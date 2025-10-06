@@ -86,6 +86,7 @@ class Network:
         self._last_p2p_log = 0.0
         self._last_sync_log = 0.0
         self._last_fullsync_log = 0.0
+        self._last_sync_count = -1
             
         # ---- Persisted peer key pins (TOFU)
         try:
@@ -473,9 +474,19 @@ class Network:
             return
         try:
             now = time.time()
-            if (now - getattr(self, "_last_sync_log", 0.0) > 8.0):
-                log.info("[Sync] Syncing with %s peers...", len(self.peers))
+            cnt = len(self.peers)
+
+            min_iv = CFG.SYNC_INFO_MIN_INTERVAL
+
+            if (self.port == CFG.BOOTSTRAP_NODE[1]) and getattr(CFG, "IS_DEV", str(getattr(CFG, "MODE", "dev")).lower() == "dev"):
+                min_iv = CFG.SYNC_INFO_MIN_INTERVAL_BOOTSTRAP
+
+            if (cnt != getattr(self, "_last_sync_count", -1)) or (now - self._last_sync_log > float(min_iv)):
+                log.info("[Sync] Connecting %s peers...", cnt)
+                self._last_sync_count = cnt
                 self._last_sync_log = now
+            else:
+                pass
         except Exception:
             pass
         for peer in list(self.peers):

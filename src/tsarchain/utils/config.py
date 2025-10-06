@@ -137,6 +137,10 @@ P2P_AEAD_AAD_PREFIX   = b"TSAR|P2P|v1" # bound to the network/version
 P2P_SESSION_TTL_S     = 3600           # rekey every 1 hours
 P2P_SESSION_MAX_MSG   = 10000          # or every N messages (whichever comes first)
 
+# Interval to clear old sessions
+SYNC_INFO_MIN_INTERVAL = 60
+SYNC_INFO_MIN_INTERVAL_BOOTSTRAP = 300.0
+
 # Wallet RPC policy (plaintext envelope)
 ALLOW_RPC_PLAINTEXT_DEV  = True
 ALLOW_RPC_PLAINTEXT_PROD = False
