@@ -492,7 +492,7 @@ class Broadcast:
                     self.utxodb._save()
             else:
                 if utxo_data:
-                    print("[Sync] Ignored UTXO snapshot (chain already present)")
+                    log.warning("[Sync] Ignoring UTXO snapshot since we have a non-empty chain")
         except Exception:
             log.exception("[Sync] Error updating UTXO DB")
 
