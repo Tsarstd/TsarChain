@@ -33,10 +33,9 @@ from tsarchain.wallet.ui_utils import center_window
 from tsarchain.network.protocol import load_or_create_keypair_at
 from tsarchain.storage.kv import kv_enabled, iter_prefix, batch
 from tsarchain.utils import config as CFG
-from tsarchain.utils.tsar_logging import setup_logging, get_logger
+from tsarchain.utils.tsar_logging import launch_gui_in_thread, setup_logging
 
 # ---------------- Constants & Paths ----------------
-logger = setup_logging(log_file="data/tsarchain.log", level="INFO")
 
 manual_bootstrap: Optional[Tuple[str, int]] = None
 try:
@@ -158,7 +157,6 @@ def show_bootstrap_lockscreen(root: tk.Tk) -> Optional[Tuple[str, int]]:
 class KremlinWalletGUI(WalletsMixin):
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.log = get_logger("Kremlin")
 
         # 0) Theme & styles
         self.theme_mode = getattr(self, "theme_mode", "dark")
@@ -241,7 +239,6 @@ class KremlinWalletGUI(WalletsMixin):
             toast_cb=lambda m, kind="info": self._toast(m, kind),
             get_wallets_cb=lambda: list(self.wallets or []),
             contact_mgr=self.contact_mgr,
-            logger=self.log,
         )
         
         self.send_tab = SendTab(
@@ -1678,6 +1675,8 @@ class KremlinWalletGUI(WalletsMixin):
                  font=("Segoe UI", 40, "bold")).pack(pady=(0, 0))
         tk.Label(info_area, text="--- Long Live The Voice Sovereignty Monetary System ---\n",
                  bg=self.bg, fg=self.accent, font=("Consolas", 12, "bold")).pack(pady=(0, 0))
+        
+        tk.Button(f, text="Open Log Viewer", command=self._open_log_viewer).pack(side=tk.RIGHT, padx=4)
 
         self.dev_text = scrolledtext.ScrolledText(
             info_area, height=10, bg=self.panel_bg, fg=self.fg,
@@ -1984,6 +1983,9 @@ class KremlinWalletGUI(WalletsMixin):
     def err(self,  msg: str):
         self._toast(msg, kind="error")
         
+    def _open_log_viewer(self):
+        log_file = str(CFG.LOG_PATH)
+        launch_gui_in_thread(log_file=log_file, attach_to_root=True)
 
     # --- Treeview hover helper ---
     def _tv_enable_hover(self, tree: "ttk.Treeview", hover_bg: str | None = None) -> None:
@@ -2043,6 +2045,13 @@ if __name__ == "__main__":
     import multiprocessing
     multiprocessing.freeze_support()
     os.umask(0o077)
+
+    setup_logging(
+        log_file=CFG.LOG_PATH,
+        level=CFG.LOG_LEVEL,
+        to_console=True,
+        force=True,
+    )
 
     root = tk.Tk()
     try:

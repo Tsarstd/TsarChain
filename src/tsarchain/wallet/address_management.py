@@ -15,8 +15,10 @@ from tsarchain.wallet.data_security import Wallet, Security,restore_keystore_byt
 from tsarchain.wallet.ui_utils import center_window
 
 # ---------------- Local Project (With Node) ----------------
+from ..utils.tsar_logging import get_ctx_logger
 from tsarchain.utils import config as CFG
 
+log = get_ctx_logger("tsarchain.wallet.address_management")
 
 
 # ---------------- Amount formatting (local) ----------------
@@ -34,7 +36,7 @@ def ensure_registry() -> None:
         try:
             os.makedirs(CFG.WALLETS_DIR)
         except Exception:
-            pass
+            log.exception("[ensure_registry] cannot create wallets dir")
     if not os.path.exists(CFG.REGISTRY_PATH):
         with open(CFG.REGISTRY_PATH, "w", encoding="utf-8") as f:
             json.dump({"wallets": []}, f)
@@ -46,6 +48,7 @@ def load_registry() -> List[str]:
         with open(CFG.REGISTRY_PATH, "r", encoding="utf-8") as f:
             return json.load(f).get("wallets", [])
     except Exception:
+        log.exception("[load_registry] cannot load registry")
         return []
 
 
@@ -73,7 +76,7 @@ class CreateWalletDialog(tk.Toplevel):
             self.attributes("-topmost", True)
             self.after(200, lambda: self.attributes("-topmost", False))
         except Exception:
-            pass
+            log.debug("[CreateWalletDialog] cannot set topmost")
 
         # Header
         hdr = tk.Frame(self, bg=theme["bg"]); hdr.pack(fill=tk.X, padx=20, pady=(18, 8))
@@ -150,7 +153,7 @@ class CreateWalletDialog(tk.Toplevel):
                         col = "#3a3a3a"
                     b.configure(bg=col)
                 except Exception:
-                    pass
+                    log.debug("[CreateWalletDialog] cannot paint strength bar")
             self._strength_lbl.config(text=f"- {label}")
             
         def validate(_e=None):
@@ -169,7 +172,7 @@ class CreateWalletDialog(tk.Toplevel):
                 elif isinstance(details, int):
                     score = details
             except Exception:
-                pass
+                log.debug("[CreateWalletDialog] cannot parse strength details")
             if not isinstance(label, str) or not label:
                 label = ("very weak","weak","fair","good","strong","excellent")[max(0,min(5,score))]
 
@@ -183,7 +186,7 @@ class CreateWalletDialog(tk.Toplevel):
         try:
             self.ent_pwd.focus_set()
         except Exception:
-            pass
+            log.debug("[CreateWalletDialog] cannot focus password entry")
 
     def _on_create(self):
         self.result_password = self.ent_pwd.get()
@@ -290,7 +293,8 @@ class WalletsMixin:
 
         self._render_wallet_list()
         try: self.reload_addresses()
-        except Exception: pass
+        except Exception:
+            log.exception("Failed to load addresses on init")
         self._wallets_update_mode()
 
     # ====== Address Cards ======
@@ -354,8 +358,8 @@ class WalletsMixin:
         try:
             w = Wallet.unlock(pwd, addr)
             priv = w.get("private_key") or ""
-        except Exception as e:
-            messagebox.showerror("Unlock failed", str(e)); return
+        except Exception:
+            log.exception("Failed to unlock wallet for private key")
         if not priv:
             messagebox.showwarning("Not available", "Private key not found."); return
 
@@ -386,13 +390,14 @@ class WalletsMixin:
             return
         try:
             delete_address_from_keystore(addr, pwd)
-        except Exception as e:
-            messagebox.showerror("Delete failed", str(e))
+        except Exception:
+            log.exception("Failed to delete address from keystore")
             return
         try:
             self.wallets = [a for a in self.wallets if a != addr]
             save_registry(self.wallets)
         except Exception:
+            log.exception("Failed to update registry after address deletion")
             pass
         self._wallets_after_change()
         self._toast("Address deleted", kind="info")
@@ -422,10 +427,12 @@ class WalletsMixin:
                 f.write(data)
 
             try: self._toast("Keystore backup saved", kind="info")
-            except Exception: pass
+            except Exception:
+                log.debug("Cannot show toast after keystore backup")
+                pass
             messagebox.showinfo("Backup OK", f"Saved to:\n{path}")
-        except Exception as e:
-            messagebox.showerror("Backup failed", str(e))
+        except Exception:
+            log.exception("Failed to backup keystore")
 
     # ===================== BALANCE BLOCK =====================
 
@@ -493,9 +500,9 @@ class WalletsMixin:
 
         return {
             "balance": int(resp.get("balance", resp.get("total", 0)) or 0),
-            "spendable": int(d.get("spendable", d.get("confirmed", d.get("mature", d.get("total", 0)))) or 0),
+            "spendable": int(resp.get("spendable", resp.get("confirmed", resp.get("mature", resp.get("total", 0)))) or 0),
             "immature": int(resp.get("immature", 0) or 0),
-            "pending_outgoing": int(d.get("pending_outgoing", d.get("pending", d.get("unconfirmed", 0))) or 0),
+            "pending_outgoing": int(resp.get("pending_outgoing", resp.get("pending", resp.get("unconfirmed", 0))) or 0),
             "maturity": int(resp.get("maturity", CFG.COINBASE_MATURITY)),
         }
 
@@ -504,6 +511,7 @@ class WalletsMixin:
             try:
                 return int(v or 0)
             except Exception:
+                log.debug("[_update_balance_block] cannot parse satoshi value")
                 return 0
 
         tot  = resp.get("balance", resp.get("total"))
@@ -515,6 +523,7 @@ class WalletsMixin:
             if tot is None or int(tot) < s or int(tot) < (s + i):
                 tot = s + i
         except Exception:
+            log.debug("[_update_balance_block] cannot validate total balance")
             tot = int(spnd or 0) + int(imm or 0)
             
         pend = resp.get("pending_outgoing", 0)
@@ -534,12 +543,14 @@ class WalletsMixin:
             try:
                 bal_labels["pending_row"].pack_info()
             except Exception:
+                log.debug("[_update_balance_block] cannot pack pending row")
                 pass
             bal_labels["pending_row"].pack(anchor="w")
         else:
             try:
                 bal_labels["pending_row"].pack_forget()
             except Exception:
+                log.debug("[_update_balance_block] cannot forget pending row")
                 pass
 
         try:
@@ -563,8 +574,8 @@ class WalletsMixin:
                     for k, _ in oldest:
                         self._bal_cache.pop(k, None)
                 self._save_balance_cache()
-        except Exception as e:
-            print("[balcache] warn:", e)
+        except Exception:
+            log.debug("[_update_balance_block] cannot update balance cache:", exc_info=True)
 
     def clear_balance_cache(self):
         self._bal_cache = {}
@@ -572,8 +583,8 @@ class WalletsMixin:
             if os.path.exists(self._bal_cache_path):
                 os.remove(self._bal_cache_path)
             self._toast("Balance cache cleared", ms=1400, kind="info")
-        except Exception as e:
-            print("[balcache] clear warn:", e)
+        except Exception:
+            log.debug("[clear_balance_cache] cannot clear cache file:", exc_info=True)
 
     # ===================== WALLET ACTIONS =====================
 
@@ -613,8 +624,8 @@ class WalletsMixin:
                 self.reload_addresses()
             if hasattr(self, "_render_wallet_list"):
                 self._render_wallet_list()
-        except Exception as e:
-            print("[UI] refresh warn:", e)
+        except Exception:
+            log.debug("Cannot reload addresses after registry update:", exc_info=True)
 
     # ------- Secure Mnemonic Dialog -------
     def _show_mnemonic_dialog(self, addr: str, mnemonic: str) -> None:
@@ -624,6 +635,7 @@ class WalletsMixin:
                 try:
                     self.root.after_cancel(tid)
                 except Exception:
+                    log.debug("[_show_mnemonic_dialog] cannot cancel timer", exc_info=True)
                     pass
                 self._security_timer_id = None
 
@@ -666,6 +678,7 @@ class WalletsMixin:
         try:
             style.theme_use("clam")  # ttk theme that can be styled
         except Exception:
+            log.debug("[_show_mnemonic_dialog] cannot set ttk theme", exc_info=True)
             pass
 
         # Gaya dasar
@@ -691,6 +704,7 @@ class WalletsMixin:
             dialog.attributes("-toolwindow", True)
             dialog.attributes("-alpha", 0.98)
         except Exception:
+            log.debug("[_show_mnemonic_dialog] cannot set window attributes", exc_info=True)
             pass
 
         main = ttk.Frame(dialog, padding=20, style="Dark.TFrame")
@@ -723,6 +737,7 @@ class WalletsMixin:
             try:
                 canvas.itemconfigure(wrap_id, width=canvas.winfo_width())
             except Exception:
+                log.debug("[_show_mnemonic_dialog] cannot sync scrollregion", exc_info=True)
                 pass
         wrap.bind("<Configure>", _sync_scrollregion)
         canvas.bind("<Configure>", _sync_scrollregion)
@@ -760,7 +775,7 @@ class WalletsMixin:
                 )
                 Security.log_security_event("MNEMONIC_COPIED", addr, "Copied to clipboard")
             except Exception:
-                messagebox.showerror("Error", "Failed to copy securely")
+                log.exception("Failed to copy mnemonic to clipboard")
 
         ttk.Button(btns, text="Copy", command=copy_once,
                    width=20, style="Dark.TButton").pack(side=tk.LEFT, padx=10)
@@ -793,6 +808,7 @@ class WalletsMixin:
                         _safe_cancel_timer()
                         return
                 except Exception:
+                    log.debug("[_show_mnemonic_dialog] cannot verify dialog existence", exc_info=True)
                     _safe_cancel_timer()
                     return
                 if self.security_time_remaining > 0:
@@ -800,6 +816,7 @@ class WalletsMixin:
                     try:
                         timer_label.config(text=f"Auto-clear: {m}:{s:02d}")
                     except Exception:
+                        log.debug("[_show_mnemonic_dialog] cannot update timer label", exc_info=True)
                         _safe_cancel_timer()
                         return
                     self.security_time_remaining -= 1
@@ -826,6 +843,7 @@ class WalletsMixin:
             dialog.attributes("-topmost", True)
             dialog.after(1000, lambda: dialog.attributes("-topmost", False))
         except Exception:
+            log.debug("[_show_mnemonic_dialog] cannot set topmost attribute", exc_info=True)
             pass
 
     # ------- Widget locker (collect) -------
@@ -839,6 +857,7 @@ class WalletsMixin:
                 if btn:
                     widgets.append(btn)
         except Exception:
+            log.debug("Cannot collect wallet action widgets:", exc_info=True)
             pass
         return widgets
 
@@ -855,20 +874,25 @@ class WalletsMixin:
             try:
                 Security.secure_erase(pwd)
             except Exception:
-                pass
+                log.exception("Failed to clear password from memory")
+            if not addr or not mnemonic:
+                messagebox.showerror("Failed", "Wallet creation failed.")
+                return
 
             try:
                 self.reload_addresses()
             except Exception:
+                log.debug("Cannot reload addresses after wallet creation")
                 pass
             self._toast("Wallet created", kind="info")
             try:
                 self._show_mnemonic_dialog(addr, mnemonic)
             except Exception:
+                log.exception("Failed to show mnemonic dialog")
                 messagebox.showinfo("Wallet Created", f"Address: {addr}\n\nSIMPAN recovery phrase dengan aman.")
 
-        except Exception as e:
-            messagebox.showerror("Failed", str(e))
+        except Exception:
+            log.exception("Failed to create wallet", exc_info=True)
 
     def load_wallet_file(self) -> None:
         path = filedialog.askopenfilename(
@@ -894,11 +918,12 @@ class WalletsMixin:
                     self.reload_addresses()
                     self._wallets_update_mode()
                 except Exception:
+                    log.debug("Cannot reload addresses after keystore restore")
                     pass
 
             messagebox.showinfo("Restore complete", "Keystore restored successfully.")
         except Exception as e:
-            messagebox.showerror("Restore failed", str(e))
+            log.exception("Failed to restore keystore from file", exc_info=True)
 
 
     def import_by_mnemonic(self) -> None:
@@ -910,7 +935,9 @@ class WalletsMixin:
         dlg.resizable(False, False)
         try:
             dlg.attributes("-topmost", True); dlg.after(200, lambda: dlg.attributes("-topmost", False))
-        except Exception: pass
+        except Exception:
+            log.debug("[import_by_mnemonic] cannot set topmost attribute", exc_info=True)
+            pass
 
         wrap = tk.Frame(dlg, bg=theme["bg"]); wrap.pack(fill="both", expand=True, padx=18, pady=16)
 
@@ -936,6 +963,7 @@ class WalletsMixin:
             try:
                 s = entries[0].clipboard_get()
             except Exception:
+                log.debug("Cannot get clipboard content on paste", exc_info=True)
                 return
             words = " ".join((s or "").replace("\n", " ").split()).strip().split(" ")
             if len(words) >= 12:
@@ -943,7 +971,9 @@ class WalletsMixin:
                     entries[i].delete(0, tk.END)
                     entries[i].insert(0, words[i])
                 try: entries[11].focus_set()
-                except Exception: pass
+                except Exception:
+                    log.debug("Cannot focus last entry after paste", exc_info=True)
+                    pass
 
         entries[0].bind("<<Paste>>", _on_paste_first)
         entries[0].bind("<Control-v>", _on_paste_first)
@@ -975,11 +1005,12 @@ class WalletsMixin:
                 try:
                     self._wallets_after_change()
                 except Exception:
+                    log.debug("Cannot reload addresses after wallet import")
                     pass
                 messagebox.showinfo("Success", f"Wallet imported!\nAddress: {addr}")
                 dlg.destroy()
-            except Exception as e:
-                messagebox.showerror("Error", f"Import failed: {e}")
+            except Exception:
+                log.exception("Failed to import wallet from mnemonic", exc_info=True)
 
         tk.Button(btns, text="Import Wallet", command=_do_import, bg=self.accent, fg="#000", font=("Segoe UI", 10, "bold")).pack(side="right")
         tk.Button(btns, text="Cancel", command=dlg.destroy, bg=theme["panel_bg"], fg=theme["fg"]).pack(side="right", padx=(0,8))
@@ -987,6 +1018,7 @@ class WalletsMixin:
         center_window(dlg, self.root)
         try: entries[0].focus_set()
         except Exception:
+            log.exception("Cannot focus first entry in import mnemonic dialog", exc_info=True)
             pass
 
 
@@ -1007,8 +1039,8 @@ class WalletsMixin:
             self._reg(addr)
             self._wallets_after_change()
             messagebox.showinfo("Wallet Imported", f"Address: {addr}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to import privkey:\n{e}")
+        except Exception:
+            log.exception("Failed to import wallet from private key", exc_info=True)
 
     def export_private_key(self) -> None:
         if not getattr(self, "wallets", []):
@@ -1028,8 +1060,8 @@ class WalletsMixin:
 
         try:
             w = Wallet.unlock(password, addr)
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to unlock wallet:\n{e}")
+        except Exception:
+            log.debug("Failed to unlock wallet for private key export", exc_info=True)
             return
 
         really = messagebox.askyesno(
@@ -1080,8 +1112,8 @@ class WalletsMixin:
                     self._update_balance_block(label_widget, data)
                 else:
                     label_widget.config(text=self._format_balance_ui(data))
-            except Exception as e:
-                print("[UI] balance render error:", e)
+            except Exception:
+                log.debug("[UI] balance render error:", exc_info=True)
                 zero = {"balance": 0, "spendable": 0, "immature": 0,
                         "pending_outgoing": 0, "maturity": CFG.COINBASE_MATURITY}
                 if isinstance(label_widget, dict):
@@ -1102,8 +1134,8 @@ class WalletsMixin:
                     self._update_balance_block(label_widget, data)
                 else:
                     label_widget.config(text=self._format_balance_ui(data))
-            except Exception as e:
-                print("[UI] balance render error:", e)
+            except Exception:
+                log.debug("[UI] balance render error:", exc_info=True)
                 zero = {"balance": 0, "spendable": 0, "immature": 0,
                         "pending_outgoing": 0, "maturity": CFG.COINBASE_MATURITY}
                 if isinstance(label_widget, dict):
@@ -1140,6 +1172,7 @@ class WalletsMixin:
                 if addr and bal_labels:
                     addrs_and_labels.append((addr, bal_labels))
             except Exception:
+                log.debug("Cannot collect address from wallet card:", exc_info=True)
                 continue
 
         if not addrs_and_labels:
@@ -1205,6 +1238,7 @@ class WalletsMixin:
             self._wallets_hero.pack_forget()
             self._wallets_compact.pack_forget()
         except Exception:
+            log.debug("Cannot switch wallet mode:", exc_info=True)
             pass
         target = self._wallets_compact if has else self._wallets_hero
         target.pack(fill=tk.BOTH, expand=True)
@@ -1218,6 +1252,7 @@ class WalletsMixin:
             if hasattr(self, "reload_addresses"):
                 self.reload_addresses()
         except Exception:
+            log.debug("Cannot reload addresses after registry update:", exc_info=True)
             pass
         self._wallets_update_mode()
 
@@ -1233,9 +1268,12 @@ class WalletsMixin:
             if hasattr(self, "reload_addresses"): self.reload_addresses()
             if hasattr(self, "_render_wallet_list"): self._render_wallet_list()
         except Exception:
+            log.debug("Cannot reload addresses after registry update:", exc_info=True)
             pass
         try: self._wallets_update_mode()
-        except Exception: pass
+        except Exception:
+            log.debug("Cannot update wallet mode after registry update:", exc_info=True)
+            pass
 
 
     # ---------- Balance Cache: init, load, save ----------
@@ -1248,6 +1286,7 @@ class WalletsMixin:
             os.makedirs(base, exist_ok=True)
             self._bal_cache_path = os.path.join(base, "balances.json")
         except Exception:
+            log.debug("Cannot init balance cache dir:", exc_info=True)
             self._bal_cache_path = "balances.json"
         self._bal_cache = self._load_balance_cache()
 
@@ -1257,6 +1296,7 @@ class WalletsMixin:
                 d = json.load(f)
                 return d if isinstance(d, dict) else {}
         except Exception:
+            log.debug("Cannot load balance cache:", exc_info=True)
             return {}
 
     def _save_balance_cache(self) -> None:
@@ -1266,6 +1306,7 @@ class WalletsMixin:
                 json.dump(self._bal_cache, f, ensure_ascii=False, indent=2)
             os.replace(tmp, self._bal_cache_path)
         except Exception:
+            log.debug("Cannot save balance cache:", exc_info=True)
             pass
 
     def _preload_cached_balance(self, address: str, labels: dict) -> None:
@@ -1282,6 +1323,7 @@ class WalletsMixin:
             }
             self._update_balance_block(labels, data)
         except Exception:
+            log.debug("Cannot preload cached balance:", exc_info=True)
             pass
 
     # ------ Password Input ------
@@ -1290,7 +1332,9 @@ class WalletsMixin:
         d.title(title); d.configure(bg=self.bg); d.resizable(False, False)
         try:
             d.attributes("-topmost", True); d.after(150, lambda: d.attributes("-topmost", False))
-        except Exception: pass
+        except Exception:
+            log.debug("[_ask_password] cannot set topmost attribute", exc_info=True)
+            pass
 
         tk.Label(d, text=prompt, bg=self.bg, fg=self.fg, font=("Segoe UI", 10)).pack(padx=16, pady=(14,6))
         row = tk.Frame(d, bg=self.bg); row.pack(padx=16, pady=(0,12))
@@ -1312,7 +1356,9 @@ class WalletsMixin:
         tk.Button(btns, text="OK",     command=ok,       bg=self.accent, fg="#fff").pack(side=tk.RIGHT)
         try:
             ent.focus_set()
-        except Exception: pass
+        except Exception:
+            log.debug("[_ask_password] cannot focus entry", exc_info=True)
+            pass
         ent.bind("<Return>", lambda _e: ok())
         d.bind("<Return>", lambda _e: ok())
         center_window(d, self.root)
@@ -1356,6 +1402,7 @@ class WalletsMixin:
         try:
             (ent or txt).focus_set()
         except Exception:
+            log.debug("[_ask_text] cannot focus input", exc_info=True)
             pass
         if not multiline:
             (ent or txt).bind("<Return>", lambda _e: ok())
@@ -1413,23 +1460,26 @@ class WalletsMixin:
             try:
                 self.reload_addresses()
             except Exception:
+                log.exception("Cannot reload addresses after sync", exc_info=True)
                 pass
             try:
                 if hasattr(self, "_maybe_lock_redirect"):
                     self._maybe_lock_redirect()
             except Exception:
+                log.exception("Cannot maybe lock redirect after sync", exc_info=True)
                 pass
             try:
                 self._render_wallet_list()
             except Exception:
+                log.exception("Cannot render wallet list after sync", exc_info=True)
                 pass
 
             messagebox.showinfo(
                 "Sync complete",
                 f"Added: {len(added)}\nRemoved: {len(removed)}\nTotal: {len(self.wallets)}"
             )
-        except Exception as e:
-            messagebox.showerror("Sync failed", f"{e}")
+        except Exception:
+            log.exception("Failed to sync from keystore", exc_info=True)
 
     def delete_wallet_dialog(self) -> None:
         if not self.wallets:
@@ -1470,19 +1520,22 @@ class WalletsMixin:
             try:
                 self.reload_addresses()
             except Exception:
+                log.debug("Cannot reload addresses after wallet deletion", exc_info=True)
                 pass
             try:
                 self._render_wallet_list()
             except Exception:
+                log.debug("Cannot render wallet list after wallet deletion", exc_info=True)
                 pass
             try:
                 if hasattr(self, "_maybe_lock_redirect"):
                     self._maybe_lock_redirect()
             except Exception:
+                log.debug("Cannot maybe lock redirect after wallet deletion", exc_info=True)
                 pass
             messagebox.showinfo("Deleted", "Wallet removed from keystore and UI.")
-        except Exception as e:
-            messagebox.showerror("Delete failed", f"{e}")
+        except Exception:
+            log.exception("Failed to delete wallet", exc_info=True)
 
     def backup_keystore(self) -> None:
         try:
@@ -1503,6 +1556,6 @@ class WalletsMixin:
             messagebox.showinfo("Backup complete", f"Encrypted keystore saved:\n{path}")
         except FileNotFoundError:
             messagebox.showerror("Backup failed", "Keystore file not found.")
-        except Exception as e:
-            messagebox.showerror("Backup failed", f"{e}")
+        except Exception:
+            log.exception("Failed to backup keystore", exc_info=True)
 

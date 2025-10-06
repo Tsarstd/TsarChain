@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173
+
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
 import threading, time, re

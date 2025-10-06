@@ -340,9 +340,9 @@ class Blockchain:
                     else:
                         circulating_estimate += amt
                 except Exception:
-                    continue
+                    self.log.exception("[_compute_state_snapshot] UTXO entry parse error")
         except Exception:
-            pass
+            self.log.exception("[_compute_state_snapshot] UTXODB load error")
 
         # ---- Supply emisi (subsidy) sampai tip ----
         try:

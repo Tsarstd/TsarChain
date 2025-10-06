@@ -5,13 +5,13 @@
 '''
 HOW TO USE logging in your code:
 
-self.log.trace("detail sangat teknis, biasanya tidak perlu")
-self.log.info("kejadian normal / milestone")
-self.log.debug("detail teknis untuk diagnosis")
-self.log.warning("ada kondisi non-fatal yang perlu perhatian")
-self.log.error("error yang tangani")
-self.log.critical("kondisi fatal")
-self.log.exception("pesan konteks saat ada exception")  >otomatis sertakan traceback
+self.log.trace("very technical details, like : PING , mining detail, etc. usually unnecessary")
+self.log.info("normal event / milestone")
+self.log.debug("technical details for diagnosis")
+self.log.warning("a non-fatal condition that needs attention")
+self.log.error("handled error")
+self.log.critical("fatal condition")
+self.log.exception("context message when an exception occurs") >automatically include traceback
 '''
 
 from __future__ import annotations
