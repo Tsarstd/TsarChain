@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "last_updated": "2025-10-04T11:52:54.010467+07:00",
+  "identity": {
+    "network_id": "gulag-net",
+    "address_prefix": "tsar",
+    "network_magic_hex": "5453415253545544494f"
+  },
+  "chain": {
+    "total_blocks": 2,
+    "tip_height": 1,
+    "genesis_hash": "000000a7b6eb878ced55e6a9f8e7d7096b981aeac8c0f6d65bf9a2ea1cb6744f",
+    "genesis_message": "Tsar Studio : In a world of copies, Bootleg culture encoded in the chain.",
+    "tip_hash": "000000f459e381a2791e3cee0e39e74407d584d5a0e6a4a86dceb3d95398fdbb",
+    "tip_timestamp": 1759553501,
+    "tip_bits": 503382015,
+    "tip_target_hex": "0xffff000000000000000000000000000000000000000000000000000000",
+    "tip_difficulty": 16777472,
+    "avg_block_time_sec_window": 3.0,
+    "est_network_hashrate_hps_window": 5592490
+  },
+  "supply": {
+    "max_supply": 25000000000000000,
+    "emitted_subsidy": 50000000000,
+    "circulating_estimate": 0,
+    "immature_coinbase": 50000000000,
+    "coinbase_maturity": 3,
+    "current_block_subsidy": 25000000000,
+    "current_epoch": 0,
+    "next_halving_height": 250000,
+    "blocks_to_halving": 249998
+  },
+  "transactions": {
+    "total_txs": 2,
+    "total_non_coinbase_txs": 0,
+    "total_fees_paid": 0,
+    "mempool_txs": 0,
+    "mempool_vbytes_estimate": 0
+  },
+  "utxo": {
+    "utxo_set_size": 2
+  },
+  "miners_snapshot": {
+    "top_miners": [
+      [
+        "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss",
+        2
+      ]
+    ]
+  },
+  "files": {
+    "blockchain_json_sha256": "4736235e7dd225b025dc4a398ed25b4e6c41fd228bbbce34aa0755b106dd806b"
+  },
+  "total_supply": 50000000000,
+  "total_blocks": 2
+}

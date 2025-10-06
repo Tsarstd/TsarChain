@@ -1,0 +1,66 @@
+{
+  "tsar1q62xtpyn82zmlkysa6tjd8p3pcgc6hwy9g2xysw": {
+    "balance": 50000000000,
+    "spendable": 50000000000,
+    "immature": 0,
+    "pending_outgoing": 0,
+    "maturity": 3,
+    "ts": 1758446476
+  },
+  "tsar1qvjf2mjupugy7es4rdfp4pa8gp58sd76nqreggl": {
+    "balance": 6725000000000,
+    "spendable": 6725000000000,
+    "immature": 0,
+    "pending_outgoing": 0,
+    "maturity": 3,
+    "ts": 1758446508
+  },
+  "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss": {
+    "balance": 0,
+    "spendable": 0,
+    "immature": 0,
+    "pending_outgoing": 0,
+    "maturity": 3,
+    "ts": 1758431139
+  },
+  "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07": {
+    "balance": 0,
+    "spendable": 0,
+    "immature": 0,
+    "pending_outgoing": 0,
+    "maturity": 3,
+    "ts": 1758431157
+  },
+  "tsar1ql4rm4k4jrafqtaef6mkff02dkhpzwjptxaxdzy": {
+    "balance": 75000000000,
+    "spendable": 75000000000,
+    "immature": 0,
+    "pending_outgoing": 0,
+    "maturity": 3,
+    "ts": 1758345800
+  },
+  "tsar1q2n4dzuzgequdwy39q4jyc0rqfmkp5ywcflju9x": {
+    "balance": 0,
+    "spendable": 0,
+    "immature": 0,
+    "pending_outgoing": 0,
+    "maturity": 3,
+    "ts": 1758407265
+  },
+  "tsar1qwlqr4ychvgyejn6fgphjqe26qfyclk32lj09s5": {
+    "balance": 715000000000,
+    "spendable": 665000000000,
+    "immature": 50000000000,
+    "pending_outgoing": 0,
+    "maturity": 3,
+    "ts": 1758446560
+  },
+  "tsar1qvuup3xw85x4hq4g25387rpzxqjt3cevl7ym7ge": {
+    "balance": 35000000000,
+    "spendable": 35000000000,
+    "immature": 0,
+    "pending_outgoing": 0,
+    "maturity": 3,
+    "ts": 1758446551
+  }
+}
