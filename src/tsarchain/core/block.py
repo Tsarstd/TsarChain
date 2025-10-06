@@ -66,8 +66,7 @@ class Block:
         short_prev = (self.prev_block_hash.hex()[:8]
               if isinstance(self.prev_block_hash, (bytes, bytearray))
               else str(self.prev_block_hash)[:8])
-        self.log = get_ctx_logger("tsarchain.block",
-                                height=self.height, block=short_prev, peer="-")
+        self.log = get_ctx_logger("tsarchain.core.block", height=self.height, block=short_prev)
         
 
     def to_dict(self):
@@ -109,7 +108,7 @@ class Block:
                     tx_obj = CoinbaseTx.from_dict(tx_data)
                 except Exception as e:
                     tx_obj = Tx.from_dict(tx_data)
-                    get_ctx_logger("tsarchain.block").exception("[Block.from_dict] Failed to parse CoinbaseTx, fallback to Tx")
+                    get_ctx_logger("tsarchain.core.block").exception("[Block.from_dict] Failed to parse CoinbaseTx, fallback to Tx")
             else:
                 tx_obj = Tx.from_dict(tx_data)
             tx_list.append(tx_obj)
