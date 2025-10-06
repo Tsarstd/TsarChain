@@ -1,0 +1,270 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Tsar Studio
+# Part of TsarChain — see LICENSE and TRADEMARKS.md
+# Refs: see REFERENCES.md
+import os
+import appdirs
+
+# =============================================================================
+# MODE & ENV (Dev/Prod Switch)
+# =============================================================================
+
+# ===== Native toggle (1=ON with Rust .pyd, 0=OFF pure-Python) =====
+NATIVE = 1
+
+# ===== Dev & Prod toggle =====
+MODE = "dev"   # "dev" | "prod"
+IS_DEV = (MODE.lower() == "dev")      
+
+# ===== Dev & Prod network toggle =====
+PORT_RANGE_DEV     = (38169, 38175)
+PORT_RANGE_PROD    = (40196, 40200)          
+
+BOOTSTRAP_DEV      = ("127.0.0.1", 38169)
+BOOTSTRAP_PROD     = ("127.0.0.1", 40196)
+
+FULL_SYNC_DEV      = True
+FULL_SYNC_PROD     = True
+
+# =============================================================================
+# APP / METADATA
+# =============================================================================
+APP_NAME   = "Kremlin"
+APP_AUTHOR = "TsarStudio"
+WALLET_DATA_DIR   = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)
+
+# =============================================================================
+# MONETARY / SUPPLY
+# =============================================================================
+TSAR                   = 100_000_000     # SAT-like unit (8 decimals)
+MAX_SUPPLY             = 250_000_000 * TSAR
+INITIAL_REWARD         = 250 * TSAR
+BLOCKS_PER_HALVING     = 250_000
+COINBASE_MATURITY      = 3
+MAX_COINBASE_EXTRADATA = 100
+
+# =============================================================================
+# CONSENSUS / DIFFICULTY
+# =============================================================================
+INITIAL_BITS       = 0x1E00FFFF
+MAX_BITS           = 0x1F00FFFF
+TARGET_BLOCK_TIME  = 30
+LWMA_WINDOW        = 75
+FUTURE_DRIFT       = 2 * 60 * 60
+
+# === Consensus Hardening ===
+# CONSENSUS LIMITS (Blocks & TX)
+MAX_BLOCK_BYTES         = 1_000_000        # ≈1 MB
+MAX_TXS_PER_BLOCK       = 5_000
+MAX_SIGOPS_PER_BLOCK    = 10_000
+MAX_SIGOPS_PER_TX       = MAX_SIGOPS_PER_BLOCK // 5
+
+# FORK-CHOICE & REORG
+ENABLE_CHAINWORK_RULE = True
+ENABLE_REORG_LIMIT = True
+REORG_LIMIT = 100
+
+# DIFF CLAMP
+ENABLE_DIFF_CLAMP   = True
+DIFF_CLAMP_MAX_UP   = 2.0
+DIFF_CLAMP_MAX_DOWN = 0.5
+
+# Emergency Difficulty Adjustment (EDA)
+ENABLE_EDA              = True  # False for Prod
+EDA_WINDOW              = 60
+EDA_TRIGGER_RATIO       = 20.0
+EDA_EASE_MULTIPLIER     = 2.0
+
+# =============================================================================
+# FEES / TX POLICY
+# =============================================================================
+DEFAULT_FEE_RATE_SATVB = 35
+MIN_FEE_RATE_SATVB     = 1
+MAX_FEE_RATE_SATVB     = 10_000
+
+TX_BASE_VBYTES       = 10
+SEGWIT_INPUT_VBYTES  = 68
+SEGWIT_OUTPUT_VBYTES = 31
+
+DUST_THRESHOLD_SAT   = 294
+MAX_DECIMALS         = 8
+
+# =============================================================================
+# CHAIN / IDENTITY
+# =============================================================================
+NET_ID_DEV      = "gulag-net"
+NET_ID_PROD     = "sputnik-net" 
+ADDRESS_PREFIX  = "tsar"
+DEFAULT_NET_ID  = NET_ID_DEV if IS_DEV else NET_ID_PROD
+NETWORK_MAGIC   = b"TSARSTUDIO"
+ZERO_HASH       = b"\x00" * 32
+CANONICAL_SEP   = (',', ':')
+
+GENESIS_BLOCK_ID_DEFAULT = ("Tsar Studio : In a world of copies, Bootleg culture encoded in the chain.")
+
+# =============================================================================
+# NETWORK / P2P
+# =============================================================================
+# === Port & Bootstrap ===
+PORT_START, PORT_END = PORT_RANGE_DEV if IS_DEV else PORT_RANGE_PROD
+BOOTSTRAP_NODE       = BOOTSTRAP_DEV if IS_DEV else BOOTSTRAP_PROD
+
+# === Buffers & Timeouts ===
+BUFFER_SIZE        = 65536
+MAX_MSG            = 2 * 1024 * 1024
+HANDSHAKE_TIMEOUT  = 10
+DISCOVERY_INTERVAL = 5
+SYNC_TIMEOUT       = 10
+SYNC_INTERVAL      = 15
+
+# === Anti-DoS ===
+MAX_ADDRS_PER_REQ  = 64
+MAX_HISTORY_LIMIT  = 200
+MAX_UTXO_ADDR_LEN  = 128
+
+# === Full Sync guard ===
+ENABLE_FULL_SYNC       = FULL_SYNC_DEV if IS_DEV else FULL_SYNC_PROD
+FULL_SYNC_MAX_BLOCKS   = 2000
+FULL_SYNC_MAX_BYTES    = 512 * 1024  # 512 KB
+
+# =============================================================================
+# P2P TRANSPORT ENCRYPTION (Node <-> Node)
+# =============================================================================
+P2P_ENC_REQUIRED      = True           # DEV = False, PROD = True
+P2P_AEAD_KEY_BYTES    = 32             # AES-256
+P2P_AEAD_NONCE_BYTES  = 12             # GCM nonce 96-bit
+P2P_AEAD_AAD_PREFIX   = b"TSAR|P2P|v1" # bound to the network/version
+P2P_SESSION_TTL_S     = 3600           # rekey every 1 hours
+P2P_SESSION_MAX_MSG   = 10000          # or every N messages (whichever comes first)
+
+# Wallet RPC policy (plaintext envelope)
+ALLOW_RPC_PLAINTEXT_DEV  = True
+ALLOW_RPC_PLAINTEXT_PROD = False
+ALLOW_RPC_PLAINTEXT = ALLOW_RPC_PLAINTEXT_DEV if IS_DEV else ALLOW_RPC_PLAINTEXT_PROD
+
+# =============================================================================
+# SECURITY / REPLAY
+# =============================================================================
+ENVELOPE_REQUIRED    = True
+ENFORCE_HELLO_PUBKEY = True
+
+HMAC_SHARED_SECRET = b"tsar.devnet.v.0.2"
+REPLAY_WINDOW_SEC  = 60
+
+# =============================================================================
+# CHAT SECURITY
+# =============================================================================
+CHAT_MAX_CT_BYTES    = 2 * 1024      # ciphertext
+CHAT_TS_DRIFT_S      = 120       # sec
+CHAT_TTL_S           = 86400     # 24 hours
+CHAT_MAILBOX_MAX     = 100
+CHAT_GLOBAL_QUEUE_MAX= 20_000
+CHAT_PULL_MAX_ITEMS  = 50
+
+# === Rate limiting ===
+CHAT_RL_ADDR_BURST   = 6
+CHAT_RL_ADDR_WINDOWS = 10        # per 10 second
+CHAT_RL_IP_BURST     = 12
+CHAT_RL_IP_WINDOWS   = 10        # per 10 second
+CHAT_BACKOFF_S       = 60
+
+# === Presence relay ===
+PRESENCE_RL_ADDR_BURST = 2
+PRESENCE_RL_ADDR_WINDOWS   = 10
+PRESENCE_MAX_HOPS      = 3
+PRESENCE_TTL_S         = 3600
+
+CHAT_NONCE_BYTES = 12
+CHAT_SAS_LEN = 8
+
+
+# =============================================================================
+# RPC / TIMEOUTS / CACHE
+# =============================================================================
+CONNECT_TIMEOUT_SCAN = 0.25
+RPC_TIMEOUT          = 4.0
+NODE_CACHE_TTL       = 60
+
+# =============================================================================
+# CONSENSUS — GRAFFITI
+# =============================================================================
+STORAGE_MAGIC = b"TSAR_GRAF1|"
+GRAFFITI_MAGIC = b"TSAR_GRAF1|"
+
+# === FEATURES / ROLES ===
+ENABLE_NODE_STORAGE = True           # aktifkan storage node
+STORAGE_ACCEPT_UPLOADS = True
+STORAGE_GC_INTERVAL_S = 3600
+
+# === SCRIPT / OP_RETURN POLICY ===
+OPRET_MAX_BYTES         = 352            # >= 270B (give margin)
+MAX_GRAFFITI_OPRET      = min(OPRET_MAX_BYTES, 320)
+OPRET_REQUIRE_LAST      = True        # OP_RETURN must be the last output
+OPRET_ONLY_ONE          = True            # hanya 1 OP_RETURN per TX
+OPRET_ALLOW_PUSHDATA1   = True
+OPRET_ALLOW_PUSHDATA2   = True     # required for lengths >255B
+
+# === OP_RETURN size guards ===
+MAX_STORAGE_OPRET = 180
+
+# === Storage gas rules ===
+STORAGE_MIN_SIZE        = 100 * 1024         # bytes (min 100KB)
+STORAGE_CHUNK           = 100 * 1024         # bytes per chunk (100KB)
+
+# === Bid fee rules ===
+MIN_BILLABLE_SIZE_KB  = 100
+BID_FEE_RATE = 0.005
+
+# === Download TTL window ===
+DOWNLOAD_WINDOW_BLOCKS  = 10
+ALLOW_UNREGISTERED_STORAGE = True
+
+# STORAGE (for NODE_STORAGE)
+STORAGE_DIR = "data/storage"
+STORAGE_MAX_BYTES = 10 * 1024 * 1024 * 1024  # 10GB
+STORAGE_UPLOAD_CHUNK = STORAGE_CHUNK
+STORAGE_MIN_CONFIRM = 2
+ALLOW_UNREGISTERED_STORAGE_UPLOADS = True
+
+# =============================================================================
+# PATHS / STORAGE
+# =============================================================================
+STATE_FILE    = "data/State/state.json"
+BLOCK_FILE    = "data/Block/blockchain.json"
+UTXOS_FILE    = "data/UTXOS/utxos.json"
+MEMPOOL_FILE  = "data/Mempools/txpools.json"
+
+# =============================================================================
+# USER STORAGE
+# =============================================================================
+USER_KEY_PATH  = "data_user/user_key.json"
+REGISTRY_PATH  = "data_user/wallet_registry.json"
+CHAT_STATE     = "data_user/chat_config.json"
+NODE_KEY_PATH  = "data_user/node_key.json"
+PEER_KEYS_PATH = "data_user/peer_keys.json"
+WALLETS_DIR    = "data_user"
+
+# =============================================================================
+# LOGGERS
+# =============================================================================
+LOG_PATH = "data/logging/tsarchain.log"
+LOG_LEVEL = "TRACE"
+LOG_FORMAT = "plain"
+LOG_RATE_LIMIT_SECONDS = 2.0
+
+# =============================================================================
+# GRAFFITI / STORAGE PATHS
+# =============================================================================
+CONTRACTS_DIR       = "data/Contracts"
+GRAFFITI_FILE       = os.path.join(CONTRACTS_DIR, "graffiti.json")
+STORAGE_NODES_FILE  = os.path.join(CONTRACTS_DIR, "storage_nodes.json")
+
+# =============================================================================
+# DB / KV BACKEND
+# =============================================================================
+DB_DIR = "data/DB"
+KV_BACKEND = "json"   # or Json
+LMDB_MAP_SIZE_INIT = 64 * 1024 * 1024  # 64 MiB
+LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # 64 GiB
+
+

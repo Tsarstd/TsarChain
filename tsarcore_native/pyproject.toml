@@ -1,0 +1,17 @@
+[build-system]
+requires = ["maturin>=1.6,<2"]
+build-backend = "maturin"
+
+[project]
+name = "tsarcore_native"
+version = "0.1.1"
+requires-python = ">=3.8"
+description = "Native acceleration for TsarChain (pyo3): low-S secp verify, sigops counter, merkle_root, BIP143 SIGHASH (ALL), hash256/hash160, optional parallel batch verify"
+authors = [{ name = "Tsar Studio" }]
+license = { file = "LICENSE" }
+readme = "README.md"
+classifiers = [
+  "Programming Language :: Rust",
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+]

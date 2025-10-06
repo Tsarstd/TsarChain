@@ -1,0 +1,27 @@
+[package]
+name = "tsarcore_native"
+version = "0.1.1"
+edition = "2021"
+description = "Native accel for TsarChain: secp256k1 verify (low-S), sigops counter, merkle_root, BIP143 SIGHASH (ALL), hash256/hash160, optional parallel batch verify"
+license = "MIT"
+
+[lib]
+name = "tsarcore_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module"] }
+secp256k1 = "0.28"
+sha2 = "0.10"
+ripemd = "0.1"
+rayon = { version = "1.10", optional = true }
+
+[features]
+# Enable parallel verification in `secp_verify_der_low_s_many` when the `parallel` feature is set.
+default = []
+parallel = ["rayon"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3

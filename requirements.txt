@@ -1,0 +1,8 @@
+appdirs==1.4.4
+bech32==1.2.0
+cryptography==45.0.6
+ecdsa==0.19.1
+mnemonic==0.21
+lmdb
+psutil
+PyNaCl
