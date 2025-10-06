@@ -892,7 +892,7 @@ class WalletsMixin:
                 messagebox.showinfo("Wallet Created", f"Address: {addr}\n\nSIMPAN recovery phrase dengan aman.")
 
         except Exception:
-            log.exception("Failed to create wallet", exc_info=True)
+            log.exception("Failed to create wallet")
 
     def load_wallet_file(self) -> None:
         path = filedialog.askopenfilename(
@@ -923,7 +923,7 @@ class WalletsMixin:
 
             messagebox.showinfo("Restore complete", "Keystore restored successfully.")
         except Exception as e:
-            log.exception("Failed to restore keystore from file", exc_info=True)
+            log.exception("Failed to restore keystore from file")
 
 
     def import_by_mnemonic(self) -> None:
@@ -1010,7 +1010,7 @@ class WalletsMixin:
                 messagebox.showinfo("Success", f"Wallet imported!\nAddress: {addr}")
                 dlg.destroy()
             except Exception:
-                log.exception("Failed to import wallet from mnemonic", exc_info=True)
+                log.exception("Failed to import wallet from mnemonic")
 
         tk.Button(btns, text="Import Wallet", command=_do_import, bg=self.accent, fg="#000", font=("Segoe UI", 10, "bold")).pack(side="right")
         tk.Button(btns, text="Cancel", command=dlg.destroy, bg=theme["panel_bg"], fg=theme["fg"]).pack(side="right", padx=(0,8))
@@ -1018,7 +1018,7 @@ class WalletsMixin:
         center_window(dlg, self.root)
         try: entries[0].focus_set()
         except Exception:
-            log.exception("Cannot focus first entry in import mnemonic dialog", exc_info=True)
+            log.exception("Cannot focus first entry in import mnemonic dialog")
             pass
 
 
@@ -1040,7 +1040,7 @@ class WalletsMixin:
             self._wallets_after_change()
             messagebox.showinfo("Wallet Imported", f"Address: {addr}")
         except Exception:
-            log.exception("Failed to import wallet from private key", exc_info=True)
+            log.exception("Failed to import wallet from private key")
 
     def export_private_key(self) -> None:
         if not getattr(self, "wallets", []):
@@ -1357,7 +1357,7 @@ class WalletsMixin:
         try:
             ent.focus_set()
         except Exception:
-            log.debug("[_ask_password] cannot focus entry", exc_info=True)
+            log.exception("[_ask_password] cannot focus entry")
             pass
         ent.bind("<Return>", lambda _e: ok())
         d.bind("<Return>", lambda _e: ok())
@@ -1402,7 +1402,7 @@ class WalletsMixin:
         try:
             (ent or txt).focus_set()
         except Exception:
-            log.debug("[_ask_text] cannot focus input", exc_info=True)
+            log.exception("[_ask_text] cannot focus input")
             pass
         if not multiline:
             (ent or txt).bind("<Return>", lambda _e: ok())
@@ -1460,18 +1460,18 @@ class WalletsMixin:
             try:
                 self.reload_addresses()
             except Exception:
-                log.exception("Cannot reload addresses after sync", exc_info=True)
+                log.exception("Cannot reload addresses after sync")
                 pass
             try:
                 if hasattr(self, "_maybe_lock_redirect"):
                     self._maybe_lock_redirect()
             except Exception:
-                log.exception("Cannot maybe lock redirect after sync", exc_info=True)
+                log.exception("Cannot maybe lock redirect after sync")
                 pass
             try:
                 self._render_wallet_list()
             except Exception:
-                log.exception("Cannot render wallet list after sync", exc_info=True)
+                log.exception("Cannot render wallet list after sync")
                 pass
 
             messagebox.showinfo(
@@ -1479,7 +1479,7 @@ class WalletsMixin:
                 f"Added: {len(added)}\nRemoved: {len(removed)}\nTotal: {len(self.wallets)}"
             )
         except Exception:
-            log.exception("Failed to sync from keystore", exc_info=True)
+            log.exception("Failed to sync from keystore")
 
     def delete_wallet_dialog(self) -> None:
         if not self.wallets:
@@ -1520,22 +1520,22 @@ class WalletsMixin:
             try:
                 self.reload_addresses()
             except Exception:
-                log.debug("Cannot reload addresses after wallet deletion", exc_info=True)
+                log.exception("Cannot reload addresses after wallet deletion")
                 pass
             try:
                 self._render_wallet_list()
             except Exception:
-                log.debug("Cannot render wallet list after wallet deletion", exc_info=True)
+                log.exception("Cannot render wallet list after wallet deletion")
                 pass
             try:
                 if hasattr(self, "_maybe_lock_redirect"):
                     self._maybe_lock_redirect()
             except Exception:
-                log.debug("Cannot maybe lock redirect after wallet deletion", exc_info=True)
+                log.exception("Cannot maybe lock redirect after wallet deletion")
                 pass
             messagebox.showinfo("Deleted", "Wallet removed from keystore and UI.")
         except Exception:
-            log.exception("Failed to delete wallet", exc_info=True)
+            log.exception("Failed to delete wallet")
 
     def backup_keystore(self) -> None:
         try:
@@ -1557,5 +1557,5 @@ class WalletsMixin:
         except FileNotFoundError:
             messagebox.showerror("Backup failed", "Keystore file not found.")
         except Exception:
-            log.exception("Failed to backup keystore", exc_info=True)
+            log.exception("Failed to backup keystore")
 
