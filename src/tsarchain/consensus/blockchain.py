@@ -22,6 +22,7 @@ from ..utils import config as CFG
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.blockchain")
 
 
 GENESIS_HASH_HEX = os.getenv("TSAR_GENESIS_HASH", "").strip().lower()
@@ -54,7 +55,6 @@ class Blockchain:
         self._state_store = AtomicJSONFile(CFG.STATE_FILE, keep_backups=3)
 
         self._auto_create_genesis_flag = (ALLOW_AUTO_GENESIS if auto_create_genesis is None else bool(auto_create_genesis))
-        self.log = get_ctx_logger("tsarchain.blockchain")
 
         if not self.in_memory:
             if self.db_path:
@@ -70,10 +70,10 @@ class Blockchain:
                     "Genesis missing while TSAR_GENESIS_HASH is set and TSAR_ALLOW_AUTO_GENESIS=0. "
                     "Sync from peers or provide the prebuilt genesis.")
             if self._auto_create_genesis_flag:
-                self.log.info(f"[__init__] Auto-genesis enabled (use_cores={self.use_cores})")
+                log.info("[__init__] Auto-genesis enabled (use_cores=%s)", self.use_cores)
                 self._create_genesis_with_lock(self.miner_address or "", self.use_cores)
             else:
-                self.log.info("[__init__] Auto-genesis disabled; node will wait for peers to sync")
+                log.info("[__init__] Auto-genesis disabled; node will wait for peers to sync")
                 self.chain = []
                 self.total_blocks = 0
                 self.total_supply = 0
@@ -92,7 +92,7 @@ class Blockchain:
         try:
             self.save_state()
         except Exception:
-            self.log.warning("[_persist_empty_state_if_needed]:", exc_info=True)
+            log.exception("[_persist_empty_state_if_needed] failed to save empty state snapshot")
 
     def _enforce_genesis_lock(self):
         if GENESIS_HASH is None or not self.chain:
@@ -159,8 +159,8 @@ class Blockchain:
                         for bidx, bd in enumerate(chain_data):
                             key = f"h:{bidx:012d}".encode('utf-8')
                             b.put(key, (json.dumps(bd, separators=(",", ":")).encode('utf-8')))
-                except Exception as e:
-                    self.log.exception("[save_chain] LMDB save_chain failed: %s", e)
+                except Exception:
+                    log.exception("[save_chain] LMDB save_chain failed")
             else:
                 self._chain_store.save(chain_data)
             
@@ -174,8 +174,8 @@ class Blockchain:
                 items = list(iter_prefix('chain', b'h:'))
                 items.sort(key=lambda kv: kv[0])
                 data_list = [json.loads(v.decode('utf-8')) for _, v in items]
-            except Exception as e:
-                self.log.exception("[load_chain] LMDB load_chain failed: %s", e)
+            except Exception:
+                log.exception("[load_chain] LMDB load_chain failed")
                 data_list = []
         if not data_list:
             data_list = self._chain_store.load(default=[])
@@ -206,8 +206,8 @@ class Blockchain:
                 if items:
                     data["total_supply"] = int(items.get('k:total_supply', '0'))
                     data["total_blocks"] = int(items.get('k:total_blocks', '0'))
-            except Exception as e:
-                self.log.exception("[load_state] LMDB load_state failed: %s", e)
+            except Exception:
+                log.exception("[load_state] LMDB load_state failed")
         if not data:
             data = self._state_store.load(default={})
         self.total_supply = int(data.get("total_supply", 0) or 0)
@@ -234,8 +234,8 @@ class Blockchain:
                 with batch('state') as b:
                     b.put(b'k:total_supply', str(int(self.total_supply)).encode('utf-8'))
                     b.put(b'k:total_blocks', str(int(self.total_blocks)).encode('utf-8'))
-            except Exception as e:
-                self.log.exception("[save_state] LMDB save_state failed: %s", e)
+            except Exception:
+                log.exception("[save_state] LMDB save_state failed")
         else:
             self._state_store.save(data)
 
@@ -313,41 +313,54 @@ class Blockchain:
             pass
 
         # ---- UTXO & sirkulasi (mature vs immature) ----
-        utxo_set_size = 0
+        utxo_set_size        = 0
         circulating_estimate = 0
         immature_coinbase    = 0
+        errors               = 0
         try:
             utxo = UTXODB()
-            # Prefer in-memory map loaded from KV; fallback to JSON
             try:
                 data_map = utxo.to_dict()
             except Exception:
                 data_map = utxo.load_json(utxo.filepath) or {}
+
             utxo_set_size = len(data_map)
             maturity = int(CFG.COINBASE_MATURITY)
+
             for _, entry in data_map.items():
                 try:
-                    tx_out = entry.get("tx_out", {})
-                    amt    = int(tx_out.get("amount", 0))
+                    tx_out = entry.get("tx_out", {}) or {}
+                    amt    = int(tx_out.get("amount", 0) or 0)
+                    if amt <= 0:
+                        continue
+
                     is_cb  = bool(entry.get("is_coinbase", False))
                     born   = int(entry.get("block_height", entry.get("height", 0)) or 0)
-                    if is_cb:
-                        conf = max(0, (tip_height - born) + 1)
-                        if conf >= maturity:
-                            circulating_estimate += amt
-                        else:
-                            immature_coinbase += amt
-                    else:
-                        circulating_estimate += amt
+
                 except Exception:
-                    self.log.exception("[_compute_state_snapshot] UTXO entry parse error")
+                    errors += 1
+                    continue
+
+                if is_cb:
+                    conf = max(0, (tip_height - born) + 1)
+                    if conf >= maturity:
+                        circulating_estimate += amt
+                    else:
+                        immature_coinbase += amt
+                else:
+                    circulating_estimate += amt
+
+            if errors:
+                log.warning("[_compute_state_snapshot] %d UTXO entries failed to parse (suppressed)", errors)
+
         except Exception:
-            self.log.exception("[_compute_state_snapshot] UTXODB load error")
+            log.exception("[_compute_state_snapshot] UTXODB load error")
 
         # ---- Supply emisi (subsidy) sampai tip ----
         try:
             emitted_subsidy = self.calculate_total_supply()
         except Exception:
+            log.exception("[_compute_state_snapshot] calculate_total_supply failed")
             emitted_subsidy = self.total_supply or 0
 
         # ---- Identitas & file checksum ----
@@ -357,7 +370,7 @@ class Blockchain:
                 with open(self._chain_store.sha_path, "r", encoding="utf-8") as fh:
                     chain_sha256 = fh.read().strip() or None
         except Exception:
-            pass
+            log.exception("[_compute_state_snapshot] cannot read chain SHA256")
 
         # Info halving/epoch
         cur_epoch = 0 if tip_height < 0 else int(tip_height // int(CFG.BLOCKS_PER_HALVING))
@@ -456,17 +469,17 @@ class Blockchain:
                 for b in self.chain:
                     try:
                         utxodb.update(b.transactions, block_height=b.height)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.debug("[replace_with] UTXO update skipped: %s", e)
                 try: utxodb._save()
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug("[replace_with] UTXO save skipped: %s", e)
                 self.save_state()
             else:
                 try:
                     self.total_supply = self.calculate_total_supply()
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug("[replace_with] calculate_total_supply skipped: %s", e)
 
 
 
@@ -479,8 +492,8 @@ class Blockchain:
 
             self.chain.append(block)
             try: setattr(block, 'chainwork', self._work_from_bits(block.bits))
-            except Exception as e:
-                self.log.exception("[add_block] Post-add hooks failed: %s", e)
+            except Exception:
+                log.exception("[add_block] Post-add hooks failed")
 
             try:
                 if not self.in_memory:
@@ -493,8 +506,8 @@ class Blockchain:
                     self.save_state()
                 else:
                     self.total_supply = self.calculate_total_supply()
-            except Exception as e:
-                self.log.exception("[add_block] failed to calculate: %s", e)
+            except Exception:
+                log.exception("[add_block] failed to calculate")
             return True
 
         last_block = self.get_last_block()
@@ -510,8 +523,8 @@ class Blockchain:
             if prev_cw is None:
                 prev_cw = self._compute_chainwork_for_chain(self.chain[:-1])
             self.chain[-1].chainwork = int(prev_cw) + self._work_from_bits(block.bits)
-        except Exception as e:
-            self.log.exception("[add_block] failed to compute chainwork: %s", e)
+        except Exception:
+            log.exception("[add_block] failed to compute chainworks")
             pass
 
         try:
@@ -530,8 +543,8 @@ class Blockchain:
                 self.save_state()
             else:
                 self.total_supply = self.calculate_total_supply()
-        except Exception as e:
-            self.log.exception("[add_block] Failed to add block: %s", e)
+        except Exception:
+            log.exception("[add_block] Failed to add block")
 
         return True
 
@@ -572,12 +585,12 @@ class Blockchain:
                         
                 ok = all(consistency_checks.values())
                 if ok:
-                    self.log.info("[_is_chain_consistent] ✅ Chain consistent: %d blocks", len(self.chain))
+                    log.info("[_is_chain_consistent] ✅ Chain consistent: %d blocks", len(self.chain))
                 else:
-                    self.log.warning("[_is_chain_consistent] ❌ Chain inconsistent: %s", consistency_checks)
+                    log.warning("[_is_chain_consistent] ❌ Chain inconsistent: %s", consistency_checks)
                 return ok
         except Exception:
-            self.log.exception("[_is_chain_consistent] Error")
+            log.exception("[_is_chain_consistent] Error")
             return False
 
     # ----------------- Monetary policy -----------------
@@ -646,10 +659,10 @@ class Blockchain:
     # ----------------- Mining -----------------
     def mine_block(self, miner_address, use_cores: int | None = None, cancel_event: MpEvent | None = None, pow_backend: str = "auto", progress_queue: mp.Queue | None = None,):
         if self._has_pending_blocks():
-            self.log.warning("[mine_block] ⚠️ Pending blocks detected, skipping mining")
+            log.warning("[mine_block] ⚠️ Pending blocks detected, skipping mining")
             return None
         if not self._is_chain_consistent():
-            self.log.warning("[mine_block] ⚠️ Chain inconsistency detected, syncing first")
+            log.warning("[mine_block] ⚠️ Chain inconsistency detected, syncing first")
             return None
 
         last_block = self.chain[-1] if self.chain else None
@@ -704,7 +717,7 @@ class Blockchain:
         if height > 0:
             expected_bits = self.calculate_expected_bits(height)
             new_block.bits = expected_bits
-            self.log.debug("[mine_block] Using bits (LWMA): %s", hex(expected_bits))
+            log.debug("[mine_block] Using bits (LWMA): %s", hex(expected_bits))
 
         # --- PoW ---
         found = new_block.mine(use_cores=use_cores, stop_event=cancel_event, pow_backend=pow_backend, progress_queue=progress_queue,)
@@ -716,7 +729,7 @@ class Blockchain:
         if not ok:
             return None
 
-        self.log.info("[mine_block] Block mined: height=%d reward=%d fee=%d", new_block.height, reward, total_fee)
+        log.info("[mine_block] Block mined: height=%d reward=%d fee=%d", new_block.height, reward, total_fee)
         return new_block
 
     # ----------------- Difficulty (LWMA) -----------------
@@ -815,8 +828,8 @@ class Blockchain:
             if int(block.bits) != int(expected_bits):
                 return False
             return True
-        except Exception as e:
-            self.log.exception("[_validate_difficulty] Error calculating expected bits : %s", e)
+        except Exception:
+            log.exception("[_validate_difficulty] Error calculating expected bits")
             return False
 
     # ----------------- Full chain validation (for replace_with) -----------------
@@ -879,7 +892,7 @@ class Blockchain:
                     if int(expected_bits) != int(got_bits):
                         return False
                 except Exception:
-                    self.log.exception("[_validate_complete_chain] Error computing expected bits at %d", i)
+                    log.exception("[_validate_complete_chain] Error computing expected bits at %d", i)
                     return False
 
                 if not _pow_ok(cur):
@@ -901,8 +914,8 @@ class Blockchain:
                 cumulative_supply += reward
 
             return True
-        except Exception as e:
-            self.log.exception("[_validate_complete_chain] Error validating complete chain: %s", e)
+        except Exception:
+            log.exception("[_validate_complete_chain] Error validating complete chain")
             return False
 
     # ----------------- Timestamp helpers -----------------
@@ -1073,6 +1086,7 @@ class Blockchain:
             except Exception:
                 utxos = utxodb.load_utxo_set()
         except Exception:
+            log.exception("[_validate_transactions] Cannot load UTXO set")
             return False
 
         pool = TxPoolDB()
@@ -1283,6 +1297,6 @@ class Blockchain:
                     return False
 
             return True
-        except Exception as e:
-            self.log.exception("[validate_block] Unexpected error during block validation: %s", e)
+        except Exception:
+            log.exception("[validate_block] Unexpected error during block validation")
             return False
