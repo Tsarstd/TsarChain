@@ -488,10 +488,12 @@ def der_encode_sig(r, s):
 def util_compute_txid(tx, include_txid: bool = False):
     tx_dict = tx.to_dict(include_txid=include_txid)
     serialized = serialize(tx_dict)
+    log.debug("[util_compute_txid] Serialized TX for txid: %s", serialized.hex())
     return double_sha256(serialized)
     
 def util_compute_wtxid(tx) -> bytes:
         raw = serialize_tx(tx, include_witness=True)
+        log.debug("[util_compute_wtxid]Serialized TX for wtxid: %s", raw.hex())
         return hash256(raw)
 
 # ========== For (Block Id) ==========
@@ -509,9 +511,7 @@ def random_message_secure(length=8):
 
     template = secrets.choice(templates)
     rand = ''.join(secrets.choice(chars) for _ in range(length))
-    log.debug("random_message_secure: %s", template.format(rand=rand))
     return template.format(rand=rand)
-
 
 # ========== Script Class ==========
 
