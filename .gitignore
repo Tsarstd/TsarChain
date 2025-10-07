@@ -33,5 +33,3 @@ tsarcore_native/Cargo.lock
 
 .DS_Store
 Thumbs.db
-
-INSTALL_NATIVE.md
