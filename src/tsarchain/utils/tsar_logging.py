@@ -48,7 +48,7 @@ def _module_from_logger_name(name: str | None) -> str | None:
         return None
     if i + 1 < len(parts):
         mod = parts[i + 1].strip().lower()
-        return mod if mod in MODULES else None
+        return mod
     return None
 
 # =========================
@@ -297,7 +297,7 @@ class TsarLogViewer:
             values=["All", *MODULES],
             state="readonly",
             width=10,
-        ).pack(side=tk.LEFT)
+        ).pack(side=tk.LEFT)    
         self.module_filter.trace_add("write", lambda *_: self._on_module_change())
 
         ttk.Button(topbar, text="Open File…", command=self.choose_file).pack(side=tk.RIGHT)
@@ -356,11 +356,14 @@ class TsarLogViewer:
 
     def _on_module_change(self):
         self._clear_ui_only()
-        if self.mode_tail and self._tail_fp:
-            try:
+        try:
+            if self.mode_tail and self._tail_fp:
                 self._preload_tail_history(self._tail_fp, max_bytes=512_000)
-            except Exception:
-                pass
+            elif self.tail_path:
+                with self.tail_path.open("r", encoding="utf-8", errors="replace") as fp:
+                    self._preload_tail_history(fp, max_bytes=512_000)
+        except Exception:
+            pass
 
     def _clear_ui_only(self):
         for name, _ in self.LEVELS:
@@ -376,9 +379,34 @@ class TsarLogViewer:
     def attach_gui_handler(self):
         if self.tk_handler is None:
             self.tk_handler = TkLogHandler(self.queue)
+            self.tk_handler.setLevel(logging.NOTSET)
+
             root = logging.getLogger()
             root.addHandler(self.tk_handler)
+
+            self._attached_loggers = []
+
+            try:
+                for name, lg in logging.root.manager.loggerDict.items():
+                    if isinstance(lg, logging.Logger) and name.startswith("tsarchain"):
+                        if not lg.propagate and self.tk_handler not in lg.handlers:
+                            lg.addHandler(self.tk_handler)
+                            self._attached_loggers.append(lg)
+            except Exception:
+                pass
+
+            try:
+                root.setLevel(min(root.level, TRACE))
+            except Exception:
+                pass
+            try:
+                lg_tsar = logging.getLogger("tsarchain")
+                lg_tsar.setLevel(min(lg_tsar.level, TRACE))
+            except Exception:
+                pass
+
             self._set_status("GUI handler attached")
+
 
     def start_tail(self, file_path: str | os.PathLike, *,
                    load_history: bool = True, history_bytes: int = 512_000):
@@ -563,8 +591,8 @@ class TsarLogViewer:
         try:
             line = self._tail_fp.readline()
             while line:
-                text, level = self._decode_line(line)
-                self._append_line(text, level_hint=level)
+                text, level, module = self._decode_line(line)
+                self._append_line(text, level_hint=level, module_hint=module)
                 line = self._tail_fp.readline()
         except Exception:
             pass
@@ -677,7 +705,15 @@ class TsarLogViewer:
         try:
             self._stop_event.set()
             if self.tk_handler:
-                logging.getLogger().removeHandler(self.tk_handler)
+                root = logging.getLogger()
+                try:
+                    root.removeHandler(self.tk_handler)
+                except Exception:
+                    pass
+                for lg in getattr(self, "_attached_loggers", []):
+                    try: lg.removeHandler(self.tk_handler)
+                    except Exception:
+                        pass
             if self._tail_fp:
                 self._tail_fp.close()
         except Exception:

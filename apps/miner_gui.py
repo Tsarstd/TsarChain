@@ -15,7 +15,7 @@ from tsarchain.core.block import Block
 from tsarchain.utils import config as CFG
 
 # ---------------- Logger ----------------
-from tsarchain.utils.tsar_logging import launch_gui_in_thread, setup_logging
+from tsarchain.utils.tsar_logging import launch_gui_in_thread, setup_logging, get_ctx_logger
 
 try:
     import psutil
@@ -63,6 +63,7 @@ class BlockchainGUI:
         self.node_alive = threading.Event()
         self.mining_alive = threading.Event()
         self.cancel_mining = None
+        self.gui_log = get_ctx_logger("tsarchain.core.gui")
 
         # theme
         self.bg = "#121212"
@@ -331,7 +332,12 @@ class BlockchainGUI:
 
     # ---------- Helpers ----------
     def log_print(self, msg: str):
+        try:
+            (getattr(self, "gui_log", None) or get_ctx_logger("tsarchain.core.gui")).info(msg)
+        except Exception:
+            pass
         self.root.after(0, self._log_print_main, msg)
+
 
     def _log_print_main(self, msg: str):
         self.log.config(state="normal")
