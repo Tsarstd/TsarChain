@@ -22,7 +22,7 @@ from ..utils import config as CFG
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.consensus.blockchain")
+log = get_ctx_logger("tsarchain.consensus(blockchain)")
 
 
 GENESIS_HASH_HEX = os.getenv("TSAR_GENESIS_HASH", "").strip().lower()
@@ -1273,6 +1273,7 @@ class Blockchain:
                                     return txo.script_pubkey.serialize()
                             if hasattr(entry, "tx_out") and hasattr(entry.tx_out, "script_pubkey"):
                                 return entry.tx_out.script_pubkey.serialize()
+                            log.debug("[validate_block] UTXO lookup found no script_pubkey for %s", k)
                         except Exception:
                             return None
                         return None
@@ -1295,7 +1296,7 @@ class Blockchain:
                     
                 if block.height > 0 and not self._validate_transactions(block):
                     return False
-
+            log.debug("[validate_block] Block at height %d is valid", block.height)
             return True
         except Exception:
             log.exception("[validate_block] Unexpected error during block validation")

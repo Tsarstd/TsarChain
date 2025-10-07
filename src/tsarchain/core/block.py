@@ -66,7 +66,7 @@ class Block:
         short_prev = (self.prev_block_hash.hex()[:8]
               if isinstance(self.prev_block_hash, (bytes, bytearray))
               else str(self.prev_block_hash)[:8])
-        self.log = get_ctx_logger("tsarchain.core.block", height=self.height, block=short_prev)
+        self.log = get_ctx_logger("tsarchain.core(block)", height=self.height, block=short_prev)
         
 
     def to_dict(self):
@@ -228,7 +228,7 @@ class Block:
                         return None
                     nowp = time.time()
                     if (nowp - last_total_print) >= REPORT_WINDOW and reports_since_print > 0:
-                        self.log.trace("⛏️ Total Hashrate: %s H/s", f"{total_hps_accum:,.0f}")
+                        self.log.trace("[mine] ⛏️ Total Hashrate: %s H/s", f"{total_hps_accum:,.0f}")
                         if progress_queue is not None:
                             try:
                                 progress_queue.put(('TOTAL_HPS', total_hps_accum))
@@ -247,7 +247,7 @@ class Block:
                         pass
                     nowp = time.time()
                     if reports_since_print >= num_cores or (nowp - last_total_print) >= REPORT_WINDOW:
-                        self.log.trace("⛏️ Total Hashrate: %s H/s", f"{total_hps_accum:,.0f}")
+                        self.log.trace("[mine] ⛏️ Total Hashrate: %s H/s", f"{total_hps_accum:,.0f}")
                         if progress_queue is not None:
                             try:
                                 progress_queue.put(('TOTAL_HPS', total_hps_accum))
@@ -270,10 +270,10 @@ class Block:
                 self.nonce = nonce
                 if hash256(self.header()) != found_hash:
                     return None
-                self.log.info("[✓] Block mined: nonce=%s, hash=%s (time=%.2fs)", self.nonce, found_hash.hex(), elapsed)
+                self.log.info("[mine] Block mined: nonce=%s, hash=%s (time=%.2fs)", self.nonce, found_hash.hex(), elapsed)
                 return found_hash
             else:
-                self.log.info("[✗] Mining failed: no valid nonce found (time=%.2fs)", elapsed)
+                self.log.info("[mine] Mining failed: no valid nonce found (time=%.2fs)", elapsed)
                 return None
 
         finally:

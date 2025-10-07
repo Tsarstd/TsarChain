@@ -17,7 +17,7 @@ from ..utils import config as CFG
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network.protocol")
+log = get_ctx_logger("tsarchain.network(protocol)")
 
 
 def _ensure_dir(path = str) -> None:
@@ -57,7 +57,7 @@ def _nonce_register(sender: str, nonce: str, ts_val: int) -> None:
                 if now - int(t or 0) > CFG.REPLAY_WINDOW_SEC:
                     rec.pop(k, None)
         except Exception:
-            log.warning("nonce prune error", exc_info=True)
+            log.warning("[_nonce_register] nonce prune error", exc_info=True)
         if nonce in rec:
             raise ValueError("replayed nonce")
         rec[nonce] = now
@@ -69,7 +69,7 @@ def _nonce_register(sender: str, nonce: str, ts_val: int) -> None:
                 for k, _t in sorted(rec.items(), key=lambda it: it[1])[:extra]:
                     rec.pop(k, None)
             except Exception:
-                log.exception("nonce prune error")
+                log.exception("[_nonce_register]nonce prune error")
 
 def send_message(sock: socket.socket, payload: bytes):
     if len(payload) + len(CFG.NETWORK_MAGIC) > CFG.MAX_MSG:
@@ -81,7 +81,7 @@ def send_message(sock: socket.socket, payload: bytes):
         sock.sendall(hdr + body)
     except Exception as e:
         if _is_disconnect_exc(e):
-            log.debug("send_message: peer closed during send (%s)", getattr(e, "winerror", getattr(e, "errno", e)))
+            log.debug("[send_message] peer closed during send (%s)", getattr(e, "winerror", getattr(e, "errno", e)))
             return
         raise
     
@@ -98,7 +98,7 @@ def recv_exact(sock: socket.socket, n: int) -> bytes:
         buf += part
         
     if log.isEnabledFor(5):  # TRACE
-        log.trace("recv_exact: got %s bytes", len(buf))
+        log.trace("[recv_exact] got %s bytes", len(buf))
     return buf
 
 def recv_message(sock, timeout: float | None = None):
@@ -118,10 +118,10 @@ def recv_message(sock, timeout: float | None = None):
         return body[len(CFG.NETWORK_MAGIC):]
     except Exception as e:
         if _is_disconnect_exc(e):
-            log.debug("recv_message: peer closed/aborted connection (%s)", getattr(e, "winerror", getattr(e, "errno", e)))
+            log.debug("[recv_message] peer closed/aborted connection (%s)", getattr(e, "winerror", getattr(e, "errno", e)))
             return None
         
-        log.exception("recv_message unexpected error")
+        log.exception("[recv_message] unexpected error")
         return None
 
 
@@ -153,8 +153,6 @@ def load_or_create_keypair_at(path: str) -> tuple[str, str, str]:
     node_id  = hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"id": node_id, "pubkey": pub_hex, "privkey": priv_hex}, f, indent=2)
-        
-    log.info("Generated new node keypair at %s", path)
     return node_id, pub_hex, priv_hex
 
 def load_or_create_node_keys() -> tuple[str, str, str]:
@@ -166,7 +164,7 @@ def sign_message_hex(privkey_hex: str, payload: bytes) -> str:
     sk = SigningKey(bytes.fromhex(privkey_hex))
     sig = sk.sign(payload).signature.hex()
     
-    log.trace("sign_message_hex: sig=%s", sig[:12])
+    log.trace("[sign_message_hex] sig=%s", sig[:12])
     return sig
 
 def verify_signature(pubkey_hex: str, payload: bytes, sig_hex: str) -> bool:
@@ -174,7 +172,7 @@ def verify_signature(pubkey_hex: str, payload: bytes, sig_hex: str) -> bool:
         VerifyKey(bytes.fromhex(pubkey_hex)).verify(payload, bytes.fromhex(sig_hex))
         return True
     except Exception:
-        log.exception("verify_signature error")
+        log.exception("[verify_signature] verify_signature error")
         return False
     
 def is_envelope(obj: dict) -> bool:
@@ -202,7 +200,7 @@ def build_envelope(inner_msg: dict, node_ctx: dict, extra: dict | None = None) -
     hmac_payload = canonical_dumps({k: outer[k] for k in outer if k != "hmac"})
     outer["hmac"] = hmac_sha256_hex(CFG.HMAC_SHARED_SECRET, hmac_payload)
     
-    log.trace("build_envelope: sig=%s", outer["sig"][:12])
+    log.trace("[build_envelope] sig=%s", outer["sig"][:12])
     return outer
 
 def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
@@ -246,7 +244,7 @@ def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
     # Anti-replay within REPLAY_WINDOW_SEC using per-sender nonce cache
     _nonce_register(node_id, str(envelope.get("nonce")), int(ts_val))
     
-    log.trace("verify_and_unwrap: sig=%s", envelope.get("sig")[:12])
+    log.trace("[verify_and_unwrap] sig=%s", envelope.get("sig")[:12])
     return inner
 
 def chat_dh_gen_keypair() -> tuple[str, str]:
@@ -262,7 +260,7 @@ def chat_dh_gen_keypair() -> tuple[str, str]:
         format   = serialization.PublicFormat.Raw
     ).hex()
     
-    log.debug("chat_dh_gen_keypair: pk=%s", pk_hex)
+    log.debug("[chat_dh_gen_keypair] pk=%s", pk_hex)
     return sk_hex, pk_hex
 
 # ==== [BEGIN: P2P SecureChannel X25519->HKDF->AESGCM] ========================
@@ -277,7 +275,7 @@ def sniff_first_json_frame(sock: socket.socket, timeout: float = 2.0) -> tuple[b
     try:
         return raw, json.loads(raw.decode("utf-8"))
     except Exception:
-        log.exception("sniff_first_json_frame error")
+        log.exception("[sniff_first_json_frame] error")
         return raw, None
 
 class SecureChannel:
@@ -348,7 +346,7 @@ class SecureChannel:
             
             vk.verify(to_verify, bytes.fromhex(hs2["sig"]))
         except Exception:
-            log.exception("bad HS2 signature")
+            log.exception("[_hs_client_auth] bad HS2 signature")
             raise ValueError("Bad signature")
 
         pinned = self.get_pinned(self.peer_node_id)
@@ -366,14 +364,14 @@ class SecureChannel:
         self.established_at = time.time()
         self.msg_count = 0
         
-        log.debug("SecureChannel established with peer %s (%s)", self.peer_node_id, self.peer_node_pub)
+        log.debug("[_hs_client_auth] established with peer %s (%s)", self.peer_node_id, self.peer_node_pub)
 
     def _hs_server_auth(self):
         raw = recv_message(self.sock, timeout=5.0)
         hs1 = json.loads(raw.decode("utf-8"))
         if hs1.get("type") != "P2P_HS1" or hs1.get("net") != CFG.DEFAULT_NET_ID:
             
-            log.error("bad P2P handshake (HS1) %s", hs1)
+            log.error("[_hs_server_auth] bad P2P handshake (HS1) %s", hs1)
             raise ValueError("bad P2P handshake (HS1)")
 
         self.peer_node_id  = str(hs1.get("node_id") or "")
@@ -387,7 +385,7 @@ class SecureChannel:
             
             vk.verify(to_verify, bytes.fromhex(hs1["sig"]))
         except Exception:
-            log.exception("bad HS1 signature")
+            log.exception("[_hs_server_auth] bad HS1 signature")
             raise ValueError("Bad signature")
             
         pinned = self.get_pinned(self.peer_node_id)
@@ -450,7 +448,7 @@ class SecureChannel:
             ])
             vk.verify(to_verify, bytes.fromhex(hs1_obj["sig"]))
         except Exception:
-            log.exception("bad HS1 signature")
+            log.exception("[hs_server_from_obj] bad HS1 signature")
             raise ValueError("Bad signature")
 
         pinned = self.get_pinned(peer_node_id)
@@ -517,7 +515,7 @@ class SecureChannel:
         self.send_ctr = seq
         self.msg_count += 1
         
-        log.debug("send: seq=%d ct=%s", seq, frame["ct"][:32] + "..." if len(frame["ct"]) > 32 else frame["ct"])
+        log.debug("[send] seq=%d ct=%s", seq, frame["ct"][:32] + "..." if len(frame["ct"]) > 32 else frame["ct"])
 
     def recv(self, timeout: float):
         self._ready()
@@ -539,5 +537,5 @@ class SecureChannel:
         self.recv_ctr = seq
         self.msg_count += 1
         
-        log.debug("recv: seq=%d ct=%s", seq, obj["ct"][:32] + "..." if len(obj["ct"]) > 32 else obj["ct"])
+        log.debug("[recv] seq=%d ct=%s", seq, obj["ct"][:32] + "..." if len(obj["ct"]) > 32 else obj["ct"])
         return pt

@@ -21,7 +21,7 @@ from .protocol import (send_message, recv_message,build_envelope, verify_and_unw
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network.node")
+log = get_ctx_logger("tsarchain.network(node)")
 
 
 class Network:
@@ -56,7 +56,7 @@ class Network:
         try:
             self.storage_service = StorageService(self.storage_address or "unknown", self.node_id)
         except Exception:
-            log.exception("[Storage] Failed to init StorageService")
+            log.exception("[__init__] Failed to init StorageService")
             self.storage_service = None
         self.peer_pubkeys: dict[str, str] = {}
         try:
@@ -76,7 +76,7 @@ class Network:
             self.peers.update(self.persistent_peers)
         else:
             self.persistent_peers = set()
-            log.warning("[Network] Running as bootstrap node")
+            log.warning("[__init__] Running as bootstrap node")
 
         self.server_thread    = threading.Thread(target=self.start_server, daemon=True)
         self.discovery_thread = threading.Thread(target=self.discover_peers_loop, daemon=True)
@@ -106,7 +106,7 @@ class Network:
                 self.peer_keys_store = AtomicJSONFile(CFG.PEER_KEYS_PATH, keep_backups=2, checksum=True)
                 self.peer_pubkeys = self.peer_keys_store.load(default={}) or {}
         except Exception:
-            log.exception("[P2P] Failed to load peer keys store")
+            log.exception("[__init__] Failed to load peer keys store")
             self.peer_keys_store = None
             self.peer_pubkeys = {}
 
@@ -141,8 +141,8 @@ class Network:
         self.discovery_thread.start()
         self.sync_thread.start()
 
-        log.info("[Network] Node ID: %s, Pubkey: %s..., Port: %s", self.node_id, self.pubkey[:16], self.port)
-        log.info("[Network] Storage Address: %s, Service: %s", self.storage_address, self.storage_service is not None)
+        log.info("[__init__] Node ID: %s, Pubkey: %s..., Port: %s", self.node_id, self.pubkey[:16], self.port)
+        log.info("[__init__] Storage Address: %s, Service: %s", self.storage_address, self.storage_service is not None)
 
     # -------------------------- Server / Accept ---------------------------
 
@@ -174,13 +174,13 @@ class Network:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(('0.0.0.0', self.port))
             s.listen(8)
-            log.info("[Network] Listening on port %s...", self.port)
+            log.info("[start_server] Listening on port %s...", self.port)
             while True:
                 try:
                     conn, addr = s.accept()
                     threading.Thread(target=self.handle_connection, args=(conn, addr), daemon=True).start()
                 except Exception:
-                    log.exception("[Network] Error accepting connection")
+                    log.exception("[start_server] Error accepting connection")
                     time.sleep(1)
 
     def _get_pinned(self, nid: str):
@@ -201,16 +201,16 @@ class Network:
                         with batch('peer_keys') as b:
                             b.put(f"nid:{nid}".encode('utf-8'), pk.encode('utf-8'))
                     except Exception:
-                        log.exception("[P2P] Failed to persist peer key to LMDB")
+                        log.exception("[_set_pinned] Failed to persist peer key to LMDB")
                 else:
                     store = getattr(self, "peer_keys_store", None) or getattr(self, "keys_store", None)
                     if store:
                         try:
                             store.save(self.peer_pubkeys)
                         except Exception:
-                            log.exception("[P2P] Failed to persist peer key to file")
+                            log.exception("[_set_pinned] Failed to persist peer key to file")
         except Exception:
-            log.exception("[P2P] Error setting pinned peer key")
+            log.exception("[_set_pinned] Error setting pinned peer key")
 
     def handle_connection(self, conn, addr):
         try:
@@ -231,12 +231,12 @@ class Network:
                     try:
                         now = time.time()
                         if now - getattr(self, "_last_p2p_log", 0.0) > 5.0:
-                            log.info(f"[P2P] Handshake from {addr}, node_id={chan.peer_node_id}, pubkey={chan.peer_node_pub[:16]}...")
+                            log.info("[handle_connection] Handshake from %s:%s, node_id=%s, pubkey=%s...", addr[0], addr[1], chan.peer_node_id, str(chan.peer_node_pub)[:16])
                             self._last_p2p_log = now
                     except Exception:
                         pass
                 except Exception:
-                    log.exception("[P2P] Handshake failed from %s ", addr)
+                    log.exception("[handle_connection] Handshake failed from %s ", addr)
                     return
 
                 # Encrypted message loop
@@ -258,13 +258,18 @@ class Network:
                                 self.peer_pubkeys[nid] = pko
                                 # Consistency: envelope pubkey must match the handshake result
                                 if getattr(chan, "peer_node_pub", None) and pko != chan.peer_node_pub:
-                                    log.warning(f"[Security] Peer pubkey mismatch from {addr}")
+                                    log.warning("[handle_connection] Peer pubkey mismatch from %s", addr)
                                     continue
                         except Exception:
-                            log.warning("[Security] envelope verify failed", extra={"peer": f"{addr[0]}:{addr[1] if len(addr)>1 else 0}", "height": int(self.broadcast.blockchain.height)})
+                            log.warning("[handle_connection] envelope verify failed",
+                                        extra={
+                                            "peer": "%s:%s" % (addr[0], addr[1] if len(addr) > 1 else 0),
+                                            "height": int(self.broadcast.blockchain.height),
+                                        },
+                                    )
                             continue
                     elif CFG.ENVELOPE_REQUIRED:
-                        log.warning(f"[Security] rejecting legacy P2P from {addr}")
+                        log.warning("[handle_connection] rejecting legacy P2P from %s", addr)
                         continue
 
                     response = process_message(self, msg, addr)
@@ -289,10 +294,15 @@ class Network:
                     if isinstance(nid, str) and isinstance(pko, str):
                         self.peer_pubkeys[nid] = pko
                 except Exception:
-                    log.warning("[Security] envelope verify failed", extra={"peer": f"{addr[0]}:{addr[1] if len(addr)>1 else 0}", "height": int(self.broadcast.blockchain.height)})
+                    log.warning("[handle_connection] envelope verify failed",
+                        extra={
+                            "peer": "%s:%s" % (addr[0], addr[1] if len(addr) > 1 else 0),
+                            "height": int(self.broadcast.blockchain.height)
+                        }
+                    )
                     return
             elif CFG.ENVELOPE_REQUIRED:
-                log.warning(f"[Security] rejecting legacy RPC from {addr}")
+                log.warning(f"[handle_connection] rejecting legacy RPC from {addr}")
                 return
 
             response = process_message(self, msg, addr)
@@ -301,7 +311,7 @@ class Network:
                 send_message(conn, json.dumps(env).encode("utf-8"))
 
         except Exception:
-            log.exception("[Network] Connection handler error from %s", addr)
+            log.exception("[handle_connection] Connection handler error from %s", addr)
         finally:
             try:
                 conn.close()
@@ -316,7 +326,7 @@ class Network:
                 self._discover_peers()
                 time.sleep(CFG.DISCOVERY_INTERVAL)
             except Exception:
-                log.exception("[Network] Peer discovery error")
+                log.exception("[discover_peers_loop] Peer discovery error")
                 time.sleep(CFG.DISCOVERY_INTERVAL * 2)
 
     def _discover_peers(self):
@@ -350,16 +360,18 @@ class Network:
                         chan.handshake()
                         chan.send(json.dumps(env).encode("utf-8"))
                         try: _ = chan.recv(1)
-                        except Exception: pass
+                        except Exception:
+                            pass
                     else:
                         send_message(s, json.dumps(env).encode("utf-8"))
                         try: _ = recv_message(s, timeout=1)
-                        except Exception: pass
+                        except Exception:
+                            pass
                     found_peers.add(peer)
             except (socket.timeout, ConnectionRefusedError, OSError):
                 continue
             except Exception:
-                log.exception("[Network] Error connecting to persistent peer %s", peer)
+                log.exception("[_discover_peers] Error connecting to persistent peer %s", peer)
                 continue
 
         # 2) Known peers
@@ -452,7 +464,7 @@ class Network:
                     continue
             self.peers.update(sane)
         if found_peers:
-            log.info("[Network] Discovered %s peers, total known: %s", len(found_peers), len(self.peers))
+            log.info("[_discover_peers] Discovered %s peers, total known: %s", len(found_peers), len(self.peers))
 
     def sync_loop(self):
         while True:
@@ -460,7 +472,7 @@ class Network:
                 self.sync_with_peers()
                 time.sleep(CFG.SYNC_INTERVAL)
             except Exception:
-                log.exception("[Sync] Error during sync")
+                log.exception("[sync_loop] Error during sync")
 
     def sync_with_peers(self):
         with self.lock:
@@ -482,7 +494,7 @@ class Network:
                 min_iv = CFG.SYNC_INFO_MIN_INTERVAL_BOOTSTRAP
 
             if (cnt != getattr(self, "_last_sync_count", -1)) or (now - self._last_sync_log > float(min_iv)):
-                log.info("[Sync] Connecting %s peers...", cnt)
+                log.info("[sync_with_peers] Connecting %s peers...", cnt)
                 self._last_sync_count = cnt
                 self._last_sync_log = now
             else:
@@ -493,7 +505,7 @@ class Network:
             try:
                 self._request_full_sync(peer)
             except Exception:
-                log.exception("[Sync] Error syncing with peer %s", peer)
+                log.exception("[sync_with_peers] Error syncing with peer %s", peer)
                 with self.lock:
                     self.peers.discard(peer)
 
@@ -536,7 +548,7 @@ class Network:
                     inner = outer
                 process_message(self, inner, peer)
         except Exception:
-            log.exception("[Sync] Full sync request to %s failed", peer)
+            log.exception("[_request_full_sync] Full sync request to %s failed", peer)
 
     # ------------------------------ Helpers -------------------------------
 
@@ -557,7 +569,7 @@ class Network:
                 prev_h = b.get('hash')
             return True
         except Exception:
-            log.exception("[Sync] Error validating incoming chain")
+            log.exception("[_validate_incoming_chain] Error validating incoming chain")
             return False
 
 # ------------------------------ P2P Chat ------------------------------
@@ -948,7 +960,7 @@ class Network:
 
             return {"items": items, "total": total, "limit": int(limit), "offset": int(offset)}
         except Exception:
-            log.exception("[History] Error in _get_tx_history")
+            log.exception("[_get_tx_history] Error fetching tx history")
             return {"items": [], "total": 0, "limit": limit, "offset": offset}
 
 
@@ -1608,7 +1620,7 @@ class Network:
                 if (ip, 0) in self.storage_peers and port > 0:
                     self.storage_peers.pop((ip, 0), None)
                 self.storage_peers[(ip, port)] = meta
-            log.info(f"[Network] Registered storage node {meta}")
+            log.info("[_handle_hello] Registered storage node %s", meta)
             return {
                 "type": "HELLO_RESPONSE",
                 "port": self.port,
@@ -1658,10 +1670,10 @@ class Network:
             sane_peers = [{"ip": ip, "port": p} for (ip, p) in self.peers]
 
         try:
-            log.info(f"[Network] Hello from {addr[0]}:{peer_port or 0} (height={peer_height}, peers={len(peer_peers)})")
-            log.debug(f"        Current peers: {sane_peers}")
+            log.info("[_handle_hello] Peer %s:%s (role=%s, height=%s) says hello. Known peers: %s")
+            log.debug("        Current peers: %s", sane_peers)
         except Exception:
-            log.exception("[Network] Error logging hello")
+            log.exception("[_handle_hello] Error logging hello")
             pass
 
         return {
@@ -1715,7 +1727,7 @@ class Network:
         try:
             now = time.time()
             if (now - getattr(self, "_last_fullsync_log", 0.0) > 5.0):
-                log.info("[Network] Received full sync from %s:%s", addr[0], addr[1] if len(addr)>1 else 0)
+                log.info("[_handle_full_sync] Received full sync from %s:%s", addr[0], addr[1] if len(addr)>1 else 0)
                 self._last_fullsync_log = now
         except Exception:
             pass
@@ -1728,17 +1740,5 @@ class Network:
     def shutdown(self):
         with self.lock:
             Network.active_ports.discard(self.port)
-        log.info(f"[Network] Node at port {self.port} shutting down")
+        log.info("[shutdown] Node at port %s shutting down", self.port)
 
-    # ------------------------------ Persistence helpers -------------------
-    def _autoset_save(self) -> None:
-        try:
-            if kv_enabled():
-                import json as _json
-                with batch('autosettle') as b:
-                    b.put(b'blob', _json.dumps(self.autosettle, separators=(",", ":")).encode('utf-8'))
-            else:
-                if self.autosettle_store:
-                    self.autosettle_store.save(self.autosettle)
-        except Exception:
-            log.exception("[Network] Failed to save autosettle data")
