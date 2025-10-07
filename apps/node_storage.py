@@ -31,6 +31,7 @@ if not kv_enabled():
         os.makedirs(os.path.dirname(_STOR_PEER_KEYS_PATH), exist_ok=True)
     except Exception:
         pass
+    
 def _load_stor_peer_keys() -> dict:
     if kv_enabled():
         m = {}
@@ -47,6 +48,7 @@ def _load_stor_peer_keys() -> dict:
             return obj if isinstance(obj, dict) else {}
     except Exception:
         return {}
+    
 def _save_stor_peer_keys() -> None:
     if kv_enabled():
         try:
@@ -63,6 +65,7 @@ def _save_stor_peer_keys() -> None:
         os.replace(tmp, _STOR_PEER_KEYS_PATH)
     except Exception:
         pass
+    
 _STOR_PEER_KEYS = _load_stor_peer_keys()
 
 
