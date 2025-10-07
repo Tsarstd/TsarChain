@@ -492,9 +492,9 @@ def util_compute_txid(tx, include_txid: bool = False):
     return double_sha256(serialized)
     
 def util_compute_wtxid(tx) -> bytes:
-        raw = serialize_tx(tx, include_witness=True)
-        log.debug("[util_compute_wtxid]Serialized TX for wtxid: %s", raw.hex())
-        return hash256(raw)
+    raw = serialize_tx(tx, include_witness=True)
+    log.debug("[util_compute_wtxid]Serialized TX for wtxid: %s", raw.hex())
+    return hash256(raw)
 
 # ========== For (Block Id) ==========
 
