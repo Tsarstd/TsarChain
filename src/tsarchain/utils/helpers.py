@@ -311,6 +311,7 @@ def target_to_bits(target: int) -> int:
             mant >>= 8
             exp += 1
     mant &= 0x007fffff
+    log.debug("[target_to_bits]: target=%s exp=%s mant=%s", target, exp, mant)
     return (exp << 24) | mant
 
 DIFFICULTY_CONST = (1 << 256) 
@@ -488,12 +489,10 @@ def der_encode_sig(r, s):
 def util_compute_txid(tx, include_txid: bool = False):
     tx_dict = tx.to_dict(include_txid=include_txid)
     serialized = serialize(tx_dict)
-    log.debug("[util_compute_txid] Serialized TX for txid: %s", serialized.hex())
     return double_sha256(serialized)
     
 def util_compute_wtxid(tx) -> bytes:
     raw = serialize_tx(tx, include_witness=True)
-    log.debug("[util_compute_wtxid]Serialized TX for wtxid: %s", raw.hex())
     return hash256(raw)
 
 # ========== For (Block Id) ==========

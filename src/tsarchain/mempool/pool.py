@@ -154,7 +154,6 @@ class TxPoolDB(BaseDatabase):
             except Exception:
                 log.error("[load_pool] LMDB read failed, falling back to file storage")
                 return []
-        log.critical("[load_pool] Loading mempool from file: %s", self.filepath)
         return self.load_json(self.filepath) or []
     
     def get_all_txs(self) -> list:
