@@ -5,16 +5,20 @@
 import json
 from ecdsa import VerifyingKey, SECP256k1
 
+# ---------------- Local Project ----------------
 from ..storage.kv import kv_enabled, iter_prefix, batch, clear_db
 from ..storage.db import BaseDatabase
 from ..core.tx import Tx
 from ..storage.utxo import UTXODB
-from bech32 import bech32_decode, convertbits
 from ..contracts.storage_nodes import StorageNodeRegistry
 from ..utils.helpers import is_p2wpkh_script, bip143_sig_hash, hash160, hash256, serialize_tx_for_txid
 from ..utils.helpers import Script, OP_RETURN, SECP256K1_P, SIGHASH_ALL
 from ..utils import helpers as H
 from ..utils import config as CFG
+
+# ---------------- Logger ----------------
+from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.mempool(pool)")
 
 
 def _is_p2pkh_script(spk: bytes) -> bool:
@@ -132,8 +136,8 @@ class TxPoolDB(BaseDatabase):
                             b.put(txid.encode('utf-8'), json.dumps(d, separators=(",", ":")).encode('utf-8'))
                         except Exception:
                             continue
-            except Exception as e:
-                print(f"[MEMPOOL] LMDB save failed: {e}")
+            except Exception:
+                log.error("[save_pool] LMDB write failed, falling back to file storage")
         else:
             self.save_json(self.filepath, pool)
 
@@ -147,9 +151,10 @@ class TxPoolDB(BaseDatabase):
                     except Exception:
                         continue
                 return out
-            except Exception as e:
-                print(f"[MEMPOOL] LMDB read failed: {e}")
+            except Exception:
+                log.error("[load_pool] LMDB read failed, falling back to file storage")
                 return []
+        log.critical("[load_pool] Loading mempool from file: %s", self.filepath)
         return self.load_json(self.filepath) or []
     
     def get_all_txs(self) -> list:
@@ -163,8 +168,9 @@ class TxPoolDB(BaseDatabase):
                     tx_data = json.loads(tx_data)
                 tx_obj = Tx.from_dict(tx_data)
                 tx_list.append(tx_obj)
-            except Exception as e:
-                print(f"[-] Failed to load transaction from pool: {e}")
+            except Exception:
+                log.warning("[get_all_txs] Failed to parse transaction in pool, skipping")
+                continue
         return tx_list
 
     def has_tx(self, txid_hex: str) -> bool:
@@ -294,8 +300,8 @@ class TxPoolDB(BaseDatabase):
                 utxo_entry = utxo_set[flat_key]
                 try:
                     amount = self._get_utxo_amount(utxo_entry)
-                except ValueError as e:
-                    print(f"[-] Error extracting amount from UTXO {flat_key}: {e}")
+                except ValueError:
+                    log.warning("[validate_transaction] Error extracting amount from UTXO %s", flat_key)
                     return False
 
             # Format NESTED: {txid: {index: data}}
@@ -305,8 +311,8 @@ class TxPoolDB(BaseDatabase):
                     utxo_entry = utxo_set[prev_txid_hex][prev_index]
                     try:
                         amount = self._get_utxo_amount(utxo_entry)
-                    except ValueError as e:
-                        print(f"[-] Error extracting amount from UTXO {prev_txid_hex}[{prev_index}]: {e}")
+                    except ValueError:
+                        log.warning("[validate_transaction] Error extracting amount from UTXO %s:%d", prev_txid_hex, prev_index)
                         return False
 
             # Coinbase maturity
@@ -321,8 +327,9 @@ class TxPoolDB(BaseDatabase):
             input_sum += int(amount)
             try:
                 spk_bytes = _get_utxo_script_bytes(utxo_entry)
-            except Exception as e:
-                print(f"[-] Failed to fetch scriptPubKey for {prev_txid_hex}:{prev_index}: {e}")
+            except Exception:
+                log.warning("[validate_transaction] Error extracting script_pubkey from UTXO %s:%d", prev_txid_hex, prev_index)
+                self.last_error_reason = "invalid_utxo_script"
                 return False
             prevouts.append((int(amount), spk_bytes, is_cb, int(born_height)))
 
@@ -344,7 +351,7 @@ class TxPoolDB(BaseDatabase):
             output_sum += amt
 
         if input_sum < output_sum:
-            print(f"[-] Jumlah input ({input_sum}) kurang dari jumlah output ({output_sum})")
+            log.warning("[validate_transaction] inputs < outputs: in=%d out=%d", input_sum, output_sum)
             self.last_error_reason = f"inputs_less_than_outputs in={input_sum} out={output_sum}"
             return False
 
@@ -381,8 +388,8 @@ class TxPoolDB(BaseDatabase):
                     script_code = _p2wpkh_script_code_from_spk(spk_bytes)
                     digest32 = bip143_sig_hash(tx, i, script_code, int(amount), sighash_type)
                 except Exception as e:
-                    print(f"[-] Failed to compute BIP143 sighash in vin {i}: {e}")
-                    self.last_error_reason = f"bip143_error:{e}"
+                    log.warning("[validate_transaction] Failed to compute BIP143 sighash in vin %d", i)
+                    self.last_error_reason = f"bip143_sighash_error:{e}"
                     return False
                 
                 vk = _vk_from_pubkey_bytes(pubkey)
@@ -405,8 +412,8 @@ class TxPoolDB(BaseDatabase):
 
                 try:
                     sig_der, sighash_type, pubkey = _extract_p2pkh_scriptsig(ss_bytes)
-                except Exception as e:
-                    print(f"[-] scriptSig parse error di vin {i}: {e}")
+                except Exception:
+                    log.warning("[validate_transaction] Failed to parse scriptSig in vin %d", i)
                     self.last_error_reason = f"scriptsig_parse_error:{e}"
                     return False
 
@@ -421,8 +428,8 @@ class TxPoolDB(BaseDatabase):
 
                 try:
                     digest32 = _legacy_sighash(tx, i, spk_bytes, sighash_type)
-                except Exception as e:
-                    print(f"[-] Failed to compute legacy sighash in vin {i}: {e}")
+                except Exception:
+                    log.warning("[validate_transaction] Failed to compute legacy sighash in vin %d", i)
                     self.last_error_reason = f"legacy_sighash_error:{e}"
                     return False
 
@@ -438,15 +445,16 @@ class TxPoolDB(BaseDatabase):
                 try:
                     reg = StorageNodeRegistry()
                     if not reg.validate_tx(tx):
-                        print("[TxPool] Storage REG validation failed")
+                        log.warning("[validate_transaction] Storage REG check failed in vin %d", i)
                         self.last_error_reason = "storage_reg_invalid"
                         return False
-                except Exception as e:
-                    print(f"[TxPool] Storage REG check error: {e}")
+                except Exception:
+                    log.warning("[validate_transaction] Storage REG check exception in vin %d", i)
+                    self.last_error_reason = "storage_reg_error"
                     return False
 
             else:
-                print(f"[-] Unsupported script type di vin {i}")
+                log.warning("[validate_transaction] Unsupported scriptPubKey type in vin %d", i)
                 self.last_error_reason = "unsupported_spk_type"
                 return False
 
@@ -459,7 +467,7 @@ class TxPoolDB(BaseDatabase):
         try:
             transaction_obj = Tx.from_dict(tx_data) if isinstance(tx_data, dict) else tx_data
         except Exception as e:
-            print(f"[TxPoolDB] Failed to parse transaction: {e}")
+            log.warning("[add_valid_tx] Failed to parse transaction: %s", e)
             self.last_error_reason = f"parse_error:{e}"
             return False
 
@@ -510,24 +518,22 @@ class TxPoolDB(BaseDatabase):
                 worst_old_fee = max(worst_old_fee, old_fee)
                 conflict_txids.append(old.txid.hex() if getattr(old, "txid", None) else "")
 
-            # Basic policy: allow replacement if strictly higher feerate OR strictly higher absolute fee
             if (new_rate > worst_old_rate) or (new_fee > worst_old_fee):
                 for ctid in conflict_txids:
                     try:
                         if ctid:
                             self.remove_tx(ctid)
                     except Exception:
+                        log.exception("[add_valid_tx] Failed to remove conflicting tx %s", ctid)
                         pass
-                # proceed to add new tx
             else:
-                # Reject and record reason
                 try:
                     any_prev = next(iter(new_prevouts))
                     prev_str = f"{any_prev[0].hex()}:{any_prev[1]}" if any_prev and hasattr(any_prev[0], 'hex') else str(any_prev)
                 except Exception:
                     prev_str = "unknown"
                 self.last_error_reason = f"double_spend_conflict prev={prev_str} with={','.join(conflict_txids)}"
-                print(f"[TxPoolDB] Transaction {txid_hex} attempted to double spend {prev_str}")
+                log.warning("[add_valid_tx] Rejecting tx due to double-spend conflict: %s", self.last_error_reason)
                 return False
 
         self.add_tx(transaction_obj)
