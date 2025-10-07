@@ -321,9 +321,11 @@ class TsarLogViewer:
             xscroll = ttk.Scrollbar(frame, orient="horizontal", command=text.xview)
             text.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
 
-            text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            yscroll.pack(side=tk.RIGHT, fill=tk.Y)
-            xscroll.pack(side=tk.BOTTOM, fill=tk.X)
+            frame.grid_rowconfigure(0, weight=1)
+            frame.grid_columnconfigure(0, weight=1)
+            text.grid(row=0, column=0, sticky="nsew")
+            yscroll.grid(row=0, column=1, sticky="ns")
+            xscroll.grid(row=1, column=0, sticky="ew")
 
             text.tag_configure("DEBUG",    foreground="#A674B9")
             text.tag_configure("TRACE",    foreground="#b5c2b0")
