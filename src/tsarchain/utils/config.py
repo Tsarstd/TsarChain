@@ -248,13 +248,6 @@ NODE_KEY_PATH  = "data_user/node_key.json"
 PEER_KEYS_PATH = "data_user/peer_keys.json"
 WALLETS_DIR    = "data_user"
 
-# =============================================================================
-# LOGGERS
-# =============================================================================
-LOG_PATH = "data/logging/tsarchain.log"
-LOG_LEVEL = "TRACE"
-LOG_FORMAT = "plain"
-LOG_RATE_LIMIT_SECONDS = 2.0
 
 # =============================================================================
 # GRAFFITI / STORAGE PATHS
@@ -262,6 +255,7 @@ LOG_RATE_LIMIT_SECONDS = 2.0
 CONTRACTS_DIR       = "data/Contracts"
 GRAFFITI_FILE       = os.path.join(CONTRACTS_DIR, "graffiti.json")
 STORAGE_NODES_FILE  = os.path.join(CONTRACTS_DIR, "storage_nodes.json")
+
 
 # =============================================================================
 # DB / KV BACKEND
@@ -272,3 +266,39 @@ LMDB_MAP_SIZE_INIT = 64 * 1024 * 1024  # 64 MiB
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # 64 GiB
 
 
+# =============================================================================
+# LOGGING SETTINGS
+# =============================================================================
+LOG_PATH = "data/logging/tsarchain.log"
+
+
+# === MODE based profile ===
+if IS_DEV:
+    # === DEV PROFILE ===
+    LOG_LEVEL = "TRACE"                # lot of details
+    LOG_FORMAT = "plain"               # easy to read while developing
+    LOG_TO_CONSOLE = True              # display to the console
+    LOG_RATE_LIMIT_SECONDS = 0.0       # don't throttle in console while debugging
+    LOG_FILE_RATE_LIMIT_SECONDS = 0.0
+    LOG_ROTATE_MAX_BYTES = 5_000_000   # 5 MB
+    LOG_BACKUP_COUNT     = 3
+else:
+    # === PROD PROFILE ===
+    LOG_LEVEL = "INFO"                 # quite informative
+    LOG_FORMAT = "json"               # suitable for parsing/tooling
+    LOG_TO_CONSOLE = False             # daemons don't need console
+    LOG_RATE_LIMIT_SECONDS = 2.0       # throttle spam console
+    LOG_FILE_RATE_LIMIT_SECONDS = 1.0  # throttle spam into file
+    LOG_ROTATE_MAX_BYTES = 10_000_000  # 10 MB
+    LOG_BACKUP_COUNT     = 7
+
+try:
+    _LOG_BASE = "data/logging/tsarchain"
+    _fmt = str(LOG_FORMAT).lower().strip()
+    if _fmt == "json":
+        LOG_PATH = _LOG_BASE + ".jsonl"   # JSON Lines: easier for parsers
+    else:
+        LOG_PATH = _LOG_BASE + ".log"
+except Exception:
+    # If anything goes wrong, stick to whatever LOG_PATH was before.
+    pass

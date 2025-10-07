@@ -211,7 +211,7 @@ class Block:
         total_hps_accum = 0.0
         reports_since_print = 0
         last_total_print = time.time()
-        REPORT_WINDOW = 5.0
+        REPORT_WINDOW = 10.0
 
         try:
             while True:

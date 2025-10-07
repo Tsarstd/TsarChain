@@ -2046,12 +2046,7 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()
     os.umask(0o077)
 
-    setup_logging(
-        log_file=CFG.LOG_PATH,
-        level=CFG.LOG_LEVEL,
-        to_console=True,
-        force=True,
-    )
+    setup_logging(force=True)
 
     root = tk.Tk()
     try:

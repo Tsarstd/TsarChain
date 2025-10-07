@@ -23,7 +23,7 @@ from pathlib import Path
 from logging.handlers import RotatingFileHandler
 from typing import Optional
 
-from ..utils import config as CFG
+from tsarchain.utils import config as CFG
 
 # ===== TRACE level (di bawah DEBUG) =====
 TRACE = 9
@@ -123,17 +123,25 @@ def get_ctx_logger(name: str = "tsarchain", **ctx) -> ContextAdapter:
 def setup_logging(
     log_file: str | os.PathLike | None = None,
     level: int | str | None = None,
-    to_console: bool = True,
-    rotate_max_bytes: int = 5_000_000,
-    backup_count: int = 3,
+    to_console: bool | None = None,
+    rotate_max_bytes: int | None = None,
+    backup_count: int | None = None,
     force: bool = False,
     fmt: str = _DEFAULT_FMT,
     datefmt: str = _DEFAULT_DATEFMT,) -> logging.Logger:
-    
+
     if level is None:
         level = CFG.LOG_LEVEL
     if log_file is None:
         log_file = CFG.LOG_PATH
+
+    # Get preference from CFG when argument is None
+    if to_console is None:
+        to_console = bool(getattr(CFG, "LOG_TO_CONSOLE", True))
+    if rotate_max_bytes is None:
+        rotate_max_bytes = int(getattr(CFG, "LOG_ROTATE_MAX_BYTES", 5_000_000))
+    if backup_count is None:
+        backup_count = int(getattr(CFG, "LOG_BACKUP_COUNT", 3))
 
     log_path = Path(log_file)
     if log_path.parent and not log_path.parent.exists():
@@ -141,8 +149,10 @@ def setup_logging(
 
     handlers: list[logging.Handler] = []
     as_json = str(CFG.LOG_FORMAT).lower() == "json"
-    rate_seconds = CFG.LOG_RATE_LIMIT_SECONDS
+    rate_seconds_console = float(getattr(CFG, "LOG_RATE_LIMIT_SECONDS", 0.0))
+    rate_seconds_file    = float(getattr(CFG, "LOG_FILE_RATE_LIMIT_SECONDS", 0.0))
 
+    # --- File handler ---
     fh = RotatingFileHandler(
         log_path, maxBytes=int(rotate_max_bytes), backupCount=int(backup_count),
         encoding="utf-8", delay=True
@@ -150,27 +160,35 @@ def setup_logging(
     file_fmt = JsonFormatter() if as_json else SafeFormatter(fmt, datefmt)
     fh.setFormatter(file_fmt)
     fh.addFilter(RedactFilter())
+    if rate_seconds_file > 0.0:
+        fh.addFilter(RateLimitFilter(rate_seconds_file))
     handlers.append(fh)
 
+    # --- Console handler (optional) ---
     if to_console:
         console_fmt = JsonFormatter() if as_json else SafeFormatter(fmt, datefmt)
         sh = logging.StreamHandler()
         sh.setFormatter(console_fmt)
         sh.addFilter(RedactFilter())
-        if rate_seconds > 0:
-            sh.addFilter(RateLimitFilter(rate_seconds))
+        if rate_seconds_console > 0.0:
+            sh.addFilter(RateLimitFilter(rate_seconds_console))
         handlers.append(sh)
 
+    # Level
     lvl = level
     if isinstance(lvl, str):
         try:
             lvl = logging._nameToLevel.get(lvl.upper(), lvl)
         except Exception:
             pass
+
     logging.basicConfig(level=lvl, handlers=handlers, force=force)
     _name = logging.getLevelName(lvl) if isinstance(lvl, int) else str(level)
     logging.getLogger("tsarchain").trace(
-        "Logging configured: level=%s file=%s", _name, str(log_path))
+        "Logging configured: level=%s file=%s format=%s console=%s rotate=%s backup=%s",
+        _name, str(log_path), ("json" if as_json else "plain"),
+        to_console, rotate_max_bytes, backup_count
+    )
     return logging.getLogger("tsarchain")
 
 
@@ -240,6 +258,17 @@ class TsarLogViewer:
         ttk.Button(topbar, text="Clear All", command=self.clear_all).pack(side=tk.LEFT)
         ttk.Button(topbar, text="Open Log Folder", command=self.open_log_folder).pack(side=tk.LEFT, padx=(6, 0))
         ttk.Button(topbar, text="Export Logs", command=self.export_logs).pack(side=tk.LEFT, padx=(6, 0))
+        
+        # --- Format Mode & Pretty JSON ---
+        ttk.Label(topbar, text="Format").pack(side=tk.LEFT, padx=(16, 4))
+        self.format_mode = tk.StringVar(value="Auto")
+        ttk.Combobox(
+            topbar, textvariable=self.format_mode,
+            values=["Auto", "Plain", "JSON"], state="readonly", width=7
+        ).pack(side=tk.LEFT)
+
+        self.pretty_json = tk.BooleanVar(value=False)
+        ttk.Checkbutton(topbar, text="Pretty JSON", variable=self.pretty_json).pack(side=tk.LEFT, padx=(6, 0))
 
         ttk.Button(topbar, text="Open File…", command=self.choose_file).pack(side=tk.RIGHT)
 
@@ -332,24 +361,10 @@ class TsarLogViewer:
 
             line = fp.readline()
             while line:
-                level = None
-                up = line.upper()
-                for name, _lvl in self.LEVELS[1:]:
-                    token = f"[{name.upper()}]"
-                    if token in up:
-                        level = name
-                        break
-                if level is None:
-                    try:
-                        obj = json.loads(line)
-                        lvl = str(obj.get("lvl", "")).upper()
-                        if lvl in ("TRACE","DEBUG","INFO","WARNING","ERROR","CRITICAL"):
-                            level = lvl.title()
-                    except Exception:
-                        pass
-                    
-                self._append_line(line.rstrip("\n"), level_hint=level)
+                text, level = self._decode_line(line)
+                self._append_line(text, level_hint=level)
                 line = fp.readline()
+                
         except Exception:
             pass
 
@@ -439,7 +454,7 @@ class TsarLogViewer:
             return
         fp = filedialog.askopenfilename(
             title="Open log file",
-            filetypes=[("Log files", "*.log *.txt"), ("All files", "*.*")]
+            filetypes=[("Log files", "*.log *.jsonl"), ("All files", "*.*")]
         )
         if fp:
             self.clear_all()
@@ -494,26 +509,12 @@ class TsarLogViewer:
         try:
             line = self._tail_fp.readline()
             while line:
-                level = None
-                text = line.rstrip("\n")
-                try:
-                    obj = json.loads(text)
-                    lvl = (obj.get("lvl") or obj.get("level") or "").upper()
-                    if lvl in {"TRACE","DEBUG","INFO","WARNING","ERROR","CRITICAL"}:
-                        level = lvl.title()
-                        text = json.dumps(obj, ensure_ascii=False)
-                except Exception:
-                    pass
-                if not level:
-                    for name, _lvl in self.LEVELS[1:]:
-                        token = f"[{name.upper()}]"
-                        if token in text.upper():
-                            level = name
-                            break
+                text, level = self._decode_line(line)
                 self._append_line(text, level_hint=level)
                 line = self._tail_fp.readline()
         except Exception:
             pass
+        
         if not self._stop_event.is_set():
             self.master.after(250, self._poll_tail)
 
@@ -536,6 +537,51 @@ class TsarLogViewer:
         }
         tab = mapping.get(levelname, "Info")
         self._append(tab, msg, tag=levelname)
+        
+    def _decode_line(self, line: str) -> tuple[str, Optional[str]]:
+        """
+        Return (text_to_show, level_name[TitleCase] or None)
+        Hormati pilihan user: Auto / Plain / JSON + Pretty JSON
+        """
+        mode = self.format_mode.get() if tk else "Auto"
+        txt = line.rstrip("\n")
+        level = None
+
+        def _from_plain(s: str):
+            nonlocal level
+            up = s.upper()
+            for name, _lvl in self.LEVELS[1:]:
+                token = f"[{name.upper()}]"
+                if token in up:
+                    level = name
+                    break
+            return s
+
+        def _from_json(s: str):
+            nonlocal level
+            try:
+                obj = json.loads(s)
+                lvl = str(obj.get("lvl", obj.get("level", ""))).upper()
+                if lvl in {"TRACE","DEBUG","INFO","WARNING","ERROR","CRITICAL"}:
+                    level = lvl.title()
+                # pretty?
+                if self.pretty_json.get():
+                    return json.dumps(obj, ensure_ascii=False, indent=2)
+                return json.dumps(obj, ensure_ascii=False)
+            except Exception:
+                # fallback ke plain jika gagal parse
+                return _from_plain(s)
+
+        if mode == "Plain":
+            return _from_plain(txt), level
+        elif mode == "JSON":
+            return _from_json(txt), level
+        else:  # Auto
+            # coba JSON dahulu, kalau gagal baru Plain
+            try:
+                return _from_json(txt), level
+            except Exception:
+                return _from_plain(txt), level
 
     def _append_line(self, line: str, *, level_hint: Optional[str] = None):
         tag = (level_hint or "Info").upper()
@@ -640,12 +686,13 @@ def export_log_bundle(path: str = "tsar_logs_bundle.zip") -> Path:
             _add(bp)
 
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("env.txt", "\n".join([
-            f"python={platform.python_version()}",
-            f"os={platform.platform()}",
-            f"tsar_log_level={CFG.LOG_LEVEL}",
-            f"tsar_log_format={CFG.LOG_FORMAT}",
-            f"tsar_log_rate_limit_seconds={CFG.LOG_RATE_LIMIT_SECONDS}",
+        z.writestr("log_info.txt", "\n".join([
+            f"Python Version : {platform.python_version()}",
+            f"Operation System : {platform.platform()}",
+            f"Mode : {CFG.MODE}",
+            f"Log Level : {CFG.LOG_LEVEL}",
+            f"Log Format : {CFG.LOG_FORMAT}",
+            f"Log Rate Limit/sec : {CFG.LOG_RATE_LIMIT_SECONDS}",
         ]))
         for rp, p in sorted(files_abs.items(), key=lambda kv: (kv[1].stem, kv[1].suffix)):
             try:

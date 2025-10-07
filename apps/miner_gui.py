@@ -800,12 +800,7 @@ class BlockchainGUI:
 if __name__ == "__main__":
     mp.freeze_support()
     
-    setup_logging(
-        log_file=CFG.LOG_PATH,
-        level=CFG.LOG_LEVEL,
-        to_console=True,
-        force=True,
-    )
+    setup_logging(force=True)
     
     root = tk.Tk()
     app = BlockchainGUI(root)
