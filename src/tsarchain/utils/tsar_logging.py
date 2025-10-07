@@ -34,8 +34,8 @@ def _trace(self, msg, *a, **k):
         self._log(TRACE, msg, a, **k)
 logging.Logger.trace = _trace
 
-# --- Module filter helpers -----------------------------------------------
-MODULES = ("consensus", "contracts", "core", "mempool", "network", "storage", "wallet")
+# --- Module filter helpers ---
+MODULES = ("consensus", "contracts", "core", "mempool", "network", "storage", "utils", "wallet")
 _RE_LOG_PLAIN = re.compile(r"\]\s+[^\s]+\s+([^:]+):\s")
 
 def _module_from_logger_name(name: str | None) -> str | None:
@@ -317,6 +317,7 @@ class TsarLogViewer:
             frame = ttk.Frame(self.nb)
             self.nb.add(frame, text=f"{name} (0)")
             text = tk.Text(frame, wrap="none", font=("Consolas", 10), undo=False)
+            self._install_readonly(text)
             yscroll = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
             xscroll = ttk.Scrollbar(frame, orient="horizontal", command=text.xview)
             text.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
@@ -502,6 +503,25 @@ class TsarLogViewer:
                 messagebox.showerror("Clear Logs", f"Failed to erase log file: {e}")
             else:
                 self._set_status(f"Clear UI only (file erase failed: {e})")
+                
+    def _install_readonly(self, text: tk.Text):
+        def _block(_): return "break"
+
+        for seq in ("<<Cut>>", "<<Paste>>", "<<Clear>>"):
+            text.bind(seq, _block)
+
+        for seq in ("<BackSpace>", "<Delete>", "<Return>", "<KP_Enter>", "<Tab>"):
+            text.bind(seq, _block)
+
+        text.bind("<Control-v>", _block)
+        text.bind("<Control-x>", _block)
+        text.bind("<Shift-Insert>", _block)
+        text.bind("<Button-2>", _block)
+
+        def _block_printable(e):
+            if e.char and e.char.isprintable():
+                return "break"
+        text.bind("<Key>", _block_printable, add="+")
 
     def _truncate_log_files(self, delete_backups: bool = True) -> None:
         p = Path(self.tail_path) if self.tail_path else Path(CFG.LOG_PATH).resolve()

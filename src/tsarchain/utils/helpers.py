@@ -10,6 +10,10 @@ from ecdsa import SECP256k1, util, VerifyingKey
 
 from ..utils import config as CFG
 
+# ---------------- Logger ----------------
+from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.utils(helpers)")
+
 SIGHASH_ALL = 1
 
 # opcode constants
@@ -505,6 +509,7 @@ def random_message_secure(length=8):
 
     template = secrets.choice(templates)
     rand = ''.join(secrets.choice(chars) for _ in range(length))
+    log.debug("random_message_secure: %s", template.format(rand=rand))
     return template.format(rand=rand)
 
 
