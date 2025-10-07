@@ -162,4 +162,4 @@ snippets can be added later to `.github/workflows/release.yml`.
 
 ---
 
-Happy hacking — *Long Live The Bootleg Monetary System*.
+Happy Coding — *Long Live The Voice Sovereignty*.
