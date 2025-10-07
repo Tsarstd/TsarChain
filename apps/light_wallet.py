@@ -33,7 +33,7 @@ from tsarchain.wallet.ui_utils import center_window
 from tsarchain.network.protocol import load_or_create_keypair_at
 from tsarchain.storage.kv import kv_enabled, iter_prefix, batch
 from tsarchain.utils import config as CFG
-from tsarchain.utils.tsar_logging import launch_gui_in_thread, setup_logging
+from tsarchain.utils.tsar_logging import launch_gui_in_thread, setup_logging, open_log_toplevel
 
 # ---------------- Constants & Paths ----------------
 
@@ -1985,7 +1985,10 @@ class KremlinWalletGUI(WalletsMixin):
         
     def _open_log_viewer(self):
         log_file = str(CFG.LOG_PATH)
-        launch_gui_in_thread(log_file=log_file, attach_to_root=True)
+        try:
+            open_log_toplevel(self.root, log_file=log_file, attach_to_root=False)
+        except Exception:
+            launch_gui_in_thread(log_file=log_file, attach_to_root=False)
 
     # --- Treeview hover helper ---
     def _tv_enable_hover(self, tree: "ttk.Treeview", hover_bg: str | None = None) -> None:
