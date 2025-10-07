@@ -12,11 +12,19 @@ from cryptography.hazmat.primitives import hashes
 from ..utils.helpers import hash160
 from ..utils import config as CFG
 
+# ---------------- Logger ----------------
+from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.network(processing_msg)")
+
 if TYPE_CHECKING:
     from .node import Network
 
 __all__ = ["process_message"]
-    
+
+def _mask_addr(s: str) -> str:
+    s = (s or "").strip().lower()
+    return s if len(s) < 14 else f"{s[:6]}…{s[-6:]}"
+
 def process_message(self: "Network", message: dict[str, Any], addr: Optional[tuple]=None) -> dict | None:
     if not isinstance(message, dict):
         return {"error": "invalid message: expected JSON object"}
@@ -55,6 +63,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         try:
             peer_port = int(message.get("port", -1))
         except Exception:
+            log.exception("[_is_miner_sender] bad port in message from %s", addr)
             peer_port = -1
         return (peer_port > 0) and ((addr[0], peer_port) in self.peers)
 
@@ -67,34 +76,40 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
 
     # =============== NODE MESSAGES ===============
     if mtype == "HELLO":
+        log.debug("[process_message] HELLO from %s", addr)
         return self._handle_hello(message, addr)
 
     elif mtype == "NEW_BLOCK":
         self.broadcast.receive_block(message, addr, self.peers)
+        log.debug("[process_message] NEW_BLOCK processed from %s", addr)
         return {"status": "ok"}
 
     elif mtype == "GET_FULL_SYNC":
         if not CFG.ENABLE_FULL_SYNC:
             return {"type": "SYNC_REDIRECT", "reason": "full_sync_disabled"}
+        log.debug("[process_message] GET_FULL_SYNC from %s", addr)
         return self._handle_get_full_sync(message, addr)
 
     elif mtype == "FULL_SYNC":
         if not CFG.ENABLE_FULL_SYNC:
             return {"status": "ignored", "reason": "full_sync_disabled"}
+        log.debug("[process_message] FULL_SYNC from %s", addr)
         return self._handle_full_sync(message, addr)
 
     elif mtype == "CHAIN":
         if self._validate_incoming_chain(message):
-            print("[Sync] Chain validation OK")
+            log.debug("[process_message] CHAIN accepted from %s", addr)
         return {"status": "ok"}
 
     elif mtype == "MEMPOOL":
         self.broadcast.receive_mempool(message)
+        log.debug("[process_message] MEMPOOL processed from %s", addr)
         return {"status": "mempool received"}
 
     # =============== USER MESSAGES ===============
 
     elif mtype == "PING":
+        log.trace("[process_message] PING from %s", addr)
         return {"type": "PONG"}
 
     elif mtype in ("GET_BALANCE", "GET_BALANCES"):
@@ -105,7 +120,8 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             return {"error": "missing addresses"}
         if len(addrs_raw) > CFG.MAX_ADDRS_PER_REQ:
             return {"error": "too many addresses (max %d)" % CFG.MAX_ADDRS_PER_REQ}
-
+        
+        log.debug("[process_message] %s from %s", mtype, addr)
         norm = []
         for a in addrs_raw:
             if not a:
@@ -124,8 +140,8 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             mem = self.broadcast.mempool.get_all_txs()
         try:
             self.broadcast.utxodb._load()
-        except Exception as e:
-            print("[BALANCE] _load warn:", e)
+        except Exception:
+            log.exception("[process_message] UTXO DB load error")
 
         opmap = self._build_outpoint_map(chain, mem)
         items = {}
@@ -142,6 +158,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
                         if owner == addr_str and amt:
                             pending_out += int(amt)
             except Exception:
+                log.exception("[process_message] pending_out calc error")
                 pass
 
             spendable = max(0, int(b.get("mature", 0)) - int(pending_out or 0))
@@ -166,8 +183,8 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         try:
             tpl = self._handle_create_tx(from_addr, to_addr, amount, fee_rate)
             return {"type": "TX_TEMPLATE", "data": tpl}
-        except Exception as e:
-            return {"error": str(e)}
+        except Exception:
+            log.exception("[process_message] CREATE_TX error")
 
     elif mtype == "GET_INFO":
         info = {
@@ -182,6 +199,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
                 peers_sane = [(ip,p) for (ip,p) in self.peers if isinstance(p,int) and p>0]
             info["peers"] = len(peers_sane)
         except Exception:
+            log.exception("[process_message] GET_INFO peers count error")
             info["peers"] = 0
         if self.storage_service:
             idx = self.storage_service.index()
@@ -207,23 +225,23 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
                 else:
                     snap["peers"] = {"count": len(peers_sane)}
             except Exception:
-                pass
+                log.exception("[process_message] GET_NETWORK_INFO peers count error")
             return {"type": "NETWORK_INFO", "data": snap}
-        except Exception as e:
-            return {"type": "NETWORK_INFO", "error": str(e)}
+        except Exception:
+            log.exception("[process_message] GET_NETWORK_INFO error")
         
     elif mtype == "GET_BLOCK_AT":
         try:
             h = int(message.get("height"))
         except Exception:
-            return {"type": "BLOCK", "error": "invalid_height"}
+            log.debug("[process_message] GET_BLOCK_AT invalid height from %s", addr)
         return self._handle_get_block_at(h)
     
     elif mtype == "GET_BLOCK_HASH":
         try:
             h = int(message.get("height"))
         except Exception:
-            return {"type": "BLOCK_HASH", "error": "invalid_height"}
+            log.debug("[process_message] GET_BLOCK_HASH invalid height from %s", addr)
         return self._handle_get_block_hash(h)
 
     elif mtype == "GET_BLOCK":
@@ -231,7 +249,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             try:
                 return self._handle_get_block_at(int(message["height"]))
             except Exception:
-                return {"type": "BLOCK", "error": "invalid_height"}
+                log.exception("[process_message] GET_BLOCK invalid height from %s", addr)
         hx = str(message.get("hash") or "").strip()
         if not hx:
             return {"type": "BLOCK", "error": "missing_height_or_hash"}
@@ -256,8 +274,8 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         try:
             txs = self.broadcast.mempool.get_all_txs()
             return {"type": "MEMPOOL", "txs": [getattr(t, "txid", b"").hex() for t in txs]}
-        except Exception as e:
-            return {"type": "MEMPOOL", "txs": [], "error": str(e)}
+        except Exception:
+            log.exception("[process_message] GET_MEMPOOL error")
 
     elif mtype == "MEMPOOL_PRUNE":
         try:
@@ -286,8 +304,8 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
                     continue
                 kept.append(item)
             self.broadcast.mempool.save_pool(kept)
-        except Exception as e:
-            return {"status": "error", "reason": str(e)}
+        except Exception:
+            log.exception("[process_message] MEMPOOL_PRUNE error")
 
     elif mtype == "GET_TX_HISTORY":
         addr_str = (message.get("address") or "").strip().lower()
@@ -303,11 +321,13 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
                                     direction=message.get("direction"),
                                     status=message.get("status"))
         history["height"] = tip_height
+        log.debug("[process_message] GET_TX_HISTORY for %s from %s", _mask_addr(addr_str), addr)
         return {"type": "TX_HISTORY", "address": addr_str, **history}
 
     elif mtype == "GET_TX_DETAIL":
         txid_hex = message.get("txid")
         if not txid_hex:
+            log.debug("[process_message] GET_TX_DETAIL missing txid from %s", addr)
             return {"error": "missing txid"}
         return self._get_tx_detail(txid_hex)
 
@@ -320,6 +340,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             return {"error": "address too long"}
         
         utxos = self.broadcast.utxodb.get(address)
+        log.debug("[process_message] GET_UTXOS for %s from %s", _mask_addr(address), addr)
         return {"type": "UTXOS", "address": address, "utxos": utxos}
     
     # ========= P2P CHAT =========
@@ -332,19 +353,24 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         ts_val   = int(message.get("ts", 0))
 
         if not addr_s or not chat_pub or not spend_pk or not reg_sig or not ts_val:
+            log.debug("[process_message] CHAT_REGISTER missing fields from %s", addr)
             return {"error": "missing fields"}
         
         if not addr_s.startswith(CFG.ADDRESS_PREFIX):
+            log.debug("[process_message] CHAT_REGISTER bad address format from %s", addr)
             return {"error": "bad address format"}
         
         if not (len(chat_pub) == 64 and all(c in "0123456789abcdef" for c in chat_pub)):
+            log.debug("[process_message] CHAT_REGISTER bad chat_pub from %s", addr)
             return {"error": "bad chat_pub"}
         
         if not (len(spend_pk) == 66 and all(c in "0123456789abcdef" for c in spend_pk)):
+            log.debug("[process_message] CHAT_REGISTER bad spend_pub from %s", addr)
             return {"error": "bad spend_pub"}
         
         # Anti replay time window (±5 minutes)
         if abs(time.time() - ts_val) > 300:
+            log.debug("[process_message] CHAT_REGISTER stale ts from %s", addr)
             return {"error": "stale ts"}
         try:
             hrp, data = bech32_decode(addr_s)
@@ -357,6 +383,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             if hash160(bytes.fromhex(spend_pk)) != prog:
                 return {"error": "register proof mismatch"}
         except Exception:
+            log.exception("[process_message] CHAT_REGISTER addr decode failed from %s", addr)
             return {"error": "addr decode failed"}
         try:
             pub_obj = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(spend_pk))
@@ -369,6 +396,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             ])
             pub_obj.verify(bytes.fromhex(reg_sig), reg_bytes, ec.ECDSA(hashes.SHA256()))
         except Exception:
+            log.exception("[process_message] CHAT_REGISTER bad reg_sig from %s", addr)
             return {"error": "bad reg_sig"}
         now = time.time()
         pid = secrets.token_hex(16)
@@ -380,6 +408,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         try:
             self._relay_presence_async(pres, exclude=addr)
         except Exception:
+            log.exception("[process_message] CHAT_REGISTER relay error from %s", addr)
             pass
         return {"type": "CHAT_REGISTERED", "address": addr_s, "pubkey": chat_pub}
 
@@ -389,6 +418,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         if not addr_s:
             return {"error": "missing address"}
         pubhex = self.chat_presence_pub.get(addr_s)
+        log.debug("[process_message] CHAT_LOOKUP_PUB for %s from %s", addr_s, addr)
         return {"type": "CHAT_PUBKEY", "address": addr_s, "pubkey": pubhex, "found": bool(pubhex)}
     
     elif mtype == "CHAT_PRESENCE":
@@ -399,9 +429,11 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         ip     = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
 
         if abs(time.time() - ts_val) > CFG.PRESENCE_TTL_S:
+            log.debug("[process_message] CHAT_PRESENCE stale ts from %s", addr)
             return {"error": "presence_stale"}
         
         if hops >= CFG.PRESENCE_MAX_HOPS:
+            log.debug("[process_message] CHAT_PRESENCE max hops from %s", addr)
             return {"error": "presence_hops"}
         
         if not self._tb_allow(self.rl_ip, ip, CFG.CHAT_RL_IP_BURST, CFG.CHAT_RL_IP_WINDOWS, CFG.CHAT_RL_IP_BURST, backoff_key=ip):
@@ -423,6 +455,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         try:
             self._relay_presence_async(message, exclude=addr)
         except Exception:
+            log.exception("[process_message] CHAT_PRESENCE relay error from %s", addr)
             pass
         return {"type": "CHAT_PRESENCE_OK"}
 
@@ -493,6 +526,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         try:
             self._enqueue_rcpt(frm, "delivered", mid, frm, to, ts)
         except Exception:
+            log.exception("[process_message] CHAT_SEND enqueue_rcpt error from %s", addr)
             pass
 
         return {"type": "CHAT_ACK", "status": "queued"}
@@ -568,6 +602,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         try:
             self._enqueue_rcpt(sender, "read", mid, sender, reader, int(time.time()))
         except Exception:
+            log.exception("[process_message] CHAT_READ enqueue_rcpt error from %s", addr)
             pass
         return {"type": "CHAT_READ_OK"}
     
@@ -609,6 +644,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         try:
             fee_rate = int(message.get("fee_rate", CFG.DEFAULT_FEE_RATE_SATVB))
         except Exception:
+            log.debug("[process_message] CREATE_TX_MULTI bad fee_rate from %s", addr)
             fee_rate = CFG.DEFAULT_FEE_RATE_SATVB
         force_inputs = message.get("force_inputs") or None
         
@@ -617,8 +653,9 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         try:
             tpl = self._handle_create_tx_multi(from_addr, outputs, fee_rate, force_inputs)
             return {"type": "TX_TEMPLATE", "data": tpl}
-        except Exception as e:
-            return {"error": str(e)}
+        except Exception:
+            log.exception("[process_message] CREATE_TX_MULTI error from %s", addr)
+            return {"error": "CREATE_TX_MULTI failed"}
         
         
     # =============== STORAGE RPC (ROLE: NODE_STORAGE) ===============
@@ -636,6 +673,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
                 b64 = base64.b64encode(raw).decode("ascii")
                 idx = 0
             except Exception:
+                log.exception("[process_message] STOR_PUT bad hex data from %s", addr)
                 return {"type": "STOR_ACK", "status":"rejected", "reason":"bad_hex"}
 
         resp = self.storage_service.put_chunk(upid, int(idx), b64)
@@ -669,4 +707,5 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         return {"type":"STOR_ACK", **resp}
 
     else:
+        log.debug("[process_message] unknown type '%s' from %s", mtype, addr)
         return {"error": "Unknown message type"}
