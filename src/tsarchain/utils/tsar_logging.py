@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os, sys, logging, threading, queue, re, json, time, hashlib, platform, zipfile
 import tkinter as tk
+from collections import deque
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
@@ -248,20 +249,26 @@ class TsarLogViewer:
         ("Critical",  logging.CRITICAL),
     ]
 
-    def __init__(self, master: "tk.Tk", *, queue_: "queue.Queue[logging.LogRecord] | None", log_file: Optional[str] = None, attach_to_root: bool = True):
+    def __init__(self, master: "tk.Tk", *, queue_: "queue.Queue[logging.LogRecord] | None", 
+                log_file: Optional[str] = None, attach_to_root: bool = True,
+                filter_queue: "queue.Queue[str] | None" = None):
         self.master = master
         self.master.title("Tsar Logging — Minimal GUI")
         self.master.geometry("980x560")
         self.queue: "queue.Queue[logging.LogRecord]" = queue_ or queue.Queue()
+        self.filter_queue = filter_queue
 
         # Status
         self.autoscroll = tk.BooleanVar(value=True) if tk else None
         self.mode_tail = False
         self.tail_path: Optional[Path] = None
-        self._tail_fp = None  # type: ignore
+        self._tail_fp = None
         self._tail_last_size = 0
         self._stop_event = threading.Event()
         self._counts = {name: 0 for (name, _) in self.LEVELS}
+        
+        self._buf = deque(maxlen=10000)
+        self._current_module_filter = "All"
 
         # UI
         container = ttk.Frame(self.master, padding=(8, 6, 8, 6))
@@ -318,14 +325,14 @@ class TsarLogViewer:
             yscroll.pack(side=tk.RIGHT, fill=tk.Y)
             xscroll.pack(side=tk.BOTTOM, fill=tk.X)
 
-            text.tag_configure("DEBUG",    foreground="#835496")
+            text.tag_configure("DEBUG",    foreground="#A674B9")
             text.tag_configure("TRACE",    foreground="#b5c2b0")
-            text.tag_configure("INFO",     foreground="#6bd359")
+            text.tag_configure("INFO",     foreground="#77c769")
             text.tag_configure("WARNING",  foreground="#f59e0b")
-            text.tag_configure("ERROR",    foreground="#ef4444")
-            text.tag_configure("CRITICAL", foreground="#f472b6")
+            text.tag_configure("ERROR",    foreground="#d84747")
+            text.tag_configure("CRITICAL", foreground="#da69a3")
 
-            text.configure(bg="#0b0f14", fg="#e5e7eb", insertbackground="#e5e7eb")
+            text.configure(bg="#1a1a1a", fg="#e5e7eb", insertbackground="#ebe8e5")
             self.text_widgets[name] = text
 
         self.status = ttk.Label(container, text="Ready", anchor="w")
@@ -337,33 +344,66 @@ class TsarLogViewer:
         self.start_tail(log_file, load_history=True)
         if attach_to_root:
             self.attach_gui_handler()
-            self.mode_tail = False
             if self._tail_fp:
-                try: self._tail_fp.close()
-                except Exception: pass
+                try:
+                    self._tail_fp.close()
+                except Exception:
+                    pass
                 self._tail_fp = None
+            self.mode_tail = False
+            self.tail_path = None
 
-        self.master.after(100, self._pollqueue)
+        if self.filter_queue:
+            self.master.after(100, self._poll_filter_updates)
 
+        self.master.after(120, self._pollqueue)
         self.master.protocol("WM_DELETE_WINDOW", self._on_close)
         
         
     # ---------- Filter logic ----------
     
+    def _poll_filter_updates(self):
+        try:
+            while True:
+                new_filter = self.filter_queue.get_nowait()
+                self._current_module_filter = new_filter
+                self._on_module_change()
+        except queue.Empty:
+            pass
+        if not self._stop_event.is_set():
+            self.master.after(100, self._poll_filter_updates)
+    
     def _category_match(self, module_hint: str | None) -> bool:
-        want = self.module_filter.get() if tk else "All"
-        return (want == "All") or (module_hint == want)
+        result = (self._current_module_filter == "All") or (module_hint == self._current_module_filter)
+        if self._current_module_filter != "All":
+            return result
+        return True
+    
+    def _render_from_buffer(self):
+        self._clear_ui_only()
+        mapping = {
+            "TRACE": "Trace", "DEBUG": "Debug", "INFO": "Info",
+            "WARNING": "Warning", "ERROR": "Error", "CRITICAL": "Critical",
+        }
+        for msg, level_up, module in list(self._buf):
+            if self._category_match(module):
+                self._append("All", msg, tag=level_up)
+                self._append(mapping.get(level_up, "Info"), msg, tag=level_up)
 
     def _on_module_change(self):
-        self._clear_ui_only()
         try:
-            if self.mode_tail and self._tail_fp:
-                self._preload_tail_history(self._tail_fp, max_bytes=512_000)
-            elif self.tail_path:
+            self._current_module_filter = self.module_filter.get()
+        except Exception:
+            self._current_module_filter = "All"
+        
+        self._render_from_buffer()
+        if not self._buf and self.tail_path:
+            try:
                 with self.tail_path.open("r", encoding="utf-8", errors="replace") as fp:
                     self._preload_tail_history(fp, max_bytes=512_000)
-        except Exception:
-            pass
+                self._render_from_buffer()
+            except Exception:
+                pass
 
     def _clear_ui_only(self):
         for name, _ in self.LEVELS:
@@ -382,30 +422,24 @@ class TsarLogViewer:
             self.tk_handler.setLevel(logging.NOTSET)
 
             root = logging.getLogger()
+            
+            for handler in root.handlers[:]:
+                if isinstance(handler, TkLogHandler):
+                    root.removeHandler(handler)
+            
             root.addHandler(self.tk_handler)
-
-            self._attached_loggers = []
-
+            
             try:
                 for name, lg in logging.root.manager.loggerDict.items():
                     if isinstance(lg, logging.Logger) and name.startswith("tsarchain"):
-                        if not lg.propagate and self.tk_handler not in lg.handlers:
-                            lg.addHandler(self.tk_handler)
-                            self._attached_loggers.append(lg)
+                        lg.propagate = True
+                        for handler in lg.handlers[:]:
+                            if isinstance(handler, TkLogHandler):
+                                lg.removeHandler(handler)
             except Exception:
                 pass
 
-            try:
-                root.setLevel(min(root.level, TRACE))
-            except Exception:
-                pass
-            try:
-                lg_tsar = logging.getLogger("tsarchain")
-                lg_tsar.setLevel(min(lg_tsar.level, TRACE))
-            except Exception:
-                pass
-
-            self._set_status("GUI handler attached")
+            self._set_status("GUI handler attached (live + tail mode)")
 
 
     def start_tail(self, file_path: str | os.PathLike, *,
@@ -577,6 +611,10 @@ class TsarLogViewer:
 
     def _pollqueue(self):
         try:
+            current_filter = self.module_filter.get()
+            if current_filter != self._current_module_filter:
+                self._current_module_filter = current_filter
+                
             while True:
                 record = self.queue.get_nowait()
                 self._append_record(record)
@@ -589,6 +627,10 @@ class TsarLogViewer:
         if not self.mode_tail or not self._tail_fp:
             return
         try:
+            current_filter = self.module_filter.get()
+            if current_filter != self._current_module_filter:
+                self._current_module_filter = current_filter
+                
             line = self._tail_fp.readline()
             while line:
                 text, level, module = self._decode_line(line)
@@ -602,27 +644,22 @@ class TsarLogViewer:
 
     def _append_record(self, record: logging.LogRecord):
         module = _module_from_logger_name(getattr(record, "name", None))
-        if not self._category_match(module):
-            return
 
         try:
             msg = self.tk_handler.format(record) if self.tk_handler else logging.Formatter(_DEFAULT_FMT, _DEFAULT_DATEFMT).format(record)
-            levelname = record.levelname.upper()
+            level_up = record.levelname.upper()
         except Exception:
-            msg = f"{record.getMessage()}"
-            levelname = "INFO"
+            msg, level_up = record.getMessage(), "INFO"
+        self._buf.append((msg, level_up, module))
 
-        self._append("All", msg, tag=levelname)
+        if not self._category_match(module):
+            return
         mapping = {
-            "TRACE": "Trace",
-            "INFO": "Info",
-            "DEBUG": "Debug",
-            "WARNING": "Warning",
-            "ERROR": "Error",
-            "CRITICAL": "Critical",
+            "TRACE": "Trace", "DEBUG": "Debug", "INFO": "Info",
+            "WARNING": "Warning", "ERROR": "Error", "CRITICAL": "Critical",
         }
-        tab = mapping.get(levelname, "Info")
-        self._append(tab, msg, tag=levelname)
+        self._append("All", msg, tag=level_up)
+        self._append(mapping.get(level_up, "Info"), msg, tag=level_up)
         
     def _decode_line(self, line: str) -> tuple[str, Optional[str], Optional[str]]:
         mode = self.format_mode.get() if tk else "Auto"
@@ -672,15 +709,19 @@ class TsarLogViewer:
                 text, module = _from_plain(txt)
                 return text, level, module
 
-
     def _append_line(self, line: str, *, level_hint: Optional[str] = None, module_hint: Optional[str] = None):
+        tag = (level_hint or "Info").upper()
+        self._buf.append((line, tag, module_hint))
         if not self._category_match(module_hint):
             return
-        tag = (level_hint or "Info").upper()
         self._append("All", line, tag=tag)
         self._append(level_hint or "Info", line, tag=tag)
 
     def _append(self, tab_name: str, text: str, tag: Optional[str] = None):
+        valid_tabs = ["All", "Trace", "Info", "Debug", "Warning", "Error", "Critical"]
+        if tab_name not in valid_tabs:
+            return
+            
         w = self.text_widgets[tab_name]
         try:
             w.insert(tk.END, text + "\n", (tag or "INFO",))
@@ -704,16 +745,18 @@ class TsarLogViewer:
     def _on_close(self):
         try:
             self._stop_event.set()
+            if hasattr(self, '_attached_loggers'):
+                for lg, handler in self._attached_loggers:
+                    try: 
+                        lg.removeHandler(handler)
+                    except Exception:
+                        pass
             if self.tk_handler:
                 root = logging.getLogger()
                 try:
                     root.removeHandler(self.tk_handler)
                 except Exception:
                     pass
-                for lg in getattr(self, "_attached_loggers", []):
-                    try: lg.removeHandler(self.tk_handler)
-                    except Exception:
-                        pass
             if self._tail_fp:
                 self._tail_fp.close()
         except Exception:
@@ -739,9 +782,25 @@ def start_log_gui(
     root.mainloop()
 
 def launch_gui_in_thread(log_file: Optional[str] = None, attach_to_root: bool = True) -> threading.Thread:
-    t = threading.Thread(target=start_log_gui, args=(log_file or CFG.LOG_PATH, attach_to_root, "Tsar Logging — Minimal GUI"), daemon=True)
+    def gui_wrapper():
+        root = tk.Tk()
+        root.title("Tsar Logging — Minimal GUI")
+        
+        log_queue = queue.Queue()
+        filter_queue = queue.Queue()
+        viewer = TsarLogViewer(root, queue_=log_queue, log_file=log_file, attach_to_root=attach_to_root, filter_queue=filter_queue)
+        root.mainloop()
+    
+    t = threading.Thread(target=gui_wrapper, daemon=True)
     t.start()
     return t
+
+def open_log_toplevel(master, log_file: Optional[str] = None, attach_to_root: bool = False):
+    win = tk.Toplevel(master)
+    win.title("Tsar Logging — Minimal GUI")
+    log_path = log_file or CFG.LOG_PATH
+    TsarLogViewer(win, queue_=queue.Queue(), log_file=log_path, attach_to_root=attach_to_root)
+    return win
 
 def export_log_bundle(path: str = "tsar_logs_bundle.zip") -> Path:
     out = Path(path)

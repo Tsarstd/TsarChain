@@ -15,7 +15,7 @@ from tsarchain.core.block import Block
 from tsarchain.utils import config as CFG
 
 # ---------------- Logger ----------------
-from tsarchain.utils.tsar_logging import launch_gui_in_thread, setup_logging, get_ctx_logger
+from tsarchain.utils.tsar_logging import launch_gui_in_thread, setup_logging, open_log_toplevel, get_ctx_logger
 
 try:
     import psutil
@@ -63,7 +63,7 @@ class BlockchainGUI:
         self.node_alive = threading.Event()
         self.mining_alive = threading.Event()
         self.cancel_mining = None
-        self.gui_log = get_ctx_logger("tsarchain.core.gui")
+        self.gui_log = get_ctx_logger("apps.[miner_gui]")
 
         # theme
         self.bg = "#121212"
@@ -333,7 +333,7 @@ class BlockchainGUI:
     # ---------- Helpers ----------
     def log_print(self, msg: str):
         try:
-            (getattr(self, "gui_log", None) or get_ctx_logger("tsarchain.core.gui")).info(msg)
+            (getattr(self, "gui_log", None) or get_ctx_logger("apps.[miner_gui]")).info(msg)
         except Exception:
             pass
         self.root.after(0, self._log_print_main, msg)
@@ -438,7 +438,10 @@ class BlockchainGUI:
         
     def _open_log_viewer(self):
         log_file = str(CFG.LOG_PATH)
-        launch_gui_in_thread(log_file=log_file, attach_to_root=True)
+        try:
+            open_log_toplevel(self.root, log_file=log_file, attach_to_root=False)
+        except Exception:
+            launch_gui_in_thread(log_file=log_file, attach_to_root=False)
         self.log_print("[Log] Opened Tsar Logging viewer")
 
     # ---------- Node / Mining control ----------
