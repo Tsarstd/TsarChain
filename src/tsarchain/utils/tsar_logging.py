@@ -33,6 +33,24 @@ def _trace(self, msg, *a, **k):
         self._log(TRACE, msg, a, **k)
 logging.Logger.trace = _trace
 
+# --- Module filter helpers -----------------------------------------------
+MODULES = ("consensus", "contracts", "core", "mempool", "network", "storage", "wallet")
+_RE_LOG_PLAIN = re.compile(r"\]\s+[^\s]+\s+([^:]+):\s")
+
+def _module_from_logger_name(name: str | None) -> str | None:
+    if not name:
+        return None
+    base = name.split("(", 1)[0]
+    parts = base.split(".")
+    try:
+        i = parts.index("tsarchain")
+    except ValueError:
+        return None
+    if i + 1 < len(parts):
+        mod = parts[i + 1].strip().lower()
+        return mod if mod in MODULES else None
+    return None
+
 # =========================
 # 0) Defaults & helpers
 # =========================
@@ -269,6 +287,18 @@ class TsarLogViewer:
 
         self.pretty_json = tk.BooleanVar(value=False)
         ttk.Checkbutton(topbar, text="Pretty JSON", variable=self.pretty_json).pack(side=tk.LEFT, padx=(6, 0))
+        
+        # --- Module filter ---
+        ttk.Label(topbar, text="Module").pack(side=tk.LEFT, padx=(16, 4))
+        self.module_filter = tk.StringVar(value="All")
+        ttk.Combobox(
+            topbar,
+            textvariable=self.module_filter,
+            values=["All", *MODULES],
+            state="readonly",
+            width=10,
+        ).pack(side=tk.LEFT)
+        self.module_filter.trace_add("write", lambda *_: self._on_module_change())
 
         ttk.Button(topbar, text="Open File…", command=self.choose_file).pack(side=tk.RIGHT)
 
@@ -316,6 +346,30 @@ class TsarLogViewer:
         self.master.after(100, self._pollqueue)
 
         self.master.protocol("WM_DELETE_WINDOW", self._on_close)
+        
+        
+    # ---------- Filter logic ----------
+    
+    def _category_match(self, module_hint: str | None) -> bool:
+        want = self.module_filter.get() if tk else "All"
+        return (want == "All") or (module_hint == want)
+
+    def _on_module_change(self):
+        self._clear_ui_only()
+        if self.mode_tail and self._tail_fp:
+            try:
+                self._preload_tail_history(self._tail_fp, max_bytes=512_000)
+            except Exception:
+                pass
+
+    def _clear_ui_only(self):
+        for name, _ in self.LEVELS:
+            try:
+                self.text_widgets[name].delete("1.0", tk.END)
+            except Exception:
+                pass
+            self._counts[name] = 0
+            self._update_tab_title(name)
 
     # ---------- Public controls ----------
 
@@ -361,8 +415,8 @@ class TsarLogViewer:
 
             line = fp.readline()
             while line:
-                text, level = self._decode_line(line)
-                self._append_line(text, level_hint=level)
+                text, level, module = self._decode_line(line)
+                self._append_line(text, level_hint=level, module_hint=module)
                 line = fp.readline()
                 
         except Exception:
@@ -519,6 +573,10 @@ class TsarLogViewer:
             self.master.after(250, self._poll_tail)
 
     def _append_record(self, record: logging.LogRecord):
+        module = _module_from_logger_name(getattr(record, "name", None))
+        if not self._category_match(module):
+            return
+
         try:
             msg = self.tk_handler.format(record) if self.tk_handler else logging.Formatter(_DEFAULT_FMT, _DEFAULT_DATEFMT).format(record)
             levelname = record.levelname.upper()
@@ -538,11 +596,7 @@ class TsarLogViewer:
         tab = mapping.get(levelname, "Info")
         self._append(tab, msg, tag=levelname)
         
-    def _decode_line(self, line: str) -> tuple[str, Optional[str]]:
-        """
-        Return (text_to_show, level_name[TitleCase] or None)
-        Hormati pilihan user: Auto / Plain / JSON + Pretty JSON
-        """
+    def _decode_line(self, line: str) -> tuple[str, Optional[str], Optional[str]]:
         mode = self.format_mode.get() if tk else "Auto"
         txt = line.rstrip("\n")
         level = None
@@ -555,7 +609,10 @@ class TsarLogViewer:
                 if token in up:
                     level = name
                     break
-            return s
+            m = _RE_LOG_PLAIN.search(s)
+            logger_name = m.group(1) if m else None
+            module = _module_from_logger_name(logger_name)
+            return s, module
 
         def _from_json(s: str):
             nonlocal level
@@ -564,26 +621,33 @@ class TsarLogViewer:
                 lvl = str(obj.get("lvl", obj.get("level", ""))).upper()
                 if lvl in {"TRACE","DEBUG","INFO","WARNING","ERROR","CRITICAL"}:
                     level = lvl.title()
-                # pretty?
+                logger_name = obj.get("logger", "")
+                module = _module_from_logger_name(str(logger_name))
                 if self.pretty_json.get():
-                    return json.dumps(obj, ensure_ascii=False, indent=2)
-                return json.dumps(obj, ensure_ascii=False)
+                    return json.dumps(obj, ensure_ascii=False, indent=2), module
+                return json.dumps(obj, ensure_ascii=False), module
             except Exception:
-                # fallback ke plain jika gagal parse
-                return _from_plain(s)
+                text, module = _from_plain(s)
+                return text, module
 
         if mode == "Plain":
-            return _from_plain(txt), level
+            text, module = _from_plain(txt)
+            return text, level, module
         elif mode == "JSON":
-            return _from_json(txt), level
+            text, module = _from_json(txt)
+            return text, level, module
         else:  # Auto
-            # coba JSON dahulu, kalau gagal baru Plain
             try:
-                return _from_json(txt), level
+                text, module = _from_json(txt)
+                return text, level, module
             except Exception:
-                return _from_plain(txt), level
+                text, module = _from_plain(txt)
+                return text, level, module
 
-    def _append_line(self, line: str, *, level_hint: Optional[str] = None):
+
+    def _append_line(self, line: str, *, level_hint: Optional[str] = None, module_hint: Optional[str] = None):
+        if not self._category_match(module_hint):
+            return
         tag = (level_hint or "Info").upper()
         self._append("All", line, tag=tag)
         self._append(level_hint or "Info", line, tag=tag)
