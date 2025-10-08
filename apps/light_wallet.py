@@ -176,7 +176,6 @@ class KremlinWalletGUI(WalletsMixin):
             cfg_module=None,
             user_ctx=USER_CTX,
             root=self.root,
-            logger=getattr(self, "log", None),
             pinned_get=lambda nid: WALLET_PEER_KEYS.get(nid),
             pinned_set=lambda nid, pk: (WALLET_PEER_KEYS.__setitem__(nid, pk), _save_peer_keys(WALLET_PEER_KEYS)),
             manual_bootstrap=manual_bootstrap,

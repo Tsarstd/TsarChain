@@ -6,11 +6,16 @@ import json, threading
 import threading, json
 from bech32 import bech32_decode, convertbits
 
+# ---------------- Local Project ----------------
 from ..core.tx import TxOut
 from .db import BaseDatabase
 from .db import AtomicJSONFile
 from ..utils import config as CFG
 from .kv import kv_enabled, iter_prefix, batch, clear_db
+
+# ---------------- Logger ----------------
+from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.storage(utxo)")
 
 
 class UTXODB(BaseDatabase):
@@ -193,6 +198,7 @@ class UTXODB(BaseDatabase):
     def _is_unspendable_opreturn(self, tx_out) -> bool:
         try:
             spk = getattr(tx_out, "script_pubkey", None)
+            log.debug("[_is_unspendable_opreturn] Checking scriptPubKey for OP_RETURN: %s", spk)
             if spk is None:
                 return False
             if hasattr(spk, "serialize"):
@@ -200,12 +206,12 @@ class UTXODB(BaseDatabase):
             elif isinstance(spk, (bytes, bytearray)):
                 b = bytes(spk)
             elif isinstance(spk, str):
-                # kemungkinan hex
                 b = bytes.fromhex(spk)
             else:
                 return False
             return len(b) >= 1 and b[0] == 0x6A  # OP_RETURN
         except Exception:
+            log.exception("[_is_unspendable_opreturn] Error checking OP_RETURN in scriptPubKey")
             return False
 
     def update(self, transactions, block_height: int):
@@ -359,6 +365,7 @@ class UTXODB(BaseDatabase):
                     if not m:
                         snapshot.pop(prev_txid_hex, None)
                 except Exception:
+                    log.exception("[apply_tx_to_utxoset] Error removing prevout from dict")
                     pass
                 return True
             removed = False
@@ -375,6 +382,7 @@ class UTXODB(BaseDatabase):
                         try:
                             snapshot.pop(addr, None)
                         except Exception:
+                            log.exception("[apply_tx_to_utxoset] Error removing empty address bucket")
                             pass
             return removed
         
@@ -385,27 +393,40 @@ class UTXODB(BaseDatabase):
                 if len(b) >= 1 and b[0] == 0x6A:
                     continue
             except Exception:
+                log.exception("[apply_tx_to_utxoset] Error checking OP_RETURN in scriptPubKey")
                 pass
 
         def _insert_output(snapshot: dict, txid_hex: str, n: int, entry: dict, address: str | None):
             layout = None
             for k, v in snapshot.items():
                 if isinstance(k, tuple) and len(k) == 2:
-                    layout = "flat_tuple"; break
+                    layout = "flat_tuple"
+                    break
+                
                 if isinstance(v, dict) and all(isinstance(_, int) for _ in v.keys()):
-                    layout = "per_txid_dict"; break
+                    layout = "per_txid_dict"
+                    break
+                
                 if isinstance(v, list):
-                    layout = "per_address_list"; break
+                    layout = "per_address_list"
+                    break
+                
             if layout == "flat_tuple":
-                snapshot[(txid_hex, int(n))] = entry; return
+                snapshot[(txid_hex, int(n))] = entry
+                return
+            
             if layout == "per_txid_dict":
                 bucket = snapshot.setdefault(txid_hex, {})
                 if isinstance(bucket, dict):
-                    bucket[int(n)] = entry; return
+                    bucket[int(n)] = entry
+                    return
+                
             if layout == "per_address_list" and address:
                 bucket = snapshot.setdefault(address, [])
                 if isinstance(bucket, list):
-                    bucket.append(entry); return
+                    bucket.append(entry)
+                    return
+                
             snapshot[(txid_hex, int(n))] = entry
 
         is_coinbase = bool(getattr(tx, "is_coinbase", False))
@@ -428,6 +449,7 @@ class UTXODB(BaseDatabase):
                 if len(b) >= 1 and b[0] == 0x6A:
                     continue
             except Exception:
+                log.exception("[apply_tx_to_utxoset] Error checking OP_RETURN in scriptPubKey")
                 pass
 
             amount = int(getattr(txout, "amount", 0))

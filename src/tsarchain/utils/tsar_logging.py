@@ -68,8 +68,12 @@ def _ensure_log_file(path: Path) -> None:
 # 1) Core logging setup
 # =========================
 
-_DEFAULT_FMT = "%(asctime)s [%(levelname)s] %(processName)s %(name)s: %(message)s"
+if CFG.LOG_SHOW_PROCESS:
+    _DEFAULT_FMT = "%(asctime)s [%(levelname)s] %(processName)s %(name)s: %(message)s"
+else:
+    _DEFAULT_FMT = f"%(asctime)s [%(levelname)s] {CFG.LOG_PROC_PLACEHOLDER} %(name)s: %(message)s"
 _DEFAULT_DATEFMT = "%Y-%m-%d %H:%M:%S"
+
 
 class RedactFilter(logging.Filter):
     RE_SEED = re.compile(r"\b([a-z]{3,}\s){11,23}[a-z]{3,}\b", re.I)
@@ -102,7 +106,7 @@ class JsonFormatter(logging.Formatter):
             "ts": self.formatTime(record, _DEFAULT_DATEFMT),
             "lvl": record.levelname,
             "logger": record.name,
-            "proc": record.processName,
+            "proc": (record.processName if CFG.LOG_SHOW_PROCESS else CFG.LOG_PROC_PLACEHOLDER),
             "msg": record.getMessage(),
         }
         for k in ("height", "block", "peer"):

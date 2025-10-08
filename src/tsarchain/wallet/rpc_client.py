@@ -4,17 +4,37 @@
 # Refs: see REFERENCES.md
 from __future__ import annotations
 
-import json
-import socket
-import threading
-import time
+import json, socket, threading, time, logging, secrets
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 import tkinter as tk
 
 # ---------------- Local Project (With Node) ----------------
-from tsarchain.network.protocol import (send_message, recv_message,build_envelope, verify_and_unwrap, is_envelope, SecureChannel,)
+from tsarchain.network.protocol import send_message, recv_message,build_envelope, verify_and_unwrap, is_envelope, SecureChannel
 from ..utils import config as CFG
 
+# ---------------- Logger ----------------
+from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.wallet(rpc_client)")
+
+_last_log_gate = {}
+
+def _preview(obj, limit=1000):
+    try:
+        s = json.dumps(obj, default=str)
+    except Exception:
+        s = str(obj)
+    return (s[:limit] + "…") if len(s) > limit else s
+
+def _mk_extra(peer=None, rpc=None, req=None):
+    return {"peer": peer or "-", "rpc": rpc or "-", "req": req or "-"}
+
+def _throttle(key: str, interval_sec: float) -> bool:
+    now = time.time()
+    last = _last_log_gate.get(key, 0.0)
+    if now - last >= interval_sec:
+        _last_log_gate[key] = now
+        return True
+    return False
 
 
 class NodeClient:
@@ -53,7 +73,6 @@ class NodeClient:
         cfg_module,
         user_ctx: Dict[str, Any],
         root: Optional["tk.Misc"]=None,
-        logger: Optional[Any]=None,
         pinned_get: Optional[Callable[[str], Optional[str]]] = None,
         pinned_set: Optional[Callable[[str, str], None]] = None,
         manual_bootstrap: Optional[Tuple[str, int]] = None,
@@ -65,7 +84,6 @@ class NodeClient:
         self.user_pub = str(user_ctx.get("pubkey", ""))
         self.user_priv = str(user_ctx.get("privkey", ""))
         self.root = root
-        self.log = logger
         self.pinned_get = pinned_get or (lambda _nid: None)
         self.pinned_set = pinned_set or (lambda _nid, _pk: None)
         self.manual_bootstrap = manual_bootstrap
@@ -73,13 +91,9 @@ class NodeClient:
         self.dir = self._Dir(ttl=CFG.NODE_CACHE_TTL)
 
     # ----------- Discovery -----------
-    def scan(self,
-             start: int = CFG.PORT_START,
-             end: int = CFG.PORT_END,
-             manual_nodes: Optional[Sequence[Tuple[str, int]]] = None
-             ) -> List[Tuple[str, int]]:
+    def scan(self, start: int = CFG.PORT_START, end: int = CFG.PORT_END, manual_nodes: Optional[Sequence[Tuple[str, int]]] = None) -> List[Tuple[str, int]]:
         candidates: List[Tuple[str, int]] = []
-        
+
         if self.manual_bootstrap:
             candidates.append(self.manual_bootstrap)
         if manual_nodes:
@@ -91,17 +105,21 @@ class NodeClient:
 
         uniq: List[Tuple[str, int]] = []
         seen = set()
+        log.trace("[scan] Scanning %d candidates", len(candidates))
         for item in candidates:
             if item not in seen:
                 seen.add(item)
                 uniq.append(item)
 
         found: List[Tuple[str, int]] = []
+        n_timeout = n_refused = n_other = 0
+
         for ip, port in uniq:
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.settimeout(CFG.CONNECT_TIMEOUT_SCAN)
                     s.connect((ip, port))
+
                     ping_env = build_envelope({"type": "PING"}, self.user_ctx, extra={"pubkey": self.user_pub})
                     resp = None
                     try:
@@ -119,6 +137,7 @@ class NodeClient:
                             raise
                         send_message(s, json.dumps(ping_env).encode("utf-8"))
                         resp = recv_message(s, timeout=CFG.CONNECT_TIMEOUT_SCAN)
+
                     if not resp:
                         continue
                     outer = json.loads(resp.decode("utf-8"))
@@ -136,11 +155,37 @@ class NodeClient:
                                 continue
                             found.append((ip, port))
                             continue
-            except Exception:
+
+            except (TimeoutError, socket.timeout):
+                n_timeout += 1
                 continue
+            
+            except ConnectionRefusedError:
+                n_refused += 1
+                continue
+            
+            except OSError as e:
+                n_other += 1
+                if log.isEnabledFor(logging.DEBUG):
+                    log.debug("[scan] os error for %s:%d: %s", ip, port, e)
+                continue
+            
+            except Exception:
+                n_other += 1
+                log.exception("[scan] unexpected scan error for %s:%d", ip, port)
+                continue
+
         if found:
             self.dir.set(found)
+
+        level = logging.DEBUG if found else logging.INFO
+        log.log(
+            level,
+            "[scan] done: %d node(s) found, %d timeout, %d refused, %d other over %d candidates",
+            len(found), n_timeout, n_refused, n_other, len(uniq)
+        )
         return found
+
 
     # ----------- Core Send -----------
     def _try_send_one(self, peer: Tuple[str, int], message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -162,6 +207,8 @@ class NodeClient:
             except Exception:
                 if CFG.P2P_ENC_REQUIRED and not CFG.ALLOW_RPC_PLAINTEXT:
                     raise
+                log.warning("[_try_send_one] secure handshake failed, fallback to plaintext", extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type")))
+                
                 send_message(s, json.dumps(env).encode("utf-8"))
                 resp = recv_message(s, timeout=CFG.RPC_TIMEOUT)
 
@@ -170,59 +217,70 @@ class NodeClient:
             outer = json.loads(resp.decode("utf-8"))
             if is_envelope(outer):
                 try:
-                    inner = verify_and_unwrap(outer, get_pubkey_by_nodeid=None)
+                    inner = verify_and_unwrap(...)
                     self.dir.mark_good(peer)
                     return inner
                 except Exception:
                     if CFG.ENVELOPE_REQUIRED:
+                        log.warning("[_try_send_one] envelope verify failed (REQUIRED) -> drop", extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type")))
                         return None
                     self.dir.mark_good(peer)
                     return outer
             else:
                 if CFG.ENVELOPE_REQUIRED:
+                    log.warning("[_try_send_one] plaintext response but ENVELOPE_REQUIRED -> drop", extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type")))
                     return None
                 self.dir.mark_good(peer)
                 return outer
 
     def send(self, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        req = secrets.token_hex(6)
         peers = self.dir.get() or self.scan()
         if not peers:
+            if _throttle("no_peers", 10.0):
+                log.warning("[send] no peers", extra=_mk_extra(req=req, rpc=message.get("type")))
             return {"error": "No peers"}
+
         for round_idx in (0, 1):
             targets = peers if round_idx == 0 else self.scan()
             for peer in targets:
                 try:
+                    if log.isEnabledFor(logging.DEBUG):
+                        log.debug("[send] -> sending", extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type"), req))
                     resp = self._try_send_one(peer, message)
                     if resp is not None:
+                        if log.isEnabledFor(logging.DEBUG):
+                            log.debug("[send] <- received %s", _preview(resp), extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type"), req))
                         return resp
                 except Exception:
+                    if _throttle(f"send_err_{peer}", 5.0):
+                        log.exception("[send] send error", extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type"), req))
                     continue
+
+        if _throttle("no_response", 10.0):
+            log.error("[send] no response from any node", extra=_mk_extra(req=req, rpc=message.get("type")))
         return {"error": "No response from any node"}
 
-    def send_async(self, message: Dict[str, Any],
-                   callback: Callable[[Optional[Dict[str, Any]]], None]) -> None:
+    def send_async(self, message: Dict[str, Any], callback: Callable[[Optional[Dict[str, Any]]], None]) -> None:
         def _safe_ui_callback(resp: Optional[Dict[str, Any]]) -> None:
             try:
                 callback(resp)
-            except Exception as e:
-                if self.log:
-                    try:
-                        self.log.error("Callback error: %s", e)
-                    except Exception:
-                        pass
+            except Exception:
+                log.exception("[send_async] Async callback error")
+                pass
 
         def worker():
-            if self.log:
-                try:
-                    self.log.debug("[Node] sending: %s", message)
-                except Exception:
-                    pass
+            try:
+                log.trace("[send_async] sending: %s", message)
+            except Exception:
+                log.exception("[send_async] Logging error")
+                pass
             resp = self.send(message)
-            if self.log:
-                try:
-                    self.log.debug("[Node] response: %s", resp)
-                except Exception:
-                    pass
+            try:
+                log.trace("[send_async] received: %s", resp)
+            except Exception:
+                log.exception("[send_async] Logging error")
+                pass
 
             root = self.root or (tk._get_default_root() if tk else None)
             if root is not None:

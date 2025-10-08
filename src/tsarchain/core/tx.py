@@ -4,10 +4,14 @@
 # Refs: BIP143; BIP141; libsecp256k1; LowS-Policy
 from ecdsa import SECP256k1, SigningKey
 
+# ---------------- Local Project ----------------
 from ..utils.helpers import Script
 from ..utils.helpers import (util_compute_txid, util_compute_wtxid, SIGHASH_ALL, bip143_sig_hash, to_bytes, is_p2pkh, is_p2wpkh, is_p2wsh, is_p2sh,
                              count_sigops_in_script, last_pushdata, sign_digest_der_low_s_strict)
 
+# ---------------- Logger ----------------
+from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.core(tx)")
 
 class Tx:
     def __init__(self, version: int = 1, locktime: int = 0, txid: bytes = None, is_coinbase: bool = False, inputs=None, outputs=None, auto_compute_txid: bool = True):
@@ -42,8 +46,9 @@ class Tx:
         total_in = sum(int(a) for a in input_amounts)
         total_out = sum(int(getattr(out, "amount", 0) or 0) for out in self.outputs)
         fee = total_in - total_out
+        log.debug("Computed fee: %s (in=%s out=%s)", fee, total_in, total_out)
         if fee < 0:
-            raise ValueError("Output lebih besar dari input, fee negatif")
+            raise ValueError("Output is greater than input, negative costs")
 
         self.fee = fee
         return fee
@@ -63,7 +68,7 @@ class Tx:
         else:
             raise TypeError("prev_output must be TxOut, Script, or bytes")
         if not (len(script_pubkey_bytes) >= 22 and script_pubkey_bytes[0] == 0x00 and script_pubkey_bytes[1] == 0x14):
-            raise ValueError("Bukan scriptPubKey P2WPKH")
+            raise ValueError("Not a P2WPKH")
 
         pubkey_hash = script_pubkey_bytes[2:22]
         script_code = b"\x19\x76\xa9\x14" + pubkey_hash + b"\x88\xac"
@@ -73,6 +78,8 @@ class Tx:
         sk = SigningKey.from_string(bytes.fromhex(priv_key_hex), curve=SECP256k1)
         der = sign_digest_der_low_s_strict(sk, z)
         sig = der + bytes([SIGHASH_ALL])
+        
+        log.debug("Signature for input %d: %s", index, sig.hex())
 
         vk = sk.get_verifying_key()
         try:
@@ -125,7 +132,8 @@ class Tx:
                     add = 1
 
             total += int(add)
-
+            
+        log.debug("Total sigops: %d", total)
         return int(total)
 
 

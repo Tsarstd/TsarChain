@@ -283,9 +283,8 @@ def merkle_root(transactions):
         for i in range(0, len(layer), 2):
             nxt.append(hash256(layer[i] + layer[i + 1]))
         layer = nxt
+    log.debug("[merkle_root] computed: %s", layer[0].hex())
     return layer[0]
-
-
 
 # --- Compact bits <-> target (kanonik & unsigned) ---
 

@@ -17,8 +17,8 @@ MODE = "dev"   # "dev" | "prod"
 IS_DEV = (MODE.lower() == "dev")      
 
 # ===== Dev & Prod network toggle =====
-PORT_RANGE_DEV     = (38169, 38175)
-PORT_RANGE_PROD    = (40196, 40200)          
+PORT_RANGE_DEV     = (38169, 38178)
+PORT_RANGE_PROD    = (40196, 40205)          
 
 BOOTSTRAP_DEV      = ("127.0.0.1", 38169)
 BOOTSTRAP_PROD     = ("127.0.0.1", 40196)
@@ -270,7 +270,8 @@ LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # 64 GiB
 # LOGGING SETTINGS
 # =============================================================================
 LOG_PATH = "data/logging/tsarchain.log"
-
+LOG_SHOW_PROCESS = False
+LOG_PROC_PLACEHOLDER = "-"
 
 # === MODE based profile ===
 if IS_DEV:
