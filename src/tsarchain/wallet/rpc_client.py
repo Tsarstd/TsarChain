@@ -217,7 +217,7 @@ class NodeClient:
             outer = json.loads(resp.decode("utf-8"))
             if is_envelope(outer):
                 try:
-                    inner = verify_and_unwrap(...)
+                    inner = verify_and_unwrap(outer, get_pubkey_by_nodeid=None)
                     self.dir.mark_good(peer)
                     return inner
                 except Exception:
