@@ -31,10 +31,14 @@ from tsarchain.wallet.data_security import list_addresses_in_keystore
 from tsarchain.wallet.ui_utils import center_window
 
 # ---------------- Local Project (With Node) ----------------
+import tsarcore_native as native
 from tsarchain.network.protocol import load_or_create_keypair_at
 from tsarchain.storage.kv import kv_enabled, iter_prefix, batch
 from tsarchain.utils import config as CFG
-from tsarchain.utils.tsar_logging import launch_gui_in_thread, setup_logging, open_log_toplevel
+
+# ---------------- Logger ----------------
+from tsarchain.utils.tsar_logging import launch_gui_in_thread, setup_logging, open_log_toplevel, get_ctx_logger
+native.set_py_logger(get_ctx_logger("tsarchain.native"))
 
 # ---------------- Constants & Paths ----------------
 

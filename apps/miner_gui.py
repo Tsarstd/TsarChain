@@ -9,6 +9,7 @@ import threading, time, re
 import multiprocessing as mp
 
 # ---------------- Local Project ----------------
+import tsarcore_native as native
 from tsarchain.consensus.blockchain import Blockchain
 from tsarchain.network.node import Network
 from tsarchain.core.block import Block
@@ -16,6 +17,7 @@ from tsarchain.utils import config as CFG
 
 # ---------------- Logger ----------------
 from tsarchain.utils.tsar_logging import launch_gui_in_thread, setup_logging, open_log_toplevel, get_ctx_logger
+native.set_py_logger(get_ctx_logger("tsarchain.native"))
 
 try:
     import psutil

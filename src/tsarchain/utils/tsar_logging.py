@@ -35,7 +35,7 @@ def _trace(self, msg, *a, **k):
 logging.Logger.trace = _trace
 
 # --- Module filter helpers ---
-MODULES = ("consensus", "contracts", "core", "mempool", "network", "storage", "utils", "wallet")
+MODULES = ("consensus", "contracts", "core", "mempool", "network", "storage", "utils", "wallet", "native")
 _RE_LOG_PLAIN = re.compile(r"\]\s+[^\s]+\s+([^:]+):\s")
 
 def _module_from_logger_name(name: str | None) -> str | None:
