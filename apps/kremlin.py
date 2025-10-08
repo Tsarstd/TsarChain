@@ -38,7 +38,6 @@ from tsarchain.utils import config as CFG
 
 # ---------------- Logger ----------------
 from tsarchain.utils.tsar_logging import launch_gui_in_thread, setup_logging, open_log_toplevel, get_ctx_logger
-native.set_py_logger(get_ctx_logger("tsarchain.native"))
 
 # ---------------- Constants & Paths ----------------
 
@@ -2054,6 +2053,7 @@ if __name__ == "__main__":
     os.umask(0o077)
 
     setup_logging(force=True)
+    native.set_py_logger(get_ctx_logger("tsarchain.native"))
 
     root = tk.Tk()
     try:
