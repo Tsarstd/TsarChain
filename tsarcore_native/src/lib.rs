@@ -14,6 +14,9 @@
 //! pip uninstall -y tsarcore_native
 //! cargo clean
 
+use pyo3::sync::GILOnceCell;
+use std::time::Instant;
+use pyo3::{Py};
 use pyo3::prelude::*;
 use pyo3::exceptions;
 use pyo3::types::{PyModule, PyAny, PyBytes, PyIterator, PyList, PyTuple};
@@ -22,6 +25,39 @@ use sha2::{Sha256, Digest};
 use ripemd::Ripemd160;
 use secp256k1::{Secp256k1, Message, PublicKey};
 use secp256k1::ecdsa::Signature;
+
+
+// ---------------------
+// Logger (from Python)
+// ---------------------
+static PY_LOGGER: GILOnceCell<Py<PyAny>> = GILOnceCell::new();
+
+#[pyfunction]
+fn set_py_logger(logger: Bound<'_, PyAny>) -> PyResult<()> {
+    Python::with_gil(|py| {
+        let _ = PY_LOGGER.set(py, logger.unbind());
+        Ok(())
+    })
+}
+
+fn py_logger_call(level: &str, msg: &str) {
+    Python::with_gil(|py| {
+        if let Some(handle) = PY_LOGGER.get(py) {
+            let logger = handle.bind(py);
+            let _ = logger.call_method(level, (msg,), None);
+        }
+    });
+}
+
+// Shortcut level
+#[inline] fn log_trace(msg: &str)    { py_logger_call("trace", msg); }
+#[inline] fn log_debug(msg: &str)    { py_logger_call("debug", msg); }
+#[inline] fn log_info(msg: &str)     { py_logger_call("info",  msg); }
+#[inline] fn log_warning(msg: &str)  { py_logger_call("warning", msg); }
+#[inline] fn log_error(msg: &str)    { py_logger_call("error", msg); }
+#[inline] fn log_critical(msg: &str) { py_logger_call("critical", msg); }
+
+
 
 // ---------------------
 // Script / Sigops utils
@@ -42,6 +78,7 @@ fn small_int(op: u8) -> Option<u32> {
     if (OP_1..=0x60).contains(&op) {
         return Some((op - OP_1 + 1) as u32);
     }
+    log_trace(&format!("small_int: unknown opcode 0x{:x}", op));
     None
 }
 
@@ -57,6 +94,7 @@ fn parse_pubkey_any(bytes: &[u8]) -> Option<PublicKey> {
             return Some(pk);
         }
     }
+    log_warning(&format!("parse_pubkey_any: invalid public key bytes: {:?}", bytes));
     None
 }
 
@@ -108,6 +146,7 @@ fn parse_ops(script: &[u8]) -> Vec<(Option<u8>, bool, usize)> {
             v.push((Some(op), false, 0));
         }
     }
+    log_info(&format!("parse_ops: parsed {} ops from script", v.len()));
     v
 }
 
@@ -141,12 +180,14 @@ fn count_sigops(script: &[u8]) -> PyResult<u32> {
             }
         }
     }
+    log_error(&format!("sigops count: {}", total));
     Ok(total)
 }
 
 #[pyfunction]
 fn hash256<'py>(py: Python<'py>, data: &'py [u8]) -> PyResult<Bound<'py, PyBytes>> {
     let h = sha256d(data);
+    log_debug(&format!("hash256: input len={}, output={:x?}", data.len(), h));
     Ok(PyBytes::new_bound(py, &h))
 }
 
@@ -154,6 +195,7 @@ fn hash256<'py>(py: Python<'py>, data: &'py [u8]) -> PyResult<Bound<'py, PyBytes
 fn hash160<'py>(py: Python<'py>, data: &'py [u8]) -> PyResult<Bound<'py, PyBytes>> {
     let sha = Sha256::digest(data);
     let ripe = Ripemd160::digest(&sha);
+    log_debug(&format!("hash160: input len={}, output={:x?}", data.len(), ripe));
     Ok(PyBytes::new_bound(py, &ripe))
 }
 
@@ -194,6 +236,7 @@ fn secp_verify_der_low_s(pubkey: &[u8], digest32: &[u8], der_sig: &[u8]) -> PyRe
     };
 
     let secp = Secp256k1::verification_only();
+    log_critical(&format!("Verifying message: {:?}", msg));
     Ok(secp.verify_ecdsa(&msg, &norm, &pk).is_ok())
 }
 
@@ -467,6 +510,7 @@ fn secp_verify_der_low_s_many<'py>(
     enforce_low_s: bool,
     parallel: bool,
 ) -> PyResult<Bound<'py, PyList>> {
+    let t0 = Instant::now();
     let ctx = Secp256k1::verification_only();
     let iter = PyIterator::from_bound_object(&triples)?;
 
@@ -534,6 +578,17 @@ fn secp_verify_der_low_s_many<'py>(
         tasks.iter().map(|(pk,d32,sg)| verify_one(pk,d32,sg)).collect()
     };
 
+    // === Logging ===
+    let total = results.len();
+    let ok = results.iter().filter(|b| **b).count();
+    let fail = total.saturating_sub(ok);
+    let dur_ms = t0.elapsed().as_millis();
+
+    log_debug(&format!(
+        "verify_many items={} ok={} fail={} parallel={} dur_ms={}",
+        total, ok, fail, use_parallel, dur_ms
+    ));
+
     Ok(PyList::new_bound(py, results))
 }
 
@@ -543,45 +598,66 @@ fn secp_verify_der_low_s_many<'py>(
 
 #[pyfunction]
 fn merkle_root<'py>(py: Python<'py>, txids_any: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
+    let t0 = Instant::now();
     let iter = PyIterator::from_bound_object(&txids_any)?;
     let mut layer: Vec<[u8; 32]> = Vec::new();
 
     for item in iter {
         let obj: Bound<'py, PyAny> = item?;
-        let b: Vec<u8> = obj.extract()?;
-        if b.len() != 32 {
-            return Err(PyErr::new::<exceptions::PyValueError, _>("each txid must be 32 bytes"));
+        let b: &Bound<'py, PyBytes> = obj.downcast()?;
+        let raw = b.as_bytes();
+        if raw.len() != 32 {
+            return Err(PyErr::new::<exceptions::PyValueError, _>("txid must be 32 bytes"));
         }
-        let mut a = [0u8; 32];
-        a.copy_from_slice(&b);
-        layer.push(a);
+        let mut d = [0u8; 32];
+        d.copy_from_slice(raw);
+        layer.push(d);
     }
 
     if layer.is_empty() {
         return Ok(PyBytes::new_bound(py, &[0u8; 32]));
     }
-
     if layer.len() == 1 {
         return Ok(PyBytes::new_bound(py, &layer[0]));
     }
+
+    let leaves = layer.len();
+    let mut rounds: usize = 0;
+    let mut dupes: usize = 0;
 
     while layer.len() > 1 {
         let mut next = Vec::with_capacity((layer.len() + 1) / 2);
         let mut i = 0usize;
         while i < layer.len() {
             let left = layer[i];
-            let right = if i + 1 < layer.len() { layer[i + 1] } else { layer[i] };
+            let right;
+            if i + 1 < layer.len() {
+                right = layer[i + 1];
+            } else {
+                right = layer[i];
+                dupes += 1;
+            }
             let mut cat = [0u8; 64];
             cat[..32].copy_from_slice(&left);
             cat[32..].copy_from_slice(&right);
-            next.push(sha256d(&cat));
+            let h = sha256d(&cat);
+            next.push(h);
             i += 2;
         }
         layer = next;
+        rounds += 1;
     }
+
+    let dur_ms = t0.elapsed().as_millis();
+
+    log_debug(&format!(
+        "merkle_root leaves={} rounds={} dupes={} dur_ms={}",
+        leaves, rounds, dupes, dur_ms
+    ));
 
     Ok(PyBytes::new_bound(py, &layer[0]))
 }
+
 
 // ---------------
 // Module binding
@@ -595,5 +671,6 @@ fn tsarcore_native(_py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hash256, m)?)?;
     m.add_function(wrap_pyfunction!(hash160, m)?)?;
     m.add_function(wrap_pyfunction!(secp_verify_der_low_s_many, m)?)?;
+    m.add_function(wrap_pyfunction!(set_py_logger, m)?)?;
     Ok(())
 }
