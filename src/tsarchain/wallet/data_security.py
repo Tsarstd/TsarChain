@@ -4,7 +4,7 @@
 # Refs: BIP173; BIP39; libsecp256k1
 
 import os, json, hashlib, base64, appdirs, time, re
-from typing import Dict, Tuple
+from typing import Dict
 from ecdsa import SECP256k1, SigningKey
 from bech32 import bech32_encode, convertbits
 from mnemonic import Mnemonic
@@ -70,16 +70,64 @@ def decrypt_wallet_file(encrypted_data: bytes, master_password: str) -> dict:
     return json.loads(decrypted_data.decode())
 
 
-# ---------------- KDF + AES helpers ----------------
-def load_or_create_chat_dh_key(addr: str) -> Tuple[str, str]:
-    p = os.path.join(_CHAT_KEYS_DIR, f"{addr.lower()}.json")
+# ---------------- Chat DH key (with optional encryption) ----------------
+
+def _chat_key_path(addr: str) -> str:
+    return os.path.join(_CHAT_KEYS_DIR, f"{addr.lower()}.json")
+
+def load_or_create_chat_dh_key(addr: str, password_provider=None) -> tuple[str, str]:
+    p = _chat_key_path(addr)
     if os.path.exists(p):
         with open(p, "r", encoding="utf-8") as f:
             obj = json.load(f)
-            return obj["sk_hex"], obj["pk_hex"]
+            
+        if isinstance(obj, dict) and "enc" in obj and "pk_hex" in obj:
+            enc_blob = obj["enc"]; pk_hex = obj["pk_hex"]
+            if not callable(password_provider):
+                raise ValueError("Password required to unlock chat key")
+            
+            pwd = password_provider("Enter wallet password to unlock chat key")
+            if not pwd:
+                raise ValueError("Unlock canceled")
+            
+            sk_hex = decrypt_privkey(enc_blob, pwd)
+            return sk_hex, pk_hex
+        # legacy plaintext
+        if "sk_hex" in obj and "pk_hex" in obj:
+            sk_hex, pk_hex = obj["sk_hex"], obj["pk_hex"]
+            try:
+                if callable(password_provider):
+                    pwd = password_provider("Set password to encrypt your chat key (recommended)")
+                    if pwd:
+                        enc = encrypt_privkey(sk_hex, pwd)
+                        with open(p, "w", encoding="utf-8") as f:
+                            json.dump({"version": 1, "pk_hex": pk_hex, "enc": enc}, f, indent=2)
+                        return sk_hex, pk_hex
+            except Exception:
+                pass
+            try:
+                os.chmod(p, 0o600)
+            except Exception:
+                pass
+            return sk_hex, pk_hex
+        raise ValueError("Corrupted chat key file")
+
     sk_hex, pk_hex = chat_dh_gen_keypair()
+    if callable(password_provider):
+        pwd = password_provider("Create password to encrypt your chat key (recommended)")
+        if pwd:
+            enc = encrypt_privkey(sk_hex, pwd)
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump({"version": 1, "pk_hex": pk_hex, "enc": enc}, f, indent=2)
+            return sk_hex, pk_hex
+        
     with open(p, "w", encoding="utf-8") as f:
         json.dump({"sk_hex": sk_hex, "pk_hex": pk_hex}, f, indent=2)
+    try:
+        os.chmod(p, 0o600)
+    except Exception:
+        pass
+    
     return sk_hex, pk_hex
 
 def chat_dh_gen_keypair() -> tuple[str, str]:

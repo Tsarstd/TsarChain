@@ -2,11 +2,13 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173; libsecp256k1
+
 import time, secrets, base64
 from typing import TYPE_CHECKING, Any, Optional
 from bech32 import convertbits, bech32_decode
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import hashes
+from cryptography.exceptions import InvalidSignature
 
 # ---------------- Local Project ----------------
 from ..utils.helpers import hash160
@@ -348,6 +350,11 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
     elif mtype == "CHAT_REGISTER":
         addr_s   = (message.get("address")  or "").strip().lower()
         chat_pub = ((message.get("chat_pub") or message.get("pubkey") or "").strip().lower())
+        
+        presence_sig = (message.get("presence_sig") or "").strip().lower()
+        if not presence_sig:
+            return {"error": "presence_sig_required"}
+        
         spend_pk = (message.get("spend_pub") or "").strip().lower()
         reg_sig  = (message.get("reg_sig")  or "")
         ts_val   = int(message.get("ts", 0))
@@ -387,6 +394,21 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             return {"error": "addr decode failed"}
         try:
             pub_obj = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(spend_pk))
+            # signature presence verification
+            pres_bytes = b"|".join([
+                b"CHAT_PRESENCE",
+                addr_s.encode(),
+                bytes.fromhex(chat_pub),
+                bytes.fromhex(spend_pk),
+                str(ts_val).encode()
+            ])
+            try:
+                pub_obj.verify(bytes.fromhex(presence_sig), pres_bytes, ec.ECDSA(hashes.SHA256()))
+            except InvalidSignature:
+                return {"error": "bad_presence_sig"}
+            except Exception:
+                return {"error": "presence_sig_verify_failed"}
+            
             reg_bytes = b"|".join([
                 b"CHAT_REG",
                 addr_s.encode(),
@@ -395,16 +417,18 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
                 str(int(ts_val)).encode()
             ])
             pub_obj.verify(bytes.fromhex(reg_sig), reg_bytes, ec.ECDSA(hashes.SHA256()))
+            
         except Exception:
             log.exception("[process_message] CHAT_REGISTER bad reg_sig from %s", addr)
             return {"error": "bad reg_sig"}
+        
         now = time.time()
         pid = secrets.token_hex(16)
         with self.chat_lock:
             self.chat_spend_pub[addr_s] = spend_pk
             self.chat_presence_pub[addr_s] = chat_pub
             self.chat_presence_seen.add(pid)
-        pres = {"pid": pid, "address": addr_s, "pubkey": chat_pub, "ts": int(now), "hops": 0}
+        pres = {"pid": pid, "address": addr_s, "pubkey": chat_pub, "spend_pub": spend_pk, "presence_sig": presence_sig, "ts": int(now), "hops": 0}
         try:
             self._relay_presence_async(pres, exclude=addr)
         except Exception:
@@ -424,6 +448,8 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
     elif mtype == "CHAT_PRESENCE":
         addr_s = (message.get("address") or "").strip().lower()
         pubhex = (message.get("pubkey")  or "").strip().lower()
+        spend_pk = (message.get("spend_pub") or "").strip().lower()
+        presence_sig = (message.get("presence_sig") or "").strip().lower()
         hops   = int(message.get("hops") or 0)
         ts_val = int(message.get("ts")   or 0)
         ip     = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
@@ -431,6 +457,31 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         if abs(time.time() - ts_val) > CFG.PRESENCE_TTL_S:
             log.debug("[process_message] CHAT_PRESENCE stale ts from %s", addr)
             return {"error": "presence_stale"}
+        
+        # signature presence verification
+        if not (pubhex and spend_pk and presence_sig):
+            return {"error": "presence_missing_fields"}
+        if not (len(pubhex) == 64 and all(c in "0123456789abcdef" for c in pubhex)):
+            return {"error": "presence_bad_pub"}
+        if not (len(spend_pk) == 66 and all(c in "0123456789abcdef" for c in spend_pk)):
+            return {"error": "presence_bad_spend_pub"}
+        try:
+            hrp, data = bech32_decode(addr_s)
+            if hrp != CFG.ADDRESS_PREFIX or not data:
+                return {"error": "presence_bad_hrp"}
+            prog = bytes(convertbits(data[1:], 5, 8, False))
+            if len(prog) != 20:
+                return {"error": "presence_bad_prog"}
+            if hash160(bytes.fromhex(spend_pk)) != prog:
+                return {"error": "presence_addr_mismatch"}
+        except Exception:
+            return {"error": "presence_addr_decode_failed"}
+        try:
+            vk = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(spend_pk))
+            pres_bytes = b"|".join([b"CHAT_PRESENCE", addr_s.encode(), bytes.fromhex(pubhex), bytes.fromhex(spend_pk), str(ts_val).encode()])
+            vk.verify(bytes.fromhex(presence_sig), pres_bytes, ec.ECDSA(hashes.SHA256()))
+        except Exception:
+            return {"error": "presence_bad_sig"}
         
         if hops >= CFG.PRESENCE_MAX_HOPS:
             log.debug("[process_message] CHAT_PRESENCE max hops from %s", addr)
@@ -444,11 +495,8 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             
         pid = message.get("pid") or secrets.token_hex(16)
         with self.chat_lock:
-            if pubhex:
-                self.chat_presence_pub[addr_s] = pubhex
-            sp = (message.get("spend_pub") or "").strip().lower()
-            if sp:
-                self.chat_spend_pub[addr_s] = sp
+            self.chat_presence_pub[addr_s] = pubhex
+            self.chat_spend_pub[addr_s] = spend_pk
             self.chat_presence_seen.add(pid)
 
         message["hops"] = hops + 1
@@ -467,6 +515,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         enc = message.get("enc")
         mid = message.get("msg_id")
         ts  = int(message.get("ts") or 0)
+        chat_sig = (message.get("chat_sig") or "").strip().lower()
 
         if not self._tb_allow(self.rl_ip, ip, CFG.CHAT_RL_IP_BURST, CFG.CHAT_RL_IP_WINDOWS, CFG.CHAT_RL_IP_BURST, backoff_key=ip):
             self._backoff(ip, CFG.CHAT_BACKOFF_S)
@@ -509,6 +558,25 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         
         if not (len(fs_hex) == 64 and all(c in "0123456789abcdef" for c in fs_hex)):
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}
+        
+        # routing authenticity signature verification (without decryption)
+        if not chat_sig:
+            return {"type": "CHAT_ACK", "status": "rejected", "reason": "sig_required"}
+        sp = (self.chat_spend_pub.get(frm) or "").strip().lower()
+        if not sp:
+            return {"type": "CHAT_ACK", "status": "rejected", "reason": "no_spend_pub"}
+        try:
+            vk = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(sp))
+            chat_bytes = b"|".join([
+                b"CHAT_SEND",
+                frm.encode(), to.encode(),
+                str(mid).encode(), str(ts).encode(),
+                bytes.fromhex(fp_hex), bytes.fromhex(fs_hex),
+                bytes.fromhex(nonce_hex), bytes.fromhex(ct_hex)
+            ])
+            vk.verify(bytes.fromhex(chat_sig), chat_bytes, ec.ECDSA(hashes.SHA256()))
+        except Exception:
+            return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_sig"}
 
         ok = self._mailbox_put(to, {
             "type": "CHAT_ITEM",
@@ -592,13 +660,34 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         reader = (message.get("reader") or "").strip().lower()
         mid    = message.get("msg_id")
         ts_val = int(message.get("ts") or 0)
+        read_sig = (message.get("read_sig") or "").strip().lower()
         
         if not sender or not reader or mid is None or ts_val <= 0:
             return {"error": "bad_fields"}
+        if not read_sig:
+            return {"error": "sig_required"}
         ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
         
         if not self._tb_allow(self.rl_ip, ip, 8, 10, 8, backoff_key=ip):
             return {"error": "rate_limited"}
+        
+        # read receipt verification
+        sp = (self.chat_spend_pub.get(reader) or "").strip().lower()
+        if not sp:
+            return {"error": "no_spend_pub"}
+        try:
+            vk = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(sp))
+            rr = b"|".join([
+                b"CHAT_READ",
+                sender.encode(), reader.encode(),
+                str(mid).encode(), str(ts_val).encode()
+            ])
+            vk.verify(bytes.fromhex(read_sig), rr, ec.ECDSA(hashes.SHA256()))
+        except InvalidSignature:
+            return {"error": "bad_sig"}
+        except Exception:
+            return {"error": "sig_verify_failed"}
+        
         try:
             self._enqueue_rcpt(sender, "read", mid, sender, reader, int(time.time()))
         except Exception:

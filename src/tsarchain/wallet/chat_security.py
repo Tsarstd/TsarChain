@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: libsecp256k1
+
 import os
 import time
 import random
@@ -32,9 +33,9 @@ class ChatManager:
         self.priv_cache: Dict[str, tuple[str, float]] = {}
         self.pub_cache: Dict[str, str] = {}
         self.read_sent: set[int] = set()
+        self._chat_dh_cache: Dict[str, tuple[str, str, float]] = {}
 
     # ---------- helpers: EC (secp for register), X25519 for chat ----------
-
     def _pack(self, s: str, bucket_sizes=(128, 256, 512, 1024)) -> bytes:
         b = s.encode("utf-8")
         L = len(b)
@@ -104,7 +105,6 @@ class ChatManager:
             return None
 
     # ---------- key management ----------
-
     def _now(self) -> float:
         return time.time()
     
@@ -139,7 +139,6 @@ class ChatManager:
             return None
 
     # ---------- pubkey directory ----------
-
     def lookup_pub(self, addr: str, cb: Callable[[Optional[str]], None]) -> None:
         a = self._canon(addr)
         if a in self.pub_cache:
@@ -162,8 +161,18 @@ class ChatManager:
             self.lookup_pub(a, lambda _p: None)
         return pub
 
-    # ---------- SAS (safety words/emoji) ----------
+    # ---------- chat DH cache ----------
+    def _get_chat_dh(self, address: str) -> tuple[str, str]:
+        a = self._canon(address)
+        now = self._now()
+        cached = self._chat_dh_cache.get(a)
+        if cached and now < cached[2]:
+            return cached[0], cached[1]
+        sk_hex, pk_hex = load_or_create_chat_dh_key(a, self.password_prompt_cb)
+        self._chat_dh_cache[a] = (sk_hex, pk_hex, now + self.key_ttl_sec)
+        return sk_hex, pk_hex
 
+    # ---------- SAS (safety words/emoji) ----------
     def sas(self, addr_a: str, addr_b: str) -> str:
         pa = (self.expected_pub_or_lookup(addr_a) or "").lower()
         pb = (self.expected_pub_or_lookup(addr_b) or "").lower()
@@ -174,7 +183,6 @@ class ChatManager:
         return "".join(emojis[digest[i] % len(emojis)] for i in range(6))
 
     # ---------- high-level ops: register / send / poll ----------
-
     def _canon(self, address: str) -> str:
         try:
             return (address or "").strip().lower()
@@ -202,7 +210,7 @@ class ChatManager:
             on_done({"error": "unlock_failed"}); return
             
         spend_pub = self.pub_hex_from_priv(self._ec_priv_from_hex(priv_hex))
-        chat_sk_hex, chat_pk_hex = load_or_create_chat_dh_key(addr)
+        chat_sk_hex, chat_pk_hex = self._get_chat_dh(addr)
         ts_now = int(time.time())
         reg_bytes = b"|".join([
             b"CHAT_REG",
@@ -212,6 +220,15 @@ class ChatManager:
             str(ts_now).encode()
         ])
         reg_sig = self.sign(priv_hex, reg_bytes).lower()
+        
+        pres_bytes = b"|".join([
+            b"CHAT_PRESENCE",
+            addr.encode(),
+            bytes.fromhex(chat_pk_hex),
+            bytes.fromhex(spend_pub),
+            str(ts_now).encode()
+        ])
+        presence_sig = self.sign(priv_hex, pres_bytes).lower()
 
         def _on(resp: Optional[Dict[str, Any]]):
             if resp and resp.get("type") == "CHAT_REGISTERED":
@@ -224,7 +241,9 @@ class ChatManager:
             "spend_pub": spend_pub,
             "chat_pub": chat_pk_hex,
             "ts": ts_now,
-            "reg_sig": reg_sig,}
+            "reg_sig": reg_sig,
+            "presence_sig": presence_sig,
+        }
         self.rpc_send(payload, _on)
 
     def send_message(self, from_addr: str, to_addr: str, text: str,
@@ -240,7 +259,7 @@ class ChatManager:
         if not to_pub:
             self.lookup_pub(to, lambda _p: on_result({"status": "no_pubkey"}))
             return
-        my_sk_hex, my_pk_hex = load_or_create_chat_dh_key(frm)
+        my_sk_hex, my_pk_hex = self._get_chat_dh(frm)
         mid = random.randint(0, 2**31 - 1)
         ts  = int(time.time())
 
@@ -249,6 +268,15 @@ class ChatManager:
             my_sk_hex, to_pub, padded,
             {"frm": frm, "to": to, "mid": mid, "ts": ts, "from_static": my_pk_hex}
         )
+        
+        chat_bytes = b"|".join([
+            b"CHAT_SEND",
+            frm.encode(), to.encode(),
+            str(mid).encode(), str(ts).encode(),
+            bytes.fromhex(eph_pub), bytes.fromhex(my_pk_hex),
+            bytes.fromhex(enc["nonce"]), bytes.fromhex(enc["ct"])
+        ])
+        chat_sig = self.sign(priv_hex, chat_bytes).lower()
 
         payload = {
             "type": "CHAT_SEND",
@@ -257,10 +285,24 @@ class ChatManager:
             "from_static": my_pk_hex,
             "from_pub": eph_pub,
             "enc": enc,
+            "chat_sig": self.sign(priv_hex, b"|".join([b"CHAT_SEND", frm.encode(), to.encode(), str(mid).encode(), str(ts).encode(), bytes.fromhex(eph_pub), bytes.fromhex(my_pk_hex), bytes.fromhex(enc["nonce"]), bytes.fromhex(enc["ct"])])),
         }
-        try: on_queued(mid, ts)
-        except Exception: pass
+        try:
+            on_queued(mid, ts)
+        except Exception:
+            pass
+        
         self.rpc_send(payload, on_result)
+        
+    # (Optional helper for UI) — send a signed read receipt
+    def send_read_receipt(self, sender: str, reader: str, msg_id: int, on_result) -> None:
+        priv_hex = self.get_priv_for_chat(reader)
+        if not priv_hex:
+            on_result({"error": "unlock_failed"}); return
+        ts = int(time.time())
+        rr = b"|".join([b"CHAT_READ", sender.encode(), reader.encode(), str(msg_id).encode(), str(ts).encode()])
+        read_sig = self.sign(priv_hex, rr).lower()
+        self.rpc_send({"type": "CHAT_READ", "sender": sender, "reader": reader, "msg_id": int(msg_id), "ts": ts, "read_sig": read_sig}, on_result)
 
     def poll(self, address: str, n: int,
             on_items, on_done=None) -> None:
@@ -282,7 +324,7 @@ class ChatManager:
 
                 items = resp.get("items") or []
                 out = []
-                my_sk_hex, _ = load_or_create_chat_dh_key(me)
+                my_sk_hex, _ = self._get_chat_dh(me)
                 for it in items:
                     if (it.get("type") != "CHAT_ITEM"): 
                         continue

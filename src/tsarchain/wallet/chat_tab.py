@@ -6,6 +6,7 @@
 import tkinter as tk
 import time, os, json, hashlib
 from typing import Optional
+from typing import Callable
 from tkinter import ttk, messagebox
 from tkinter import font as tkfont
 from datetime import datetime
@@ -25,6 +26,12 @@ class ChatTab:
         self.contact_mgr = contact_mgr
         self.log = logger
         self.set_palette(palette or {})
+        try:
+            if hasattr(self.chat_mgr, "key_ttl_sec"):
+                self.chat_mgr.key_ttl_sec = getattr(self, "_chat_key_ttl_sec", 15*60)
+        except Exception:
+            pass
+        
         # internal state moved from light_wallet
         self.chat_verified_var = tk.StringVar(value="Unverified ❌")
         self.chat_sas_var = tk.StringVar(value="••••••")
@@ -40,12 +47,14 @@ class ChatTab:
         self.contacts = getattr(self.contact_mgr, "contacts", {}) if self.contact_mgr else {}
         self.parent = None
         self.frame = None
+        
         # fonts (safe defaults)
         self.font_chat_meta_peer = tkfont.Font(family="Segoe UI", size=10)
         self.font_chat_meta_me = tkfont.Font(family="Segoe UI", size=10, weight="bold")
         self.chat_font = tkfont.Font(family="Segoe UI", size=11)
         self.chat_font_mono = tkfont.Font(family="Consolas", size=11)
         self.chat_font_body = tkfont.Font(family="Segoe UI", size=12)
+        self._chat_key_ttl_sec = getattr(self, "_chat_key_ttl_sec", 15 * 60)
 
     def set_palette(self, palette: dict):
         self.bg = palette.get("bg", "#0e141a")
@@ -204,10 +213,12 @@ class ChatTab:
         # ======= HERO OVERLAY =======
         self.chat_hero = tk.Frame(self.frame, bg=self.bg)
         header = tk.Frame(self.chat_hero, bg=self.bg); header.pack(side="top", pady=(10, 0))
+        
         tk.Label(header, text="♜Kremlin Chat♜", bg=self.bg, fg=self.accent,
                 font=("Segoe UI", 60, "bold")).pack(side="top")
         tk.Label(header, text="Encrypted whispers for underground creators.",
                 bg=self.bg, fg="#C4A231", font=("Consolas", 18, "italic")).pack(side="top", pady=(0, 30))
+        
         body_wrap = tk.Frame(self.chat_hero, bg=self.bg); body_wrap.pack(fill="both", expand=True, padx=16, pady=16)
         grid = tk.Frame(body_wrap, bg=self.bg); grid.pack(fill="both", expand=True)
         grid.grid_columnconfigure(0, weight=1); grid.grid_columnconfigure(1, weight=3); grid.grid_columnconfigure(2, weight=1)
@@ -266,8 +277,12 @@ class ChatTab:
         except Exception:
             pass
         try:
-            self.chat_from_var.trace_add("write", lambda *_: (self._chat_update_security_badges(),
-                                                            self._update_chat_context()))
+            self.chat_from_var.trace_add(
+                "write",
+                lambda *_: (
+                    self._chat_update_security_badges(),
+                    self._update_chat_context(),
+                    self._on_from_changed()))
         except Exception:
             pass
 
@@ -443,6 +458,43 @@ class ChatTab:
         except Exception:
             pass
 
+    # ---------- Session prewarm: unlock + load chat keys sekali di awal ----------
+    def _prewarm_session(self, addr: str) -> bool:
+        a = (addr or "").strip().lower()
+        if not a:
+            self.toast("Pilih address dulu.", kind="warn")
+            return False
+        
+        priv, err = self.chat_mgr.try_unlock(a)
+        if err:
+            msg = None
+            if "Wallet file not found" in err:
+                msg = "Keystore not present. Create or import a wallet first."
+            elif "Keystore empty" in err:
+                msg = "Keystore is empty. Create or import a wallet first."
+            elif "Account locked" in err or "Too many failed attempts" in err:
+                msg = err
+            elif "Invalid password" in err:
+                msg = "Password salah atau file keystore korup."
+            else:
+                msg = f"Gagal unlock: {err}"
+            self.toast(msg, kind="error")
+            return False
+
+        try:
+            _sk, _pk = self.chat_mgr._get_chat_dh(a)
+        except Exception as e:
+            self.toast(f"Unlock chat key dibatalkan/ gagal: {e}", kind="error")
+            return False
+        try:
+            if hasattr(self.chat_mgr, "_chat_dh_cache"):
+                sk, pk, _t = self.chat_mgr._chat_dh_cache.get(a, (None, None, 0))
+                if sk and pk:
+                    self.chat_mgr._chat_dh_cache[a] = (sk, pk, time.time() + self._chat_key_ttl_sec)
+        except Exception:
+            pass
+        return True
+
     def _chat_enter_hero(self):
         try:
             self.chat_addr_label.pack_forget()
@@ -485,7 +537,7 @@ class ChatTab:
             self.toast("Pilih address dulu.", kind="warn")
             return
         self.chat_from_var.set(addr)
-        self._chat_toggle_online()
+        self._chat_toggle_online(prewarm=True)
 
     def _chat_logout(self):
         addr = (self.chat_from_var.get() or "").strip().lower()
@@ -555,7 +607,7 @@ class ChatTab:
         self._chat_update_send_state()
         self._update_chat_context()
 
-    def _chat_toggle_online(self) -> None:
+    def _chat_toggle_online(self, prewarm: bool = False) -> None:
         addr = (self.chat_from_var.get() or "").strip().lower()
         if not addr:
             self.toast("Input Target Address First!.", kind="warn")
@@ -577,12 +629,15 @@ class ChatTab:
                     msg = f"Gagal unlock: {err}"
                 self.toast(msg, kind="error")
                 return
+            if prewarm:
+                if not self._prewarm_session(addr):
+                    return
 
             def _on(resp):
                 if resp and resp.get("type") == "CHAT_REGISTERED":
                     self._chat_set_online_ui(True)
                     self.toast("Online •", kind="info")
-                    self._chat_schedule_next(800)
+                    self._chat_schedule_next(600)
                 else:
                     self.toast(f"Failed Register: {resp}", kind="error")
 
@@ -604,6 +659,14 @@ class ChatTab:
         self._chat_poll_job = None
         self._chat_set_online_ui(False)
         self.toast("Offline.", kind="info")
+
+    def _on_from_changed(self) -> None:
+        try:
+            if self._chat_online:
+                a = (self.chat_from_var.get() or "").strip().lower()
+                if a: self._prewarm_session(a)
+        except Exception:
+            pass
 
     def _chat_reflow_bubbles(self, *_):
         txt = getattr(self, "chat_log", None)
