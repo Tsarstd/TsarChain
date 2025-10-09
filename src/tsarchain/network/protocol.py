@@ -308,28 +308,6 @@ def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
     log.trace("[verify_and_unwrap] sig=%s", envelope.get("sig")[:12])
     return inner
 
-
-# -----------------------------
-# FOR P2P CHAT (WALLET)
-# -----------------------------
-
-def chat_dh_gen_keypair() -> tuple[str, str]:
-    sk = x25519.X25519PrivateKey.generate()
-    pk = sk.public_key()
-    sk_hex = sk.private_bytes(
-        encoding = serialization.Encoding.Raw,
-        format   = serialization.PrivateFormat.Raw,
-        encryption_algorithm = serialization.NoEncryption()
-    ).hex()
-    pk_hex = pk.public_bytes(
-        encoding = serialization.Encoding.Raw,
-        format   = serialization.PublicFormat.Raw
-    ).hex()
-    
-    log.debug("[chat_dh_gen_keypair] pk=%s", pk_hex)
-    return sk_hex, pk_hex
-
-
 # =========================================================
 # ==== [BEGIN: P2P SecureChannel X25519->HKDF->AESGCM] ====
 # =========================================================

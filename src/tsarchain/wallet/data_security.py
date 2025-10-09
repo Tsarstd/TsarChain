@@ -4,24 +4,23 @@
 # Refs: BIP173; BIP39; libsecp256k1
 
 import os, json, hashlib, base64, appdirs, time, re
-from typing import Dict
-from typing import Tuple
+from typing import Dict, Tuple
 from ecdsa import SECP256k1, SigningKey
 from bech32 import bech32_encode, convertbits
 from mnemonic import Mnemonic
+from cryptography.hazmat.primitives.asymmetric import x25519
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.backends import default_backend
-from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
+from cryptography.fernet import Fernet
 
 # ---------------- Local Project (With Node) ----------------
 from ..utils.helpers import hash160
 from ..core.tx import Tx
-from ..network.protocol import chat_dh_gen_keypair
 from ..utils import config as CFG
-
 
 
 _CHAT_KEYS_DIR = os.path.join("data_user", "chat_keys")
@@ -81,6 +80,21 @@ def load_or_create_chat_dh_key(addr: str) -> Tuple[str, str]:
     sk_hex, pk_hex = chat_dh_gen_keypair()
     with open(p, "w", encoding="utf-8") as f:
         json.dump({"sk_hex": sk_hex, "pk_hex": pk_hex}, f, indent=2)
+    return sk_hex, pk_hex
+
+def chat_dh_gen_keypair() -> tuple[str, str]:
+    sk = x25519.X25519PrivateKey.generate()
+    pk = sk.public_key()
+    sk_hex = sk.private_bytes(
+        encoding = serialization.Encoding.Raw,
+        format   = serialization.PrivateFormat.Raw,
+        encryption_algorithm = serialization.NoEncryption()
+    ).hex()
+    pk_hex = pk.public_bytes(
+        encoding = serialization.Encoding.Raw,
+        format   = serialization.PublicFormat.Raw
+    ).hex()
+    
     return sk_hex, pk_hex
 
 def _derive_key(password: str, salt: bytes, n=2**15, r=8, p=1) -> bytes:

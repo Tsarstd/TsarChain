@@ -3,7 +3,7 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
 from decimal import Decimal, ROUND_DOWN, InvalidOperation
-from typing import Callable, Optional, Dict, Any
+from typing import Optional, Dict, Any
 
 # ---------------- Local Project (Wallet Only) ----------------
 from .data_security import Wallet

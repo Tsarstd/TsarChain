@@ -2,8 +2,8 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
-from typing import Callable, Optional, Dict, Any, List
 
+from typing import Callable, Optional, Dict, Any, List
 
 # ---------------- Local Project (Wallet Only) ----------------
 from .data_security import Wallet

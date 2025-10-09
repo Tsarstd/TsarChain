@@ -2,8 +2,8 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
+
 from __future__ import annotations
-import re
 from typing import Callable, Dict, Any, Optional, Sequence, List
 import tkinter as tk
 from tkinter import ttk, messagebox as mb
