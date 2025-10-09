@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
+
 import tkinter as tk
 import time, os, json, hashlib
 from typing import Optional
@@ -11,7 +12,7 @@ from datetime import datetime
 
 
 from tsarchain.wallet.chat_security import ChatManager
-from tsarchain.wallet.data_security import CFG
+from ..utils import config as CFG
 
 
 class ChatTab:
