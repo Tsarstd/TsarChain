@@ -1,37 +1,40 @@
 # Install `tsarcore_native` (Rust Native Acceleration)
 
 `tsarcore_native` is the Rust + PyO3 native acceleration module for **TsarChain**.
-When available, TsarChain will automatically use native paths for critical code
-(e.g. sigops counting, ECDSA verify (low-S), Merkle root, etc.). If the module
-is missing or fails to import, TsarChain gracefully falls back to pure‑Python.
+When available, TsarChain will automatically use native paths for performance‑critical routines
+(sigops counting, ECDSA verify (low‑S) incl. batch, BIP143 sighash, hashing, etc.).
+If the module is missing or fails to import, TsarChain **gracefully falls back to pure‑Python**.
 
-> **Default toggle:** See `src/tsarchain/utils/config.py` → `NATIVE = 1` to enable,
-> or set `NATIVE = 0` to force pure‑Python.
+> **Native toggle:** configure in `src/tsarchain/utils/config.py` → `NATIVE = 1` (prefer native),
+> set `NATIVE = 0` to force pure‑Python.
 
 ---
 
-## ⚠️ Consensus: Merkle Root is locked to Python ⚠️
+## ⚠️ Consensus Note: Merkle Root is Locked to Python
 
-To maintain consensus determinism across platforms/architectures, the `merkle_root` function used by consensus is locked to the Python implementation** (native is not used for the final merkle result in consensus).
-This means that even though Rust bindings are available, merkle calculations affecting blocks/tx still use the Python version. See the implementation and comments in `helpers.py`.
+For deterministic consensus across platforms/architectures, the **`merkle_root` used by consensus
+is locked to the Python implementation**. The native Merkle function may exist for diagnostics, but
+block/tx consensus calculation *always* calls the Python version. See the binding comment in
+`helpers.py` (look for the wrapper that returns the Python `_py_merkle_root`).
 
 ---
 
 ## TL;DR
 
 ```bash
-# From repo root
+# From your repo root
 python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
 
-pip install --upgrade pip
-pip install maturin            # build backend
+pip install --upgrade pip maturin
 
 cd tsarcore_native
 maturin develop --release      # build & install into the active venv
 ```
 
-To build a wheel instead:
+Want a distributable wheel?
+
 ```bash
 cd tsarcore_native
 maturin build --release
@@ -42,131 +45,168 @@ pip install target/wheels/tsarcore_native-*.whl
 
 ## 1) Prerequisites
 
-- **Python** 3.8–3.12 (virtualenv recommended)
+- **Python** 3.8–3.12 (recommended to use a virtual environment)
 - **Rust toolchain (stable)** via [`rustup`](https://rustup.rs/)
-- **maturin** (build backend). Installed via `pip install maturin`
-- Platform toolchain:
-  - **Windows**
-    - Install *Visual Studio Build Tools* (C++ workload).
-    - Rust target: MSVC (default if using standard rustup on Windows).
-  - **macOS**
-    - `xcode-select --install` (Command Line Tools) + rustup.
-    - Apple Silicon is supported; the wheel will match your Python arch (arm64/x86_64).
-  - **Linux (Debian/Ubuntu)**
-    - `sudo apt-get update && sudo apt-get install -y build-essential python3-dev`
-    - Install rustup per official docs.
+- **maturin** (`pip install maturin`)
 
-> Ensure your Python architecture (x64/arm64) matches the Rust target; mismatch can cause import errors.
+Platform notes:
+- **Windows**: install *Visual Studio Build Tools* (C++ workload). Rust target should be **MSVC** (default).
+- **macOS**: `xcode-select --install` for Command Line Tools. Apple Silicon is supported; your wheel arch follows your Python arch (arm64/x86_64).
+- **Linux (Debian/Ubuntu)**: `sudo apt-get update && sudo apt-get install -y build-essential python3-dev` in addition to rustup.
+
+> Ensure the Python architecture matches Rust’s target (x64 ↔ x64, arm64 ↔ arm64).
 
 ---
 
-## 2) Install Options
+## 2) Installation Options
 
-### Option A — Fast Dev (editable)
-Build and install directly into the current virtualenv (best for contributors).
+### A) Dev‑friendly (editable)
 
 ```bash
-# repo root
 python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
 
-pip install --upgrade pip
-pip install maturin
-
+pip install --upgrade pip maturin
 cd tsarcore_native
 maturin develop --release
 ```
 
-### Option B — Release Wheel (distributable)
-Build a wheel and install it explicitly.
+### B) Build a wheel (for distribution)
 
 ```bash
-# activate venv first
+# with your venv active
 pip install --upgrade pip maturin
-
 cd tsarcore_native
 maturin build --release
 pip install target/wheels/tsarcore_native-*.whl
 ```
 
-### Option C — Via `pip` (PEP 517)
-Pip will invoke maturin (maturin must be installed in the environment).
+### C) PEP 517 install via `pip`
 
 ```bash
-# repo root (venv active)
+# from repo root (venv active)
 pip install --upgrade pip maturin
 pip install ./tsarcore_native
+```
+
+### (Optional) Enable parallel code paths
+
+If you added conditional parallel implementations in Rust, you can expose them with a feature flag:
+
+```bash
+cd tsarcore_native
+maturin develop --release --features parallel
+# or
+maturin build --release --features parallel
 ```
 
 ---
 
 ## 3) Enable Native in TsarChain
 
-Set the native toggle in config:
+Set the toggle in config:
 
 ```python
 # src/tsarchain/utils/config.py
-NATIVE = 1  # 1 = prefer Rust acceleration, 0 = force pure-Python
+NATIVE = 1  # 1 = prefer Rust acceleration, 0 = force pure‑Python
 ```
 
-TsarChain will attempt to import `tsarcore_native`. On failure, it falls back automatically.
+On import, TsarChain tries `import tsarcore_native`; if it fails, it auto‑fallbacks to Python.
 
 ---
 
-## 4) Quick Self‑Test
+## 4) Quick Self‑Test (sanity)
+
+Run a very small import & call check in your active environment:
 
 ```bash
 python - <<'PY'
 import tsarcore_native as n
-print("[native] count_sigops(OP_CHECKSIG) ->", n.count_sigops(b"\xac"))  # expect 1
-mr = n.merkle_root([])
-print("[native] merkle_root([]) ->", type(mr), len(mr) if isinstance(mr,(bytes,bytearray)) else None)
+print("[native] available symbols:", [k for k in dir(n) if not k.startswith("_")][:8], "...")
+print("[native] count_sigops(OP_CHECKSIG):", n.count_sigops(b"\xac"))
+print("[native] hash256('abc'):", n.hash256(b"abc"))
+print("[native] hash160('abc'):", n.hash160(b"abc"))
 print("OK")
 PY
 ```
 
-Or run the bundled benchmark/test (if available):
+> Remember: for **consensus**, Merkle root remains Python‑only (see section above).
+
+---
+
+## 5) How to Test with `native_test.py`
+
+`native_test.py` performs **correctness parity** checks (Python vs Native where applicable) and **micro‑benchmarks**.
+
+What it covers:
+- Parity: `hash256/hash160`, ECDSA verify (strict DER + low‑S), **BIP143 SIGHASH_ALL**,
+  and diagnostic **Merkle** comparisons (for debugging only — consensus still uses Python).
+- Micro‑benchmarks: sigops counting, Merkle tree building, ECDSA single verify, ECDSA batch verify, and hashing.
+
+### Run with defaults
 
 ```bash
-python -m tests.native_test --sigops-iters 500000 --merkle-n 2000 --merkle-reps 200 --ecdsa-keys 5 --ecdsa-iters 5000
+# from repo root, in the project venv
+python native_test.py
 ```
 
-> If some functions (e.g., `sighash_bip143`) are not yet implemented in the native module,
-> TsarChain will transparently use Python implementations.
+### Useful CLI options
+
+```bash
+python native_test.py   --sigops-iters 250000   --merkle-n 1000 --merkle-reps 200   --ecdsa-keys 200 --ecdsa-iters 5000   --batch-keys 256 --batch-iters 2048   --hash-total 1500000   --strict-merkle \            # fail the run if any merkle mismatch
+  --show-merkle-debug \        # print diagnostic details for merkle differences
+  --no-bench-batch \           # skip batch verify benchmark
+  --no-bench-hash              # skip hashing benchmarks
+```
+
+**Expected output (high‑level):**
+- A header line stating whether native loaded (`True/False`) and why.
+- `== correctness ==` section showing OK/mismatch per component (with details when mismatched).
+- `== microbench ==` section with throughputs (ops/s, trees/s, verif/s).
+
+If `--strict-merkle` is set and a mismatch is detected, the script **raises** after printing a minimal repro.
 
 ---
 
-## 5) Troubleshooting
+## 6) Troubleshooting
 
 - **`ModuleNotFoundError: tsarcore_native`**
-  - Ensure you built and installed into the **same** environment where you run TsarChain.
-  - Re-activate the venv and `pip show tsarcore_native` to verify installation.
-- **Linker / toolchain errors**
-  - Update toolchain: `rustup update`
-  - Windows: ensure **MSVC Build Tools** installed; use “x64 Native Tools” prompt if needed.
-  - Linux: check `build-essential` and `python3-dev` installed.
-- **Arch mismatch**
-  - Ensure Python x64 ↔ Rust x64 (or arm64 ↔ arm64). On macOS Apple Silicon,
-    prefer a native arm64 Python to avoid Rosetta mismatches.
-- **Rebuild clean**
-  - `cd tsarcore_native && maturin develop --release --strip` to strip symbols and rebuild.
+  - Verify you built inside the **same venv** you’re running.
+  - Re‑activate venv and check with `pip show tsarcore_native`.
+
+- **Toolchain/linker errors**
+  - `rustup update` to ensure a fresh stable toolchain.
+  - **Windows**: make sure *MSVC Build Tools* are installed; open the “x64 Native Tools” prompt if needed.
+  - **Linux**: ensure `build-essential` and `python3-dev` are installed.
+
+- **Architecture mismatch**
+  - Python x64 requires Rust x64; Python arm64 requires Rust arm64. On macOS Apple Silicon,
+    prefer a native arm64 Python instead of Rosetta emulation for clean wheels.
+
+- **Clean rebuild**
+  - `cd tsarcore_native && maturin develop --release --strip`
+
+- **`maturin` complains about `LICENSE`**
+  - Example: `Failed to read .../tsarcore_native/LICENSE`
+  - Add a `LICENSE` file in `tsarcore_native/`, or set the appropriate `license` / `license-file`
+    metadata fields in `Cargo.toml`.
 
 ---
 
-## 6) CI / Release (Optional)
+## 7) CI / Release (optional)
 
-For publishing wheels, consider GitHub Actions with `maturin-action` to build for
-multiple targets (macOS, Linux manylinux, Windows) and upload artifacts. Example
-snippets can be added later to `.github/workflows/release.yml`.
-
----
-
-## 7) Notes
-
-- This module uses **PyO3**; the Python ABI compatibility follows what maturin builds.
-- Performance-sensitive features (sigops, merkle, ECDSA verify) benefit most from native.
-- Pure‑Python remains the reference implementation and safe fallback.
+You can use GitHub Actions with `maturin-action` to build wheels for macOS, manylinux, and Windows,
+then upload artifacts to a release. Keep your workflow minimal at first; expand once basics are green.
 
 ---
 
-Happy Coding — *Long Live The Voice Sovereignty*.
+## 8) Notes
+
+- Built with **PyO3**; ABI compatibility follows the wheel built by `maturin`.
+- The biggest wins from native are: sigops, ECDSA verify (low‑S), BIP143 sighash, batch verify, and hashing.
+- **Consensus Merkle Root is Python‑locked** by design; native Merkle should be treated as a diagnostic helper only.
+
+---
+
+Happy coding — *Long Live The Voice Sovereignty*.
