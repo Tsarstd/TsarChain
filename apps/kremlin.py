@@ -1360,6 +1360,9 @@ class KremlinWalletGUI(WalletsMixin):
             self.net_refresh_btn.pack(side=tk.LEFT)
 
             self.net_text = scrolledtext.ScrolledText(f, height=20, bg=self.panel_bg, fg=self.fg, insertbackground=self.fg)
+            self.net_text.bind("<Key>", lambda e: "break")
+            self.net_text.bind("<<Paste>>", lambda e: "break")
+            
             self.net_text.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
 
             self.net_text.tag_configure("h1",  font=("Segoe UI", 46, "bold"), foreground=self.accent, spacing3=6)
@@ -1375,6 +1378,7 @@ class KremlinWalletGUI(WalletsMixin):
             self.net_text.tag_configure("rank1", font=("Consolas", 17), foreground="#FFD700")  # Gold
             self.net_text.tag_configure("rank2", font=("Consolas", 15), foreground="#C0C0C0")  # Silver
             self.net_text.tag_configure("rank3", font=("Consolas", 13), foreground="#CD7F32")  # Bronze
+            
 
     def refresh_network_info(self) -> None:
         self.net_text.delete("1.0", tk.END)
@@ -1656,7 +1660,6 @@ class KremlinWalletGUI(WalletsMixin):
                     self.net_text.insert(tk.END, ("-"*72) + "\n", ("sep2", "center"))
         else:
             self.net_text.insert(tk.END, "No Miners Data Found\n", ("mut","center"))
-        self.net_text.config(state="disabled")
 
 
     # ---------------- Dev Frame ----------------
