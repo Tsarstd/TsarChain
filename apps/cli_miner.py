@@ -1,6 +1,7 @@
-#!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# TsarChain Minimal Mining CLI
+# Copyright (c) 2025 Tsar Studio
+# Part of TsarChain — see LICENSE and TRADEMARKS.md
+# Refs: see REFERENCES.md
 
 import argparse, re, sys, time, threading
 import multiprocessing as mp
@@ -26,11 +27,9 @@ def parse_bootstrap(raw: str | None) -> tuple[str, int] | None:
 
 
 def start_node(blockchain: Blockchain, bootstrap: tuple[str, int] | None) -> tuple[Network, threading.Event]:
-    """Start node + background sync daemon."""
     net = Network(blockchain=blockchain)
 
     if bootstrap:
-        # Prioritaskan peer manual
         try:
             net.persistent_peers.clear()
             net.peers.clear()
@@ -40,7 +39,6 @@ def start_node(blockchain: Blockchain, bootstrap: tuple[str, int] | None) -> tup
         net.peers.add(bootstrap)
         print(f"[Network] Manual bootstrap: {bootstrap[0]}:{bootstrap[1]}")
     else:
-        # Fallback ke config
         fallback = CFG.BOOTSTRAP_DEV if CFG.IS_DEV else CFG.BOOTSTRAP_PROD
         net.persistent_peers.add(fallback)
         net.peers.add(fallback)
@@ -69,7 +67,6 @@ def start_node(blockchain: Blockchain, bootstrap: tuple[str, int] | None) -> tup
 def mining_loop(blockchain: Blockchain, network: Network, address: str,
                 use_cores: int, pow_backend: str,
                 cancel_evt, progress_q):
-    """Loop penambangan dengan broadcast block baru (mirror dari GUI)."""
     while not cancel_evt.is_set():
         try:
             if network and network.peers:
@@ -95,7 +92,6 @@ def mining_loop(blockchain: Blockchain, network: Network, address: str,
                 except Exception:
                     print("[+] Block mined")
 
-                # Broadcast block ke peers (seperti di GUI)
                 try:
                     msg = {"type": "NEW_BLOCK", "data": blk.to_dict(), "port": getattr(network, 'port', None)}
                     for peer in list(getattr(network, 'peers', []) or []):
@@ -106,7 +102,6 @@ def mining_loop(blockchain: Blockchain, network: Network, address: str,
                 except Exception:
                     pass
 
-                # Prune mempool tx yang sudah masuk block (mirror GUI)
                 try:
                     for tx in (getattr(blk, "transactions", []) or [])[1:]:
                         try:
@@ -127,17 +122,17 @@ def mining_loop(blockchain: Blockchain, network: Network, address: str,
 
 
 def main():
-    print_banner()  # banner CLI buatanmu
+    print_banner()
 
     parser = argparse.ArgumentParser(description="TsarChain Minimal Mining CLI")
     parser.add_argument("-a", "--address", help="Miner address (tsar1…)", default=None)
     parser.add_argument("-c", "--cores", type=int, help="Jumlah core CPU yang dipakai", default=None)
     parser.add_argument("--bootstrap", help="Bootstrap peer ip:port (opsional)")
     parser.add_argument("--pow-backend", choices=["numba", "python"], default="numba")
-    # Toggle start node & start mining
+
     parser.add_argument("--no-node", action="store_true", help="Jalankan tanpa start node (tidak disarankan)")
     parser.add_argument("--no-mine", action="store_true", help="Jalankan tanpa mining (seed-only)")
-    # Genesis otomatis saat chain kosong:
+
     parser.add_argument("--no-genesis", action="store_true", help="Jangan auto-create genesis walau chain kosong")
 
     args = parser.parse_args()
@@ -172,7 +167,6 @@ def main():
         sys.exit(2)
 
     # ====== Init blockchain ======
-    # auto_create_genesis=False -> kita kendalikan sendiri sesuai kondisi
     bc = Blockchain(
         db_path=CFG.BLOCK_FILE,
         in_memory=False,
@@ -180,7 +174,6 @@ def main():
         auto_create_genesis=False
     )
 
-    # Auto-create genesis kalau height < 0 dan tidak di-disable
     if (getattr(bc, "height", -1) or -1) < 0 and not args.no_genesis:
         print("[Genesis] Chain kosong → membuat genesis block…")
         created = bc.ensure_genesis(address, use_cores=cores)
@@ -211,7 +204,7 @@ def main():
         t.start()
 
         print(f"[*] Mining started → addr={address} backend={args.pow_backend} cores={cores}")
-        print("[*] Tekan Ctrl+C untuk berhenti.")
+        print("[*] Ctrl+C for stop.")
 
         try:
             last_print = 0.0
@@ -236,7 +229,7 @@ def main():
             t.join(timeout=3.0)
 
     else:
-        print("[Info] Mode seed-only (tanpa mining). Tekan Ctrl+C untuk keluar.")
+        print("[Info] Mode seed-only (no mining). Ctrl+C for stop.")
         try:
             while True:
                 time.sleep(60)
