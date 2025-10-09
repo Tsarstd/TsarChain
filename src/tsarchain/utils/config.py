@@ -201,12 +201,12 @@ STORAGE_ACCEPT_UPLOADS = True
 STORAGE_GC_INTERVAL_S = 3600
 
 # === SCRIPT / OP_RETURN POLICY ===
-OPRET_MAX_BYTES         = 352            # >= 270B (give margin)
+OPRET_MAX_BYTES         = 352             # >= 270B (give margin)
 MAX_GRAFFITI_OPRET      = min(OPRET_MAX_BYTES, 320)
-OPRET_REQUIRE_LAST      = True        # OP_RETURN must be the last output
+OPRET_REQUIRE_LAST      = True            # OP_RETURN must be the last output
 OPRET_ONLY_ONE          = True            # hanya 1 OP_RETURN per TX
 OPRET_ALLOW_PUSHDATA1   = True
-OPRET_ALLOW_PUSHDATA2   = True     # required for lengths >255B
+OPRET_ALLOW_PUSHDATA2   = True            # required for lengths >255B
 
 # === OP_RETURN size guards ===
 MAX_STORAGE_OPRET = 180
@@ -214,10 +214,6 @@ MAX_STORAGE_OPRET = 180
 # === Storage gas rules ===
 STORAGE_MIN_SIZE        = 100 * 1024         # bytes (min 100KB)
 STORAGE_CHUNK           = 100 * 1024         # bytes per chunk (100KB)
-
-# === Bid fee rules ===
-MIN_BILLABLE_SIZE_KB  = 100
-BID_FEE_RATE = 0.005
 
 # === Download TTL window ===
 DOWNLOAD_WINDOW_BLOCKS  = 10
@@ -286,7 +282,7 @@ if IS_DEV:
 else:
     # === PROD PROFILE ===
     LOG_LEVEL = "INFO"                 # quite informative
-    LOG_FORMAT = "json"               # suitable for parsing/tooling
+    LOG_FORMAT = "json"                # suitable for parsing/tooling
     LOG_TO_CONSOLE = False             # daemons don't need console
     LOG_RATE_LIMIT_SECONDS = 2.0       # throttle spam console
     LOG_FILE_RATE_LIMIT_SECONDS = 1.0  # throttle spam into file
