@@ -261,7 +261,7 @@ STORAGE_NODES_FILE  = os.path.join(CONTRACTS_DIR, "storage_nodes.json")
 # DB / KV BACKEND
 # =============================================================================
 DB_DIR = "data/DB"
-KV_BACKEND = "json"   # or Json
+KV_BACKEND = "lmdb"   # lmdb or json
 LMDB_MAP_SIZE_INIT = 64 * 1024 * 1024  # 64 MiB
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # 64 GiB
 
