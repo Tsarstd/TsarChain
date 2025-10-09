@@ -198,7 +198,6 @@ class UTXODB(BaseDatabase):
     def _is_unspendable_opreturn(self, tx_out) -> bool:
         try:
             spk = getattr(tx_out, "script_pubkey", None)
-            log.debug("[_is_unspendable_opreturn] Checking scriptPubKey for OP_RETURN: %s", spk)
             if spk is None:
                 return False
             if hasattr(spk, "serialize"):

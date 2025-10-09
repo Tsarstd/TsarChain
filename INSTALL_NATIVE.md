@@ -10,6 +10,13 @@ is missing or fails to import, TsarChain gracefully falls back to pure‑Python.
 
 ---
 
+## ⚠️ Consensus: Merkle Root is locked to Python ⚠️
+
+To maintain consensus determinism across platforms/architectures, the `merkle_root` function used by consensus is locked to the Python implementation** (native is not used for the final merkle result in consensus).
+This means that even though Rust bindings are available, merkle calculations affecting blocks/tx still use the Python version. See the implementation and comments in `helpers.py`.
+
+---
+
 ## TL;DR
 
 ```bash
