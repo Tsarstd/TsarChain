@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP173; BIP39; libsecp256k1
+
 import os, json, hashlib, base64, appdirs, time, re
 from typing import Dict
 from typing import Tuple

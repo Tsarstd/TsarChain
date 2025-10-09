@@ -2,7 +2,8 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
-import socket, struct, time, os, json, hmac, secrets, hashlib, errno
+
+import socket, struct, time, os, json, secrets, hashlib, errno
 import threading
 from nacl.signing import SigningKey, VerifyKey
 from nacl.encoding import HexEncoder
@@ -25,11 +26,10 @@ def _ensure_dir(path = str) -> None:
     if d:
         os.makedirs(d, exist_ok=True)
 
-# ---- Simple per-sender nonce cache for anti-replay guard ----
-_nonce_lock = threading.RLock()
-_NONCE_PER_SENDER_MAX = 4096
-_nonce_cache: dict[str, dict[str, int]] = {}
 
+# -----------------------------
+# DISCONECT SPAM FILTER LOGGING
+# -----------------------------
 WIN_DISCONNECT = {10053, 10054, 10058, 10060}  # WSAECONNABORTED, WSAECONNRESET, WSAESHUTDOWN, WSAETIMEDOUT
 POSIX_DISCONNECT = {errno.ECONNRESET, errno.EPIPE, errno.ECONNABORTED, errno.ETIMEDOUT}
 
@@ -42,41 +42,102 @@ def _is_disconnect_exc(e: BaseException) -> bool:
         return (code in POSIX_DISCONNECT) or (w in WIN_DISCONNECT)
     return False
 
+
+# ----------------------------------
+# NONCE CACHE for ANTI-REPLAY GUARD
+# ----------------------------------
+_nonce_lock = threading.RLock()
+_nonce_cache: dict[str, dict[str, int]] = {}
+
+def _nonce_total_entries() -> int:
+    return sum(len(rec) for rec in _nonce_cache.values())
+
+def _nonce_prune_expired_locked(now_ts: int):
+    ttl = CFG.REPLAY_WINDOW_SEC
+    for sender, rec in list(_nonce_cache.items()):
+        try:
+            for k, t in list(rec.items()):
+                if now_ts - int(t or 0) > ttl:
+                    rec.pop(k, None)
+        except Exception:
+            log.warning("[_nonce_prune_expired_locked] prune error", exc_info=True)
+        if not rec:
+            _nonce_cache.pop(sender, None)
+
+def _nonce_prune_global_if_needed_locked():
+    total = _nonce_total_entries()
+    if total <= CFG.NONCE_GLOBAL_MAX:
+        return
+    # Oldest evict globally until <= CFG.NONCE_GLOBAL_MAX
+    # Collect the head (oldest nonce) from each sender
+    heads = []
+    for sender, rec in _nonce_cache.items():
+        if rec:
+            try:
+                oldest_nonce, oldest_ts = min(rec.items(), key=lambda it: it[1])
+                heads.append((oldest_ts, sender, oldest_nonce))
+            except Exception:
+                pass
+    heads.sort()  # oldest first
+    to_evict = total - CFG.NONCE_GLOBAL_MAX
+    i = 0
+    while to_evict > 0 and i < len(heads):
+        _, s, n = heads[i]
+        rec = _nonce_cache.get(s)
+        if rec and n in rec:
+            rec.pop(n, None)
+            if not rec:
+                _nonce_cache.pop(s, None)
+            to_evict -= 1
+        i += 1
+
+
 def _nonce_register(sender: str, nonce: str, ts_val: int) -> None:
     if not sender or not nonce:
         raise ValueError("missing sender/nonce")
     now = int(time.time())
     with _nonce_lock:
+        # 1) Prune global yang expired
+        _nonce_prune_expired_locked(now)
+
+        # 2) Ambil map per-sender
         rec = _nonce_cache.get(sender)
         if rec is None:
             rec = {}
             _nonce_cache[sender] = rec
-        # prune expired
-        try:
-            for k, t in list(rec.items()):
-                if now - int(t or 0) > CFG.REPLAY_WINDOW_SEC:
-                    rec.pop(k, None)
-        except Exception:
-            log.warning("[_nonce_register] nonce prune error", exc_info=True)
+
+        # 3) Tolak jika nonce sudah pernah dipakai
         if nonce in rec:
             raise ValueError("replayed nonce")
+
+        # 4) Tambah nonce baru
         rec[nonce] = now
-        # bound size
-        if len(rec) > _NONCE_PER_SENDER_MAX:
+
+        # 5) Bound per-sender size (evict tertua)
+        if len(rec) > CFG.NONCE_PER_SENDER_MAX:
             try:
-                # drop oldest entries
-                extra = len(rec) - _NONCE_PER_SENDER_MAX
+                extra = len(rec) - CFG.NONCE_PER_SENDER_MAX
                 for k, _t in sorted(rec.items(), key=lambda it: it[1])[:extra]:
                     rec.pop(k, None)
             except Exception:
-                log.exception("[_nonce_register]nonce prune error")
+                log.exception("[_nonce_register] nonce prune error")
 
+        # 6) Enforce global cap
+        _nonce_prune_global_if_needed_locked()
+
+
+
+# -----------------------------
+# SEND & RECEIVE MESSAGE
+# -----------------------------
 def send_message(sock: socket.socket, payload: bytes):
     if len(payload) + len(CFG.NETWORK_MAGIC) > CFG.MAX_MSG:
         raise ValueError("Message too large")
+    
     body = CFG.NETWORK_MAGIC + payload
     n = len(body)
     hdr = struct.pack(">I", n)
+    
     try:
         sock.sendall(hdr + body)
     except Exception as e:
@@ -87,19 +148,6 @@ def send_message(sock: socket.socket, payload: bytes):
     
     if log.isEnabledFor(5):  # TRACE
         log.trace("sent %s bytes", n)
-
-
-def recv_exact(sock: socket.socket, n: int) -> bytes:
-    buf = b""
-    while len(buf) < n:
-        part = sock.recv(n - len(buf))
-        if not part:
-            raise ConnectionError("Connection closed")
-        buf += part
-        
-    if log.isEnabledFor(5):  # TRACE
-        log.trace("[recv_exact] got %s bytes", len(buf))
-    return buf
 
 def recv_message(sock, timeout: float | None = None):
     if timeout is not None:
@@ -124,21 +172,33 @@ def recv_message(sock, timeout: float | None = None):
         log.exception("[recv_message] unexpected error")
         return None
 
+def recv_exact(sock: socket.socket, n: int) -> bytes:
+    buf = b""
+    while len(buf) < n:
+        part = sock.recv(n - len(buf))
+        if not part:
+            raise ConnectionError("Connection closed")
+        buf += part
+        
+    if log.isEnabledFor(5):  # TRACE
+        log.trace("[recv_exact] got %s bytes", len(buf))
+    return buf
+
+def sniff_first_json_frame(sock: socket.socket, timeout: float = 2.0) -> tuple[bytes | None, dict | None]:
+    raw = recv_message(sock, timeout=timeout)
+    if not raw:
+        return None, None
+    try:
+        return raw, json.loads(raw.decode("utf-8"))
+    except Exception:
+        log.exception("[sniff_first_json_frame] error")
+        return raw, None
+
+
 
 # -----------------------------
-# NETWORK
+# KEYPAIR HELPER
 # -----------------------------
-
-def canonical_dumps(obj) -> bytes:
-    return json.dumps(obj, separators=CFG.CANONICAL_SEP, sort_keys=True, ensure_ascii=False).encode('utf-8')
-
-def gen_nonce(nbytes: int = 16) -> str:
-    return secrets.token_hex(nbytes)
-
-def hmac_sha256_hex(key: bytes, data: bytes) -> str:
-    return hmac.new(key, data, hashlib.sha256).hexdigest()
-
-
 def load_or_create_keypair_at(path: str) -> tuple[str, str, str]:
     _ensure_dir(path)
     if os.path.exists(path):
@@ -153,18 +213,28 @@ def load_or_create_keypair_at(path: str) -> tuple[str, str, str]:
     node_id  = hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"id": node_id, "pubkey": pub_hex, "privkey": priv_hex}, f, indent=2)
+    try:
+        os.chmod(path, 0o600)
+    except Exception:
+        log.debug("[keys] chmod 600 failed (non-POSIX or permissions)")
     return node_id, pub_hex, priv_hex
 
 def load_or_create_node_keys() -> tuple[str, str, str]:
     return load_or_create_keypair_at(CFG.NODE_KEY_PATH)
 
-# ---- Signature (placeholder) ----
+
+# -----------------------------
+# ENVELOPE & SIGNATURE
+# -----------------------------
+def canonical_dumps(obj) -> bytes:
+    return json.dumps(obj, separators=CFG.CANONICAL_SEP, sort_keys=True, ensure_ascii=False).encode('utf-8')
+
+def gen_nonce(nbytes: int = 16) -> str:
+    return secrets.token_hex(nbytes)
 
 def sign_message_hex(privkey_hex: str, payload: bytes) -> str:
     sk = SigningKey(bytes.fromhex(privkey_hex))
     sig = sk.sign(payload).signature.hex()
-    
-    log.trace("[sign_message_hex] sig=%s", sig[:12])
     return sig
 
 def verify_signature(pubkey_hex: str, payload: bytes, sig_hex: str) -> bool:
@@ -172,15 +242,13 @@ def verify_signature(pubkey_hex: str, payload: bytes, sig_hex: str) -> bool:
         VerifyKey(bytes.fromhex(pubkey_hex)).verify(payload, bytes.fromhex(sig_hex))
         return True
     except Exception:
-        log.exception("[verify_signature] verify_signature error")
+        log.debug("[verify_signature] bad signature")
         return False
-    
+
 def is_envelope(obj: dict) -> bool:
     return isinstance(obj, dict) and \
            "net_id" in obj and "from" in obj and "msg" in obj and \
-           "sig" in obj and "hmac" in obj and "ts" in obj and "nonce" in obj
-
-# ---- Envelope helpers ----
+           "sig" in obj and "ts" in obj and "nonce" in obj
 
 def build_envelope(inner_msg: dict, node_ctx: dict, extra: dict | None = None) -> dict:
     ts_now = int(time.time())
@@ -197,10 +265,7 @@ def build_envelope(inner_msg: dict, node_ctx: dict, extra: dict | None = None) -
 
     to_sign = canonical_dumps({"msg": inner_msg, "ts": ts_now, "nonce": nonce, "from": node_ctx["node_id"]})
     outer["sig"] = sign_message_hex(node_ctx["privkey"], to_sign)
-    hmac_payload = canonical_dumps({k: outer[k] for k in outer if k != "hmac"})
-    outer["hmac"] = hmac_sha256_hex(CFG.HMAC_SHARED_SECRET, hmac_payload)
-    
-    log.trace("[build_envelope] sig=%s", outer["sig"][:12])
+
     return outer
 
 def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
@@ -212,12 +277,8 @@ def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
         raise ValueError("timestamp window violation")
     if not envelope.get("nonce"):
         raise ValueError("missing nonce")
-    hmac_recv = envelope.get("hmac")
-    if not hmac_recv:
-        raise ValueError("missing hmac")
-    hmac_payload = canonical_dumps({k: envelope[k] for k in envelope if k != "hmac"})
-    if hmac_sha256_hex(CFG.HMAC_SHARED_SECRET, hmac_payload) != hmac_recv:
-        raise ValueError("bad hmac")
+
+    envelope.pop("hmac", None)
     node_id = envelope.get("from")
     if not node_id:
         raise ValueError("missing node_id")
@@ -247,6 +308,11 @@ def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
     log.trace("[verify_and_unwrap] sig=%s", envelope.get("sig")[:12])
     return inner
 
+
+# -----------------------------
+# FOR P2P CHAT (WALLET)
+# -----------------------------
+
 def chat_dh_gen_keypair() -> tuple[str, str]:
     sk = x25519.X25519PrivateKey.generate()
     pk = sk.public_key()
@@ -263,20 +329,13 @@ def chat_dh_gen_keypair() -> tuple[str, str]:
     log.debug("[chat_dh_gen_keypair] pk=%s", pk_hex)
     return sk_hex, pk_hex
 
-# ==== [BEGIN: P2P SecureChannel X25519->HKDF->AESGCM] ========================
+
+# =========================================================
+# ==== [BEGIN: P2P SecureChannel X25519->HKDF->AESGCM] ====
+# =========================================================
 
 def _hkdf_derive(secret: bytes, salt: bytes, info: bytes, length: int) -> bytes:
     return HKDF(algorithm=hashes.SHA256(), length=length, salt=salt, info=info).derive(secret)
-
-def sniff_first_json_frame(sock: socket.socket, timeout: float = 2.0) -> tuple[bytes | None, dict | None]:
-    raw = recv_message(sock, timeout=timeout)
-    if not raw:
-        return None, None
-    try:
-        return raw, json.loads(raw.decode("utf-8"))
-    except Exception:
-        log.exception("[sniff_first_json_frame] error")
-        return raw, None
 
 class SecureChannel:
     def __init__(self, sock: socket.socket, role: str, node_id: str | None = None, node_pub: str | None = None, node_priv: str | None = None, get_pinned=None, set_pinned=None):
@@ -363,8 +422,6 @@ class SecureChannel:
         self.aes = AESGCM(key)
         self.established_at = time.time()
         self.msg_count = 0
-        
-        log.debug("[_hs_client_auth] established with peer %s (%s)", self.peer_node_id, self.peer_node_pub)
 
     def _hs_server_auth(self):
         raw = recv_message(self.sock, timeout=5.0)
@@ -514,8 +571,6 @@ class SecureChannel:
         send_message(self.sock, json.dumps(frame).encode("utf-8"))
         self.send_ctr = seq
         self.msg_count += 1
-        
-        log.debug("[send] seq=%d ct=%s", seq, frame["ct"][:32] + "..." if len(frame["ct"]) > 32 else frame["ct"])
 
     def recv(self, timeout: float):
         self._ready()
@@ -536,6 +591,4 @@ class SecureChannel:
         pt    = self.aes.decrypt(nonce, ct, aad)
         self.recv_ctr = seq
         self.msg_count += 1
-        
-        log.debug("[recv] seq=%d ct=%s", seq, obj["ct"][:32] + "..." if len(obj["ct"]) > 32 else obj["ct"])
         return pt

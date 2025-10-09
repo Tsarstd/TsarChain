@@ -24,6 +24,40 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network(node)")
 
 
+
+# ---- Handshake rate-limit per IP (anti-DoS) ----
+_handshake_hits: dict[str, deque] = {}
+_temp_ban_until: dict[str, float] = {}
+
+def _rl_prune(ip: str, now_ts: float):
+    dq = _handshake_hits.get(ip)
+    if not dq: return
+    while dq and (now_ts - dq[0]) > CFG.HANDSHAKE_RL_PER_IP_WINDOW_S:
+        dq.popleft()
+    if not dq:
+        _handshake_hits.pop(ip, None)
+
+def _allow_handshake(ip: str, now_ts: float) -> bool:
+    # Skip localhost (if necessary)
+    if ip in ("127.0.0.1", "::1"):
+        return True
+
+    # Temp-ban?
+    banned_until = _temp_ban_until.get(ip, 0.0)
+    if now_ts < banned_until:
+        return False
+
+    dq = _handshake_hits.setdefault(ip, deque())
+    _rl_prune(ip, now_ts)
+    if len(dq) >= CFG.HANDSHAKE_RL_PER_IP_BURST:
+        _temp_ban_until[ip] = now_ts + CFG.TEMP_BAN_SECONDS
+        dq.clear()
+        return False
+
+    dq.append(now_ts)
+    return True
+
+
 class Network:
     active_ports = set()
     _instance_lock = threading.Lock()
@@ -178,6 +212,19 @@ class Network:
             while True:
                 try:
                     conn, addr = s.accept()
+                    try:
+                        ip = addr[0]
+                    except Exception:
+                        ip = ""
+                    now = time.time()
+                    if not _allow_handshake(ip, now):
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        log.warning("[start_server] temp-ban handshake %s", ip)
+                        continue
+                    
                     threading.Thread(target=self.handle_connection, args=(conn, addr), daemon=True).start()
                 except Exception:
                     log.exception("[start_server] Error accepting connection")

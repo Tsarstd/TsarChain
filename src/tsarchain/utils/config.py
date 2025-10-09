@@ -2,15 +2,16 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
+
 import os
 import appdirs
+
+# ===== Native toggle (1=ON with Rust .pyd, 0=OFF pure-Python) =====
+NATIVE = 1
 
 # =============================================================================
 # MODE & ENV (Dev/Prod Switch)
 # =============================================================================
-
-# ===== Native toggle (1=ON with Rust .pyd, 0=OFF pure-Python) =====
-NATIVE = 1
 
 # ===== Dev & Prod toggle =====
 MODE = "dev"   # "dev" | "prod"
@@ -33,6 +34,7 @@ APP_NAME   = "Kremlin"
 APP_AUTHOR = "TsarStudio"
 WALLET_DATA_DIR   = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)
 
+
 # =============================================================================
 # MONETARY / SUPPLY
 # =============================================================================
@@ -42,6 +44,7 @@ INITIAL_REWARD         = 250 * TSAR
 BLOCKS_PER_HALVING     = 250_000
 COINBASE_MATURITY      = 3
 MAX_COINBASE_EXTRADATA = 100
+
 
 # =============================================================================
 # CONSENSUS / DIFFICULTY
@@ -75,6 +78,7 @@ EDA_WINDOW              = 60
 EDA_TRIGGER_RATIO       = 20.0
 EDA_EASE_MULTIPLIER     = 2.0
 
+
 # =============================================================================
 # FEES / TX POLICY
 # =============================================================================
@@ -89,6 +93,7 @@ SEGWIT_OUTPUT_VBYTES = 31
 DUST_THRESHOLD_SAT   = 294
 MAX_DECIMALS         = 8
 
+
 # =============================================================================
 # CHAIN / IDENTITY
 # =============================================================================
@@ -96,11 +101,12 @@ NET_ID_DEV      = "gulag-net"
 NET_ID_PROD     = "sputnik-net" 
 ADDRESS_PREFIX  = "tsar"
 DEFAULT_NET_ID  = NET_ID_DEV if IS_DEV else NET_ID_PROD
-NETWORK_MAGIC   = b"TSARSTUDIO"
+NETWORK_MAGIC   = b"TSARCHAIN"
 ZERO_HASH       = b"\x00" * 32
 CANONICAL_SEP   = (',', ':')
 
 GENESIS_BLOCK_ID_DEFAULT = ("Tsar Studio : In a world of copies, Bootleg culture encoded in the chain.")
+
 
 # =============================================================================
 # NETWORK / P2P
@@ -111,7 +117,7 @@ BOOTSTRAP_NODE       = BOOTSTRAP_DEV if IS_DEV else BOOTSTRAP_PROD
 
 # === Buffers & Timeouts ===
 BUFFER_SIZE        = 65536
-MAX_MSG            = 2 * 1024 * 1024
+MAX_MSG            = int(1.5 * 1024 * 1024)
 HANDSHAKE_TIMEOUT  = 10
 DISCOVERY_INTERVAL = 5
 SYNC_TIMEOUT       = 10
@@ -122,10 +128,18 @@ MAX_ADDRS_PER_REQ  = 64
 MAX_HISTORY_LIMIT  = 200
 MAX_UTXO_ADDR_LEN  = 128
 
+NONCE_PER_SENDER_MAX         = 4096
+NONCE_GLOBAL_MAX             = 100_000     # total nonce entries of all senders
+
+HANDSHAKE_RL_PER_IP_BURST    = 10          # max 10 handshake
+HANDSHAKE_RL_PER_IP_WINDOW_S = 10          # /10 second
+TEMP_BAN_SECONDS             = 60          # temporary ban
+
 # === Full Sync guard ===
 ENABLE_FULL_SYNC       = FULL_SYNC_DEV if IS_DEV else FULL_SYNC_PROD
 FULL_SYNC_MAX_BLOCKS   = 2000
 FULL_SYNC_MAX_BYTES    = 512 * 1024  # 512 KB
+
 
 # =============================================================================
 # P2P TRANSPORT ENCRYPTION (Node <-> Node)
@@ -142,9 +156,8 @@ SYNC_INFO_MIN_INTERVAL = 60
 SYNC_INFO_MIN_INTERVAL_BOOTSTRAP = 300.0
 
 # Wallet RPC policy (plaintext envelope)
-ALLOW_RPC_PLAINTEXT_DEV  = True
-ALLOW_RPC_PLAINTEXT_PROD = False
-ALLOW_RPC_PLAINTEXT = ALLOW_RPC_PLAINTEXT_DEV if IS_DEV else ALLOW_RPC_PLAINTEXT_PROD
+ALLOW_RPC_PLAINTEXT = False
+
 
 # =============================================================================
 # SECURITY / REPLAY
@@ -152,34 +165,31 @@ ALLOW_RPC_PLAINTEXT = ALLOW_RPC_PLAINTEXT_DEV if IS_DEV else ALLOW_RPC_PLAINTEXT
 ENVELOPE_REQUIRED    = True
 ENFORCE_HELLO_PUBKEY = True
 
-HMAC_SHARED_SECRET = b"tsar.devnet.v.0.2"
 REPLAY_WINDOW_SEC  = 60
+
 
 # =============================================================================
 # CHAT SECURITY
 # =============================================================================
-CHAT_MAX_CT_BYTES    = 2 * 1024      # ciphertext
-CHAT_TS_DRIFT_S      = 120       # sec
-CHAT_TTL_S           = 86400     # 24 hours
-CHAT_MAILBOX_MAX     = 100
-CHAT_GLOBAL_QUEUE_MAX= 20_000
-CHAT_PULL_MAX_ITEMS  = 50
+CHAT_MAX_CT_BYTES     = 2 * 1024      # ciphertext
+CHAT_TS_DRIFT_S       = 120       # sec
+CHAT_TTL_S            = 86400     # 24 hours
+CHAT_MAILBOX_MAX      = 100
+CHAT_GLOBAL_QUEUE_MAX = 20_000
+CHAT_PULL_MAX_ITEMS   = 50
 
 # === Rate limiting ===
-CHAT_RL_ADDR_BURST   = 6
-CHAT_RL_ADDR_WINDOWS = 10        # per 10 second
-CHAT_RL_IP_BURST     = 12
-CHAT_RL_IP_WINDOWS   = 10        # per 10 second
-CHAT_BACKOFF_S       = 60
+CHAT_RL_ADDR_BURST    = 6
+CHAT_RL_ADDR_WINDOWS  = 10        # per 10 second
+CHAT_RL_IP_BURST      = 12
+CHAT_RL_IP_WINDOWS    = 10        # per 10 second
+CHAT_BACKOFF_S        = 60
 
 # === Presence relay ===
-PRESENCE_RL_ADDR_BURST = 2
+PRESENCE_RL_ADDR_BURST     = 2
 PRESENCE_RL_ADDR_WINDOWS   = 10
-PRESENCE_MAX_HOPS      = 3
-PRESENCE_TTL_S         = 3600
-
-CHAT_NONCE_BYTES = 12
-CHAT_SAS_LEN = 8
+PRESENCE_MAX_HOPS          = 3
+PRESENCE_TTL_S             = 3600
 
 
 # =============================================================================
@@ -189,6 +199,7 @@ CONNECT_TIMEOUT_SCAN = 0.25
 RPC_TIMEOUT          = 4.0
 NODE_CACHE_TTL       = 60
 
+
 # =============================================================================
 # CONSENSUS — GRAFFITI
 # =============================================================================
@@ -196,7 +207,7 @@ STORAGE_MAGIC = b"TSAR_GRAF1|"
 GRAFFITI_MAGIC = b"TSAR_GRAF1|"
 
 # === FEATURES / ROLES ===
-ENABLE_NODE_STORAGE = True           # aktifkan storage node
+ENABLE_NODE_STORAGE = True
 STORAGE_ACCEPT_UPLOADS = True
 STORAGE_GC_INTERVAL_S = 3600
 
@@ -226,6 +237,7 @@ STORAGE_UPLOAD_CHUNK = STORAGE_CHUNK
 STORAGE_MIN_CONFIRM = 2
 ALLOW_UNREGISTERED_STORAGE_UPLOADS = True
 
+
 # =============================================================================
 # PATHS / STORAGE
 # =============================================================================
@@ -234,15 +246,18 @@ BLOCK_FILE    = "data/Block/blockchain.json"
 UTXOS_FILE    = "data/UTXOS/utxos.json"
 MEMPOOL_FILE  = "data/Mempools/txpools.json"
 
+
 # =============================================================================
-# USER STORAGE
+# USER & NODE (STORAGE PATH)
 # =============================================================================
+# -- User (wallet)
+WALLETS_DIR    = "data_user"
 USER_KEY_PATH  = "data_user/user_key.json"
 REGISTRY_PATH  = "data_user/wallet_registry.json"
 CHAT_STATE     = "data_user/chat_config.json"
+# -- Node
 NODE_KEY_PATH  = "data_user/node_key.json"
 PEER_KEYS_PATH = "data_user/peer_keys.json"
-WALLETS_DIR    = "data_user"
 
 
 # =============================================================================

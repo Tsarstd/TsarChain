@@ -105,7 +105,6 @@ class NodeClient:
 
         uniq: List[Tuple[str, int]] = []
         seen = set()
-        log.trace("[scan] Scanning %d candidates", len(candidates))
         for item in candidates:
             if item not in seen:
                 seen.add(item)
@@ -246,12 +245,12 @@ class NodeClient:
             for peer in targets:
                 try:
                     if log.isEnabledFor(logging.DEBUG):
-                        log.debug("[send] -> sending", extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type"), req))
-                    resp = self._try_send_one(peer, message)
+                        resp = self._try_send_one(peer, message)
+                        
                     if resp is not None:
                         if log.isEnabledFor(logging.DEBUG):
-                            log.debug("[send] <- received %s", _preview(resp), extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type"), req))
-                        return resp
+                            return resp
+                        
                 except Exception:
                     if _throttle(f"send_err_{peer}", 5.0):
                         log.exception("[send] send error", extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type"), req))
@@ -271,13 +270,13 @@ class NodeClient:
 
         def worker():
             try:
-                log.trace("[send_async] sending: %s", message)
+                log.debug("[send_async] sending: %s", message)
             except Exception:
                 log.exception("[send_async] Logging error")
                 pass
             resp = self.send(message)
             try:
-                log.trace("[send_async] received: %s", resp)
+                log.debug("[send_async] received: %s", resp)
             except Exception:
                 log.exception("[send_async] Logging error")
                 pass

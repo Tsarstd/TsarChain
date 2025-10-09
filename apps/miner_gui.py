@@ -179,8 +179,6 @@ class BlockchainGUI:
         self.cpu_entry.insert(0, "1")
         tk.Button(rr, text="MAX", command=self._auto_cores).pack(side=tk.LEFT, padx=(4,0))
         self.numba_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(rr, text="Use Numba (More Faster!!)", variable=self.numba_var,
-                       bg=self.bg, fg=self.fg, selectcolor="#1e1e1e").pack(side=tk.LEFT, padx=12)
         Tooltip(self.cpu_entry, "More Cores More Fast!!!!")
         
         # Genesis
@@ -539,8 +537,7 @@ class BlockchainGUI:
                 return
 
         use_cores = int(self.cpu_entry.get() or "1")
-        use_numba = bool(self.numba_var.get())
-        pow_backend = "numba" if use_numba else "hashlib"
+        pow_backend = "numba"
 
         self.log_print(f"[*] Mining → addr={self.miner_address_entry.get().strip()}  backend={pow_backend}  cores={use_cores}")
 
@@ -648,8 +645,7 @@ class BlockchainGUI:
             messagebox.showwarning("Benchmark", "Start the node first to obtain network parameters.")
             return
         use_cores = int(self.cpu_entry.get() or "1")
-        use_numba = bool(self.numba_var.get())
-        pow_backend = "numba" if use_numba else "hashlib"
+        pow_backend = "numba"
 
         try:
             last = self.blockchain.chain[-1] if self.blockchain.chain else None
