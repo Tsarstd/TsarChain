@@ -2,22 +2,15 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
-import os
+import os, lmdb
 from contextlib import contextmanager
 from typing import Iterator, Tuple, Optional
 
 from ..utils import config as CFG
 
-_HAVE_LMDB = False
-try:
-    import lmdb
-    _HAVE_LMDB = True
-except Exception:
-    lmdb = None
-
 
 def kv_enabled() -> bool:
-    return CFG.KV_BACKEND == "lmdb" and _HAVE_LMDB
+    return CFG.KV_BACKEND == "lmdb"
 
 
 _env = None

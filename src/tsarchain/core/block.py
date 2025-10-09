@@ -2,27 +2,15 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
-import struct, time, queue, os
+
+import struct, time, queue, os, psutil
 import multiprocessing as mp
 from multiprocessing.synchronize import Event as MpEvent
 from typing import List, Optional
 
-try:
-    import psutil
-    HAVE_PSUTIL = True
-except Exception:
-    psutil = None
-    HAVE_PSUTIL = False
-
-try:
-    from .nmb import HAVE_NUMBA as POW_HAVE_NUMBA, pow_hash as pow_hash_numba
-except Exception:
-    POW_HAVE_NUMBA = False
-    import hashlib
-    def pow_hash_numba(header80: bytes) -> bytes:
-        return hashlib.sha256(hashlib.sha256(header80).digest()).digest()
 
 # ---------------- Local Project ----------------
+from .nmb.pow_numba import pow_hash as pow_hash_numba
 from ..utils.helpers import int_to_little_endian, merkle_root, hash256, bits_to_target
 from ..core.coinbase import CoinbaseTx
 from ..core.tx import Tx
@@ -157,17 +145,10 @@ class Block:
             return None
         
         env_backend = os.getenv("TSAR_POW_BACKEND", "").strip().lower()
-        backend = (env_backend or pow_backend or "auto").lower()
-        if backend not in ("auto", "numba", "hashlib"):
-            backend = "auto"
-        if backend == "auto":
-            use_numba = POW_HAVE_NUMBA
-        elif backend == "numba":
-            use_numba = bool(POW_HAVE_NUMBA)
-        else:
-            use_numba = False
-
-        self.log.info("[mine] backend: %s", "numba" if use_numba else "hashlib")
+        if env_backend == "hashlib" or (pow_backend and pow_backend.lower() == "hashlib"):
+            raise RuntimeError("hashlib backend is disabled: Numba backend is required.")
+        
+        self.log.info("[mine] backend: numba")
         self.log.info("[mine] Mining with %s/%s cores, Target: %s", num_cores, total_cores, hex(target))
 
         header_without_nonce = self.header()[:-4]
@@ -180,7 +161,7 @@ class Block:
             stop_event = mp.Event()
             created_local_stop = True
 
-        worker_target = (type(self).mine_worker_numba if use_numba else type(self).mine_worker)
+        worker_target = type(self).mine_worker_numba
 
         cpu_ids = list(range(total_cores))
         for i in range(num_cores):
@@ -192,14 +173,14 @@ class Block:
             p.start()
             processes.append(p)
 
-            if HAVE_PSUTIL:
-                try:
-                    proc = psutil.Process(p.pid)
+            try:
+                proc = psutil.Process(p.pid)
+                if hasattr(proc, "cpu_affinity"):
                     proc.cpu_affinity([cpu_ids[i % len(cpu_ids)]])
-                    if hasattr(psutil, "HIGH_PRIORITY_CLASS"):
-                        proc.nice(psutil.HIGH_PRIORITY_CLASS)
-                except Exception:
-                    self.log.exception("[mine] psutil affinity/nice failed for pid=%s", p.pid)
+                if hasattr(psutil, "HIGH_PRIORITY_CLASS"):
+                    proc.nice(psutil.HIGH_PRIORITY_CLASS)
+            except Exception:
+                self.log.exception("[mine] psutil affinity/nice failed for pid=%s", p.pid)
 
         alive_after_launch = sum(1 for p in processes if p.is_alive())
         if alive_after_launch < num_cores:
@@ -316,6 +297,7 @@ class Block:
 
     # ==== Workers (tetap): kirim ('PROGRESS', hps) setiap ~5 detik ====
     
+    # The haslib backend is no longer available, mine workers can be used for other purposes
     @staticmethod
     def mine_worker(start_nonce, step, header_template, target, result_queue, found_event: MpEvent, stop_event: MpEvent):
         try:
@@ -367,6 +349,7 @@ class Block:
                 result_queue.put(('ERR', f"Core {start_nonce % max(1, step)} -> {e!r}"))
             except Exception:
                 pass
+
 
     @staticmethod
     def mine_worker_numba(start_nonce, step, header_template, target, result_queue, found_event: MpEvent, stop_event: MpEvent):

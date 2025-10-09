@@ -2,21 +2,15 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
+
 from typing import Final
-
-HAVE_NUMBA: Final[bool]
-
-try:
-    from numba import njit
-    HAVE_NUMBA = True
-except Exception:
-    HAVE_NUMBA = False
-    njit = None
+from numba import njit
+import numpy as np
+HAVE_NUMBA: Final[bool] = True
 
 # ---- Minimal SHA-256 implementation for Numba ----
 
 if HAVE_NUMBA:
-    import numpy as np
     @njit(cache=True)
     def _rotr(x: np.uint32, n: int) -> np.uint32:
         return np.uint32(((x >> n) | (x << (32 - n))) & 0xFFFFFFFF)
@@ -145,8 +139,4 @@ if HAVE_NUMBA:
         return bytes(double_sha256_numba(arr))
 
 else:
-    import hashlib
-    def pow_hash(header80_bytes: bytes) -> bytes:
-        if len(header80_bytes) != 80:
-            raise ValueError("pow_hash expects exactly 80 bytes")
-        return hashlib.sha256(hashlib.sha256(header80_bytes).digest()).digest()
+    raise ImportError("Numba is required but HAVE_NUMBA=False")
