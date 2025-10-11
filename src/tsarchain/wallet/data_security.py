@@ -6,6 +6,7 @@
 import os, json, hashlib, base64, appdirs, time, re
 from typing import Dict
 from ecdsa import SECP256k1, SigningKey
+from ecdsa.util import sigencode_der
 from bech32 import bech32_encode, convertbits
 from mnemonic import Mnemonic
 from cryptography.hazmat.primitives.asymmetric import x25519
@@ -26,16 +27,151 @@ from ..utils import config as CFG
 _CHAT_KEYS_DIR = os.path.join("data_user", "chat_keys")
 os.makedirs(_CHAT_KEYS_DIR, exist_ok=True)
 
+_PREKEY_DIR = os.path.join("data_user", "chat_prekeys")
+os.makedirs(_PREKEY_DIR, exist_ok=True)
+
 
 # ---------------- Secure Path ----------------
-
 def get_secure_wallet_path():
     config_dir = appdirs.user_config_dir(CFG.APP_NAME, CFG.APP_AUTHOR)
     os.makedirs(config_dir, exist_ok=True, mode=0o700)
     return os.path.join(config_dir, "wallets.enc")
 
-# ---------------- Encrypt - Decrypt .JSON ----------------
+# -------------- PreKey management --------------
+def _prekey_path(addr: str) -> str:
+    safe = re.sub(r"[^0-9a-z]", "_", addr.lower())
+    return os.path.join(_PREKEY_DIR, f"{safe}.json")
 
+def _ecdsa_sign_spend(priv_hex: str, data: bytes) -> str:
+    sk = SigningKey.from_string(bytes.fromhex(priv_hex), curve=SECP256k1)
+    sig_der = sk.sign_deterministic(data, hashfunc=hashlib.sha256, sigencode=sigencode_der)
+    return sig_der.hex()
+
+def ensure_signed_prekey(addr: str, password_provider=None) -> dict:
+    p = _prekey_path(addr)
+    if os.path.exists(p):
+        with open(p, "r", encoding="utf-8") as f:
+            obj = json.load(f)
+            
+        if isinstance(obj, dict) and "spk" in obj and "sig" in obj:
+            try:
+                old = bytes.fromhex(str(obj["sig"]))
+                if len(old) == 64:  # raw r||s → must upgrade
+                    if not callable(password_provider):
+                        raise ValueError("password required")
+                    pwd = password_provider(addr)
+                    sp_priv = get_priv_for_address(addr, pwd)
+                    sp_pub  = pubkey_from_privhex(sp_priv)
+                    payload = b"TSAR-SPK|" + bytes.fromhex(obj["spk"]) + b"|" + sp_pub
+                    obj["sig"] = _ecdsa_sign_spend(sp_priv, payload)
+                    with open(p, "w", encoding="utf-8") as wf:
+                        json.dump(obj, wf, indent=2)
+                return obj
+            except Exception:
+                pass
+    if not callable(password_provider): raise ValueError("password required")
+    
+    pwd = password_provider(addr)
+    sp_priv = get_priv_for_address(addr, pwd)
+    sp_pub  = pubkey_from_privhex(sp_priv)  # compressed 33 bytes
+    spk_sk, spk_pk = chat_dh_gen_keypair()
+    payload = b"TSAR-SPK|" + bytes.fromhex(spk_pk) + b"|" + sp_pub
+    sig = _ecdsa_sign_spend(sp_priv, payload)
+    obj = {"addr": addr.lower(), "ik": None, "spk": spk_pk, "spk_sk": spk_sk, "sig": sig, "created": int(time.time()), "opk_list": [], "opk_pairs": []}
+    
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2)
+    return obj
+
+def add_one_time_prekeys(addr: str, n: int) -> dict:
+    p = _prekey_path(addr)
+    obj = ensure_signed_prekey(addr, lambda _a: get_priv_for_address(_a, "")) if not os.path.exists(p) else json.load(open(p,"r",encoding="utf-8"))
+    obj.setdefault("opk_list", [])
+    obj.setdefault("opk_pairs", [])
+    for _ in range(int(n)):
+        sk, pk = chat_dh_gen_keypair()
+        obj["opk_list"].append(pk)
+        obj["opk_pairs"].append({"sk": sk, "pk": pk, "used": False})
+    json.dump(obj, open(p,"w",encoding="utf-8"), indent=2)
+    try: os.chmod(p, 0o600)
+    except Exception:
+        pass
+    return obj
+
+def get_prekey_inventory(addr: str) -> dict:
+    p = _prekey_path(addr)
+    if not os.path.exists(p):
+        return {"opk_queue": 0, "opk_unused_pairs": 0, "created": 0}
+    with open(p, "r", encoding="utf-8") as fh:
+        obj = json.load(fh)
+    opk_queue = len(obj.get("opk_list") or [])
+    unused_pairs = sum(1 for it in obj.get("opk_pairs") or [] if not it.get("used"))
+    return {
+        "opk_queue": opk_queue,
+        "opk_unused_pairs": unused_pairs,
+        "created": int(obj.get("created") or 0),
+    }
+
+def rotate_signed_prekey(addr: str, password_provider=None) -> dict:
+    if not callable(password_provider):
+        raise ValueError("password provider required for SPK rotation")
+    pwd = password_provider(addr)
+    sp_priv = get_priv_for_address(addr, pwd)
+    sp_pub  = pubkey_from_privhex(sp_priv)
+    spk_sk, spk_pk = chat_dh_gen_keypair()
+    payload = b"TSAR-SPK|" + bytes.fromhex(spk_pk) + b"|" + sp_pub
+    sig = _ecdsa_sign_spend(sp_priv, payload)
+    obj = {
+        "addr": addr.lower(),
+        "ik": None,
+        "spk": spk_pk,
+        "spk_sk": spk_sk,
+        "sig": sig,
+        "created": int(time.time()),
+        "opk_list": [],
+        "opk_pairs": [],
+    }
+    p = _prekey_path(addr)
+    with open(p, "w", encoding="utf-8") as fh:
+        json.dump(obj, fh, indent=2)
+    try: os.chmod(p, 0o600)
+    except Exception:
+        pass
+    return obj
+
+def get_local_prekeys_for_recv(addr: str) -> dict:
+    p = _prekey_path(addr)
+    if not os.path.exists(p): return {}
+    obj = json.load(open(p,"r",encoding="utf-8"))
+    return {"spk_sk": obj.get("spk_sk"), "spk": obj.get("spk"),
+            "opk_pairs": obj.get("opk_pairs") or []}
+
+def consume_opk_priv(addr: str, opk_pk_hex: str) -> str | None:
+    p = _prekey_path(addr)
+    if not os.path.exists(p): return None
+    obj = json.load(open(p,"r",encoding="utf-8"))
+    pairs = obj.get("opk_pairs") or []
+    for it in pairs:
+        if (it.get("pk") or "").lower() == (opk_pk_hex or "").lower() and not it.get("used"):
+            it["used"] = True
+            json.dump(obj, open(p,"w",encoding="utf-8"), indent=2)
+            try: os.chmod(p, 0o600)
+            except Exception:
+                pass
+            return it.get("sk")
+    return None
+
+def get_prekey_bundle_local(addr: str, password_provider=None) -> dict:
+    _, ik = load_or_create_chat_dh_key(addr, password_provider)
+    b = ensure_signed_prekey(addr, password_provider)
+    opk = None
+    if (b.get("opk_list") or []):
+        opk = (b["opk_list"]).pop(0)
+        with open(_prekey_path(addr), "w", encoding="utf-8") as f:
+            json.dump(b, f, indent=2)
+    return {"ik": ik, "spk": b["spk"], "sig": b["sig"], "opk": opk}
+
+# ---------------- Encrypt - Decrypt .JSON ----------------
 def encrypt_wallet_file(data: dict, master_password: str) -> bytes:
     salt = os.urandom(16)
     kdf = PBKDF2HMAC(
@@ -71,7 +207,6 @@ def decrypt_wallet_file(encrypted_data: bytes, master_password: str) -> dict:
 
 
 # ---------------- Chat DH key (with optional encryption) ----------------
-
 def _chat_key_path(addr: str) -> str:
     return os.path.join(_CHAT_KEYS_DIR, f"{addr.lower()}.json")
 

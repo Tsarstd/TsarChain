@@ -44,6 +44,24 @@ class ChatTab:
         self._msg_meta_map = {}
         self._chat_key_ttl_sec = 15 * 60
         self.chat_blocked = set()
+        # pasang key-change callback → tampilkan alert & reset sesi
+        try:
+            def _on_key_changed(addr, old, new):
+                try:
+                    # buang sesi ratchet lawan itu supaya re-bootstrap aman
+                    if hasattr(self.chat_mgr, "_sessions"):
+                        self.chat_mgr._sessions.pop(addr, None)
+                except Exception:
+                    pass
+                messagebox.showwarning("Partner key changed",
+                    f"Public key untuk {self._alias_label(addr) or self._mask_addr(addr)} telah berubah.\n\n"
+                    "Safety Number diperbarui. Verifikasi kembali sebelum lanjut chat.")
+                self._chat_update_security_badges()
+            if hasattr(self.chat_mgr, "on_partner_key_changed"):
+                self.chat_mgr.on_partner_key_changed = _on_key_changed
+        except Exception:
+            pass
+        
         self.contacts = getattr(self.contact_mgr, "contacts", {}) if self.contact_mgr else {}
         self.parent = None
         self.frame = None
@@ -964,18 +982,35 @@ class ChatTab:
 
         def _on_result(resp):
             st = (resp or {}).get("status")
+            mid = (resp or {}).get("msg_id")
             if st == "duplicate":
+                if mid is not None: self._chat_update_status(mid, "• duplicate")
                 self._chat_append_line("••• duplicate (not re-sent)", tag="sys")
+                
             elif st == "rate_limited":
                 scope = (resp or {}).get("scope") or "addr"
                 self.toast(f"spam detect!! ({scope}). Try Aggain Later.", ms=1200, kind="warn")
+                if mid is not None: self._chat_update_status(mid, "× rate-limited")
+
             elif st == "mailbox_full":
                 self.toast("Mailbox penerima penuh.", kind="error")
-            elif st in ("queued", None):
-                # already handled or a generic error
-                pass
+                if mid is not None: self._chat_update_status(mid, "× mailbox full")
+                
+            elif st == "relayed":
+                hops = (resp or {}).get("hops", 0)
+                if mid is not None: self._chat_update_status(mid, f"↗ relayed ({hops} hops)")
+                
+            elif st == "queued":
+                if mid is not None: self._chat_update_status(mid, "✓ queued")
+                
+            elif st is None:
+                if mid is not None: self._chat_update_status(mid, "× error")
+            
             else:
                 self.toast(f"Gagal kirim: {resp}", kind="error")
+                if mid is not None:
+                    reason = (resp or {}).get("reason") or st
+                    self._chat_update_status(mid, f"× {reason}")
 
         self.chat_mgr.send_message(frm_addr, to_addr, text, _on_queued, _on_result)
         

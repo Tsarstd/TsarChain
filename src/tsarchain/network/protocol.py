@@ -166,7 +166,6 @@ def recv_message(sock, timeout: float | None = None):
         return body[len(CFG.NETWORK_MAGIC):]
     except Exception as e:
         if _is_disconnect_exc(e):
-            log.debug("[recv_message] peer closed/aborted connection (%s)", getattr(e, "winerror", getattr(e, "errno", e)))
             return None
         
         log.exception("[recv_message] unexpected error")
@@ -304,8 +303,7 @@ def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
         raise ValueError("bad signature")
     # Anti-replay within REPLAY_WINDOW_SEC using per-sender nonce cache
     _nonce_register(node_id, str(envelope.get("nonce")), int(ts_val))
-    
-    log.trace("[verify_and_unwrap] sig=%s", envelope.get("sig")[:12])
+
     return inner
 
 # =========================================================

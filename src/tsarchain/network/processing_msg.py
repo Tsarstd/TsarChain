@@ -3,7 +3,7 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173; libsecp256k1
 
-import time, secrets, base64
+import time, secrets, base64, random
 from typing import TYPE_CHECKING, Any, Optional
 from bech32 import convertbits, bech32_decode
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -27,6 +27,7 @@ def _mask_addr(s: str) -> str:
     s = (s or "").strip().lower()
     return s if len(s) < 14 else f"{s[:6]}…{s[-6:]}"
 
+
 def process_message(self: "Network", message: dict[str, Any], addr: Optional[tuple]=None) -> dict | None:
     if not isinstance(message, dict):
         return {"error": "invalid message: expected JSON object"}
@@ -45,11 +46,11 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
     USER = {
         "PING", "GET_BALANCE", "GET_BALANCES", "CREATE_TX", "CREATE_TX_MULTI", "GET_INFO",
         "GET_TX_HISTORY", "GET_TX_DETAIL", "NEW_TX", "GET_UTXOS", "GET_PEERS",
-        "GET_NETWORK_INFO", "GET_BLOCK_AT", "GET_BLOCK", "GET_BLOCK_HASH",
+        "GET_NETWORK_INFO", "GET_BLOCK_AT", "GET_BLOCK", "GET_BLOCK_HASH", "STOR_LIST", 
         
         # Chat & storage listing
         "CHAT_REGISTER", "CHAT_LOOKUP_PUB", "CHAT_PRESENCE", "CHAT_SEND", "CHAT_PULL", "CHAT_RELAY", "CHAT_READ",
-        "STOR_LIST",
+        "CHAT_GET_PREKEY", "CHAT_PUBLISH_PREKEYS",
         
         # Mempool utilities
         "MEMPOOL_PRUNE", "GET_MEMPOOL",
@@ -78,40 +79,33 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
 
     # =============== NODE MESSAGES ===============
     if mtype == "HELLO":
-        log.debug("[process_message] HELLO from %s", addr)
         return self._handle_hello(message, addr)
 
     elif mtype == "NEW_BLOCK":
         self.broadcast.receive_block(message, addr, self.peers)
-        log.debug("[process_message] NEW_BLOCK processed from %s", addr)
         return {"status": "ok"}
 
     elif mtype == "GET_FULL_SYNC":
         if not CFG.ENABLE_FULL_SYNC:
             return {"type": "SYNC_REDIRECT", "reason": "full_sync_disabled"}
-        log.debug("[process_message] GET_FULL_SYNC from %s", addr)
         return self._handle_get_full_sync(message, addr)
 
     elif mtype == "FULL_SYNC":
         if not CFG.ENABLE_FULL_SYNC:
             return {"status": "ignored", "reason": "full_sync_disabled"}
-        log.debug("[process_message] FULL_SYNC from %s", addr)
         return self._handle_full_sync(message, addr)
 
     elif mtype == "CHAIN":
         if self._validate_incoming_chain(message):
-            log.debug("[process_message] CHAIN accepted from %s", addr)
-        return {"status": "ok"}
+            return {"status": "ok"}
 
     elif mtype == "MEMPOOL":
         self.broadcast.receive_mempool(message)
-        log.debug("[process_message] MEMPOOL processed from %s", addr)
         return {"status": "mempool received"}
 
     # =============== USER MESSAGES ===============
 
     elif mtype == "PING":
-        log.trace("[process_message] PING from %s", addr)
         return {"type": "PONG"}
 
     elif mtype in ("GET_BALANCE", "GET_BALANCES"):
@@ -123,7 +117,6 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         if len(addrs_raw) > CFG.MAX_ADDRS_PER_REQ:
             return {"error": "too many addresses (max %d)" % CFG.MAX_ADDRS_PER_REQ}
         
-        log.debug("[process_message] %s from %s", mtype, addr)
         norm = []
         for a in addrs_raw:
             if not a:
@@ -323,13 +316,11 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
                                     direction=message.get("direction"),
                                     status=message.get("status"))
         history["height"] = tip_height
-        log.debug("[process_message] GET_TX_HISTORY for %s from %s", _mask_addr(addr_str), addr)
         return {"type": "TX_HISTORY", "address": addr_str, **history}
 
     elif mtype == "GET_TX_DETAIL":
         txid_hex = message.get("txid")
         if not txid_hex:
-            log.debug("[process_message] GET_TX_DETAIL missing txid from %s", addr)
             return {"error": "missing txid"}
         return self._get_tx_detail(txid_hex)
 
@@ -342,7 +333,6 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             return {"error": "address too long"}
         
         utxos = self.broadcast.utxodb.get(address)
-        log.debug("[process_message] GET_UTXOS for %s from %s", _mask_addr(address), addr)
         return {"type": "UTXOS", "address": address, "utxos": utxos}
     
     # ========= P2P CHAT =========
@@ -428,6 +418,12 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             self.chat_spend_pub[addr_s] = spend_pk
             self.chat_presence_pub[addr_s] = chat_pub
             self.chat_presence_seen.add(pid)
+            b = self.chat_prekeys.get(addr_s) or {}
+            if "ik" not in b: 
+                b["ik"] = chat_pub
+                b["ts"] = int(now)
+                self.chat_prekeys[addr_s] = b
+                
         pres = {"pid": pid, "address": addr_s, "pubkey": chat_pub, "spend_pub": spend_pk, "presence_sig": presence_sig, "ts": int(now), "hops": 0}
         try:
             self._relay_presence_async(pres, exclude=addr)
@@ -435,7 +431,6 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             log.exception("[process_message] CHAT_REGISTER relay error from %s", addr)
             pass
         return {"type": "CHAT_REGISTERED", "address": addr_s, "pubkey": chat_pub}
-
 
     elif mtype == "CHAT_LOOKUP_PUB":
         addr_s = (message.get("address") or "").strip().lower()
@@ -498,6 +493,11 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             self.chat_presence_pub[addr_s] = pubhex
             self.chat_spend_pub[addr_s] = spend_pk
             self.chat_presence_seen.add(pid)
+            b = self.chat_prekeys.get(addr_s) or {}
+            if "ik" not in b:
+                b["ik"] = pubhex
+                b["ts"] = int(time.time())
+                self.chat_prekeys[addr_s] = b
 
         message["hops"] = hops + 1
         try:
@@ -507,6 +507,46 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             pass
         return {"type": "CHAT_PRESENCE_OK"}
 
+    # ====== PREKEY BUNDLE ======
+    elif mtype == "CHAT_PUBLISH_PREKEYS":
+        addr_s = (message.get("address") or "").strip().lower()
+        ik  = (message.get("ik")  or "").strip().lower()
+        spk = (message.get("spk") or "").strip().lower()
+        sig = (message.get("sig") or "").strip().lower()
+        opk = (message.get("opk") or None)
+        if not addr_s or not ik or not spk or not sig:
+            return {"error":"missing fields"}
+        # validasi: addr -> spend_pub ada? dan signature SPK ditandatangani oleh spend key
+        sp = (self.chat_spend_pub.get(addr_s) or "").strip().lower()
+        if not sp: return {"error":"unknown_address"}
+        try:
+            pub_obj = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(sp))
+            payload = b"TSAR-SPK|" + bytes.fromhex(spk) + b"|" + bytes.fromhex(sp)
+            pub_obj.verify(bytes.fromhex(sig), payload, ec.ECDSA(hashes.SHA256()))
+        except Exception:
+            return {"error":"bad_spk_sig"}
+        with self.chat_lock:
+            rec = self.chat_prekeys.get(addr_s) or {}
+            rec.update({"ik": ik, "spk": spk, "sig": sig, "ts": int(time.time())})
+            if isinstance(opk, str) and len(opk)==64:
+                rec.setdefault("opk_list", []).append(opk)
+            self.chat_prekeys[addr_s] = rec
+        return {"type":"CHAT_PUBLISHED"}
+
+    elif mtype == "CHAT_GET_PREKEY":
+        addr_s = (message.get("address") or "").strip().lower()
+        b = self.chat_prekeys.get(addr_s) or {}
+        if not b or ("ik" not in b or "spk" not in b or "sig" not in b):
+            return {"error":"no_bundle"}
+        # consume satu OPK jika ada
+        opk = None
+        with self.chat_lock:
+            lst = b.get("opk_list") or []
+            if lst:
+                opk = lst.pop(0)
+            self.chat_prekeys[addr_s] = b
+        sp = self.chat_spend_pub.get(addr_s)
+        return {"type":"CHAT_PREKEY_BUNDLE","bundle":{"ik": b["ik"], "spk": b["spk"], "sig": b["sig"], "opk": opk, "spend_pub": sp}}
 
     elif mtype == "CHAT_SEND":
         ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
@@ -516,6 +556,15 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         mid = message.get("msg_id")
         ts  = int(message.get("ts") or 0)
         chat_sig = (message.get("chat_sig") or "").strip().lower()
+        try:
+            ratchet_pn = int(message.get("ratchet_pn") or 0)
+            ratchet_n = int(message.get("ratchet_n") or 0)
+        except Exception:
+            return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_ratchet_index"}
+        max_idx = getattr(CFG, "CHAT_RATCHET_INDEX_MAX", 1_000_000)
+        if not (0 <= ratchet_pn <= max_idx and 0 <= ratchet_n <= max_idx):
+            return {"type": "CHAT_ACK", "status": "rejected", "reason": "ratchet_index_out_of_range"}
+
 
         if not self._tb_allow(self.rl_ip, ip, CFG.CHAT_RL_IP_BURST, CFG.CHAT_RL_IP_WINDOWS, CFG.CHAT_RL_IP_BURST, backoff_key=ip):
             self._backoff(ip, CFG.CHAT_BACKOFF_S)
@@ -526,6 +575,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             return {"type": "CHAT_ACK", "status": "rate_limited", "scope": "address"}
 
         if not (frm and to and enc and (mid is not None) and ts):
+            log.debug("[process_message] CHAT_SEND reject bad_fields from %s -> %s mid=%s", frm, to, mid)
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_fields"}
 
         now = int(time.time())
@@ -533,6 +583,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "ts_drift"}
 
         if self._dedup_mid(frm, mid):
+            log.debug("[process_message] CHAT_SEND duplicate drop frm=%s mid=%s", frm, mid)
             return {"type": "CHAT_ACK", "status": "duplicate"}
 
         # ---- Encrypted only ----
@@ -542,28 +593,40 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             fp_hex    = (message.get("from_pub")    or "").strip().lower()     # eph X25519
             fs_hex = (message.get("from_static") or "").strip().lower()
             exp = self.chat_presence_pub.get(frm)
-            if not exp or fs_hex != exp:
-                return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}     # static X25519
+            
+            if not exp:
+                log.debug("[process_message] CHAT_SEND reject no_presence frm=%s mid=%s", frm, mid)
+                return {"type": "CHAT_ACK", "status": "rejected", "reason": "no_presence"}
+            if fs_hex != exp:
+                log.debug("[process_message] CHAT_SEND reject bad_from_static frm=%s mid=%s exp=%s got=%s", frm, mid, exp[:12], fs_hex[:12])
+                return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}
+            
         except Exception:
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_enc"}
 
         if not (len(ct_hex) // 2 <= CFG.CHAT_MAX_CT_BYTES):
+            log.debug("[process_message] CHAT_SEND reject too_large frm=%s mid=%s size=%d", frm, mid, len(ct_hex)//2)
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "too_large"}
         
         if not (len(nonce_hex) == 24 and all(c in "0123456789abcdef" for c in nonce_hex)):
+            log.debug("[process_message] CHAT_SEND reject bad_nonce frm=%s mid=%s", frm, mid)
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_nonce"}
         
         if not (len(fp_hex) == 64 and all(c in "0123456789abcdef" for c in fp_hex)):
+            log.debug("[process_message] CHAT_SEND reject bad_from_pub frm=%s mid=%s", frm, mid)
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_pub"}
         
         if not (len(fs_hex) == 64 and all(c in "0123456789abcdef" for c in fs_hex)):
+            log.debug("[process_message] CHAT_SEND reject bad_from_static_len frm=%s mid=%s", frm, mid)
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}
         
         # routing authenticity signature verification (without decryption)
         if not chat_sig:
+            log.debug("[process_message] CHAT_SEND reject sig_required frm=%s mid=%s", frm, mid)
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "sig_required"}
         sp = (self.chat_spend_pub.get(frm) or "").strip().lower()
         if not sp:
+            log.debug("[process_message] CHAT_SEND reject no_spend_pub frm=%s mid=%s", frm, mid)
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "no_spend_pub"}
         try:
             vk = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(sp))
@@ -572,11 +635,39 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
                 frm.encode(), to.encode(),
                 str(mid).encode(), str(ts).encode(),
                 bytes.fromhex(fp_hex), bytes.fromhex(fs_hex),
+                str(ratchet_pn).encode(), str(ratchet_n).encode(),
                 bytes.fromhex(nonce_hex), bytes.fromhex(ct_hex)
             ])
             vk.verify(bytes.fromhex(chat_sig), chat_bytes, ec.ECDSA(hashes.SHA256()))
         except Exception:
+            log.debug("[process_message] CHAT_SEND reject bad_sig frm=%s mid=%s", frm, mid)
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_sig"}
+
+        # === Onion-lite relay (opsional) ===
+        relay_hops = int(getattr(CFG, "CHAT_NUM_HOPS", 2))
+        if getattr(CFG, "CHAT_FORCE_RELAY", False) and len(self.peers) >= max(1, relay_hops):
+            route = _choose_relay_route(self, hops=relay_hops)
+            if not route:
+                log.debug("[process_message] CHAT_SEND relay requested but no peers available; falling back to direct queue")
+            else:
+                log.debug("[process_message] CHAT_SEND relay route=%s used_opk=%s", route, "yes" if message.get("used_opk") else "no")
+                inner = {
+                    "type": "CHAT_SEND_INNER",
+                    "to": to,
+                    "msg": {
+                        "from": frm,
+                        "msg_id": mid,
+                        "ts": ts,
+                        "from_static": fs_hex,
+                        "from_pub": (message.get("from_pub") or "").strip().lower(),
+                        "enc": {"nonce": enc.get("nonce"), "ct": enc.get("ct")},
+                        "used_opk": message.get("used_opk"),
+                        "ratchet_pn": ratchet_pn,
+                        "ratchet_n": ratchet_n,
+                    },
+                }
+                _relay_chain(self, route, inner)
+                return {"type": "CHAT_ACK", "status": "relayed", "hops": len(route)}
 
         ok = self._mailbox_put(to, {
             "type": "CHAT_ITEM",
@@ -585,11 +676,15 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             "enc": {"nonce": enc.get("nonce"), "ct": enc.get("ct")},
             "from_pub": (message.get("from_pub") or "").strip().lower(),
             "from_static": fs_hex,
+            "used_opk": message.get("used_opk"),
+            "ratchet_pn": ratchet_pn,
+            "ratchet_n": ratchet_n,
             "msg_id": mid,
             "ts": ts,
         }, CFG.CHAT_TTL_S, CFG.CHAT_MAILBOX_MAX, CFG.CHAT_GLOBAL_QUEUE_MAX)
-        
+
         if not ok:
+            log.debug("[process_message] CHAT_SEND reject mailbox_full frm=%s -> %s mid=%s", frm, to, mid)
             return {"type": "CHAT_ACK", "status": "mailbox_full"}
         try:
             self._enqueue_rcpt(frm, "delivered", mid, frm, to, ts)
@@ -597,8 +692,8 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             log.exception("[process_message] CHAT_SEND enqueue_rcpt error from %s", addr)
             pass
 
+        log.debug("[process_message] CHAT_SEND queued frm=%s -> %s mid=%s used_opk=%s", frm, to, mid, "yes" if message.get("used_opk") else "no")
         return {"type": "CHAT_ACK", "status": "queued"}
-
 
     elif mtype == "CHAT_PULL":
         me = (message.get("address") or "").strip().lower()
@@ -621,6 +716,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
 
         now = int(time.time())
         if abs(now - ts) > CFG.CHAT_TS_DRIFT_S:
+            log.debug("[process_message] CHAT_PULL reject ts_drift addr=%s now=%s ts=%s", me, now, ts)
             return {"type": "CHAT_NONE", "items": [], "error": "ts_drift"}
 
         spend_pk = self.chat_spend_pub.get(me)
@@ -639,21 +735,32 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         self._gc_mailboxes()
         return {"type": "CHAT_ITEMS", "items": items}
 
-
     elif mtype == "CHAT_RELAY":
-        data    = message.get("data") or {}
-        msg_id  = data.get("msg_id")
-        to_addr = (data.get("to") or "").strip().lower()
-        
-        if not msg_id or not to_addr:
-            return {"status": "ignored"}
-        with self.chat_lock:
-            if not self._chat_seen_add_locked(msg_id):
-                return {"status": "dup"}
-            self._chat_enqueue_locked(to_addr, data)
-            
-        self._relay_chat_async(data, exclude=addr)
-        return {"status": "ok"}
+        # payload: {"route": [peer1, peer2, ...], "inner": {...}}
+        route = list(message.get("route") or [])
+        inner = message.get("inner") or {}
+        if route:
+            nxt = route.pop(0)
+            return _send_chat_relay(self, nxt, {"type": "CHAT_RELAY", "route": route, "inner": inner})
+        # last hop: deliver inner ke mailbox
+        if (inner or {}).get("type") == "CHAT_SEND_INNER":
+            to  = (inner.get("to") or "").strip().lower()
+            msg = inner.get("msg") or {}
+            ok = self._mailbox_put(to, {
+                "type": "CHAT_ITEM",
+                "from": msg.get("from"),
+                "to": to,
+                "enc": msg.get("enc"),
+                "from_pub": msg.get("from_pub"),
+                "from_static": msg.get("from_static"),
+                "used_opk": msg.get("used_opk"),
+                "ratchet_pn": msg.get("ratchet_pn"),
+                "ratchet_n": msg.get("ratchet_n"),
+                "msg_id": msg.get("msg_id"),
+                "ts": msg.get("ts"),
+            }, CFG.CHAT_TTL_S, CFG.CHAT_MAILBOX_MAX, CFG.CHAT_GLOBAL_QUEUE_MAX)
+            return {"type": "CHAT_RELAY_ACK", "status": ("queued" if ok else "rejected")}
+        return {"error": "bad_inner"}
     
     elif mtype == "CHAT_READ":
         sender = (message.get("sender") or "").strip().lower()
@@ -798,3 +905,29 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
     else:
         log.debug("[process_message] unknown type '%s' from %s", mtype, addr)
         return {"error": "Unknown message type"}
+    
+    # -------- helpers: relay ----------
+def _choose_relay_route(self, hops: int = 2) -> list[tuple]:
+    try:
+        with self.lock:
+            pool = list(self.peers)
+        random.shuffle(pool)
+        return pool[:max(1,hops)]
+    except Exception:
+        return []
+
+def _relay_chain(self, route: list[tuple], inner: dict, src_addr=None):
+    if not route:
+        return
+    first = route[0]
+    payload = {"type":"CHAT_RELAY","route": route[1:], "inner": inner}
+    self._send_chat_relay(first, payload)
+
+def _send_chat_relay(self, peer: tuple, payload: dict):
+    try:
+        # gunakan mekanisme kirim pesan node yang sudah ada
+        self._send_to_peer(peer, payload)   # pastikan _send_to_peer ada di kelas Network
+        return {"status":"ok"}
+    except Exception:
+        log.exception("[_send_chat_relay] send error to %s", peer)
+        return {"status":"error"}

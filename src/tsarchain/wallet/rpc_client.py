@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
+
 from __future__ import annotations
 
 import json, socket, threading, time, logging, secrets
@@ -18,12 +19,6 @@ log = get_ctx_logger("tsarchain.wallet(rpc_client)")
 
 _last_log_gate = {}
 
-def _preview(obj, limit=1000):
-    try:
-        s = json.dumps(obj, default=str)
-    except Exception:
-        s = str(obj)
-    return (s[:limit] + "…") if len(s) > limit else s
 
 def _mk_extra(peer=None, rpc=None, req=None):
     return {"peer": peer or "-", "rpc": rpc or "-", "req": req or "-"}
@@ -244,13 +239,9 @@ class NodeClient:
             targets = peers if round_idx == 0 else self.scan()
             for peer in targets:
                 try:
-                    if log.isEnabledFor(logging.DEBUG):
-                        resp = self._try_send_one(peer, message)
-                        
+                    resp = self._try_send_one(peer, message)
                     if resp is not None:
-                        if log.isEnabledFor(logging.DEBUG):
-                            return resp
-                        
+                        return resp
                 except Exception:
                     if _throttle(f"send_err_{peer}", 5.0):
                         log.exception("[send] send error", extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type"), req))
@@ -269,18 +260,7 @@ class NodeClient:
                 pass
 
         def worker():
-            try:
-                log.debug("[send_async] sending: %s", message)
-            except Exception:
-                log.exception("[send_async] Logging error")
-                pass
             resp = self.send(message)
-            try:
-                log.debug("[send_async] received: %s", resp)
-            except Exception:
-                log.exception("[send_async] Logging error")
-                pass
-
             root = self.root or (tk._get_default_root() if tk else None)
             if root is not None:
                 try:

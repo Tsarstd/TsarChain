@@ -170,6 +170,7 @@ class Network:
         self.rl_ip   = {}
         self.backoff_until = {}
         self.chat_gc_last = 0
+        self.chat_prekeys: dict[str, dict] = {}
 
         self.server_thread.start()
         self.discovery_thread.start()
@@ -620,6 +621,34 @@ class Network:
             return False
 
 # ------------------------------ P2P Chat ------------------------------
+    def _send_to_peer(self, peer: tuple[str,int], payload: dict) -> None:
+        """Kirim satu pesan ke peer tertentu, mengikuti kebijakan envelope & P2P_ENC."""
+        if not isinstance(peer, tuple) or len(peer) != 2:
+            raise ValueError("bad peer")
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1.5)
+            s.connect(peer)
+            env = build_envelope(payload, self.node_ctx, extra={"pubkey": self.pubkey})
+            if getattr(CFG, "ENFORCE_HELLO_PUBKEY", False) or getattr(CFG, "ENVELOPE_REQUIRED", False):
+                env["pubkey"] = self.pubkey
+            raw = json.dumps(env).encode("utf-8")
+            if getattr(CFG, "P2P_ENC_REQUIRED", True):
+                chan = SecureChannel(
+                    s, role="client",
+                    node_id=self.node_id, node_pub=self.pubkey, node_priv=self.privkey,
+                    get_pinned=self._get_pinned, set_pinned=self._set_pinned,
+                )
+                chan.handshake()
+                chan.send(raw)
+                try: _ = chan.recv(1)
+                except Exception:
+                    pass
+            else:
+                send_message(s, raw)
+                try: _ = recv_message(s, timeout=1)
+                except Exception:
+                    pass
+
     def _chat_enqueue_locked(self, to_addr: str, msg: dict) -> None:
         mb = self.chat_mailboxes.get(to_addr)
         if mb is None:

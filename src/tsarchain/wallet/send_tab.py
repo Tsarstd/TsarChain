@@ -4,8 +4,10 @@
 # Refs: see REFERENCES.md
 
 from __future__ import annotations
-from typing import Callable, Dict, Any, Optional, Sequence, List
+
+import re
 import tkinter as tk
+from typing import Callable, Dict, Any, Optional, Sequence, List
 from tkinter import ttk, messagebox as mb
 
 # ---------------- Local Project (Wallet Only) ----------------
@@ -27,17 +29,9 @@ class SendTab:
             pass
 
     def set_amount(self, amount_text: str) -> None:
-        """Prefill amount. Accepts sats (int/str) or TSAR string; auto-detects.
-        If it's a pure integer, we assume sats and convert to TSAR string.
-        """
-        import re as _re
         try:
             txt = (str(amount_text or '').strip())
-            if _re.fullmatch(r"\d+", txt):
-                try:
-                    from ..utils import config as CFG  # may fail if path differs
-                except Exception:
-                    from ..utils import config as CFG
+            if re.fullmatch(r"\d+", txt):
                 tsar = int(txt) / float(CFG.TSAR)
                 txt = ("{:.8f}".format(tsar)).rstrip('0').rstrip('.')
             self.amount_var.set(txt)

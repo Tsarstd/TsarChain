@@ -191,6 +191,19 @@ PRESENCE_RL_ADDR_WINDOWS   = 10
 PRESENCE_MAX_HOPS          = 3
 PRESENCE_TTL_S             = 3600
 
+# === Chat onion-lite ===
+CHAT_FORCE_RELAY = True       # multi-hop
+CHAT_NUM_HOPS    = 2          
+
+CHAT_SESSION_DIR            = os.path.join("data_user", "chat_sessions")
+CHAT_KEY_TTL_SEC            = 15 * 60
+CHAT_PWD_CACHE_TTL_SEC      = 60
+CHAT_RATCHET_MAX_SKIP       = 200
+CHAT_RATCHET_INDEX_MAX      = 1_000_000
+CHAT_OPK_MIN_THRESHOLD      = 5
+CHAT_OPK_REFILL_COUNT       = 20
+CHAT_SPK_ROTATE_INTERVAL_S  = 7 * 24 * 3600
+
 
 # =============================================================================
 # RPC / TIMEOUTS / CACHE
@@ -272,7 +285,7 @@ STORAGE_NODES_FILE  = os.path.join(CONTRACTS_DIR, "storage_nodes.json")
 # DB / KV BACKEND
 # =============================================================================
 DB_DIR = "data/DB"
-KV_BACKEND = "lmdb"   # lmdb or json
+KV_BACKEND = "json"   # lmdb or json
 LMDB_MAP_SIZE_INIT = 64 * 1024 * 1024  # 64 MiB
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # 64 GiB
 
