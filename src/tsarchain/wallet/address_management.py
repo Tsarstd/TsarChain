@@ -1172,7 +1172,7 @@ class WalletsMixin:
                 if addr and bal_labels:
                     addrs_and_labels.append((addr, bal_labels))
             except Exception:
-                log.debug("[refresh_all_wallets] cannot collect address from card", exc_info=True)
+                log.exception("[refresh_all_wallets] cannot collect address from card", exc_info=True)
                 continue
 
         if not addrs_and_labels:

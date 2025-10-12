@@ -20,8 +20,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat,
 from ..utils import config as CFG
 
 # ---------------- Local Project (Wallet Only) ----------------
-from .data_security import (
-    Wallet,
+from .data_security import (Wallet,
     load_or_create_chat_dh_key,
     get_prekey_bundle_local,
     get_local_prekeys_for_recv,
@@ -338,11 +337,14 @@ class ChatManager:
         peer = self._canon(peer_addr)
         if self._get_session(me, peer):
             cb(None); return
+            
         self._ensure_prekey_inventory(me)
         my_sk_hex, my_pk_hex = self._get_chat_dh(me)   # identity (IK)
+        
         def _on_bundle(resp: Optional[Dict[str, Any]]):
             if not resp or resp.get("type") != "CHAT_PREKEY_BUNDLE":
                 cb("no_bundle"); return
+                
             b = resp.get("bundle") or {}
             log.debug("[ensure_session] bundle keys=%s", list(b.keys()))
             
@@ -350,18 +352,29 @@ class ChatManager:
             spk = (b.get("spk") or "").lower()         # signed prekey
             opk = (b.get("opk") or "").lower()         # optional one-time
             spend_pub = (b.get("spend_pub") or "").lower()
-            if spend_pub:
-                try:
-                    if len(spend_pub) == 66:
-                        vk = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(spend_pub))
-                        payload = b"TSAR-SPK|" + bytes.fromhex(spk) + b"|" + bytes.fromhex(spend_pub)
-                        vk.verify(bytes.fromhex(b.get("sig","")), payload, ec.ECDSA(hashes.SHA256()))
-                    else:
-                        log.warning("[ensure_session] spend_pub length invalid; continue without ECDSA verify")
-                except Exception as e:
-                    log.warning("[ensure_session] SPK signature verify failed: %s; continue without blocking", e)
-            else:
-                log.debug("[ensure_session] no spend_pub in bundle; skipping ECDSA verification")
+            sig_hex = (b.get("sig") or "").lower()
+            
+            if not spend_pub:
+                log.warning("[ensure_session] bundle missing spend_pub for %s", peer)
+                cb("bundle_missing_spend_pub"); return
+                
+            if len(spend_pub) != 66 or any(c not in "0123456789abcdef" for c in spend_pub):
+                log.warning("[ensure_session] spend_pub invalid format for %s", peer)
+                cb("bundle_invalid_spend_pub"); return
+                
+            if not sig_hex:
+                log.warning("[ensure_session] bundle missing SPK signature for %s", peer)
+                cb("bundle_missing_spk_sig"); return
+                
+            try:
+                vk = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(spend_pub))
+                payload = b"TSAR-SPK|" + bytes.fromhex(spk) + b"|" + bytes.fromhex(spend_pub)
+                vk.verify(bytes.fromhex(sig_hex), payload, ec.ECDSA(hashes.SHA256()))
+                
+            except Exception as e:
+                log.warning("[ensure_session] SPK signature verify failed for %s: %s", peer, e)
+                cb("bundle_spk_verify_failed"); return
+                
             # 2) X3DH derive
             try:
                 eph = x25519.X25519PrivateKey.generate()
@@ -373,9 +386,11 @@ class ChatManager:
                 dh2 = eph.exchange(IKr)               # EPh × IKr
                 dh3 = eph.exchange(SPKr)              # EPh × SPKr
                 secret = dh1 + dh2 + dh3
+                
                 if opk:
                     OPKr = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(opk))
                     secret += IKs.exchange(OPKr)      # optional IKs x OPKr
+                    
                 rk = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:x3dh:v1").derive(secret)
                 sess = RatchetSession.init_as_initiator(
                     root_key=rk,
@@ -629,9 +644,19 @@ class ChatManager:
 
         def _after(resp):
             try:
-                log.debug("[publish_prekeys] resp=%s", resp)
-                self.rpc_send({"type":"CHAT_GET_PREKEY","address": addr},
-                              lambda r: log.debug("[publish_prekeys.selfcheck] %s", r))
+                status = (resp or {}).get("type")
+                log.debug("[publish_prekeys] resp_type=%s", status)
+
+                def _selfcheck(r):
+                    r_type = (r or {}).get("type")
+                    if r_type == "CHAT_PREKEY_BUNDLE":
+                        bundle = r.get("bundle") or {}
+                        has_opk = bool(bundle.get("opk"))
+                        log.debug("[publish_prekeys.selfcheck] bundle_ok=True has_opk=%s", has_opk)
+                    else:
+                        log.debug("[publish_prekeys.selfcheck] resp_type=%s", r_type)
+
+                self.rpc_send({"type":"CHAT_GET_PREKEY","address": addr}, _selfcheck)
             finally:
                 (on_done or (lambda _r: None))(resp)
         self.rpc_send(payload, _after)
@@ -790,12 +815,14 @@ class RatchetSession:
         self.Nr = int(nr)
         self.Pn = int(pn)
         self.skipped: Dict[str, bytes] = {}
+        
         if skipped:
             for k, v in skipped.items():
                 try:
                     self.skipped[k] = bytes.fromhex(v)
                 except Exception:
                     continue
+                
         self.my_identity = my_identity
         self.their_identity = their_identity
         self.my_static_hex = my_static_hex or my_identity
@@ -836,6 +863,7 @@ class RatchetSession:
         
         sck = cls._kdf(root_key, b"tsar:ratchet:send")
         rck = cls._kdf(root_key, b"tsar:ratchet:recv")
+        
         return cls(root_key, sck, rck, my_ratchet_priv, their_ratchet_pub_hex, my_identity, their_identity, my_static_hex, ns=0, nr=0, pn=0)
 
     @classmethod
@@ -853,6 +881,7 @@ class RatchetSession:
         rck = cls._kdf(root_key, b"tsar:ratchet:send")
         inst = cls(root_key, sck, rck, my_ratchet_priv, their_first_eph, my_identity, their_identity, my_static_hex, ns=0, nr=0, pn=0)
         inst._needs_send_rotation = True
+        
         return inst
 
     def to_dict(self) -> dict:
@@ -893,6 +922,7 @@ class RatchetSession:
             skipped=data.get("skipped"),
         )
         inst._needs_send_rotation = bool(data.get("needs_send_rotation", False))
+        
         return inst
 
     def _remote_pub(self, pub_hex: str) -> x25519.X25519PublicKey:

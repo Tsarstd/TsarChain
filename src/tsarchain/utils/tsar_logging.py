@@ -78,11 +78,33 @@ _DEFAULT_DATEFMT = "%Y-%m-%d %H:%M:%S"
 class RedactFilter(logging.Filter):
     RE_SEED = re.compile(r"\b([a-z]{3,}\s){11,23}[a-z]{3,}\b", re.I)
     RE_WIF  = re.compile(r"\b[5KL][1-9A-HJ-NP-Za-km-z]{50,51}\b")
+    _SENSITIVE_KEYS = (
+        "ik", "spk", "sig", "opk", "spend_pub", "chat_pub", "from_pub", "from_static",
+        "chat_sig", "pull_sig", "read_sig", "used_opk", "nonce", "ct",
+        "rk", "cks", "ckr", "dhs", "dhr", "my_identity", "their_identity", "my_static_hex",
+        "enc", "bundle", "payload",
+    )
+    RE_HEX_FIELD = re.compile(
+        r"(?i)(\"?(?:"
+        + "|".join(_SENSITIVE_KEYS)
+        + r")\"?\s*[:=]\s*)(['\"]?)([0-9a-f]{12,})(['\"]?)"
+    )
+    RE_LONG_HEX = re.compile(r"\b[0-9a-f]{48,}\b", re.I)
+
+    @staticmethod
+    def _mask_hex_field(match: re.Match) -> str:
+        prefix = match.group(1)
+        quote = match.group(2) or ""
+        suffix = match.group(4) or ""
+        return f"{prefix}{quote}[REDACTED_HEX]{suffix}"
+
     def filter(self, record):
         msg = record.getMessage()
         msg = self.RE_SEED.sub("[REDACTED_MNEMONIC]", msg)
         msg = self.RE_WIF.sub("[REDACTED_WIF]", msg)
-        record.msg, record.args = msg, None
+        msg = self.RE_HEX_FIELD.sub(self._mask_hex_field, msg)
+        msg = self.RE_LONG_HEX.sub("[REDACTED_HEX]", msg)
+        record.msg, record.args = msg, ()
         return True
 
 class RateLimitFilter(logging.Filter):
