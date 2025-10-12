@@ -21,7 +21,7 @@ IS_DEV = (MODE.lower() == "dev")
 PORT_RANGE_DEV     = (38169, 38178)
 PORT_RANGE_PROD    = (40196, 40205)          
 
-BOOTSTRAP_DEV      = ("127.0.0.1", 38169)
+BOOTSTRAP_DEV      = ("31.97.51.207", 38169)
 BOOTSTRAP_PROD     = ("127.0.0.1", 40196)
 
 FULL_SYNC_DEV      = True
@@ -197,7 +197,7 @@ CHAT_NUM_HOPS    = 2
 
 CHAT_SESSION_DIR            = os.path.join("data_user", "chat_sessions")
 CHAT_KEY_TTL_SEC            = 15 * 60
-CHAT_PWD_CACHE_TTL_SEC      = 60
+CHAT_PWD_CACHE_TTL_SEC      = 180
 CHAT_RATCHET_MAX_SKIP       = 200
 CHAT_RATCHET_INDEX_MAX      = 1_000_000
 CHAT_OPK_MIN_THRESHOLD      = 5
