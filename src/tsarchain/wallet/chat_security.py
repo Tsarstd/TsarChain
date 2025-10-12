@@ -3,7 +3,6 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: libsecp256k1; Signal-X3DH; Signal-DoubleRatchet; RFC7748-X25519; RFC5869-HKDF; NIST-800-38D-AES-GCM
 
-import json
 import os
 import time
 import random
@@ -29,6 +28,9 @@ from .data_security import (Wallet,
     add_one_time_prekeys,
     get_prekey_inventory,
     rotate_signed_prekey,
+    load_chat_session,
+    store_chat_session,
+    delete_chat_session,
 )
 
 # ---------------- Logger ----------------
@@ -165,10 +167,11 @@ class ChatManager:
         return _provider
 
     def _ensure_prekey_inventory(self, addr: str) -> None:
+        provider = self._pwd_provider_for(addr)
         try:
-            inv = get_prekey_inventory(addr)
+            inv = get_prekey_inventory(addr, provider)
         except Exception:
-            log.exception("[prekey] inventory read failed for %s", addr)
+            log.exception("[_ensure_prekey_inventory] inventory read failed for %s", addr)
             return
         now = self._now()
         rotated = False
@@ -176,22 +179,22 @@ class ChatManager:
         created = int(inv.get("created") or 0)
         if rotate_after and created and now - created >= rotate_after:
             try:
-                rotate_signed_prekey(addr, self._pwd_provider_for(addr))
-                add_one_time_prekeys(addr, CFG.CHAT_OPK_REFILL_COUNT)
+                rotate_signed_prekey(addr, provider)
+                add_one_time_prekeys(addr, CFG.CHAT_OPK_REFILL_COUNT, provider)
                 rotated = True
-                inv = get_prekey_inventory(addr)
+                inv = get_prekey_inventory(addr, provider)
             except Exception:
-                log.exception("[prekey] rotate signed prekey failed for %s", addr)
+                log.exception("[_ensure_prekey_inventory] rotate signed prekey failed for %s", addr)
         if int(inv.get("opk_queue") or 0) < CFG.CHAT_OPK_MIN_THRESHOLD:
             try:
-                add_one_time_prekeys(addr, CFG.CHAT_OPK_REFILL_COUNT)
+                add_one_time_prekeys(addr, CFG.CHAT_OPK_REFILL_COUNT, provider)
             except Exception:
-                log.exception("[prekey] refill OPK failed for %s", addr)
+                log.exception("[_ensure_prekey_inventory] refill OPK failed for %s", addr)
         if rotated or int(inv.get("opk_queue") or 0) < CFG.CHAT_OPK_MIN_THRESHOLD:
             try:
                 self.publish_prekeys(addr, on_done=lambda _resp: None)
             except Exception:
-                log.debug("[prekey] publish_prekeys defer for %s", addr, exc_info=True)
+                log.debug("[_ensure_prekey_inventory] publish_prekeys defer for %s", addr, exc_info=True)
 
     def _session_key(self, me: str, peer: str) -> Tuple[str, str]:
         return (self._canon(me), self._canon(peer))
@@ -200,34 +203,32 @@ class ChatManager:
         return os.path.join(CFG.CHAT_SESSION_DIR, self._canon(me) or "_", f"{self._canon(peer) or '_'}")
 
     def _load_session_from_disk(self, me: str, peer: str) -> Optional["RatchetSession"]:
-        path = self._session_path(me, peer)
-        if not os.path.exists(path):
+        provider = self._pwd_provider_for(me)
+        try:
+            data = load_chat_session(me, peer, provider)
+        except Exception:
+            log.exception("[_load_session_from_disk] failed loading chat session %s -> %s", me, peer)
+            return None
+        if not data:
             return None
         try:
-            with open(path, "r", encoding="utf-8") as fh:
-                data = json.load(fh)
-            sess = RatchetSession.from_dict(data)
-            return sess
+            return RatchetSession.from_dict(data)
         except Exception:
-            log.exception("failed loading chat session %s -> %s", me, peer)
+            log.exception("[_load_session_from_disk] failed decoding chat session %s -> %s", me, peer)
             return None
 
     def _persist_session(self, me: str, peer: str, sess: "RatchetSession") -> None:
-        path = self._session_path(me, peer)
+        provider = self._pwd_provider_for(me)
         try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w", encoding="utf-8") as fh:
-                json.dump(sess.to_dict(), fh, indent=2)
+            store_chat_session(me, peer, sess.to_dict(), provider)
         except Exception:
-            log.exception("failed persisting chat session %s -> %s", me, peer)
+            log.exception("[_persist_session] failed persisting chat session %s -> %s", me, peer)
 
     def _delete_session(self, me: str, peer: str) -> None:
-        path = self._session_path(me, peer)
         try:
-            if os.path.exists(path):
-                os.remove(path)
+            delete_chat_session(me, peer)
         except Exception:
-            log.exception("failed deleting chat session %s -> %s", me, peer)
+            log.exception("[_delete_session] failed deleting chat session %s -> %s", me, peer)
 
     def _get_session(self, me: str, peer: str) -> Optional["RatchetSession"]:
         key = self._session_key(me, peer)
@@ -727,7 +728,8 @@ class ChatManager:
                     sess = self._get_session(me, frm)
                     if not sess:
                         try:
-                            pkinfo = get_local_prekeys_for_recv(me)
+                            provider_me = self._pwd_provider_for(me)
+                            pkinfo = get_local_prekeys_for_recv(me, provider_me)
                             spk_sk = (pkinfo.get("spk_sk") or "")
                             if not spk_sk:
                                 raise ValueError("missing_spk_sk")
@@ -740,7 +742,7 @@ class ChatManager:
                             dh3 = SPKs.exchange(EPh_pub)
                             secret = dh1 + dh2 + dh3
                             if used_opk:
-                                opk_sk = consume_opk_priv(me, used_opk)
+                                opk_sk = consume_opk_priv(me, used_opk, provider_me)
                                 if opk_sk:
                                     OPKs = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(opk_sk))
                                     secret += OPKs.exchange(IKs_pub)

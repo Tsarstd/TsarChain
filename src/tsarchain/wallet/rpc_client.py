@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 import tkinter as tk
 
 # ---------------- Local Project (With Node) ----------------
-from tsarchain.network.protocol import send_message, recv_message,build_envelope, verify_and_unwrap, is_envelope, SecureChannel
+from tsarchain.network.protocol import send_message, recv_message, build_envelope, verify_and_unwrap, is_envelope, SecureChannel
 from ..utils import config as CFG
 
 # ---------------- Logger ----------------

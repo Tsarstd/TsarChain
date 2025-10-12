@@ -528,9 +528,7 @@ class TsarStorageGUI:
         try:
             self._server = getattr(self, "_server", None)
             if self._server is None:
-                # pakai STORAGE_DIR dari config
-                from tsarchain.utils.config import STORAGE_DIR
-                self._server = StorageServer("0.0.0.0", miner_port, STORAGE_DIR)
+                self._server = StorageServer("0.0.0.0", miner_port, CFG.STORAGE_DIR)
                 self.logln(f"[Storage] server listening on 0.0.0.0:{miner_port}")
         except Exception as e:
             messagebox.showerror("Connect", f"Gagal start storage server: {e}")

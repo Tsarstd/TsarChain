@@ -4,16 +4,15 @@
 # Refs: see REFERENCES.md
 
 import tkinter as tk
-import time, os, json, hashlib
+import time, hashlib
 from typing import Optional
-from typing import Callable
 from tkinter import ttk, messagebox
 from tkinter import font as tkfont
 from datetime import datetime
 
 
 from tsarchain.wallet.chat_security import ChatManager
-from ..utils import config as CFG
+from tsarchain.wallet.data_security import load_chat_state, save_chat_state
 
 
 class ChatTab:
@@ -576,14 +575,12 @@ class ChatTab:
 
     def _chat_state_load(self):
         try:
-            p = CFG.CHAT_STATE
-            if os.path.exists(p):
-                data = json.load(open(p, "r", encoding="utf-8"))
-                self.chat_blocked = set(data.get("blocked", []))
-                self.chat_mgr.pub_cache.update(data.get("pubcache", {}) or {})
-                tsz = data.get("textsize")
-                if tsz:
-                    self.chat_textsize_var.set(tsz)
+            data = load_chat_state()
+            self.chat_blocked = set(data.get("blocked", []))
+            self.chat_mgr.pub_cache.update(data.get("pubcache", {}) or {})
+            tsz = data.get("textsize")
+            if tsz:
+                self.chat_textsize_var.set(tsz)
         except Exception:
             pass
 
@@ -592,8 +589,9 @@ class ChatTab:
             data = {
                 "blocked": sorted(self.chat_blocked),
                 "pubcache": self.chat_mgr.pub_cache,
-                "textsize": self.chat_textsize_var.get(),}
-            json.dump(data, open(CFG.CHAT_STATE, "w", encoding="utf-8"))
+                "textsize": self.chat_textsize_var.get(),
+            }
+            save_chat_state(data)
         except Exception:
             pass
 

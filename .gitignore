@@ -9,6 +9,7 @@ env/
 .env
 
 /data/
+/data_node/
 /data_user/
 
 **/__pycache__/

@@ -3,8 +3,9 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP173; BIP39; libsecp256k1; Signal-X3DH; RFC7748-X25519; NIST-800-38D-AES-GCM
 
-import os, json, hashlib, base64, appdirs, time, re
-from typing import Dict
+import os, json, hashlib, base64, appdirs, time, re, threading
+from pathlib import Path
+from typing import Dict, Optional, Tuple, Sequence, List
 from ecdsa import SECP256k1, SigningKey
 from ecdsa.util import sigencode_der
 from bech32 import bech32_encode, convertbits
@@ -18,7 +19,9 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.fernet import Fernet
 
+
 # ---------------- Local Project (With Node) ----------------
+from ..storage.kv import kv_enabled, get as kv_get, put as kv_put, delete as kv_delete
 from ..utils.helpers import hash160
 from ..core.tx import Tx
 from ..utils import config as CFG
@@ -29,6 +32,249 @@ os.makedirs(_CHAT_KEYS_DIR, exist_ok=True)
 
 _PREKEY_DIR = os.path.join("data_user", "chat_prekeys")
 os.makedirs(_PREKEY_DIR, exist_ok=True)
+
+_SECURE_KV_DB = "secure_wallet"
+
+_APP_SECRET_PATH = Path(os.path.join("data_user", ".app_secret.json"))
+_APP_SECRET_LOCK = threading.Lock()
+_APP_SECRET_CACHE: Optional[str] = None
+
+
+def _secure_kv_key(namespace: str, key: str) -> bytes:
+    return f"{namespace}:{key}".encode("utf-8")
+
+
+def encrypt_blob(blob: bytes, password: str) -> Dict:
+    salt = os.urandom(16)
+    key = _derive_key(password, salt)
+    aes = AESGCM(key)
+    nonce = os.urandom(12)
+    ct = aes.encrypt(nonce, blob, None)
+    return {
+        "alg": "AESGCM",
+        "nonce": nonce.hex(),
+        "ct": ct.hex(),
+        "kdf": "scrypt",
+        "salt": salt.hex(),
+        "n": 2**15,
+        "r": 8,
+        "p": 1,
+    }
+
+
+def decrypt_blob(enc: Dict, password: str) -> bytes:
+    if str(enc.get("alg")).upper() != "AESGCM":
+        raise ValueError("Unsupported cipher")
+    
+    if str(enc.get("kdf")).lower() != "scrypt":
+        raise ValueError("Unsupported kdf")
+    
+    salt = bytes.fromhex(enc["salt"])
+    key = _derive_key(password, salt, n=int(enc.get("n", 2**15)), r=int(enc.get("r", 8)), p=int(enc.get("p", 1)))
+    aes = AESGCM(key)
+    nonce = bytes.fromhex(enc["nonce"])
+    ct = bytes.fromhex(enc["ct"])
+    return aes.decrypt(nonce, ct, None)
+
+
+def _secure_backend_read(namespace: str, key: str, path: Optional[Path]) -> Tuple[Optional[Dict], bool]:
+    raw = None
+    from_file = False
+    if kv_enabled():
+        try:
+            val = kv_get(_SECURE_KV_DB, _secure_kv_key(namespace, key))
+        except Exception:
+            val = None
+        if val:
+            raw = val.decode("utf-8")
+    if raw is None and path is not None and path.exists():
+        raw = path.read_text(encoding="utf-8")
+        from_file = True
+    if raw is None:
+        return None, from_file
+    try:
+        obj = json.loads(raw)
+    except Exception as exc:
+        raise ValueError(f"secure storage corrupted for {namespace}:{key}") from exc
+    return obj, from_file and kv_enabled()
+
+
+def _secure_backend_write(namespace: str, key: str, path: Optional[Path], payload: Dict) -> None:
+    data = json.dumps(payload, separators=(",", ":"))
+    if kv_enabled():
+        kv_put(_SECURE_KV_DB, _secure_kv_key(namespace, key), data.encode("utf-8"))
+        if path is not None and path.exists():
+            try:
+                path.unlink()
+            except Exception:
+                pass
+    else:
+        if path is None:
+            raise ValueError("file path required for secure storage")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(data, encoding="utf-8")
+
+
+def _secure_backend_delete(namespace: str, key: str, path: Optional[Path]) -> None:
+    if kv_enabled():
+        try:
+            kv_delete(_SECURE_KV_DB, _secure_kv_key(namespace, key))
+        except Exception:
+            pass
+    if path is not None and path.exists():
+        try:
+            path.unlink()
+        except Exception:
+            pass
+
+
+def _get_app_secret_password() -> str:
+    global _APP_SECRET_CACHE
+    with _APP_SECRET_LOCK:
+        if _APP_SECRET_CACHE:
+            return _APP_SECRET_CACHE
+        record, _ = _secure_backend_read("app_secret", "global", _APP_SECRET_PATH)
+        secret_hex: Optional[str] = None
+        if isinstance(record, dict):
+            secret_hex = str(record.get("secret") or "") or None
+        if not secret_hex:
+            secret_hex = os.urandom(32).hex()
+            payload = {"secret": secret_hex, "created": int(time.time())}
+            _secure_backend_write("app_secret", "global", _APP_SECRET_PATH, payload)
+            try:
+                os.chmod(_APP_SECRET_PATH, 0o600)
+            except Exception:
+                pass
+        password = base64.urlsafe_b64encode(bytes.fromhex(secret_hex)).decode("utf-8")
+        _APP_SECRET_CACHE = password
+        return password
+
+
+def _app_secret_provider(_prompt: str = "") -> str:
+    return _get_app_secret_password()
+
+
+def _secure_load(namespace: str, key: str, path: Optional[Path], password_provider, prompt: str) -> Tuple[Optional[Dict], bool]:
+    obj, migrated = _secure_backend_read(namespace, key, path)
+    if obj is None:
+        return None, False
+    if "enc" in obj:
+        if not callable(password_provider):
+            raise ValueError("password required")
+        pwd = password_provider(prompt)
+        if not pwd:
+            raise ValueError("password required")
+        plain = decrypt_blob(obj["enc"], pwd)
+        return json.loads(plain.decode("utf-8")), False
+    return obj, True
+
+
+def _secure_store(namespace: str, key: str, path: Optional[Path], data: Dict, password_provider, prompt: str) -> None:
+    if not callable(password_provider):
+        raise ValueError("password provider required")
+    pwd = password_provider(prompt)
+    if not pwd:
+        raise ValueError("password required")
+    enc = encrypt_blob(json.dumps(data, separators=(",", ":")).encode("utf-8"), pwd)
+    payload = {"version": 1, "enc": enc}
+    _secure_backend_write(namespace, key, path, payload)
+def load_chat_state(default: Optional[Dict] = None) -> Dict:
+    fallback = default or {"blocked": [], "pubcache": {}, "textsize": "Medium"}
+    path_obj = Path(CFG.CHAT_STATE)
+    try:
+        data, legacy = _secure_load("chat_state", "default", path_obj, _app_secret_provider, "Load chat state")
+    except Exception:
+        return fallback.copy()
+    if data is None:
+        return fallback.copy()
+    if legacy:
+        try:
+            _secure_store("chat_state", "default", path_obj, data, _app_secret_provider, "Migrate chat state")
+        except Exception:
+            pass
+    return {
+        "blocked": list(dict.fromkeys(data.get("blocked", []) or [])),
+        "pubcache": data.get("pubcache") or {},
+        "textsize": data.get("textsize") or fallback["textsize"],
+    }
+
+
+def save_chat_state(data: Dict) -> None:
+    path_obj = Path(CFG.CHAT_STATE)
+    payload = {
+        "blocked": sorted(set(data.get("blocked", []) or [])),
+        "pubcache": data.get("pubcache") or {},
+        "textsize": data.get("textsize") or "Medium",
+    }
+    _secure_store("chat_state", "default", path_obj, payload, _app_secret_provider, "Store chat state")
+
+
+def load_wallet_registry(default: Optional[Sequence[str]] = None) -> List[str]:
+    fallback = list(default or [])
+    path_obj = Path(CFG.REGISTRY_PATH)
+    try:
+        data, legacy = _secure_load("wallet_registry", "default", path_obj, _app_secret_provider, "Load wallet registry")
+    except Exception:
+        return fallback
+    if data is None:
+        return fallback
+    if legacy:
+        try:
+            _secure_store("wallet_registry", "default", path_obj, data, _app_secret_provider, "Migrate wallet registry")
+        except Exception:
+            pass
+    wallets = data.get("wallets") if isinstance(data, dict) else None
+    if not isinstance(wallets, list):
+        return fallback
+    seen: List[str] = []
+    for addr in wallets:
+        a = (addr or "").strip().lower()
+        if a and a not in seen:
+            seen.append(a)
+    return seen
+
+
+def save_wallet_registry(addrs: Sequence[str]) -> None:
+    path_obj = Path(CFG.REGISTRY_PATH)
+    uniq: List[str] = []
+    for addr in addrs:
+        a = (addr or "").strip().lower()
+        if a and a not in uniq:
+            uniq.append(a)
+    payload = {"wallets": uniq, "updated": int(time.time())}
+    _secure_store("wallet_registry", "default", path_obj, payload, _app_secret_provider, "Store wallet registry")
+
+
+def ensure_wallet_registry(default: Optional[Sequence[str]] = None) -> List[str]:
+    wallets = load_wallet_registry(default)
+    if not wallets and default:
+        save_wallet_registry(default)
+        return list(default)
+    if not wallets:
+        save_wallet_registry([])
+    return wallets
+
+
+def load_user_key_record() -> Optional[Dict]:
+    path_obj = Path(CFG.USER_KEY_PATH)
+    try:
+        data, legacy = _secure_load("user_key", "default", path_obj, _app_secret_provider, "Load user key")
+    except Exception:
+        data = None
+        legacy = False
+    if data is None:
+        return None
+    if legacy:
+        try:
+            _secure_store("user_key", "default", path_obj, data, _app_secret_provider, "Migrate user key")
+        except Exception:
+            pass
+    return data
+
+
+def save_user_key_record(record: Dict) -> None:
+    path_obj = Path(CFG.USER_KEY_PATH)
+    _secure_store("user_key", "default", path_obj, record, _app_secret_provider, "Store user key")
 
 
 # ---------------- Secure Path ----------------
@@ -42,122 +288,140 @@ def _prekey_path(addr: str) -> str:
     safe = re.sub(r"[^0-9a-z]", "_", addr.lower())
     return os.path.join(_PREKEY_DIR, f"{safe}.json")
 
+def _prekey_storage_key(addr: str) -> str:
+    return addr.lower()
+
+def _load_prekey_record(addr: str, password_provider=None) -> Optional[Dict]:
+    addr_c = addr.lower()
+    path = Path(_prekey_path(addr_c))
+    record, legacy = _secure_load(
+        namespace="chat_prekey",
+        key=addr_c,
+        path=path,
+        password_provider=password_provider,
+        prompt=f"Unlock chat prekeys for {addr_c}",
+    )
+    if record is None:
+        return None
+    if legacy:
+        _secure_store("chat_prekey", addr_c, path, record, password_provider, f"Migrate chat prekeys for {addr_c}")
+    return record
+
+def _store_prekey_record(addr: str, record: Dict, password_provider) -> None:
+    addr_c = addr.lower()
+    path = Path(_prekey_path(addr_c))
+    _secure_store("chat_prekey", addr_c, path, record, password_provider, f"Store chat prekeys for {addr_c}")
+
 def _ecdsa_sign_spend(priv_hex: str, data: bytes) -> str:
     sk = SigningKey.from_string(bytes.fromhex(priv_hex), curve=SECP256k1)
     sig_der = sk.sign_deterministic(data, hashfunc=hashlib.sha256, sigencode=sigencode_der)
     return sig_der.hex()
 
 def ensure_signed_prekey(addr: str, password_provider=None) -> dict:
-    p = _prekey_path(addr)
-    if os.path.exists(p):
-        with open(p, "r", encoding="utf-8") as f:
-            obj = json.load(f)
-            
-        if isinstance(obj, dict) and "spk" in obj and "sig" in obj:
-            try:
-                old = bytes.fromhex(str(obj["sig"]))
-                if len(old) == 64:  # raw r||s → must upgrade
-                    if not callable(password_provider):
-                        raise ValueError("password required")
-                    pwd = password_provider(addr)
-                    sp_priv = get_priv_for_address(addr, pwd)
-                    sp_pub  = pubkey_from_privhex(sp_priv)
-                    payload = b"TSAR-SPK|" + bytes.fromhex(obj["spk"]) + b"|" + sp_pub
-                    obj["sig"] = _ecdsa_sign_spend(sp_priv, payload)
-                    with open(p, "w", encoding="utf-8") as wf:
-                        json.dump(obj, wf, indent=2)
-                return obj
-            except Exception:
-                pass
-    if not callable(password_provider): raise ValueError("password required")
-    
+    addr_c = addr.lower()
+    record = _load_prekey_record(addr_c, password_provider)
+    if record and record.get("spk") and record.get("spk_sk") and record.get("sig"):
+        record.setdefault("opk_list", [])
+        record.setdefault("opk_pairs", [])
+        record.setdefault("addr", addr_c)
+        return record
+
+    if not callable(password_provider):
+        raise ValueError("password required")
+
     pwd = password_provider(addr)
+    if not pwd:
+        raise ValueError("password required")
     sp_priv = get_priv_for_address(addr, pwd)
-    sp_pub  = pubkey_from_privhex(sp_priv)  # compressed 33 bytes
+    sp_pub = pubkey_from_privhex(sp_priv)
     spk_sk, spk_pk = chat_dh_gen_keypair()
     payload = b"TSAR-SPK|" + bytes.fromhex(spk_pk) + b"|" + sp_pub
     sig = _ecdsa_sign_spend(sp_priv, payload)
-    obj = {"addr": addr.lower(), "ik": None, "spk": spk_pk, "spk_sk": spk_sk, "sig": sig, "created": int(time.time()), "opk_list": [], "opk_pairs": []}
-    
-    with open(p, "w", encoding="utf-8") as f:
-        json.dump(obj, f, indent=2)
-    return obj
 
-def add_one_time_prekeys(addr: str, n: int) -> dict:
-    p = _prekey_path(addr)
-    obj = ensure_signed_prekey(addr, lambda _a: get_priv_for_address(_a, "")) if not os.path.exists(p) else json.load(open(p,"r",encoding="utf-8"))
-    obj.setdefault("opk_list", [])
-    obj.setdefault("opk_pairs", [])
+    record = record or {}
+    record.update({
+        "addr": addr_c,
+        "ik": record.get("ik"),
+        "spk": spk_pk,
+        "spk_sk": spk_sk,
+        "sig": sig,
+        "created": int(time.time()),
+        "opk_list": record.get("opk_list") or [],
+        "opk_pairs": record.get("opk_pairs") or [],
+    })
+
+    _store_prekey_record(addr_c, record, password_provider)
+    return record
+
+def add_one_time_prekeys(addr: str, n: int, password_provider=None) -> dict:
+    if not callable(password_provider):
+        raise ValueError("password required")
+    record = ensure_signed_prekey(addr, password_provider)
+    record.setdefault("opk_list", [])
+    record.setdefault("opk_pairs", [])
     for _ in range(int(n)):
         sk, pk = chat_dh_gen_keypair()
-        obj["opk_list"].append(pk)
-        obj["opk_pairs"].append({"sk": sk, "pk": pk, "used": False})
-    json.dump(obj, open(p,"w",encoding="utf-8"), indent=2)
-    try: os.chmod(p, 0o600)
-    except Exception:
-        pass
-    return obj
+        record["opk_list"].append(pk)
+        record["opk_pairs"].append({"sk": sk, "pk": pk, "used": False})
+    _store_prekey_record(addr, record, password_provider)
+    return record
 
-def get_prekey_inventory(addr: str) -> dict:
-    p = _prekey_path(addr)
-    if not os.path.exists(p):
+def get_prekey_inventory(addr: str, password_provider=None) -> dict:
+    record = _load_prekey_record(addr, password_provider)
+    if record is None:
         return {"opk_queue": 0, "opk_unused_pairs": 0, "created": 0}
-    with open(p, "r", encoding="utf-8") as fh:
-        obj = json.load(fh)
-    opk_queue = len(obj.get("opk_list") or [])
-    unused_pairs = sum(1 for it in obj.get("opk_pairs") or [] if not it.get("used"))
+    opk_queue = len(record.get("opk_list") or [])
+    unused_pairs = sum(1 for it in record.get("opk_pairs") or [] if not it.get("used"))
     return {
         "opk_queue": opk_queue,
         "opk_unused_pairs": unused_pairs,
-        "created": int(obj.get("created") or 0),
+        "created": int(record.get("created") or 0),
     }
 
 def rotate_signed_prekey(addr: str, password_provider=None) -> dict:
     if not callable(password_provider):
         raise ValueError("password provider required for SPK rotation")
     pwd = password_provider(addr)
+    if not pwd:
+        raise ValueError("password required")
     sp_priv = get_priv_for_address(addr, pwd)
     sp_pub  = pubkey_from_privhex(sp_priv)
     spk_sk, spk_pk = chat_dh_gen_keypair()
     payload = b"TSAR-SPK|" + bytes.fromhex(spk_pk) + b"|" + sp_pub
     sig = _ecdsa_sign_spend(sp_priv, payload)
-    obj = {
+    record = _load_prekey_record(addr, password_provider) or {}
+    record.update({
         "addr": addr.lower(),
-        "ik": None,
+        "ik": record.get("ik"),
         "spk": spk_pk,
         "spk_sk": spk_sk,
         "sig": sig,
         "created": int(time.time()),
         "opk_list": [],
         "opk_pairs": [],
+    })
+    _store_prekey_record(addr, record, password_provider)
+    return record
+
+def get_local_prekeys_for_recv(addr: str, password_provider=None) -> dict:
+    record = _load_prekey_record(addr, password_provider)
+    if not record:
+        return {}
+    return {
+        "spk_sk": record.get("spk_sk"),
+        "spk": record.get("spk"),
+        "opk_pairs": record.get("opk_pairs") or [],
     }
-    p = _prekey_path(addr)
-    with open(p, "w", encoding="utf-8") as fh:
-        json.dump(obj, fh, indent=2)
-    try: os.chmod(p, 0o600)
-    except Exception:
-        pass
-    return obj
 
-def get_local_prekeys_for_recv(addr: str) -> dict:
-    p = _prekey_path(addr)
-    if not os.path.exists(p): return {}
-    obj = json.load(open(p,"r",encoding="utf-8"))
-    return {"spk_sk": obj.get("spk_sk"), "spk": obj.get("spk"),
-            "opk_pairs": obj.get("opk_pairs") or []}
-
-def consume_opk_priv(addr: str, opk_pk_hex: str) -> str | None:
-    p = _prekey_path(addr)
-    if not os.path.exists(p): return None
-    obj = json.load(open(p,"r",encoding="utf-8"))
-    pairs = obj.get("opk_pairs") or []
+def consume_opk_priv(addr: str, opk_pk_hex: str, password_provider=None) -> str | None:
+    record = _load_prekey_record(addr, password_provider)
+    if not record:
+        return None
+    pairs = record.get("opk_pairs") or []
     for it in pairs:
         if (it.get("pk") or "").lower() == (opk_pk_hex or "").lower() and not it.get("used"):
             it["used"] = True
-            json.dump(obj, open(p,"w",encoding="utf-8"), indent=2)
-            try: os.chmod(p, 0o600)
-            except Exception:
-                pass
+            _store_prekey_record(addr, record, password_provider)
             return it.get("sk")
     return None
 
@@ -167,9 +431,50 @@ def get_prekey_bundle_local(addr: str, password_provider=None) -> dict:
     opk = None
     if (b.get("opk_list") or []):
         opk = (b["opk_list"]).pop(0)
-        with open(_prekey_path(addr), "w", encoding="utf-8") as f:
-            json.dump(b, f, indent=2)
+        _store_prekey_record(addr, b, password_provider)
+    else:
+        _store_prekey_record(addr, b, password_provider)
     return {"ik": ik, "spk": b["spk"], "sig": b["sig"], "opk": opk}
+
+
+def _session_storage_key(me: str, peer: str) -> str:
+    return f"{(me or '').lower()}|{(peer or '').lower()}"
+
+
+def _session_path(me: str, peer: str) -> Path:
+    base = Path(CFG.CHAT_SESSION_DIR)
+    me_c = (me or "").lower() or "_"
+    peer_c = (peer or "").lower() or "_"
+    return base / me_c / peer_c
+
+
+def load_chat_session(me: str, peer: str, password_provider) -> Optional[Dict]:
+    key = _session_storage_key(me, peer)
+    path = _session_path(me, peer)
+    record, legacy = _secure_load(
+        namespace="chat_session",
+        key=key,
+        path=path,
+        password_provider=password_provider,
+        prompt=f"Unlock chat session for {me.lower() if me else ''}",
+    )
+    if record and legacy:
+        _secure_store("chat_session", key, path, record, password_provider,
+                      f"Migrate chat session for {me.lower() if me else ''}")
+    return record
+
+
+def store_chat_session(me: str, peer: str, record: Dict, password_provider) -> None:
+    key = _session_storage_key(me, peer)
+    path = _session_path(me, peer)
+    _secure_store("chat_session", key, path, record, password_provider,
+                  f"Store chat session for {me.lower() if me else ''}")
+
+
+def delete_chat_session(me: str, peer: str) -> None:
+    key = _session_storage_key(me, peer)
+    path = _session_path(me, peer)
+    _secure_backend_delete("chat_session", key, path)
 
 # ---------------- Encrypt - Decrypt .JSON ----------------
 def encrypt_wallet_file(data: dict, master_password: str) -> bytes:
@@ -211,58 +516,32 @@ def _chat_key_path(addr: str) -> str:
     return os.path.join(_CHAT_KEYS_DIR, f"{addr.lower()}.json")
 
 def load_or_create_chat_dh_key(addr: str, password_provider=None) -> tuple[str, str]:
-    p = _chat_key_path(addr)
-    if os.path.exists(p):
-        with open(p, "r", encoding="utf-8") as f:
-            obj = json.load(f)
-            
-        if isinstance(obj, dict) and "enc" in obj and "pk_hex" in obj:
-            enc_blob = obj["enc"]; pk_hex = obj["pk_hex"]
-            if not callable(password_provider):
-                raise ValueError("Password required to unlock chat key")
-            
-            pwd = password_provider("Enter wallet password to unlock chat key")
-            if not pwd:
-                raise ValueError("Unlock canceled")
-            
-            sk_hex = decrypt_privkey(enc_blob, pwd)
-            return sk_hex, pk_hex
-        # legacy plaintext
-        if "sk_hex" in obj and "pk_hex" in obj:
-            sk_hex, pk_hex = obj["sk_hex"], obj["pk_hex"]
-            try:
-                if callable(password_provider):
-                    pwd = password_provider("Set password to encrypt your chat key (recommended)")
-                    if pwd:
-                        enc = encrypt_privkey(sk_hex, pwd)
-                        with open(p, "w", encoding="utf-8") as f:
-                            json.dump({"version": 1, "pk_hex": pk_hex, "enc": enc}, f, indent=2)
-                        return sk_hex, pk_hex
-            except Exception:
-                pass
-            try:
-                os.chmod(p, 0o600)
-            except Exception:
-                pass
-            return sk_hex, pk_hex
-        raise ValueError("Corrupted chat key file")
+    addr_c = addr.lower()
+    path = Path(_chat_key_path(addr_c))
+    data, legacy = _secure_load(
+        namespace="chat_key",
+        key=addr_c,
+        path=path,
+        password_provider=password_provider,
+        prompt=f"Unlock chat key for {addr_c}",
+    )
+    if data:
+        if legacy:
+            _secure_store("chat_key", addr_c, path, data, password_provider,
+                          f"Migrate chat key for {addr_c}")
+        sk_hex = data.get("sk_hex")
+        pk_hex = data.get("pk_hex")
+        if not sk_hex or not pk_hex:
+            raise ValueError("Chat key store corrupted")
+        return sk_hex, pk_hex
+
+    if not callable(password_provider):
+        raise ValueError("Password required to create chat key")
 
     sk_hex, pk_hex = chat_dh_gen_keypair()
-    if callable(password_provider):
-        pwd = password_provider("Create password to encrypt your chat key (recommended)")
-        if pwd:
-            enc = encrypt_privkey(sk_hex, pwd)
-            with open(p, "w", encoding="utf-8") as f:
-                json.dump({"version": 1, "pk_hex": pk_hex, "enc": enc}, f, indent=2)
-            return sk_hex, pk_hex
-        
-    with open(p, "w", encoding="utf-8") as f:
-        json.dump({"sk_hex": sk_hex, "pk_hex": pk_hex}, f, indent=2)
-    try:
-        os.chmod(p, 0o600)
-    except Exception:
-        pass
-    
+    record = {"sk_hex": sk_hex, "pk_hex": pk_hex, "created": int(time.time())}
+    _secure_store("chat_key", addr_c, path, record, password_provider,
+                  f"Create encrypted chat key for {addr_c}")
     return sk_hex, pk_hex
 
 def chat_dh_gen_keypair() -> tuple[str, str]:

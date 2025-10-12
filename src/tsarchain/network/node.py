@@ -12,12 +12,11 @@ from ..utils import config as CFG
 from .broadcast import Broadcast
 from ..core.tx import Tx, TxIn, TxOut
 from ..contracts.storage_nodes import StorageService
-from ..storage.db import AtomicJSONFile
-from ..storage.kv import kv_enabled, batch, iter_prefix
 from ..utils.helpers import Script, hash160, OP_RETURN, last_pushdata
 from .processing_msg import process_message
 from .protocol import (send_message, recv_message,build_envelope, verify_and_unwrap,
                         load_or_create_node_keys, is_envelope, sniff_first_json_frame, SecureChannel)
+from .peers_storage import load_peer_keys, save_peer_keys
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
@@ -124,24 +123,9 @@ class Network:
             
         # ---- Persisted peer key pins (TOFU)
         try:
-            if kv_enabled():
-                # Load pinned keys from LMDB 'peer_keys' subdb (nid:<id> => pubkey)
-                m = {}
-                try:
-                    for k, v in iter_prefix('peer_keys', b'nid:'):
-                        nid = k.decode('utf-8')[4:]
-                        m[nid] = v.decode('utf-8')
-                except Exception:
-                    m = {}
-                self.peer_keys_store = None
-                self.peer_pubkeys = m
-            else:
-                os.makedirs(os.path.dirname(CFG.PEER_KEYS_PATH), exist_ok=True)
-                self.peer_keys_store = AtomicJSONFile(CFG.PEER_KEYS_PATH, keep_backups=2, checksum=True)
-                self.peer_pubkeys = self.peer_keys_store.load(default={}) or {}
+            self.peer_pubkeys = load_peer_keys()
         except Exception:
             log.exception("[__init__] Failed to load peer keys store")
-            self.peer_keys_store = None
             self.peer_pubkeys = {}
 
         # --- inject identity into Broadcast (setelah load TOFU) ---
@@ -244,19 +228,7 @@ class Network:
                 if self.peer_pubkeys.get(nid) == pk:
                     return
                 self.peer_pubkeys[nid] = pk
-                if kv_enabled():
-                    try:
-                        with batch('peer_keys') as b:
-                            b.put(f"nid:{nid}".encode('utf-8'), pk.encode('utf-8'))
-                    except Exception:
-                        log.exception("[_set_pinned] Failed to persist peer key to LMDB")
-                else:
-                    store = getattr(self, "peer_keys_store", None) or getattr(self, "keys_store", None)
-                    if store:
-                        try:
-                            store.save(self.peer_pubkeys)
-                        except Exception:
-                            log.exception("[_set_pinned] Failed to persist peer key to file")
+                save_peer_keys(self.peer_pubkeys)
         except Exception:
             log.exception("[_set_pinned] Error setting pinned peer key")
 

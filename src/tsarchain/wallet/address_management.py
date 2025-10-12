@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP39
+
 import os
 import json
 import time
@@ -11,7 +12,17 @@ from typing import Any, Dict, List, Optional, Sequence
 from datetime import datetime
 
 # ---------------- Local Project (Wallet Only) ----------------
-from tsarchain.wallet.data_security import Wallet, Security,restore_keystore_bytes, list_addresses_in_keystore,delete_address_from_keystore, get_encrypted_keystore_bytes
+from tsarchain.wallet.data_security import (
+    Wallet,
+    Security,
+    restore_keystore_bytes,
+    list_addresses_in_keystore,
+    delete_address_from_keystore,
+    get_encrypted_keystore_bytes,
+    ensure_wallet_registry,
+    load_wallet_registry,
+    save_wallet_registry,
+)
 from tsarchain.wallet.ui_utils import center_window
 
 # ---------------- Local Project (With Node) ----------------
@@ -32,30 +43,26 @@ def sat_to_tsar(amount_satoshi: Optional[int]) -> str:
 
 # ---------------- Registry helpers ----------------
 def ensure_registry() -> None:
-    if not os.path.exists(CFG.WALLETS_DIR):
-        try:
-            os.makedirs(CFG.WALLETS_DIR)
-        except Exception:
-            log.exception("[ensure_registry] cannot create wallets dir")
-    if not os.path.exists(CFG.REGISTRY_PATH):
-        with open(CFG.REGISTRY_PATH, "w", encoding="utf-8") as f:
-            json.dump({"wallets": []}, f)
+    try:
+        ensure_wallet_registry([])
+    except Exception:
+        log.exception("[ensure_registry] ensure_wallet_registry failed")
 
 
 def load_registry() -> List[str]:
     ensure_registry()
     try:
-        with open(CFG.REGISTRY_PATH, "r", encoding="utf-8") as f:
-            return json.load(f).get("wallets", [])
+        return load_wallet_registry()
     except Exception:
         log.exception("[load_registry] cannot load registry")
         return []
 
 
 def save_registry(addrs: Sequence[str]) -> None:
-    os.makedirs(os.path.dirname(CFG.REGISTRY_PATH), exist_ok=True)
-    with open(CFG.REGISTRY_PATH, "w", encoding="utf-8") as f:
-        json.dump({"wallets": list(addrs)}, f, indent=2)
+    try:
+        save_wallet_registry(addrs)
+    except Exception:
+        log.exception("[save_registry] cannot persist registry")
 
 
 # --- Create Wallet Dialog ---

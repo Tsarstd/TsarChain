@@ -268,9 +268,13 @@ WALLETS_DIR    = "data_user"
 USER_KEY_PATH  = "data_user/user_key.json"
 REGISTRY_PATH  = "data_user/wallet_registry.json"
 CHAT_STATE     = "data_user/chat_config.json"
+
 # -- Node
-NODE_KEY_PATH  = "data_user/node_key.json"
-PEER_KEYS_PATH = "data_user/peer_keys.json"
+NODE_DATA_DIR          = "data_node"
+NODE_KEY_PATH          = os.path.join(NODE_DATA_DIR, "node_key.json")
+PEER_KEYS_PATH         = os.path.join(NODE_DATA_DIR, "peer_keys.json")
+LEGACY_NODE_KEY_PATH   = "data_user/node_key.json"
+LEGACY_PEER_KEYS_PATH  = "data_user/peer_keys.json"
 
 
 # =============================================================================
@@ -285,7 +289,7 @@ STORAGE_NODES_FILE  = os.path.join(CONTRACTS_DIR, "storage_nodes.json")
 # DB / KV BACKEND
 # =============================================================================
 DB_DIR = "data/DB"
-KV_BACKEND = "json"   # lmdb or json
+KV_BACKEND = "lmdb"   # lmdb | json
 LMDB_MAP_SIZE_INIT = 64 * 1024 * 1024  # 64 MiB
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # 64 GiB
 
