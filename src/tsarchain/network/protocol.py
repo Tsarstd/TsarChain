@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
-# Refs: see REFERENCES.md
+# Refs: RFC7748-X25519; RFC5869-HKDF; NIST-800-38D-AES-GCM
 
 import socket, struct, time, os, json, secrets, hashlib, errno
 import threading

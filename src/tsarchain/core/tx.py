@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
-# Refs: BIP143; BIP141; libsecp256k1; LowS-Policy
+# Refs: BIP143; BIP141; libsecp256k1; LowS-Policy;
+
 from ecdsa import SECP256k1, SigningKey
 
 # ---------------- Local Project ----------------

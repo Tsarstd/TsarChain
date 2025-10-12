@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP143; BIP141; Merkle; libsecp256k1; LowS-Policy
+
 import time
 import secrets
 import argparse

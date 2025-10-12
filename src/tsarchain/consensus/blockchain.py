@@ -2,9 +2,10 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: LWMA-Zawy; Merkle
+
 from __future__ import annotations
 import os, threading, time, re, json
-import datetime as _dt
+import datetime as dt
 from copy import deepcopy
 from typing import List, Optional
 from multiprocessing.synchronize import Event as MpEvent
@@ -381,7 +382,7 @@ class Blockchain:
         # ---- Susun snapshot ----
         snapshot = {
             "schema_version": 1,
-            "last_updated": _dt.datetime.now().astimezone().isoformat(),
+            "last_updated": dt.datetime.now().astimezone().isoformat(),
             "identity": {
                 "network_id": CFG.DEFAULT_NET_ID,
                 "address_prefix": CFG.ADDRESS_PREFIX,
@@ -967,13 +968,13 @@ class Blockchain:
                 return "--:--:--"
             if isinstance(ts, (int, float)):
                 try:
-                    return _dt.datetime.fromtimestamp(ts).strftime("%H:%M:%S")
+                    return dt.datetime.fromtimestamp(ts).strftime("%H:%M:%S")
                 except Exception:
                     return "--:--:--"
             if isinstance(ts, str):
                 try:
                     t = ts.replace("Z", "+00:00")
-                    return _dt.datetime.fromisoformat(t).strftime("%H:%M:%S")
+                    return dt.datetime.fromisoformat(t).strftime("%H:%M:%S")
                 except Exception:
                     for sep in ("T", " "):
                         if sep in ts:

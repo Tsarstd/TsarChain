@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
-# Refs: BIP141; BIP173; libsecp256k1
+# Refs: BIP141; BIP173; libsecp256k1; Signal-X3DH; RFC7748-X25519
 
 import time, secrets, base64, random
 from typing import TYPE_CHECKING, Any, Optional

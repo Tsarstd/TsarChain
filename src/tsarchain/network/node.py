@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
-# Refs: BIP141; BIP173; Merkle
+# Refs: BIP141; BIP173; Merkle; Signal-X3DH
 import socket, threading, json, time, collections, os, hashlib
 from bech32 import convertbits, bech32_decode, bech32_encode
 from typing import Set, Tuple, Optional, Any

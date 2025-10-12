@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
-# Refs: BIP173; BIP39; libsecp256k1
+# Refs: BIP173; BIP39; libsecp256k1; Signal-X3DH; RFC7748-X25519; NIST-800-38D-AES-GCM
 
 import os, json, hashlib, base64, appdirs, time, re
 from typing import Dict

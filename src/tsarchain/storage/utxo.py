@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
-# Refs: BIP141; BIP173
+# Refs: BIP141; BIP173; Signal-X3DH
+
 import json, threading
 import threading, json
 from bech32 import bech32_decode, convertbits
