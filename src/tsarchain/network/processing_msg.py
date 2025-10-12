@@ -565,7 +565,6 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         if not (0 <= ratchet_pn <= max_idx and 0 <= ratchet_n <= max_idx):
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "ratchet_index_out_of_range"}
 
-
         if not self._tb_allow(self.rl_ip, ip, CFG.CHAT_RL_IP_BURST, CFG.CHAT_RL_IP_WINDOWS, CFG.CHAT_RL_IP_BURST, backoff_key=ip):
             self._backoff(ip, CFG.CHAT_BACKOFF_S)
             return {"type": "CHAT_ACK", "status": "rate_limited", "scope": "ip"}

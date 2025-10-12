@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173
+
 import os, json, socket, threading, sys, time, tkinter as tk
 import base64, hashlib
 import multiprocessing as mp
