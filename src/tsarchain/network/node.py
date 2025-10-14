@@ -626,6 +626,7 @@ class Network:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(5)
                 s.connect(peer)
+                timeout = max(float(getattr(CFG, "SYNC_TIMEOUT", 10.0)), 15.0)
                 if CFG.P2P_ENC_REQUIRED:
                     chan = SecureChannel(
                         s, role="client",
@@ -636,12 +637,16 @@ class Network:
                     
                     chan.handshake()
                     chan.send(json.dumps(build_envelope(sync_msg, self.node_ctx, extra={"pubkey": self.pubkey})).encode("utf-8"))
-                    resp = chan.recv(5)
+                    resp = chan.recv(timeout)
                 else:
                     env = build_envelope(sync_msg, self.node_ctx, extra={"pubkey": self.pubkey})
                     send_message(s, json.dumps(env).encode("utf-8"))
-                    resp = recv_message(s)
+                    resp = recv_message(s, timeout=timeout)
                 if not resp:
+                    try:
+                        log.warning("[_request_full_sync] No response from %s within %.1fs", peer, timeout)
+                    except Exception:
+                        pass
                     return
                 
                 outer = json.loads(resp.decode("utf-8"))
