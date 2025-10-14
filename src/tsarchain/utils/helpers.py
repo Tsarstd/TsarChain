@@ -310,7 +310,6 @@ def target_to_bits(target: int) -> int:
             mant >>= 8
             exp += 1
     mant &= 0x007fffff
-    log.debug("[target_to_bits]: target=%s exp=%s mant=%s", target, exp, mant)
     return (exp << 24) | mant
 
 DIFFICULTY_CONST = (1 << 256) 

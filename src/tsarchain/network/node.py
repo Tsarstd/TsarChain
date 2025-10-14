@@ -575,7 +575,7 @@ class Network:
                     continue
             self.peers.update(sane)
         if found_peers:
-            log.info("[_discover_peers] Discovered %s peers, total known: %s", len(found_peers), len(self.peers))
+            log.trace("[_discover_peers] Discovered %s peers, total known: %s", len(found_peers), len(self.peers))
 
     def sync_loop(self):
         while not self._stop.is_set():
@@ -637,17 +637,9 @@ class Network:
                 pass
             
             sync_msg = {"type": "GET_FULL_SYNC", "port": self.port, "height": self.broadcast.blockchain.height}
-            try:
-                log.debug("[_request_full_sync] Dialing %s:%s (height=%s)", peer[0], peer[1], self.broadcast.blockchain.height)
-            except Exception:
-                pass
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(5)
                 s.connect(peer)
-                try:
-                    log.debug("[_request_full_sync] Connected to %s:%s", peer[0], peer[1])
-                except Exception:
-                    pass
                 timeout = max(float(getattr(CFG, "SYNC_TIMEOUT", 10.0)), 15.0)
                 if CFG.P2P_ENC_REQUIRED:
                     chan = SecureChannel(
@@ -658,16 +650,8 @@ class Network:
                     )
                     
                     chan.handshake()
-                    try:
-                        log.info("[_request_full_sync] Secure handshake established with %s:%s (peer_id=%s)", peer[0], peer[1], getattr(chan, "peer_node_id", "?"))
-                    except Exception:
-                        pass
                     payload = json.dumps(build_envelope(sync_msg, self.node_ctx, extra={"pubkey": self.pubkey})).encode("utf-8")
                     chan.send(payload)
-                    try:
-                        log.info("[_request_full_sync] Request sent to %s:%s (%s bytes)", peer[0], peer[1], len(payload))
-                    except Exception:
-                        pass
                     resp = chan.recv(timeout)
                 else:
                     env = build_envelope(sync_msg, self.node_ctx, extra={"pubkey": self.pubkey})
@@ -681,10 +665,6 @@ class Network:
                     return
                 
                 outer = json.loads(resp.decode("utf-8"))
-                try:
-                    log.info("[_request_full_sync] Response from %s:%s len=%s type=%s", peer[0], peer[1], len(resp), outer.get("type"))
-                except Exception:
-                    pass
                 if is_envelope(outer):
                     nid = outer.get("from")
                     pko = outer.get("pubkey")
@@ -699,15 +679,11 @@ class Network:
                     inner = verify_and_unwrap(outer, _resolver)
                     if isinstance(nid, str) and isinstance(pko, str):
                         self.peer_pubkeys[nid] = pko
-                    try:
-                        log.debug("[_request_full_sync] Envelope unwrap ok from %s", nid)
-                    except Exception:
-                        pass
                 else:
                     inner = outer
                 result = process_message(self, inner, peer)
                 try:
-                    log.info("[_request_full_sync] Processed response from %s:%s result_keys=%s", peer[0], peer[1], list(result.keys()) if isinstance(result, dict) else type(result).__name__)
+                    log.trace("[_request_full_sync] Processed response from %s:%s result_keys=%s", peer[0], peer[1], list(result.keys()) if isinstance(result, dict) else type(result).__name__)
                 except Exception:
                     pass
                 
@@ -870,7 +846,7 @@ class Network:
         try:
             now = time.time()
             if (now - getattr(self, "_last_fullsync_log", 0.0) > 5.0):
-                log.info("[_handle_full_sync] Received full sync from %s:%s", addr[0], addr[1] if len(addr)>1 else 0)
+                log.trace("[_handle_full_sync] Received full sync from %s:%s", addr[0], addr[1] if len(addr)>1 else 0)
                 self._last_fullsync_log = now
         except Exception:
             pass
