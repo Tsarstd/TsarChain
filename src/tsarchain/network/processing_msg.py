@@ -24,10 +24,6 @@ if TYPE_CHECKING:
 
 __all__ = ["process_message"]
 
-def _mask_addr(s: str) -> str:
-    s = (s or "").strip().lower()
-    return s if len(s) < 14 else f"{s[:6]}…{s[-6:]}"
-
 
 def process_message(self: "Network", message: dict[str, Any], addr: Optional[tuple]=None) -> dict | None:
     if not isinstance(message, dict):

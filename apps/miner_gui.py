@@ -318,7 +318,8 @@ class BlockchainGUI:
             self.btn_stop.config(state="normal")
         else:
             self.btn_start_node.config(state="disabled" if node_on else "normal")
-            self.btn_start_mining.config(state="normal" if (node_on and addr_ok) else "disabled")
+            can_mine = node_on and addr_ok and (getattr(self.blockchain, "height", -1) >= 0)
+            self.btn_start_mining.config(state="normal" if can_mine else "disabled")
             self.btn_bench.config(state="normal" if node_on else "disabled")
             self.btn_stop.config(state="normal" if node_on else "disabled")
         
@@ -532,7 +533,7 @@ class BlockchainGUI:
         self.stop_mining()
         if self.network:
             try:
-                self.network.broadcast.shutdown()
+                self.network.shutdown()
             except:
                 pass
         self.blockchain = None

@@ -42,7 +42,7 @@ TSAR                   = 100_000_000     # SAT-like unit (8 decimals)
 MAX_SUPPLY             = 250_000_000 * TSAR
 INITIAL_REWARD         = 250 * TSAR
 BLOCKS_PER_HALVING     = 250_000
-COINBASE_MATURITY      = 3
+COINBASE_MATURITY      = 85
 MAX_COINBASE_EXTRADATA = 100
 
 
@@ -54,6 +54,7 @@ MAX_BITS           = 0x1F00FFFF
 TARGET_BLOCK_TIME  = 30
 LWMA_WINDOW        = 90
 FUTURE_DRIFT       = 10 * 60
+MTP_WINDOS         = 11
 
 # === Consensus Hardening ===
 # CONSENSUS LIMITS (Blocks & TX)

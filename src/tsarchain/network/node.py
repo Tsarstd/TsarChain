@@ -110,10 +110,16 @@ class Network:
         else:
             self.persistent_peers = set()
             log.warning("[__init__] Running as bootstrap node")
+        
+        # --- graceful shutdown controls ---
+        self._stop = threading.Event()
+        self._server_sock = None
+        self._threads: list[threading.Thread] = []
 
-        self.server_thread    = threading.Thread(target=self.start_server, daemon=True)
+        self.server_thread = threading.Thread(target=self.start_server, daemon=True)
         self.discovery_thread = threading.Thread(target=self.discover_peers_loop, daemon=True)
-        self.sync_thread      = threading.Thread(target=self.sync_loop, daemon=True)
+        self.sync_thread = threading.Thread(target=self.sync_loop, daemon=True)
+        self._threads = [self.server_thread, self.discovery_thread, self.sync_thread]
 
         # --- Log throttles to reduce console spam
         self._last_p2p_log = 0.0
@@ -190,11 +196,13 @@ class Network:
 
     def start_server(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            self._server_sock = s
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(('0.0.0.0', self.port))
             s.listen(8)
+            s.settimeout(1.0)
             log.info("[start_server] Listening on port %s...", self.port)
-            while True:
+            while not self._stop.is_set():
                 try:
                     conn, addr = s.accept()
                     try:
@@ -212,8 +220,9 @@ class Network:
                     
                     threading.Thread(target=self.handle_connection, args=(conn, addr), daemon=True).start()
                 except Exception:
-                    log.exception("[start_server] Error accepting connection")
-                    time.sleep(1)
+                    if self._stop.is_set():
+                        break
+                    continue
 
     def _get_pinned(self, nid: str):
         # may return None if not yet available
@@ -341,7 +350,7 @@ class Network:
     # --------------------------- Discovery / Sync -------------------------
 
     def discover_peers_loop(self):
-        while True:
+        while not self._stop.is_set():
             try:
                 self._discover_peers()
                 time.sleep(CFG.DISCOVERY_INTERVAL)
@@ -487,7 +496,7 @@ class Network:
             log.info("[_discover_peers] Discovered %s peers, total known: %s", len(found_peers), len(self.peers))
 
     def sync_loop(self):
-        while True:
+        while not self._stop.is_set():
             try:
                 self.sync_with_peers()
                 time.sleep(CFG.SYNC_INTERVAL)
@@ -1644,7 +1653,6 @@ class Network:
                 if (ip, 0) in self.storage_peers and port > 0:
                     self.storage_peers.pop((ip, 0), None)
                 self.storage_peers[(ip, port)] = meta
-            log.info("[_handle_hello] Registered storage node %s", meta)
             return {
                 "type": "HELLO_RESPONSE",
                 "port": self.port,
@@ -1694,8 +1702,7 @@ class Network:
             sane_peers = [{"ip": ip, "port": p} for (ip, p) in self.peers]
 
         try:
-            log.info("[_handle_hello] Peer %s:%s (role=%s, height=%s) says hello. Known peers: %s")
-            log.debug("        Current peers: %s", sane_peers)
+            log.debug("Current peers: %s", sane_peers)
         except Exception:
             log.exception("[_handle_hello] Error logging hello")
             pass
@@ -1789,7 +1796,26 @@ class Network:
     # ------------------------------ Shutdown ------------------------------
 
     def shutdown(self):
+        self._stop.set()
+        try:
+            if self._server_sock:
+                self._server_sock.close()
+        except Exception:
+            pass
+        
+        for t in self._threads:
+            try:
+                if t.is_alive():
+                    t.join(timeout=1.5)
+            except Exception:
+                pass
+            
         with self.lock:
             Network.active_ports.discard(self.port)
-        log.info("[shutdown] Node at port %s shutting down", self.port)
+        try:
+            self.broadcast.shutdown()
+        except Exception:
+            pass
+        
+        log.info("[shutdown] Node at port %s stopped", self.port)
 

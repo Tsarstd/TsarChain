@@ -65,9 +65,12 @@ class Blockchain:
                 self._enforce_genesis_lock()
                 return
             if GENESIS_HASH is not None and not CFG.ALLOW_AUTO_GENESIS:
-                raise RuntimeError(
-                    "Genesis missing, "
-                    "Sync from peers or provide the prebuilt genesis.")
+                log.info("[__init__] Genesis lock set; auto-genesis disabled. Waiting for peer sync.")
+                self.chain = []
+                self.total_blocks = 0
+                self.total_supply = 0
+                self._persist_empty_state_if_needed()
+                return
             if CFG.ALLOW_AUTO_GENESIS:
                 log.info("[__init__] Auto-genesis enabled (use_cores=%s)", self.use_cores)
                 self._create_genesis_with_lock(self.miner_address or "", self.use_cores)
@@ -926,7 +929,7 @@ class Blockchain:
             return False
 
     # ----------------- Timestamp helpers -----------------
-    def median_time_past(self, k: int = 11) -> int:
+    def median_time_past(self, k: int = CFG.MTP_WINDOS) -> int:
         if not self.chain:
             return 0
 
@@ -1206,7 +1209,7 @@ class Blockchain:
                 if not self.chain and block.height == 0 and GENESIS_HASH is not None:
                     if block.hash() != GENESIS_HASH:
                         return False
-                mtp = self.median_time_past(11)
+                mtp = self.median_time_past(CFG.MTP_WINDOS)
                 if block.timestamp < mtp:
                     return False
                 if block.timestamp > int(time.time()) + CFG.FUTURE_DRIFT:
