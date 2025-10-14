@@ -644,10 +644,15 @@ class Network:
                     
                     chan.handshake()
                     try:
-                        log.debug("[_request_full_sync] Secure handshake established with %s:%s (peer_id=%s)", peer[0], peer[1], getattr(chan, "peer_node_id", "?"))
+                        log.info("[_request_full_sync] Secure handshake established with %s:%s (peer_id=%s)", peer[0], peer[1], getattr(chan, "peer_node_id", "?"))
                     except Exception:
                         pass
-                    chan.send(json.dumps(build_envelope(sync_msg, self.node_ctx, extra={"pubkey": self.pubkey})).encode("utf-8"))
+                    payload = json.dumps(build_envelope(sync_msg, self.node_ctx, extra={"pubkey": self.pubkey})).encode("utf-8")
+                    chan.send(payload)
+                    try:
+                        log.info("[_request_full_sync] Request sent to %s:%s (%s bytes)", peer[0], peer[1], len(payload))
+                    except Exception:
+                        pass
                     resp = chan.recv(timeout)
                 else:
                     env = build_envelope(sync_msg, self.node_ctx, extra={"pubkey": self.pubkey})
@@ -662,7 +667,7 @@ class Network:
                 
                 outer = json.loads(resp.decode("utf-8"))
                 try:
-                    log.debug("[_request_full_sync] Received response type=%s keys=%s", outer.get("type"), list(outer.keys()))
+                    log.info("[_request_full_sync] Response from %s:%s len=%s type=%s", peer[0], peer[1], len(resp), outer.get("type"))
                 except Exception:
                     pass
                 if is_envelope(outer):
@@ -685,7 +690,11 @@ class Network:
                         pass
                 else:
                     inner = outer
-                process_message(self, inner, peer)
+                result = process_message(self, inner, peer)
+                try:
+                    log.info("[_request_full_sync] Processed response from %s:%s result_keys=%s", peer[0], peer[1], list(result.keys()) if isinstance(result, dict) else type(result).__name__)
+                except Exception:
+                    pass
                 
         except Exception:
             log.exception("[_request_full_sync] Full sync request to %s failed", peer)

@@ -48,7 +48,7 @@ def print_banner():
        ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ 
                                                                           
                             Tsar Chain Mining CLI
-                Long Live The Voice Sovereignty Monetary System
+                       Long Live The Voice Sovereignty
     """
     print(banner)
 
