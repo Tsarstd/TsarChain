@@ -21,7 +21,7 @@ IS_DEV = (MODE.lower() == "dev")
 PORT_RANGE_DEV     = (38169, 38178)
 PORT_RANGE_PROD    = (40196, 40205)
 
-BOOTSTRAP_DEV      = ("127.0.0.1", 38169)   # << VPS IP
+BOOTSTRAP_DEV      = ("31.97.51.207", 38169)   # << VPS IP
 BOOTSTRAP_PROD     = ("127.0.0.1", 40196)
 
 FULL_SYNC_DEV      = True
@@ -107,8 +107,8 @@ ZERO_HASH       = b"\x00" * 32
 CANONICAL_SEP   = (',', ':')
 
 # === Genesis ===
-ALLOW_AUTO_GENESIS = 0
-GENESIS_HASH_HEX = "00000e69ae86e2c7569b07b0a1b19cd59855b28c7ae720a9a66bf0dc316f071a"
+ALLOW_AUTO_GENESIS = 1
+GENESIS_HASH_HEX = ""
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"
 
 # === Voice Sovereignty Figures (ASCII only) ===
