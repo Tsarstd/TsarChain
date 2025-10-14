@@ -40,12 +40,12 @@ HALF_N = SECP256K1_N // 2
 
 def print_banner():
     banner = r"""
-  _______ ______  _____   ____  _      ____  _               _             
- |__   __|  ____|/ ____| |  _ \(_)    / __ \| |             | |            
-    | |  | |__  | (___   | |_) |_ ___| |  | | |__  _   _ ___| |_ ___  _ __ 
-    | |  |  __|  \___ \  |  _ <| / __| |  | | '_ \| | | / __| __/ _ \| '__|
-    | |  | |____ ____) | | |_) | \__ \ |__| | |_) | |_| \__ \ || (_) | |   
-    |_|  |______|_____/  |____/|_|___/\____/|_.__/ \__,_|___/\__\___/|_|   
+    ████████╗███████╗ █████╗ ██████╗    ██████╗██╗  ██╗ █████╗ ██╗███╗   ██╗
+    ╚══██╔══╝██╔════╝██╔══██╗██╔══██╗  ██╔════╝██║  ██║██╔══██╗██║████╗  ██║
+       ██║   ███████╗███████║██████╔╝  ██║     ███████║███████║██║██╔██╗ ██║
+       ██║   ╚════██║██╔══██║██╔══██╗  ██║     ██╔══██║██╔══██║██║██║╚██╗██║
+       ██║   ███████║██║  ██║██║  ██║  ╚██████╗██║  ██║██║  ██║██║██║ ╚████║
+       ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ 
                                                                           
                             Tsar Chain Mining CLI
                 Long Live The Voice Sovereignty Monetary System
@@ -507,13 +507,12 @@ def block_id_generator(length: int = 9, with_year: bool = True) -> str:
     chars = string.ascii_letters + string.digits
     rand = "".join(secrets.choice(chars) for _ in range(length))
 
-    name, role, year = secrets.choice(CFG.VOICE_SOVEREIGNTY_FIGURES)
+    name, year = secrets.choice(CFG.VOICE_SOVEREIGNTY_FIGURES)
     name_slug = _ascii_slug(name, 24)
-    role_slug = _ascii_slug(role, 18) if role else None
     year_part = (f"{year}_" if (with_year and year) else "")
 
     patterns = [
-        f"{name_slug}_{role_slug}_{year_part}{rand}",
+        f"{name_slug}_{year_part}{rand}",
     ]
     
     for p in patterns:

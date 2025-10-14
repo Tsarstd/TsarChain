@@ -618,7 +618,7 @@ class BlockchainGUI:
             return
         
         try:
-            chain_str = self.blockchain.print_chain(max_blocks=100, columns=("height","time","txs","prev","hash","block_id"), widths={"prev":12, "hash":12, "block_id":28}, hash_len=12)
+            chain_str = self.blockchain.print_chain(max_blocks=100, columns=("height","time","txs","prev","hash","block_id"), widths={"prev":12, "hash":12, "block_id":35}, hash_len=12)
             h_raw = getattr(self.blockchain, "height", "?")
             try:
                 height_str = str(int(h_raw))

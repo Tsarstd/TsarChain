@@ -19,9 +19,9 @@ IS_DEV = (MODE.lower() == "dev")
 
 # ===== Dev & Prod network toggle =====
 PORT_RANGE_DEV     = (38169, 38178)
-PORT_RANGE_PROD    = (40196, 40205)          
+PORT_RANGE_PROD    = (40196, 40205)
 
-BOOTSTRAP_DEV      = ("31.97.51.207", 38169)   # << VPS IP
+BOOTSTRAP_DEV      = ("127.0.0.1", 38169)   # << VPS IP
 BOOTSTRAP_PROD     = ("127.0.0.1", 40196)
 
 FULL_SYNC_DEV      = True
@@ -108,37 +108,37 @@ CANONICAL_SEP   = (',', ':')
 
 # === Genesis ===
 ALLOW_AUTO_GENESIS = 0
-GENESIS_HASH_HEX = "000002fc7cb847bbc4133b7c4933faf4aeae9e03633a8f8f8fd0d60c3ce4d56d"
-GENESIS_BLOCK_ID_DEFAULT = "The highest career of an activist is not a position, but death (Munir Said Thalib - 2004-09-07)"
+GENESIS_HASH_HEX = "00000e69ae86e2c7569b07b0a1b19cd59855b28c7ae720a9a66bf0dc316f071a"
+GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"
 
 # === Voice Sovereignty Figures (ASCII only) ===
-# (name, role, year)
+# (name, year)
 VOICE_SOVEREIGNTY_FIGURES = [
-    ("Munir", "rights_activist", 2004),
-    ("Widji Thukul", "poet", 1998),
-    ("Marsinah", "worker_activist", 1993),
-    ("Jamal Khashoggi", "journalist", 2018),
-    ("Daphne Caruana Galizia", "journalist", 2017),
-    ("Anna Politkovskaya", "journalist", 2006),
-    ("Berta Caceres", "enviro_activist", 2016),
-    ("Marielle Franco", "civic_activist", 2018),
-    ("Shireen Abu Akleh", "journalist", 2022),
-    ("Javier Valdez Cardenas", "journalist", 2017),
-    ("Pavel Sheremet", "journalist", 2016),
-    ("Lasantha Wickrematunge", "journalist", 2009),
-    ("Narges Mohammadi", "rights_defender", 2023),
-    ("Liu Xiaobo", "writer_activist", 2017),
-    ("Ai Weiwei", "artist", 2011),
-    ("Edward Snowden", "whistleblower", 2013),
-    ("Chelsea Manning", "whistleblower", 2010),
-    ("Julian Assange", "publisher", 2010),
-    ("Raif Badawi", "blogger", 2014),
-    ("Mahsa Amini", "symbol", 2022),
-    ("Nasrin Sotoudeh", "lawyer", 2010),
-    ("Ilham Tohti", "scholar", 2014),
-    ("Wa Lone and Kyaw Soe Oo", "journalists", 2017),
-    ("Maria Ressa", "journalist", 2018),
-    ("Evan Gershkovich", "journalist", 2023),
+    ("Munir", 2004),
+    ("Widji Thukul", 1998),
+    ("Marsinah", 1993),
+    ("Jamal Khashoggi", 2018),
+    ("Daphne Caruana Galizia", 2017),
+    ("Anna Politkovskaya", 2006),
+    ("Berta Caceres", 2016),
+    ("Marielle Franco", 2018),
+    ("Shireen Abu Akleh", 2022),
+    ("Javier Valdez Cardenas", 2017),
+    ("Pavel Sheremet", 2016),
+    ("Lasantha Wickrematunge", 2009),
+    ("Narges Mohammadi", 2023),
+    ("Liu Xiaobo", 2017),
+    ("Ai Weiwei", 2011),
+    ("Edward Snowden", 2013),
+    ("Chelsea Manning", 2010),
+    ("Julian Assange", 2010),
+    ("Raif Badawi", 2014),
+    ("Mahsa Amini", 2022),
+    ("Nasrin Sotoudeh", 2010),
+    ("Ilham Tohti", 2014),
+    ("Wa Lone and Kyaw Soe Oo", 2017),
+    ("Maria Ressa", 2018),
+    ("Evan Gershkovich", 2023),
 ]
 
 

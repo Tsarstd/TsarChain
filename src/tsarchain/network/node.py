@@ -105,12 +105,25 @@ class Network:
         self.peers: Set[Tuple[str, int]] = set()
         self.utxodb = self.broadcast.utxodb
 
-        if self.port != CFG.BOOTSTRAP_NODE[1]:
+        bootstrap_host, bootstrap_port = CFG.BOOTSTRAP_NODE
+        if not self._is_self_bootstrap(bootstrap_host, bootstrap_port):
             self.persistent_peers = {CFG.BOOTSTRAP_NODE}
             self.peers.update(self.persistent_peers)
+            if self.port == bootstrap_port:
+                try:
+                    log.info(
+                        "[__init__] Port %s matches bootstrap but host differs (%s); treating as client node",
+                        self.port,
+                        bootstrap_host,
+                    )
+                except Exception:
+                    pass
         else:
             self.persistent_peers = set()
-            log.warning("[__init__] Running as bootstrap node")
+            try:
+                log.warning("[__init__] Running as bootstrap node (%s:%s)", bootstrap_host, bootstrap_port)
+            except Exception:
+                log.warning("[__init__] Running as bootstrap node")
         
         # --- graceful shutdown controls ---
         self._stop = threading.Event()
@@ -194,6 +207,65 @@ class Network:
             except (socket.error, OSError):
                 continue
         return None
+
+    def _is_self_bootstrap(self, host: str, port: int) -> bool:
+        try:
+            if int(port) != int(getattr(self, "port", -1)):
+                return False
+        except Exception:
+            return False
+        return self._is_local_address(host)
+
+    @staticmethod
+    def _is_local_address(host: str) -> bool:
+        if not host:
+            return False
+        host = str(host).strip()
+        if not host:
+            return False
+        if host in ("127.0.0.1", "localhost", "::1"):
+            return True
+
+        target_ips: set[str] = set()
+        try:
+            infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+        except Exception:
+            infos = []
+            try:
+                resolved = socket.gethostbyname(host)
+                infos.append((None, None, None, None, (resolved, 0)))
+            except Exception:
+                return False
+        for info in infos:
+            try:
+                ip = info[4][0]
+                if ip:
+                    target_ips.add(ip)
+            except Exception:
+                continue
+        if not target_ips:
+            return False
+
+        local_ips: set[str] = {"127.0.0.1", "::1"}
+        try:
+            hn = socket.gethostname()
+            local_ips.update(socket.gethostbyname_ex(hn)[2])
+        except Exception:
+            pass
+        try:
+            fqdn = socket.getfqdn()
+            local_ips.update(socket.gethostbyname_ex(fqdn)[2])
+        except Exception:
+            pass
+        try:
+            for info in socket.getaddrinfo(None, 0, proto=socket.IPPROTO_TCP):
+                ip = info[4][0]
+                if ip:
+                    local_ips.add(ip)
+        except Exception:
+            pass
+
+        return any(ip in local_ips for ip in target_ips)
 
     def start_server(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
