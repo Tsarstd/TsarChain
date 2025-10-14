@@ -10,10 +10,8 @@ from tsarchain.utils.helpers import print_banner
 from tsarchain.utils import config as CFG
 from tsarchain.consensus.blockchain import Blockchain
 from tsarchain.network.node import Network
-from tsarchain.utils.tsar_logging import setup_logging, get_ctx_logger
 
 IPPORT_RE = re.compile(r"^([0-9]{1,3}(?:\.[0-9]{1,3}){3}):([0-9]{1,5})$")
-LOG = get_ctx_logger("apps.[cli_miner]")
 
 def parse_bootstrap(raw: str | None) -> tuple[str, int] | None:
     if not raw:
@@ -25,7 +23,6 @@ def parse_bootstrap(raw: str | None) -> tuple[str, int] | None:
     if not (0 < port <= 65535):
         raise ValueError("Invalid Port")
     return ip, port
-
 
 def start_node(blockchain: Blockchain, bootstrap: tuple[str, int] | None) -> tuple[Network, threading.Event]:
     net = Network(blockchain=blockchain)
@@ -144,7 +141,6 @@ def mining_loop(blockchain: Blockchain, network: Network, address: str,
 
 
 def main():
-    setup_logging(force=True)
     print_banner()
 
     parser = argparse.ArgumentParser(description="TsarChain Minimal Mining CLI")

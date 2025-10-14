@@ -921,8 +921,7 @@ def _relay_chain(self, route: list[tuple], inner: dict, src_addr=None):
 
 def _send_chat_relay(self, peer: tuple, payload: dict):
     try:
-        # gunakan mekanisme kirim pesan node yang sudah ada
-        self._send_to_peer(peer, payload)   # pastikan _send_to_peer ada di kelas Network
+        self._send_to_peer(peer, payload)
         return {"status":"ok"}
     except Exception:
         log.exception("[_send_chat_relay] send error to %s", peer)
