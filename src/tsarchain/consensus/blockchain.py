@@ -26,22 +26,22 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.consensus(blockchain)")
 
 
-GENESIS_HASH_HEX = os.getenv("TSAR_GENESIS_HASH", "").strip().lower()
-if GENESIS_HASH_HEX.startswith("0x"):
-    GENESIS_HASH_HEX = GENESIS_HASH_HEX[2:]
+def _resolve_genesis_hash():
+    cfg_hex = CFG.GENESIS_HASH_HEX
+    if cfg_hex.startswith("0x"):
+        cfg_hex = cfg_hex[2:]
+    if cfg_hex:
+        if not re.fullmatch(r"[0-9a-f]{64}", cfg_hex):
+            raise ValueError("Invalid Genesis Hash!!")
+        return bytes.fromhex(cfg_hex)
+    
+    return None
 
-if GENESIS_HASH_HEX:
-    if not re.fullmatch(r"[0-9a-f]{64}", GENESIS_HASH_HEX):
-        raise ValueError("Invalid TSAR_GENESIS_HASH: must be 64 hex chars (32 bytes)")
-    GENESIS_HASH = bytes.fromhex(GENESIS_HASH_HEX)
-else:
-    GENESIS_HASH = None
-
-ALLOW_AUTO_GENESIS = False
+GENESIS_HASH = _resolve_genesis_hash()
 
 
 class Blockchain:
-    def __init__(self, db_path: str = CFG.BLOCK_FILE, miner_address: str | None = None, in_memory: bool = False, use_cores: int | None = None, *, auto_create_genesis: bool | None = None,):
+    def __init__(self, db_path: str = CFG.BLOCK_FILE, miner_address: str | None = None, in_memory: bool = False, use_cores: int | None = None,):
         self.in_memory = in_memory
         self.db_path = db_path
         self.chain: List[Block] = []
@@ -55,8 +55,6 @@ class Blockchain:
         self._chain_store = AtomicJSONFile(CFG.BLOCK_FILE, keep_backups=3)
         self._state_store = AtomicJSONFile(CFG.STATE_FILE, keep_backups=3)
 
-        self._auto_create_genesis_flag = (ALLOW_AUTO_GENESIS if auto_create_genesis is None else bool(auto_create_genesis))
-
         if not self.in_memory:
             if self.db_path:
                 os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
@@ -66,11 +64,11 @@ class Blockchain:
             if self.chain:
                 self._enforce_genesis_lock()
                 return
-            if GENESIS_HASH is not None and not ALLOW_AUTO_GENESIS:
+            if GENESIS_HASH is not None and not CFG.ALLOW_AUTO_GENESIS:
                 raise RuntimeError(
-                    "Genesis missing while TSAR_GENESIS_HASH is set and TSAR_ALLOW_AUTO_GENESIS=0. "
+                    "Genesis missing, "
                     "Sync from peers or provide the prebuilt genesis.")
-            if self._auto_create_genesis_flag:
+            if CFG.ALLOW_AUTO_GENESIS:
                 log.info("[__init__] Auto-genesis enabled (use_cores=%s)", self.use_cores)
                 self._create_genesis_with_lock(self.miner_address or "", self.use_cores)
             else:
@@ -123,6 +121,9 @@ class Blockchain:
 
     def ensure_genesis(self, miner_address: str, use_cores: int | None = None) -> bool:
         if self.chain:
+            return False
+        if not CFG.ALLOW_AUTO_GENESIS:
+            log.info("[ensure_genesis] Auto-genesis disabled; waiting for peer sync")
             return False
         self._create_genesis_with_lock(miner_address, use_cores)
         return True
@@ -659,9 +660,14 @@ class Blockchain:
 
     # ----------------- Mining -----------------
     def mine_block(self, miner_address, use_cores: int | None = None, cancel_event: MpEvent | None = None, pow_backend: str = "auto", progress_queue: mp.Queue | None = None,):
+        if not self.chain and not CFG.ALLOW_AUTO_GENESIS:
+            log.warning("[mine_block] ⛔ Refusing to mine genesis, Sync from peers first.")
+            return None
+        
         if self._has_pending_blocks():
             log.warning("[mine_block] ⚠️ Pending blocks detected, skipping mining")
             return None
+        
         if not self._is_chain_consistent():
             log.warning("[mine_block] ⚠️ Chain inconsistency detected, syncing first")
             return None
@@ -1244,6 +1250,8 @@ class Blockchain:
                     if txs_ex_coinbase > CFG.MAX_TXS_PER_BLOCK:
                         return False
                     est_size = self._estimate_block_size(block)
+                    log.debug("[validate_block] est block size : %s", est_size)
+                    
                     if est_size is not None and est_size > CFG.MAX_BLOCK_BYTES:
                         return False
                 except Exception:

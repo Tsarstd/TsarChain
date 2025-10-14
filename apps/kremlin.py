@@ -1359,9 +1359,28 @@ class KremlinWalletGUI(WalletsMixin):
                 bg=self.panel_bg, fg=self.fg)
             self.net_refresh_btn.pack(side=tk.LEFT)
 
-            self.net_text = scrolledtext.ScrolledText(f, height=20, bg=self.panel_bg, fg=self.fg, insertbackground=self.fg)
-            self.net_text.bind("<Key>", lambda e: "break")
+            # Read-only tapi tetap bisa seleksi & copy
+            self.net_text = scrolledtext.ScrolledText(
+                f,
+                height=20,
+                bg=self.panel_bg,
+                fg=self.fg,
+                insertbackground=self.fg,
+                state="disabled",
+                takefocus=1,
+            )
+
+            self.net_text.bind("<Button-1>", lambda e: (self.net_text.focus_set(), None))
+            self.net_text.bind("<Control-c>", lambda e: (self.net_text.event_generate("<<Copy>>"), "break"))
+            self.net_text.bind("<Control-a>", lambda e: (self.net_text.tag_add("sel", "1.0", "end-1c"), "break"))
+            self.net_text.bind("<<Cut>>",   lambda e: "break")
             self.net_text.bind("<<Paste>>", lambda e: "break")
+            self.net_text.bind("<Control-v>", lambda e: "break")
+            self.net_text.bind("<Button-2>", lambda e: "break")
+            
+            _copy_menu = tk.Menu(self.net_text, tearoff=False)
+            _copy_menu.add_command(label="Copy", command=lambda: self.net_text.event_generate("<<Copy>>"))
+            self.net_text.bind("<Button-3>", lambda e: (_copy_menu.tk_popup(e.x_root, e.y_root), "break"))
             
             self.net_text.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
 

@@ -69,7 +69,7 @@ class BlockchainGUI:
 
         # theme
         self.bg = "#121212"
-        self.panel_bg = "#181818"
+        self.panel_bg = "#1e1e1e"
         self.accent = "#ff5e00"
         self.fg = "#C8C8C8"
         self.good = "#4EBD40"
@@ -123,42 +123,12 @@ class BlockchainGUI:
         self.frames['mining'] = f
 
         # Wizard hint
-        hint = tk.Label(f, text="Connect → 1) Address → 2) Performance → 3) Start Node → 4) Happy Mining!",
+        hint = tk.Label(f, text="Address → 1) Performance → 2) Start Node → 3) Happy Mining!",
                         bg=self.bg, fg=self.fg, font=("Consolas", 10))
         hint.pack(anchor="w", padx=12, pady=(10, 2))
 
-        # Section 1: Connection / Peers
-        sec_conn = self._section(f, "1) Connection")
-        sec_conn.pack(fill=tk.X, padx=12, pady=8)
-        
-        # ---- Manual Bootstrap (prioritized) ----
-        br = tk.Frame(sec_conn, bg=self.bg)
-        br.pack(fill=tk.X, pady=(6, 2))
-        tk.Label(br, text="Bootstrap (ip:port):", bg=self.bg, fg=self.fg).pack(side=tk.LEFT)
-        self.bootstrap_entry = tk.Entry(br, width=22, bg="#1e1e1e", fg=self.fg, insertbackground=self.fg)
-        self.bootstrap_entry.pack(side=tk.LEFT, padx=6)
-        tk.Button(br, text="Use", command=self._set_bootstrap, bg=self.accent, fg="#fff").pack(side=tk.LEFT)
-        tk.Button(br, text="Clear", command=self._clear_bootstrap).pack(side=tk.LEFT, padx=(6,0))
-
-        br2 = tk.Frame(sec_conn, bg=self.bg); br2.pack(fill=tk.X, pady=(0,2))
-        self.force_bootstrap_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(br2, text="Prioritize this peer on start", variable=self.force_bootstrap_var,
-                       bg=self.bg, fg=self.fg, selectcolor="#1e1e1e").pack(side=tk.LEFT)
-        self.bootstrap_status = tk.Label(sec_conn, text="No manual bootstrap", bg=self.bg, fg=self.warn)
-        self.bootstrap_status.pack(anchor="w", pady=(2,4))
-
-        # Peers list
-        listrow = tk.Frame(sec_conn, bg=self.bg)
-        listrow.pack(fill=tk.X, pady=4)
-        self.peer_listbox = tk.Listbox(listrow, height=4, bg="#0f0f0f", fg=self.fg, selectmode=tk.EXTENDED)
-        self.peer_listbox.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        btns = tk.Frame(listrow, bg=self.bg)
-        btns.pack(side=tk.LEFT, padx=6)
-        tk.Button(btns, text="Remove", command=self._remove_selected_peers).pack(fill=tk.X, pady=2)
-        tk.Button(btns, text="Clear", command=self._clear_peers).pack(fill=tk.X, pady=2)
-
-        # Section 2: Miner Address (with validation)
-        sec_addr = self._section(f, "2) Miner Address")
+        # Section 1: Miner Address (with validation)
+        sec_addr = self._section(f, "1) Miner Address")
         sec_addr.pack(fill=tk.X, padx=12, pady=8)
         r = tk.Frame(sec_addr, bg=self.bg); r.pack(fill=tk.X)
         tk.Label(r, text="Address (tsar1…):", bg=self.bg, fg=self.fg).pack(side=tk.LEFT)
@@ -169,8 +139,8 @@ class BlockchainGUI:
         self.miner_address_entry.bind("<KeyRelease>", lambda _e: (self._validate_address(False), self._set_buttons_state()))
         Tooltip(self.miner_address_entry, "Only Support 'tsar1' Prefix Address")
 
-        # Section 3: Performance
-        sec_perf = self._section(f, "3) Performance")
+        # Section 2: Performance
+        sec_perf = self._section(f, "2) Performance")
         sec_perf.pack(fill=tk.X, padx=12, pady=8)
         rr = tk.Frame(sec_perf, bg=self.bg); rr.pack(fill=tk.X)
         tk.Label(rr, text="CPU cores:", bg=self.bg, fg=self.fg).pack(side=tk.LEFT)
@@ -180,19 +150,9 @@ class BlockchainGUI:
         tk.Button(rr, text="MAX", command=self._auto_cores).pack(side=tk.LEFT, padx=(4,0))
         self.numba_var = tk.BooleanVar(value=True)
         Tooltip(self.cpu_entry, "More Cores More Fast!!!!")
-        
-        # Genesis
-        gg = tk.Frame(sec_perf, bg=self.bg); gg.pack(fill=tk.X, pady=(6,0))
-        self.genesis_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(gg, text="Create genesis block if chain is empty",
-                       variable=self.genesis_var, bg=self.bg, fg=self.fg,
-                       selectcolor="#1e1e1e").pack(side=tk.LEFT)
-        self.genesis_status_var = tk.StringVar(value="")
-        self.genesis_status_label = tk.Label(gg, textvariable=self.genesis_status_var, bg=self.bg, fg=self.accent)
-        self.genesis_status_label.pack(side=tk.LEFT, padx=10)
 
-        # Section 4: Controls
-        sec_ctrl = self._section(f, "4) Controls")
+        # Section 3: Controls
+        sec_ctrl = self._section(f, "3) Controls")
         sec_ctrl.pack(fill=tk.X, padx=12, pady=8)
         ctrl = tk.Frame(sec_ctrl, bg=self.bg); ctrl.pack()
         self.btn_start_node = tk.Button(ctrl, text="Start Node", bg=self.accent, fg="#fff", command=self.start_node)
@@ -210,11 +170,12 @@ class BlockchainGUI:
         self.hashrate_var = tk.StringVar(value="⛏️ 0 H/s")
         self.hashrate_label = tk.Label(hr, textvariable=self.hashrate_var, bg=self.bg, fg=self.accent, font=("Consolas", 12, "bold"))
         self.hashrate_label.pack(side=tk.LEFT, padx=8)
+        
         tk.Button(hr, text="Open Log Viewer", command=self._open_log_viewer).pack(side=tk.RIGHT, padx=4)
         tk.Button(hr, text="Clear Logs", command=self._clear_logs).pack(side=tk.RIGHT, padx=4)
 
         # Log area
-        self.log = scrolledtext.ScrolledText(f, width=96, height=18, state="disabled", bg="#0f0f0f", fg=self.fg)
+        self.log = scrolledtext.ScrolledText(f, width=96, height=18, state="disabled", bg="#1e1e1e", fg="#52aa41")
         self.log.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
 
     # ---------------- Print Chain Tab ----------------
@@ -234,7 +195,7 @@ class BlockchainGUI:
             self.meta_label.configure(font=("Courier New", 12, "bold"))
             
         self.meta_label.pack(anchor="center")
-        self.print_output = scrolledtext.ScrolledText(f, width=90, height=25, state="disabled", bg="#0f0f0f", fg=self.fg, wrap="none", undo=False, autoseparators=False)
+        self.print_output = scrolledtext.ScrolledText(f, width=90, height=25, state="disabled", bg="#1e1e1e", fg=self.fg, wrap="none", undo=False, autoseparators=False)
         
         try:
             self.print_output.configure(font=("Consolas", 10))
@@ -264,7 +225,7 @@ class BlockchainGUI:
             lbl_title.pack(pady=(0, 0)) 
             lbl_sub = tk.Label(info_area, text="--- Long Live The Voice Sovereignty Monetary System ---\n", bg=self.bg, fg=self.accent, font=("Consolas", 12, 'bold'))
             lbl_sub.pack(pady=(0, 0))
-            self.dev_text = scrolledtext.ScrolledText(info_area, height=5, bg="#121212", fg=self.fg, insertbackground=self.fg, font=("Consolas", 11))
+            self.dev_text = scrolledtext.ScrolledText(info_area, height=5, bg="#1e1e1e", fg=self.fg, insertbackground=self.fg, font=("Consolas", 11))
             self.dev_text.pack(fill=tk.BOTH, expand=True)
             self.dev_text.tag_configure("title", font=("Consolas", 16, "bold"), foreground="#ff5e00")
             self.dev_text.tag_configure("center", justify="center")
@@ -314,20 +275,22 @@ class BlockchainGUI:
             self.dev_text.config(state="disabled")
             
     def _build_corner_status(self):
-        self.corner = tk.Frame(self.main, bg=self.panel_bg)
+        self.corner = tk.Frame(self.main, bg="#4D4D4D")
         self.corner.place(relx=0.0, rely=1.0, anchor="sw", x=8, y=-8)
 
-        self.dot_node = tk.Label(self.corner, text="●", fg=self.bad, bg=self.panel_bg, font=("Consolas", 10, "bold"))
+        self.dot_node = tk.Label(self.corner, text="●", fg=self.bad, bg="#4D4D4D", font=("Consolas", 10, "bold"))
         self.dot_node.pack(side=tk.LEFT, padx=(8, 4), pady=4)
-        self.status_node = tk.Label(self.corner, text="Offline", fg=self.fg, bg=self.panel_bg, font=("Consolas", 9))
+        
+        self.status_node = tk.Label(self.corner, text="Offline", fg=self.fg, bg="#4D4D4D", font=("Consolas", 9))
         self.status_node.pack(side=tk.LEFT, padx=(0, 8))
 
-        self.status_peers = tk.Label(self.corner, text="Peers: 0", fg=self.fg, bg=self.panel_bg, font=("Consolas", 9))
+        self.status_peers = tk.Label(self.corner, text="Peers: 0", fg=self.fg, bg="#4D4D4D", font=("Consolas", 9))
         self.status_peers.pack(side=tk.LEFT, padx=(0, 8))
 
-        self.dot_mine = tk.Label(self.corner, text="●", fg=self.bad, bg=self.panel_bg, font=("Consolas", 10, "bold"))
+        self.dot_mine = tk.Label(self.corner, text="●", fg=self.bad, bg="#4D4D4D", font=("Consolas", 10, "bold"))
         self.dot_mine.pack(side=tk.LEFT, padx=(8, 4))
-        self.status_mine = tk.Label(self.corner, text="Mining: stopped", fg=self.fg, bg=self.panel_bg, font=("Consolas", 9))
+        
+        self.status_mine = tk.Label(self.corner, text="Mining: stopped", fg=self.fg, bg="#4D4D4D", font=("Consolas", 9))
         self.status_mine.pack(side=tk.LEFT, padx=(0, 8))
 
     # ---------- Helpers ----------
@@ -337,7 +300,6 @@ class BlockchainGUI:
         except Exception:
             pass
         self.root.after(0, self._log_print_main, msg)
-
 
     def _log_print_main(self, msg: str):
         self.log.config(state="normal")
@@ -359,7 +321,6 @@ class BlockchainGUI:
             self.btn_start_mining.config(state="normal" if (node_on and addr_ok) else "disabled")
             self.btn_bench.config(state="normal" if node_on else "disabled")
             self.btn_stop.config(state="normal" if node_on else "disabled")
-
         
     def _address_ok(self) -> bool:
         addr = (self.miner_address_entry.get() or "").strip()
@@ -384,53 +345,6 @@ class BlockchainGUI:
             self.cpu_entry.delete(0, tk.END)
             self.cpu_entry.insert(0, "1")
 
-    def _add_peer(self):
-        raw = (self.add_peer_entry.get() or "").strip()
-        if not raw:
-            return
-        m = IPPORT_RE.match(raw)
-        if not m:
-            messagebox.showerror("Peer format", "Enter in ip:port format, e.g. 127.0.0.1:64215")
-            return
-        ip, port = m.group(1), int(m.group(2))
-        tup = (ip, port)
-        if tup not in self.peer_list:
-            self.peer_list.append(tup)
-            self.peer_listbox.insert(tk.END, f"{ip}:{port}")
-        self.add_peer_entry.delete(0, tk.END)
-
-    def _remove_selected_peers(self):
-        sel = list(self.peer_listbox.curselection())
-        for idx in reversed(sel):
-            self.peer_listbox.delete(idx)
-            try: del self.peer_list[idx]
-            except Exception:
-                pass
-
-    def _clear_peers(self):
-        self.peer_listbox.delete(0, tk.END)
-        self.peer_list.clear()
-        
-    def _set_bootstrap(self):
-        raw = (self.bootstrap_entry.get() or "").strip()
-        if not raw:
-            messagebox.showerror("Bootstrap", "Input ip:port first")
-            return
-        m = IPPORT_RE.match(raw)
-        if not m:
-            messagebox.showerror("Bootstrap", "Wrong Format. Example: 157.45.14.12:35466")
-            return
-        ip, port = m.group(1), int(m.group(2))
-        if not (0 < port <= 65535):
-            messagebox.showerror("Bootstrap", "Port must be 1..65535")
-            return
-        self.bootstrap_manual = (ip, port)
-        self.bootstrap_status.config(text=f"Manual bootstrap set → {ip}:{port}", fg=self.good)
-
-    def _clear_bootstrap(self):
-        self.bootstrap_manual = None
-        self.bootstrap_status.config(text="No manual bootstrap", fg=self.warn)
-
     def _clear_logs(self):
         self.log.config(state="normal")
         self.log.delete("1.0", tk.END)
@@ -454,34 +368,18 @@ class BlockchainGUI:
             use_cores = int(self.cpu_entry.get() or "1")
             self.blockchain = Blockchain(
                 db_path=CFG.BLOCK_FILE, in_memory=False,
-                use_cores=use_cores, auto_create_genesis=False
+                use_cores=use_cores, miner_address=self.miner_address_entry.get().strip()
             )
             self.network = Network(blockchain=self.blockchain)
 
-            # --- Prioritize manual bootstrap if exists ---
-            manual = self.bootstrap_manual
-            if manual:
-                if self.force_bootstrap_var.get():
-                    try:
-                        self.network.persistent_peers.clear()
-                        self.network.peers.clear()
-                    except Exception:
-                        pass
-                try:
-                    self.network.persistent_peers.add(manual)
-                    self.network.peers.add(manual)
-                    self.log_print(f"[Network] Manual bootstrap prioritized: {manual[0]}:{manual[1]}")
-                except Exception:
-                    pass
-            else:
-                # Fallback → BOOTSTRAP from config.py
-                fallback = CFG.BOOTSTRAP_DEV if CFG.IS_DEV else CFG.BOOTSTRAP_PROD
-                try:
-                    self.network.persistent_peers.add(fallback)
-                    self.network.peers.add(fallback)
-                    self.log_print(f"[Network] Using config bootstrap: {fallback[0]}:{fallback[1]}")
-                except Exception:
-                    pass
+            # Fallback → BOOTSTRAP from config.py
+            fallback = CFG.BOOTSTRAP_DEV if CFG.IS_DEV else CFG.BOOTSTRAP_PROD
+            try:
+                self.network.persistent_peers.add(fallback)
+                self.network.peers.add(fallback)
+                self.log_print(f"[Network] Using config bootstrap: {fallback[0]}:{fallback[1]}")
+            except Exception:
+                pass
 
             self.log_print("[Network] Node started")
             self._set_buttons_state()
@@ -494,7 +392,7 @@ class BlockchainGUI:
 
         if self.network:
             threading.Thread(target=self._sync_daemon, daemon=True).start()
-            self.log_print("[Sync] Background sync started (every ~20s)")
+            self.log_print("[Sync] Background sync started..")
 
             def _early_sync():
                 for _ in range(5):
@@ -504,9 +402,6 @@ class BlockchainGUI:
                         pass
                     time.sleep(1.0)
             threading.Thread(target=_early_sync, daemon=True).start()
-
-
-
 
     def _sync_daemon(self):
         while self.blockchain and self.network:
@@ -527,13 +422,22 @@ class BlockchainGUI:
             return
 
         if getattr(self.blockchain, "height", -1) < 0:
-            if self.genesis_var.get():
-                created = self.blockchain.ensure_genesis((self.miner_address_entry.get()).strip(),
-                                                        use_cores=int(self.cpu_entry.get() or "1"))
-                if created:
-                    self.log_print("[+] Genesis block created")
+            created = self.blockchain.ensure_genesis(
+                (self.miner_address_entry.get()).strip(),
+                use_cores=int(self.cpu_entry.get() or "1")
+                )
+            
+            if created:
+                self.log_print("[+] Genesis block created")
             else:
-                messagebox.showwarning("Warning", "No chain available. Check 'Create genesis...' or wait for sync from a peer.")
+                self.log_print("[Genesis] Auto-genesis disabled; trying initial sync…")
+                try:
+                    if self.network:
+                        self.network.sync_with_peers()
+                        time.sleep(1.0)
+                except Exception:
+                    pass
+                messagebox.showwarning("Warning", "No chain available. Wait for sync from a peer.")
                 return
 
         use_cores = int(self.cpu_entry.get() or "1")

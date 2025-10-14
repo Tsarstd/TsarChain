@@ -538,6 +538,7 @@ class Network:
                     return  # never sync with self
             except Exception:
                 pass
+            
             sync_msg = {"type": "GET_FULL_SYNC", "port": self.port, "height": self.broadcast.blockchain.height}
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(5)
@@ -567,6 +568,7 @@ class Network:
                 else:
                     inner = outer
                 process_message(self, inner, peer)
+                
         except Exception:
             log.exception("[_request_full_sync] Full sync request to %s failed", peer)
 
@@ -1285,34 +1287,6 @@ class Network:
         }
 
 
-    def _handle_get_block_at(self, height: int) -> dict:
-        try:
-            with self.broadcast.lock:
-                chain = list(self.broadcast.blockchain.chain)
-            if height < 0 or height >= len(chain):
-                return {"type": "BLOCK", "error": "height_out_of_range"}
-            b = chain[height]
-            d = self._serialize_block(b)
-            d["type"] = "BLOCK"
-            return d
-        except Exception as e:
-            return {"type": "BLOCK", "error": str(e)}
-
-    def _handle_get_block_by_hash(self, hx: str) -> dict:
-        try:
-            hx = (hx or "").strip().lower()
-            with self.broadcast.lock:
-                chain = list(self.broadcast.blockchain.chain)
-            for b in chain:
-                if self._bhash_hex(b).lower() == hx:
-                    d = self._serialize_block(b)
-                    d["type"] = "BLOCK"
-                    return d
-            return {"type": "BLOCK", "error": "not_found"}
-        except Exception as e:
-            return {"type": "BLOCK", "error": str(e)}
-
-
     # ----------------------- TX template (wallet) -------------------------
 
     def _addr_to_spk(self, addr: str) -> Script:
@@ -1641,6 +1615,8 @@ class Network:
         }
 
 
+    # ----------------------- Communications -------------------------
+    
     def _handle_hello(self, message, addr):
         role = str(message.get("role","")).strip().upper()
         try:
@@ -1782,6 +1758,33 @@ class Network:
         payload = message.get("data", message)
         self.broadcast.receive_full_sync(payload)
         return {"status": "ok"}
+    
+    def _handle_get_block_at(self, height: int) -> dict:
+        try:
+            with self.broadcast.lock:
+                chain = list(self.broadcast.blockchain.chain)
+            if height < 0 or height >= len(chain):
+                return {"type": "BLOCK", "error": "height_out_of_range"}
+            b = chain[height]
+            d = self._serialize_block(b)
+            d["type"] = "BLOCK"
+            return d
+        except Exception as e:
+            return {"type": "BLOCK", "error": str(e)}
+
+    def _handle_get_block_by_hash(self, hx: str) -> dict:
+        try:
+            hx = (hx or "").strip().lower()
+            with self.broadcast.lock:
+                chain = list(self.broadcast.blockchain.chain)
+            for b in chain:
+                if self._bhash_hex(b).lower() == hx:
+                    d = self._serialize_block(b)
+                    d["type"] = "BLOCK"
+                    return d
+            return {"type": "BLOCK", "error": "not_found"}
+        except Exception as e:
+            return {"type": "BLOCK", "error": str(e)}
 
     # ------------------------------ Shutdown ------------------------------
 

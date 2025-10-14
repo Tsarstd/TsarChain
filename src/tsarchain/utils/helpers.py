@@ -3,7 +3,7 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP143; BIP141; BIP173; CompactSize; Merkle; libsecp256k1; LowS-Policy; Signal-X3DH
 from __future__ import annotations
-import hashlib, json, secrets, string
+import hashlib, json, secrets, string, unicodedata
 from bech32 import bech32_decode, convertbits
 from typing import Union, Tuple
 from ecdsa import SECP256k1, util, VerifyingKey
@@ -481,8 +481,6 @@ def der_encode_sig(r, s):
     sb = encode_int(s)
     return b'\x30' + (len(rb) + len(sb) + 4).to_bytes(1, 'big') + b'\x02' + len(rb).to_bytes(1, 'big') + rb + b'\x02' + len(sb).to_bytes(1, 'big') + sb
 
-
-
 # ========== Compute ==========
 
 def util_compute_txid(tx, include_txid: bool = False):
@@ -494,22 +492,35 @@ def util_compute_wtxid(tx) -> bytes:
     raw = serialize_tx(tx, include_witness=True)
     return hash256(raw)
 
-# ========== For (Block Id) ==========
 
-def random_message_secure(length=8):
+# ====== Block Id (Voice Sovereignty flavored) ======
+
+def _ascii_slug(s: str, maxlen: int = 32) -> str:
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+    s = "".join(ch if ch.isalnum() else "_" for ch in s)
+    while "__" in s:
+        s = s.replace("__", "_")
+    s = s.strip("_")
+    return s[:maxlen] if maxlen else s
+
+def block_id_generator(length: int = 9, with_year: bool = True) -> str:
     chars = string.ascii_letters + string.digits
-    templates = [
-        "TsarChain::{rand}",
-        "TsarStudio::{rand}",
-        "Bootleg4Life_{rand}",
-        "UndergroundCode_{rand}",
-        "#TSAR_{rand}",
-        "#BOOTLEG_{rand}",
-        "FakeItReal_{rand}"]
+    rand = "".join(secrets.choice(chars) for _ in range(length))
 
-    template = secrets.choice(templates)
-    rand = ''.join(secrets.choice(chars) for _ in range(length))
-    return template.format(rand=rand)
+    name, role, year = secrets.choice(CFG.VOICE_SOVEREIGNTY_FIGURES)
+    name_slug = _ascii_slug(name, 24)
+    role_slug = _ascii_slug(role, 18) if role else None
+    year_part = (f"{year}_" if (with_year and year) else "")
+
+    patterns = [
+        f"{name_slug}_{role_slug}_{year_part}{rand}",
+    ]
+    
+    for p in patterns:
+        if len(p) <= 48:
+            return p
+    return patterns[0][:48]
+
 
 # ========== Script Class ==========
 

@@ -122,19 +122,16 @@ def _store_record(name: str, data: Dict) -> None:
 def load_node_key() -> Optional[Dict]:
     return _load_record("node_key")
 
-
 def save_node_key(record: Dict) -> None:
     data = dict(record)
     data.setdefault("updated", int(time.time()))
     _store_record("node_key", data)
-
 
 def load_peer_keys() -> Dict[str, str]:
     rec = _load_record("peer_keys")
     if isinstance(rec, dict):
         return {str(k): str(v) for k, v in rec.items()}
     return {}
-
 
 def save_peer_keys(keys: Dict[str, str]) -> None:
     # normalise and persist

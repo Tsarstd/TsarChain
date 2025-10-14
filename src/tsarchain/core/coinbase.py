@@ -7,8 +7,7 @@ from typing import Optional
 
 
 from ..core.tx import Tx, TxIn, TxOut
-from ..utils.helpers import Script
-from ..utils.helpers import random_message_secure
+from ..utils.helpers import Script, block_id_generator
 from ..utils import config as CFG
 
 # ---------- Helper ----------
@@ -34,7 +33,7 @@ class CoinbaseTx(Tx):
             if self.height == 0:
                 self.block_id = CFG.GENESIS_BLOCK_ID_DEFAULT
             else:
-                self.block_id = random_message_secure()
+                self.block_id = block_id_generator()
         else:
             self.block_id = str(block_id).strip()
 

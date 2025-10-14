@@ -18,6 +18,7 @@ from ..utils import config as CFG
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network(processing_msg)")
 
+
 if TYPE_CHECKING:
     from .node import Network
 

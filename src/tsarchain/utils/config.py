@@ -21,7 +21,7 @@ IS_DEV = (MODE.lower() == "dev")
 PORT_RANGE_DEV     = (38169, 38178)
 PORT_RANGE_PROD    = (40196, 40205)          
 
-BOOTSTRAP_DEV      = ("31.97.51.207", 38169)
+BOOTSTRAP_DEV      = ("31.97.51.207", 38169)   # << VPS IP
 BOOTSTRAP_PROD     = ("127.0.0.1", 40196)
 
 FULL_SYNC_DEV      = True
@@ -49,33 +49,33 @@ MAX_COINBASE_EXTRADATA = 100
 # =============================================================================
 # CONSENSUS / DIFFICULTY
 # =============================================================================
-INITIAL_BITS       = 0x1E00FFFF
+INITIAL_BITS       = 0x1E0FFFFF
 MAX_BITS           = 0x1F00FFFF
 TARGET_BLOCK_TIME  = 30
-LWMA_WINDOW        = 75
-FUTURE_DRIFT       = 2 * 60 * 60
+LWMA_WINDOW        = 90
+FUTURE_DRIFT       = 10 * 60
 
 # === Consensus Hardening ===
 # CONSENSUS LIMITS (Blocks & TX)
-MAX_BLOCK_BYTES         = 1_000_000        # ≈1 MB
-MAX_TXS_PER_BLOCK       = 5_000
+MAX_BLOCK_BYTES         = 1_000_000        # 1 MB
+MAX_TXS_PER_BLOCK       = 2_000
 MAX_SIGOPS_PER_BLOCK    = 10_000
-MAX_SIGOPS_PER_TX       = MAX_SIGOPS_PER_BLOCK // 5
+MAX_SIGOPS_PER_TX       = 2,000
 
 # FORK-CHOICE & REORG
 ENABLE_CHAINWORK_RULE = True
 ENABLE_REORG_LIMIT = True
-REORG_LIMIT = 100
+REORG_LIMIT = 45
 
 # DIFF CLAMP
 ENABLE_DIFF_CLAMP   = True
 DIFF_CLAMP_MAX_UP   = 2.0
-DIFF_CLAMP_MAX_DOWN = 0.5
+DIFF_CLAMP_MAX_DOWN = 0.33
 
 # Emergency Difficulty Adjustment (EDA)
 ENABLE_EDA              = True  # False for Prod
 EDA_WINDOW              = 60
-EDA_TRIGGER_RATIO       = 20.0
+EDA_TRIGGER_RATIO       = 10.0
 EDA_EASE_MULTIPLIER     = 2.0
 
 
@@ -105,7 +105,40 @@ NETWORK_MAGIC   = b"TSARCHAIN"
 ZERO_HASH       = b"\x00" * 32
 CANONICAL_SEP   = (',', ':')
 
-GENESIS_BLOCK_ID_DEFAULT = ("Tsar Studio : In a world of copies, Bootleg culture encoded in the chain.")
+# === Genesis ===
+ALLOW_AUTO_GENESIS = 1
+GENESIS_HASH_HEX = ""
+GENESIS_BLOCK_ID_DEFAULT = "The highest career of an activist is not a position, but death (Munir Said Thalib - 2004-09-07)"
+
+# === Voice Sovereignty Figures (ASCII only) ===
+# (name, role, year)
+VOICE_SOVEREIGNTY_FIGURES = [
+    ("Munir", "rights_activist", 2004),
+    ("Widji Thukul", "poet", 1998),
+    ("Marsinah", "worker_activist", 1993),
+    ("Jamal Khashoggi", "journalist", 2018),
+    ("Daphne Caruana Galizia", "journalist", 2017),
+    ("Anna Politkovskaya", "journalist", 2006),
+    ("Berta Caceres", "enviro_activist", 2016),
+    ("Marielle Franco", "civic_activist", 2018),
+    ("Shireen Abu Akleh", "journalist", 2022),
+    ("Javier Valdez Cardenas", "journalist", 2017),
+    ("Pavel Sheremet", "journalist", 2016),
+    ("Lasantha Wickrematunge", "journalist", 2009),
+    ("Narges Mohammadi", "rights_defender", 2023),
+    ("Liu Xiaobo", "writer_activist", 2017),
+    ("Ai Weiwei", "artist", 2011),
+    ("Edward Snowden", "whistleblower", 2013),
+    ("Chelsea Manning", "whistleblower", 2010),
+    ("Julian Assange", "publisher", 2010),
+    ("Raif Badawi", "blogger", 2014),
+    ("Mahsa Amini", "symbol", 2022),
+    ("Nasrin Sotoudeh", "lawyer", 2010),
+    ("Ilham Tohti", "scholar", 2014),
+    ("Wa Lone and Kyaw Soe Oo", "journalists", 2017),
+    ("Maria Ressa", "journalist", 2018),
+    ("Evan Gershkovich", "journalist", 2023),
+]
 
 
 # =============================================================================
@@ -117,7 +150,6 @@ BOOTSTRAP_NODE       = BOOTSTRAP_DEV if IS_DEV else BOOTSTRAP_PROD
 
 # === Buffers & Timeouts ===
 BUFFER_SIZE        = 65536
-MAX_MSG            = int(1.5 * 1024 * 1024)
 HANDSHAKE_TIMEOUT  = 10
 DISCOVERY_INTERVAL = 5
 SYNC_TIMEOUT       = 10
@@ -137,8 +169,9 @@ TEMP_BAN_SECONDS             = 60          # temporary ban
 
 # === Full Sync guard ===
 ENABLE_FULL_SYNC       = FULL_SYNC_DEV if IS_DEV else FULL_SYNC_PROD
-FULL_SYNC_MAX_BLOCKS   = 2000
-FULL_SYNC_MAX_BYTES    = 512 * 1024  # 512 KB
+FULL_SYNC_MAX_BLOCKS   = 100_000
+FULL_SYNC_MAX_BYTES    = 51200 * 1024  # 50 MB
+MAX_MSG                = FULL_SYNC_MAX_BYTES
 
 
 # =============================================================================
@@ -218,11 +251,6 @@ NODE_CACHE_TTL       = 60
 # =============================================================================
 STORAGE_MAGIC = b"TSAR_GRAF1|"
 GRAFFITI_MAGIC = b"TSAR_GRAF1|"
-
-# === FEATURES / ROLES ===
-ENABLE_NODE_STORAGE = True
-STORAGE_ACCEPT_UPLOADS = True
-STORAGE_GC_INTERVAL_S = 3600
 
 # === SCRIPT / OP_RETURN POLICY ===
 OPRET_MAX_BYTES         = 352             # >= 270B (give margin)

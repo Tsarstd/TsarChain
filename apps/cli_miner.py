@@ -66,9 +66,30 @@ def start_node(blockchain: Blockchain, bootstrap: tuple[str, int] | None) -> tup
 
 def mining_loop(blockchain: Blockchain, network: Network, address: str,
                 use_cores: int, pow_backend: str,
-                cancel_evt, progress_q):
+                cancel_evt, progress_q: mp.Queue):
+    
     while not cancel_evt.is_set():
         try:
+            if (getattr(blockchain, "height", -1) or -1) < 0:
+                if not CFG.ALLOW_AUTO_GENESIS:
+                    print("Auto-genesis disabled!!, waiting for peer sync…")
+                    try:
+                        if network and network.peers:
+                            network.sync_with_peers()
+                    except Exception:
+                        pass
+                    time.sleep(3)
+                    continue
+                else:
+                    try:
+                        created = blockchain.ensure_genesis(address, use_cores=use_cores)
+                        if created:
+                            print("Genesis Block Created")
+                    except Exception as e:
+                        print(f"ensure_genesis failed: {e}")
+                        time.sleep(2)
+                        continue
+                    
             if network and network.peers:
                 try:
                     network.sync_with_peers()
@@ -128,19 +149,16 @@ def main():
     parser.add_argument("-a", "--address", help="Miner address (tsar1…)", default=None)
     parser.add_argument("-c", "--cores", type=int, help="Jumlah core CPU yang dipakai", default=None)
     parser.add_argument("--bootstrap", help="Bootstrap peer ip:port (opsional)")
-    parser.add_argument("--pow-backend", choices=["numba", "python"], default="numba")
-
-    parser.add_argument("--no-node", action="store_true", help="Jalankan tanpa start node (tidak disarankan)")
     parser.add_argument("--no-mine", action="store_true", help="Jalankan tanpa mining (seed-only)")
-
-    parser.add_argument("--no-genesis", action="store_true", help="Jangan auto-create genesis walau chain kosong")
 
     args = parser.parse_args()
 
     # ====== Input interaktif bila tidak diberikan via arg ======
     address = args.address or input("Address (tsar1…): ").strip()
+    pow_backend = "numba"
+    
     if not address.lower().startswith("tsar1"):
-        print("Address harus prefix 'tsar1'.")
+        print("Address must prefix 'tsar1'.")
         sys.exit(2)
 
     if args.cores is None:
@@ -167,30 +185,24 @@ def main():
         sys.exit(2)
 
     # ====== Init blockchain ======
-    bc = Blockchain(
-        db_path=CFG.BLOCK_FILE,
-        in_memory=False,
-        use_cores=cores,
-        auto_create_genesis=False
-    )
+    bc = Blockchain(db_path=CFG.BLOCK_FILE, in_memory=False, use_cores=cores, miner_address=address)
 
-    if (getattr(bc, "height", -1) or -1) < 0 and not args.no_genesis:
-        print("[Genesis] Chain kosong → membuat genesis block…")
-        created = bc.ensure_genesis(address, use_cores=cores)
-        print("[Genesis] Done" if created else "[Genesis] Sudah ada")
-
-    # ====== Start node (kecuali --no-node) ======
-    net = None
-    node_stop_evt = None
-    if not args.no_node:
-        net, node_stop_evt = start_node(bc, bootstrap)
-    else:
-        print("[Warn] --no-node aktif: mining tanpa node tidak disarankan.")
+    if (getattr(bc, "height", -1) or -1) < 0:
+        if CFG.ALLOW_AUTO_GENESIS:
+            print("[Genesis] Chain empty → creating genesis (Allowed)…")
+            try:
+                created = bc.ensure_genesis(address, use_cores=cores)
+                print("Genesis Block Created" if created else "[Genesis] Already present/locked")
+            except Exception as e:
+                print(f"Create Genesis Block Failed: {e}. Will wait for peer sync.")
+        else:
+            print("Auto-genesis disabled!!. Will wait for peer sync.")
 
     # ====== Start mining (kecuali --no-mine) ======
+    net = None
+    node_stop_evt = None
     if not args.no_mine:
         if net is None:
-            # paksa start node agar mining berjalan sehat
             net, node_stop_evt = start_node(bc, bootstrap)
 
         cancel_evt = mp.Event()
@@ -198,12 +210,12 @@ def main():
 
         t = threading.Thread(
             target=mining_loop,
-            args=(bc, net, address, cores, args.pow_backend, cancel_evt, progress_q),
+            args=(bc, net, address, cores, pow_backend, cancel_evt, progress_q),
             daemon=True
         )
         t.start()
 
-        print(f"[*] Mining started → addr={address} backend={args.pow_backend} cores={cores}")
+        print(f"[*] Mining started → addr={address} backend={pow_backend} cores={cores}")
         print("[*] Ctrl+C for stop.")
 
         try:
@@ -213,7 +225,6 @@ def main():
                     tag, val = progress_q.get(timeout=1.0)
                     if tag == "TOTAL_HPS":
                         now = time.time()
-                        # batasi spam output
                         if now - last_print >= 0.5:
                             try:
                                 hps = float(val)
