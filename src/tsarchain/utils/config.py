@@ -21,7 +21,7 @@ IS_DEV = (MODE.lower() == "dev")
 PORT_RANGE_DEV     = (38169, 38178)
 PORT_RANGE_PROD    = (40196, 40205)
 
-BOOTSTRAP_DEV      = ("127.0.0.1", 38169)   # << VPS IP
+BOOTSTRAP_DEV      = ("31.97.51.207", 38169)   # << VPS IP
 BOOTSTRAP_PROD     = ("127.0.0.1", 40196)
 
 FULL_SYNC_DEV      = True
