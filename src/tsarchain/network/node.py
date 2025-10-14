@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173; Merkle; Signal-X3DH
+
 import socket, threading, json, time, collections, os, hashlib
 from bech32 import convertbits, bech32_decode, bech32_encode
 from typing import Set, Tuple, Optional, Any
@@ -365,11 +366,11 @@ class Network:
         for peer in self.persistent_peers:
             if not isinstance(peer, tuple) or len(peer) != 2:
                 continue
-            if peer[1] == self.port:
+            if peer[0] in ("127.0.0.1", "localhost") and peer[1] == self.port:
                 continue
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(1)
+                    s.settimeout(3.5)
                     s.connect(peer)
                     hello_msg = {
                         "type": "HELLO",
@@ -407,11 +408,11 @@ class Network:
         for peer in list(self.peers):
             if not isinstance(peer, tuple) or len(peer) != 2:
                 continue
-            if peer[1] == self.port:
+            if peer[0] in ("127.0.0.1", "localhost") and peer[1] == self.port:
                 continue
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(1)
+                    s.settimeout(2.0)
                     s.connect(peer)
                     hello_msg = {
                         "type": "HELLO",
@@ -483,11 +484,12 @@ class Network:
                 pass
 
         with self.lock:
-            # filter out self-port entries to avoid self-sync
             sane = set()
             for (ip, p) in found_peers:
                 try:
-                    if isinstance(p, int) and p > 0 and p != self.port:
+                    if isinstance(p, int) and p > 0:
+                        if ip in ("127.0.0.1", "localhost") and p == self.port:
+                            continue
                         sane.add((ip, p))
                 except Exception:
                     continue
@@ -569,11 +571,22 @@ class Network:
                     resp = recv_message(s)
                 if not resp:
                     return
+                
                 outer = json.loads(resp.decode("utf-8"))
                 if is_envelope(outer):
-                    inner = verify_and_unwrap(outer, lambda nid: self.peer_pubkeys.get(nid))
-                    if isinstance(outer.get("from"), str) and isinstance(outer.get("pubkey"), str):
-                        self.peer_pubkeys[outer["from"]] = outer["pubkey"]
+                    nid = outer.get("from")
+                    pko = outer.get("pubkey")
+                    def _resolver(qnid):
+                        pk = self.peer_pubkeys.get(qnid)
+                        if pk:
+                            return pk
+                        if isinstance(nid, str) and qnid == nid and isinstance(pko, str):
+                            return pko
+                        return None
+
+                    inner = verify_and_unwrap(outer, _resolver)
+                    if isinstance(nid, str) and isinstance(pko, str):
+                        self.peer_pubkeys[nid] = pko
                 else:
                     inner = outer
                 process_message(self, inner, peer)

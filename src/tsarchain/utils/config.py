@@ -108,7 +108,7 @@ CANONICAL_SEP   = (',', ':')
 
 # === Genesis ===
 ALLOW_AUTO_GENESIS = 0
-GENESIS_HASH_HEX = "00000074a9b5f5815ac652cdc3ecc97d421521a97f1c21f7e11501a74ccb0de3"
+GENESIS_HASH_HEX = "000002fc7cb847bbc4133b7c4933faf4aeae9e03633a8f8f8fd0d60c3ce4d56d"
 GENESIS_BLOCK_ID_DEFAULT = "The highest career of an activist is not a position, but death (Munir Said Thalib - 2004-09-07)"
 
 # === Voice Sovereignty Figures (ASCII only) ===
