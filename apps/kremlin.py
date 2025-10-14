@@ -1359,7 +1359,6 @@ class KremlinWalletGUI(WalletsMixin):
                 bg=self.panel_bg, fg=self.fg)
             self.net_refresh_btn.pack(side=tk.LEFT)
 
-            # Read-only tapi tetap bisa seleksi & copy
             self.net_text = scrolledtext.ScrolledText(
                 f,
                 height=20,
@@ -1398,10 +1397,32 @@ class KremlinWalletGUI(WalletsMixin):
             self.net_text.tag_configure("rank2", font=("Consolas", 15), foreground="#C0C0C0")  # Silver
             self.net_text.tag_configure("rank3", font=("Consolas", 13), foreground="#CD7F32")  # Bronze
             
+    def _net_text_enable(self) -> None:
+        try:
+            self.net_text.config(state="normal")
+        except Exception:
+            pass
+
+    def _net_text_disable(self) -> None:
+        try:
+            self.net_text.config(state="disabled")
+        except Exception:
+            pass
+
+    def _net_text_write(self, text: str, tags: tuple[str, ...] = ()) -> None:
+        try:
+            self._net_text_enable()
+            self.net_text.insert(tk.END, text, tags)
+        finally:
+            self._net_text_disable()
 
     def refresh_network_info(self) -> None:
-        self.net_text.delete("1.0", tk.END)
-        self.net_text.insert(tk.END, "[*] Requesting network info...\n")
+        self._net_text_enable()
+        try:
+            self.net_text.delete("1.0", tk.END)
+            self.net_text.insert(tk.END, "[*] Requesting network info.\n")
+        finally:
+            self._net_text_disable()
 
         if not self._busy_start("netinfo", [getattr(self, "net_refresh_btn", None)]):
             return
@@ -1415,14 +1436,14 @@ class KremlinWalletGUI(WalletsMixin):
                 try:
                     self._render_network_snapshot(store.get("snap"), int(store.get("peers", 0)))
                 except Exception as e:
-                    self.net_text.insert(tk.END, f"\n[-] Render error: {e}\n")
+                    self._net_text_write(f"\n[-] Render error: {e}\n")
                 finally:
                     self._busy_end("netinfo")
 
         def on_info(resp: Optional[Dict[str, Any]]) -> None:
             try:
                 if not resp:
-                    self.net_text.insert(tk.END, "[-] Failed to fetch network info\n")
+                    self._net_text_write("[-] Failed to fetch network info\n")
                     return
                 if resp.get("type") == "NETWORK_INFO" and isinstance(resp.get("data"), dict):
                     store["snap"] = resp["data"]
@@ -1541,9 +1562,11 @@ class KremlinWalletGUI(WalletsMixin):
                 return "-"
 
     def _render_network_snapshot(self, snap: Optional[Dict[str, Any]], peers_cnt: int) -> None:
+        self._net_text_enable()
         self.net_text.delete("1.0", tk.END)
         if not isinstance(snap, dict):
             self.net_text.insert(tk.END, "[-] Snapshot not available\n")
+            self._net_text_disable()
             return
 
         ident = snap.get("identity", {}) or {}
@@ -1679,6 +1702,11 @@ class KremlinWalletGUI(WalletsMixin):
                     self.net_text.insert(tk.END, ("-"*72) + "\n", ("sep2", "center"))
         else:
             self.net_text.insert(tk.END, "No Miners Data Found\n", ("mut","center"))
+        try:
+            self.net_text.see("end")
+        except Exception:
+            pass
+        self._net_text_disable()
 
 
     # ---------------- Dev Frame ----------------
