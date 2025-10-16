@@ -1224,7 +1224,7 @@ class Blockchain:
                 
                 if self.chain:
                     parent_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
-                    if block.timestamp < parent_ts:
+                    if block.timestamp + int(CFG.TARGET_BLOCK_TIME) < parent_ts:
                         return False
                     
                 if not self._validate_difficulty(block):
