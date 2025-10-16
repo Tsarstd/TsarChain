@@ -44,9 +44,9 @@ MAX_COINBASE_EXTRADATA = 100
 # =============================================================================
 # CONSENSUS / DIFFICULTY
 # =============================================================================
-INITIAL_BITS       = 0x1E0FFFFF
-MAX_BITS           = 0x1F00FFFF
-TARGET_BLOCK_TIME  = 35             # 35 Sec
+INITIAL_BITS       = 0x1F0FFFFF
+MAX_BITS           = 0x1D00FFFF
+TARGET_BLOCK_TIME  = 40             # 40 Sec
 LWMA_WINDOW        = 90
 FUTURE_DRIFT       = 120
 MTP_WINDOWS        = 11

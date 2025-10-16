@@ -441,6 +441,7 @@ class Blockchain:
         return snapshot
 
     # ----------------- Chain mutation -----------------
+    
     def replace_with(self, other_chain: "Blockchain"):
         with self.lock:
             # 1) pastikan kandidat valid full
@@ -485,8 +486,6 @@ class Blockchain:
                     self.total_supply = self.calculate_total_supply()
                 except Exception as e:
                     log.debug("[replace_with] calculate_total_supply skipped: %s", e)
-
-
 
     def add_block(self, block: Block):
         if not self.chain:
@@ -552,6 +551,77 @@ class Blockchain:
             log.exception("[add_block] Failed to add block")
 
         return True
+
+    def swap_tip_if_better(self, block: Block):
+        with self.lock:
+            if len(self.chain) < 2:
+                return None
+
+            current_tip = self.chain[-1]
+            parent = self.chain[-2]
+
+            try:
+                parent_hash = parent.hash()
+            except Exception:
+                parent_hash = getattr(parent, "hash", lambda: None)()
+
+            if not parent_hash or block.prev_block_hash != parent_hash:
+                return None
+
+            expected_height = getattr(parent, "height", 0) + 1
+            if getattr(block, "height", expected_height) != expected_height:
+                return None
+
+            candidate_chain = list(self.chain[:-1]) + [block]
+            if not self._validate_complete_chain(candidate_chain):
+                return None
+
+            if CFG.ENABLE_CHAINWORK_RULE:
+                current_cw = self._compute_chainwork_for_chain(self.chain)
+                candidate_cw = self._compute_chainwork_for_chain(candidate_chain)
+                if candidate_cw < current_cw:
+                    return None
+                if candidate_cw == current_cw:
+                    try:
+                        if block.hash() >= current_tip.hash():
+                            return None
+                    except Exception:
+                        return None
+
+            old_tip = self.chain[-1]
+            self.chain[-1] = block
+
+            try:
+                prev_cw = getattr(parent, "chainwork", None)
+                if prev_cw is None:
+                    prev_cw = self._compute_chainwork_for_chain(self.chain[:-1])
+                self.chain[-1].chainwork = int(prev_cw) + self._work_from_bits(block.bits)
+            except Exception:
+                pass
+
+            self.total_blocks = len(self.chain)
+
+            if not self.in_memory:
+                self.save_chain()
+                utxodb = UTXODB()
+                utxodb.utxos.clear()
+                for b in self.chain:
+                    try:
+                        utxodb.update(b.transactions, block_height=b.height)
+                    except Exception:
+                        pass
+                try:
+                    utxodb._save()
+                except Exception:
+                    pass
+                self.save_state()
+            else:
+                try:
+                    self.total_supply = self.calculate_total_supply()
+                except Exception:
+                    pass
+
+            return old_tip
 
 
 
@@ -844,6 +914,7 @@ class Blockchain:
             return False
 
     # ----------------- Full chain validation (for replace_with) -----------------
+    
     def _validate_complete_chain(self, chain: List[Block]) -> bool:
         try:
             if not isinstance(chain, list) or not chain:
@@ -930,6 +1001,7 @@ class Blockchain:
             return False
 
     # ----------------- Timestamp helpers -----------------
+    
     def median_time_past(self, k: int = CFG.MTP_WINDOWS) -> int:
         if not self.chain:
             return 0
@@ -944,12 +1016,14 @@ class Blockchain:
         return times[len(times) // 2]
 
     # ----------------- Block lookups -----------------
+    
     def print_chain(
         self,
         max_blocks: int | None = None,
         columns: tuple[str, ...] = ("height", "time", "txs", "block_id", "hash", "prev"),
         widths: dict[str, int] | None = None,
         hash_len: int = 12,) -> str:
+        
         allowed = {"height", "time", "txs", "block_id", "hash", "prev"}
         cols = [c for c in columns if c in allowed]
         if not cols:
@@ -1070,6 +1144,7 @@ class Blockchain:
         return "\n".join(lines)
 
     # ----------------- Validation primitives -----------------
+    
     def _validate_pow(self, block: Block) -> bool:
         try:
             header_hash = block.hash()
@@ -1310,12 +1385,14 @@ class Blockchain:
                             log.debug("[validate_block] UTXO lookup found no script_pubkey for %s", k)
                         except Exception:
                             return None
+                        
                         return None
 
                     total_sigops = 0
                     for tx in (block.transactions or []):
                         if getattr(tx, "is_coinbase", False):
                             continue
+                        
                         so = int(tx.sigops_count(_utxo_lookup)) if hasattr(tx, "sigops_count") else len(getattr(tx, "inputs", []))
                         if so > int(CFG.MAX_SIGOPS_PER_TX):
                             return False
@@ -1332,8 +1409,10 @@ class Blockchain:
                     
                 if block.height > 0 and not self._validate_transactions(block):
                     return False
+                
             log.debug("[validate_block] Block at height %d is valid", block.height)
             return True
+        
         except Exception:
             log.exception("[validate_block] Unexpected error during block validation")
             return False

@@ -31,6 +31,7 @@ class Broadcast:
         self.state = {}
         self.seen_blocks: Set[str] = set()
         self.seen_txs: Set[str] = set()
+        self._processing_blocks: Set[str] = set()
         self.last_sync_time = 0
         self.port: Optional[int] = None
         self._encode = lambda m: m
@@ -209,7 +210,6 @@ class Broadcast:
         return success_count
 
     def broadcast_block(self, block: Block, peers: Set[Tuple[str, int]], exclude: Optional[Tuple[str, int]] = None, force: bool = False):
-        
         block_id = block.hash().hex()
         with self.lock:
             if not force and block_id in self.seen_blocks:
@@ -377,6 +377,9 @@ class Broadcast:
             log.exception("[Sync] Error cleaning mempool after chain replace")
 
     def receive_block(self, message: Dict[str, Any], addr, peers: Set[Tuple[str, int]]):
+        block_id = None
+        inflight = False
+        accepted = False
         try:
             block_data = message.get("data")
             if not block_data:
@@ -387,15 +390,18 @@ class Broadcast:
 
             origin_port = message.get("port")
             origin = (addr[0], origin_port) if origin_port else None
+
             with self.lock:
-                if block_id in self.seen_blocks:
+                if block_id in self.seen_blocks or block_id in self._processing_blocks:
                     return
-                self.seen_blocks.add(block_id)
+                self._processing_blocks.add(block_id)
+                inflight = True
 
             last = self.blockchain.get_last_block()
+            potential_fork = False
             if last:
                 tip_h = last.hash()
-                if block.height > last.height + 1 or block.prev_block_hash != tip_h:
+                if block.height > last.height + 1:
                     handled = False
                     if self.network:
                         try:
@@ -411,63 +417,96 @@ class Broadcast:
                             except Exception:
                                 log.exception(f"[Sync] Full sync request to {p} failed")
                     return
-                
-            if not self.blockchain.validate_block(block):
-                log.warning("[Broadcast] Invalid block received ... block=%s peer=%s", block_id[:12], f"{addr[0]}:{origin_port or 0}")
-                with self.lock:
-                    self.seen_blocks.add(block_id)
-                return
-            
-            do_broadcast = False
-            with self.lock:
-                ok = self.blockchain.add_block(block)
-                if ok:
-                    try:
-                        fail_rm = 0
-                        for tx in (block.transactions[1:] or []):
-                            try:
-                                self.mempool.remove_tx(tx.txid.hex())
-                            except Exception:
-                                fail_rm += 1
-                        if fail_rm:
-                            log.warning("[Broadcast] %s tx failed to remove from mempool after block addition", fail_rm)
-                        # Clean mempool of any other invalid txs
-                        try:
-                            self.mempool.save_pool(self.mempool.load_pool())
-                        except Exception:
-                            log.exception("[Broadcast] Error cleaning mempool")
-                    except Exception:
-                        log.exception("[Broadcast] Error updating mempool after block addition")
-                        
-                    try:
-                        if self.blockchain.in_memory:
-                            try:
-                                self.utxodb.update(block.transactions, block.height)
-                            except Exception:
-                                log.exception("[Broadcast] Error updating UTXO after block addition")
-                        else:
-                            try:
-                                self.utxodb._load()
-                            except Exception:
-                                log.exception("[Broadcast] Error loading UTXO DB from disk")
-                    except Exception:
-                        log.exception("[Broadcast] Error updating UTXO DB after block addition")
-                    do_broadcast = True
-                    
-                else:
-                    log.warning(f"[Broadcast] Block at height {block.height} rejected by add_block")
-                    with self.lock:
-                        self.seen_blocks.add(block_id)
+                if block.prev_block_hash != tip_h:
+                    potential_fork = True
+
+            if not potential_fork:
+                if not self.blockchain.validate_block(block):
+                    log.warning("[Broadcast] Invalid block received ... block=%s peer=%s", block_id[:12], f"{addr[0]}:{origin_port or 0}")
                     return
-                
-            if do_broadcast:
+
+            old_tip = None
+            try:
+                ok = self.blockchain.add_block(block)
+            except ValueError:
+                if potential_fork:
+                    old_tip = self.blockchain.swap_tip_if_better(block)
+                    ok = old_tip is not None
+                else:
+                    ok = False
+            if not ok:
+                log.warning(f"[Broadcast] Block at height {block.height} rejected by add_block")
+                if potential_fork:
+                    targets = [origin] if origin else list(peers)
+                    for p in targets:
+                        try:
+                            prev_flag = CFG.ENABLE_FULL_SYNC
+                            CFG.ENABLE_FULL_SYNC = True
+                            self._request_full_sync(p)
+                        except Exception:
+                            log.exception(f"[Broadcast] Fallback full sync request to {p} failed")
+                        finally:
+                            CFG.ENABLE_FULL_SYNC = prev_flag
+                return
+
+            accepted = True
+
+            try:
+                fail_rm = 0
+                for tx in (block.transactions[1:] or []):
+                    try:
+                        self.mempool.remove_tx(tx.txid.hex())
+                    except Exception:
+                        fail_rm += 1
+                if fail_rm:
+                    log.warning("[Broadcast] %s tx failed to remove from mempool after block addition", fail_rm)
                 try:
-                    self.broadcast_block(block, peers, exclude=origin, force=True)
+                    self.mempool.save_pool(self.mempool.load_pool())
                 except Exception:
-                    log.exception("[Broadcast] Error broadcasting new block to peers")
+                    log.exception("[Broadcast] Error cleaning mempool")
+
+                if old_tip:
+                    try:
+                        for tx in (old_tip.transactions[1:] or []):
+                            try:
+                                self.mempool.add_valid_tx(tx)
+                            except Exception:
+                                pass
+                    except Exception:
+                        log.exception("[Broadcast] Error requeueing transactions from orphaned tip")
+            except Exception:
+                log.exception("[Broadcast] Error updating mempool after block acceptance")
+
+            try:
+                if self.blockchain.in_memory:
+                    try:
+                        self.utxodb.update(block.transactions, block.height)
+                    except Exception:
+                        log.exception("[Broadcast] Error updating UTXO after block acceptance")
+                else:
+                    try:
+                        self.utxodb._load()
+                    except Exception:
+                        log.exception("[Broadcast] Error loading UTXO DB from disk")
+            except Exception:
+                log.exception("[Broadcast] Error updating UTXO DB after block acceptance")
+
+            with self.lock:
+                self.seen_blocks.add(block_id)
+
+            try:
+                self.broadcast_block(block, peers, exclude=origin, force=True)
+            except Exception:
+                log.exception("[Broadcast] Error broadcasting new block to peers")
 
         except Exception:
             log.exception("[Broadcast] Error processing incoming block")
+        finally:
+            if inflight and block_id:
+                with self.lock:
+                    self._processing_blocks.discard(block_id)
+                    if not accepted:
+                        self.seen_blocks.discard(block_id)
 
 
     def receive_tx(self, message: Dict[str, Any], addr, peers: Set[Tuple[str, int]]) -> bool:
