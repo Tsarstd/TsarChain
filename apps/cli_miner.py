@@ -67,6 +67,13 @@ def mining_loop(blockchain: Blockchain, network: Network, address: str,
     def _confirm_tip_ready() -> bool:
         notice_at = 0.0
         while not cancel_evt.is_set():
+            height_val = int(getattr(blockchain, "height", -1) or -1)
+            if getattr(CFG, "ALLOW_AUTO_GENESIS", 0) and (not network or not network.peers):
+                if height_val >= 0:
+                    if time.time() - notice_at > 5:
+                        print("[Sync] No peers detected; continuing with local chain tip.")
+                        notice_at = time.time()
+                    return True
             if network and network.peers:
                 try:
                     network.request_sync(fast=True)
@@ -74,7 +81,6 @@ def mining_loop(blockchain: Blockchain, network: Network, address: str,
                     print(f"[Sync] {exc}")
                 peer_sync_map = getattr(network, "_peer_last_sync", {})
                 latest_sync = max(peer_sync_map.values()) if peer_sync_map else 0.0
-                height_val = int(getattr(blockchain, "height", -1) or -1)
                 if height_val >= 0 and latest_sync and (time.time() - latest_sync) < 10:
                     print("[Sync] Chain tip confirmed. Ready to mine.")
                     return True
@@ -113,8 +119,13 @@ def mining_loop(blockchain: Blockchain, network: Network, address: str,
                     if current_height < 0:
                         continue
 
-            if network and not network.peers:
-                tip_verified = False
+            if network:
+                if network.peers:
+                    pass
+                elif getattr(CFG, "ALLOW_AUTO_GENESIS", 0):
+                    tip_verified = True
+                else:
+                    tip_verified = False
 
             if not tip_verified:
                 if not _confirm_tip_ready():
