@@ -154,7 +154,6 @@ class SimpleMiner:
                 return False
         
         # Mining loop
-        block_count = 0
         while self.mining_alive:
             try:
                 if self.network.peers:
@@ -172,14 +171,14 @@ class SimpleMiner:
                     break
                     
                 if block:
-                    block_count += 1
-                    print(f"[+] Block #{block_count} mined: {block.hash().hex()[:16]}…")
+                    print(f"[+] Block mined: {block.hash().hex()[:18]}…")
                     
                     # Broadcast new block
                     try:
-                        msg = {"type": "NEW_BLOCK", "data": block.to_dict(), "port": self.network.port}
-                        for peer in list(self.network.peers):
-                            self.network.broadcast._send(peer, msg)
+                        sent = self.network.publish_block(block, exclude=None, force=True)
+                        if sent <= 0:
+                            print("Warning: block broadcast reached 0 peers, triggering fast resync request.")
+                            self.network.request_sync(fast=True)
                     except Exception as e:
                         print(f"Broadcast error: {e}")
                         

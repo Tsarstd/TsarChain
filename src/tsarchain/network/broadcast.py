@@ -63,7 +63,7 @@ class Broadcast:
                 return True
             log.debug("[_send]: %s, %s", s, peer)
         except Exception:
-            log.debug("[Broadcast] Send to %s failed", peer)
+            log.warning("[Broadcast] Send to %s failed", peer, exc_info=True)
             return False
 
     def _request_full_sync(self, peer: Tuple[str, int]) -> bool:

@@ -3,13 +3,15 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173; Merkle; Signal-X3DH
 
+from __future__ import annotations
 import socket, threading, json, time, os, random
 from bech32 import convertbits, bech32_encode
-from typing import Set, Tuple, Optional, Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple, Set
 from collections import deque
 
 # ---------------- Local Project ----------------
 from ..utils import config as CFG
+from ..core.block import Block
 from .broadcast import Broadcast
 from ..contracts.storage_nodes import StorageService
 from ..utils.helpers import hash160
@@ -22,7 +24,7 @@ from .peers_storage import load_peer_keys, save_peer_keys
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network(node)")
-
+    
 
 # ---- Handshake rate-limit per IP (anti-DoS) ----
 _handshake_hits: dict[str, deque] = {}
@@ -778,6 +780,23 @@ class Network:
         with self.lock:
             candidates = [h for h in self._peer_best_height.values() if isinstance(h, int) and h >= 0]
         return max(candidates) if candidates else -1
+
+    def _collect_broadcast_peers(self) -> Set[Tuple[str, int]]:
+        with self.lock:
+            targets: Set[Tuple[str, int]] = set(self.outbound_peers)
+            targets.update(self.inbound_peers)
+            if not targets:
+                targets.update(self.peers)
+        return targets
+
+    def publish_block(self, block: "Block", exclude: Optional[Tuple[str, int]] = None, force: bool = True) -> int:
+        Block = None
+        if Block is not None and not isinstance(block, Block):
+            raise TypeError("block must be a Block instance")
+        peers = self._collect_broadcast_peers()
+        if not peers:
+            return 0
+        return self.broadcast.broadcast_block(block, peers, exclude=exclude, force=force)
 
     def _build_locator(self) -> List[str]:
         locator: List[str] = []

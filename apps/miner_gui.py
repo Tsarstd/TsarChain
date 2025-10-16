@@ -533,9 +533,9 @@ class BlockchainGUI:
                     if block:
                         self.log_print(f"[+] Block mined: {block.hash().hex()[:16]}…")
                         try:
-                            msg = {"type": "NEW_BLOCK", "data": block.to_dict(), "port": self.network.port}
-                            for peer in list(self.network.peers):
-                                self.network.broadcast._send(peer, msg)
+                            sent = self.network.publish_block(block, exclude=None, force=True)
+                            if sent <= 0:
+                                self.network.request_sync(fast=True)
                         except Exception:
                             pass
                         try:
