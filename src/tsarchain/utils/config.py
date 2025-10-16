@@ -15,7 +15,7 @@ NATIVE = 1
 
 # ===== Dev & Prod toggle =====
 MODE   = "dev"   # "dev" | "prod"
-IS_DEV = (MODE.lower() == "dev")      
+IS_DEV = (MODE.lower() == "dev")
 
 # ===== Sync Data (Block, UTXO, etc) =====
 FULL_SYNC_DEV      = False
@@ -147,14 +147,10 @@ PORT_RANGE_PROD    = (40196, 40205)
 
 BOOTSTRAP_DEV      = (
     ("31.97.51.207", 38169),
-    ("31.97.51.207", 38170),
-    ("31.97.51.207", 38171),
 )
 
 BOOTSTRAP_PROD     = (
     ("127.0.0.1", 40197),
-    ("127.0.0.1", 40198),
-    ("127.0.0.1", 40199),
 )
 
 if IS_DEV:
@@ -189,7 +185,7 @@ TEMP_BAN_SECONDS             = 30          # temporary ban
 # === Full Sync guard ===
 ENABLE_FULL_SYNC            = FULL_SYNC_DEV if IS_DEV else FULL_SYNC_PROD
 FULL_SYNC_MAX_BLOCKS        = 10_000
-FULL_SYNC_MAX_BYTES         = 5120 * 1024  # 5 MB
+FULL_SYNC_MAX_BYTES         = 5120 * 1024   # 5 MB
 FULL_SYNC_MIN_INTERVAL      = 300           # seconds per peer
 FULL_SYNC_BACKOFF_INITIAL   = 600
 FULL_SYNC_BACKOFF_MAX       = 3600
