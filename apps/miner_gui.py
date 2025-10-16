@@ -67,6 +67,8 @@ class BlockchainGUI:
         self.cancel_mining = None
         self.gui_log = get_ctx_logger("apps.[miner_gui]")
         self._last_chain_height = -1
+        self._sync_ready = False
+        self._sync_status = "idle"
 
         # theme
         self.bg = "#121212"
@@ -158,8 +160,6 @@ class BlockchainGUI:
         ctrl = tk.Frame(sec_ctrl, bg=self.bg); ctrl.pack()
         self.btn_start_node = tk.Button(ctrl, text="Start Node", bg=self.accent, fg="#fff", command=self.start_node)
         self.btn_start_node.grid(row=0, column=0, padx=5, pady=2)
-        self.btn_bench = tk.Button(ctrl, text="Benchmark 5s", command=self.run_benchmark, state="disabled")
-        self.btn_bench.grid(row=0, column=1, padx=5, pady=2)
         self.btn_start_mining = tk.Button(ctrl, text="Start Mining", bg=self.accent, fg="#fff", command=self.start_mining, state="disabled")
         self.btn_start_mining.grid(row=0, column=2, padx=5, pady=2)
         self.btn_stop = tk.Button(ctrl, text="Stop Node & Mining", bg="#d9534f", fg="#fff", command=self.stop_all, state="disabled")
@@ -303,6 +303,8 @@ class BlockchainGUI:
         self.status_mine = tk.Label(self.corner, text="Mining: stopped", fg=self.fg, bg="#4D4D4D", font=("Consolas", 9))
         self.status_mine.pack(side=tk.LEFT, padx=(0, 8))
 
+
+
     # ---------- Helpers ----------
     def log_print(self, msg: str):
         try:
@@ -328,9 +330,13 @@ class BlockchainGUI:
             self.btn_stop.config(state="normal")
         else:
             self.btn_start_node.config(state="disabled" if node_on else "normal")
-            can_mine = node_on and addr_ok and (getattr(self.blockchain, "height", -1) >= 0)
+            can_mine = (
+                node_on
+                and addr_ok
+                and (getattr(self.blockchain, "height", -1) >= 0)
+                and self._sync_ready
+            )
             self.btn_start_mining.config(state="normal" if can_mine else "disabled")
-            self.btn_bench.config(state="normal" if node_on else "disabled")
             self.btn_stop.config(state="normal" if node_on else "disabled")
         
     def _address_ok(self) -> bool:
@@ -344,7 +350,7 @@ class BlockchainGUI:
         else:
             self.addr_status.config(text=f"Address should start with '{ADDR_HINT}'", fg=self.warn)
             if notify:
-                messagebox.showwarning("Address", f"Isi miner address yang valid, contoh: {ADDR_HINT}")
+                messagebox.showwarning("Address", f"Fill in a valid miner address, for example: {ADDR_HINT}")
         return ok
 
     def _auto_cores(self):
@@ -375,6 +381,9 @@ class BlockchainGUI:
             messagebox.showinfo("Info", "Node is already running.")
             return
 
+        self._sync_ready = False
+        self._sync_status = "init"
+
         try:
             use_cores = int(self.cpu_entry.get() or "1")
             self.blockchain = Blockchain(
@@ -387,7 +396,6 @@ class BlockchainGUI:
             except Exception:
                 self._last_chain_height = -1
 
-            # Fallback ? BOOTSTRAP from config.py
             fallback_nodes = tuple(getattr(CFG, "BOOTSTRAP_NODES", ()) or (CFG.BOOTSTRAP_NODE,))
             try:
                 for peer in fallback_nodes:
@@ -395,20 +403,21 @@ class BlockchainGUI:
                     self.network.peers.add(peer)
                 if fallback_nodes:
                     host, port = fallback_nodes[0]
-                    extra = f" (+{len(fallback_nodes)-1} alt)" if len(fallback_nodes) > 1 else ""
-                    self.log_print(f"[Network] Using config bootstrap: {host}:{port}{extra}")
+                    self.log_print(f"[Network] Connecting to Tsarchain Network: '{CFG.DEFAULT_NET_ID}', peer {host}:{port}")
             except Exception:
                 pass
         except Exception as e:
             self.blockchain = None
             self.network = None
             self._last_chain_height = -1
+            self._sync_status = "idle"
             messagebox.showerror("Start Node", f"Failed to Starting Node: {e}")
+            self._set_buttons_state()
             return
 
         if self.network:
             threading.Thread(target=self._sync_daemon, daemon=True).start()
-            self.log_print("[Sync] Background sync started..")
+            self.log_print("[Sync] Background sync started... Please Wait...")
 
             def _early_sync():
                 for _ in range(5):
@@ -418,24 +427,49 @@ class BlockchainGUI:
                         pass
                     time.sleep(1.0)
             threading.Thread(target=_early_sync, daemon=True).start()
+            self._set_buttons_state()
 
     def _sync_daemon(self):
         while self.blockchain and self.network:
             try:
-                if self.network.peers:
-                    self.network.request_sync(fast=True)
-                    try:
-                        height_raw = getattr(self.blockchain, "height", -1)
-                        height = int(height_raw)
-                    except Exception:
-                        height = -1
-                    if height != self._last_chain_height:
-                        if height >= 0 and not self.mining_alive.is_set():
-                            self.log_print(f"[Sync] Chain height now {height}")
-                        self._last_chain_height = height
+                if not self.network.peers:
+                    if self._sync_status != "no_peers":
+                        self.log_print("[Sync] Waiting for peer connection...")
+                        self._sync_status = "no_peers"
+                    if self._sync_ready:
+                        self._sync_ready = False
+                        self.log_print("[Sync] Mining is locked. Peer lost, waiting for resync.")
+                        self.root.after(0, self._set_buttons_state)
+                    time.sleep(5)
+                    continue
+
+                if self._sync_status not in ("peers", "ready"):
+                    self.log_print("[Sync] Peer connected. Checking for the latest block...")
+                    self._sync_status = "peers"
+
+                self.network.request_sync(fast=True)
+                try:
+                    height_raw = getattr(self.blockchain, "height", -1)
+                    height = int(height_raw)
+                except Exception:
+                    height = -1
+                if height != self._last_chain_height:
+                    if height >= 0 and not self.mining_alive.is_set():
+                        self.log_print(f"[Sync] Chain height now {height}")
+                    self._last_chain_height = height
+
+                peer_sync_map = getattr(self.network, "_peer_last_sync", {})
+                latest_sync = max(peer_sync_map.values()) if peer_sync_map else 0.0
+                synced_recently = latest_sync and (time.time() - latest_sync) < 10
+
+                if not self._sync_ready and height >= 0 and synced_recently:
+                    self._sync_ready = True
+                    self._sync_status = "ready"
+                    self.log_print("Chain has been confirmed. You can start mining now!")
+                    self.root.after(0, self._set_buttons_state)
             except Exception:
                 pass
-            time.sleep(20)
+            time.sleep(5)
 
     def start_mining(self):
         if not self.blockchain or not self.network:
@@ -444,6 +478,10 @@ class BlockchainGUI:
         if not self._validate_address():
             return
         if self.mining_alive.is_set():
+            return
+        if not self._sync_ready:
+            self.log_print("[Sync] Mining locked: wait for the latest chain sync first.")
+            messagebox.showinfo("Sync Required", "The node hasn't finished syncing.")
             return
 
         if getattr(self.blockchain, "height", -1) < 0:
@@ -564,77 +602,9 @@ class BlockchainGUI:
         self.network = None
         self._last_chain_height = -1
         self.log_print("[!] Node stopped")
+        self._sync_ready = False
+        self._sync_status = "idle"
         self._set_buttons_state()
-
-    # ---------- Benchmark ----------
-    def run_benchmark(self):
-        if self.mining_alive.is_set():
-            messagebox.showinfo("Benchmark", "Stop mining first before running the benchmark.")
-            return
-        if not self.blockchain:
-            messagebox.showwarning("Benchmark", "Start the node first to obtain network parameters.")
-            return
-        use_cores = int(self.cpu_entry.get() or "1")
-        pow_backend = "numba"
-
-        try:
-            last = self.blockchain.chain[-1] if self.blockchain.chain else None
-            prev_hash = last.hash() if last else bytes.fromhex("00"*32)
-            nxt_height = (getattr(self.blockchain, "height", -1) or -1) + 1
-            bits = getattr(last, "bits", None)
-            if hasattr(self.blockchain, "_expected_bits_on_prefix"):
-                bits = self.blockchain._expected_bits_on_prefix(self.blockchain.chain, nxt_height)
-            if not isinstance(bits, int):
-                bits = getattr(self.blockchain, "MAX_BITS", 0x1D75FFFF)
-
-            dummy_txs = ["benchmark"]
-            dummy = Block(height=nxt_height, prev_block_hash=prev_hash, transactions=dummy_txs, bits=bits)
-        except Exception as e:
-            messagebox.showerror("Benchmark", f"Failed to make dummy block: {e}")
-            return
-
-        q = mp.Queue()
-        stop_event = mp.Event()
-        hps_values: list[float] = []
-        self.log_print("[*] Benchmark started (5 seconds)…")
-
-        def worker():
-            try:
-                dummy.mine(use_cores=use_cores, stop_event=stop_event, pow_backend=pow_backend, progress_queue=q)
-            except Exception:
-                pass
-
-        t = threading.Thread(target=worker, daemon=True)
-        t.start()
-
-        t0 = time.time()
-        def poll_bench():
-            nonlocal t0
-            now = time.time()
-            try:
-                while True:
-                    tag, val = q.get_nowait()
-                    if tag == "TOTAL_HPS":
-                        hps_values.append(float(val))
-                        self.hashrate_var.set(f"{float(val):,.0f} H/s (bench)")
-            except Exception:
-                pass
-            if now - t0 >= 5.0:
-                stop_event.set()
-                self.root.after(200, finish_bench)
-            else:
-                self.root.after(200, poll_bench)
-
-        def finish_bench():
-            try:
-                t.join(timeout=1.5)
-            except Exception:
-                pass
-            avg = sum(hps_values[-10:]) / max(1, len(hps_values[-10:])) if hps_values else 0.0
-            self.log_print(f"Benchmark done ~{avg:,.0f} H/s (avg of last samples)")
-            messagebox.showinfo("Benchmark Result", f"Average hashrate: ~{avg:,.0f} H/s\nBackend: {pow_backend}, Cores: {use_cores}")
-
-        poll_bench()
 
     # ---------- Print chain ----------
     def print_chain(self):

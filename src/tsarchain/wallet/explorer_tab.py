@@ -93,7 +93,7 @@ class ExplorePanel(tk.Frame):
 
         self.tagline = tk.Label(
             self.header,
-            text="Zero Censorship. Pure Art. Final Bid.",
+            text="Explore the full Tsarchain ecosystem",
             bg=BG, fg=VAL_NUM,
             font=("Consolas", 20, "italic")
         )

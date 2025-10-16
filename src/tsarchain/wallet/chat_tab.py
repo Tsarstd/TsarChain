@@ -43,11 +43,11 @@ class ChatTab:
         self._msg_meta_map = {}
         self._chat_key_ttl_sec = 15 * 60
         self.chat_blocked = set()
-        # pasang key-change callback → tampilkan alert & reset sesi
+        self._hero_visible = False
+
         try:
             def _on_key_changed(addr, old, new):
                 try:
-                    # buang sesi ratchet lawan itu supaya re-bootstrap aman
                     if hasattr(self.chat_mgr, "_sessions"):
                         self.chat_mgr._sessions.pop(addr, None)
                 except Exception:
@@ -72,6 +72,11 @@ class ChatTab:
         self.chat_font_mono = tkfont.Font(family="Consolas", size=11)
         self.chat_font_body = tkfont.Font(family="Segoe UI", size=12)
         self._chat_key_ttl_sec = getattr(self, "_chat_key_ttl_sec", 15 * 60)
+        
+        try:
+            self.chat_mgr.password_prompt_cb = self._pwd_prompt_cb
+        except Exception:
+            pass
 
     def set_palette(self, palette: dict):
         self.bg = palette.get("bg", "#0e141a")
@@ -231,10 +236,12 @@ class ChatTab:
         self.chat_hero = tk.Frame(self.frame, bg=self.bg)
         header = tk.Frame(self.chat_hero, bg=self.bg); header.pack(side="top", pady=(10, 0))
         
-        tk.Label(header, text="♜Kremlin Chat♜", bg=self.bg, fg=self.accent,
-                font=("Segoe UI", 60, "bold")).pack(side="top")
-        tk.Label(header, text="Encrypted whispers for underground creators.",
-                bg=self.bg, fg="#C4A231", font=("Consolas", 18, "italic")).pack(side="top", pady=(0, 30))
+        self._brand_lbl = tk.Label(header, text="♜Kremlin Chat♜", bg=self.bg, fg=self.accent,
+                                   font=("Segoe UI", 60, "bold"))
+        self._brand_lbl.pack(side="top")
+        self._tagline_lbl = tk.Label(header, text="Encrypted whispers for The Voice Sovereignty.",
+                                     bg=self.bg, fg="#C4A231", font=("Consolas", 18, "italic"))
+        self._tagline_lbl.pack(side="top", pady=(0, 30))
         
         body_wrap = tk.Frame(self.chat_hero, bg=self.bg); body_wrap.pack(fill="both", expand=True, padx=16, pady=16)
         grid = tk.Frame(body_wrap, bg=self.bg); grid.pack(fill="both", expand=True)
@@ -248,6 +255,40 @@ class ChatTab:
         self.chat_hero_addr_var = tk.StringVar(value=(wallets[0] if wallets else ""))
         self.chat_hero_addr_combo = ttk.Combobox(inner, values=wallets, textvariable=self.chat_hero_addr_var, state="readonly", width=64)
         self.chat_hero_addr_combo.pack(fill="x")
+        
+        # == Password field  ==
+        tk.Label(inner, text="Wallet password:", bg=self.panel_bg, fg=self.fg, font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=(14, 6))
+        self.chat_hero_pwd_var = tk.StringVar(value="")
+        self.chat_hero_pwd_entry = tk.Entry(
+            inner, textvariable=self.chat_hero_pwd_var, show="•",
+            bg=self.panel_bg, fg=self.fg, insertbackground=self.fg,
+            relief="flat", highlightthickness=1, highlightbackground="#2a2f36", highlightcolor="#2a2f36"
+        )
+        self.chat_hero_pwd_entry.pack(fill="x")
+        self._pwd_menu = tk.Menu(self.chat_hero, tearoff=0, bg=self.panel_bg, fg=self.fg, activebackground="#2a2f36")
+        def _pwd_do_paste():
+            try:
+                clip = self.chat_hero_pwd_entry.clipboard_get()
+            except Exception:
+                clip = ""
+            if not clip:
+                return
+            e = self.chat_hero_pwd_entry
+            try:
+                s, t = e.index("sel.first"), e.index("sel.last")
+                e.delete(s, t)
+                e.insert(s, clip.strip())
+            except tk.TclError:
+                e.insert("insert", clip.strip())
+        self._pwd_menu.add_command(label="Paste", command=_pwd_do_paste)
+        def _pwd_popup(ev):
+            self._pwd_menu.tk_popup(ev.x_root, ev.y_root)
+            self._pwd_menu.grab_release()
+        self.chat_hero_pwd_entry.bind("<Button-3>", _pwd_popup)
+        
+        # enter for login
+        self.chat_hero_pwd_entry.bind("<Return>", lambda _e: self._chat_login_from_hero())
+        
         tk.Button(inner, text="Go Online", command=self._chat_login_from_hero,
                 bg=self.accent, fg="#000", font=("Segoe UI", 11, "bold")).pack(pady=(12, 0))
 
@@ -256,6 +297,34 @@ class ChatTab:
         self._update_chat_context()
         self._chat_enter_hero()          # default: offline → hero overlay
         self._chat_update_send_state()
+
+
+    # --- password provider For ChatManager.password_prompt_cb(addr) ---
+    def _pwd_prompt_cb(self, addr: str) -> Optional[str]:
+        a = (addr or "").strip().lower()
+
+        try:
+            get_cached = getattr(self.chat_mgr, "_pwd_cache_get", None)
+            if callable(get_cached):
+                cached = get_cached(a)
+                if cached:
+                    return cached
+        except Exception:
+            pass
+
+        try:
+            if getattr(self, "_hero_visible", False):
+                val = (self.chat_hero_pwd_var.get() or "").strip()
+                if val:
+                    put_cached = getattr(self.chat_mgr, "_pwd_cache_put", None)
+                    if callable(put_cached):
+                        try: put_cached(a, val)
+                        except Exception: pass
+                    return val
+        except Exception:
+            pass
+
+        return None
 
 
     def _build_chat_to_controls(self, parent):
@@ -532,6 +601,12 @@ class ChatTab:
             self.chat_offline_badge.config(text="● Offline", fg="#d41c1c")
         except Exception:
             pass
+        try:
+            self._brand_lbl.config(font=("Segoe UI", 60, "bold"))
+            self._tagline_lbl.config(font=("Consolas", 18, "italic"))
+        except Exception:
+            pass
+        self._hero_visible = True
 
     def _chat_enter_compact(self):
         try:
@@ -547,12 +622,33 @@ class ChatTab:
         except Exception:
             pass
         self._update_chat_context()
+        
+        try:
+            self._brand_lbl.config(font=("Segoe UI", 39, "bold"))
+            self._tagline_lbl.config(font=("Consolas", 8, "italic"))
+        except Exception:
+            pass
+        self._hero_visible = False
 
     def _chat_login_from_hero(self):
         addr = (self.chat_hero_addr_var.get() or "").strip().lower()
         if not addr:
-            self.toast("Pilih address dulu.", kind="warn")
+            self.toast("Choose Address First..", kind="warn")
             return
+
+        pwd = (self.chat_hero_pwd_var.get() or "").strip()
+        if not pwd:
+            self.toast("Masukkan password wallet dulu.", kind="warn")
+            try: self.chat_hero_pwd_entry.focus_set()
+            except Exception:
+                pass
+            return
+
+        try:
+            self.chat_mgr._pwd_cache_put(addr, pwd)
+        except Exception:
+            pass
+        
         self.chat_from_var.set(addr)
         self._chat_toggle_online(prewarm=True)
 
@@ -563,6 +659,19 @@ class ChatTab:
                 self.chat_mgr.priv_cache.pop(addr, None)
         except Exception:
             pass
+
+        try:
+            cache = getattr(self.chat_mgr, "_pwd_cache", None)
+            if isinstance(cache, dict):
+                cache.pop(addr, None)
+        except Exception:
+            pass
+        try:
+            if hasattr(self, "chat_hero_pwd_var"):
+                self.chat_hero_pwd_var.set("")
+        except Exception:
+            pass
+        
         try:
             if getattr(self, "_chat_poll_job", None):
                 self.root.after_cancel(self._chat_poll_job)
@@ -642,7 +751,7 @@ class ChatTab:
                 elif "Invalid password" in err:
                     msg = "Password salah atau file keystore korup."
                 else:
-                    msg = f"Gagal unlock: {err}"
+                    msg = f"Failed to unlock: {err}"
                 self.toast(msg, kind="error")
                 return
             if prewarm:

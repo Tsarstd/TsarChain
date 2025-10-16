@@ -223,7 +223,7 @@ class WalletsMixin:
         ).pack(pady=(36, 8))
 
         tk.Label(
-            center, text="Zero Censorship. Pure Art. Final Bid.",
+            center, text="Keep Your Voice Safe!",
             bg=self.bg, fg="#C4A231", font=("Consolas", 14, "italic")
         ).pack(pady=(0, 26))
 
