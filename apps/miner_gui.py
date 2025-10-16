@@ -326,7 +326,6 @@ class BlockchainGUI:
         if mining_on:
             self.btn_start_node.config(state="disabled")
             self.btn_start_mining.config(state="disabled")
-            self.btn_bench.config(state="disabled")
             self.btn_stop.config(state="normal")
         else:
             self.btn_start_node.config(state="disabled" if node_on else "normal")

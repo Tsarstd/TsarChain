@@ -91,6 +91,8 @@ def mining_loop(blockchain: Blockchain, network: Network, address: str,
         return False
 
     tip_verified = False
+    allow_solo = bool(getattr(CFG, "ALLOW_AUTO_GENESIS", 0))
+    prev_has_peers = False
 
     while not cancel_evt.is_set():
         try:
@@ -119,20 +121,23 @@ def mining_loop(blockchain: Blockchain, network: Network, address: str,
                     if current_height < 0:
                         continue
 
-            if network:
-                if network.peers:
-                    pass
-                elif getattr(CFG, "ALLOW_AUTO_GENESIS", 0):
+            has_peers = bool(network and getattr(network, "peers", None))
+            if has_peers and not prev_has_peers:
+                tip_verified = False
+            prev_has_peers = has_peers
+            solo_mode = allow_solo and not has_peers
+
+            if not solo_mode:
+                if not tip_verified:
+                    if not _confirm_tip_ready():
+                        break
                     tip_verified = True
-                else:
-                    tip_verified = False
+            else:
+                # Solo mining mode; ensure flag so we skip waiting for peers
+                if not tip_verified:
+                    tip_verified = True
 
-            if not tip_verified:
-                if not _confirm_tip_ready():
-                    break
-                tip_verified = True
-
-            if network and network.peers:
+            if has_peers:
                 try:
                     network.request_sync(fast=True)
                 except Exception:
@@ -155,29 +160,30 @@ def mining_loop(blockchain: Blockchain, network: Network, address: str,
                 except Exception:
                     print("[+] Block mined")
 
-                try:
-                    msg = {"type": "NEW_BLOCK", "data": blk.to_dict(), "port": getattr(network, 'port', None)}
-                    for peer in list(getattr(network, 'peers', []) or []):
-                        try:
-                            network.broadcast._send(peer, msg)
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-
-                try:
-                    for tx in (getattr(blk, "transactions", []) or [])[1:]:
-                        try:
-                            network.broadcast.mempool.remove_tx(tx.txid.hex())
-                        except Exception:
-                            pass
+                if network:
                     try:
-                        pool = network.broadcast.mempool.load_pool()
-                        network.broadcast.mempool.save_pool(pool)
+                        msg = {"type": "NEW_BLOCK", "data": blk.to_dict(), "port": getattr(network, 'port', None)}
+                        for peer in list(getattr(network, 'peers', []) or []):
+                            try:
+                                network.broadcast._send(peer, msg)
+                            except Exception:
+                                pass
                     except Exception:
                         pass
-                except Exception as e:
-                    print(f"[Mempool] prune error: {e}")
+
+                    try:
+                        for tx in (getattr(blk, "transactions", []) or [])[1:]:
+                            try:
+                                network.broadcast.mempool.remove_tx(tx.txid.hex())
+                            except Exception:
+                                pass
+                        try:
+                            pool = network.broadcast.mempool.load_pool()
+                            network.broadcast.mempool.save_pool(pool)
+                        except Exception:
+                            pass
+                    except Exception as e:
+                        print(f"[Mempool] prune error: {e}")
 
         except Exception as e:
             print(f"[-] Mining: {e}")
