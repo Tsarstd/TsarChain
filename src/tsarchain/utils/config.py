@@ -21,11 +21,19 @@ IS_DEV = (MODE.lower() == "dev")
 PORT_RANGE_DEV     = (38169, 38178)
 PORT_RANGE_PROD    = (40196, 40205)
 
-BOOTSTRAP_DEV      = ("31.97.51.207", 38169)   # << VPS IP
-BOOTSTRAP_PROD     = ("127.0.0.1", 40196)
+BOOTSTRAP_DEV      = (
+    ("31.97.51.207", 38169),
+    ("31.97.51.207", 38170),
+    ("31.97.51.207", 38171),
+)
 
-FULL_SYNC_DEV      = True
+BOOTSTRAP_PROD     = (
+    ("127.0.0.1", 40196),
+)
+
+FULL_SYNC_DEV      = False
 FULL_SYNC_PROD     = True
+
 
 # =============================================================================
 # APP / METADATA
@@ -107,8 +115,8 @@ ZERO_HASH       = b"\x00" * 32
 CANONICAL_SEP   = (',', ':')
 
 # === Genesis ===
-ALLOW_AUTO_GENESIS = 0
-GENESIS_HASH_HEX = "00000dbdd68bf56bcd41d4fa930efbdd14fd1633b6e97b4bec2b72e08a0f917a"
+ALLOW_AUTO_GENESIS = 1
+GENESIS_HASH_HEX = ""
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"
 
 # === Voice Sovereignty Figures (ASCII only) ===
@@ -147,7 +155,8 @@ VOICE_SOVEREIGNTY_FIGURES = [
 # =============================================================================
 # === Port & Bootstrap ===
 PORT_START, PORT_END = PORT_RANGE_DEV if IS_DEV else PORT_RANGE_PROD
-BOOTSTRAP_NODE       = BOOTSTRAP_DEV if IS_DEV else BOOTSTRAP_PROD
+BOOTSTRAP_NODES      = BOOTSTRAP_DEV if IS_DEV else BOOTSTRAP_PROD
+BOOTSTRAP_NODE       = BOOTSTRAP_NODES[0]
 
 # === Buffers & Timeouts ===
 BUFFER_SIZE        = 65536
@@ -155,6 +164,7 @@ HANDSHAKE_TIMEOUT  = 10
 DISCOVERY_INTERVAL = 5
 SYNC_TIMEOUT       = 10
 SYNC_INTERVAL      = 15
+FAST_SYNC_INTERVAL = 5
 
 # === Anti-DoS ===
 MAX_ADDRS_PER_REQ  = 64
@@ -169,10 +179,27 @@ HANDSHAKE_RL_PER_IP_WINDOW_S = 10          # /10 second
 TEMP_BAN_SECONDS             = 60          # temporary ban
 
 # === Full Sync guard ===
-ENABLE_FULL_SYNC       = FULL_SYNC_DEV if IS_DEV else FULL_SYNC_PROD
-FULL_SYNC_MAX_BLOCKS   = 100_000
-FULL_SYNC_MAX_BYTES    = 51200 * 1024  # 50 MB
-MAX_MSG                = FULL_SYNC_MAX_BYTES
+ENABLE_FULL_SYNC            = FULL_SYNC_DEV if IS_DEV else FULL_SYNC_PROD
+FULL_SYNC_MAX_BLOCKS        = 10_000
+FULL_SYNC_MAX_BYTES         = 5120 * 1024  # 5 MB
+FULL_SYNC_MIN_INTERVAL      = 300           # seconds per peer
+FULL_SYNC_BACKOFF_INITIAL   = 600
+FULL_SYNC_BACKOFF_MAX       = 3600
+MAX_MSG                     = FULL_SYNC_MAX_BYTES
+
+HEADERS_BATCH_MAX           = 2_048
+HEADERS_LOCATOR_DEPTH       = 64
+HEADERS_FANOUT              = 16
+HEADERS_SYNC_MIN_INTERVAL   = 20
+BLOCK_DOWNLOAD_BATCH_MAX    = 32
+
+MAX_OUTBOUND_PEERS          = 8
+MAX_INBOUND_PEERS           = 16
+MAX_INBOUND_PER_IP          = 4
+PEER_SCORE_START            = 10
+PEER_SCORE_FAILURE_PENALTY  = 5
+PEER_SCORE_REWARD           = 1
+PEER_SCORE_MIN              = -40
 
 
 # =============================================================================

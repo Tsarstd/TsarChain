@@ -238,6 +238,31 @@ class UTXODB(BaseDatabase):
                              autosave=False)
             self._save()
 
+
+    def rebuild_from_chain(self, blocks) -> None:
+        with self._lock:
+            self.utxos.clear()
+            if kv_enabled():
+                try:
+                    clear_db('utxo')
+                except Exception:
+                    pass
+            for block in blocks or []:
+                txs = getattr(block, "transactions", []) or []
+                height = int(getattr(block, "height", 0))
+                for tx in txs:
+                    txid_hex = self._txid_hex(getattr(tx, "txid", None))
+                    is_coinbase = bool(getattr(tx, "is_coinbase", False))
+                    if not is_coinbase:
+                        for tx_input in getattr(tx, "inputs", []) or []:
+                            prev_txid_hex, vout = self._prevout_from_txin(tx_input)
+                            if prev_txid_hex is None or vout is None:
+                                continue
+                            spent_key = f"{prev_txid_hex}:{int(vout)}"
+                            self.utxos.pop(spent_key, None)
+                    for index, tx_out in enumerate(getattr(tx, "outputs", []) or []):
+                        self.add(txid_hex, index, tx_out, is_coinbase=is_coinbase, block_height=height, autosave=False)
+            self._save()
     def add(self, txid: str, index: int, tx_out: TxOut, is_coinbase: bool = False, block_height: int = 0, autosave: bool = True):
         if self._is_unspendable_opreturn(tx_out):
             return
@@ -518,3 +543,4 @@ class UTXODB(BaseDatabase):
                         "block_height": int(data.get("block_height", 0)),
                     }
         return result
+

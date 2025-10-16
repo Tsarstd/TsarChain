@@ -123,7 +123,7 @@ class BlockchainGUI:
         self.frames['mining'] = f
 
         # Wizard hint
-        hint = tk.Label(f, text="Address → 1) Performance → 2) Start Node → 3) Happy Mining!",
+        hint = tk.Label(f, text="Address ? 1) Performance ? 2) Start Node ? 3) Happy Mining!",
                         bg=self.bg, fg=self.fg, font=("Consolas", 10))
         hint.pack(anchor="w", padx=12, pady=(10, 2))
 
@@ -167,7 +167,7 @@ class BlockchainGUI:
         # Hashrate row + log controls
         hr = tk.Frame(f, bg=self.bg); hr.pack(fill=tk.X, padx=12, pady=(6,0))
         tk.Label(hr, text="Total Hashrate:", bg=self.bg, fg=self.fg).pack(side=tk.LEFT)
-        self.hashrate_var = tk.StringVar(value="⛏️ 0 H/s")
+        self.hashrate_var = tk.StringVar(value="?? 0 H/s")
         self.hashrate_label = tk.Label(hr, textvariable=self.hashrate_var, bg=self.bg, fg=self.accent, font=("Consolas", 12, "bold"))
         self.hashrate_label.pack(side=tk.LEFT, padx=8)
         
@@ -221,7 +221,7 @@ class BlockchainGUI:
 
             info_area = tk.Frame(f, bg=self.bg)
             info_area.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
-            lbl_title = tk.Label(info_area, text="🌐Tsar Chain🌐", bg=self.bg, fg=self.accent, font=("Segoe UI", 65, 'bold'))
+            lbl_title = tk.Label(info_area, text="??Tsar Chain??", bg=self.bg, fg=self.accent, font=("Segoe UI", 65, 'bold'))
             lbl_title.pack(pady=(0, 0)) 
             lbl_sub = tk.Label(info_area, text="--- Long Live The Voice Sovereignty Monetary System ---\n", bg=self.bg, fg=self.accent, font=("Consolas", 12, 'bold'))
             lbl_sub.pack(pady=(0, 0))
@@ -236,7 +236,7 @@ class BlockchainGUI:
             
             self.dev_text.insert(tk.END, "\nWhat is TsarChain?\n", ("title", "center"))
             self.dev_text.insert(tk.END, "----------------------------------\n\n", ("info", "center"))
-            self.dev_text.insert(tk.END, "⚠️ This is a Voice Sovereignty chain ⚠️\n\n", ("alert", "center"))
+            self.dev_text.insert(tk.END, "?? This is a Voice Sovereignty chain ??\n\n", ("alert", "center"))
             self.dev_text.insert(
                 tk.END,
                 "A from-scratch, UTXO-based L1 that records **expressive value** graffiti, testimony, evidence—immutably.\n"
@@ -252,7 +252,7 @@ class BlockchainGUI:
                 "No drops, No royalties, No lamborghini, No mint/burn mechanics\nthis layer is for public memory, not marketplace hype.\n",
                 ("info", "center"),
             )
-            self.dev_text.insert(tk.END, "\n⚠️ Status ⚠️\n", ("alert", "center"))
+            self.dev_text.insert(tk.END, "\n?? Status ??\n", ("alert", "center"))
             self.dev_text.insert(
                 tk.END,
                 "\n-- Wallet generation (with SegWit Bech32) --\n-- Address prefix 'tsar1' --\n-- Genesis block --\n"
@@ -261,7 +261,7 @@ class BlockchainGUI:
                 "-- Chain validation --\n-- Security layer --\n",
                 ("status", "center"),
             )
-            self.dev_text.insert(tk.END, "\n⚠️ Disclaimer ⚠️\n", ("alert", "center"))
+            self.dev_text.insert(tk.END, "\n?? Disclaimer ??\n", ("alert", "center"))
             self.dev_text.insert(
                 tk.END,
                 "\nPublished data becomes part of the chain and cannot be removed.\n"
@@ -278,7 +278,7 @@ class BlockchainGUI:
         self.corner = tk.Frame(self.main, bg="#4D4D4D")
         self.corner.place(relx=0.0, rely=1.0, anchor="sw", x=8, y=-8)
 
-        self.dot_node = tk.Label(self.corner, text="●", fg=self.bad, bg="#4D4D4D", font=("Consolas", 10, "bold"))
+        self.dot_node = tk.Label(self.corner, text="?", fg=self.bad, bg="#4D4D4D", font=("Consolas", 10, "bold"))
         self.dot_node.pack(side=tk.LEFT, padx=(8, 4), pady=4)
         
         self.status_node = tk.Label(self.corner, text="Offline", fg=self.fg, bg="#4D4D4D", font=("Consolas", 9))
@@ -287,7 +287,7 @@ class BlockchainGUI:
         self.status_peers = tk.Label(self.corner, text="Peers: 0", fg=self.fg, bg="#4D4D4D", font=("Consolas", 9))
         self.status_peers.pack(side=tk.LEFT, padx=(0, 8))
 
-        self.dot_mine = tk.Label(self.corner, text="●", fg=self.bad, bg="#4D4D4D", font=("Consolas", 10, "bold"))
+        self.dot_mine = tk.Label(self.corner, text="?", fg=self.bad, bg="#4D4D4D", font=("Consolas", 10, "bold"))
         self.dot_mine.pack(side=tk.LEFT, padx=(8, 4))
         
         self.status_mine = tk.Label(self.corner, text="Mining: stopped", fg=self.fg, bg="#4D4D4D", font=("Consolas", 9))
@@ -330,7 +330,7 @@ class BlockchainGUI:
     def _validate_address(self, notify=True) -> bool:
         ok = self._address_ok()
         if ok:
-            self.addr_status.config(text="Looks good ✔", fg=self.good)
+            self.addr_status.config(text="Looks good ?", fg=self.good)
         else:
             self.addr_status.config(text=f"Address should start with '{ADDR_HINT}'", fg=self.warn)
             if notify:
@@ -373,18 +373,18 @@ class BlockchainGUI:
             )
             self.network = Network(blockchain=self.blockchain)
 
-            # Fallback → BOOTSTRAP from config.py
-            fallback = CFG.BOOTSTRAP_DEV if CFG.IS_DEV else CFG.BOOTSTRAP_PROD
+            # Fallback ? BOOTSTRAP from config.py
+            fallback_nodes = tuple(getattr(CFG, "BOOTSTRAP_NODES", ()) or (CFG.BOOTSTRAP_NODE,))
             try:
-                self.network.persistent_peers.add(fallback)
-                self.network.peers.add(fallback)
-                self.log_print(f"[Network] Using config bootstrap: {fallback[0]}:{fallback[1]}")
+                for peer in fallback_nodes:
+                    self.network.persistent_peers.add(peer)
+                    self.network.peers.add(peer)
+                if fallback_nodes:
+                    host, port = fallback_nodes[0]
+                    extra = f" (+{len(fallback_nodes)-1} alt)" if len(fallback_nodes) > 1 else ""
+                    self.log_print(f"[Network] Using config bootstrap: {host}:{port}{extra}")
             except Exception:
                 pass
-
-            self.log_print("[Network] Node started")
-            self._set_buttons_state()
-
         except Exception as e:
             self.blockchain = None
             self.network = None
@@ -398,7 +398,7 @@ class BlockchainGUI:
             def _early_sync():
                 for _ in range(5):
                     try:
-                        self.network.sync_with_peers()
+                        self.network.request_sync(fast=True)
                     except Exception:
                         pass
                     time.sleep(1.0)
@@ -408,7 +408,7 @@ class BlockchainGUI:
         while self.blockchain and self.network:
             try:
                 if self.network.peers:
-                    self.network.sync_with_peers()
+                    self.network.request_sync(fast=True)
             except Exception:
                 pass
             time.sleep(20)
@@ -434,7 +434,7 @@ class BlockchainGUI:
                 self.log_print("[Genesis] Auto-genesis disabled; trying initial sync…")
                 try:
                     if self.network:
-                        self.network.sync_with_peers()
+                        self.network.request_sync(fast=True)
                         time.sleep(1.0)
                 except Exception:
                     pass
@@ -444,7 +444,7 @@ class BlockchainGUI:
         use_cores = int(self.cpu_entry.get() or "1")
         pow_backend = "numba"
 
-        self.log_print(f"[*] Mining → addr={self.miner_address_entry.get().strip()}  backend={pow_backend}  cores={use_cores}")
+        self.log_print(f"[*] Mining ? addr={self.miner_address_entry.get().strip()}  backend={pow_backend}  cores={use_cores}")
 
         self.mining_alive.set()
         self.status_mine.config(text="Mining: running"); self.dot_mine.config(fg=self.good)
@@ -458,7 +458,7 @@ class BlockchainGUI:
             while self.mining_alive.is_set():
                 try:
                     if self.network.peers:
-                        self.network.sync_with_peers()
+                        self.network.request_sync(fast=True)
                         time.sleep(1)
 
                     block = self.blockchain.mine_block(
@@ -509,7 +509,7 @@ class BlockchainGUI:
             while True:
                 tag, val = self.progress_queue.get_nowait()
                 if tag == "TOTAL_HPS":
-                    self.hashrate_var.set(f"⛏️ {float(val):,.0f} H/s")
+                    self.hashrate_var.set(f"?? {float(val):,.0f} H/s")
                     updated = True
         except Exception:
             pass
@@ -524,7 +524,7 @@ class BlockchainGUI:
         if self.mining_thread and self.mining_thread.is_alive():
             self.mining_thread.join(timeout=3)
         self.progress_polling = False
-        self.hashrate_var.set("⛏️ 0 H/s")
+        self.hashrate_var.set("?? 0 H/s")
         self.progress_queue = None
         self.log_print("[!] Mining stopped")
         self._set_buttons_state()
@@ -591,7 +591,7 @@ class BlockchainGUI:
                     tag, val = q.get_nowait()
                     if tag == "TOTAL_HPS":
                         hps_values.append(float(val))
-                        self.hashrate_var.set(f"⛏️ {float(val):,.0f} H/s (bench)")
+                        self.hashrate_var.set(f"?? {float(val):,.0f} H/s (bench)")
             except Exception:
                 pass
             if now - t0 >= 5.0:
@@ -606,7 +606,7 @@ class BlockchainGUI:
             except Exception:
                 pass
             avg = sum(hps_values[-10:]) / max(1, len(hps_values[-10:])) if hps_values else 0.0
-            self.log_print(f"[✓] Benchmark done → ~{avg:,.0f} H/s (avg of last samples)")
+            self.log_print(f"[?] Benchmark done ? ~{avg:,.0f} H/s (avg of last samples)")
             messagebox.showinfo("Benchmark Result", f"Average hashrate: ~{avg:,.0f} H/s\nBackend: {pow_backend}, Cores: {use_cores}")
 
         poll_bench()

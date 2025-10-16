@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+﻿# SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173; libsecp256k1; Signal-X3DH; RFC7748-X25519
@@ -37,24 +37,23 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
     # ----------------------------------------------------------------------------------
     # GUARDIANS: role-based gate + limits
     # ----------------------------------------------------------------------------------
-    MINERS = {"HELLO", "NEW_BLOCK", "GET_FULL_SYNC", "FULL_SYNC", "CHAIN", "MEMPOOL"}
+    MINERS = {"HELLO", "NEW_BLOCK", "GET_FULL_SYNC", "FULL_SYNC", "CHAIN", "MEMPOOL",
+              "GET_HEADERS", "HEADERS", "GET_BLOCKS", "BLOCKS"}
     NODE_STORAGE = {"STOR_INIT", "STOR_PUT", "STOR_COMMIT", "STOR_STATUS", "STOR_GC", "STOR_PAID"}
-    
+
     USER = {
         "PING", "GET_BALANCE", "GET_BALANCES", "CREATE_TX", "CREATE_TX_MULTI", "GET_INFO",
         "GET_TX_HISTORY", "GET_TX_DETAIL", "NEW_TX", "GET_UTXOS", "GET_PEERS",
-        "GET_NETWORK_INFO", "GET_BLOCK_AT", "GET_BLOCK", "GET_BLOCK_HASH", "STOR_LIST", 
-        
+        "GET_NETWORK_INFO", "GET_BLOCK_AT", "GET_BLOCK", "GET_BLOCK_HASH", "STOR_LIST",
+
         # Chat & storage listing
         "CHAT_REGISTER", "CHAT_LOOKUP_PUB", "CHAT_PRESENCE", "CHAT_SEND", "CHAT_PULL", "CHAT_RELAY", "CHAT_READ",
         "CHAT_GET_PREKEY", "CHAT_PUBLISH_PREKEYS",
-        
+
         # Mempool utilities
         "MEMPOOL_PRUNE", "GET_MEMPOOL",
     }
-    # ----------------------------------------------------------------------------------
-    # ----------------------------------------------------------------------------------
-    
+
     def _is_miner_sender() -> bool:
         if not isinstance(addr, tuple):
             return False
@@ -86,6 +85,15 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         if not CFG.ENABLE_FULL_SYNC:
             return {"type": "SYNC_REDIRECT", "reason": "full_sync_disabled"}
         return self._handle_get_full_sync(message, addr)
+
+    elif mtype == "GET_HEADERS":
+        return self._handle_get_headers(message, addr)
+
+    elif mtype == "GET_BLOCKS":
+        return self._handle_get_blocks(message, addr)
+
+    elif mtype in ("HEADERS", "BLOCKS"):
+        return {"status": "ok"}
 
     elif mtype == "FULL_SYNC":
         if not CFG.ENABLE_FULL_SYNC:

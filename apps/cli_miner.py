@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+﻿# SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
@@ -37,11 +37,20 @@ def start_node(blockchain: Blockchain, bootstrap: tuple[str, int] | None) -> tup
         net.peers.add(bootstrap)
         print(f"[Network] Manual bootstrap: {bootstrap[0]}:{bootstrap[1]}")
     else:
-        fallback = CFG.BOOTSTRAP_DEV if CFG.IS_DEV else CFG.BOOTSTRAP_PROD
-        net.persistent_peers.add(fallback)
-        net.peers.add(fallback)
+        fallback_nodes = tuple(getattr(CFG, "BOOTSTRAP_NODES", ()) or (CFG.BOOTSTRAP_NODE,))
+        for peer in fallback_nodes:
+            try:
+                net.persistent_peers.add(peer)
+                net.peers.add(peer)
+            except Exception:
+                pass
         try:
-            print(f"[Network] Using config bootstrap: {fallback[0]}:{fallback[1]}")
+            if fallback_nodes:
+                host, port = fallback_nodes[0]
+                extra = f" (+{len(fallback_nodes)-1} alt)" if len(fallback_nodes) > 1 else ""
+                print(f"[Network] Using config bootstrap: {host}:{port}{extra}")
+            else:
+                print("[Network] No bootstrap peers configured")
         except Exception:
             print("[Network] Using config bootstrap")
 
@@ -53,7 +62,7 @@ def start_node(blockchain: Blockchain, bootstrap: tuple[str, int] | None) -> tup
         while not stop_evt.is_set():
             try:
                 if net.peers:
-                    net.sync_with_peers()
+                    net.request_sync()
             except Exception as e:
                 print(f"[Sync] {e}")
             time.sleep(20)
@@ -73,7 +82,7 @@ def mining_loop(blockchain: Blockchain, network: Network, address: str,
                     print("Auto-genesis disabled!!, waiting for peer sync…")
                     try:
                         if network and network.peers:
-                            network.sync_with_peers()
+                            network.request_sync()
                     except Exception:
                         pass
                     time.sleep(3)
@@ -90,7 +99,7 @@ def mining_loop(blockchain: Blockchain, network: Network, address: str,
                     
             if network and network.peers:
                 try:
-                    network.sync_with_peers()
+                    network.request_sync()
                 except Exception:
                     pass
                 time.sleep(1)

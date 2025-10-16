@@ -1,11 +1,11 @@
-# SPDX-License-Identifier: MIT
+﻿# SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173; Merkle; Signal-X3DH
 
-import socket, threading, json, time, os
+import socket, threading, json, time, os, random
 from bech32 import convertbits, bech32_encode
-from typing import Set, Tuple, Optional, Any
+from typing import Set, Tuple, Optional, Any, Dict, List
 from collections import deque
 
 # ---------------- Local Project ----------------
@@ -72,6 +72,7 @@ class Network:
 
         self.broadcast = Broadcast(blockchain=blockchain)
         self.broadcast.port = self.port
+        self.broadcast.network = self
         self.node_id, self.pubkey, self.privkey = load_or_create_node_keys()
         self.node_ctx = {
             "net_id": CFG.DEFAULT_NET_ID,
@@ -102,27 +103,56 @@ class Network:
             self._peer_keys_lock = threading.RLock()
         
         self.peers: Set[Tuple[str, int]] = set()
+        self.inbound_peers: Set[Tuple[str, int]] = set()
+        self.outbound_peers: Set[Tuple[str, int]] = set()
+        self.peer_scores: Dict[Tuple[str, int], int] = {}
+        self._inbound_ips: Dict[str, int] = {}
+        self._peer_last_sync: Dict[Tuple[str, int], float] = {}
+        self._peer_last_dial: Dict[Tuple[str, int], float] = {}
+        self._full_sync_served_at: Dict[str, float] = {}
+        self._full_sync_backoff: Dict[Tuple[str, int], float] = {}
+        self._full_sync_last_request: Dict[Tuple[str, int], float] = {}
+        self._last_headers_locator: Dict[Tuple[str, int], List[str]] = {}
+        self._recent_gap_requests: Dict[Tuple[str, int], float] = {}
+        self._sync_event = threading.Event()
+        self._sync_fast_until = 0.0
         self.utxodb = self.broadcast.utxodb
 
-        bootstrap_host, bootstrap_port = CFG.BOOTSTRAP_NODE
-        if not self._is_self_bootstrap(bootstrap_host, bootstrap_port):
-            self.persistent_peers = {CFG.BOOTSTRAP_NODE}
-            self.peers.update(self.persistent_peers)
-            if self.port == bootstrap_port:
-                try:
-                    log.info(
-                        "[__init__] Port %s matches bootstrap but host differs (%s); treating as client node",
-                        self.port,
-                        bootstrap_host,
-                    )
-                except Exception:
-                    pass
-        else:
-            self.persistent_peers = set()
+        try:
+            configured_bootstrap = tuple(getattr(CFG, "BOOTSTRAP_NODES", ()) or (CFG.BOOTSTRAP_NODE,))
+        except Exception as exc:
+            raise ValueError("Invalid BOOTSTRAP_NODES configuration") from exc
+
+        bootstrap_nodes: Set[Tuple[str, int]] = set()
+        for host, port in configured_bootstrap:
             try:
-                log.warning("[__init__] Running as bootstrap node (%s:%s)", bootstrap_host, bootstrap_port)
+                bootstrap_nodes.add((str(host), int(port)))
+            except Exception:
+                continue
+
+        if not bootstrap_nodes:
+            raise ValueError("No valid bootstrap peers configured")
+
+        primary_peer = self._normalize_peer(getattr(CFG, "BOOTSTRAP_NODE", None)) or next(iter(bootstrap_nodes))
+
+        is_bootstrap_self = any(self._is_self_bootstrap(h, p) for h, p in bootstrap_nodes)
+        if is_bootstrap_self:
+            self.persistent_peers = {peer for peer in bootstrap_nodes if not self._is_self_bootstrap(*peer)}
+            try:
+                log.warning("[__init__] Running as bootstrap node (%s:%s)", primary_peer[0], primary_peer[1])
             except Exception:
                 log.warning("[__init__] Running as bootstrap node")
+        else:
+            self.persistent_peers = set(bootstrap_nodes)
+            if self.port == primary_peer[1] and not self._is_local_address(primary_peer[0]):
+                try:
+                    log.info("[__init__] Port %s matches bootstrap but host differs (%s); treating as client node", self.port, primary_peer[0])
+                except Exception:
+                    pass
+
+        self.peers.update(self.persistent_peers)
+        for peer in self.persistent_peers:
+            self.peer_scores[peer] = CFG.PEER_SCORE_START
         
         # --- graceful shutdown controls ---
         self._stop = threading.Event()
@@ -266,6 +296,46 @@ class Network:
 
         return any(ip in local_ips for ip in target_ips)
 
+    @staticmethod
+    def _normalize_peer(peer: Any) -> Optional[Tuple[str, int]]:
+        if not peer:
+            return None
+        if isinstance(peer, tuple) and len(peer) == 2:
+            try:
+                return (str(peer[0]), int(peer[1]))
+            except Exception:
+                return None
+        if isinstance(peer, list) and len(peer) == 2:
+            try:
+                return (str(peer[0]), int(peer[1]))
+            except Exception:
+                return None
+        return None
+
+    def _penalize_peer(self, peer: Any, amount: int) -> None:
+        norm = self._normalize_peer(peer)
+        if norm is None:
+            return
+        delta = max(1, int(amount))
+        with self.lock:
+            score = self.peer_scores.get(norm, CFG.PEER_SCORE_START) - delta
+            self.peer_scores[norm] = score
+            if score <= CFG.PEER_SCORE_MIN:
+                self.peers.discard(norm)
+                self.outbound_peers.discard(norm)
+
+    def _reward_peer(self, peer: Any, amount: int = CFG.PEER_SCORE_REWARD) -> None:
+        norm = self._normalize_peer(peer)
+        if norm is None:
+            return
+        delta = max(0, int(amount))
+        with self.lock:
+            score = self.peer_scores.get(norm, CFG.PEER_SCORE_START) + delta
+            self.peer_scores[norm] = min(score, CFG.PEER_SCORE_START * 5)
+            self.peers.add(norm)
+            if len(self.outbound_peers) < CFG.MAX_OUTBOUND_PEERS or norm in self.outbound_peers:
+                self.outbound_peers.add(norm)
+
     def start_server(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             self._server_sock = s
@@ -288,6 +358,24 @@ class Network:
                         except Exception:
                             pass
                         log.warning("[start_server] temp-ban handshake %s", ip)
+                        continue
+
+                    with self.lock:
+                        inbound_total = len(self.inbound_peers)
+                        inbound_from_ip = self._inbound_ips.get(ip, 0)
+                    if inbound_total >= CFG.MAX_INBOUND_PEERS and inbound_from_ip == 0:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        log.debug("[start_server] inbound capacity full (total) %s", ip)
+                        continue
+                    if inbound_from_ip >= CFG.MAX_INBOUND_PER_IP:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        log.debug("[start_server] inbound capacity full for %s", ip)
                         continue
                     
                     threading.Thread(target=self.handle_connection, args=(conn, addr), daemon=True).start()
@@ -314,7 +402,13 @@ class Network:
             log.exception("[_set_pinned] Error setting pinned peer key")
 
     def handle_connection(self, conn, addr):
+        peer = (addr[0], int(addr[1]) if len(addr) > 1 else 0)
         try:
+            with self.lock:
+                self.inbound_peers.add(peer)
+                ip = peer[0]
+                self._inbound_ips[ip] = self._inbound_ips.get(ip, 0) + 1
+                self.peer_scores.setdefault(peer, CFG.PEER_SCORE_START // 2)
             raw, first = sniff_first_json_frame(conn, timeout=2.0)
 
             # === Secure path (handshake HS1) ===
@@ -414,6 +508,15 @@ class Network:
         except Exception:
             log.exception("[handle_connection] Connection handler error from %s", addr)
         finally:
+            with self.lock:
+                self.inbound_peers.discard(peer)
+                ip = peer[0]
+                if ip in self._inbound_ips:
+                    remaining = self._inbound_ips.get(ip, 1) - 1
+                    if remaining > 0:
+                        self._inbound_ips[ip] = remaining
+                    else:
+                        self._inbound_ips.pop(ip, None)
             try:
                 conn.close()
             except Exception:
@@ -430,217 +533,38 @@ class Network:
                 log.exception("[discover_peers_loop] Peer discovery error")
                 time.sleep(CFG.DISCOVERY_INTERVAL * 2)
 
-    def _discover_peers(self):
-        found_peers = set()
+    def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
+        norm = self._normalize_peer(peer)
+        if not norm:
+            return False
+        ip, port = norm
+        if port <= 0:
+            return False
+        if ip in ("127.0.0.1", "localhost") and port == self.port:
+            return False
+        if (port == self.port) and self._is_local_address(ip):
+            return False
 
-        # 1) Persistent
-        for peer in self.persistent_peers:
-            if not isinstance(peer, tuple) or len(peer) != 2:
-                continue
-            if peer[0] in ("127.0.0.1", "localhost") and peer[1] == self.port:
-                continue
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(3.5)
-                    if (peer[1] == self.port) and self._is_local_address(peer[0]):
-                        continue
-                    
-                    s.connect(peer)
-                    hello_msg = {
-                        "type": "HELLO",
-                        "port": self.port,
-                        "height": self.broadcast.blockchain.height,
-                        "peers": [{"ip": ip, "port": p} for ip, p in self.peers],
-                    }
-                    env = build_envelope(hello_msg, self.node_ctx, extra={"pubkey": self.pubkey})
-                    if CFG.P2P_ENC_REQUIRED:
-                        chan = SecureChannel(
-                            s, role="client",
-                            node_id=self.node_id, node_pub=self.pubkey, node_priv=self.privkey,
-                            get_pinned=self._get_pinned,
-                            set_pinned=self._set_pinned,
-                        )
-                        
-                        chan.handshake()
-                        chan.send(json.dumps(env).encode("utf-8"))
-                        try: _ = chan.recv(1)
-                        except Exception:
-                            pass
-                    else:
-                        send_message(s, json.dumps(env).encode("utf-8"))
-                        try: _ = recv_message(s, timeout=1)
-                        except Exception:
-                            pass
-                    found_peers.add(peer)
-            except (socket.timeout, ConnectionRefusedError, OSError):
-                continue
-            except Exception:
-                log.exception("[_discover_peers] Error connecting to persistent peer %s", peer)
-                continue
+        now = time.time()
+        last_dial = self._peer_last_dial.get(norm, 0.0)
+        if now - last_dial < max(2.0, CFG.DISCOVERY_INTERVAL / 2):
+            return norm in self.outbound_peers
 
-        # 2) Known peers
-        for peer in list(self.peers):
-            if not isinstance(peer, tuple) or len(peer) != 2:
-                continue
-            if peer[0] in ("127.0.0.1", "localhost") and peer[1] == self.port:
-                continue
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(2.0)
-                    if (peer[1] == self.port) and self._is_local_address(peer[0]):
-                        continue
-                    
-                    s.connect(peer)
-                    hello_msg = {
-                        "type": "HELLO",
-                        "port": self.port,
-                        "height": self.broadcast.blockchain.height,
-                        "peers": [{"ip": ip, "port": p} for ip, p in self.peers],
-                    }
-                    env = build_envelope(hello_msg, self.node_ctx, extra={"pubkey": self.pubkey})
-                    if CFG.ENFORCE_HELLO_PUBKEY or CFG.ENVELOPE_REQUIRED:
-                        env["pubkey"] = self.pubkey
-                    if CFG.P2P_ENC_REQUIRED:
-                        chan = SecureChannel(
-                            s, role="client",
-                            node_id=self.node_id, node_pub=self.pubkey, node_priv=self.privkey,
-                            get_pinned=self._get_pinned,
-                            set_pinned=self._set_pinned,
-                        )
-                        
-                        chan.handshake()
-                        chan.send(json.dumps(env).encode("utf-8"))
-                        try: _ = chan.recv(1)
-                        except Exception: pass
-                    else:
-                        send_message(s, json.dumps(env).encode("utf-8"))
-                        try: _ = recv_message(s, timeout=1)
-                        except Exception: pass
-                    found_peers.add(peer)
-            except (socket.timeout, ConnectionRefusedError, OSError):
-                with self.lock:
-                    self.peers.discard(peer)
-                continue
-            except Exception:
-                continue
+        hello_msg = {
+            "type": "HELLO",
+            "port": self.port,
+            "height": self.broadcast.blockchain.height,
+            "peers": [{"ip": h, "port": p} for h, p in list(self.peers)[:CFG.HEADERS_FANOUT]],
+        }
+        env = build_envelope(hello_msg, self.node_ctx, extra={"pubkey": self.pubkey})
+        if CFG.ENFORCE_HELLO_PUBKEY or CFG.ENVELOPE_REQUIRED:
+            env["pubkey"] = self.pubkey
 
-        # 3) Local sweep
-        for port in range(CFG.PORT_START, CFG.PORT_END + 1):
-            if port == self.port:
-                continue
-            peer = ("127.0.0.1", port)
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(0.5)
-                    if (peer[1] == self.port) and self._is_local_address(peer[0]):
-                        continue
-                    
-                    s.connect(peer)
-                    hello_msg = {
-                        "type": "HELLO",
-                        "port": self.port,
-                        "height": self.broadcast.blockchain.height,
-                        "peers": [{"ip": ip, "port": p} for ip, p in self.peers]
-                    }
-                    env = build_envelope(hello_msg, self.node_ctx, extra={"pubkey": self.pubkey})
-                    if CFG.P2P_ENC_REQUIRED:
-                        chan = SecureChannel(
-                            s, role="client",
-                            node_id=self.node_id, node_pub=self.pubkey, node_priv=self.privkey,
-                            get_pinned=self._get_pinned,
-                            set_pinned=self._set_pinned,
-                        )
-                        
-                        chan.handshake()
-                        chan.send(json.dumps(env).encode("utf-8"))
-                        try: _ = chan.recv(1)
-                        except Exception: pass
-                    else:
-                        send_message(s, json.dumps(env).encode("utf-8"))
-                        try: _ = recv_message(s, timeout=1)
-                        except Exception: pass
-                    found_peers.add(peer)
-            except Exception:
-                pass
-
-        with self.lock:
-            sane = set()
-            for (ip, p) in found_peers:
-                try:
-                    if isinstance(p, int) and p > 0:
-                        if ip in ("127.0.0.1", "localhost") and p == self.port:
-                            continue
-                        sane.add((ip, p))
-                except Exception:
-                    continue
-            self.peers.update(sane)
-        if found_peers:
-            log.trace("[_discover_peers] Discovered %s peers, total known: %s", len(found_peers), len(self.peers))
-
-    def sync_loop(self):
-        while not self._stop.is_set():
-            try:
-                self.sync_with_peers()
-                time.sleep(CFG.SYNC_INTERVAL)
-            except Exception:
-                log.exception("[sync_loop] Error during sync")
-
-    def sync_with_peers(self):
-        with self.lock:
-            try:
-                self.peers = {(ip, p) for (ip, p) in self.peers if isinstance(p, int) and p > 0}
-            except Exception:
-                self.peers = set()
-        if not self.peers:
-            return
-        if not CFG.ENABLE_FULL_SYNC:
-            return
         try:
-            now = time.time()
-            cnt = len(self.peers)
-
-            min_iv = CFG.SYNC_INFO_MIN_INTERVAL
-
-            if (self.port == CFG.BOOTSTRAP_NODE[1]) and getattr(CFG, "IS_DEV", str(getattr(CFG, "MODE", "dev")).lower() == "dev"):
-                min_iv = CFG.SYNC_INFO_MIN_INTERVAL_BOOTSTRAP
-
-            if (cnt != getattr(self, "_last_sync_count", -1)) or (now - self._last_sync_log > float(min_iv)):
-                log.info("[sync_with_peers] Connecting %s peers...", cnt)
-                self._last_sync_count = cnt
-                self._last_sync_log = now
-            else:
-                pass
-        except Exception:
-            pass
-        for peer in list(self.peers):
-            try:
-                self._request_full_sync(peer)
-            except Exception:
-                log.exception("[sync_with_peers] Error syncing with peer %s", peer)
-                with self.lock:
-                    self.peers.discard(peer)
-
-    def _request_full_sync(self, peer):
-        try:
-            if not CFG.ENABLE_FULL_SYNC:
-                return
-            try:
-                if isinstance(peer, tuple) and len(peer) == 2:
-                    try:
-                        same_port = int(peer[1]) == int(self.port)
-                    except Exception:
-                        same_port = False
-                    if same_port and self._is_local_address(peer[0]):
-                        return
-                    
-            except Exception:
-                pass
-            
-            sync_msg = {"type": "GET_FULL_SYNC", "port": self.port, "height": self.broadcast.blockchain.height}
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(5)
-                s.connect(peer)
-                timeout = max(float(getattr(CFG, "SYNC_TIMEOUT", 10.0)), 15.0)
+                timeout = 3.5 if norm in self.persistent_peers else 2.0
+                s.settimeout(timeout)
+                s.connect(norm)
                 if CFG.P2P_ENC_REQUIRED:
                     chan = SecureChannel(
                         s, role="client",
@@ -648,162 +572,451 @@ class Network:
                         get_pinned=self._get_pinned,
                         set_pinned=self._set_pinned,
                     )
-                    
                     chan.handshake()
-                    payload = json.dumps(build_envelope(sync_msg, self.node_ctx, extra={"pubkey": self.pubkey})).encode("utf-8")
-                    chan.send(payload)
-                    resp = chan.recv(timeout)
-                else:
-                    env = build_envelope(sync_msg, self.node_ctx, extra={"pubkey": self.pubkey})
-                    send_message(s, json.dumps(env).encode("utf-8"))
-                    resp = recv_message(s, timeout=timeout)
-                if not resp:
+                    chan.send(json.dumps(env).encode("utf-8"))
                     try:
-                        log.warning("[_request_full_sync] No response from %s within %.1fs", peer, timeout)
+                        chan.recv(1)
                     except Exception:
                         pass
-                    return
-                
-                outer = json.loads(resp.decode("utf-8"))
-                if is_envelope(outer):
-                    nid = outer.get("from")
-                    pko = outer.get("pubkey")
-                    def _resolver(qnid):
-                        pk = self.peer_pubkeys.get(qnid)
-                        if pk:
-                            return pk
-                        if isinstance(nid, str) and qnid == nid and isinstance(pko, str):
-                            return pko
-                        return None
-
-                    inner = verify_and_unwrap(outer, _resolver)
-                    if isinstance(nid, str) and isinstance(pko, str):
-                        self.peer_pubkeys[nid] = pko
                 else:
-                    inner = outer
-                result = process_message(self, inner, peer)
-                try:
-                    log.trace("[_request_full_sync] Processed response from %s:%s result_keys=%s", peer[0], peer[1], list(result.keys()) if isinstance(result, dict) else type(result).__name__)
-                except Exception:
-                    pass
-                
-        except Exception:
-            log.exception("[_request_full_sync] Full sync request to %s failed", peer)
-
-    # ------------------------------ Helpers -------------------------------
-
-    def _validate_incoming_chain(self, message: dict[str, Any]) -> bool:
-        try:
-            chain_data = message.get("data", [])
-            if not isinstance(chain_data, list) or not chain_data:
-                return False
-            if chain_data[0].get('height') != 0:
-                return False
-            prev_h = None
-            for i, b in enumerate(chain_data):
-                h = b.get('height')
-                if h is None or (i > 0 and h != chain_data[i-1].get('height') + 1):
-                    return False
-                if i > 0 and b.get('prev_block_hash') != prev_h:
-                    return False
-                prev_h = b.get('hash')
-            return True
-        except Exception:
-            log.exception("[_validate_incoming_chain] Error validating incoming chain")
+                    send_message(s, json.dumps(env).encode("utf-8"))
+                    try:
+                        recv_message(s, timeout=1)
+                    except Exception:
+                        pass
+        except (socket.timeout, ConnectionRefusedError, OSError):
             return False
-
-    # ----------------------- Communications -------------------------
-    
-    def _handle_hello(self, message, addr):
-        role = str(message.get("role","")).strip().upper()
-        try:
-            peer_port = int(message.get("port"))
         except Exception:
-            peer_port = None
+            log.exception("[_attempt_hello] Error dialing %s", norm)
+            return False
+        finally:
+            self._peer_last_dial[norm] = now
 
-        peer_height = message.get("height", 0)
-        peer_peers  = message.get("peers", [])
-        peer_addr   = (addr[0], peer_port if isinstance(peer_port,int) else None)
+        return True
+    def _discover_peers(self):
+        limit = max(1, int(getattr(CFG, "MAX_OUTBOUND_PEERS", 8)))
+        found_peers: Set[Tuple[str, int]] = set()
 
-        if role == "NODE_STORAGE":
-            s_addr = (message.get("address") or "").strip().lower()
-            s_url  = (message.get("url") or "").strip()
-            ip     = addr[0]
-            port   = int(peer_port or 0)
+        with self.lock:
+            candidates: List[Tuple[str, int]] = list(self.persistent_peers)
+            scored = sorted(
+                (p for p in self.peers if p not in self.persistent_peers),
+                key=lambda p: self.peer_scores.get(p, 0),
+                reverse=True,
+            )
+        candidates.extend(scored)
+        random.shuffle(candidates)
 
-            meta = {
-                "addr": s_addr, "url": s_url, "ip": ip,
-                "port": port, "last_seen": int(time.time()), "alive": True
-            }
-            with self.lock:
-                if not hasattr(self, "storage_peers"):
-                    self.storage_peers = {}
-                if (ip, 0) in self.storage_peers and port > 0:
-                    self.storage_peers.pop((ip, 0), None)
-                self.storage_peers[(ip, port)] = meta
-            return {
-                "type": "HELLO_RESPONSE",
-                "port": self.port,
-                "height": self.broadcast.blockchain.height,
-                "peers": [{"ip": ip, "port": p} for ip, p in self.peers if isinstance(p,int) and p>0],}
+        for peer in candidates:
+            norm = self._normalize_peer(peer)
+            if not norm:
+                continue
+            if norm in found_peers:
+                continue
+            if limit > 0 and len(found_peers) >= limit and norm not in self.outbound_peers:
+                break
+            if self._attempt_hello(norm):
+                found_peers.add(norm)
+                self._reward_peer(norm)
+            else:
+                self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
 
-        role = str(message.get("role","")).strip().upper()
-        if role == "NODE_STORAGE":
-            addr_b32 = (message.get("address") or "").strip().lower()
-            url      = (message.get("url") or "").strip()
+        if len(found_peers) < limit:
+            for port in range(CFG.PORT_START, CFG.PORT_END + 1):
+                if port == self.port:
+                    continue
+                norm = ("127.0.0.1", port)
+                if norm in found_peers:
+                    continue
+                if limit > 0 and len(found_peers) >= limit and norm not in self.outbound_peers:
+                    break
+                if self._attempt_hello(norm):
+                    found_peers.add(norm)
+                    self._reward_peer(norm)
+
+        with self.lock:
+            self.peers.update(found_peers)
+            retained = {p for p in self.outbound_peers if p in found_peers}
+            for peer in found_peers:
+                if len(retained) < limit or peer in retained:
+                    retained.add(peer)
+            self.outbound_peers = retained
+
+        if found_peers:
             try:
-                st_port = int(message.get("port") or 0)
-            except Exception:
-                st_port = 0
-
-            rec = {
-                "ip": addr[0],
-                "port": st_port,
-                "address": addr_b32,
-                "url": url,
-                "pubkey": (message.get("pubkey") or ""),
-                "last_seen": int(time.time()),
-            }
-            key = addr_b32 or f"{addr[0]}:{st_port}" or addr[0]
-            with self.lock:
-                self.storage_peers[key] = rec
-
-        if isinstance(peer_port, int) and peer_port > 0 and peer_port != self.port and role != "NODE_STORAGE":
-            with self.lock:
-                self.peers.add(peer_addr)
-
-        # --- Merge peers sent by the counterparty (only valid ones) ---
-        for pi in peer_peers:
-            try:
-                peer_ip = (pi.get("ip") if isinstance(pi, dict) else None) or addr[0]
-                pport = (pi.get("port") if isinstance(pi, dict) else None)
-                if isinstance(pport, int) and pport > 0 and pport != self.port:
-                    pt = (peer_ip, pport)
-                    if isinstance(pt, tuple) and len(pt) == 2:
-                        with self.lock:
-                            self.peers.add(pt)
+                log.trace("[_discover_peers] reachable=%s outbound=%s", len(found_peers), len(self.outbound_peers))
             except Exception:
                 pass
 
+    def sync_loop(self):
+        while not self._stop.is_set():
+            try:
+                window = CFG.FAST_SYNC_INTERVAL if time.time() < self._sync_fast_until else CFG.SYNC_INTERVAL
+                self._sync_event.wait(timeout=max(1.0, float(window)))
+                self._sync_event.clear()
+                self.sync_with_peers()
+            except Exception:
+                log.exception("[sync_loop] Error during sync")
+
+    def request_sync(self, fast: bool = False) -> None:
+        if fast:
+            self._sync_fast_until = max(self._sync_fast_until, time.time() + CFG.FAST_SYNC_INTERVAL)
+        self._sync_event.set()
+
+    def sync_with_peers(self):
         with self.lock:
-            self.peers = {(ip, p) for (ip, p) in self.peers if isinstance(p, int) and p > 0}
-            sane_peers = [{"ip": ip, "port": p} for (ip, p) in self.peers]
+            selected = [p for p in self.outbound_peers if p in self.peers]
+            if len(selected) < CFG.MAX_OUTBOUND_PEERS:
+                extras = sorted(
+                    (p for p in self.peers if p not in selected),
+                    key=lambda p: self.peer_scores.get(p, 0),
+                    reverse=True,
+                )
+                for peer in extras:
+                    if len(selected) >= CFG.MAX_OUTBOUND_PEERS:
+                        break
+                    selected.append(peer)
+        if not selected:
+            return
 
+        now = time.time()
+        if (len(selected) != getattr(self, "_last_sync_count", -1)) or (now - self._last_sync_log > float(getattr(CFG, "SYNC_INFO_MIN_INTERVAL", 60))):
+            try:
+                log.info("[sync_with_peers] syncing %s peers", len(selected))
+            except Exception:
+                pass
+            self._last_sync_count = len(selected)
+            self._last_sync_log = now
+
+        random.shuffle(selected)
+        for peer in selected:
+            norm = self._normalize_peer(peer)
+            if not norm:
+                continue
+            try:
+                synced = self._sync_peer(norm)
+                if not synced and CFG.ENABLE_FULL_SYNC:
+                    self._request_full_sync(norm)
+            except Exception:
+                log.exception("[sync_with_peers] Error syncing with peer %s", norm)
+                self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY * 2)
+    def _sync_peer(self, peer: Tuple[str, int]) -> bool:
+        now = time.time()
+        if now - self._peer_last_sync.get(peer, 0.0) < float(getattr(CFG, "HEADERS_SYNC_MIN_INTERVAL", 20)):
+            return False
+        locator = self._build_locator()
+        headers_resp = self._request_headers(peer, locator)
+        if not headers_resp:
+            self._penalize_peer(peer, CFG.PEER_SCORE_FAILURE_PENALTY)
+            return False
+        if headers_resp.get("type") == "SYNC_REJECT":
+            retry = float(headers_resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
+            self._full_sync_backoff[peer] = now + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
+            return False
+        headers = headers_resp.get("headers") or []
+        if not headers:
+            self._peer_last_sync[peer] = now
+            self._reward_peer(peer)
+            return True
+        missing = self._determine_missing_blocks(headers)
+        if not missing:
+            self._peer_last_sync[peer] = now
+            self._reward_peer(peer)
+            return True
+        downloaded = self._download_blocks(peer, missing)
+        if downloaded:
+            self._peer_last_sync[peer] = time.time()
+            self._reward_peer(peer, CFG.PEER_SCORE_REWARD * 2)
+            if headers_resp.get("more"):
+                self.request_sync(fast=True)
+            return True
+        return False
+
+    def _build_locator(self) -> List[str]:
+        locator: List[str] = []
+        with self.broadcast.lock:
+            chain = list(self.broadcast.blockchain.chain)
+        if not chain:
+            locator.append(CFG.ZERO_HASH.hex())
+            return locator
+        idx = len(chain) - 1
+        step = 1
+        while idx >= 0 and len(locator) < CFG.HEADERS_LOCATOR_DEPTH:
+            try:
+                locator.append(chain[idx].hash().hex())
+            except Exception:
+                break
+            if len(locator) >= 10:
+                step *= 2
+            idx -= step
+        zero_hex = CFG.ZERO_HASH.hex()
+        if zero_hex not in locator:
+            locator.append(zero_hex)
+        return locator
+
+    def _request_headers(self, peer: Tuple[str, int], locator: List[str]) -> Optional[dict]:
+        payload = {
+            "type": "GET_HEADERS",
+            "locator": locator[:CFG.HEADERS_LOCATOR_DEPTH],
+            "limit": int(CFG.HEADERS_BATCH_MAX),
+            "port": self.port,
+        }
+        return self._rpc_request(peer, payload, timeout=max(10.0, getattr(CFG, "SYNC_TIMEOUT", 10.0)))
+
+    def _determine_missing_blocks(self, headers: List[dict]) -> List[int]:
+        missing: List[int] = []
+        reorg_point: Optional[int] = None
+        max_remote_height = -1
+        with self.broadcast.lock:
+            chain = list(self.broadcast.blockchain.chain)
+        for header in headers:
+            try:
+                height = int(header.get("height", -1))
+            except Exception:
+                continue
+            blk_hash = header.get("hash")
+            if height < 0 or not isinstance(blk_hash, str):
+                continue
+            max_remote_height = max(max_remote_height, height)
+            if height < len(chain):
+                try:
+                    local_hash = chain[height].hash().hex()
+                except Exception:
+                    local_hash = ""
+                if local_hash != blk_hash:
+                    reorg_point = height if reorg_point is None else min(reorg_point, height)
+            else:
+                missing.append(height)
+        if reorg_point is not None:
+            start = max(0, reorg_point)
+            end = max(max_remote_height, len(chain) - 1)
+            missing.extend(range(start, end + 1))
+        return sorted(set(missing))
+
+    def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> bool:
+        if not heights:
+            return False
+        unique_heights = sorted({int(h) for h in heights if isinstance(h, int)})
+        if not unique_heights:
+            return False
+        batch_size = max(1, int(getattr(CFG, "BLOCK_DOWNLOAD_BATCH_MAX", 16)))
+        downloaded = False
+        for idx in range(0, len(unique_heights), batch_size):
+            chunk = unique_heights[idx: idx + batch_size]
+            payload = {"type": "GET_BLOCKS", "heights": chunk, "port": self.port}
+            resp = self._rpc_request(peer, payload, timeout=max(15.0, getattr(CFG, "SYNC_TIMEOUT", 10.0)))
+            if not resp:
+                break
+            if resp.get("type") == "BLOCKS":
+                blocks = resp.get("blocks") or []
+                for block_obj in blocks:
+                    try:
+                        self._apply_block_from_sync(block_obj, peer)
+                        downloaded = True
+                    except Exception:
+                        log.exception("[_download_blocks] Failed applying block from %s", peer)
+                        return downloaded
+            elif resp.get("type") == "SYNC_REJECT":
+                retry = float(resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
+                self._full_sync_backoff[peer] = time.time() + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
+                break
+            else:
+                break
+        return downloaded
+
+    def _apply_block_from_sync(self, block_obj: Dict[str, Any], peer: Tuple[str, int]) -> None:
+        message = {
+            "type": "NEW_BLOCK",
+            "data": block_obj,
+            "port": peer[1],
+        }
+        self.broadcast.receive_block(message, peer, self.peers)
+
+    def handle_block_gap(self, block, origin: Optional[Tuple[str, int]]) -> None:
+        peer = self._normalize_peer(origin)
+        self.request_sync(fast=True)
+        if not peer:
+            return
+        now = time.time()
+        last = self._recent_gap_requests.get(peer, 0.0)
+        if now - last < float(getattr(CFG, "HEADERS_SYNC_MIN_INTERVAL", 20)):
+            return
+        self._recent_gap_requests[peer] = now
         try:
-            log.debug("Current peers: %s", sane_peers)
+            height = int(getattr(block, "height", 0))
         except Exception:
-            log.exception("[_handle_hello] Error logging hello")
-            pass
+            height = 0
+        span = max(1, int(getattr(CFG, "HEADERS_FANOUT", 8)) // 2)
+        missing = list(range(max(0, height - span), height + 1))
+        self._download_blocks(peer, missing)
 
-        return {
-            "type": "HELLO_RESPONSE",
+    def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[float] = None) -> Optional[dict]:
+        norm = self._normalize_peer(peer)
+        if not norm:
+            return None
+        env = build_envelope(payload, self.node_ctx, extra={"pubkey": self.pubkey})
+        timeout = float(timeout or getattr(CFG, "SYNC_TIMEOUT", 10.0))
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(timeout)
+                s.connect(norm)
+                if CFG.P2P_ENC_REQUIRED:
+                    chan = SecureChannel(
+                        s, role="client",
+                        node_id=self.node_id, node_pub=self.pubkey, node_priv=self.privkey,
+                        get_pinned=self._get_pinned,
+                        set_pinned=self._set_pinned,
+                    )
+                    chan.handshake()
+                    chan.send(json.dumps(env).encode("utf-8"))
+                    resp = chan.recv(timeout)
+                else:
+                    send_message(s, json.dumps(env).encode("utf-8"))
+                    resp = recv_message(s, timeout=timeout)
+        except (socket.timeout, ConnectionRefusedError, OSError):
+            return None
+        except Exception:
+            log.exception("[_rpc_request] Error contacting %s", norm)
+            return None
+        if not resp:
+            return None
+        try:
+            outer = json.loads(resp.decode("utf-8"))
+        except Exception:
+            return None
+        if is_envelope(outer):
+            nid = outer.get("from")
+            pko = outer.get("pubkey")
+            def _resolver(qnid: str):
+                pk = self.peer_pubkeys.get(qnid)
+                if pk:
+                    return pk
+                if isinstance(nid, str) and qnid == nid and isinstance(pko, str):
+                    return pko
+                return None
+            try:
+                inner = verify_and_unwrap(outer, _resolver)
+            except Exception:
+                log.warning("[_rpc_request] verify failed from %s", norm)
+                return None
+            if isinstance(nid, str) and isinstance(pko, str):
+                self.peer_pubkeys[nid] = pko
+        else:
+            inner = outer
+        return inner
+    
+    def _request_full_sync(self, peer: Tuple[str, int]) -> bool:
+        if not CFG.ENABLE_FULL_SYNC:
+            return False
+        norm = self._normalize_peer(peer)
+        if not norm:
+            return False
+        now = time.time()
+        if now < self._full_sync_backoff.get(norm, 0.0):
+            return False
+        last_req = self._full_sync_last_request.get(norm, 0.0)
+        if now - last_req < float(getattr(CFG, "FULL_SYNC_MIN_INTERVAL", 300)):
+            return False
+
+        payload = {
+            "type": "GET_FULL_SYNC",
             "port": self.port,
             "height": self.broadcast.blockchain.height,
-            "peers": sane_peers,
+        }
+        resp = self._rpc_request(norm, payload, timeout=max(20.0, getattr(CFG, "SYNC_TIMEOUT", 10.0) * 2))
+        self._full_sync_last_request[norm] = now
+        if not resp:
+            self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
+            return False
+        if resp.get("type") == "SYNC_REJECT":
+            retry = float(resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
+            self._full_sync_backoff[norm] = now + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
+            return False
+        if resp.get("type") != "FULL_SYNC":
+            return False
+
+        data = resp.get("data", resp)
+        ok = self.broadcast.receive_full_sync(data)
+        if ok:
+            self._peer_last_sync[norm] = time.time()
+            self._reward_peer(norm, CFG.PEER_SCORE_REWARD * 3)
+            self._full_sync_backoff.pop(norm, None)
+            return True
+        self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
+        return False
+    
+    def _handle_get_headers(self, message, addr):
+        locator = message.get("locator") or []
+        try:
+            limit = int(message.get("limit", CFG.HEADERS_BATCH_MAX))
+        except Exception:
+            limit = CFG.HEADERS_BATCH_MAX
+        limit = max(1, min(limit, CFG.HEADERS_BATCH_MAX))
+        with self.broadcast.lock:
+            chain = list(self.broadcast.blockchain.chain)
+        start_idx = 0
+        if locator:
+            known = {}
+            for idx, blk in enumerate(chain):
+                try:
+                    known[blk.hash().hex()] = idx
+                except Exception:
+                    continue
+            for cand in locator:
+                idx = known.get(str(cand))
+                if idx is not None:
+                    start_idx = idx + 1
+                    break
+        headers = []
+        for blk in chain[start_idx:start_idx + limit]:
+            try:
+                prev_hash = blk.prev_block_hash.hex() if isinstance(blk.prev_block_hash, (bytes, bytearray)) else str(blk.prev_block_hash)
+            except Exception:
+                prev_hash = None
+            headers.append({
+                "height": getattr(blk, "height", start_idx),
+                "hash": blk.hash().hex() if hasattr(blk, "hash") else getattr(blk, "hash", ""),
+                "prev_hash": prev_hash,
+                "timestamp": getattr(blk, "timestamp", 0),
+                "bits": getattr(blk, "bits", 0),
+            })
+        more = (start_idx + limit) < len(chain)
+        return {
+            "type": "HEADERS",
+            "headers": headers,
+            "more": more,
+            "best_height": max(-1, len(chain) - 1),
         }
 
-
+    def _handle_get_blocks(self, message, addr):
+        heights = message.get("heights") or []
+        if not isinstance(heights, list):
+            return {"type": "BLOCKS", "blocks": []}
+        limit = min(len(heights), CFG.BLOCK_DOWNLOAD_BATCH_MAX)
+        blocks: List[dict] = []
+        with self.broadcast.lock:
+            chain = list(self.broadcast.blockchain.chain)
+        for raw_h in heights[:limit]:
+            try:
+                h = int(raw_h)
+            except Exception:
+                continue
+            if 0 <= h < len(chain):
+                try:
+                    blocks.append(chain[h].to_dict())
+                except Exception:
+                    continue
+        return {"type": "BLOCKS", "blocks": blocks}
+    
     def _handle_get_full_sync(self, message, addr):
+        ip = (addr[0] if isinstance(addr, tuple) and len(addr) > 0 else "unknown")
+        now = time.time()
+        min_iv = float(getattr(CFG, "FULL_SYNC_MIN_INTERVAL", 300))
+        last_served = self._full_sync_served_at.get(ip, 0.0)
+        if now - last_served < min_iv:
+            retry_after = max(30.0, min_iv - (now - last_served))
+            return {"type": "SYNC_REJECT", "reason": "rate_limited", "retry_after": retry_after}
+        self._full_sync_served_at[ip] = now
         try:
             if len(self.broadcast.blockchain.chain) > CFG.FULL_SYNC_MAX_BLOCKS:
                 return {
@@ -908,4 +1121,12 @@ class Network:
         log.info("[shutdown] Node at port %s stopped", self.port)
         
 install_wallet_routes(Network)
+
+
+
+
+
+
+
+
 

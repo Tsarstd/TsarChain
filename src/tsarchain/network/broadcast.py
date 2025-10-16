@@ -3,7 +3,7 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
 import socket, json, threading, time
-from typing import Set, Tuple, Optional, Dict, Any
+from typing import Set, Tuple, Optional, Dict, Any, TYPE_CHECKING
 
 # ---------------- Local Project ----------------
 from .protocol import send_message, recv_message, verify_and_unwrap, is_envelope, SecureChannel
@@ -17,6 +17,9 @@ from ..utils import config as CFG
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network(broadcast)")
+
+if TYPE_CHECKING:  # pragma: no cover - assist typing without circular import
+    from .node import Network
 
 
 class Broadcast:
@@ -35,6 +38,7 @@ class Broadcast:
         self.pubkey = None
         self.privkey = None
         self.peer_pubkeys = {}
+        self.network: Optional["Network"] = None
 
     # ----------------------------- I/O helpers -----------------------------
 
@@ -348,11 +352,7 @@ class Broadcast:
 
     def _rebuild_utxo_from_chain_locked(self):
         try:
-            self.utxodb.utxos.clear()
-            for b in self.blockchain.chain:
-                self.utxodb.update(b.transactions, b.height)
-            if not self.blockchain.in_memory:
-                self.utxodb._save()
+            self.utxodb.rebuild_from_chain(self.blockchain.chain)
             self._clean_mempool_after_chain_replace()
         except Exception:
             log.exception("[Sync] Error rebuilding UTXO from chain")
@@ -393,7 +393,14 @@ class Broadcast:
             if last:
                 tip_h = last.hash()
                 if block.height > last.height + 1 or block.prev_block_hash != tip_h:
-                    if CFG.ENABLE_FULL_SYNC:
+                    handled = False
+                    if self.network:
+                        try:
+                            self.network.handle_block_gap(block, origin)
+                            handled = True
+                        except Exception:
+                            log.exception("[Broadcast] Network handle_block_gap failed")
+                    if not handled and CFG.ENABLE_FULL_SYNC:
                         targets = [origin] if origin else list(peers)
                         for p in targets:
                             try:

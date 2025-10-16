@@ -95,8 +95,10 @@ class NodeClient:
             candidates.extend(list(manual_nodes))
         for port in range(start, end + 1):
             candidates.append(("127.0.0.1", port))
-        if CFG.BOOTSTRAP_NODE not in candidates:
-            candidates.append(CFG.BOOTSTRAP_NODE)
+        bootstrap_nodes = tuple(getattr(CFG, "BOOTSTRAP_NODES", ()) or (CFG.BOOTSTRAP_NODE,))
+        for peer in bootstrap_nodes:
+            if peer not in candidates:
+                candidates.append(peer)
 
         uniq: List[Tuple[str, int]] = []
         seen = set()
