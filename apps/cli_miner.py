@@ -12,34 +12,24 @@ from tsarchain.consensus.blockchain import Blockchain
 from tsarchain.network.node import Network
 
 
-def start_node(blockchain: Blockchain, bootstrap: tuple[str, int] | None) -> tuple[Network, threading.Event]:
+def start_node(blockchain: Blockchain) -> tuple[Network, threading.Event]:
     net = Network(blockchain=blockchain)
-    if bootstrap:
+    fallback_nodes = tuple(getattr(CFG, "BOOTSTRAP_NODES", ()) or (CFG.BOOTSTRAP_NODE,))
+    for peer in fallback_nodes:
         try:
-            net.persistent_peers.clear()
-            net.peers.clear()
+            net.persistent_peers.add(peer)
+            net.peers.add(peer)
         except Exception:
             pass
-        net.persistent_peers.add(bootstrap)
-        net.peers.add(bootstrap)
-        print(f"[Network] Manual bootstrap: {bootstrap[0]}:{bootstrap[1]}")
-    else:
-        fallback_nodes = tuple(getattr(CFG, "BOOTSTRAP_NODES", ()) or (CFG.BOOTSTRAP_NODE,))
-        for peer in fallback_nodes:
-            try:
-                net.persistent_peers.add(peer)
-                net.peers.add(peer)
-            except Exception:
-                pass
-        try:
-            if fallback_nodes:
-                host, port = fallback_nodes[0]
-                extra = f" (+{len(fallback_nodes)-1} alt)" if len(fallback_nodes) > 1 else ""
-                print(f"[Network] Using config bootstrap: {host}:{port}{extra}")
-            else:
-                print("[Network] No bootstrap peers configured")
-        except Exception:
-            print("[Network] Using config bootstrap")
+    try:
+        if fallback_nodes:
+            host, port = fallback_nodes[0]
+            extra = f" (+{len(fallback_nodes)-1} alt)" if len(fallback_nodes) > 1 else ""
+            print(f"[Network] Using config bootstrap: {host}:{port}{extra}")
+        else:
+            print("[Network] No bootstrap peers configured")
+    except Exception:
+        print("[Network] Using config bootstrap")
 
     print(f"[Network] Node started on port {getattr(net, 'port', '?')}")
 
