@@ -1,300 +1,216 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
-# Refs: see REFERENCES.md
+# Refs: BIP141; BIP173
 
-import argparse, re, sys, time, threading
+import time
 import multiprocessing as mp
+import signal
 
-from tsarchain.utils.helpers import print_banner
-from tsarchain.utils import config as CFG
+# ---------------- Local Project ----------------
 from tsarchain.consensus.blockchain import Blockchain
 from tsarchain.network.node import Network
+from tsarchain.utils import config as CFG
+from tsarchain.utils.helpers import print_banner
+
+try:
+    import psutil
+    HAVE_PSUTIL = True
+except Exception:
+    psutil = None
+    HAVE_PSUTIL = False
 
 
-def start_node(blockchain: Blockchain) -> tuple[Network, threading.Event]:
-    net = Network(blockchain=blockchain)
-    fallback_nodes = tuple(getattr(CFG, "BOOTSTRAP_NODES", ()) or (CFG.BOOTSTRAP_NODE,))
-    for peer in fallback_nodes:
-        try:
-            net.persistent_peers.add(peer)
-        except Exception:
-            pass
-    try:
-        if fallback_nodes:
-            host, port = fallback_nodes[0]
-            extra = f" (+{len(fallback_nodes)-1} alt)" if len(fallback_nodes) > 1 else ""
-            print(f"[Network] Using config bootstrap: {host}:{port}{extra}")
-        else:
-            print("[Network] No bootstrap peers configured")
-    except Exception:
-        print("[Network] Using config bootstrap")
-
-    print(f"[Network] Node started on port {getattr(net, 'port', '?')}")
-
-    stop_evt = threading.Event()
-
-    def sync_daemon():
-        last_wait_log = 0.0
-        peers_announced = False
-        while not stop_evt.is_set():
-            try:
-                if net.peers:
-                    if not peers_announced:
-                        print("[Sync] Peers detected, syncing latest blocks...")
-                        peers_announced = True
-                    net.request_sync(fast=True)
-                else:
-                    if peers_announced:
-                        print("[Sync] Peer connection lost, waiting to resync...")
-                        peers_announced = False
-                    if time.time() - last_wait_log > 5:
-                        print("[Sync] Waiting for peers...")
-                        last_wait_log = time.time()
-            except Exception as e:
-                print(f"[Sync] {e}")
-            time.sleep(5)
-
-    threading.Thread(target=net.discover_peers_loop, daemon=True).start()
-    threading.Thread(target=sync_daemon, daemon=True).start()
-    return net, stop_evt
-
-
-def mining_loop(blockchain: Blockchain, network: Network, address: str, use_cores: int, pow_backend: str, cancel_evt, progress_q: mp.Queue):
+class SimpleMiner:
+    def __init__(self, address, cores):
+        self.address = address
+        self.cores = cores
+        self.mining_alive = True
+        self.cancel_mining = mp.Event()
+        self.blockchain = None
+        self.network = None
+        
+        # Setup signal handler for graceful shutdown
+        signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGTERM, self.signal_handler)
     
-    def _confirm_tip_ready() -> bool:
-        notice_at = 0.0
-        while not cancel_evt.is_set():
-            height_val = int(getattr(blockchain, "height", -1) or -1)
-            if getattr(CFG, "ALLOW_AUTO_GENESIS", 0) and (not network or not network.peers):
-                if height_val >= 0:
-                    if time.time() - notice_at > 5:
-                        print("[Sync] No peers detected; continuing with local chain tip.")
-                        notice_at = time.time()
-                    return True
-            if network and network.peers:
-                try:
-                    network.request_sync(fast=True)
-                except Exception as exc:
-                    print(f"[Sync] {exc}")
-                peer_sync_map = getattr(network, "_peer_last_sync", {})
-                latest_sync = max(peer_sync_map.values()) if peer_sync_map else 0.0
-                if height_val >= 0 and latest_sync and (time.time() - latest_sync) < 10:
-                    print("[Sync] Chain tip confirmed. Ready to mine.")
-                    return True
-            if time.time() - notice_at > 5:
-                print("[Sync] Waiting for latest blocks before mining...")
-                notice_at = time.time()
-            time.sleep(2)
-        return False
-
-    tip_verified = False
-    allow_solo = bool(getattr(CFG, "ALLOW_AUTO_GENESIS", 0))
-    prev_has_peers = False
-
-    while not cancel_evt.is_set():
+    def signal_handler(self, signum, frame):
+        print(f"\nReceived signal {signum}, shutting down...")
+        self.mining_alive = False
+        if self.cancel_mining:
+            self.cancel_mining.set()
+    
+    def validate_address(self):
+        if not self.address or not self.address.lower().startswith("tsar1"):
+            print(f"Error: Address should start with 'tsar1...'")
+            return False
+        return True
+    
+    def start_node(self):
+        print("Starting node...")
         try:
-            current_height = int(getattr(blockchain, "height", -1) or -1)
-            if current_height < 0:
-                if not CFG.ALLOW_AUTO_GENESIS:
-                    print("Auto-genesis disabled!!, waiting for peer sync.")
-                    try:
-                        if network and network.peers:
-                            network.request_sync(fast=True)
-                    except Exception:
-                        pass
-                    time.sleep(3)
-                    continue
-                else:
-                    try:
-                        created = blockchain.ensure_genesis(address, use_cores=use_cores)
-                        if created:
-                            print("Genesis Block Created")
-                            tip_verified = True
-                    except Exception as e:
-                        print(f"ensure_genesis failed: {e}")
-                        time.sleep(2)
-                        continue
-                    current_height = int(getattr(blockchain, "height", -1) or -1)
-                    if current_height < 0:
-                        continue
-
-            sync_map = getattr(network, "_peer_last_sync", {}) if network else {}
-            has_live_sync = any((time.time() - t) < 15 for t in sync_map.values()) if sync_map else False
-            has_out_in = bool(getattr(network, "outbound_peers", None) or getattr(network, "inbound_peers", None)) if network else False
-            has_peers = bool(network and (has_live_sync or has_out_in))
-            
-            if has_peers and not prev_has_peers:
-                tip_verified = False
-            prev_has_peers = has_peers
-            solo_mode = allow_solo and not has_peers
-
-            if not solo_mode:
-                if not tip_verified:
-                    if not _confirm_tip_ready():
-                        break
-                    tip_verified = True
-            else:
-                # Solo mining mode; ensure flag so we skip waiting for peers
-                if not tip_verified:
-                    tip_verified = True
-
-            if has_peers:
-                try:
-                    network.request_sync(fast=True)
-                except Exception:
-                    pass
-                time.sleep(1)
-
-            blk = blockchain.mine_block(
-                miner_address=address.strip(),
-                use_cores=use_cores,
-                cancel_event=cancel_evt,
-                pow_backend=pow_backend,
-                progress_queue=progress_q
+            self.blockchain = Blockchain(
+                db_path=CFG.BLOCK_FILE, 
+                in_memory=False,
+                use_cores=self.cores, 
+                miner_address=self.address
             )
-            if cancel_evt.is_set():
-                break
-            if blk:
-                try:
-                    h = blk.hash().hex()
-                    print(f"[+] Block mined: {h[:16]}. height={getattr(blk, 'height', '?')}")
-                except Exception:
-                    print("[+] Block mined")
-
-                if network:
-                    try:
-                        msg = {"type": "NEW_BLOCK", "data": blk.to_dict(), "port": getattr(network, 'port', None)}
-                        for peer in list(getattr(network, 'peers', []) or []):
-                            try:
-                                network.broadcast._send(peer, msg)
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-
-                    try:
-                        for tx in (getattr(blk, "transactions", []) or [])[1:]:
-                            try:
-                                network.broadcast.mempool.remove_tx(tx.txid.hex())
-                            except Exception:
-                                pass
-                        try:
-                            pool = network.broadcast.mempool.load_pool()
-                            network.broadcast.mempool.save_pool(pool)
-                        except Exception:
-                            pass
-                    except Exception as e:
-                        print(f"[Mempool] prune error: {e}")
-
+            self.network = Network(blockchain=self.blockchain)
+            
+            # Add bootstrap nodes
+            fallback_nodes = tuple(getattr(CFG, "BOOTSTRAP_NODES", ()) or (CFG.BOOTSTRAP_NODE,))
+            for peer in fallback_nodes:
+                self.network.persistent_peers.add(peer)
+                self.network.peers.add(peer)
+                
+            print(f"Node started with {len(fallback_nodes)} bootstrap peers")
+            return True
+            
         except Exception as e:
-            print(f"[-] Mining: {e}")
-            time.sleep(1)
+            print(f"Failed to start node: {e}")
+            return False
+    
+    def wait_for_sync(self, timeout=60):
+        print("Waiting for blockchain sync...")
+        start_time = time.time()
+        
+        while self.mining_alive and (time.time() - start_time) < timeout:
+            try:
+                if self.network.peers:
+                    self.network.request_sync(fast=True)
+                    
+                    height = getattr(self.blockchain, "height", -1)
+                    if height >= 0:
+                        print(f"Chain synced to height {height}")
+                        return True
+                
+                time.sleep(2)
+            except Exception as e:
+                print(f"Sync error: {e}")
+                time.sleep(2)
+        
+        print("Sync timeout or interrupted")
+        return False
+    
+    def start_mining(self):
+        if not self.validate_address():
+            return False
+            
+        if not self.start_node():
+            return False
+            
+        if not self.wait_for_sync():
+            return False
+        
+        print(f"Starting mining with:")
+        print(f"  Address: {self.address}")
+        print(f"  Cores: {self.cores}")
+        print("Press Ctrl+C to stop mining")
+        print("-" * 50)
+        
+        # Ensure genesis block exists
+        if getattr(self.blockchain, "height", -1) < 0:
+            created = self.blockchain.ensure_genesis(self.address, use_cores=self.cores)
+            if created:
+                print("[+] Genesis block created")
+            else:
+                print("[-] Failed to create genesis block")
+                return False
+        
+        # Mining loop
+        block_count = 0
+        while self.mining_alive:
+            try:
+                if self.network.peers:
+                    self.network.request_sync(fast=True)
+                
+                block = self.blockchain.mine_block(
+                    miner_address=self.address,
+                    use_cores=self.cores,
+                    cancel_event=self.cancel_mining,
+                    pow_backend="numba",
+                    progress_queue=None
+                )
+                
+                if not self.mining_alive:
+                    break
+                    
+                if block:
+                    block_count += 1
+                    print(f"[+] Block #{block_count} mined: {block.hash().hex()[:16]}…")
+                    
+                    # Broadcast new block
+                    try:
+                        msg = {"type": "NEW_BLOCK", "data": block.to_dict(), "port": self.network.port}
+                        for peer in list(self.network.peers):
+                            self.network.broadcast._send(peer, msg)
+                    except Exception as e:
+                        print(f"Broadcast error: {e}")
+                        
+            except Exception as e:
+                print(f"[-] Mining error: {e}")
+                time.sleep(1)
+        
+        return True
+    
+    def stop(self):
+        self.mining_alive = False
+        if self.cancel_mining:
+            self.cancel_mining.set()
+        
+        if self.network:
+            try:
+                self.network.shutdown()
+            except:
+                pass
+        
+        print("Miner stopped")
+
+def get_user_input():
+    print_banner()
+    print("Please enter your mining details:")
+    print("-" * 40)
+    
+    # Get address
+    while True:
+        address = input("Miner address (tsar1...): ").strip()
+        if address and address.lower().startswith("tsar1"):
+            break
+        else:
+            print("Error: Address must start with 'tsar1...'")
+            print("Example: tsar1qyourwalletaddresshere")
+    
+    # Get cores
+    while True:
+        cores = psutil.cpu_count(logical=True) if HAVE_PSUTIL else mp.cpu_count()
+        cores_input = input(f"CPU cores to use [{cores}]: ").strip()
+        if not cores_input:
+            cores = 1
+            break
+        try:
+            cores = int(cores_input)
+            if cores > 0:
+                break
+            else:
+                print("Error: Cores must be a positive number")
+        except ValueError:
+            print("Error: Please enter a valid number")
+    
+    return address, cores
 
 def main():
-    print_banner()
-
-    parser = argparse.ArgumentParser(description="TsarChain Minimal Mining CLI")
-    parser.add_argument("-a", "--address", help="Miner address (tsar1…)", default=None)
-    parser.add_argument("-c", "--cores", type=int, help="Number of CPU cores used", default=None)
-    parser.add_argument("--no-mine", action="store_true", help="Run Withoun Mining (seed-only)")
-
-    args = parser.parse_args()
-
-    # ====== Input interaktif bila tidak diberikan via arg ======
-    address = args.address or input("Address (tsar1…): ").strip()
-    pow_backend = "numba"
+    address, cores = get_user_input()
+    miner = SimpleMiner(address, cores)
     
-    if not address.lower().startswith("tsar1"):
-        print("Address must prefix 'tsar1'.")
-        sys.exit(2)
-
-    if args.cores is None:
-        try:
-            import psutil
-            cores = max(1, (psutil.cpu_count(logical=True) or 1) - 1)
-        except Exception:
-            import multiprocessing as _mp
-            cores = max(1, (_mp.cpu_count() or 1) - 1)
-        raw = input(f"CPU cores [{cores}]: ").strip()
-        if raw:
-            try:
-                cores = max(1, int(raw))
-            except Exception:
-                print("Input cores tidak valid, pakai default.")
-    else:
-        cores = max(1, int(args.cores))
-
-    # ====== Init blockchain ======
-    bc = Blockchain(db_path=CFG.BLOCK_FILE, in_memory=False, use_cores=cores, miner_address=address)
-
-    if (getattr(bc, "height", -1) or -1) < 0:
-        if CFG.ALLOW_AUTO_GENESIS:
-            print("[Genesis] Chain empty → creating genesis (Allowed)…")
-            try:
-                created = bc.ensure_genesis(address, use_cores=cores)
-                print("Genesis Block Created" if created else "[Genesis] Already present/locked")
-            except Exception as e:
-                print(f"Create Genesis Block Failed: {e}. Will wait for peer sync.")
-        else:
-            print("Auto-genesis disabled!!. Will wait for peer sync.")
-
-    # ====== Start mining (kecuali --no-mine) ======
-    net = None
-    node_stop_evt = None
-    if not args.no_mine:
-        if net is None:
-            net, node_stop_evt = start_node(bc)
-
-        cancel_evt = mp.Event()
-        progress_q = mp.Queue()
-
-        t = threading.Thread(
-            target=mining_loop,
-            args=(bc, net, address, cores, pow_backend, cancel_evt, progress_q),
-            daemon=True
-        )
-        t.start()
-
-        print(f"[*] Mining started → addr={address} backend={pow_backend} cores={cores}")
-        print("[*] Ctrl+C for stop.")
-
-        try:
-            last_print = 0.0
-            while True:
-                try:
-                    tag, val = progress_q.get(timeout=1.0)
-                    if tag == "TOTAL_HPS":
-                        now = time.time()
-                        if now - last_print >= 0.5:
-                            try:
-                                hps = float(val)
-                                print(f"\r⛏️  {hps:,.0f} H/s", end="", flush=True)
-                                last_print = now
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-        except KeyboardInterrupt:
-            print("\n[!] Shutting down…")
-            cancel_evt.set()
-            t.join(timeout=3.0)
-
-    else:
-        print("[Info] Mode seed-only (no mining). Ctrl+C for stop.")
-        try:
-            while True:
-                time.sleep(60)
-        except KeyboardInterrupt:
-            print("\n[!] Shutting down…")
-
-    # ====== Stop node sync daemon ======
     try:
-        if node_stop_evt:
-            node_stop_evt.set()
-    except Exception:
-        pass
-
+        miner.start_mining()
+    except KeyboardInterrupt:
+        print("\nInterrupted by user")
+    except Exception as e:
+        print(f"Fatal error: {e}")
+    finally:
+        miner.stop()
 
 if __name__ == "__main__":
+    mp.freeze_support()
     main()

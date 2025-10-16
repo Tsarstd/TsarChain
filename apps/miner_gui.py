@@ -12,7 +12,6 @@ import multiprocessing as mp
 import tsarcore_native as native
 from tsarchain.consensus.blockchain import Blockchain
 from tsarchain.network.node import Network
-from tsarchain.core.block import Block
 from tsarchain.utils import config as CFG
 
 # ---------------- Logger ----------------
