@@ -10,7 +10,7 @@ from tkinter import ttk, messagebox
 from tkinter import font as tkfont
 from datetime import datetime
 
-
+from tsarchain.utils import config as CFG
 from tsarchain.wallet.chat_security import ChatManager
 from tsarchain.wallet.data_security import load_chat_state, save_chat_state
 
@@ -232,40 +232,44 @@ class ChatTab:
         )
         self.chat_send_btn.pack(side=tk.LEFT, padx=(8, 0))
 
-        # ======= HERO OVERLAY =======
+        # ======= HERO OVERLAY (minimal, center ala Explore) =======
+        
         self.chat_hero = tk.Frame(self.frame, bg=self.bg)
-        header = tk.Frame(self.chat_hero, bg=self.bg); header.pack(side="top", pady=(10, 0))
-        
-        self._brand_lbl = tk.Label(header, text="♜Kremlin Chat♜", bg=self.bg, fg=self.accent,
-                                   font=("Segoe UI", 60, "bold"))
-        self._brand_lbl.pack(side="top")
-        self._tagline_lbl = tk.Label(header, text="Encrypted whispers for The Voice Sovereignty.",
-                                     bg=self.bg, fg="#C4A231", font=("Consolas", 18, "italic"))
-        self._tagline_lbl.pack(side="top", pady=(0, 30))
-        
-        body_wrap = tk.Frame(self.chat_hero, bg=self.bg); body_wrap.pack(fill="both", expand=True, padx=16, pady=16)
-        grid = tk.Frame(body_wrap, bg=self.bg); grid.pack(fill="both", expand=True)
-        grid.grid_columnconfigure(0, weight=1); grid.grid_columnconfigure(1, weight=3); grid.grid_columnconfigure(2, weight=1)
-        center = tk.Frame(grid, bg=self.bg); center.grid(row=0, column=1, sticky="nsew")
-        card = tk.Frame(center, bg=self.panel_bg, bd=1, highlightthickness=1, highlightbackground="#2a2f36", highlightcolor="#2a2f36")
-        card.pack(fill="x", expand=False, padx=12, pady=6)
-        inner = tk.Frame(card, bg=self.panel_bg); inner.pack(fill="x", padx=16, pady=16)
+        self._hero_top_spacer    = tk.Frame(self.chat_hero, bg=self.bg, height=1)
+        self._hero_bottom_spacer = tk.Frame(self.chat_hero, bg=self.bg, height=1)
 
-        tk.Label(inner, text="Choose your address:", bg=self.panel_bg, fg=self.fg, font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=(0, 6))
+        header = tk.Frame(self.chat_hero, bg=self.bg)
+        self._brand_lbl = tk.Label(header, text="♜Kremlin Chat♜", bg=self.bg, fg=self.accent,
+                                   font=("Segoe UI", 65, "bold"))
+        self._brand_lbl.pack(side="top", pady=(10, 0))
+        self._tagline_lbl = tk.Label(header, text="Encrypted whispers for The Voice Sovereignty.",
+                                     bg=self.bg, fg="#C4A231", font=("Consolas", 14, "italic"))
+        self._tagline_lbl.pack(side="top", pady=(0, 20))
+
+        # --- FORM minimalis ---
+        form = tk.Frame(self.chat_hero, bg=self.bg)
+        
+        # address
+        tk.Label(form, text="Choose your address:", bg=self.bg, fg=self.fg, font=("Segoe UI", 12, "bold"))\
+            .pack(anchor="w", pady=(0, 6))
         self.chat_hero_addr_var = tk.StringVar(value=(wallets[0] if wallets else ""))
-        self.chat_hero_addr_combo = ttk.Combobox(inner, values=wallets, textvariable=self.chat_hero_addr_var, state="readonly", width=64)
+        self.chat_hero_addr_combo = ttk.Combobox(
+            form, values=wallets, textvariable=self.chat_hero_addr_var, state="readonly", width=64
+        )
         self.chat_hero_addr_combo.pack(fill="x")
         
-        # == Password field  ==
-        tk.Label(inner, text="Wallet password:", bg=self.panel_bg, fg=self.fg, font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=(14, 6))
+        # password
+        tk.Label(form, text="Wallet password:", bg=self.bg, fg=self.fg, font=("Segoe UI", 12, "bold"))\
+            .pack(anchor="w", pady=(14, 6))
         self.chat_hero_pwd_var = tk.StringVar(value="")
         self.chat_hero_pwd_entry = tk.Entry(
-            inner, textvariable=self.chat_hero_pwd_var, show="•",
-            bg=self.panel_bg, fg=self.fg, insertbackground=self.fg,
+            form, textvariable=self.chat_hero_pwd_var, show="•",
+            bg=self.bg, fg=self.fg, insertbackground=self.fg,
             relief="flat", highlightthickness=1, highlightbackground="#2a2f36", highlightcolor="#2a2f36"
         )
         self.chat_hero_pwd_entry.pack(fill="x")
         self._pwd_menu = tk.Menu(self.chat_hero, tearoff=0, bg=self.panel_bg, fg=self.fg, activebackground="#2a2f36")
+        
         def _pwd_do_paste():
             try:
                 clip = self.chat_hero_pwd_entry.clipboard_get()
@@ -286,11 +290,15 @@ class ChatTab:
             self._pwd_menu.grab_release()
         self.chat_hero_pwd_entry.bind("<Button-3>", _pwd_popup)
         
-        # enter for login
         self.chat_hero_pwd_entry.bind("<Return>", lambda _e: self._chat_login_from_hero())
-        
-        tk.Button(inner, text="Go Online", command=self._chat_login_from_hero,
-                bg=self.accent, fg="#000", font=("Segoe UI", 11, "bold")).pack(pady=(12, 0))
+        tk.Button(form, text="Go Online", command=self._chat_login_from_hero,
+                  bg=self.accent, fg="#000", font=("Segoe UI", 11, "bold")).pack(pady=(12, 0))
+
+        self._hero_top_spacer.pack(fill="both", expand=True)
+        header.pack(side="top")
+
+        form.pack(side="top", fill="x", expand=False, padx=260)
+        self._hero_bottom_spacer.pack(fill="both", expand=True)
 
         # ---- final init
         self._chat_state_load()
@@ -602,8 +610,8 @@ class ChatTab:
         except Exception:
             pass
         try:
-            self._brand_lbl.config(font=("Segoe UI", 60, "bold"))
-            self._tagline_lbl.config(font=("Consolas", 18, "italic"))
+            self._brand_lbl.config(font=("Segoe UI", 65, "bold"))
+            self._tagline_lbl.config(font=("Consolas", 14, "italic"))
         except Exception:
             pass
         self._hero_visible = True
@@ -762,7 +770,7 @@ class ChatTab:
                 if resp and resp.get("type") == "CHAT_REGISTERED":
                     self._chat_set_online_ui(True)
                     self.toast("Online •", kind="info")
-                    self._chat_schedule_next(600)
+                    self._chat_schedule_next(getattr(CFG, "CHAT_POLL_INITIAL_MS", 4000))
                 else:
                     self.toast(f"Failed Register: {resp}", kind="error")
 
@@ -1021,7 +1029,7 @@ class ChatTab:
         except Exception:
             self.chat_sas_var.set("••••••")
 
-    def _chat_schedule_next(self, delay_ms: int = 2500) -> None:
+    def _chat_schedule_next(self, delay_ms: Optional[int] = None) -> None:
         try:
             if hasattr(self, "_chat_poll_job") and self._chat_poll_job:
                 self.root.after_cancel(self._chat_poll_job)
@@ -1031,7 +1039,10 @@ class ChatTab:
             self._chat_poll_job = None
             return
         try:
-            self._chat_poll_job = self.root.after(delay_ms, self._chat_poll)
+            default_delay = int(getattr(CFG, "CHAT_POLL_INTERVAL_MS", 2500))
+            delay = int(delay_ms if delay_ms is not None else default_delay)
+            delay = max(delay, 500)
+            self._chat_poll_job = self.root.after(delay, self._chat_poll)
         except Exception:
             self._chat_poll_job = None
 
@@ -1040,7 +1051,7 @@ class ChatTab:
             return
         addr = (self.chat_from_var.get() or "").strip().lower()
         if not addr:
-            self._chat_schedule_next(3000)
+            self._chat_schedule_next()
             return
         def _on_items(items):
             try:
@@ -1056,7 +1067,7 @@ class ChatTab:
         try:
             self.chat_mgr.poll(addr, 20, _on_items, on_done=None)
         finally:
-            self._chat_schedule_next(2500)
+            self._chat_schedule_next()
 
     def _chat_register(self) -> None:
         addr = (self.chat_from_var.get() or "").strip().lower()

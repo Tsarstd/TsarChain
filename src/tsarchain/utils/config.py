@@ -182,9 +182,9 @@ MAX_UTXO_ADDR_LEN  = 128
 NONCE_PER_SENDER_MAX         = 4096
 NONCE_GLOBAL_MAX             = 100_000     # total nonce entries of all senders
 
-HANDSHAKE_RL_PER_IP_BURST    = 10          # max 10 handshake
+HANDSHAKE_RL_PER_IP_BURST    = 30          # max 30 handshake
 HANDSHAKE_RL_PER_IP_WINDOW_S = 10          # /10 second
-TEMP_BAN_SECONDS             = 60          # temporary ban
+TEMP_BAN_SECONDS             = 30          # temporary ban
 
 # === Full Sync guard ===
 ENABLE_FULL_SYNC            = FULL_SYNC_DEV if IS_DEV else FULL_SYNC_PROD
@@ -246,6 +246,10 @@ CHAT_TTL_S            = 86400     # 24 hours
 CHAT_MAILBOX_MAX      = 100
 CHAT_GLOBAL_QUEUE_MAX = 20_000
 CHAT_PULL_MAX_ITEMS   = 50
+CHAT_POLL_INTERVAL_MS = 2500
+CHAT_POLL_INITIAL_MS  = 4000
+CHAT_PUBLISH_MIN_INTERVAL_S = 20
+CHAT_PUBLISH_SELF_CHECK = False
 
 # === Rate limiting ===
 CHAT_RL_ADDR_BURST    = 6
@@ -280,6 +284,7 @@ CHAT_SPK_ROTATE_INTERVAL_S  = 7 * 24 * 3600
 CONNECT_TIMEOUT_SCAN = 0.25
 RPC_TIMEOUT          = 4.0
 NODE_CACHE_TTL       = 60
+WALLET_RPC_MIN_INTERVAL = 0.35
 
 
 # =============================================================================

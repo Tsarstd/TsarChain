@@ -54,7 +54,8 @@ class ChatManager:
         self.read_sent: set[int] = set()
         self._chat_dh_cache: Dict[str, tuple[str, str, float]] = {}
         self._pwd_cache: Dict[str, tuple[str, float]] = {}
-        
+        self._last_prekey_publish: Dict[str, float] = {}
+
         self._sessions: Dict[tuple[str, str], "RatchetSession"] = {}
         self._pending_used_opk: Dict[tuple[str, str], str] = {}
         self.on_partner_key_changed: Optional[Callable[[str, str, str], None]] = None
@@ -190,11 +191,27 @@ class ChatManager:
                 add_one_time_prekeys(addr, CFG.CHAT_OPK_REFILL_COUNT, provider)
             except Exception:
                 log.exception("[_ensure_prekey_inventory] refill OPK failed for %s", addr)
-        if rotated or int(inv.get("opk_queue") or 0) < CFG.CHAT_OPK_MIN_THRESHOLD:
+        needs_publish = rotated or int(inv.get("opk_queue") or 0) < CFG.CHAT_OPK_MIN_THRESHOLD
+        if needs_publish and self._can_publish_prekeys(addr):
             try:
                 self.publish_prekeys(addr, on_done=lambda _resp: None)
             except Exception:
                 log.debug("[_ensure_prekey_inventory] publish_prekeys defer for %s", addr, exc_info=True)
+
+    def _can_publish_prekeys(self, addr: str) -> bool:
+        try:
+            interval = float(getattr(CFG, "CHAT_PUBLISH_MIN_INTERVAL_S", 0) or 0)
+        except Exception:
+            interval = 0.0
+        if interval <= 0:
+            return True
+        last = self._last_prekey_publish.get(addr)
+        if last is None:
+            return True
+        if self._now() - last >= interval:
+            return True
+        log.debug("[_can_publish_prekeys] skip publish for %s (cooldown active)", addr)
+        return False
 
     def _session_key(self, me: str, peer: str) -> Tuple[str, str]:
         return (self._canon(me), self._canon(peer))
@@ -627,6 +644,13 @@ class ChatManager:
     # -- New: publish prekeys (IK, SPK+sig, OPK) ke node
     def publish_prekeys(self, address: str, on_done=None) -> None:
         addr = self._canon(address)
+        if not self._can_publish_prekeys(addr):
+            log.debug("[publish_prekeys] skip publish for %s (cooldown)", addr)
+            try:
+                (on_done or (lambda _r: None))({"skipped": "cooldown"})
+            except Exception:
+                pass
+            return
         try:
             ensure_signed_prekey(addr, self._pwd_provider_for(addr))
             bundle = get_prekey_bundle_local(addr, self._pwd_provider_for(addr))  # {"ik","spk","sig","opk"}
@@ -639,6 +663,7 @@ class ChatManager:
             }
             if bundle.get("opk"):
                 payload["opk"] = (bundle["opk"] or "").lower()
+            self._last_prekey_publish[addr] = self._now()
         except Exception as e:
             (on_done or (lambda _r: None))({"error": f"bundle_error:{e}"})
             return
@@ -647,17 +672,21 @@ class ChatManager:
             try:
                 status = (resp or {}).get("type")
                 log.debug("[publish_prekeys] resp_type=%s", status)
-
-                def _selfcheck(r):
-                    r_type = (r or {}).get("type")
-                    if r_type == "CHAT_PREKEY_BUNDLE":
-                        bundle = r.get("bundle") or {}
-                        has_opk = bool(bundle.get("opk"))
-                        log.debug("[publish_prekeys.selfcheck] bundle_ok=True has_opk=%s", has_opk)
-                    else:
-                        log.debug("[publish_prekeys.selfcheck] resp_type=%s", r_type)
-
-                self.rpc_send({"type":"CHAT_GET_PREKEY","address": addr}, _selfcheck)
+                if not resp or resp.get("error"):
+                    self._last_prekey_publish.pop(addr, None)
+                try:
+                    if getattr(CFG, "CHAT_PUBLISH_SELF_CHECK", False):
+                        def _selfcheck(r):
+                            r_type = (r or {}).get("type")
+                            if r_type == "CHAT_PREKEY_BUNDLE":
+                                bundle = r.get("bundle") or {}
+                                has_opk = bool(bundle.get("opk"))
+                                log.debug("[publish_prekeys.selfcheck] bundle_ok=True has_opk=%s", has_opk)
+                            else:
+                                log.debug("[publish_prekeys.selfcheck] resp_type=%s", r_type)
+                        self.rpc_send({"type": "CHAT_GET_PREKEY", "address": addr}, _selfcheck)
+                except Exception:
+                    log.debug("[publish_prekeys] self-check skipped due to error", exc_info=True)
             finally:
                 (on_done or (lambda _r: None))(resp)
         self.rpc_send(payload, _after)
@@ -782,8 +811,7 @@ class ChatManager:
             finally:
                 if on_done: on_done(resp)
 
-        self.rpc_send({"type": "CHAT_PULL", "address": me, "n": int(n),
-                    "ts": ts_now, "pull_sig": pull_sig}, _on)
+        self.rpc_send({"type": "CHAT_PULL", "address": me, "n": int(n), "ts": ts_now, "pull_sig": pull_sig}, _on)
 
 
 # ==================================================

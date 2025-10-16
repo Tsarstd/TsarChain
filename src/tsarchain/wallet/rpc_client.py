@@ -84,6 +84,8 @@ class NodeClient:
         self.manual_bootstrap = manual_bootstrap
 
         self.dir = self._Dir(ttl=CFG.NODE_CACHE_TTL)
+        self._send_lock = threading.Lock()
+        self._last_send_ts = 0.0
 
     # ----------- Discovery -----------
     def scan(self, start: int = CFG.PORT_START, end: int = CFG.PORT_END, manual_nodes: Optional[Sequence[Tuple[str, int]]] = None) -> List[Tuple[str, int]]:
@@ -112,6 +114,7 @@ class NodeClient:
 
         for ip, port in uniq:
             try:
+                self._pace()
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.settimeout(CFG.CONNECT_TIMEOUT_SCAN)
                     s.connect((ip, port))
@@ -182,6 +185,21 @@ class NodeClient:
         )
         return found
 
+    def _pace(self) -> None:
+        try:
+            interval = float(getattr(CFG, "WALLET_RPC_MIN_INTERVAL", 0.0) or 0.0)
+        except Exception:
+            interval = 0.0
+        if interval <= 0.0:
+            return
+        with self._send_lock:
+            now = time.time()
+            wait = (self._last_send_ts + interval) - now
+            if wait > 0:
+                time.sleep(wait)
+                now = time.time()
+            self._last_send_ts = now
+
 
     # ----------- Core Send -----------
     def _try_send_one(self, peer: Tuple[str, int], message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -241,6 +259,7 @@ class NodeClient:
             targets = peers if round_idx == 0 else self.scan()
             for peer in targets:
                 try:
+                    self._pace()
                     resp = self._try_send_one(peer, message)
                     if resp is not None:
                         return resp
