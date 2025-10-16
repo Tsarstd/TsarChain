@@ -14,33 +14,20 @@ NATIVE = 1
 # =============================================================================
 
 # ===== Dev & Prod toggle =====
-MODE = "dev"   # "dev" | "prod"
+MODE   = "dev"   # "dev" | "prod"
 IS_DEV = (MODE.lower() == "dev")      
 
-# ===== Dev & Prod network toggle =====
-PORT_RANGE_DEV     = (38169, 38178)
-PORT_RANGE_PROD    = (40196, 40205)
-
-BOOTSTRAP_DEV      = (
-    ("31.97.51.207", 38169),
-    ("31.97.51.207", 38170),
-    ("31.97.51.207", 38171),
-)
-
-BOOTSTRAP_PROD     = (
-    ("127.0.0.1", 40196),
-)
-
+# ===== Sync Data (Block, UTXO, etc) =====
 FULL_SYNC_DEV      = False
-FULL_SYNC_PROD     = True
+FULL_SYNC_PROD     = False
 
 
 # =============================================================================
 # APP / METADATA
 # =============================================================================
-APP_NAME   = "Kremlin"
-APP_AUTHOR = "TsarStudio"
-WALLET_DATA_DIR   = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)
+APP_NAME            = "Kremlin"
+APP_AUTHOR          = "TsarStudio"
+WALLET_DATA_DIR     = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)
 
 
 # =============================================================================
@@ -61,31 +48,31 @@ INITIAL_BITS       = 0x1E0FFFFF
 MAX_BITS           = 0x1F00FFFF
 TARGET_BLOCK_TIME  = 30
 LWMA_WINDOW        = 90
-FUTURE_DRIFT       = 10 * 60
-MTP_WINDOS         = 11
+FUTURE_DRIFT       = 120
+MTP_WINDOWS        = 11
 
 # === Consensus Hardening ===
 # CONSENSUS LIMITS (Blocks & TX)
 MAX_BLOCK_BYTES         = 1_000_000        # 1 MB
 MAX_TXS_PER_BLOCK       = 2_000
 MAX_SIGOPS_PER_BLOCK    = 10_000
-MAX_SIGOPS_PER_TX       = 2,000
+MAX_SIGOPS_PER_TX       = 2_000
 
 # FORK-CHOICE & REORG
-ENABLE_CHAINWORK_RULE = True
-ENABLE_REORG_LIMIT = True
-REORG_LIMIT = 75
+ENABLE_CHAINWORK_RULE   = True
+ENABLE_REORG_LIMIT      = True
+REORG_LIMIT             = 75
 
 # DIFF CLAMP
-ENABLE_DIFF_CLAMP   = True
-DIFF_CLAMP_MAX_UP   = 2.0
-DIFF_CLAMP_MAX_DOWN = 0.33
+ENABLE_DIFF_CLAMP       = True
+DIFF_CLAMP_MAX_UP       = 1.8
+DIFF_CLAMP_MAX_DOWN     = 0.5
 
 # Emergency Difficulty Adjustment (EDA)
 ENABLE_EDA              = True  # False for Prod
 EDA_WINDOW              = 60
-EDA_TRIGGER_RATIO       = 10.0
-EDA_EASE_MULTIPLIER     = 2.0
+EDA_TRIGGER_RATIO       = 6.0
+EDA_EASE_MULTIPLIER     = 3.0
 
 
 # =============================================================================
@@ -95,12 +82,12 @@ DEFAULT_FEE_RATE_SATVB = 35
 MIN_FEE_RATE_SATVB     = 1
 MAX_FEE_RATE_SATVB     = 10_000
 
-TX_BASE_VBYTES       = 10
-SEGWIT_INPUT_VBYTES  = 68
-SEGWIT_OUTPUT_VBYTES = 31
+TX_BASE_VBYTES         = 10
+SEGWIT_INPUT_VBYTES    = 68
+SEGWIT_OUTPUT_VBYTES   = 31
 
-DUST_THRESHOLD_SAT   = 294
-MAX_DECIMALS         = 8
+DUST_THRESHOLD_SAT     = 294
+MAX_DECIMALS           = 8
 
 
 # =============================================================================
@@ -115,8 +102,8 @@ ZERO_HASH       = b"\x00" * 32
 CANONICAL_SEP   = (',', ':')
 
 # === Genesis ===
-ALLOW_AUTO_GENESIS = 1
-GENESIS_HASH_HEX = ""
+ALLOW_AUTO_GENESIS       = 1
+GENESIS_HASH_HEX         = ""
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"
 
 # === Voice Sovereignty Figures (ASCII only) ===
@@ -153,10 +140,31 @@ VOICE_SOVEREIGNTY_FIGURES = [
 # =============================================================================
 # NETWORK / P2P
 # =============================================================================
+
 # === Port & Bootstrap ===
-PORT_START, PORT_END = PORT_RANGE_DEV if IS_DEV else PORT_RANGE_PROD
-BOOTSTRAP_NODES      = BOOTSTRAP_DEV if IS_DEV else BOOTSTRAP_PROD
-BOOTSTRAP_NODE       = BOOTSTRAP_NODES[0]
+PORT_RANGE_DEV     = (38169, 38178)
+PORT_RANGE_PROD    = (40196, 40205)
+
+BOOTSTRAP_DEV      = (
+    ("31.97.51.207", 38169),
+    ("31.97.51.207", 38170),
+    ("31.97.51.207", 38171),
+)
+
+BOOTSTRAP_PROD     = (
+    ("127.0.0.1", 40197),
+    ("127.0.0.1", 40198),
+    ("127.0.0.1", 40199),
+)
+
+if IS_DEV:
+    PORT_START, PORT_END = PORT_RANGE_DEV
+    BOOTSTRAP_NODES      = BOOTSTRAP_DEV
+else:
+    PORT_START, PORT_END = PORT_RANGE_PROD
+    BOOTSTRAP_NODES      = BOOTSTRAP_PROD
+
+BOOTSTRAP_NODE = BOOTSTRAP_NODES[0]
 
 # === Buffers & Timeouts ===
 BUFFER_SIZE        = 65536
@@ -213,7 +221,7 @@ P2P_SESSION_TTL_S     = 3600           # rekey every 1 hours
 P2P_SESSION_MAX_MSG   = 10000          # or every N messages (whichever comes first)
 
 # Interval to clear old sessions
-SYNC_INFO_MIN_INTERVAL = 60
+SYNC_INFO_MIN_INTERVAL           = 60
 SYNC_INFO_MIN_INTERVAL_BOOTSTRAP = 300.0
 
 # Wallet RPC policy (plaintext envelope)
@@ -289,21 +297,21 @@ OPRET_ALLOW_PUSHDATA1   = True
 OPRET_ALLOW_PUSHDATA2   = True            # required for lengths >255B
 
 # === OP_RETURN size guards ===
-MAX_STORAGE_OPRET = 180
+MAX_STORAGE_OPRET       = 180
 
 # === Storage gas rules ===
 STORAGE_MIN_SIZE        = 100 * 1024         # bytes (min 100KB)
 STORAGE_CHUNK           = 100 * 1024         # bytes per chunk (100KB)
 
 # === Download TTL window ===
-DOWNLOAD_WINDOW_BLOCKS  = 10
+DOWNLOAD_WINDOW_BLOCKS     = 10
 ALLOW_UNREGISTERED_STORAGE = True
 
 # STORAGE (for NODE_STORAGE)
-STORAGE_DIR = "data/storage"
-STORAGE_MAX_BYTES = 10 * 1024 * 1024 * 1024  # 10GB
-STORAGE_UPLOAD_CHUNK = STORAGE_CHUNK
-STORAGE_MIN_CONFIRM = 2
+STORAGE_DIR                 = "data/storage"
+STORAGE_MAX_BYTES           = 10 * 1024 * 1024 * 1024  # 10GB
+STORAGE_UPLOAD_CHUNK        = STORAGE_CHUNK
+STORAGE_MIN_CONFIRM         = 2
 ALLOW_UNREGISTERED_STORAGE_UPLOADS = True
 
 
@@ -353,8 +361,8 @@ LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # 64 GiB
 # =============================================================================
 # LOGGING SETTINGS
 # =============================================================================
-LOG_PATH = "data/logging/tsarchain.log"
-LOG_SHOW_PROCESS = False
+LOG_PATH             = "data/logging/tsarchain.log"
+LOG_SHOW_PROCESS     = False
 LOG_PROC_PLACEHOLDER = "-"
 
 # === MODE based profile ===

@@ -915,7 +915,7 @@ class Network:
         if now < self._full_sync_backoff.get(norm, 0.0):
             return False
         last_req = self._full_sync_last_request.get(norm, 0.0)
-        if now - last_req < float(getattr(CFG, "FULL_SYNC_MIN_INTERVAL", 300)):
+        if now - last_req < CFG.FULL_SYNC_MIN_INTERVAL:
             return False
 
         payload = {
@@ -944,7 +944,74 @@ class Network:
             return True
         self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
         return False
-    
+
+    def _handle_hello(self, message, addr):
+        peer_ip = addr[0] if isinstance(addr, tuple) and len(addr) > 0 else str(message.get("ip", "")).strip()
+        try:
+            peer_port = int(message.get("port", 0))
+        except Exception:
+            peer_port = 0
+        peer_tuple = (peer_ip, peer_port) if peer_ip and isinstance(peer_port, int) and peer_port > 0 else None
+
+        role = str(message.get("role", "")).strip().upper()
+        now = time.time()
+
+        if role == "NODE_STORAGE":
+            meta = {
+                "addr": (message.get("address") or "").strip().lower(),
+                "url": (message.get("url") or "").strip(),
+                "ip": peer_ip,
+                "port": int(peer_port or 0),
+                "last_seen": int(now),
+                "alive": True,
+            }
+            with self.lock:
+                if not hasattr(self, "storage_peers") or self.storage_peers is None:
+                    self.storage_peers = {}
+                self.storage_peers[(peer_ip, meta["port"])] = meta
+
+        incoming_peers = message.get("peers") or []
+        normalized_incoming = []
+        for entry in incoming_peers:
+            if isinstance(entry, dict):
+                ip = str(entry.get("ip") or entry.get("host") or "").strip()
+                try:
+                    port = int(entry.get("port", 0))
+                except Exception:
+                    port = 0
+                if not ip or port <= 0:
+                    continue
+                if self._is_local_address(ip) and port == self.port:
+                    continue
+                normalized_incoming.append((ip, port))
+
+        with self.lock:
+            if peer_tuple and not (self._is_local_address(peer_tuple[0]) and peer_tuple[1] == self.port):
+                self.peers.add(peer_tuple)
+                self.peer_scores.setdefault(peer_tuple, CFG.PEER_SCORE_START)
+            for cand in normalized_incoming:
+                if cand == peer_tuple:
+                    continue
+                self.peers.add(cand)
+                self.peer_scores.setdefault(cand, CFG.PEER_SCORE_START // 2)
+
+            sane_peers = [
+                {"ip": ip, "port": port}
+                for ip, port in self.peers
+                if isinstance(port, int) and port > 0
+            ]
+            height = int(self.broadcast.blockchain.height)
+
+        if peer_tuple:
+            self._reward_peer(peer_tuple)
+
+        return {
+            "type": "HELLO_RESPONSE",
+            "port": self.port,
+            "height": height,
+            "peers": sane_peers,
+        }
+
     def _handle_get_headers(self, message, addr):
         locator = message.get("locator") or []
         try:
@@ -1011,7 +1078,7 @@ class Network:
     def _handle_get_full_sync(self, message, addr):
         ip = (addr[0] if isinstance(addr, tuple) and len(addr) > 0 else "unknown")
         now = time.time()
-        min_iv = float(getattr(CFG, "FULL_SYNC_MIN_INTERVAL", 300))
+        min_iv = CFG.FULL_SYNC_MIN_INTERVAL
         last_served = self._full_sync_served_at.get(ip, 0.0)
         if now - last_served < min_iv:
             retry_after = max(30.0, min_iv - (now - last_served))

@@ -263,6 +263,8 @@ class UTXODB(BaseDatabase):
                     for index, tx_out in enumerate(getattr(tx, "outputs", []) or []):
                         self.add(txid_hex, index, tx_out, is_coinbase=is_coinbase, block_height=height, autosave=False)
             self._save()
+            
+            
     def add(self, txid: str, index: int, tx_out: TxOut, is_coinbase: bool = False, block_height: int = 0, autosave: bool = True):
         if self._is_unspendable_opreturn(tx_out):
             return
@@ -294,7 +296,6 @@ class UTXODB(BaseDatabase):
         # Prefer KV state when enabled
         if kv_enabled():
             try:
-                from .kv import iter_prefix  # local import to avoid cycles
                 items = dict((k.decode('utf-8'), v.decode('utf-8')) for k, v in iter_prefix('state', b'k:'))
                 tb = int(items.get('k:total_blocks', '0'))
                 return max(0, tb - 1)

@@ -929,7 +929,7 @@ class Blockchain:
             return False
 
     # ----------------- Timestamp helpers -----------------
-    def median_time_past(self, k: int = CFG.MTP_WINDOS) -> int:
+    def median_time_past(self, k: int = CFG.MTP_WINDOWS) -> int:
         if not self.chain:
             return 0
 
@@ -1209,7 +1209,7 @@ class Blockchain:
                 if not self.chain and block.height == 0 and GENESIS_HASH is not None:
                     if block.hash() != GENESIS_HASH:
                         return False
-                mtp = self.median_time_past(CFG.MTP_WINDOS)
+                mtp = self.median_time_past(CFG.MTP_WINDOWS)
                 if block.timestamp < mtp:
                     return False
                 if block.timestamp > int(time.time()) + CFG.FUTURE_DRIFT:

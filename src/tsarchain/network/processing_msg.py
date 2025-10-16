@@ -1,4 +1,4 @@
-﻿# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173; libsecp256k1; Signal-X3DH; RFC7748-X25519
@@ -39,10 +39,11 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
     # ----------------------------------------------------------------------------------
     MINERS = {"HELLO", "NEW_BLOCK", "GET_FULL_SYNC", "FULL_SYNC", "CHAIN", "MEMPOOL",
               "GET_HEADERS", "HEADERS", "GET_BLOCKS", "BLOCKS"}
+    
     NODE_STORAGE = {"STOR_INIT", "STOR_PUT", "STOR_COMMIT", "STOR_STATUS", "STOR_GC", "STOR_PAID"}
 
     USER = {
-        "PING", "GET_BALANCE", "GET_BALANCES", "CREATE_TX", "CREATE_TX_MULTI", "GET_INFO",
+        "PING", "GET_BALANCES", "CREATE_TX", "CREATE_TX_MULTI", "GET_INFO",
         "GET_TX_HISTORY", "GET_TX_DETAIL", "NEW_TX", "GET_UTXOS", "GET_PEERS",
         "GET_NETWORK_INFO", "GET_BLOCK_AT", "GET_BLOCK", "GET_BLOCK_HASH", "STOR_LIST",
 
@@ -51,7 +52,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         "CHAT_GET_PREKEY", "CHAT_PUBLISH_PREKEYS",
 
         # Mempool utilities
-        "MEMPOOL_PRUNE", "GET_MEMPOOL",
+        "GET_MEMPOOL",
     }
 
     def _is_miner_sender() -> bool:
@@ -113,7 +114,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
     elif mtype == "PING":
         return {"type": "PONG"}
 
-    elif mtype in ("GET_BALANCE", "GET_BALANCES"):
+    elif mtype in ("GET_BALANCES"):
         addrs_raw = message.get("addresses") or []
         if not addrs_raw and message.get("address"):
             addrs_raw = [message["address"]]
@@ -276,36 +277,6 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             return {"type": "MEMPOOL", "txs": [getattr(t, "txid", b"").hex() for t in txs]}
         except Exception:
             log.exception("[process_message] GET_MEMPOOL error")
-
-    elif mtype == "MEMPOOL_PRUNE":
-        try:
-            # remove any mempool tx already mined in chain
-            in_chain = set()
-            for b in self.broadcast.blockchain.chain:
-                for t in getattr(b, "transactions", []) or []:
-                    try:
-                        if getattr(t, "txid", None):
-                            in_chain.add(t.txid.hex())
-                    except Exception:
-                        pass
-            cur = self.broadcast.mempool.load_pool()
-            kept = []
-            removed = []
-            for item in cur:
-                try:
-                    if isinstance(item, dict):
-                        tid = item.get("txid")
-                    else:
-                        tid = getattr(item, "txid", b"").hex()
-                except Exception:
-                    tid = None
-                if tid and tid in in_chain:
-                    removed.append(tid)
-                    continue
-                kept.append(item)
-            self.broadcast.mempool.save_pool(kept)
-        except Exception:
-            log.exception("[process_message] MEMPOOL_PRUNE error")
 
     elif mtype == "GET_TX_HISTORY":
         addr_str = (message.get("address") or "").strip().lower()

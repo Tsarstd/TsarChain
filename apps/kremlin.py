@@ -1736,13 +1736,14 @@ class KremlinWalletGUI(WalletsMixin):
             insertbackground=self.fg, font=("Consolas", 11))
         self.dev_text.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
 
-        self.dev_text.tag_configure("title",  font=("Consolas", 16, "bold"), foreground="#ff5e00")
+        self.dev_text.tag_configure("title", font=("Consolas", 16, "bold"), foreground="#ff5e00")
         self.dev_text.tag_configure("center", justify="center")
-        self.dev_text.tag_configure("info",   font=("Consolas", 10), foreground="#858585")
-        self.dev_text.tag_configure("alert",  font=("Consolas", 13, "bold"), foreground="#F1633F")
+        self.dev_text.tag_configure("info", font=("Consolas", 10), foreground="#858585")
+        self.dev_text.tag_configure("alert", font=("Consolas", 13, "bold"), foreground="#F1633F")
         self.dev_text.tag_configure("status", font=("Consolas", 10, "bold"), foreground="#31C47F")
-        self.dev_text.tag_configure("dev",    font=("Consolas", 10, "bold"), foreground="#378EC0")
-
+        self.dev_text.tag_configure("on_develop", font=("Consolas", 10, "bold"), foreground="#BDAA3F")
+        self.dev_text.tag_configure("dev", font=("Consolas", 10, "bold"), foreground="#378EC0")
+        
         self.dev_text.insert(tk.END, "\nWhat is TsarChain?\n", ("title", "center"))
         self.dev_text.insert(tk.END, "----------------------------------\n\n", ("info", "center"))
         self.dev_text.insert(tk.END, "⚠️ This is a Voice Sovereignty chain ⚠️\n\n", ("alert", "center"))
@@ -1765,10 +1766,17 @@ class KremlinWalletGUI(WalletsMixin):
         self.dev_text.insert(
             tk.END,
             "\n-- Wallet generation (with SegWit Bech32) --\n-- Address prefix 'tsar1' --\n-- Genesis block --\n"
-            "-- Proof-of-Work --\n-- Coinbase reward --\n-- UTXO system --\n-- SegWit transactions --\n"
+            "-- Proof-of-Work --\n-- Chat Feature (3XDH & Double Rachet) --\n-- Coinbase reward --\n-- UTXO system --\n-- SegWit transactions --\n"
             "-- Fee mechanism --\n-- Mempool --\n-- Multi-node networking --\n-- Transaction & block validation --\n"
-            "-- Chain validation --\n-- Security layer --\n",
+            "-- Chain validation --\n",
             ("status", "center"),
+        )
+        self.dev_text.insert(tk.END, "\n⚠️ On Development ⚠️\n", ("alert", "center"))
+        self.dev_text.insert(
+            tk.END,
+            "\n-- Storage Node --\n-- Graffiti --\n-- Some Security --\n-- Some UI/UX Wallet --\n"
+            "-- etc. --\n",
+            ("on_develop", "center"),
         )
         self.dev_text.insert(tk.END, "\n⚠️ Disclaimer ⚠️\n", ("alert", "center"))
         self.dev_text.insert(
