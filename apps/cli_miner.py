@@ -18,7 +18,6 @@ def start_node(blockchain: Blockchain) -> tuple[Network, threading.Event]:
     for peer in fallback_nodes:
         try:
             net.persistent_peers.add(peer)
-            net.peers.add(peer)
         except Exception:
             pass
     try:
@@ -56,13 +55,12 @@ def start_node(blockchain: Blockchain) -> tuple[Network, threading.Event]:
                 print(f"[Sync] {e}")
             time.sleep(5)
 
+    threading.Thread(target=net.discover_peers_loop, daemon=True).start()
     threading.Thread(target=sync_daemon, daemon=True).start()
     return net, stop_evt
 
 
-def mining_loop(blockchain: Blockchain, network: Network, address: str,
-                use_cores: int, pow_backend: str,
-                cancel_evt, progress_q: mp.Queue):
+def mining_loop(blockchain: Blockchain, network: Network, address: str, use_cores: int, pow_backend: str, cancel_evt, progress_q: mp.Queue):
     
     def _confirm_tip_ready() -> bool:
         notice_at = 0.0
@@ -121,7 +119,11 @@ def mining_loop(blockchain: Blockchain, network: Network, address: str,
                     if current_height < 0:
                         continue
 
-            has_peers = bool(network and getattr(network, "peers", None))
+            sync_map = getattr(network, "_peer_last_sync", {}) if network else {}
+            has_live_sync = any((time.time() - t) < 15 for t in sync_map.values()) if sync_map else False
+            has_out_in = bool(getattr(network, "outbound_peers", None) or getattr(network, "inbound_peers", None)) if network else False
+            has_peers = bool(network and (has_live_sync or has_out_in))
+            
             if has_peers and not prev_has_peers:
                 tip_verified = False
             prev_has_peers = has_peers
