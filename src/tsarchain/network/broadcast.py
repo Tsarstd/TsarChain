@@ -61,8 +61,9 @@ class Broadcast:
                 else:
                     send_message(s, payload)
                 return True
+            log.debug("[_send]: %s, %s", s, peer)
         except Exception:
-            log.exception("[Broadcast] Send to %s failed", peer)
+            log.debug("[Broadcast] Send to %s failed", peer)
             return False
 
     def _request_full_sync(self, peer: Tuple[str, int]) -> bool:
@@ -207,11 +208,11 @@ class Broadcast:
                 success_count += 1
         return success_count
 
-    def broadcast_block(self, block: Block, peers: Set[Tuple[str, int]],
-                        exclude: Optional[Tuple[str, int]] = None):
+    def broadcast_block(self, block: Block, peers: Set[Tuple[str, int]], exclude: Optional[Tuple[str, int]] = None, force: bool = False):
+        
         block_id = block.hash().hex()
         with self.lock:
-            if block_id in self.seen_blocks:
+            if not force and block_id in self.seen_blocks:
                 return 0
             self.seen_blocks.add(block_id)
 
@@ -220,6 +221,7 @@ class Broadcast:
             "data": block.to_dict(),
             "port": getattr(self, "port", 0)
         }, exclude)
+        
         return success
 
     def broadcast_tx(self, tx: Tx, peers: Set[Tuple[str, int]]):
@@ -389,6 +391,7 @@ class Broadcast:
                 if block_id in self.seen_blocks:
                     return
                 self.seen_blocks.add(block_id)
+
             last = self.blockchain.get_last_block()
             if last:
                 tip_h = last.hash()
@@ -408,8 +411,11 @@ class Broadcast:
                             except Exception:
                                 log.exception(f"[Sync] Full sync request to {p} failed")
                     return
+                
             if not self.blockchain.validate_block(block):
-                log.warning("[Broadcast] Invalid block received at height %s", block.height, extra={"height": int(block.height), "block": block_id[:12], "peer": f"{addr[0]}:{origin_port or 0}"})
+                log.warning("[Broadcast] Invalid block received ... block=%s peer=%s", block_id[:12], f"{addr[0]}:{origin_port or 0}")
+                with self.lock:
+                    self.seen_blocks.add(block_id)
                 return
             
             do_broadcast = False
@@ -446,14 +452,17 @@ class Broadcast:
                                 log.exception("[Broadcast] Error loading UTXO DB from disk")
                     except Exception:
                         log.exception("[Broadcast] Error updating UTXO DB after block addition")
-
                     do_broadcast = True
+                    
                 else:
                     log.warning(f"[Broadcast] Block at height {block.height} rejected by add_block")
+                    with self.lock:
+                        self.seen_blocks.add(block_id)
                     return
+                
             if do_broadcast:
                 try:
-                    self.broadcast_block(block, peers, exclude=origin)
+                    self.broadcast_block(block, peers, exclude=origin, force=True)
                 except Exception:
                     log.exception("[Broadcast] Error broadcasting new block to peers")
 

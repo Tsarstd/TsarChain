@@ -70,20 +70,56 @@ class SimpleMiner:
             print(f"Failed to start node: {e}")
             return False
     
-    def wait_for_sync(self, timeout=60):
+    def wait_for_sync(self, timeout=560):
         print("Waiting for blockchain sync...")
         start_time = time.time()
+        last_progress = (-1, -1)
+        notified_no_peer = False
         
         while self.mining_alive and (time.time() - start_time) < timeout:
             try:
                 if self.network.peers:
+                    if notified_no_peer:
+                        print("Peer connection restored, resuming sync...")
+                        notified_no_peer = False
                     self.network.request_sync(fast=True)
                     
-                    height = getattr(self.blockchain, "height", -1)
-                    if height >= 0:
+                    try:
+                        height = int(getattr(self.blockchain, "height", -1))
+                    except Exception:
+                        height = -1
+
+                    best_height = -1
+                    if hasattr(self.network, "get_best_peer_height"):
+                        try:
+                            best_height = int(self.network.get_best_peer_height())
+                        except Exception:
+                            best_height = -1
+
+                    caught_up = False
+                    if hasattr(self.network, "is_caught_up"):
+                        try:
+                            caught_up = self.network.is_caught_up(freshness=20.0, height_slack=0)
+                        except Exception:
+                            caught_up = (height >= 0)
+                    else:
+                        caught_up = (height >= 0)
+
+                    if caught_up and height >= 0:
+                        if best_height < height:
+                            best_height = height
                         print(f"Chain synced to height {height}")
                         return True
-                
+
+                    if best_height >= 0:
+                        progress = (height, best_height)
+                        if progress != last_progress:
+                            print(f"Sync progress - local height: {height}, best known peer: {best_height}")
+                            last_progress = progress
+                else:
+                    if not notified_no_peer:
+                        print("Waiting for peer connection...")
+                        notified_no_peer = True
                 time.sleep(2)
             except Exception as e:
                 print(f"Sync error: {e}")

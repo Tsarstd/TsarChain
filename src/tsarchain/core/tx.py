@@ -96,7 +96,7 @@ class Tx:
 
         total = 0
         for vin in self.inputs:
-            add = 1  # fallback aman
+            add = 1
             prev_spk = None
 
             if utxo_lookup is not None:

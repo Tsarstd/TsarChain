@@ -108,6 +108,7 @@ class Network:
         self.peer_scores: Dict[Tuple[str, int], int] = {}
         self._inbound_ips: Dict[str, int] = {}
         self._peer_last_sync: Dict[Tuple[str, int], float] = {}
+        self._peer_best_height: Dict[Tuple[str, int], int] = {}
         self._peer_last_dial: Dict[Tuple[str, int], float] = {}
         self._full_sync_served_at: Dict[str, float] = {}
         self._full_sync_backoff: Dict[Tuple[str, int], float] = {}
@@ -323,6 +324,8 @@ class Network:
             if score <= CFG.PEER_SCORE_MIN:
                 self.peers.discard(norm)
                 self.outbound_peers.discard(norm)
+                self._peer_best_height.pop(norm, None)
+                self._peer_last_sync.pop(norm, None)
 
     def _reward_peer(self, peer: Any, amount: int = CFG.PEER_SCORE_REWARD) -> None:
         norm = self._normalize_peer(peer)
@@ -700,29 +703,50 @@ class Network:
             except Exception:
                 log.exception("[sync_with_peers] Error syncing with peer %s", norm)
                 self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY * 2)
+                
     def _sync_peer(self, peer: Tuple[str, int]) -> bool:
         now = time.time()
-        if now - self._peer_last_sync.get(peer, 0.0) < float(getattr(CFG, "HEADERS_SYNC_MIN_INTERVAL", 20)):
+        min_iv = 0.0 if now < getattr(self, "_sync_fast_until", 0.0) else float(getattr(CFG, "HEADERS_SYNC_MIN_INTERVAL", 20))
+        if now - self._peer_last_sync.get(peer, 0.0) < min_iv:
             return False
+        
         locator = self._build_locator()
         headers_resp = self._request_headers(peer, locator)
         if not headers_resp:
             self._penalize_peer(peer, CFG.PEER_SCORE_FAILURE_PENALTY)
             return False
+        
         if headers_resp.get("type") == "SYNC_REJECT":
             retry = float(headers_resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
             self._full_sync_backoff[peer] = now + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
             return False
+        
         headers = headers_resp.get("headers") or []
+        best_height = -1
+        try:
+            best_height = int(headers_resp.get("best_height", -1))
+        except Exception:
+            best_height = -1
+        if best_height < 0 and headers:
+            try:
+                best_height = max(int(h.get("height", -1)) for h in headers if isinstance(h, dict))
+            except Exception:
+                best_height = -1
+        if best_height >= 0:
+            with self.lock:
+                self._peer_best_height[peer] = best_height
+
         if not headers:
             self._peer_last_sync[peer] = now
             self._reward_peer(peer)
             return True
+        
         missing = self._determine_missing_blocks(headers)
         if not missing:
             self._peer_last_sync[peer] = now
             self._reward_peer(peer)
             return True
+        
         downloaded = self._download_blocks(peer, missing)
         if downloaded:
             self._peer_last_sync[peer] = time.time()
@@ -730,7 +754,30 @@ class Network:
             if headers_resp.get("more"):
                 self.request_sync(fast=True)
             return True
+        
         return False
+
+    def is_caught_up(self, freshness: float = 10.0, height_slack: int = 0) -> bool:
+        now = time.time()
+        freshness = max(0.0, float(freshness))
+        slack = max(0, int(height_slack))
+        with self.lock:
+            if not self._peer_last_sync:
+                return False
+            recent = any(now - ts <= freshness for ts in self._peer_last_sync.values())
+            if not recent:
+                return False
+            candidates = [h for h in self._peer_best_height.values() if isinstance(h, int) and h >= 0]
+            if not candidates:
+                return False
+            best_remote = max(candidates)
+        local_height = int(self.broadcast.blockchain.height)
+        return (best_remote - local_height) <= slack
+
+    def get_best_peer_height(self) -> int:
+        with self.lock:
+            candidates = [h for h in self._peer_best_height.values() if isinstance(h, int) and h >= 0]
+        return max(candidates) if candidates else -1
 
     def _build_locator(self) -> List[str]:
         locator: List[str] = []
@@ -955,6 +1002,10 @@ class Network:
 
         role = str(message.get("role", "")).strip().upper()
         now = time.time()
+        try:
+            advertised_height = int(message.get("height", -1))
+        except Exception:
+            advertised_height = -1
 
         if role == "NODE_STORAGE":
             meta = {
@@ -989,6 +1040,8 @@ class Network:
             if peer_tuple and not (self._is_local_address(peer_tuple[0]) and peer_tuple[1] == self.port):
                 self.peers.add(peer_tuple)
                 self.peer_scores.setdefault(peer_tuple, CFG.PEER_SCORE_START)
+                if advertised_height >= 0:
+                    self._peer_best_height[peer_tuple] = advertised_height
             for cand in normalized_incoming:
                 if cand == peer_tuple:
                     continue

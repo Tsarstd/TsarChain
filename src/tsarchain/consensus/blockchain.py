@@ -641,6 +641,7 @@ class Blockchain:
         genesis.mine(use_cores=use_cores)
         if not self.validate_block(genesis):
             raise ValueError("[Blockchain] Genesis block validation failed")
+        
         self.chain.append(genesis)
         if GENESIS_HASH is not None and genesis.hash() != GENESIS_HASH:
             raise ValueError("[Genesis] Newly created genesis does not match TSAR_GENESIS_HASH")
@@ -1199,31 +1200,42 @@ class Blockchain:
             with self.lock:
                 if not all([block.height is not None, block.prev_block_hash, block.transactions]):
                     return False
+                
                 expected_height = self.height + 1 if self.chain else 0
                 if block.height != expected_height:
                     return False
+                
                 if self.chain and block.prev_block_hash != self.chain[-1].hash():
                     return False
+                
                 if not self.chain and (block.height != 0 or block.prev_block_hash != CFG.ZERO_HASH):
                     return False
+                
                 if not self.chain and block.height == 0 and GENESIS_HASH is not None:
                     if block.hash() != GENESIS_HASH:
                         return False
+                    
                 mtp = self.median_time_past(CFG.MTP_WINDOWS)
                 if block.timestamp < mtp:
                     return False
+                
                 if block.timestamp > int(time.time()) + CFG.FUTURE_DRIFT:
                     return False
+                
                 if self.chain:
                     parent_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
-                    if block.timestamp + int(CFG.TARGET_BLOCK_TIME) < parent_ts:
+                    if block.timestamp < parent_ts:
                         return False
+                    
                 if not self._validate_difficulty(block):
                     return False
+                
                 if not self._validate_pow(block):
                     return False
+                
                 if not self._validate_merkle(block):
                     return False
+                
                 # --- Hardening: duplicate txid check (always runs, not only when the merkle check fails) ---
                 try:
                     seen_txids = set()
@@ -1233,16 +1245,20 @@ class Blockchain:
                                 tx.compute_txid()
                             except Exception:
                                 return False
+                            
                         txid_b = getattr(tx, 'txid', None)
                         if not isinstance(txid_b, (bytes, bytearray)):
                             try:
                                 txid_b = bytes.fromhex(txid_b) if isinstance(txid_b, str) else None
                             except Exception:
                                 txid_b = None
+                                
                         if txid_b is None:
                             return False
+                        
                         if txid_b in seen_txids:
                             return False
+                        
                         seen_txids.add(txid_b)
                 except Exception:
                     return False
@@ -1252,11 +1268,13 @@ class Blockchain:
                     txs_ex_coinbase = max(0, (len(block.transactions) or 0) - 1)
                     if txs_ex_coinbase > CFG.MAX_TXS_PER_BLOCK:
                         return False
+                    
                     est_size = self._estimate_block_size(block)
                     log.debug("[validate_block] est block size : %s", est_size)
                     
                     if est_size is not None and est_size > CFG.MAX_BLOCK_BYTES:
                         return False
+                    
                 except Exception:
                     return False
 
@@ -1275,16 +1293,20 @@ class Blockchain:
                             entry = utxos.get(k) if isinstance(utxos, dict) else None
                             if entry is None:
                                 return None
+                            
                             if isinstance(entry, dict):
                                 spk_hex = ((entry.get("tx_out") or {}).get("script_pubkey")
                                         or entry.get("script_pubkey"))
                                 if isinstance(spk_hex, str):
                                     return bytes.fromhex(spk_hex)
+                                
                                 txo = entry.get("tx_out")
                                 if hasattr(txo, "script_pubkey"):
                                     return txo.script_pubkey.serialize()
+                                
                             if hasattr(entry, "tx_out") and hasattr(entry.tx_out, "script_pubkey"):
                                 return entry.tx_out.script_pubkey.serialize()
+                            
                             log.debug("[validate_block] UTXO lookup found no script_pubkey for %s", k)
                         except Exception:
                             return None
@@ -1297,10 +1319,12 @@ class Blockchain:
                         so = int(tx.sigops_count(_utxo_lookup)) if hasattr(tx, "sigops_count") else len(getattr(tx, "inputs", []))
                         if so > int(CFG.MAX_SIGOPS_PER_TX):
                             return False
+                        
                         total_sigops += so
 
                     if total_sigops > int(CFG.MAX_SIGOPS_PER_BLOCK):
                         return False
+                    
                 except Exception:
                     est_sigops = self._count_block_sigops(block)
                     if est_sigops is not None and est_sigops > int(CFG.MAX_SIGOPS_PER_BLOCK):
