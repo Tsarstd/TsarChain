@@ -44,10 +44,10 @@ MAX_COINBASE_EXTRADATA = 100
 # =============================================================================
 # CONSENSUS / DIFFICULTY
 # =============================================================================
-INITIAL_BITS       = 0x1F0FFFFF
-MAX_BITS           = 0x1D00FFFF
-TARGET_BLOCK_TIME  = 40             # 40 Sec
-LWMA_WINDOW        = 90
+INITIAL_BITS       = 0x1E00FFFF
+MAX_BITS           = 0x1F0FFFFF
+TARGET_BLOCK_TIME  = 30             # 30 Sec
+LWMA_WINDOW        = 70
 FUTURE_DRIFT       = 120
 MTP_WINDOWS        = 11
 
@@ -61,7 +61,7 @@ MAX_SIGOPS_PER_TX       = 2_000
 # FORK-CHOICE & REORG
 ENABLE_CHAINWORK_RULE   = True
 ENABLE_REORG_LIMIT      = True
-REORG_LIMIT             = 75
+REORG_LIMIT             = 100
 
 # DIFF CLAMP
 ENABLE_DIFF_CLAMP       = True
