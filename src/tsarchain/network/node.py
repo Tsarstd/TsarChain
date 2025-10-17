@@ -931,7 +931,7 @@ class Network:
             height = 0
         span = max(1, int(CFG.HEADERS_FANOUT) // 2)
         missing = list(range(max(0, height - span), height + 1))
-                self._download_blocks(peer, missing)
+        self._download_blocks(peer, missing)
 
     def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[float] = None) -> Optional[dict]:
         norm = self._normalize_peer(peer)
