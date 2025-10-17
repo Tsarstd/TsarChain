@@ -102,8 +102,8 @@ ZERO_HASH       = b"\x00" * 32
 CANONICAL_SEP   = (',', ':')
 
 # === Genesis ===
-ALLOW_AUTO_GENESIS       = 1
-GENESIS_HASH_HEX         = ""
+ALLOW_AUTO_GENESIS       = 0
+GENESIS_HASH_HEX         = "000000de3612007ded27008d68b703d0be28ded2046d40d0e980d10652fe988a"
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"
 
 # === Voice Sovereignty Figures (ASCII only) ===
@@ -163,12 +163,15 @@ else:
 BOOTSTRAP_NODE = BOOTSTRAP_NODES[0]
 
 # === Buffers & Timeouts ===
-BUFFER_SIZE        = 65536
-HANDSHAKE_TIMEOUT  = 10
-DISCOVERY_INTERVAL = 5
-SYNC_TIMEOUT       = 10
-SYNC_INTERVAL      = 15
-FAST_SYNC_INTERVAL = 5
+BUFFER_SIZE                 = 65536
+HANDSHAKE_TIMEOUT           = 10
+DISCOVERY_INTERVAL          = 5
+SYNC_TIMEOUT                = 10
+SYNC_INTERVAL               = 15
+FAST_SYNC_INTERVAL          = 5
+CONNECT_TIMEOUT             = 1.5
+BROADCAST_FAIL_THRESHOLD    = 2
+BROADCAST_FAIL_BACKOFF_S    = 120
 
 # === Anti-DoS ===
 MAX_ADDRS_PER_REQ  = 64
@@ -236,16 +239,16 @@ REPLAY_WINDOW_SEC  = 60
 # =============================================================================
 # CHAT SECURITY
 # =============================================================================
-CHAT_MAX_CT_BYTES     = 2 * 1024      # ciphertext
-CHAT_TS_DRIFT_S       = 120       # sec
-CHAT_TTL_S            = 86400     # 24 hours
-CHAT_MAILBOX_MAX      = 100
-CHAT_GLOBAL_QUEUE_MAX = 20_000
-CHAT_PULL_MAX_ITEMS   = 50
-CHAT_POLL_INTERVAL_MS = 2500
-CHAT_POLL_INITIAL_MS  = 4000
+CHAT_MAX_CT_BYTES           = 2 * 1024  # ciphertext
+CHAT_TS_DRIFT_S             = 120       # sec
+CHAT_TTL_S                  = 86400     # 24 hours
+CHAT_MAILBOX_MAX            = 100
+CHAT_GLOBAL_QUEUE_MAX       = 20_000
+CHAT_PULL_MAX_ITEMS         = 50
+CHAT_POLL_INTERVAL_MS       = 2500
+CHAT_POLL_INITIAL_MS        = 4000
 CHAT_PUBLISH_MIN_INTERVAL_S = 20
-CHAT_PUBLISH_SELF_CHECK = False
+CHAT_PUBLISH_SELF_CHECK     = False
 
 # === Rate limiting ===
 CHAT_RL_ADDR_BURST    = 6

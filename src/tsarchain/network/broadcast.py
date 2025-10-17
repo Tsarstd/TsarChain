@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
+
 import socket, json, threading, time
 from typing import Set, Tuple, Optional, Dict, Any, TYPE_CHECKING
 
@@ -14,12 +15,12 @@ from ..mempool.pool import TxPoolDB
 from ..storage.utxo import UTXODB
 from ..utils import config as CFG
 
+if TYPE_CHECKING:
+    from .node import Network
+
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network(broadcast)")
-
-if TYPE_CHECKING:  # pragma: no cover - assist typing without circular import
-    from .node import Network
 
 
 class Broadcast:
@@ -40,14 +41,17 @@ class Broadcast:
         self.privkey = None
         self.peer_pubkeys = {}
         self.network: Optional["Network"] = None
+        self._failmap: Dict[Tuple[str, int], Dict[str, float | int]] = {}  # {peer: {"fails": int, "last": ts}}
 
     # ----------------------------- I/O helpers -----------------------------
 
     def _send(self, peer: Tuple[str, int], message: Dict[str, Any]) -> bool:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(CFG.SYNC_TIMEOUT)
+                connect_timeout = getattr(CFG.CONNECT_TIMEOUT, CFG.SYNC_TIMEOUT)
+                s.settimeout(connect_timeout)
                 s.connect(peer)
+                s.settimeout(CFG.SYNC_TIMEOUT)
                 payload = json.dumps(self._encode(message)).encode("utf-8")
                 if CFG.P2P_ENC_REQUIRED:
                     chan = SecureChannel(
@@ -61,11 +65,37 @@ class Broadcast:
                     chan.send(payload)
                 else:
                     send_message(s, payload)
+                try:
+                    fm = self._failmap.get(peer)
+                    if fm:
+                        self._failmap.pop(peer, None)
+                        
+                except Exception:
+                    pass
+                log.debug("[_send] delivered to %s", peer)
                 return True
-            log.debug("[_send]: %s, %s", s, peer)
+            
+        except TimeoutError:
+            log.info("[_send] Connect to %s timed out", peer)
+            
+        except ConnectionRefusedError:
+            log.info("[_send] Connect to %s refused", peer)
+            
+        except OSError as e:
+            log.warning("[_send] OSError sending to %s: %s", peer, getattr(e, "strerror", e))
+            
         except Exception:
-            log.warning("[Broadcast] Send to %s failed", peer, exc_info=True)
-            return False
+            log.warning("[_send] Send to %s failed (unexpected)", peer, exc_info=True)
+
+        try:
+            fm = self._failmap.get(peer) or {"fails": 0, "last": 0.0}
+            fm["fails"] = int(fm["fails"]) + 1
+            fm["last"]  = time.time()
+            self._failmap[peer] = fm
+            
+        except Exception:
+            pass
+        return False
 
     def _request_full_sync(self, peer: Tuple[str, int]) -> bool:
         if not CFG.ENABLE_FULL_SYNC:
@@ -102,14 +132,14 @@ class Broadcast:
                 try:
                     inner = verify_and_unwrap(outer, lambda nid: None)  # will use the 'pubkey' from the envelope
                 except Exception:
-                    log.warning("[Sync] Invalid envelope from peer")
+                    log.warning("[_request_full_sync] Invalid envelope from peer")
                     return False
                 if isinstance(inner, dict) and inner.get("type") == "FULL_SYNC":
                     self.receive_full_sync(inner.get("data", inner))
                     return True
                 return False
         except Exception as e:
-            log.exception(f"[Broadcast] Full sync request to {peer} failed: {e}")
+            log.exception(f"[_request_full_sync] Full sync request to {peer} failed: {e}")
             return False
 
     # ----------------------------- FULL SYNC -------------------------------
@@ -136,7 +166,7 @@ class Broadcast:
                 }
                 self._send(peer, full)
         except Exception as e:
-            log.exception(f"[Sync] Error sending full sync to {peer}: {e}")
+            log.exception(f"[send_full_sync] Error sending full sync to {peer}: {e}")
 
     def receive_full_sync(self, payload: dict):
         if not CFG.ENABLE_FULL_SYNC:
@@ -186,25 +216,33 @@ class Broadcast:
                             if self.mempool.add_valid_tx(tx):
                                 added += 1
                         except Exception:
-                            log.exception("[Sync] Error adding tx from mempool during full sync")
+                            log.exception("[receive_full_sync] Error adding tx from mempool during full sync")
                     if added:
-                        log.info(f"[Sync] Mempool updated: {added} new transactions")
+                        log.info("[receive_full_sync] Mempool updated: %s new transactions", added)
                         
                 self.last_sync_time = time.time()
             return True
 
         except Exception:
-            log.exception("[Sync] Error receiving full sync")
+            log.exception("[receive_full_sync] Error receiving full sync")
             return False
 
     # ----------------------------- Broadcast ------------------------------
 
-    def _broadcast(self, peers: Set[Tuple[str, int]], message: Dict[str, Any],
-                   exclude: Optional[Tuple[str, int]] = None):
+    def _broadcast(self, peers: Set[Tuple[str, int]], message: Dict[str, Any], exclude: Optional[Tuple[str, int]] = None):
         success_count = 0
+        now = time.time()
+        backoff_s = CFG.BROADCAST_FAIL_BACKOFF_S
+        thr = CFG.BROADCAST_FAIL_THRESHOLD
         for peer in peers:
             if exclude and peer == exclude:
                 continue
+            
+            fm = self._failmap.get(peer)
+            if fm and int(fm.get("fails", 0)) >= thr and (now - float(fm.get("last", 0.0)) < backoff_s):
+                log.debug("[_broadcast] Skipping %s due to backoff (fails=%s)", peer, fm.get("fails"))
+                continue
+            
             if self._send(peer, message):
                 success_count += 1
         return success_count
@@ -330,7 +368,7 @@ class Broadcast:
                 return False
 
         except Exception:
-            log.exception("[Sync] Error receiving chain")
+            log.exception("[receive_chain] Error receiving chain")
             return False
 
     def _validate_incoming_chain(self, message: Dict[str, Any]) -> bool:
@@ -349,7 +387,7 @@ class Broadcast:
                     return False
             return True
         except Exception:
-            log.exception("[Sync] Error validating incoming chain")
+            log.exception("[_validate_incoming_chain] Error validating incoming chain")
             return False
 
     def _rebuild_utxo_from_chain_locked(self):
@@ -357,7 +395,7 @@ class Broadcast:
             self.utxodb.rebuild_from_chain(self.blockchain.chain)
             self._clean_mempool_after_chain_replace()
         except Exception:
-            log.exception("[Sync] Error rebuilding UTXO from chain")
+            log.exception("[_rebuild_utxo_from_chain_locked] Error rebuilding UTXO from chain")
 
     def _clean_mempool_after_chain_replace(self):
         try:
@@ -374,7 +412,7 @@ class Broadcast:
 
             self.mempool.save_pool([tx.to_dict() for tx in new_mempool])
         except Exception:
-            log.exception("[Sync] Error cleaning mempool after chain replace")
+            log.exception("[_clean_mempool_after_chain_replace] Error cleaning mempool after chain replace")
 
     def receive_block(self, message: Dict[str, Any], addr, peers: Set[Tuple[str, int]]):
         block_id = None
@@ -408,21 +446,21 @@ class Broadcast:
                             self.network.handle_block_gap(block, origin)
                             handled = True
                         except Exception:
-                            log.exception("[Broadcast] Network handle_block_gap failed")
+                            log.exception("[receive_block] Network handle_block_gap failed")
                     if not handled and CFG.ENABLE_FULL_SYNC:
                         targets = [origin] if origin else list(peers)
                         for p in targets:
                             try:
                                 self._request_full_sync(p)
                             except Exception:
-                                log.exception(f"[Sync] Full sync request to {p} failed")
+                                log.exception("[receive_block] Full sync request to %s failed", p)
                     return
                 if block.prev_block_hash != tip_h:
                     potential_fork = True
 
             if not potential_fork:
                 if not self.blockchain.validate_block(block):
-                    log.warning("[Broadcast] Invalid block received ... block=%s peer=%s", block_id[:12], f"{addr[0]}:{origin_port or 0}")
+                    log.warning("[receive_block] Invalid block received ... block=%s peer=%s", block_id[:12], f"{addr[0]}:{origin_port or 0}")
                     return
 
             old_tip = None
@@ -435,7 +473,7 @@ class Broadcast:
                 else:
                     ok = False
             if not ok:
-                log.warning(f"[Broadcast] Block at height {block.height} rejected by add_block")
+                log.warning("[receive_block] Block at height %s rejected by add_block", block.height)
                 if potential_fork:
                     targets = [origin] if origin else list(peers)
                     for p in targets:
@@ -444,7 +482,7 @@ class Broadcast:
                             CFG.ENABLE_FULL_SYNC = True
                             self._request_full_sync(p)
                         except Exception:
-                            log.exception(f"[Broadcast] Fallback full sync request to {p} failed")
+                            log.exception("[receive_block] Fallback full sync request to %s failed", p)
                         finally:
                             CFG.ENABLE_FULL_SYNC = prev_flag
                 return
@@ -459,11 +497,11 @@ class Broadcast:
                     except Exception:
                         fail_rm += 1
                 if fail_rm:
-                    log.warning("[Broadcast] %s tx failed to remove from mempool after block addition", fail_rm)
+                    log.warning("[receive_block] %s tx failed to remove from mempool after block addition", fail_rm)
                 try:
                     self.mempool.save_pool(self.mempool.load_pool())
                 except Exception:
-                    log.exception("[Broadcast] Error cleaning mempool")
+                    log.exception("[receive_block] Error cleaning mempool")
 
                 if old_tip:
                     try:
@@ -473,23 +511,23 @@ class Broadcast:
                             except Exception:
                                 pass
                     except Exception:
-                        log.exception("[Broadcast] Error requeueing transactions from orphaned tip")
+                        log.exception("[receive_block] Error requeueing transactions from orphaned tip")
             except Exception:
-                log.exception("[Broadcast] Error updating mempool after block acceptance")
+                log.exception("[receive_block] Error updating mempool after block acceptance")
 
             try:
                 if self.blockchain.in_memory:
                     try:
                         self.utxodb.update(block.transactions, block.height)
                     except Exception:
-                        log.exception("[Broadcast] Error updating UTXO after block acceptance")
+                        log.exception("[receive_block] Error updating UTXO after block acceptance")
                 else:
                     try:
                         self.utxodb._load()
                     except Exception:
-                        log.exception("[Broadcast] Error loading UTXO DB from disk")
+                        log.exception("[receive_block] Error loading UTXO DB from disk")
             except Exception:
-                log.exception("[Broadcast] Error updating UTXO DB after block acceptance")
+                log.exception("[receive_block] Error updating UTXO DB after block acceptance")
 
             with self.lock:
                 self.seen_blocks.add(block_id)
@@ -497,10 +535,10 @@ class Broadcast:
             try:
                 self.broadcast_block(block, peers, exclude=origin, force=True)
             except Exception:
-                log.exception("[Broadcast] Error broadcasting new block to peers")
+                log.exception("[receive_block] Error broadcasting new block to peers")
 
         except Exception:
-            log.exception("[Broadcast] Error processing incoming block")
+            log.exception("[receive_block] Error processing incoming block")
         finally:
             if inflight and block_id:
                 with self.lock:
@@ -523,7 +561,7 @@ class Broadcast:
             try:
                 is_valid = self.mempool.add_valid_tx(tx)
             except Exception:
-                log.exception("[Broadcast] Error validating/adding incoming TX")
+                log.exception("[receive_tx] Error validating/adding incoming TX")
                 return False
 
             if is_valid:
@@ -533,7 +571,7 @@ class Broadcast:
                 # Keep last_error_reason for caller to inspect via process_message
                 return False
         except Exception:
-            log.exception("[Broadcast] Error processing incoming TX")
+            log.exception("[receive_tx] Error processing incoming TX")
             return False
 
     # ------------------- Legacy handlers (compatibility) -------------------
@@ -547,15 +585,15 @@ class Broadcast:
                     self.utxodb._save()
             else:
                 if utxo_data:
-                    log.warning("[Sync] Ignoring UTXO snapshot since we have a non-empty chain")
+                    log.warning("[receive_utxos] Ignoring UTXO snapshot since we have a non-empty chain")
         except Exception:
-            log.exception("[Sync] Error updating UTXO DB")
+            log.exception("[receive_utxos] Error updating UTXO DB")
 
     def receive_state(self, message: Dict[str, Any]):
         try:
             self.state = message.get("data", {})
         except Exception:
-            log.exception("[Sync] Error updating state")
+            log.exception("[receive_state] Error updating state")
 
     def receive_mempool(self, message: Dict[str, Any]):
         try:
@@ -567,11 +605,11 @@ class Broadcast:
                     if self.mempool.add_valid_tx(tx):
                         added_count += 1
                 except Exception:
-                    log.exception("[Sync] Error adding tx from mempool snapshot")
+                    log.exception("[receive_mempool] Error adding tx from mempool snapshot")
             if added_count:
-                log.info(f"[Sync] Mempool updated: {added_count} new transactions")
+                log.info("[receive_mempool] Mempool updated: %s new transactions", added_count)
         except Exception:
-            log.exception("[Sync] Error updating mempool")
+            log.exception("[receive_mempool] Error updating mempool")
 
     # ------------------------------ Shutdown ------------------------------
 
@@ -579,4 +617,4 @@ class Broadcast:
         with self.lock:
             self.seen_blocks.clear()
             self.seen_txs.clear()
-        log.info("[Broadcast] Shutdown complete")
+        log.info("[shutdown] Shutdown complete")

@@ -148,7 +148,6 @@ class Block:
         if env_backend == "hashlib" or (pow_backend and pow_backend.lower() == "hashlib"):
             raise RuntimeError("hashlib backend is disabled: Numba backend is required.")
         
-        self.log.info("[mine] backend: numba")
         self.log.info("[mine] Mining with %s/%s cores, Target: %s", num_cores, total_cores, hex(target))
 
         header_without_nonce = self.header()[:-4]
@@ -192,7 +191,7 @@ class Block:
         total_hps_accum = 0.0
         reports_since_print = 0
         last_total_print = time.time()
-        REPORT_WINDOW = 10.0
+        REPORT_WINDOW = 15.0
 
         try:
             while True:
@@ -209,7 +208,7 @@ class Block:
                         return None
                     nowp = time.time()
                     if (nowp - last_total_print) >= REPORT_WINDOW and reports_since_print > 0:
-                        self.log.trace("[mine] ⛏️ Total Hashrate: %s H/s", f"{total_hps_accum:,.0f}")
+                        #self.log.trace("[mine] ⛏️ Total Hashrate: %s H/s", f"{total_hps_accum:,.0f}")
                         if progress_queue is not None:
                             try:
                                 progress_queue.put(('TOTAL_HPS', total_hps_accum))
@@ -228,7 +227,7 @@ class Block:
                         pass
                     nowp = time.time()
                     if reports_since_print >= num_cores or (nowp - last_total_print) >= REPORT_WINDOW:
-                        self.log.trace("[mine] ⛏️ Total Hashrate: %s H/s", f"{total_hps_accum:,.0f}")
+                        #self.log.trace("[mine] ⛏️ Total Hashrate: %s H/s", f"{total_hps_accum:,.0f}")
                         if progress_queue is not None:
                             try:
                                 progress_queue.put(('TOTAL_HPS', total_hps_accum))
@@ -254,7 +253,7 @@ class Block:
                 self.log.info("[mine] Block mined: nonce=%s, hash=%s (time=%.2fs)", self.nonce, found_hash.hex(), elapsed)
                 return found_hash
             else:
-                self.log.info("[mine] Mining failed: no valid nonce found (time=%.2fs)", elapsed)
+                self.log.warning("[mine] Mining failed: no valid nonce found (time=%.2fs)", elapsed)
                 return None
 
         finally:

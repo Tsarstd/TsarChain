@@ -158,7 +158,6 @@ class SimpleMiner:
                 print("[-] Failed to create genesis block")
                 return False
 
-        block_count = 0
         while self.mining_alive:
             try:
                 if self.network.peers:
@@ -176,8 +175,7 @@ class SimpleMiner:
                     break
 
                 if block:
-                    block_count += 1
-                    print(f"[+] Block #{block_count} mined: {block.hash().hex()[:16]}…")
+                    print(f"[+] Block mined: {block.hash().hex()[:18]}…")
                     try:
                         sent = self.network.publish_block(block, exclude=None, force=True)
                         if sent <= 0:
