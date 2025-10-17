@@ -127,7 +127,7 @@ maturin develop --release --features parallel
 # -- Run Test --
 python tests/native_test.py
 ```
-> You can Switch between pure‑Python and native acceleration in [`src/tsarchain/utils/config.py`](src/tsarchain/utils/config.py): set `NATIVE = 0` or `1`.
+> You can Switch python or native acceleration in [`src/tsarchain/utils/config.py`](src/tsarchain/utils/config.py): set `NATIVE = 0` or `1`.
 
 ---
 
