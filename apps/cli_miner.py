@@ -175,7 +175,7 @@ class SimpleMiner:
                     break
 
                 if block:
-                    print(f"[+] Block mined: {block.hash().hex()[:18]}…")
+                    print(f"[+] Block mined ( height :{getattr(block, 'height')}): {block.hash().hex()[:18]}…")
                     try:
                         sent = self.network.publish_block(block, exclude=None, force=True)
                         if sent <= 0:

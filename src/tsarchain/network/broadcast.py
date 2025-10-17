@@ -48,7 +48,10 @@ class Broadcast:
     def _send(self, peer: Tuple[str, int], message: Dict[str, Any]) -> bool:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                connect_timeout = getattr(CFG.CONNECT_TIMEOUT, CFG.SYNC_TIMEOUT)
+                connect_timeout = float(CFG.CONNECT_TIMEOUT)
+                if connect_timeout <= 0:
+                    connect_timeout = float(CFG.SYNC_TIMEOUT)
+                    
                 s.settimeout(connect_timeout)
                 s.connect(peer)
                 s.settimeout(CFG.SYNC_TIMEOUT)
