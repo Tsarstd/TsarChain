@@ -3,10 +3,8 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173
 
-import argparse
-import time
+import argparse, time, signal, threading
 import multiprocessing as mp
-import signal
 
 # ---------------- Local Project ----------------
 from tsarchain.consensus.blockchain import Blockchain
@@ -208,6 +206,8 @@ class NodeRunner:
         self.blockchain = None
         self.network = None
         self.running = True
+        self._last_chain_height = -1
+        self._sync_ready = False
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
 
@@ -225,17 +225,97 @@ class NodeRunner:
                 use_cores=None,
                 miner_address=None,
             )
-            print(f"Local chain height: {self.blockchain.height}")
+            
+            try:
+                self._last_chain_height = int(getattr(self.blockchain, "height", -1))
+            except Exception:
+                self._last_chain_height = -1
+            print(f"Local chain height: {self._last_chain_height}")
+            
             self.network = Network(blockchain=self.blockchain)
             peer_count = _register_bootstrap_peers(self.network)
             print(f"Node online on port {self.network.port}, bootstrap peers: {peer_count}")
+
+            # == Early fast-sync kick (mirror miner_gui) ==
+            def _early_sync():
+                for _ in range(5):
+                    try:
+                        self.network.request_sync(fast=True)
+                    except Exception:
+                        pass
+                    time.sleep(1.0)
+            threading.Thread(target=_early_sync, daemon=True).start()
+
+            # == Background sync daemon (mirror miner_gui logic, but CLI prints) ==
+            threading.Thread(target=self._sync_daemon, daemon=True).start()
+
             print("Press Ctrl+C to stop.")
             while self.running:
                 time.sleep(2)
+                
         except Exception as exc:
             print(f"Node error: {exc}")
+            
         finally:
             self.shutdown()
+
+    def _sync_daemon(self):
+        last_status = ""
+        while self.running and self.blockchain and self.network:
+            try:
+                # No peers yet
+                if not getattr(self.network, "peers", None):
+                    msg = "[Sync] Waiting for peer connection..."
+                    if msg != last_status:
+                        print(msg)
+                        last_status = msg
+                    self._sync_ready = False
+                    time.sleep(5)
+                    continue
+
+                # Have peers — request fast sync
+                self.network.request_sync(fast=True)
+
+                # Heights
+                try:
+                    height = int(getattr(self.blockchain, "height", -1))
+                except Exception:
+                    height = -1
+                best_height = -1
+                if hasattr(self.network, "get_best_peer_height"):
+                    try:
+                        best_height = int(self.network.get_best_peer_height())
+                    except Exception:
+                        best_height = -1
+
+                # Progress print (only when changed)
+                if height != self._last_chain_height:
+                    if height >= 0:
+                        print(f"[Sync] Chain height now {height}")
+                    self._last_chain_height = height
+
+                peer_sync_map = getattr(self.network, "_peer_last_sync", {}) or {}
+                latest_sync = max(peer_sync_map.values()) if peer_sync_map else 0.0
+                synced_recently = latest_sync and (time.time() - latest_sync) < 10
+                if not self._sync_ready and height >= 0 and synced_recently:
+                    self._sync_ready = True
+                    print("Chain has been confirmed. Node is live (no mining).")
+
+                try:
+                    inb = len(getattr(self.network, "inbound_peers", ()))
+                    outb = len(getattr(self.network, "outbound_peers", ()))
+                    known = len(getattr(self.network, "peers", ()))
+                except Exception:
+                    inb = outb = known = 0
+                    
+                status = f"[peers in={inb} out={outb} known={known}] local={height} best={best_height if best_height>=0 else '?'}"
+                if status != last_status:
+                    print(status)
+                    last_status = status
+
+            except Exception as e:
+                print(f"[node-only] sync error: {e}")
+            time.sleep(5)
 
     def shutdown(self):
         if self.network:
@@ -245,7 +325,6 @@ class NodeRunner:
                 pass
             self.network = None
         print("Node stopped.")
-
 
 def get_user_input():
     print_banner()
@@ -287,7 +366,6 @@ def parse_args():
 
 def main():
     args = parse_args()
-
     if args.node_only:
         runner = NodeRunner()
         runner.start()
