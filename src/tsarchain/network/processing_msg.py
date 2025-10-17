@@ -279,6 +279,35 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             return {"status": "error", "reason": (reason or "invalid tx")}
 
     elif mtype == "GET_MEMPOOL":
+        mode = str(message.get("mode", "")).strip().lower()
+        if mode == "snapshot":
+            if not _is_miner_sender():
+                return {"error": "forbidden: miners-only endpoint"}
+            try:
+                peer_port = int(message.get("port", 0))
+            except Exception:
+                peer_port = 0
+            target = None
+            if isinstance(addr, tuple):
+                if peer_port > 0:
+                    target = self._normalize_peer((addr[0], peer_port))
+                if not target:
+                    # fall back to known peers with same IP
+                    with self.lock:
+                        for candidate in self.peers:
+                            if candidate[0] == addr[0]:
+                                target = candidate
+                                break
+            if not target:
+                return {"error": "missing_peer_port"}
+            min_iv = message.get("min_interval")
+            force = bool(message.get("force"))
+            try:
+                pushed = self.broadcast.send_mempool_to_peer(target, min_interval_s=min_iv, force=force)
+                return {"type": "MEMPOOL_SYNC", "count": int(pushed)}
+            except Exception:
+                log.exception("[process_message] GET_MEMPOOL snapshot push error to %s", target)
+                return {"type": "MEMPOOL_SYNC", "count": 0, "status": "error"}
         try:
             txs = self.broadcast.mempool.get_all_txs()
             return {"type": "MEMPOOL", "txs": [getattr(t, "txid", b"").hex() for t in txs]}
@@ -544,7 +573,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             ratchet_n = int(message.get("ratchet_n") or 0)
         except Exception:
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_ratchet_index"}
-        max_idx = getattr(CFG, "CHAT_RATCHET_INDEX_MAX", 1_000_000)
+        max_idx = CFG.CHAT_RATCHET_INDEX_MAX
         if not (0 <= ratchet_pn <= max_idx and 0 <= ratchet_n <= max_idx):
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "ratchet_index_out_of_range"}
 
@@ -615,8 +644,8 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_sig"}
 
         # === Onion-lite relay (opsional) ===
-        relay_hops = int(getattr(CFG, "CHAT_NUM_HOPS", 2))
-        if getattr(CFG, "CHAT_FORCE_RELAY", False) and len(self.peers) >= max(1, relay_hops):
+        relay_hops = int(CFG.CHAT_NUM_HOPS)
+        if CFG.CHAT_FORCE_RELAY and len(self.peers) >= max(1, relay_hops):
             route = _choose_relay_route(self, hops=relay_hops)
             if not route:
                 log.debug("[process_message] CHAT_SEND relay requested but no peers available; falling back to direct queue")

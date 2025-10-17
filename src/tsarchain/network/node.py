@@ -110,6 +110,7 @@ class Network:
         self.peer_scores: Dict[Tuple[str, int], int] = {}
         self._inbound_ips: Dict[str, int] = {}
         self._peer_last_sync: Dict[Tuple[str, int], float] = {}
+        self._peer_last_mempool_sync: Dict[Tuple[str, int], float] = {}
         self._peer_best_height: Dict[Tuple[str, int], int] = {}
         self._peer_last_dial: Dict[Tuple[str, int], float] = {}
         self._full_sync_served_at: Dict[str, float] = {}
@@ -122,7 +123,7 @@ class Network:
         self.utxodb = self.broadcast.utxodb
 
         try:
-            configured_bootstrap = tuple(getattr(CFG, "BOOTSTRAP_NODES", ()) or (CFG.BOOTSTRAP_NODE,))
+            configured_bootstrap = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
         except Exception as exc:
             raise ValueError("Invalid BOOTSTRAP_NODES configuration") from exc
 
@@ -136,7 +137,7 @@ class Network:
         if not bootstrap_nodes:
             raise ValueError("No valid bootstrap peers configured")
 
-        primary_peer = self._normalize_peer(getattr(CFG, "BOOTSTRAP_NODE", None)) or next(iter(bootstrap_nodes))
+        primary_peer = self._normalize_peer(CFG.BOOTSTRAP_NODE) or next(iter(bootstrap_nodes))
 
         is_bootstrap_self = any(self._is_self_bootstrap(h, p) for h, p in bootstrap_nodes)
         if is_bootstrap_self:
@@ -328,6 +329,7 @@ class Network:
                 self.outbound_peers.discard(norm)
                 self._peer_best_height.pop(norm, None)
                 self._peer_last_sync.pop(norm, None)
+                self._peer_last_mempool_sync.pop(norm, None)
 
     def _reward_peer(self, peer: Any, amount: int = CFG.PEER_SCORE_REWARD) -> None:
         norm = self._normalize_peer(peer)
@@ -602,11 +604,16 @@ class Network:
             self.broadcast.send_mempool_to_peer(norm)
         except Exception:
             log.exception("[_attempt_hello] mempool push error to %s", norm)
+        try:
+            if not CFG.ENABLE_FULL_SYNC:
+                self._request_mempool_snapshot(norm, force=True)
+        except Exception:
+            log.exception("[_attempt_hello] mempool pull error from %s", norm)
             
         return True
     
     def _discover_peers(self):
-        limit = max(1, int(getattr(CFG, "MAX_OUTBOUND_PEERS", 8)))
+        limit = max(1, int(CFG.MAX_OUTBOUND_PEERS))
         found_peers: Set[Tuple[str, int]] = set()
 
         with self.lock:
@@ -692,7 +699,7 @@ class Network:
             return
 
         now = time.time()
-        if (len(selected) != getattr(self, "_last_sync_count", -1)) or (now - self._last_sync_log > float(getattr(CFG, "SYNC_INFO_MIN_INTERVAL", 60))):
+        if (len(selected) != getattr(self, "_last_sync_count", -1)) or (now - self._last_sync_log > float(CFG.SYNC_INFO_MIN_INTERVAL)):
             try:
                 log.info("[sync_with_peers] syncing %s peers", len(selected))
             except Exception:
@@ -707,15 +714,18 @@ class Network:
                 continue
             try:
                 synced = self._sync_peer(norm)
-                if not synced and CFG.ENABLE_FULL_SYNC:
-                    self._request_full_sync(norm)
+                if not synced:
+                    if CFG.ENABLE_FULL_SYNC:
+                        self._request_full_sync(norm)
+                    else:
+                        self._request_mempool_snapshot(norm)
             except Exception:
                 log.exception("[sync_with_peers] Error syncing with peer %s", norm)
                 self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY * 2)
                 
     def _sync_peer(self, peer: Tuple[str, int]) -> bool:
         now = time.time()
-        min_iv = 0.0 if now < getattr(self, "_sync_fast_until", 0.0) else float(getattr(CFG, "HEADERS_SYNC_MIN_INTERVAL", 20))
+        min_iv = 0.0 if now < getattr(self, "_sync_fast_until", 0.0) else float(CFG.HEADERS_SYNC_MIN_INTERVAL)
         if now - self._peer_last_sync.get(peer, 0.0) < min_iv:
             return False
         
@@ -834,7 +844,7 @@ class Network:
             "limit": int(CFG.HEADERS_BATCH_MAX),
             "port": self.port,
         }
-        return self._rpc_request(peer, payload, timeout=max(10.0, getattr(CFG, "SYNC_TIMEOUT", 10.0)))
+        return self._rpc_request(peer, payload, timeout=max(10.0, CFG.SYNC_TIMEOUT))
 
     def _determine_missing_blocks(self, headers: List[dict]) -> List[int]:
         missing: List[int] = []
@@ -872,12 +882,12 @@ class Network:
         unique_heights = sorted({int(h) for h in heights if isinstance(h, int)})
         if not unique_heights:
             return False
-        batch_size = max(1, int(getattr(CFG, "BLOCK_DOWNLOAD_BATCH_MAX", 16)))
+        batch_size = max(1, int(CFG.BLOCK_DOWNLOAD_BATCH_MAX))
         downloaded = False
         for idx in range(0, len(unique_heights), batch_size):
             chunk = unique_heights[idx: idx + batch_size]
             payload = {"type": "GET_BLOCKS", "heights": chunk, "port": self.port}
-            resp = self._rpc_request(peer, payload, timeout=max(15.0, getattr(CFG, "SYNC_TIMEOUT", 10.0)))
+            resp = self._rpc_request(peer, payload, timeout=max(15.0, CFG.SYNC_TIMEOUT))
             if not resp:
                 break
             if resp.get("type") == "BLOCKS":
@@ -912,23 +922,23 @@ class Network:
             return
         now = time.time()
         last = self._recent_gap_requests.get(peer, 0.0)
-        if now - last < float(getattr(CFG, "HEADERS_SYNC_MIN_INTERVAL", 20)):
+        if now - last < float(CFG.HEADERS_SYNC_MIN_INTERVAL):
             return
         self._recent_gap_requests[peer] = now
         try:
             height = int(getattr(block, "height", 0))
         except Exception:
             height = 0
-        span = max(1, int(getattr(CFG, "HEADERS_FANOUT", 8)) // 2)
+        span = max(1, int(CFG.HEADERS_FANOUT) // 2)
         missing = list(range(max(0, height - span), height + 1))
-        self._download_blocks(peer, missing)
+                self._download_blocks(peer, missing)
 
     def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[float] = None) -> Optional[dict]:
         norm = self._normalize_peer(peer)
         if not norm:
             return None
         env = build_envelope(payload, self.node_ctx, extra={"pubkey": self.pubkey})
-        timeout = float(timeout or getattr(CFG, "SYNC_TIMEOUT", 10.0))
+        timeout = float(timeout or CFG.SYNC_TIMEOUT)
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(timeout)
@@ -977,10 +987,44 @@ class Network:
         else:
             inner = outer
         return inner
+
+    def _request_mempool_snapshot(self, peer: Tuple[str, int], *, force: bool = False) -> bool:
+        norm = self._normalize_peer(peer)
+        if not norm:
+            return False
+        now = time.time()
+        min_iv = float(CFG.MEMPOOL_SYNC_MIN_INTERVAL)
+        if not force and now - self._peer_last_mempool_sync.get(norm, 0.0) < min_iv:
+            return False
+
+        payload = {
+            "type": "GET_MEMPOOL",
+            "mode": "snapshot",
+            "port": self.port,
+        }
+        if force:
+            payload["force"] = True
+            payload["min_interval"] = 0
+
+        resp = self._rpc_request(norm, payload, timeout=max(10.0, CFG.SYNC_TIMEOUT))
+        if not resp:
+            self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
+            return False
+
+        if resp.get("type") != "MEMPOOL_SYNC" or resp.get("status") == "error":
+            return False
+
+        self._peer_last_mempool_sync[norm] = now
+        try:
+            if int(resp.get("count", 0)) > 0:
+                self._reward_peer(norm, CFG.PEER_SCORE_REWARD)
+        except Exception:
+            pass
+        return True
     
     def _request_full_sync(self, peer: Tuple[str, int]) -> bool:
         if not CFG.ENABLE_FULL_SYNC:
-            return False
+            return self._request_mempool_snapshot(peer, force=True)
         norm = self._normalize_peer(peer)
         if not norm:
             return False
@@ -996,7 +1040,7 @@ class Network:
             "port": self.port,
             "height": self.broadcast.blockchain.height,
         }
-        resp = self._rpc_request(norm, payload, timeout=max(20.0, getattr(CFG, "SYNC_TIMEOUT", 10.0) * 2))
+        resp = self._rpc_request(norm, payload, timeout=max(20.0, CFG.SYNC_TIMEOUT * 2))
         self._full_sync_last_request[norm] = now
         if not resp:
             self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)

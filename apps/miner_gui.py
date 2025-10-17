@@ -394,7 +394,7 @@ class BlockchainGUI:
             except Exception:
                 self._last_chain_height = -1
 
-            fallback_nodes = tuple(getattr(CFG, "BOOTSTRAP_NODES", ()) or (CFG.BOOTSTRAP_NODE,))
+            fallback_nodes = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
             try:
                 for peer in fallback_nodes:
                     self.network.persistent_peers.add(peer)

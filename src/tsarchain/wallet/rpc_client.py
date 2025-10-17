@@ -97,7 +97,7 @@ class NodeClient:
             candidates.extend(list(manual_nodes))
         for port in range(start, end + 1):
             candidates.append(("127.0.0.1", port))
-        bootstrap_nodes = tuple(getattr(CFG, "BOOTSTRAP_NODES", ()) or (CFG.BOOTSTRAP_NODE,))
+        bootstrap_nodes = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
         for peer in bootstrap_nodes:
             if peer not in candidates:
                 candidates.append(peer)
@@ -187,7 +187,7 @@ class NodeClient:
 
     def _pace(self) -> None:
         try:
-            interval = float(getattr(CFG, "WALLET_RPC_MIN_INTERVAL", 0.0) or 0.0)
+            interval = float(CFG.WALLET_RPC_MIN_INTERVAL or 0.0)
         except Exception:
             interval = 0.0
         if interval <= 0.0:

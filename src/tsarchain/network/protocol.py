@@ -205,7 +205,7 @@ def load_or_create_keypair_at(path: str) -> tuple[str, str, str]:
     norm_path = os.path.normpath(path)
     user_key_norm = os.path.normpath(CFG.USER_KEY_PATH)
     node_key_norm = os.path.normpath(CFG.NODE_KEY_PATH)
-    legacy_node_key_norm = os.path.normpath(getattr(CFG, "LEGACY_NODE_KEY_PATH", CFG.NODE_KEY_PATH))
+    legacy_node_key_norm = os.path.normpath(CFG.LEGACY_NODE_KEY_PATH)
     use_secure_user = norm_path == user_key_norm
     use_node_store = norm_path in (node_key_norm, legacy_node_key_norm)
 

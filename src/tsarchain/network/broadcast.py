@@ -462,6 +462,7 @@ class Broadcast:
                     self.mempool.save_pool(self.mempool.load_pool())
                 except Exception:
                     log.exception("[receive_block] Error cleaning mempool")
+                
 
                 if old_tip:
                     try:
@@ -627,13 +628,13 @@ class Broadcast:
             chunks.append(cur)
         return chunks
 
-    def send_mempool_to_peer(self, peer: tuple[str, int], *, min_interval_s: float | None = None) -> int:
+    def send_mempool_to_peer(self, peer: tuple[str, int], *, min_interval_s: float | None = None, force: bool = False) -> int:
         if not hasattr(self, "_last_mempool_push"):
             self._last_mempool_push = {}
-        ttl = float(min_interval_s or CFG.MEMPOOL_SYNC_MIN_INTERVAL)
+        ttl = float(CFG.MEMPOOL_SYNC_MIN_INTERVAL) if min_interval_s is None else max(0.0, float(min_interval_s))
         now = time.time()
         last = float(self._last_mempool_push.get(peer, 0.0))
-        if now - last < ttl:
+        if not force and now - last < ttl:
             return 0
 
         sent = 0

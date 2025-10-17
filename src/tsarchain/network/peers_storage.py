@@ -20,13 +20,13 @@ _RECORD_PATHS = {
     "peer_keys": Path(CFG.PEER_KEYS_PATH),
 }
 _LEGACY_PATHS = {
-    "node_key": Path(getattr(CFG, "LEGACY_NODE_KEY_PATH", CFG.NODE_KEY_PATH)),
-    "peer_keys": Path(getattr(CFG, "LEGACY_PEER_KEYS_PATH", CFG.PEER_KEYS_PATH)),
+    "node_key": Path(CFG.LEGACY_NODE_KEY_PATH),
+    "peer_keys": Path(CFG.LEGACY_PEER_KEYS_PATH),
 }
 
 
 def _lmdb_enabled() -> bool:
-    backend = str(getattr(CFG, "KV_BACKEND", "json")).lower()
+    backend = str(CFG.KV_BACKEND).lower()
     return backend == "lmdb" and lmdb is not None
 
 
@@ -42,7 +42,7 @@ def _ensure_env():
         if _ENV is None:
             path = _env_path()
             os.makedirs(path, exist_ok=True)
-            size = int(getattr(CFG, "LMDB_MAP_SIZE_INIT", 64 * 1024 * 1024))
+            size = int(CFG.LMDB_MAP_SIZE_INIT)
             _ENV = lmdb.open(
                 path,
                 map_size=size,

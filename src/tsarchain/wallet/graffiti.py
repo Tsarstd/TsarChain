@@ -49,9 +49,9 @@ def _compact_json(obj: Dict[str, Any]) -> bytes:
 
 def _max_graffiti_limit() -> int:
     if hasattr(CFG, "MAX_GRAFFITI_OPRET"):
-        return int(getattr(CFG, "MAX_GRAFFITI_OPRET"))
+        return int(CFG.MAX_GRAFFITI_OPRET)
     if hasattr(CFG, "OPRET_MAX_BYTES"):
-        return int(getattr(CFG, "OPRET_MAX_BYTES"))
+        return int(CFG.OPRET_MAX_BYTES)
     return 80
 
 def _guard_payload_size(data: bytes) -> None:

@@ -70,21 +70,62 @@ def _extract_p2pkh_scriptsig(script_sig_bytes: bytes):
     return sig_der, sighash_type, pubkey
 
 def _get_utxo_script_bytes(utxo_entry) -> bytes:
+    # dict with tx_out object
     if isinstance(utxo_entry, dict):
-        if "tx_out" in utxo_entry and hasattr(utxo_entry["tx_out"], "script_pubkey"):
-            return utxo_entry["tx_out"].script_pubkey.serialize()
-        
-        if "tx_out" in utxo_entry and isinstance(utxo_entry["tx_out"], dict) and "script_pubkey" in utxo_entry["tx_out"]:
-            spk = utxo_entry["tx_out"]["script_pubkey"]
-            return bytes.fromhex(spk) if isinstance(spk, str) else (spk or b"")
-        
+        tx_out = utxo_entry.get("tx_out")
+        if tx_out is not None:
+            if hasattr(tx_out, "script_pubkey") and hasattr(tx_out.script_pubkey, "serialize"):
+                try:
+                    return tx_out.script_pubkey.serialize()
+                except Exception:
+                    pass
+                
+            # tx_out dict
+            if isinstance(tx_out, dict) and "script_pubkey" in tx_out:
+                spk = tx_out["script_pubkey"]
+                if isinstance(spk, (bytes, bytearray)):
+                    return bytes(spk)
+                if isinstance(spk, str):
+                    try:
+                        return bytes.fromhex(spk)
+                    except Exception:
+                        pass
+
+        # flat dict
         if "script_pubkey" in utxo_entry:
             spk = utxo_entry["script_pubkey"]
-            return bytes.fromhex(spk) if isinstance(spk, str) else (spk or b"")
-        
+            if isinstance(spk, (bytes, bytearray)):
+                return bytes(spk)
+            if isinstance(spk, str):
+                try:
+                    return bytes.fromhex(spk)
+                except Exception:
+                    pass
+
+    # object level (namedtuple/dataclass)
+    if hasattr(utxo_entry, "tx_out") and hasattr(utxo_entry.tx_out, "script_pubkey"):
+        spk_obj = utxo_entry.tx_out.script_pubkey
+        if hasattr(spk_obj, "serialize"):
+            try:
+                return spk_obj.serialize()
+            except Exception:
+                pass
+            
+        if isinstance(spk_obj, (bytes, bytearray)):
+            return bytes(spk_obj)
+
     if hasattr(utxo_entry, "script_pubkey"):
-        return utxo_entry.script_pubkey.serialize()
-    raise ValueError("Cannot extract script_pubkey bytes from UTXO entry")
+        spk_obj = utxo_entry.script_pubkey
+        if hasattr(spk_obj, "serialize"):
+            try:
+                return spk_obj.serialize()
+            except Exception:
+                pass
+            
+        if isinstance(spk_obj, (bytes, bytearray)):
+            return bytes(spk_obj)
+
+    raise ValueError("script_pubkey not found in UTXO entry")
 
 def _p2wpkh_script_code_from_spk(spk_bytes: bytes) -> bytes:
     if not is_p2wpkh_script(spk_bytes):

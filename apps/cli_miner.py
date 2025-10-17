@@ -21,7 +21,7 @@ except Exception:
 
 
 def _register_bootstrap_peers(network: Network) -> int:
-    fallback_nodes = tuple(getattr(CFG, "BOOTSTRAP_NODES", ()) or (CFG.BOOTSTRAP_NODE,))
+    fallback_nodes = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
     count = 0
     for peer in fallback_nodes:
         if not peer:

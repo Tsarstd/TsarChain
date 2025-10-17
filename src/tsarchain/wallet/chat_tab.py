@@ -770,7 +770,7 @@ class ChatTab:
                 if resp and resp.get("type") == "CHAT_REGISTERED":
                     self._chat_set_online_ui(True)
                     self.toast("Online •", kind="info")
-                    self._chat_schedule_next(getattr(CFG, "CHAT_POLL_INITIAL_MS", 4000))
+                    self._chat_schedule_next(CFG.CHAT_POLL_INITIAL_MS)
                 else:
                     self.toast(f"Failed Register: {resp}", kind="error")
 
@@ -1039,7 +1039,7 @@ class ChatTab:
             self._chat_poll_job = None
             return
         try:
-            default_delay = int(getattr(CFG, "CHAT_POLL_INTERVAL_MS", 2500))
+            default_delay = int(CFG.CHAT_POLL_INTERVAL_MS)
             delay = int(delay_ms if delay_ms is not None else default_delay)
             delay = max(delay, 500)
             self._chat_poll_job = self.root.after(delay, self._chat_poll)

@@ -176,7 +176,7 @@ class ChatManager:
             return
         now = self._now()
         rotated = False
-        rotate_after = getattr(CFG, "CHAT_SPK_ROTATE_INTERVAL_S", 0)
+        rotate_after = CFG.CHAT_SPK_ROTATE_INTERVAL_S
         created = int(inv.get("created") or 0)
         if rotate_after and created and now - created >= rotate_after:
             try:
@@ -200,7 +200,7 @@ class ChatManager:
 
     def _can_publish_prekeys(self, addr: str) -> bool:
         try:
-            interval = float(getattr(CFG, "CHAT_PUBLISH_MIN_INTERVAL_S", 0) or 0)
+            interval = float(CFG.CHAT_PUBLISH_MIN_INTERVAL_S or 0)
         except Exception:
             interval = 0.0
         if interval <= 0:
@@ -675,7 +675,7 @@ class ChatManager:
                 if not resp or resp.get("error"):
                     self._last_prekey_publish.pop(addr, None)
                 try:
-                    if getattr(CFG, "CHAT_PUBLISH_SELF_CHECK", False):
+                    if CFG.CHAT_PUBLISH_SELF_CHECK:
                         def _selfcheck(r):
                             r_type = (r or {}).get("type")
                             if r_type == "CHAT_PREKEY_BUNDLE":

@@ -26,10 +26,10 @@ def _send_to_peer(self, peer: tuple[str,int], payload: dict) -> None:
         s.settimeout(1.5)
         s.connect(peer)
         env = build_envelope(payload, self.node_ctx, extra={"pubkey": self.pubkey})
-        if getattr(CFG, "ENFORCE_HELLO_PUBKEY", False) or getattr(CFG, "ENVELOPE_REQUIRED", False):
+        if CFG.ENFORCE_HELLO_PUBKEY or CFG.ENVELOPE_REQUIRED:
             env["pubkey"] = self.pubkey
         raw = json.dumps(env).encode("utf-8")
-        if getattr(CFG, "P2P_ENC_REQUIRED", True):
+        if CFG.P2P_ENC_REQUIRED:
             chan = SecureChannel(
                 s, role="client",
                 node_id=self.node_id, node_pub=self.pubkey, node_priv=self.privkey,

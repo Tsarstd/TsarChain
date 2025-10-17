@@ -182,11 +182,11 @@ def setup_logging(
 
     # Get preference from CFG when argument is None
     if to_console is None:
-        to_console = bool(getattr(CFG, "LOG_TO_CONSOLE", True))
+        to_console = bool(CFG.LOG_TO_CONSOLE)
     if rotate_max_bytes is None:
-        rotate_max_bytes = int(getattr(CFG, "LOG_ROTATE_MAX_BYTES", 5_000_000))
+        rotate_max_bytes = int(CFG.LOG_ROTATE_MAX_BYTES)
     if backup_count is None:
-        backup_count = int(getattr(CFG, "LOG_BACKUP_COUNT", 3))
+        backup_count = int(CFG.LOG_BACKUP_COUNT)
 
     log_path = Path(log_file)
     if log_path.parent and not log_path.parent.exists():
@@ -194,8 +194,8 @@ def setup_logging(
 
     handlers: list[logging.Handler] = []
     as_json = str(CFG.LOG_FORMAT).lower() == "json"
-    rate_seconds_console = float(getattr(CFG, "LOG_RATE_LIMIT_SECONDS", 0.0))
-    rate_seconds_file    = float(getattr(CFG, "LOG_FILE_RATE_LIMIT_SECONDS", 0.0))
+    rate_seconds_console = float(CFG.LOG_RATE_LIMIT_SECONDS)
+    rate_seconds_file    = float(CFG.LOG_FILE_RATE_LIMIT_SECONDS)
 
     # --- File handler ---
     fh = RotatingFileHandler(
