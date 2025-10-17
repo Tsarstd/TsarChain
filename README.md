@@ -11,7 +11,7 @@
   <img alt="Network" src="https://img.shields.io/badge/Network-Devnet-orange">
 </p>
 
-# TsarChain — The Voice Sovereignty Monetary System
+# Long Live The Voice Sovereignty Monetary System
 
 *A proof-of-work, UTXO-based chain built to preserve human voice — uncensorable, durable, and verifiable.*
 
