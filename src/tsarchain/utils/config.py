@@ -36,7 +36,7 @@ WALLET_DATA_DIR     = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)
 TSAR                   = 100_000_000     # SAT-like unit (8 decimals)
 MAX_SUPPLY             = 250_000_000 * TSAR
 INITIAL_REWARD         = 250 * TSAR
-BLOCKS_PER_HALVING     = 250_000
+BLOCKS_PER_HALVING     = 235_000
 COINBASE_MATURITY      = 85
 MAX_COINBASE_EXTRADATA = 100
 
@@ -46,17 +46,17 @@ MAX_COINBASE_EXTRADATA = 100
 # =============================================================================
 INITIAL_BITS       = 0x1E00FFFF
 MAX_BITS           = 0x1F0FFFFF
-TARGET_BLOCK_TIME  = 30             # 30 Sec
-LWMA_WINDOW        = 70
-FUTURE_DRIFT       = 7200
-MTP_WINDOWS        = 11
+TARGET_BLOCK_TIME  = 37             # 37 Sec
+LWMA_WINDOW        = 75             # Block's
+FUTURE_DRIFT       = 7200           # 2 Hours
+MTP_WINDOWS        = 11             # Block's
 
 # === Consensus Hardening ===
 # CONSENSUS LIMITS (Blocks & TX)
-MAX_BLOCK_BYTES         = 1_000_000        # 1 MB
-MAX_TXS_PER_BLOCK       = 2_000
-MAX_SIGOPS_PER_BLOCK    = 10_000
-MAX_SIGOPS_PER_TX       = 2_000
+MAX_BLOCK_BYTES         = 1_200_000        # 1,2 MB
+MAX_TXS_PER_BLOCK       = 5_000
+MAX_SIGOPS_PER_BLOCK    = 40_000
+MAX_SIGOPS_PER_TX       = 6_000
 
 # FORK-CHOICE & REORG
 ENABLE_CHAINWORK_RULE   = True
@@ -70,9 +70,9 @@ DIFF_CLAMP_MAX_DOWN     = 0.5
 
 # Emergency Difficulty Adjustment (EDA)
 ENABLE_EDA              = True  # False for Prod
-EDA_WINDOW              = 60
-EDA_TRIGGER_RATIO       = 6.0
-EDA_EASE_MULTIPLIER     = 3.0
+EDA_WINDOW              = 48
+EDA_TRIGGER_RATIO       = 5.0
+EDA_EASE_MULTIPLIER     = 2.5
 
 
 # =============================================================================
@@ -103,7 +103,7 @@ CANONICAL_SEP   = (',', ':')
 
 # === Genesis ===
 ALLOW_AUTO_GENESIS       = 0
-GENESIS_HASH_HEX         = "0000003aa38b74ba796de275db3e96babdaf1a6e520209e13c14c2e2379809da"
+GENESIS_HASH_HEX         = "00000002363462f88cc7e0efd71005af0cf9449e98ed68bc64e5990719ea4920"
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"
 
 # === Voice Sovereignty Figures (ASCII only) ===

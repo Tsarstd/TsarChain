@@ -105,8 +105,6 @@ def _legacy_sighash(tx: "Tx", vin_index: int, script_code: bytes, sighash_type: 
             tin.script_sig = orig
 
 
-
-
 class TxPoolDB(BaseDatabase):
     def __init__(self, filepath: str = CFG.MEMPOOL_FILE, max_size_mb: int = 50):
         self.filepath = filepath
