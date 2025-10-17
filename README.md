@@ -17,11 +17,46 @@
 
 TsarChain is a minimal, pragmatic Layer-1 focused on **Voice Sovereignty**: protecting speech, art, and testimony so they can’t be silently erased. The project pairs a Python-first core with Rust accelerators where performance matters, and ships a local-first wallet so everyone can participate without gatekeepers.
 
+
 ---
 
-## ⚠️ Project Status (Snapshot)
+## Table of Contents
+- [Demo](#️-demo)
+- [Project Status](#️-project-status)
+- [Features at a Glance](#-features-at-a-glance)
+- [Why Voice Sovereignty](#-why-voice-sovereignty)
+- [Getting Started](#-getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Setup](#setup)
+  - [(Optional) Build Native Extension](#optional-build-native-extension)
+  - [Quickstart](#️-quickstart)
+- [Devnet Quick Config](#️-devnet-quick-config)
+- [Architecture](#️-architecture)
+- [Security Notes](#-security-notes)
+- [Contributing](#-contributing)
+- [Roadmap](#️-roadmap)
+- [License](#-license)
 
-### ✅ Implemented
+---
+
+## 🎞️ Demo
+
+- **Miner walkthrough (Mining GUI):**
+  - MP4: `assets/demo/Miner_gui_demo.mp4`
+
+<details>
+  <summary>Watch (Miner Gui) Demo</summary>
+  <video width="500" height="500" controls playsinline muted>
+    <source src="assets/demo/Miner_gui_demo.mp4" type="video/mp4">
+    Your browser doesn’t support inline video.
+  </video>
+</details>
+
+---
+
+## ⚠️ Project Status
+
+#### ✅ Implemented
 - Wallet generation (with SegWit Bech32)
 - Address prefix `tsar1`
 - Genesis block
@@ -36,7 +71,7 @@ TsarChain is a minimal, pragmatic Layer-1 focused on **Voice Sovereignty**: prot
 - Transaction & block validation
 - Chain validation
 
-### 🚧 In Development
+#### 🚧 In Development
 - Storage Node
 - Graffiti
 - Some Security
@@ -67,11 +102,11 @@ Platforms curate history; networks preserve it. TsarChain treats each message, a
 
 ## 🚀 Getting Started
 
-### Prerequisites
+#### Prerequisites
 - Python ≥ 3.11, Git
 - (Optional) Rust toolchain for native acceleration
 
-### Setup
+#### Setup
 ```bash
 python -m venv .venv
 # Windows: .venv\Scripts\activate
@@ -80,7 +115,7 @@ pip install -U pip wheel
 pip install -r requirements.txt
 ```
 
-### (Optional) Build Native Extension
+#### (Optional) Build Native Extension
 ```bash
 pip install maturin
 cd tsarcore_native
@@ -92,9 +127,13 @@ maturin develop --release --features parallel
 # -- Run Test --
 python tests/native_test.py
 ```
-> you can switch to **pure python** or with **rust acceleration** in [`src/tsarchain/utils/config.py`] > `NATIVE = 0` *or* `NATIVE = 1` 
+> You can Switch between pure‑Python and native acceleration in [`src/tsarchain/utils/config.py`](src/tsarchain/utils/config.py): set `NATIVE = 0` or `1`.
 
-### Run a Miner/Node
+---
+
+## 🏃🏻‍♂️ Quickstart
+
+**Run a Miner/Node**
 ```bash
 # GUI
 python apps/miner_gui.py
@@ -102,7 +141,7 @@ python apps/miner_gui.py
 python apps/cli_miner.py
 ```
 
-### Run the GUI Wallet
+**Run the GUI Wallet**
 ```bash
 python apps/kremlin.py
 ```
@@ -159,13 +198,27 @@ BOOTSTRAP_DEV      = (
 
 > To see the entire project configuration, you can check in [`src/tsarchain/utils/config.py`]
 
+
 ---
 
-## 🗺️ Roadmap (High Level)
+## 🏗️ Architecture
 
-- Smarter mempool relay + anti-DoS
-- Graffiti & Storage Node incentives
-- Wallet UX hardening and recovery tooling
+```
++-----------------+                     +------------------+
+|  Miner / Node   | <--- blocks/tx ---> |   Miner / Node   |
++-----------------+                     +------------------+
+         ^                                     ^
+         | RPC                                 | RPC
+         v                                     v
++-----------------+                     +-----------------+
+|  Kremlin Wallet |  <-- P2P chat -->   |  Kremlin Wallet |
++-----------------+                     +-----------------+
+
+- UTXO ledger with SegWit
+- LWMA difficulty adjustment
+- Bootstrap discovery + multi‑port range
+- Chat: X3DH + Double Ratchet + safety number
+```
 
 ---
 
@@ -174,6 +227,21 @@ BOOTSTRAP_DEV      = (
 - Chat privacy uses X3DH + Double Ratchet (simple implementation).
 - This is experimental software; there haven't been many network security audits, it was built by a **graphics design studio** with little experience in low-level engineering.
 - If you run validators/miners publicly, just **mining it!** **fork it!** **learn it!** **Look for vulnerabilities!** and see how blockchain work.
+
+---
+
+## 🫂 Contributing
+
+Pull requests are welcome. Please start with small, well‑scoped changes (docs, tests, logging), then propose larger work via issues. Be respectful: the mission is **Voice Sovereignty**.
+> I've provided a logging tool. For easier debugging, you can check `src/tsarchain/utils/tsar_logging.py`
+
+---
+
+## 🗺️ Roadmap
+
+- Smarter mempool relay + anti-DoS
+- Graffiti & Storage Node incentives
+- Wallet UX hardening and recovery tooling
 
 ---
 
