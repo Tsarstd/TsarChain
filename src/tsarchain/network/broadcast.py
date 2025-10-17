@@ -613,7 +613,7 @@ class Broadcast:
             test = dict(base)
             test["data"] = cur + [d]
             try:
-                enc = json.dumps(self._encode(test), separators=(',', ':')).encode("utf-8")
+                enc = json.dumps(self._encode(test), separators=CFG.CANONICAL_SEP).encode("utf-8")
             except Exception:
                 continue
             
