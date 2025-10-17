@@ -557,7 +557,6 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             return {"type": "CHAT_ACK", "status": "rate_limited", "scope": "address"}
 
         if not (frm and to and enc and (mid is not None) and ts):
-            log.debug("[process_message] CHAT_SEND reject bad_fields from %s -> %s mid=%s", frm, to, mid)
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_fields"}
 
         now = int(time.time())
@@ -565,7 +564,6 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "ts_drift"}
 
         if self._dedup_mid(frm, mid):
-            log.debug("[process_message] CHAT_SEND duplicate drop frm=%s mid=%s", frm, mid)
             return {"type": "CHAT_ACK", "status": "duplicate"}
 
         # ---- Encrypted only ----
@@ -577,38 +575,30 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             exp = self.chat_presence_pub.get(frm)
             
             if not exp:
-                log.debug("[process_message] CHAT_SEND reject no_presence frm=%s mid=%s", frm, mid)
                 return {"type": "CHAT_ACK", "status": "rejected", "reason": "no_presence"}
             if fs_hex != exp:
-                log.debug("[process_message] CHAT_SEND reject bad_from_static frm=%s mid=%s exp=%s got=%s", frm, mid, exp[:12], fs_hex[:12])
                 return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}
             
         except Exception:
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_enc"}
 
         if not (len(ct_hex) // 2 <= CFG.CHAT_MAX_CT_BYTES):
-            log.debug("[process_message] CHAT_SEND reject too_large frm=%s mid=%s size=%d", frm, mid, len(ct_hex)//2)
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "too_large"}
         
         if not (len(nonce_hex) == 24 and all(c in "0123456789abcdef" for c in nonce_hex)):
-            log.debug("[process_message] CHAT_SEND reject bad_nonce frm=%s mid=%s", frm, mid)
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_nonce"}
         
         if not (len(fp_hex) == 64 and all(c in "0123456789abcdef" for c in fp_hex)):
-            log.debug("[process_message] CHAT_SEND reject bad_from_pub frm=%s mid=%s", frm, mid)
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_pub"}
         
         if not (len(fs_hex) == 64 and all(c in "0123456789abcdef" for c in fs_hex)):
-            log.debug("[process_message] CHAT_SEND reject bad_from_static_len frm=%s mid=%s", frm, mid)
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}
         
         # routing authenticity signature verification (without decryption)
         if not chat_sig:
-            log.debug("[process_message] CHAT_SEND reject sig_required frm=%s mid=%s", frm, mid)
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "sig_required"}
         sp = (self.chat_spend_pub.get(frm) or "").strip().lower()
         if not sp:
-            log.debug("[process_message] CHAT_SEND reject no_spend_pub frm=%s mid=%s", frm, mid)
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "no_spend_pub"}
         try:
             vk = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(sp))
@@ -622,7 +612,6 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             ])
             vk.verify(bytes.fromhex(chat_sig), chat_bytes, ec.ECDSA(hashes.SHA256()))
         except Exception:
-            log.debug("[process_message] CHAT_SEND reject bad_sig frm=%s mid=%s", frm, mid)
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_sig"}
 
         # === Onion-lite relay (opsional) ===
@@ -632,7 +621,6 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             if not route:
                 log.debug("[process_message] CHAT_SEND relay requested but no peers available; falling back to direct queue")
             else:
-                log.debug("[process_message] CHAT_SEND relay route=%s used_opk=%s", route, "yes" if message.get("used_opk") else "no")
                 inner = {
                     "type": "CHAT_SEND_INNER",
                     "to": to,
@@ -666,7 +654,6 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         }, CFG.CHAT_TTL_S, CFG.CHAT_MAILBOX_MAX, CFG.CHAT_GLOBAL_QUEUE_MAX)
 
         if not ok:
-            log.debug("[process_message] CHAT_SEND reject mailbox_full frm=%s -> %s mid=%s", frm, to, mid)
             return {"type": "CHAT_ACK", "status": "mailbox_full"}
         try:
             self._enqueue_rcpt(frm, "delivered", mid, frm, to, ts)
@@ -674,7 +661,6 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             log.exception("[process_message] CHAT_SEND enqueue_rcpt error from %s", addr)
             pass
 
-        log.debug("[process_message] CHAT_SEND queued frm=%s -> %s mid=%s used_opk=%s", frm, to, mid, "yes" if message.get("used_opk") else "no")
         return {"type": "CHAT_ACK", "status": "queued"}
 
     elif mtype == "CHAT_PULL":
@@ -698,7 +684,6 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
 
         now = int(time.time())
         if abs(now - ts) > CFG.CHAT_TS_DRIFT_S:
-            log.debug("[process_message] CHAT_PULL reject ts_drift addr=%s now=%s ts=%s", me, now, ts)
             return {"type": "CHAT_NONE", "items": [], "error": "ts_drift"}
 
         spend_pk = self.chat_spend_pub.get(me)
@@ -824,6 +809,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         except Exception:
             log.debug("[process_message] CREATE_TX_MULTI bad fee_rate from %s", addr)
             fee_rate = CFG.DEFAULT_FEE_RATE_SATVB
+            
         force_inputs = message.get("force_inputs") or None
         
         if not from_addr or not outputs:
@@ -831,6 +817,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         try:
             tpl = self._handle_create_tx_multi(from_addr, outputs, fee_rate, force_inputs)
             return {"type": "TX_TEMPLATE", "data": tpl}
+        
         except Exception:
             log.exception("[process_message] CREATE_TX_MULTI error from %s", addr)
             return {"error": "CREATE_TX_MULTI failed"}
@@ -885,7 +872,6 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         return {"type":"STOR_ACK", **resp}
 
     else:
-        log.debug("[process_message] unknown type '%s' from %s", mtype, addr)
         return {"error": "Unknown message type"}
     
     # -------- helpers: relay ----------
