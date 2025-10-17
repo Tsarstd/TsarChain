@@ -41,8 +41,11 @@ TsarChain is a minimal, pragmatic Layer-1 focused on **Voice Sovereignty**: prot
 
 ## 🎞️ Demo
 
-- **Miner walkthrough (Mining GUI):**
-![Watch the demo](assets/demo/Miner_gui_demo.gif)
+- ***Miner walkthrough (Mining GUI):***
+  <details>
+    <summary>See Mining demo</summary>
+    <img src="assets/demo/Miner_gui_demo.gif" alt="Miner GUI demo" width="500" height="500">
+  </details>
 
 ---
 
