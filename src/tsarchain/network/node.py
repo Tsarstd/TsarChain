@@ -589,6 +589,7 @@ class Network:
                         recv_message(s, timeout=1)
                     except Exception:
                         pass
+                    
         except (socket.timeout, ConnectionRefusedError, OSError):
             return False
         except Exception:
@@ -596,8 +597,14 @@ class Network:
             return False
         finally:
             self._peer_last_dial[norm] = now
-
+            
+        try:
+            self.broadcast.send_mempool_to_peer(norm)
+        except Exception:
+            log.exception("[_attempt_hello] mempool push error to %s", norm)
+            
         return True
+    
     def _discover_peers(self):
         limit = max(1, int(getattr(CFG, "MAX_OUTBOUND_PEERS", 8)))
         found_peers: Set[Tuple[str, int]] = set()
@@ -1061,6 +1068,7 @@ class Network:
                 self.peer_scores.setdefault(peer_tuple, CFG.PEER_SCORE_START)
                 if advertised_height >= 0:
                     self._peer_best_height[peer_tuple] = advertised_height
+                    
             for cand in normalized_incoming:
                 if cand == peer_tuple:
                     continue
@@ -1073,6 +1081,17 @@ class Network:
                 if isinstance(port, int) and port > 0
             ]
             height = int(self.broadcast.blockchain.height)
+            
+            try:
+                peer_port = int(message.get("port", -1))
+            except Exception:
+                peer_port = -1
+            if isinstance(addr, tuple) and peer_port > 0:
+                dst = (addr[0], peer_port)
+                try:
+                    self.broadcast.send_mempool_to_peer(dst)
+                except Exception:
+                    log.exception("[_handle_hello] failed to push mempool to %s", dst)
 
         if peer_tuple:
             self._reward_peer(peer_tuple)
@@ -1181,7 +1200,7 @@ class Network:
                     "state": state,
                     "mempool": txs}}
             try:
-                enc = json.dumps(full_obj, separators=(',', ':'), ensure_ascii=False).encode("utf-8")
+                enc = json.dumps(full_obj, separators=CFG.CANONICAL_SEP, ensure_ascii=False).encode("utf-8")
             except Exception as e:
                 return {"type": "SYNC_REDIRECT", "reason": "serialize_failed", "detail": str(e)}
             hard_cap = min(CFG.FULL_SYNC_MAX_BYTES, CFG.MAX_MSG - len(CFG.NETWORK_MAGIC))

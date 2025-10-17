@@ -90,7 +90,7 @@ def _load_record(name: str) -> Optional[Dict]:
 
 def _store_record(name: str, data: Dict) -> None:
     env, db = _ensure_env()
-    payload = json.dumps(data, separators=(",", ":")).encode("utf-8")
+    payload = json.dumps(data, separators=CFG.CANONICAL_SEP).encode("utf-8")
 
     if env and db:
         with _LOCK:

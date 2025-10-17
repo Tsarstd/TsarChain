@@ -374,49 +374,6 @@ class Broadcast:
             log.exception("[receive_chain] Error receiving chain")
             return False
 
-    def _validate_incoming_chain(self, message: Dict[str, Any]) -> bool:
-        try:
-            chain_data = message.get("data", [])
-            if not chain_data:
-                return False
-
-            if chain_data[0].get("height") != 0:
-                return False
-
-            for i in range(1, len(chain_data)):
-                if chain_data[i].get("height") != chain_data[i - 1].get("height") + 1:
-                    return False
-                if chain_data[i].get("prev_block_hash") != chain_data[i - 1].get("hash"):
-                    return False
-            return True
-        except Exception:
-            log.exception("[_validate_incoming_chain] Error validating incoming chain")
-            return False
-
-    def _rebuild_utxo_from_chain_locked(self):
-        try:
-            self.utxodb.rebuild_from_chain(self.blockchain.chain)
-            self._clean_mempool_after_chain_replace()
-        except Exception:
-            log.exception("[_rebuild_utxo_from_chain_locked] Error rebuilding UTXO from chain")
-
-    def _clean_mempool_after_chain_replace(self):
-        try:
-            current_mempool = self.mempool.get_all_txs()
-            new_mempool = []
-            in_chain = set()
-            for block in self.blockchain.chain:
-                for block_tx in block.transactions:
-                    in_chain.add(block_tx.txid.hex() if getattr(block_tx, "txid", None) else "")
-
-            for tx in current_mempool:
-                if not (tx.txid.hex() in in_chain):
-                    new_mempool.append(tx)
-
-            self.mempool.save_pool([tx.to_dict() for tx in new_mempool])
-        except Exception:
-            log.exception("[_clean_mempool_after_chain_replace] Error cleaning mempool after chain replace")
-
     def receive_block(self, message: Dict[str, Any], addr, peers: Set[Tuple[str, int]]):
         block_id = None
         inflight = False
@@ -549,7 +506,6 @@ class Broadcast:
                     if not accepted:
                         self.seen_blocks.discard(block_id)
 
-
     def receive_tx(self, message: Dict[str, Any], addr, peers: Set[Tuple[str, int]]) -> bool:
         try:
             tx_data = message["data"]
@@ -576,8 +532,6 @@ class Broadcast:
         except Exception:
             log.exception("[receive_tx] Error processing incoming TX")
             return False
-
-    # ------------------- Legacy handlers (compatibility) -------------------
 
     def receive_utxos(self, message: Dict[str, Any]):
         try:
@@ -613,6 +567,106 @@ class Broadcast:
                 log.info("[receive_mempool] Mempool updated: %s new transactions", added_count)
         except Exception:
             log.exception("[receive_mempool] Error updating mempool")
+
+    def _validate_incoming_chain(self, message: Dict[str, Any]) -> bool:
+        try:
+            chain_data = message.get("data", [])
+            if not chain_data:
+                return False
+
+            if chain_data[0].get("height") != 0:
+                return False
+
+            for i in range(1, len(chain_data)):
+                if chain_data[i].get("height") != chain_data[i - 1].get("height") + 1:
+                    return False
+                if chain_data[i].get("prev_block_hash") != chain_data[i - 1].get("hash"):
+                    return False
+            return True
+        except Exception:
+            log.exception("[_validate_incoming_chain] Error validating incoming chain")
+            return False
+
+    def _rebuild_utxo_from_chain_locked(self):
+        try:
+            self.utxodb.rebuild_from_chain(self.blockchain.chain)
+            self._clean_mempool_after_chain_replace()
+        except Exception:
+            log.exception("[_rebuild_utxo_from_chain_locked] Error rebuilding UTXO from chain")
+
+
+    # ------------------------------ Mempool Snapshoot Gossip -------------------------------
+    
+    def _mempool_chunks(self, max_bytes: int) -> list[list[dict]]:
+        try:
+            txs = self.mempool.get_all_txs() or []
+        except Exception:
+            txs = []
+        chunks, cur = [], []
+        base = {"type": "MEMPOOL", "data": []}
+        for tx in txs:
+            try:
+                d = tx.to_dict() if hasattr(tx, "to_dict") else tx
+            except Exception:
+                continue
+            
+            test = dict(base)
+            test["data"] = cur + [d]
+            try:
+                enc = json.dumps(self._encode(test), separators=(',', ':')).encode("utf-8")
+            except Exception:
+                continue
+            
+            hard_cap = max(1024, CFG.MAX_MSG) - len(CFG.NETWORK_MAGIC)
+            if len(enc) > hard_cap and cur:
+                chunks.append(cur)
+                cur = [d]
+            else:
+                cur.append(d)
+        if cur:
+            chunks.append(cur)
+        return chunks
+
+    def send_mempool_to_peer(self, peer: tuple[str, int], *, min_interval_s: float | None = None) -> int:
+        if not hasattr(self, "_last_mempool_push"):
+            self._last_mempool_push = {}
+        ttl = float(min_interval_s or CFG.MEMPOOL_SYNC_MIN_INTERVAL)
+        now = time.time()
+        last = float(self._last_mempool_push.get(peer, 0.0))
+        if now - last < ttl:
+            return 0
+
+        sent = 0
+        hard_cap = max(1024, CFG.MAX_MSG) - len(CFG.NETWORK_MAGIC)
+        for chunk in self._mempool_chunks(hard_cap):
+            if not chunk:
+                continue
+            ok = self._send(peer, {
+                "type": "MEMPOOL",
+                "data": chunk,
+                "port": getattr(self, "port", 0),
+            })
+            if ok:
+                sent += len(chunk)
+        self._last_mempool_push[peer] = now
+        return sent
+
+    def _clean_mempool_after_chain_replace(self):
+        try:
+            current_mempool = self.mempool.get_all_txs()
+            new_mempool = []
+            in_chain = set()
+            for block in self.blockchain.chain:
+                for block_tx in block.transactions:
+                    in_chain.add(block_tx.txid.hex() if getattr(block_tx, "txid", None) else "")
+
+            for tx in current_mempool:
+                if not (tx.txid.hex() in in_chain):
+                    new_mempool.append(tx)
+
+            self.mempool.save_pool([tx.to_dict() for tx in new_mempool])
+        except Exception:
+            log.exception("[_clean_mempool_after_chain_replace] Error cleaning mempool after chain replace")
 
     # ------------------------------ Shutdown ------------------------------
 

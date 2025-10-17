@@ -3,6 +3,53 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: NIST-800-38D-AES-GCM
 
+'''
+=============================================================================
+ -------- ⚠ CONSENSUS-CRITICAL REMINDER — READ BEFORE EDITING ⚠ --------
+-----------------------------------------------------------------------------
+
+The values below **MUST BE IDENTICAL** across all nodes.
+Changing them may cause different block/tx validity (hard fork) unless otherwise stated.
+
+ 1) GENESIS / CHAIN IDENTITY
+   - GENESIS_HASH_HEX
+   - ALLOW_AUTO_GENESIS
+   - GENESIS_BLOCK_ID_DEFAULT  (fork jika berpengaruh pada perhitungan hash genesis)
+   
+ 2) MONETARY
+   - INITIAL_REWARD, BLOCKS_PER_HALVING, COINBASE_MATURITY
+   - MAX_SUPPLY (jika ditegakkan pada validasi)
+   - MAX_COINBASE_EXTRADATA
+   
+ 3) DIFFICULTY & TIMESTAMPS
+   - INITIAL_BITS, MAX_BITS, TARGET_BLOCK_TIME, LWMA_WINDOW
+   - FUTURE_DRIFT, MTP_WINDOWS
+   - ENABLE_DIFF_CLAMP, DIFF_CLAMP_MAX_UP, DIFF_CLAMP_MAX_DOWN
+   - ENABLE_EDA, EDA_WINDOW, EDA_TRIGGER_RATIO, EDA_EASE_MULTIPLIER
+   
+ 4) BLOCK & TRANSACTION LIMITS
+   - MAX_BLOCK_BYTES, MAX_TXS_PER_BLOCK
+   - MAX_SIGOPS_PER_BLOCK, MAX_SIGOPS_PER_TX
+   
+ 5) SCRIPT RULES / OP_RETURN / GRAFFITI
+   (For now, this section is not critical, because it is still under development.)
+   - OPRET_MAX_BYTES, OPRET_REQUIRE_LAST, OPRET_ONLY_ONE
+   - OPRET_ALLOW_PUSHDATA1, OPRET_ALLOW_PUSHDATA2
+   - MAX_STORAGE_OPRET, GRAFFITI_MAGIC
+   
+ 6) FORK-CHOICE & REORG
+   - ENABLE_CHAINWORK_RULE, ENABLE_REORG_LIMIT, REORG_LIMIT
+   
+ NOT CONSENSUS (safety differs between nodes):
+   port/BOOTSTRAP, timeout, connection limit, anti-DoS, logging/path,
+   toggle NATIVE, option UI/wallet.
+   
+ NETWORK ISOLATION (not a fork, but cannot connect to each other):
+   - DEFAULT_NET_ID / NET_ID_DEV / NET_ID_PROD, NETWORK_MAGIC
+
+=============================================================================
+'''
+
 import os
 import appdirs
 
@@ -188,11 +235,12 @@ TEMP_BAN_SECONDS             = 30          # temporary ban
 # === Full Sync guard ===
 ENABLE_FULL_SYNC            = FULL_SYNC_DEV if IS_DEV else FULL_SYNC_PROD
 FULL_SYNC_MAX_BLOCKS        = 10_000
-FULL_SYNC_MAX_BYTES         = 5120 * 1024   # 5 MB
-FULL_SYNC_MIN_INTERVAL      = 300           # seconds per peer
+FULL_SYNC_MAX_BYTES         = 5 * 1024 * 1024   # 5 MB
+FULL_SYNC_MIN_INTERVAL      = 300               # seconds per peer
 FULL_SYNC_BACKOFF_INITIAL   = 600
 FULL_SYNC_BACKOFF_MAX       = 3600
 MAX_MSG                     = FULL_SYNC_MAX_BYTES
+MEMPOOL_SYNC_MIN_INTERVAL   = 60
 
 HEADERS_BATCH_MAX           = 2_048
 HEADERS_LOCATOR_DEPTH       = 64
