@@ -966,8 +966,27 @@ class Blockchain:
 
                 if getattr(cur, "height", None) != getattr(prev, "height", -1) + 1:
                     return False
+                
                 if getattr(cur, "prev_block_hash", None) != prev.hash():
                     return False
+                
+                # --- Timestamp checks (consistency with validate_block) ---
+                try:
+                    now_ts = int(time.time())
+                    cur_ts = int(getattr(cur, "timestamp", 0) or 0)
+                    if cur_ts > now_ts + CFG.FUTURE_DRIFT:
+                        return False
+                    k = CFG.MTP_WINDOWS
+                    prefix = chain[:i]
+                    if prefix:
+                        window = prefix[-k:] if len(prefix) >= k else prefix
+                        times = sorted(int(getattr(b, "timestamp", 0) or 0) for b in window)
+                        mtp = times[len(times)//2] if times else 0
+                        if cur_ts < int(mtp):
+                            return False
+                except Exception:
+                    return False
+                
                 try:
                     expected_bits = self._expected_bits_on_prefix(chain[:i], int(getattr(cur, "height", i)))
                     got_bits = int(getattr(cur, "bits"))

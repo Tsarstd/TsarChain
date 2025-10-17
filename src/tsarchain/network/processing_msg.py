@@ -67,9 +67,16 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             peer_port = -1
         return (peer_port > 0) and ((addr[0], peer_port) in self.peers)
 
-    BOOTSTRAP_ALLOW = {"HELLO", "GET_FULL_SYNC", "FULL_SYNC"}
+    BOOTSTRAP_ALLOW = {"HELLO", "GET_FULL_SYNC", "FULL_SYNC", "GET_HEADERS", "HEADERS"}
     if (mtype in MINERS) and (mtype not in BOOTSTRAP_ALLOW) and (not _is_miner_sender()):
-        return {"error": "forbidden: miners-only endpoint"}
+        try:
+            peer_port = int(message.get("port", -1))
+            if peer_port > 0 and isinstance(addr, tuple):
+                self.peers.add((addr[0], peer_port))
+            else:
+                return {"error": "forbidden: miners-only endpoint"}
+        except Exception:
+            return {"error": "forbidden: miners-only endpoint"}
     
     if (mtype not in MINERS) and (mtype not in USER) and (mtype not in NODE_STORAGE):
         return {"error": "unknown type"}

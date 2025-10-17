@@ -48,7 +48,7 @@ INITIAL_BITS       = 0x1E00FFFF
 MAX_BITS           = 0x1F0FFFFF
 TARGET_BLOCK_TIME  = 30             # 30 Sec
 LWMA_WINDOW        = 70
-FUTURE_DRIFT       = 120
+FUTURE_DRIFT       = 7200
 MTP_WINDOWS        = 11
 
 # === Consensus Hardening ===
@@ -178,7 +178,7 @@ MAX_UTXO_ADDR_LEN  = 128
 NONCE_PER_SENDER_MAX         = 4096
 NONCE_GLOBAL_MAX             = 100_000     # total nonce entries of all senders
 
-HANDSHAKE_RL_PER_IP_BURST    = 30          # max 30 handshake
+HANDSHAKE_RL_PER_IP_BURST    = 50          # max 50 handshake
 HANDSHAKE_RL_PER_IP_WINDOW_S = 10          # /10 second
 TEMP_BAN_SECONDS             = 30          # temporary ban
 
