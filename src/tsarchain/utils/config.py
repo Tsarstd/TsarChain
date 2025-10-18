@@ -149,8 +149,8 @@ ZERO_HASH       = b"\x00" * 32
 CANONICAL_SEP   = (',', ':')
 
 # === Genesis ===
-ALLOW_AUTO_GENESIS       = 1
-GENESIS_HASH_HEX         = ""
+ALLOW_AUTO_GENESIS       = 0
+GENESIS_HASH_HEX         = "00000040b33ece3287bec48a5dfbfa914e8938fe3dda529beec554c7ba950ce9"
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"
 
 # === Voice Sovereignty Figures (ASCII only) ===
