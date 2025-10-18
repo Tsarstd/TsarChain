@@ -357,10 +357,7 @@ class KremlinWalletGUI(WalletsMixin):
         style.configure("Muted.TLabel", background=bg, foreground=muted)
         style.configure("Accent.TLabel", background=bg, foreground=accent)
         style.configure("Tsar.TButton", background=panel, foreground=fg, padding=6, bordercolor=border)
-        style.map(
-            "Tsar.TButton",
-            background=[("active", lighten(panel, 0.08)), ("pressed", lighten(panel, 0.12))],
-        )
+        style.map("Tsar.TButton", background=[("active", lighten(panel, 0.08)), ("pressed", lighten(panel, 0.12))])
         try:
             style.configure("Tsar.Vertical.TScrollbar", background=panel, troughcolor=bg)
         except Exception:
@@ -1542,7 +1539,7 @@ class KremlinWalletGUI(WalletsMixin):
             palette = getattr(self.theme_set, "palette", None)
             accent = self.accent
             muted = self.muted
-            success = palette.success if palette else "#31C47F"
+            success = palette.success if palette else "#319E4D"
             self.net_text.tag_configure("h2",  font=("Consolas", 17, "bold"), foreground=accent, spacing3=2)
             self.net_text.tag_configure("lab", font=("Consolas", 13, "bold"), foreground=accent)
             self.net_text.tag_configure("val", font=("Consolas", 11), foreground=muted)
@@ -1550,9 +1547,9 @@ class KremlinWalletGUI(WalletsMixin):
             self.net_text.tag_configure("sep", font=("Consolas", 11), foreground=accent)
             self.net_text.tag_configure("sep2", font=("Consolas", 11), foreground=muted)
             # Rank-specific styles for Top #10 miners
-            self.net_text.tag_configure("rank1", font=("Consolas", 17), foreground="#FFD700")  # Gold
-            self.net_text.tag_configure("rank2", font=("Consolas", 15), foreground="#C0C0C0")  # Silver
-            self.net_text.tag_configure("rank3", font=("Consolas", 13), foreground="#CD7F32")  # Bronze
+            self.net_text.tag_configure("rank1", font=("Consolas", 17), foreground="#CE961C")  # Gold
+            self.net_text.tag_configure("rank2", font=("Consolas", 15), foreground="#646464")  # Silver
+            self.net_text.tag_configure("rank3", font=("Consolas", 13), foreground="#96622D")  # Bronze
             
     def _net_text_enable(self) -> None:
         try:

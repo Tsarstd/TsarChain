@@ -438,9 +438,9 @@ class WalletsMixin:
 
     def _build_balance_block(self, parent: tk.Widget) -> Dict[str, tk.Label]:
         col_total = self.fg
-        col_spend = "#17c964"
-        col_immat = "#f5a524"
-        col_pend  = "#f1633f"
+        col_spend = "#098f43"
+        col_immat = "#a87625"
+        col_pend  = "#aa4e37"
 
         wrap = tk.Frame(parent, bg=self.panel_bg)
         wrap.pack(anchor="w", pady=(2, 4))

@@ -45,11 +45,11 @@ def _blend(color: str, target: str, factor: float) -> str:
 
 
 def lighten(color: str, amount: float) -> str:
-    return _blend(color, "#ffffff", amount)
+    return _blend(color, "#dfdede", amount)
 
 
 def darken(color: str, amount: float) -> str:
-    return _blend(color, "#000000", amount)
+    return _blend(color, "#1D1B1B", amount)
 
 
 # --------------------------------------------------------------------------- #
@@ -215,24 +215,24 @@ _BASE_MODES: Dict[str, Dict[str, str]] = {
         "card": "#161a1f",
         "fg": "#f2f5f7",
         "muted": "#a9b1ba",
-        "accent": "#ff6b00",
+        "accent": "#eb6709",
         "border": "#2a2f36",
         "success": "#31C47F",
         "warning": "#f59f45",
         "danger": "#f87171",
-        "info": "#38bdf8",
+        "info": "#1086d4",
     },
     "light": {
-        "bg": "#f6f7fb",
-        "panel_bg": "#e9edf4",
-        "surface": "#f1f4fa",
+        "bg": "#d4d2cc",
+        "panel_bg": "#adacaa",
+        "surface": "#979591",
         "surface_alt": "#e0e6f2",
-        "card": "#e9edf4",
+        "card": "#d1c3ae",
         "fg": "#16202b",
-        "muted": "#59616b",
-        "accent": "#2563eb",
-        "border": "#b8c2d3",
-        "success": "#1a9f63",
+        "muted": "#46515e",
+        "accent": "#eb6709",
+        "border": "#d1cec4",
+        "success": "#1f6948",
         "warning": "#f59b35",
         "danger": "#d3464d",
         "info": "#2072b8",
@@ -265,7 +265,7 @@ def _build_palette(mode: str) -> Palette:
 
 def _build_chat_theme(p: Palette) -> ChatTheme:
     bubble_peer = _blend(p.surface, p.accent, 0.12)
-    bubble_me = _blend(p.accent, "#ffffff", 0.25)
+    bubble_me = _blend(p.accent, "#a8a0a0", 0.25)
     return ChatTheme(
         mode=p.mode,
         bg=p.bg,
@@ -288,9 +288,9 @@ def _build_chat_theme(p: Palette) -> ChatTheme:
 
 
 def _build_explorer_theme(p: Palette) -> ExplorerTheme:
-    value_num = _blend(p.accent, "#f7e3a1", 0.45)
+    value_num = _blend(p.accent, "#e4b653", 0.45)
     value_id = _blend(p.info, "#ffffff", 0.35)
-    unconfirmed = _blend(p.warning, "#ffffff", 0.4)
+    unconfirmed = _blend(p.warning, "#e46352", 0.4)
     return ExplorerTheme(
         bg=p.bg,
         card_bg=p.surface,
