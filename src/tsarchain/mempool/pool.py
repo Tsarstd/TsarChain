@@ -354,6 +354,23 @@ class TxPoolDB(BaseDatabase):
                         log.warning("[validate_transaction] Error extracting amount from UTXO %s:%d", prev_txid_hex, prev_index)
                         return False
 
+            # Format TUPLE: {(txid, index): data}
+            if not found:
+                tuple_key = (prev_txid_hex, prev_index)
+                if tuple_key in utxo_set:
+                    found = True
+                    utxo_entry = utxo_set[tuple_key]
+                    try:
+                        amount = self._get_utxo_amount(utxo_entry)
+                    except ValueError:
+                        log.warning("[validate_transaction] Error extracting amount from tuple-key UTXO %s:%d", prev_txid_hex, prev_index)
+                        return False
+
+            if not found or utxo_entry is None:
+                self.last_error_reason = f"prevout_missing {prev_txid_hex}:{prev_index}"
+                log.warning("[validate_transaction] Missing prevout %s:%d", prev_txid_hex, prev_index)
+                return False
+
             # Coinbase maturity
             is_cb, born_height = self.utxo._get_utxo_meta(utxo_entry)
             if is_cb:

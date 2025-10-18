@@ -84,7 +84,7 @@ TSAR                   = 100_000_000     # SAT-like unit (8 decimals)
 MAX_SUPPLY             = 250_000_000 * TSAR
 INITIAL_REWARD         = 250 * TSAR
 BLOCKS_PER_HALVING     = 235_000
-COINBASE_MATURITY      = 85
+COINBASE_MATURITY      = 3
 MAX_COINBASE_EXTRADATA = 100
 
 
@@ -149,8 +149,8 @@ ZERO_HASH       = b"\x00" * 32
 CANONICAL_SEP   = (',', ':')
 
 # === Genesis ===
-ALLOW_AUTO_GENESIS       = 0
-GENESIS_HASH_HEX         = "0000000d20030f5260b375946baefd5898d197889cfbecbc17def890d3805b54"
+ALLOW_AUTO_GENESIS       = 1
+GENESIS_HASH_HEX         = ""
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"
 
 # === Voice Sovereignty Figures (ASCII only) ===

@@ -380,10 +380,20 @@ class UTXODB(BaseDatabase):
             return str(x)
 
         def _remove_prevout(snapshot: dict, prev_txid_hex: str, vout: int):
-            key = (prev_txid_hex, int(vout))
-            if key in snapshot:
-                snapshot.pop(key, None)
+            key_int = int(vout)
+
+            # Flat-string layout: "txid:vout"
+            key_str = f"{prev_txid_hex}:{key_int}"
+            if key_str in snapshot:
+                snapshot.pop(key_str, None)
                 return True
+
+            # Flat-tuple layout: (txid, vout)
+            key_tuple = (prev_txid_hex, key_int)
+            if key_tuple in snapshot:
+                snapshot.pop(key_tuple, None)
+                return True
+
             m = snapshot.get(prev_txid_hex)
             if isinstance(m, dict) and int(vout) in m:
                 try:
@@ -425,35 +435,41 @@ class UTXODB(BaseDatabase):
         def _insert_output(snapshot: dict, txid_hex: str, n: int, entry: dict, address: str | None):
             layout = None
             for k, v in snapshot.items():
+                if isinstance(k, str) and ":" in k:
+                    layout = "flat_string"
+                    break
                 if isinstance(k, tuple) and len(k) == 2:
                     layout = "flat_tuple"
                     break
-                
                 if isinstance(v, dict) and all(isinstance(_, int) for _ in v.keys()):
                     layout = "per_txid_dict"
                     break
-                
                 if isinstance(v, list):
                     layout = "per_address_list"
                     break
-                
+
+            if layout == "flat_string":
+                snapshot[f"{txid_hex}:{int(n)}"] = entry
+                return
+
             if layout == "flat_tuple":
                 snapshot[(txid_hex, int(n))] = entry
                 return
-            
+
             if layout == "per_txid_dict":
                 bucket = snapshot.setdefault(txid_hex, {})
                 if isinstance(bucket, dict):
                     bucket[int(n)] = entry
                     return
-                
+
             if layout == "per_address_list" and address:
                 bucket = snapshot.setdefault(address, [])
                 if isinstance(bucket, list):
                     bucket.append(entry)
                     return
-                
-            snapshot[(txid_hex, int(n))] = entry
+
+            # Default fallback: maintain flat-string layout
+            snapshot[f"{txid_hex}:{int(n)}"] = entry
 
         is_coinbase = bool(getattr(tx, "is_coinbase", False))
         txid_hex = _txid_hex(getattr(tx, "txid", None)) or getattr(tx, "txid_hex", lambda: None)()
