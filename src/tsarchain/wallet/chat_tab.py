@@ -27,7 +27,7 @@ class ChatTab:
         self.set_palette(palette or {})
         try:
             if hasattr(self.chat_mgr, "key_ttl_sec"):
-                self.chat_mgr.key_ttl_sec = getattr(self, "_chat_key_ttl_sec", 15*60)
+                self.chat_mgr.key_ttl_sec = getattr(self, "_chat_key_ttl_sec", 15 * 60)
         except Exception:
             pass
         

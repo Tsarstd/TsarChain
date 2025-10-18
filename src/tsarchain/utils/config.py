@@ -14,11 +14,11 @@ Changing them may cause different block/tx validity (hard fork) unless otherwise
  1) GENESIS / CHAIN IDENTITY
    - GENESIS_HASH_HEX
    - ALLOW_AUTO_GENESIS
-   - GENESIS_BLOCK_ID_DEFAULT  (fork jika berpengaruh pada perhitungan hash genesis)
+   - GENESIS_BLOCK_ID_DEFAULT
    
  2) MONETARY
    - INITIAL_REWARD, BLOCKS_PER_HALVING, COINBASE_MATURITY
-   - MAX_SUPPLY (jika ditegakkan pada validasi)
+   - MAX_SUPPLY
    - MAX_COINBASE_EXTRADATA
    
  3) DIFFICULTY & TIMESTAMPS
@@ -84,7 +84,7 @@ TSAR                   = 100_000_000     # SAT-like unit (8 decimals)
 MAX_SUPPLY             = 250_000_000 * TSAR
 INITIAL_REWARD         = 250 * TSAR
 BLOCKS_PER_HALVING     = 235_000
-COINBASE_MATURITY      = 65
+COINBASE_MATURITY      = 10
 MAX_COINBASE_EXTRADATA = 100
 
 
@@ -149,8 +149,8 @@ ZERO_HASH       = b"\x00" * 32
 CANONICAL_SEP   = (',', ':')
 
 # === Genesis ===
-ALLOW_AUTO_GENESIS       = 0
-GENESIS_HASH_HEX         = "000000d4310a99d27119a4fb2a28a26dac077c0e1a240654a16feaede7ce6021"
+ALLOW_AUTO_GENESIS       = 1
+GENESIS_HASH_HEX         = ""
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"
 
 # === Voice Sovereignty Figures (ASCII only) ===

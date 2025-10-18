@@ -27,7 +27,7 @@ from tsarchain.wallet.send_service import SendService
 from tsarchain.wallet.send_tab import SendTab
 from tsarchain.wallet.tx_history import HistoryService
 from tsarchain.wallet.explorer_tab import ExplorePanel
-from tsarchain.wallet.data_security import list_addresses_in_keystore
+from tsarchain.wallet.data_security import list_addresses_in_keystore, WALLET_FILE
 from tsarchain.wallet.ui_utils import center_window
 
 # ---------------- Local Project (With Node) ----------------
@@ -103,47 +103,83 @@ def sat_to_tsar(amount_satoshi: Optional[int]) -> str:
     return f"{s} TSAR"
 
 
-# ---------------- Bootstrap Lock Screen ----------------
-class BootstrapLockscreen(tk.Toplevel):
+# ---------------- Password Lock Screen ----------------
+class PasswordLockscreen(tk.Toplevel):
 
     def __init__(self, root: tk.Tk):
         super().__init__(root)
-        self.result: Optional[Tuple[str, int]] = None
+        self.result: Optional[str] = None
         self.configure(bg="#121212")
-        self.geometry("820x540")
-        self.title("TsarChain Bootstrap Setup")
+        self.geometry("1070x700")
+        self.title("Unlock Wallet")
+        self.resizable(False, False)
 
         lbl = tk.Label(
             self,
-            text="Enter Bootstrap IP:Port\n(or Cancel for default)",
+            text="Enter the keystore password to open the wallet.",
             bg="#121212",
             fg="#ff5e00",
             font=("Consolas", 16, "bold"),
         )
-        lbl.pack(pady=30)
+        lbl.pack(pady=(40, 12))
 
-        self.entry = tk.Entry(self, font=("Consolas", 14), width=30, bg="#121212", fg="#ff5e00")
-        self.entry.pack(pady=20)
+        self.entry = tk.Entry(self, font=("Consolas", 14), width=32, bg="#0f0f0f", fg="#ff5e00", show="*")
+        self.entry.pack(pady=12)
+        self.entry.bind("<Return>", self.on_unlock)
+
+        self.error_var = tk.StringVar(value="")
+        tk.Label(
+            self,
+            textvariable=self.error_var,
+            bg="#121212",
+            fg="#ff5e00",
+            font=("Consolas", 11),
+        ).pack(pady=(0, 18))
 
         btn_frame = tk.Frame(self, bg="#121212")
-        btn_frame.pack(pady=20)
+        btn_frame.pack(pady=10)
 
-        tk.Button(btn_frame, text="OK", font=("Consolas", 12), bg="#ff5e00", fg="#fff",
-                  command=self.on_ok).pack(side=tk.LEFT, padx=10)
-        tk.Button(btn_frame, text="Cancel", font=("Consolas", 12), bg="#444", fg="#fff",
-                  command=self.on_cancel).pack(side=tk.LEFT, padx=10)
+        tk.Button(
+            btn_frame,
+            text="Unlock",
+            font=("Consolas", 12),
+            bg="#ff5e00",
+            fg="#fff",
+            command=self.on_unlock,
+        ).pack(side=tk.LEFT, padx=10)
+        
+        tk.Button(
+            btn_frame,
+            text="Exit",
+            font=("Consolas", 12),
+            bg="#444",
+            fg="#fff",
+            command=self.on_cancel,
+        ).pack(side=tk.LEFT, padx=10)
 
         center_window(self, root)
+        try:
+            self.entry.focus_set()
+        except Exception:
+            pass
 
-    def on_ok(self) -> None:
-        entry = self.entry.get().strip()
-        if entry:
+    def on_unlock(self, _event=None) -> None:
+        pwd = self.entry.get().strip()
+        if not pwd:
+            self.error_var.set("Password is required.")
+            return
+        try:
+            _ = list_addresses_in_keystore(pwd)
+        except Exception:
+            self.error_var.set("Wrong password or keystore cannot be opened.")
             try:
-                ip, port_str = entry.split(":")
-                self.result = (ip.strip(), int(port_str))
+                self.entry.select_range(0, tk.END)
+                self.entry.focus_set()
             except Exception:
-                messagebox.showerror("Invalid", "Format must ip:port")
-                return
+                pass
+            return
+
+        self.result = pwd
         self.destroy()
 
     def on_cancel(self) -> None:
@@ -151,15 +187,27 @@ class BootstrapLockscreen(tk.Toplevel):
         self.destroy()
 
 
-def show_bootstrap_lockscreen(root: tk.Tk) -> Optional[Tuple[str, int]]:
-    lock = BootstrapLockscreen(root)
+def should_show_password_lock() -> bool:
+    try:
+        if load_registry():
+            return True
+    except Exception:
+        pass
+    try:
+        return os.path.exists(WALLET_FILE) and os.path.getsize(WALLET_FILE) > 0
+    except Exception:
+        return False
+
+
+def show_password_lockscreen(root: tk.Tk) -> Optional[str]:
+    lock = PasswordLockscreen(root)
     root.wait_window(lock)
     return lock.result
 
 
 # ---------------- Main GUI ----------------
 class KremlinWalletGUI(WalletsMixin):
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: tk.Tk, initial_keystore_password: Optional[str] = None):
         self.root = root
 
         # 0) Theme & styles
@@ -172,7 +220,7 @@ class KremlinWalletGUI(WalletsMixin):
         self._busy_setup()
 
         root.title("Kremlin")
-        root.geometry("1070x600")
+        root.geometry("1070x700")
 
         # 1) RPC client — MUST be initialized before services/tabs that use RPC
         self.rpc = NodeClient(
@@ -211,6 +259,12 @@ class KremlinWalletGUI(WalletsMixin):
         self.contacts: Dict[str, str] = {}
         self._ks_pwd_cache: Optional[Tuple[str, float]] = None
         self._ks_pwd_ttl_sec = 15 * 60
+        if initial_keystore_password:
+            self._ks_pwd_cache = (initial_keystore_password, time.time() + self._ks_pwd_ttl_sec)
+
+        self._conn_online = False
+        self._balance_poll_interval_ms = 15000
+        self._balance_poll_job: Optional[str] = None
 
         # 4) Theme vars & tab state
         self.themes = {
@@ -254,10 +308,7 @@ class KremlinWalletGUI(WalletsMixin):
             busy_request=getattr(self, "_request_locked", None),
             palette={"bg": self.bg, "panel_bg": self.panel_bg, "fg": self.fg,
                     "muted": self.muted, "accent": self.accent, "border": "#2a2f36", "card": self.panel_bg},
-            on_sent=lambda addr_from: (
-                hasattr(self, "refresh_wallet_balance") and
-                self.refresh_wallet_balance(addr_from, getattr(self, "last_balance_widget", None))
-            ),
+            on_sent=lambda addr_from: self._handle_balance_refresh_request(addresses=[addr_from], immediate=True),
         )
 
         # 7) Build frames/tab
@@ -356,7 +407,6 @@ class KremlinWalletGUI(WalletsMixin):
 
     def _bind_shortcuts(self) -> None:
         self.root.bind_all("<Control-n>", lambda _e: self.create_wallet())
-        self.root.bind_all("<Control-r>", lambda _e: self.refresh_all_wallets())
         self.root.bind_all("<Control-i>", lambda _e: self.import_by_mnemonic())
         self.root.bind_all("<Control-b>", lambda _e: self.backup_keystore())
         self.root.bind_all("<Control-o>", lambda _e: self.load_wallet_file())
@@ -559,7 +609,6 @@ class KremlinWalletGUI(WalletsMixin):
         if key.startswith("bal:") or key == "wallet_balances":
             return "Taking balance..."
         return {
-            "refresh_all": "Refreshing all balances...",
             "send": "Sending transactions...",
             "netinfo": "Loading network info..",
             "history_list": "Loading transaction history...",
@@ -570,7 +619,6 @@ class KremlinWalletGUI(WalletsMixin):
         if key.startswith("bal:") or key == "wallet_balances":
             return "balance is still being processed .. please wait..Bro"
         return {
-            "refresh_all": "Balance refresh is still in progress...",
             "send": "Transaction is still being sent...",
             "netinfo": "Network info retrieval is still in progress...",
             "history_list": "History is still loading...",
@@ -579,13 +627,29 @@ class KremlinWalletGUI(WalletsMixin):
 
     # ---------------- Connection status (UI + heartbeat) ----------------
     def _set_conn_status(self, ok: bool) -> None:
+        prev = getattr(self, "_conn_online", False)
+        self._conn_online = bool(ok)
         try:
-            if ok:
+            if self._conn_online:
                 self.conn_status.config(text="Connected", fg="#17c964")
             else:
-                self.conn_status.config(text="Offline",   fg="#d41c1c")
+                self.conn_status.config(text="Offline", fg="#d41c1c")
         except Exception:
             pass
+
+        if self._conn_online and not prev:
+            if self._balance_poll_job:
+                try:
+                    self.root.after_cancel(self._balance_poll_job)
+                except Exception:
+                    pass
+                self._balance_poll_job = None
+            if getattr(self, "wallets", []):
+                def _reschedule() -> None:
+                    self._schedule_balance_refresh()
+                self._request_balance_update(on_complete=_reschedule)
+            else:
+                self._schedule_balance_refresh()
 
     def _start_conn_heartbeat(self, interval_ms: int = 10000) -> None:
         self._conn_hb_interval = int(max(1000, interval_ms))
@@ -618,6 +682,54 @@ class KremlinWalletGUI(WalletsMixin):
             self._conn_hb_job = self.root.after(600, _tick)
         except Exception:
             pass
+
+    def _schedule_balance_refresh(self, delay_ms: Optional[int] = None) -> None:
+        if delay_ms is None:
+            delay_ms = self._balance_poll_interval_ms
+        delay = int(max(0, delay_ms))
+        if self._balance_poll_job:
+            try:
+                self.root.after_cancel(self._balance_poll_job)
+            except Exception:
+                pass
+        try:
+            self._balance_poll_job = self.root.after(delay, self._run_balance_poll)
+        except Exception:
+            self._balance_poll_job = None
+
+    def _run_balance_poll(self) -> None:
+        self._balance_poll_job = None
+        if not self._conn_online:
+            self._schedule_balance_refresh()
+            return
+        if not getattr(self, "wallets", []):
+            self._schedule_balance_refresh()
+            return
+
+        def _reschedule() -> None:
+            self._schedule_balance_refresh()
+
+        self._request_balance_update(on_complete=_reschedule)
+
+    def _handle_balance_refresh_request(
+        self,
+        addresses: Optional[Sequence[str]] = None,
+        immediate: bool = False,
+    ) -> None:
+        addrs = [a for a in addresses if a] if addresses else None
+
+        if immediate:
+            if self._conn_online:
+                self._request_balance_update(addresses=addrs)
+                if self._balance_poll_job is None:
+                    self._schedule_balance_refresh()
+            return
+
+        if self._conn_online:
+            if addrs:
+                self._request_balance_update(addresses=addrs)
+            if self._balance_poll_job is None:
+                self._schedule_balance_refresh()
 
     # ---------------- Send Tab ----------------
     def _build_send_frame(self) -> None:
@@ -1867,14 +1979,6 @@ class KremlinWalletGUI(WalletsMixin):
             self.send_tab.on_activated()
         except Exception:
             pass
-        try:
-            self.root.after(0, self.refresh_all_wallets)
-        except Exception:
-            try:
-                self.refresh_all_wallets()
-            except Exception:
-                pass
-        
     
     def show_graffiti_frame(self) -> None:
         self._hide_all_frames()
@@ -2116,10 +2220,14 @@ if __name__ == "__main__":
     root = tk.Tk()
     try:
         root.withdraw()
-        result = show_bootstrap_lockscreen(root)
-        globals()["manual_bootstrap"] = result if result else None
+        initial_password: Optional[str] = None
+        if should_show_password_lock():
+            initial_password = show_password_lockscreen(root)
+            if initial_password is None:
+                root.destroy()
+                sys.exit(0)
         root.deiconify()
-        app = KremlinWalletGUI(root)
+        app = KremlinWalletGUI(root, initial_keystore_password=initial_password)
         root.mainloop()
 
     except Exception as e:

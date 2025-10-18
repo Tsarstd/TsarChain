@@ -8,7 +8,7 @@ import json
 import time
 import tkinter as tk
 from tkinter import messagebox, scrolledtext, Toplevel, filedialog, simpledialog, ttk
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 from datetime import datetime
 
 # ---------------- Local Project (Wallet Only) ----------------
@@ -22,8 +22,10 @@ from tsarchain.wallet.data_security import (
     ensure_wallet_registry,
     load_wallet_registry,
     save_wallet_registry,
+    WALLET_FILE,
 )
 from tsarchain.wallet.ui_utils import center_window
+from tsarchain.wallet.tx_history import HistoryService
 
 # ---------------- Local Project (With Node) ----------------
 from ..utils.tsar_logging import get_ctx_logger
@@ -275,9 +277,10 @@ class WalletsMixin:
 
         self.actions_mb = ttk.Menubutton(left, text="Actions")
         act_menu = tk.Menu(self.actions_mb, tearoff=False)
-        act_menu.add_command(label="Refresh All",        command=self.refresh_all_wallets, accelerator="Ctrl+R")
         act_menu.add_command(label="Clear balance cache", command=self.clear_balance_cache)
         act_menu.add_command(label="Sync Keystore",      command=self.sync_from_keystore, accelerator="Ctrl+S")
+        act_menu.add_separator()
+        act_menu.add_command(label="Reset Data",         command=self.reset_wallet_data)
         self.actions_mb["menu"] = act_menu
         self.actions_mb.pack(side=tk.LEFT, padx=6)
 
@@ -340,16 +343,6 @@ class WalletsMixin:
 
             btns = tk.Frame(card, bg=self.panel_bg)
             btns.pack(anchor="e", pady=(6, 0))
-
-            check_btn = tk.Button(
-                btns, text="Check Balance",
-                command=lambda a=addr, bl=bal_labels: self.refresh_wallet_balance_locked(a, bl, None),
-                bg="#d9d9d9", fg="#1a1a1a", bd=0, padx=12, pady=5,
-                activebackground="#cfcfcf", activeforeground="#1a1a1a",
-                highlightthickness=0, cursor="hand2"
-            )
-            check_btn.pack(side=tk.LEFT, padx=(0,6))
-            setattr(card, "_check_btn", check_btn)
 
             tk.Button(
                 btns, text="Copy", command=lambda a=addr: self.copy_to_clipboard(a),
@@ -592,6 +585,136 @@ class WalletsMixin:
             self._toast("Balance cache cleared", ms=1400, kind="info")
         except Exception:
             log.debug("[clear_balance_cache] cannot clear cache file:", exc_info=True)
+
+    def reset_wallet_data(self) -> None:
+        warning = (
+            "Data Reset will erase the encrypted keystore (.enc), wallet list, and local cache from this device.\n"
+            "All saved addresses will be lost unless you have exported a keystore (.enc) backup.\n\n"
+            "Make sure you have a backup copy before continuing.\n"
+            "Are You Sure ?"
+        )
+        if not messagebox.askyesno("Reset Wallet Data", warning, icon="warning"):
+            return
+
+        pwd = simpledialog.askstring(
+            "Confirm Reset",
+            "Enter keystore password to confirm.",
+            show="*",
+        )
+        if pwd is None:
+            try:
+                self._toast("Reset cancelled.", kind="warn")
+            except Exception:
+                pass
+            return
+        pwd = pwd.strip()
+        try:
+            list_addresses_in_keystore(pwd)
+        except Exception as exc:
+            messagebox.showerror(
+                "Reset cancelled.",
+                f"Wrong password or keystore cannot be opened.\n\nDetails: {exc}",
+            )
+            return
+        finally:
+            try:
+                Security.secure_erase(pwd)
+            except Exception:
+                pass
+
+        existing_wallets = list(getattr(self, "wallets", []) or [])
+        removed_labels: list[str] = []
+        errors: list[str] = []
+
+        def _remove_path(path: Optional[str], label: str) -> None:
+            if not path:
+                return
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+                    removed_labels.append(label)
+            except Exception as exc:
+                errors.append(f"{label}: {exc}")
+
+        _remove_path(WALLET_FILE, "Keystore")
+        _remove_path(CFG.REGISTRY_PATH, "Wallet registry")
+        bal_cache_path = getattr(self, "_bal_cache_path", None)
+        _remove_path(bal_cache_path, "Balance cache")
+
+        cleared_hist = 0
+        for addr in existing_wallets:
+            try:
+                if HistoryService.cache_clear(addr):
+                    cleared_hist += 1
+            except Exception:
+                pass
+
+        try:
+            self.wallets = []
+        except Exception:
+            self.wallets = []
+        try:
+            save_registry(self.wallets)
+        except Exception:
+            log.exception("[reset_wallet_data] cannot persist empty registry", exc_info=True)
+
+        if hasattr(self, "_bal_cache"):
+            self._bal_cache = {}
+        if hasattr(self, "_ks_pwd_cache"):
+            self._ks_pwd_cache = None
+
+        try:
+            self._wallets_after_change()
+        except Exception:
+            log.exception("[reset_wallet_data] cannot refresh wallet views", exc_info=True)
+            try:
+                self._wallets_update_mode()
+            except Exception:
+                pass
+
+        if hasattr(self, "contact_mgr"):
+            try:
+                self.contact_mgr._contacts = {}
+            except Exception:
+                pass
+        if hasattr(self, "contacts"):
+            try:
+                self.contacts = {}
+            except Exception:
+                pass
+        if hasattr(self, "_contact_pairs"):
+            try:
+                self._contact_pairs = []
+            except Exception:
+                pass
+        if hasattr(self, "_refresh_contacts_ui"):
+            try:
+                self._refresh_contacts_ui()
+            except Exception:
+                pass
+
+        summary_lines = []
+        if removed_labels:
+            summary_lines.append("File dihapus: " + ", ".join(removed_labels))
+        if cleared_hist:
+            summary_lines.append(f"Riwayat lokal yang dibersihkan: {cleared_hist}")
+        if not summary_lines:
+            summary_lines.append("Tidak ada file yang perlu dihapus.")
+
+        if errors:
+            messagebox.showwarning(
+                "Reset Data selesai dengan catatan",
+                "\n".join(summary_lines + ["", "Peringatan:", *errors]),
+            )
+        else:
+            messagebox.showinfo(
+                "Reset Data selesai",
+                "\n".join(summary_lines + ["", "Wallet siap digunakan ulang."]),
+            )
+        try:
+            self._toast("Reset data selesai.", kind="info")
+        except Exception:
+            pass
 
     # ===================== WALLET ACTIONS =====================
 
@@ -853,21 +976,6 @@ class WalletsMixin:
             log.debug("[_show_mnemonic_dialog] cannot set topmost attribute", exc_info=True)
             pass
 
-    # ------- Widget locker (collect) -------
-    def _wallet_action_widgets(self) -> list[tk.Widget]:
-        widgets: list[tk.Widget] = []
-        if getattr(self, "actions_mb", None):
-            widgets.append(self.actions_mb)
-        try:
-            for card in getattr(self, "wallet_list_frame", tk.Frame()).winfo_children():
-                btn = getattr(card, "_check_btn", None)
-                if btn:
-                    widgets.append(btn)
-        except Exception:
-            log.debug("[_wallet_action_widgets] Cannot collect wallet action widgets:", exc_info=True)
-            pass
-        return widgets
-
     # ------- Create/Import/Export/Backup/Delete -------
     def create_wallet(self) -> None:
         theme = {"bg": self.bg, "panel_bg": self.panel_bg, "fg": self.fg, "muted": self.muted, "accent": self.accent}
@@ -1111,132 +1219,103 @@ class WalletsMixin:
 
     # ===================== BALANCE HELPERS =====================
 
-    def refresh_wallet_balance(self, addr: str, label_widget) -> None:
-        def on_bal(resp: Optional[Dict[str, Any]]) -> None:
+    def _notify_balance_refresh(self, addresses: Optional[Sequence[str]] = None, immediate: bool = False) -> None:
+        handler = getattr(self, "_handle_balance_refresh_request", None)
+        if callable(handler):
             try:
-                data = self._normalize_balance_resp(resp, target_addr=addr)
-                if isinstance(label_widget, dict):
-                    self._update_balance_block(label_widget, data)
-                else:
-                    label_widget.config(text=self._format_balance_ui(data))
+                handler(addresses=addresses, immediate=immediate)
             except Exception:
-                log.debug("[refresh_wallet_balance] balance render error:", exc_info=True)
-                zero = {"balance": 0, "spendable": 0, "immature": 0,
-                        "pending_outgoing": 0, "maturity": CFG.COINBASE_MATURITY}
-                if isinstance(label_widget, dict):
-                    self._update_balance_block(label_widget, zero)
-                else:
-                    label_widget.config(text=self._format_balance_ui(zero))
+                log.debug("[_notify_balance_refresh] Cannot forward balance refresh request", exc_info=True)
 
-        self.rpc_send({"type": "GET_BALANCES", "addresses": [addr]}, on_bal)
+    def _collect_balance_targets(self, addresses: Optional[Sequence[str]] = None) -> list[tuple[str, dict]]:
+        targets: list[tuple[str, dict]] = []
+        allowed = None
+        if addresses:
+            allowed = {str(a).strip().lower() for a in addresses if a}
 
-    def refresh_wallet_balance_locked(self, addr: str, label_widget, btn: tk.Widget) -> None:
-        def on_bal(resp):
-            try:
-                data = self._normalize_balance_resp(resp, target_addr=addr)
-                if data is None:
-                    self._toast("No Connection!!", kind="warn")
-                    return
-                if isinstance(label_widget, dict):
-                    self._update_balance_block(label_widget, data)
-                else:
-                    label_widget.config(text=self._format_balance_ui(data))
-            except Exception:
-                log.debug("[refresh_wallet_balance_locked] balance render error:", exc_info=True)
-                zero = {"balance": 0, "spendable": 0, "immature": 0,
-                        "pending_outgoing": 0, "maturity": CFG.COINBASE_MATURITY}
-                if isinstance(label_widget, dict):
-                    self._update_balance_block(label_widget, zero)
-                else:
-                    label_widget.config(text=self._format_balance_ui(zero))
+        try:
+            cards = getattr(self, "wallet_list_frame", tk.Frame()).winfo_children()
+        except Exception:
+            cards = []
 
-        if getattr(self, "_request_locked", None):
-            self._request_locked(
-                "wallet_balances",
-                self._wallet_action_widgets(),
-                {"type": "GET_BALANCES", "addresses": [addr]},
-                on_bal,
-            )
-        else:
-            self.rpc_send({"type": "GET_BALANCES", "addresses": [addr]}, on_bal)
-
-    def refresh_all_wallets(self) -> None:
-        if not hasattr(self, "actions_mb"):
-            self.actions_mb = None
-        widgets = self._wallet_action_widgets()
-        if not self._busy_start("wallet_balances", widgets):
-            return
-
-        cards = list(self.wallet_list_frame.winfo_children())
-        addrs_and_labels: list[tuple[str, object]] = []
         for card in cards:
-            try:
-                addr = card.winfo_children()[0].cget("text")
-                bal_labels = getattr(card, "_bal_labels", None)
-                addr = getattr(card, "_address", None)
-                if not addr and isinstance(bal_labels, dict):
-                    addr = bal_labels.get("_address")
-                if addr and bal_labels:
-                    addrs_and_labels.append((addr, bal_labels))
-            except Exception:
-                log.exception("[refresh_all_wallets] cannot collect address from card", exc_info=True)
+            bal_labels = getattr(card, "_bal_labels", None)
+            addr = getattr(card, "_address", None)
+            if not addr and isinstance(bal_labels, dict):
+                addr = bal_labels.get("_address")
+            if not addr or bal_labels is None:
                 continue
+            addr_norm = str(addr).strip()
+            if allowed is not None and addr_norm.lower() not in allowed:
+                continue
+            targets.append((addr_norm, bal_labels))
+        return targets
 
-        if not addrs_and_labels:
-            self._busy_end("wallet_balances")
+    def _request_balance_update(
+        self,
+        addresses: Optional[Sequence[str]] = None,
+        on_complete: Optional[Callable[[], None]] = None,
+    ) -> None:
+        targets = self._collect_balance_targets(addresses)
+        if not targets:
+            if on_complete:
+                try:
+                    on_complete()
+                except Exception:
+                    pass
             return
 
-        addresses = [a for a, _ in addrs_and_labels]
+        addr_map: Dict[str, list[dict]] = {}
+        for addr, labels in targets:
+            addr_map.setdefault(addr, []).append(labels)
 
-        def _fallback_per_addr():
-            CONCURRENCY = 4
-            queue = list(addrs_and_labels)
-            active = {"n": 0}
-            pending = {"n": len(queue)}
+        uniq_addrs = list(addr_map.keys())
 
-            def pump():
-                while active["n"] < CONCURRENCY and queue:
-                    addr, labels = queue.pop(0)
-                    active["n"] += 1
+        def zero_template() -> Dict[str, int]:
+            return {
+                "balance": 0,
+                "spendable": 0,
+                "immature": 0,
+                "pending_outgoing": 0,
+                "maturity": CFG.COINBASE_MATURITY,
+            }
 
-                    def _cb(resp: Optional[Dict[str, Any]], a=addr, lbls=labels):
-                        try:
-                            data = self._normalize_balance_resp(resp, target_addr=a)
-                            self._update_balance_block(lbls, data)
-                        finally:
-                            active["n"] -= 1
-                            pending["n"] -= 1
-                            if pending["n"] <= 0:
-                                self._busy_end("wallet_balances")
-                            else:
-                                pump()
-                    self.rpc_send({"type": "GET_BALANCES", "addresses": [addr]}, _cb)
-            if pending["n"] == 0:
-                self._busy_end("wallet_balances")
-                return
-            pump()
+        def apply(addr: str, data: Dict[str, Any]) -> None:
+            for labels in addr_map.get(addr, []):
+                try:
+                    self._update_balance_block(labels, data)
+                except Exception:
+                    log.debug("[_request_balance_update] Cannot update balance block for %s", addr, exc_info=True)
 
+        def finalize() -> None:
+            if on_complete:
+                try:
+                    on_complete()
+                except Exception:
+                    pass
 
-        def _on_bulk(resp: Optional[Dict[str, Any]]) -> None:
-            if (not resp) or (resp.get("type") != "BALANCES") or ("items" not in resp):
-                _fallback_per_addr()
-                return
-
+        def handle(resp: Optional[Dict[str, Any]]) -> None:
             try:
-                items: Dict[str, Dict[str, Any]] = resp.get("items", {})
-                for addr, labels in addrs_and_labels:
-                    data = items.get(addr)
-                    if isinstance(data, dict):
-                        self._update_balance_block(labels, data)
-                    else:
-                        self._update_balance_block(labels, {"balance":0,"spendable":0,"immature":0,
-                                                            "pending_outgoing":0,"maturity":CFG.COINBASE_MATURITY})
+                if isinstance(resp, dict) and resp.get("type") == "BALANCES":
+                    items: Dict[str, Dict[str, Any]] = resp.get("items", {})
+                    for addr in uniq_addrs:
+                        data = items.get(addr)
+                        if not isinstance(data, dict):
+                            data = zero_template()
+                        apply(addr, data)
+                else:
+                    for addr in uniq_addrs:
+                        apply(addr, zero_template())
             finally:
-                self._busy_end("wallet_balances")
+                finalize()
 
-        self.rpc_send({"type": "GET_BALANCES", "addresses": addresses}, _on_bulk)
-        
-        
+        try:
+            self.rpc_send({"type": "GET_BALANCES", "addresses": uniq_addrs}, handle)
+        except Exception:
+            for addr in uniq_addrs:
+                apply(addr, zero_template())
+            finalize()
+
     # ---------- switch & refresh ----------
 
     def _wallets_update_mode(self) -> None:
@@ -1262,6 +1341,10 @@ class WalletsMixin:
             log.debug("[_wallets_after_change] Cannot reload addresses after registry update:", exc_info=True)
             pass
         self._wallets_update_mode()
+        try:
+            self._notify_balance_refresh()
+        except Exception:
+            pass
 
     def _reg(self, addr: str) -> None:
         if not hasattr(self, "wallets"):
@@ -1277,6 +1360,10 @@ class WalletsMixin:
         except Exception:
             log.debug("[_reg] Cannot reload addresses after registry update:", exc_info=True)
             pass
+        try:
+            self._notify_balance_refresh(addresses=[addr], immediate=True)
+        except Exception:
+            log.debug("[_reg] Cannot trigger immediate balance refresh for %s", addr, exc_info=True)
         try: self._wallets_update_mode()
         except Exception:
             log.debug("[_reg] Cannot update wallet mode after registry update:", exc_info=True)
@@ -1485,6 +1572,10 @@ class WalletsMixin:
                 "Sync complete",
                 f"Added: {len(added)}\nRemoved: {len(removed)}\nTotal: {len(self.wallets)}"
             )
+            try:
+                self._notify_balance_refresh(addresses=(added or None), immediate=bool(added))
+            except Exception:
+                log.debug("[sync_from_keystore] Cannot trigger balance refresh after sync", exc_info=True)
         except Exception:
             log.exception("[sync_from_keystore] Failed to sync from keystore")
 
@@ -1540,6 +1631,10 @@ class WalletsMixin:
             except Exception:
                 log.exception("[delete_wallet_dialog] Cannot maybe lock redirect after wallet deletion")
                 pass
+            try:
+                self._notify_balance_refresh(immediate=True)
+            except Exception:
+                log.debug("[delete_wallet_dialog] Cannot trigger balance refresh after deletion", exc_info=True)
             messagebox.showinfo("Deleted", "Wallet removed from keystore and UI.")
         except Exception:
             log.exception("[delete_wallet_dialog] Failed to delete wallet")

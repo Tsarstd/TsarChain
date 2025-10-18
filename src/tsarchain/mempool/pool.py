@@ -159,7 +159,37 @@ class TxPoolDB(BaseDatabase):
         # Last error/context for receive_tx to report back to clients
         self.last_error_reason: str | None = None
 
+    def _normalize_entry(self, item) -> dict | None:
+        try:
+            if isinstance(item, Tx):
+                tx_obj = item
+            elif isinstance(item, dict):
+                tx_obj = Tx.from_dict(item)
+            else:
+                return None
+
+            if not getattr(tx_obj, "txid", None):
+                tx_obj.compute_txid()
+
+            tx_dict = tx_obj.to_dict(include_txid=True)
+            if not tx_dict.get("txid") and getattr(tx_obj, "txid", None):
+                tx_dict["txid"] = tx_obj.txid.hex()
+            if not tx_dict.get("txid"):
+                return None
+            return tx_dict
+        except Exception:
+            log.exception("[save_pool] Failed to normalize mempool entry")
+            return None
+
     def save_pool(self, pool: list) -> None:
+        normalized: list[dict] = []
+        for item in pool:
+            norm = self._normalize_entry(item)
+            if norm:
+                normalized.append(norm)
+        if not normalized and pool:
+            normalized = [item for item in pool if isinstance(item, dict)]
+
         if kv_enabled():
             try:
                 clear_db('mempool')
@@ -167,19 +197,20 @@ class TxPoolDB(BaseDatabase):
                 pass
             try:
                 with batch('mempool') as b:
-                    for item in pool:
+                    for d in normalized:
                         try:
-                            d = item if isinstance(item, dict) else (item.to_dict() if hasattr(item, 'to_dict') else item)
                             txid = d.get('txid')
                             if not txid:
                                 continue
                             b.put(txid.encode('utf-8'), json.dumps(d, separators=(",", ":")).encode('utf-8'))
                         except Exception:
+                            log.exception("[save_pool] Failed writing tx %s to LMDB", d.get("txid"))
                             continue
             except Exception:
                 log.error("[save_pool] LMDB write failed, falling back to file storage")
+                self.save_json(self.filepath, normalized)
         else:
-            self.save_json(self.filepath, pool)
+            self.save_json(self.filepath, normalized)
 
     def load_pool(self) -> list:
         if kv_enabled():
