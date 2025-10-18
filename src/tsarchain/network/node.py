@@ -12,6 +12,7 @@ from collections import deque
 # ---------------- Local Project ----------------
 from ..utils import config as CFG
 from ..core.block import Block
+from ..core.tx import Tx
 from .broadcast import Broadcast
 from ..contracts.storage_nodes import StorageService
 from ..utils.helpers import hash160
@@ -706,11 +707,15 @@ class Network:
                 continue
             try:
                 synced = self._sync_peer(norm)
+                inline_status = self._request_mempool_inline(norm)
                 if not synced:
                     if CFG.ENABLE_FULL_SYNC:
                         self._request_full_sync(norm)
-                    else:
+                    elif inline_status is False:
                         self._request_mempool_snapshot(norm)
+                elif inline_status is False:
+                    # Remote node does not support inline fetch; fall back to legacy snapshot push.
+                    self._request_mempool_snapshot(norm)
             except Exception:
                 log.exception("[sync_with_peers] Error syncing with peer %s", norm)
                 self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY * 2)
@@ -979,6 +984,51 @@ class Network:
         else:
             inner = outer
         return inner
+
+    def _request_mempool_inline(self, peer: Tuple[str, int], *, force: bool = False) -> Optional[bool]:
+        norm = self._normalize_peer(peer)
+        if not norm:
+            return False
+        now = time.time()
+        min_iv = float(CFG.MEMPOOL_SYNC_MIN_INTERVAL)
+        if not force and now - self._peer_last_mempool_sync.get(norm, 0.0) < min_iv:
+            return None
+
+        payload = {
+            "type": "GET_MEMPOOL",
+            "mode": "inline_full",
+        }
+        resp = self._rpc_request(norm, payload, timeout=max(10.0, CFG.SYNC_TIMEOUT))
+        if not resp:
+            return False
+        if resp.get("type") != "MEMPOOL":
+            return False
+
+        resp_mode = str(resp.get("mode", "")).strip().lower()
+        if resp_mode and resp_mode not in ("inline", "inline_full"):
+            return False
+
+        txs = resp.get("txs") or resp.get("data")
+        if not isinstance(txs, list):
+            return False
+
+        if txs and all(isinstance(x, (str, bytes)) for x in txs):
+            # remote node returned only txids; fall back to legacy snapshot
+            return False
+
+        added = 0
+        for item in txs:
+            try:
+                tx_obj = Tx.from_dict(item) if isinstance(item, dict) else item
+                if self.broadcast.mempool.add_valid_tx(tx_obj):
+                    added += 1
+            except Exception:
+                log.debug("[_request_mempool_inline] Failed to add tx from %s", norm, exc_info=True)
+
+        self._peer_last_mempool_sync[norm] = now
+        if added:
+            self._reward_peer(norm, CFG.PEER_SCORE_REWARD)
+        return True
 
     def _request_mempool_snapshot(self, peer: Tuple[str, int], *, force: bool = False) -> bool:
         norm = self._normalize_peer(peer)

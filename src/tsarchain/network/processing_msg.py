@@ -3,7 +3,7 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173; libsecp256k1; Signal-X3DH; RFC7748-X25519
 
-import time, secrets, base64, random
+import time, secrets, base64, random, json
 from typing import TYPE_CHECKING, Any, Optional
 from bech32 import convertbits, bech32_decode
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -308,9 +308,68 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             except Exception:
                 log.exception("[process_message] GET_MEMPOOL snapshot push error to %s", target)
                 return {"type": "MEMPOOL_SYNC", "count": 0, "status": "error"}
+        if mode in ("inline", "inline_full"):
+            try:
+                all_txs = self.broadcast.mempool.get_all_txs() or []
+            except Exception:
+                log.exception("[process_message] GET_MEMPOOL inline read error")
+                return {"error": "mempool_unavailable"}
+            
+            inline: list[dict] = []
+            total = len(all_txs)
+            hard_cap = max(1024, CFG.MAX_MSG) - len(CFG.NETWORK_MAGIC)
+            limit = CFG.MEMPOOL_INLINE_MAX_TX
+            base = {"type": "MEMPOOL", "mode": "inline_full", "total": total, "txs": []}
+            
+            for tx in all_txs:
+                if len(inline) >= limit:
+                    break
+                try:
+                    if hasattr(tx, "to_dict"):
+                        tx_dict = tx.to_dict(include_txid=True)
+                    elif isinstance(tx, dict):
+                        tx_dict = dict(tx)
+                    else:
+                        continue
+                    
+                    if not tx_dict.get("txid") and getattr(tx, "txid", None):
+                        txid_attr = getattr(tx, "txid")
+                        tx_dict["txid"] = txid_attr.hex() if isinstance(txid_attr, (bytes, bytearray)) else str(txid_attr)
+                except Exception:
+                    continue
+
+                candidate = dict(base)
+                candidate["txs"] = inline + [tx_dict]
+                try:
+                    enc = json.dumps(candidate, separators=CFG.CANONICAL_SEP).encode("utf-8")
+                except Exception:
+                    enc = b""
+
+                if hard_cap > 0 and enc and len(enc) > hard_cap:
+                    if inline:
+                        break
+                    # Single tx too large, skip it
+                    continue
+                
+                inline.append(tx_dict)
+
+            return {
+                "type": "MEMPOOL",
+                "mode": "inline_full",
+                "total": total,
+                "count": len(inline),
+                "txs": inline,
+            }
         try:
             txs = self.broadcast.mempool.get_all_txs()
-            return {"type": "MEMPOOL", "txs": [getattr(t, "txid", b"").hex() for t in txs]}
+            hexes = []
+            for t in txs:
+                txid = getattr(t, "txid", None)
+                if isinstance(txid, (bytes, bytearray)):
+                    hexes.append(txid.hex())
+                elif isinstance(txid, str):
+                    hexes.append(txid)
+            return {"type": "MEMPOOL", "mode": "txids", "txs": hexes}
         except Exception:
             log.exception("[process_message] GET_MEMPOOL error")
 

@@ -642,6 +642,26 @@ class Blockchain:
         if len(txs) <= 1:
             return
 
+        spent_prevouts: set[tuple[str, int]] = set()
+        for tx in txs[1:]:
+            if getattr(tx, "is_coinbase", False):
+                continue
+            
+            for txin in getattr(tx, "inputs", []) or []:
+                prev_txid = getattr(txin, "txid", None)
+                if isinstance(prev_txid, (bytes, bytearray)):
+                    prev_hex = prev_txid.hex()
+                elif isinstance(prev_txid, str):
+                    prev_hex = prev_txid
+                else:
+                    continue
+                
+                try:
+                    vout_index = int(getattr(txin, "vout", 0))
+                except Exception:
+                    vout_index = 0
+                spent_prevouts.add((prev_hex.lower(), vout_index))
+
         txids: list[str] = []
         for tx in txs[1:]:
             txid_hex: str | None = None
@@ -687,6 +707,21 @@ class Blockchain:
 
         if pruned:
             log.debug("[_prune_mempool_confirmed] Removed %d confirmed txs from mempool", pruned)
+
+        try:
+            conflicts = pool.drop_conflicts(spent_prevouts)
+        except Exception:
+            log.exception("[_prune_mempool_confirmed] Failed to drop conflicting mempool entries")
+            conflicts = 0
+
+        stale_removed = 0
+        try:
+            stale_removed = pool.prune_stale_entries()
+        except Exception:
+            log.exception("[_prune_mempool_confirmed] Failed to prune stale mempool entries")
+
+        if conflicts or stale_removed:
+            log.debug("[_prune_mempool_confirmed] pruned conflicts=%d stale=%d", conflicts, stale_removed)
 
 
 

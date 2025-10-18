@@ -323,6 +323,69 @@ class TxPoolDB(BaseDatabase):
     def clear(self) -> None:
         self.save_pool([])
 
+    def drop_conflicts(self, spent_prevouts: set[tuple[str, int]]) -> int:
+        if not spent_prevouts:
+            return 0
+        current = self.get_all_txs()
+        keep: list[Tx] = []
+        removed = 0
+        normalized_spent = {(txid.lower(), int(vout)) for txid, vout in spent_prevouts}
+
+        for tx in current:
+            conflict = False
+            for txin in getattr(tx, "inputs", []) or []:
+                prev_txid_hex = txin.txid.hex() if isinstance(txin.txid, (bytes, bytearray)) else str(txin.txid)
+                if (prev_txid_hex.lower(), int(txin.vout)) in normalized_spent:
+                    conflict = True
+                    break
+            if conflict:
+                removed += 1
+            else:
+                keep.append(tx)
+
+        if removed:
+            serialized = [
+                tx.to_dict(include_txid=True) if hasattr(tx, "to_dict") else tx
+                for tx in keep
+            ]
+            self.save_pool(serialized)
+            try:
+                self.current_size = sum(self._estimate_tx_size_any(entry) for entry in serialized)
+            except Exception:
+                pass
+            
+        return removed
+
+    def prune_stale_entries(self) -> int:
+        try:
+            self.utxo._load()
+        except Exception:
+            log.debug("[prune_stale_entries] Failed to reload UTXO snapshot", exc_info=True)
+        utxo_set = getattr(self.utxo, "utxos", {})
+        tip = self.utxo._get_tip_height_from_state()
+
+        current = self.get_all_txs()
+        keep: list[Tx] = []
+        removed = 0
+        for tx in current:
+            if self.validate_transaction(tx, utxo_set, spend_at_height=tip + 1):
+                keep.append(tx)
+            else:
+                removed += 1
+
+        if removed:
+            serialized = [
+                tx.to_dict(include_txid=True) if hasattr(tx, "to_dict") else tx
+                for tx in keep
+            ]
+            self.save_pool(serialized)
+            try:
+                self.current_size = sum(self._estimate_tx_size_any(entry) for entry in serialized)
+            except Exception:
+                pass
+            
+        return removed
+
     def _get_utxo_amount(self, utxo_data):
         if isinstance(utxo_data, dict):
             if "tx_out" in utxo_data:
@@ -492,11 +555,17 @@ class TxPoolDB(BaseDatabase):
 
             input_sum += int(amount)
             try:
+                tx_in.amount = int(amount)
+            except Exception:
+                pass
+            try:
                 spk_bytes = _get_utxo_script_bytes(utxo_entry)
             except Exception:
                 log.warning("[validate_transaction] Error extracting script_pubkey from UTXO %s:%d", prev_txid_hex, prev_index)
+                
                 self.last_error_reason = "invalid_utxo_script"
                 return False
+            
             prevouts.append((int(amount), spk_bytes, is_cb, int(born_height)))
 
         # --- NEW: fobiden output 0/negativ + acumulation output_sum ---
@@ -520,6 +589,11 @@ class TxPoolDB(BaseDatabase):
             log.warning("[validate_transaction] inputs < outputs: in=%d out=%d", input_sum, output_sum)
             self.last_error_reason = f"inputs_less_than_outputs in={input_sum} out={output_sum}"
             return False
+        fee_value = int(input_sum - output_sum)
+        try:
+            tx.fee = fee_value
+        except Exception:
+            setattr(tx, "fee", fee_value)
 
         # ---------- VERIFICATION SIGNATURE ----------
         for i, tx_in in enumerate(tx.inputs):
@@ -606,23 +680,19 @@ class TxPoolDB(BaseDatabase):
                 if not H.verify_der_strict_low_s(vk, digest32, sig_der):
                     self.last_error_reason = "ecdsa_verify_failed"
                     return False
-                
-                # --- [NEW] Storage Registry ---
-                try:
-                    reg = StorageNodeRegistry()
-                    if not reg.validate_tx(tx):
-                        log.warning("[validate_transaction] Storage REG check failed in vin %d", i)
-                        self.last_error_reason = "storage_reg_invalid"
-                        return False
-                except Exception:
-                    log.warning("[validate_transaction] Storage REG check exception in vin %d", i)
-                    self.last_error_reason = "storage_reg_error"
-                    return False
-
             else:
                 log.warning("[validate_transaction] Unsupported scriptPubKey type in vin %d", i)
                 self.last_error_reason = "unsupported_spk_type"
                 return False
+        try:
+            reg = StorageNodeRegistry()
+            if not reg.validate_tx(tx):
+                self.last_error_reason = "storage_reg_invalid"
+                return False
+        except Exception:
+            log.warning("[validate_transaction] Storage REG check exception")
+            self.last_error_reason = "storage_reg_error"
+            return False
 
         return True
 
