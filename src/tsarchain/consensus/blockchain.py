@@ -506,6 +506,11 @@ class Blockchain:
                     try: utxodb._save()
                     except Exception:
                         pass
+                try:
+                    self._prune_mempool_confirmed(block)
+                except Exception:
+                    log.exception("[add_block] Failed to prune mempool after genesis")
+                if not self.in_memory:
                     self.save_chain()
                     self.save_state()
                 else:
@@ -541,7 +546,11 @@ class Blockchain:
                     except Exception: pass
                 except Exception:
                     pass
-                
+            try:
+                self._prune_mempool_confirmed(block)
+            except Exception:
+                log.exception("[add_block] Failed to prune mempool")
+
             if not self.in_memory:
                 self.save_chain()
                 self.save_state()
@@ -621,7 +630,63 @@ class Blockchain:
                 except Exception:
                     pass
 
+            try:
+                self._prune_mempool_confirmed(block)
+            except Exception:
+                log.exception("[swap_tip_if_better] Failed to prune mempool")
+
             return old_tip
+
+    def _prune_mempool_confirmed(self, block: Block) -> None:
+        txs = getattr(block, "transactions", []) or []
+        if len(txs) <= 1:
+            return
+
+        txids: list[str] = []
+        for tx in txs[1:]:
+            txid_hex: str | None = None
+            candidate = getattr(tx, "txid", None)
+            if isinstance(candidate, (bytes, bytearray)):
+                txid_hex = candidate.hex()
+            elif isinstance(candidate, str) and len(candidate) == 64:
+                txid_hex = candidate.lower()
+            else:
+                try:
+                    txid_hex = getattr(tx, "txid_hex", lambda: None)()
+                except Exception:
+                    txid_hex = None
+
+            if not txid_hex and hasattr(tx, "to_dict"):
+                try:
+                    d = tx.to_dict(include_txid=True)
+                    txid_hex = d.get("txid")
+                except Exception:
+                    txid_hex = None
+
+            if txid_hex:
+                txids.append(txid_hex)
+                lower = txid_hex.lower()
+                if lower != txid_hex:
+                    txids.append(lower)
+
+        if not txids:
+            return
+
+        pool = TxPoolDB()
+        pruned = 0
+        seen: set[str] = set()
+        for txid in txids:
+            if txid in seen:
+                continue
+            seen.add(txid)
+            try:
+                pool.remove_tx(txid)
+                pruned += 1
+            except Exception:
+                log.debug("[_prune_mempool_confirmed] Failed to remove tx %s", txid)
+
+        if pruned:
+            log.debug("[_prune_mempool_confirmed] Removed %d confirmed txs from mempool", pruned)
 
 
 
@@ -1034,7 +1099,7 @@ class Blockchain:
         times = sorted(_to_int_ts(getattr(b, "timestamp", 0)) for b in window)
         return times[len(times) // 2]
 
-    # ----------------- Block lookups -----------------
+    # ----------------- Block lookups ( For Miner GUI ) -----------------
     
     def print_chain(
         self,

@@ -84,7 +84,7 @@ TSAR                   = 100_000_000     # SAT-like unit (8 decimals)
 MAX_SUPPLY             = 250_000_000 * TSAR
 INITIAL_REWARD         = 250 * TSAR
 BLOCKS_PER_HALVING     = 235_000
-COINBASE_MATURITY      = 3
+COINBASE_MATURITY      = 65
 MAX_COINBASE_EXTRADATA = 100
 
 
@@ -193,7 +193,7 @@ PORT_RANGE_DEV     = (38169, 38178)
 PORT_RANGE_PROD    = (40196, 40205)
 
 BOOTSTRAP_DEV      = (
-    ("31.97.51.207", 38169),
+    ("127.0.0.1", 38169),
 )
 
 BOOTSTRAP_PROD     = (

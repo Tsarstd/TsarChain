@@ -142,10 +142,6 @@ class Network:
         is_bootstrap_self = any(self._is_self_bootstrap(h, p) for h, p in bootstrap_nodes)
         if is_bootstrap_self:
             self.persistent_peers = {peer for peer in bootstrap_nodes if not self._is_self_bootstrap(*peer)}
-            try:
-                log.warning("[__init__] Running as bootstrap node (%s:%s)", primary_peer[0], primary_peer[1])
-            except Exception:
-                log.warning("[__init__] Running as bootstrap node")
         else:
             self.persistent_peers = set(bootstrap_nodes)
             if self.port == primary_peer[1] and not self._is_local_address(primary_peer[0]):
@@ -212,9 +208,6 @@ class Network:
         self.server_thread.start()
         self.discovery_thread.start()
         self.sync_thread.start()
-
-        log.info("[__init__] Node ID: %s, Pubkey: %s..., Port: %s", self.node_id, self.pubkey[:16], self.port)
-        log.info("[__init__] Storage Address: %s, Service: %s", self.storage_address, self.storage_service is not None)
 
     # -------------------------- Server / Accept ---------------------------
 
@@ -433,7 +426,6 @@ class Network:
                     try:
                         now = time.time()
                         if now - getattr(self, "_last_p2p_log", 0.0) > 5.0:
-                            log.info("[handle_connection] Handshake from %s:%s, node_id=%s, pubkey=%s...", addr[0], addr[1], chan.peer_node_id, str(chan.peer_node_pub)[:16])
                             self._last_p2p_log = now
                     except Exception:
                         pass

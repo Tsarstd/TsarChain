@@ -332,16 +332,33 @@ class TxPoolDB(BaseDatabase):
             amount = 0
             utxo_entry = None
 
+            def _extract_amount(entry, key_desc: str) -> int:
+                try:
+                    return self._get_utxo_amount(entry)
+                except ValueError:
+                    log.warning("[validate_transaction] Error extracting amount from UTXO %s", key_desc)
+                    raise
+
             # Format FLAT: "txid:index"
             flat_key = f"{prev_txid_hex}:{prev_index}"
             if flat_key in utxo_set:
                 found = True
                 utxo_entry = utxo_set[flat_key]
                 try:
-                    amount = self._get_utxo_amount(utxo_entry)
+                    amount = _extract_amount(utxo_entry, flat_key)
                 except ValueError:
-                    log.warning("[validate_transaction] Error extracting amount from UTXO %s", flat_key)
                     return False
+
+            # Direct bytes key
+            if not found:
+                flat_key_b = flat_key.encode("utf-8")
+                if flat_key_b in utxo_set:
+                    found = True
+                    utxo_entry = utxo_set[flat_key_b]
+                    try:
+                        amount = _extract_amount(utxo_entry, f"{flat_key} (bytes)")
+                    except ValueError:
+                        return False
 
             # Format NESTED: {txid: {index: data}}
             if not found and prev_txid_hex in utxo_set and isinstance(utxo_set[prev_txid_hex], dict):
@@ -349,10 +366,32 @@ class TxPoolDB(BaseDatabase):
                     found = True
                     utxo_entry = utxo_set[prev_txid_hex][prev_index]
                     try:
-                        amount = self._get_utxo_amount(utxo_entry)
+                        amount = _extract_amount(utxo_entry, f"{prev_txid_hex}:{prev_index}")
                     except ValueError:
-                        log.warning("[validate_transaction] Error extracting amount from UTXO %s:%d", prev_txid_hex, prev_index)
                         return False
+            if not found:
+                key_ci = prev_txid_hex.lower()
+                for key, bucket in utxo_set.items():
+                    if not isinstance(bucket, dict):
+                        continue
+                    if isinstance(key, str) and key.lower() == key_ci:
+                        if prev_index in bucket:
+                            found = True
+                            utxo_entry = bucket[prev_index]
+                            try:
+                                amount = _extract_amount(utxo_entry, f"{key}:{prev_index} (nested-ci)")
+                            except ValueError:
+                                return False
+                        break
+                    if isinstance(key, (bytes, bytearray)) and key.hex().lower() == key_ci:
+                        if prev_index in bucket:
+                            found = True
+                            utxo_entry = bucket[prev_index]
+                            try:
+                                amount = _extract_amount(utxo_entry, f"{key.hex()}:{prev_index} (nested-bytes)")
+                            except ValueError:
+                                return False
+                        break
 
             # Format TUPLE: {(txid, index): data}
             if not found:
@@ -361,10 +400,50 @@ class TxPoolDB(BaseDatabase):
                     found = True
                     utxo_entry = utxo_set[tuple_key]
                     try:
-                        amount = self._get_utxo_amount(utxo_entry)
+                        amount = _extract_amount(utxo_entry, f"{prev_txid_hex}:{prev_index} (tuple)")
                     except ValueError:
-                        log.warning("[validate_transaction] Error extracting amount from tuple-key UTXO %s:%d", prev_txid_hex, prev_index)
                         return False
+
+            # Tuple with bytes txid
+            if not found:
+                try:
+                    tuple_key_b = (bytes.fromhex(prev_txid_hex), prev_index)
+                except ValueError:
+                    tuple_key_b = None
+                if tuple_key_b and tuple_key_b in utxo_set:
+                    found = True
+                    utxo_entry = utxo_set[tuple_key_b]
+                    try:
+                        amount = _extract_amount(utxo_entry, f"{prev_txid_hex}:{prev_index} (tuple-bytes)")
+                    except ValueError:
+                        return False
+
+            # Fallback: case-insensitive scan for string keys
+            if not found:
+                lookup_key_ci = flat_key.lower()
+                for key in utxo_set.keys():
+                    try:
+                        if isinstance(key, str) and key.lower() == lookup_key_ci:
+                            utxo_entry = utxo_set[key]
+                            amount = _extract_amount(utxo_entry, f"{key} (ci)")
+                            found = True
+                            break
+                        if isinstance(key, tuple) and len(key) == 2:
+                            txid_part = key[0]
+                            vout_part = int(key[1])
+                            if vout_part != prev_index:
+                                continue
+                            if isinstance(txid_part, (bytes, bytearray)):
+                                key_hex = txid_part.hex()
+                            else:
+                                key_hex = str(txid_part)
+                            if key_hex.lower() == prev_txid_hex.lower():
+                                utxo_entry = utxo_set[key]
+                                amount = _extract_amount(utxo_entry, f"{key} (tuple-ci)")
+                                found = True
+                                break
+                    except Exception:
+                        continue
 
             if not found or utxo_entry is None:
                 self.last_error_reason = f"prevout_missing {prev_txid_hex}:{prev_index}"

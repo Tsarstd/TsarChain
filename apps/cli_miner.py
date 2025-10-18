@@ -12,6 +12,8 @@ from tsarchain.network.node import Network
 from tsarchain.utils import config as CFG
 from tsarchain.utils.helpers import print_banner
 
+#from tsarchain.utils.tsar_logging import setup_logging
+
 try:
     import psutil
     HAVE_PSUTIL = True
@@ -366,6 +368,7 @@ def parse_args():
 
 def main():
     args = parse_args()
+    #setup_logging()
     if args.node_only:
         runner = NodeRunner()
         runner.start()
