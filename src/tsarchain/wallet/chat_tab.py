@@ -13,10 +13,21 @@ from datetime import datetime
 from tsarchain.utils import config as CFG
 from tsarchain.wallet.chat_security import ChatManager
 from tsarchain.wallet.data_security import load_chat_state, save_chat_state
+from tsarchain.wallet.theme import ChatTheme
 
 
 class ChatTab:
-    def __init__(self, root, chat_mgr: ChatManager, rpc_send, palette, toast_cb, get_wallets_cb, contact_mgr=None, logger=None):
+    def __init__(
+        self,
+        root,
+        chat_mgr: ChatManager,
+        rpc_send,
+        theme: ChatTheme,
+        toast_cb,
+        get_wallets_cb,
+        contact_mgr=None,
+        logger=None,
+    ):
         self.root = root
         self.chat_mgr = chat_mgr
         self.rpc_send = rpc_send
@@ -24,7 +35,7 @@ class ChatTab:
         self.get_wallets_cb = get_wallets_cb
         self.contact_mgr = contact_mgr
         self.log = logger
-        self.set_palette(palette or {})
+        self.set_palette(theme)
         try:
             if hasattr(self.chat_mgr, "key_ttl_sec"):
                 self.chat_mgr.key_ttl_sec = getattr(self, "_chat_key_ttl_sec", 15 * 60)
@@ -78,12 +89,25 @@ class ChatTab:
         except Exception:
             pass
 
-    def set_palette(self, palette: dict):
-        self.bg = palette.get("bg", "#0e141a")
-        self.panel_bg = palette.get("panel_bg", "#141b23")
-        self.fg = palette.get("fg", "#e5e7eb")
-        self.muted = palette.get("muted", "#9ca3af")
-        self.accent = palette.get("accent", "#4ade80")
+    def set_palette(self, theme: ChatTheme):
+        self.theme = theme
+        self.bg = theme.bg
+        self.panel_bg = theme.panel_bg
+        self.fg = theme.text_fg
+        self.muted = theme.muted_fg
+        self.accent = theme.accent
+        self._bubble_peer_bg = theme.bubble_peer_bg
+        self._bubble_peer_fg = theme.bubble_peer_fg
+        self._bubble_me_bg = theme.bubble_me_bg
+        self._bubble_me_fg = theme.bubble_me_fg
+        self._system_fg = theme.system_fg
+        self._status_online_fg = theme.status_online_fg
+        self._status_offline_fg = theme.status_offline_fg
+        self._entry_bg = theme.entry_bg
+        self._border = theme.border
+        self._accent_fg = "#ffffff" if theme.mode == "light" else "#000000"
+        self._warn_fg = theme.warning_fg
+        self._error_fg = theme.error_fg
 
     def build(self, parent) -> None:
         self.parent = parent
@@ -161,15 +185,23 @@ class ChatTab:
 
         self._init_chat_tags_and_fonts()
         self._chat_setup_bottom_align()
-        self.chat_log.tag_configure("bubble_peer", background="#15212b")
-        self.chat_log.tag_configure("bubble_me",   background="#3d6839")
+        self.chat_log.tag_configure("bubble_peer", background=self._bubble_peer_bg, foreground=self._bubble_peer_fg)
+        self.chat_log.tag_configure("bubble_me", background=self._bubble_me_bg, foreground=self._bubble_me_fg)
         self.chat_log.tag_configure("hdr_peer")  # left default
         self.chat_log.tag_configure("hdr_me", justify="right")
         try:
-            self.chat_log.tag_configure("meta_peer", foreground="#a0a7ad",
-                                        font=self.font_chat_meta_peer, justify="left")
-            self.chat_log.tag_configure("meta_me", foreground="#a0a7ad",
-                                        font=self.font_chat_meta_me, justify="right")
+            self.chat_log.tag_configure(
+                "meta_peer",
+                foreground=self.muted,
+                font=self.font_chat_meta_peer,
+                justify="left",
+            )
+            self.chat_log.tag_configure(
+                "meta_me",
+                foreground=self.muted,
+                font=self.font_chat_meta_me,
+                justify="right",
+            )
         except Exception:
             pass
 
@@ -180,12 +212,12 @@ class ChatTab:
 
         # badge online/offline + context
         self.chat_offline_badge = tk.Label(
-            body, text="● Offline", bg=self.bg, fg="#d41c1c", font=("Segoe UI", 9, "bold")
+            body, text="● Offline", bg=self.bg, fg=self._status_offline_fg, font=("Segoe UI", 9, "bold")
         )
         self.chat_offline_badge.pack(anchor="e", padx=2, pady=(2, 0))
 
         ctx = tk.Label(
-            body, textvariable=self.chat_context_var, bg=self.bg, fg="#9c9797",
+            body, textvariable=self.chat_context_var, bg=self.bg, fg=self.muted,
             font=("Consolas", 9, "italic")
         )
         ctx.pack(fill=tk.X, pady=(2, 0))
@@ -195,7 +227,7 @@ class ChatTab:
         entryfrm.pack(fill=tk.X, pady=(6, 0))
 
         self.chat_input = tk.Text(
-            entryfrm, height=3, wrap="word", bg=self.panel_bg, fg=self.fg,
+            entryfrm, height=3, wrap="word", bg=self._entry_bg, fg=self.fg,
             insertbackground=self.fg, relief="flat"
         )
         self.chat_input.pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -203,7 +235,7 @@ class ChatTab:
 
         self.typing_var = tk.StringVar(value="")
         self.typing_lbl = tk.Label(
-            entryfrm, textvariable=self.typing_var, bg=self.bg, fg="#a0a7ad",
+            entryfrm, textvariable=self.typing_var, bg=self.bg, fg=self.muted,
             font=("Segoe UI", 9, "italic")
         )
         self.typing_lbl.pack(side=tk.RIGHT, padx=6)
@@ -227,7 +259,7 @@ class ChatTab:
 
         self.chat_send_btn = tk.Button(
             entryfrm, text="Send", command=self._chat_send,
-            bg=self.accent, fg="#000000", font=("Segoe UI", 10, "bold"),
+            bg=self.accent, fg=self._accent_fg, font=("Segoe UI", 10, "bold"),
             state=tk.DISABLED
         )
         self.chat_send_btn.pack(side=tk.LEFT, padx=(8, 0))
@@ -242,8 +274,13 @@ class ChatTab:
         self._brand_lbl = tk.Label(header, text="♜Kremlin Chat♜", bg=self.bg, fg=self.accent,
                                    font=("Segoe UI", 65, "bold"))
         self._brand_lbl.pack(side="top", pady=(10, 0))
-        self._tagline_lbl = tk.Label(header, text="Encrypted whispers for The Voice Sovereignty.",
-                                     bg=self.bg, fg="#C4A231", font=("Consolas", 14, "italic"))
+        self._tagline_lbl = tk.Label(
+            header,
+            text="Encrypted whispers for The Voice Sovereignty.",
+            bg=self.bg,
+            fg=self.accent,
+            font=("Consolas", 14, "italic"),
+        )
         self._tagline_lbl.pack(side="top", pady=(0, 20))
 
         # --- FORM minimalis ---
@@ -263,12 +300,25 @@ class ChatTab:
             .pack(anchor="w", pady=(14, 6))
         self.chat_hero_pwd_var = tk.StringVar(value="")
         self.chat_hero_pwd_entry = tk.Entry(
-            form, textvariable=self.chat_hero_pwd_var, show="•",
-            bg=self.bg, fg=self.fg, insertbackground=self.fg,
-            relief="flat", highlightthickness=1, highlightbackground="#2a2f36", highlightcolor="#2a2f36"
+            form,
+            textvariable=self.chat_hero_pwd_var,
+            show="•",
+            bg=self.bg,
+            fg=self.fg,
+            insertbackground=self.fg,
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=self._border,
+            highlightcolor=self._border,
         )
         self.chat_hero_pwd_entry.pack(fill="x")
-        self._pwd_menu = tk.Menu(self.chat_hero, tearoff=0, bg=self.panel_bg, fg=self.fg, activebackground="#2a2f36")
+        self._pwd_menu = tk.Menu(
+            self.chat_hero,
+            tearoff=0,
+            bg=self.panel_bg,
+            fg=self.fg,
+            activebackground=self._border,
+        )
         
         def _pwd_do_paste():
             try:
@@ -291,8 +341,14 @@ class ChatTab:
         self.chat_hero_pwd_entry.bind("<Button-3>", _pwd_popup)
         
         self.chat_hero_pwd_entry.bind("<Return>", lambda _e: self._chat_login_from_hero())
-        tk.Button(form, text="Go Online", command=self._chat_login_from_hero,
-                  bg=self.accent, fg="#000", font=("Segoe UI", 11, "bold")).pack(pady=(12, 0))
+        tk.Button(
+            form,
+            text="Go Online",
+            command=self._chat_login_from_hero,
+            bg=self.accent,
+            fg=self._accent_fg,
+            font=("Segoe UI", 11, "bold"),
+        ).pack(pady=(12, 0))
 
         self._hero_top_spacer.pack(fill="both", expand=True)
         header.pack(side="top")
@@ -500,10 +556,9 @@ class ChatTab:
             return
 
         # --- Warna tema (fallback jika atribut belum ada) ---
-        bg = getattr(self, "bg", "#0f1115")
-        fg = getattr(self, "fg", "#e8e8e8")
-        panel = getattr(self, "panel_bg", "#171a21")
-        # accent = getattr(self, "accent", "#F5A524")  # tidak dipakai di tag saat ini
+        bg = getattr(self, "bg", self.bg)
+        fg = getattr(self, "fg", self.fg)
+        panel = getattr(self, "panel_bg", self.panel_bg)
 
         # Hapus dan definisikan ulang tag (aman jika belum ada)
         for tag in ("me", "peer", "sys", "ts", "bold", "code", "warn", "error"):
@@ -531,18 +586,18 @@ class ChatTab:
         # System/info line
         txt.tag_configure("sys",
                         lmargin1=pad_left, lmargin2=pad_left, rmargin=12,
-                        foreground="#9aa1a9", justify="center")
+                        foreground=self._system_fg, justify="center")
 
         # Timestamp kecil
         txt.tag_configure("ts",
-                        foreground="#9aa1a9",
+                        foreground=self._system_fg,
                         font=self.chat_font_small if self.chat_font_small else None)
 
         # Gaya tambahan
         txt.tag_configure("bold", font=self.chat_font_bold if self.chat_font_bold else None)
         txt.tag_configure("code", font=self.chat_font_mono if self.chat_font_mono else None, background=panel)
-        txt.tag_configure("warn", foreground="#ffc107")
-        txt.tag_configure("error", foreground="#ff4d4f")
+        txt.tag_configure("warn", foreground=self._warn_fg)
+        txt.tag_configure("error", foreground=self._error_fg)
 
         # Set default font untuk widget
         try:
@@ -606,7 +661,7 @@ class ChatTab:
         except Exception:
             self.chat_hero.pack(fill="both", expand=True)
         try:
-            self.chat_offline_badge.config(text="● Offline", fg="#d41c1c")
+            self.chat_offline_badge.config(text="● Offline", fg=self._status_offline_fg)
         except Exception:
             pass
         try:
@@ -717,7 +772,7 @@ class ChatTab:
         from_addr = (self.chat_from_var.get() or "").strip().lower()
         from_name = self._alias_label(from_addr) or self._mask_addr(from_addr)
         state_label = "Online" if on else "Offline"
-        state_color = "#17c964" if on else "#d41c1c"
+        state_color = self._status_online_fg if on else self._status_offline_fg
         status_text = f"Address: {from_name} • {state_label}"
 
         try:

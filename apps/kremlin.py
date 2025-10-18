@@ -28,6 +28,7 @@ from tsarchain.wallet.send_tab import SendTab
 from tsarchain.wallet.tx_history import HistoryService
 from tsarchain.wallet.explorer_tab import ExplorePanel
 from tsarchain.wallet.data_security import list_addresses_in_keystore, WALLET_FILE
+from tsarchain.wallet.theme import get_theme, lighten
 from tsarchain.wallet.ui_utils import center_window
 
 # ---------------- Local Project (With Node) ----------------
@@ -211,10 +212,9 @@ class KremlinWalletGUI(WalletsMixin):
         self.root = root
 
         # 0) Theme & styles
-        self.theme_mode = getattr(self, "theme_mode", "dark")
-        self._apply_theme_palette(self.theme_mode)
-        self.root.configure(bg=self.bg)
-        
+        self.current_theme = getattr(self, "current_theme", "dark")
+        self._set_theme(self.current_theme)
+
         self._install_styles()
         self._bind_shortcuts()
         self._busy_setup()
@@ -266,13 +266,7 @@ class KremlinWalletGUI(WalletsMixin):
         self._balance_poll_interval_ms = 15000
         self._balance_poll_job: Optional[str] = None
 
-        # 4) Theme vars & tab state
-        self.themes = {
-            "dark":  {"bg": "#121212", "panel_bg": "#1e1e1e", "fg": "#E6E6E6", "muted": "#8a8a8a", "accent": "#e06214"},
-            "light": {"bg": "#6b6b6b", "panel_bg": "#dfdfdf", "fg": "#222222", "muted": "#E6E6E6", "accent": "#e06214"},
-        }
-        self.current_theme = "dark"
-        self._apply_theme_vars()
+        # 4) Tab state
         self._active_tab = "wallets"
         self._sidebar_buttons: dict[str, ttk.Button] = {}
 
@@ -285,14 +279,14 @@ class KremlinWalletGUI(WalletsMixin):
             self.root,
             get_password_cb=self._get_keystore_password,
             toast_cb=lambda m: self._toast(m, kind="info"),
-            palette={"bg": self.bg, "panel_bg": self.panel_bg, "fg": self.fg, "muted": self.muted, "accent": self.accent},
+            theme=self.theme_set.contacts,
         )
         
         self.chat_tab = ChatTab(
             root=self.root,
             chat_mgr=self.chat_mgr,
             rpc_send=self.rpc.send,
-            palette={"bg": self.bg, "panel_bg": self.panel_bg, "fg": self.fg, "muted": self.muted, "accent": self.accent},
+            theme=self.theme_set.chat,
             toast_cb=lambda m, kind="info": self._toast(m, kind),
             get_wallets_cb=lambda: list(self.wallets or []),
             contact_mgr=self.contact_mgr,
@@ -306,8 +300,7 @@ class KremlinWalletGUI(WalletsMixin):
             addresses_provider=lambda: list(self.wallets or []),
             contact_manager=getattr(self, "contact_mgr", None),
             busy_request=getattr(self, "_request_locked", None),
-            palette={"bg": self.bg, "panel_bg": self.panel_bg, "fg": self.fg,
-                    "muted": self.muted, "accent": self.accent, "border": "#2a2f36", "card": self.panel_bg},
+            theme=self.theme_set.send,
             on_sent=lambda addr_from: self._handle_balance_refresh_request(addresses=[addr_from], immediate=True),
         )
 
@@ -326,60 +319,70 @@ class KremlinWalletGUI(WalletsMixin):
 
 
     # ---------------- Theme / Layout ----------------
-    def _apply_theme_vars(self) -> None:
-        t = self.themes[self.current_theme]
-        self.bg = t["bg"]
-        self.panel_bg = t["panel_bg"]
-        self.fg = t["fg"]
-        self.muted = t["muted"]
-        self.accent = t["accent"]
         
     # -------------- Theme palette & styles --------------
-    def _apply_theme_palette(self, mode: str | None = None) -> None:
-        if mode is None:
-            mode = getattr(self, "theme_mode", "dark")
-        if mode == "light":
-            self.bg        = "#f7f9fc"
-            self.panel_bg  = "#eef1f5"
-            self.fg        = "#0f1115"
-            self.muted     = "#6b7280"
-            self.accent    = "#2563eb"
-        else:  # dark (default)
-            self.bg        = "#0f1115"
-            self.panel_bg  = "#161a1f"
-            self.fg        = "#f2f5f7"
-            self.muted     = "#a9b1ba"
-            self.accent    = "#ff6b00"
+    def _set_theme(self, mode: str | None = None) -> None:
+        if mode is not None:
+            self.current_theme = mode.lower()
+        theme_set = get_theme(getattr(self, "current_theme", "dark"))
+        self.theme_set = theme_set
+        palette = theme_set.palette
+        self.bg = palette.bg
+        self.panel_bg = palette.panel_bg
+        self.fg = palette.fg
+        self.muted = palette.muted
+        self.accent = palette.accent
+        self.border_color = palette.border
+        self.card_bg = palette.card
+        self.sidebar_bg = theme_set.wallet.sidebar_bg
+        self.sidebar_active = theme_set.wallet.sidebar_active
+        self.root.configure(bg=self.bg)
 
     def _install_styles(self) -> None:
-        bg  = getattr(self, "bg",       "#0f1115")
-        fg  = getattr(self, "fg",       "#f2f5f7")
-        pbg = getattr(self, "panel_bg", "#161a1f")
-        acc = getattr(self, "accent",   "#ff6b00")
-        muted = getattr(self, "muted",  "#a9b1ba")
+        bg = getattr(self, "bg", "#0f1115")
+        fg = getattr(self, "fg", "#f2f5f7")
+        panel = getattr(self, "panel_bg", "#161a1f")
+        accent = getattr(self, "accent", "#ff6b00")
+        muted = getattr(self, "muted", "#a9b1ba")
+        border = getattr(self, "border_color", "#2a2f36")
         style = ttk.Style(self.root)
         try:
             style.theme_use("clam")
         except Exception:
             pass
-        style.configure("Tsar.TFrame",      background=bg)
+        style.configure("Tsar.TFrame", background=bg)
         style.configure("Tsar.TLabelframe", background=bg, foreground=fg)
         style.configure("Tsar.TLabelframe.Label", background=bg, foreground=fg)
-        style.configure("Tsar.TLabel",      background=bg, foreground=fg)
-        style.configure("Muted.TLabel",     background=bg, foreground=muted)
-        style.configure("Accent.TLabel",    background=bg, foreground=acc)
-        style.configure("Tsar.TButton",     background=pbg, foreground=fg, padding=6)
-        style.map("Tsar.TButton",
-                background=[("active", "#222831"), ("pressed", "#1b1f24")])
+        style.configure("Tsar.TLabel", background=bg, foreground=fg)
+        style.configure("Muted.TLabel", background=bg, foreground=muted)
+        style.configure("Accent.TLabel", background=bg, foreground=accent)
+        style.configure("Tsar.TButton", background=panel, foreground=fg, padding=6, bordercolor=border)
+        style.map(
+            "Tsar.TButton",
+            background=[("active", lighten(panel, 0.08)), ("pressed", lighten(panel, 0.12))],
+        )
         try:
-            style.configure("Tsar.Vertical.TScrollbar", background=pbg, troughcolor=bg)
+            style.configure("Tsar.Vertical.TScrollbar", background=panel, troughcolor=bg)
         except Exception:
             pass
         self._style = style
 
     def toggle_theme(self) -> None:
         self.current_theme = "light" if self.current_theme == "dark" else "dark"
-        self._apply_theme_vars()
+        self._set_theme(self.current_theme)
+        self._install_styles()
+        try:
+            self.contact_mgr.apply_theme(self.theme_set.contacts)
+        except Exception:
+            pass
+        try:
+            self.chat_tab.set_palette(self.theme_set.chat)
+        except Exception:
+            pass
+        try:
+            self.send_tab.update_theme(self.theme_set.send)
+        except Exception:
+            pass
         for widget in self.root.winfo_children():
             widget.destroy()
         self._build_layout()
@@ -465,33 +468,54 @@ class KremlinWalletGUI(WalletsMixin):
 
     def _refresh_sidebar_styles(self) -> None:
         try:
+            active_fg = self.bg if self.current_theme == "dark" else self.fg
             for tab, btn in getattr(self, "_sidebar_buttons", {}).items():
                 if not btn or not btn.winfo_exists():
                     continue
                 if tab == getattr(self, "_active_tab", ""):
                     btn.configure(
-                        bg=self.accent, fg="#ffffff",
-                        activebackground=self.accent, activeforeground="#ffffff")
+                        bg=self.sidebar_active,
+                        fg=active_fg,
+                        activebackground=self.sidebar_active,
+                        activeforeground=active_fg,
+                    )
                 else:
                     btn.configure(
-                        bg=self.panel_bg, fg=self.fg,
-                        activebackground=self.accent, activeforeground="#ffffff")
+                        bg=self.sidebar_bg,
+                        fg=self.fg,
+                        activebackground=self.sidebar_active,
+                        activeforeground=active_fg,
+                    )
         except Exception:
             pass
 
     def _create_sidebar_button(self, text: str, tab: str, on_click) -> tk.Button:
+        active_fg = self.bg if self.current_theme == "dark" else self.fg
         btn = tk.Button(
-            self.sidebar, text=text,
+            self.sidebar,
+            text=text,
             command=lambda: (on_click(), self._activate_tab(tab)),
-            bg=self.panel_bg, fg=self.fg, font=("Segoe UI", 10, "bold"),
-            bd=0, relief=tk.FLAT, padx=8, pady=8, highlightthickness=0,
-            cursor="hand2", activebackground=self.accent, activeforeground="#ffffff")
+            bg=self.sidebar_bg,
+            fg=self.fg,
+            font=("Segoe UI", 10, "bold"),
+            bd=0,
+            relief=tk.FLAT,
+            padx=8,
+            pady=8,
+            highlightthickness=0,
+            cursor="hand2",
+            activebackground=self.sidebar_active,
+            activeforeground=active_fg,
+        )
+
         def _hover_in(_e):
             if tab != getattr(self, "_active_tab", ""):
-                btn.configure(bg=self.accent, fg="#ffffff")
+                btn.configure(bg=self.sidebar_active, fg=active_fg)
+
         def _hover_out(_e):
             if tab != getattr(self, "_active_tab", ""):
-                btn.configure(bg=self.panel_bg, fg=self.fg)
+                btn.configure(bg=self.sidebar_bg, fg=self.fg)
+
         btn.bind("<Enter>", _hover_in)
         btn.bind("<Leave>", _hover_out)
 
@@ -502,12 +526,12 @@ class KremlinWalletGUI(WalletsMixin):
         return btn
 
     def _build_layout(self) -> None:
-        self.sidebar = tk.Frame(self.root, bg=self.panel_bg, width=100)
+        self.sidebar = tk.Frame(self.root, bg=self.sidebar_bg, width=100)
         self.sidebar.pack(side=tk.LEFT, fill=tk.Y)
         self.main = tk.Frame(self.root, bg=self.bg)
         self.main.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        tk.Label(self.sidebar, text="Kremlin", bg=self.panel_bg, fg=self.accent,
+        tk.Label(self.sidebar, text="Kremlin", bg=self.sidebar_bg, fg=self.accent,
                  font=("Segoe UI", 17, "bold")).pack(pady=(12, 6))
 
         self._sidebar_buttons = {}
@@ -520,13 +544,27 @@ class KremlinWalletGUI(WalletsMixin):
         self._create_sidebar_button("Network",  "network",  self.show_network_frame)
         self._create_sidebar_button("Dev",      "dev",      self.show_dev_frame)
 
-        tk.Button(self.sidebar, text="Switch Theme", command=self.toggle_theme,
-                bg=self.panel_bg, fg=self.fg, bd=0, relief=tk.FLAT,
-                padx=8, pady=8, highlightthickness=0, cursor="hand2",
-                activebackground=self.accent, activeforeground="#ffffff").pack(side=tk.BOTTOM, pady=10)
+        active_fg = self.bg if self.current_theme == "dark" else self.fg
+        tk.Button(
+            self.sidebar,
+            text="Switch Theme",
+            command=self.toggle_theme,
+            bg=self.sidebar_bg,
+            fg=self.fg,
+            bd=0,
+            relief=tk.FLAT,
+            padx=8,
+            pady=8,
+            highlightthickness=0,
+            cursor="hand2",
+            activebackground=self.sidebar_active,
+            activeforeground=active_fg,
+        ).pack(side=tk.BOTTOM, pady=10)
 
-        self.conn_status = tk.Label(self.sidebar, text="Offline", bg=self.panel_bg,
-                                    fg="#d41c1c", font=("Segoe UI", 9, "bold"))
+        palette = getattr(self.theme_set, "palette", None)
+        offline_color = palette.danger if palette else "#d41c1c"
+        self.conn_status = tk.Label(self.sidebar, text="Offline", bg=self.sidebar_bg,
+                                    fg=offline_color, font=("Segoe UI", 9, "bold"))
         self.conn_status.pack(side=tk.BOTTOM, pady=(0, 12))
 
         self.frames: Dict[str, tk.Frame] = {}
@@ -554,7 +592,11 @@ class KremlinWalletGUI(WalletsMixin):
             except Exception:
                 pass
 
-            border = {"info": self.accent, "warn": "#f5a524", "error": "#f1633f"}.get(kind, self.accent)
+            palette = getattr(self, "theme_set", None).palette if hasattr(self, "theme_set") else None
+            warn_color = palette.warning if palette else "#f5a524"
+            error_color = palette.danger if palette else "#f1633f"
+            info_color = self.accent
+            border = {"info": info_color, "warn": warn_color, "error": error_color}.get(kind, info_color)
             bg = self.panel_bg
             w, h = 320, 52
             rx = self.root.winfo_rootx(); ry = self.root.winfo_rooty()
@@ -614,10 +656,13 @@ class KremlinWalletGUI(WalletsMixin):
         prev = getattr(self, "_conn_online", False)
         self._conn_online = bool(ok)
         try:
+            palette = getattr(self.theme_set, "palette", None)
+            ok_color = palette.success if palette else "#17c964"
+            fail_color = palette.danger if palette else "#d41c1c"
             if self._conn_online:
-                self.conn_status.config(text="Connected", fg="#17c964")
+                self.conn_status.config(text="Connected", fg=ok_color)
             else:
-                self.conn_status.config(text="Offline", fg="#d41c1c")
+                self.conn_status.config(text="Offline", fg=fail_color)
         except Exception:
             pass
 
@@ -720,6 +765,7 @@ class KremlinWalletGUI(WalletsMixin):
         fr = ttk.Frame(self.main, style="Tsar.TFrame")
         self.frames["send"] = fr
         try:
+            self.send_tab.update_theme(self.theme_set.send)
             self.send_tab.build(fr)
         except Exception as e:
             tk.Label(
@@ -924,11 +970,20 @@ class KremlinWalletGUI(WalletsMixin):
         self.history_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         vs.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self.history_tree.tag_configure("CONF", foreground="#17c964")
-        self.history_tree.tag_configure("UNCONF", foreground="#f5a524")
+        palette = getattr(self.theme_set, "palette", None)
+        conf_color = palette.success if palette else "#17c964"
+        unconf_color = palette.warning if palette else "#f5a524"
+        self.history_tree.tag_configure("CONF", foreground=conf_color)
+        self.history_tree.tag_configure("UNCONF", foreground=unconf_color)
 
-        self._hist_menu = tk.Menu(self.root, tearoff=0, bg="#1b1d20", fg="#e8e8e8",
-                                activebackground="#2a2f36", activeforeground="#ffffff")
+        self._hist_menu = tk.Menu(
+            self.root,
+            tearoff=0,
+            bg=self.panel_bg,
+            fg=self.fg,
+            activebackground=self.border_color,
+            activeforeground=self.fg,
+        )
         self._hist_menu.add_command(label="Open in Explorer", command=self._hist_ctx_open)
         
         def _hist_ctx_menu(event):
@@ -1266,7 +1321,7 @@ class KremlinWalletGUI(WalletsMixin):
         self.frames["explorer"] = f
 
         # Panel Explore baru
-        self.explore_panel = ExplorePanel(f, app=self)
+        self.explore_panel = ExplorePanel(f, app=self, theme=self.theme_set.explorer)
         self.explore_panel.pack(fill=tk.BOTH, expand=True)
 
         # ---------- helper RPC ----------
@@ -1441,7 +1496,7 @@ class KremlinWalletGUI(WalletsMixin):
         try:
             if GraffitiTab is None:
                 raise RuntimeError("GraffitiTab missing")
-            self.graffiti_tab = GraffitiTab(self, f)
+            self.graffiti_tab = GraffitiTab(self, self.theme_set.graffiti, master=f)
             self.graffiti_tab.pack(fill="both", expand=True)
         except Exception as e:
             tk.Label(f, text=f"Graffiti UI failed: {e}", bg=self.bg, fg="red").pack(fill="both", expand=True, padx=20, pady=20)
@@ -1484,12 +1539,16 @@ class KremlinWalletGUI(WalletsMixin):
             self.net_text.tag_configure("h1",  font=("Segoe UI", 46, "bold"), foreground=self.accent, spacing3=6)
             self.net_text.tag_configure("Leaderboards",  font=("Segoe UI", 36, "bold"), foreground=self.accent, spacing3=6)
             self.net_text.tag_configure("center", justify="center")
-            self.net_text.tag_configure("h2",  font=("Consolas", 17, "bold"), foreground="#F1633F", spacing3=2)
-            self.net_text.tag_configure("lab", font=("Consolas", 13, "bold"), foreground="#378EC0")
-            self.net_text.tag_configure("val", font=("Consolas", 11), foreground="#858585")
-            self.net_text.tag_configure("mut", font=("Consolas", 10), foreground="#31C47F")
-            self.net_text.tag_configure("sep", font=("Consolas", 11), foreground=self.accent)
-            self.net_text.tag_configure("sep2", font=("Consolas", 11), foreground="#858585")
+            palette = getattr(self.theme_set, "palette", None)
+            accent = self.accent
+            muted = self.muted
+            success = palette.success if palette else "#31C47F"
+            self.net_text.tag_configure("h2",  font=("Consolas", 17, "bold"), foreground=accent, spacing3=2)
+            self.net_text.tag_configure("lab", font=("Consolas", 13, "bold"), foreground=accent)
+            self.net_text.tag_configure("val", font=("Consolas", 11), foreground=muted)
+            self.net_text.tag_configure("mut", font=("Consolas", 10), foreground=success)
+            self.net_text.tag_configure("sep", font=("Consolas", 11), foreground=accent)
+            self.net_text.tag_configure("sep2", font=("Consolas", 11), foreground=muted)
             # Rank-specific styles for Top #10 miners
             self.net_text.tag_configure("rank1", font=("Consolas", 17), foreground="#FFD700")  # Gold
             self.net_text.tag_configure("rank2", font=("Consolas", 15), foreground="#C0C0C0")  # Silver
@@ -1834,13 +1893,16 @@ class KremlinWalletGUI(WalletsMixin):
             insertbackground=self.fg, font=("Consolas", 11))
         self.dev_text.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
 
-        self.dev_text.tag_configure("title", font=("Consolas", 16, "bold"), foreground="#ff5e00")
+        palette = getattr(self.theme_set, "palette", None)
+        self.dev_text.tag_configure("title", font=("Consolas", 16, "bold"), foreground=self.accent)
         self.dev_text.tag_configure("center", justify="center")
-        self.dev_text.tag_configure("info", font=("Consolas", 10), foreground="#858585")
-        self.dev_text.tag_configure("alert", font=("Consolas", 13, "bold"), foreground="#F1633F")
-        self.dev_text.tag_configure("status", font=("Consolas", 10, "bold"), foreground="#31C47F")
-        self.dev_text.tag_configure("on_develop", font=("Consolas", 10, "bold"), foreground="#BDAA3F")
-        self.dev_text.tag_configure("dev", font=("Consolas", 10, "bold"), foreground="#378EC0")
+        self.dev_text.tag_configure("info", font=("Consolas", 10), foreground=self.muted)
+        alert_color = palette.danger if palette else self.accent
+        status_color = palette.success if palette else self.accent
+        self.dev_text.tag_configure("alert", font=("Consolas", 13, "bold"), foreground=alert_color)
+        self.dev_text.tag_configure("status", font=("Consolas", 10, "bold"), foreground=status_color)
+        self.dev_text.tag_configure("on_develop", font=("Consolas", 10, "bold"), foreground=self.accent)
+        self.dev_text.tag_configure("dev", font=("Consolas", 10, "bold"), foreground=self.accent)
         
         self.dev_text.insert(tk.END, "\nWhat is TsarChain?\n", ("title", "center"))
         self.dev_text.insert(tk.END, "----------------------------------\n\n", ("info", "center"))
@@ -1994,7 +2056,7 @@ class KremlinWalletGUI(WalletsMixin):
                 parent = tk.Frame(self.main, bg=self.bg)
                 self.frames["chat"] = parent
                 try:
-                    self.chat_tab.set_palette({"bg": self.bg, "panel_bg": self.panel_bg, "fg": self.fg, "muted": self.muted, "accent": self.accent})
+                    self.chat_tab.set_palette(self.theme_set.chat)
                     self.chat_tab.build(parent)
                 except Exception as e:
                     err = tk.Label(parent, text=f"Chat UI failed: {e}", bg=self.bg, fg="red")

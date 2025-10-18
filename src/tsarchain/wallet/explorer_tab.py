@@ -11,20 +11,9 @@ import re
 
 # ---------------- Local Project (With Node) ----------------
 from tsarchain.utils import config as CFG
+from .theme import ExplorerTheme
 
 
-# ===== Brand / Theme =====
-ORANGE   = "#e06214"
-BG       = "#111213"
-BG_CARD  = "#1e1e1e"
-BORDER   = "#2a2f36"
-FG       = "#e8e8e8"
-MUTED    = "#858585"
-ACCENT   = "#378EC0"   # accent for hex (hash/txid)
-VAL_NUM  = "#C4A231"   # numbers
-CONF     = "#31C47F"
-UNCONF   = "#d68b4d"
-VAL_ID   = "#f4b8e4"   # block_id
 MONO     = ("Consolas", 10)
 
 HINT_TEXT = "search with : (block height/txid/hash/address)"
@@ -73,42 +62,74 @@ def _fmt_tsar_amount(v: Union[int, str, float, None]) -> str:
 
 
 class ExplorePanel(tk.Frame):
-    def __init__(self, master, app=None):
-        super().__init__(master, bg=BG)
+    def __init__(self, master, app=None, theme: ExplorerTheme | None = None):
+        if theme is None:
+            from .theme import get_theme
+
+            theme = get_theme().explorer
+        self.theme = theme
         self.app = app
         self.providers: Dict[str, callable] = {}
         self._active = False
         self._lock = threading.Lock()
 
+        self.bg = theme.bg
+        self.card_bg = theme.card_bg
+        self.border = theme.border
+        self.fg = theme.fg
+        self.muted = theme.muted
+        self.accent = theme.accent
+        self.value_num = theme.value_num
+        self.value_id = theme.value_id
+        self.confirm_color = theme.confirmed
+        self.unconfirm_color = theme.unconfirmed
+
+        super().__init__(master, bg=self.bg)
+
         # ===== Header (brand + search) =====
-        self.header = tk.Frame(self, bg=BG)
+        self.header = tk.Frame(self, bg=self.bg)
 
         self.brand = tk.Label(
             self.header,
             text="♜Kremlin♜",
-            bg=BG, fg=ORANGE,
-            font=("Segoe UI", 65, "bold")
+            bg=self.bg,
+            fg=self.accent,
+            font=("Segoe UI", 65, "bold"),
         )
         self.brand.pack(side="top", pady=(10, 0))
 
         self.tagline = tk.Label(
             self.header,
             text="Explore the full Tsarchain ecosystem",
-            bg=BG, fg=VAL_NUM,
-            font=("Consolas", 20, "italic")
+            bg=self.bg,
+            fg=self.value_num,
+            font=("Consolas", 20, "italic"),
         )
         self.tagline.pack(side="top", pady=(0, 35))
 
-        self.search_wrap = tk.Frame(self.header, bg=BG)
+        self.search_wrap = tk.Frame(self.header, bg=self.bg)
         self.search_wrap.pack(side="top")
         self.search_var = tk.StringVar()
         self.search_entry = tk.Entry(
-            self.search_wrap, textvariable=self.search_var, width=56,
-            bg=BG_CARD, fg=FG, insertbackground=FG,
-            relief="flat", highlightthickness=1,
-            highlightbackground=BORDER, highlightcolor=BORDER
+            self.search_wrap,
+            textvariable=self.search_var,
+            width=56,
+            bg=self.card_bg,
+            fg=self.fg,
+            insertbackground=self.fg,
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=self.border,
+            highlightcolor=self.border,
         )
-        self._search_menu = tk.Menu(self, tearoff=0, bg=BG_CARD, fg=FG, activebackground="#2a2f36")
+        self._search_menu = tk.Menu(
+            self,
+            tearoff=0,
+            bg=self.card_bg,
+            fg=self.fg,
+            activebackground=self.border,
+        )
+
         def _do_paste():
             try:
                 clip = self.clipboard_get()
@@ -125,12 +146,13 @@ class ExplorePanel(tk.Frame):
                 e.insert("insert", clip.strip())
 
         self._search_menu.add_command(label="Paste", command=_do_paste)
-        
+
         self.infoscreen = tk.Label(
             self.header,
             text=f"© {datetime.now().year} Tsar Studio\nKremlin Wallet (Ver. 0.1.0)",
-            bg=BG, fg=MUTED,
-            font=("Consolas", 8,)
+            bg=self.bg,
+            fg=self.muted,
+            font=("Consolas", 8),
         )
 
         def _popup_paste(ev):
@@ -138,96 +160,123 @@ class ExplorePanel(tk.Frame):
             self._search_menu.grab_release()
 
         self.search_entry.bind("<Button-3>", _popup_paste)
-        self.search_btn = tk.Button(self.search_wrap, text="Search", command=self._on_search, bg=BG, fg=ORANGE)
-        self.exit_btn   = tk.Button(self.search_wrap, text="Exit",   command=lambda: self._enter_hero(), bg=BG, fg=MUTED)
+        self.search_btn = tk.Button(
+            self.search_wrap,
+            text="Search",
+            command=self._on_search,
+            bg=self.bg,
+            fg=self.accent,
+            activebackground=self.accent,
+            activeforeground=self.bg,
+        )
+        self.exit_btn = tk.Button(
+            self.search_wrap,
+            text="Exit",
+            command=lambda: self._enter_hero(),
+            bg=self.bg,
+            fg=self.muted,
+            activebackground=self.border,
+            activeforeground=self.fg,
+        )
         self.search_wrap.columnconfigure(0, weight=1)
 
         self._install_entry_hint(self.search_entry, HINT_TEXT)
-        self.bind_all("<Control-l>", lambda e: (
-            self._enter_compact(),
-            self.search_entry.focus_set(),
-            self.search_entry.select_range(0, 'end'),
-            "break"
-        ))
+        self.bind_all(
+            "<Control-l>",
+            lambda e: (
+                self._enter_compact(),
+                self.search_entry.focus_set(),
+                self.search_entry.select_range(0, "end"),
+                "break",
+            ),
+        )
 
         self.bind_all("<Escape>", lambda e: (self._enter_hero(), "break"))
         self.search_entry.bind("<Return>", lambda e: self._on_search())
 
         # ===== Centered Body (ala Dev) =====
-        self.body = tk.Frame(self, bg=BG)
+        self.body = tk.Frame(self, bg=self.bg)
         self.body.pack(fill="both", expand=True, padx=0, pady=12)
 
-        grid = tk.Frame(self.body, bg=BG)
+        grid = tk.Frame(self.body, bg=self.bg)
         grid.pack(fill="both", expand=True)
 
         grid.grid_columnconfigure(0, weight=1)
-        grid.grid_columnconfigure(1, weight=20)  # kolom utama grow
+        grid.grid_columnconfigure(1, weight=20)
         grid.grid_columnconfigure(2, weight=1)
         grid.grid_rowconfigure(0, weight=1)
 
-        center = tk.Frame(grid, bg=BG)
+        center = tk.Frame(grid, bg=self.bg)
         center.grid(row=0, column=1, sticky="nsew")
 
         self.card = tk.Frame(
-            center, bg=BG_CARD, bd=1, highlightthickness=1,
-            highlightbackground=BORDER, highlightcolor=BORDER
+            center,
+            bg=self.card_bg,
+            bd=1,
+            highlightthickness=1,
+            highlightbackground=self.border,
+            highlightcolor=self.border,
         )
-        self.card.pack(fill="both", expand=True, padx=16)   # add left/right padding so it looks medium sized
+        self.card.pack(fill="both", expand=True, padx=16)
 
         self.text = tk.Text(
-            self.card, wrap="word",
-            bg=BG_CARD, fg=FG, insertbackground=FG,
-            relief="flat", borderwidth=0,
+            self.card,
+            wrap="word",
+            bg=self.card_bg,
+            fg=self.fg,
+            insertbackground=self.fg,
+            relief="flat",
+            borderwidth=0,
             height=28,
         )
         self.text.pack(fill="both", expand=True, padx=18, pady=16)
 
         self._vsb = ttk.Scrollbar(self.card, orient="vertical", command=self.text.yview)
-        
+        self.text.configure(yscrollcommand=self._vsb.set)
+        self._vsb.pack(side="right", fill="y")
+
         def _wheel(e):
             if getattr(e, "delta", 0) != 0:
-                self.text.yview_scroll(-int(e.delta/120), "units")
+                self.text.yview_scroll(-int(e.delta / 120), "units")
             else:
                 self.text.yview_scroll(1 if getattr(e, "num", 0) == 5 else -1, "units")
             return "break"
 
-        self.text.bind("<MouseWheel>", _wheel)   # Windows / macOS
-        self.text.bind("<Button-4>",  _wheel)    # Linux scroll up
-        self.text.bind("<Button-5>",  _wheel)    # Linux scroll down
+        self.text.bind("<MouseWheel>", _wheel)
+        self.text.bind("<Button-4>", _wheel)
+        self.text.bind("<Button-5>", _wheel)
         self.text.configure(cursor="arrow")
 
-        # fonts/tags
         self.text.tag_configure("title", font=("Segoe UI", 12, "bold"))
         self.text.tag_configure("mono", font=MONO)
-        self.text.tag_configure("muted", foreground=MUTED)
-        self.text.tag_configure("key", foreground=MUTED)
-        self.text.tag_configure("sep", foreground=MUTED)
-        # value colors
-        self.text.tag_configure("val_hex", foreground=ACCENT)      # txid/hash/merkle
-        self.text.tag_configure("val_num", foreground=VAL_NUM)     # numbers
-        self.text.tag_configure("val_addr", foreground=ORANGE)     # tsar1...
-        self.text.tag_configure("val_id", foreground=VAL_ID)       # block_id
-        
-        self.text.tag_configure("unconfirmed", foreground=UNCONF)
-        self.text.tag_configure("confirmed", foreground=CONF)
+        self.text.tag_configure("muted", foreground=self.muted)
+        self.text.tag_configure("key", foreground=self.muted)
+        self.text.tag_configure("sep", foreground=self.muted)
+        self.text.tag_configure("val_hex", foreground=self.value_id)
+        self.text.tag_configure("val_num", foreground=self.value_num)
+        self.text.tag_configure("val_addr", foreground=self.accent)
+        self.text.tag_configure("val_id", foreground=self.value_id)
+        self.text.tag_configure("unconfirmed", foreground=self.unconfirm_color)
+        self.text.tag_configure("confirmed", foreground=self.confirm_color)
 
-        # context menu (Copy)
-        self.menu = tk.Menu(self, tearoff=0, bg=BG_CARD, fg=FG, activebackground="#2a2f36")
+        self.menu = tk.Menu(
+            self,
+            tearoff=0,
+            bg=self.card_bg,
+            fg=self.fg,
+            activebackground=self.border,
+        )
         self.menu.add_command(label="Copy", command=self._copy_selection)
         self.text.bind("<Button-3>", self._popup_copy)
         self.text.bind("<Control-c>", lambda e: (self._copy_selection(), "break"))
 
-        # status bar (selalu pojok kanan bawah)
-        bottom = tk.Frame(self, bg=BG)
+        bottom = tk.Frame(self, bg=self.bg)
         bottom.pack(side="bottom", fill="x", padx=16, pady=(0, 10))
         self.status_var = tk.StringVar(value="Explore ready.")
-        tk.Label(
-            bottom, textvariable=self.status_var, bg=BG, fg=MUTED
-        ).pack(side="right")
+        tk.Label(bottom, textvariable=self.status_var, bg=self.bg, fg=self.muted).pack(side="right")
 
-        # spacer
-        self._hero_top_spacer    = tk.Frame(self, bg=BG, height=1)
-        self._hero_bottom_spacer = tk.Frame(self, bg=BG, height=1)
+        self._hero_top_spacer = tk.Frame(self, bg=self.bg, height=1)
+        self._hero_bottom_spacer = tk.Frame(self, bg=self.bg, height=1)
         self.hero_mode = True
         self._enter_hero()
         
@@ -257,11 +306,11 @@ class ExplorePanel(tk.Frame):
         def put_hint():
             if not self.search_var.get().strip():
                 entry.insert(0, hint)
-                entry.config(fg=MUTED)
+                entry.config(fg=self.muted)
         def focus_in(_):
             if entry.get() == hint:
                 entry.delete(0, "end")
-            entry.config(fg=FG)
+            entry.config(fg=self.fg)
         def focus_out(_):
             if not entry.get().strip():
                 put_hint()

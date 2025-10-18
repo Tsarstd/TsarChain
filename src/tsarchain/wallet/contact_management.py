@@ -11,6 +11,7 @@ from typing import Callable, Optional, Dict, Tuple, List
 # ---------------- Local Project (Wallet Only) ----------------
 from .data_security import list_contacts_in_keystore, upsert_contact_in_keystore, delete_contact_from_keystore
 from .ui_utils import center_window
+from .theme import ContactsTheme
 
 Mask = Tuple[str, str]
 
@@ -80,30 +81,43 @@ class ContactManager:
         root: tk.Misc,
         get_password_cb: Callable[[], Optional[str]],
         toast_cb: Optional[Callable[[str], None]] = None,
-        palette: Optional[Dict[str, str]] = None,
+        theme: ContactsTheme | None = None,
     ) -> None:
+        if theme is None:
+            from .theme import get_theme
+
+            theme = get_theme().contacts
+        self.theme = theme
         self.root = root
         self.get_pwd = get_password_cb
         self.toast = toast_cb or (lambda m: None)
         self.colors = {
-            "bg": "#0f1115",
-            "panel_bg": "#161a1f",
-            "fg": "#f2f5f7",
-            "muted": "#a9b1ba",
-            "accent": "#e06214",
-            "card": "#1e1e1e",
-            "border": "#2a2f36",
-            "on": "#5ade3b",
-            "off":  "#e05555",
+            "bg": theme.bg,
+            "panel_bg": theme.panel_bg,
+            "fg": theme.fg,
+            "muted": theme.muted,
+            "accent": theme.accent,
+            "card": theme.card_bg,
+            "border": theme.border,
+            "on": theme.state_on,
+            "off": theme.state_off,
         }
-        if palette:
-            self.colors.update(palette)
-        self.colors.setdefault("card", "#1e1e1e")
-        self.colors.setdefault("border", "#2a2f36")
-        self.colors.setdefault("on", "#5ade3b")
-        self.colors.setdefault("off",  "#e05555")
 
         self._contacts: Dict[str, str] = {}  # address -> alias
+
+    def apply_theme(self, theme: ContactsTheme) -> None:
+        self.theme = theme
+        self.colors.update({
+            "bg": theme.bg,
+            "panel_bg": theme.panel_bg,
+            "fg": theme.fg,
+            "muted": theme.muted,
+            "accent": theme.accent,
+            "card": theme.card_bg,
+            "border": theme.border,
+            "on": theme.state_on,
+            "off": theme.state_off,
+        })
 
     # ---------- Data ----------
     def load(self) -> Dict[str, str]:
@@ -414,8 +428,8 @@ class ContactManager:
 
     # ---------- UX helper: context menu for Entry/Combobox ----------
     def attach_to_entry(self, widget: tk.Widget, on_pick: Callable[[str, str], None]) -> None:
-        menu = tk.Menu(widget, tearoff=0, bg="#1b1d20", fg="#e8e8e8",
-                       activebackground="#2a2f36", activeforeground="#ffffff")
+        menu = tk.Menu(widget, tearoff=0, bg=self.colors.get("panel_bg", self.colors["bg"]), fg=self.colors["fg"],
+                       activebackground=self.colors.get("border", self.colors["panel_bg"]), activeforeground=self.colors["fg"])
         menu.add_command(label="Paste", command=lambda: widget.event_generate("<<Paste>>"))
         menu.add_separator()
         menu.add_command(label="Pick Contact…", command=lambda: self.pick_contact(on_pick=on_pick))

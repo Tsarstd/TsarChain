@@ -8,6 +8,7 @@ from tkinter import ttk, filedialog, messagebox, StringVar
 import tkinter as tk
 
 from .graffiti import build_metadata, build_opret_hex
+from .theme import GraffitiTheme, lighten
 
 
 # ========= Stub API (ganti dengan RPC ke node/storage nanti) =========
@@ -42,9 +43,10 @@ def detect_mime(path: str) -> str:
 
 # ========= Graffiti Tab (UI) =========
 class GraffitiTab(ttk.Frame):
-    def __init__(self, app, *args, **kwargs):
+    def __init__(self, app, theme: GraffitiTheme, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.app = app
+        self.theme = theme
         self.api = DummyStorageAPI()
 
         # state
@@ -57,24 +59,41 @@ class GraffitiTab(ttk.Frame):
         self.opret_hex: str | None = None
 
         self._build_style()
+        self.configure(style="Tsar.TFrame")
         self._build_ui()
         self.refresh_storers()
 
-    # ---- styling sederhana (dark + orange accent) ----
     def _build_style(self):
+        t = self.theme
         style = ttk.Style(self)
         try:
             style.theme_use("clam")
         except tk.TclError:
             pass
-        style.configure("Tsar.TButton", padding=8)
-        style.configure("Tsar.TLabelframe.Label", font=("Consolas", 11, "bold"))
-        style.configure("Tsar.Header.TLabel", font=("Consolas", 14, "bold"))
-        style.configure("Tsar.Mono.TLabel", font=("Consolas", 10))
+        style.configure("Tsar.TFrame", background=t.bg)
+        style.configure("Tsar.Card.TFrame", background=t.card_bg)
+        style.configure("Tsar.TLabelframe", background=t.card_bg, foreground=t.fg)
+        style.configure("Tsar.TLabelframe.Label", background=t.card_bg, foreground=t.fg, font=("Consolas", 11, "bold"))
+        style.configure("Tsar.Header.TLabel", background=t.bg, foreground=t.accent, font=("Consolas", 14, "bold"))
+        style.configure("Tsar.Card.TLabel", background=t.card_bg, foreground=t.fg)
+        style.configure("Tsar.Mono.TLabel", background=t.bg, foreground=t.muted, font=("Consolas", 10))
+        style.configure("Tsar.Card.Mono.TLabel", background=t.card_bg, foreground=t.muted, font=("Consolas", 10))
+        style.configure("Tsar.TButton", padding=8, background=t.accent, foreground="#ffffff")
+        style.map(
+            "Tsar.TButton",
+            background=[("active", lighten(t.accent, 0.12)), ("disabled", t.border)],
+            foreground=[("disabled", t.muted)],
+        )
+        style.configure("Tsar.Secondary.TButton", padding=8, background=t.card_bg, foreground=t.fg)
+        style.map("Tsar.Secondary.TButton", background=[("active", lighten(t.card_bg, 0.08))])
+        style.configure("Tsar.TEntry", fieldbackground=t.card_bg, foreground=t.fg, background=t.card_bg)
+        style.configure("Tsar.TCombobox", fieldbackground=t.card_bg, foreground=t.fg, background=t.card_bg)
+        style.configure("Tsar.Progressbar", troughcolor=t.card_bg, background=t.accent)
+        self._style = style
 
     # ---- layout utama ----
     def _build_ui(self):
-        root = ttk.Frame(self, padding=12)
+        root = ttk.Frame(self, padding=12, style="Tsar.TFrame")
         root.pack(fill="both", expand=True)
 
         # Header
@@ -86,40 +105,46 @@ class GraffitiTab(ttk.Frame):
         self.storer_var = StringVar()
         self.storer_map = {}  # name -> addr
 
-        self.storer_cb = ttk.Combobox(stor_fr, textvariable=self.storer_var, state="readonly", width=50)
+        self.storer_cb = ttk.Combobox(
+            stor_fr,
+            textvariable=self.storer_var,
+            state="readonly",
+            width=50,
+            style="Tsar.TCombobox",
+        )
         self.storer_cb.grid(row=0, column=0, padx=(8, 6), pady=8, sticky="w")
-        ttk.Button(stor_fr, text="Refresh", style="Tsar.TButton", command=self.refresh_storers)\
+        ttk.Button(stor_fr, text="Refresh", style="Tsar.Secondary.TButton", command=self.refresh_storers)\
             .grid(row=0, column=1, padx=6, pady=8, sticky="w")
 
         # File
         file_fr = ttk.LabelFrame(root, text="File", style="Tsar.TLabelframe")
         file_fr.pack(fill="x", pady=(6, 6))
         self.file_var = StringVar(value="(no file)")
-        ttk.Label(file_fr, textvariable=self.file_var, style="Tsar.Mono.TLabel").grid(row=0, column=0, padx=8, pady=(8, 2), sticky="w")
+        ttk.Label(file_fr, textvariable=self.file_var, style="Tsar.Card.Mono.TLabel").grid(row=0, column=0, padx=8, pady=(8, 2), sticky="w")
         ttk.Button(file_fr, text="Choose File…", style="Tsar.TButton", command=self.pick_file)\
             .grid(row=0, column=1, padx=8, pady=(8, 2), sticky="e")
 
         self.meta_var = StringVar(value="size: -, mime: -, sha256: -")
-        ttk.Label(file_fr, textvariable=self.meta_var, style="Tsar.Mono.TLabel")\
+        ttk.Label(file_fr, textvariable=self.meta_var, style="Tsar.Card.Mono.TLabel")\
             .grid(row=1, column=0, columnspan=2, padx=8, pady=(0, 8), sticky="w")
 
         # Tip & Upload
         up_fr = ttk.LabelFrame(root, text="Upload → Receipt (stub)", style="Tsar.TLabelframe")
         up_fr.pack(fill="x", pady=(6, 6))
-        ttk.Label(up_fr, text="Tip (sats) → paid to storer address:", style="Tsar.Mono.TLabel")\
+        ttk.Label(up_fr, text="Tip (sats) → paid to storer address:", style="Tsar.Card.Mono.TLabel")\
             .grid(row=0, column=0, padx=8, pady=(8, 2), sticky="w")
         self.tip_var = StringVar(value="1000")
-        tip_entry = ttk.Entry(up_fr, textvariable=self.tip_var, width=12)
+        tip_entry = ttk.Entry(up_fr, textvariable=self.tip_var, width=12, style="Tsar.TEntry")
         tip_entry.grid(row=0, column=1, padx=6, pady=(8, 2), sticky="w")
 
         self.upload_btn = ttk.Button(up_fr, text="Upload (stub)", style="Tsar.TButton", command=self._upload_stub)
         self.upload_btn.grid(row=0, column=2, padx=8, pady=(8, 2), sticky="e")
 
-        self.pbar = ttk.Progressbar(up_fr, mode="indeterminate", length=240)
+        self.pbar = ttk.Progressbar(up_fr, mode="indeterminate", length=240, style="Tsar.Progressbar")
         self.pbar.grid(row=1, column=0, columnspan=3, padx=8, pady=(4, 8), sticky="we")
 
         self.receipt_var = StringVar(value="receipt: -")
-        ttk.Label(up_fr, textvariable=self.receipt_var, style="Tsar.Mono.TLabel")\
+        ttk.Label(up_fr, textvariable=self.receipt_var, style="Tsar.Card.Mono.TLabel")\
             .grid(row=2, column=0, columnspan=3, padx=8, pady=(0, 8), sticky="w")
 
         # Build OP_RETURN & Prefill
@@ -127,17 +152,41 @@ class GraffitiTab(ttk.Frame):
         op_fr.pack(fill="x", pady=(6, 6))
 
         self.opret_info_var = StringVar(value="OP_RETURN size: -")
-        ttk.Label(op_fr, textvariable=self.opret_info_var, style="Tsar.Mono.TLabel")\
+        ttk.Label(op_fr, textvariable=self.opret_info_var, style="Tsar.Card.Mono.TLabel")\
             .grid(row=0, column=0, padx=8, pady=(8, 2), sticky="w")
 
-        self.build_btn = ttk.Button(op_fr, text="Build Metadata + OP_RETURN", style="Tsar.TButton", command=self._build_opret, state="disabled")
+        self.build_btn = ttk.Button(
+            op_fr,
+            text="Build Metadata + OP_RETURN",
+            style="Tsar.TButton",
+            command=self._build_opret,
+            state="disabled",
+        )
         self.build_btn.grid(row=0, column=1, padx=8, pady=(8, 2), sticky="e")
 
-        self.prefill_btn = ttk.Button(op_fr, text="Prefill Send", style="Tsar.TButton", command=self._prefill_send, state="disabled")
+        self.prefill_btn = ttk.Button(
+            op_fr,
+            text="Prefill Send",
+            style="Tsar.Secondary.TButton",
+            command=self._prefill_send,
+            state="disabled",
+        )
         self.prefill_btn.grid(row=0, column=2, padx=8, pady=(8, 2), sticky="e")
 
         # Feed hint
         ttk.Label(root, text="Tip: After broadcast, check Graffiti Feed on Explorer tab.", style="Tsar.Mono.TLabel").pack(anchor="w", pady=(4,0))
+
+    def apply_theme(self, theme: GraffitiTheme) -> None:
+        self.theme = theme
+        self._build_style()
+        self.configure(style="Tsar.TFrame")
+        for child in list(self.winfo_children()):
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        self._build_ui()
+        self.refresh_storers()
 
     # ---- actions ----
     def refresh_storers(self):

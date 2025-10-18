@@ -12,6 +12,7 @@ from tkinter import ttk, messagebox as mb
 
 # ---------------- Local Project (Wallet Only) ----------------
 from .send_service import SendService
+from .theme import SendTheme
 
 # ---------------- Local Project (With Node) ----------------
 from ..utils import config as CFG
@@ -37,7 +38,7 @@ class SendTab:
             self.amount_var.set(txt)
             self._amt_placeholder_active = False
             if getattr(self, 'amount_entry', None):
-                self.amount_entry.config(fg=self.palette.get('accent', '#e06214'))
+                self.amount_entry.config(fg=self.palette["accent"])
             self._refresh_state()
         except Exception:
             pass
@@ -64,7 +65,7 @@ class SendTab:
         addresses_provider: Callable[[], List[str]] = lambda: [],
         contact_manager: Any | None = None,
         busy_request: Callable[[str, Sequence[tk.Widget], Dict[str, Any], Callable[[Optional[Dict[str, Any]]], None]], None] | None = None,
-        palette: Dict[str, str] | None = None,
+        theme: SendTheme,
         on_sent: Callable[[str], None] | None = None,
     ) -> None:
         
@@ -88,16 +89,34 @@ class SendTab:
                 pass
         self._toast = _toaster
 
+        self.theme = theme
         self.palette = {
-            "bg": "#0f1115",
-            "panel_bg": "#161a1f",
-            "fg": "#f2f5f7",
-            "muted": "#a9b1ba",
-            "accent": "#ff6b00",
-            "border": "#2a2f36",
-            "card": "#0f1115",
-            **(palette or {}),
+            "bg": theme.bg,
+            "panel_bg": theme.panel_bg,
+            "fg": theme.fg,
+            "muted": theme.muted,
+            "accent": theme.accent,
+            "border": theme.border,
+            "card": theme.card_bg,
+            "slider_trough": theme.slider_trough,
         }
+
+        self._success_color = theme.success
+        self._warning_color = theme.warning
+        self._danger_color = theme.danger
+
+    def update_theme(self, theme: SendTheme) -> None:
+        self.theme = theme
+        self.palette.update({
+            "bg": theme.bg,
+            "panel_bg": theme.panel_bg,
+            "fg": theme.fg,
+            "muted": theme.muted,
+            "accent": theme.accent,
+            "border": theme.border,
+            "card": theme.card_bg,
+            "slider_trough": theme.slider_trough,
+        })
 
         # Services & state
         self.svc = SendService()
@@ -267,9 +286,9 @@ class SendTab:
         tk.Button(row, text="Refresh", command=self._refresh_spendable, bg=p["panel_bg"], fg=p["fg"], bd=0,
                   relief=tk.FLAT, cursor="hand2", width=8).pack(side="left", padx=(8, 0))
 
-        self.from_spend_lbl = tk.Label(box, text="", bg=p["card"], fg="#17c964", font=("Consolas", 10, "bold"))
+        self.from_spend_lbl = tk.Label(box, text="", bg=p["card"], fg=self._success_color, font=("Consolas", 10, "bold"))
         self.from_spend_lbl.pack(anchor="w", pady=(4, 0))
-        tk.Label(box, textvariable=self.from_err, bg=p["card"], fg="#fa5252", font=("Consolas", 9)).pack(anchor="w")
+        tk.Label(box, textvariable=self.from_err, bg=p["card"], fg=self._danger_color, font=("Consolas", 9)).pack(anchor="w")
 
     # --- Step 2: To ---
     def _build_step_to(self, parent: tk.Misc) -> None:
@@ -294,7 +313,7 @@ class SendTab:
 
         hint = tk.Label(box, text="Example: tsar1…", bg=p["card"], fg=p["muted"], font=("Consolas", 9))
         hint.pack(anchor="w", pady=(2, 0))
-        tk.Label(box, textvariable=self.to_err, bg=p["card"], fg="#fa5252", font=("Consolas", 9)).pack(anchor="w")
+        tk.Label(box, textvariable=self.to_err, bg=p["card"], fg=self._danger_color, font=("Consolas", 9)).pack(anchor="w")
 
     # --- Step 3: Amount & Fee ---
     def _build_step_amount(self, parent: tk.Misc) -> None:
@@ -342,9 +361,17 @@ class SendTab:
 
         # Scale  - map MIN..MAX (integers). Keep step=1 for clarity
         self.fee_scale = tk.Scale(
-            fee_box, from_=CFG.MIN_FEE_RATE_SATVB, to=CFG.MAX_FEE_RATE_SATVB, orient="horizontal", showvalue=False,
-            bg=p["card"], troughcolor=p["border"], highlightthickness=0, sliderrelief=tk.FLAT, length=260,
-            command=lambda _val: self._on_fee_scale()
+            fee_box,
+            from_=CFG.MIN_FEE_RATE_SATVB,
+            to=CFG.MAX_FEE_RATE_SATVB,
+            orient="horizontal",
+            showvalue=False,
+            bg=p["card"],
+            troughcolor=p["slider_trough"],
+            highlightthickness=0,
+            sliderrelief=tk.FLAT,
+            length=260,
+            command=lambda _val: self._on_fee_scale(),
         )
         try:
             self.fee_scale.set(float(self.fee_rate_var.get()))
@@ -365,7 +392,7 @@ class SendTab:
         tk.Label(speed, text=f"Fast — max {CFG.MAX_FEE_RATE_SATVB}", bg=p["card"], fg=p["muted"], font=("Consolas", 8))\
             .pack(side="right", padx=(0, 2))
 
-        tk.Label(box, textvariable=self.amount_err, bg=p["card"], fg="#fa5252", font=("Consolas", 9)).pack(anchor="w")
+        tk.Label(box, textvariable=self.amount_err, bg=p["card"], fg=self._danger_color, font=("Consolas", 9)).pack(anchor="w")
 
     def _step_title(self, parent: tk.Misc, n: int, title: str) -> None:
         p = self.palette
