@@ -376,22 +376,6 @@ class KremlinWalletGUI(WalletsMixin):
         except Exception:
             pass
         self._style = style
-        
-    def _repaint_theme(self):
-        def paint(w):
-            cls = w.winfo_class().lower()
-            try:
-                if cls in ("frame",):
-                    w.configure(bg=self.bg)
-                elif cls in ("label",):
-                    w.configure(bg=self.bg, fg=self.fg)
-                elif cls in ("text",):
-                    w.configure(bg=self.panel_bg, fg=self.fg, insertbackground=self.fg)
-            except Exception:
-                pass
-            for c in w.winfo_children():
-                paint(c)
-        paint(self.root)
 
     def toggle_theme(self) -> None:
         self.current_theme = "light" if self.current_theme == "dark" else "dark"
@@ -1211,8 +1195,10 @@ class KremlinWalletGUI(WalletsMixin):
                 if not resp or resp.get("type") != "TX_HISTORY":
                     messagebox.showerror("Error", f"Failed to load history: {resp}")
                     try: self._toast("Failed to Load History", ms=1800, kind="error")
-                    except Exception: pass
+                    except Exception:
+                        pass
                     return
+                
                 items = resp.get("items", [])
                 self._history_rows_cache = items
                 try:
@@ -2030,6 +2016,7 @@ class KremlinWalletGUI(WalletsMixin):
     def show_history_frame(self) -> None:
         if not self._is_wallet_ready():
             return self._show_locked_screen("History")
+        
         self._hide_all_frames()
         if "history" not in self.frames:
             self._build_history_frame()

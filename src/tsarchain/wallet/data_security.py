@@ -778,6 +778,9 @@ def restore_keystore_bytes(data: bytes, password: str):
 
     raise ValueError("Unsupported backup format")
 
+def _write_atomic_json(path: str, obj: dict):
+    data = json.dumps(obj, indent=2).encode("utf-8")
+    _write_atomic(path, data)
 
 def _hist_dir() -> str:
     p = os.path.join(CFG.WALLET_DATA_DIR, "history")
@@ -787,10 +790,6 @@ def _hist_dir() -> str:
 def _hist_path(address: str) -> str:
     safe = re.sub(r"[^0-9a-z]", "_", address.lower())
     return os.path.join(_hist_dir(), f"{safe}.json")
-
-def _write_atomic_json(path: str, obj: dict):
-    data = json.dumps(obj, indent=2).encode("utf-8")
-    _write_atomic(path, data)
 
 def _load_cache_raw(address: str) -> dict:
     path = _hist_path(address)

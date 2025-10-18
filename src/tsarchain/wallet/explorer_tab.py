@@ -349,7 +349,6 @@ class ExplorePanel(tk.Frame):
             self._ui(self._render_overview, info)
         threading.Thread(target=worker, daemon=True).start()
 
-
     def _render_overview(self, info: Dict):
         self._clear_text()
         self._section("Network Overview")
