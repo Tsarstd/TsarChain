@@ -122,7 +122,7 @@ maturin develop --release --features parallel
 # -- Run Test --
 python tests/native_test.py
 ```
-> You can Switch python or native acceleration in [`src/tsarchain/utils/config.py`](src/tsarchain/utils/config.py): set `NATIVE = 0` or `1`.
+> You can Switch python or native acceleration in [`src/tsarchain/utils/config.py`](src/tsarchain/utils/config.py) : set `NATIVE = 0` or `1`.
 
 ---
 
@@ -176,10 +176,16 @@ ENABLE_CHAINWORK_RULE   = True
 ENABLE_REORG_LIMIT      = True
 REORG_LIMIT             = 100
 
-# === Genesis ===
-ALLOW_AUTO_GENESIS       = 0
-GENESIS_HASH_HEX         = "000000d4310a99d27119a4fb2a28a26dac077c0e1a240654a16feaede7ce6021"
-GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"
+# DIFF CLAMP
+ENABLE_DIFF_CLAMP       = True
+DIFF_CLAMP_MAX_UP       = 1.8
+DIFF_CLAMP_MAX_DOWN     = 0.5
+
+# Emergency Difficulty Adjustment (EDA)
+ENABLE_EDA              = True
+EDA_WINDOW              = 48
+EDA_TRIGGER_RATIO       = 5.0
+EDA_EASE_MULTIPLIER     = 2.5
 
 # =============================================================================
 # P2P / PORTS
@@ -191,7 +197,7 @@ BOOTSTRAP_DEV      = (
 )
 ```
 
-> To see the entire project configuration, you can check in [`src/tsarchain/utils/config.py`]
+> To see the entire project configuration, you can check in [`src/tsarchain/utils/config.py`](src/tsarchain/utils/config.py)
 
 
 ---
@@ -228,7 +234,7 @@ BOOTSTRAP_DEV      = (
 ## 🫂 Contributing
 
 Pull requests are welcome. Please start with small, well‑scoped changes (docs, tests, logging), then propose larger work via issues. Be respectful: the mission is **Voice Sovereignty**.
-> I've provided a logging tool. For easier debugging, you can check `src/tsarchain/utils/tsar_logging.py`
+> I've provided a logging tool. For easier debugging, you can check [`src/tsarchain/utils/tsar_logging.py`](src/tsarchain/utils/tsar_logging.py)
 
 ---
 
