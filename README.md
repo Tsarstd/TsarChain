@@ -178,7 +178,7 @@ REORG_LIMIT             = 100
 
 # === Genesis ===
 ALLOW_AUTO_GENESIS       = 0
-GENESIS_HASH_HEX         = "00000002363462f88cc7e0efd71005af0cf9449e98ed68bc64e5990719ea4920"
+GENESIS_HASH_HEX         = "000000d4310a99d27119a4fb2a28a26dac077c0e1a240654a16feaede7ce6021"
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"
 
 # =============================================================================
