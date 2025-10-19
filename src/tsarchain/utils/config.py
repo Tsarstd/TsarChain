@@ -136,6 +136,8 @@ SEGWIT_OUTPUT_VBYTES   = 31
 DUST_THRESHOLD_SAT     = 294
 MAX_DECIMALS           = 8
 
+MEMPOOL_MAX_SIZE       = 50 * 1024 * 1024   # 50 Mb
+
 
 # =============================================================================
 # CHAIN / IDENTITY

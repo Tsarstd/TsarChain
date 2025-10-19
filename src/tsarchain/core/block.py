@@ -3,10 +3,11 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
 
-import struct, time, queue, os, psutil
+import numpy as np
 import multiprocessing as mp
-from multiprocessing.synchronize import Event as MpEvent
+import struct, time, queue, os, psutil
 from typing import List, Optional
+from multiprocessing.synchronize import Event as MpEvent
 
 
 # ---------------- Local Project ----------------
@@ -353,8 +354,6 @@ class Block:
     @staticmethod
     def mine_worker_numba(start_nonce, step, header_template, target, result_queue, found_event: MpEvent, stop_event: MpEvent):
         try:
-            import numpy as np
-
             header = np.empty(80, dtype=np.uint8)
             ht = memoryview(header_template)
             for i in range(76):

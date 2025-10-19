@@ -351,6 +351,7 @@ class KremlinWalletGUI(WalletsMixin):
             style.theme_use("clam")
         except Exception:
             pass
+        
         style.configure("Tsar.TFrame", background=bg)
         style.configure("Tsar.TLabelframe", background=bg, foreground=fg)
         style.configure("Tsar.TLabelframe.Label", background=bg, foreground=fg)
@@ -363,31 +364,22 @@ class KremlinWalletGUI(WalletsMixin):
             style.configure("Tsar.Vertical.TScrollbar", background=panel, troughcolor=bg)
         except Exception:
             pass
+        
         self._style = style
 
     def toggle_theme(self) -> None:
         self.current_theme = "light" if self.current_theme == "dark" else "dark"
         self._set_theme(self.current_theme)
         self._install_styles()
-        try:
-            self.contact_mgr.apply_theme(self.theme_set.contacts)
-        except Exception:
-            pass
-        try:
-            self.chat_tab.set_palette(self.theme_set.chat)
-        except Exception:
-            pass
-        try:
-            self.send_tab.update_theme(self.theme_set.send)
-        except Exception:
-            pass
-        try:
-            if hasattr(self, "graffiti_tab"):
-                self.graffiti_tab.apply_theme(self.theme_set.graffiti)
-        except Exception:
-            pass
+        self.contact_mgr.apply_theme(self.theme_set.contacts)
+        self.chat_tab.set_palette(self.theme_set.chat)
+        self.send_tab.update_theme(self.theme_set.send)
+        if hasattr(self, "graffiti_tab"):
+            self.graffiti_tab.apply_theme(self.theme_set.graffiti)
+            
         for widget in self.root.winfo_children():
             widget.destroy()
+            
         self._build_layout()
         self._build_wallets_frame()
         self._build_send_frame()
@@ -456,6 +448,7 @@ class KremlinWalletGUI(WalletsMixin):
             self._lock_sub.config(text="Create or Load Your Wallet First")
         except Exception:
             pass
+        
         self.frames["locked"].pack(fill=tk.BOTH, expand=True)
 
     def _maybe_lock_redirect(self) -> None:

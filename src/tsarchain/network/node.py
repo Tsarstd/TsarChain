@@ -90,11 +90,13 @@ class Network:
             self.storage_address = bech32_encode(CFG.ADDRESS_PREFIX, data)
         except Exception:
             self.storage_address = None
+            
         try:
             self.storage_service = StorageService(self.storage_address or "unknown", self.node_id)
         except Exception:
             log.exception("[__init__] Failed to init StorageService")
             self.storage_service = None
+            
         self.peer_pubkeys: dict[str, str] = {}
         try:
             self.broadcast._encode = lambda inner: build_envelope(inner, self.node_ctx, extra={"pubkey": self.pubkey})
@@ -247,9 +249,11 @@ class Network:
     def _is_local_address(host: str) -> bool:
         if not host:
             return False
+        
         host = str(host).strip()
         if not host:
             return False
+        
         if host in ("127.0.0.1", "localhost", "::1"):
             return True
 
@@ -263,6 +267,7 @@ class Network:
                 infos.append((None, None, None, None, (resolved, 0)))
             except Exception:
                 return False
+            
         for info in infos:
             try:
                 ip = info[4][0]
@@ -270,6 +275,7 @@ class Network:
                     target_ips.add(ip)
             except Exception:
                 continue
+            
         if not target_ips:
             return False
 
@@ -279,11 +285,13 @@ class Network:
             local_ips.update(socket.gethostbyname_ex(hn)[2])
         except Exception:
             pass
+        
         try:
             fqdn = socket.getfqdn()
             local_ips.update(socket.gethostbyname_ex(fqdn)[2])
         except Exception:
             pass
+        
         try:
             for info in socket.getaddrinfo(None, 0, proto=socket.IPPROTO_TCP):
                 ip = info[4][0]
@@ -876,9 +884,11 @@ class Network:
     def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> bool:
         if not heights:
             return False
+        
         unique_heights = sorted({int(h) for h in heights if isinstance(h, int)})
         if not unique_heights:
             return False
+        
         batch_size = max(1, int(CFG.BLOCK_DOWNLOAD_BATCH_MAX))
         downloaded = False
         for idx in range(0, len(unique_heights), batch_size):
@@ -887,6 +897,7 @@ class Network:
             resp = self._rpc_request(peer, payload, timeout=max(15.0, CFG.SYNC_TIMEOUT))
             if not resp:
                 break
+            
             if resp.get("type") == "BLOCKS":
                 blocks = resp.get("blocks") or []
                 for block_obj in blocks:
@@ -896,12 +907,14 @@ class Network:
                     except Exception:
                         log.exception("[_download_blocks] Failed applying block from %s", peer)
                         return downloaded
+                    
             elif resp.get("type") == "SYNC_REJECT":
                 retry = float(resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
                 self._full_sync_backoff[peer] = time.time() + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
                 break
             else:
                 break
+            
         return downloaded
 
     def _apply_block_from_sync(self, block_obj: Dict[str, Any], peer: Tuple[str, int]) -> None:
@@ -917,15 +930,18 @@ class Network:
         self.request_sync(fast=True)
         if not peer:
             return
+        
         now = time.time()
         last = self._recent_gap_requests.get(peer, 0.0)
         if now - last < float(CFG.HEADERS_SYNC_MIN_INTERVAL):
             return
+        
         self._recent_gap_requests[peer] = now
         try:
             height = int(getattr(block, "height", 0))
         except Exception:
             height = 0
+            
         span = max(1, int(CFG.HEADERS_FANOUT) // 2)
         missing = list(range(max(0, height - span), height + 1))
         self._download_blocks(peer, missing)
@@ -934,6 +950,7 @@ class Network:
         norm = self._normalize_peer(peer)
         if not norm:
             return None
+        
         env = build_envelope(payload, self.node_ctx, extra={"pubkey": self.pubkey})
         timeout = float(timeout or CFG.SYNC_TIMEOUT)
         try:
@@ -955,15 +972,19 @@ class Network:
                     resp = recv_message(s, timeout=timeout)
         except (socket.timeout, ConnectionRefusedError, OSError):
             return None
+        
         except Exception:
             log.exception("[_rpc_request] Error contacting %s", norm)
             return None
+        
         if not resp:
             return None
+        
         try:
             outer = json.loads(resp.decode("utf-8"))
         except Exception:
             return None
+        
         if is_envelope(outer):
             nid = outer.get("from")
             pko = outer.get("pubkey")
@@ -971,14 +992,17 @@ class Network:
                 pk = self.peer_pubkeys.get(qnid)
                 if pk:
                     return pk
+                
                 if isinstance(nid, str) and qnid == nid and isinstance(pko, str):
                     return pko
                 return None
+            
             try:
                 inner = verify_and_unwrap(outer, _resolver)
             except Exception:
                 log.warning("[_rpc_request] verify failed from %s", norm)
                 return None
+            
             if isinstance(nid, str) and isinstance(pko, str):
                 self.peer_pubkeys[nid] = pko
         else:
@@ -989,6 +1013,7 @@ class Network:
         norm = self._normalize_peer(peer)
         if not norm:
             return False
+        
         now = time.time()
         min_iv = float(CFG.MEMPOOL_SYNC_MIN_INTERVAL)
         if not force and now - self._peer_last_mempool_sync.get(norm, 0.0) < min_iv:
@@ -1001,6 +1026,7 @@ class Network:
         resp = self._rpc_request(norm, payload, timeout=max(10.0, CFG.SYNC_TIMEOUT))
         if not resp:
             return False
+        
         if resp.get("type") != "MEMPOOL":
             return False
 
@@ -1034,6 +1060,7 @@ class Network:
         norm = self._normalize_peer(peer)
         if not norm:
             return False
+        
         now = time.time()
         min_iv = float(CFG.MEMPOOL_SYNC_MIN_INTERVAL)
         if not force and now - self._peer_last_mempool_sync.get(norm, 0.0) < min_iv:
@@ -1067,12 +1094,15 @@ class Network:
     def _request_full_sync(self, peer: Tuple[str, int]) -> bool:
         if not CFG.ENABLE_FULL_SYNC:
             return self._request_mempool_snapshot(peer, force=True)
+        
         norm = self._normalize_peer(peer)
         if not norm:
             return False
+        
         now = time.time()
         if now < self._full_sync_backoff.get(norm, 0.0):
             return False
+        
         last_req = self._full_sync_last_request.get(norm, 0.0)
         if now - last_req < CFG.FULL_SYNC_MIN_INTERVAL:
             return False
@@ -1087,10 +1117,12 @@ class Network:
         if not resp:
             self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
             return False
+        
         if resp.get("type") == "SYNC_REJECT":
             retry = float(resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
             self._full_sync_backoff[norm] = now + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
             return False
+        
         if resp.get("type") != "FULL_SYNC":
             return False
 
@@ -1195,6 +1227,7 @@ class Network:
             limit = int(message.get("limit", CFG.HEADERS_BATCH_MAX))
         except Exception:
             limit = CFG.HEADERS_BATCH_MAX
+            
         limit = max(1, min(limit, CFG.HEADERS_BATCH_MAX))
         with self.broadcast.lock:
             chain = list(self.broadcast.blockchain.chain)
@@ -1206,17 +1239,20 @@ class Network:
                     known[blk.hash().hex()] = idx
                 except Exception:
                     continue
+                
             for cand in locator:
                 idx = known.get(str(cand))
                 if idx is not None:
                     start_idx = idx + 1
                     break
+                
         headers = []
         for blk in chain[start_idx:start_idx + limit]:
             try:
                 prev_hash = blk.prev_block_hash.hex() if isinstance(blk.prev_block_hash, (bytes, bytearray)) else str(blk.prev_block_hash)
             except Exception:
                 prev_hash = None
+                
             headers.append({
                 "height": getattr(blk, "height", start_idx),
                 "hash": blk.hash().hex() if hasattr(blk, "hash") else getattr(blk, "hash", ""),
@@ -1236,10 +1272,12 @@ class Network:
         heights = message.get("heights") or []
         if not isinstance(heights, list):
             return {"type": "BLOCKS", "blocks": []}
+        
         limit = min(len(heights), CFG.BLOCK_DOWNLOAD_BATCH_MAX)
         blocks: List[dict] = []
         with self.broadcast.lock:
             chain = list(self.broadcast.blockchain.chain)
+            
         for raw_h in heights[:limit]:
             try:
                 h = int(raw_h)
@@ -1260,6 +1298,7 @@ class Network:
         if now - last_served < min_iv:
             retry_after = max(30.0, min_iv - (now - last_served))
             return {"type": "SYNC_REJECT", "reason": "rate_limited", "retry_after": retry_after}
+        
         self._full_sync_served_at[ip] = now
         try:
             if len(self.broadcast.blockchain.chain) > CFG.FULL_SYNC_MAX_BLOCKS:
@@ -1276,6 +1315,7 @@ class Network:
                     utxo_dict = self.broadcast.utxodb.to_dict()
                 except Exception:
                     utxo_dict = {}
+                    
                 txs   = [tx.to_dict() for tx in self.broadcast.mempool.get_all_txs()]
                 state = self.broadcast.state
             full_obj = {
@@ -1289,12 +1329,14 @@ class Network:
                 enc = json.dumps(full_obj, separators=CFG.CANONICAL_SEP, ensure_ascii=False).encode("utf-8")
             except Exception as e:
                 return {"type": "SYNC_REDIRECT", "reason": "serialize_failed", "detail": str(e)}
+            
             hard_cap = min(CFG.FULL_SYNC_MAX_BYTES, CFG.MAX_MSG - len(CFG.NETWORK_MAGIC))
             if len(enc) > hard_cap:
                 return {
                     "type": "SYNC_REDIRECT",
                     "reason": "payload_would_exceed_limit",
-                    "limit_bytes": hard_cap}
+                    "limit_bytes": hard_cap
+                    }
             return full_obj
         except Exception as e:
             return {"type": "SYNC_REDIRECT", "reason": "internal_error", "detail": str(e)}
@@ -1307,6 +1349,7 @@ class Network:
                 self._last_fullsync_log = now
         except Exception:
             pass
+        
         payload = message.get("data", message)
         self.broadcast.receive_full_sync(payload)
         return {"status": "ok"}
@@ -1317,6 +1360,7 @@ class Network:
                 chain = list(self.broadcast.blockchain.chain)
             if height < 0 or height >= len(chain):
                 return {"type": "BLOCK", "error": "height_out_of_range"}
+            
             b = chain[height]
             d = self._serialize_block(b)
             d["type"] = "BLOCK"
@@ -1335,6 +1379,7 @@ class Network:
                     d["type"] = "BLOCK"
                     return d
             return {"type": "BLOCK", "error": "not_found"}
+        
         except Exception as e:
             return {"type": "BLOCK", "error": str(e)}
 

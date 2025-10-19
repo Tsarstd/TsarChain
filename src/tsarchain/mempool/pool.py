@@ -13,7 +13,6 @@ from ..core.tx import Tx
 from ..storage.utxo import UTXODB
 from ..contracts.storage_nodes import StorageNodeRegistry
 from ..utils.helpers import is_p2wpkh_script, bip143_sig_hash, hash160, hash256, serialize_tx_for_txid
-from ..utils.helpers import Script, OP_RETURN, SECP256K1_P, SIGHASH_ALL
 from ..utils import helpers as H
 from ..utils import config as CFG
 
@@ -33,10 +32,11 @@ def _decompress_pubkey33(pub33: bytes) -> bytes:
         raise ValueError("Invalid compressed pubkey")
     
     x = int.from_bytes(pub33[1:], "big")
-    y_sq = (pow(x, 3, SECP256K1_P) + 7) % SECP256K1_P
-    y = pow(y_sq, (SECP256K1_P + 1) // 4, SECP256K1_P)
+    y_sq = (pow(x, 3, H.SECP256K1_P) + 7) % H.SECP256K1_P
+    y = pow(y_sq, (H.SECP256K1_P + 1) // 4, H.SECP256K1_P)
+    
     if (y & 1) != (pub33[0] & 1):
-        y = SECP256K1_P - y
+        y = H.SECP256K1_P - y
     return x.to_bytes(32, "big") + y.to_bytes(32, "big")
 
 def _vk_from_pubkey_bytes(pubkey: bytes) -> VerifyingKey:
@@ -55,6 +55,7 @@ def _vk_from_pubkey_bytes(pubkey: bytes) -> VerifyingKey:
 def _extract_p2pkh_scriptsig(script_sig_bytes: bytes):
     if not script_sig_bytes or len(script_sig_bytes) < 2:
         raise ValueError("scriptSig too short")
+    
     i = 0
     L1 = script_sig_bytes[i]; i += 1
     if i + L1 > len(script_sig_bytes):
@@ -138,6 +139,7 @@ def _get_utxo_script_bytes(utxo_entry) -> bytes:
 def _p2wpkh_script_code_from_spk(spk_bytes: bytes) -> bytes:
     if not is_p2wpkh_script(spk_bytes):
         raise ValueError("Not a P2WPKH script")
+    
     pkhash = spk_bytes[2:22]
     return b"\x19\x76\xa9\x14" + pkhash + b"\x88\xac"
 
@@ -145,17 +147,18 @@ def _legacy_sighash(tx: "Tx", vin_index: int, script_code: bytes, sighash_type: 
     orig_scripts = [tin.script_sig for tin in tx.inputs]
     try:
         for tin in tx.inputs:
-            tin.script_sig = Script([])
-        tx.inputs[vin_index].script_sig = Script.deserialize(script_code)
+            tin.script_sig = H.Script([])
+        tx.inputs[vin_index].script_sig = H.Script.deserialize(script_code)
         preimage = serialize_tx_for_txid(tx) + int(sighash_type).to_bytes(4, "little")
         return hash256(preimage)
+    
     finally:
         for tin, orig in zip(tx.inputs, orig_scripts):
             tin.script_sig = orig
 
 
 class TxPoolDB(BaseDatabase):
-    def __init__(self, filepath: str = CFG.MEMPOOL_FILE, max_size_mb: int = 50):
+    def __init__(self, filepath: str = CFG.MEMPOOL_FILE, max_size_mb: int = CFG.MEMPOOL_MAX_SIZE):
         self.filepath = filepath
         self.max_size_mb = max_size_mb
         pool = self.load_pool()
@@ -163,6 +166,7 @@ class TxPoolDB(BaseDatabase):
             self.current_size = sum(self._estimate_tx_size_any(Tx.from_dict(x) if isinstance(x, dict) else x) for x in pool)
         except Exception:
             self.current_size = 0
+        
         self.utxo = UTXODB()
         
         # Last error/context for receive_tx to report back to clients
@@ -183,8 +187,10 @@ class TxPoolDB(BaseDatabase):
             tx_dict = tx_obj.to_dict(include_txid=True)
             if not tx_dict.get("txid") and getattr(tx_obj, "txid", None):
                 tx_dict["txid"] = tx_obj.txid.hex()
+                
             if not tx_dict.get("txid"):
                 return None
+            
             return tx_dict
         except Exception:
             log.exception("[save_pool] Failed to normalize mempool entry")
@@ -196,6 +202,7 @@ class TxPoolDB(BaseDatabase):
             norm = self._normalize_entry(item)
             if norm:
                 normalized.append(norm)
+                
         if not normalized and pool:
             normalized = [item for item in pool if isinstance(item, dict)]
 
@@ -211,10 +218,12 @@ class TxPoolDB(BaseDatabase):
                             txid = d.get('txid')
                             if not txid:
                                 continue
+                            
                             b.put(txid.encode('utf-8'), json.dumps(d, separators=(",", ":")).encode('utf-8'))
                         except Exception:
                             log.exception("[save_pool] Failed writing tx %s to LMDB", d.get("txid"))
                             continue
+                        
             except Exception:
                 log.error("[save_pool] LMDB write failed, falling back to file storage")
                 self.save_json(self.filepath, normalized)
@@ -230,10 +239,12 @@ class TxPoolDB(BaseDatabase):
                         out.append(json.loads(v.decode('utf-8')))
                     except Exception:
                         continue
+                    
                 return out
             except Exception:
                 log.error("[load_pool] LMDB read failed, falling back to file storage")
                 return []
+            
         return self.load_json(self.filepath) or []
     
     def get_all_txs(self) -> list:
@@ -250,6 +261,7 @@ class TxPoolDB(BaseDatabase):
             except Exception:
                 log.warning("[get_all_txs] Failed to parse transaction in pool, skipping")
                 continue
+            
         return tx_list
 
     def has_tx(self, txid_hex: str) -> bool:
@@ -258,14 +270,16 @@ class TxPoolDB(BaseDatabase):
             if isinstance(item, dict):
                 if item.get("txid") == txid_hex:
                     return True
+                
             elif isinstance(item, Tx):
                 if item.txid and item.txid.hex() == txid_hex:
                     return True
+                
         return False
 
     def add_tx(self, tx: "Tx") -> None:
         tx_size = self._estimate_tx_size(tx)
-        if self.current_size + tx_size > self.max_size_mb * 1024 * 1024:
+        if self.current_size + tx_size > CFG.MEMPOOL_MAX_SIZE:
             self._evict_low_fee_txs(tx_size)
         
         pool = self.load_pool()
@@ -298,6 +312,7 @@ class TxPoolDB(BaseDatabase):
                 return self._estimate_tx_size(Tx.from_dict(tx_like))
             except Exception:
                 return len(json.dumps(tx_like))
+            
         return self._estimate_tx_size(tx_like)
 
     def _evict_low_fee_txs(self, needed_space: int):
@@ -306,7 +321,6 @@ class TxPoolDB(BaseDatabase):
             return
         
         sorted_txs = sorted(pool, key=lambda x: x.get('fee', 0) / max(1, self._estimate_tx_size_any(x)))
-        
         freed_space = 0
         while sorted_txs and freed_space < needed_space:
             tx = sorted_txs.pop(0)
@@ -370,6 +384,7 @@ class TxPoolDB(BaseDatabase):
             self.utxo._load()
         except Exception:
             log.debug("[prune_stale_entries] Failed to reload UTXO snapshot", exc_info=True)
+            
         utxo_set = getattr(self.utxo, "utxos", {})
         tip = self.utxo._get_tip_height_from_state()
 
@@ -429,8 +444,8 @@ class TxPoolDB(BaseDatabase):
             if key_dup in seen_prevouts:
                 self.last_error_reason = "duplicate_prevout_in_tx"
                 return False
+            
             seen_prevouts.add(key_dup)
-
             found = False
             amount = 0
             utxo_entry = None
@@ -472,6 +487,7 @@ class TxPoolDB(BaseDatabase):
                         amount = _extract_amount(utxo_entry, f"{prev_txid_hex}:{prev_index}")
                     except ValueError:
                         return False
+                    
             if not found:
                 key_ci = prev_txid_hex.lower()
                 for key, bucket in utxo_set.items():
@@ -486,6 +502,7 @@ class TxPoolDB(BaseDatabase):
                             except ValueError:
                                 return False
                         break
+                    
                     if isinstance(key, (bytes, bytearray)) and key.hex().lower() == key_ci:
                         if prev_index in bucket:
                             found = True
@@ -531,11 +548,13 @@ class TxPoolDB(BaseDatabase):
                             amount = _extract_amount(utxo_entry, f"{key} (ci)")
                             found = True
                             break
+                        
                         if isinstance(key, tuple) and len(key) == 2:
                             txid_part = key[0]
                             vout_part = int(key[1])
                             if vout_part != prev_index:
                                 continue
+                            
                             if isinstance(txid_part, (bytes, bytearray)):
                                 key_hex = txid_part.hex()
                             else:
@@ -545,6 +564,7 @@ class TxPoolDB(BaseDatabase):
                                 amount = _extract_amount(utxo_entry, f"{key} (tuple-ci)")
                                 found = True
                                 break
+                            
                     except Exception:
                         continue
 
@@ -567,6 +587,7 @@ class TxPoolDB(BaseDatabase):
                 tx_in.amount = int(amount)
             except Exception:
                 pass
+            
             try:
                 spk_bytes = _get_utxo_script_bytes(utxo_entry)
             except Exception:
@@ -583,21 +604,25 @@ class TxPoolDB(BaseDatabase):
             is_opret = False
             try:
                 spk_bytes = tx_out.script_pubkey.serialize()
-                is_opret = (isinstance(tx_out.script_pubkey, Script) and spk_bytes and spk_bytes[0] == OP_RETURN)
+                is_opret = (isinstance(tx_out.script_pubkey, H.Script) and spk_bytes and spk_bytes[0] == H.OP_RETURN)
             except Exception:
                 is_opret = False
+                
             if amt <= 0:
                 # Allow zero-amount OP_RETURN outputs
                 if is_opret and amt == 0:
                     continue
+                
                 self.last_error_reason = "nonpositive_output_amount"
                 return False
+            
             output_sum += amt
 
         if input_sum < output_sum:
             log.warning("[validate_transaction] inputs < outputs: in=%d out=%d", input_sum, output_sum)
             self.last_error_reason = f"inputs_less_than_outputs in={input_sum} out={output_sum}"
             return False
+        
         fee_value = int(input_sum - output_sum)
         try:
             tx.fee = fee_value
@@ -624,7 +649,7 @@ class TxPoolDB(BaseDatabase):
 
                 sighash_type = sig[-1]
                 sig_der = sig[:-1]
-                if sighash_type != SIGHASH_ALL:
+                if sighash_type != H.SIGHASH_ALL:
                     self.last_error_reason = "unsupported_sighash"
                     return False
 
@@ -645,6 +670,7 @@ class TxPoolDB(BaseDatabase):
                 if not H.is_signature_canonical_low_s(sig_der):
                     self.last_error_reason = "sighash_or_der_non_canonical"
                     return False
+                
                 if not H.verify_der_strict_low_s(vk, digest32, sig_der):
                     self.last_error_reason = "ecdsa_verify_failed"
                     return False
@@ -654,11 +680,11 @@ class TxPoolDB(BaseDatabase):
                 if ss_bytes is None:
                     self.last_error_reason = "missing_scriptsig"
                     return False
+                
                 if hasattr(ss_bytes, "serialize"):
                     ss_bytes = ss_bytes.serialize()
                 if isinstance(ss_bytes, str):
                     ss_bytes = bytes.fromhex(ss_bytes)
-
                 try:
                     sig_der, sighash_type, pubkey = _extract_p2pkh_scriptsig(ss_bytes)
                 except Exception:
@@ -666,7 +692,7 @@ class TxPoolDB(BaseDatabase):
                     self.last_error_reason = f"scriptsig_parse_error:{e}"
                     return False
 
-                if sighash_type != SIGHASH_ALL:
+                if sighash_type != H.SIGHASH_ALL:
                     self.last_error_reason = "unsupported_sighash"
                     return False
 
@@ -686,6 +712,7 @@ class TxPoolDB(BaseDatabase):
                 if not H.is_signature_canonical_low_s(sig_der):
                     self.last_error_reason = "sighash_or_der_non_canonical"
                     return False
+                
                 if not H.verify_der_strict_low_s(vk, digest32, sig_der):
                     self.last_error_reason = "ecdsa_verify_failed"
                     return False
@@ -698,6 +725,7 @@ class TxPoolDB(BaseDatabase):
             if not reg.validate_tx(tx):
                 self.last_error_reason = "storage_reg_invalid"
                 return False
+            
         except Exception:
             log.warning("[validate_transaction] Storage REG check exception")
             self.last_error_reason = "storage_reg_error"
