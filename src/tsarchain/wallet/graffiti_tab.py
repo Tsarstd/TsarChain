@@ -88,7 +88,16 @@ class GraffitiTab(ttk.Frame):
         style.map("Tsar.Secondary.TButton", background=[("active", lighten(t.card_bg, 0.08))])
         style.configure("Tsar.TEntry", fieldbackground=t.card_bg, foreground=t.fg, background=t.card_bg)
         style.configure("Tsar.TCombobox", fieldbackground=t.card_bg, foreground=t.fg, background=t.card_bg)
-        style.configure("Tsar.Progressbar", troughcolor=t.card_bg, background=t.accent)
+        # Progressbar styles require explicit horizontal/vertical layouts.
+        try:
+            h_layout = style.layout("Horizontal.TProgressbar")
+            v_layout = style.layout("Vertical.TProgressbar")
+        except Exception:
+            h_layout = v_layout = ()
+        style.layout("Horizontal.Tsar.TProgressbar", h_layout)
+        style.layout("Vertical.Tsar.TProgressbar", v_layout)
+        style.configure("Horizontal.Tsar.TProgressbar", troughcolor=t.card_bg, background=t.accent)
+        style.configure("Vertical.Tsar.TProgressbar", troughcolor=t.card_bg, background=t.accent)
         self._style = style
 
     # ---- layout utama ----
@@ -140,7 +149,7 @@ class GraffitiTab(ttk.Frame):
         self.upload_btn = ttk.Button(up_fr, text="Upload (stub)", style="Tsar.TButton", command=self._upload_stub)
         self.upload_btn.grid(row=0, column=2, padx=8, pady=(8, 2), sticky="e")
 
-        self.pbar = ttk.Progressbar(up_fr, mode="indeterminate", length=240, style="Tsar.Progressbar")
+        self.pbar = ttk.Progressbar(up_fr, mode="indeterminate", length=240, style="Horizontal.Tsar.TProgressbar")
         self.pbar.grid(row=1, column=0, columnspan=3, padx=8, pady=(4, 8), sticky="we")
 
         self.receipt_var = StringVar(value="receipt: -")
@@ -300,3 +309,15 @@ class GraffitiTab(ttk.Frame):
         # Switch to Send tab for final review/broadcast
         if hasattr(self.app, "switch_tab"):
             self.app.switch_tab("send")
+
+    def apply_theme(self, theme: GraffitiTheme) -> None:
+        """Rebuild the tab using a new theme palette."""
+        self.theme = theme
+        self._build_style()
+        for child in list(self.winfo_children()):
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        self._build_ui()
+        self.refresh_storers()

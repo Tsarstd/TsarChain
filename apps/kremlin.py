@@ -210,6 +210,7 @@ def show_password_lockscreen(root: tk.Tk) -> Optional[str]:
 class KremlinWalletGUI(WalletsMixin):
     def __init__(self, root: tk.Tk, initial_keystore_password: Optional[str] = None):
         self.root = root
+        self.log = get_ctx_logger("tsarchain.wallet.gui")
 
         # 0) Theme & styles
         self.current_theme = getattr(self, "current_theme", "dark")
@@ -380,6 +381,11 @@ class KremlinWalletGUI(WalletsMixin):
             self.send_tab.update_theme(self.theme_set.send)
         except Exception:
             pass
+        try:
+            if hasattr(self, "graffiti_tab"):
+                self.graffiti_tab.apply_theme(self.theme_set.graffiti)
+        except Exception:
+            pass
         for widget in self.root.winfo_children():
             widget.destroy()
         self._build_layout()
@@ -521,6 +527,13 @@ class KremlinWalletGUI(WalletsMixin):
         self._sidebar_buttons[tab] = btn
         btn.pack(pady=(12, 6))
         return btn
+
+    @staticmethod
+    def _widget_exists(widget) -> bool:
+        try:
+            return bool(widget) and widget.winfo_exists()
+        except Exception:
+            return False
 
     def _build_layout(self) -> None:
         self.sidebar = tk.Frame(self.root, bg=self.sidebar_bg, width=100)
@@ -772,24 +785,34 @@ class KremlinWalletGUI(WalletsMixin):
 
 
     def reload_addresses(self) -> None:
-        try:
-            values = (self.wallets[:] if getattr(self, "wallets", None) else [])
-            if getattr(self, "wallet_count_label", None):
-                self.wallet_count_label.config(text=f"Wallets: {len(values)}")
+        values = list(self.wallets or [])
 
-            if getattr(self, "history_addr_combo", None) is not None:
-                self.history_addr_combo["values"] = values
+        if self._widget_exists(getattr(self, "wallet_count_label", None)):
+            try:
+                self.wallet_count_label.config(text=f"Wallets: {len(values)}")
+            except Exception:
+                if self.log:
+                    self.log.debug("[reload_addresses] wallet_count_label update skipped", exc_info=True)
+
+        combo = getattr(self, "history_addr_combo", None)
+        if self._widget_exists(combo):
+            try:
+                combo["values"] = values
                 if hasattr(self, "history_addr_var") and self.history_addr_var is not None:
                     if values and self.history_addr_var.get() not in values:
                         self.history_addr_var.set(values[0])
-                    if not values:
+                    elif not values:
                         self.history_addr_var.set("")
-            try:
-                self.chat_tab.reload_addresses()
             except Exception:
-                pass
+                if self.log:
+                    self.log.debug("[reload_addresses] history combo update skipped", exc_info=True)
+
+        try:
+            if hasattr(self, "chat_tab"):
+                self.chat_tab.reload_addresses()
         except Exception:
-            self.log.exception("[reload_addresses] warning:")
+            if self.log:
+                self.log.debug("[reload_addresses] chat tab reload skipped", exc_info=True)
 
     def _chat_toggle_online(self) -> None:
         addr = (self.chat_from_var.get() or "").strip().lower()

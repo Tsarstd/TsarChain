@@ -31,6 +31,7 @@ def _is_p2pkh_script(spk: bytes) -> bool:
 def _decompress_pubkey33(pub33: bytes) -> bytes:
     if not (len(pub33) == 33 and pub33[0] in (2, 3)):
         raise ValueError("Invalid compressed pubkey")
+    
     x = int.from_bytes(pub33[1:], "big")
     y_sq = (pow(x, 3, SECP256K1_P) + 7) % SECP256K1_P
     y = pow(y_sq, (SECP256K1_P + 1) // 4, SECP256K1_P)
@@ -42,10 +43,13 @@ def _vk_from_pubkey_bytes(pubkey: bytes) -> VerifyingKey:
     if len(pubkey) == 33 and pubkey[0] in (2, 3):
         raw = _decompress_pubkey33(pubkey)
         return VerifyingKey.from_string(raw, curve=SECP256k1)
+    
     if len(pubkey) == 65 and pubkey[0] == 4:
         return VerifyingKey.from_string(pubkey[1:], curve=SECP256k1)
+    
     if len(pubkey) == 64:
         return VerifyingKey.from_string(pubkey, curve=SECP256k1)
+    
     raise ValueError("Unsupported pubkey format")
 
 def _extract_p2pkh_scriptsig(script_sig_bytes: bytes):
@@ -55,17 +59,21 @@ def _extract_p2pkh_scriptsig(script_sig_bytes: bytes):
     L1 = script_sig_bytes[i]; i += 1
     if i + L1 > len(script_sig_bytes):
         raise ValueError("Bad sig length in scriptSig")
+    
     sig_all = script_sig_bytes[i:i+L1]; i += L1
     if len(sig_all) < 2:
         raise ValueError("Bad DER+hashtype")
+    
     sighash_type = sig_all[-1]
     sig_der = sig_all[:-1]
 
     if i >= len(script_sig_bytes):
         raise ValueError("Missing pubkey push")
+    
     L2 = script_sig_bytes[i]; i += 1
     if i + L2 > len(script_sig_bytes):
         raise ValueError("Bad pubkey length in scriptSig")
+    
     pubkey = script_sig_bytes[i:i+L2]
     return sig_der, sighash_type, pubkey
 
@@ -156,6 +164,7 @@ class TxPoolDB(BaseDatabase):
         except Exception:
             self.current_size = 0
         self.utxo = UTXODB()
+        
         # Last error/context for receive_tx to report back to clients
         self.last_error_reason: str | None = None
 
