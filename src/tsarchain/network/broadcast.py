@@ -280,17 +280,6 @@ class Broadcast:
 
     # ---------------------- Chainwork / validation utils ------------------
 
-    def _compact_to_target(self, bits):
-        if isinstance(bits, str):
-            bits = int(bits, 16) if bits.startswith("0x") else int(bits)
-        exp = (bits >> 24) & 0xff
-        mant = bits & 0xffffff
-        if exp <= 3:
-            target = mant >> (8 * (3 - exp))
-        else:
-            target = mant << (8 * (exp - 3))
-        return max(1, target)
-
     @staticmethod
     def _parse_bits(bits):
         if bits is None:
