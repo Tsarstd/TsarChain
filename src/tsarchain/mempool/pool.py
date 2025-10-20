@@ -164,6 +164,7 @@ class TxPoolDB(BaseDatabase):
         filepath: str = CFG.MEMPOOL_FILE,
         max_size_mb: int = CFG.MEMPOOL_MAX_SIZE,
         utxo_store: Optional[UTXODB] = None,
+        inherit_state: bool = False,
     ):
         self.filepath = filepath
         self.max_size_mb = max_size_mb
@@ -173,7 +174,13 @@ class TxPoolDB(BaseDatabase):
         except Exception:
             self.current_size = 0
         
-        self.utxo = utxo_store if utxo_store is not None else UTXODB()
+        utxo_store = utxo_store or UTXODB()
+        self.utxo = utxo_store
+        if inherit_state:
+            try:
+                self.utxo._load()
+            except Exception:
+                pass
         
         # Last error/context for receive_tx to report back to clients
         self.last_error_reason: str | None = None

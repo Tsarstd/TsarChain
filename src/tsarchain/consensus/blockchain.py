@@ -59,7 +59,8 @@ class Blockchain:
         self._utxodb: Optional[UTXODB] = None
         self._utxo_dirty: bool = False
         self._utxo_last_flush_height: int = -1
-        self._utxo_flush_interval: int = max(1, CFG.UTXO_FLUSH_INTERVAL)
+        self._utxo_flush_interval: int = max(1, int(getattr(CFG, "UTXO_FLUSH_INTERVAL", 20)))
+        self._utxo_synced: bool = False
 
         if not self.in_memory:
             if self.db_path:
@@ -135,6 +136,9 @@ class Blockchain:
             self._utxodb = UTXODB()
             self._utxo_dirty = False
             self._utxo_last_flush_height = self.height
+            self._utxo_synced = False
+        if not self._utxo_synced:
+            self._sync_utxo_store(force=True)
         return self._utxodb
 
     def get_utxo_store(self) -> Optional[UTXODB]:
@@ -193,6 +197,24 @@ class Blockchain:
         if did_flush:
             self._utxo_dirty = False
             self._utxo_last_flush_height = current_height
+    
+    def _sync_utxo_store(self, *, force: bool = False) -> None:
+        if self.in_memory or self._utxodb is None:
+            return
+        if self._utxo_synced and not force:
+            return
+        try:
+            if self.chain:
+                self._utxodb.rebuild_from_chain(self.chain)
+            else:
+                self._utxodb.utxos.clear()
+                self._utxodb.flush(force=True)
+        except Exception:
+            log.exception("[_sync_utxo_store] Failed to rebuild UTXO snapshot")
+            return
+        self._utxo_dirty = False
+        self._utxo_last_flush_height = self.height
+        self._utxo_synced = True
             
     def ensure_genesis(self, miner_address: str, use_cores: int | None = None) -> bool:
         if self.chain:
@@ -591,6 +613,7 @@ class Blockchain:
                     store.rebuild_from_chain(self.chain)
                     self._utxo_dirty = False
                     self._utxo_last_flush_height = self.height
+                    self._utxo_synced = True
                 self.save_state()
             else:
                 try:
@@ -616,6 +639,7 @@ class Blockchain:
                     if store is not None:
                         store.update(block.transactions, block_height=0, autosave=False)
                         self._mark_utxo_dirty()
+                        self._utxo_synced = True
                         self._maybe_flush_utxo(force=True)
                 try:
                     self._prune_mempool_confirmed(block)

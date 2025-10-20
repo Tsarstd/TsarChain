@@ -33,9 +33,10 @@ class Broadcast:
                 shared_utxo = self.blockchain.get_utxo_store()
             except Exception:
                 shared_utxo = None
+                
         self._utxo_shared = shared_utxo is not None
         self.utxodb = shared_utxo or UTXODB()
-        self.mempool = TxPoolDB(utxo_store=self.utxodb)
+        self.mempool = TxPoolDB(utxo_store=self.utxodb, inherit_state=True)
         self.state = {}
         self.seen_blocks: Set[str] = set()
         self.seen_txs: Set[str] = set()
