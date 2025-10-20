@@ -4,6 +4,7 @@
 # Refs: BIP143; BIP141; libsecp256k1; Signal-X3DH
 
 import json
+from typing import Optional
 from ecdsa import VerifyingKey, SECP256k1
 
 # ---------------- Local Project ----------------
@@ -158,7 +159,12 @@ def _legacy_sighash(tx: "Tx", vin_index: int, script_code: bytes, sighash_type: 
 
 
 class TxPoolDB(BaseDatabase):
-    def __init__(self, filepath: str = CFG.MEMPOOL_FILE, max_size_mb: int = CFG.MEMPOOL_MAX_SIZE):
+    def __init__(
+        self,
+        filepath: str = CFG.MEMPOOL_FILE,
+        max_size_mb: int = CFG.MEMPOOL_MAX_SIZE,
+        utxo_store: Optional[UTXODB] = None,
+    ):
         self.filepath = filepath
         self.max_size_mb = max_size_mb
         pool = self.load_pool()
@@ -167,7 +173,7 @@ class TxPoolDB(BaseDatabase):
         except Exception:
             self.current_size = 0
         
-        self.utxo = UTXODB()
+        self.utxo = utxo_store if utxo_store is not None else UTXODB()
         
         # Last error/context for receive_tx to report back to clients
         self.last_error_reason: str | None = None
@@ -749,8 +755,7 @@ class TxPoolDB(BaseDatabase):
             self.last_error_reason = "tx_already_in_pool"
             return False
 
-        utxo_db = UTXODB()
-        utxo_set = utxo_db.utxos
+        utxo_set = self.utxo.utxos
         tip = self.utxo._get_tip_height_from_state()
         if not self.validate_transaction(transaction_obj, utxo_set, spend_at_height=tip + 1):
             if not self.last_error_reason:

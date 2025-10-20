@@ -412,6 +412,8 @@ KV_BACKEND = "lmdb"   # lmdb | json
 LMDB_MAP_SIZE_INIT = 64 * 1024 * 1024  # 64 MiB
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # 64 GiB
 
+UTXO_FLUSH_INTERVAL  = 20
+
 
 # =============================================================================
 # LOGGING SETTINGS

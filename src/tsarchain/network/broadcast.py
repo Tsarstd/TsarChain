@@ -27,8 +27,15 @@ class Broadcast:
     def __init__(self, blockchain=None, utxodb=None):
         self.lock = threading.RLock()
         self.blockchain = blockchain or Blockchain()
-        self.utxodb = utxodb or UTXODB()
-        self.mempool = TxPoolDB()
+        shared_utxo = utxodb
+        if shared_utxo is None and hasattr(self.blockchain, "get_utxo_store"):
+            try:
+                shared_utxo = self.blockchain.get_utxo_store()
+            except Exception:
+                shared_utxo = None
+        self._utxo_shared = shared_utxo is not None
+        self.utxodb = shared_utxo or UTXODB()
+        self.mempool = TxPoolDB(utxo_store=self.utxodb)
         self.state = {}
         self.seen_blocks: Set[str] = set()
         self.seen_txs: Set[str] = set()
@@ -466,16 +473,11 @@ class Broadcast:
                 log.exception("[receive_block] Error updating mempool after block acceptance")
 
             try:
-                if self.blockchain.in_memory:
+                if not self._utxo_shared:
                     try:
                         self.utxodb.update(block.transactions, block.height)
                     except Exception:
                         log.exception("[receive_block] Error updating UTXO after block acceptance")
-                else:
-                    try:
-                        self.utxodb._load()
-                    except Exception:
-                        log.exception("[receive_block] Error loading UTXO DB from disk")
             except Exception:
                 log.exception("[receive_block] Error updating UTXO DB after block acceptance")
 
@@ -528,8 +530,9 @@ class Broadcast:
             utxo_data = message.get("data", {})
             if utxo_data and not self.blockchain.chain:
                 self.utxodb = UTXODB.from_dict(utxo_data)
+                self._utxo_shared = False
                 if not self.blockchain.in_memory:
-                    self.utxodb._save()
+                    self.utxodb.flush(force=True)
             else:
                 if utxo_data:
                     log.warning("[receive_utxos] Ignoring UTXO snapshot since we have a non-empty chain")

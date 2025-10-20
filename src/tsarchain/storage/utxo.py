@@ -24,6 +24,7 @@ class UTXODB(BaseDatabase):
         self.filepath = CFG.UTXOS_FILE
         self.utxos = {}
         self._lock = threading.RLock()
+        self._dirty = False
         self._load()
 
     # ===================== SERIALIZE =====================
@@ -89,7 +90,7 @@ class UTXODB(BaseDatabase):
                         continue
                 return nested
             except Exception as e:
-                print(f"[UTXODB] LMDB read error: {e}")
+                log.debug("[UTXODB] LMDB read error: %s", e)
                 return {}
         else:
             try:
@@ -101,10 +102,10 @@ class UTXODB(BaseDatabase):
                         index = int(index)
                         nested.setdefault(txid, {})[index] = val
                     except ValueError:
-                        print(f"[UTXODB] Format key UTXO invalid: {key}")
+                        log.debug("[UTXODB] Format key UTXO invalid: %s", key)
                 return nested
             except Exception as e:
-                print(f"[UTXODB] Gagal membaca {self.filepath}: {e}")
+                log.warning("[UTXODB] Failed To Read %s: %s", self.filepath, e)
                 return {}
 
     # ===================== FILE I/O =====================
@@ -154,10 +155,15 @@ class UTXODB(BaseDatabase):
                             "block_height": 0,
                         }
                     else:
-                        print(f"[UTXODB] Skip UTXO invalid (field kurang): {key}")
+                        log.debug("[UTXODB] Skip UTXO invalid (less fields): %s", key)
+            self._dirty = False
 
-    def _save(self):
+    def _save(self, force: bool = False):
+        if not force and not self._dirty:
+            return
         with self._lock:
+            if not force and not self._dirty:
+                return
             if kv_enabled():
                 try:
                     clear_db('utxo')
@@ -168,9 +174,10 @@ class UTXODB(BaseDatabase):
                         for k, v in self.to_dict().items():
                             b.put(k.encode('utf-8'), json.dumps(v, separators=(",", ":")).encode('utf-8'))
                 except Exception as e:
-                    print(f"[UTXODB] LMDB save failed: {e}")
+                    log.warning("[UTXODB] LMDB save failed: %s", e)
             else:
                 self.save_json(self.filepath, self.to_dict())
+            self._dirty = False
 
     # ===================== MODIFIKASI DATA =====================
     def _txid_hex(self, x):
@@ -214,7 +221,7 @@ class UTXODB(BaseDatabase):
             log.exception("[_is_unspendable_opreturn] Error checking OP_RETURN in scriptPubKey")
             return False
 
-    def update(self, transactions, block_height: int):
+    def update(self, transactions, block_height: int, *, autosave: bool = True):
         if not transactions:
             return
         with self._lock:
@@ -236,7 +243,9 @@ class UTXODB(BaseDatabase):
                              is_coinbase=is_coinbase,
                              block_height=block_height,
                              autosave=False)
-            self._save()
+            self._dirty = True
+            if autosave:
+                self._save()
 
 
     def rebuild_from_chain(self, blocks) -> None:
@@ -262,9 +271,15 @@ class UTXODB(BaseDatabase):
                             self.utxos.pop(spent_key, None)
                     for index, tx_out in enumerate(getattr(tx, "outputs", []) or []):
                         self.add(txid_hex, index, tx_out, is_coinbase=is_coinbase, block_height=height, autosave=False)
+            self._dirty = True
             self._save()
-            
-            
+
+    def flush(self, force: bool = False) -> bool:
+        if not force and not self._dirty:
+            return False
+        self._save(force=force)
+        return True
+
     def add(self, txid: str, index: int, tx_out: TxOut, is_coinbase: bool = False, block_height: int = 0, autosave: bool = True):
         if self._is_unspendable_opreturn(tx_out):
             return
@@ -276,20 +291,24 @@ class UTXODB(BaseDatabase):
                 "is_coinbase": bool(is_coinbase),
                 "block_height": int(block_height),
             }
+            self._dirty = True
             if autosave:
                 self._save()
 
-    def remove(self, txid, index: int):
+    def remove(self, txid, index: int, autosave: bool = True):
         key = f"{self._txid_hex(txid)}:{int(index)}"
         with self._lock:
             if self.utxos.pop(key, None) is not None:
-                self._save()
+                self._dirty = True
+                if autosave:
+                    self._save()
 
     def spend_input(self, tx_input):
         prev_txid_hex, vout = self._prevout_from_txin(tx_input)
         if prev_txid_hex is None or vout is None:
             raise AttributeError("TxIn missing prevout (txid/vout)")
         self.remove(prev_txid_hex, int(vout))
+
 
     # ===================== QUERY / BALANCE =====================
     def _get_tip_height_from_state(self) -> int:

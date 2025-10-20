@@ -17,7 +17,7 @@ from ..core.coinbase import CoinbaseTx
 from ..storage.utxo import UTXODB
 from ..mempool.pool import TxPoolDB
 from ..storage.db import AtomicJSONFile
-from ..storage.kv import kv_enabled, batch, iter_prefix, clear_db
+from ..storage.kv import kv_enabled, batch, iter_prefix, clear_db, delete
 from ..utils.helpers import bits_to_target, target_to_bits, target_to_difficulty, difficulty_to_target, merkle_root
 from ..utils import config as CFG
 
@@ -54,6 +54,12 @@ class Blockchain:
         self.pending_blocks: List[Block] = []
         self._chain_store = AtomicJSONFile(CFG.BLOCK_FILE, keep_backups=3)
         self._state_store = AtomicJSONFile(CFG.STATE_FILE, keep_backups=3)
+        self._persisted_height: int = -1
+        self._chain_dirty_from: Optional[int] = None
+        self._utxodb: Optional[UTXODB] = None
+        self._utxo_dirty: bool = False
+        self._utxo_last_flush_height: int = -1
+        self._utxo_flush_interval: int = max(1, CFG.UTXO_FLUSH_INTERVAL)
 
         if not self.in_memory:
             if self.db_path:
@@ -122,6 +128,72 @@ class Blockchain:
             self.save_chain()
             self.save_state()
 
+    def _ensure_utxodb(self) -> Optional[UTXODB]:
+        if self.in_memory:
+            return None
+        if self._utxodb is None:
+            self._utxodb = UTXODB()
+            self._utxo_dirty = False
+            self._utxo_last_flush_height = self.height
+        return self._utxodb
+
+    def get_utxo_store(self) -> Optional[UTXODB]:
+        return self._ensure_utxodb()
+
+    def _mark_chain_dirty(self, height: int = 0) -> None:
+        if height < 0:
+            height = 0
+        if self._chain_dirty_from is None:
+            self._chain_dirty_from = height
+        else:
+            self._chain_dirty_from = min(self._chain_dirty_from, height)
+
+    def _prune_chain_store(self, start_height: int) -> None:
+        if self.in_memory or not kv_enabled():
+            return
+        if start_height < 0:
+            start_height = 0
+        try:
+            keys_to_remove: list[bytes] = []
+            for key, _ in iter_prefix('chain', b'h:'):
+                try:
+                    h = int(key[2:].decode('utf-8'))
+                except Exception:
+                    continue
+                if h >= start_height:
+                    keys_to_remove.append(key)
+            for key in keys_to_remove:
+                try:
+                    delete('chain', key)
+                except Exception:
+                    pass
+        except Exception:
+            log.exception("[_prune_chain_store] Failed pruning chain entries from height %s", start_height)
+
+    def _mark_utxo_dirty(self) -> None:
+        if self.in_memory:
+            return
+        self._utxo_dirty = True
+
+    def _maybe_flush_utxo(self, *, force: bool = False) -> None:
+        if self.in_memory:
+            return
+        store = self._ensure_utxodb()
+        if store is None:
+            return
+        current_height = self.height
+        if force:
+            did_flush = store.flush(force=True)
+        else:
+            if not self._utxo_dirty:
+                return
+            if self._utxo_last_flush_height >= 0 and (current_height - self._utxo_last_flush_height) < self._utxo_flush_interval:
+                return
+            did_flush = store.flush()
+        if did_flush:
+            self._utxo_dirty = False
+            self._utxo_last_flush_height = current_height
+            
     def ensure_genesis(self, miner_address: str, use_cores: int | None = None) -> bool:
         if self.chain:
             return False
@@ -152,22 +224,59 @@ class Blockchain:
         return bc
 
     # ----------------- I/O Chain -----------------
-    def save_chain(self):
+    def save_chain(self, *, force_full: bool = False):
         if self.in_memory:
             return
         with self.lock:
-            chain_data = [block.to_dict() for block in self.chain]
+            tip_height = len(self.chain) - 1
+            if force_full:
+                self._chain_dirty_from = 0
+                self._persisted_height = -1
+
+            if tip_height < 0:
+                if force_full:
+                    if kv_enabled():
+                        try:
+                            clear_db('chain')
+                        except Exception:
+                            pass
+                    else:
+                        self._chain_store.save([])
+                self._chain_dirty_from = None
+                self._persisted_height = -1
+                return
+
+            start_height: Optional[int] = None
+            if self._chain_dirty_from is not None:
+                start_height = max(0, self._chain_dirty_from)
+            elif tip_height > self._persisted_height:
+                start_height = self._persisted_height + 1
+            elif force_full or self._persisted_height < 0:
+                start_height = 0
+
             if kv_enabled():
                 try:
-                    clear_db('chain')
-                    with batch('chain') as b:
-                        for bidx, bd in enumerate(chain_data):
-                            key = f"h:{bidx:012d}".encode('utf-8')
-                            b.put(key, (json.dumps(bd, separators=(",", ":")).encode('utf-8')))
+                    if self._persisted_height < 0 or (start_height == 0 and (force_full or self._persisted_height < 0)):
+                        clear_db('chain')
+                        self._persisted_height = -1
+                    if tip_height < self._persisted_height:
+                        self._prune_chain_store(tip_height + 1)
+                        self._persisted_height = tip_height
+                    if start_height is not None and start_height <= tip_height:
+                        with batch('chain') as b:
+                            for height in range(start_height, tip_height + 1):
+                                key = f"h:{height:012d}".encode('utf-8')
+                                payload = json.dumps(self.chain[height].to_dict(), separators=(",", ":")).encode('utf-8')
+                                b.put(key, payload)
+                        self._persisted_height = tip_height
                 except Exception:
                     log.exception("[save_chain] LMDB save_chain failed")
             else:
-                self._chain_store.save(chain_data)
+                if force_full or start_height is not None or tip_height != self._persisted_height:
+                    self._chain_store.save([block.to_dict() for block in self.chain])
+                    self._persisted_height = tip_height
+
+            self._chain_dirty_from = None
             
     def load_chain(self):
         if self.in_memory:
@@ -198,6 +307,12 @@ class Blockchain:
         self.total_blocks = len(self.chain)
         self.total_supply = self.calculate_total_supply()
         self.supply_in_tsar = self.total_supply / CFG.TSAR if self.total_supply else 0
+        self._persisted_height = len(self.chain) - 1
+        self._chain_dirty_from = None
+        if not self.in_memory:
+            self._ensure_utxodb()
+            self._utxo_last_flush_height = self.height
+            self._utxo_dirty = False
 
     # ----------------- I/O State -----------------
     def load_state(self):
@@ -311,7 +426,7 @@ class Blockchain:
         mempool_count = 0
         mempool_vbytes_est = None
         try:
-            pool = TxPoolDB()
+            pool = TxPoolDB(utxo_store=self._ensure_utxodb())
             mempool_count = len(pool.get_all_txs())
             mempool_vbytes_est = int(getattr(pool, "current_size", 0))
         except Exception:
@@ -323,7 +438,7 @@ class Blockchain:
         immature_coinbase    = 0
         errors               = 0
         try:
-            utxo = UTXODB()
+            utxo = self._ensure_utxodb() or UTXODB()
             try:
                 data_map = utxo.to_dict()
             except Exception:
@@ -469,17 +584,13 @@ class Blockchain:
             self.total_blocks = len(self.chain)
 
             if not self.in_memory:
-                self.save_chain()
-                utxodb = UTXODB()
-                utxodb.utxos.clear()
-                for b in self.chain:
-                    try:
-                        utxodb.update(b.transactions, block_height=b.height)
-                    except Exception as e:
-                        log.debug("[replace_with] UTXO update skipped: %s", e)
-                try: utxodb._save()
-                except Exception as e:
-                    log.debug("[replace_with] UTXO save skipped: %s", e)
+                self._mark_chain_dirty(0)
+                self.save_chain(force_full=True)
+                store = self._ensure_utxodb()
+                if store is not None:
+                    store.rebuild_from_chain(self.chain)
+                    self._utxo_dirty = False
+                    self._utxo_last_flush_height = self.height
                 self.save_state()
             else:
                 try:
@@ -501,17 +612,18 @@ class Blockchain:
 
             try:
                 if not self.in_memory:
-                    utxodb = UTXODB()
-                    utxodb.update(block.transactions, block_height=0)
-                    try: utxodb._save()
-                    except Exception:
-                        pass
+                    store = self._ensure_utxodb()
+                    if store is not None:
+                        store.update(block.transactions, block_height=0, autosave=False)
+                        self._mark_utxo_dirty()
+                        self._maybe_flush_utxo(force=True)
                 try:
                     self._prune_mempool_confirmed(block)
                 except Exception:
                     log.exception("[add_block] Failed to prune mempool after genesis")
                 if not self.in_memory:
-                    self.save_chain()
+                    self._mark_chain_dirty(block.height)
+                    self.save_chain(force_full=True)
                     self.save_state()
                 else:
                     self.total_supply = self.calculate_total_supply()
@@ -536,14 +648,16 @@ class Blockchain:
             log.exception("[add_block] failed to compute chainworks")
             pass
 
+        self._mark_chain_dirty(block.height)
+
         try:
             # UTXO
             if not self.in_memory:
                 try:
-                    utxodb = UTXODB()
-                    utxodb.update(block.transactions, block_height=block.height)
-                    try: utxodb._save()
-                    except Exception: pass
+                    store = self._ensure_utxodb()
+                    if store is not None:
+                        store.update(block.transactions, block_height=block.height, autosave=False)
+                        self._mark_utxo_dirty()
                 except Exception:
                     pass
             try:
@@ -553,6 +667,7 @@ class Blockchain:
 
             if not self.in_memory:
                 self.save_chain()
+                self._maybe_flush_utxo()
                 self.save_state()
             else:
                 self.total_supply = self.calculate_total_supply()
@@ -611,18 +726,13 @@ class Blockchain:
             self.total_blocks = len(self.chain)
 
             if not self.in_memory:
+                self._mark_chain_dirty(block.height)
                 self.save_chain()
-                utxodb = UTXODB()
-                utxodb.utxos.clear()
-                for b in self.chain:
-                    try:
-                        utxodb.update(b.transactions, block_height=b.height)
-                    except Exception:
-                        pass
-                try:
-                    utxodb._save()
-                except Exception:
-                    pass
+                store = self._ensure_utxodb()
+                if store is not None:
+                    store.rebuild_from_chain(self.chain)
+                    self._utxo_dirty = False
+                    self._utxo_last_flush_height = self.height
                 self.save_state()
             else:
                 try:
@@ -692,7 +802,7 @@ class Blockchain:
         if not txids:
             return
 
-        pool = TxPoolDB()
+        pool = TxPoolDB(utxo_store=self._ensure_utxodb())
         pruned = 0
         seen: set[str] = set()
         for txid in txids:
@@ -816,13 +926,13 @@ class Blockchain:
         if GENESIS_HASH is not None and genesis.hash() != GENESIS_HASH:
             raise ValueError("[Genesis] Newly created genesis does not match TSAR_GENESIS_HASH")
         if not self.in_memory:
-            self.save_chain()
-            utxodb = UTXODB()
-            utxodb.update(genesis.transactions, block_height=0)
-            try:
-                utxodb._save()
-            except Exception:
-                pass
+            self._mark_chain_dirty(genesis.height)
+            self.save_chain(force_full=True)
+            store = self._ensure_utxodb()
+            if store is not None:
+                store.update(genesis.transactions, block_height=0, autosave=False)
+                self._mark_utxo_dirty()
+                self._maybe_flush_utxo(force=True)
             self.save_state()
             
         else:
@@ -851,14 +961,13 @@ class Blockchain:
         reward = self.get_block_reward(height)
         if self.total_supply + reward > CFG.MAX_SUPPLY:
             reward = max(0, CFG.MAX_SUPPLY - self.total_supply)
-        pool = TxPoolDB()
+        pool = TxPoolDB(utxo_store=self._ensure_utxodb())
         txs_from_mempool = pool.get_all_txs()
-        utxodb = UTXODB()
+        store = self._ensure_utxodb() or UTXODB()
         try:
-            utxodb._load()
-            current_utxos = getattr(utxodb, "utxos", utxodb.load_utxo_set())
+            current_utxos = getattr(store, "utxos", store.load_utxo_set())
         except Exception:
-            current_utxos = utxodb.load_utxo_set()
+            current_utxos = store.load_utxo_set()
 
         temp_utxos = current_utxos.copy() if isinstance(current_utxos, dict) else dict(current_utxos)
 
@@ -880,7 +989,7 @@ class Blockchain:
                 used_utxos_in_block.add((txin.txid, txin.vout))
             valid_txs.append(tx)
             try:
-                utxodb.apply_tx_to_utxoset(tx, temp_utxos)
+                self._utxodb.apply_tx_to_utxoset(tx, temp_utxos)
             except Exception:
                 pass
 
@@ -1283,18 +1392,17 @@ class Blockchain:
             return False
 
     def _validate_transactions(self, block: Block) -> bool:
+        store = self._ensure_utxodb() or UTXODB()
         try:
-            utxodb = UTXODB()
-            try:
-                utxodb._load()
-                utxos = getattr(utxodb, "utxos", utxodb.load_utxo_set())
-            except Exception:
-                utxos = utxodb.load_utxo_set()
+            utxos = getattr(store, "utxos", store.load_utxo_set())
         except Exception:
-            log.exception("[_validate_transactions] Cannot load UTXO set")
-            return False
+            try:
+                utxos = store.load_utxo_set()
+            except Exception:
+                log.exception("[_validate_transactions] Cannot load UTXO set")
+                return False
 
-        pool = TxPoolDB()
+        pool = TxPoolDB(utxo_store=self._ensure_utxodb())
         txs = getattr(block, "transactions", [])
         if not txs:
             return False
@@ -1472,12 +1580,11 @@ class Blockchain:
 
                 # --- SIGOPS budget: per-tx & per-block ---
                 try:
-                    utxodb = UTXODB()
+                    store = self._ensure_utxodb() or UTXODB()
                     try:
-                        utxodb._load()
-                        utxos = getattr(utxodb, "utxos", utxodb.load_utxo_set())
+                        utxos = getattr(store, "utxos", store.load_utxo_set())
                     except Exception:
-                        utxos = utxodb.load_utxo_set()
+                        utxos = store.load_utxo_set()
 
                     def _utxo_lookup(txid_b: bytes, vout_i: int):
                         try:
