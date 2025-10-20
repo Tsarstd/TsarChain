@@ -11,7 +11,6 @@ env/
 /data/
 /data_node/
 /data_user/
-/docs/
 
 **/__pycache__/
 *.py[cod]
