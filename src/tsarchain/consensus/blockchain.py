@@ -1464,8 +1464,6 @@ class Blockchain:
                         return False
                     
                     est_size = self._estimate_block_size(block)
-                    log.debug("[validate_block] est block size : %s", est_size)
-                    
                     if est_size is not None and est_size > CFG.MAX_BLOCK_BYTES:
                         return False
                     
@@ -1501,7 +1499,7 @@ class Blockchain:
                             if hasattr(entry, "tx_out") and hasattr(entry.tx_out, "script_pubkey"):
                                 return entry.tx_out.script_pubkey.serialize()
                             
-                            log.debug("[validate_block] UTXO lookup found no script_pubkey for %s", k)
+                            log.debug("[_utxo_lookup] UTXO lookup found no script_pubkey for %s", k)
                         except Exception:
                             return None
                         
@@ -1528,8 +1526,7 @@ class Blockchain:
                     
                 if block.height > 0 and not self._validate_transactions(block):
                     return False
-                
-            log.debug("[validate_block] Block at height %d is valid", block.height)
+    
             return True
         
         except Exception:

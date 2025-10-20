@@ -65,7 +65,7 @@ MODE   = "dev"   # "dev" | "prod"
 IS_DEV = (MODE.lower() == "dev")
 
 # ===== Sync Data (Block, UTXO, etc) =====
-FULL_SYNC_DEV      = False
+FULL_SYNC_DEV      = True
 FULL_SYNC_PROD     = False
 
 
@@ -95,7 +95,7 @@ INITIAL_BITS       = 0x1E00FFFF
 MAX_BITS           = 0x1F0FFFFF
 TARGET_BLOCK_TIME  = 37             # 37 Sec
 LWMA_WINDOW        = 75             # Block's
-FUTURE_DRIFT       = 7200           # 2 Hours
+FUTURE_DRIFT       = 600            # 10 Minute
 MTP_WINDOWS        = 11             # Block's
 
 # === Consensus Hardening ===
@@ -215,8 +215,8 @@ BOOTSTRAP_NODE = BOOTSTRAP_NODES[0]
 BUFFER_SIZE                 = 65536
 HANDSHAKE_TIMEOUT           = 10
 DISCOVERY_INTERVAL          = 5
-SYNC_INTERVAL               = 15
-FAST_SYNC_INTERVAL          = 5
+SYNC_INTERVAL               = 10
+FAST_SYNC_INTERVAL          = 3
 SYNC_TIMEOUT                = 10
 CONNECT_TIMEOUT             = 1.5
 BROADCAST_FAIL_THRESHOLD    = 2
@@ -236,20 +236,20 @@ TEMP_BAN_SECONDS             = 30          # temporary ban
 
 # === Full Sync guard ===
 ENABLE_FULL_SYNC            = FULL_SYNC_DEV if IS_DEV else FULL_SYNC_PROD
-FULL_SYNC_MAX_BLOCKS        = 10_000
-FULL_SYNC_MAX_BYTES         = 5 * 1024 * 1024   # 5 MB
-FULL_SYNC_MIN_INTERVAL      = 300               # seconds per peer
-FULL_SYNC_BACKOFF_INITIAL   = 600
-FULL_SYNC_BACKOFF_MAX       = 3600
+FULL_SYNC_MAX_BLOCKS        = 13_000
+FULL_SYNC_MAX_BYTES         = 15 * 1024 * 1024   # 15 MB
+FULL_SYNC_MIN_INTERVAL      = 60                 # seconds per peer
+FULL_SYNC_BACKOFF_INITIAL   = 120
+FULL_SYNC_BACKOFF_MAX       = 600
 MAX_MSG                     = FULL_SYNC_MAX_BYTES
-MEMPOOL_SYNC_MIN_INTERVAL   = 60
-MEMPOOL_INLINE_MAX_TX       = 200
+MEMPOOL_SYNC_MIN_INTERVAL   = 30
+MEMPOOL_INLINE_MAX_TX       = 200                # if the network is high, increase it to 400 - 600
 
 HEADERS_BATCH_MAX           = 2_048
 HEADERS_LOCATOR_DEPTH       = 64
-HEADERS_FANOUT              = 16
-HEADERS_SYNC_MIN_INTERVAL   = 3
-BLOCK_DOWNLOAD_BATCH_MAX    = 128
+HEADERS_FANOUT              = 32
+HEADERS_SYNC_MIN_INTERVAL   = 1
+BLOCK_DOWNLOAD_BATCH_MAX    = 256
 
 MAX_OUTBOUND_PEERS          = 8
 MAX_INBOUND_PEERS           = 16
@@ -293,20 +293,20 @@ REPLAY_WINDOW_SEC  = 60
 CHAT_MAX_CT_BYTES           = 2 * 1024  # ciphertext
 CHAT_TS_DRIFT_S             = 120       # sec
 CHAT_TTL_S                  = 86400     # 24 hours
-CHAT_MAILBOX_MAX            = 100
+CHAT_MAILBOX_MAX            = 250
 CHAT_GLOBAL_QUEUE_MAX       = 20_000
 CHAT_PULL_MAX_ITEMS         = 50
-CHAT_POLL_INTERVAL_MS       = 2500
+CHAT_POLL_INTERVAL_MS       = 2000      # don't set it too low below 1500, so that nodes are not flooded with pull requests
 CHAT_POLL_INITIAL_MS        = 4000
-CHAT_PUBLISH_MIN_INTERVAL_S = 20
-CHAT_PUBLISH_SELF_CHECK     = False
+CHAT_PUBLISH_MIN_INTERVAL_S = 10
+CHAT_PUBLISH_SELF_CHECK     = False      # no self check ,
 
 # === Rate limiting ===
-CHAT_RL_ADDR_BURST    = 6
+CHAT_RL_ADDR_BURST    = 18
 CHAT_RL_ADDR_WINDOWS  = 10        # per 10 second
-CHAT_RL_IP_BURST      = 12
+CHAT_RL_IP_BURST      = 37
 CHAT_RL_IP_WINDOWS    = 10        # per 10 second
-CHAT_BACKOFF_S        = 60
+CHAT_BACKOFF_S        = 13        # limiter rate
 
 # === Presence relay ===
 PRESENCE_RL_ADDR_BURST     = 2
@@ -315,12 +315,12 @@ PRESENCE_MAX_HOPS          = 3
 PRESENCE_TTL_S             = 3600
 
 # === Chat onion-lite ===
-CHAT_FORCE_RELAY = True       # multi-hop
-CHAT_NUM_HOPS    = 2          
+CHAT_FORCE_RELAY = True       # multi-hop , set true if many peers/node , set false if only 1 peers/node
+CHAT_NUM_HOPS    = 1          # can set 1 > ... if many peers/node
 
 CHAT_SESSION_DIR            = os.path.join("data_user", "chat_sessions")
 CHAT_KEY_TTL_SEC            = 15 * 60
-CHAT_PWD_CACHE_TTL_SEC      = 180
+CHAT_PWD_CACHE_TTL_SEC      = 180           # This configuration requires the user to enter the keystore password every time it is set.
 CHAT_RATCHET_MAX_SKIP       = 200
 CHAT_RATCHET_INDEX_MAX      = 1_000_000
 CHAT_OPK_MIN_THRESHOLD      = 5
@@ -331,7 +331,7 @@ CHAT_SPK_ROTATE_INTERVAL_S  = 7 * 24 * 3600
 # =============================================================================
 # RPC / TIMEOUTS / CACHE
 # =============================================================================
-CONNECT_TIMEOUT_SCAN = 0.25
+CONNECT_TIMEOUT_SCAN = 1.25
 RPC_TIMEOUT          = 4.0
 NODE_CACHE_TTL       = 60
 WALLET_RPC_MIN_INTERVAL = 0.35

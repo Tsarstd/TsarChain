@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import scrolledtext, messagebox
 import threading, time, re
 import multiprocessing as mp
+from collections import deque, OrderedDict
 
 # ---------------- Local Project ----------------
 import tsarcore_native as native
@@ -68,6 +69,9 @@ class BlockchainGUI:
         self._last_chain_height = -1
         self._sync_ready = False
         self._sync_status = "idle"
+        self._sync_progress_text = ""
+        self._log_static: "OrderedDict[str, tuple[str, str | None]]" = OrderedDict()
+        self._log_history: "deque[tuple[str, str | None]]" = deque(maxlen=12)
 
         # theme
         self.bg = "#121212"
@@ -174,9 +178,91 @@ class BlockchainGUI:
         tk.Button(hr, text="Open Log Viewer", command=self._open_log_viewer).pack(side=tk.RIGHT, padx=4)
         tk.Button(hr, text="Clear Logs", command=self._clear_logs).pack(side=tk.RIGHT, padx=4)
 
+        # Log theme configuration (edit colors/fonts here)
+        self.log_theme = {
+            "font": ("Consolas", 9),
+            "background": "#1e1e1e",
+            "insert": "#eea33b",
+            "default": {"foreground": "#95e089"},
+            "tags": {
+                "sync":    {"foreground": "#36a3dd"},
+                "network": {"foreground": "#fae6a4"},
+                "warning": {"foreground": "#d6b72b"},
+                "error":   {"foreground": "#d65151"},
+                "mining":  {"foreground": "#986dd4"},
+            },
+            "tag_map": {
+                "sync": "sync",
+                "network": "network",
+                "!": "warning",
+                "warn": "warning",
+                "warning": "warning",
+                "error": "error",
+                "err": "error",
+                "mining": "mining",
+            },
+        }
+
         # Log area
-        self.log = scrolledtext.ScrolledText(f, width=96, height=18, state="disabled", bg="#1e1e1e", fg="#52aa41")
+        self.log = scrolledtext.ScrolledText(f, width=96, height=18, state="disabled")
         self.log.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
+        self._apply_log_theme()
+
+    def _apply_log_theme(self):
+        theme = getattr(self, "log_theme", {}) or {}
+        font = theme.get("font", ("Consolas", 10))
+        background = theme.get("background", "#1e1e1e")
+        insert = theme.get("insert", self.accent)
+        default_style = {"font": font}
+        default_style.update(theme.get("default", {"foreground": "#52aa41"}))
+
+        self.log.configure(
+            bg=background,
+            fg=default_style.get("foreground", "#52aa41"),
+            font=font,
+            insertbackground=insert,
+            relief=tk.FLAT,
+            borderwidth=0,
+        )
+
+        self.log.tag_configure(self._tag_name("default"), **default_style)
+
+        for key, style in (theme.get("tags") or {}).items():
+            conf = {"font": font}
+            conf.update(style)
+            self.log.tag_configure(self._tag_name(key), **conf)
+
+    def _tag_name(self, key: str) -> str:
+        return f"log_{key}"
+
+    def _map_style_key(self, bracket_tag: str | None, message: str) -> str:
+        theme = getattr(self, "log_theme", {}) or {}
+        raw_map = theme.get("tag_map") or {}
+        tag_map = {str(k).lower(): v for k, v in raw_map.items()}
+
+        if bracket_tag:
+            lower_tag = bracket_tag.lower()
+            if lower_tag in tag_map:
+                return tag_map[lower_tag]
+            if bracket_tag in raw_map:
+                return raw_map[bracket_tag]
+
+        msg_lower = message.lower()
+        if "error" in msg_lower or "failed" in msg_lower or "exception" in msg_lower:
+            if "error" in tag_map:
+                return tag_map["error"]
+            return "error"
+        if "warning" in msg_lower or "locked" in msg_lower or "wait" in msg_lower:
+            if "warning" in tag_map:
+                return tag_map["warning"]
+            return "warning"
+        if "mining" in msg_lower:
+            if "mining" in tag_map:
+                return tag_map["mining"]
+            return "mining"
+        if bracket_tag:
+            return bracket_tag.lower()
+        return "default"
 
     # ---------------- Print Chain Tab ----------------
     def _build_print_frame(self):
@@ -313,10 +399,82 @@ class BlockchainGUI:
         self.root.after(0, self._log_print_main, msg)
 
     def _log_print_main(self, msg: str):
+        tag = None
+        m = re.match(r"^\[(?P<tag>[^\]]+)\]\s*(.*)", msg)
+        if m:
+            tag = m.group("tag").strip()
+        style_key = self._map_style_key(tag, msg)
+        entry = (msg, style_key)
+        if tag:
+            self._log_static[tag] = entry
+        else:
+            self._log_history.append(entry)
+        self._refresh_log_widget_locked()
+
+    def _update_status(self, tag: str, message: str, style_key: str | None = None):
+        def _apply():
+            style = style_key or self._map_style_key(tag, message)
+            self._log_static[tag] = (message, style)
+            self._refresh_log_widget_locked()
+        self.root.after(0, _apply)
+
+    def _refresh_log_widget_locked(self):
+        entries: list[tuple[str, str | None]] = list(self._log_static.values())
+        if self._log_history:
+            if entries:
+                entries.append(("", None))
+            entries.extend(list(self._log_history))
+
         self.log.config(state="normal")
-        self.log.insert(tk.END, msg + "\n")
-        self.log.see(tk.END)
+        self.log.delete("1.0", tk.END)
+        for msg, style_key in entries:
+            message = msg or ""
+            style = style_key or "default"
+            tag_name = self._tag_name(style)
+            if tag_name not in self.log.tag_names():
+                fallback = {"font": self.log_theme.get("font", ("Consolas", 10))}
+                fallback.update(self.log_theme.get("tags", {}).get(style, self.log_theme.get("default", {})))
+                self.log.tag_configure(tag_name, **fallback)
+            self.log.insert(tk.END, message + "\n", tag_name)
         self.log.config(state="disabled")
+        self.log.see(tk.END)
+
+    def _set_sync_progress_text(self, text: str):
+        text = text.strip()
+        if text == self._sync_progress_text:
+            return
+
+        self._sync_progress_text = text
+        message = text if text.startswith("[") else f"[Sync] {text}"
+        self._update_status("Sync", message)
+
+    def _clear_sync_progress(self, final_text: str | None = None):
+        self._sync_progress_text = ""
+
+        def _apply():
+            if final_text:
+                msg = final_text if final_text.startswith("[") else f"[Sync] {final_text}"
+                self._log_static["Sync"] = (msg, self._map_style_key("Sync", msg))
+            else:
+                self._log_static.pop("Sync", None)
+            self._refresh_log_widget_locked()
+
+        self.root.after(0, _apply)
+
+    def _get_peer_best_height(self) -> int:
+        try:
+            peer_best = getattr(self.network, "_peer_best_height", {})
+            heights: list[int] = []
+            for value in peer_best.values():
+                try:
+                    heights.append(int(value))
+                except Exception:
+                    continue
+            if heights:
+                return max(heights)
+        except Exception:
+            pass
+        return -1
 
     def _set_buttons_state(self):
         node_on   = self.blockchain is not None and self.network is not None
@@ -361,9 +519,10 @@ class BlockchainGUI:
             self.cpu_entry.insert(0, "1")
 
     def _clear_logs(self):
-        self.log.config(state="normal")
-        self.log.delete("1.0", tk.END)
-        self.log.config(state="disabled")
+        self._log_static.clear()
+        self._log_history.clear()
+        self._sync_progress_text = ""
+        self._refresh_log_widget_locked()
         
     def _open_log_viewer(self):
         log_file = str(CFG.LOG_PATH)
@@ -438,12 +597,13 @@ class BlockchainGUI:
                         self._sync_ready = False
                         self.log_print("[Sync] Mining is locked. Peer lost, waiting for resync.")
                         self.root.after(0, self._set_buttons_state)
+                    self._set_sync_progress_text("Sync... Waiting for peer connection...")
                     time.sleep(5)
                     continue
 
-                if self._sync_status not in ("peers", "ready"):
+                if self._sync_status not in ("peers", "ready", "syncing"):
                     self.log_print("[Sync] Peer connected. Checking for the latest block...")
-                    self._sync_status = "peers"
+                self._sync_status = "syncing"
 
                 self.network.request_sync(fast=True)
                 try:
@@ -451,20 +611,60 @@ class BlockchainGUI:
                     height = int(height_raw)
                 except Exception:
                     height = -1
-                if height != self._last_chain_height:
-                    if height >= 0 and not self.mining_alive.is_set():
-                        self.log_print(f"[Sync] Chain height now {height}")
-                    self._last_chain_height = height
+                self._last_chain_height = height
 
                 peer_sync_map = getattr(self.network, "_peer_last_sync", {})
                 latest_sync = max(peer_sync_map.values()) if peer_sync_map else 0.0
-                synced_recently = latest_sync and (time.time() - latest_sync) < 10
+                synced_recently = bool(peer_sync_map) and (time.time() - latest_sync) < 10
 
-                if not self._sync_ready and height >= 0 and synced_recently:
-                    self._sync_ready = True
-                    self._sync_status = "ready"
-                    self.log_print("Chain has been confirmed. You can start mining now!")
-                    self.root.after(0, self._set_buttons_state)
+                best_height = max(self._get_peer_best_height(), height)
+                if best_height < 0:
+                    self._set_sync_progress_text("Sync... Collecting peer height data...")
+                    if self._sync_ready:
+                        self._sync_ready = False
+                        self.root.after(0, self._set_buttons_state)
+                    time.sleep(5)
+                    continue
+
+                best_display = max(best_height, 0)
+                current_display = max(height, 0)
+                if current_display > best_display and best_display >= 0:
+                    current_display = best_display
+
+                close_enough = (
+                    best_height >= 0
+                    and height >= 0
+                    and height >= (best_height - 1)
+                )
+                is_synced = close_enough and synced_recently
+
+                if is_synced:
+                    if not self._sync_ready:
+                        final_msg = (
+                            f"[Sync] Complete. Chain height {height} "
+                            f"(Total Height {best_height}). You can start mining now!"
+                        )
+                        self._clear_sync_progress(final_msg)
+                        self._sync_ready = True
+                        self._sync_status = "ready"
+                        self.root.after(0, self._set_buttons_state)
+                    else:
+                        self._sync_status = "ready"
+                else:
+                    if self._sync_ready:
+                        self._sync_ready = False
+                        self.log_print("[Sync] Mining is locked until the chain catch-up completes.")
+                        self.root.after(0, self._set_buttons_state)
+                    if best_display <= 0:
+                        progress_text = "Sync... Collecting peer block data..."
+                    else:
+                        percent = min(100, int((current_display * 100) // best_display)) if best_display else 0
+                        progress_text = (
+                            f"Total ( {best_display} Block's ) :"
+                            f"{percent:>3d} % ( {current_display} Block's Received )"
+                        )
+                    self._set_sync_progress_text(progress_text)
+
             except Exception:
                 pass
             time.sleep(5)
@@ -599,6 +799,7 @@ class BlockchainGUI:
         self.blockchain = None
         self.network = None
         self._last_chain_height = -1
+        self._clear_sync_progress(None)
         self.log_print("[!] Node stopped")
         self._sync_ready = False
         self._sync_status = "idle"
