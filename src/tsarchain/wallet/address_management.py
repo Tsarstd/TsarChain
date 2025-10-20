@@ -532,26 +532,48 @@ class WalletsMixin:
         if spnd is None and imm is None:
             spnd, imm = tot, 0
 
-        bal_labels["total"].config(text=sat_to_tsar(_sat(tot)))
-        bal_labels["spend"].config(text=sat_to_tsar(_sat(spnd)))
-        bal_labels["immature"].config(text=sat_to_tsar(_sat(imm)))
+        def _exists(widget: tk.Widget) -> bool:
+            try:
+                return bool(widget and widget.winfo_exists())
+            except Exception:
+                return False
+
+        def _safe_config(widget: tk.Widget, **kwargs) -> None:
+            if not _exists(widget):
+                return
+            try:
+                widget.config(**kwargs)
+            except Exception:
+                pass
+
+        bal_total = bal_labels.get("total")
+        bal_spend = bal_labels.get("spend")
+        bal_immat = bal_labels.get("immature")
+        bal_hint  = bal_labels.get("hint")
+
+        _safe_config(bal_total, text=sat_to_tsar(_sat(tot)))
+        _safe_config(bal_spend, text=sat_to_tsar(_sat(spnd)))
+        _safe_config(bal_immat, text=sat_to_tsar(_sat(imm)))
         if mat is not None:
-            bal_labels["hint"].config(text=f"(rule: {int(mat)} block)")
+            _safe_config(bal_hint, text=f"(rule: {int(mat)} block)")
 
         if _sat(pend) > 0:
-            bal_labels["pending"].config(text=sat_to_tsar(_sat(pend)))
-            try:
-                bal_labels["pending_row"].pack_info()
-            except Exception:
-                log.debug("[_update_balance_block] cannot pack pending row")
-                pass
-            bal_labels["pending_row"].pack(anchor="w")
+            pending_lbl = bal_labels.get("pending")
+            pending_row = bal_labels.get("pending_row")
+            _safe_config(pending_lbl, text=sat_to_tsar(_sat(pend)))
+            if _exists(pending_row):
+                try:
+                    pending_row.pack_info()
+                except Exception:
+                    pass
+                pending_row.pack(anchor="w")
         else:
-            try:
-                bal_labels["pending_row"].pack_forget()
-            except Exception:
-                log.debug("[_update_balance_block] cannot forget pending row")
-                pass
+            pending_row = bal_labels.get("pending_row")
+            if _exists(pending_row):
+                try:
+                    pending_row.pack_forget()
+                except Exception:
+                    pass
 
         try:
             addr = None

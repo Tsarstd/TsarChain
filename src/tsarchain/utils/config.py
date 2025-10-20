@@ -315,7 +315,7 @@ PRESENCE_MAX_HOPS          = 3
 PRESENCE_TTL_S             = 3600
 
 # === Chat onion-lite ===
-CHAT_FORCE_RELAY = True       # multi-hop , set true if many peers/node , set false if only 1 peers/node
+CHAT_FORCE_RELAY = False       # multi-hop , set true if many peers/node , set false if only 1 peers/node
 CHAT_NUM_HOPS    = 1          # can set 1 > ... if many peers/node
 
 CHAT_SESSION_DIR            = os.path.join("data_user", "chat_sessions")

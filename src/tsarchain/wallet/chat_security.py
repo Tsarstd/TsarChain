@@ -418,8 +418,7 @@ class ChatManager:
                     their_ratchet_pub_hex=spk,
                     my_static_hex=my_pk_hex,
                 )
-                log.debug("[ensure_session] init_as_initiator OK (peer=%s) eph=%s bound as first ratchet key", peer, eph_pub[:12])
-
+                
                 key = self._session_key(me, peer)
                 self._sessions[key] = sess
                 self._persist_session(me, peer, sess)
@@ -576,8 +575,6 @@ class ChatManager:
             static_hex = (header.get("static_pub") or "").lower()
             pn_val = int(header.get("pn", 0))
             n_val = int(header.get("n", 0))
-
-            log.debug("[send_message] %s -> %s mid=%d eph=%s static=%s pn=%d n=%d", frm, to, mid, eph_hex[:12], static_hex[:12], pn_val, n_val)
 
             try:
                 sig_parts = [
@@ -788,7 +785,6 @@ class ChatManager:
                             key = self._session_key(me, frm)
                             self._sessions[key] = sess
                             self._persist_session(me, frm, sess)
-                            log.debug("[poll] bootstrap responder X3DH (from=%s) used_opk=%s", frm, used_opk[:12] if used_opk else "-")
                         except Exception:
                             log.exception("[poll] failed bootstrap for %s", frm)
                             sess = None
@@ -805,7 +801,6 @@ class ChatManager:
                     else:
                         log.debug("[poll] decrypt failed for %s mid=%s", frm, mid)
 
-                log.debug("[poll] %s item(s) for %s", len(out), me)
                 on_items(out)
                 
             finally:
@@ -1056,10 +1051,10 @@ class RatchetSession:
                 mkh = hashlib.sha256(mk).hexdigest()[:8]
             except Exception:
                 mkh = "?"
-            log.debug("[ratchet.decrypt] ok frm=%s to=%s mid=%s eph=%s pn=%s n=%s mk#=%s", frm, to, mid, eph_hex[:12], pn, n, mkh)
+            log.debug("[ratchet._decrypt_with_mk] ok mk#=%s", mkh)
             return pt
-        except Exception:
-            log.debug("[ratchet.decrypt] fail frm=%s to=%s mid=%s eph=%s pn=%s n=%s", frm, to, mid, eph_hex[:12], pn, n)
+        except Exception as e:
+            log.debug("[ratchet._decrypt_with_mk] fail =%s", e)
             return None
 
     def decrypt(self, enc: dict, frm: str, to: str, mid: int, ts: int, header: dict) -> Optional[bytes]:
