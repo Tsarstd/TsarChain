@@ -65,7 +65,7 @@ MODE   = "dev"   # "dev" | "prod"
 IS_DEV = (MODE.lower() == "dev")
 
 # ===== Sync Data (Block, UTXO, etc) =====
-FULL_SYNC_DEV      = True
+FULL_SYNC_DEV      = False
 FULL_SYNC_PROD     = False
 
 
