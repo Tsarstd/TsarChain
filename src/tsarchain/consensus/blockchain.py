@@ -1447,7 +1447,7 @@ class Blockchain:
         if actual_cb != expected_cb:
             return False
         for tx in txs[1:]:
-            if not pool.validate_transaction(tx, utxos):
+            if not pool.validate_transaction(tx, utxos, spend_at_height=int(getattr(block, "height", 0))):
                 return False
         
         return True

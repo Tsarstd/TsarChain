@@ -109,8 +109,11 @@ class UTXODB(BaseDatabase):
                 return {}
 
     # ===================== FILE I/O =====================
-    def _load(self):
+    def _load(self, *, force: bool = False):
         with self._lock:
+            if not force and getattr(self, "_dirty", False):
+                # Keep in-memory state (contains latest unsaved blocks/txs)
+                return
             self.utxos.clear()
             if kv_enabled():
                 for k, v in iter_prefix('utxo', b''):

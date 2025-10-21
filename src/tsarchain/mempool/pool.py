@@ -437,6 +437,13 @@ class TxPoolDB(BaseDatabase):
             return int(utxo_data.amount)
         raise ValueError(f"Unknown UTXO format: {utxo_data}")
 
+    @staticmethod
+    def _coinbase_confirmations(born_height: int, spend_height: int) -> int:
+        try:
+            return max(0, int(spend_height) - int(born_height))
+        except Exception:
+            return 0
+
     # ======== VALIDATE TRANSACTION ON MEMPOOL ========
     
     def validate_transaction(self, tx: "Tx", utxo_set: dict, spend_at_height: int | None = None) -> bool:
@@ -590,7 +597,7 @@ class TxPoolDB(BaseDatabase):
             is_cb, born_height = self.utxo._get_utxo_meta(utxo_entry)
             if is_cb:
                 effective_height = int(spend_at_height) if spend_at_height is not None else int(current_height) + 1
-                confirmations = max(0, (effective_height - int(born_height)) + 1)
+                confirmations = self._coinbase_confirmations(born_height, effective_height)
                 if confirmations < int(CFG.COINBASE_MATURITY):
                     self.last_error_reason = f"coinbase_immature conf={confirmations} need>={CFG.COINBASE_MATURITY}"
                     return False
