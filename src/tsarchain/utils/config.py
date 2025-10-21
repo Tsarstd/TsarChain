@@ -243,7 +243,7 @@ FULL_SYNC_BACKOFF_INITIAL   = 120
 FULL_SYNC_BACKOFF_MAX       = 600
 MAX_MSG                     = FULL_SYNC_MAX_BYTES
 MEMPOOL_SYNC_MIN_INTERVAL   = 30
-MEMPOOL_INLINE_MAX_TX       = 200                # if the network is high, increase it to 400 - 600
+MEMPOOL_INLINE_MAX_TX       = 600                # if the network is high, increase it to 400 - 600
 
 HEADERS_BATCH_MAX           = 2_048
 HEADERS_LOCATOR_DEPTH       = 64
