@@ -59,7 +59,7 @@ class Blockchain:
         self._utxodb: Optional[UTXODB] = None
         self._utxo_dirty: bool = False
         self._utxo_last_flush_height: int = -1
-        self._utxo_flush_interval: int = max(1, int(getattr(CFG, "UTXO_FLUSH_INTERVAL", 20)))
+        self._utxo_flush_interval: int = max(1, int(CFG.UTXO_FLUSH_INTERVAL))
         self._utxo_synced: bool = False
 
         if not self.in_memory:
