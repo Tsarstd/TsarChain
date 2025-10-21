@@ -2,11 +2,19 @@ MIT License
 
 Copyright (c) 2025 Tsar Studio
 
-This implementation of X3DH and Double Ratchet algorithm is based on 
-public technical specifications from Signal Foundation, not derived 
-from their AGPL-3.0 licensed source code.
+This software includes an independent implementation of 
+end-to-end encryption protocols based on published 
+technical specifications of:
 
-Original Signal Protocol specifications: https://signal.org/docs/
+- X3DH Key Agreement Protocol
+- Double Ratchet Algorithm
+
+These implementations were developed through clean-room 
+engineering processes without reference to or derivation 
+from any AGPL-licensed source code.
+
+Cryptographic primitives use standard libraries and 
+well-established algorithms (X25519, HKDF, AES-GCM).
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
