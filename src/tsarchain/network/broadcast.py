@@ -417,7 +417,24 @@ class Broadcast:
 
             if not potential_fork:
                 if not self.blockchain.validate_block(block):
-                    log.warning("[receive_block] Invalid block received ... block=%s peer=%s", block_id[:12], f"{addr[0]}:{origin_port or 0}")
+                    reason = getattr(self.blockchain, "_last_block_validation_error", None)
+                    if reason:
+                        log.warning(
+                            "[receive_block] Invalid block received ... block=%s peer=%s reason=%s",
+                            block_id[:12], f"{addr[0]}:{origin_port or 0}", reason
+                        )
+                    else:
+                        log.warning("[receive_block] Invalid block received ... block=%s peer=%s", block_id[:12], f"{addr[0]}:{origin_port or 0}")
+                    if reason and isinstance(reason, str) and reason.startswith("prevout_missing"):
+                        try:
+                            if self.network:
+                                target = origin if origin else (next(iter(peers)) if peers else None)
+                                if target:
+                                    self.network._request_full_sync(target)
+                                else:
+                                    self.network.request_sync(fast=True)
+                        except Exception:
+                            log.exception("[receive_block] Failed to trigger full sync after prevout missing")
                     return
 
             old_tip = None
@@ -481,6 +498,13 @@ class Broadcast:
                         log.exception("[receive_block] Error updating UTXO after block acceptance")
             except Exception:
                 log.exception("[receive_block] Error updating UTXO DB after block acceptance")
+
+            try:
+                recovered = self.mempool.recheck_orphans() if hasattr(self.mempool, "recheck_orphans") else 0
+                if recovered:
+                    log.info("[receive_block] Revalidated %s orphan mempool txs", recovered)
+            except Exception:
+                log.exception("[receive_block] Error rechecking orphan mempool txs after block")
 
             with self.lock:
                 self.seen_blocks.add(block_id)
@@ -557,6 +581,13 @@ class Broadcast:
                         added_count += 1
                 except Exception:
                     log.exception("[receive_mempool] Error adding tx from mempool snapshot")
+            try:
+                rechecked = self.mempool.recheck_orphans() if hasattr(self.mempool, "recheck_orphans") else 0
+                if rechecked:
+                    added_count += rechecked
+                    log.debug("[receive_mempool] Revalidated %s orphan transactions", rechecked)
+            except Exception:
+                log.exception("[receive_mempool] Error rechecking orphan transactions")
             if added_count:
                 log.info("[receive_mempool] Mempool updated: %s new transactions", added_count)
         except Exception:

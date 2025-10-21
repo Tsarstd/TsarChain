@@ -61,6 +61,7 @@ class Blockchain:
         self._utxo_last_flush_height: int = -1
         self._utxo_flush_interval: int = max(1, int(CFG.UTXO_FLUSH_INTERVAL))
         self._utxo_synced: bool = False
+        self._last_block_validation_error: str | None = None
 
         if not self.in_memory:
             if self.db_path:
@@ -1439,15 +1440,70 @@ class Blockchain:
                 log.exception("[_validate_transactions] Cannot load UTXO set")
                 return False
 
+        base_utxos = getattr(store, "utxos", {}) if isinstance(getattr(store, "utxos", {}), dict) else {}
+        nested_cache = None
+
+        def _inject_prevout_from_store(missing_key: str) -> bool:
+            nonlocal nested_cache
+            mk = (missing_key or "").strip()
+            if not mk:
+                return False
+            txid_part, _, idx_part = mk.partition(":")
+            try:
+                idx_int = int(idx_part)
+            except Exception:
+                idx_int = None
+
+            candidates = {
+                mk,
+                mk.lower(),
+                mk.upper(),
+                f"{txid_part.lower()}:{idx_int}" if idx_int is not None else mk.lower(),
+            }
+
+            for key in list(candidates):
+                entry = base_utxos.get(key)
+                if entry is not None:
+                    if idx_int is None:
+                        try:
+                            _, _, idx_str = key.partition(":")
+                            idx_int_candidate = int(idx_str)
+                        except Exception:
+                            idx_int_candidate = None
+                    else:
+                        idx_int_candidate = idx_int
+                    if idx_int_candidate is not None:
+                        target_key = f"{txid_part.lower()}:{idx_int_candidate}"
+                        utxo_view[target_key] = deepcopy(entry)
+                        return True
+
+            if nested_cache is None:
+                try:
+                    nested_cache = store.load_utxo_set()
+                except Exception:
+                    nested_cache = {}
+
+            if isinstance(nested_cache, dict) and idx_int is not None:
+                for cand_txid in {txid_part, txid_part.lower(), txid_part.upper()}:
+                    bucket = nested_cache.get(cand_txid)
+                    if isinstance(bucket, dict) and idx_int in bucket:
+                        utxo_view[f"{cand_txid.lower()}:{idx_int}"] = deepcopy(bucket[idx_int])
+                        return True
+            return False
+
         pool = TxPoolDB(utxo_store=self._ensure_utxodb())
+        self._last_block_validation_error = "validation_failed"
         txs = getattr(block, "transactions", [])
         if not txs:
+            self._last_block_validation_error = "empty_block_transactions"
             return False
 
         cb = txs[0]
         if not getattr(cb, "is_coinbase", False):
+            self._last_block_validation_error = "missing_coinbase"
             return False
         if any(getattr(t, "is_coinbase", False) for t in txs[1:]):
+            self._last_block_validation_error = "duplicate_coinbase"
             return False
 
         total_fee = sum(int(getattr(t, "fee", 0)) for t in txs[1:])
@@ -1458,11 +1514,92 @@ class Blockchain:
 
         actual_cb = sum(int(o.amount) for o in getattr(cb, "outputs", []))
         if actual_cb != expected_cb:
+            self._last_block_validation_error = f"coinbase_amount_mismatch expected={expected_cb} actual={actual_cb}"
             return False
+        # Clone UTXO view so we can mutate for intra-block spends without touching disk store
+        if isinstance(utxos, dict):
+            try:
+                utxo_view = {k: deepcopy(v) for k, v in utxos.items()}
+            except Exception:
+                utxo_view = dict(utxos)
+        else:
+            utxo_view = {}
+
+        def _remove_prevout(txid_hex: str, index: int):
+            flat = f"{txid_hex}:{index}"
+            utxo_view.pop(flat, None)
+            utxo_view.pop(flat.lower(), None)
+            utxo_view.pop(flat.upper(), None)
+            utxo_view.pop((txid_hex, index), None)
+            try:
+                txid_bytes = bytes.fromhex(txid_hex)
+                utxo_view.pop((txid_bytes, index), None)
+            except Exception:
+                pass
+
+        def _add_output(txid_hex: str, index: int, tx_out) -> None:
+            try:
+                spk_bytes = tx_out.script_pubkey.serialize()
+                spk_hex = spk_bytes.hex()
+            except Exception:
+                spk_hex = None
+            entry = {
+                "tx_out": {
+                    "amount": int(getattr(tx_out, "amount", 0) or 0),
+                    "script_pubkey": spk_hex,
+                },
+                "amount": int(getattr(tx_out, "amount", 0) or 0),
+                "script_pubkey": spk_hex,
+                "is_coinbase": False,
+                "block_height": int(getattr(block, "height", 0)),
+            }
+            utxo_view[f"{txid_hex}:{index}"] = entry
+
+        spend_height = int(getattr(block, "height", 0))
         for tx in txs[1:]:
-            if not pool.validate_transaction(tx, utxos, spend_at_height=int(getattr(block, "height", 0))):
+            try:
+                txid_hex = tx.txid.hex() if isinstance(tx.txid, (bytes, bytearray)) else str(tx.txid)
+            except Exception:
+                txid_hex = None
+
+            if not pool.validate_transaction(tx, utxo_view, spend_at_height=spend_height):
+                reason = pool.last_error_reason or "tx_validation_failed"
+                injected = False
+                if isinstance(reason, str) and reason.startswith("prevout_missing "):
+                    missing_key = reason.split(" ", 1)[1].strip()
+                    injected = _inject_prevout_from_store(missing_key)
+                    if injected and pool.validate_transaction(tx, utxo_view, spend_at_height=spend_height):
+                        reason = None
+
+                if reason:
+                    if txid_hex:
+                        self._last_block_validation_error = f"{reason} tx={txid_hex}"
+                    else:
+                        self._last_block_validation_error = reason
+                    try:
+                        log.warning("[_validate_transactions] Reject tx in block %s injected=%s", self._last_block_validation_error, injected)
+                    except Exception:
+                        pass
+                    return False
+
+            if not txid_hex:
+                self._last_block_validation_error = "tx_missing_txid"
                 return False
-        
+
+            for txin in getattr(tx, "inputs", []):
+                try:
+                    prev_hex = txin.txid.hex() if isinstance(txin.txid, (bytes, bytearray)) else str(txin.txid)
+                except Exception:
+                    prev_hex = None
+                if prev_hex is None:
+                    self._last_block_validation_error = "tx_input_missing_txid"
+                    return False
+                _remove_prevout(prev_hex.lower(), int(getattr(txin, "vout", 0)))
+
+            for idx, tx_out in enumerate(getattr(tx, "outputs", [])):
+                _add_output(txid_hex.lower(), idx, tx_out)
+
+        self._last_block_validation_error = None
         return True
 
     # ----------------- Security/consensus helpers -----------------

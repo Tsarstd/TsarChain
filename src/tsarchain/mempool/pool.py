@@ -4,7 +4,7 @@
 # Refs: BIP143; BIP141; libsecp256k1; Signal-X3DH
 
 import json
-from typing import Optional
+from typing import Optional, Dict
 from ecdsa import VerifyingKey, SECP256k1
 
 # ---------------- Local Project ----------------
@@ -184,6 +184,9 @@ class TxPoolDB(BaseDatabase):
         
         # Last error/context for receive_tx to report back to clients
         self.last_error_reason: str | None = None
+        # Orphan transactions awaiting missing prevouts (txid -> tx_dict)
+        self._orphan_pool: Dict[str, dict] = {}
+        self._orphan_missing: Dict[str, str] = {}
 
     def _normalize_entry(self, item) -> dict | None:
         try:
@@ -774,6 +777,12 @@ class TxPoolDB(BaseDatabase):
         if not self.validate_transaction(transaction_obj, utxo_set, spend_at_height=tip + 1):
             if not self.last_error_reason:
                 self.last_error_reason = "tx_validation_failed"
+            else:
+                reason = str(self.last_error_reason)
+                if reason.startswith("prevout_missing "):
+                    missing = reason.split(" ", 1)[1].strip()
+                    self._queue_orphan(transaction_obj, missing)
+                    self.last_error_reason = f"orphan_waiting {missing}"
             return False
 
         # Double-spend check & basic RBF (replace-by-fee) for conflicting prevouts
@@ -830,3 +839,50 @@ class TxPoolDB(BaseDatabase):
 
         self.add_tx(transaction_obj)
         return True
+
+    def _queue_orphan(self, tx_obj: Tx, missing_key: str) -> None:
+        try:
+            tx_dict = tx_obj.to_dict(include_txid=True)
+        except Exception:
+            if isinstance(tx_obj, dict):
+                tx_dict = dict(tx_obj)
+            else:
+                return
+        txid_hex = tx_dict.get("txid")
+        if not txid_hex:
+            try:
+                if getattr(tx_obj, "txid", None):
+                    txid_hex = tx_obj.txid.hex()
+                    tx_dict["txid"] = txid_hex
+            except Exception:
+                return
+        if not txid_hex:
+            return
+        key = txid_hex.lower()
+        self._orphan_pool[key] = tx_dict
+        self._orphan_missing[key] = missing_key.lower()
+
+    def recheck_orphans(self) -> int:
+        if not self._orphan_pool:
+            return 0
+        retry_items = list(self._orphan_pool.items())
+        # Clear before retry to avoid infinite loops; will be repopulated if still missing
+        self._orphan_pool = {}
+        self._orphan_missing = {}
+        added = 0
+        for key, tx_dict in retry_items:
+            try:
+                tx_obj = Tx.from_dict(tx_dict)
+            except Exception:
+                continue
+            if self.add_valid_tx(tx_obj):
+                added += 1
+            else:
+                reason = self.last_error_reason or ""
+                if reason.startswith("prevout_missing "):
+                    missing = reason.split(" ", 1)[1].strip()
+                    self._queue_orphan(tx_obj, missing)
+                elif reason.startswith("orphan_waiting "):
+                    missing = reason.split(" ", 1)[1].strip()
+                    self._queue_orphan(tx_obj, missing)
+        return added

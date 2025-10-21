@@ -16,8 +16,8 @@ class DummyStorageAPI:
     def list_storers(self):
         # (name, addr) — addr dipakai untuk prefill recipient
         return [
-            ("Sputnik Storer #1", "tsar1q62xtpyn82zmlkysa6tjd8p3pcgc6hwy9g2xysw"),
-            ("Gulag Storer #2",  "tsar1qvjf2mjupugy7es4rdfp4pa8gp58sd76nqreggl"),
+            ("Sputnik Storer #1", "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss"),
+            ("Gulag Storer #2",  "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr"),
         ]
 
     def upload_stub(self, path: str, sha_hex: str, size: int, mime: str):

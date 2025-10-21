@@ -146,7 +146,6 @@ fn parse_ops(script: &[u8]) -> Vec<(Option<u8>, bool, usize)> {
             v.push((Some(op), false, 0));
         }
     }
-    log_info(&format!("parse_ops: parsed {} ops from script", v.len()));
     v
 }
 
@@ -180,7 +179,6 @@ fn count_sigops(script: &[u8]) -> PyResult<u32> {
             }
         }
     }
-    log_info(&format!("sigops count: {}", total));
     Ok(total)
 }
 

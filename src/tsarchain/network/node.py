@@ -120,7 +120,10 @@ class Network:
         self._full_sync_backoff: Dict[Tuple[str, int], float] = {}
         self._full_sync_last_request: Dict[Tuple[str, int], float] = {}
         self._last_headers_locator: Dict[Tuple[str, int], List[str]] = {}
+        self._snapshot_unreachable: Set[Tuple[str, int]] = set()
+        self._rpc_backoff: Dict[Tuple[str, int], float] = {}
         self._recent_gap_requests: Dict[Tuple[str, int], float] = {}
+        
         self._sync_event = threading.Event()
         self._sync_fast_until = 0.0
         self.utxodb = self.broadcast.utxodb
@@ -716,14 +719,26 @@ class Network:
             try:
                 synced = self._sync_peer(norm)
                 inline_status = self._request_mempool_inline(norm)
+                if inline_status is False:
+                    retry_inline = self._request_mempool_inline(norm, force=True)
+                    if retry_inline is True:
+                        inline_status = True
+                    elif retry_inline is not None:
+                        inline_status = retry_inline
                 if not synced:
                     if CFG.ENABLE_FULL_SYNC:
                         self._request_full_sync(norm)
                     elif inline_status is False:
-                        self._request_mempool_snapshot(norm)
+                        if norm not in self._snapshot_unreachable:
+                            self._request_mempool_snapshot(norm)
+                        else:
+                            log.debug("[sync_with_peers] Skipping snapshot pull for %s (unreachable)", norm)
                 elif inline_status is False:
-                    # Remote node does not support inline fetch; fall back to legacy snapshot push.
-                    self._request_mempool_snapshot(norm)
+                    # Remote node does not support inline fetch; fall back to legacy snapshot push when viable.
+                    if norm not in self._snapshot_unreachable:
+                        self._request_mempool_snapshot(norm)
+                    else:
+                        log.debug("[sync_with_peers] Snapshot push skipped for %s (unreachable)", norm)
             except Exception:
                 log.exception("[sync_with_peers] Error syncing with peer %s", norm)
                 self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY * 2)
@@ -951,6 +966,15 @@ class Network:
         if not norm:
             return None
         
+        now = time.time()
+        retry_at = self._rpc_backoff.get(norm, 0.0)
+        if now < retry_at:
+            try:
+                log.debug("[_rpc_request] backoff active for %s (%.1fs remaining)", norm, retry_at - now)
+            except Exception:
+                pass
+            return None
+        
         env = build_envelope(payload, self.node_ctx, extra={"pubkey": self.pubkey})
         timeout = float(timeout or CFG.SYNC_TIMEOUT)
         try:
@@ -973,10 +997,18 @@ class Network:
         except (socket.timeout, ConnectionRefusedError, OSError):
             return None
         
-        except Exception:
-            log.exception("[_rpc_request] Error contacting %s", norm)
+        except Exception as exc:
+            self._rpc_backoff[norm] = time.time() + max(5.0, float(CFG.TEMP_BAN_SECONDS))
+            if isinstance(exc, AttributeError):
+                try:
+                    log.warning("[_rpc_request] Handshake aborted by %s; backing off", norm)
+                except Exception:
+                    pass
+            else:
+                log.exception("[_rpc_request] Error contacting %s", norm)
             return None
         
+        self._rpc_backoff.pop(norm, None)
         if not resp:
             return None
         
@@ -1018,28 +1050,59 @@ class Network:
         min_iv = float(CFG.MEMPOOL_SYNC_MIN_INTERVAL)
         if not force and now - self._peer_last_mempool_sync.get(norm, 0.0) < min_iv:
             return None
+        retry_at = self._rpc_backoff.get(norm, 0.0)
+        if now < retry_at:
+            return None
+        try:
+            log.debug("[_request_mempool_inline] requesting from %s force=%s", norm, force)
+        except Exception:
+            pass
 
         payload = {
             "type": "GET_MEMPOOL",
             "mode": "inline_full",
+            "port": self.port,
         }
+        if self.node_id:
+            payload["node_id"] = self.node_id
+
         resp = self._rpc_request(norm, payload, timeout=max(10.0, CFG.SYNC_TIMEOUT))
         if not resp:
-            return False
+            try:
+                log.debug("[_request_mempool_inline] no response from %s", norm)
+            except Exception:
+                pass
+            return None
         
         if resp.get("type") != "MEMPOOL":
+            try:
+                log.debug("[_request_mempool_inline] unexpected response %s from %s", resp.get("type"), norm)
+            except Exception:
+                pass
             return False
 
         resp_mode = str(resp.get("mode", "")).strip().lower()
         if resp_mode and resp_mode not in ("inline", "inline_full"):
+            try:
+                log.debug("[_request_mempool_inline] unsupported mode=%s from %s", resp_mode, norm)
+            except Exception:
+                pass
             return False
 
         txs = resp.get("txs") or resp.get("data")
         if not isinstance(txs, list):
+            try:
+                log.debug("[_request_mempool_inline] bad payload from %s (txs not list)", norm)
+            except Exception:
+                pass
             return False
 
         if txs and all(isinstance(x, (str, bytes)) for x in txs):
             # remote node returned only txids; fall back to legacy snapshot
+            try:
+                log.debug("[_request_mempool_inline] txids-only response from %s", norm)
+            except Exception:
+                pass
             return False
 
         added = 0
@@ -1052,11 +1115,16 @@ class Network:
                 log.debug("[_request_mempool_inline] Failed to add tx from %s", norm, exc_info=True)
 
         self._peer_last_mempool_sync[norm] = now
+        self._snapshot_unreachable.discard(norm)
+        try:
+            log.debug("[_request_mempool_inline] added=%s total=%s from %s", added, len(txs), norm)
+        except Exception:
+            pass
         if added:
             self._reward_peer(norm, CFG.PEER_SCORE_REWARD)
         return True
 
-    def _request_mempool_snapshot(self, peer: Tuple[str, int], *, force: bool = False) -> bool:
+    def _request_mempool_snapshot(self, peer: Tuple[str, int], *, force: bool = False) -> Optional[bool]:
         norm = self._normalize_peer(peer)
         if not norm:
             return False
@@ -1071,19 +1139,37 @@ class Network:
             "mode": "snapshot",
             "port": self.port,
         }
+        retry_at = self._rpc_backoff.get(norm, 0.0)
+        if now < retry_at:
+            return None
         if force:
             payload["force"] = True
             payload["min_interval"] = 0
+        try:
+            log.debug("[_request_mempool_snapshot] requesting from %s force=%s", norm, force)
+        except Exception:
+            pass
 
         resp = self._rpc_request(norm, payload, timeout=max(10.0, CFG.SYNC_TIMEOUT))
         if not resp:
+            try:
+                log.debug("[_request_mempool_snapshot] no response from %s", norm)
+            except Exception:
+                pass
+            self._snapshot_unreachable.add(norm)
             self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
-            return False
+            return None
 
         if resp.get("type") != "MEMPOOL_SYNC" or resp.get("status") == "error":
+            try:
+                log.debug("[_request_mempool_snapshot] reject from %s resp=%s", norm, resp)
+            except Exception:
+                pass
+            self._snapshot_unreachable.add(norm)
             return False
 
         self._peer_last_mempool_sync[norm] = now
+        self._snapshot_unreachable.discard(norm)
         try:
             if int(resp.get("count", 0)) > 0:
                 self._reward_peer(norm, CFG.PEER_SCORE_REWARD)
