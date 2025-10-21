@@ -87,6 +87,10 @@ BLOCKS_PER_HALVING     = 235_000
 COINBASE_MATURITY      = 10
 MAX_COINBASE_EXTRADATA = 100
 
+# --- Genesis reward override ---
+GENESIS_REWARD         = True           # True: use special genesis rewards, False: follow standard policies
+GENESIS_REWARD_AMOUNT  = 1_000_000 * TSAR
+
 
 # =============================================================================
 # CONSENSUS / DIFFICULTY

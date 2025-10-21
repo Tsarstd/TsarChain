@@ -438,7 +438,7 @@ class Blockchain:
                 cb = txs[0]  # coinbase
                 cb_amt = int((cb.get("outputs") or [{}])[0].get("amount", 0))
                 # subsidy teoritis:
-                base = int(CFG.INITIAL_REWARD) // (2 ** (h // int(CFG.BLOCKS_PER_HALVING)))
+                base = self._scheduled_reward(h)
                 fee  = max(0, cb_amt - base)
                 total_fees_paid += fee
         except Exception:
@@ -518,7 +518,7 @@ class Blockchain:
         cur_epoch = 0 if tip_height < 0 else int(tip_height // int(CFG.BLOCKS_PER_HALVING))
         next_halving_height = int((cur_epoch + 1) * int(CFG.BLOCKS_PER_HALVING))
         blocks_to_halving   = None if tip_height < 0 else max(0, next_halving_height - (tip_height + 1))
-        current_block_subsidy = int(CFG.INITIAL_REWARD) // (2 ** cur_epoch)
+        current_block_subsidy = self._scheduled_reward(max(0, tip_height))
 
         # ---- Susun snapshot ----
         snapshot = {
@@ -904,12 +904,25 @@ class Blockchain:
 
     # ----------------- Monetary policy -----------------
     
+    def _scheduled_reward(self, height: int) -> int:
+        if height < 0:
+            return 0
+        if height == 0 and getattr(CFG, "GENESIS_REWARD", False):
+            try:
+                return int(CFG.GENESIS_REWARD_AMOUNT)
+            except Exception:
+                return int(CFG.INITIAL_REWARD)
+        try:
+            return int(CFG.INITIAL_REWARD) // (2 ** (int(max(0, height)) // int(CFG.BLOCKS_PER_HALVING)))
+        except Exception:
+            return 0
+    
     def _cumulative_supply_until(self, height: int) -> int:
         total = 0
         if height <= 0:
             return 0
         for h in range(height):
-            base = CFG.INITIAL_REWARD // (2 ** (h // CFG.BLOCKS_PER_HALVING))
+            base = self._scheduled_reward(h)
             if base <= 0:
                 break
             if total + base > CFG.MAX_SUPPLY:
@@ -920,7 +933,7 @@ class Blockchain:
         return total
     
     def get_block_reward(self, height: int) -> int:
-        base = CFG.INITIAL_REWARD // (2 ** (height // CFG.BLOCKS_PER_HALVING))
+        base = self._scheduled_reward(height)
         if base <= 0:
             return 0
         minted_before = self._cumulative_supply_until(height)
@@ -1182,7 +1195,7 @@ class Blockchain:
             if not _merkle_ok(g):
                 return False
 
-            base_reward = CFG.INITIAL_REWARD // (2 ** (0 // CFG.BLOCKS_PER_HALVING))
+            base_reward = self._scheduled_reward(0)
             reward = min(base_reward, max(0, CFG.MAX_SUPPLY - cumulative_supply))
             fees = 0
             cb = getattr(g, "transactions", [None])[0]
@@ -1239,7 +1252,7 @@ class Blockchain:
                     return False
                 
                 fees = sum(int(getattr(t, "fee", 0)) for t in txs[1:])
-                base_reward = CFG.INITIAL_REWARD // (2 ** (getattr(cur, "height", 0) // CFG.BLOCKS_PER_HALVING))
+                base_reward = self._scheduled_reward(int(getattr(cur, "height", 0)))
                 reward = min(base_reward, max(0, CFG.MAX_SUPPLY - cumulative_supply))
                 actual_cb = sum(int(o.amount) for o in getattr(txs[0], "outputs", []) or [])
                 expected_cb = reward + fees
@@ -1439,7 +1452,7 @@ class Blockchain:
 
         total_fee = sum(int(getattr(t, "fee", 0)) for t in txs[1:])
         minted_before = self._cumulative_supply_until(block.height)
-        base = CFG.INITIAL_REWARD // (2 ** (block.height // CFG.BLOCKS_PER_HALVING))
+        base = self._scheduled_reward(block.height)
         reward = min(max(0, base), max(0, CFG.MAX_SUPPLY - minted_before))
         expected_cb = reward + total_fee
 
