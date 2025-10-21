@@ -208,16 +208,16 @@ class ThemeSet:
 
 _BASE_MODES: Dict[str, Dict[str, str]] = {
     "dark": {
-        "bg": "#0f1115",
-        "panel_bg": "#161a1f",
-        "surface": "#1d232b",
-        "surface_alt": "#232a33",
+        "bg": "#121212",
+        "panel_bg": "#1e1e1e",
+        "surface": "#1e1e1e",
+        "surface_alt": "#1e1e1e",
         "card": "#161a1f",
         "fg": "#f2f5f7",
         "muted": "#a9b1ba",
-        "accent": "#eb6709",
+        "accent": "#dd5b0f",
         "border": "#2a2f36",
-        "success": "#31C47F",
+        "success": "#168a56",
         "warning": "#f59f45",
         "danger": "#f87171",
         "info": "#1086d4",
@@ -225,17 +225,17 @@ _BASE_MODES: Dict[str, Dict[str, str]] = {
     "light": {
         "bg": "#d4d2cc",
         "panel_bg": "#adacaa",
-        "surface": "#979591",
+        "surface": "#969492",
         "surface_alt": "#e0e6f2",
         "card": "#d1c3ae",
-        "fg": "#16202b",
-        "muted": "#46515e",
-        "accent": "#eb6709",
-        "border": "#d1cec4",
-        "success": "#1f6948",
-        "warning": "#f59b35",
-        "danger": "#d3464d",
-        "info": "#2072b8",
+        "fg": "#1e1e1e",
+        "muted": "#6B6A67",
+        "accent": "#d36526",
+        "border": "#979691",
+        "success": "#198353",
+        "warning": "#caa709",
+        "danger": "#b82a31",
+        "info": "#0f4391",
     },
 }
 
@@ -288,8 +288,8 @@ def _build_chat_theme(p: Palette) -> ChatTheme:
 
 
 def _build_explorer_theme(p: Palette) -> ExplorerTheme:
-    value_num = _blend(p.accent, "#e4b653", 0.45)
-    value_id = _blend(p.info, "#ffffff", 0.35)
+    value_num = _blend(p.warning, "#e0aa13", 0.35)
+    value_id = _blend(p.info, "#b9b9b9", 0.35)
     unconfirmed = _blend(p.warning, "#e46352", 0.4)
     return ExplorerTheme(
         bg=p.bg,

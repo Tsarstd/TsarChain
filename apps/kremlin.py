@@ -333,6 +333,7 @@ class KremlinWalletGUI(WalletsMixin):
         self.fg = palette.fg
         self.muted = palette.muted
         self.accent = palette.accent
+        self.inf = palette.info
         self.border_color = palette.border
         self.card_bg = palette.card
         self.sidebar_bg = theme_set.wallet.sidebar_bg
@@ -1554,16 +1555,17 @@ class KremlinWalletGUI(WalletsMixin):
             self.net_text.tag_configure("center", justify="center")
             palette = getattr(self.theme_set, "palette", None)
             accent = self.accent
+            info = self.inf
             muted = self.muted
             success = palette.success if palette else "#319E4D"
             self.net_text.tag_configure("h2",  font=("Consolas", 17, "bold"), foreground=accent, spacing3=2)
-            self.net_text.tag_configure("lab", font=("Consolas", 13, "bold"), foreground=accent)
+            self.net_text.tag_configure("lab", font=("Consolas", 13, "bold"), foreground=info)
             self.net_text.tag_configure("val", font=("Consolas", 11), foreground=muted)
             self.net_text.tag_configure("mut", font=("Consolas", 10), foreground=success)
             self.net_text.tag_configure("sep", font=("Consolas", 11), foreground=accent)
             self.net_text.tag_configure("sep2", font=("Consolas", 11), foreground=muted)
             # Rank-specific styles for Top #10 miners
-            self.net_text.tag_configure("rank1", font=("Consolas", 17), foreground="#CE961C")  # Gold
+            self.net_text.tag_configure("rank1", font=("Consolas", 17), foreground="#F8B31F")  # Gold
             self.net_text.tag_configure("rank2", font=("Consolas", 15), foreground="#646464")  # Silver
             self.net_text.tag_configure("rank3", font=("Consolas", 13), foreground="#96622D")  # Bronze
             

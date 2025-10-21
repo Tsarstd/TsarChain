@@ -15,7 +15,6 @@ from .theme import ExplorerTheme
 
 
 MONO     = ("Consolas", 10)
-
 HINT_TEXT = "search with : (block height/txid/hash/address)"
 
 # ---------- small helpers ----------
@@ -102,7 +101,7 @@ class ExplorePanel(tk.Frame):
             self.header,
             text="Explore the full Tsarchain ecosystem",
             bg=self.bg,
-            fg=self.value_num,
+            fg=self.accent,
             font=("Consolas", 20, "italic"),
         )
         self.tagline.pack(side="top", pady=(0, 35))
@@ -437,12 +436,14 @@ class ExplorePanel(tk.Frame):
     def _layout_search(self, hero: bool):
         for w in (self.search_entry, self.search_btn, self.exit_btn):
             try: w.grid_forget()
-            except Exception: pass
+            except Exception:
+                pass
         if hero:
             self.search_entry.grid(row=0, column=0, sticky="ew", pady=(0, 6))
             self.search_btn.grid(row=1, column=0, sticky="ew")
             try: self.exit_btn.grid_remove()
-            except Exception: pass
+            except Exception:
+                pass
         else:
             self.search_entry.grid(row=0, column=0, sticky="ew")
             self.search_btn.grid(row=0, column=1, padx=(6, 0))
