@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP143; BIP141; BIP173; CompactSize; Merkle; libsecp256k1; LowS-Policy; Signal-X3DH
+
 from __future__ import annotations
 import hashlib, json, secrets, string, unicodedata
 from bech32 import bech32_decode, convertbits
