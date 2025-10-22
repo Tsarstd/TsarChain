@@ -1567,6 +1567,18 @@ class Blockchain:
                 injected = False
                 if isinstance(reason, str) and reason.startswith("prevout_missing "):
                     missing_key = reason.split(" ", 1)[1].strip()
+                    try:
+                        txid_part, _, idx_part = missing_key.partition(":")
+                        short_tx = txid_part[:8] + ".." + txid_part[-8:] if len(txid_part) > 16 else txid_part
+                        log.warning(
+                            "[_validate_transactions] Block %s missing prevout %s:%s (tx %s)",
+                            getattr(block, "height", "?"),
+                            short_tx,
+                            idx_part or "?",
+                            (txid_hex[:8] + ".." + txid_hex[-8:]) if txid_hex else "unknown",
+                        )
+                    except Exception:
+                        pass
                     injected = _inject_prevout_from_store(missing_key)
                     if injected and pool.validate_transaction(tx, utxo_view, spend_at_height=spend_height):
                         reason = None

@@ -161,7 +161,7 @@ INITIAL_BITS       = 0x1E00FFFF
 MAX_BITS           = 0x1F0FFFFF
 TARGET_BLOCK_TIME  = 37             # 37 Sec
 LWMA_WINDOW        = 75             # Block's
-FUTURE_DRIFT       = 7200           # 2 Hours
+FUTURE_DRIFT       = 600            # 10 Minute
 MTP_WINDOWS        = 11             # Block's
 
 # === Consensus Hardening ===
@@ -174,7 +174,7 @@ MAX_SIGOPS_PER_TX       = 6_000
 # FORK-CHOICE & REORG
 ENABLE_CHAINWORK_RULE   = True
 ENABLE_REORG_LIMIT      = True
-REORG_LIMIT             = 100
+REORG_LIMIT             = 1000
 
 # DIFF CLAMP
 ENABLE_DIFF_CLAMP       = True

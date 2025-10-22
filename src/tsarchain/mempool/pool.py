@@ -593,7 +593,12 @@ class TxPoolDB(BaseDatabase):
 
             if not found or utxo_entry is None:
                 self.last_error_reason = f"prevout_missing {prev_txid_hex}:{prev_index}"
-                log.warning("[validate_transaction] Missing prevout %s:%d", prev_txid_hex, prev_index)
+                short_prev = (
+                    prev_txid_hex[:8] + ".." + prev_txid_hex[-8:]
+                    if isinstance(prev_txid_hex, str) and len(prev_txid_hex) > 16
+                    else prev_txid_hex
+                )
+                log.warning("[validate_transaction] Missing prevout %s:%d", short_prev, prev_index)
                 return False
 
             # Coinbase maturity

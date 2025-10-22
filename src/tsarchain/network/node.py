@@ -917,10 +917,23 @@ class Network:
                 blocks = resp.get("blocks") or []
                 for block_obj in blocks:
                     try:
-                        self._apply_block_from_sync(block_obj, peer)
-                        downloaded = True
+                        applied = self._apply_block_from_sync(block_obj, peer)
                     except Exception:
                         log.exception("[_download_blocks] Failed applying block from %s", peer)
+                        return downloaded
+                    if applied:
+                        downloaded = True
+                    else:
+                        blk_hash = None
+                        try:
+                            blk_hash = block_obj.get("hash")
+                        except Exception:
+                            blk_hash = None
+                        try:
+                            label = str(blk_hash or "unknown")
+                            log.warning("[_download_blocks] Block %s rejected during sync from %s", label[:12], peer)
+                        except Exception:
+                            pass
                         return downloaded
                     
             elif resp.get("type") == "SYNC_REJECT":
@@ -932,13 +945,13 @@ class Network:
             
         return downloaded
 
-    def _apply_block_from_sync(self, block_obj: Dict[str, Any], peer: Tuple[str, int]) -> None:
+    def _apply_block_from_sync(self, block_obj: Dict[str, Any], peer: Tuple[str, int]) -> bool:
         message = {
             "type": "NEW_BLOCK",
             "data": block_obj,
             "port": peer[1],
         }
-        self.broadcast.receive_block(message, peer, self.peers)
+        return bool(self.broadcast.receive_block(message, peer, self.peers))
 
     def handle_block_gap(self, block, origin: Optional[Tuple[str, int]]) -> None:
         peer = self._normalize_peer(origin)
@@ -1177,8 +1190,8 @@ class Network:
             pass
         return True
     
-    def _request_full_sync(self, peer: Tuple[str, int]) -> bool:
-        if not CFG.ENABLE_FULL_SYNC:
+    def _request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> bool:
+        if not force and not CFG.ENABLE_FULL_SYNC:
             return self._request_mempool_snapshot(peer, force=True)
         
         norm = self._normalize_peer(peer)
@@ -1186,11 +1199,11 @@ class Network:
             return False
         
         now = time.time()
-        if now < self._full_sync_backoff.get(norm, 0.0):
+        if not force and now < self._full_sync_backoff.get(norm, 0.0):
             return False
         
         last_req = self._full_sync_last_request.get(norm, 0.0)
-        if now - last_req < CFG.FULL_SYNC_MIN_INTERVAL:
+        if not force and now - last_req < CFG.FULL_SYNC_MIN_INTERVAL:
             return False
 
         payload = {

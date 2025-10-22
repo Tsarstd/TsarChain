@@ -371,14 +371,14 @@ class Broadcast:
             log.exception("[receive_chain] Error receiving chain")
             return False
 
-    def receive_block(self, message: Dict[str, Any], addr, peers: Set[Tuple[str, int]]):
+    def receive_block(self, message: Dict[str, Any], addr, peers: Set[Tuple[str, int]]) -> bool:
         block_id = None
         inflight = False
         accepted = False
         try:
             block_data = message.get("data")
             if not block_data:
-                return
+                return False
 
             block = Block.deserialize_block(block_data)
             block_id = block.hash().hex()
@@ -388,7 +388,7 @@ class Broadcast:
 
             with self.lock:
                 if block_id in self.seen_blocks or block_id in self._processing_blocks:
-                    return
+                    return True
                 self._processing_blocks.add(block_id)
                 inflight = True
 
@@ -411,7 +411,7 @@ class Broadcast:
                                 self._request_full_sync(p)
                             except Exception:
                                 log.exception("[receive_block] Full sync request to %s failed", p)
-                    return
+                    return False
                 if block.prev_block_hash != tip_h:
                     potential_fork = True
 
@@ -430,12 +430,12 @@ class Broadcast:
                             if self.network:
                                 target = origin if origin else (next(iter(peers)) if peers else None)
                                 if target:
-                                    self.network._request_full_sync(target)
+                                    self.network._request_full_sync(target, force=True)
                                 else:
                                     self.network.request_sync(fast=True)
                         except Exception:
                             log.exception("[receive_block] Failed to trigger full sync after prevout missing")
-                    return
+                    return False
 
             old_tip = None
             try:
@@ -459,7 +459,7 @@ class Broadcast:
                             log.exception("[receive_block] Fallback full sync request to %s failed", p)
                         finally:
                             CFG.ENABLE_FULL_SYNC = prev_flag
-                return
+                return False
 
             accepted = True
 
@@ -514,14 +514,17 @@ class Broadcast:
             except Exception:
                 log.exception("[receive_block] Error broadcasting new block to peers")
 
+            return True
         except Exception:
             log.exception("[receive_block] Error processing incoming block")
+            return False
         finally:
             if inflight and block_id:
                 with self.lock:
                     self._processing_blocks.discard(block_id)
                     if not accepted:
                         self.seen_blocks.discard(block_id)
+        return accepted
 
     def receive_tx(self, message: Dict[str, Any], addr, peers: Set[Tuple[str, int]]) -> bool:
         try:

@@ -81,7 +81,7 @@ WALLET_DATA_DIR     = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)
 # MONETARY / SUPPLY
 # =============================================================================
 TSAR                   = 100_000_000     # SAT-like unit (8 decimals)
-MAX_SUPPLY             = 250_000_000 * TSAR
+MAX_SUPPLY             = 252_500_000 * TSAR
 INITIAL_REWARD         = 250 * TSAR
 BLOCKS_PER_HALVING     = 235_000
 COINBASE_MATURITY      = 10
@@ -89,7 +89,7 @@ MAX_COINBASE_EXTRADATA = 100
 
 # --- Genesis reward override ---
 GENESIS_REWARD         = True           # True: use special genesis rewards, False: follow standard policies
-GENESIS_REWARD_AMOUNT  = 1_000_000 * TSAR
+GENESIS_REWARD_AMOUNT  = 2_500_000 * TSAR
 
 
 # =============================================================================
@@ -112,7 +112,7 @@ MAX_SIGOPS_PER_TX       = 6_000
 # FORK-CHOICE & REORG
 ENABLE_CHAINWORK_RULE   = True
 ENABLE_REORG_LIMIT      = True
-REORG_LIMIT             = 100
+REORG_LIMIT             = 1000
 
 # DIFF CLAMP
 ENABLE_DIFF_CLAMP       = True
@@ -156,7 +156,7 @@ CANONICAL_SEP   = (',', ':')
 
 # === Genesis ===
 ALLOW_AUTO_GENESIS       = 0
-GENESIS_HASH_HEX         = "0000006a00d8b36a47db16d9957b055e6355081b72da07cf19fc78c7ff6750ac"
+GENESIS_HASH_HEX         = "0000000046df1b71a81098d7aba39aee50855fbb044156cad6f59223e570d1c7"
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"
 
 # === Voice Sovereignty Figures (ASCII only) ===
