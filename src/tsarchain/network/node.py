@@ -1066,10 +1066,6 @@ class Network:
         retry_at = self._rpc_backoff.get(norm, 0.0)
         if now < retry_at:
             return None
-        try:
-            log.debug("[_request_mempool_inline] requesting from %s force=%s", norm, force)
-        except Exception:
-            pass
 
         payload = {
             "type": "GET_MEMPOOL",
@@ -1104,10 +1100,6 @@ class Network:
 
         txs = resp.get("txs") or resp.get("data")
         if not isinstance(txs, list):
-            try:
-                log.debug("[_request_mempool_inline] bad payload from %s (txs not list)", norm)
-            except Exception:
-                pass
             return False
 
         if txs and all(isinstance(x, (str, bytes)) for x in txs):
@@ -1158,10 +1150,6 @@ class Network:
         if force:
             payload["force"] = True
             payload["min_interval"] = 0
-        try:
-            log.debug("[_request_mempool_snapshot] requesting from %s force=%s", norm, force)
-        except Exception:
-            pass
 
         resp = self._rpc_request(norm, payload, timeout=max(10.0, CFG.SYNC_TIMEOUT))
         if not resp:
