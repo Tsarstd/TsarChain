@@ -140,7 +140,7 @@ SEGWIT_OUTPUT_VBYTES   = 31
 DUST_THRESHOLD_SAT     = 294
 MAX_DECIMALS           = 8
 
-MEMPOOL_MAX_SIZE       = 50 * 1024 * 1024   # 50 Mb
+MEMPOOL_MAX_SIZE       = 1 * 1024 * 1024   # 1 Mb
 
 
 # =============================================================================
@@ -156,7 +156,7 @@ CANONICAL_SEP   = (',', ':')
 
 # === Genesis ===
 ALLOW_AUTO_GENESIS       = 0
-GENESIS_HASH_HEX         = "0000000046df1b71a81098d7aba39aee50855fbb044156cad6f59223e570d1c7"
+GENESIS_HASH_HEX         = "0000005767040903bba6121f65ba5d8892819a1a2491e2835a219d797995b1ec"
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"
 
 # === Voice Sovereignty Figures (ASCII only) ===
@@ -248,6 +248,7 @@ FULL_SYNC_BACKOFF_MAX       = 600
 MAX_MSG                     = FULL_SYNC_MAX_BYTES
 MEMPOOL_SYNC_MIN_INTERVAL   = 30
 MEMPOOL_INLINE_MAX_TX       = 600                # if the network is high, increase it to 400 - 600
+MEMPOOL_FLUSH_INTERVAL      = 5.0
 
 HEADERS_BATCH_MAX           = 2_048
 HEADERS_LOCATOR_DEPTH       = 64

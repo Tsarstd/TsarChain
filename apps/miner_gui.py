@@ -1,4 +1,4 @@
-﻿# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173
@@ -72,6 +72,7 @@ class BlockchainGUI:
         self._sync_progress_text = ""
         self._log_static: "OrderedDict[str, tuple[str, str | None]]" = OrderedDict()
         self._log_history: "deque[tuple[str, str | None]]" = deque(maxlen=12)
+        self._last_sync_request = 0.0
 
         # theme
         self.bg = "#121212"
@@ -388,9 +389,19 @@ class BlockchainGUI:
         self.status_mine = tk.Label(self.corner, text="Mining: stopped", fg=self.fg, bg="#4D4D4D", font=("Consolas", 9))
         self.status_mine.pack(side=tk.LEFT, padx=(0, 8))
 
-
-
     # ---------- Helpers ----------
+    def _request_fast_sync(self, min_interval: float = 2.0) -> None:
+        if not self.network:
+            return
+        now = time.time()
+        if min_interval > 0 and (now - self._last_sync_request) < min_interval:
+            return
+        self._last_sync_request = now
+        try:
+            self.network.request_sync(fast=True)
+        except Exception:
+            pass
+
     def log_print(self, msg: str):
         try:
             (getattr(self, "gui_log", None) or get_ctx_logger("apps.[miner_gui]")).info(msg)
@@ -578,10 +589,7 @@ class BlockchainGUI:
 
             def _early_sync():
                 for _ in range(5):
-                    try:
-                        self.network.request_sync(fast=True)
-                    except Exception:
-                        pass
+                    self._request_fast_sync(min_interval=0.0)
                     time.sleep(1.0)
             threading.Thread(target=_early_sync, daemon=True).start()
             self._set_buttons_state()
@@ -605,7 +613,7 @@ class BlockchainGUI:
                     self.log_print("[Sync] Peer connected. Checking for the latest block...")
                 self._sync_status = "syncing"
 
-                self.network.request_sync(fast=True)
+                self._request_fast_sync()
                 try:
                     height_raw = getattr(self.blockchain, "height", -1)
                     height = int(height_raw)
@@ -694,7 +702,7 @@ class BlockchainGUI:
                 self.log_print("[Genesis] Auto-genesis disabled; trying initial sync…")
                 try:
                     if self.network:
-                        self.network.request_sync(fast=True)
+                        self._request_fast_sync(min_interval=0.0)
                         time.sleep(1.0)
                 except Exception:
                     pass
@@ -718,7 +726,7 @@ class BlockchainGUI:
             while self.mining_alive.is_set():
                 try:
                     if self.network.peers:
-                        self.network.request_sync(fast=True)
+                        self._request_fast_sync(min_interval=3.0)
                         time.sleep(1)
 
                     block = self.blockchain.mine_block(
@@ -735,19 +743,31 @@ class BlockchainGUI:
                         try:
                             sent = self.network.publish_block(block, exclude=None, force=True)
                             if sent <= 0:
-                                self.network.request_sync(fast=True)
+                                self._request_fast_sync(min_interval=0.5)
                         except Exception:
                             pass
                         try:
-                            for tx in (getattr(block, "transactions", []) or [])[1:]:
+                            pool = getattr(self.network.broadcast, "mempool", None)
+                            if pool:
+                                txids_to_purge: list[str] = []
+                                for tx in (getattr(block, "transactions", []) or [])[1:]:
+                                    txid = getattr(tx, "txid", None)
+                                    if not txid:
+                                        continue
+                                    txids_to_purge.append(txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid))
+                                if txids_to_purge:
+                                    try:
+                                        if hasattr(pool, "remove_many"):
+                                            pool.remove_many(txids_to_purge)
+                                        else:
+                                            for _txid in txids_to_purge:
+                                                pool.remove_tx(_txid)
+                                    except Exception:
+                                        pass
                                 try:
-                                    self.network.broadcast.mempool.remove_tx(tx.txid.hex())
+                                    pool.flush()
                                 except Exception:
                                     pass
-                            try:
-                                self.network.broadcast.mempool.save_pool(self.network.broadcast.mempool.load_pool())
-                            except Exception:
-                                pass
                         except Exception as _e:
                             try:
                                 self.log_print(f"[Mempool] prune error: {_e}")

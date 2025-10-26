@@ -52,7 +52,7 @@ fn py_logger_call(level: &str, msg: &str) {
 // Shortcut level
 #[inline] fn log_trace(msg: &str)    { py_logger_call("trace", msg); }
 #[inline] fn log_debug(msg: &str)    { py_logger_call("debug", msg); }
-#[inline] fn log_info(msg: &str)     { py_logger_call("info",  msg); }
+//#[inline] fn log_info(msg: &str)     { py_logger_call("info",  msg); }
 #[inline] fn log_warning(msg: &str)  { py_logger_call("warning", msg); }
 //#[inline] fn log_error(msg: &str)    { py_logger_call("error", msg); }
 //#[inline] fn log_critical(msg: &str) { py_logger_call("critical", msg); }
@@ -234,7 +234,6 @@ fn secp_verify_der_low_s(pubkey: &[u8], digest32: &[u8], der_sig: &[u8]) -> PyRe
     };
 
     let secp = Secp256k1::verification_only();
-    log_info(&format!("Verifying message: {:?}", msg));
     Ok(secp.verify_ecdsa(&msg, &norm, &pk).is_ok())
 }
 
@@ -245,8 +244,6 @@ fn secp_verify_der_low_s(pubkey: &[u8], digest32: &[u8], der_sig: &[u8]) -> PyRe
 mod bip143_native {
     use pyo3::{exceptions, PyErr};
     use sha2::{Digest, Sha256};
-
-    use crate::log_info;
 
     const SIGHASH_ALL: u32 = 0x01;
 
@@ -478,13 +475,6 @@ mod bip143_native {
         pre.extend_from_slice(&tx.locktime.to_le_bytes());
         pre.extend_from_slice(&sighash_type.to_le_bytes());
 
-        log_info(&format!(
-            "sighash_bip143: input_index={}, script_code_len={}, value_sat={}, sighash_type={}",
-            input_index,
-            script_code.len(),
-            value_sat,
-            sighash_type
-        ));
         Ok(sha256d(&pre))
     }
 }

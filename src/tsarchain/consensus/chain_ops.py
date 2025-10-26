@@ -272,18 +272,34 @@ class ChainOpsMixin:
         if not txids:
             return
 
-        pool = TxPoolDB(utxo_store=self._ensure_utxodb())
+        pool = None
+        owned_pool = False
+        try:
+            if hasattr(self, "get_mempool"):
+                pool = self.get_mempool()
+        except Exception:
+            pool = None
+        if pool is None:
+            pool = TxPoolDB(utxo_store=self._ensure_utxodb())
+            owned_pool = True
+
         pruned = 0
         seen: set[str] = set()
-        for txid in txids:
-            if txid in seen:
-                continue
-            seen.add(txid)
-            try:
-                pool.remove_tx(txid)
-                pruned += 1
-            except Exception:
-                log.debug("[_prune_mempool_confirmed] Failed to remove tx %s", txid)
+        try:
+            if hasattr(pool, "remove_many"):
+                pruned = pool.remove_many(txids)
+            else:
+                for txid in txids:
+                    if txid in seen:
+                        continue
+                    seen.add(txid)
+                    try:
+                        if pool.remove_tx(txid):
+                            pruned += 1
+                    except Exception:
+                        log.debug("[_prune_mempool_confirmed] Failed to remove tx %s", txid)
+        except Exception:
+            log.exception("[_prune_mempool_confirmed] Error removing confirmed txs from mempool")
 
         if pruned:
             log.debug("[_prune_mempool_confirmed] Removed %d confirmed txs from mempool", pruned)
@@ -302,6 +318,17 @@ class ChainOpsMixin:
 
         if conflicts or stale_removed:
             log.debug("[_prune_mempool_confirmed] pruned conflicts=%d stale=%d", conflicts, stale_removed)
+
+        try:
+            pool.flush()
+        except Exception:
+            log.exception("[_prune_mempool_confirmed] Failed to flush mempool after pruning")
+
+        if owned_pool:
+            try:
+                pool.flush(force=True)
+            except Exception:
+                pass
 
     def _has_pending_blocks(self) -> bool:
         try:

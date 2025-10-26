@@ -41,6 +41,13 @@ class Broadcast:
         self.seen_blocks: Set[str] = set()
         self.seen_txs: Set[str] = set()
         self._processing_blocks: Set[str] = set()
+        
+        if hasattr(self.blockchain, "attach_mempool"):
+            try:
+                self.blockchain.attach_mempool(self.mempool)  # type: ignore[arg-type]
+            except Exception:
+                pass
+
         self.last_sync_time = 0
         self.port: Optional[int] = None
         self._encode = lambda m: m
@@ -50,6 +57,7 @@ class Broadcast:
         self.peer_pubkeys = {}
         self.network: Optional["Network"] = None
         self._failmap: Dict[Tuple[str, int], Dict[str, float | int]] = {}  # {peer: {"fails": int, "last": ts}}
+        self._last_mempool_seq: Dict[Tuple[str, int], int] = {}
 
     # ----------------------------- I/O helpers -----------------------------
 
@@ -230,6 +238,10 @@ class Broadcast:
                             log.exception("[receive_full_sync] Error adding tx from mempool during full sync")
                     if added:
                         log.info("[receive_full_sync] Mempool updated: %s new transactions", added)
+                        try:
+                            self.mempool.flush()
+                        except Exception:
+                            log.exception("[receive_full_sync] Failed to flush mempool after update")
                         
                 self.last_sync_time = time.time()
             return True
@@ -464,19 +476,32 @@ class Broadcast:
             accepted = True
 
             try:
-                fail_rm = 0
+                removal_candidates: list[str] = []
                 for tx in (block.transactions[1:] or []):
+                    txid = getattr(tx, "txid", None)
+                    if not txid:
+                        continue
+                    removal_candidates.append(txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid))
+                if removal_candidates:
                     try:
-                        self.mempool.remove_tx(tx.txid.hex())
-                    except Exception:
-                        fail_rm += 1
-                if fail_rm:
-                    log.warning("[receive_block] %s tx failed to remove from mempool after block addition", fail_rm)
+                        removed = self.mempool.remove_many(removal_candidates)
+                        missing = len(removal_candidates) - removed
+                        if missing > 0:
+                            log.debug("[receive_block] %s mempool tx already absent when pruning confirmed set", missing)
+                    except AttributeError:
+                        fail_rm = 0
+                        for txid in removal_candidates:
+                            try:
+                                if not self.mempool.remove_tx(txid):
+                                    fail_rm += 1
+                            except Exception:
+                                fail_rm += 1
+                        if fail_rm:
+                            log.warning("[receive_block] %s tx failed to remove from mempool after block addition", fail_rm)
                 try:
-                    self.mempool.save_pool(self.mempool.load_pool())
+                    self.mempool.flush()
                 except Exception:
-                    log.exception("[receive_block] Error cleaning mempool")
-                
+                    log.exception("[receive_block] Error flushing mempool after block acceptance")
 
                 if old_tip:
                     try:
@@ -487,6 +512,10 @@ class Broadcast:
                                 pass
                     except Exception:
                         log.exception("[receive_block] Error requeueing transactions from orphaned tip")
+                try:
+                    self.mempool.flush()
+                except Exception:
+                    log.exception("[receive_block] Failed to flush mempool after block handling")
             except Exception:
                 log.exception("[receive_block] Error updating mempool after block acceptance")
 
@@ -593,6 +622,10 @@ class Broadcast:
                 log.exception("[receive_mempool] Error rechecking orphan transactions")
             if added_count:
                 log.info("[receive_mempool] Mempool updated: %s new transactions", added_count)
+                try:
+                    self.mempool.flush()
+                except Exception:
+                    log.exception("[receive_mempool] Failed to flush mempool after update")
         except Exception:
             log.exception("[receive_mempool] Error updating mempool")
 
@@ -664,6 +697,12 @@ class Broadcast:
         if not force and now - last < ttl:
             return 0
 
+        current_seq = getattr(self.mempool, "change_seq", None)
+        if not force and current_seq is not None:
+            last_seq = self._last_mempool_seq.get(peer)
+            if last_seq is not None and last_seq == current_seq:
+                return 0
+
         sent = 0
         hard_cap = max(1024, CFG.MAX_MSG) - len(CFG.NETWORK_MAGIC)
         for chunk in self._mempool_chunks(hard_cap):
@@ -677,6 +716,8 @@ class Broadcast:
             if ok:
                 sent += len(chunk)
         self._last_mempool_push[peer] = now
+        if current_seq is not None and sent >= 0:
+            self._last_mempool_seq[peer] = current_seq
         return sent
 
     def _clean_mempool_after_chain_replace(self):
@@ -692,7 +733,16 @@ class Broadcast:
                 if not (tx.txid.hex() in in_chain):
                     new_mempool.append(tx)
 
-            self.mempool.save_pool([tx.to_dict() for tx in new_mempool])
+            if hasattr(self.mempool, "save_pool"):
+                self.mempool.save_pool(new_mempool)
+            else:
+                self.mempool.clear()
+                for tx in new_mempool:
+                    self.mempool.add_tx(tx)
+                try:
+                    self.mempool.flush()
+                except Exception:
+                    pass
         except Exception:
             log.exception("[_clean_mempool_after_chain_replace] Error cleaning mempool after chain replace")
 

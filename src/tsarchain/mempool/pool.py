@@ -4,6 +4,9 @@
 # Refs: BIP143; BIP141; libsecp256k1; Signal-X3DH
 
 import json
+import threading
+import time
+from collections import OrderedDict
 from typing import Optional, Dict
 from ecdsa import VerifyingKey, SECP256k1
 
@@ -168,12 +171,18 @@ class TxPoolDB(BaseDatabase):
     ):
         self.filepath = filepath
         self.max_size_mb = max_size_mb
-        pool = self.load_pool()
-        try:
-            self.current_size = sum(self._estimate_tx_size_any(Tx.from_dict(x) if isinstance(x, dict) else x) for x in pool)
-        except Exception:
-            self.current_size = 0
-        
+        self._lock = threading.RLock()
+        self._auto_flush_interval = max(1.0, float(CFG.MEMPOOL_FLUSH_INTERVAL))
+        self._pool: "OrderedDict[str, Tx]" = OrderedDict()
+        self._size_map: Dict[str, int] = {}
+        self._dirty = False
+        self._change_seq = 0
+        self._last_flush = time.time()
+
+        storage_items = self._load_storage_pool()
+        self._hydrate_pool(storage_items)
+        self.current_size = sum(self._size_map.values())
+
         utxo_store = utxo_store or UTXODB()
         self.utxo = utxo_store
         if inherit_state:
@@ -181,218 +190,269 @@ class TxPoolDB(BaseDatabase):
                 self.utxo._load()
             except Exception:
                 pass
-        
+
         # Last error/context for receive_tx to report back to clients
         self.last_error_reason: str | None = None
         # Orphan transactions awaiting missing prevouts (txid -> tx_dict)
         self._orphan_pool: Dict[str, dict] = {}
         self._orphan_missing: Dict[str, str] = {}
 
-    def _normalize_entry(self, item) -> dict | None:
-        try:
-            if isinstance(item, Tx):
-                tx_obj = item
-            elif isinstance(item, dict):
-                tx_obj = Tx.from_dict(item)
-            else:
-                return None
-
-            if not getattr(tx_obj, "txid", None):
-                tx_obj.compute_txid()
-
-            tx_dict = tx_obj.to_dict(include_txid=True)
-            if not tx_dict.get("txid") and getattr(tx_obj, "txid", None):
-                tx_dict["txid"] = tx_obj.txid.hex()
-                
-            if not tx_dict.get("txid"):
-                return None
-            
-            return tx_dict
-        except Exception:
-            log.exception("[save_pool] Failed to normalize mempool entry")
-            return None
-
-    def save_pool(self, pool: list) -> None:
-        normalized: list[dict] = []
-        for item in pool:
-            norm = self._normalize_entry(item)
-            if norm:
-                normalized.append(norm)
-                
-        if not normalized and pool:
-            normalized = [item for item in pool if isinstance(item, dict)]
-
-        if kv_enabled():
-            try:
-                clear_db('mempool')
-            except Exception:
-                pass
-            try:
-                with batch('mempool') as b:
-                    for d in normalized:
-                        try:
-                            txid = d.get('txid')
-                            if not txid:
-                                continue
-                            
-                            b.put(txid.encode('utf-8'), json.dumps(d, separators=(",", ":")).encode('utf-8'))
-                        except Exception:
-                            log.exception("[save_pool] Failed writing tx %s to LMDB", d.get("txid"))
-                            continue
-                        
-            except Exception:
-                log.error("[save_pool] LMDB write failed, falling back to file storage")
-                self.save_json(self.filepath, normalized)
-        else:
-            self.save_json(self.filepath, normalized)
-
-    def load_pool(self) -> list:
+    # ------------- Storage helpers -------------
+    def _load_storage_pool(self) -> list:
         if kv_enabled():
             out = []
             try:
-                for k, v in iter_prefix('mempool', b''):
+                for _k, v in iter_prefix('mempool', b''):
                     try:
                         out.append(json.loads(v.decode('utf-8')))
                     except Exception:
                         continue
-                    
-                return out
             except Exception:
                 log.error("[load_pool] LMDB read failed, falling back to file storage")
                 return []
-            
+            return out
         return self.load_json(self.filepath) or []
-    
-    def get_all_txs(self) -> list:
-        tx_dicts = self.load_pool()
-        tx_list = []
-        for tx_data in tx_dicts:
+
+    def _hydrate_pool(self, entries: list) -> None:
+        for entry in entries:
             try:
-                if isinstance(tx_data, bytes):
-                    tx_data = tx_data.decode('utf-8')
-                if isinstance(tx_data, str):
-                    tx_data = json.loads(tx_data)
-                tx_obj = Tx.from_dict(tx_data)
-                tx_list.append(tx_obj)
+                tx_obj = self._tx_from_any(entry)
             except Exception:
-                log.warning("[get_all_txs] Failed to parse transaction in pool, skipping")
+                log.warning("[mempool] Failed to hydrate entry, skipping")
                 continue
-            
-        return tx_list
+            txid = self._normalize_txid(tx_obj.txid)
+            self._pool[txid] = tx_obj
+            self._size_map[txid] = self._estimate_tx_size(tx_obj)
+
+    def _normalize_txid(self, txid) -> str:
+        if txid is None:
+            raise ValueError("Transaction missing txid")
+        if isinstance(txid, (bytes, bytearray)):
+            return txid.hex().lower()
+        return str(txid).lower()
+
+    def _tx_from_any(self, item) -> Tx:
+        if isinstance(item, Tx):
+            tx_obj = item
+        elif isinstance(item, dict):
+            tx_obj = Tx.from_dict(item)
+        else:
+            raise TypeError(f"Unsupported mempool entry type: {type(item)}")
+        if not getattr(tx_obj, "txid", None):
+            tx_obj.compute_txid()
+        return tx_obj
+
+    def _serialize_tx(self, tx_obj: Tx) -> dict:
+        tx_dict = tx_obj.to_dict(include_txid=True)
+        if not tx_dict.get("txid") and getattr(tx_obj, "txid", None):
+            tx_dict["txid"] = tx_obj.txid.hex()
+        return tx_dict
+
+    def _mark_dirty(self) -> None:
+        self._dirty = True
+        self._change_seq += 1
+
+    # ------------- Public API -------------
+    @property
+    def change_seq(self) -> int:
+        return self._change_seq
+
+    def flush(self, force: bool = False) -> bool:
+        with self._lock:
+            if not self._dirty and not force:
+                return False
+            now = time.time()
+            if not force and (now - self._last_flush) < self._auto_flush_interval:
+                return False
+
+            snapshot = [self._serialize_tx(tx) for tx in self._pool.values()]
+            self._dirty = False
+            self._last_flush = now
+
+        try:
+            if kv_enabled():
+                try:
+                    clear_db('mempool')
+                except Exception:
+                    pass
+                try:
+                    with batch('mempool') as b:
+                        for entry in snapshot:
+                            txid = entry.get('txid')
+                            if not txid:
+                                continue
+                            b.put(txid.encode('utf-8'), json.dumps(entry, separators=(",", ":")).encode('utf-8'))
+                except Exception:
+                    log.error("[flush] LMDB write failed, falling back to file storage")
+                    self.save_json(self.filepath, snapshot)
+            else:
+                self.save_json(self.filepath, snapshot)
+        except Exception:
+            log.exception("[flush] Failed to persist mempool")
+            with self._lock:
+                self._dirty = True  # ensure retry on next flush
+            return False
+        return True
+
+    def load_pool(self) -> list:
+        with self._lock:
+            return [self._serialize_tx(tx) for tx in self._pool.values()]
+
+    def save_pool(self, pool: list) -> None:
+        tx_objects = []
+        for item in pool:
+            try:
+                tx_objects.append(self._tx_from_any(item))
+            except Exception:
+                log.warning("[save_pool] Skipping invalid entry during replace")
+        with self._lock:
+            self._pool = OrderedDict()
+            self._size_map = {}
+            for tx in tx_objects:
+                txid = self._normalize_txid(tx.txid)
+                self._pool[txid] = tx
+                self._size_map[txid] = self._estimate_tx_size(tx)
+            self.current_size = sum(self._size_map.values())
+            self._mark_dirty()
+        self.flush(force=True)
+
+    def get_all_txs(self) -> list:
+        with self._lock:
+            return list(self._pool.values())
 
     def has_tx(self, txid_hex: str) -> bool:
-        pool = self.load_pool()
-        for item in pool:
-            if isinstance(item, dict):
-                if item.get("txid") == txid_hex:
-                    return True
-                
-            elif isinstance(item, Tx):
-                if item.txid and item.txid.hex() == txid_hex:
-                    return True
-                
-        return False
+        norm = self._normalize_txid(txid_hex)
+        with self._lock:
+            return norm in self._pool
+
+    def _estimate_tx_size(self, tx: Tx) -> int:
+        size = 0
+        for txin in getattr(tx, "inputs", []) or []:
+            size += 40
+            if getattr(txin, "script_sig", None):
+                try:
+                    size += len(txin.script_sig.serialize())
+                except Exception:
+                    size += len(getattr(txin.script_sig, "asm", "") or "")
+            if getattr(txin, "witness", None):
+                try:
+                    size += sum(len(w) for w in txin.witness)
+                except Exception:
+                    pass
+        for txout in getattr(tx, "outputs", []) or []:
+            size += 8
+            if getattr(txout, "script_pubkey", None):
+                try:
+                    size += len(txout.script_pubkey.serialize())
+                except Exception:
+                    pass
+        return max(size, len(tx.to_dict(include_txid=True)))
+
+    def _ensure_space(self, needed_space: int) -> None:
+        if needed_space <= 0:
+            return
+        with self._lock:
+            if self.current_size + needed_space <= CFG.MEMPOOL_MAX_SIZE:
+                return
+            target = (self.current_size + needed_space) - CFG.MEMPOOL_MAX_SIZE
+            ordered = sorted(
+                self._pool.items(),
+                key=lambda item: int(getattr(item[1], "fee", 0)) / max(1, self._size_map.get(item[0], 1))
+            )
+            freed = 0
+            removal: list[str] = []
+            for txid, tx in ordered:
+                removal.append(txid)
+                freed += self._size_map.get(txid, self._estimate_tx_size(tx))
+                if freed >= target:
+                    break
+            if not removal:
+                return
+            for txid in removal:
+                self._pool.pop(txid, None)
+                size = self._size_map.pop(txid, 0)
+                self.current_size -= size
+            if freed:
+                if self.current_size < 0:
+                    self.current_size = 0
+                self._mark_dirty()
 
     def add_tx(self, tx: "Tx") -> None:
-        tx_size = self._estimate_tx_size(tx)
-        if self.current_size + tx_size > CFG.MEMPOOL_MAX_SIZE:
-            self._evict_low_fee_txs(tx_size)
-        
-        pool = self.load_pool()
-        if isinstance(tx, Tx):
-            pool.append(tx.to_dict())
-        elif isinstance(tx, dict):
-            pool.append(tx)
-        else:
-            raise TypeError("add_tx only accepts Tx objects or dicts")
-        
-        self.save_pool(pool)
-        self.current_size += tx_size
-        
-    def _estimate_tx_size(self, tx) -> int:
-        size = 0
-        for txin in tx.inputs:
-            size += 40  # txid + vout
-            size += len(txin.script_sig.serialize()) if txin.script_sig else 0
-            size += sum(len(w) for w in txin.witness) if txin.witness else 0
+        tx_obj = self._tx_from_any(tx)
+        txid = self._normalize_txid(tx_obj.txid)
+        tx_size = self._estimate_tx_size(tx_obj)
+        self._ensure_space(tx_size)
+        with self._lock:
+            prev_size = 0
+            if txid in self._pool:
+                prev_size = self._size_map.get(txid, 0)
+            self._pool[txid] = tx_obj
+            self._size_map[txid] = tx_size
+            self.current_size += tx_size - prev_size
+            self._mark_dirty()
 
-        for txout in tx.outputs:
-            size += 8  # amount
-            size += len(txout.script_pubkey.serialize()) if txout.script_pubkey else 0
-        
-        return size
-    
-    def _estimate_tx_size_any(self, tx_like) -> int:
-        if isinstance(tx_like, dict):
-            try:
-                return self._estimate_tx_size(Tx.from_dict(tx_like))
-            except Exception:
-                return len(json.dumps(tx_like))
-            
-        return self._estimate_tx_size(tx_like)
+    def remove_tx(self, txid_hex: str) -> bool:
+        norm = self._normalize_txid(txid_hex)
+        with self._lock:
+            tx = self._pool.pop(norm, None)
+            if not tx:
+                return False
+            size = self._size_map.pop(norm, 0)
+            self.current_size -= size
+            if self.current_size < 0:
+                self.current_size = 0
+            self._mark_dirty()
+            return True
 
-    def _evict_low_fee_txs(self, needed_space: int):
-        pool = self.load_pool()
-        if not pool:
-            return
-        
-        sorted_txs = sorted(pool, key=lambda x: x.get('fee', 0) / max(1, self._estimate_tx_size_any(x)))
-        freed_space = 0
-        while sorted_txs and freed_space < needed_space:
-            tx = sorted_txs.pop(0)
-            tx_size = self._estimate_tx_size_any(tx)
-            pool.remove(tx)
-            freed_space += tx_size
-            self.current_size -= tx_size
-        
-        self.save_pool(pool)
-
-    def remove_tx(self, txid_hex: str) -> None:
-        pool = self.load_pool()
-        new_pool = []
-        for item in pool:
-            if isinstance(item, dict):
-                if item.get("txid") != txid_hex:
-                    new_pool.append(item)
-            elif isinstance(item, Tx):
-                if not (item.txid and item.txid.hex() == txid_hex):
-                    new_pool.append(item)
-        self.save_pool(new_pool)
+    def remove_many(self, txids) -> int:
+        removed = 0
+        with self._lock:
+            for txid in txids or []:
+                norm = self._normalize_txid(txid)
+                if norm in self._pool:
+                    self.current_size -= self._size_map.pop(norm, 0)
+                    self._pool.pop(norm, None)
+                    removed += 1
+            if removed:
+                if self.current_size < 0:
+                    self.current_size = 0
+                self._mark_dirty()
+        return removed
 
     def clear(self) -> None:
-        self.save_pool([])
+        with self._lock:
+            if not self._pool:
+                return
+            self._pool.clear()
+            self._size_map.clear()
+            self.current_size = 0
+            self._mark_dirty()
+        self.flush(force=True)
 
     def drop_conflicts(self, spent_prevouts: set[tuple[str, int]]) -> int:
         if not spent_prevouts:
             return 0
-        current = self.get_all_txs()
-        keep: list[Tx] = []
+        normalized_spent = {(str(txid).lower(), int(vout)) for txid, vout in spent_prevouts}
         removed = 0
-        normalized_spent = {(txid.lower(), int(vout)) for txid, vout in spent_prevouts}
-
-        for tx in current:
-            conflict = False
-            for txin in getattr(tx, "inputs", []) or []:
-                prev_txid_hex = txin.txid.hex() if isinstance(txin.txid, (bytes, bytearray)) else str(txin.txid)
-                if (prev_txid_hex.lower(), int(txin.vout)) in normalized_spent:
-                    conflict = True
-                    break
-            if conflict:
+        with self._lock:
+            to_remove = []
+            for txid, tx in self._pool.items():
+                conflict = False
+                for txin in getattr(tx, "inputs", []) or []:
+                    prev_txid_hex = txin.txid.hex() if isinstance(txin.txid, (bytes, bytearray)) else str(txin.txid)
+                    if (prev_txid_hex.lower(), int(getattr(txin, "vout", 0))) in normalized_spent:
+                        conflict = True
+                        break
+                if conflict:
+                    to_remove.append(txid)
+            for txid in to_remove:
+                self.current_size -= self._size_map.pop(txid, 0)
+                self._pool.pop(txid, None)
                 removed += 1
-            else:
-                keep.append(tx)
-
-        if removed:
-            serialized = [
-                tx.to_dict(include_txid=True) if hasattr(tx, "to_dict") else tx
-                for tx in keep
-            ]
-            self.save_pool(serialized)
-            try:
-                self.current_size = sum(self._estimate_tx_size_any(entry) for entry in serialized)
-            except Exception:
-                pass
-            
+            if removed:
+                if self.current_size < 0:
+                    self.current_size = 0
+                self._mark_dirty()
         return removed
 
     def prune_stale_entries(self) -> int:
@@ -400,31 +460,24 @@ class TxPoolDB(BaseDatabase):
             self.utxo._load()
         except Exception:
             log.debug("[prune_stale_entries] Failed to reload UTXO snapshot", exc_info=True)
-            
         utxo_set = getattr(self.utxo, "utxos", {})
         tip = self.utxo._get_tip_height_from_state()
-
-        current = self.get_all_txs()
-        keep: list[Tx] = []
         removed = 0
-        for tx in current:
-            if self.validate_transaction(tx, utxo_set, spend_at_height=tip + 1):
-                keep.append(tx)
-            else:
+        with self._lock:
+            to_remove = []
+            for txid, tx in self._pool.items():
+                if not self.validate_transaction(tx, utxo_set, spend_at_height=tip + 1):
+                    to_remove.append(txid)
+            for txid in to_remove:
+                self.current_size -= self._size_map.pop(txid, 0)
+                self._pool.pop(txid, None)
                 removed += 1
-
-        if removed:
-            serialized = [
-                tx.to_dict(include_txid=True) if hasattr(tx, "to_dict") else tx
-                for tx in keep
-            ]
-            self.save_pool(serialized)
-            try:
-                self.current_size = sum(self._estimate_tx_size_any(entry) for entry in serialized)
-            except Exception:
-                pass
-            
+            if removed:
+                if self.current_size < 0:
+                    self.current_size = 0
+                self._mark_dirty()
         return removed
+
 
     def _get_utxo_amount(self, utxo_data):
         if isinstance(utxo_data, dict):
@@ -891,3 +944,9 @@ class TxPoolDB(BaseDatabase):
                     missing = reason.split(" ", 1)[1].strip()
                     self._queue_orphan(tx_obj, missing)
         return added
+
+    def __del__(self):
+        try:
+            self.flush(force=False)
+        except Exception:
+            pass

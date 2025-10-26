@@ -38,7 +38,21 @@ class MiningMixin:
         reward = self.get_block_reward(height)
         if self.total_supply + reward > CFG.MAX_SUPPLY:
             reward = max(0, CFG.MAX_SUPPLY - self.total_supply)
-        pool = TxPoolDB(utxo_store=self._ensure_utxodb())
+        pool = None
+        if hasattr(self, "get_mempool"):
+            try:
+                pool = self.get_mempool()
+            except Exception:
+                pool = None
+                
+        if pool is None:
+            pool = TxPoolDB(utxo_store=self._ensure_utxodb())
+            if hasattr(self, "attach_mempool"):
+                try:
+                    self.attach_mempool(pool)  # type: ignore[arg-type]
+                except Exception:
+                    pass
+                
         txs_from_mempool = pool.get_all_txs()
         store = self._ensure_utxodb() or UTXODB()
         try:

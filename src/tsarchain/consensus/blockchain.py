@@ -13,6 +13,7 @@ from typing import List, Optional
 from ..core.block import Block
 from ..storage.db import AtomicJSONFile
 from ..storage.utxo import UTXODB
+from ..mempool.pool import TxPoolDB
 from ..utils import config as CFG
 from .chain_ops import ChainOpsMixin
 from .difficulty import DifficultyMixin
@@ -53,6 +54,7 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
         self._utxo_flush_interval: int = max(1, int(CFG.UTXO_FLUSH_INTERVAL))
         self._utxo_synced: bool = False
         self._last_block_validation_error: str | None = None
+        self._mempool: TxPoolDB | None = None
 
         if not self.in_memory:
             if self.db_path:
@@ -83,6 +85,12 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
             self.chain = []
             self.total_blocks = 0
             self.total_supply = 0
+
+    def attach_mempool(self, pool: TxPoolDB) -> None:
+        self._mempool = pool
+
+    def get_mempool(self) -> TxPoolDB | None:
+        return self._mempool
 
     @property
     def height(self) -> int:
