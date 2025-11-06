@@ -255,7 +255,7 @@ HEADERS_LOCATOR_DEPTH       = 64
 HEADERS_FANOUT              = 32
 HEADERS_SYNC_MIN_INTERVAL   = 1
 BLOCK_DOWNLOAD_BATCH_MAX    = 4096
-CHAIN_FLUSH_INTERVAL        = 128                 # blocks between chain persistence when not forced
+CHAIN_FLUSH_INTERVAL        = 2                 # blocks between chain persistence when not forced
 CHAIN_FORCE_FULL_FLUSH      = False               # set True to force full chain persistence each save
 
 MAX_OUTBOUND_PEERS          = 14
