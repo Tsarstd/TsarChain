@@ -8,6 +8,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+from collections import Counter
 from typing import Optional
 
 from ..core.block import Block
@@ -53,6 +54,8 @@ class StorageMixin:
             log.exception("[_prune_chain_store] Failed pruning chain entries from height %s", start_height)
 
     def save_chain(self, *, force_full: bool = False):
+        if CFG.CHAIN_FORCE_FULL_FLUSH:
+            force_full = True
         if self.in_memory:
             return
         with self.lock:
@@ -81,6 +84,23 @@ class StorageMixin:
                 start_height = self._persisted_height + 1
             elif force_full or self._persisted_height < 0:
                 start_height = 0
+
+            flush_interval = max(1, int(CFG.CHAIN_FLUSH_INTERVAL))
+            should_flush = (
+                force_full
+                or self._persisted_height < 0
+                or tip_height < self._persisted_height
+                or flush_interval <= 1
+            )
+
+            if not should_flush and start_height is not None:
+                pending = tip_height - self._persisted_height if self._persisted_height >= 0 else tip_height + 1
+                if pending < flush_interval:
+                    if self._chain_dirty_from is None:
+                        self._chain_dirty_from = start_height
+                    else:
+                        self._chain_dirty_from = min(self._chain_dirty_from, start_height)
+                    return
 
             if kv_enabled():
                 try:
@@ -365,11 +385,17 @@ class StorageMixin:
                 "utxo_set_size": int(utxo_set_size),
             },
             "miners_snapshot": {
-                "top_miners": (lambda _c: sorted(_c.items(), key=lambda x: x[1], reverse=True))(
-                    (lambda cs: {a: cs.count(a) for a in cs})(
-                        [((b.get("transactions") or [{}])[0] or {}).get("to_address") for b in chain if (b.get("transactions") or [{}])[0]]
-                    )
-                )
+                "top_miners": [
+                    (miner, count)
+                    for miner, count in Counter(
+                        (
+                            ((b.get("transactions") or [{}])[0] or {}).get("to_address")
+                            for b in chain
+                            if (b.get("transactions") or [{}])[0]
+                        )
+                    ).most_common()
+                    if miner
+                ]
             },
             "files": {
                 "blockchain_json_sha256": chain_sha256

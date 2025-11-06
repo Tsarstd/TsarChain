@@ -65,7 +65,7 @@ MODE   = "dev"   # "dev" | "prod"
 IS_DEV = (MODE.lower() == "dev")
 
 # ===== Sync Data (Block, UTXO, etc) =====
-FULL_SYNC_DEV      = False
+FULL_SYNC_DEV      = True
 FULL_SYNC_PROD     = False
 
 
@@ -220,7 +220,7 @@ BUFFER_SIZE                 = 65536
 HANDSHAKE_TIMEOUT           = 10
 DISCOVERY_INTERVAL          = 5
 SYNC_INTERVAL               = 10
-FAST_SYNC_INTERVAL          = 3
+FAST_SYNC_INTERVAL          = 2
 SYNC_TIMEOUT                = 10
 CONNECT_TIMEOUT             = 1.5
 BROADCAST_FAIL_THRESHOLD    = 2
@@ -240,23 +240,25 @@ TEMP_BAN_SECONDS             = 30          # temporary ban
 
 # === Full Sync guard ===
 ENABLE_FULL_SYNC            = FULL_SYNC_DEV if IS_DEV else FULL_SYNC_PROD
-FULL_SYNC_MAX_BLOCKS        = 13_000
-FULL_SYNC_MAX_BYTES         = 15 * 1024 * 1024   # 15 MB
+FULL_SYNC_MAX_BLOCKS        = 75_000
+FULL_SYNC_MAX_BYTES         = 75 * 1024 * 1024   # 75 MB
 FULL_SYNC_MIN_INTERVAL      = 60                 # seconds per peer
 FULL_SYNC_BACKOFF_INITIAL   = 120
 FULL_SYNC_BACKOFF_MAX       = 600
 MAX_MSG                     = FULL_SYNC_MAX_BYTES
-MEMPOOL_SYNC_MIN_INTERVAL   = 30
+MEMPOOL_SYNC_MIN_INTERVAL   = 60
 MEMPOOL_INLINE_MAX_TX       = 600                # if the network is high, increase it to 400 - 600
 MEMPOOL_FLUSH_INTERVAL      = 5.0
 
-HEADERS_BATCH_MAX           = 2_048
+HEADERS_BATCH_MAX           = 4096
 HEADERS_LOCATOR_DEPTH       = 64
 HEADERS_FANOUT              = 32
 HEADERS_SYNC_MIN_INTERVAL   = 1
-BLOCK_DOWNLOAD_BATCH_MAX    = 256
+BLOCK_DOWNLOAD_BATCH_MAX    = 4096
+CHAIN_FLUSH_INTERVAL        = 128                 # blocks between chain persistence when not forced
+CHAIN_FORCE_FULL_FLUSH      = False               # set True to force full chain persistence each save
 
-MAX_OUTBOUND_PEERS          = 8
+MAX_OUTBOUND_PEERS          = 14
 MAX_INBOUND_PEERS           = 16
 MAX_INBOUND_PER_IP          = 4
 PEER_SCORE_START            = 10

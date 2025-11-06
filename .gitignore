@@ -12,6 +12,10 @@ env/
 /data_node/
 /data_user/
 
+/target/
+/rust-analyzer/
+/flycheck0/
+
 **/__pycache__/
 *.py[cod]
 *.pyo

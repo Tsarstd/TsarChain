@@ -183,7 +183,15 @@ class Broadcast:
                         "mempool": txs
                     }
                 }
-                self._send(peer, full)
+                send_start = time.time()
+                sent = self._send(peer, full)
+                elapsed = time.time() - send_start
+                try:
+                    log.info("[full-sync-send] Snapshot to %s (%d blocks, %d utxos, %d mempool tx) status=%s elapsed=%.2fs",
+                             peer, len(chain_data), len(utxo_dict), len(txs),
+                             "ok" if sent else "failed", elapsed)
+                except Exception:
+                    pass
         except Exception as e:
             log.exception(f"[send_full_sync] Error sending full sync to {peer}: {e}")
 
@@ -217,6 +225,7 @@ class Broadcast:
                 return False
 
             new_chain = Blockchain.from_dict(incoming)
+            added = 0
 
             with self.lock:
                 self.blockchain.replace_with(new_chain)
@@ -228,7 +237,6 @@ class Broadcast:
 
                 pool = payload.get("mempool") or []
                 if isinstance(pool, list) and pool:
-                    added = 0
                     for tx_data in pool:
                         try:
                             tx = Tx.from_dict(tx_data) if isinstance(tx_data, dict) else tx_data
@@ -244,6 +252,13 @@ class Broadcast:
                             log.exception("[receive_full_sync] Failed to flush mempool after update")
                         
                 self.last_sync_time = time.time()
+            try:
+                log.info("[full-sync-recv] Applied snapshot (blocks=%d, height=%s, mempool_added=%d)",
+                         len(incoming),
+                         self.blockchain.height,
+                         added)
+            except Exception:
+                pass
             return True
 
         except Exception:
@@ -254,7 +269,10 @@ class Broadcast:
 
     def _broadcast(self, peers: Set[Tuple[str, int]], message: Dict[str, Any], exclude: Optional[Tuple[str, int]] = None):
         success_count = 0
-        now = time.time()
+        attempted = 0
+        skipped = 0
+        start_time = time.time()
+        now = start_time
         backoff_s = CFG.BROADCAST_FAIL_BACKOFF_S
         thr = CFG.BROADCAST_FAIL_THRESHOLD
         for peer in peers:
@@ -264,10 +282,13 @@ class Broadcast:
             fm = self._failmap.get(peer)
             if fm and int(fm.get("fails", 0)) >= thr and (now - float(fm.get("last", 0.0)) < backoff_s):
                 log.debug("[_broadcast] Skipping %s due to backoff (fails=%s)", peer, fm.get("fails"))
+                skipped += 1
                 continue
             
+            attempted += 1
             if self._send(peer, message):
                 success_count += 1
+                
         return success_count
 
     def broadcast_block(self, block: Block, peers: Set[Tuple[str, int]], exclude: Optional[Tuple[str, int]] = None, force: bool = False):

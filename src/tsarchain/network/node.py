@@ -700,6 +700,10 @@ class Network:
                         break
                     selected.append(peer)
         if not selected:
+            try:
+                log.info("[sync_with_peers] No peers available for sync round")
+            except Exception:
+                pass
             return
 
         now = time.time()
@@ -750,14 +754,24 @@ class Network:
             return False
         
         locator = self._build_locator()
+        headers_started = time.time()
         headers_resp = self._request_headers(peer, locator)
+        headers_elapsed = time.time() - headers_started
         if not headers_resp:
+            try:
+                log.info("[_sync_peer] %s returned no headers (elapsed=%.2fs)", peer, headers_elapsed)
+            except Exception:
+                pass
             self._penalize_peer(peer, CFG.PEER_SCORE_FAILURE_PENALTY)
             return False
         
         if headers_resp.get("type") == "SYNC_REJECT":
             retry = float(headers_resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
             self._full_sync_backoff[peer] = now + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
+            try:
+                log.info("[_sync_peer] %s rejected header request (retry in %.1fs)", peer, min(retry, CFG.FULL_SYNC_BACKOFF_MAX))
+            except Exception:
+                pass
             return False
         
         headers = headers_resp.get("headers") or []
@@ -774,6 +788,10 @@ class Network:
         if best_height >= 0:
             with self.lock:
                 self._peer_best_height[peer] = best_height
+        try:
+            log.info("[_sync_peer] %s delivered %d headers in %.2fs (best_height=%s)", peer, len(headers), headers_elapsed, best_height if best_height >= 0 else "-")
+        except Exception:
+            pass
 
         if not headers:
             self._peer_last_sync[peer] = now
@@ -785,14 +803,31 @@ class Network:
             self._peer_last_sync[peer] = now
             self._reward_peer(peer)
             return True
+        try:
+            first_missing = missing[0]
+            last_missing = missing[-1]
+        except Exception:
+            first_missing = last_missing = "-"
+        try:
+            log.info("[_sync_peer] %s missing %d blocks (range %s -> %s)", peer, len(missing), first_missing, last_missing)
+        except Exception:
+            pass
         
-        downloaded = self._download_blocks(peer, missing)
-        if downloaded:
+        downloaded_count, download_elapsed = self._download_blocks(peer, missing)
+        if downloaded_count > 0:
             self._peer_last_sync[peer] = time.time()
             self._reward_peer(peer, CFG.PEER_SCORE_REWARD * 2)
+            try:
+                log.info("[_sync_peer] Applied %d blocks from %s in %.2fs", downloaded_count, peer, download_elapsed)
+            except Exception:
+                pass
             if headers_resp.get("more"):
                 self.request_sync(fast=True)
             return True
+        try:
+            log.info("[_sync_peer] Failed to apply blocks from %s (elapsed=%.2fs)", peer, download_elapsed)
+        except Exception:
+            pass
         
         return False
 
@@ -896,33 +931,43 @@ class Network:
             missing.extend(range(start, end + 1))
         return sorted(set(missing))
 
-    def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> bool:
+    def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[int, float]:
+        start_time = time.time()
         if not heights:
-            return False
+            return 0, 0.0
         
         unique_heights = sorted({int(h) for h in heights if isinstance(h, int)})
         if not unique_heights:
-            return False
+            return 0, 0.0
         
         batch_size = max(1, int(CFG.BLOCK_DOWNLOAD_BATCH_MAX))
-        downloaded = False
+        total_applied = 0
+        total_attempted = len(unique_heights)
+        total_chunks = (total_attempted + batch_size - 1) // batch_size
         for idx in range(0, len(unique_heights), batch_size):
             chunk = unique_heights[idx: idx + batch_size]
+            chunk_start = time.time()
             payload = {"type": "GET_BLOCKS", "heights": chunk, "port": self.port}
             resp = self._rpc_request(peer, payload, timeout=max(15.0, CFG.SYNC_TIMEOUT))
             if not resp:
+                try:
+                    log.info("[_download_blocks] %s no response for chunk %d/%d (heights %s-%s)", peer, (idx // batch_size) + 1, total_chunks, chunk[0], chunk[-1])
+                except Exception:
+                    pass
                 break
             
             if resp.get("type") == "BLOCKS":
                 blocks = resp.get("blocks") or []
+                applied_in_chunk = 0
                 for block_obj in blocks:
                     try:
                         applied = self._apply_block_from_sync(block_obj, peer)
                     except Exception:
                         log.exception("[_download_blocks] Failed applying block from %s", peer)
-                        return downloaded
+                        return total_applied, time.time() - start_time
                     if applied:
-                        downloaded = True
+                        total_applied += 1
+                        applied_in_chunk += 1
                     else:
                         blk_hash = None
                         try:
@@ -934,16 +979,41 @@ class Network:
                             log.warning("[_download_blocks] Block %s rejected during sync from %s", label[:12], peer)
                         except Exception:
                             pass
-                        return downloaded
+                        return total_applied, time.time() - start_time
+                try:
+                    log.info("[_download_blocks] %s chunk %d/%d applied %d/%d blocks in %.2fs (heights %s-%s)",
+                             peer,
+                             (idx // batch_size) + 1,
+                             total_chunks,
+                             applied_in_chunk,
+                             len(blocks),
+                             time.time() - chunk_start,
+                             chunk[0],
+                             chunk[-1])
+                except Exception:
+                    pass
                     
             elif resp.get("type") == "SYNC_REJECT":
                 retry = float(resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
                 self._full_sync_backoff[peer] = time.time() + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
+                try:
+                    log.info("[_download_blocks] %s asked to retry later (retry %.1fs)", peer, min(retry, CFG.FULL_SYNC_BACKOFF_MAX))
+                except Exception:
+                    pass
                 break
             else:
+                try:
+                    log.info("[_download_blocks] %s returned unexpected type=%s", peer, resp.get("type"))
+                except Exception:
+                    pass
                 break
-            
-        return downloaded
+        
+        elapsed = time.time() - start_time
+        try:
+            log.info("[_download_blocks] %s total applied %d/%d blocks in %.2fs", peer, total_applied, total_attempted, elapsed)
+        except Exception:
+            pass
+        return total_applied, elapsed
 
     def _apply_block_from_sync(self, block_obj: Dict[str, Any], peer: Tuple[str, int]) -> bool:
         message = {
@@ -1097,6 +1167,24 @@ class Network:
             except Exception:
                 pass
             return False
+        tx_candidates = []
+        for key in ("transactions", "txs", "items"):
+            cand = resp.get(key)
+            if isinstance(cand, list):
+                tx_candidates = cand
+                break
+        raw_count = resp.get("count")
+        if raw_count is None:
+            count = len(tx_candidates)
+        else:
+            try:
+                count = int(raw_count)
+            except Exception:
+                count = len(tx_candidates)
+        try:
+            log.info("[_request_mempool_inline] Received %d tx entries from %s (mode=%s)", count, norm, resp_mode or "inline")
+        except Exception:
+            pass
 
         txs = resp.get("txs") or resp.get("data")
         if not isinstance(txs, list):
@@ -1174,6 +1262,7 @@ class Network:
         try:
             if int(resp.get("count", 0)) > 0:
                 self._reward_peer(norm, CFG.PEER_SCORE_REWARD)
+            log.info("[_request_mempool_snapshot] Pulled snapshot from %s (items=%s)", norm, resp.get("count", "-"))
         except Exception:
             pass
         return True
@@ -1199,18 +1288,31 @@ class Network:
             "port": self.port,
             "height": self.broadcast.blockchain.height,
         }
+        sync_start = time.time()
         resp = self._rpc_request(norm, payload, timeout=max(20.0, CFG.SYNC_TIMEOUT * 2))
         self._full_sync_last_request[norm] = now
         if not resp:
+            try:
+                log.info("[_request_full_sync] %s did not respond (elapsed=%.2fs)", norm, time.time() - sync_start)
+            except Exception:
+                pass
             self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
             return False
         
         if resp.get("type") == "SYNC_REJECT":
             retry = float(resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
             self._full_sync_backoff[norm] = now + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
+            try:
+                log.info("[_request_full_sync] %s rejected request (retry %.1fs)", norm, min(retry, CFG.FULL_SYNC_BACKOFF_MAX))
+            except Exception:
+                pass
             return False
         
         if resp.get("type") != "FULL_SYNC":
+            try:
+                log.info("[_request_full_sync] %s returned unexpected type=%s", norm, resp.get("type"))
+            except Exception:
+                pass
             return False
 
         data = resp.get("data", resp)
@@ -1219,8 +1321,20 @@ class Network:
             self._peer_last_sync[norm] = time.time()
             self._reward_peer(norm, CFG.PEER_SCORE_REWARD * 3)
             self._full_sync_backoff.pop(norm, None)
+            try:
+                chain_blocks = len(data.get("chain") or [])
+                utxo_entries = len(data.get("utxos") or {})
+                mempool_entries = len(data.get("mempool") or [])
+                log.info("[_request_full_sync] Applied snapshot from %s in %.2fs (blocks=%d, utxos=%d, mempool=%d)",
+                         norm, time.time() - sync_start, chain_blocks, utxo_entries, mempool_entries)
+            except Exception:
+                pass
             return True
         self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
+        try:
+            log.info("[_request_full_sync] Snapshot from %s failed validation (elapsed=%.2fs)", norm, time.time() - sync_start)
+        except Exception:
+            pass
         return False
 
     def _handle_hello(self, message, addr):
