@@ -58,6 +58,8 @@ class Broadcast:
         self.network: Optional["Network"] = None
         self._failmap: Dict[Tuple[str, int], Dict[str, float | int]] = {}  # {peer: {"fails": int, "last": ts}}
         self._last_mempool_seq: Dict[Tuple[str, int], int] = {}
+        self._utxo_flush_interval = max(1, int(getattr(CFG, "UTXO_FLUSH_INTERVAL", 1)))
+        self._utxo_last_flush_height = -1
 
     # ----------------------------- I/O helpers -----------------------------
 
@@ -161,37 +163,93 @@ class Broadcast:
             log.exception(f"[_request_full_sync] Full sync request to {peer} failed: {e}")
             return False
 
+    def _snapshot_components(self):
+        snapshot_start = time.time()
+        chain_lock = getattr(self.blockchain, "lock", None)
+        if chain_lock:
+            chain_lock.acquire()
+        try:
+            chain_objects = list(self.blockchain.chain)
+        finally:
+            if chain_lock:
+                chain_lock.release()
+        with self.lock:
+            state_view = dict(self.state)
+        try:
+            mempool_objects = self.mempool.get_all_txs()
+        except Exception:
+            mempool_objects = []
+        chain_data = []
+        for block in chain_objects:
+            try:
+                chain_data.append(block.to_dict())
+            except Exception:
+                continue
+        mempool_data = []
+        for tx in mempool_objects:
+            try:
+                mempool_data.append(tx.to_dict())
+            except Exception:
+                continue
+        try:
+            utxo_dict = self.utxodb.to_dict()
+        except Exception:
+            utxo_dict = {}
+        duration = time.time() - snapshot_start
+        log.info("[broadcast.snapshot] chain=%d utxos=%d mempool=%d in %.2fs",
+                 len(chain_data), len(utxo_dict), len(mempool_data), duration)
+        return chain_data, utxo_dict, state_view, mempool_data
+
+    def build_full_sync_payload(self) -> Tuple[Dict[str, Any], int, int, int]:
+        start = time.time()
+        chain_data, utxo_dict, state_view, mempool_data = self._snapshot_components()
+        payload = {
+            "type": "FULL_SYNC",
+            "data": {
+                "chain": chain_data,
+                "utxos": utxo_dict,
+                "state": state_view,
+                "mempool": mempool_data,
+            },
+        }
+        log.info("[broadcast.build_full_sync_payload] totals blocks=%d utxos=%d mempool=%d assembled in %.2fs",
+                 len(chain_data), len(utxo_dict), len(mempool_data), time.time() - start)
+        return payload, len(chain_data), len(utxo_dict), len(mempool_data)
+
+    def _maybe_flush_local_utxo(self, height: Optional[int], *, force: bool = False) -> None:
+        if self._utxo_shared:
+            return
+        try:
+            if force:
+                if self.utxodb.flush(force=True):
+                    log.info("[_maybe_flush_local_utxo] forced flush at height=%s", height)
+                    if height is not None:
+                        self._utxo_last_flush_height = height
+                return
+            if height is None:
+                return
+            if self._utxo_last_flush_height < 0 or (height - self._utxo_last_flush_height) >= self._utxo_flush_interval:
+                if self.utxodb.flush():
+                    self._utxo_last_flush_height = height
+                    log.info("[_maybe_flush_local_utxo] flushed at height=%s interval=%s",
+                             height, self._utxo_flush_interval)
+        except Exception:
+            log.exception("[_maybe_flush_local_utxo] Failed flushing local UTXO store")
+
     # ----------------------------- FULL SYNC -------------------------------
 
     def send_full_sync(self, peer: Tuple[str, int]):
         try:
-            with self.lock:
-                if not self.blockchain.in_memory:
-                    self.blockchain.load_chain()
-                chain_data = [blk.to_dict() for blk in self.blockchain.chain]
-                try:
-                    utxo_dict = self.utxodb.to_dict()
-                except Exception:
-                    utxo_dict = {}
-                txs = [tx.to_dict() for tx in self.mempool.get_all_txs()]
-                full = {
-                    "type": "FULL_SYNC",
-                    "data": {
-                        "chain": chain_data,
-                        "utxos": utxo_dict,
-                        "state": self.state,
-                        "mempool": txs
-                    }
-                }
-                send_start = time.time()
-                sent = self._send(peer, full)
-                elapsed = time.time() - send_start
-                try:
-                    log.info("[full-sync-send] Snapshot to %s (%d blocks, %d utxos, %d mempool tx) status=%s elapsed=%.2fs",
-                             peer, len(chain_data), len(utxo_dict), len(txs),
-                             "ok" if sent else "failed", elapsed)
-                except Exception:
-                    pass
+            payload, blocks_cnt, utxo_cnt, mempool_cnt = self.build_full_sync_payload()
+            send_start = time.time()
+            sent = self._send(peer, payload)
+            elapsed = time.time() - send_start
+            try:
+                log.info("[full-sync-send] Snapshot to %s (%d blocks, %d utxos, %d mempool tx) status=%s elapsed=%.2fs",
+                         peer, blocks_cnt, utxo_cnt, mempool_cnt,
+                         "ok" if sent else "failed", elapsed)
+            except Exception:
+                pass
         except Exception as e:
             log.exception(f"[send_full_sync] Error sending full sync to {peer}: {e}")
 
@@ -228,13 +286,14 @@ class Broadcast:
             added = 0
 
             with self.lock:
+                replace_start = time.time()
                 self.blockchain.replace_with(new_chain)
-                if not self.blockchain.in_memory:
-                    self.blockchain.save_chain()
-                    self.blockchain.save_state()
-
+                log.info("[full-sync-recv] chain replace applied in %.2fs (blocks=%d)",
+                         time.time() - replace_start, len(incoming))
+                utxo_start = time.time()
                 self._rebuild_utxo_from_chain_locked()
-
+                log.info("[full-sync-recv] utxo/mempool rebuild finished in %.2fs",
+                         time.time() - utxo_start)
                 pool = payload.get("mempool") or []
                 if isinstance(pool, list) and pool:
                     for tx_data in pool:
@@ -392,9 +451,6 @@ class Broadcast:
 
                 if is_better():
                     self.blockchain.replace_with(incoming_chain)
-                    if not self.blockchain.in_memory:
-                        self.blockchain.save_chain()
-                        self.blockchain.save_state()
                     self._rebuild_utxo_from_chain_locked()
                     return True
 
@@ -540,14 +596,12 @@ class Broadcast:
             except Exception:
                 log.exception("[receive_block] Error updating mempool after block acceptance")
 
-            try:
-                if not self._utxo_shared:
-                    try:
-                        self.utxodb.update(block.transactions, block.height)
-                    except Exception:
-                        log.exception("[receive_block] Error updating UTXO after block acceptance")
-            except Exception:
-                log.exception("[receive_block] Error updating UTXO DB after block acceptance")
+            if not self._utxo_shared:
+                try:
+                    self.utxodb.update(block.transactions, block.height, autosave=False)
+                    self._maybe_flush_local_utxo(block.height)
+                except Exception:
+                    log.exception("[receive_block] Error updating UTXO after block acceptance")
 
             try:
                 recovered = self.mempool.recheck_orphans() if hasattr(self.mempool, "recheck_orphans") else 0
@@ -609,6 +663,7 @@ class Broadcast:
             if utxo_data and not self.blockchain.chain:
                 self.utxodb = UTXODB.from_dict(utxo_data)
                 self._utxo_shared = False
+                self._utxo_last_flush_height = -1
                 if not self.blockchain.in_memory:
                     self.utxodb.flush(force=True)
             else:
@@ -670,9 +725,16 @@ class Broadcast:
             return False
 
     def _rebuild_utxo_from_chain_locked(self):
+        if self._utxo_shared:
+            log.info("[_rebuild_utxo_from_chain_locked] shared UTXO store detected; skipping local rebuild")
+            return
         try:
+            rebuild_start = time.time()
             self.utxodb.rebuild_from_chain(self.blockchain.chain)
+            self._maybe_flush_local_utxo(self.blockchain.height, force=True)
             self._clean_mempool_after_chain_replace()
+            log.info("[_rebuild_utxo_from_chain_locked] rebuilt local store in %.2fs",
+                     time.time() - rebuild_start)
         except Exception:
             log.exception("[_rebuild_utxo_from_chain_locked] Error rebuilding UTXO from chain")
 
@@ -773,4 +835,9 @@ class Broadcast:
         with self.lock:
             self.seen_blocks.clear()
             self.seen_txs.clear()
+        try:
+            if hasattr(self.blockchain, "shutdown"):
+                self.blockchain.shutdown()
+        except Exception:
+            log.exception("[shutdown] Blockchain shutdown failed")
         log.info("[shutdown] Shutdown complete")

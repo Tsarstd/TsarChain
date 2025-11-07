@@ -665,12 +665,6 @@ class Network:
                     retained.add(peer)
             self.outbound_peers = retained
 
-        if found_peers:
-            try:
-                log.trace("[_discover_peers] reachable=%s outbound=%s", len(found_peers), len(self.outbound_peers))
-            except Exception:
-                pass
-
     def sync_loop(self):
         while not self._stop.is_set():
             try:
@@ -947,6 +941,11 @@ class Network:
         for idx in range(0, len(unique_heights), batch_size):
             chunk = unique_heights[idx: idx + batch_size]
             chunk_start = time.time()
+            try:
+                log.info("[_download_blocks.chunk] requesting %d blocks (%s-%s) from %s",
+                         len(chunk), chunk[0], chunk[-1], peer)
+            except Exception:
+                pass
             payload = {"type": "GET_BLOCKS", "heights": chunk, "port": self.port}
             resp = self._rpc_request(peer, payload, timeout=max(15.0, CFG.SYNC_TIMEOUT))
             if not resp:
@@ -955,9 +954,14 @@ class Network:
                 except Exception:
                     pass
                 break
-            
+
             if resp.get("type") == "BLOCKS":
                 blocks = resp.get("blocks") or []
+                try:
+                    log.info("[_download_blocks.chunk] received %d blocks from %s in %.2fs",
+                             len(blocks), peer, time.time() - chunk_start)
+                except Exception:
+                    pass
                 applied_in_chunk = 0
                 for block_obj in blocks:
                     try:
@@ -1262,7 +1266,6 @@ class Network:
         try:
             if int(resp.get("count", 0)) > 0:
                 self._reward_peer(norm, CFG.PEER_SCORE_REWARD)
-            log.info("[_request_mempool_snapshot] Pulled snapshot from %s (items=%s)", norm, resp.get("count", "-"))
         except Exception:
             pass
         return True
@@ -1502,30 +1505,13 @@ class Network:
         
         self._full_sync_served_at[ip] = now
         try:
-            if len(self.broadcast.blockchain.chain) > CFG.FULL_SYNC_MAX_BLOCKS:
+            blocks_available = max(0, self.broadcast.blockchain.height + 1)
+            if blocks_available > CFG.FULL_SYNC_MAX_BLOCKS:
                 return {
                     "type": "SYNC_REDIRECT",
                     "reason": "too_large_chain",
                     "limit_blocks": CFG.FULL_SYNC_MAX_BLOCKS}
-                
-            with self.broadcast.lock:
-                if not self.broadcast.blockchain.in_memory:
-                    self.broadcast.blockchain.load_chain()
-                chain_data = [blk.to_dict() for blk in self.broadcast.blockchain.chain]
-                try:
-                    utxo_dict = self.broadcast.utxodb.to_dict()
-                except Exception:
-                    utxo_dict = {}
-                    
-                txs   = [tx.to_dict() for tx in self.broadcast.mempool.get_all_txs()]
-                state = self.broadcast.state
-            full_obj = {
-                "type": "FULL_SYNC",
-                "data": {
-                    "chain": chain_data,
-                    "utxos": utxo_dict,
-                    "state": state,
-                    "mempool": txs}}
+            full_obj, _, _, _ = self.broadcast.build_full_sync_payload()
             try:
                 enc = json.dumps(full_obj, separators=CFG.CANONICAL_SEP, ensure_ascii=False).encode("utf-8")
             except Exception as e:

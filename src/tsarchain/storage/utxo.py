@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
-# Part of TsarChain — see LICENSE and TRADEMARKS.md
+# Part of TsarChain - see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173; Signal-X3DH
 
-import json, threading
-import threading, json
+import json
+import threading
+import time
 from bech32 import bech32_decode, convertbits
 
 # ---------------- Local Project ----------------
@@ -25,28 +26,45 @@ class UTXODB(BaseDatabase):
         self.utxos = {}
         self._lock = threading.RLock()
         self._dirty = False
+        self._dirty_keys = set()
+        self._removed_keys = set()
+        self._rewrite_all = False
         self._load()
 
     # ===================== SERIALIZE =====================
-    def to_dict(self):
-        serialized_data = {}
-        for key, value in self.utxos.items():
-            tx_out = value.get("tx_out")
-            if hasattr(tx_out, "to_dict"):
+    def _serialize_entry(self, entry):
+        tx_out = entry.get("tx_out")
+        if hasattr(tx_out, "to_dict"):
+            try:
                 tx_out_dict = tx_out.to_dict()
-            else:
-                tx_out_dict = {
-                    "amount": getattr(tx_out, "amount", 0),
-                    "script_pubkey": getattr(tx_out, "script_pubkey", None).serialize().hex()
-                    if getattr(tx_out, "script_pubkey", None) and hasattr(tx_out.script_pubkey, "serialize")
-                    else None
-                }
-            serialized_data[key] = {
-                "tx_out": tx_out_dict,
-                "is_coinbase": bool(value.get("is_coinbase", False)),
-                "block_height": int(value.get("block_height", 0)),
-            }
-        return serialized_data
+            except Exception:
+                tx_out_dict = {}
+        elif isinstance(tx_out, dict):
+            tx_out_dict = dict(tx_out)
+        else:
+            amount = getattr(tx_out, "amount", 0) if tx_out is not None else 0
+            spk = getattr(tx_out, "script_pubkey", None) if tx_out is not None else None
+            spk_hex = None
+            if spk is not None:
+                if hasattr(spk, "serialize"):
+                    try:
+                        spk_hex = spk.serialize().hex()
+                    except Exception:
+                        spk_hex = None
+                elif isinstance(spk, (bytes, bytearray)):
+                    spk_hex = bytes(spk).hex()
+                elif isinstance(spk, str):
+                    spk_hex = spk
+            tx_out_dict = {"amount": amount, "script_pubkey": spk_hex}
+        return {
+            "tx_out": tx_out_dict,
+            "is_coinbase": bool(entry.get("is_coinbase", False)),
+            "block_height": int(entry.get("block_height", 0)),
+        }
+
+    def to_dict(self):
+        with self._lock:
+            return {key: self._serialize_entry(value) for key, value in self.utxos.items()}
 
     @classmethod
     def from_dict(cls, data: dict):
@@ -74,6 +92,10 @@ class UTXODB(BaseDatabase):
                     "is_coinbase": False,
                     "block_height": 0,
                 }
+        utxo_db._dirty = True
+        utxo_db._dirty_keys = set(utxo_db.utxos.keys())
+        utxo_db._removed_keys.clear()
+        utxo_db._rewrite_all = True
         return utxo_db
 
     def load_utxo_set(self):
@@ -160,6 +182,9 @@ class UTXODB(BaseDatabase):
                     else:
                         log.debug("[UTXODB] Skip UTXO invalid (less fields): %s", key)
             self._dirty = False
+            self._dirty_keys.clear()
+            self._removed_keys.clear()
+            self._rewrite_all = False
 
     def _save(self, force: bool = False):
         if not force and not self._dirty:
@@ -167,20 +192,38 @@ class UTXODB(BaseDatabase):
         with self._lock:
             if not force and not self._dirty:
                 return
+            started = time.time()
+            rewrite = bool(force or self._rewrite_all)
+            target_keys = self.utxos.keys() if rewrite else set(self._dirty_keys)
             if kv_enabled():
                 try:
-                    clear_db('utxo')
-                except Exception:
-                    pass
-                try:
+                    if rewrite:
+                        clear_db('utxo')
                     with batch('utxo') as b:
-                        for k, v in self.to_dict().items():
-                            b.put(k.encode('utf-8'), json.dumps(v, separators=(",", ":")).encode('utf-8'))
+                        for key in target_keys:
+                            entry = self.utxos.get(key)
+                            if entry is None:
+                                continue
+                            payload = self._serialize_entry(entry)
+                            b.put(key.encode('utf-8'), json.dumps(payload, separators=(",", ":")).encode('utf-8'))
+                        if not rewrite and self._removed_keys:
+                            for key in self._removed_keys:
+                                b.delete(key.encode('utf-8'))
                 except Exception as e:
                     log.warning("[UTXODB] LMDB save failed: %s", e)
             else:
-                self.save_json(self.filepath, self.to_dict())
+                payload = {k: self._serialize_entry(v) for k, v in self.utxos.items()}
+                self.save_json(self.filepath, payload)
+            removed = len(self._removed_keys)
             self._dirty = False
+            self._dirty_keys.clear()
+            self._removed_keys.clear()
+            self._rewrite_all = False
+            duration = time.time() - started
+            backend = "lmdb" if kv_enabled() else "json"
+            written = len(self.utxos) if rewrite else len(target_keys)
+            log.info("[UTXODB._save] backend=%s rewrite=%s written=%d removed=%d in %.3fs",
+                     backend, rewrite, written, removed, duration)
 
     # ===================== MODIFIKASI DATA =====================
     def _txid_hex(self, x):
@@ -238,8 +281,9 @@ class UTXODB(BaseDatabase):
                         if prev_txid_hex is None or vout is None:
                             continue
                         spent_key = f"{prev_txid_hex}:{int(vout)}"
-                        if spent_key in self.utxos:
-                            del self.utxos[spent_key]
+                        if self.utxos.pop(spent_key, None) is not None:
+                            self._removed_keys.add(spent_key)
+                            self._dirty_keys.discard(spent_key)
 
                 for index, tx_out in enumerate(getattr(tx, "outputs", [])):
                     self.add(txid_hex, index, tx_out,
@@ -252,13 +296,13 @@ class UTXODB(BaseDatabase):
 
 
     def rebuild_from_chain(self, blocks) -> None:
+        started = time.time()
+        block_count = len(blocks or [])
         with self._lock:
             self.utxos.clear()
-            if kv_enabled():
-                try:
-                    clear_db('utxo')
-                except Exception:
-                    pass
+            self._dirty_keys.clear()
+            self._removed_keys.clear()
+            self._rewrite_all = True
             for block in blocks or []:
                 txs = getattr(block, "transactions", []) or []
                 height = int(getattr(block, "height", 0))
@@ -275,7 +319,10 @@ class UTXODB(BaseDatabase):
                     for index, tx_out in enumerate(getattr(tx, "outputs", []) or []):
                         self.add(txid_hex, index, tx_out, is_coinbase=is_coinbase, block_height=height, autosave=False)
             self._dirty = True
-            self._save()
+            self._save(force=True)
+        duration = time.time() - started
+        log.info("[UTXODB.rebuild_from_chain] rebuilt from %d blocks -> %d utxos in %.2fs",
+                 block_count, len(self.utxos), duration)
 
     def flush(self, force: bool = False) -> bool:
         if not force and not self._dirty:
@@ -295,6 +342,8 @@ class UTXODB(BaseDatabase):
                 "block_height": int(block_height),
             }
             self._dirty = True
+            self._dirty_keys.add(key)
+            self._removed_keys.discard(key)
             if autosave:
                 self._save()
 
@@ -303,6 +352,8 @@ class UTXODB(BaseDatabase):
         with self._lock:
             if self.utxos.pop(key, None) is not None:
                 self._dirty = True
+                self._dirty_keys.discard(key)
+                self._removed_keys.add(key)
                 if autosave:
                     self._save()
 

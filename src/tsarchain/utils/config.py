@@ -65,7 +65,7 @@ MODE   = "dev"   # "dev" | "prod"
 IS_DEV = (MODE.lower() == "dev")
 
 # ===== Sync Data (Block, UTXO, etc) =====
-FULL_SYNC_DEV      = True
+FULL_SYNC_DEV      = False
 FULL_SYNC_PROD     = False
 
 
@@ -255,8 +255,11 @@ HEADERS_LOCATOR_DEPTH       = 64
 HEADERS_FANOUT              = 32
 HEADERS_SYNC_MIN_INTERVAL   = 1
 BLOCK_DOWNLOAD_BATCH_MAX    = 4096
-CHAIN_FLUSH_INTERVAL        = 2                 # blocks between chain persistence when not forced
+CHAIN_FLUSH_INTERVAL        = 1                   # blocks between chain persistence when not forced
 CHAIN_FORCE_FULL_FLUSH      = False               # set True to force full chain persistence each save
+ADD_BLOCK_LOG_THRESHOLD     = 0.1                 # seconds; log add_block metrics when slower than this
+
+UTXO_FLUSH_INTERVAL         = 250
 
 MAX_OUTBOUND_PEERS          = 14
 MAX_INBOUND_PEERS           = 16
@@ -418,8 +421,6 @@ DB_DIR = "data/DB"
 KV_BACKEND = "lmdb"   # lmdb | json
 LMDB_MAP_SIZE_INIT = 64 * 1024 * 1024  # 64 MiB
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # 64 GiB
-
-UTXO_FLUSH_INTERVAL  = 20
 
 
 # =============================================================================

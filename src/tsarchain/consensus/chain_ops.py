@@ -68,6 +68,12 @@ class ChainOpsMixin:
                     log.debug("[replace_with] calculate_total_supply skipped: %s", e)
 
     def add_block(self, block: Block):
+        log_threshold = float(CFG.ADD_BLOCK_LOG_THRESHOLD)
+        metrics_enabled = log_threshold > 0
+        t_total_start = time.perf_counter() if metrics_enabled else 0.0
+        utxo_sec = mempool_sec = persist_sec = 0.0
+        tx_count = len(getattr(block, "transactions", []) or [])
+
         if not self.chain:
             if getattr(block, "height", 0) != 0:
                 raise ValueError("[Blockchain] First block must be the genesis block (height=0)")
@@ -83,22 +89,31 @@ class ChainOpsMixin:
                 if not self.in_memory:
                     store = self._ensure_utxodb()
                     if store is not None:
+                        utxo_start = time.perf_counter() if metrics_enabled else None
                         store.update(block.transactions, block_height=0, autosave=False)
+                        if metrics_enabled and utxo_start is not None:
+                            utxo_sec = time.perf_counter() - utxo_start
                         self._mark_utxo_dirty()
                         self._utxo_synced = True
-                        self._maybe_flush_utxo(force=True)
+                        self._schedule_persist(force_full=True, flush_force=True, save_state=True)
                 try:
+                    mempool_start = time.perf_counter() if metrics_enabled else None
                     self._prune_mempool_confirmed(block)
+                    if metrics_enabled and mempool_start is not None:
+                        mempool_sec = time.perf_counter() - mempool_start
                 except Exception:
                     log.exception("[add_block] Failed to prune mempool after genesis")
                 if not self.in_memory:
                     self._mark_chain_dirty(block.height)
-                    self.save_chain(force_full=True)
-                    self.save_state()
-                else:
+                if self.in_memory:
                     self.total_supply = self.calculate_total_supply()
             except Exception:
                 log.exception("[add_block] failed to calculate")
+            if metrics_enabled:
+                total = time.perf_counter() - t_total_start
+                if total >= log_threshold:
+                    log.info("[add_block.metrics] height=%s txs=%s total=%.4fs utxo=%.4fs mempool=%.4fs persist=%.4fs (genesis)",
+                             getattr(block, "height", 0), tx_count, total, utxo_sec, mempool_sec, persist_sec)
             return True
 
         last_block = self.get_last_block()
@@ -126,23 +141,32 @@ class ChainOpsMixin:
                 try:
                     store = self._ensure_utxodb()
                     if store is not None:
+                        utxo_start = time.perf_counter() if metrics_enabled else None
                         store.update(block.transactions, block_height=block.height, autosave=False)
+                        if metrics_enabled and utxo_start is not None:
+                            utxo_sec = time.perf_counter() - utxo_start
                         self._mark_utxo_dirty()
                 except Exception:
                     pass
             try:
+                mempool_start = time.perf_counter() if metrics_enabled else None
                 self._prune_mempool_confirmed(block)
+                if metrics_enabled and mempool_start is not None:
+                    mempool_sec = time.perf_counter() - mempool_start
             except Exception:
                 log.exception("[add_block] Failed to prune mempool")
 
             if not self.in_memory:
-                self.save_chain()
-                self._maybe_flush_utxo()
-                self.save_state()
+                self._schedule_persist()
             else:
                 self.total_supply = self.calculate_total_supply()
         except Exception:
             log.exception("[add_block] Failed to add block")
+        if metrics_enabled:
+            total = time.perf_counter() - t_total_start
+            if total >= log_threshold:
+                log.info("[add_block.metrics] height=%s txs=%s total=%.4fs utxo=%.4fs mempool=%.4fs persist=%.4fs",
+                         block.height, tx_count, total, utxo_sec, mempool_sec, persist_sec)
 
         return True
 
