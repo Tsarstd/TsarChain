@@ -25,6 +25,9 @@ use sha2::{Sha256, Digest};
 use ripemd::Ripemd160;
 use secp256k1::{Secp256k1, Message, PublicKey};
 use secp256k1::ecdsa::Signature;
+use validation::validate_block_txs_native;
+
+mod validation;
 
 
 // ---------------------
@@ -669,5 +672,6 @@ fn tsarcore_native(_py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hash160, m)?)?;
     m.add_function(wrap_pyfunction!(secp_verify_der_low_s_many, m)?)?;
     m.add_function(wrap_pyfunction!(set_py_logger, m)?)?;
+    m.add_function(wrap_pyfunction!(validate_block_txs_native, m)?)?;
     Ok(())
 }

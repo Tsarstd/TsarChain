@@ -15,6 +15,7 @@ from ..mempool.pool import TxPoolDB
 from ..storage.utxo import UTXODB
 from ..utils import config as CFG
 from ..utils.helpers import bits_to_target, merkle_root
+from ..utils import helpers as H
 from .genesis import GENESIS_HASH
 
 # ---------------- Logger ----------------
@@ -167,6 +168,107 @@ class ValidationMixin:
             utxo_view[f"{txid_hex}:{index}"] = entry
 
         spend_height = int(getattr(block, "height", 0))
+
+        def _script_to_hex(spk_obj):
+            if spk_obj is None:
+                return None
+            if isinstance(spk_obj, dict):
+                spk_obj = spk_obj.get("script_pubkey")
+            if isinstance(spk_obj, str):
+                return spk_obj.lower()
+            if isinstance(spk_obj, (bytes, bytearray)):
+                return spk_obj.hex()
+            script_attr = getattr(spk_obj, "script_pubkey", None)
+            if script_attr is not None:
+                spk_obj = script_attr
+            if hasattr(spk_obj, "serialize"):
+                try:
+                    return spk_obj.serialize().hex()
+                except Exception:
+                    return None
+            if hasattr(spk_obj, "to_hex"):
+                try:
+                    return spk_obj.to_hex().lower()
+                except Exception:
+                    return None
+            return None
+
+        if CFG.NATIVE and H.native_block_validator_available():
+            try:
+                snapshot = {}
+                for key, entry in utxo_view.items():
+                    k = str(key).lower()
+                    if not isinstance(entry, dict):
+                        log.debug("[native_snapshot] drop entry %s: not dict (type=%s)", key, type(entry).__name__)
+                        snapshot = None
+                        break
+                    candidate = entry
+                    tx_out = candidate.get("tx_out")
+                    if tx_out is None:
+                        tx_out = candidate
+                    script_hex = _script_to_hex(tx_out)
+                    if script_hex is None:
+                        script_hex = _script_to_hex(candidate.get("script_pubkey"))
+                    if isinstance(tx_out, dict):
+                        amount_val = tx_out.get("amount")
+                    elif hasattr(tx_out, "amount"):
+                        amount_val = getattr(tx_out, "amount", None)
+                    else:
+                        amount_val = None
+                    if amount_val is None:
+                        amount_val = candidate.get("amount", 0)
+                    if script_hex is None:
+                        snapshot = None
+                        break
+                    try:
+                        amt = int(amount_val)
+                    except Exception:
+                        log.debug("[native_snapshot] entry %s amount invalid (%s)", k, amount_val)
+                        snapshot = None
+                        break
+                    snapshot[k] = {
+                        "amount": amt,
+                        "script_pubkey": script_hex,
+                        "is_coinbase": bool(candidate.get("is_coinbase", False)),
+                        "block_height": int(candidate.get("block_height", 0)),
+                    }
+                if snapshot and txs:
+                    opts = {
+                        "coinbase_maturity": int(CFG.COINBASE_MATURITY),
+                        "max_sigops_per_tx": int(CFG.MAX_SIGOPS_PER_TX),
+                        "max_sigops_per_block": int(CFG.MAX_SIGOPS_PER_BLOCK),
+                        "enforce_low_s": True,
+                    }
+                    try:
+                        ok, reason, fees = H.native_validate_block_txs(
+                            block.to_dict(),
+                            snapshot,
+                            spend_height,
+                            opts,
+                        )
+                    except Exception:
+                        log.exception("[_validate_transactions] Native block validator failed")
+                    else:
+                        if ok:
+                            if isinstance(fees, (list, tuple)):
+                                for tx_obj, fee_val in zip(txs[1:], fees):
+                                    try:
+                                        tx_obj.fee = int(fee_val)
+                                    except Exception:
+                                        setattr(tx_obj, "fee", int(fee_val))
+                            self._last_block_validation_error = None
+                            return True
+                        elif isinstance(reason, str) and reason == "unsupported_script":
+                            log.debug("[native_snapshot] fallback (unsupported script) height=%s", spend_height)
+                        elif reason:
+                            self._last_block_validation_error = reason
+                            return False
+                        else:
+                            self._last_block_validation_error = "native_validation_failed"
+                            return False
+            except Exception:
+                log.exception("[_validate_transactions] Failed preparing native snapshot")
+
         for tx in txs[1:]:
             try:
                 txid_hex = tx.txid.hex() if isinstance(tx.txid, (bytes, bytearray)) else str(tx.txid)

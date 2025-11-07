@@ -259,7 +259,7 @@ CHAIN_FLUSH_INTERVAL        = 1                   # blocks between chain persist
 CHAIN_FORCE_FULL_FLUSH      = False               # set True to force full chain persistence each save
 ADD_BLOCK_LOG_THRESHOLD     = 0.1                 # seconds; log add_block metrics when slower than this
 
-UTXO_FLUSH_INTERVAL         = 250
+UTXO_FLUSH_INTERVAL         = 1000
 
 MAX_OUTBOUND_PEERS          = 14
 MAX_INBOUND_PEERS           = 16

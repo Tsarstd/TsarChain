@@ -8,8 +8,15 @@ import secrets
 import argparse
 from typing import List, Tuple
 
+import pytest
 import tsarchain.utils.helpers as H
 from ecdsa import SigningKey, VerifyingKey, SECP256k1, util as ecdsa_util
+from tsarchain.core.block import Block
+from tsarchain.core.coinbase import CoinbaseTx
+from tsarchain.core.tx import Tx, TxIn, TxOut
+from tsarchain.utils.helpers import Script
+from tsarchain.wallet.data_security import pubkey_from_privhex, pubkey_to_tsar_address
+from tsarchain.utils import config as CFG
 
 
 # -----------------------------
@@ -81,6 +88,106 @@ def _py_merkle_rev_final(txids: List[bytes]) -> bytes:
 
 def _py_merkle_rev_both(txids: List[bytes]) -> bytes:
     return H._py_merkle_root([t[::-1] for t in txids])[::-1]
+
+
+# -----------------------------
+# Native block validation helpers/tests
+# -----------------------------
+
+def _make_test_address(priv_hex: str) -> Tuple[str, bytes]:
+    pubkey = pubkey_from_privhex(priv_hex)
+    address = pubkey_to_tsar_address(pubkey)
+    return address, pubkey
+
+
+def _build_p2wpkh_block():
+    priv_hex = secrets.token_hex(32)
+    address, pubkey = _make_test_address(priv_hex)
+
+    prev_txid = secrets.token_bytes(32)
+    prev_amount = 50_000_000
+    fee = 1_000
+    spend_amount = prev_amount - fee
+
+    prev_output = TxOut(amount=prev_amount, script_pubkey=Script.p2wpkh_script(address))
+    spend_input = TxIn(
+        txid=prev_txid,
+        vout=0,
+        amount=prev_amount,
+        script_sig=Script([]),
+    )
+    spend_tx = Tx(
+        inputs=[spend_input],
+        outputs=[TxOut(amount=spend_amount, script_pubkey=Script.p2wpkh_script(address))],
+        locktime=0,
+        is_coinbase=False,
+    )
+    spend_tx.sign_input(0, priv_hex, prev_output, prev_amount)
+
+    reward = int(CFG.INITIAL_REWARD)
+    coinbase = CoinbaseTx(
+        to_address=address,
+        reward=reward + fee,
+        height=1,
+    )
+    block = Block(
+        height=1,
+        prev_block_hash=bytes.fromhex(CFG.ZERO_HASH),
+        transactions=[coinbase, spend_tx],
+        bits=CFG.INITIAL_BITS,
+        timestamp=int(time.time()),
+    )
+    snapshot = {
+        f"{prev_txid.hex()}:0": {
+            "tx_out": {
+                "amount": prev_amount,
+                "script_pubkey": prev_output.script_pubkey.serialize().hex(),
+            },
+            "is_coinbase": False,
+            "block_height": 0,
+        }
+    }
+    return block, snapshot, spend_tx, fee
+
+
+@pytest.mark.skipif(not H.native_block_validator_available(), reason="native validator unavailable")
+def test_native_block_validator_accepts_valid_block():
+    block, snapshot, _, fee = _build_p2wpkh_block()
+    opts = {
+        "coinbase_maturity": int(CFG.COINBASE_MATURITY),
+        "max_sigops_per_tx": int(CFG.MAX_SIGOPS_PER_TX),
+        "max_sigops_per_block": int(CFG.MAX_SIGOPS_PER_BLOCK),
+        "enforce_low_s": True,
+    }
+    ok, reason, fees = H.native_validate_block_txs(
+        block.to_dict(),
+        snapshot,
+        block.height,
+        opts,
+    )
+    assert ok, f"native validator rejected block: {reason}"
+    assert fees == [fee], "fee projection mismatch"
+
+
+@pytest.mark.skipif(not H.native_block_validator_available(), reason="native validator unavailable")
+def test_native_block_validator_detects_invalid_witness():
+    block, snapshot, spend_tx, _ = _build_p2wpkh_block()
+    # Corrupt witness pubkey so hash mismatch occurs
+    spend_tx.inputs[0].witness[1] = b"\x02" + b"\x01" * 32
+    opts = {
+        "coinbase_maturity": int(CFG.COINBASE_MATURITY),
+        "max_sigops_per_tx": int(CFG.MAX_SIGOPS_PER_TX),
+        "max_sigops_per_block": int(CFG.MAX_SIGOPS_PER_BLOCK),
+        "enforce_low_s": True,
+    }
+    ok, reason, _ = H.native_validate_block_txs(
+        block.to_dict(),
+        snapshot,
+        block.height,
+        opts,
+    )
+    assert not ok, "tampered witness should fail native validation"
+    assert reason, "failure should include reason"
 
 
 # -----------------------------

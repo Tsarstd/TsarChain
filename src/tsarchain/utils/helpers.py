@@ -878,6 +878,7 @@ try:
         hash256 as _native_hash256,
         hash160 as _native_hash160,
         secp_verify_der_low_s_many as _native_verify_many,
+        validate_block_txs_native as _native_validate_block_txs,
     )
     
     _HAVE_NATIVE = True
@@ -891,6 +892,7 @@ except Exception as _e:
     _native_hash256 = None
     _native_hash160 = None
     _native_verify_many = None
+    _native_validate_block_txs = None
     
     if _native_reason == "not_tried":
         _native_reason = f"import_failed:{type(_e).__name__}"
@@ -968,3 +970,11 @@ def verify_der_strict_low_s(vk: "VerifyingKey", digest32: bytes, der_sig: bytes)
 
 def merkle_root(transactions):
     return _py_merkle_root(transactions)  # merkle root is locked to python version, for consensus convenience
+
+def native_block_validator_available() -> bool:
+    return _HAVE_NATIVE and (_native_validate_block_txs is not None)
+
+def native_validate_block_txs(block_dict: dict, utxo_snapshot: dict, spend_height: int, options: dict):
+    if not native_block_validator_available():
+        raise RuntimeError("native block validator unavailable")
+    return _native_validate_block_txs(block_dict, utxo_snapshot, int(spend_height), options)
