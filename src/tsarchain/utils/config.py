@@ -417,10 +417,28 @@ STORAGE_NODES_FILE  = os.path.join(CONTRACTS_DIR, "storage_nodes.json")
 # =============================================================================
 # DB / KV BACKEND
 # =============================================================================
-DB_DIR = "data/DB"
-KV_BACKEND = "lmdb"   # lmdb | json
+DB_DIR             = "data/DB"
+KV_BACKEND         = "lmdb"   # lmdb | json
 LMDB_MAP_SIZE_INIT = 64 * 1024 * 1024  # 64 MiB
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # 64 GiB
+LMDB_DATA_FILE     = os.path.join(DB_DIR, "data.mdb")
+LMDB_LOCK_FILE     = os.path.join(DB_DIR, "lock.mdb")
+
+# Snapshot bootstrap (data.mdb fast-sync)
+SNAPSHOT_REQUIRE_SIGNATURE   = False
+SNAPSHOT_MANIFEST_URL        = "http://31.97.51.207:8080/snapshot.manifest.json"
+SNAPSHOT_FILE_URL            = "http://31.97.51.207:8080/data.mdb"
+SNAPSHOT_PUBKEY_HEX          = ""
+
+SNAPSHOT_BOOTSTRAP_ENABLED   = True
+SNAPSHOT_BOOTSTRAP_FOR_GUI   = True
+SNAPSHOT_BOOTSTRAP_FOR_CLI   = True
+SNAPSHOT_HTTP_TIMEOUT        = 90
+SNAPSHOT_CHUNK_BYTES         = 2 * 1024 * 1024
+SNAPSHOT_MIN_SIZE_BYTES      = 4 * 1024 * 1024
+SNAPSHOT_META_PATH           = os.path.join(DB_DIR, "snapshot.meta.json")
+SNAPSHOT_MAX_AGE_SECONDS     = 12 * 3600
+SNAPSHOT_USER_AGENT          = "TsarChainSnapshot/1.0"
 
 
 # =============================================================================

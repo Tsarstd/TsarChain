@@ -16,7 +16,8 @@ from ..mempool.pool import TxPoolDB
 from ..storage.utxo import UTXODB
 from ..storage.kv import kv_enabled, batch, iter_prefix, clear_db, delete
 from ..utils import config as CFG
-from ..utils.helpers import bits_to_target, target_to_bits, target_to_difficulty, difficulty_to_target, merkle_root
+from ..utils.bootstrap import annotate_local_snapshot_meta
+from ..utils.helpers import bits_to_target, target_to_difficulty
 from ..utils.tsar_logging import get_ctx_logger
 from .genesis import GENESIS_HASH
 
@@ -161,6 +162,16 @@ class StorageMixin:
             self._ensure_utxodb()
             self._utxo_last_flush_height = self.height
             self._utxo_dirty = False
+            try:
+                tip_ts = None
+                if self.chain:
+                    tip_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
+            except Exception:
+                tip_ts = None
+            try:
+                annotate_local_snapshot_meta(height=self.height, tip_timestamp=tip_ts)
+            except Exception:
+                log.debug("[load_chain] snapshot meta annotate failed", exc_info=True)
 
     def load_state(self):
         if self.in_memory:

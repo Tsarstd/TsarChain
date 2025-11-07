@@ -14,6 +14,7 @@ import tsarcore_native as native
 from tsarchain.consensus.blockchain import Blockchain
 from tsarchain.network.node import Network
 from tsarchain.utils import config as CFG
+from tsarchain.utils.bootstrap import maybe_bootstrap_snapshot
 
 # ---------------- Logger ----------------
 from tsarchain.utils.tsar_logging import launch_gui_in_thread, setup_logging, open_log_toplevel, get_ctx_logger
@@ -92,6 +93,7 @@ class BlockchainGUI:
         self.peer_list: list[tuple[str,int]] = []
         self.bootstrap_manual: tuple[str, int] | None = None
         self.progress_polling = False
+        self._node_starting = False
 
         # layout
         self.sidebar = tk.Frame(root, bg=self.panel_bg, width=160)
@@ -491,12 +493,13 @@ class BlockchainGUI:
         node_on   = self.blockchain is not None and self.network is not None
         mining_on = self.mining_alive.is_set()
         addr_ok   = self._address_ok()
+        starting  = getattr(self, "_node_starting", False)
         if mining_on:
             self.btn_start_node.config(state="disabled")
             self.btn_start_mining.config(state="disabled")
             self.btn_stop.config(state="normal")
         else:
-            self.btn_start_node.config(state="disabled" if node_on else "normal")
+            self.btn_start_node.config(state="disabled" if (node_on or starting) else "normal")
             can_mine = (
                 node_on
                 and addr_ok
@@ -543,56 +546,110 @@ class BlockchainGUI:
             launch_gui_in_thread(log_file=log_file, attach_to_root=False)
         self.log_print("[Log] Opened Tsar Logging viewer")
 
-    # ---------- Node / Mining control ----------
-    def start_node(self):
-        if self.blockchain:
-            messagebox.showinfo("Info", "Node is already running.")
+    def _bootstrap_progress(self, message: str):
+        msg = (message or "").strip()
+        if not msg:
             return
+        self._sync_status = "bootstrap"
+        self.log_print(f"[Bootstrap] {msg}")
+        self._set_sync_progress_text(f"Bootstrap: {msg}")
 
-        self._sync_ready = False
-        self._sync_status = "init"
+    def _handle_start_failure(self, reason: str):
+        self.blockchain = None
+        self.network = None
+        self._last_chain_height = -1
+        self._sync_status = "idle"
+        self._node_starting = False
+        self._set_buttons_state()
+        message = f"Failed to start node: {reason}"
+        try:
+            messagebox.showerror("Start Node", message)
+        except Exception:
+            self.log_print(f"[Start Node] {message}")
+
+    def _on_node_started(self):
+        self._node_starting = False
+        self._set_buttons_state()
+
+    def _start_node_worker(self, use_cores: int, miner_address: str):
+        result = maybe_bootstrap_snapshot(context="gui", progress_cb=self._bootstrap_progress)
+        if result.status == "failed":
+            self.log_print(f"[Bootstrap] Snapshot gagal: {result.reason or 'unknown'}; lanjutkan sync biasa.")
+        elif result.status == "installed":
+            self.log_print(f"[Bootstrap] Snapshot siap di height {result.height or '?'}")
+        else:
+            skip_reason = result.reason or "tidak ada sumber snapshot"
+            self.log_print(f"[Bootstrap] Dilewati: {skip_reason}")
 
         try:
-            use_cores = int(self.cpu_entry.get() or "1")
-            self.blockchain = Blockchain(
-                db_path=CFG.BLOCK_FILE, in_memory=False,
-                use_cores=use_cores, miner_address=self.miner_address_entry.get().strip()
+            blockchain = Blockchain(
+                db_path=CFG.BLOCK_FILE,
+                in_memory=False,
+                use_cores=use_cores,
+                miner_address=miner_address,
             )
-            self.network = Network(blockchain=self.blockchain)
+            network = Network(blockchain=blockchain)
             try:
-                self._last_chain_height = int(getattr(self.blockchain, "height", -1))
+                self._last_chain_height = int(getattr(blockchain, "height", -1))
             except Exception:
                 self._last_chain_height = -1
 
             fallback_nodes = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
             try:
                 for peer in fallback_nodes:
-                    self.network.persistent_peers.add(peer)
-                    self.network.peers.add(peer)
+                    network.persistent_peers.add(peer)
+                    network.peers.add(peer)
                 if fallback_nodes:
                     host, port = fallback_nodes[0]
                     self.log_print(f"[Network] Connecting to Tsarchain Network: '{CFG.DEFAULT_NET_ID}', peer {host}:{port}")
             except Exception:
                 pass
-        except Exception as e:
-            self.blockchain = None
-            self.network = None
-            self._last_chain_height = -1
-            self._sync_status = "idle"
-            messagebox.showerror("Start Node", f"Failed to Starting Node: {e}")
-            self._set_buttons_state()
+
+        except Exception as exc:
+            err_msg = str(exc)
+            self.log_print(f"[Start Node] {err_msg}")
+            self.root.after(0, lambda msg=err_msg: self._handle_start_failure(msg))
             return
 
-        if self.network:
-            threading.Thread(target=self._sync_daemon, daemon=True).start()
-            self.log_print("[Sync] Background sync started... Please Wait...")
+        self.blockchain = blockchain
+        self.network = network
+        self._sync_status = "syncing"
+        self.log_print("[Sync] Background sync started... Please Wait...")
 
-            def _early_sync():
-                for _ in range(5):
-                    self._request_fast_sync(min_interval=0.0)
-                    time.sleep(1.0)
-            threading.Thread(target=_early_sync, daemon=True).start()
-            self._set_buttons_state()
+        def _early_sync():
+            for _ in range(5):
+                self._request_fast_sync(min_interval=0.0)
+                time.sleep(1.0)
+
+        threading.Thread(target=self._sync_daemon, daemon=True).start()
+        threading.Thread(target=_early_sync, daemon=True).start()
+        self.root.after(0, self._on_node_started)
+    # ---------- Node / Mining control ----------
+    def start_node(self):
+        if self.blockchain:
+            messagebox.showinfo("Info", "Node is already running.")
+            return
+
+        try:
+            use_cores = int(self.cpu_entry.get() or "1")
+            if use_cores <= 0:
+                raise ValueError("CPU cores must be positive")
+        except Exception as exc:
+            messagebox.showerror("Start Node", f"Invalid CPU cores: {exc}")
+            return
+
+        miner_address = self.miner_address_entry.get().strip()
+        self._sync_ready = False
+        self._sync_status = "init"
+        self._set_sync_progress_text("Menyiapkan node...")
+        self._node_starting = True
+        self._set_buttons_state()
+        self.log_print("[Start Node] Initializing node...")
+        threading.Thread(
+            target=self._start_node_worker,
+            args=(use_cores, miner_address),
+            daemon=True,
+        ).start()
 
     def _sync_daemon(self):
         while self.blockchain and self.network:
@@ -827,6 +884,7 @@ class BlockchainGUI:
         self.log_print("[!] Node stopped")
         self._sync_ready = False
         self._sync_status = "idle"
+        self._node_starting = False
         self._set_buttons_state()
 
     # ---------- Print chain ----------

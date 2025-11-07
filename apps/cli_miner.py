@@ -10,6 +10,7 @@ import multiprocessing as mp
 from tsarchain.consensus.blockchain import Blockchain
 from tsarchain.network.node import Network
 from tsarchain.utils import config as CFG
+from tsarchain.utils.bootstrap import maybe_bootstrap_snapshot
 from tsarchain.utils.helpers import print_banner
 
 #from tsarchain.utils.tsar_logging import setup_logging
@@ -37,10 +38,29 @@ def _register_bootstrap_peers(network: Network) -> int:
     return count
 
 
+def _run_snapshot_bootstrap(context: str, enabled: bool):
+    if not enabled:
+        return None
+
+    def _printer(message: str):
+        print(f"[Bootstrap] {message}")
+
+    result = maybe_bootstrap_snapshot(context=context, progress_cb=_printer)
+    if result.status == "failed":
+        print(f"[Bootstrap] Snapshot bootstrap failed: {result.reason}. Continuing with normal sync.")
+    elif result.status == "installed":
+        print(f"[Bootstrap] Snapshot installed at height {result.height or '?'}")
+    else:
+        reason = result.reason or "no snapshot source"
+        print(f"[Bootstrap] Skipped: {reason}")
+    return result
+
+
 class SimpleMiner:
-    def __init__(self, address, cores):
+    def __init__(self, address, cores, bootstrap_snapshot: bool = True):
         self.address = address
         self.cores = cores
+        self.bootstrap_snapshot = bootstrap_snapshot
         self.mining_alive = True
         self.cancel_mining = mp.Event()
         self.blockchain = None
@@ -64,6 +84,7 @@ class SimpleMiner:
     def start_node(self):
         print("Starting node...")
         try:
+            _run_snapshot_bootstrap("cli", self.bootstrap_snapshot)
             self.blockchain = Blockchain(
                 db_path=CFG.BLOCK_FILE,
                 in_memory=False,
@@ -204,12 +225,13 @@ class SimpleMiner:
 
 
 class NodeRunner:
-    def __init__(self):
+    def __init__(self, bootstrap_snapshot: bool = True):
         self.blockchain = None
         self.network = None
         self.running = True
         self._last_chain_height = -1
         self._sync_ready = False
+        self.bootstrap_snapshot = bootstrap_snapshot
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
 
@@ -221,6 +243,7 @@ class NodeRunner:
         print_banner()
         print("Starting TsarChain node (no mining)...")
         try:
+            _run_snapshot_bootstrap("cli", self.bootstrap_snapshot)
             self.blockchain = Blockchain(
                 db_path=CFG.BLOCK_FILE,
                 in_memory=False,
@@ -363,6 +386,7 @@ def parse_args():
     parser.add_argument("--cores", type=int, help="CPU cores to use for mining")
     parser.add_argument("--node-only", action="store_true", help="Run node without mining")
     parser.add_argument("--timeout", type=int, default=560, help="Sync timeout in seconds (mining mode)")
+    parser.add_argument("--no-bootstrap", action="store_true", help="Skip snapshot bootstrap download")
     return parser.parse_args()
 
 
@@ -370,7 +394,7 @@ def main():
     args = parse_args()
     #setup_logging()
     if args.node_only:
-        runner = NodeRunner()
+        runner = NodeRunner(bootstrap_snapshot=not args.no_bootstrap)
         runner.start()
         return
 
@@ -382,7 +406,7 @@ def main():
         address = address or input_address
         cores = cores or input_cores
 
-    miner = SimpleMiner(address, cores)
+    miner = SimpleMiner(address, cores, bootstrap_snapshot=not args.no_bootstrap)
 
     try:
         miner.start_mining(timeout=args.timeout)

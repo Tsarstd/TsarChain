@@ -101,19 +101,31 @@ def clear_db(name: str) -> int:
     env = _ensure_env(); db = _get_db(name)
     if env is None or db is None:
         return 0
-    removed = 0
     with env.begin(db=db, write=True) as txn:
-        with txn.cursor() as cur:
-            if cur.first():
-                while True:
-                    try:
-                        cur.delete()
-                        removed += 1
-                    except Exception:
-                        pass
-                    if not cur.next():
-                        break
-    return removed
+        try:
+            stats = txn.stat(db)
+        except Exception:
+            stats = {}
+        try:
+            txn.drop(db, delete=False)
+        except Exception:
+            # Fallback: manual delete (older behaviour)
+            removed = 0
+            try:
+                with txn.cursor() as cur:
+                    if cur.first():
+                        while True:
+                            try:
+                                cur.delete()
+                                removed += 1
+                            except Exception:
+                                pass
+                            if not cur.next():
+                                break
+            except Exception:
+                pass
+            return removed
+    return int(stats.get("entries", 0) or 0)
 
 
 def iter_prefix(name: str, prefix: bytes) -> Iterator[Tuple[bytes, bytes]]:
