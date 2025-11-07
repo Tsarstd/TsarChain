@@ -576,7 +576,7 @@ class BlockchainGUI:
         if result.status == "failed":
             self.log_print(f"[Bootstrap] Snapshot gagal: {result.reason or 'unknown'}; lanjutkan sync biasa.")
         elif result.status == "installed":
-            self.log_print(f"[Bootstrap] Snapshot siap di height {result.height or '?'}")
+            self.log_print(f"[Download] Download Completed !")
         else:
             skip_reason = result.reason or "tidak ada sumber snapshot"
             self.log_print(f"[Bootstrap] Dilewati: {skip_reason}")

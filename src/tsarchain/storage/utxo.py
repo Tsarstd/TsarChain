@@ -222,8 +222,6 @@ class UTXODB(BaseDatabase):
             duration = time.time() - started
             backend = "lmdb" if kv_enabled() else "json"
             written = len(self.utxos) if rewrite else len(target_keys)
-            log.info("[UTXODB._save] backend=%s rewrite=%s written=%d removed=%d in %.3fs",
-                     backend, rewrite, written, removed, duration)
 
     # ===================== MODIFIKASI DATA =====================
     def _txid_hex(self, x):
@@ -321,8 +319,6 @@ class UTXODB(BaseDatabase):
             self._dirty = True
             self._save(force=True)
         duration = time.time() - started
-        log.info("[UTXODB.rebuild_from_chain] rebuilt from %d blocks -> %d utxos in %.2fs",
-                 block_count, len(self.utxos), duration)
 
     def flush(self, force: bool = False) -> bool:
         if not force and not self._dirty:

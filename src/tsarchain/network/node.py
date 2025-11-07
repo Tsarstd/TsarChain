@@ -769,24 +769,6 @@ class Network:
             return False
         
         headers = headers_resp.get("headers") or []
-        best_height = -1
-        try:
-            best_height = int(headers_resp.get("best_height", -1))
-        except Exception:
-            best_height = -1
-        if best_height < 0 and headers:
-            try:
-                best_height = max(int(h.get("height", -1)) for h in headers if isinstance(h, dict))
-            except Exception:
-                best_height = -1
-        if best_height >= 0:
-            with self.lock:
-                self._peer_best_height[peer] = best_height
-        try:
-            log.info("[_sync_peer] %s delivered %d headers in %.2fs (best_height=%s)", peer, len(headers), headers_elapsed, best_height if best_height >= 0 else "-")
-        except Exception:
-            pass
-
         if not headers:
             self._peer_last_sync[peer] = now
             self._reward_peer(peer)
@@ -1171,24 +1153,6 @@ class Network:
             except Exception:
                 pass
             return False
-        tx_candidates = []
-        for key in ("transactions", "txs", "items"):
-            cand = resp.get(key)
-            if isinstance(cand, list):
-                tx_candidates = cand
-                break
-        raw_count = resp.get("count")
-        if raw_count is None:
-            count = len(tx_candidates)
-        else:
-            try:
-                count = int(raw_count)
-            except Exception:
-                count = len(tx_candidates)
-        try:
-            log.info("[_request_mempool_inline] Received %d tx entries from %s (mode=%s)", count, norm, resp_mode or "inline")
-        except Exception:
-            pass
 
         txs = resp.get("txs") or resp.get("data")
         if not isinstance(txs, list):
@@ -1254,10 +1218,6 @@ class Network:
             return None
 
         if resp.get("type") != "MEMPOOL_SYNC" or resp.get("status") == "error":
-            try:
-                log.debug("[_request_mempool_snapshot] reject from %s resp=%s", norm, resp)
-            except Exception:
-                pass
             self._snapshot_unreachable.add(norm)
             return False
 
