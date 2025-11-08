@@ -969,7 +969,29 @@ def verify_der_strict_low_s(vk: "VerifyingKey", digest32: bytes, der_sig: bytes)
     return bool(_py_verify_der_strict_low_s(vk, digest32, der_sig))
 
 def merkle_root(transactions):
-    return _py_merkle_root(transactions)  # merkle root is locked to python version, for consensus convenience
+    use_native = CFG.MERKLE_NATIVE and _HAVE_NATIVE and _native_merkle_root is not None
+    if use_native:
+        try:
+            txids = []
+            for tx in transactions or []:
+                if isinstance(tx, (bytes, bytearray)):
+                    txids.append(bytes(tx))
+                    continue
+                if hasattr(tx, "txid") and callable(tx.txid):
+                    txid = tx.txid()
+                elif hasattr(tx, "hash") and callable(tx.hash):
+                    txid = tx.hash()
+                else:
+                    raise TypeError("merkle_root expects 32-byte txids or objects with .txid/.hash")
+                txids.append(bytes(txid))
+            if not txids:
+                return b"\x00" * 32
+            raw = b"".join(txids)
+            result = _native_merkle_root(raw, len(txids))
+            return bytes(result)
+        except Exception:
+            pass
+    return _py_merkle_root(transactions)
 
 def native_block_validator_available() -> bool:
     return _HAVE_NATIVE and (_native_validate_block_txs is not None)
