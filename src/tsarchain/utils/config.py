@@ -156,8 +156,8 @@ ZERO_HASH       = b"\x00" * 32
 CANONICAL_SEP   = (',', ':')
 
 # === Genesis ===
-ALLOW_AUTO_GENESIS       = 1
-GENESIS_HASH_HEX         = ""
+ALLOW_AUTO_GENESIS       = 0
+GENESIS_HASH_HEX         = "0000003f9348c7ef1886533c9e0166aeb871d6da72e533b75dda0527f736c24d"
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"
 
 # === Voice Sovereignty Figures (ASCII only) ===
@@ -428,12 +428,12 @@ LMDB_LOCK_FILE     = os.path.join(DB_DIR, "lock.mdb")
 # Snapshot bootstrap (data.mdb fast-sync)
 SNAPSHOT_REQUIRE_SIGNATURE   = False
 SNAPSHOT_MANIFEST_URL        = ""
-SNAPSHOT_FILE_URL            = ""
+SNAPSHOT_FILE_URL            = "http://31.97.51.207:8080/data.mdb"
 SNAPSHOT_PUBKEY_HEX          = ""
 
-SNAPSHOT_BOOTSTRAP_ENABLED   = False
-SNAPSHOT_BOOTSTRAP_FOR_GUI   = False
-SNAPSHOT_BOOTSTRAP_FOR_CLI   = False
+SNAPSHOT_BOOTSTRAP_ENABLED   = True
+SNAPSHOT_BOOTSTRAP_FOR_GUI   = True
+SNAPSHOT_BOOTSTRAP_FOR_CLI   = True
 SNAPSHOT_HTTP_TIMEOUT        = 90
 SNAPSHOT_CHUNK_BYTES         = 2 * 1024 * 1024
 SNAPSHOT_MIN_SIZE_BYTES      = 4 * 1024 * 1024
@@ -443,7 +443,7 @@ SNAPSHOT_USER_AGENT          = "TsarChainSnapshot/1.0"
 
 # Backup
 SNAPSHOT_BACKUP_DIR          = os.path.join("data", "snapshot")
-BACKUP_SNAPSHOT              = True
+BACKUP_SNAPSHOT              = False
 BLOCK_BACKUP_SNAPSHOT        = 50
 
 
