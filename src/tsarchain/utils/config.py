@@ -426,7 +426,7 @@ LMDB_LOCK_FILE     = os.path.join(DB_DIR, "lock.mdb")
 
 # Snapshot bootstrap (data.mdb fast-sync)
 SNAPSHOT_REQUIRE_SIGNATURE   = False
-SNAPSHOT_MANIFEST_URL        = ""
+SNAPSHOT_MANIFEST_URL        = "http://31.97.51.207:8080/snapshot.manifest.json"
 SNAPSHOT_FILE_URL            = "http://31.97.51.207:8080/data.mdb"
 SNAPSHOT_PUBKEY_HEX          = ""
 
