@@ -624,6 +624,7 @@ class BlockchainGUI:
         threading.Thread(target=self._sync_daemon, daemon=True).start()
         threading.Thread(target=_early_sync, daemon=True).start()
         self.root.after(0, self._on_node_started)
+        
     # ---------- Node / Mining control ----------
     def start_node(self):
         if self.blockchain:
@@ -701,10 +702,6 @@ class BlockchainGUI:
                     and height >= 0
                     and height >= (best_height - 1)
                 )
-                if not synced_recently and close_enough:
-                    recent_request = (time.time() - self._last_sync_request) < 10
-                    if recent_request:
-                        synced_recently = True
                 is_synced = close_enough and synced_recently
 
                 if is_synced:

@@ -10,11 +10,14 @@ import json
 import os
 from collections import Counter
 from typing import Optional
+import shutil
+import time
+import hashlib
 
 from ..core.block import Block
 from ..mempool.pool import TxPoolDB
 from ..storage.utxo import UTXODB
-from ..storage.kv import kv_enabled, batch, iter_prefix, clear_db, delete
+from ..storage.kv import kv_enabled, batch, iter_prefix, clear_db, delete, _ensure_env
 from ..utils import config as CFG
 from ..utils.bootstrap import annotate_local_snapshot_meta
 from ..utils.helpers import bits_to_target, target_to_difficulty
@@ -54,6 +57,141 @@ class StorageMixin:
         except Exception:
             log.exception("[_prune_chain_store] Failed pruning chain entries from height %s", start_height)
 
+    def _reset_chain_store(self) -> None:
+        if self.in_memory:
+            return
+        if kv_enabled():
+            try:
+                clear_db('chain')
+            except Exception:
+                log.exception("[_reset_chain_store] Failed clearing LMDB chain data")
+        try:
+            self._chain_store.save([])
+        except Exception:
+            log.exception("[_reset_chain_store] Failed clearing JSON chain data")
+        meta_path = CFG.SNAPSHOT_META_PATH
+        if meta_path and os.path.exists(meta_path):
+            try:
+                os.remove(meta_path)
+            except Exception:
+                log.warning("[_reset_chain_store] Failed removing snapshot meta file at %s", meta_path)
+        self._persisted_height = -1
+        self._chain_dirty_from = None
+        try:
+            self._snapshot_last_backup_height = -1
+        except Exception:
+            pass
+
+    def _backup_snapshot_enabled(self) -> bool:
+        if self.in_memory:
+            return False
+        return bool(CFG.BACKUP_SNAPSHOT)
+
+    def _maybe_backup_snapshot(self, tip_height: int) -> None:
+        if tip_height < 0 or not kv_enabled():
+            return
+        if not self._backup_snapshot_enabled():
+            return
+        interval = int(CFG.BLOCK_BACKUP_SNAPSHOT or 0)
+        if interval <= 0:
+            return
+        last = getattr(self, "_snapshot_last_backup_height", -1)
+        if last >= 0 and (tip_height - last) < interval:
+            return
+        target_dir = CFG.SNAPSHOT_BACKUP_DIR
+        if not target_dir:
+            return
+        try:
+            self._copy_snapshot_env(target_dir)
+            tip_ts = None
+            try:
+                if self.chain:
+                    tip_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
+            except Exception:
+                tip_ts = None
+            meta = None
+            try:
+                meta = annotate_local_snapshot_meta(height=tip_height, tip_timestamp=tip_ts)
+            except Exception:
+                log.debug("[backup_snapshot] annotate meta failed", exc_info=True)
+            backup_dir = os.path.abspath(target_dir)
+            if meta:
+                meta_name = os.path.basename(CFG.SNAPSHOT_META_PATH or "snapshot.meta.json")
+                backup_meta_path = os.path.join(backup_dir, meta_name)
+                try:
+                    with open(backup_meta_path, "w", encoding="utf-8") as fh:
+                        json.dump(meta, fh, indent=2, sort_keys=True)
+                except Exception:
+                    log.warning("[backup_snapshot] Failed to write snapshot meta copy at %s", backup_meta_path)
+                try:
+                    self._write_snapshot_manifest(backup_dir, meta, tip_height)
+                except Exception:
+                    log.warning("[backup_snapshot] Failed to write snapshot manifest copy", exc_info=True)
+            self._snapshot_last_backup_height = tip_height
+            log.info("[backup_snapshot] Snapshot updated at height %s to %s", tip_height, target_dir)
+        except Exception:
+            log.exception("[backup_snapshot] Failed to update snapshot backup")
+
+    def _copy_snapshot_env(self, target_dir: str) -> None:
+        target_dir = os.path.abspath(target_dir)
+        parent = os.path.dirname(target_dir)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+            
+        tmp_dir = f"{target_dir}.tmp"
+        if os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            
+        env = _ensure_env() if kv_enabled() else None
+        if env is not None:
+            os.makedirs(tmp_dir, exist_ok=True)
+            env.copy(tmp_dir, compact=True)
+        else:
+            os.makedirs(tmp_dir, exist_ok=True)
+            data_file = CFG.LMDB_DATA_FILE
+            if data_file and os.path.exists(data_file):
+                shutil.copy2(data_file, os.path.join(tmp_dir, os.path.basename(data_file)))
+            lock_file = CFG.LMDB_LOCK_FILE
+            if lock_file and os.path.exists(lock_file):
+                shutil.copy2(lock_file, os.path.join(tmp_dir, os.path.basename(lock_file)))
+                
+        if os.path.exists(target_dir):
+            shutil.rmtree(target_dir, ignore_errors=True)
+        os.replace(tmp_dir, target_dir)
+
+    @staticmethod
+    def _hash_file(path: str) -> Optional[str]:
+        try:
+            digest = hashlib.sha256()
+            with open(path, "rb") as fh:
+                for chunk in iter(lambda: fh.read(4 * 1024 * 1024), b""):
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+            return digest.hexdigest()
+        except Exception:
+            return None
+
+    def _write_snapshot_manifest(self, target_dir: str, meta: dict, height: int) -> None:
+        data_basename = os.path.basename(CFG.LMDB_DATA_FILE)
+        data_path = os.path.join(target_dir, data_basename)
+        sha = meta.get("sha256")
+        size = meta.get("size")
+        if (not sha or not size) and os.path.exists(data_path):
+            size = size or os.path.getsize(data_path)
+            sha = sha or self._hash_file(data_path)
+        manifest = {
+            "version": 1,
+            "snapshot_url": meta.get("source") or CFG.SNAPSHOT_FILE_URL,
+            "size": int(size or 0),
+            "sha256": sha or "",
+            "height": int(meta.get("height", height)),
+            "generated_at": int(meta.get("generated_at") or int(time.time())),
+        }
+        manifest_path = os.path.join(target_dir, "snapshot.manifest.json")
+        with open(manifest_path, "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh, indent=2, sort_keys=True)
+
     def save_chain(self, *, force_full: bool = False):
         if CFG.CHAIN_FORCE_FULL_FLUSH:
             force_full = True
@@ -61,6 +199,7 @@ class StorageMixin:
             return
         with self.lock:
             tip_height = len(self.chain) - 1
+            full_flush = force_full or self._persisted_height < 0
             if force_full:
                 self._chain_dirty_from = 0
                 self._persisted_height = -1
@@ -85,11 +224,12 @@ class StorageMixin:
                 start_height = self._persisted_height + 1
             elif force_full or self._persisted_height < 0:
                 start_height = 0
+            if full_flush:
+                start_height = 0
 
             flush_interval = max(1, int(CFG.CHAIN_FLUSH_INTERVAL))
             should_flush = (
-                force_full
-                or self._persisted_height < 0
+                full_flush
                 or tip_height < self._persisted_height
                 or flush_interval <= 1
             )
@@ -105,7 +245,7 @@ class StorageMixin:
 
             if kv_enabled():
                 try:
-                    if self._persisted_height < 0 or (start_height == 0 and (force_full or self._persisted_height < 0)):
+                    if full_flush:
                         clear_db('chain')
                         self._persisted_height = -1
                     if tip_height < self._persisted_height:
@@ -121,11 +261,13 @@ class StorageMixin:
                 except Exception:
                     log.exception("[save_chain] LMDB save_chain failed")
             else:
-                if force_full or start_height is not None or tip_height != self._persisted_height:
+                if full_flush or start_height is not None or tip_height != self._persisted_height:
                     self._chain_store.save([block.to_dict() for block in self.chain])
                     self._persisted_height = tip_height
 
             self._chain_dirty_from = None
+            if tip_height >= 0:
+                self._maybe_backup_snapshot(tip_height)
 
     def load_chain(self):
         if self.in_memory:
@@ -148,9 +290,26 @@ class StorageMixin:
         if not chain:
             return
         if chain[0].height != 0 or chain[0].prev_block_hash != CFG.ZERO_HASH:
-            raise ValueError("[Blockchain] Invalid on-disk genesis header fields")
+            prev_hex = None
+            try:
+                prev_hex = chain[0].prev_block_hash.hex()  # type: ignore[attr-defined]
+            except Exception:
+                prev_hex = str(chain[0].prev_block_hash)
+            log.error(
+                "[load_chain] Invalid on-disk genesis header fields (height=%s prev=%s); resetting chain store",
+                chain[0].height,
+                prev_hex,
+            )
+            self._reset_chain_store()
+            return
         if GENESIS_HASH is not None and chain[0].hash() != GENESIS_HASH:
-            raise ValueError(f"[Blockchain] Invalid genesis for this network. Expected {GENESIS_HASH.hex()}, got {chain[0].hash().hex()}")
+            log.error(
+                "[load_chain] Invalid genesis for this network. Expected %s, got %s; resetting chain store",
+                GENESIS_HASH.hex(),
+                chain[0].hash().hex(),
+            )
+            self._reset_chain_store()
+            return
 
         self.chain = chain
         self.total_blocks = len(self.chain)
@@ -158,6 +317,10 @@ class StorageMixin:
         self.supply_in_tsar = self.total_supply / CFG.TSAR if self.total_supply else 0
         self._persisted_height = len(self.chain) - 1
         self._chain_dirty_from = None
+        try:
+            self._snapshot_last_backup_height = self._persisted_height
+        except Exception:
+            pass
         if not self.in_memory:
             self._ensure_utxodb()
             self._utxo_last_flush_height = self.height

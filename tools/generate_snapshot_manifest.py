@@ -14,8 +14,9 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from ecdsa import SECP256k1, SigningKey
+import lmdb
 
 
 def _sha256_file(path: Path) -> str:
@@ -50,14 +51,37 @@ def _load_signing_key(raw: str) -> SigningKey:
     return SigningKey.from_string(bytes.fromhex(key_hex), curve=SECP256k1)
 
 
+def _detect_height_from_lmdb(path: Path) -> Optional[int]:
+    env = None
+    try:
+        env = lmdb.open(str(path), readonly=True, lock=False, subdir=path.is_dir(), max_dbs=16)
+        chain_db = env.open_db(b"chain")
+        with env.begin(db=chain_db, write=False) as txn:
+            cur = txn.cursor()
+            if cur.last():
+                try:
+                    entry = json.loads(cur.value().decode("utf-8"))
+                    return int(entry.get("height"))
+                except Exception:
+                    return None
+    except Exception:
+        return None
+    finally:
+        if env:
+            try:
+                env.close()
+            except Exception:
+                pass
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate snapshot manifest for TsarChain data.mdb")
-    parser.add_argument("--data", default="data/DB/data.mdb", help="Path ke file data.mdb yang akan dipublikasikan")
+    parser.add_argument("--data", default="data/snapshot/data.mdb", help="Path ke file data.mdb yang akan dipublikasikan")
     parser.add_argument("--meta", default="data/DB/snapshot.meta.json", help="Path snapshot.meta.json untuk mengambil info tambahan")
-    parser.add_argument("--output", default="data/DB/snapshot.manifest.json", help="File output manifest")
-    parser.add_argument("--url", help="URL publik tempat data.mdb akan tersedia (http(s)://...)")
-    parser.add_argument("--height", type=int, help="Tinggi blok snapshot (override jika tidak memakai meta)")
+    parser.add_argument("--output", default="data/snapshot/snapshot.manifest.json", help="File output manifest")
     parser.add_argument("--timestamp", type=int, help="Unix timestamp saat snapshot dibuat")
+    parser.add_argument("--url", help="URL publik tempat data.mdb akan tersedia (http(s)://...)")
     parser.add_argument("--note", help="Catatan tambahan yang akan dimasukkan ke manifest")
     parser.add_argument("--sign-key", help="Hex private key (atau path file) untuk menandatangani manifest")
     args = parser.parse_args()
@@ -68,9 +92,11 @@ def main() -> int:
 
     meta = _load_meta(Path(args.meta).expanduser().resolve())
 
-    height = args.height if args.height is not None else meta.get("height")
+    height = meta.get("height")
     if height is None:
-        parser.error("Parameter --height diperlukan (atau jalankan node sekali agar snapshot.meta.json terisi).")
+        height = _detect_height_from_lmdb(data_path)
+    if height is None:
+        parser.error("Gagal menentukan height snapshot. Jalankan dengan --height atau pastikan data.mdb valid.")
 
     timestamp = args.timestamp if args.timestamp is not None else meta.get("generated_at") or int(time.time())
     source_url = args.url or meta.get("source") or ""

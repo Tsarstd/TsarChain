@@ -74,11 +74,26 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
         return SnapshotBootstrapResult(status="skipped", reason="no_snapshot_url")
 
     local_meta = _load_meta(meta_path)
-    if expected_sha and local_meta.get("sha256") == expected_sha and os.path.exists(target_file):
-        return SnapshotBootstrapResult(
-            status="skipped",
-            reason="already_current",
-            height=local_meta.get("height"),
+    have_local = os.path.exists(target_file)
+    actual_sha = None
+    if expected_sha and have_local:
+        try:
+            actual_sha = _hash_file(target_file)
+        except Exception as exc:
+            log.warning("[bootstrap.%s] Failed hashing local snapshot: %s", ctx, exc)
+            actual_sha = None
+    if expected_sha and local_meta.get("sha256") == expected_sha and have_local:
+        if actual_sha == expected_sha:
+            return SnapshotBootstrapResult(
+                status="skipped",
+                reason="already_current",
+                height=local_meta.get("height"),
+            )
+        log.warning(
+            "[bootstrap.%s] Local snapshot hash mismatch (expected %s, got %s); forcing re-download",
+            ctx,
+            expected_sha,
+            actual_sha or "unknown",
         )
 
     if os.path.exists(target_file) and not expected_sha and os.path.getsize(target_file) >= CFG.SNAPSHOT_MIN_SIZE_BYTES:
@@ -311,6 +326,7 @@ def annotate_local_snapshot_meta(height: Optional[int], tip_timestamp: Optional[
             updated = True
 
     file_size = None
+    digest = None
     if data_file and os.path.exists(data_file):
         try:
             stat = os.stat(data_file)
@@ -320,11 +336,6 @@ def annotate_local_snapshot_meta(height: Optional[int], tip_timestamp: Optional[
                 updated = True
         except Exception:
             pass
-
-    need_hash = not meta.get("sha256")
-    if file_size is not None and meta.get("size") != file_size:
-        need_hash = True
-    if need_hash and data_file and os.path.exists(data_file):
         try:
             digest = _hash_file(data_file)
             if meta.get("sha256") != digest:

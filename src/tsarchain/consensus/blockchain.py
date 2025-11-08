@@ -54,6 +54,7 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
         self._utxo_last_flush_height: int = -1
         self._utxo_flush_interval: int = max(1, int(CFG.UTXO_FLUSH_INTERVAL))
         self._utxo_synced: bool = False
+        self._snapshot_last_backup_height: int = -1
         self._last_block_validation_error: str | None = None
         self._mempool: TxPoolDB | None = None
         self._persist_queue: queue.Queue[bool | None] | None = None

@@ -440,6 +440,11 @@ SNAPSHOT_META_PATH           = os.path.join(DB_DIR, "snapshot.meta.json")
 SNAPSHOT_MAX_AGE_SECONDS     = 12 * 3600
 SNAPSHOT_USER_AGENT          = "TsarChainSnapshot/1.0"
 
+# Backup
+SNAPSHOT_BACKUP_DIR          = os.path.join("data", "snapshot")
+BACKUP_SNAPSHOT              = False
+BLOCK_BACKUP_SNAPSHOT        = 50
+
 
 # =============================================================================
 # LOGGING SETTINGS
