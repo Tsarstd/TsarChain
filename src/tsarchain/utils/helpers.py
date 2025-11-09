@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+﻿# SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP143; BIP141; BIP173; CompactSize; Merkle; libsecp256k1; LowS-Policy; Signal-X3DH
@@ -6,10 +6,26 @@
 from __future__ import annotations
 import hashlib, json, secrets, string, unicodedata
 from bech32 import bech32_decode, convertbits
-from typing import Union, Tuple
+from typing import Union, Tuple, Optional
 from ecdsa import SECP256k1, util, VerifyingKey
 
 from ..utils import config as CFG
+
+try:
+    from tsarcore_native import (
+        count_sigops as _native_count_sigops,
+        hash160 as _native_hash160,
+        hash256 as _native_hash256,
+        merkle_root as _native_merkle_root,
+        secp_verify_der_low_s as _native_verify_der_low_s,
+        secp_verify_der_low_s_many as _native_verify_many,
+        sighash_bip143 as _native_sighash_bip143,
+        validate_block_txs_native as _native_validate_block_txs,
+    )
+except ImportError as exc:
+    raise ImportError(
+        "tsarcore_native is required: build/install the Rust extension to run TsarChain"
+    ) from exc
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
@@ -72,13 +88,6 @@ def to_bytes(x) -> bytes:
             return x.encode("utf-8", "ignore")
     return b""
 
-def small_int(op):
-    if op == OP_0:
-        return 0
-    if isinstance(op, int) and OP_1 <= op <= OP_16:
-        return op - (OP_1 - 1)
-    return None
-
 def read_push(script: bytes, i: int):
     if i >= len(script):
         return None, i
@@ -112,24 +121,6 @@ def parse_ops(script: bytes):
         else:
             ops.append((b, None)); i += 1
     return ops
-
-def count_sigops_in_script(script: bytes) -> int:
-    ops = parse_ops(script)
-    total = 0
-    for idx, (op, data) in enumerate(ops):
-        if op in (OP_CHECKSIG, OP_CHECKSIGVERIFY):
-            total += 1
-        elif op in (OP_CHECKMULTISIG, OP_CHECKMULTISIGVERIFY):
-            n = None
-            j = idx - 1
-            while j >= 0:
-                opj, dataj = ops[j]
-                si = small_int(opj) if opj is not None else None
-                if si is not None:
-                    n = si; break
-                j -= 1
-            total += min(n or 20, 20)
-    return total
 
 def is_p2pkh(spk: bytes) -> bool:
     return (
@@ -180,13 +171,13 @@ def ripemd160(b: bytes) -> bytes:
     return h.digest()
 
 def hash160(b: bytes) -> bytes:
-    return ripemd160(sha256(b))
+    return bytes(_native_hash160(bytes(b)))
 
 def double_sha256(data: bytes) -> bytes:
     return sha256(sha256(data))
 
 def hash256(data: bytes) -> bytes:
-    return hashlib.sha256(hashlib.sha256(data).digest()).digest()
+    return bytes(_native_hash256(bytes(data)))
 
 # -----------------------------
 # VARINT ENCODING (Bitcoin-style)
@@ -247,44 +238,6 @@ def decode_der_sig(signature: bytes):
     s_len = signature[4 + r_len + 1]
     s = int.from_bytes(signature[s_index:s_index + s_len], 'big')
     return r, s
-
-# -------------------- Merkle root --------------------
-
-def merkle_root(transactions):
-    if not transactions:
-        return b"\x00" * 32
-
-    txids = []
-    for tx in transactions:
-        b = None
-        if isinstance(tx, (bytes, bytearray)):
-            b = bytes(tx)
-        elif hasattr(tx, "txid"):
-            b = tx.txid
-        elif hasattr(tx, "hash"):
-            b = tx.hash()
-        else:
-            raise TypeError("merkle_root expects 32-byte txids or objects with .txid/.hash")
-
-        if isinstance(b, str):
-            b = bytes.fromhex(b)
-        b = bytes(b)
-        if len(b) != 32:
-            raise ValueError(f"txid must be 32 bytes, got {len(b)}")
-        txids.append(b)
-
-    if len(txids) == 1:
-        return txids[0]
-
-    layer = txids
-    while len(layer) > 1:
-        if len(layer) & 1:
-            layer = layer + [layer[-1]]
-        nxt = []
-        for i in range(0, len(layer), 2):
-            nxt.append(hash256(layer[i] + layer[i + 1]))
-        layer = nxt
-    return layer[0]
 
 # --- Compact bits <-> target (kanonik & unsigned) ---
 
@@ -377,86 +330,8 @@ def serialize_tx(tx, include_witness: bool = True) -> bytes:
     res += int(getattr(tx, 'locktime', 0)).to_bytes(4, 'little')
     return res
 
-
 def serialize_tx_for_txid(tx) -> bytes:
     return serialize_tx(tx, include_witness=False)
-
-
-# ========== BIP143 sig-hash (SIGHASH_ALL only) ===========
-
-def _hash_prevouts(tx) -> bytes:
-    inputs = getattr(tx, 'inputs', [])
-    if not inputs:
-        return b'\x00' * 32
-    data = b''
-    for txin in inputs:
-        txid = getattr(txin, 'txid', b'')
-        if isinstance(txid, bytes) and len(txid) == 32:
-            txid_bytes = txid[::-1]
-        elif isinstance(txid, bytes):
-            txid_bytes = txid
-        else:
-            raise TypeError("txin.txid must be bytes, not %s" % type(txid))
-        vout = getattr(txin, 'vout', 0xffffffff)
-        if not isinstance(vout, int):
-            raise TypeError("txin.vout must be int, not %s" % type(vout))
-        data += txid_bytes + vout.to_bytes(4, 'little')
-
-    return hash256(data)
-
-
-def _hash_sequence(tx) -> bytes:
-    inputs = getattr(tx, 'inputs', [])
-    if not inputs:
-        return b'\x00' * 32
-    data = b''
-    for txin in inputs:
-        sequence = getattr(txin, 'sequence', 0xffffffff)
-        if not isinstance(sequence, int):
-            raise TypeError("txin.sequence must be int, not %s" % type(sequence))
-        data += sequence.to_bytes(4, 'little')
-    return hash256(data)
-
-
-def _hash_outputs(tx) -> bytes:
-    outputs = getattr(tx, 'outputs', [])
-    if not outputs:
-        return b'\x00' * 32
-    data = b''
-    for txout in outputs:
-        amount = int(getattr(txout, 'amount', 0))
-        script_pubkey = getattr(txout, 'script_pubkey', None)
-
-        if callable(getattr(script_pubkey, 'serialize', None)):
-            script_serialized = script_pubkey.serialize()
-        else:
-            script_serialized = b''
-        data += amount.to_bytes(8, 'little') + serialize_bytes_with_len(script_serialized)
-    return hash256(data)
-
-
-def bip143_sig_hash(tx, input_index: int, script_code: bytes, value: int, sighash: int = SIGHASH_ALL) -> bytes:
-    if sighash != SIGHASH_ALL:
-        raise NotImplementedError('Only SIGHASH_ALL supported')
-
-    hash_prevouts = _hash_prevouts(tx)
-    hash_sequence = _hash_sequence(tx)
-    hash_outputs = _hash_outputs(tx)
-    txin = tx.inputs[input_index]
-    outpoint = (txin.txid[::-1] if len(txin.txid) == 32 else txin.txid) + (txin.vout if txin.vout >= 0 else 0xffffffff).to_bytes(4, 'little')
-    data = b''
-    data += int(tx.version).to_bytes(4, 'little')
-    data += hash_prevouts
-    data += hash_sequence
-    data += outpoint
-    data += serialize_bytes_with_len(script_code)
-    data += int(value).to_bytes(8, 'little')
-    data += getattr(txin, 'sequence', 0xffffffff).to_bytes(4, 'little')
-    data += hash_outputs
-    data += int(getattr(tx, 'locktime', 0)).to_bytes(4, 'little')
-    data += int(sighash).to_bytes(4, 'little')
-
-    return hash256(data)
 
 # ========== Convenience: detect p2wpkh from scriptPubKey ==========
 
@@ -828,15 +703,6 @@ def sign_digest_der_low_s_strict(sk, digest32):
         return der_encode_sig(r, s)
 
 
-def verify_der_strict_low_s(vk: VerifyingKey, digest32: bytes, der_sig: bytes) -> bool:
-    r, s = der_parse_sig_strict(der_sig)
-    if not is_low_s(s):
-        return False
-    try:
-        return vk.verify_digest(der_sig, digest32, sigdecode=util.sigdecode_der)
-    except Exception:
-        return False
-
 def is_signature_canonical_low_s(der_sig: bytes) -> bool:
     try:
         r, s = der_parse_sig_strict(der_sig)
@@ -849,53 +715,8 @@ def sha256d(data: bytes) -> bytes:
 
 
 # ===========================================================================
-# ------------------------- Native acceleration (Rust) ----------------------
+# Native acceleration (Rust)
 # ===========================================================================
-
-from typing import Optional
-
-# status & reason for debugging
-_HAVE_NATIVE = False
-_native_reason = "not_tried"
-
-# pegangan fallback Python-asli
-_py_count_sigops_in_script = count_sigops_in_script
-_py_bip143_sig_hash        = bip143_sig_hash
-_py_verify_der_strict_low_s= verify_der_strict_low_s
-_py_merkle_root            = merkle_root
-
-# hanya import tsarcore_native bila NATIVE==1
-try:
-    if CFG.NATIVE != 1:
-        _native_reason = "disabled_by_config"
-        raise ImportError("tsarcore_native disabled via config.NATIVE")
-
-    from tsarcore_native import (
-        count_sigops as _native_count_sigops,
-        sighash_bip143 as _native_sighash_bip143,
-        secp_verify_der_low_s as _native_verify_der_low_s,
-        merkle_root as _native_merkle_root,      # merkle root is locked to python version, for consensus convenience
-        hash256 as _native_hash256,
-        hash160 as _native_hash160,
-        secp_verify_der_low_s_many as _native_verify_many,
-        validate_block_txs_native as _native_validate_block_txs,
-    )
-    
-    _HAVE_NATIVE = True
-    _native_reason = "import_ok"
-except Exception as _e:
-    _HAVE_NATIVE = False
-    _native_count_sigops = None
-    _native_sighash_bip143 = None
-    _native_verify_der_low_s = None
-    _native_merkle_root = None       # merkle root is locked to python version, for consensus convenience
-    _native_hash256 = None
-    _native_hash160 = None
-    _native_verify_many = None
-    _native_validate_block_txs = None
-    
-    if _native_reason == "not_tried":
-        _native_reason = f"import_failed:{type(_e).__name__}"
 
 def _vk_to_bytes(vk: "VerifyingKey") -> Optional[bytes]:
     try:
@@ -904,99 +725,63 @@ def _vk_to_bytes(vk: "VerifyingKey") -> Optional[bytes]:
     except Exception:
         return None
 
-# ---- overrides: use native if available, else fallback Python ----
 
 def count_sigops_in_script(script: bytes) -> int:
-    if _HAVE_NATIVE and _native_count_sigops is not None:
-        try:
-            return int(_native_count_sigops(bytes(script)))
-        except Exception:
-            pass
-    return int(_py_count_sigops_in_script(script))
+    data = to_bytes(script)
+    if not data:
+        return 0
+    return int(_native_count_sigops(data))
 
-def hash256_native(data: bytes) -> bytes:
-    if _HAVE_NATIVE and _native_hash256 is not None:
-        try:
-            return bytes(_native_hash256(bytes(data)))
-        except Exception:
-            pass
-    return hash256(data)
-
-def hash160_native(data: bytes) -> bytes:
-    if _HAVE_NATIVE and _native_hash160 is not None:
-        try:
-            return bytes(_native_hash160(bytes(data)))
-        except Exception:
-            pass
-    return hash160(data)
 
 def batch_verify_der_low_s(items, enforce_low_s: bool = True, parallel: bool = True):
-    if _HAVE_NATIVE and _native_verify_many is not None:
-        try:
-            return list(_native_verify_many(items, enforce_low_s, parallel))
-        except Exception:
-            pass
-    out = []
-    for pub, dig, sig in items:
-        try:
-            vk = VerifyingKey.from_string(pub, curve=SECP256k1)
-            ok = verify_der_strict_low_s(vk, dig, sig)
-        except Exception:
-            ok = False
-        out.append(bool(ok))
-    return out
+    return list(_native_verify_many(items, enforce_low_s, parallel))
+
 
 def bip143_sig_hash(tx, input_index: int, script_code: bytes, value: int, sighash: int = SIGHASH_ALL) -> bytes:
-    if _HAVE_NATIVE and _native_sighash_bip143 is not None:
-        try:
-            tx_bytes = serialize_tx(tx, include_witness=True)
-            digest32 = _native_sighash_bip143(tx_bytes, int(input_index), bytes(script_code), int(value), int(sighash))
-            if isinstance(digest32, (list, tuple)):
-                digest32 = bytes(digest32)
-            return bytes(digest32)
-        except Exception:
-            pass
-    return _py_bip143_sig_hash(tx, input_index, script_code, value, sighash)
+    tx_bytes = serialize_tx(tx, include_witness=True)
+    script = to_bytes(script_code)
+    digest32 = _native_sighash_bip143(
+        tx_bytes,
+        int(input_index),
+        script,
+        int(value),
+        int(sighash),
+    )
+    return bytes(digest32)
+
 
 def verify_der_strict_low_s(vk: "VerifyingKey", digest32: bytes, der_sig: bytes) -> bool:
-    if _HAVE_NATIVE and _native_verify_der_low_s is not None and isinstance(digest32, (bytes, bytearray)) and len(digest32) == 32:
-        pub = _vk_to_bytes(vk)
-        if pub:
-            try:
-                return bool(_native_verify_der_low_s(pub, bytes(digest32), bytes(der_sig)))
-            except Exception:
-                pass
-    return bool(_py_verify_der_strict_low_s(vk, digest32, der_sig))
+    if not isinstance(digest32, (bytes, bytearray)) or len(digest32) != 32:
+        raise ValueError("digest32 must be 32-byte")
+    pub = _vk_to_bytes(vk)
+    if not pub:
+        raise ValueError("verifying key conversion failed")
+    return bool(_native_verify_der_low_s(pub, bytes(digest32), bytes(der_sig)))
+
 
 def merkle_root(transactions):
-    use_native = CFG.MERKLE_NATIVE and _HAVE_NATIVE and _native_merkle_root is not None
-    if use_native:
-        try:
-            txids = []
-            for tx in transactions or []:
-                if isinstance(tx, (bytes, bytearray)):
-                    txids.append(bytes(tx))
-                    continue
-                if hasattr(tx, "txid") and callable(tx.txid):
-                    txid = tx.txid()
-                elif hasattr(tx, "hash") and callable(tx.hash):
-                    txid = tx.hash()
-                else:
-                    raise TypeError("merkle_root expects 32-byte txids or objects with .txid/.hash")
-                txids.append(bytes(txid))
-            if not txids:
-                return b"\x00" * 32
-            raw = b"".join(txids)
-            result = _native_merkle_root(raw, len(txids))
-            return bytes(result)
-        except Exception:
-            pass
-    return _py_merkle_root(transactions)
-
-def native_block_validator_available() -> bool:
-    return _HAVE_NATIVE and (_native_validate_block_txs is not None)
+    txids = []
+    for tx in transactions or []:
+        if isinstance(tx, (bytes, bytearray)):
+            txid = bytes(tx)
+        elif hasattr(tx, "txid") and callable(tx.txid):
+            txid = tx.txid()
+        elif hasattr(tx, "txid"):
+            txid = getattr(tx, "txid")
+        elif hasattr(tx, "hash") and callable(tx.hash):
+            txid = tx.hash()
+        else:
+            raise TypeError("merkle_root expects 32-byte txids or objects with .txid/.hash")
+        if isinstance(txid, str):
+            txid = bytes.fromhex(txid)
+        txid = bytes(txid)
+        if len(txid) != 32:
+            raise ValueError(f"txid must be 32 bytes, got {len(txid)}")
+        txids.append(txid)
+    if not txids:
+        return b"\x00" * 32
+    return bytes(_native_merkle_root(txids))
 
 def native_validate_block_txs(block_dict: dict, utxo_snapshot: dict, spend_height: int, options: dict):
-    if not native_block_validator_available():
-        raise RuntimeError("native block validator unavailable")
     return _native_validate_block_txs(block_dict, utxo_snapshot, int(spend_height), options)
+

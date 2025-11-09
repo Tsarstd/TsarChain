@@ -5,7 +5,7 @@ Native acceleration module for **TsarChain**.
 ## What’s inside (current API)
 
 - `count_sigops(script: bytes) -> int`  
-  Counts `CHECKSIG` (+1) and `CHECKMULTISIG` (+min(n or 20, 20)) including their `VERIFY` variants, mirroring typical Bitcoin-style limits.
+  Counts `CHECKSIG` (+1) and `CHECKMULTISIG` (+min(n or 20, 20)) including their `VERIFY` variants, mirroring TsarChain’s consensus rules.
 
 - `hash256(data: bytes) -> bytes32`  
   SHA256d (double-SHA256).
@@ -13,19 +13,25 @@ Native acceleration module for **TsarChain**.
 - `hash160(data: bytes) -> bytes20`  
   RIPEMD160(SHA256(data)).
 
+- `merkle_root(txids: Iterable[bytes32]) -> bytes32`  
+  Double-SHA256 Merkle root over 32-byte leaves. For odd nodes, the last hash is duplicated (Bitcoin-style).
+
+- `sighash_bip143(tx_bytes: bytes, input_index: int, script_code: bytes, value_sat: int, sighash_type: int) -> bytes32`  
+  Native **BIP143** preimage + SHA256d for **`SIGHASH_ALL`**. Other sighash types return `ValueError` so the caller can handle fallbacks if ever needed.
+
 - `secp_verify_der_low_s(pubkey: bytes, digest32: bytes, der_sig: bytes) -> bool`  
-  Strict DER parse; rejects **high-S** signatures (normalized-s must match original). Accepts 33B/65B pubkeys and 64B raw `x||y` (treated as uncompressed).
+  Strict DER parse + low-S enforcement (mirrors mempool policy). Accepts 33/65-byte SEC pubkeys or 64-byte raw `x||y`.
 
 - `secp_verify_der_low_s_many(triples: Sequence[tuple[pubkey, digest32, der_sig]], enforce_low_s: bool = True, parallel: bool = False) -> list[bool]`  
   Batch verify. If built with feature `parallel`, set `parallel=True` to use Rayon.
 
-- `sighash_bip143(tx_bytes: bytes, input_index: int, script_code: bytes, value_sat: int, sighash_type: int) -> bytes32`  
-  Native **BIP143** preimage + SHA256d for **`SIGHASH_ALL` only**. Other sighash types raise `ValueError` so your Python shim can fallback.
+- `validate_block_txs_native(block: Mapping, utxo_snapshot: Mapping, spend_height: int, opts: Mapping) -> tuple[bool, str|None, list[int]|None]`  
+  Full block-level transaction validation (sigops, coinbase rules, witness verification, fee projection, etc.). Returns `(ok, reason, fees)` where `fees` is per-non-coinbase once `ok` is `True`.
 
-- `merkle_root(txids: Iterable[bytes32]) -> bytes32`  
-  Double-SHA256 Merkle root over 32‑byte leaves. For odd nodes, the last hash is duplicated (Bitcoin-style).
+- `set_py_logger(callable)`  
+  Optional hook so Rust logs can piggyback on TsarChain’s logger.
 
-> Endianness note: pass **little‑endian txids** if you want a Bitcoin‑compatible block header merkle root.
+> Endianness note: pass **little-endian txids** to `merkle_root` if you want a Bitcoin-compatible block header merkle root.
 
 ## Build & install
 
@@ -56,6 +62,18 @@ ok = tc.secp_verify_der_low_s(pk, d32, sig)
 # Batch verify (optional parallel)
 pairs = [(pk, d32, sig)]
 results = tc.secp_verify_der_low_s_many(pairs, enforce_low_s=True, parallel=False)
+
+# Block validation (simplified)
+block_dict = {...}      # block.to_dict()
+utxo_snapshot = {...}   # { "txid:vout": {"amount":..., "script_pubkey":..., ...}, ... }
+opts = {
+    "coinbase_maturity": 10,
+    "max_sigops_per_tx": 6000,
+    "max_sigops_per_block": 40000,
+    "enforce_low_s": True,
+}
+ok, reason, fees = tc.validate_block_txs_native(block_dict, utxo_snapshot, block_dict["height"], opts)
+assert ok, reason
 ```
 
 ## Safety notes

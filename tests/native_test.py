@@ -8,7 +8,6 @@ import secrets
 import argparse
 from typing import List, Tuple
 
-import pytest
 import tsarchain.utils.helpers as H
 from ecdsa import SigningKey, VerifyingKey, SECP256k1, util as ecdsa_util
 from tsarchain.core.block import Block
@@ -68,27 +67,15 @@ def _make_high_s_from_low_der(der_low: bytes) -> bytes:
 def _vk_bytes_uncompressed(vk: VerifyingKey) -> bytes:
     return b"\x04" + vk.to_string()
 
-def _vk_bytes_raw64(vk: VerifyingKey) -> bytes:
-    return vk.to_string()  # X||Y (64B)
+HASH256_ABC = bytes.fromhex("4f8b42c22dd3729b519ba6f68d2da7cc5b2d606d05daed5ad5128cc03e6c6358")
+HASH160_ABC = bytes.fromhex("bb1be98c142444d7a56aa3981c3942a978e4dc33")
 
+MERKLE_SAMPLE_TXIDS = [bytes([i]) * 32 for i in range(3)]
+MERKLE_SAMPLE_ROOT = bytes.fromhex("d6384640762f797ede7e7f13839222f9452272809932cc6089f701331df4552d")
 
-# -----------------------------
-# Merkle variants (for diagnosis)
-# -----------------------------
-
-def _py_merkle(txids: List[bytes]) -> bytes:
-    return H._py_merkle_root(txids)
-
-def _py_merkle_rev_leaves(txids: List[bytes]) -> bytes:
-    tx = [t[::-1] for t in txids]
-    return H._py_merkle_root(tx)
-
-def _py_merkle_rev_final(txids: List[bytes]) -> bytes:
-    return H._py_merkle_root(txids)[::-1]
-
-def _py_merkle_rev_both(txids: List[bytes]) -> bytes:
-    return H._py_merkle_root([t[::-1] for t in txids])[::-1]
-
+BIP143_PREV_TXID = bytes.fromhex("11" * 32)
+BIP143_SCRIPT_CODE = b"\x76\xa9\x14" + bytes.fromhex("44" * 20) + b"\x88\xac"
+BIP143_EXPECTED_DIGEST = bytes.fromhex("ad701ad662d18e8ee1324071611ed61e4391d1dfb5596a8a86aecbf8e93ed924")
 
 # -----------------------------
 # Native block validation helpers/tests
@@ -130,9 +117,12 @@ def _build_p2wpkh_block():
         reward=reward + fee,
         height=1,
     )
+    prev_hash = CFG.ZERO_HASH
+    if isinstance(prev_hash, str):
+        prev_hash = bytes.fromhex(prev_hash)
     block = Block(
         height=1,
-        prev_block_hash=bytes.fromhex(CFG.ZERO_HASH),
+        prev_block_hash=prev_hash,
         transactions=[coinbase, spend_tx],
         bits=CFG.INITIAL_BITS,
         timestamp=int(time.time()),
@@ -149,16 +139,17 @@ def _build_p2wpkh_block():
     }
     return block, snapshot, spend_tx, fee
 
-
-@pytest.mark.skipif(not H.native_block_validator_available(), reason="native validator unavailable")
-def test_native_block_validator_accepts_valid_block():
-    block, snapshot, _, fee = _build_p2wpkh_block()
-    opts = {
+def _native_opts():
+    return {
         "coinbase_maturity": int(CFG.COINBASE_MATURITY),
         "max_sigops_per_tx": int(CFG.MAX_SIGOPS_PER_TX),
         "max_sigops_per_block": int(CFG.MAX_SIGOPS_PER_BLOCK),
         "enforce_low_s": True,
     }
+
+def test_native_block_validator_accepts_valid_block():
+    block, snapshot, _, fee = _build_p2wpkh_block()
+    opts = _native_opts()
     ok, reason, fees = H.native_validate_block_txs(
         block.to_dict(),
         snapshot,
@@ -169,17 +160,11 @@ def test_native_block_validator_accepts_valid_block():
     assert fees == [fee], "fee projection mismatch"
 
 
-@pytest.mark.skipif(not H.native_block_validator_available(), reason="native validator unavailable")
 def test_native_block_validator_detects_invalid_witness():
     block, snapshot, spend_tx, _ = _build_p2wpkh_block()
     # Corrupt witness pubkey so hash mismatch occurs
     spend_tx.inputs[0].witness[1] = b"\x02" + b"\x01" * 32
-    opts = {
-        "coinbase_maturity": int(CFG.COINBASE_MATURITY),
-        "max_sigops_per_tx": int(CFG.MAX_SIGOPS_PER_TX),
-        "max_sigops_per_block": int(CFG.MAX_SIGOPS_PER_BLOCK),
-        "enforce_low_s": True,
-    }
+    opts = _native_opts()
     ok, reason, _ = H.native_validate_block_txs(
         block.to_dict(),
         snapshot,
@@ -188,6 +173,61 @@ def test_native_block_validator_detects_invalid_witness():
     )
     assert not ok, "tampered witness should fail native validation"
     assert reason, "failure should include reason"
+
+
+def test_native_block_validator_detects_immature_coinbase():
+    block, snapshot, _, _ = _build_p2wpkh_block()
+    entry = next(iter(snapshot.values()))
+    entry["is_coinbase"] = True
+    entry["block_height"] = block.height
+    ok, reason, _ = H.native_validate_block_txs(
+        block.to_dict(),
+        snapshot,
+        block.height,
+        _native_opts(),
+    )
+    assert not ok, "immature coinbase spend must be rejected"
+    assert isinstance(reason, str) and reason.startswith("coinbase_immature"), f"unexpected reason: {reason}"
+
+
+def test_native_block_validator_requires_witness():
+    block, snapshot, spend_tx, _ = _build_p2wpkh_block()
+    spend_tx.inputs[0].witness = []
+    ok, reason, _ = H.native_validate_block_txs(
+        block.to_dict(),
+        snapshot,
+        block.height,
+        _native_opts(),
+    )
+    assert not ok
+    assert reason == "missing_witness"
+
+
+def test_native_block_validator_rejects_unsupported_script():
+    block, snapshot, _, _ = _build_p2wpkh_block()
+    entry = next(iter(snapshot.values()))
+    entry["tx_out"]["script_pubkey"] = ("76a914" + "11" * 20 + "88ac").lower()
+    ok, reason, _ = H.native_validate_block_txs(
+        block.to_dict(),
+        snapshot,
+        block.height,
+        _native_opts(),
+    )
+    assert not ok
+    assert reason == "unsupported_script"
+
+
+def run_block_validation_checks():
+    scenarios = [
+        ("valid block", test_native_block_validator_accepts_valid_block),
+        ("invalid witness", test_native_block_validator_detects_invalid_witness),
+        ("immature coinbase", test_native_block_validator_detects_immature_coinbase),
+        ("missing witness", test_native_block_validator_requires_witness),
+        ("unsupported script", test_native_block_validator_rejects_unsupported_script),
+    ]
+    for label, fn in scenarios:
+        fn()
+        print(f"[block] {label}: ok")
 
 
 # -----------------------------
@@ -249,11 +289,7 @@ def bench_verify_batch(num_keys: int, iters: int) -> float:
         der = _make_low_s_der(sk, d)
         vecs.append((vk, d, der))
 
-    if getattr(H, "_HAVE_NATIVE", False):
-        items = [(_vk_bytes_uncompressed(vk), d, der) for (vk, d, der) in vecs]
-    else:
-        items = [(_vk_bytes_raw64(vk), d, der) for (vk, d, der) in vecs]
-
+    items = [(_vk_bytes_uncompressed(vk), d, der) for (vk, d, der) in vecs]
     singles = [H.verify_der_strict_low_s(vk, d, der) for (vk, d, der) in vecs]
     batch_once = H.batch_verify_der_low_s(items, enforce_low_s=True, parallel=True)
     assert list(map(bool, batch_once)) == list(map(bool, singles)), "batch != single result"
@@ -277,12 +313,12 @@ def bench_hashes(total_bytes: int = 2_000_000) -> Tuple[float, float]:
 
     t0 = time.perf_counter()
     for b in blobs:
-        _ = H.hash256_native(b)
+        _ = H.hash256(b)
     dt256 = time.perf_counter() - t0
 
     t0 = time.perf_counter()
     for b in blobs:
-        _ = H.hash160_native(b)
+        _ = H.hash160(b)
     dt160 = time.perf_counter() - t0
 
     return dt256, dt160
@@ -292,77 +328,16 @@ def bench_hashes(total_bytes: int = 2_000_000) -> Tuple[float, float]:
 # Correctness tests
 # -----------------------------
 
-def check_hash_parity(samples: int = 200):
-    for _ in range(samples):
-        b = secrets.token_bytes(secrets.randbelow(512) + 1)
-        assert H.hash256_native(b) == H.hash256(b)
-        assert H.hash160_native(b) == H.hash160(b)
+def check_hash_vectors():
+    assert H.hash256(b"abc") == HASH256_ABC
+    assert H.hash160(b"abc") == HASH160_ABC
 
-def diagnose_merkle_diff(txids: List[bytes], r_native: bytes, r_py: bytes, show_debug=False) -> str:
-    cand1 = _py_merkle_rev_leaves(txids)
-    cand2 = _py_merkle_rev_final(txids)
-    cand3 = _py_merkle_rev_both(txids)
-
-    if r_native == cand1:
-        tag = "leaves_reversed"
-    elif r_native == cand2:
-        tag = "final_reversed"
-    elif r_native == cand3:
-        tag = "both_reversed"
-    else:
-        tag = "unknown"
-
-    if show_debug:
-        print("  > py      :", hx(r_py))
-        print("  > native  :", hx(r_native))
-        print("  > cand1(L):", hx(cand1), "== native?", cand1 == r_native)
-        print("  > cand2(F):", hx(cand2), "== native?", cand2 == r_native)
-        print("  > cand3(LF):", hx(cand3), "== native?", cand3 == r_native)
-        print("  > sample leaves:", hx(txids[0]), hx(txids[-1]))
-    return tag
-
-def check_merkle_parity(strict: bool = False, show_debug: bool = False):
-    mismatches = []
-    for n in (1, 2, 3, 8, 17, 32):
-        txids = [secrets.token_bytes(32) for _ in range(n)]
-        r_native = H.merkle_root(txids)
-        r_py = H._py_merkle_root(txids)
-
-        ok_types = (
-            isinstance(r_native, (bytes, bytearray)) and len(r_native) == 32,
-            isinstance(r_py, (bytes, bytearray)) and len(r_py) == 32,
-        )
-        if not all(ok_types):
-            raise AssertionError("Merkle root must be 32 bytes on both paths")
-
-        if r_native != r_py:
-            tag = diagnose_merkle_diff(txids, r_native, r_py, show_debug=show_debug)
-            mismatches.append((n, tag, r_native, r_py))
-
-    # empty set semantics
-    empty_native = H.merkle_root([])
-    ok_empty_form = isinstance(empty_native, (bytes, bytearray)) and len(empty_native) == 32 and set(empty_native) <= {0}
-    assert ok_empty_form, "merkle([]) must be 32 zero bytes on native path"
-    empty_py = H._py_merkle_root([])
-    if not (isinstance(empty_py, (bytes, bytearray)) and len(empty_py) == 32):
-        print("[warn] _py_merkle_root([]) bukan 32-byte; pertimbangkan samakan perilaku dengan native")
-
-    if mismatches:
-        print("\n[merkle] parity: MISMATCHES detected")
-        buckets = {}
-        for n, tag, _, _ in mismatches:
-            buckets.setdefault(tag, []).append(n)
-        for tag, sizes in buckets.items():
-            print(f"  - case={tag:>14}  sizes={sizes}")
-        if strict:
-            # tampilkan contoh satu mismatch sebelum fail
-            n, tag, r_native, r_py = mismatches[0]
-            print(f"  example mismatch (n={n}, case={tag}):")
-            print("    py     :", hx(r_py))
-            print("    native :", hx(r_native))
-            raise AssertionError("native vs python merkle mismatch (strict mode)")
-    else:
-        print("[ok] merkle parity (all tested sizes)")
+def check_merkle_vector():
+    root = H.merkle_root(MERKLE_SAMPLE_TXIDS)
+    assert isinstance(root, (bytes, bytearray)) and len(root) == 32
+    assert root == MERKLE_SAMPLE_ROOT
+    empty_root = H.merkle_root([])
+    assert isinstance(empty_root, (bytes, bytearray)) and len(empty_root) == 32 and set(empty_root) <= {0}
 
 def check_verify_low_s():
     sk = SigningKey.generate(curve=SECP256k1)
@@ -371,9 +346,7 @@ def check_verify_low_s():
     der_low = _make_low_s_der(sk, d)
     der_high = _make_high_s_from_low_der(der_low)
     assert H.verify_der_strict_low_s(vk, d, der_low) is True
-    assert H._py_verify_der_strict_low_s(vk, d, der_low) is True
     assert H.verify_der_strict_low_s(vk, d, der_high) is False
-    assert H._py_verify_der_strict_low_s(vk, d, der_high) is False
 
 def check_batch_matches_single(num: int = 64):
     vecs = []
@@ -386,11 +359,7 @@ def check_batch_matches_single(num: int = 64):
 
     singles = [H.verify_der_strict_low_s(vk, d, der) for (vk, d, der) in vecs]
 
-    if getattr(H, "_HAVE_NATIVE", False):
-        items = [(_vk_bytes_uncompressed(vk), d, der) for (vk, d, der) in vecs]
-    else:
-        items = [(_vk_bytes_raw64(vk), d, der) for (vk, d, der) in vecs]
-
+    items = [(_vk_bytes_uncompressed(vk), d, der) for (vk, d, der) in vecs]
     batch = H.batch_verify_der_low_s(items, enforce_low_s=True, parallel=True)
     assert list(map(bool, batch)) == list(map(bool, singles)), "batch != single result"
 
@@ -420,20 +389,17 @@ class _Tx:
         self.outputs = outputs
         self.locktime = int(locktime)
 
-def check_bip143_parity():
-    prev_txid = secrets.token_bytes(32)
-    inp = _TxIn(txid=prev_txid, vout=1, script_sig=_RawScript(b""))
-    spk1 = _RawScript(b"\x00\x14" + secrets.token_bytes(20))
-    spk2 = _RawScript(b"\x00\x14" + secrets.token_bytes(20))
+def check_bip143_vector():
+    inp = _TxIn(txid=BIP143_PREV_TXID, vout=1, script_sig=_RawScript(b""))
+    spk1 = _RawScript(b"\x00\x14" + bytes.fromhex("22" * 20))
+    spk2 = _RawScript(b"\x00\x14" + bytes.fromhex("33" * 20))
     out1 = _TxOut(50_000, spk1)
     out2 = _TxOut(30_000, spk2)
     tx = _Tx(version=2, inputs=[inp], outputs=[out1, out2], locktime=0)
 
-    script_code = b"\x76\xa9\x14" + b"\x11"*20 + b"\x88\xac"
-    digest_native = H.bip143_sig_hash(tx, 0, script_code, value=50_000, sighash=H.SIGHASH_ALL)
-    digest_py = H._py_bip143_sig_hash(tx, 0, script_code, value=50_000, sighash=H.SIGHASH_ALL)
+    digest_native = H.bip143_sig_hash(tx, 0, BIP143_SCRIPT_CODE, value=50_000, sighash=H.SIGHASH_ALL)
     assert isinstance(digest_native, (bytes, bytearray)) and len(digest_native) == 32
-    assert digest_native == digest_py, "BIP143 digest mismatch (native vs python)"
+    assert digest_native == BIP143_EXPECTED_DIGEST, "BIP143 digest mismatch vs known vector"
 
 
 # -----------------------------
@@ -452,24 +418,22 @@ def main():
     ap.add_argument("--hash-total", type=int, default=1_500_000, help="total bytes for hash benches")
     ap.add_argument("--no-bench-batch", action="store_true")
     ap.add_argument("--no-bench-hash", action="store_true")
-    ap.add_argument("--strict-merkle", action="store_true", help="fail jika merkle mismatch")
-    ap.add_argument("--show-merkle-debug", action="store_true", help="tampilkan detail diagnosis merkle")
     args = ap.parse_args()
 
-    print(f"native loaded? {getattr(H, '_HAVE_NATIVE', False)}  reason={getattr(H, '_native_reason', '?')}")
+    print("Native backend is mandatory; helpers module imported tsarcore_native successfully.")
     print("Functions available:", [x for x in (
         "count_sigops_in_script", "bip143_sig_hash",
         "verify_der_strict_low_s", "merkle_root",
-        "hash256_native", "hash160_native", "batch_verify_der_low_s"
+        "hash256", "hash160", "batch_verify_der_low_s"
     ) if hasattr(H, x)])
 
     # -------- correctness --------
     print("\n== correctness checks ==")
-    check_hash_parity()
-    print("[ok] hash256/hash160 parity")
+    check_hash_vectors()
+    print("[ok] hash256/hash160 vectors")
 
-    check_merkle_parity(strict=args.strict_merkle, show_debug=args.show_merkle_debug)
-    print("[note] merkle parity check finished")
+    check_merkle_vector()
+    print("[ok] merkle root deterministic vector")
 
     check_verify_low_s()
     print("[ok] verify_der_strict_low_s (low-S true, high-S false)")
@@ -477,8 +441,11 @@ def main():
     check_batch_matches_single()
     print("[ok] batch_verify_der_low_s == single verify")
 
-    check_bip143_parity()
-    print("[ok] bip143_sig_hash parity (SIGHASH_ALL)")
+    check_bip143_vector()
+    print("[ok] bip143_sig_hash known vector (SIGHASH_ALL)")
+
+    print("\n== native block validation ==")
+    run_block_validation_checks()
 
     # -------- microbenches --------
     print("\n== microbench ==")
@@ -502,8 +469,8 @@ def main():
 
     if not args.no_bench_hash:
         dt256, dt160 = bench_hashes(args.hash_total)
-        print(f"[hash256_native] {human(args.hash_total)}B in {dt256:.3f}s")
-        print(f"[hash160_native] {human(args.hash_total)}B in {dt160:.3f}s")
+        print(f"[hash256] {human(args.hash_total)}B in {dt256:.3f}s")
+        print(f"[hash160] {human(args.hash_total)}B in {dt160:.3f}s")
 
 
 if __name__ == "__main__":

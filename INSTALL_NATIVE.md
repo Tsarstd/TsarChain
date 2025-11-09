@@ -1,21 +1,19 @@
 # Install `tsarcore_native` (Rust Native Acceleration)
 
 `tsarcore_native` is the Rust + PyO3 native acceleration module for **TsarChain**.
-When available, TsarChain will automatically use native paths for performance‑critical routines
-(sigops counting, ECDSA verify (low‑S) incl. batch, BIP143 sighash, hashing, etc.).
-If the module is missing or fails to import, TsarChain **gracefully falls back to pure‑Python**.
-
-> **Native toggle:** configure in `src/tsarchain/utils/config.py` → `NATIVE = 1` (prefer native),
-> set `NATIVE = 0` to force pure‑Python.
+TsarChain now **requires** this module: all consensus-critical routines (sigops counting,
+ECDSA verify (low-S) incl. batch, BIP143 sighash, hashing, block validation, etc.) call the
+Rust bindings directly. If the module is missing or fails to import, TsarChain will raise
+at startup—there is no longer a Python fallback or runtime toggle.
 
 ---
 
-## ⚠️ Consensus Note: Merkle Root is Locked to Python
+## ⚠️ Consensus Note: Single Native Path
 
-For deterministic consensus across platforms/architectures, the **`merkle_root` used by consensus
-is locked to the Python implementation**. The native Merkle function may exist for diagnostics, but
-block/tx consensus calculation *always* calls the Python version. See the binding comment in
-`helpers.py` (look for the wrapper that returns the Python `_py_merkle_root`).
+For deterministic consensus across platforms/architectures, every node now runs the exact same
+Rust implementation shipped in `tsarcore_native` for operations such as `merkle_root`,
+`sighash_bip143`, sigops counting, and block validation. The historical Python implementations have
+been removed to avoid divergence, so keeping the native library installed is mandatory.
 
 ---
 
@@ -103,16 +101,11 @@ maturin build --release --features parallel
 
 ---
 
-## 3) Enable Native in TsarChain
+## 3) Integrate with TsarChain
 
-Set the toggle in config:
-
-```python
-# src/tsarchain/utils/config.py
-NATIVE = 1  # 1 = prefer Rust acceleration, 0 = force pure‑Python
-```
-
-On import, TsarChain tries `import tsarcore_native`; if it fails, it auto‑fallbacks to Python.
+Install `tsarcore_native` inside the same environment that runs TsarChain. On startup the code
+imports the module and will abort with a descriptive error if the binding is unavailable. Nothing
+else needs to be toggled in `config.py`.
 
 ---
 
@@ -131,41 +124,65 @@ print("OK")
 PY
 ```
 
-> Remember: for **consensus**, Merkle root remains Python‑only (see section above).
-
----
-
 ## 5) How to Test with `native_test.py`
 
-`native_test.py` performs **correctness parity** checks (Python vs Native where applicable) and **micro‑benchmarks**.
+`tests/native_test.py` is the all-in-one harness for the Rust bindings. It now runs **only native paths** and checks:
 
-What it covers:
-- Parity: `hash256/hash160`, ECDSA verify (strict DER + low‑S), **BIP143 SIGHASH_ALL**,
-  and diagnostic **Merkle** comparisons (for debugging only — consensus still uses Python).
-- Micro‑benchmarks: sigops counting, Merkle tree building, ECDSA single verify, ECDSA batch verify, and hashing.
+- Deterministic vectors for `hash256`, `hash160`, `merkle_root`, `bip143_sig_hash`, strict DER low-S verification (single + batch).
+- Native block validation via `validate_block_txs_native` (happy-path block + common failure reasons: witness tamper, immature coinbase, missing witness, unsupported script).
+- Micro-benchmarks for sigops counting, merkle building, single/batch ECDSA verify, and hashing.
 
 ### Run with defaults
 
 ```bash
-# from repo root, in the project venv
-python native_test.py
+# from repo root, inside your project venv
+python tests/native_test.py
 ```
 
-### Useful CLI options
+Useful knobs (keep or drop as needed):
 
 ```bash
-python native_test.py   --sigops-iters 250000   --merkle-n 1000 --merkle-reps 200   --ecdsa-keys 200 --ecdsa-iters 5000   --batch-keys 256 --batch-iters 2048   --hash-total 1500000   --strict-merkle \            # fail the run if any merkle mismatch
-  --show-merkle-debug \        # print diagnostic details for merkle differences
-  --no-bench-batch \           # skip batch verify benchmark
-  --no-bench-hash              # skip hashing benchmarks
+python tests/native_test.py \
+  --sigops-iters 250000 \
+  --merkle-n 1000 --merkle-reps 200 \
+  --ecdsa-keys 200 --ecdsa-iters 5000 \
+  --batch-keys 256 --batch-iters 2048 \
+  --hash-total 1500000 \
+  --no-bench-batch --no-bench-hash   # skip heavy benches if you only need correctness
 ```
 
-**Expected output (high‑level):**
-- A header line stating whether native loaded (`True/False`) and why.
-- `== correctness ==` section showing OK/mismatch per component (with details when mismatched).
-- `== microbench ==` section with throughputs (ops/s, trees/s, verif/s).
+### Sample output
 
-If `--strict-merkle` is set and a mismatch is detected, the script **raises** after printing a minimal repro.
+When everything is installed correctly you should see something like:
+
+```
+Native backend is mandatory; helpers module imported tsarcore_native successfully.
+Functions available: ['count_sigops_in_script', 'bip143_sig_hash', 'verify_der_strict_low_s', 'merkle_root', 'hash256', 'hash160', 'batch_verify_der_low_s']
+
+== correctness checks ==
+[ok] hash256/hash160 vectors
+[ok] merkle root deterministic vector
+[ok] verify_der_strict_low_s (low-S true, high-S false)
+[ok] batch_verify_der_low_s == single verify
+[ok] bip143_sig_hash known vector (SIGHASH_ALL)
+
+== native block validation ==
+[block] valid block: ok
+[block] invalid witness: ok
+[block] immature coinbase: ok
+[block] missing witness: ok
+[block] unsupported script: ok
+
+== microbench ==
+[sigops] 250.000 loops in 0.101s -> 2.468.004 ops/s
+[merkle] 200 trees (n=1000) in 0.070s -> 2843.6 trees/s
+[ecdsa-single] 5.000 verifications in 0.245s -> 20.433 verif/s
+[ecdsa-batch] ~2.048 verifications in 0.016s -> ~129.146 verif/s
+[hash256] 1.500.000B in 0.001s
+[hash160] 1.500.000B in 0.001s
+```
+
+Any deviation (e.g., `[block] …` showing a failure reason) means the native validator caught a real issue—fix the underlying data before moving on.
 
 ---
 

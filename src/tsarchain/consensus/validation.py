@@ -11,7 +11,6 @@ from typing import Optional
 
 # ---------------- Local Project ----------------
 from ..core.block import Block
-from ..mempool.pool import TxPoolDB
 from ..storage.utxo import UTXODB
 from ..utils import config as CFG
 from ..utils.helpers import bits_to_target, merkle_root
@@ -52,58 +51,6 @@ class ValidationMixin:
                 log.exception("[_validate_transactions] Cannot load UTXO set")
                 return False
 
-        base_utxos = getattr(store, "utxos", {}) if isinstance(getattr(store, "utxos", {}), dict) else {}
-        nested_cache = None
-
-        def _inject_prevout_from_store(missing_key: str) -> bool:
-            nonlocal nested_cache
-            mk = (missing_key or "").strip()
-            if not mk:
-                return False
-            txid_part, _, idx_part = mk.partition(":")
-            try:
-                idx_int = int(idx_part)
-            except Exception:
-                idx_int = None
-
-            candidates = {
-                mk,
-                mk.lower(),
-                mk.upper(),
-                f"{txid_part.lower()}:{idx_int}" if idx_int is not None else mk.lower(),
-            }
-
-            for key in list(candidates):
-                entry = base_utxos.get(key)
-                if entry is not None:
-                    if idx_int is None:
-                        try:
-                            _, _, idx_str = key.partition(":")
-                            idx_int_candidate = int(idx_str)
-                        except Exception:
-                            idx_int_candidate = None
-                    else:
-                        idx_int_candidate = idx_int
-                    if idx_int_candidate is not None:
-                        target_key = f"{txid_part.lower()}:{idx_int_candidate}"
-                        utxo_view[target_key] = deepcopy(entry)
-                        return True
-
-            if nested_cache is None:
-                try:
-                    nested_cache = store.load_utxo_set()
-                except Exception:
-                    nested_cache = {}
-
-            if isinstance(nested_cache, dict) and idx_int is not None:
-                for cand_txid in {txid_part, txid_part.lower(), txid_part.upper()}:
-                    bucket = nested_cache.get(cand_txid)
-                    if isinstance(bucket, dict) and idx_int in bucket:
-                        utxo_view[f"{cand_txid.lower()}:{idx_int}"] = deepcopy(bucket[idx_int])
-                        return True
-            return False
-
-        pool = TxPoolDB(utxo_store=self._ensure_utxodb())
         self._last_block_validation_error = "validation_failed"
         txs = getattr(block, "transactions", [])
         if not txs:
@@ -137,36 +84,6 @@ class ValidationMixin:
         else:
             utxo_view = {}
 
-        def _remove_prevout(txid_hex: str, index: int):
-            flat = f"{txid_hex}:{index}"
-            utxo_view.pop(flat, None)
-            utxo_view.pop(flat.lower(), None)
-            utxo_view.pop(flat.upper(), None)
-            utxo_view.pop((txid_hex, index), None)
-            try:
-                txid_bytes = bytes.fromhex(txid_hex)
-                utxo_view.pop((txid_bytes, index), None)
-            except Exception:
-                pass
-
-        def _add_output(txid_hex: str, index: int, tx_out) -> None:
-            try:
-                spk_bytes = tx_out.script_pubkey.serialize()
-                spk_hex = spk_bytes.hex()
-            except Exception:
-                spk_hex = None
-            entry = {
-                "tx_out": {
-                    "amount": int(getattr(tx_out, "amount", 0) or 0),
-                    "script_pubkey": spk_hex,
-                },
-                "amount": int(getattr(tx_out, "amount", 0) or 0),
-                "script_pubkey": spk_hex,
-                "is_coinbase": False,
-                "block_height": int(getattr(block, "height", 0)),
-            }
-            utxo_view[f"{txid_hex}:{index}"] = entry
-
         spend_height = int(getattr(block, "height", 0))
 
         def _script_to_hex(spk_obj):
@@ -193,136 +110,70 @@ class ValidationMixin:
                     return None
             return None
 
-        if CFG.NATIVE and H.native_block_validator_available():
-            try:
-                snapshot = {}
-                for key, entry in utxo_view.items():
-                    k = str(key).lower()
-                    if not isinstance(entry, dict):
-                        log.debug("[native_snapshot] drop entry %s: not dict (type=%s)", key, type(entry).__name__)
-                        snapshot = None
-                        break
-                    candidate = entry
-                    tx_out = candidate.get("tx_out")
-                    if tx_out is None:
-                        tx_out = candidate
-                    script_hex = _script_to_hex(tx_out)
-                    if script_hex is None:
-                        script_hex = _script_to_hex(candidate.get("script_pubkey"))
-                    if isinstance(tx_out, dict):
-                        amount_val = tx_out.get("amount")
-                    elif hasattr(tx_out, "amount"):
-                        amount_val = getattr(tx_out, "amount", None)
-                    else:
-                        amount_val = None
-                    if amount_val is None:
-                        amount_val = candidate.get("amount", 0)
-                    if script_hex is None:
-                        snapshot = None
-                        break
-                    try:
-                        amt = int(amount_val)
-                    except Exception:
-                        log.debug("[native_snapshot] entry %s amount invalid (%s)", k, amount_val)
-                        snapshot = None
-                        break
-                    snapshot[k] = {
-                        "amount": amt,
-                        "script_pubkey": script_hex,
-                        "is_coinbase": bool(candidate.get("is_coinbase", False)),
-                        "block_height": int(candidate.get("block_height", 0)),
-                    }
-                if snapshot and txs:
-                    opts = {
-                        "coinbase_maturity": int(CFG.COINBASE_MATURITY),
-                        "max_sigops_per_tx": int(CFG.MAX_SIGOPS_PER_TX),
-                        "max_sigops_per_block": int(CFG.MAX_SIGOPS_PER_BLOCK),
-                        "enforce_low_s": True,
-                    }
-                    try:
-                        ok, reason, fees = H.native_validate_block_txs(
-                            block.to_dict(),
-                            snapshot,
-                            spend_height,
-                            opts,
-                        )
-                    except Exception:
-                        log.exception("[_validate_transactions] Native block validator failed")
-                    else:
-                        if ok:
-                            if isinstance(fees, (list, tuple)):
-                                for tx_obj, fee_val in zip(txs[1:], fees):
-                                    try:
-                                        tx_obj.fee = int(fee_val)
-                                    except Exception:
-                                        setattr(tx_obj, "fee", int(fee_val))
-                            self._last_block_validation_error = None
-                            return True
-                        elif isinstance(reason, str) and reason == "unsupported_script":
-                            log.debug("[native_snapshot] fallback (unsupported script) height=%s", spend_height)
-                        elif reason:
-                            self._last_block_validation_error = reason
-                            return False
-                        else:
-                            self._last_block_validation_error = "native_validation_failed"
-                            return False
-            except Exception:
-                log.exception("[_validate_transactions] Failed preparing native snapshot")
-
-        for tx in txs[1:]:
-            try:
-                txid_hex = tx.txid.hex() if isinstance(tx.txid, (bytes, bytearray)) else str(tx.txid)
-            except Exception:
-                txid_hex = None
-
-            if not pool.validate_transaction(tx, utxo_view, spend_at_height=spend_height):
-                reason = pool.last_error_reason or "tx_validation_failed"
-                injected = False
-                if isinstance(reason, str) and reason.startswith("prevout_missing "):
-                    missing_key = reason.split(" ", 1)[1].strip()
-                    try:
-                        txid_part, _, idx_part = missing_key.partition(":")
-                        short_tx = txid_part[:8] + ".." + txid_part[-8:] if len(txid_part) > 16 else txid_part
-                        log.warning(
-                            "[_validate_transactions] Block %s missing prevout %s:%s (tx %s)",
-                            getattr(block, "height", "?"),
-                            short_tx,
-                            idx_part or "?",
-                            (txid_hex[:8] + ".." + txid_hex[-8:]) if txid_hex else "unknown",
-                        )
-                    except Exception:
-                        pass
-                    injected = _inject_prevout_from_store(missing_key)
-                    if injected and pool.validate_transaction(tx, utxo_view, spend_at_height=spend_height):
-                        reason = None
-
-                if reason:
-                    if txid_hex:
-                        self._last_block_validation_error = f"{reason} tx={txid_hex}"
-                    else:
-                        self._last_block_validation_error = reason
-                    try:
-                        log.warning("[_validate_transactions] Reject tx in block %s injected=%s", self._last_block_validation_error, injected)
-                    except Exception:
-                        pass
-                    return False
-
-            if not txid_hex:
-                self._last_block_validation_error = "tx_missing_txid"
+        snapshot = {}
+        for key, entry in utxo_view.items():
+            k = str(key).lower()
+            if not isinstance(entry, dict):
+                log.debug("[native_snapshot] drop entry %s: not dict (type=%s)", key, type(entry).__name__)
+                self._last_block_validation_error = "native_snapshot_invalid_entry"
                 return False
+            
+            candidate = entry
+            tx_out = candidate.get("tx_out") or candidate
+            script_hex = _script_to_hex(tx_out) or _script_to_hex(candidate.get("script_pubkey"))
+            if script_hex is None:
+                log.debug("[native_snapshot] entry %s missing script", k)
+                self._last_block_validation_error = "native_snapshot_missing_script"
+                return False
+            
+            if isinstance(tx_out, dict):
+                amount_val = tx_out.get("amount")
+            elif hasattr(tx_out, "amount"):
+                amount_val = getattr(tx_out, "amount", None)
+            else:
+                amount_val = candidate.get("amount")
+            try:
+                amt = int(amount_val if amount_val is not None else 0)
+            except Exception:
+                log.debug("[native_snapshot] entry %s amount invalid (%s)", k, amount_val)
+                self._last_block_validation_error = "native_snapshot_invalid_amount"
+                return False
+            
+            snapshot[k] = {
+                "amount": amt,
+                "script_pubkey": script_hex,
+                "is_coinbase": bool(candidate.get("is_coinbase", False)),
+                "block_height": int(candidate.get("block_height", 0)),
+            }
 
-            for txin in getattr(tx, "inputs", []):
+        opts = {
+            "coinbase_maturity": int(CFG.COINBASE_MATURITY),
+            "max_sigops_per_tx": int(CFG.MAX_SIGOPS_PER_TX),
+            "max_sigops_per_block": int(CFG.MAX_SIGOPS_PER_BLOCK),
+            "enforce_low_s": True,
+        }
+        try:
+            ok, reason, fees = H.native_validate_block_txs(
+                block.to_dict(),
+                snapshot,
+                spend_height,
+                opts,
+            )
+        except Exception:
+            log.exception("[_validate_transactions] Native block validator failed")
+            self._last_block_validation_error = "native_validation_failed"
+            return False
+
+        if not ok:
+            self._last_block_validation_error = reason or "native_validation_failed"
+            return False
+
+        if isinstance(fees, (list, tuple)):
+            for tx_obj, fee_val in zip(txs[1:], fees):
                 try:
-                    prev_hex = txin.txid.hex() if isinstance(txin.txid, (bytes, bytearray)) else str(txin.txid)
+                    tx_obj.fee = int(fee_val)
                 except Exception:
-                    prev_hex = None
-                if prev_hex is None:
-                    self._last_block_validation_error = "tx_input_missing_txid"
-                    return False
-                _remove_prevout(prev_hex.lower(), int(getattr(txin, "vout", 0)))
-
-            for idx, tx_out in enumerate(getattr(tx, "outputs", [])):
-                _add_output(txid_hex.lower(), idx, tx_out)
+                    setattr(tx_obj, "fee", int(fee_val))
 
         self._last_block_validation_error = None
         return True

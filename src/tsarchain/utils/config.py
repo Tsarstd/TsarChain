@@ -11,7 +11,7 @@
 The values below **MUST BE IDENTICAL** across all nodes.
 Changing them may cause different block/tx validity (hard fork) unless otherwise stated.
 
- 1) GENESIS / CHAIN IDENTITY
+  1) GENESIS / CHAIN IDENTITY
    - GENESIS_HASH_HEX
    - ALLOW_AUTO_GENESIS
    - GENESIS_BLOCK_ID_DEFAULT
@@ -42,7 +42,7 @@ Changing them may cause different block/tx validity (hard fork) unless otherwise
    
  NOT CONSENSUS (safety differs between nodes):
    port/BOOTSTRAP, timeout, connection limit, anti-DoS, logging/path,
-   toggle NATIVE, option UI/wallet.
+   option UI/wallet.
    
  NETWORK ISOLATION (not a fork, but cannot connect to each other):
    - DEFAULT_NET_ID / NET_ID_DEV / NET_ID_PROD, NETWORK_MAGIC
@@ -52,10 +52,6 @@ Changing them may cause different block/tx validity (hard fork) unless otherwise
 
 import os
 import appdirs
-
-# ===== Native toggle (1=ON with Rust .pyd, 0=OFF pure-Python) =====
-NATIVE = 1
-MERKLE_NATIVE = True
 
 # =============================================================================
 # MODE & ENV (Dev/Prod Switch)
@@ -156,8 +152,8 @@ ZERO_HASH       = b"\x00" * 32
 CANONICAL_SEP   = (',', ':')
 
 # === Genesis ===
-ALLOW_AUTO_GENESIS       = 0
-GENESIS_HASH_HEX         = "0000003f9348c7ef1886533c9e0166aeb871d6da72e533b75dda0527f736c24d"
+ALLOW_AUTO_GENESIS       = 0   # Set this with '1' if you want make genesis, set '0' if you done creating genesis block
+GENESIS_HASH_HEX         = "00000097434976000f41af4d492f549160c86485bd06d28609ea9c393ce9f06a"  # input genesis hash after you create the genesis block, after input the hash, you must set 'ALLOW_AUTO_GENESIS' to '0'
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"
 
 # === Voice Sovereignty Figures (ASCII only) ===
@@ -200,7 +196,7 @@ PORT_RANGE_DEV     = (38169, 38178)
 PORT_RANGE_PROD    = (40196, 40205)
 
 BOOTSTRAP_DEV      = (
-    ("31.97.51.207", 38169),
+    ("127.0.0.1", 38169),
 )
 
 BOOTSTRAP_PROD     = (
@@ -428,12 +424,12 @@ LMDB_LOCK_FILE     = os.path.join(DB_DIR, "lock.mdb")
 # Snapshot bootstrap (data.mdb fast-sync)
 SNAPSHOT_REQUIRE_SIGNATURE   = False
 SNAPSHOT_MANIFEST_URL        = ""
-SNAPSHOT_FILE_URL            = "http://31.97.51.207:8080/data.mdb"
+SNAPSHOT_FILE_URL            = ""
 SNAPSHOT_PUBKEY_HEX          = ""
 
-SNAPSHOT_BOOTSTRAP_ENABLED   = True
-SNAPSHOT_BOOTSTRAP_FOR_GUI   = True
-SNAPSHOT_BOOTSTRAP_FOR_CLI   = True
+SNAPSHOT_BOOTSTRAP_ENABLED   = False
+SNAPSHOT_BOOTSTRAP_FOR_GUI   = False
+SNAPSHOT_BOOTSTRAP_FOR_CLI   = False
 SNAPSHOT_HTTP_TIMEOUT        = 90
 SNAPSHOT_CHUNK_BYTES         = 2 * 1024 * 1024
 SNAPSHOT_MIN_SIZE_BYTES      = 4 * 1024 * 1024

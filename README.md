@@ -110,7 +110,7 @@ pip install -U pip wheel
 pip install -r requirements.txt
 ```
 
-#### (Optional) Build Native Extension
+#### Build Native Extension
 ```bash
 pip install maturin
 cd tsarcore_native
@@ -122,7 +122,7 @@ maturin develop --release --features parallel
 # -- Run Test --
 python tests/native_test.py
 ```
-> You can Switch python or native acceleration in [`src/tsarchain/utils/config.py`](src/tsarchain/utils/config.py) : set `NATIVE = 0` or `1`.
+> TsarChain always loads the Rust extension; ensure `tsarcore_native` is installed in the active environment.
 
 ---
 

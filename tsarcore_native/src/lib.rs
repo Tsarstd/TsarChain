@@ -188,7 +188,6 @@ fn count_sigops(script: &[u8]) -> PyResult<u32> {
 #[pyfunction]
 fn hash256<'py>(py: Python<'py>, data: &'py [u8]) -> PyResult<Bound<'py, PyBytes>> {
     let h = sha256d(data);
-    log_debug(&format!("hash256: input len={}, output={:x?}", data.len(), h));
     Ok(PyBytes::new_bound(py, &h))
 }
 
@@ -196,7 +195,6 @@ fn hash256<'py>(py: Python<'py>, data: &'py [u8]) -> PyResult<Bound<'py, PyBytes
 fn hash160<'py>(py: Python<'py>, data: &'py [u8]) -> PyResult<Bound<'py, PyBytes>> {
     let sha = Sha256::digest(data);
     let ripe = Ripemd160::digest(&sha);
-    log_debug(&format!("hash160: input len={}, output={:x?}", data.len(), ripe));
     Ok(PyBytes::new_bound(py, &ripe))
 }
 
