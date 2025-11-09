@@ -152,22 +152,53 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             log.exception("[process_message] UTXO DB load error")
 
         opmap = self._build_outpoint_map(chain, mem)
+        pending_out_map: dict[str, int] = {}
+        incoming_map: dict[str, int] = {}
+        try:
+            for tx in mem or []:
+                spent_local: dict[str, int] = {}
+                recv_local: dict[str, int] = {}
+
+                for tin in getattr(tx, "inputs", []) or []:
+                    key = self._txin_prevkey(tin)
+                    amt_owner = opmap.get(key)
+                    if not amt_owner:
+                        continue
+                    amt, owner = amt_owner
+                    if owner and amt:
+                        spent_local[owner] = spent_local.get(owner, 0) + int(amt)
+
+                for o in getattr(tx, "outputs", []) or []:
+                    amt = int(getattr(o, "amount", 0) or 0)
+                    if amt <= 0:
+                        continue
+                    addr_o = self._txout_to_address(o)
+                    if addr_o:
+                        recv_local[addr_o] = recv_local.get(addr_o, 0) + amt
+
+                # Treat change outputs (addr appears on both sides) as neutral.
+                for addr, spent_amt in list(spent_local.items()):
+                    change_amt = min(spent_amt, recv_local.get(addr, 0))
+                    if change_amt > 0:
+                        spent_local[addr] = spent_amt - change_amt
+                        recv_local[addr] = recv_local.get(addr, 0) - change_amt
+
+                for addr, spent_amt in spent_local.items():
+                    if spent_amt > 0:
+                        pending_out_map[addr] = pending_out_map.get(addr, 0) + spent_amt
+                for addr, recv_amt in recv_local.items():
+                    if recv_amt > 0:
+                        incoming_map[addr] = incoming_map.get(addr, 0) + recv_amt
+        except Exception:
+            log.exception("[process_message] pending/incoming map build error")
+
         items = {}
         for addr_str in addrs:
             b = self.broadcast.utxodb.get_balance(addr_str, mode="breakdown", current_height=tip_height)
             if not isinstance(b, dict):
                 b = {"total": int(b or 0), "mature": int(b or 0), "immature": 0}
-            pending_out = 0
-            try:
-                for tx in mem or []:
-                    for tin in getattr(tx, "inputs", []) or []:
-                        key = self._txin_prevkey(tin)
-                        amt, owner = opmap.get(key, (0, ""))
-                        if owner == addr_str and amt:
-                            pending_out += int(amt)
-            except Exception:
-                log.exception("[process_message] pending_out calc error")
-                pass
+            pending_out = int(pending_out_map.get(addr_str, 0))
+            pending_in = int(incoming_map.get(addr_str, 0))
 
             spendable = max(0, int(b.get("mature", 0)) - int(pending_out or 0))
             items[addr_str] = {
@@ -175,6 +206,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
                 "spendable": spendable,
                 "immature": int(b.get("immature", 0)),
                 "pending_outgoing": int(pending_out or 0),
+                "pending_incoming": int(pending_in or 0),
                 "maturity": int(CFG.COINBASE_MATURITY),
             }
         return {"type": "BALANCES", "height": tip_height, "items": items}
@@ -224,6 +256,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
     elif mtype == "GET_NETWORK_INFO":
         try:
             snap = self.broadcast.blockchain._compute_state_snapshot()
+            _overlay_realtime_mempool_stats(snap, self)
             try:
                 with self.lock:
                     peers_sane = [(ip,p) for (ip,p) in self.peers if isinstance(p,int) and p>0]
@@ -961,8 +994,46 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
 
     else:
         return {"error": "Unknown message type"}
+
+    # -------- HELPERS ----------
+def _overlay_realtime_mempool_stats(snapshot: dict, network: "Network") -> None:
+    """Inject live mempool stats into the snapshot returned to clients."""
+    if not isinstance(snapshot, dict):
+        return
+
+    tx_section = snapshot.setdefault("transactions", {})
+    if not isinstance(tx_section, dict):
+        return
+
+    broadcast = getattr(network, "broadcast", None)
+    pool = getattr(broadcast, "mempool", None) if broadcast else None
+    if pool is None:
+        return
+
+    tx_count = None
+    try:
+        store = getattr(pool, "_pool", None)
+        if isinstance(store, dict):
+            tx_count = len(store)
+        else:
+            txs = pool.get_all_txs() or []
+            tx_count = len(txs)
+    except Exception:
+        log.exception("[_overlay_realtime_mempool_stats] Failed to read mempool entries")
+        return
+
+    try:
+        tx_section["mempool_txs"] = int(tx_count)
+    except Exception:
+        tx_section["mempool_txs"] = tx_count
+
+    size_est = getattr(pool, "current_size", None)
+    if size_est is not None:
+        try:
+            tx_section["mempool_vbytes_estimate"] = int(size_est)
+        except Exception:
+            tx_section["mempool_vbytes_estimate"] = size_est
     
-    # -------- helpers: relay ----------
 def _choose_relay_route(self, hops: int = 2) -> list[tuple]:
     try:
         with self.lock:

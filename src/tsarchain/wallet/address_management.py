@@ -441,6 +441,7 @@ class WalletsMixin:
         col_spend = "#098f43"
         col_immat = "#a87625"
         col_pend  = "#aa4e37"
+        col_incoming = "#1a8ac2"
 
         wrap = tk.Frame(parent, bg=self.panel_bg)
         wrap.pack(anchor="w", pady=(2, 4))
@@ -470,6 +471,15 @@ class WalletsMixin:
         pend_lbl.pack(side=tk.LEFT)
         pending_row.pack_forget()
 
+        incoming_row = tk.Frame(wrap, bg=self.panel_bg)
+        incoming_row.pack(anchor="w")
+        tk.Label(incoming_row, text="Incoming", bg=self.panel_bg, fg=self.muted,
+                 font=("Consolas", 9)).pack(side=tk.LEFT, padx=(0, 8))
+        incoming_lbl = tk.Label(incoming_row, text="0 TSAR", bg=self.panel_bg, fg=col_incoming,
+                                font=("Consolas", 11, "bold"))
+        incoming_lbl.pack(side=tk.LEFT)
+        incoming_row.pack_forget()
+
         return {
             "wrap": wrap,
             "total": total_lbl,
@@ -477,6 +487,8 @@ class WalletsMixin:
             "immature": immat_lbl,
             "pending_row": pending_row,
             "pending": pend_lbl,
+            "incoming_row": incoming_row,
+            "incoming": incoming_lbl,
             "hint": maturity_hint,
         }
 
@@ -494,6 +506,7 @@ class WalletsMixin:
                     "spendable": int(d.get("spendable", d.get("confirmed", d.get("mature", d.get("total", 0)))) or 0),
                     "immature": int(d.get("immature", 0) or 0),
                     "pending_outgoing": int(d.get("pending_outgoing", d.get("pending", d.get("unconfirmed", 0))) or 0),
+                    "pending_incoming": int(d.get("pending_incoming", 0) or 0),
                     "maturity": int(d.get("maturity", CFG.COINBASE_MATURITY)),
                 }
             return None
@@ -503,6 +516,7 @@ class WalletsMixin:
             "spendable": int(resp.get("spendable", resp.get("confirmed", resp.get("mature", resp.get("total", 0)))) or 0),
             "immature": int(resp.get("immature", 0) or 0),
             "pending_outgoing": int(resp.get("pending_outgoing", resp.get("pending", resp.get("unconfirmed", 0))) or 0),
+            "pending_incoming": int(resp.get("pending_incoming", 0) or 0),
             "maturity": int(resp.get("maturity", CFG.COINBASE_MATURITY)),
         }
 
@@ -527,6 +541,7 @@ class WalletsMixin:
             tot = int(spnd or 0) + int(imm or 0)
             
         pend = resp.get("pending_outgoing", 0)
+        incoming_amt = resp.get("pending_incoming", 0)
         mat  = resp.get("maturity")
 
         if spnd is None and imm is None:
@@ -575,18 +590,37 @@ class WalletsMixin:
                 except Exception:
                     pass
 
+        if _sat(incoming_amt) > 0:
+            incoming_lbl = bal_labels.get("incoming")
+            incoming_row = bal_labels.get("incoming_row")
+            _safe_config(incoming_lbl, text=sat_to_tsar(_sat(incoming_amt)))
+            if _exists(incoming_row):
+                try:
+                    incoming_row.pack_info()
+                except Exception:
+                    pass
+                incoming_row.pack(anchor="w")
+        else:
+            incoming_row = bal_labels.get("incoming_row")
+            if _exists(incoming_row):
+                try:
+                    incoming_row.pack_forget()
+                except Exception:
+                    pass
+
         try:
             addr = None
             if isinstance(bal_labels, dict):
                 addr = bal_labels.get("_address")
-            if addr:
-                cached = {
-                    "balance": int(_sat(tot)),
-                    "spendable": int(_sat(spnd)),
-                    "immature": int(_sat(imm)),
-                    "pending_outgoing": int(_sat(pend)),
-                    "maturity": int(mat if mat is not None else CFG.COINBASE_MATURITY),
-                    "ts": int(time.time()),}
+                if addr:
+                    cached = {
+                        "balance": int(_sat(tot)),
+                        "spendable": int(_sat(spnd)),
+                        "immature": int(_sat(imm)),
+                        "pending_outgoing": int(_sat(pend)),
+                        "pending_incoming": int(_sat(incoming_amt)),
+                        "maturity": int(mat if mat is not None else CFG.COINBASE_MATURITY),
+                        "ts": int(time.time()),}
                 if not hasattr(self, "_bal_cache"):
                     self._init_balance_cache()
                 self._bal_cache[addr] = cached
@@ -748,6 +782,7 @@ class WalletsMixin:
         spend_sat = resp.get("spendable")
         immat_sat = resp.get("immature")
         pend_out  = resp.get("pending_outgoing", 0)
+        incoming  = resp.get("pending_incoming", 0)
         maturity  = resp.get("maturity")
 
         if spend_sat is None and immat_sat is None:
@@ -760,7 +795,9 @@ class WalletsMixin:
             f"Immature  : {sat_to_tsar(_sat(immat_sat))}{hint}",]
 
         if int(pend_out or 0) > 0:
-            lines.append(f"Pending: {sat_to_tsar(_sat(pend_out))}")
+            lines.append(f"Pending : {sat_to_tsar(_sat(pend_out))}")
+        if int(incoming or 0) > 0:
+            lines.append(f"Incoming: {sat_to_tsar(_sat(incoming))}")
         return "\n".join(lines)
 
     def _reg(self, addr: str) -> None:
@@ -1299,6 +1336,7 @@ class WalletsMixin:
                 "spendable": 0,
                 "immature": 0,
                 "pending_outgoing": 0,
+                "pending_incoming": 0,
                 "maturity": CFG.COINBASE_MATURITY,
             }
 
@@ -1435,6 +1473,7 @@ class WalletsMixin:
                 "spendable": int(d.get("spendable", 0)),
                 "immature": int(d.get("immature", 0)),
                 "pending_outgoing": int(d.get("pending_outgoing", 0)),
+                "pending_incoming": int(d.get("pending_incoming", 0)),
                 "maturity": int(d.get("maturity", d.get("coinbase_maturity", CFG.COINBASE_MATURITY))),
             }
             self._update_balance_block(labels, data)

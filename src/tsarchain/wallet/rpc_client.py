@@ -91,16 +91,27 @@ class NodeClient:
     def scan(self, start: int = CFG.PORT_START, end: int = CFG.PORT_END, manual_nodes: Optional[Sequence[Tuple[str, int]]] = None) -> List[Tuple[str, int]]:
         candidates: List[Tuple[str, int]] = []
 
-        if self.manual_bootstrap:
-            candidates.append(self.manual_bootstrap)
+        def _within_range(port: int) -> bool:
+            try:
+                return start <= int(port) <= end
+            except Exception:
+                return False
+
+        def _append(peer: Optional[Tuple[str, int]]) -> None:
+            if not peer:
+                return
+            ip, port = peer
+            if _within_range(port):
+                candidates.append((ip, int(port)))
+
+        _append(self.manual_bootstrap)
         if manual_nodes:
-            candidates.extend(list(manual_nodes))
-        for port in range(start, end + 1):
-            candidates.append(("127.0.0.1", port))
+            for peer in manual_nodes:
+                _append(peer)
+
         bootstrap_nodes = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
         for peer in bootstrap_nodes:
-            if peer not in candidates:
-                candidates.append(peer)
+            _append(peer)
 
         uniq: List[Tuple[str, int]] = []
         seen = set()

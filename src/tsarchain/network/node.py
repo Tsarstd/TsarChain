@@ -218,16 +218,6 @@ class Network:
     # -------------------------- Server / Accept ---------------------------
 
     def _find_available_port(self) -> Optional[int]:
-        env_p = os.getenv("CFG.TSAR_LISTEN_PORT")
-        if env_p:
-            try:
-                p = int(env_p)
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(1)
-                    s.bind(('0.0.0.0', p))
-                    return p
-            except Exception:
-                pass
         for port in range(CFG.PORT_START, CFG.PORT_END + 1):
             if port in Network.active_ports:
                 continue
@@ -1477,7 +1467,7 @@ class Network:
             except Exception as e:
                 return {"type": "SYNC_REDIRECT", "reason": "serialize_failed", "detail": str(e)}
             
-            hard_cap = min(CFG.FULL_SYNC_MAX_BYTES, CFG.MAX_MSG - len(CFG.NETWORK_MAGIC))
+            hard_cap = min(CFG.MAX_MSG - len(CFG.NETWORK_MAGIC))
             if len(enc) > hard_cap:
                 return {
                     "type": "SYNC_REDIRECT",
