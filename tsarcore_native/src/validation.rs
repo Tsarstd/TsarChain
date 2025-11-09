@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2025 Tsar Studio
+// Part of TsarChain — see LICENSE and TRADEMARKS.md
+// Refs: see REFERENCES.md
+
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyAnyMethods, PyDict, PyDictMethods, PyList, PyListMethods};
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
