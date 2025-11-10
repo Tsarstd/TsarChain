@@ -43,7 +43,7 @@ def _guess_kind(q: str) -> str:
     if q.isdigit() and 1 <= len(q) <= 7:
         return "block_height"
     if re.fullmatch(r"[0-9a-fA-F]{64}", q):
-        return "block_hash" if q.startswith(("0000",)) else "txid_hash"
+        return "block_hash" if q.startswith(("00",)) else "txid_hash"
     return "unknown"
 
 def _fmt_tsar_amount(v: Union[int, str, float, None]) -> str:

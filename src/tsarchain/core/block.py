@@ -204,7 +204,7 @@ class Block:
         total_hps_accum = 0.0
         reports_since_print = 0
         last_total_print = time.time()
-        REPORT_WINDOW = 15.0
+        REPORT_WINDOW = 15
 
         try:
             while True:
@@ -354,6 +354,13 @@ class Block:
             if not stop_event.is_set() and not found_event.is_set():
                 result_queue.put((None, None))
 
+        except KeyboardInterrupt:
+            try:
+                stop_event.set()
+            except Exception:
+                pass
+            return
+        
         except Exception as e:
             try:
                 result_queue.put(('ERR', f"RX-Core {start_nonce % max(1, step)} -> {e!r}"))

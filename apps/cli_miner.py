@@ -8,6 +8,7 @@ Intended for VPS / mining rigs. For full-node duties use cli_node_miner.py
 """
 
 import argparse
+import errno
 import multiprocessing as mp
 import signal
 import time
@@ -16,6 +17,16 @@ from tsarchain.consensus.blockchain import Blockchain
 from tsarchain.network.node import Network
 from tsarchain.utils import config as CFG
 from tsarchain.utils.helpers import print_banner
+from tsarchain.utils.tsar_logging import setup_logging
+
+INTERRUPTED_ERRNOS = {
+    code
+    for code in (
+        getattr(errno, "EINTR", None),
+        getattr(errno, "WSAEINTR", None),
+    )
+    if code is not None
+}
 
 try:
     import psutil
@@ -183,7 +194,14 @@ class LightMiner:
                         print(f"[broadcast] Error: {exc}")
             except KeyboardInterrupt:
                 self.mining_alive = False
+                self.cancel_mining.set()
+                print("\n[signal] Mining interrupted by user; stopping workers...")
             except Exception as exc:
+                if isinstance(exc, OSError) and getattr(exc, "errno", None) in INTERRUPTED_ERRNOS:
+                    print("[mining] Interrupted system call; stopping miners...")
+                    self.mining_alive = False
+                    self.cancel_mining.set()
+                    break
                 print(f"[mining] Error: {exc}")
                 time.sleep(1)
         return True
@@ -251,6 +269,7 @@ def main():
     try:
         miner.start_mining(timeout=max(120, int(args.timeout or 600)))
     except KeyboardInterrupt:
+        miner.cancel_mining.set()
         print("\nInterrupted by user.")
     finally:
         miner.shutdown()
@@ -258,4 +277,5 @@ def main():
 
 if __name__ == "__main__":
     mp.freeze_support()
+    setup_logging(force=True)
     main()

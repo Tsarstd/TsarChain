@@ -13,7 +13,7 @@ from tsarchain.utils import config as CFG
 from tsarchain.utils.bootstrap import maybe_bootstrap_snapshot
 from tsarchain.utils.helpers import print_banner
 
-#from tsarchain.utils.tsar_logging import setup_logging
+from tsarchain.utils.tsar_logging import setup_logging
 
 try:
     import psutil
@@ -226,7 +226,6 @@ class SimpleMiner:
                     try:
                         sent = self.network.publish_block(block, exclude=None, force=True)
                         if sent <= 0:
-                            print("Warning: block broadcast reached 0 peers, triggering fast resync request.")
                             self.network.request_sync(fast=True)
                     except Exception as exc:
                         print(f"Broadcast error: {exc}")
@@ -446,4 +445,5 @@ def main():
 
 if __name__ == "__main__":
     mp.freeze_support()
+    setup_logging(force=True)
     main()

@@ -469,7 +469,7 @@ if IS_DEV:
     # ---- DEV PROFILE ----
     LOG_LEVEL                   = "TRACE"  # very verbose logging for development
     LOG_FORMAT                  = "plain"  # plain text logs ease local debugging
-    LOG_TO_CONSOLE              = True  # mirror logs to stdout for dev loops
+    LOG_TO_CONSOLE              = False  # mirror logs to stdout for dev loops
     LOG_RATE_LIMIT_SECONDS      = 0.0  # disable console throttling in dev
     LOG_FILE_RATE_LIMIT_SECONDS = 0.0  # disable file throttling in dev
     LOG_ROTATE_MAX_BYTES        = 5_000_000  # rollover log files after ~5MB in dev
