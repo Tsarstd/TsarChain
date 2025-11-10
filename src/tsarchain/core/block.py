@@ -3,16 +3,14 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
 
-import numpy as np
 import multiprocessing as mp
-import struct, time, queue, os, psutil
+import struct, time, queue, psutil
 from typing import List, Optional
 from multiprocessing.synchronize import Event as MpEvent
 
 
 # ---------------- Local Project ----------------
-from .nmb.pow_numba import pow_hash as pow_hash_numba
-from ..utils.helpers import int_to_little_endian, merkle_root, hash256, bits_to_target
+from ..utils.helpers import int_to_little_endian, merkle_root, pow_hash, bits_to_target, pow_key_for_height
 from ..core.coinbase import CoinbaseTx
 from ..core.tx import Tx
 from ..utils import config as CFG
@@ -128,7 +126,7 @@ class Block:
     # -----------------------------
 
     def hash(self) -> bytes:
-        return hash256(self.header())
+        return pow_hash(self.header(), height=self.height)
 
     def is_valid(self, target: int):
         hnum = int.from_bytes(self.hash(), 'big')
@@ -144,12 +142,26 @@ class Block:
         target = bits_to_target(self.bits)
         if target <= 0:
             return None
+
+        default_backend = (CFG.POW_ALGO or "randomx").strip().lower()
+        requested = (pow_backend or "auto").strip().lower()
+        backend = requested if requested not in ("", "auto") else default_backend
+        if backend in ("", "auto"):
+            backend = "randomx"
+        if backend != "randomx":
+            raise RuntimeError(f"Unsupported PoW backend '{backend}'. Only RandomX is available.")
+
+        pow_key = pow_key_for_height(self.height)
+        if not pow_key:
+            raise RuntimeError("RandomX key derivation failed; check RANDOMX_* configuration.")
         
-        env_backend = os.getenv("TSAR_POW_BACKEND", "").strip().lower()
-        if env_backend == "hashlib" or (pow_backend and pow_backend.lower() == "hashlib"):
-            raise RuntimeError("hashlib backend is disabled: Numba backend is required.")
-        
-        self.log.info("[mine] Mining with %s/%s cores, Target: %s", num_cores, total_cores, hex(target))
+        self.log.info(
+            "[mine] Mining with %s/%s cores, Target: %s, Backend=%s",
+            num_cores,
+            total_cores,
+            hex(target),
+            backend,
+        )
 
         header_without_nonce = self.header()[:-4]
         start_time = time.time()
@@ -161,14 +173,14 @@ class Block:
             stop_event = mp.Event()
             created_local_stop = True
 
-        worker_target = type(self).mine_worker_numba
+        worker_target = type(self).mine_worker_randomx
 
         cpu_ids = list(range(total_cores))
         for i in range(num_cores):
             p = mp.Process(
                 target=worker_target,
                 args=(i, num_cores, header_without_nonce, target,
-                      result_queue, found_event, stop_event))
+                      result_queue, found_event, stop_event, pow_key))
             p.daemon = True
             p.start()
             processes.append(p)
@@ -249,7 +261,7 @@ class Block:
             elapsed = time.time() - start_time
             if nonce is not None and found_hash:
                 self.nonce = nonce
-                if hash256(self.header()) != found_hash:
+                if pow_hash(self.header(), key_hint=pow_key) != found_hash:
                     return None
                 self.log.info("[mine] Block mined: nonce=%s, hash=%s (time=%.2fs)", self.nonce, found_hash.hex(), elapsed)
                 return found_hash
@@ -295,11 +307,10 @@ class Block:
             except Exception:
                 pass
 
-    # ==== Workers (tetap): kirim ('PROGRESS', hps) setiap ~5 detik ====
-    
-    # The haslib backend is no longer available, mine workers can be used for other purposes
+    # ==== RandomX workers: kirim ('PROGRESS', hps) setiap ~5 detik ====
+
     @staticmethod
-    def mine_worker(start_nonce, step, header_template, target, result_queue, found_event: MpEvent, stop_event: MpEvent):
+    def mine_worker_randomx(start_nonce, step, header_template, target, result_queue, found_event: MpEvent, stop_event: MpEvent, pow_key: bytes):
         try:
             nonce = start_nonce
             max_nonce = (2**32 - 1)
@@ -307,17 +318,16 @@ class Block:
             last_report_time = time.time()
 
             header = bytearray(header_template)
-            header.extend(b'\x00\x00\x00\x00')
-            mv = memoryview(header)
+            header.extend(b"\x00\x00\x00\x00")
             nonce_offset = len(header) - 4
 
             while nonce <= max_nonce:
                 if stop_event.is_set() or found_event.is_set():
                     break
 
-                struct.pack_into('<I', mv, nonce_offset, nonce)
-                block_hash = hash256(mv)
-                hash_int = int.from_bytes(block_hash, 'big')
+                struct.pack_into("<I", header, nonce_offset, nonce & 0xFFFFFFFF)
+                block_hash = pow_hash(header, key_hint=pow_key)
+                hash_int = int.from_bytes(block_hash, "big")
                 hash_count += 1
 
                 now = time.time()
@@ -336,7 +346,7 @@ class Block:
                 if hash_int < target:
                     if not found_event.is_set() and not stop_event.is_set():
                         found_event.set()
-                        result_queue.put((nonce, block_hash))
+                        result_queue.put((nonce & 0xFFFFFFFF, block_hash))
                     return
 
                 nonce += step
@@ -346,70 +356,7 @@ class Block:
 
         except Exception as e:
             try:
-                result_queue.put(('ERR', f"Core {start_nonce % max(1, step)} -> {e!r}"))
-            except Exception:
-                pass
-
-
-    @staticmethod
-    def mine_worker_numba(start_nonce, step, header_template, target, result_queue, found_event: MpEvent, stop_event: MpEvent):
-        try:
-            header = np.empty(80, dtype=np.uint8)
-            ht = memoryview(header_template)
-            for i in range(76):
-                header[i] = ht[i]
-
-            nonce = start_nonce
-            max_nonce = (2**32 - 1)
-            last_report = time.time()
-            hashes = 0
-            BATCH = 4096
-
-            while nonce <= max_nonce and not stop_event.is_set() and not found_event.is_set():
-                upper = nonce + BATCH * step
-                if upper > max_nonce + 1:
-                    upper = max_nonce + 1
-
-                n = nonce
-                while n < upper:
-                    nn = n & 0xFFFFFFFF
-                    header[76] = nn & 0xFF
-                    header[77] = (nn >> 8) & 0xFF
-                    header[78] = (nn >> 16) & 0xFF
-                    header[79] = (nn >> 24) & 0xFF
-
-                    h = pow_hash_numba(header.tobytes())
-                    acc = 0
-                    for b in h:
-                        acc = (acc << 8) | b
-                    if acc < target:
-                        if not found_event.is_set() and not stop_event.is_set():
-                            found_event.set()
-                            result_queue.put((nn, bytes(h)))
-                        return
-
-                    hashes += 1
-                    n += step
-
-                nonce = n
-
-                now = time.time()
-                if now - last_report >= 5.0:
-                    elapsed = now - last_report
-                    hps = hashes / elapsed if elapsed > 0 else 0.0
-                    try:
-                        result_queue.put(('PROGRESS', hps))
-                    except Exception:
-                        pass
-                    last_report = now
-                    hashes = 0
-
-            if not stop_event.is_set() and not found_event.is_set():
-                result_queue.put((None, None))
-
-        except Exception as e:
-            try:
-                result_queue.put(('ERR', f"NB-Core {start_nonce % max(1, step)} -> {e!r}"))
+                result_queue.put(('ERR', f"RX-Core {start_nonce % max(1, step)} -> {e!r}"))
             except Exception:
                 pass
 

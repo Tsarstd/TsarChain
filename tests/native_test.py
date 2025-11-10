@@ -8,14 +8,37 @@ import secrets
 import argparse
 from typing import List, Tuple
 
-import tsarchain.utils.helpers as H
 from ecdsa import SigningKey, VerifyingKey, SECP256k1, util as ecdsa_util
 from tsarchain.core.block import Block
 from tsarchain.core.coinbase import CoinbaseTx
 from tsarchain.core.tx import Tx, TxIn, TxOut
+from tsarchain.utils import config as CFG
+import tsarchain.utils.helpers as H
 from tsarchain.utils.helpers import Script
 from tsarchain.wallet.data_security import pubkey_from_privhex, pubkey_to_tsar_address
-from tsarchain.utils import config as CFG
+
+
+def _configure_randomx_pow(use_lite: bool, cache_cap: int):
+    """Tune RandomX config for tests (default to lite mode)."""
+    algo = str(CFG.POW_ALGO.lower())
+    if algo != "randomx":
+        return
+
+    cache_cap = max(1, cache_cap)
+    if use_lite:
+        CFG.RANDOMX_FULL_MEM = False
+        CFG.RANDOMX_LARGE_PAGES = False
+        CFG.RANDOMX_CACHE_MAX = cache_cap
+    else:
+        CFG.RANDOMX_FULL_MEM = True
+        CFG.RANDOMX_CACHE_MAX = cache_cap
+
+    H._POW_ALGO = (CFG.POW_ALGO or "sha256").lower()
+    H._RANDOMX_EPOCH_BLOCKS = max(1, int(CFG.RANDOMX_KEY_EPOCH_BLOCKS))
+    H._RANDOMX_SALT = (CFG.RANDOMX_KEY_SALT or "tsar-randomx").encode("utf-8")
+    H._RANDOMX_ROOT = H._resolve_randomx_root()
+    mode = "lite" if use_lite else "full"
+    print(f"[randomx] configured {mode} mode (cache_max={CFG.RANDOMX_CACHE_MAX})")
 
 
 # -----------------------------
@@ -418,7 +441,14 @@ def main():
     ap.add_argument("--hash-total", type=int, default=1_500_000, help="total bytes for hash benches")
     ap.add_argument("--no-bench-batch", action="store_true")
     ap.add_argument("--no-bench-hash", action="store_true")
+    ap.add_argument("--randomx-cache", type=int, default=1, help="max RandomX VM cache entries during tests (default: 1)")
+    gx = ap.add_mutually_exclusive_group()
+    gx.add_argument("--randomx-lite", dest="randomx_lite", action="store_true", help="force RandomX light mode (default)")
+    gx.add_argument("--randomx-full", dest="randomx_lite", action="store_false", help="use full-memory RandomX dataset (slow, ~2GB)")
+    ap.set_defaults(randomx_lite=True)
     args = ap.parse_args()
+
+    _configure_randomx_pow(args.randomx_lite, args.randomx_cache)
 
     print("Native backend is mandatory; helpers module imported tsarcore_native successfully.")
     print("Functions available:", [x for x in (

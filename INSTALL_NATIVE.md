@@ -46,6 +46,7 @@ pip install target/wheels/tsarcore_native-*.whl
 - **Python** 3.8–3.12 (recommended to use a virtual environment)
 - **Rust toolchain (stable)** via [`rustup`](https://rustup.rs/)
 - **maturin** (`pip install maturin`)
+- **cmake** 3.20+ (RandomX vendored sources are compiled during the build)
 
 Platform notes:
 - **Windows**: install *Visual Studio Build Tools* (C++ workload). Rust target should be **MSVC** (default).
@@ -156,6 +157,7 @@ python tests/native_test.py \
 When everything is installed correctly you should see something like:
 
 ```
+[randomx] configured lite mode (cache_max=1)
 Native backend is mandatory; helpers module imported tsarcore_native successfully.
 Functions available: ['count_sigops_in_script', 'bip143_sig_hash', 'verify_der_strict_low_s', 'merkle_root', 'hash256', 'hash160', 'batch_verify_der_low_s']
 
@@ -174,10 +176,10 @@ Functions available: ['count_sigops_in_script', 'bip143_sig_hash', 'verify_der_s
 [block] unsupported script: ok
 
 == microbench ==
-[sigops] 250.000 loops in 0.101s -> 2.468.004 ops/s
-[merkle] 200 trees (n=1000) in 0.070s -> 2843.6 trees/s
-[ecdsa-single] 5.000 verifications in 0.245s -> 20.433 verif/s
-[ecdsa-batch] ~2.048 verifications in 0.016s -> ~129.146 verif/s
+[sigops] 250.000 loops in 0.082s -> 3.050.979 ops/s
+[merkle] 200 trees (n=1000) in 0.069s -> 2911.8 trees/s
+[ecdsa-single] 5.000 verifications in 0.244s -> 20.520 verif/s
+[ecdsa-batch] ~2.048 verifications in 0.016s -> ~129.737 verif/s
 [hash256] 1.500.000B in 0.001s
 [hash160] 1.500.000B in 0.001s
 ```

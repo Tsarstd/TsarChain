@@ -36,8 +36,13 @@ Changing them may cause different block/tx validity (hard fork) unless otherwise
    - OPRET_ALLOW_PUSHDATA1, OPRET_ALLOW_PUSHDATA2
    - MAX_STORAGE_OPRET, GRAFFITI_MAGIC
 
-  6) FORK-CHOICE & REORG
-   - ENABLE_CHAINWORK_RULE, ENABLE_REORG_LIMIT, REORG_LIMIT
+ 6) FORK-CHOICE & REORG
+  - ENABLE_CHAINWORK_RULE, ENABLE_REORG_LIMIT, REORG_LIMIT
+
+  7) POW (RandomX)
+   - POW_ALGO, RANDOMX_STATIC_KEY
+   - RANDOMX_KEY_EPOCH_BLOCKS, RANDOMX_FULL_MEM, RANDOMX_LARGE_PAGES
+   - RANDOMX_JIT, RANDOMX_SECURE_JIT, RANDOMX_HARD_AES, RANDOMX_CACHE_MAX
 
 NOT CONSENSUS (safety differs between nodes):
    port/BOOTSTRAP, timeout, connection limit, anti-DoS, logging/path,
@@ -111,8 +116,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "00000097434976000f41af4d492f549160c86485bd06d28609ea9c393ce9f06a"  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 1  # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -168,12 +173,24 @@ GENESIS_REWARD_AMOUNT = 2_500_000 * TSAR  # allocation granted when genesis rewa
 # 5. CONSENSUS & DIFFICULTY
 # =============================================================================
 # ---- BASE DIFFICULTY ----
-INITIAL_BITS      = 0x1E00FFFF  # starting difficulty bits assigned to block zero
-MAX_BITS          = 0x1F0FFFFF  # cap for easiest allowed difficulty
-TARGET_BLOCK_TIME = 37  # aim for ~37 seconds block cadence
-LWMA_WINDOW       = 75  # block count considered by LWMA difficulty algo
+INITIAL_BITS      = 0x1F5FFFFF  # starting difficulty bits assigned to block zero
+MAX_BITS          = 0x1F5FFFFF  # cap for easiest allowed difficulty
+TARGET_BLOCK_TIME = 67  # aim for ~67 seconds block cadence
+LWMA_WINDOW       = 45  # block count considered by LWMA difficulty algo
 FUTURE_DRIFT      = 600  # max seconds a block timestamp may lead wall clock
 MTP_WINDOWS       = 11  # number of blocks in median time past calculation
+
+# ---- PROOF OF WORK ----
+POW_ALGO = "randomx"
+RANDOMX_STATIC_KEY = "tsar-dev-seed"
+RANDOMX_KEY_SALT = "tsar-randomx"
+RANDOMX_KEY_EPOCH_BLOCKS = 64  # rotate RandomX seed every N blocks
+RANDOMX_FULL_MEM = False        # allocate ~2GB dataset for mining/validation - if set 'False' = RandomX Lite
+RANDOMX_LARGE_PAGES = False    # set True only if huge pages configured OS-wide
+RANDOMX_JIT = True
+RANDOMX_SECURE_JIT = True
+RANDOMX_HARD_AES = True
+RANDOMX_CACHE_MAX = 1          # max RandomX VM entries cached in rust binding
 
 # ---- BLOCK & TX LIMITS ----
 MAX_BLOCK_BYTES      = 1_200_000  # block size limit (approx 1.2 MB)
@@ -188,14 +205,14 @@ REORG_LIMIT           = 1000  # maximum blocks allowed for automatic reorg
 
 # ---- DIFF CLAMP ----
 ENABLE_DIFF_CLAMP   = True  # clamp difficulty adjustments to damp volatility
-DIFF_CLAMP_MAX_UP   = 1.8  # ratio cap for upward difficulty moves
-DIFF_CLAMP_MAX_DOWN = 0.5  # ratio floor for downward difficulty moves
+DIFF_CLAMP_MAX_UP   = 1.5  # ratio cap for upward difficulty moves
+DIFF_CLAMP_MAX_DOWN = 0.4  # ratio floor for downward difficulty moves
 
 # ---- EMERGENCY DIFFICULTY ----
 ENABLE_EDA          = True  # emergency difficulty adjustment switch (often off on prod)
 EDA_WINDOW          = 48  # number of blocks observed by EDA
-EDA_TRIGGER_RATIO   = 5.0  # slowdown ratio that triggers EDA easing
-EDA_EASE_MULTIPLIER = 2.5  # difficulty divisor applied when EDA fires
+EDA_TRIGGER_RATIO   = 3.0  # slowdown ratio that triggers EDA easing
+EDA_EASE_MULTIPLIER = 2.0  # difficulty divisor applied when EDA fires
 
 
 # =============================================================================

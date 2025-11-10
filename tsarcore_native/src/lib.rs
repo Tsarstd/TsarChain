@@ -15,12 +15,16 @@
 //! cargo clean
 
 use pyo3::sync::GILOnceCell;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::thread_local;
 use std::time::Instant;
 use pyo3::{Py};
 use pyo3::prelude::*;
 use pyo3::exceptions;
 use pyo3::types::{PyModule, PyAny, PyBytes, PyIterator, PyList, PyTuple};
 use pyo3::{Bound, PyErr};
+use randomx_rs::{RandomXCache, RandomXDataset, RandomXError, RandomXFlag, RandomXVM};
 use sha2::{Sha256, Digest};
 use ripemd::Ripemd160;
 use secp256k1::{Secp256k1, Message, PublicKey};
@@ -29,6 +33,181 @@ use validation::validate_block_txs_native;
 
 mod validation;
 
+
+// ---------------------
+// RandomX VM cache
+// ---------------------
+struct RandomxVmEntry {
+    vm: RandomXVM,
+    flags: RandomXFlag,
+    last_used: Instant,
+}
+
+thread_local! {
+    static RANDOMX_VM_CACHE: RefCell<HashMap<Vec<u8>, RandomxVmEntry>> = RefCell::new(HashMap::new());
+}
+
+fn cache_flags_from(flags: RandomXFlag) -> RandomXFlag {
+    let mut out = RandomXFlag::FLAG_DEFAULT;
+    for candidate in [
+        RandomXFlag::FLAG_LARGE_PAGES,
+        RandomXFlag::FLAG_JIT,
+        RandomXFlag::FLAG_ARGON2,
+        RandomXFlag::FLAG_ARGON2_AVX2,
+        RandomXFlag::FLAG_ARGON2_SSSE3,
+    ] {
+        if flags.contains(candidate) {
+            out.insert(candidate);
+        }
+    }
+    out
+}
+
+fn instantiate_vm(key: &[u8], flags: RandomXFlag) -> Result<RandomXVM, RandomXError> {
+    let cache_flags = cache_flags_from(flags);
+    let cache = RandomXCache::new(cache_flags, key)?;
+    let dataset = if flags.contains(RandomXFlag::FLAG_FULL_MEM) {
+        Some(RandomXDataset::new(flags, cache.clone(), 0)?)
+    } else {
+        None
+    };
+    RandomXVM::new(flags, Some(cache), dataset)
+}
+
+fn with_cached_vm<R>(
+    key: &[u8],
+    flags: RandomXFlag,
+    max_entries: usize,
+    f: impl FnOnce(&RandomXVM) -> Result<R, RandomXError>,
+) -> Result<R, RandomXError> {
+    RANDOMX_VM_CACHE.with(|cell| -> Result<R, RandomXError> {
+        let mut cache = cell.borrow_mut();
+        let now = Instant::now();
+        let mut needs_purge = false;
+        if let Some(entry) = cache.get_mut(key) {
+            if entry.flags == flags {
+                entry.last_used = now;
+                return f(&entry.vm);
+            } else {
+                needs_purge = true;
+            }
+        }
+        if needs_purge {
+            cache.remove(key);
+        }
+
+        let vm = instantiate_vm(key, flags)?;
+        if max_entries > 0 && cache.len() >= max_entries {
+            let mut victim_key: Option<Vec<u8>> = None;
+            let mut oldest = Instant::now();
+            for (k, v) in cache.iter() {
+                if victim_key.is_none() || v.last_used < oldest {
+                    oldest = v.last_used;
+                    victim_key = Some(k.clone());
+                }
+            }
+            if let Some(k) = victim_key {
+                cache.remove(&k);
+            }
+        }
+
+        let entry = cache
+            .entry(key.to_vec())
+            .or_insert(RandomxVmEntry { vm, flags, last_used: now });
+        entry.last_used = now;
+        f(&entry.vm)
+    })
+}
+
+fn configure_randomx_flags(
+    full_mem: bool,
+    large_pages: bool,
+    jit: bool,
+    hard_aes: bool,
+    secure: bool,
+) -> RandomXFlag {
+    let mut flags = RandomXFlag::get_recommended_flags();
+    if full_mem {
+        flags.insert(RandomXFlag::FLAG_FULL_MEM);
+    } else {
+        flags.remove(RandomXFlag::FLAG_FULL_MEM);
+    }
+    if large_pages {
+        flags.insert(RandomXFlag::FLAG_LARGE_PAGES);
+    } else {
+        flags.remove(RandomXFlag::FLAG_LARGE_PAGES);
+    }
+    if jit {
+        flags.insert(RandomXFlag::FLAG_JIT);
+    } else {
+        flags.remove(RandomXFlag::FLAG_JIT);
+    }
+    if hard_aes {
+        flags.insert(RandomXFlag::FLAG_HARD_AES);
+    } else {
+        flags.remove(RandomXFlag::FLAG_HARD_AES);
+    }
+    if secure && jit {
+        flags.insert(RandomXFlag::FLAG_SECURE);
+    } else {
+        flags.remove(RandomXFlag::FLAG_SECURE);
+    }
+    flags
+}
+
+fn map_randomx_err(err: RandomXError) -> PyErr {
+    PyErr::new::<exceptions::PyRuntimeError, _>(format!("RandomX error: {err}"))
+}
+
+// ---------------------
+// RandomX hash binding
+// ---------------------
+
+#[pyfunction]
+fn randomx_pow_hash<'py>(
+    py: Python<'py>,
+    header: Bound<'py, PyBytes>,
+    key: Bound<'py, PyBytes>,
+    full_mem: bool,
+    large_pages: bool,
+    jit: bool,
+    hard_aes: bool,
+    secure_jit: bool,
+    max_cache_entries: usize,
+) -> PyResult<Bound<'py, PyBytes>> {
+    let header_bytes = header.as_bytes();
+    if header_bytes.is_empty() {
+        return Err(PyErr::new::<exceptions::PyValueError, _>(
+            "header cannot be empty",
+        ));
+    }
+    let key_bytes = key.as_bytes();
+    if key_bytes.is_empty() {
+        return Err(PyErr::new::<exceptions::PyValueError, _>(
+            "key cannot be empty",
+        ));
+    }
+
+    let flags = configure_randomx_flags(full_mem, large_pages, jit, hard_aes, secure_jit);
+    let max_entries = if max_cache_entries == 0 {
+        usize::MAX
+    } else {
+        max_cache_entries
+    };
+
+    let hash = match with_cached_vm(key_bytes, flags, max_entries, |vm| vm.calculate_hash(header_bytes)) {
+        Ok(h) => h,
+        Err(e) if large_pages => {
+            log_warning(&format!("[randomx] large pages unavailable ({e}); retrying without large pages"));
+            let mut fallback_flags = flags;
+            fallback_flags.remove(RandomXFlag::FLAG_LARGE_PAGES);
+            with_cached_vm(key_bytes, fallback_flags, max_entries, |vm| vm.calculate_hash(header_bytes))
+                .map_err(map_randomx_err)?
+        }
+        Err(e) => return Err(map_randomx_err(e)),
+    };
+    Ok(PyBytes::new_bound(py, &hash))
+}
 
 // ---------------------
 // Logger (from Python)
@@ -671,5 +850,6 @@ fn tsarcore_native(_py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(secp_verify_der_low_s_many, m)?)?;
     m.add_function(wrap_pyfunction!(set_py_logger, m)?)?;
     m.add_function(wrap_pyfunction!(validate_block_txs_native, m)?)?;
+    m.add_function(wrap_pyfunction!(randomx_pow_hash, m)?)?;
     Ok(())
 }

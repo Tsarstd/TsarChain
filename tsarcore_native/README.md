@@ -2,6 +2,13 @@
 
 Native acceleration module for **TsarChain**.
 
+**Build prerequisites**
+
+- Python 3.8+
+- Rust toolchain (stable) via `rustup`
+- `maturin`
+- `cmake` 3.20+ (required to build the bundled RandomX backend)
+
 ## What’s inside (current API)
 
 - `count_sigops(script: bytes) -> int`  
@@ -27,6 +34,8 @@ Native acceleration module for **TsarChain**.
 
 - `validate_block_txs_native(block: Mapping, utxo_snapshot: Mapping, spend_height: int, opts: Mapping) -> tuple[bool, str|None, list[int]|None]`  
   Full block-level transaction validation (sigops, coinbase rules, witness verification, fee projection, etc.). Returns `(ok, reason, fees)` where `fees` is per-non-coinbase once `ok` is `True`.
+- `randomx_pow_hash(header: bytes, seed: bytes, *, full_mem: bool, large_pages: bool, jit: bool, hard_aes: bool, secure_jit: bool, cache_entries: int) -> bytes32`  
+  Stateless RandomX hashing used by TsarChain PoW. The binding internally caches VMs per thread/seed to avoid rebuilding datasets on every call.
 
 - `set_py_logger(callable)`  
   Optional hook so Rust logs can piggyback on TsarChain’s logger.
@@ -74,6 +83,20 @@ opts = {
 }
 ok, reason, fees = tc.validate_block_txs_native(block_dict, utxo_snapshot, block_dict["height"], opts)
 assert ok, reason
+
+# RandomX hashing (80-byte block header + seed)
+header80 = block_header_bytes
+seed = b\"seed-deriv\"  # derived from height/epoch in TsarChain
+digest = tc.randomx_pow_hash(
+    header80,
+    seed,
+    full_mem=False,
+    large_pages=False,
+    jit=True,
+    hard_aes=True,
+    secure_jit=False,
+    cache_entries=1,
+)
 ```
 
 ## Safety notes

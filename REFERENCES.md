@@ -14,6 +14,9 @@
 ### Algorithms / Libraries
 - [LWMA (Linearly Weighted Moving Average) Difficulty Algorithm – Zawy](https://github.com/zawy12/difficulty-algorithms/issues/3)
 - [libsecp256k1 (Bitcoin Core EC crypto library)](https://github.com/bitcoin-core/secp256k1)
+- [RandomX (official design + reference implementation)](https://github.com/tevador/RandomX)
+- [Monero RandomX deployment guide (huge pages, AES-NI)](https://www.getmonero.org/2019/10/18/RandomX.html)
+- [Linux HugeTLB / Huge Pages documentation](https://www.kernel.org/doc/html/latest/admin-guide/mm/hugetlbpage.html)
 
 ### Secure Messaging (Signal-style)
 - [The X3DH Key Agreement Protocol — Signal (2016)](https://signal.org/docs/specifications/x3dh)

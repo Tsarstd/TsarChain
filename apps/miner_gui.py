@@ -156,9 +156,26 @@ class BlockchainGUI:
         self.cpu_entry = tk.Entry(rr, width=6, bg="#1e1e1e", fg=self.fg, insertbackground=self.fg)
         self.cpu_entry.pack(side=tk.LEFT, padx=6)
         self.cpu_entry.insert(0, "1")
+        self.cpu_entry.bind("<FocusOut>", lambda _e: self._enforce_core_bounds())
         tk.Button(rr, text="MAX", command=self._auto_cores).pack(side=tk.LEFT, padx=(4,0))
-        self.numba_var = tk.BooleanVar(value=True)
+        self.lite_mode_var = tk.BooleanVar(value=True)
+        lite_chk = tk.Checkbutton(
+            rr,
+            text="Lite GUI mode",
+            variable=self.lite_mode_var,
+            command=self._enforce_core_bounds,
+            bg=self.bg,
+            fg=self.fg,
+            selectcolor="#1e1e1e",
+            activebackground=self.bg,
+            activeforeground=self.fg,
+            highlightthickness=0,
+        )
+        lite_chk.pack(side=tk.LEFT, padx=8)
+        Tooltip(lite_chk, "Limit mining to 1 core for smoother GUI. Use CLI miner for full power.")
         Tooltip(self.cpu_entry, "More Cores More Fast!!!!")
+        tip_text = "Tip: For full-power RandomX mining use CLI Version"
+        tk.Label(sec_perf, text=tip_text, bg=self.bg, fg=self.warn, wraplength=360, justify="left").pack(fill=tk.X, padx=4, pady=(6,0))
 
         # Section 3: Controls
         sec_ctrl = self._section(f, "3) Controls")
@@ -531,6 +548,25 @@ class BlockchainGUI:
         except Exception:
             self.cpu_entry.delete(0, tk.END)
             self.cpu_entry.insert(0, "1")
+        self._enforce_core_bounds()
+
+    def _enforce_core_bounds(self):
+        entry = str(self.cpu_entry.get() or "1").strip()
+        try:
+            cores = int(entry)
+        except Exception:
+            cores = 1
+        if cores < 1:
+            cores = 1
+        if self.lite_mode_var.get() and cores != 1:
+            self.log_print("[GUI] Lite mode limits mining to 1 core for smoother UI. Use CLI miner for full power.")
+            cores = 1
+        self.cpu_entry.delete(0, tk.END)
+        self.cpu_entry.insert(0, str(cores))
+        self._set_buttons_state()
+
+    def _log_cli_tip(self):
+        self.log_print("[Tip] For full-power RandomX mining run: python apps/cli_miner.py --address tsar1... --cores N")
 
     def _clear_logs(self):
         self._log_static.clear()
@@ -767,8 +803,35 @@ class BlockchainGUI:
                 messagebox.showwarning("Warning", "No chain available. Wait for sync from a peer.")
                 return
 
-        use_cores = int(self.cpu_entry.get() or "1")
-        pow_backend = "numba"
+        lite_mode = bool(self.lite_mode_var.get())
+        try:
+            requested_cores = int(self.cpu_entry.get() or "1")
+        except Exception:
+            requested_cores = 1
+            self.cpu_entry.delete(0, tk.END)
+            self.cpu_entry.insert(0, "1")
+        if requested_cores < 1:
+            requested_cores = 1
+        use_cores = requested_cores
+        if lite_mode and requested_cores != 1:
+            use_cores = 1
+            self.cpu_entry.delete(0, tk.END)
+            self.cpu_entry.insert(0, "1")
+            self.log_print("[GUI] Lite mode active -> forcing mining to 1 core.")
+        if not lite_mode and requested_cores > 2:
+            self._log_cli_tip()
+            msg = (
+                "Running RandomX with more than 2 cores inside the GUI can freeze the interface.\n\n"
+                "For full-power mining use the CLI miner:\n"
+                "python apps/cli_miner.py --address tsar1... --cores N\n\n"
+                "Do you still want to continue mining from the GUI?"
+            )
+            proceed = messagebox.askyesno("Heavy Mining Warning", msg)
+            if not proceed:
+                self.log_print("[Mining] Cancelled by user; please use CLI miner for full power.")
+                return
+
+        pow_backend = "randomx"
 
         self.log_print(f"[*] Mining with addr={self.miner_address_entry.get().strip()}  backend={pow_backend}  cores={use_cores}")
 

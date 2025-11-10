@@ -31,6 +31,7 @@ TsarChain is a minimal, pragmatic Layer-1 focused on **Voice Sovereignty**: prot
   - [(Optional) Build Native Extension](#optional-build-native-extension)
   - [Quickstart](#️-quickstart)
 - [Devnet Quick Config](#️-devnet-quick-config)
+- [Mining Modes](#-mining-modes)
 - [Architecture](#️-architecture)
 - [Security Notes](#-security-notes)
 - [Contributing](#-contributing)
@@ -79,7 +80,7 @@ TsarChain is a minimal, pragmatic Layer-1 focused on **Voice Sovereignty**: prot
 
 ## ✨ Features at a Glance
 
-- **Consensus** — PoW with LWMA difficulty targeting predictable block times.
+- **Consensus** – RandomX PoW with LWMA difficulty targeting predictable block times.
 - **Ledger model** — UTXO with SegWit serialization and signature validation (secp256k1).
 - **Addresses** — Bech32, prefix **`tsar1`** (P2WPKH today; room for scripts/contracts later).
 - **Wallet** — “Kremlin” light wallet (GUI) for send/receive, explorer, and secure P2P chat.
@@ -124,20 +125,24 @@ python tests/native_test.py
 ```
 > TsarChain always loads the Rust extension; ensure `tsarcore_native` is installed in the active environment.
 
+> RandomX support ships inside `tsarcore_native`. Building it requires a C toolchain plus `cmake` (RandomX vendored sources are compiled during `maturin develop`). For best CPU performance enable AES-NI in BIOS and configure huge pages before starting the miner (`TSAR_RANDOMX_LARGE_PAGES=1`).
+
 ---
 
 ## 🏃🏻‍♂️ Quickstart
 
 **Run a Miner/Node**
 ```bash
-# GUI
+# GUI (lite-friendly, limited to 1 core)
 python apps/miner_gui.py
-# CLI
-python apps/cli_miner.py
-```
 
-**Run the GUI Wallet**
-```bash
+# Stateless CLI miner (no on-disk blockchain, just hashing)
+python apps/cli_miner.py --address tsar1qyoursomething --cores 4
+
+# Full node + miner (keeps blockchain DB + snapshot gateway)
+python apps/cli_node_miner.py --address tsar1qyoursomething --cores 4
+
+# GUI Wallet
 python apps/kremlin.py
 ```
 
@@ -157,10 +162,10 @@ NET_ID_DEV          = "gulag-net"
 # =============================================================================
 # CONSENSUS / DIFFICULTY
 # =============================================================================
-INITIAL_BITS       = 0x1E00FFFF
+INITIAL_BITS       = 0x1F0FFFFF     # easier RandomX default for dev
 MAX_BITS           = 0x1F0FFFFF
-TARGET_BLOCK_TIME  = 37             # 37 Sec
-LWMA_WINDOW        = 75             # Block's
+TARGET_BLOCK_TIME  = 60             # 60 Sec
+LWMA_WINDOW        = 60             # Block's
 FUTURE_DRIFT       = 600            # 10 Minute
 MTP_WINDOWS        = 11             # Block's
 
@@ -178,14 +183,14 @@ REORG_LIMIT             = 1000
 
 # DIFF CLAMP
 ENABLE_DIFF_CLAMP       = True
-DIFF_CLAMP_MAX_UP       = 1.8
-DIFF_CLAMP_MAX_DOWN     = 0.5
+DIFF_CLAMP_MAX_UP       = 1.5
+DIFF_CLAMP_MAX_DOWN     = 0.4
 
 # Emergency Difficulty Adjustment (EDA)
 ENABLE_EDA              = True
 EDA_WINDOW              = 48
-EDA_TRIGGER_RATIO       = 5.0
-EDA_EASE_MULTIPLIER     = 2.5
+EDA_TRIGGER_RATIO       = 3.0
+EDA_EASE_MULTIPLIER     = 2.0
 
 # =============================================================================
 # P2P / PORTS
@@ -198,9 +203,22 @@ BOOTSTRAP_DEV      = (
 ```
 
 > To see the entire project configuration, you can check in [`src/tsarchain/utils/config.py`](src/tsarchain/utils/config.py)
+>
+> 🔧 **RandomX knobs** live in the same file (`POW_ALGO`, `RANDOMX_*`). Tune `RANDOMX_FULL_MEM`, `RANDOMX_LARGE_PAGES`, and `RANDOMX_KEY_EPOCH_BLOCKS` if you need lighter verification nodes or want to rotate the RandomX seed more/less frequently.
+> - **Dev/Test**: `RANDOMX_FULL_MEM=False`, `RANDOMX_LARGE_PAGES=False`, `RANDOMX_CACHE_MAX=1`, `RANDOMX_KEY_EPOCH_BLOCKS=64`.
+> - **Mainnet/Full Node**: `RANDOMX_FULL_MEM=True`, enable huge pages, bump `RANDOMX_CACHE_MAX` (4+) and lengthen `RANDOMX_KEY_EPOCH_BLOCKS` (e.g. 2048).
 
 
 ---
+
+## Mining Modes
+
+- **GUI Miner (`apps/miner_gui.py`)** ? ships with Lite GUI mode enabled and limits RandomX to one core by default so the Tkinter UI stays responsive.
+- **Stateless CLI Miner (`apps/cli_miner.py`)** ? keeps chain data in-memory, fetches the latest tip from peers, mines, then broadcasts (no snapshots or DB).
+- **Full Node CLI Miner (`apps/cli_node_miner.py`)** ? persists the entire blockchain, handles snapshot bootstrap, wallet gateway traffic, and can run `--node-only` for infra roles.
+
+Use the GUI for demos/monitoring, `cli_miner.py` for raw hash power, and `cli_node_miner.py` when you need full-node responsibilities.
+
 
 ## 🏗️ Architecture
 

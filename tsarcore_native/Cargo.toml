@@ -16,6 +16,7 @@ sha2 = "0.10"
 ripemd = "0.1"
 rayon = { version = "1.10", optional = true }
 hex = "0.4"
+randomx-rs = { version = "1.4", default-features = false }
 
 [features]
 # Enable parallel verification in `secp_verify_der_low_s_many` when the `parallel` feature is set.
@@ -26,3 +27,4 @@ parallel = ["rayon"]
 lto = true
 codegen-units = 1
 opt-level = 3
+
