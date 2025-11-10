@@ -36,8 +36,8 @@ Changing them may cause different block/tx validity (hard fork) unless otherwise
    - OPRET_ALLOW_PUSHDATA1, OPRET_ALLOW_PUSHDATA2
    - MAX_STORAGE_OPRET, GRAFFITI_MAGIC
 
- 6) FORK-CHOICE & REORG
-  - ENABLE_CHAINWORK_RULE, ENABLE_REORG_LIMIT, REORG_LIMIT
+  6) FORK-CHOICE & REORG
+   - ENABLE_CHAINWORK_RULE, ENABLE_REORG_LIMIT, REORG_LIMIT
 
   7) POW (RandomX)
    - POW_ALGO, RANDOMX_STATIC_KEY
@@ -173,24 +173,24 @@ GENESIS_REWARD_AMOUNT = 2_500_000 * TSAR  # allocation granted when genesis rewa
 # 5. CONSENSUS & DIFFICULTY
 # =============================================================================
 # ---- BASE DIFFICULTY ----
-INITIAL_BITS      = 0x1F5FFFFF  # starting difficulty bits assigned to block zero
-MAX_BITS          = 0x1F5FFFFF  # cap for easiest allowed difficulty
-TARGET_BLOCK_TIME = 67  # aim for ~67 seconds block cadence
-LWMA_WINDOW       = 45  # block count considered by LWMA difficulty algo
+INITIAL_BITS      = 0x1F8FFFFF  # starting difficulty bits assigned to block zero
+MAX_BITS          = 0x1F8FFFFF  # cap for easiest allowed difficulty
+TARGET_BLOCK_TIME = 37  # aim for ~37 seconds block cadence
+LWMA_WINDOW       = 75  # block count considered by LWMA difficulty algo
 FUTURE_DRIFT      = 600  # max seconds a block timestamp may lead wall clock
 MTP_WINDOWS       = 11  # number of blocks in median time past calculation
 
 # ---- PROOF OF WORK ----
-POW_ALGO = "randomx"
-RANDOMX_STATIC_KEY = "tsar-dev-seed"
-RANDOMX_KEY_SALT = "tsar-randomx"
-RANDOMX_KEY_EPOCH_BLOCKS = 64  # rotate RandomX seed every N blocks
-RANDOMX_FULL_MEM = False        # allocate ~2GB dataset for mining/validation - if set 'False' = RandomX Lite
-RANDOMX_LARGE_PAGES = False    # set True only if huge pages configured OS-wide
-RANDOMX_JIT = True
-RANDOMX_SECURE_JIT = True
-RANDOMX_HARD_AES = True
-RANDOMX_CACHE_MAX = 1          # max RandomX VM entries cached in rust binding
+POW_ALGO                 = "randomx"
+RANDOMX_STATIC_KEY       = "tsar-dev-seed"
+RANDOMX_KEY_SALT         = "tsar-randomx"
+RANDOMX_KEY_EPOCH_BLOCKS = 64     # rotate RandomX seed every N blocks
+RANDOMX_FULL_MEM         = False  # allocate ~2GB dataset for mining/validation - if set 'False' = RandomX Lite
+RANDOMX_LARGE_PAGES      = False  # set True only if huge pages configured OS-wide
+RANDOMX_JIT              = True
+RANDOMX_SECURE_JIT       = True
+RANDOMX_HARD_AES         = True
+RANDOMX_CACHE_MAX        = 1      # max RandomX VM entries cached in rust binding
 
 # ---- BLOCK & TX LIMITS ----
 MAX_BLOCK_BYTES      = 1_200_000  # block size limit (approx 1.2 MB)
@@ -426,8 +426,8 @@ ALLOW_UNREGISTERED_STORAGE_UPLOADS = True  # permit uploads from nodes without r
 # ---- KV BACKEND ----
 DB_DIR             = "data/DB"  # LMDB root folder
 KV_BACKEND         = "lmdb"  # active key-value backend implementation
-LMDB_MAP_SIZE_INIT = 64 * 1024 * 1024  # initial LMDB map size (64 MiB)
-LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GiB)
+LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
+LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
 LMDB_DATA_FILE     = os.path.join(DB_DIR, "data.mdb")  # main LMDB data file path
 LMDB_LOCK_FILE     = os.path.join(DB_DIR, "lock.mdb")  # LMDB lock file path
 
