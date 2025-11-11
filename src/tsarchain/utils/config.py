@@ -439,8 +439,8 @@ SNAPSHOT_PUBKEY_HEX        = ""  # hex-encoded pubkey used to verify snapshot si
 
 # ---- SNAPSHOT MODES ----
 SNAPSHOT_BOOTSTRAP_ENABLED = False  # allow nodes to bootstrap via snapshot downloads
-SNAPSHOT_BOOTSTRAP_FOR_GUI = False  # enable snapshot bootstrap path for GUI clients
-SNAPSHOT_BOOTSTRAP_FOR_CLI = False  # enable snapshot bootstrap path for CLI clients
+SNAPSHOT_BOOTSTRAP_FOR_GUI = False  # enable snapshot bootstrap path for miner_gui.py
+SNAPSHOT_BOOTSTRAP_FOR_CLI = False  # enable snapshot bootstrap path for cli_node_miner.py
 
 # ---- SNAPSHOT TRANSFER ----
 SNAPSHOT_HTTP_TIMEOUT    = 90  # HTTP timeout applied to snapshot downloads
