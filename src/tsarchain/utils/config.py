@@ -183,7 +183,7 @@ MTP_WINDOWS       = 11  # number of blocks in median time past calculation
 # ---- PROOF OF WORK ----
 POW_ALGO                 = "randomx"
 RANDOMX_STATIC_KEY       = "tsar-dev-seed"
-RANDOMX_KEY_SALT         = "tsar-randomx"
+RANDOMX_KEY_SALT         = b"tsar-randomx"
 RANDOMX_KEY_EPOCH_BLOCKS = 64     # rotate RandomX seed every N blocks
 RANDOMX_FULL_MEM         = False  # allocate ~2GB dataset for mining/validation - if set 'False' = RandomX Lite
 RANDOMX_LARGE_PAGES      = False  # set True only if huge pages configured OS-wide
