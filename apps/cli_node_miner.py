@@ -3,8 +3,9 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
 
-import argparse, time, signal, threading
+import argparse, time, signal, threading, psutil, queue, colorama
 import multiprocessing as mp
+from datetime import datetime
 
 # ---------------- Local Project ----------------
 from tsarchain.consensus.blockchain import Blockchain
@@ -15,13 +16,62 @@ from tsarchain.utils.helpers import print_banner
 
 from tsarchain.utils.tsar_logging import setup_logging
 
-try:
-    import psutil
-    HAVE_PSUTIL = True
-except Exception:
-    psutil = None
-    HAVE_PSUTIL = False
+# ---------- Simple color + timestamp utilities ----------
 
+colorama.init()
+RESET  = "\033[0m"
+BLUE   = "\033[34m"
+YELLOW = "\033[33m"
+GREEN  = "\033[32m"
+RED    = "\033[31m"
+CYAN   = "\033[36m"
+DIM    = "\033[2m"
+
+def _stamp() -> str:
+    now = datetime.now()
+    d = f"{now.year:04d}.{now.month:02d}.{now.day:02d}"
+    t = f"{now.hour:02d}.{now.minute:02d}.{now.second:02d}"
+    return f"[{BLUE}{d}{RESET}] - [{YELLOW}{t}{RESET}]"
+
+def clog(message: str, color: str = GREEN):
+    print(f"{_stamp()} : {color}{message}{RESET}")
+
+def human_hps(hps: float) -> str:
+    try:
+        hps = float(hps)
+    except Exception:
+        return "? H/s"
+    units = ["H/s", "kH/s", "MH/s", "GH/s", "TH/s"]
+    i = 0
+    while hps >= 1000.0 and i < len(units)-1:
+        hps /= 1000.0
+        i += 1
+    if hps >= 100:
+        return f"{hps:,.0f} {units[i]}"
+    if hps >= 10:
+        return f"{hps:,.1f} {units[i]}"
+    return f"{hps:,.2f} {units[i]}"
+
+class HashrateReporter(threading.Thread):
+    def __init__(self, q: mp.Queue, name="HashrateReporter"):
+        super().__init__(name=name, daemon=True)
+        self.q = q
+        self.stop_event = mp.Event()
+
+    def run(self):
+        last_line = ""
+        while not self.stop_event.is_set():
+            try:
+                msg = self.q.get(timeout=1.0)
+            except queue.Empty:
+                continue
+            if isinstance(msg, tuple) and len(msg) == 2 and msg[0] == "TOTAL_HPS":
+                hps = human_hps(msg[1])
+                line = f"Hashrate ~ {hps} {DIM}{RESET}"
+                if line != last_line:
+                    clog(line, color=CYAN)
+                    last_line = line
+                    
 
 def _register_bootstrap_peers(network: Network) -> int:
     fallback_nodes = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
@@ -43,16 +93,16 @@ def _run_snapshot_bootstrap(context: str, enabled: bool):
         return None
 
     def _printer(message: str):
-        print(f"[Bootstrap] {message}")
+        clog(f"[Bootstrap] {message}")
 
     result = maybe_bootstrap_snapshot(context=context, progress_cb=_printer)
     if result.status == "failed":
-        print(f"[Bootstrap] Snapshot bootstrap failed: {result.reason}. Continuing with normal sync.")
+        clog(f"[Bootstrap] Snapshot bootstrap failed: {result.reason}. Continuing with normal sync.", color=YELLOW)
     elif result.status == "installed":
-        print(f"[Bootstrap] Snapshot installed at height {result.height or '?'}")
+        clog(f"[Bootstrap] Snapshot installed at height {result.height or '?'}")
     else:
         reason = result.reason or "no snapshot source"
-        print(f"[Bootstrap] Skipped: {reason}")
+        clog(f"[Bootstrap] Skipped: {reason}")
     return result
 
 
@@ -65,19 +115,21 @@ class SimpleMiner:
         self.cancel_mining = mp.Event()
         self.blockchain = None
         self.network = None
+        self._progress_q: mp.Queue | None = None
+        self._hr_thread: HashrateReporter | None = None
 
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
 
     def signal_handler(self, signum, _frame):
-        print(f"\nReceived signal {signum}, shutting down...")
+        clog(f"Received signal {signum}, shutting down...", color=YELLOW)
         self.mining_alive = False
         if self.cancel_mining:
             self.cancel_mining.set()
 
     def validate_address(self):
         if not self.address or not self.address.lower().startswith("tsar1"):
-            print("Error: Address should start with 'tsar1...'")
+            clog("Error: Address should start with 'tsar1...'", color=RED)
             return False
         return True
 
@@ -89,7 +141,7 @@ class SimpleMiner:
         return bool(inbound or outbound)
 
     def start_node(self):
-        print("Starting node...")
+        clog("Starting node...")
         try:
             _run_snapshot_bootstrap("cli", self.bootstrap_snapshot)
             self.blockchain = Blockchain(
@@ -100,14 +152,14 @@ class SimpleMiner:
             )
             self.network = Network(blockchain=self.blockchain)
             peer_count = _register_bootstrap_peers(self.network)
-            print(f"Node started with {peer_count} bootstrap peers")
+            clog(f"Node started with {peer_count} bootstrap peers")
             return True
         except Exception as exc:
-            print(f"Failed to start node: {exc}")
+            clog(f"Failed to start node: {exc}", color=RED)
             return False
 
     def wait_for_sync(self, timeout=560):
-        print("Waiting for blockchain sync...")
+        clog("Waiting for blockchain sync...")
         start_time = time.time()
         last_progress = (-1, -1)
         notified_no_peer = False
@@ -122,17 +174,17 @@ class SimpleMiner:
                 active_peers = self._has_active_peers()
                 if not active_peers:
                     if height >= 0:
-                        print(f"No active peers detected (local height {height}). Proceeding with local chain.")
+                        clog(f"No active peers detected (local height {height}). Proceeding with local chain.", color=YELLOW)
                         return True
                     if not notified_no_peer:
-                        print("[Sync] Waiting for peer connection...")
+                        clog("[Sync] Waiting for peer connection...", color=YELLOW)
                         notified_no_peer = True
                     time.sleep(3)
                     continue
 
                 if self.network.peers:
                     if notified_no_peer:
-                        print("Peer connection restored, resuming sync...")
+                        clog("Peer connection restored, resuming sync...")
                         notified_no_peer = False
                     self.network.request_sync(fast=True)
 
@@ -155,25 +207,32 @@ class SimpleMiner:
                     if caught_up and height >= 0:
                         if best_height < height:
                             best_height = height
-                        print(f"Chain synced to height {height}")
+                        clog(f"Chain synced to height {height}")
                         return True
 
                     if best_height >= 0:
                         progress = (height, best_height)
                         if progress != last_progress:
-                            print(f"Sync progress - local height: {height}, best known peer: {best_height}")
+                            clog(f"Sync progress - local height: {height}, best known peer: {best_height}")
                             last_progress = progress
                 else:
                     if not notified_no_peer:
-                        print("Waiting for peer connection...")
+                        clog("Waiting for peer connection...", color=YELLOW)
                         notified_no_peer = True
                 time.sleep(2)
             except Exception as exc:
-                print(f"Sync error: {exc}")
+                clog(f"Sync error: {exc}", color=RED)
                 time.sleep(2)
 
-        print("Sync timeout or interrupted")
+        clog("Sync timeout or interrupted", color=RED)
         return False
+
+    def _start_hashrate_thread(self):
+        if self._progress_q is None:
+            self._progress_q = mp.Queue()
+
+        self._hr_thread = HashrateReporter(self._progress_q, self.cancel_mining)
+        self._hr_thread.start()
 
     def start_mining(self, timeout=560):
         if not self.validate_address():
@@ -186,24 +245,27 @@ class SimpleMiner:
         except Exception:
             local_height = -1
         if not self._has_active_peers() and local_height >= 0:
-            print(f"No active peer connections detected (local height {local_height}). Skipping sync wait.")
+            clog(f"No active peer connections detected (local height {local_height}). Skipping sync wait.", color=YELLOW)
             need_sync = False
         if need_sync and not self.wait_for_sync(timeout=timeout):
             return False
 
-        print("Starting mining with:")
-        print(f"  Address: {self.address}")
-        print(f"  Cores:   {self.cores}")
-        print("Press Ctrl+C to stop mining")
-        print("-" * 50)
+        clog("Starting mining with:", color=CYAN)
+        clog(f"  Address: {self.address}")
+        clog(f"  Cores:   {self.cores}")
+        clog("Press Ctrl+C to stop mining", color=YELLOW)
+        clog("-" * 50)
 
         if getattr(self.blockchain, "height", -1) < 0:
             created = self.blockchain.ensure_genesis(self.address, use_cores=self.cores)
             if created:
-                print("[+] Genesis block created")
+                clog("Genesis block created")
             else:
-                print("[-] Failed to create genesis block")
+                clog("Failed to create genesis block", color=RED)
                 return False
+
+        # Start hashrate reporter (prints every ~10–15s)
+        self._start_hashrate_thread()
 
         while self.mining_alive:
             try:
@@ -215,22 +277,22 @@ class SimpleMiner:
                     use_cores=self.cores,
                     cancel_event=self.cancel_mining,
                     pow_backend="randomx",
-                    progress_queue=None,
+                    progress_queue=self._progress_q,
                 )
 
                 if not self.mining_alive:
                     break
 
                 if block:
-                    print(f"[+] Block mined ( height :{getattr(block, 'height')}): {block.hash().hex()[:18]}…")
+                    clog(f"Block mined ( height :{getattr(block, 'height')}): {block.hash().hex()[:18]}…  broadcasting...")
                     try:
                         sent = self.network.publish_block(block, exclude=None, force=True)
                         if sent <= 0:
                             self.network.request_sync(fast=True)
                     except Exception as exc:
-                        print(f"Broadcast error: {exc}")
+                        clog(f"Broadcast error: {exc}", color=RED)
             except Exception as exc:
-                print(f"[-] Mining error: {exc}")
+                clog(f"Mining error: {exc}", color=RED)
                 time.sleep(1)
 
         return True
@@ -246,7 +308,7 @@ class SimpleMiner:
             except Exception:
                 pass
 
-        print("Miner stopped")
+        clog("Miner stopped", color=YELLOW)
 
 
 class NodeRunner:
@@ -261,12 +323,12 @@ class NodeRunner:
         signal.signal(signal.SIGTERM, self._handle_signal)
 
     def _handle_signal(self, *_args):
-        print("\nStopping node...")
+        clog("Stopping node...", color=YELLOW)
         self.running = False
 
     def start(self):
         print_banner()
-        print("Starting TsarChain node (no mining)...")
+        clog("Starting TsarChain node (no mining)...")
         try:
             _run_snapshot_bootstrap("cli", self.bootstrap_snapshot)
             self.blockchain = Blockchain(
@@ -280,11 +342,11 @@ class NodeRunner:
                 self._last_chain_height = int(getattr(self.blockchain, "height", -1))
             except Exception:
                 self._last_chain_height = -1
-            print(f"Local chain height: {self._last_chain_height}")
+            clog(f"Local chain height: {self._last_chain_height}")
             
             self.network = Network(blockchain=self.blockchain)
             peer_count = _register_bootstrap_peers(self.network)
-            print(f"Node online on port {self.network.port}, bootstrap peers: {peer_count}")
+            clog(f"Node online on port {self.network.port}, bootstrap peers: {peer_count}")
 
             # == Early fast-sync kick (mirror miner_gui) ==
             def _early_sync():
@@ -299,12 +361,12 @@ class NodeRunner:
             # == Background sync daemon (mirror miner_gui logic, but CLI prints) ==
             threading.Thread(target=self._sync_daemon, daemon=True).start()
 
-            print("Press Ctrl+C to stop.")
+            clog("Press Ctrl+C to stop.", color=YELLOW)
             while self.running:
                 time.sleep(2)
                 
         except Exception as exc:
-            print(f"Node error: {exc}")
+            clog(f"Node error: {exc}", color=RED)
             
         finally:
             self.shutdown()
@@ -317,7 +379,7 @@ class NodeRunner:
                 if not getattr(self.network, "peers", None):
                     msg = "[Sync] Waiting for peer connection..."
                     if msg != last_status:
-                        print(msg)
+                        clog(msg, color=YELLOW)
                         last_status = msg
                     self._sync_ready = False
                     time.sleep(5)
@@ -341,15 +403,16 @@ class NodeRunner:
                 # Progress print (only when changed)
                 if height != self._last_chain_height:
                     if height >= 0:
-                        print(f"[Sync] Chain height now {height}")
+                        clog(f"[Sync] Chain height now {height}")
                     self._last_chain_height = height
 
                 peer_sync_map = getattr(self.network, "_peer_last_sync", {}) or {}
+                import time as _t
                 latest_sync = max(peer_sync_map.values()) if peer_sync_map else 0.0
-                synced_recently = latest_sync and (time.time() - latest_sync) < 10
+                synced_recently = latest_sync and (_t.time() - latest_sync) < 10
                 if not self._sync_ready and height >= 0 and synced_recently:
                     self._sync_ready = True
-                    print("Chain has been confirmed. Node is live (no mining).")
+                    clog("Chain has been confirmed. Node is live (no mining).")
 
                 try:
                     inb = len(getattr(self.network, "inbound_peers", ()))
@@ -360,11 +423,11 @@ class NodeRunner:
                     
                 status = f"[peers in={inb} out={outb} known={known}] local={height} best={best_height if best_height>=0 else '?'}"
                 if status != last_status:
-                    print(status)
+                    clog(status)
                     last_status = status
 
             except Exception as e:
-                print(f"[node-only] sync error: {e}")
+                clog(f"[node-only] sync error: {e}", color=RED)
             time.sleep(5)
 
     def shutdown(self):
@@ -374,22 +437,22 @@ class NodeRunner:
             except Exception:
                 pass
             self.network = None
-        print("Node stopped.")
+        clog("Node stopped.", color=YELLOW)
 
 def get_user_input():
     print_banner()
-    print("Please enter your mining details:")
-    print("-" * 40)
+    clog("Please enter your mining details:")
+    clog("-" * 40)
 
     while True:
         address = input("Miner address (tsar1...): ").strip()
         if address and address.lower().startswith("tsar1"):
             break
-        print("Error: Address must start with 'tsar1...'")
-        print("Example: tsar1qyourwalletaddresshere")
+        clog("Error: Address must start with 'tsar1...'", color=YELLOW)
+        clog("Example: tsar1qyourwalletaddresshere", color=YELLOW)
 
     while True:
-        cores = psutil.cpu_count(logical=True) if HAVE_PSUTIL else mp.cpu_count()
+        cores = psutil.cpu_count(logical=True)
         cores_input = input(f"CPU cores to use [{cores}]: ").strip()
         if not cores_input:
             cores = 1
@@ -398,9 +461,9 @@ def get_user_input():
             cores = int(cores_input)
             if cores > 0:
                 break
-            print("Error: Cores must be a positive number")
+            clog("Error: Cores must be a positive number", color=YELLOW)
         except ValueError:
-            print("Error: Please enter a valid number")
+            clog("Error: Please enter a valid number", color=YELLOW)
 
     return address, cores
 
@@ -436,9 +499,9 @@ def main():
     try:
         miner.start_mining(timeout=args.timeout)
     except KeyboardInterrupt:
-        print("\nInterrupted by user")
+        clog("Interrupted by user", color=YELLOW)
     except Exception as exc:
-        print(f"Fatal error: {exc}")
+        clog(f"Fatal error: {exc}", color=RED)
     finally:
         miner.stop()
 

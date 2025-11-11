@@ -5,7 +5,7 @@
 
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
-import threading, time, re
+import threading, time, re, psutil
 import multiprocessing as mp
 from collections import deque, OrderedDict
 
@@ -20,12 +20,6 @@ from tsarchain.utils.bootstrap import maybe_bootstrap_snapshot
 from tsarchain.utils.tsar_logging import launch_gui_in_thread, setup_logging, open_log_toplevel, get_ctx_logger
 native.set_py_logger(get_ctx_logger("tsarchain.native"))
 
-try:
-    import psutil
-    HAVE_PSUTIL = True
-except Exception:
-    psutil = None
-    HAVE_PSUTIL = False
 
 ADDR_HINT = "tsar1..."
 IPPORT_RE = re.compile(r"^([0-9]{1,3}(?:\.[0-9]{1,3}){3}):([0-9]{1,5})$")
@@ -542,7 +536,7 @@ class BlockchainGUI:
 
     def _auto_cores(self):
         try:
-            cores = psutil.cpu_count(logical=True) if HAVE_PSUTIL else mp.cpu_count()
+            cores = psutil.cpu_count(logical=True)
             self.cpu_entry.delete(0, tk.END)
             self.cpu_entry.insert(0, str(max(1, int(cores) - 1)))
         except Exception:

@@ -7,11 +7,11 @@ Stateless CLI miner: keeps blockchain data in-memory only (no full DB persistenc
 Intended for VPS / mining rigs. For full-node duties use cli_node_miner.py
 """
 
-import argparse
-import errno
+import argparse, psutil, errno, signal, time, threading, queue, colorama
 import multiprocessing as mp
-import signal
-import time
+from datetime import datetime
+
+# ---------- Imports from project ----------
 
 from tsarchain.consensus.blockchain import Blockchain
 from tsarchain.network.node import Network
@@ -28,13 +28,61 @@ INTERRUPTED_ERRNOS = {
     if code is not None
 }
 
-try:
-    import psutil
+# ---------- Simple color + timestamp utilities ----------
 
-    HAVE_PSUTIL = True
-except Exception:
-    psutil = None
-    HAVE_PSUTIL = False
+colorama.init()
+RESET  = "\033[0m"
+BLUE   = "\033[34m"
+YELLOW = "\033[33m"
+GREEN  = "\033[32m"
+RED    = "\033[31m"
+CYAN   = "\033[36m"
+DIM    = "\033[2m"
+
+def _stamp() -> str:
+    now = datetime.now()
+    d = f"{now.year:04d}.{now.month:02d}.{now.day:02d}"
+    t = f"{now.hour:02d}.{now.minute:02d}.{now.second:02d}"
+    return f"[{BLUE}{d}{RESET}] - [{YELLOW}{t}{RESET}]"
+
+def clog(message: str, color: str = GREEN):
+    print(f"{_stamp()} : {color}{message}{RESET}")
+
+def human_hps(hps: float) -> str:
+    try:
+        hps = float(hps)
+    except Exception:
+        return "? H/s"
+    units = ["H/s", "kH/s", "MH/s", "GH/s", "TH/s"]
+    i = 0
+    while hps >= 1000.0 and i < len(units)-1:
+        hps /= 1000.0
+        i += 1
+    if hps >= 100:
+        return f"{hps:,.0f} {units[i]}"
+    if hps >= 10:
+        return f"{hps:,.1f} {units[i]}"
+    return f"{hps:,.2f} {units[i]}"
+
+class HashrateReporter(threading.Thread):
+    def __init__(self, q: mp.Queue, name="HashrateReporter"):
+        super().__init__(name=name, daemon=True)
+        self.q = q
+        self.stop_event = mp.Event()
+
+    def run(self):
+        last_line = ""
+        while not self.stop_event.is_set():
+            try:
+                msg = self.q.get(timeout=1.0)
+            except queue.Empty:
+                continue
+            if isinstance(msg, tuple) and len(msg) == 2 and msg[0] == "TOTAL_HPS":
+                hps = human_hps(msg[1])
+                line = f"Hashrate ~ {hps} {DIM}{RESET}"
+                if line != last_line:
+                    clog(line, color=CYAN)
+                    last_line = line
 
 
 def _register_bootstrap_peers(network: Network) -> int:
@@ -65,24 +113,26 @@ class LightMiner:
         self.network: Network | None = None
         self.mining_alive = True
         self.cancel_mining = mp.Event()
+        self._progress_q: mp.Queue | None = None
+        self._hr_thread: HashrateReporter | None = None
 
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
 
     # -------- lifecycle --------
     def _handle_signal(self, signum, _frame):
-        print(f"\n[signal] Received {signum}; stopping miner...")
+        clog(f"[signal] Received {signum}; stopping miner...", color=YELLOW)
         self.mining_alive = False
         self.cancel_mining.set()
 
     def validate_address(self) -> bool:
         if not self.address or not self.address.lower().startswith("tsar1"):
-            print("Error: Address must start with 'tsar1...' (bech32)")
+            clog("Error: Address must start with 'tsar1...' (bech32)", color=RED)
             return False
         return True
 
     def start_node(self) -> bool:
-        print("[light-node] Starting stateless mining node...")
+        clog("[light-node] Starting stateless mining node...")
         try:
             self.blockchain = Blockchain(
                 db_path=CFG.BLOCK_FILE,
@@ -92,10 +142,10 @@ class LightMiner:
             )
             self.network = Network(blockchain=self.blockchain)
             peer_count = _register_bootstrap_peers(self.network)
-            print(f"[light-node] Connected to {peer_count} bootstrap peers (stateless mode)")
+            clog(f"[light-node] Connected to {peer_count} bootstrap peers (stateless mode)")
             return True
         except Exception as exc:
-            print(f"[light-node] Failed to start: {exc}")
+            clog(f"[light-node] Failed to start: {exc}", color=RED)
             return False
 
     def _best_peer_height(self) -> int:
@@ -112,7 +162,7 @@ class LightMiner:
     def wait_for_sync(self, timeout: int = 600) -> bool:
         if not self.blockchain or not self.network:
             return False
-        print("[sync] Waiting for latest tip from peers (stateless miner)...")
+        clog("[sync] Waiting for latest tip from peers (stateless miner)...")
         start = time.time()
         notified_no_peer = False
         last_height = -2
@@ -124,7 +174,7 @@ class LightMiner:
                     self.network.request_sync(fast=True)
                 else:
                     if not notified_no_peer:
-                        print("[sync] Waiting for peer connection...")
+                        clog("[sync] Waiting for peer connection...", color=YELLOW)
                         notified_no_peer = True
 
                 try:
@@ -135,16 +185,23 @@ class LightMiner:
                 best_height = self._best_peer_height()
                 if height >= 0 and peers_known:
                     if height != last_height:
-                        print(f"[sync] Local tip height {height} (peer best {best_height if best_height >= 0 else '?'})")
+                        clog(f"[sync] Local tip height {height} (peer best {best_height if best_height >= 0 else '?'})")
                         last_height = height
                     return True
 
                 time.sleep(2)
             except Exception as exc:
-                print(f"[sync] Error: {exc}")
+                clog(f"[sync] Error: {exc}", color=RED)
                 time.sleep(2)
-        print("[sync] Failed to obtain chain tip within timeout.")
+        clog("[sync] Failed to obtain chain tip within timeout.", color=RED)
         return False
+
+    def _start_hashrate_thread(self):
+        if self._progress_q is None:
+            self._progress_q = mp.Queue()
+
+        self._hr_thread = HashrateReporter(self._progress_q, self.cancel_mining)
+        self._hr_thread.start()
 
     def start_mining(self, timeout: int = 600) -> bool:
         if not self.validate_address():
@@ -156,14 +213,17 @@ class LightMiner:
 
         current_height = int(getattr(self.blockchain, "height", -1))
         if current_height < 0:
-            print("[sync] No chain data available from peers; cannot mine in stateless mode.")
+            clog("[sync] No chain data available from peers; cannot mine in stateless mode.", color=RED)
             return False
 
-        print("\n=== Stateless RandomX Miner ===")
-        print(f"Address : {self.address}")
-        print(f"Cores   : {self.cores}")
-        print("Tip     :", current_height)
-        print("NOTE    : No local DB is kept. Use cli_node_miner.py for full-node duties.")
+        clog("=== Stateless RandomX Miner ===", color=CYAN)
+        clog(f"Address : {self.address}")
+        clog(f"Cores   : {self.cores}")
+        clog(f"Tip     : {current_height}")
+        clog("NOTE    : No local DB is kept. Use cli_node_miner.py for full-node duties.", color=YELLOW)
+
+        # Start hashrate reporter (prints every ~10–15s when Block.mine emits progress)
+        self._start_hashrate_thread()
 
         while self.mining_alive:
             try:
@@ -175,7 +235,7 @@ class LightMiner:
                     use_cores=self.cores,
                     cancel_event=self.cancel_mining,
                     pow_backend="randomx",
-                    progress_queue=None,
+                    progress_queue=self._progress_q,  # << enable TOTAL_HPS feed
                 )
 
                 if not self.mining_alive:
@@ -183,26 +243,26 @@ class LightMiner:
 
                 if block:
                     h = getattr(block, "height", "?")
-                    print(f"[+] Block mined at height {h}: {block.hash().hex()[:18]}…  broadcasting...")
+                    clog(f"Block mined at height {h} : {block.hash().hex()[:18]}…  broadcasting...")
                     try:
                         sent = self.network.publish_block(block, exclude=None, force=True) if self.network else 0
                         if sent <= 0:
-                            print("[broadcast] No peers reached; forcing fast sync.")
+                            clog("[broadcast] No peers reached; forcing fast sync.", color=YELLOW)
                             if self.network:
                                 self.network.request_sync(fast=True)
                     except Exception as exc:
-                        print(f"[broadcast] Error: {exc}")
+                        clog(f"[broadcast] Error: {exc}", color=RED)
             except KeyboardInterrupt:
                 self.mining_alive = False
                 self.cancel_mining.set()
-                print("\n[signal] Mining interrupted by user; stopping workers...")
+                clog("[signal] Mining interrupted by user; stopping workers...", color=YELLOW)
             except Exception as exc:
                 if isinstance(exc, OSError) and getattr(exc, "errno", None) in INTERRUPTED_ERRNOS:
-                    print("[mining] Interrupted system call; stopping miners...")
+                    clog("[mining] Interrupted system call; stopping miners...", color=YELLOW)
                     self.mining_alive = False
                     self.cancel_mining.set()
                     break
-                print(f"[mining] Error: {exc}")
+                clog(f"[mining] Error: {exc}", color=RED)
                 time.sleep(1)
         return True
 
@@ -215,24 +275,24 @@ class LightMiner:
             except Exception:
                 pass
             self.network = None
-        print("[light-node] Shutdown complete.")
+        clog("[light-node] Shutdown complete.", color=YELLOW)
 
 
 # -------- CLI helpers --------
 def _prompt_address_and_cores() -> tuple[str, int]:
     print_banner()
-    print("CLI Miner (RandomX)")
-    print("Only mines + validates tip. For full node duties use cli_node_miner.py.")
-    print("-" * 48)
+    clog("CLI Miner (RandomX)")
+    clog("Only mines + validates tip. For full node duties use cli_node_miner.py.")
+    clog("-" * 48)
 
     while True:
         addr = input("Miner address (tsar1...): ").strip()
         if addr.lower().startswith("tsar1"):
             break
-        print("Invalid address. Example: tsar1qyourwalletaddresshere")
+        clog("Invalid address. Example: tsar1qyourwalletaddresshere", color=YELLOW)
 
     while True:
-        core_default = psutil.cpu_count(logical=True) if HAVE_PSUTIL else mp.cpu_count()
+        core_default = psutil.cpu_count(logical=True)
         entry = input(f"CPU cores to use [{core_default}]: ").strip()
         if not entry:
             cores = max(1, core_default or 1)
@@ -241,9 +301,9 @@ def _prompt_address_and_cores() -> tuple[str, int]:
             cores = int(entry)
             if cores > 0:
                 break
-            print("Cores must be positive.")
+            clog("Cores must be positive.", color=YELLOW)
         except ValueError:
-            print("Enter a number.")
+            clog("Enter a number.", color=YELLOW)
 
     return addr, cores
 
@@ -270,7 +330,7 @@ def main():
         miner.start_mining(timeout=max(120, int(args.timeout or 600)))
     except KeyboardInterrupt:
         miner.cancel_mining.set()
-        print("\nInterrupted by user.")
+        clog("Interrupted by user.", color=YELLOW)
     finally:
         miner.shutdown()
 
