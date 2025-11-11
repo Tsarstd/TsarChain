@@ -4,9 +4,26 @@
 # Refs: see REFERENCES.md
 
 """
-Full Node CLI miner: keeps & receive full blockchain data in disk.
---node-only "for activate node only, no mining "
---no-bootstrap "for skip bootsratp snapshot (fast sync), and use default sync (/block)
+TsarChain — Full Node CLI Miner
+
+Role
+- Runs a full node with on-disk persistence.
+- Receives/maintains mempool and includes transactions in mined blocks.
+
+Intended environment
+- VPS / always-on servers.
+
+Key flags
+--node-only     : Run as full node only (no mining) — still relays mempool & chain.
+--no-bootstrap  : Skip snapshot fast-sync; use default block-by-block sync.
+
+Safety & behavior
+- Validates headers, difficulty, timestamps, and full block rules.
+- Keeps local DB, mempool policies apply (size/fees/sanity checks).
+- Reorg-safe: cancels current work and re-mines on new best tip.
+
+Notes
+- For mining-only rigs without mempool, use `cli_miner.py`.
 """
 
 import argparse, time, signal, threading, psutil, errno, queue, colorama, platform, shutil, subprocess, os, sys

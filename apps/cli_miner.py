@@ -3,8 +3,22 @@
 # Part of TsarChain – see LICENSE and TRADEMARKS.md
 
 """
-Stateless CLI miner: keeps blockchain data in-memory only (no full DB persistence).
-Intended for VPS / mining rigs. For full-node duties use cli_node_miner.py
+TsarChain — CLI Miner (Light)
+
+Role
+- Mining only: no mempool/transaction processing, no full DB persistence.
+
+Intended environment
+- Dedicated mining rigs.
+
+Safety & behavior
+- Sync-gated: starts hashing only after at least 1 peer and caught-up tip.
+- Validates header/consensus core locally (prev-hash, target, timestamp, etc.).
+- Typically mines empty/near-empty blocks (lower fee capture by design).
+- Reorg-safe: stops current job when best tip changes.
+
+Notes
+- For full-node duties and transaction inclusion, use `cli_node_miner.py`.
 """
 
 import argparse, psutil, errno, signal, time, threading, queue, colorama, platform, shutil, subprocess, os, sys
@@ -264,7 +278,7 @@ class LightMiner:
         return True
 
     def start_node(self) -> bool:
-        clog("[light-node] Starting stateless mining node...")
+        clog("Starting to Connect Tsarchain Network...")
         try:
             self.blockchain = Blockchain(
                 db_path=CFG.BLOCK_FILE,
@@ -274,27 +288,16 @@ class LightMiner:
             )
             self.network = Network(blockchain=self.blockchain)
             peer_count = _register_bootstrap_peers(self.network)
-            clog(f"[light-node] Connected to {peer_count} bootstrap peers (stateless mode)")
+            clog(f"Connected to TsarChain Network [{peer_count} bootstrap peers]")
             return True
         except Exception as exc:
-            clog(f"[light-node] Failed to start: {exc}", color=RED)
+            clog(f"Failed to connect: {exc}", color=RED)
             return False
-
-    def _best_peer_height(self) -> int:
-        if not self.network:
-            return -1
-        getter = getattr(self.network, "get_best_peer_height", None)
-        if getter is None:
-            return -1
-        try:
-            return int(getter())
-        except Exception:
-            return -1
 
     def wait_for_sync(self, timeout: int = 600) -> bool:
         if not self.blockchain or not self.network:
             return False
-        clog("[sync] Waiting for latest tip from peers (stateless miner)...")
+        clog("[sync] Requesting latest tip height for mining...")
         start = time.time()
         notified_no_peer = False
         last_height = -2
@@ -314,17 +317,17 @@ class LightMiner:
                 except Exception:
                     height = -1
 
-                best_height = self._best_peer_height()
                 if height >= 0 and peers_known:
                     if height != last_height:
-                        clog(f"[sync] Local tip height {height} (peer best {best_height if best_height >= 0 else '?'})")
+                        clog("[sync] tip height received...starting mining")
                         last_height = height
                     return True
-
                 time.sleep(2)
+                
             except Exception as exc:
                 clog(f"[sync] Error: {exc}", color=RED)
                 time.sleep(2)
+                
         clog("[sync] Failed to obtain chain tip within timeout.", color=RED)
         return False
 
@@ -345,13 +348,12 @@ class LightMiner:
 
         current_height = int(getattr(self.blockchain, "height", -1))
         if current_height < 0:
-            clog("[sync] No chain data available from peers; cannot mine in stateless mode.", color=RED)
+            clog("[sync] No chain data available from peers; cannot strating mining", color=RED)
             return False
 
-        clog("=== Stateless RandomX Miner ===", color=CYAN)
+        clog("=== Mining Informations ===", color=CYAN)
         clog(f"Address : {self.address}")
         clog(f"Cores   : {self.cores}")
-        clog(f"Tip     : {current_height}")
         clog("NOTE    : No local DB is kept. Use cli_node_miner.py for full-node duties.", color=YELLOW)
 
         # Start hashrate reporter (prints every ~10–15s when Block.mine emits progress)
