@@ -7,12 +7,11 @@ Stateless CLI miner: keeps blockchain data in-memory only (no full DB persistenc
 Intended for VPS / mining rigs. For full-node duties use cli_node_miner.py
 """
 
-import argparse, psutil, errno, signal, time, threading, queue, colorama
+import argparse, psutil, errno, signal, time, threading, queue, colorama, platform, shutil, subprocess, os, sys
 import multiprocessing as mp
 from datetime import datetime
 
-# ---------- Imports from project ----------
-
+# ---------- Local Project ----------
 from tsarchain.consensus.blockchain import Blockchain
 from tsarchain.network.node import Network
 from tsarchain.utils import config as CFG
@@ -64,6 +63,137 @@ def human_hps(hps: float) -> str:
         return f"{hps:,.1f} {units[i]}"
     return f"{hps:,.2f} {units[i]}"
 
+def _human_bytes(n: int) -> str:
+    try:
+        n = float(n)
+    except Exception:
+        return "?"
+    for unit in ("B","KB","MB","GB","TB","PB","EB"):
+        if n < 1024.0:
+            return f"{n:.1f} {unit}"
+        n /= 1024.0
+    return f"{n:.1f} ZB"
+
+def _cpu_brand() -> str:
+    try:
+        sysname = platform.system()
+        if sysname == "Windows":
+            # Registry
+            try:
+                import winreg  # type: ignore
+                with winreg.OpenKey(
+                    winreg.HKEY_LOCAL_MACHINE,
+                    r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as k:
+                    name, _ = winreg.QueryValueEx(k, "ProcessorNameString")
+                    name = " ".join(str(name).split())
+                    if name:
+                        return name
+            except Exception:
+                pass
+
+            # WMIC
+            try:
+                out = subprocess.check_output(
+                    ["wmic", "cpu", "get", "Name"],
+                    stderr=subprocess.DEVNULL
+                )
+                lines = [l.strip() for l in out.decode(errors="ignore").splitlines() if l.strip()]
+                if len(lines) >= 2:
+                    name = " ".join(lines[1].split())
+                    if name:
+                        return name
+            except Exception:
+                pass
+
+            # PowerShell
+            try:
+                out = subprocess.check_output(
+                    ["powershell", "-NoProfile", "-Command",
+                     "Get-CimInstance Win32_Processor | Select-Object -ExpandProperty Name"],
+                    stderr=subprocess.DEVNULL
+                )
+                name = " ".join(out.decode(errors="ignore").strip().split())
+                if name:
+                    return name
+            except Exception:
+                pass
+        
+        if sysname == "Darwin":
+            try:
+                out = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"])
+                return out.decode().strip()
+            except Exception:
+                pass
+            
+        elif sysname == "Linux":
+            try:
+                with open("/proc/cpuinfo", "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        if "model name" in line:
+                            return line.split(":", 1)[1].strip()
+            except Exception:
+                pass
+            
+            # lscpu
+            try:
+                out = subprocess.check_output(["lscpu"], stderr=subprocess.DEVNULL)
+                for line in out.decode(errors="ignore").splitlines():
+                    if "Model name:" in line:
+                        name = " ".join(line.split(":", 1)[1].strip().split())
+                        if name:
+                            return name
+            except Exception:
+                pass
+            
+        # Windows / fallback
+        name = platform.processor() or getattr(platform.uname(), "processor", "") or ""
+        name = " ".join(str(name).strip().split())
+        return name or "Unknown CPU"
+    except Exception:
+        return "Unknown CPU"
+
+def print_system_snapshot(cores_hint: int | None = None):
+    try:
+        uname = platform.uname()
+        vm = psutil.virtual_memory()
+        du = shutil.disk_usage("/")  # root fs
+        freq = None
+        try:
+            freq = psutil.cpu_freq()
+        except Exception:
+            pass
+
+        phys = psutil.cpu_count(logical=False) or 0
+        logi = psutil.cpu_count(logical=True) or 0
+        try:
+            la = os.getloadavg()  # Unix
+            la_str = f"{la[0]:.2f} {la[1]:.2f} {la[2]:.2f}"
+        except Exception:
+            la_str = "n/a"
+
+        clog("System snapshot:", color=CYAN)
+        clog(f"  CPU     : {_cpu_brand()}")
+        line_core = f"  Cores   : {phys} phys / {logi} logical"
+        if cores_hint:
+            line_core += f"  |  use {cores_hint}"
+        clog(line_core)
+        if freq:
+            try:
+                base = f"{(freq.min or 0)/1000:.2f}"
+                cur  = f"{(freq.current or 0)/1000:.2f}"
+                mx   = f"{(freq.max or 0)/1000:.2f}"
+                clog(f"  Speed   : {cur} GHz (base ~{base} / boost ~{mx})")
+            except Exception:
+                pass
+        clog(f"  RAM     : {_human_bytes(vm.total)} total, {_human_bytes(vm.available)} free")
+        clog(f"  Disk    : {_human_bytes(du.free)} free of {_human_bytes(du.total)}")
+        clog(f"  OS      : {uname.system} {uname.release} ({uname.machine})")
+        clog(f"  Python  : {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+        clog("-" * 50)
+    except Exception as e:
+        clog(f"[snapshot] failed: {e}", color=YELLOW)
+
+
 class HashrateReporter(threading.Thread):
     def __init__(self, q: mp.Queue, name="HashrateReporter"):
         super().__init__(name=name, daemon=True)
@@ -71,18 +201,21 @@ class HashrateReporter(threading.Thread):
         self.stop_event = mp.Event()
 
     def run(self):
-        last_line = ""
-        while not self.stop_event.is_set():
-            try:
-                msg = self.q.get(timeout=1.0)
-            except queue.Empty:
-                continue
-            if isinstance(msg, tuple) and len(msg) == 2 and msg[0] == "TOTAL_HPS":
-                hps = human_hps(msg[1])
-                line = f"Hashrate ~ {hps} {DIM}{RESET}"
-                if line != last_line:
-                    clog(line, color=CYAN)
-                    last_line = line
+        try :
+            last_line = ""
+            while not self.stop_event.is_set():
+                try:
+                    msg = self.q.get(timeout=1.0)
+                except queue.Empty:
+                    continue
+                if isinstance(msg, tuple) and len(msg) == 2 and msg[0] == "TOTAL_HPS":
+                    hps = human_hps(msg[1])
+                    line = f"Hashrate ~ {hps} {DIM}{RESET}"
+                    if line != last_line:
+                        clog(line, color=CYAN)
+                        last_line = line
+        except Exception:
+            pass
 
 
 def _register_bootstrap_peers(network: Network) -> int:
@@ -105,7 +238,6 @@ class LightMiner:
     Miner that keeps blockchain/UTXO data only in-memory.
     It relies on peers for the latest tip and does not create/persist genesis locally.
     """
-
     def __init__(self, address: str, cores: int):
         self.address = address
         self.cores = cores
@@ -283,6 +415,7 @@ def _prompt_address_and_cores() -> tuple[str, int]:
     print_banner()
     clog("CLI Miner (RandomX)")
     clog("Only mines + validates tip. For full node duties use cli_node_miner.py.")
+    print_system_snapshot(cores_hint=None)
     clog("-" * 48)
 
     while True:

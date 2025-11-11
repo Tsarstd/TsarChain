@@ -34,8 +34,8 @@ class SnapshotBootstrapResult:
 def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCallback = None) -> SnapshotBootstrapResult:
     ctx = (context or "default").lower()
     start_time = time.time()
-    target_file = getattr(CFG, "LMDB_DATA_FILE", os.path.join(CFG.DB_DIR, "data.mdb"))
-    meta_path = getattr(CFG, "SNAPSHOT_META_PATH", os.path.join(CFG.DB_DIR, "snapshot.meta.json"))
+    target_file = CFG.LMDB_DATA_FILE
+    meta_path = CFG.SNAPSHOT_META_PATH
     os.makedirs(os.path.dirname(target_file), exist_ok=True)
 
     if not CFG.SNAPSHOT_BOOTSTRAP_ENABLED:
