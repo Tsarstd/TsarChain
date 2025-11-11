@@ -39,14 +39,14 @@ Changing them may cause different block/tx validity (hard fork) unless otherwise
   6) FORK-CHOICE & REORG
    - ENABLE_CHAINWORK_RULE, ENABLE_REORG_LIMIT, REORG_LIMIT
 
-  7) POW (RandomX)
+  7) POW (RandomX) - CONSENSUS CRITICAL
    - POW_ALGO, RANDOMX_STATIC_KEY
-   - RANDOMX_KEY_EPOCH_BLOCKS, RANDOMX_FULL_MEM, RANDOMX_LARGE_PAGES
-   - RANDOMX_JIT, RANDOMX_SECURE_JIT, RANDOMX_HARD_AES, RANDOMX_CACHE_MAX
+   - RANDOMX_KEY_EPOCH_BLOCKS
 
 NOT CONSENSUS (safety differs between nodes):
-   port/BOOTSTRAP, timeout, connection limit, anti-DoS, logging/path,
-   option UI/wallet.
+   - RANDOMX_FULL_MEM, RANDOMX_LARGE_PAGES, RANDOMX_JIT, etc. (performance tuning only)
+   - port/BOOTSTRAP, timeout, connection limit, anti-DoS, logging/path
+   - option UI/wallet
 
 NETWORK ISOLATION (not a fork, but cannot connect to each other):
    - DEFAULT_NET_ID / NET_ID_DEV / NET_ID_PROD, NETWORK_MAGIC
@@ -116,8 +116,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "00060822610cc8393314ec12b44b7f0e4ae3bec4197215b7e0b6896851a25998"  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 1  # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -173,8 +173,8 @@ GENESIS_REWARD_AMOUNT = 2_500_000 * TSAR  # allocation granted when genesis rewa
 # 5. CONSENSUS & DIFFICULTY
 # =============================================================================
 # ---- BASE DIFFICULTY ----
-INITIAL_BITS      = 0x1F8FFFFF  # starting difficulty bits assigned to block zero
-MAX_BITS          = 0x1F8FFFFF  # cap for easiest allowed difficulty
+INITIAL_BITS      = 0x1F9FFFFF  # starting difficulty bits assigned to block zero
+MAX_BITS          = 0x1F9FFFFF  # cap for easiest allowed difficulty
 TARGET_BLOCK_TIME = 37  # aim for ~37 seconds block cadence
 LWMA_WINDOW       = 75  # block count considered by LWMA difficulty algo
 FUTURE_DRIFT      = 600  # max seconds a block timestamp may lead wall clock
@@ -438,9 +438,9 @@ SNAPSHOT_FILE_URL          = ""  # optional URL for snapshot binary
 SNAPSHOT_PUBKEY_HEX        = ""  # hex-encoded pubkey used to verify snapshot signature
 
 # ---- SNAPSHOT MODES ----
-SNAPSHOT_BOOTSTRAP_ENABLED = False  # allow nodes to bootstrap via snapshot downloads
-SNAPSHOT_BOOTSTRAP_FOR_GUI = False  # enable snapshot bootstrap path for miner_gui.py
-SNAPSHOT_BOOTSTRAP_FOR_CLI = False  # enable snapshot bootstrap path for cli_node_miner.py
+SNAPSHOT_BOOTSTRAP_ENABLED = True  # allow nodes to bootstrap via snapshot downloads
+SNAPSHOT_BOOTSTRAP_FOR_GUI = True  # enable snapshot bootstrap path for miner_gui.py
+SNAPSHOT_BOOTSTRAP_FOR_CLI = True  # enable snapshot bootstrap path for cli_node_miner.py
 
 # ---- SNAPSHOT TRANSFER ----
 SNAPSHOT_HTTP_TIMEOUT    = 90  # HTTP timeout applied to snapshot downloads
@@ -452,8 +452,8 @@ SNAPSHOT_USER_AGENT      = "TsarChainSnapshot/1.0"  # UA string used when fetchi
 
 # ---- SNAPSHOT BACKUP ----
 SNAPSHOT_BACKUP_DIR   = os.path.join("data", "snapshot")  # folder storing backup snapshots
-BACKUP_SNAPSHOT       = False  # toggle to keep automatic backup copies
-BLOCK_BACKUP_SNAPSHOT = 50  # interval in blocks between snapshot backups
+BACKUP_SNAPSHOT       = True  # toggle to keep automatic backup copies
+BLOCK_BACKUP_SNAPSHOT = 25  # interval in blocks between snapshot backups
 
 
 # =============================================================================
