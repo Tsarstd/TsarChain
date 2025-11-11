@@ -32,69 +32,6 @@ except ImportError as exc:
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.utils(helpers)")
 
-_POW_ALGO = (CFG.POW_ALGO or "sha256").lower()
-_RANDOMX_EPOCH_BLOCKS = max(1, int(CFG.RANDOMX_KEY_EPOCH_BLOCKS))
-_RANDOMX_SALT = (CFG.RANDOMX_KEY_SALT or "tsar-randomx").encode("utf-8")
-
-
-def _resolve_randomx_root() -> bytes:
-    raw = (CFG.RANDOMX_STATIC_KEY or "").strip()
-    if not raw:
-        return b"tsar-randomx-dev"
-    lowered = raw.lower()
-    if lowered.startswith("0x"):
-        lowered = lowered[2:]
-    try:
-        if lowered and len(lowered) % 2 == 0 and all(c in "0123456789abcdef" for c in lowered):
-            return bytes.fromhex(lowered)
-    except Exception:
-        pass
-    return raw.encode("utf-8")
-
-
-_RANDOMX_ROOT = _resolve_randomx_root()
-
-
-def _pow_epoch(height: int | None) -> int:
-    if height is None:
-        return 0
-    try:
-        h = int(height)
-    except Exception:
-        h = 0
-    if h < 0:
-        h = 0
-    return h // _RANDOMX_EPOCH_BLOCKS
-
-
-def randomx_key_for_height(height: int | None = None) -> bytes:
-    epoch = _pow_epoch(height)
-    payload = _RANDOMX_ROOT + _RANDOMX_SALT + epoch.to_bytes(8, "big", signed=False)
-    return hashlib.sha256(payload).digest()
-
-
-def pow_key_for_height(height: int | None = None) -> bytes:
-    return randomx_key_for_height(height) if _POW_ALGO == "randomx" else b""
-
-
-def pow_hash(header: bytes, height: int | None = None, key_hint: bytes | None = None) -> bytes:
-    data = to_bytes(header)
-    if _POW_ALGO == "randomx":
-        seed = key_hint if key_hint is not None else randomx_key_for_height(height)
-        seed_bytes = bytes(seed)
-        cache_cap = max(1, int(CFG.RANDOMX_CACHE_MAX))
-        return _native_randomx_hash(
-            data,
-            seed_bytes,
-            bool(CFG.RANDOMX_FULL_MEM),
-            bool(CFG.RANDOMX_LARGE_PAGES),
-            bool(CFG.RANDOMX_JIT),
-            bool(CFG.RANDOMX_HARD_AES),
-            bool(CFG.RANDOMX_SECURE_JIT),
-            cache_cap if cache_cap > 0 else 1,
-        )
-    return hash256(data)
-
 SIGHASH_ALL = 1
 
 # opcode constants
@@ -132,6 +69,63 @@ def print_banner():
                        Long Live The Voice Sovereignty
     """
     print(banner)
+
+# -----------------------------
+# RANDOMX MINING ALGO
+# -----------------------------
+
+def _resolve_randomx_root() -> bytes:
+    raw = (CFG.RANDOMX_STATIC_KEY or "").strip()
+    if not raw:
+        return b"tsar-randomx-dev"
+    lowered = raw.lower()
+    if lowered.startswith("0x"):
+        lowered = lowered[2:]
+    try:
+        if lowered and len(lowered) % 2 == 0 and all(c in "0123456789abcdef" for c in lowered):
+            return bytes.fromhex(lowered)
+    except Exception:
+        pass
+    return raw.encode("utf-8")
+
+_RANDOMX_ROOT = _resolve_randomx_root()
+
+def _pow_epoch(height: int | None) -> int:
+    if height is None:
+        return 0
+    try:
+        h = int(height)
+    except Exception:
+        h = 0
+    if h < 0:
+        h = 0
+    return h // CFG.RANDOMX_KEY_EPOCH_BLOCKS
+
+def randomx_key_for_height(height: int | None = None) -> bytes:
+    epoch = _pow_epoch(height)
+    payload = _RANDOMX_ROOT + CFG.RANDOMX_KEY_SALT + epoch.to_bytes(8, "big", signed=False)
+    return hashlib.sha256(payload).digest()
+
+def pow_key_for_height(height: int | None = None) -> bytes:
+    return randomx_key_for_height(height) if CFG.POW_ALGO == "randomx" else b""
+
+def pow_hash(header: bytes, height: int | None = None, key_hint: bytes | None = None) -> bytes:
+    data = to_bytes(header)
+    if CFG.POW_ALGO == "randomx":
+        seed = key_hint if key_hint is not None else randomx_key_for_height(height)
+        seed_bytes = bytes(seed)
+        cache_cap = max(1, int(CFG.RANDOMX_CACHE_MAX))
+        return _native_randomx_hash(
+            data,
+            seed_bytes,
+            bool(CFG.RANDOMX_FULL_MEM),
+            bool(CFG.RANDOMX_LARGE_PAGES),
+            bool(CFG.RANDOMX_JIT),
+            bool(CFG.RANDOMX_HARD_AES),
+            bool(CFG.RANDOMX_SECURE_JIT),
+            cache_cap if cache_cap > 0 else 1,
+        )
+    return hash256(data)
 
 # -----------------------------
 # SIGOPS UTIL
