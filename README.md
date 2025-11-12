@@ -37,6 +37,7 @@ TsarChain focuses on **Voice Sovereignty**: preserving *cultural archives*, *art
 - [Security Notes](#-security-notes)
 - [Contributing](#-contributing)
 - [Roadmap](#️-roadmap)
+- [Documentation](#-documentation)
 - [License](#-license)
 
 ---
