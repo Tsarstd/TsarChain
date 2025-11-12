@@ -116,8 +116,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 1  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = "000468319ebb8df03e476edb0e9e305c827bef34d759497acdfac0dc03a54772"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -185,7 +185,7 @@ POW_ALGO                 = "randomx"
 RANDOMX_STATIC_KEY       = "tsar-dev-seed"
 RANDOMX_KEY_SALT         = b"tsar-randomx"
 RANDOMX_KEY_EPOCH_BLOCKS = 64     # rotate RandomX seed every N blocks
-RANDOMX_FULL_MEM         = False  # allocate ~2GB dataset for mining/validation - if set 'False' = RandomX Lite
+RANDOMX_FULL_MEM         = True  # allocate ~2GB dataset for mining/validation - if set 'False' = RandomX Lite
 RANDOMX_LARGE_PAGES      = False  # set True only if huge pages configured OS-wide
 RANDOMX_JIT              = True
 RANDOMX_SECURE_JIT       = True
@@ -438,14 +438,14 @@ SNAPSHOT_FILE_URL          = ""  # optional URL for snapshot binary
 SNAPSHOT_PUBKEY_HEX        = ""  # hex-encoded pubkey used to verify snapshot signature
 
 # ---- SNAPSHOT MODES ----
-SNAPSHOT_BOOTSTRAP_ENABLED = True  # allow nodes to bootstrap via snapshot downloads
-SNAPSHOT_BOOTSTRAP_FOR_GUI = True  # enable snapshot bootstrap path for miner_gui.py
-SNAPSHOT_BOOTSTRAP_FOR_CLI = True  # enable snapshot bootstrap path for cli_node_miner.py
+SNAPSHOT_BOOTSTRAP_ENABLED = False  # allow nodes to bootstrap via snapshot downloads
+SNAPSHOT_BOOTSTRAP_FOR_GUI = False  # enable snapshot bootstrap path for miner_gui.py
+SNAPSHOT_BOOTSTRAP_FOR_CLI = False  # enable snapshot bootstrap path for cli_node_miner.py
 
 # ---- SNAPSHOT TRANSFER ----
 SNAPSHOT_HTTP_TIMEOUT    = 90  # HTTP timeout applied to snapshot downloads
 SNAPSHOT_CHUNK_BYTES     = 2 * 1024 * 1024  # chunk size when streaming snapshot data
-SNAPSHOT_MIN_SIZE_BYTES  = 4 * 1024 * 1024  # ignore snapshot files smaller than this
+SNAPSHOT_MIN_SIZE_BYTES  = 4 * 1024  # ignore snapshot files smaller than this
 SNAPSHOT_META_PATH       = os.path.join(DB_DIR, "snapshot.meta.json")  # cached metadata file for snapshots
 SNAPSHOT_MAX_AGE_SECONDS = 12 * 3600  # maximum tolerated snapshot age (12h)
 SNAPSHOT_USER_AGENT      = "TsarChainSnapshot/1.0"  # UA string used when fetching snapshots

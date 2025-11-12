@@ -109,23 +109,36 @@ def randomx_key_for_height(height: int | None = None) -> bytes:
 def pow_key_for_height(height: int | None = None) -> bytes:
     return randomx_key_for_height(height) if CFG.POW_ALGO == "randomx" else b""
 
-def pow_hash(header: bytes, height: int | None = None, key_hint: bytes | None = None) -> bytes:
+def _randomx_hash_core(data: bytes, seed_bytes: bytes, *, full_mem: bool) -> bytes:
+    cache_cap = max(1, int(CFG.RANDOMX_CACHE_MAX))
+    return _native_randomx_hash(
+        data,
+        seed_bytes,
+        bool(full_mem),
+        bool(CFG.RANDOMX_LARGE_PAGES),
+        bool(CFG.RANDOMX_JIT),
+        bool(CFG.RANDOMX_HARD_AES),
+        bool(CFG.RANDOMX_SECURE_JIT),
+        cache_cap if cache_cap > 0 else 1,
+    )
+
+def pow_hash_miner(header: bytes, *, height: int | None = None, key_hint: bytes | None = None, full_mem_override: bool | None = None) -> bytes:
+    """Hash for MINING. Can be full-mem according to override/CFG."""
     data = to_bytes(header)
-    if CFG.POW_ALGO == "randomx":
-        seed = key_hint if key_hint is not None else randomx_key_for_height(height)
-        seed_bytes = bytes(seed)
-        cache_cap = max(1, int(CFG.RANDOMX_CACHE_MAX))
-        return _native_randomx_hash(
-            data,
-            seed_bytes,
-            bool(CFG.RANDOMX_FULL_MEM),
-            bool(CFG.RANDOMX_LARGE_PAGES),
-            bool(CFG.RANDOMX_JIT),
-            bool(CFG.RANDOMX_HARD_AES),
-            bool(CFG.RANDOMX_SECURE_JIT),
-            cache_cap if cache_cap > 0 else 1,
-        )
-    return hash256(data)
+    if CFG.POW_ALGO != "randomx":
+        return hash256(data)
+    seed = key_hint if key_hint is not None else randomx_key_for_height(height)
+    fm = bool(CFG.RANDOMX_FULL_MEM) if full_mem_override is None else bool(full_mem_override)
+    return _randomx_hash_core(data, bytes(seed), full_mem=fm)
+
+def pow_hash_verify_light(header: bytes, *, height: int | None = None, key_hint: bytes | None = None) -> bytes:
+    """Hash for VERIFICATION. Always LIGHT (no 2 GB dataset)."""
+    data = to_bytes(header)
+    if CFG.POW_ALGO != "randomx":
+        return hash256(data)
+    seed = key_hint if key_hint is not None else randomx_key_for_height(height)
+    return _randomx_hash_core(data, bytes(seed), full_mem=False)
+
 
 # -----------------------------
 # SIGOPS UTIL

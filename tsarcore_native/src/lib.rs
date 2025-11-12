@@ -83,6 +83,7 @@ fn with_cached_vm<R>(
     RANDOMX_VM_CACHE.with(|cell| -> Result<R, RandomXError> {
         let mut cache = cell.borrow_mut();
         let now = Instant::now();
+        let cap = if flags.contains(RandomXFlag::FLAG_FULL_MEM) { 1 } else { max_entries.max(1) };
         let mut needs_purge = false;
         if let Some(entry) = cache.get_mut(key) {
             if entry.flags == flags {
@@ -97,7 +98,7 @@ fn with_cached_vm<R>(
         }
 
         let vm = instantiate_vm(key, flags)?;
-        if max_entries > 0 && cache.len() >= max_entries {
+        if cap > 0 && cache.len() >= cap {
             let mut victim_key: Option<Vec<u8>> = None;
             let mut oldest = Instant::now();
             for (k, v) in cache.iter() {
@@ -126,7 +127,7 @@ fn configure_randomx_flags(
     hard_aes: bool,
     secure: bool,
 ) -> RandomXFlag {
-    let mut flags = RandomXFlag::get_recommended_flags();
+    let mut flags = RandomXFlag::FLAG_DEFAULT;
     if full_mem {
         flags.insert(RandomXFlag::FLAG_FULL_MEM);
     } else {

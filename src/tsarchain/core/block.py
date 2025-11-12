@@ -10,7 +10,7 @@ from multiprocessing.synchronize import Event as MpEvent
 
 
 # ---------------- Local Project ----------------
-from ..utils.helpers import int_to_little_endian, merkle_root, pow_hash, bits_to_target, pow_key_for_height
+from ..utils.helpers import int_to_little_endian, merkle_root, pow_hash_miner, pow_hash_verify_light, bits_to_target, pow_key_for_height
 from ..core.coinbase import CoinbaseTx
 from ..core.tx import Tx
 from ..utils import config as CFG
@@ -126,7 +126,7 @@ class Block:
     # -----------------------------
 
     def hash(self) -> bytes:
-        return pow_hash(self.header(), height=self.height)
+        return pow_hash_verify_light(self.header(), height=self.height)
 
     def is_valid(self, target: int):
         hnum = int.from_bytes(self.hash(), 'big')
@@ -174,6 +174,46 @@ class Block:
             created_local_stop = True
 
         worker_target = type(self).mine_worker_randomx
+        
+        if num_cores == 1:
+            nonce = 0
+            max_nonce = (2**32 - 1)
+            hash_count = 0
+            last_report_time = time.time()
+            header = bytearray(header_without_nonce)
+            header.extend(b"\x00\x00\x00\x00")
+            nonce_offset = len(header) - 4
+            while nonce <= max_nonce:
+                if stop_event is not None and stop_event.is_set():
+                    return None
+                struct.pack_into("<I", header, nonce_offset, nonce & 0xFFFFFFFF)
+                block_hash = pow_hash_miner(header, key_hint=pow_key)
+                if int.from_bytes(block_hash, "big") < target:
+                    self.nonce = nonce & 0xFFFFFFFF
+                    
+                    # LIGHT verification to prevent second dataset in parent
+                    if pow_hash_verify_light(self.header(), key_hint=pow_key) != block_hash:
+                        return None
+                    self.log.info("[mine] Block mined: nonce=%s, hash=%s", self.nonce, block_hash.hex())
+                    return block_hash
+                
+                # progress every ~5 second
+                now = time.time()
+                hash_count += 1
+                if now - last_report_time >= 5.0:
+                    if progress_queue is not None:
+                        try:
+                            hps = hash_count / max(1e-9, (now - last_total_print))
+                        except NameError:
+                            hps = hash_count / max(1e-9, (now - last_report_time))
+                        try:
+                            progress_queue.put(('TOTAL_HPS', float(hps)))
+                        except Exception:
+                            pass
+                    hash_count = 0
+                    last_report_time = now
+                nonce += 1
+            return None
 
         cpu_ids = list(range(total_cores))
         for i in range(num_cores):
@@ -261,7 +301,7 @@ class Block:
             elapsed = time.time() - start_time
             if nonce is not None and found_hash:
                 self.nonce = nonce
-                if pow_hash(self.header(), key_hint=pow_key) != found_hash:
+                if pow_hash_verify_light(self.header(), key_hint=pow_key) != found_hash:
                     return None
                 self.log.info("[mine] Block mined: nonce=%s, hash=%s (time=%.2fs)", self.nonce, found_hash.hex(), elapsed)
                 return found_hash
@@ -326,7 +366,7 @@ class Block:
                     break
 
                 struct.pack_into("<I", header, nonce_offset, nonce & 0xFFFFFFFF)
-                block_hash = pow_hash(header, key_hint=pow_key)
+                block_hash = pow_hash_miner(header, key_hint=pow_key)
                 hash_int = int.from_bytes(block_hash, "big")
                 hash_count += 1
 
