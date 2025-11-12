@@ -210,7 +210,7 @@ def print_system_snapshot(cores_hint: int | None = None):
         clog(f"  Disk    : {_human_bytes(du.free)} free of {_human_bytes(du.total)}")
         clog(f"  OS      : {uname.system} {uname.release} ({uname.machine})")
         clog(f"  Python  : {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
-        clog("-" * 50)
+        clog("-" * 40, color=RED)
     except Exception as e:
         clog(f"[snapshot] failed: {e}", color=YELLOW)
 
@@ -419,6 +419,12 @@ class SimpleMiner:
         clog("Starting mining with:", color=CYAN)
         clog(f"  Address: {self.address}")
         clog(f"  Cores:   {self.cores}")
+        try:
+            mode_label = "FULL-MEM (+2.5GB)" if bool(CFG.RANDOMX_FULL_MEM) else "LIGHT"
+            clog(f"  RandomX: {mode_label}")
+        except Exception:
+            pass
+        
         clog("Press Ctrl+C to stop mining", color=YELLOW)
         clog("-" * 50)
 
@@ -611,7 +617,7 @@ class NodeRunner:
 
 def get_user_input():
     clog("Please enter your mining details:")
-    clog("-" * 40)
+    clog("-" * 40, color=RED)
 
     while True:
         address = input("Miner address (tsar1...): ").strip()
@@ -642,7 +648,7 @@ def choose_mode() -> int:
       0 -> Mining Mode
       1 -> Node Only (no mining)
     """
-    clog("Please Choose Mode :")
+    clog("Please Choose Mode:", color=CYAN)
     clog("[0] Mining Mode   [1] Node Only ( no mining )")
     while True:
         try:
@@ -654,6 +660,20 @@ def choose_mode() -> int:
             return int(sel)
         clog("Invalid selection. Enter 0 or 1.", color=YELLOW)
         
+def _prompt_rx_full_mem() -> bool:
+    clog("RandomX Memory Boost", color=CYAN)
+    clog("-" * 40, color=RED)
+    clog("if you choose 'y' your PC will consume 2.5GB - 7GB RAM Usage")
+    clog("if you choose 'N' RAM Usage will stable in 2.5GB")
+    clog("-" * 40, color=RED)
+    while True:
+        ans = input("Enable RandomX FULL MEMORY mode (+2.5GB)? [y/N]: ").strip().lower()
+        if ans in ("y", "yes", "1"):
+            return True
+        if ans in ("n", "no", "0", ""):
+            return False
+        clog("Please answer y or n.", color=YELLOW)
+        
 def parse_args():
     parser = argparse.ArgumentParser(description="TsarChain CLI miner / node runner")
     parser.add_argument("--address", help="Miner payout address (tsar1...)")
@@ -661,12 +681,12 @@ def parse_args():
     parser.add_argument("--node-only", action="store_true", help="Run node without mining")
     parser.add_argument("--timeout", type=int, default=560, help="Sync timeout in seconds (mining mode)")
     parser.add_argument("--no-bootstrap", action="store_true", help="Skip snapshot bootstrap download")
+    parser.add_argument("--rx-full", action="store_true", help="Enable RandomX FULL MEMORY mode (+2.5GB dataset)")
+    parser.add_argument("--rx-light", action="store_true", help="Force RandomX LIGHT mode (~<2.5GB, lower RAM)")
     return parser.parse_args()
-
 
 def main():
     args = parse_args()
-    #setup_logging()
     mode_selected = None
     if not args.node_only:
         # Interactive mode selection
@@ -690,8 +710,22 @@ def main():
         address = address or input_address
         cores = cores or input_cores
 
-    miner = SimpleMiner(address, cores, bootstrap_snapshot=not args.no_bootstrap)
+    # Decide RandomX memory mode (mining mode only)
+    if args.rx_full and args.rx_light:
+        clog("Cannot set both --rx-full and --rx-light. Choose one.", color=RED)
+        sys.exit(2)
+    if args.rx_full:
+        rx_full_mem = True
+    elif args.rx_light:
+        rx_full_mem = False
+    else:
+        rx_full_mem = _prompt_rx_full_mem()
+    CFG.RANDOMX_FULL_MEM = bool(rx_full_mem)
+    os.environ["TSAR_RANDOMX_FULL_MEM"] = "1" if rx_full_mem else "0"
+    mode_label = "FULL-MEM (+2.5GB)" if CFG.RANDOMX_FULL_MEM else "LIGHT"
+    clog(f"RandomX mode set to: {mode_label}")
 
+    miner = SimpleMiner(address, cores, bootstrap_snapshot=not args.no_bootstrap)
     try:
         miner.start_mining(timeout=args.timeout)
     except KeyboardInterrupt:
@@ -700,7 +734,6 @@ def main():
         clog(f"Fatal error: {exc}", color=RED)
     finally:
         miner.stop()
-
 
 if __name__ == "__main__":
     mp.freeze_support()

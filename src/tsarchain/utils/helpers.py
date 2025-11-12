@@ -4,7 +4,7 @@
 # Refs: BIP143; BIP141; BIP173; CompactSize; Merkle; libsecp256k1; LowS-Policy; Signal-X3DH
 
 from __future__ import annotations
-import hashlib, json, secrets, string, unicodedata
+import hashlib, json, secrets, string, unicodedata, os
 from bech32 import bech32_decode, convertbits
 from typing import Union, Tuple, Optional
 from ecdsa import SECP256k1, util, VerifyingKey
@@ -121,6 +121,22 @@ def _randomx_hash_core(data: bytes, seed_bytes: bytes, *, full_mem: bool) -> byt
         bool(CFG.RANDOMX_SECURE_JIT),
         cache_cap if cache_cap > 0 else 1,
     )
+    
+def _resolve_rx_full_mem(full_mem_override: bool | None) -> bool:
+    """
+    Resolution order:
+      1) explicit function arg full_mem_override (if not None)
+      2) env var TSAR_RANDOMX_FULL_MEM ("1/true/yes/on" => True, "0/false/no/off" => False)
+      3) CFG.RANDOMX_FULL_MEM
+    """
+    if full_mem_override is not None:
+        return bool(full_mem_override)
+    env = (os.getenv("TSAR_RANDOMX_FULL_MEM") or "").strip().lower()
+    if env in ("1", "true", "yes", "y", "on"):
+        return True
+    if env in ("0", "false", "no", "n", "off"):
+        return False
+    return bool(CFG.RANDOMX_FULL_MEM)
 
 def pow_hash_miner(header: bytes, *, height: int | None = None, key_hint: bytes | None = None, full_mem_override: bool | None = None) -> bytes:
     """Hash for MINING. Can be full-mem according to override/CFG."""
@@ -128,7 +144,7 @@ def pow_hash_miner(header: bytes, *, height: int | None = None, key_hint: bytes 
     if CFG.POW_ALGO != "randomx":
         return hash256(data)
     seed = key_hint if key_hint is not None else randomx_key_for_height(height)
-    fm = bool(CFG.RANDOMX_FULL_MEM) if full_mem_override is None else bool(full_mem_override)
+    fm = _resolve_rx_full_mem(full_mem_override)
     return _randomx_hash_core(data, bytes(seed), full_mem=fm)
 
 def pow_hash_verify_light(header: bytes, *, height: int | None = None, key_hint: bytes | None = None) -> bytes:

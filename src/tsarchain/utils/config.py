@@ -185,7 +185,7 @@ POW_ALGO                 = "randomx"
 RANDOMX_STATIC_KEY       = "tsar-dev-seed"
 RANDOMX_KEY_SALT         = b"tsar-randomx"
 RANDOMX_KEY_EPOCH_BLOCKS = 64     # rotate RandomX seed every N blocks
-RANDOMX_FULL_MEM         = True  # allocate ~2GB dataset for mining/validation - if set 'False' = RandomX Lite
+RANDOMX_FULL_MEM         = False  # allocate ~2GB dataset for mining/validation - default 'False' can be changed in CLI
 RANDOMX_LARGE_PAGES      = False  # set True only if huge pages configured OS-wide
 RANDOMX_JIT              = True
 RANDOMX_SECURE_JIT       = True

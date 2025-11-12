@@ -203,7 +203,7 @@ def print_system_snapshot(cores_hint: int | None = None):
         clog(f"  Disk    : {_human_bytes(du.free)} free of {_human_bytes(du.total)}")
         clog(f"  OS      : {uname.system} {uname.release} ({uname.machine})")
         clog(f"  Python  : {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
-        clog("-" * 50)
+        clog("-" * 40, color=RED)
     except Exception as e:
         clog(f"[snapshot] failed: {e}", color=YELLOW)
 
@@ -354,6 +354,12 @@ class LightMiner:
         clog("=== Mining Informations ===", color=CYAN)
         clog(f"Address : {self.address}")
         clog(f"Cores   : {self.cores}")
+        try:
+            mode_label = "FULL-MEM (+2.5GB)" if bool(CFG.RANDOMX_FULL_MEM) else "LIGHT"
+            clog(f"RandomX : {mode_label}")
+        except Exception:
+            pass
+        
         clog("NOTE    : No local DB is kept. Use cli_node_miner.py for full-node duties.", color=YELLOW)
 
         # Start hashrate reporter (prints every ~10–15s when Block.mine emits progress)
@@ -418,7 +424,8 @@ def _prompt_address_and_cores() -> tuple[str, int]:
     clog("CLI Miner (RandomX)")
     clog("Only mines + validates tip. For full node duties use cli_node_miner.py.")
     print_system_snapshot(cores_hint=None)
-    clog("-" * 48)
+    clog("Please enter your mining details:", color=CYAN)
+    clog("-" * 40, color=RED)
 
     while True:
         addr = input("Miner address (tsar1...): ").strip()
@@ -442,12 +449,28 @@ def _prompt_address_and_cores() -> tuple[str, int]:
 
     return addr, cores
 
+def _prompt_rx_full_mem() -> bool:
+    clog("RandomX Memory Boost", color=CYAN)
+    clog("-" * 40, color=RED)
+    clog("if you choose 'y' your PC will consume 2.5GB - 7GB RAM Usage")
+    clog("if you choose 'N' RAM Usage will stable in 2.5GB")
+    clog("-" * 40, color=RED)
+    while True:
+        ans = input("Enable RandomX FULL MEMORY mode (+2.5GB)? [y/N]: ").strip().lower()
+        if ans in ("y", "yes", "1"):
+            return True
+        if ans in ("n", "no", "0", ""):
+            return False
+        clog("Please answer y or n.", color=YELLOW)
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="TsarChain Stateless CLI Miner (RandomX)")
     parser.add_argument("--address", help="Miner payout address (tsar1...)")
     parser.add_argument("--cores", type=int, help="CPU cores to dedicate")
     parser.add_argument("--timeout", type=int, default=600, help="Sync timeout (seconds)")
+    parser.add_argument("--rx-full", action="store_true", help="Enable RandomX FULL MEMORY mode (+2.5GB dataset)")
+    parser.add_argument("--rx-light", action="store_true", help="Force RandomX LIGHT mode (~<2.5GB, lower RAM)")
     return parser.parse_args()
 
 
@@ -459,6 +482,28 @@ def main():
         addr_prompt, cores_prompt = _prompt_address_and_cores()
         address = address or addr_prompt
         cores = cores or cores_prompt
+    
+    if not address or not cores:
+        addr_prompt, cores_prompt = _prompt_address_and_cores()
+        address = address or addr_prompt
+        cores = cores or cores_prompt
+
+    # Decide RandomX memory mode
+    if args.rx_full and args.rx_light:
+        clog("Cannot set both --rx-full and --rx-light. Choose one.", color=RED)
+        sys.exit(2)
+    if args.rx_full:
+        rx_full_mem = True
+    elif args.rx_light:
+        rx_full_mem = False
+    else:
+        rx_full_mem = _prompt_rx_full_mem()
+
+    # Apply runtime override so mining respects the chosen mode
+    CFG.RANDOMX_FULL_MEM = bool(rx_full_mem)
+    os.environ["TSAR_RANDOMX_FULL_MEM"] = "1" if rx_full_mem else "0"
+    mode_label = "FULL-MEM (+2.5GB)" if CFG.RANDOMX_FULL_MEM else "LIGHT"
+    clog(f"RandomX mode set to: {mode_label}")
 
     miner = LightMiner(address=address, cores=max(1, int(cores)))
     try:
