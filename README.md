@@ -5,17 +5,18 @@
 <p align="center">
   <img alt="License" src="https://img.shields.io/badge/License-MIT-brightgreen">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.11%2B-blue">
+  <img alt="Rust" src="https://img.shields.io/badge/Rust-Pyo3-black">
   <img alt="Consensus" src="https://img.shields.io/badge/Consensus-PoW-lightgrey">
   <img alt="Ledger" src="https://img.shields.io/badge/Ledger-UTXO-blueviolet">
-  <img alt="Address" src="https://img.shields.io/badge/Address-tsar1%20(Bech32)-informational">
-  <img alt="Network" src="https://img.shields.io/badge/Network-Devnet-orange">
+  <img alt="Address" src="https://img.shields.io/badge/Address-tsar1%20(Bech32)-orange">
+  <img alt="Network" src="https://img.shields.io/badge/Network-Devnet-yellow">
 </p>
 
 # Long Live The Voice Sovereignty Monetary System
 
-*A proof-of-work, UTXO-based chain built to preserve human voice — uncensorable, durable, and verifiable.*
+*A proof‑of‑work, UTXO‑based chain for digital preservation — durable, verifiable, and community‑owned.*
 
-TsarChain is a minimal, pragmatic Layer-1 focused on **Voice Sovereignty**: protecting speech, art, and testimony so they can’t be silently erased. The project pairs a Python-first core with Rust accelerators where performance matters, and ships a local-first wallet so everyone can participate without gatekeepers.
+TsarChain focuses on **Voice Sovereignty**: preserving *cultural archives*, *art*, and *testimonies* so that *digital traces* don't disappear. Its decentralized architecture keeps evidence **verifiable** and **publicly auditable**, providing creative communities and cultural researchers with a durable **preservation platform**.
 
 
 ---
@@ -92,7 +93,7 @@ TsarChain is a minimal, pragmatic Layer-1 focused on **Voice Sovereignty**: prot
 
 ## 🧭 Why Voice Sovereignty?
 
-Platforms curate history; networks preserve it. TsarChain treats each message, artwork, or testimony as **expressive value** anchored in blocks and protected by open consensus — so proof of speech remains auditable long after timelines move on.
+Platforms curate history; networks preserve it. TsarChain treats each message, artwork, or testimony as **expressive value** anchored in blocks and protected by open consensus — not for confrontation, but for the care of collective memory.
 
 ---
 
@@ -100,7 +101,7 @@ Platforms curate history; networks preserve it. TsarChain treats each message, a
 
 #### Prerequisites
 - Python ≥ 3.11, Git
-- (Optional) Rust toolchain for native acceleration
+- Rust toolchain for native acceleration
 
 #### Setup
 ```bash
