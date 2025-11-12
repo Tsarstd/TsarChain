@@ -259,9 +259,16 @@ Pull requests are welcome. Please start with small, well‑scoped changes (docs,
 
 ## 🗺️ Roadmap
 
-- Smarter mempool relay + anti-DoS
 - Graffiti & Storage Node incentives
 - Wallet UX hardening and recovery tooling
+- The Voice Sovereignty
+
+---
+
+## 📄 Documentation
+
+- [`Grungepaper - The Voice Sovereignty (EN)`](docs/Grungepaper%20-%20The%20Voice%20Sovereignty%20(EN).pdf)
+- [`Grungepaper - The Voice Sovereignty (ID)`](docs/Grungepaper%20-%20The%20Voice%20Sovereignty%20(ID).pdf)
 
 ---
 
