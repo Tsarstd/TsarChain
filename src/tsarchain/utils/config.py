@@ -76,7 +76,43 @@ WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wal
 
 
 # =============================================================================
-# 2. FILESYSTEM LAYOUT
+# 2. DATABASE & SNAPSHOTS
+# =============================================================================
+# ---- KV BACKEND ----
+DB_DIR             = "data/DB"  # LMDB root folder
+KV_BACKEND         = "lmdb"  # active key-value backend implementation
+LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
+LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
+LMDB_DATA_FILE     = os.path.join(DB_DIR, "data.mdb")  # main LMDB data file path
+LMDB_LOCK_FILE     = os.path.join(DB_DIR, "lock.mdb")  # LMDB lock file path
+
+# ---- SNAPSHOT SIGNING ----
+SNAPSHOT_REQUIRE_SIGNATURE = False  # demand signed snapshot manifests when True
+SNAPSHOT_MANIFEST_URL      = ""  # optional URL supplying snapshot manifest
+SNAPSHOT_FILE_URL          = ""  # optional URL for snapshot binary
+SNAPSHOT_PUBKEY_HEX        = ""  # hex-encoded pubkey used to verify snapshot signature
+
+# ---- SNAPSHOT MODES ----
+SNAPSHOT_BOOTSTRAP_ENABLED = False  # allow nodes to bootstrap via snapshot downloads
+SNAPSHOT_BOOTSTRAP_FOR_GUI = False  # enable snapshot bootstrap path for miner_gui.py
+SNAPSHOT_BOOTSTRAP_FOR_CLI = False  # enable snapshot bootstrap path for cli_node_miner.py
+
+# ---- SNAPSHOT TRANSFER ----
+SNAPSHOT_HTTP_TIMEOUT    = 90  # HTTP timeout applied to snapshot downloads
+SNAPSHOT_CHUNK_BYTES     = 2 * 1024 * 1024  # chunk size when streaming snapshot data
+SNAPSHOT_MIN_SIZE_BYTES  = 4 * 1024  # ignore snapshot files smaller than this
+SNAPSHOT_META_PATH       = os.path.join(DB_DIR, "snapshot.meta.json")  # cached metadata file for snapshots
+SNAPSHOT_MAX_AGE_SECONDS = 12 * 3600  # maximum tolerated snapshot age (12h)
+SNAPSHOT_USER_AGENT      = "TsarChainSnapshot/1.0"  # UA string used when fetching snapshots
+
+# ---- SNAPSHOT BACKUP ----
+SNAPSHOT_BACKUP_DIR   = os.path.join("data", "snapshot")  # folder storing backup snapshots
+BACKUP_SNAPSHOT       = True  # toggle to keep automatic backup copies
+BLOCK_BACKUP_SNAPSHOT = 25  # interval in blocks between snapshot backups
+
+
+# =============================================================================
+# 3. FILESYSTEM LAYOUT
 # =============================================================================
 # ---- CORE STATE FILES ----
 STATE_FILE              = "data/State/state.json"  # serialized node state snapshot
@@ -106,7 +142,7 @@ STORAGE_NODES_FILE = os.path.join(CONTRACTS_DIR, "storage_nodes.json")  # known 
 
 
 # =============================================================================
-# 3. CHAIN IDENTITY & GENESIS
+# 4. CHAIN IDENTITY & GENESIS
 # =============================================================================
 # ---- NETWORK IDENTIFIERS ----
 NET_ID_DEV     = "gulag-net"  # dev network identifier string advertised on handshake
@@ -154,7 +190,7 @@ VOICE_SOVEREIGNTY_FIGURES = [
 
 
 # =============================================================================
-# 4. MONETARY POLICY
+# 5. MONETARY POLICY
 # =============================================================================
 # ---- UNIT CONSTANTS ----
 TSAR = 100_000_000  # atomic unit (8 decimals) equivalent to satoshis
@@ -172,7 +208,7 @@ GENESIS_REWARD_AMOUNT = 2_500_000 * TSAR  # allocation granted when genesis rewa
 
 
 # =============================================================================
-# 5. CONSENSUS & DIFFICULTY
+# 6. CONSENSUS & DIFFICULTY
 # =============================================================================
 # ---- BASE DIFFICULTY ----
 INITIAL_BITS      = 0x1F9FFFFF  # starting difficulty bits assigned to block zero
@@ -218,7 +254,7 @@ EDA_EASE_MULTIPLIER = 2.0  # difficulty divisor applied when EDA fires
 
 
 # =============================================================================
-# 6. TRANSACTION FEES & MEMPOOL
+# 7. TRANSACTION FEES & MEMPOOL
 # =============================================================================
 # ---- FEE POLICY ----
 DEFAULT_FEE_RATE_SATVB = 35  # wallet default feerate in sat/vbyte
@@ -237,7 +273,7 @@ MEMPOOL_MAX_SIZE = 1 * 1024 * 1024  # maximum in-memory mempool footprint (bytes
 
 
 # =============================================================================
-# 7. NETWORK & SYNC
+# 8. NETWORK & SYNC
 # =============================================================================
 # ---- PORTS & BOOTSTRAP ----
 PORT_RANGE_DEV  = (38169, 38178)  # port span reserved for dev deployments
@@ -313,7 +349,7 @@ PEER_SCORE_MIN             = -40  # floor value before dropping the peer
 
 
 # =============================================================================
-# 8. SECURITY & CRYPTOGRAPHY
+# 9. SECURITY & CRYPTOGRAPHY
 # =============================================================================
 # ---- P2P ENCRYPTION ----
 P2P_ENC_REQUIRED     = True  # enforce AEAD encryption for all node links
@@ -337,7 +373,7 @@ REPLAY_WINDOW_SEC    = 60  # Acceptable skew window for anti-replay stamps
 
 
 # =============================================================================
-# 9. CHAT & PRESENCE
+# 10. CHAT & PRESENCE
 # =============================================================================
 # ---- CHAT PAYLOAD LIMITS ----
 CHAT_MAX_CT_BYTES     = 2 * 1024  # ciphertext size cap per chat message
@@ -382,7 +418,7 @@ CHAT_SPK_ROTATE_INTERVAL_S = 7 * 24 * 3600  # seconds between signed pre-key rot
 
 
 # =============================================================================
-# 10. RPC & CACHE
+# 11. RPC & CACHE
 # =============================================================================
 # ---- RPC TIMEOUTS ----
 CONNECT_TIMEOUT_SCAN = 1.25  # timeout for quick port scanning during discovery
@@ -419,7 +455,7 @@ CHAT_REG_RL_BACKOFF_S   = 20  # cooldown after chat register limiter trips
 
 
 # =============================================================================
-# 11. SCRIPT, GRAFFITI & STORAGE POLICY
+# 12. SCRIPT, GRAFFITI & STORAGE POLICY
 # =============================================================================
 # ---- MAGIC CONSTANTS ----
 STORAGE_MAGIC  = b"TSAR_GRAF1|"  # domain separator for storage commitments
@@ -450,42 +486,6 @@ ALLOW_UNREGISTERED_STORAGE_UPLOADS = True  # permit uploads from nodes without r
 STORAGE_RPC_LOCAL_ONLY = True  # restrict privileged storage RPCs to localhost when no token is supplied
 STORAGE_RPC_ALLOWED_IPS = ("127.0.0.1", "::1")  # loopback addresses permitted during local-only mode
 STORAGE_RPC_TOKEN = (os.getenv("TSAR_STORAGE_RPC_TOKEN") or "").strip() or None  # optional shared secret for remote storage RPCs
-
-
-# =============================================================================
-# 12. DATABASE & SNAPSHOTS
-# =============================================================================
-# ---- KV BACKEND ----
-DB_DIR             = "data/DB"  # LMDB root folder
-KV_BACKEND         = "lmdb"  # active key-value backend implementation
-LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
-LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
-LMDB_DATA_FILE     = os.path.join(DB_DIR, "data.mdb")  # main LMDB data file path
-LMDB_LOCK_FILE     = os.path.join(DB_DIR, "lock.mdb")  # LMDB lock file path
-
-# ---- SNAPSHOT SIGNING ----
-SNAPSHOT_REQUIRE_SIGNATURE = False  # demand signed snapshot manifests when True
-SNAPSHOT_MANIFEST_URL      = ""  # optional URL supplying snapshot manifest
-SNAPSHOT_FILE_URL          = ""  # optional URL for snapshot binary
-SNAPSHOT_PUBKEY_HEX        = ""  # hex-encoded pubkey used to verify snapshot signature
-
-# ---- SNAPSHOT MODES ----
-SNAPSHOT_BOOTSTRAP_ENABLED = False  # allow nodes to bootstrap via snapshot downloads
-SNAPSHOT_BOOTSTRAP_FOR_GUI = False  # enable snapshot bootstrap path for miner_gui.py
-SNAPSHOT_BOOTSTRAP_FOR_CLI = False  # enable snapshot bootstrap path for cli_node_miner.py
-
-# ---- SNAPSHOT TRANSFER ----
-SNAPSHOT_HTTP_TIMEOUT    = 90  # HTTP timeout applied to snapshot downloads
-SNAPSHOT_CHUNK_BYTES     = 2 * 1024 * 1024  # chunk size when streaming snapshot data
-SNAPSHOT_MIN_SIZE_BYTES  = 4 * 1024  # ignore snapshot files smaller than this
-SNAPSHOT_META_PATH       = os.path.join(DB_DIR, "snapshot.meta.json")  # cached metadata file for snapshots
-SNAPSHOT_MAX_AGE_SECONDS = 12 * 3600  # maximum tolerated snapshot age (12h)
-SNAPSHOT_USER_AGENT      = "TsarChainSnapshot/1.0"  # UA string used when fetching snapshots
-
-# ---- SNAPSHOT BACKUP ----
-SNAPSHOT_BACKUP_DIR   = os.path.join("data", "snapshot")  # folder storing backup snapshots
-BACKUP_SNAPSHOT       = True  # toggle to keep automatic backup copies
-BLOCK_BACKUP_SNAPSHOT = 25  # interval in blocks between snapshot backups
 
 
 # =============================================================================
