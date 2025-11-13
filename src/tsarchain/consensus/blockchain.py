@@ -37,16 +37,23 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
     def __init__(self, db_path: str = CFG.BLOCK_FILE, miner_address: str | None = None, in_memory: bool = False, use_cores: int | None = None,):
         self.in_memory = in_memory
         self.db_path = db_path
+        
         self.chain: List[Block] = []
         self.total_supply = 0
         self.total_blocks = 0
-        self.use_cores = use_cores
         self.supply_in_tsar = 0
+        
         self.miner_address = miner_address
+        self.use_cores = use_cores
         self.lock = threading.RLock()
+        
         self.pending_blocks: List[Block] = []
         self._chain_store = AtomicJSONFile(CFG.BLOCK_FILE, keep_backups=3)
         self._state_store = AtomicJSONFile(CFG.STATE_FILE, keep_backups=3)
+        self._chain_journal_path = CFG.CHAIN_JOURNAL_FILE
+        if self._chain_journal_path:
+            os.makedirs(os.path.dirname(self._chain_journal_path), exist_ok=True)
+            
         self._persisted_height: int = -1
         self._chain_dirty_from: Optional[int] = None
         self._utxodb: Optional[UTXODB] = None
@@ -54,9 +61,12 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
         self._utxo_last_flush_height: int = -1
         self._utxo_flush_interval: int = max(1, int(CFG.UTXO_FLUSH_INTERVAL))
         self._utxo_synced: bool = False
+        
         self._snapshot_last_backup_height: int = -1
+        self._state_snapshot_cache: dict | None = None
         self._last_block_validation_error: str | None = None
         self._mempool: TxPoolDB | None = None
+        
         self._persist_queue: queue.Queue[bool | None] | None = None
         self._persist_thread: threading.Thread | None = None
         self._persist_stop = threading.Event()

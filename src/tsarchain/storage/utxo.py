@@ -6,6 +6,7 @@
 import json
 import threading
 import time
+from collections import defaultdict
 from bech32 import bech32_decode, convertbits
 
 # ---------------- Local Project ----------------
@@ -21,7 +22,7 @@ log = get_ctx_logger("tsarchain.storage(utxo)")
 
 
 class UTXODB(BaseDatabase):
-    def __init__(self):
+    def __init__(self, *, persist: bool = True):
         self.filepath = CFG.UTXOS_FILE
         self.utxos = {}
         self._lock = threading.RLock()
@@ -29,7 +30,21 @@ class UTXODB(BaseDatabase):
         self._dirty_keys = set()
         self._removed_keys = set()
         self._rewrite_all = False
-        self._load()
+        self._version = 0
+        self._address_index: dict[str, set[str]] | None = None
+        self._key_to_spk: dict[str, str] = {}
+        self._tip_cache = {"height": 0, "ts": 0.0}
+        self._tip_cache_ttl = float(getattr(CFG, "STATE_HEIGHT_CACHE_TTL", 2.0) or 2.0)
+        self._version = 0
+        self._address_index: dict[str, set[str]] | None = None
+        self._key_to_spk: dict[str, str] = {}
+        self._tip_cache = {"height": 0, "ts": 0.0}
+        self._tip_cache_ttl = float(getattr(CFG, "STATE_HEIGHT_CACHE_TTL", 2.0) or 2.0)
+        self._persist_enabled = bool(persist)
+        if self._persist_enabled:
+            self._load()
+        else:
+            self.utxos.clear()
 
     # ===================== SERIALIZE =====================
     def _serialize_entry(self, entry):
@@ -96,6 +111,9 @@ class UTXODB(BaseDatabase):
         utxo_db._dirty_keys = set(utxo_db.utxos.keys())
         utxo_db._removed_keys.clear()
         utxo_db._rewrite_all = True
+        utxo_db._address_index = None
+        utxo_db._key_to_spk.clear()
+        utxo_db._bump_version()
         return utxo_db
 
     def load_utxo_set(self):
@@ -132,11 +150,15 @@ class UTXODB(BaseDatabase):
 
     # ===================== FILE I/O =====================
     def _load(self, *, force: bool = False):
+        if not self._persist_enabled:
+            return
         with self._lock:
             if not force and getattr(self, "_dirty", False):
                 # Keep in-memory state (contains latest unsaved blocks/txs)
                 return
             self.utxos.clear()
+            self._address_index = None
+            self._key_to_spk.clear()
             if kv_enabled():
                 for k, v in iter_prefix('utxo', b''):
                     try:
@@ -185,14 +207,16 @@ class UTXODB(BaseDatabase):
             self._dirty_keys.clear()
             self._removed_keys.clear()
             self._rewrite_all = False
+            self._bump_version()
 
     def _save(self, force: bool = False):
+        if not self._persist_enabled:
+            return
         if not force and not self._dirty:
             return
         with self._lock:
             if not force and not self._dirty:
                 return
-            started = time.time()
             rewrite = bool(force or self._rewrite_all)
             target_keys = self.utxos.keys() if rewrite else set(self._dirty_keys)
             if kv_enabled():
@@ -214,14 +238,10 @@ class UTXODB(BaseDatabase):
             else:
                 payload = {k: self._serialize_entry(v) for k, v in self.utxos.items()}
                 self.save_json(self.filepath, payload)
-            removed = len(self._removed_keys)
             self._dirty = False
             self._dirty_keys.clear()
             self._removed_keys.clear()
             self._rewrite_all = False
-            duration = time.time() - started
-            backend = "lmdb" if kv_enabled() else "json"
-            written = len(self.utxos) if rewrite else len(target_keys)
 
     # ===================== MODIFIKASI DATA =====================
     def _txid_hex(self, x):
@@ -282,6 +302,7 @@ class UTXODB(BaseDatabase):
                         if self.utxos.pop(spent_key, None) is not None:
                             self._removed_keys.add(spent_key)
                             self._dirty_keys.discard(spent_key)
+                            self._drop_index_entry(spent_key)
 
                 for index, tx_out in enumerate(getattr(tx, "outputs", [])):
                     self.add(txid_hex, index, tx_out,
@@ -291,11 +312,10 @@ class UTXODB(BaseDatabase):
             self._dirty = True
             if autosave:
                 self._save()
+            self._bump_version()
 
 
     def rebuild_from_chain(self, blocks) -> None:
-        started = time.time()
-        block_count = len(blocks or [])
         with self._lock:
             self.utxos.clear()
             self._dirty_keys.clear()
@@ -313,12 +333,14 @@ class UTXODB(BaseDatabase):
                             if prev_txid_hex is None or vout is None:
                                 continue
                             spent_key = f"{prev_txid_hex}:{int(vout)}"
-                            self.utxos.pop(spent_key, None)
+                            if self.utxos.pop(spent_key, None) is not None:
+                                self._drop_index_entry(spent_key)
                     for index, tx_out in enumerate(getattr(tx, "outputs", []) or []):
                         self.add(txid_hex, index, tx_out, is_coinbase=is_coinbase, block_height=height, autosave=False)
             self._dirty = True
-            self._save(force=True)
-        duration = time.time() - started
+            if self._persist_enabled:
+                self._save(force=True)
+            self._bump_version()
 
     def flush(self, force: bool = False) -> bool:
         if not force and not self._dirty:
@@ -342,6 +364,8 @@ class UTXODB(BaseDatabase):
             self._removed_keys.discard(key)
             if autosave:
                 self._save()
+            self._index_entry(key, tx_out)
+            self._bump_version()
 
     def remove(self, txid, index: int, autosave: bool = True):
         key = f"{self._txid_hex(txid)}:{int(index)}"
@@ -352,6 +376,8 @@ class UTXODB(BaseDatabase):
                 self._removed_keys.add(key)
                 if autosave:
                     self._save()
+                self._drop_index_entry(key)
+                self._bump_version()
 
     def spend_input(self, tx_input):
         prev_txid_hex, vout = self._prevout_from_txin(tx_input)
@@ -361,21 +387,31 @@ class UTXODB(BaseDatabase):
 
 
     # ===================== QUERY / BALANCE =====================
-    def _get_tip_height_from_state(self) -> int:
+    def _get_tip_height_from_state(self, *, use_cache: bool = True) -> int:
+        now = time.time()
+        if use_cache and (now - self._tip_cache.get("ts", 0.0)) <= self._tip_cache_ttl:
+            return int(self._tip_cache.get("height", 0))
+
         # Prefer KV state when enabled
+        height = 0
         if kv_enabled():
             try:
                 items = dict((k.decode('utf-8'), v.decode('utf-8')) for k, v in iter_prefix('state', b'k:'))
                 tb = int(items.get('k:total_blocks', '0'))
-                return max(0, tb - 1)
+                height = max(0, tb - 1)
             except Exception:
                 pass
+            else:
+                self._tip_cache.update(height=height, ts=now)
+                return height
         try:
             data = AtomicJSONFile(CFG.STATE_FILE).load(default={})
             total_blocks = int(data.get("total_blocks", 0))
-            return max(0, total_blocks - 1)
+            height = max(0, total_blocks - 1)
         except Exception:
-            return 0
+            height = 0
+        self._tip_cache.update(height=height, ts=now)
+        return height
 
     def _get_utxo_meta(self, utxo_data):
         if isinstance(utxo_data, dict):
@@ -408,16 +444,13 @@ class UTXODB(BaseDatabase):
 
         total = mature = immature = 0
         with self._lock:
-            for _, entry in self.utxos.items():
-                try:
-                    tx_out = entry["tx_out"]
-                    spk_hex = tx_out.script_pubkey.serialize().hex().lower()
-                except Exception:
+            keys = list(self._get_index_bucket(target_spk_hex))
+            for key in keys:
+                entry = self.utxos.get(key)
+                if not entry:
                     continue
-                if spk_hex != target_spk_hex:
-                    continue
-
-                amt = int(getattr(tx_out, "amount", 0))
+                tx_out = entry["tx_out"]
+                amt = self._amount_from_tx_out(tx_out)
                 is_cb = bool(entry.get("is_coinbase", False))
                 born = int(entry.get("block_height", entry.get("height", 0)))
 
@@ -616,17 +649,100 @@ class UTXODB(BaseDatabase):
         target_spk_hex = _normalize_target_spk_hex(identifier)
         result = {}
         with self._lock:
-            for key, data in self.utxos.items():
-                try:
-                    spk_hex = data["tx_out"].script_pubkey.serialize().hex().lower()
-                except Exception:
+            keys = list(self._get_index_bucket(target_spk_hex))
+            for key in keys:
+                data = self.utxos.get(key)
+                if not data:
                     continue
-                if spk_hex == target_spk_hex:
-                    result[key] = {
-                        "amount": int(data["tx_out"].amount),
-                        "script_pubkey": spk_hex,
-                        "is_coinbase": bool(data.get("is_coinbase", False)),
-                        "block_height": int(data.get("block_height", 0)),
-                    }
+                result[key] = {
+                    "amount": self._amount_from_tx_out(data["tx_out"]),
+                    "script_pubkey": target_spk_hex,
+                    "is_coinbase": bool(data.get("is_coinbase", False)),
+                    "block_height": int(data.get("block_height", 0)),
+                }
         return result
+
+    # ------------------------ Index Helpers ------------------------
+    def _script_hex_from_tx_out(self, tx_out) -> str | None:
+        if tx_out is None:
+            return None
+        try:
+            spk = None
+            if hasattr(tx_out, "script_pubkey"):
+                spk = tx_out.script_pubkey
+            elif isinstance(tx_out, dict):
+                spk = tx_out.get("script_pubkey")
+            elif hasattr(tx_out, "serialize"):
+                return tx_out.serialize().hex().lower()
+            if spk is None:
+                return None
+            if hasattr(spk, "serialize"):
+                return spk.serialize().hex().lower()
+            if isinstance(spk, (bytes, bytearray)):
+                return bytes(spk).hex().lower()
+            if isinstance(spk, str):
+                return spk.lower()
+        except Exception:
+            return None
+        return None
+
+    def _amount_from_tx_out(self, tx_out) -> int:
+        if isinstance(tx_out, dict):
+            return int(tx_out.get("amount", 0) or 0)
+        return int(getattr(tx_out, "amount", 0) or 0)
+
+    def _ensure_index_locked(self):
+        if self._address_index is not None:
+            return
+        self._address_index = defaultdict(set)
+        self._key_to_spk.clear()
+        for key, entry in self.utxos.items():
+            tx_out = entry.get("tx_out")
+            spk_hex = self._script_hex_from_tx_out(tx_out)
+            if spk_hex:
+                self._address_index[spk_hex].add(key)
+                self._key_to_spk[key] = spk_hex
+
+    def _get_index_bucket(self, script_hex: str) -> set[str]:
+        script_hex = (script_hex or "").lower()
+        self._ensure_index_locked()
+        bucket = self._address_index.get(script_hex) if self._address_index else None
+        return set(bucket) if bucket else set()
+
+    def _index_entry(self, key: str, tx_out):
+        if self._address_index is None:
+            return
+        spk_hex = self._script_hex_from_tx_out(tx_out)
+        if spk_hex:
+            self._address_index.setdefault(spk_hex, set()).add(key)
+            self._key_to_spk[key] = spk_hex
+
+    def _drop_index_entry(self, key: str):
+        if self._address_index is None:
+            return
+        spk = self._key_to_spk.pop(key, None)
+        if not spk:
+            return
+        bucket = self._address_index.get(spk)
+        if bucket:
+            bucket.discard(key)
+            if not bucket:
+                self._address_index.pop(spk, None)
+
+    # ------------------------ Version helpers ------------------------
+    def _bump_version(self):
+        self._version = (self._version + 1) % (1 << 63)
+        self._tip_cache["ts"] = 0.0  # force refresh next read
+
+    @property
+    def version(self) -> int:
+        return self._version
+
+    # ------------------------ Lookup helpers ------------------------
+    def lookup_entry(self, txid_hex: str, index: int):
+        if txid_hex is None:
+            return None
+        key = f"{str(txid_hex).lower()}:{int(index)}"
+        with self._lock:
+            return self.utxos.get(key)
 

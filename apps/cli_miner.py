@@ -300,30 +300,61 @@ class LightMiner:
         clog("[sync] Requesting latest tip height for mining...")
         start = time.time()
         notified_no_peer = False
-        last_height = -2
+        last_progress: tuple[int, int] = (-2, -2)
 
         while self.mining_alive and (time.time() - start) < timeout:
             try:
-                peers_known = bool(getattr(self.network, "peers", None))
-                if peers_known:
-                    self.network.request_sync(fast=True)
-                else:
+                peers = getattr(self.network, "peers", set()) or set()
+                inbound = getattr(self.network, "inbound_peers", set()) or set()
+                outbound = getattr(self.network, "outbound_peers", set()) or set()
+                active_peers = bool(peers or inbound or outbound)
+
+                if not active_peers:
                     if not notified_no_peer:
                         clog("[sync] Waiting for peer connection...", color=YELLOW)
                         notified_no_peer = True
+                    time.sleep(2)
+                    continue
+
+                self.network.request_sync(fast=True)
+                notified_no_peer = False
 
                 try:
                     height = int(getattr(self.blockchain, "height", -1))
                 except Exception:
                     height = -1
 
-                if height >= 0 and peers_known:
-                    if height != last_height:
-                        clog("[sync] tip height received...starting mining")
-                        last_height = height
+                best_height = -1
+                if hasattr(self.network, "get_best_peer_height"):
+                    try:
+                        best_height = int(self.network.get_best_peer_height())
+                    except Exception:
+                        best_height = -1
+
+                caught_up = False
+                if hasattr(self.network, "is_caught_up"):
+                    try:
+                        caught_up = self.network.is_caught_up(freshness=20.0, height_slack=0)
+                    except Exception:
+                        caught_up = False
+
+                if not caught_up and height >= 0 and best_height >= 0:
+                    caught_up = (best_height - height) <= 0
+
+                if caught_up and height >= 0:
+                    if best_height < height:
+                        best_height = height
+                    clog(f"[sync] Chain synced to height {height}")
                     return True
+
+                if best_height >= 0:
+                    progress = (height, best_height)
+                    if progress != last_progress:
+                        clog(f"[sync] progress: local {height}, best peer {best_height}")
+                        last_progress = progress
+
                 time.sleep(2)
-                
+
             except Exception as exc:
                 clog(f"[sync] Error: {exc}", color=RED)
                 time.sleep(2)

@@ -79,10 +79,12 @@ WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wal
 # 2. FILESYSTEM LAYOUT
 # =============================================================================
 # ---- CORE STATE FILES ----
-STATE_FILE   = "data/State/state.json"  # serialized node state snapshot
-BLOCK_FILE   = "data/Block/blockchain.json"  # block archive used before DB bootstrap
-UTXOS_FILE   = "data/UTXOS/utxos.json"  # fallback UTXO dump for light tooling
-MEMPOOL_FILE = "data/Mempools/txpools.json"  # persistent mempool cache file
+STATE_FILE              = "data/State/state.json"  # serialized node state snapshot
+BLOCK_FILE              = "data/Block/blockchain.json"  # block archive used before DB bootstrap
+UTXOS_FILE              = "data/UTXOS/utxos.json"  # fallback UTXO dump for light tooling
+MEMPOOL_FILE            = "data/Mempools/txpools.json"  # persistent mempool cache file
+CHAIN_JOURNAL_FILE      = os.path.join(os.path.dirname(BLOCK_FILE), "blockchain.journal")  # append-only delta log for JSON mode
+CHAIN_JOURNAL_MAX_BYTES = int(os.getenv("TSAR_CHAIN_JOURNAL_MAX_BYTES", 8 * 1024 * 1024))
 
 # ---- WALLET FILES ----
 WALLETS_DIR   = "data_user"  # root folder for local wallet assets
@@ -117,7 +119,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "000468319ebb8df03e476edb0e9e305c827bef34d759497acdfac0dc03a54772"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "000d7b7365798418fe9c08c1497464172f82531da93b5bc689daf916097bd4ac"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -161,7 +163,7 @@ TSAR = 100_000_000  # atomic unit (8 decimals) equivalent to satoshis
 MAX_SUPPLY             = 252_500_000 * TSAR  # hard cap on total minted supply
 INITIAL_REWARD         = 250 * TSAR  # block subsidy at height zero
 BLOCKS_PER_HALVING     = 235_000  # interval before subsidy halves
-COINBASE_MATURITY      = 10  # required confirmations before spending coinbase
+COINBASE_MATURITY      = 3  # required confirmations before spending coinbase
 MAX_COINBASE_EXTRADATA = 100  # soft limit for coinbase metadata bytes
 
 # ---- GENESIS BONUSES ----
@@ -280,11 +282,11 @@ TEMP_BAN_SECONDS             = 30  # duration for temporary ban entries
 
 # ---- FULL SYNC GUARD ----
 ENABLE_FULL_SYNC          = FULL_SYNC_DEV if IS_DEV else FULL_SYNC_PROD  # controls whether expensive full sync is allowed
-FULL_SYNC_MAX_BLOCKS      = 75_000  # cap on blocks served per full-sync round
+FULL_SYNC_MAX_BLOCKS      = 15_000  # cap on blocks served per full-sync round
 FULL_SYNC_MIN_INTERVAL    = 60  # seconds a peer must wait between full-sync requests
 FULL_SYNC_BACKOFF_INITIAL = 120  # starting backoff between full sync retries
 FULL_SYNC_BACKOFF_MAX     = 600  # maximum backoff delay between full sync retries
-MAX_MSG                   = 75 * 1024 * 1024  # upper bound for inbound message payloads
+MAX_MSG                   = 35 * 1024 * 1024  # upper bound for inbound message payloads
 MEMPOOL_SYNC_MIN_INTERVAL = 60  # seconds between mempool sync batches
 MEMPOOL_INLINE_MAX_TX     = 600  # tx count allowed inline before streaming
 MEMPOOL_FLUSH_INTERVAL    = 5.0  # seconds between mempool flush to disk

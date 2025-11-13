@@ -265,7 +265,7 @@ def _run_snapshot_bootstrap(context: str, enabled: bool):
     if result.status == "failed":
         clog(f"[Bootstrap] Snapshot bootstrap failed: {result.reason}. Continuing with normal sync.", color=YELLOW)
     elif result.status == "installed":
-        clog(f"[Bootstrap] Snapshot installed at height {result.height or '?'}")
+        clog(f"[Bootstrap] Finished Instaling Snapshot")
     else:
         reason = result.reason or "no snapshot source"
         clog(f"[Bootstrap] Skipped: {reason}")
@@ -583,9 +583,8 @@ class NodeRunner:
                     self._last_chain_height = height
 
                 peer_sync_map = getattr(self.network, "_peer_last_sync", {}) or {}
-                import time as _t
                 latest_sync = max(peer_sync_map.values()) if peer_sync_map else 0.0
-                synced_recently = latest_sync and (_t.time() - latest_sync) < 10
+                synced_recently = latest_sync and (time.time() - latest_sync) < 10
                 if not self._sync_ready and height >= 0 and synced_recently:
                     self._sync_ready = True
                     clog("Chain has been confirmed. Node is live (no mining).")
@@ -597,7 +596,7 @@ class NodeRunner:
                 except Exception:
                     inb = outb = known = 0
                     
-                status = f"[peers in={inb} out={outb} known={known}] local={height} best={best_height if best_height>=0 else '?'}"
+                status = f"[peers in={inb} out={outb} known={known}] local={height} best={best_height if best_height>=0 else 'syncing...'}"
                 if status != last_status:
                     clog(status)
                     last_status = status

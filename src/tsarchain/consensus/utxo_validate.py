@@ -16,7 +16,20 @@ log = get_ctx_logger('tsarchain.consensus.utxo_validate')
 class UTXOMixin:
     def _ensure_utxodb(self) -> Optional[UTXODB]:
         if self.in_memory:
-            return None
+            mem_store = getattr(self, "_in_memory_utxodb", None)
+            tip_state = getattr(self, "_in_memory_utxo_tip", -1)
+            if mem_store is None or tip_state != self.height:
+                mem_store = UTXODB(persist=False)
+                mem_store.utxos.clear()
+                mem_store._dirty = False
+                mem_store._dirty_keys.clear()
+                mem_store._removed_keys.clear()
+                mem_store._rewrite_all = False
+                mem_store.rebuild_from_chain(self.chain)
+                self._in_memory_utxodb = mem_store
+                self._in_memory_utxo_tip = self.height
+            return mem_store
+        
         if self._utxodb is None:
             self._utxodb = UTXODB()
             self._utxo_dirty = False

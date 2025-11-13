@@ -6,6 +6,7 @@
 import json
 import threading
 import time
+import heapq
 from collections import OrderedDict
 from typing import Optional, Dict
 from ecdsa import VerifyingKey, SECP256k1
@@ -168,7 +169,8 @@ class TxPoolDB(BaseDatabase):
         max_size_mb: int = CFG.MEMPOOL_MAX_SIZE,
         utxo_store: Optional[UTXODB] = None,
         inherit_state: bool = False,
-    ):
+        ):
+        
         self.filepath = filepath
         self.max_size_mb = max_size_mb
         self._lock = threading.RLock()
@@ -178,6 +180,12 @@ class TxPoolDB(BaseDatabase):
         self._dirty = False
         self._change_seq = 0
         self._last_flush = time.time()
+        
+        self._prevout_index: dict[tuple[str, int], str] = {}
+        self._last_prune_version: int | None = None
+        self._last_prune_reload_ts = 0.0
+        self._fee_heap: list[tuple[float, str]] = []
+        self._heap_entries: Dict[str, float] = {}
 
         storage_items = self._load_storage_pool()
         self._hydrate_pool(storage_items)
@@ -223,6 +231,8 @@ class TxPoolDB(BaseDatabase):
             txid = self._normalize_txid(tx_obj.txid)
             self._pool[txid] = tx_obj
             self._size_map[txid] = self._estimate_tx_size(tx_obj)
+            self._record_fee_rate(txid, tx_obj, self._size_map[txid])
+            self._index_tx_prevouts(tx_obj)
 
     def _normalize_txid(self, txid) -> str:
         if txid is None:
@@ -251,6 +261,60 @@ class TxPoolDB(BaseDatabase):
     def _mark_dirty(self) -> None:
         self._dirty = True
         self._change_seq += 1
+
+    def _compute_fee_rate(self, tx_obj: Tx, tx_size: int | None = None) -> float:
+        fee = float(getattr(tx_obj, "fee", 0) or 0)
+        if tx_size is None:
+            tx_size = self._estimate_tx_size(tx_obj)
+        return fee / max(1, int(tx_size))
+
+    def _record_fee_rate(self, txid: str, tx_obj: Tx, tx_size: int | None = None) -> None:
+        rate = self._compute_fee_rate(tx_obj, tx_size)
+        self._heap_entries[txid] = rate
+        heapq.heappush(self._fee_heap, (rate, txid))
+
+    def _remove_fee_record(self, txid: str) -> None:
+        self._heap_entries.pop(txid, None)
+
+    def _prevout_key(self, txid, vout) -> tuple[str, int] | None:
+        if txid is None:
+            return None
+        if isinstance(txid, (bytes, bytearray)):
+            txid_hex = txid.hex().lower()
+        else:
+            txid_hex = str(txid).lower()
+        try:
+            vout_i = int(vout)
+        except Exception:
+            return None
+        return (txid_hex, vout_i)
+
+    def _index_tx_prevouts(self, tx_obj: Tx) -> None:
+        if getattr(tx_obj, "is_coinbase", False):
+            return
+        try:
+            owner_txid = self._normalize_txid(tx_obj.txid)
+        except Exception:
+            owner_txid = None
+        if not owner_txid:
+            return
+        for txin in getattr(tx_obj, "inputs", []) or []:
+            key = self._prevout_key(getattr(txin, "txid", None) or getattr(txin, "prev_tx", None),
+                                    getattr(txin, "vout", getattr(txin, "prev_index", None)))
+            if key:
+                self._prevout_index[key] = owner_txid
+
+    def _drop_tx_prevouts(self, tx_obj: Tx | None) -> None:
+        if not tx_obj or getattr(tx_obj, "is_coinbase", False):
+            return
+        try:
+            owner_txid = self._normalize_txid(tx_obj.txid)
+        except Exception:
+            owner_txid = None
+        if not owner_txid or not self._prevout_index:
+            return
+        for key in [k for k, owner in self._prevout_index.items() if owner == owner_txid]:
+            self._prevout_index.pop(key, None)
 
     # ------------- Public API -------------
     @property
@@ -308,10 +372,15 @@ class TxPoolDB(BaseDatabase):
         with self._lock:
             self._pool = OrderedDict()
             self._size_map = {}
+            self._prevout_index = {}
+            self._fee_heap = []
+            self._heap_entries = {}
             for tx in tx_objects:
                 txid = self._normalize_txid(tx.txid)
                 self._pool[txid] = tx
                 self._size_map[txid] = self._estimate_tx_size(tx)
+                self._index_tx_prevouts(tx)
+                self._record_fee_rate(txid, tx, self._size_map[txid])
             self.current_size = sum(self._size_map.values())
             self._mark_dirty()
         self.flush(force=True)
@@ -319,6 +388,13 @@ class TxPoolDB(BaseDatabase):
     def get_all_txs(self) -> list:
         with self._lock:
             return list(self._pool.values())
+
+    def stats(self) -> dict:
+        with self._lock:
+            return {
+                "count": len(self._pool),
+                "virtual_size": int(self.current_size),
+            }
 
     def has_tx(self, txid_hex: str) -> bool:
         norm = self._normalize_txid(txid_hex)
@@ -355,24 +431,21 @@ class TxPoolDB(BaseDatabase):
             if self.current_size + needed_space <= CFG.MEMPOOL_MAX_SIZE:
                 return
             target = (self.current_size + needed_space) - CFG.MEMPOOL_MAX_SIZE
-            ordered = sorted(
-                self._pool.items(),
-                key=lambda item: int(getattr(item[1], "fee", 0)) / max(1, self._size_map.get(item[0], 1))
-            )
             freed = 0
-            removal: list[str] = []
-            for txid, tx in ordered:
-                removal.append(txid)
-                freed += self._size_map.get(txid, self._estimate_tx_size(tx))
-                if freed >= target:
-                    break
-            if not removal:
-                return
-            for txid in removal:
-                self._pool.pop(txid, None)
-                size = self._size_map.pop(txid, 0)
+            while freed < target and self._fee_heap:
+                rate, txid = heapq.heappop(self._fee_heap)
+                entry_rate = self._heap_entries.get(txid)
+                if entry_rate is None or entry_rate != rate:
+                    continue
+                tx_obj = self._pool.pop(txid, None)
+                self._heap_entries.pop(txid, None)
+                if tx_obj is None:
+                    continue
+                self._drop_tx_prevouts(tx_obj)
+                size = self._size_map.pop(txid, self._estimate_tx_size(tx_obj))
                 self.current_size -= size
-            if freed:
+                freed += size
+            if freed > 0:
                 if self.current_size < 0:
                     self.current_size = 0
                 self._mark_dirty()
@@ -384,11 +457,16 @@ class TxPoolDB(BaseDatabase):
         self._ensure_space(tx_size)
         with self._lock:
             prev_size = 0
-            if txid in self._pool:
+            old_tx = self._pool.get(txid)
+            if old_tx:
                 prev_size = self._size_map.get(txid, 0)
+                self._drop_tx_prevouts(old_tx)
+                self._remove_fee_record(txid)
             self._pool[txid] = tx_obj
             self._size_map[txid] = tx_size
             self.current_size += tx_size - prev_size
+            self._index_tx_prevouts(tx_obj)
+            self._record_fee_rate(txid, tx_obj, tx_size)
             self._mark_dirty()
 
     def remove_tx(self, txid_hex: str) -> bool:
@@ -397,6 +475,8 @@ class TxPoolDB(BaseDatabase):
             tx = self._pool.pop(norm, None)
             if not tx:
                 return False
+            self._drop_tx_prevouts(tx)
+            self._remove_fee_record(norm)
             size = self._size_map.pop(norm, 0)
             self.current_size -= size
             if self.current_size < 0:
@@ -410,8 +490,11 @@ class TxPoolDB(BaseDatabase):
             for txid in txids or []:
                 norm = self._normalize_txid(txid)
                 if norm in self._pool:
+                    tx_obj = self._pool.pop(norm, None)
+                    if tx_obj:
+                        self._drop_tx_prevouts(tx_obj)
+                    self._remove_fee_record(norm)
                     self.current_size -= self._size_map.pop(norm, 0)
-                    self._pool.pop(norm, None)
                     removed += 1
             if removed:
                 if self.current_size < 0:
@@ -426,7 +509,10 @@ class TxPoolDB(BaseDatabase):
             self._pool.clear()
             self._size_map.clear()
             self.current_size = 0
-            self._mark_dirty()
+            self._prevout_index.clear()
+            self._fee_heap.clear()
+            self._heap_entries.clear()
+        self._mark_dirty()
         self.flush(force=True)
 
     def drop_conflicts(self, spent_prevouts: set[tuple[str, int]]) -> int:
@@ -446,8 +532,11 @@ class TxPoolDB(BaseDatabase):
                 if conflict:
                     to_remove.append(txid)
             for txid in to_remove:
+                tx_obj = self._pool.pop(txid, None)
+                if tx_obj:
+                    self._drop_tx_prevouts(tx_obj)
+                self._remove_fee_record(txid)
                 self.current_size -= self._size_map.pop(txid, 0)
-                self._pool.pop(txid, None)
                 removed += 1
             if removed:
                 if self.current_size < 0:
@@ -456,10 +545,17 @@ class TxPoolDB(BaseDatabase):
         return removed
 
     def prune_stale_entries(self) -> int:
-        try:
-            self.utxo._load()
-        except Exception:
-            log.debug("[prune_stale_entries] Failed to reload UTXO snapshot", exc_info=True)
+        current_version = getattr(self.utxo, "version", None)
+        if current_version is not None and current_version == self._last_prune_version:
+            return 0
+        now = time.time()
+        if now - self._last_prune_reload_ts > max(self._auto_flush_interval, 5.0):
+            try:
+                self.utxo._load()
+            except Exception:
+                log.debug("[prune_stale_entries] Failed to reload UTXO snapshot", exc_info=True)
+            else:
+                self._last_prune_reload_ts = now
         utxo_set = getattr(self.utxo, "utxos", {})
         tip = self.utxo._get_tip_height_from_state()
         removed = 0
@@ -469,13 +565,17 @@ class TxPoolDB(BaseDatabase):
                 if not self.validate_transaction(tx, utxo_set, spend_at_height=tip + 1):
                     to_remove.append(txid)
             for txid in to_remove:
+                tx_obj = self._pool.pop(txid, None)
+                if tx_obj:
+                    self._drop_tx_prevouts(tx_obj)
+                self._remove_fee_record(txid)
                 self.current_size -= self._size_map.pop(txid, 0)
-                self._pool.pop(txid, None)
                 removed += 1
             if removed:
                 if self.current_size < 0:
                     self.current_size = 0
                 self._mark_dirty()
+        self._last_prune_version = current_version
         return removed
 
 
@@ -492,6 +592,73 @@ class TxPoolDB(BaseDatabase):
         elif hasattr(utxo_data, 'amount'):
             return int(utxo_data.amount)
         raise ValueError(f"Unknown UTXO format: {utxo_data}")
+
+    def _txin_prev_txid(self, tx_in) -> str | None:
+        txid_val = getattr(tx_in, "txid", None) or getattr(tx_in, "prev_tx", None)
+        if txid_val is None:
+            return None
+        if isinstance(txid_val, (bytes, bytearray)):
+            return txid_val.hex().lower()
+        return str(txid_val).lower()
+
+    def _lookup_utxo_entry(self, snapshot, prev_txid_hex: str, prev_index: int):
+        if prev_txid_hex is None:
+            return None
+        key_str = f"{prev_txid_hex}:{int(prev_index)}"
+        if isinstance(snapshot, dict):
+            entry = snapshot.get(key_str)
+            if entry is not None:
+                return entry
+            entry = snapshot.get(key_str.lower())
+            if entry is not None:
+                return entry
+            try:
+                entry = snapshot.get(key_str.encode("utf-8"))
+                if entry is not None:
+                    return entry
+            except Exception:
+                pass
+
+            bucket = snapshot.get(prev_txid_hex) or snapshot.get(prev_txid_hex.lower())
+            if isinstance(bucket, dict) and int(prev_index) in bucket:
+                return bucket[int(prev_index)]
+
+            tuple_key = (prev_txid_hex, int(prev_index))
+            if tuple_key in snapshot:
+                return snapshot[tuple_key]
+
+            try:
+                tuple_b = (bytes.fromhex(prev_txid_hex), int(prev_index))
+            except ValueError:
+                tuple_b = None
+            if tuple_b and tuple_b in snapshot:
+                return snapshot[tuple_b]
+
+            # Fallback scan for legacy snapshots (bounded to avoid huge work)
+            if len(snapshot) <= 2048:
+                lookup_key_ci = key_str.lower()
+                for key, value in snapshot.items():
+                    try:
+                        if isinstance(key, str) and key.lower() == lookup_key_ci:
+                            return value
+                        if isinstance(key, tuple) and len(key) == 2:
+                            k_txid = key[0]
+                            k_vout = int(key[1])
+                            if k_vout != int(prev_index):
+                                continue
+                            if isinstance(k_txid, (bytes, bytearray)):
+                                cmp = k_txid.hex().lower()
+                            else:
+                                cmp = str(k_txid).lower()
+                            if cmp == prev_txid_hex.lower():
+                                return value
+                    except Exception:
+                        continue
+
+        lookup_method = getattr(self.utxo, "lookup_entry", None)
+        if callable(lookup_method):
+            return lookup_method(prev_txid_hex, int(prev_index))
+        return None
 
     @staticmethod
     def _coinbase_confirmations(born_height: int, spend_height: int) -> int:
@@ -513,8 +680,19 @@ class TxPoolDB(BaseDatabase):
         seen_prevouts: set[tuple[str, int]] = set()
 
         for tx_in in tx.inputs:
-            prev_txid_hex = tx_in.txid.hex()
-            prev_index = int(tx_in.vout)
+            prev_txid_hex = self._txin_prev_txid(tx_in)
+            if prev_txid_hex is None:
+                self.last_error_reason = "missing_prev_txid"
+                return False
+            prev_index_val = getattr(tx_in, "vout", getattr(tx_in, "prev_index", None))
+            if prev_index_val is None:
+                self.last_error_reason = "missing_prev_index"
+                return False
+            try:
+                prev_index = int(prev_index_val)
+            except Exception:
+                self.last_error_reason = "invalid_prev_index"
+                return False
 
             key_dup = (prev_txid_hex, prev_index)
             if key_dup in seen_prevouts:
@@ -522,129 +700,9 @@ class TxPoolDB(BaseDatabase):
                 return False
             
             seen_prevouts.add(key_dup)
-            found = False
-            amount = 0
-            utxo_entry = None
 
-            def _extract_amount(entry, key_desc: str) -> int:
-                try:
-                    return self._get_utxo_amount(entry)
-                except ValueError:
-                    log.warning("[validate_transaction] Error extracting amount from UTXO %s", key_desc)
-                    raise
-
-            # Format FLAT: "txid:index"
-            flat_key = f"{prev_txid_hex}:{prev_index}"
-            if flat_key in utxo_set:
-                found = True
-                utxo_entry = utxo_set[flat_key]
-                try:
-                    amount = _extract_amount(utxo_entry, flat_key)
-                except ValueError:
-                    return False
-
-            # Direct bytes key
-            if not found:
-                flat_key_b = flat_key.encode("utf-8")
-                if flat_key_b in utxo_set:
-                    found = True
-                    utxo_entry = utxo_set[flat_key_b]
-                    try:
-                        amount = _extract_amount(utxo_entry, f"{flat_key} (bytes)")
-                    except ValueError:
-                        return False
-
-            # Format NESTED: {txid: {index: data}}
-            if not found and prev_txid_hex in utxo_set and isinstance(utxo_set[prev_txid_hex], dict):
-                if prev_index in utxo_set[prev_txid_hex]:
-                    found = True
-                    utxo_entry = utxo_set[prev_txid_hex][prev_index]
-                    try:
-                        amount = _extract_amount(utxo_entry, f"{prev_txid_hex}:{prev_index}")
-                    except ValueError:
-                        return False
-                    
-            if not found:
-                key_ci = prev_txid_hex.lower()
-                for key, bucket in utxo_set.items():
-                    if not isinstance(bucket, dict):
-                        continue
-                    if isinstance(key, str) and key.lower() == key_ci:
-                        if prev_index in bucket:
-                            found = True
-                            utxo_entry = bucket[prev_index]
-                            try:
-                                amount = _extract_amount(utxo_entry, f"{key}:{prev_index} (nested-ci)")
-                            except ValueError:
-                                return False
-                        break
-                    
-                    if isinstance(key, (bytes, bytearray)) and key.hex().lower() == key_ci:
-                        if prev_index in bucket:
-                            found = True
-                            utxo_entry = bucket[prev_index]
-                            try:
-                                amount = _extract_amount(utxo_entry, f"{key.hex()}:{prev_index} (nested-bytes)")
-                            except ValueError:
-                                return False
-                        break
-
-            # Format TUPLE: {(txid, index): data}
-            if not found:
-                tuple_key = (prev_txid_hex, prev_index)
-                if tuple_key in utxo_set:
-                    found = True
-                    utxo_entry = utxo_set[tuple_key]
-                    try:
-                        amount = _extract_amount(utxo_entry, f"{prev_txid_hex}:{prev_index} (tuple)")
-                    except ValueError:
-                        return False
-
-            # Tuple with bytes txid
-            if not found:
-                try:
-                    tuple_key_b = (bytes.fromhex(prev_txid_hex), prev_index)
-                except ValueError:
-                    tuple_key_b = None
-                if tuple_key_b and tuple_key_b in utxo_set:
-                    found = True
-                    utxo_entry = utxo_set[tuple_key_b]
-                    try:
-                        amount = _extract_amount(utxo_entry, f"{prev_txid_hex}:{prev_index} (tuple-bytes)")
-                    except ValueError:
-                        return False
-
-            # Fallback: case-insensitive scan for string keys
-            if not found:
-                lookup_key_ci = flat_key.lower()
-                for key in utxo_set.keys():
-                    try:
-                        if isinstance(key, str) and key.lower() == lookup_key_ci:
-                            utxo_entry = utxo_set[key]
-                            amount = _extract_amount(utxo_entry, f"{key} (ci)")
-                            found = True
-                            break
-                        
-                        if isinstance(key, tuple) and len(key) == 2:
-                            txid_part = key[0]
-                            vout_part = int(key[1])
-                            if vout_part != prev_index:
-                                continue
-                            
-                            if isinstance(txid_part, (bytes, bytearray)):
-                                key_hex = txid_part.hex()
-                            else:
-                                key_hex = str(txid_part)
-                            if key_hex.lower() == prev_txid_hex.lower():
-                                utxo_entry = utxo_set[key]
-                                amount = _extract_amount(utxo_entry, f"{key} (tuple-ci)")
-                                found = True
-                                break
-                            
-                    except Exception:
-                        continue
-
-            if not found or utxo_entry is None:
+            utxo_entry = self._lookup_utxo_entry(utxo_set, prev_txid_hex, prev_index)
+            if utxo_entry is None:
                 self.last_error_reason = f"prevout_missing {prev_txid_hex}:{prev_index}"
                 short_prev = (
                     prev_txid_hex[:8] + ".." + prev_txid_hex[-8:]
@@ -654,7 +712,12 @@ class TxPoolDB(BaseDatabase):
                 log.warning("[validate_transaction] Missing prevout %s:%d", short_prev, prev_index)
                 return False
 
-            # Coinbase maturity
+            try:
+                amount = self._get_utxo_amount(utxo_entry)
+            except ValueError:
+                self.last_error_reason = "invalid_utxo_amount"
+                return False
+
             is_cb, born_height = self.utxo._get_utxo_meta(utxo_entry)
             if is_cb:
                 effective_height = int(spend_at_height) if spend_at_height is not None else int(current_height) + 1
@@ -673,7 +736,6 @@ class TxPoolDB(BaseDatabase):
                 spk_bytes = _get_utxo_script_bytes(utxo_entry)
             except Exception:
                 log.warning("[validate_transaction] Error extracting script_pubkey from UTXO %s:%d", prev_txid_hex, prev_index)
-                
                 self.last_error_reason = "invalid_utxo_script"
                 return False
             
@@ -844,14 +906,15 @@ class TxPoolDB(BaseDatabase):
             return False
 
         # Double-spend check & basic RBF (replace-by-fee) for conflicting prevouts
-        existing_txs = self.get_all_txs()
-        new_prevouts = {(txin.txid, txin.vout) for txin in transaction_obj.inputs}
+        new_prevouts = set()
+        for txin in getattr(transaction_obj, "inputs", []) or []:
+            key = self._prevout_key(getattr(txin, "txid", None) or getattr(txin, "prev_tx", None),
+                                    getattr(txin, "vout", getattr(txin, "prev_index", None)))
+            if key:
+                new_prevouts.add(key)
 
-        conflicts: list[Tx] = []
-        for old in existing_txs:
-            old_prevouts = {(tin.txid, tin.vout) for tin in old.inputs}
-            if new_prevouts & old_prevouts:
-                conflicts.append(old)
+        conflict_ids = {self._prevout_index.get(key) for key in new_prevouts if self._prevout_index.get(key)}
+        conflicts: list[Tx] = [self._pool[cid] for cid in conflict_ids if cid and cid in self._pool]
 
         if conflicts:
             # Calculate simple fee rates (fee / size) to decide replacement
