@@ -41,6 +41,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
               "GET_HEADERS", "HEADERS", "GET_BLOCKS", "BLOCKS"}
     
     NODE_STORAGE = {"STOR_INIT", "STOR_PUT", "STOR_COMMIT", "STOR_STATUS", "STOR_GC", "STOR_PAID"}
+    STORAGE_PRIV_OPS = {"STOR_PUT", "STOR_COMMIT", "STOR_STATUS", "STOR_INDEX", "STOR_GC", "STOR_PAID"}
 
     USER = {
         "PING", "GET_BALANCES", "CREATE_TX", "CREATE_TX_MULTI", "GET_INFO",
@@ -67,19 +68,45 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             peer_port = -1
         return (peer_port > 0) and ((addr[0], peer_port) in self.peers)
 
+    def _client_ip() -> str:
+        if isinstance(addr, tuple) and addr:
+            return addr[0]
+        return "0.0.0.0"
+
+    def _storage_request_allowed() -> tuple[bool, Optional[dict]]:
+        if getattr(self, "storage_service", None) is None:
+            return False, {"type": "STOR_ACK", "status": "rejected", "reason": "storage_disabled"}
+
+        token_expected = getattr(CFG, "STORAGE_RPC_TOKEN", None)
+        supplied_token = str(message.get("storage_token") or message.get("token") or "").strip()
+        if token_expected:
+            try:
+                if not supplied_token or not secrets.compare_digest(supplied_token, str(token_expected)):
+                    log.warning("[process_message] storage RPC token mismatch from %s", addr)
+                    return False, {"type": "STOR_ACK", "status": "rejected", "reason": "forbidden"}
+            except Exception:
+                return False, {"type": "STOR_ACK", "status": "rejected", "reason": "forbidden"}
+            
+        elif getattr(CFG, "STORAGE_RPC_LOCAL_ONLY", False):
+            allowed_ips = tuple(getattr(CFG, "STORAGE_RPC_ALLOWED_IPS", ("127.0.0.1", "::1")))
+            if not (isinstance(addr, tuple) and addr[0] in allowed_ips):
+                log.warning("[process_message] storage RPC rejected non-local caller %s", addr)
+                return False, {"type": "STOR_ACK", "status": "rejected", "reason": "forbidden"}
+
+        return True, None
+
     BOOTSTRAP_ALLOW = {"HELLO", "GET_FULL_SYNC", "FULL_SYNC", "GET_HEADERS", "HEADERS"}
     if (mtype in MINERS) and (mtype not in BOOTSTRAP_ALLOW) and (not _is_miner_sender()):
-        try:
-            peer_port = int(message.get("port", -1))
-            if peer_port > 0 and isinstance(addr, tuple):
-                self.peers.add((addr[0], peer_port))
-            else:
-                return {"error": "forbidden: miners-only endpoint"}
-        except Exception:
-            return {"error": "forbidden: miners-only endpoint"}
+        log.debug("[process_message] rejecting unauthorized miner RPC %s from %s", mtype, addr)
+        return {"error": "forbidden: miners-only endpoint"}
     
     if (mtype not in MINERS) and (mtype not in USER) and (mtype not in NODE_STORAGE):
         return {"error": "unknown type"}
+    
+    if mtype in STORAGE_PRIV_OPS:
+        allowed, deny_resp = _storage_request_allowed()
+        if not allowed:
+            return deny_resp
 
     # =============== NODE MESSAGES ===============
     if mtype == "HELLO":
@@ -122,6 +149,12 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         return {"type": "PONG"}
 
     elif mtype in ("GET_BALANCES"):
+        ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
+        rl_key = f"bal:{ip}"
+        if not self._tb_allow(self.rl_ip, rl_key, CFG.BALANCE_RL_IP_BURST, CFG.BALANCE_RL_IP_WINDOW_S, CFG.BALANCE_RL_IP_BURST, backoff_key=rl_key):
+            self._backoff(rl_key, CFG.BALANCE_RL_BACKOFF_S)
+            return {"error": "rate_limited"}
+        
         addrs_raw = message.get("addresses") or []
         if not addrs_raw and message.get("address"):
             addrs_raw = [message["address"]]
@@ -227,6 +260,12 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             log.exception("[process_message] CREATE_TX error")
 
     elif mtype == "GET_INFO":
+        ip = _client_ip()
+        rl_key = f"info:{ip}"
+        if not self._tb_allow(self.rl_ip, rl_key, CFG.INFO_RL_IP_BURST, CFG.INFO_RL_IP_WINDOW_S, CFG.INFO_RL_IP_BURST, backoff_key=rl_key):
+            self._backoff(rl_key, CFG.INFO_RL_BACKOFF_S)
+            return {"error": "rate_limited"}
+        
         info = {
             "type": "INFO",
             "height": self.broadcast.blockchain.height,
@@ -254,6 +293,11 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         return info
 
     elif mtype == "GET_NETWORK_INFO":
+        ip = _client_ip()
+        rl_key = f"info:{ip}"
+        if not self._tb_allow(self.rl_ip, rl_key, CFG.INFO_RL_IP_BURST, CFG.INFO_RL_IP_WINDOW_S, CFG.INFO_RL_IP_BURST, backoff_key=rl_key):
+            self._backoff(rl_key, CFG.INFO_RL_BACKOFF_S)
+            return {"error": "rate_limited"}
         try:
             snap = self.broadcast.blockchain._compute_state_snapshot()
             _overlay_realtime_mempool_stats(snap, self)
@@ -276,6 +320,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             h = int(message.get("height"))
         except Exception:
             log.debug("[process_message] GET_BLOCK_AT invalid height from %s", addr)
+            return {"error": "invalid height"}
         return self._handle_get_block_at(h)
     
     elif mtype == "GET_BLOCK_HASH":
@@ -283,6 +328,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             h = int(message.get("height"))
         except Exception:
             log.debug("[process_message] GET_BLOCK_HASH invalid height from %s", addr)
+            return {"error": "invalid height"}
         return self._handle_get_block_hash(h)
 
     elif mtype == "GET_BLOCK":
@@ -341,7 +387,13 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             except Exception:
                 log.exception("[process_message] GET_MEMPOOL snapshot push error to %s", target)
                 return {"type": "MEMPOOL_SYNC", "count": 0, "status": "error"}
+            
         if mode in ("inline", "inline_full"):
+            ip = _client_ip()
+            mp_key = f"mempool:{ip}"
+            if not self._tb_allow(self.rl_ip, mp_key, CFG.MEMPOOL_INLINE_RL_BURST, CFG.MEMPOOL_INLINE_RL_WINDOW_S, CFG.MEMPOOL_INLINE_RL_BURST, backoff_key=mp_key):
+                self._backoff(mp_key, CFG.MEMPOOL_INLINE_RL_BACKOFF)
+                return {"error": "rate_limited"}
             try:
                 all_txs = self.broadcast.mempool.get_all_txs() or []
             except Exception:
@@ -407,6 +459,11 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             log.exception("[process_message] GET_MEMPOOL error")
 
     elif mtype == "GET_TX_HISTORY":
+        ip = _client_ip()
+        hist_key = f"hist:{ip}"
+        if not self._tb_allow(self.rl_ip, hist_key, CFG.HISTORY_RL_IP_BURST, CFG.HISTORY_RL_IP_WINDOW_S, CFG.HISTORY_RL_IP_BURST, backoff_key=hist_key):
+            self._backoff(hist_key, CFG.HISTORY_RL_BACKOFF_S)
+            return {"error": "rate_limited"}
         addr_str = (message.get("address") or "").strip().lower()
         if not addr_str:
             return {"error": "missing address"}
@@ -423,12 +480,22 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         return {"type": "TX_HISTORY", "address": addr_str, **history}
 
     elif mtype == "GET_TX_DETAIL":
+        ip = _client_ip()
+        hist_key = f"hist:{ip}"
+        if not self._tb_allow(self.rl_ip, hist_key, CFG.HISTORY_RL_IP_BURST, CFG.HISTORY_RL_IP_WINDOW_S, CFG.HISTORY_RL_IP_BURST, backoff_key=hist_key):
+            self._backoff(hist_key, CFG.HISTORY_RL_BACKOFF_S)
+            return {"error": "rate_limited"}
         txid_hex = message.get("txid")
         if not txid_hex:
             return {"error": "missing txid"}
         return self._get_tx_detail(txid_hex)
 
     elif mtype == "GET_UTXOS":
+        ip = _client_ip()
+        hist_key = f"hist:{ip}"
+        if not self._tb_allow(self.rl_ip, hist_key, CFG.HISTORY_RL_IP_BURST, CFG.HISTORY_RL_IP_WINDOW_S, CFG.HISTORY_RL_IP_BURST, backoff_key=hist_key):
+            self._backoff(hist_key, CFG.HISTORY_RL_BACKOFF_S)
+            return {"error": "rate_limited"}
         address = (message.get("address") or "").strip().lower()
         if not address:
             return {"error": "missing address"}
@@ -442,6 +509,11 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
     # ========= P2P CHAT =========
     
     elif mtype == "CHAT_REGISTER":
+        ip = _client_ip()
+        reg_key = f"chatreg:{ip}"
+        if not self._tb_allow(self.rl_ip, reg_key, CFG.CHAT_REG_RL_IP_BURST, CFG.CHAT_REG_RL_WINDOW_S, CFG.CHAT_REG_RL_IP_BURST, backoff_key=reg_key):
+            self._backoff(reg_key, CFG.CHAT_REG_RL_BACKOFF_S)
+            return {"error": "rate_limited"}
         addr_s   = (message.get("address")  or "").strip().lower()
         chat_pub = ((message.get("chat_pub") or message.get("pubkey") or "").strip().lower())
         
@@ -613,6 +685,12 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
 
     # ====== PREKEY BUNDLE ======
     elif mtype == "CHAT_PUBLISH_PREKEYS":
+        ip = _client_ip()
+        reg_key = f"chatreg:{ip}"
+        if not self._tb_allow(self.rl_ip, reg_key, CFG.CHAT_REG_RL_IP_BURST, CFG.CHAT_REG_RL_WINDOW_S, CFG.CHAT_REG_RL_IP_BURST, backoff_key=reg_key):
+            self._backoff(reg_key, CFG.CHAT_REG_RL_BACKOFF_S)
+            return {"error": "rate_limited"}
+        
         addr_s = (message.get("address") or "").strip().lower()
         ik  = (message.get("ik")  or "").strip().lower()
         spk = (message.get("spk") or "").strip().lower()

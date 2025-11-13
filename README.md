@@ -152,7 +152,7 @@ python apps/kremlin.py
 
 ---
 
-## ⚙️ Devnet Quick Config
+## ⚙️ Config Codebase Preview
 
 ```python
 # =============================================================================
@@ -200,7 +200,7 @@ EDA_EASE_MULTIPLIER     = 2.0
 PORT_RANGE_DEV     = (38169, 38178)
 
 BOOTSTRAP_DEV      = (
-    ("31.97.51.207", 38169),
+    ("127.0.0.1", 38169),
 )
 ```
 
@@ -239,6 +239,123 @@ Use the GUI for demos/monitoring, `cli_miner.py` for raw hash power, and `cli_no
 - LWMA difficulty adjustment
 - Bootstrap discovery + multi‑port range
 - Chat: X3DH + Double Ratchet + safety number
+```
+- **Block Data Structure**
+```python
+  {
+    "height": 9,
+    "version": 1,
+    "prev_block_hash": "00055cf16aa3b256594be97cea914e725cfa445d2a72d3bb41664f08f36905b5",
+    "merkle_root": "f84393b07bf754e34f88d07f573e389abe2609cc764bfec92aa2b0ef65bc8bf5",
+    "timestamp": 1763044929,
+    "bits": 521871414,
+    "nonce": 729,
+    "hash": "00174b6f1cb8b8069562824e9fe07b21e9ada22c81acfbf42067e60aef35f34e",
+    "transactions": [
+      {
+        "version": 1,
+        "inputs": [
+          {
+            "txid": "0000000000000000000000000000000000000000000000000000000000000000",
+            "vout": 4294967295,
+            "amount": 0,
+            "script_sig": "010925446170686e655f43617275616e615f47616c697a69615f323031375f5a7133666a3755526f",
+            "witness": []
+          }
+        ],
+        "outputs": [
+          {
+            "amount": 25000009568,
+            "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
+          }
+        ],
+        "locktime": 0,
+        "txid": "3e8ec61b5016df41fb60d460dbe3baaff926e8ee08587c7f864e5e355ba2ebb3",
+        "fee": 0,
+        "is_coinbase": true,
+        "type": "Coinbase",
+        "to_address": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr",
+        "reward": 25000009568,
+        "block_id": "Daphne_Caruana_Galizia_2017_Zq3fj7URo",
+        "height": 9
+      },
+      {
+        "version": 1,
+        "inputs": [
+          {
+            "txid": "24b06b68fc405364159d686b526c9ccda1d389f3cc2111187099d39f656b38f6",
+            "vout": 0,
+            "amount": 25000000000,
+            "script_sig": "",
+            "witness": [
+              "3045022100d80a60b0b3230dc995d2991ce7db1780f6c463f6df38bff43ffbd747bd475aa1022030a257bc61e0f30a5cdf6f598df94d329f8ba0ea298997f1af6be54c67a0fec601",
+              "0359c3eab29ad7feb9fad33caae30e9e7a9bbbc1291748a851bb1e6d3bc81c0143"
+            ]
+          },
+          {
+            "txid": "42c7d44c08976be5161a365817fee5a1cbdf15d58a67d1f5296311c6e2ee6d01",
+            "vout": 1,
+            "amount": 248824999992720,
+            "script_sig": "",
+            "witness": [
+              "3045022100c0d242bf9081abdb0f4387048b5367f8995955467acf24e99f18555b72cd50eb02207949b401638a8d2b0b379ac842eb2154bc4bda99d4c7df3f974d27540a5e92b501",
+              "0359c3eab29ad7feb9fad33caae30e9e7a9bbbc1291748a851bb1e6d3bc81c0143"
+            ]
+          }
+        ],
+        "outputs": [
+          {
+            "amount": 1000000000000,
+            "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
+          },
+          {
+            "amount": 247849999983152,
+            "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+          }
+        ],
+        "locktime": 0,
+        "txid": "6533068e0db4c759a444801894554c4ad701c338585de4fa21d02f956c6b9c86",
+        "fee": 9568,
+        "is_coinbase": false
+      }
+    ]
+  }
+```
+- **UTXO's Data Structure**
+```python
+  },
+  "3e8ec61b5016df41fb60d460dbe3baaff926e8ee08587c7f864e5e355ba2ebb3:0": {
+    "tx_out": {
+      "amount": 25000009568,
+      "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
+    },
+    "is_coinbase": true,
+    "block_height": 9
+  },
+  "6533068e0db4c759a444801894554c4ad701c338585de4fa21d02f956c6b9c86:0": {
+    "tx_out": {
+      "amount": 1000000000000,
+      "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
+    },
+    "is_coinbase": false,
+    "block_height": 9
+  },
+  "6533068e0db4c759a444801894554c4ad701c338585de4fa21d02f956c6b9c86:1": {
+    "tx_out": {
+      "amount": 247849999983152,
+      "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+    },
+    "is_coinbase": false,
+    "block_height": 9
+  },
+  "44ceacde4425a12a6032e0f93bd952d87b844d28e6d5cacda02d0e315a3b8104:0": {
+    "tx_out": {
+      "amount": 25000000000,
+      "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
+    },
+    "is_coinbase": true,
+    "block_height": 10
+  }
 ```
 
 ---

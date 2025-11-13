@@ -392,6 +392,31 @@ RPC_TIMEOUT          = 4.0  # wallet RPC request timeout in seconds
 NODE_CACHE_TTL          = 60  # seconds cached node metadata stays valid
 WALLET_RPC_MIN_INTERVAL = 0.35  # minimum spacing between wallet RPC calls
 
+# ---- BALANCE LOOKUP THROTTLING ----
+BALANCE_RL_IP_BURST    = 8   # balance queries allowed per IP before throttling
+BALANCE_RL_IP_WINDOW_S = 4   # time window (seconds) evaluated by the limiter
+BALANCE_RL_BACKOFF_S   = 5   # seconds to backoff when the limiter trips
+
+# ---- INFO SNAPSHOT THROTTLING ----
+INFO_RL_IP_BURST    = 4   # GET_INFO / GET_NETWORK_INFO allowed per IP within window
+INFO_RL_IP_WINDOW_S = 8   # seconds evaluated by limiter
+INFO_RL_BACKOFF_S   = 5   # backoff applied when limit exceeded
+
+# ---- HISTORY / UTXO LOOKUP THROTTLING ----
+HISTORY_RL_IP_BURST    = 6   # GET_TX_HISTORY/DETAIL/GET_UTXOS burst allowance
+HISTORY_RL_IP_WINDOW_S = 5   # seconds window for history limiter
+HISTORY_RL_BACKOFF_S   = 4   # seconds to back off when tripped
+
+# ---- MEMPOOL INLINE THROTTLING ----
+MEMPOOL_INLINE_RL_BURST    = 3   # inline mempool dumps allowed before throttling
+MEMPOOL_INLINE_RL_WINDOW_S = 20  # seconds window to evaluate inline dump rate
+MEMPOOL_INLINE_RL_BACKOFF  = 15  # seconds to wait after hitting inline limiter
+
+# ---- CHAT REGISTER/PREKEY THROTTLING ----
+CHAT_REG_RL_IP_BURST    = 3   # chat register/prekey submissions allowed per IP
+CHAT_REG_RL_WINDOW_S    = 30  # seconds window for chat register limiter
+CHAT_REG_RL_BACKOFF_S   = 20  # cooldown after chat register limiter trips
+
 
 # =============================================================================
 # 11. SCRIPT, GRAFFITI & STORAGE POLICY
@@ -420,6 +445,11 @@ STORAGE_DIR                        = "data/storage"  # folder holding uploaded s
 STORAGE_MAX_BYTES                  = 10 * 1024 * 1024 * 1024  # cap on cumulative storage usage (10GB)
 STORAGE_MIN_CONFIRM                = 2  # confirmations required before serving stored data
 ALLOW_UNREGISTERED_STORAGE_UPLOADS = True  # permit uploads from nodes without registry entries
+
+# ---- STORAGE RPC SECURITY ----
+STORAGE_RPC_LOCAL_ONLY = True  # restrict privileged storage RPCs to localhost when no token is supplied
+STORAGE_RPC_ALLOWED_IPS = ("127.0.0.1", "::1")  # loopback addresses permitted during local-only mode
+STORAGE_RPC_TOKEN = (os.getenv("TSAR_STORAGE_RPC_TOKEN") or "").strip() or None  # optional shared secret for remote storage RPCs
 
 
 # =============================================================================
