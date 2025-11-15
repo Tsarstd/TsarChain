@@ -155,7 +155,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "000d7b7365798418fe9c08c1497464172f82531da93b5bc689daf916097bd4ac"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "000eb0d2fa96b56bd8667e465f3b785e5d32de835f6895cdaab30255700d5ff7"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -279,6 +279,9 @@ MEMPOOL_MAX_SIZE = 1 * 1024 * 1024  # maximum in-memory mempool footprint (bytes
 PORT_RANGE_DEV  = (38169, 38178)  # port span reserved for dev deployments
 PORT_RANGE_PROD = (40196, 40205)  # port span reserved for production nodes
 
+STORAGE_PORT_RANGE_DEV  = (39200, 39210)
+STORAGE_PORT_RANGE_PROD = (41200, 41210)
+
 BOOTSTRAP_DEV = (
     ("127.0.0.1", 38169),
 ) # loopback bootstrap peers for development
@@ -290,9 +293,12 @@ BOOTSTRAP_PROD = (
 if IS_DEV:
     PORT_START, PORT_END = PORT_RANGE_DEV  # active listening range for dev mode
     BOOTSTRAP_NODES      = BOOTSTRAP_DEV  # list of seed peers for dev mode
+    STORAGE_PORT_START, STORAGE_PORT_END = STORAGE_PORT_RANGE_DEV
 else:
     PORT_START, PORT_END = PORT_RANGE_PROD  # active listening range for prod mode
     BOOTSTRAP_NODES      = BOOTSTRAP_PROD  # list of seed peers for prod mode
+    STORAGE_PORT_START, STORAGE_PORT_END = STORAGE_PORT_RANGE_PROD
+
 BOOTSTRAP_NODE           = BOOTSTRAP_NODES[0]  # preferred bootstrap peer entry
 
 # ---- SOCKET DEFAULTS ----
@@ -460,6 +466,7 @@ CHAT_REG_RL_BACKOFF_S   = 20  # cooldown after chat register limiter trips
 # ---- MAGIC CONSTANTS ----
 STORAGE_MAGIC  = b"TSAR_GRAF1|"  # domain separator for storage commitments
 GRAFFITI_MAGIC = b"TSAR_GRAF1|"  # domain separator for graffiti commitments
+GRAFFITI_POOL_SALT = b"TSAR_GRAFFITI_POOL|"  # seed when deriving deterministic pool addresses
 
 # ---- OP_RETURN POLICY ----
 OPRET_MAX_BYTES       = 352  # OP_RETURN payload ceiling (bytes)
@@ -470,11 +477,14 @@ OPRET_ALLOW_PUSHDATA1 = True  # allow PUSHDATA1 opcodes inside OP_RETURN handler
 OPRET_ALLOW_PUSHDATA2 = True  # allow PUSHDATA2 opcodes for >255B payloads
 
 # ---- STORAGE POLICY ----
-MAX_STORAGE_OPRET          = 180  # storage proof payload bound for OP_RETURN
-STORAGE_MIN_SIZE           = 100 * 1024  # minimum bytes required for storage contracts
-STORAGE_UPLOAD_CHUNK       = 100 * 1024  # chunk size used when slicing storage payloads
-DOWNLOAD_WINDOW_BLOCKS     = 10  # number of blocks allowed for data retrieval window
-ALLOW_UNREGISTERED_STORAGE = True  # toggle to accept storage downloads from unregistered nodes
+MAX_STORAGE_OPRET             = 180  # storage proof payload bound for OP_RETURN
+STORAGE_MIN_SIZE              = 100 * 1024  # minimum bytes required for storage contracts
+STORAGE_UPLOAD_CHUNK          = 100 * 1024  # chunk size used when slicing storage payloads
+GRAFFITI_MIN_BILLABLE_SIZE    = 100 * 1024
+GRAFFITI_UPLOAD_FEE_PER_CHUNK = 0.8 * TSAR
+GRAFFITI_REPLICATION_R        = 3
+DOWNLOAD_WINDOW_BLOCKS        = 10  # number of blocks allowed for data retrieval window
+ALLOW_UNREGISTERED_STORAGE    = True  # toggle to accept storage downloads from unregistered nodes
 
 # ---- STORAGE PATHS ----
 STORAGE_DIR                        = "data/storage"  # folder holding uploaded storage blobs

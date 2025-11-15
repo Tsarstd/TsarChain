@@ -1313,6 +1313,7 @@ class Network:
                 "port": int(peer_port or 0),
                 "last_seen": int(now),
                 "alive": True,
+                "trusted": bool(message.get("trusted", False)),
             }
             with self.lock:
                 if not hasattr(self, "storage_peers") or self.storage_peers is None:

@@ -3,11 +3,11 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP173
 from __future__ import annotations
-import json, re, time
+import json, re, time, hashlib, math
 from typing import Any, Dict, Optional
-from bech32 import bech32_decode, convertbits
+from bech32 import bech32_decode, bech32_encode, convertbits
 
-from ..utils.helpers import Script, OP_RETURN
+from ..utils.helpers import Script, OP_RETURN, hash160
 from ..utils import config as CFG
 
 
@@ -185,6 +185,37 @@ def parse_from_script(script: Script) -> Optional[Dict[str, Any]]:
         return None
 
 
+def compute_art_id(sha256_hex: str, creator_addr: str | None = None, block_hint: str | None = None) -> str:
+    """
+    Deterministic art identifier. Spec ideally mixes block hash, but prior to confirmation
+    we derive a provisional id using creator + file hash. Once anchored, explorers can
+    append block hash for final ID.
+    """
+    payload = [
+        b"TSAR_GRAFFITI_ART",
+        bytes.fromhex(sha256_hex.strip().lower()),
+    ]
+    if creator_addr:
+        payload.append(creator_addr.strip().lower().encode("utf-8"))
+    if block_hint:
+        payload.append(block_hint.strip().lower().encode("utf-8"))
+    blob = b"|".join(payload)
+    return hashlib.sha256(blob).hexdigest()
+
+
+def derive_pool_address(art_id_hex: str) -> str:
+    seed = CFG.GRAFFITI_POOL_SALT + bytes.fromhex(art_id_hex.strip().lower())
+    pkh = hash160(seed)
+    data = [0] + list(convertbits(pkh, 8, 5, True))
+    return bech32_encode(CFG.ADDRESS_PREFIX, data)
+
+
+def calc_upload_fee_sats(size_bytes: int) -> int:
+    billable = max(int(size_bytes), int(CFG.GRAFFITI_MIN_BILLABLE_SIZE))
+    chunks = max(1, math.ceil(billable / float(CFG.GRAFFITI_MIN_BILLABLE_SIZE)))
+    return chunks * float(CFG.GRAFFITI_UPLOAD_FEE_PER_CHUNK)
+
+
 __all__ = [
     "build_metadata",
     "encode_payload",
@@ -192,4 +223,7 @@ __all__ = [
     "build_opret_hex",
     "parse_payload",
     "parse_from_script",
+    "compute_art_id",
+    "derive_pool_address",
+    "calc_upload_fee_sats",
 ]
