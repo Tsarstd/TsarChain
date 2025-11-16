@@ -1305,7 +1305,8 @@ class Network:
         except Exception:
             advertised_height = -1
 
-        if role == "NODE_STORAGE":
+        is_storage = (role == "NODE_STORAGE")
+        if is_storage:
             meta = {
                 "addr": (message.get("address") or "").strip().lower(),
                 "url": (message.get("url") or "").strip(),
@@ -1336,17 +1337,18 @@ class Network:
                 normalized_incoming.append((ip, port))
 
         with self.lock:
-            if peer_tuple and not (self._is_local_address(peer_tuple[0]) and peer_tuple[1] == self.port):
+            if (not is_storage) and peer_tuple and not (self._is_local_address(peer_tuple[0]) and peer_tuple[1] == self.port):
                 self.peers.add(peer_tuple)
                 self.peer_scores.setdefault(peer_tuple, CFG.PEER_SCORE_START)
                 if advertised_height >= 0:
                     self._peer_best_height[peer_tuple] = advertised_height
                     
-            for cand in normalized_incoming:
-                if cand == peer_tuple:
-                    continue
-                self.peers.add(cand)
-                self.peer_scores.setdefault(cand, CFG.PEER_SCORE_START // 2)
+            if not is_storage:
+                for cand in normalized_incoming:
+                    if cand == peer_tuple:
+                        continue
+                    self.peers.add(cand)
+                    self.peer_scores.setdefault(cand, CFG.PEER_SCORE_START // 2)
 
             sane_peers = [
                 {"ip": ip, "port": port}
@@ -1359,14 +1361,14 @@ class Network:
                 peer_port = int(message.get("port", -1))
             except Exception:
                 peer_port = -1
-            if isinstance(addr, tuple) and peer_port > 0:
+            if (not is_storage) and isinstance(addr, tuple) and peer_port > 0:
                 dst = (addr[0], peer_port)
                 try:
                     self.broadcast.send_mempool_to_peer(dst)
                 except Exception:
                     log.exception("[_handle_hello] failed to push mempool to %s", dst)
 
-        if peer_tuple:
+        if (not is_storage) and peer_tuple:
             self._reward_peer(peer_tuple)
 
         return {

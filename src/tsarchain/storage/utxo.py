@@ -37,12 +37,7 @@ class UTXODB(BaseDatabase):
         self._address_index: dict[str, set[str]] | None = None
         self._key_to_spk: dict[str, str] = {}
         self._tip_cache = {"height": 0, "ts": 0.0}
-        self._tip_cache_ttl = float(getattr(CFG, "STATE_HEIGHT_CACHE_TTL", 2.0) or 2.0)
-        self._version = 0
-        self._address_index: dict[str, set[str]] | None = None
-        self._key_to_spk: dict[str, str] = {}
-        self._tip_cache = {"height": 0, "ts": 0.0}
-        self._tip_cache_ttl = float(getattr(CFG, "STATE_HEIGHT_CACHE_TTL", 2.0) or 2.0)
+        self._tip_cache_ttl = float(CFG.STATE_HEIGHT_CACHE_TTL)
         self._persist_enabled = bool(persist)
         if self._persist_enabled:
             self._load()
@@ -66,7 +61,7 @@ class UTXODB(BaseDatabase):
                 return b""
         return b""
 
-    def _maybe_record_graffiti_post(self, tx, outputs_info: list[dict[str, Any]], block_height: int | None) -> None:
+    def _maybe_record_graffiti_event(self, tx, outputs_info: list[dict[str, Any]], block_height: int | None) -> None:
         if block_height is None:
             return
         try:
@@ -78,31 +73,78 @@ class UTXODB(BaseDatabase):
                     payload = self._read_opreturn_payload(script_bytes)
                     if payload:
                         candidate = GRAFFITI.parse_payload(payload)
-                        if candidate and str(candidate.get("event", "POST")).upper() == "POST":
+                        if candidate:
                             meta = candidate
                             break
             if not meta:
                 return
-            sha_hex = str(meta.get("sha256") or "")
-            creator = meta.get("creator")
-            art_id = GRAFFITI.compute_art_id(sha_hex, creator, str(block_height))
-            pool_addr = GRAFFITI.derive_pool_address(art_id)
-            min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
-            paid = sum(int(info.get("amount") or 0) for info in outputs_info if info.get("address") == pool_addr)
-            if paid < min_fee:
-                log.warning("[graffiti] POST fee too low: paid=%s required=%s tx=%s", paid, min_fee, txid_hex)
-                return
-            entry = {
-                "sha256": sha_hex,
-                "size": int(meta.get("size") or 0),
-                "mime": meta.get("mime"),
-                "storer": meta.get("storer"),
-                "receipt": meta.get("receipt"),
-                "creator": creator,
-            }
-            self._graffiti_registry.record_post(art_id, entry, txid_hex, block_height, pool_addr, paid)
+            event = str(meta.get("event", "POST")).upper()
+            if event == "POST":
+                self._handle_graffiti_post(meta, outputs_info, txid_hex, block_height)
+            elif event == "COMMENT":
+                self._handle_graffiti_comment(meta, outputs_info, txid_hex, block_height)
         except Exception:
-            log.exception("[graffiti] failed to record POST tx=%s", getattr(tx, "txid", None))
+            log.exception("[graffiti] failed to record event tx=%s", getattr(tx, "txid", None))
+
+    def _handle_graffiti_post(self, meta: dict[str, Any], outputs_info: list[dict[str, Any]],
+                              txid_hex: str, block_height: int) -> None:
+        sha_hex = str(meta.get("sha256") or "")
+        creator = meta.get("creator")
+        art_id = GRAFFITI.compute_art_id(sha_hex, creator, str(block_height))
+        pool_addr = GRAFFITI.derive_pool_address(art_id)
+        min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
+        paid = sum(int(info.get("amount") or 0) for info in outputs_info if info.get("address") == pool_addr)
+        if paid < min_fee:
+            log.warning("[graffiti] POST fee too low: paid=%s required=%s tx=%s", paid, min_fee, txid_hex)
+            return
+        entry = {
+            "sha256": sha_hex,
+            "size": int(meta.get("size") or 0),
+            "mime": meta.get("mime"),
+            "storer": meta.get("storer"),
+            "receipt": meta.get("receipt"),
+            "creator": creator,
+        }
+        self._graffiti_registry.record_post(art_id, entry, txid_hex, block_height, pool_addr, paid)
+
+    def _handle_graffiti_comment(self, meta: dict[str, Any], outputs_info: list[dict[str, Any]],
+                                 txid_hex: str, block_height: int) -> None:
+        art_id = str(meta.get("art_id") or "").lower()
+        if not art_id:
+            return
+        
+        post_entry = self._graffiti_registry.get_post(art_id)
+        if not post_entry:
+            log.warning("[graffiti] COMMENT references unknown art_id=%s tx=%s", art_id, txid_hex)
+            return
+        
+        pool_addr = post_entry.get("pool_address") or GRAFFITI.derive_pool_address(art_id)
+        creator_addr = post_entry.get("creator") or meta.get("creator")
+        if not creator_addr:
+            log.warning("[graffiti] COMMENT missing creator for art_id=%s", art_id)
+            return
+        
+        base_amount = int(meta.get("amount") or 0)
+        tip = int(meta.get("tip") or 0)
+        if base_amount < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
+            log.warning("[graffiti] COMMENT amount %s below minimum for art_id=%s", base_amount, art_id)
+            return
+        
+        split = GRAFFITI.calc_comment_split(base_amount, tip)
+        paid_creator = sum(int(info.get("amount") or 0) for info in outputs_info if info.get("address") == creator_addr)
+        paid_pool = sum(int(info.get("amount") or 0) for info in outputs_info if info.get("address") == pool_addr)
+        if paid_creator < split["creator_total"]:
+            log.warning("[graffiti] COMMENT royalty shortfall for art_id=%s paid=%s req=%s", art_id, paid_creator, split["creator_total"])
+        if paid_pool < split["storage"]:
+            log.warning("[graffiti] COMMENT storage share shortfall for art_id=%s paid=%s req=%s", art_id, paid_pool, split["storage"])
+        self._graffiti_registry.record_comment(
+            art_id=art_id,
+            meta=meta,
+            txid=txid_hex,
+            block_height=block_height,
+            creator_paid=paid_creator,
+            storage_paid=paid_pool,
+        )
 
     @staticmethod
     def _read_opreturn_payload(script_bytes: bytes) -> bytes | None:
@@ -409,7 +451,7 @@ class UTXODB(BaseDatabase):
                     except Exception:
                         address = None
                     outputs_info.append({"script_bytes": script_bytes, "amount": amount, "address": address})
-                self._maybe_record_graffiti_post(tx, outputs_info, block_height)
+                self._maybe_record_graffiti_event(tx, outputs_info, block_height)
             self._dirty = True
             if autosave:
                 self._save()
@@ -450,7 +492,7 @@ class UTXODB(BaseDatabase):
                         except Exception:
                             address = None
                         outputs_info.append({"script_bytes": script_bytes, "amount": amount, "address": address})
-                    self._maybe_record_graffiti_post(tx, outputs_info, height)
+                    self._maybe_record_graffiti_event(tx, outputs_info, height)
             self._dirty = True
             if self._persist_enabled:
                 self._save(force=True)
@@ -745,7 +787,7 @@ class UTXODB(BaseDatabase):
             _insert_output(utxos, txid_hex, n, entry, address)
             
         if block_height is not None:
-            self._maybe_record_graffiti_post(tx, outputs_info, block_height)
+            self._maybe_record_graffiti_event(tx, outputs_info, block_height)
 
         return utxos
 

@@ -19,6 +19,7 @@ log = get_ctx_logger("tsarchain.contracts(graffiti)")
 # -----------------------------
 
 HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
+ART_ID_RE = HEX64_RE
 MIME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+/_-]{0,63}$")  # konservatif
 
 def _is_valid_sha256_hex(x: str) -> bool:
@@ -46,6 +47,24 @@ def _is_valid_tsar_address(addr: str) -> bool:
         return len(prog) == 20
     except Exception:
         return False
+
+def _is_valid_art_id(art_id: str) -> bool:
+    if not isinstance(art_id, str):
+        return False
+    try:
+        return bool(ART_ID_RE.fullmatch(art_id.strip().lower()))
+    except Exception:
+        return False
+
+def _encode_comment(comment_text: str) -> str:
+    if not isinstance(comment_text, str):
+        raise ValueError("comment_text must be str")
+    data = comment_text.encode("utf-8")
+    if not data:
+        raise ValueError("empty_comment")
+    if len(data) > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
+        raise ValueError("comment_too_large")
+    return data.hex()
 
 def _compact_json(obj: Dict[str, Any]) -> bytes:
     return json.dumps(obj, separators=(',', ':'), ensure_ascii=True).encode('ascii')
@@ -107,6 +126,66 @@ def build_metadata(sha256_hex: str, size_bytes: int, mime: str,
             meta[k] = v
     return meta
 
+def build_comment_metadata(art_id: str, comment_text: str, amount_sats: int,
+                           creator_addr: str,
+                           commenter_addr: str | None = None,
+                           tip_sats: int = 0,
+                           ts: Optional[int] = None,
+                           extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    if not _is_valid_art_id(art_id):
+        raise ValueError("bad_art_id")
+    if not _is_valid_tsar_address(creator_addr):
+        raise ValueError("bad_creator_addr")
+    if commenter_addr and not _is_valid_tsar_address(commenter_addr):
+        raise ValueError("bad_commenter_addr")
+    base_amount = int(amount_sats)
+    if base_amount < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
+        raise ValueError("comment_fee_too_low")
+    tip = int(tip_sats or 0)
+    if tip < 0:
+        raise ValueError("bad_tip")
+    comment_hex = _encode_comment(comment_text)
+    meta: Dict[str, Any] = {
+        "event": "COMMENT",
+        "art_id": art_id.strip().lower(),
+        "comment": comment_hex,
+        "amount": base_amount,
+        "tip": tip,
+        "creator": creator_addr.strip().lower(),
+    }
+    if commenter_addr:
+        meta["commenter"] = commenter_addr.strip().lower()
+    if ts is None:
+        ts = int(time.time())
+    meta["ts"] = int(ts)
+    if extra:
+        for k, v in extra.items():
+            if k in meta:
+                continue
+            if isinstance(v, (str, bytes)) and len(str(v)) > 128:
+                continue
+            meta[k] = v
+    return meta
+
+def calc_comment_split(base_amount: int, tip: int = 0) -> Dict[str, int]:
+    amt = int(base_amount)
+    if amt < 0:
+        raise ValueError("base_amount_negative")
+    tip_amt = max(0, int(tip))
+    denom = max(1, int(CFG.GRAFFITI_COMMENT_BP_DENOM))
+    creator_bp = max(0, min(denom, int(CFG.GRAFFITI_COMMENT_CREATOR_BP)))
+    storage_bp = max(0, min(denom, int(CFG.GRAFFITI_COMMENT_STORAGE_BP)))
+    creator_share = (amt * creator_bp) // denom
+    storage_share = (amt * storage_bp) // denom
+    miner_share = max(0, amt - creator_share - storage_share)
+    return {
+        "creator_base": int(creator_share),
+        "creator_total": int(creator_share + tip_amt),
+        "storage": int(storage_share),
+        "miner": int(miner_share),
+        "tip": tip_amt,
+    }
+
 
 def encode_payload(meta: Dict[str, Any]) -> bytes:
     if not isinstance(meta, dict):
@@ -138,17 +217,48 @@ def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
         obj = json.loads(blob.decode('ascii'))
         if not isinstance(obj, dict):
             return None
-        # Sanity re-check
-        if not _is_valid_sha256_hex(obj.get("sha256", "")):
+        event = str(obj.get("event", "POST")).strip().upper()
+        if event == "POST":
+            if not _is_valid_sha256_hex(obj.get("sha256", "")):
+                return None
+            if not isinstance(obj.get("size"), int) or obj["size"] < 0:
+                return None
+            if not _is_valid_mime(obj.get("mime", "")):
+                return None
+            if not _is_valid_tsar_address(obj.get("storer", "")):
+                return None
+            receipt = obj.get("receipt", "")
+            if not isinstance(receipt, str) or not receipt.strip():
+                return None
+        elif event == "COMMENT":
+            art_id = obj.get("art_id", "")
+            if not _is_valid_art_id(art_id):
+                return None
+            comment_hex = obj.get("comment", "")
+            if not isinstance(comment_hex, str):
+                return None
+            try:
+                comment_bytes = bytes.fromhex(comment_hex)
+            except Exception:
+                return None
+            if not comment_bytes or len(comment_bytes) > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
+                return None
+            amount = int(obj.get("amount", 0))
+            if amount < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
+                return None
+            tip = int(obj.get("tip", 0))
+            if tip < 0:
+                return None
+            creator_addr = obj.get("creator")
+            if not _is_valid_tsar_address(creator_addr or ""):
+                return None
+            commenter = obj.get("commenter")
+            if commenter and not _is_valid_tsar_address(commenter):
+                return None
+            obj["comment_len"] = len(comment_bytes)
+        else:
             return None
-        if not isinstance(obj.get("size"), int) or obj["size"] < 0:
-            return None
-        if not _is_valid_mime(obj.get("mime", "")):
-            return None
-        if not _is_valid_tsar_address(obj.get("storer", "")):
-            return None
-        if not isinstance(obj.get("receipt", ""), str) or not obj["receipt"].strip():
-            return None
+        obj["event"] = event
         return obj
     except Exception:
         return None
@@ -221,6 +331,7 @@ def calc_upload_fee_sats(size_bytes: int) -> int:
 
 __all__ = [
     "build_metadata",
+    "build_comment_metadata",
     "encode_payload",
     "build_script",
     "build_opret_hex",
@@ -229,4 +340,5 @@ __all__ = [
     "compute_art_id",
     "derive_pool_address",
     "calc_upload_fee_sats",
+    "calc_comment_split",
 ]

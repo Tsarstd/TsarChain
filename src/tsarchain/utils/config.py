@@ -119,8 +119,10 @@ STATE_FILE              = "data/State/state.json"  # serialized node state snaps
 BLOCK_FILE              = "data/Block/blockchain.json"  # block archive used before DB bootstrap
 UTXOS_FILE              = "data/UTXOS/utxos.json"  # fallback UTXO dump for light tooling
 MEMPOOL_FILE            = "data/Mempools/txpools.json"  # persistent mempool cache file
+
 CHAIN_JOURNAL_FILE      = os.path.join(os.path.dirname(BLOCK_FILE), "blockchain.journal")  # append-only delta log for JSON mode
 CHAIN_JOURNAL_MAX_BYTES = int(os.getenv("TSAR_CHAIN_JOURNAL_MAX_BYTES", 8 * 1024 * 1024))
+STATE_HEIGHT_CACHE_TTL  = 2.0  # height for utxo validation & cache
 
 # ---- WALLET FILES ----
 WALLETS_DIR   = "data_user"  # root folder for local wallet assets
@@ -155,12 +157,14 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "0012b8b0ba3dc1a4d132b6959dbc15be5ffab6ab9cefea0b3e4869e05508e102"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "001a6a65bd4f75a5f9d623b679fd32cc762c413a428bfeed2558b8107c4b8cde"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
 # ---- BLOCK ID LIST ----
 VOICE_SOVEREIGNTY_FIGURES = [
+    
+    # Whistleblower / voice sovereignty figures
     ("Munir", 2004),
     ("Widji Thukul", 1998),
     ("Marsinah", 1993),
@@ -186,7 +190,20 @@ VOICE_SOVEREIGNTY_FIGURES = [
     ("Wa Lone and Kyaw Soe Oo", 2017),
     ("Maria Ressa", 2018),
     ("Evan Gershkovich", 2023),
-]  # public figures remembered inside special ops
+    
+    # Graffiti / street art pioneers
+    ("Jean Michel Basquiat", 1980),
+    ("Keith Haring", 1980),
+    ("Futura 2000", 1982),
+    ("Dondi White", 1980),
+    ("Lady Pink", 1980),
+    ("Lee Quinones", 1979),
+    ("Banksy", 2005),
+    ("Shepard Fairey", 2008),
+    ("Os Gemeos", 1999),
+    ("Blu", 2007),
+    ("Darbotz", 2004),
+]
 
 
 # =============================================================================
@@ -200,7 +217,7 @@ MAX_SUPPLY             = 252_500_000 * TSAR  # hard cap on total minted supply
 INITIAL_REWARD         = 250 * TSAR  # block subsidy at height zero
 BLOCKS_PER_HALVING     = 235_000  # interval before subsidy halves
 COINBASE_MATURITY      = 3  # required confirmations before spending coinbase
-MAX_COINBASE_EXTRADATA = 100  # soft limit for coinbase metadata bytes
+MAX_COINBASE_EXTRADATA = 95  # soft limit for coinbase metadata bytes (based on GENESIS_BLOCK_ID_DEFAULT length)
 
 # ---- GENESIS BONUSES ----
 GENESIS_REWARD        = True  # toggle to allow special-case payouts at genesis
@@ -228,7 +245,7 @@ RANDOMX_LARGE_PAGES      = False  # set True only if huge pages configured OS-wi
 RANDOMX_JIT              = True
 RANDOMX_SECURE_JIT       = True
 RANDOMX_HARD_AES         = True
-RANDOMX_CACHE_MAX        = 1      # max RandomX VM entries cached in rust binding
+RANDOMX_CACHE_MAX        = 3      # max RandomX VM entries cached in rust binding
 
 # ---- BLOCK & TX LIMITS ----
 MAX_BLOCK_BYTES      = 1_200_000  # block size limit (approx 1.2 MB)
@@ -475,15 +492,20 @@ OPRET_ONLY_ONE        = True  # restrict transactions to a single OP_RETURN
 OPRET_ALLOW_PUSHDATA1 = True  # allow PUSHDATA1 opcodes inside OP_RETURN handler
 OPRET_ALLOW_PUSHDATA2 = True  # allow PUSHDATA2 opcodes for >255B payloads
 
+# ---- GRAFFITI ----
+GRAFFITI_MIN_BILLABLE_SIZE    = 100 * 1024
+GRAFFITI_UPLOAD_FEE_PER_CHUNK = 0.8 * TSAR
+GRAFFITI_REPLICATION_R        = 3
+GRAFFITI_COMMENT_MAX_BYTES    = 280
+GRAFFITI_COMMENT_MIN_FEE      = 1 * TSAR
+GRAFFITI_COMMENT_BP_DENOM     = 10_000  # denominator (basis points) for split percentages
+GRAFFITI_COMMENT_CREATOR_BP   = 8_000   # 80%
+GRAFFITI_COMMENT_STORAGE_BP   = 1_000   # 10% (remaining -> miners as fee tip)
+
 # ---- STORAGE POLICY ----
 MAX_STORAGE_OPRET             = 180  # storage proof payload bound for OP_RETURN
 STORAGE_MIN_SIZE              = 100 * 1024  # minimum bytes required for storage contracts
 STORAGE_UPLOAD_CHUNK          = 100 * 1024  # chunk size used when slicing storage payloads
-GRAFFITI_MIN_BILLABLE_SIZE    = 100 * 1024
-GRAFFITI_UPLOAD_FEE_PER_CHUNK = 0.8 * TSAR
-GRAFFITI_REPLICATION_R        = 3
-DOWNLOAD_WINDOW_BLOCKS        = 10  # number of blocks allowed for data retrieval window
-ALLOW_UNREGISTERED_STORAGE    = True  # toggle to accept storage downloads from unregistered nodes
 
 # ---- STORAGE PATHS ----
 STORAGE_DIR                        = "data/storage"  # folder holding uploaded storage blobs

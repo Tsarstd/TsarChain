@@ -25,6 +25,7 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.consensus.chain_ops')
 
 class ChainOpsMixin:
+    
     def replace_with(self, other_chain: "Blockchain"):
         with self.lock:
             # 1) pastikan kandidat valid full

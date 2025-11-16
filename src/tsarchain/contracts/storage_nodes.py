@@ -253,26 +253,6 @@ class StorageService:
             self._flush(idx)
 
     # ------------ API ------------
-    def init_upload(self, graffiti_id: str, seller: str, sha256_hex: str,
-                    size_bytes: int, end_height: int,
-                    download_window_blocks: int = CFG.DOWNLOAD_WINDOW_BLOCKS,
-                    allow_unregistered: bool = CFG.ALLOW_UNREGISTERED_STORAGE_UPLOADS) -> Dict[str, Any]:
-        if size_bytes < CFG.STORAGE_MIN_SIZE:
-            size_bytes = CFG.STORAGE_MIN_SIZE
-        if not self._reserve(size_bytes):
-            return {"status":"rejected","reason":"no_space"}
-        upid = f"up_{int(time.time())}_{hashlib.sha1(os.urandom(8)).hexdigest()[:8]}"
-        tmp = os.path.join(CFG.STORAGE_DIR, f"{upid}.part")
-        sess = UploadSession(
-            upload_id=upid, graffiti_id=graffiti_id, seller=seller,
-            sha256_hex=sha256_hex.lower(), size_bytes=int(size_bytes),
-            expire_at_height=int(end_height) + int(download_window_blocks),
-            created_ts=int(time.time()), tmp_path=tmp,
-        )
-        self.sessions[upid] = sess
-        open(tmp, "wb").close()
-        return {"status":"ok","upload_id":upid,"chunk_size":int(CFG.STORAGE_UPLOAD_CHUNK),
-                "expire_at_height": sess.expire_at_height}
 
     def put_chunk(self, upload_id: str, chunk_index: int, b64: str) -> Dict[str, Any]:
         sess = self.sessions.get(upload_id)

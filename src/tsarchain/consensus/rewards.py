@@ -12,7 +12,7 @@ class RewardMixin:
     def _scheduled_reward(self, height: int) -> int:
         if height < 0:
             return 0
-        if height == 0 and getattr(CFG, "GENESIS_REWARD", False):
+        if height == 0 and CFG.GENESIS_REWARD:
             try:
                 return int(CFG.GENESIS_REWARD_AMOUNT)
             except Exception:
