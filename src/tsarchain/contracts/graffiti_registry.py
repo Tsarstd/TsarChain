@@ -1,24 +1,52 @@
 import os
 import time
+import json
 from typing import Any, Dict
 
 from ..storage.db import AtomicJSONFile
+from ..storage.kv import kv_enabled, iter_prefix, batch
 from ..utils import config as CFG
 
 
 class GraffitiRegistry:
     def __init__(self) -> None:
-        os.makedirs(os.path.dirname(CFG.GRAFFITI_FILE), exist_ok=True)
-        self.store = AtomicJSONFile(CFG.GRAFFITI_FILE, keep_backups=2, checksum=True)
+        self._kv = kv_enabled()
+        self._kv_prefix = "graffiti:"
+        if self._kv:
+            self.store = None
+            self._data_cache = None
+        else:
+            os.makedirs(os.path.dirname(CFG.GRAFFITI_FILE), exist_ok=True)
+            self.store = AtomicJSONFile(CFG.GRAFFITI_FILE, keep_backups=2, checksum=True)
         default = {"posts": {}, "comments": {}, "payouts": {}}
+        self.data = self._load(default)
+
+    def _load(self, default: dict) -> dict:
+        if self._kv:
+            data = {"posts": {}, "comments": {}, "payouts": {}}
+            try:
+                for k, v in iter_prefix("graffiti", b"data:"):
+                    if k.decode("utf-8") == "data:data":
+                        data = json.loads(v.decode("utf-8"))
+                        break
+            except Exception:
+                data = dict(default)
+            return data or dict(default)
         try:
-            self.data = self.store.load(default=default)
+            return self.store.load(default=default)
         except FileNotFoundError:
             self.store.save(default)
-            self.data = dict(default)
+            return dict(default)
 
     def _flush(self) -> None:
-        self.store.save(self.data)
+        if self._kv:
+            try:
+                with batch("graffiti") as b:
+                    b.put(b"data:data", json.dumps(self.data, separators=(",", ":")).encode("utf-8"))
+            except Exception:
+                pass
+        else:
+            self.store.save(self.data)
 
     def record_post(self, art_id: str, meta: Dict[str, Any], txid: str, block_height: int, pool_addr: str, amount_paid: int) -> None:
         posts = self.data.setdefault("posts", {})
