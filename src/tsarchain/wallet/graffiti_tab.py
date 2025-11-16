@@ -5,14 +5,17 @@
 
 from __future__ import annotations
 import os, time, hashlib, mimetypes, threading
+from decimal import Decimal, ROUND_DOWN, InvalidOperation
 from typing import Any, Dict, Optional
 from tkinter import ttk, filedialog, messagebox, StringVar
 import tkinter as tk
 
 from ..contracts.graffiti import (
     build_metadata,
+    build_comment_metadata,
     build_opret_hex,
     calc_upload_fee_sats,
+    calc_comment_split,
     compute_art_id,
     derive_pool_address,
 )
@@ -57,6 +60,22 @@ class GraffitiTab(ttk.Frame):
         self.post_send_btn: ttk.Button | None = None
         self._post_plan: Optional[Dict[str, Any]] = None
         self._active_storer: Optional[Dict[str, Any]] = None
+        self.catalog_posts: list[Dict[str, Any]] = []
+        self._catalog_map: dict[str, Dict[str, Any]] = {}
+        self._selected_art: Optional[Dict[str, Any]] = None
+        self.catalog_tree: ttk.Treeview | None = None
+        self.comment_tree: ttk.Treeview | None = None
+        self.comment_text: tk.Text | None = None
+        self.comment_wallet_var = StringVar()
+        self.comment_wallet_cb: ttk.Combobox | None = None
+        self.comment_amount_var = StringVar()
+        self.comment_tip_var = StringVar(value="0")
+        self.comment_status_var = StringVar(value="Select artwork to comment.")
+        self.catalog_status_var = StringVar(value="Catalog belum dimuat.")
+        self.art_info_var = StringVar(value="Pilih karya untuk melihat detail.")
+        self.comment_split_var = StringVar(value="")
+        self.comment_send_btn: ttk.Button | None = None
+        self._comment_plan: Optional[Dict[str, Any]] = None
 
         self._build_style()
         self.configure(style="Tsar.TFrame")
@@ -187,6 +206,71 @@ class GraffitiTab(ttk.Frame):
             .grid(row=1, column=1, padx=8, pady=(4, 8), sticky="e")
         ttk.Label(root, text="After upload completes, Send tab is prefilled automatically for review.", style="Tsar.Mono.TLabel").pack(anchor="w", pady=(4,0))
 
+        # Explore & Comment
+        explore_fr = ttk.LabelFrame(root, text="Explore & Comment", style="Tsar.TLabelframe")
+        explore_fr.pack(fill="both", expand=True, pady=(6, 0))
+
+        left = ttk.Frame(explore_fr, style="Tsar.Card.TFrame")
+        left.pack(side=tk.LEFT, fill="both", expand=True, padx=(0, 8))
+        left_top = ttk.Frame(left, style="Tsar.Card.TFrame")
+        left_top.pack(fill="x")
+        ttk.Button(left_top, text="Refresh Catalog", style="Tsar.TButton", command=self._refresh_catalog).pack(side=tk.LEFT, padx=4, pady=4)
+        ttk.Label(left_top, textvariable=self.catalog_status_var, style="Tsar.Card.Mono.TLabel").pack(side=tk.LEFT, padx=4)
+        cols = ("art_id", "creator", "height", "size")
+        self.catalog_tree = ttk.Treeview(left, columns=cols, show="headings", height=8)
+        for c, w in [("art_id", 160), ("creator", 120), ("height", 70), ("size", 80)]:
+            self.catalog_tree.heading(c, text=c)
+            self.catalog_tree.column(c, width=w, stretch=(c == "art_id"))
+        self.catalog_tree.pack(fill="both", expand=True, padx=4, pady=4)
+        self.catalog_tree.bind("<<TreeviewSelect>>", lambda _e: self._on_catalog_select())
+
+        right = ttk.Frame(explore_fr, style="Tsar.Card.TFrame")
+        right.pack(side=tk.LEFT, fill="both", expand=True)
+        ttk.Label(right, textvariable=self.art_info_var, style="Tsar.Card.Mono.TLabel", wraplength=360)\
+            .pack(fill="x", padx=4, pady=(4, 2))
+
+        comments_frame = ttk.LabelFrame(right, text="Comments", style="Tsar.TLabelframe")
+        comments_frame.pack(fill="both", expand=True, padx=4, pady=(0, 4))
+        cols_c = ("time", "from", "amt", "excerpt")
+        self.comment_tree = ttk.Treeview(comments_frame, columns=cols_c, show="headings", height=5)
+        for c, w in [("time", 110), ("from", 130), ("amt", 80), ("excerpt", 220)]:
+            self.comment_tree.heading(c, text=c)
+            self.comment_tree.column(c, width=w, stretch=(c == "excerpt"))
+        self.comment_tree.pack(fill="both", expand=True, padx=4, pady=4)
+        ttk.Button(comments_frame, text="Refresh Comments", style="Tsar.Secondary.TButton",
+                   command=self._refresh_current_comments).pack(anchor="e", padx=6, pady=(0, 4))
+
+        form = ttk.LabelFrame(right, text="Write Comment", style="Tsar.TLabelframe")
+        form.pack(fill="x", padx=4, pady=(0, 4))
+        row1 = ttk.Frame(form, style="Tsar.Card.TFrame"); row1.pack(fill="x", padx=6, pady=(4, 2))
+        ttk.Label(row1, text="Commenter Wallet:", style="Tsar.Card.TLabel").pack(side=tk.LEFT)
+        self.comment_wallet_cb = ttk.Combobox(row1, textvariable=self.comment_wallet_var, state="readonly", width=36, style="Tsar.TCombobox")
+        self.comment_wallet_cb.pack(side=tk.LEFT, padx=6, fill="x", expand=True)
+        row2 = ttk.Frame(form, style="Tsar.Card.TFrame"); row2.pack(fill="x", padx=6, pady=(2, 2))
+        ttk.Label(row2, text="Base Amount (TSAR):", width=18, style="Tsar.Card.TLabel").pack(side=tk.LEFT)
+        amt_entry = ttk.Entry(row2, textvariable=self.comment_amount_var, width=14, style="Tsar.TEntry")
+        amt_entry.pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Label(row2, text="Tip (TSAR):", style="Tsar.Card.TLabel").pack(side=tk.LEFT)
+        tip_entry = ttk.Entry(row2, textvariable=self.comment_tip_var, width=10, style="Tsar.TEntry")
+        tip_entry.pack(side=tk.LEFT)
+        self.comment_split_var.set("")
+        ttk.Label(form, textvariable=self.comment_split_var, style="Tsar.Card.Mono.TLabel").pack(anchor="w", padx=6, pady=(0, 2))
+        self.comment_text = tk.Text(form, height=4, wrap="word")
+        self.comment_text.pack(fill="x", padx=6, pady=(2, 2))
+        btn_row = ttk.Frame(form, style="Tsar.Card.TFrame"); btn_row.pack(fill="x", padx=6, pady=(2, 4))
+        self.comment_send_btn = ttk.Button(btn_row, text="Broadcast COMMENT", style="Tsar.TButton",
+                                           state="disabled", command=self._broadcast_comment_tx)
+        self.comment_send_btn.pack(side=tk.LEFT)
+        ttk.Button(btn_row, text="Clear", style="Tsar.Secondary.TButton",
+                   command=lambda: self.comment_text.delete("1.0", tk.END)).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Label(form, textvariable=self.comment_status_var, style="Tsar.Card.Mono.TLabel").pack(anchor="w", padx=6, pady=(2, 0))
+
+        self.comment_amount_var.set(self._format_tsar(CFG.GRAFFITI_COMMENT_MIN_FEE))
+        self.comment_amount_var.trace_add("write", lambda *_: self._update_comment_split_preview())
+        self.comment_tip_var.trace_add("write", lambda *_: self._update_comment_split_preview())
+        self._update_comment_split_preview()
+        self._refresh_catalog()
+
     def apply_theme(self, theme: GraffitiTheme) -> None:
         self.theme = theme
         self._build_style()
@@ -253,6 +337,18 @@ class GraffitiTab(ttk.Frame):
         else:
             self.creator_cb.set("")
             self.creator_var.set("")
+        if self.comment_wallet_cb:
+            self.comment_wallet_cb["values"] = wallets
+            if wallets:
+                current = self.comment_wallet_var.get()
+                if current and current in wallets:
+                    self.comment_wallet_cb.set(current)
+                else:
+                    self.comment_wallet_cb.current(0)
+                    self.comment_wallet_var.set(wallets[0])
+            else:
+                self.comment_wallet_cb.set("")
+                self.comment_wallet_var.set("")
 
     def pick_file(self):
         path = filedialog.askopenfilename(title="Select file for Graffiti")
@@ -400,9 +496,6 @@ class GraffitiTab(ttk.Frame):
         except Exception as exc:
             raise RuntimeError(f"prefill send tab failed: {exc}") from exc
 
-        if hasattr(self.app, "switch_tab"):
-            self.app.switch_tab("send")
-
     def _broadcast_post_tx(self) -> None:
         plan = self._post_plan
         if not plan:
@@ -468,6 +561,295 @@ class GraffitiTab(ttk.Frame):
             messagebox.showerror("Graffiti", f"Broadcast gagal: {exc}")
             if self.post_send_btn:
                 self.post_send_btn.config(state="normal")
+
+    def _refresh_catalog(self) -> None:
+        rpc = getattr(self.app, "rpc", None)
+        if not rpc:
+            self.catalog_status_var.set("Wallet offline.")
+            return
+        self.catalog_status_var.set("Memuat catalog...")
+        def handle(resp: Optional[Dict[str, Any]]):
+            self.after(0, lambda: self._apply_catalog(resp))
+        try:
+            rpc.send_async({"type": "GRAFFITI_GET_POSTS", "limit": 200}, handle)
+        except Exception:
+            self.catalog_status_var.set("RPC error")
+
+    def _apply_catalog(self, resp: Optional[Dict[str, Any]]) -> None:
+        try:
+            posts = (resp or {}).get("posts") or []
+        except Exception:
+            posts = []
+        self.catalog_posts = list(posts)
+        self._catalog_map = {}
+        if self.catalog_tree:
+            self.catalog_tree.delete(*self.catalog_tree.get_children())
+            for post in posts:
+                art_id = str(post.get("art_id") or "")
+                if not art_id:
+                    continue
+                self._catalog_map[art_id] = post
+                creator = (post.get("creator") or "")[:18]
+                size = int(post.get("size", post.get("size_bytes", 0)) or 0)
+                sz_str = f"{size:,} B"
+                self.catalog_tree.insert("", tk.END, iid=art_id, values=(
+                    art_id[:16] + "..." if len(art_id) > 19 else art_id,
+                    creator or "-",
+                    int(post.get("block_height") or 0),
+                    sz_str,
+                ))
+            children = self.catalog_tree.get_children()
+            if children:
+                self.catalog_tree.selection_set(children[0])
+                self.catalog_tree.focus(children[0])
+                self._on_catalog_select()
+        self.catalog_status_var.set(f"{len(self.catalog_posts)} karya")
+
+    def _on_catalog_select(self) -> None:
+        if not self.catalog_tree:
+            return
+        sel = self.catalog_tree.selection()
+        if not sel:
+            return
+        try:
+            iid = sel[0]
+        except IndexError:
+            return
+        art_obj = self._catalog_map.get(iid)
+        if art_obj:
+            self._set_selected_art(art_obj)
+
+    def _set_selected_art(self, art: Dict[str, Any]) -> None:
+        self._selected_art = art
+        art_id = str(art.get("art_id") or "")
+        creator = str(art.get("creator") or "")
+        sha = str(art.get("sha256") or "")[:16]
+        pool = str(art.get("pool_address") or derive_pool_address(art_id))
+        size = int(art.get("size") or art.get("size_bytes") or 0)
+        block_h = int(art.get("block_height") or 0)
+        stats = art.get("stats") or {}
+        pool_balance = stats.get("pool_balance", 0)
+        info = [
+            f"Art ID: {art_id}",
+            f"Creator: {creator or '-'}",
+            f"Block Height: {block_h}",
+            f"Size: {size:,} bytes | sha256: {sha}...",
+            f"Pool Address: {pool}",
+            f"Pool Balance: {self._format_tsar(pool_balance)} TSAR",
+        ]
+        self.art_info_var.set("\n".join(info))
+        if self.comment_send_btn:
+            self.comment_send_btn.config(state="normal")
+        self.comment_status_var.set("Ready to comment.")
+        self._update_comment_split_preview()
+        self._refresh_comments_for(art_id)
+
+    def _refresh_current_comments(self) -> None:
+        if self._selected_art:
+            self._refresh_comments_for(self._selected_art.get("art_id"))
+
+    def _refresh_comments_for(self, art_id: Optional[str]) -> None:
+        if not art_id:
+            return
+        rpc = getattr(self.app, "rpc", None)
+        if not rpc:
+            return
+        def handle(resp: Optional[Dict[str, Any]]):
+            self.after(0, lambda: self._apply_comments(resp))
+        try:
+            rpc.send_async({"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id, "limit": 100}, handle)
+        except Exception:
+            pass
+
+    def _apply_comments(self, resp: Optional[Dict[str, Any]]) -> None:
+        if not self.comment_tree:
+            return
+        comments = []
+        try:
+            comments = (resp or {}).get("comments") or []
+        except Exception:
+            comments = []
+        self.comment_tree.delete(*self.comment_tree.get_children())
+        for entry in comments:
+            ts = self._format_ts(entry.get("ts"))
+            commenter = (entry.get("commenter") or entry.get("creator") or "")[:20]
+            amt_tsar = self._format_tsar(entry.get("amount", 0))
+            excerpt = self._decode_comment_hex(entry.get("comment"))
+            self.comment_tree.insert("", tk.END, values=(ts, commenter, f"{amt_tsar} TSAR", excerpt))
+
+    def _decode_comment_hex(self, comment_hex: Optional[str]) -> str:
+        try:
+            raw = bytes.fromhex(comment_hex or "")
+            text = raw.decode("utf-8", errors="replace")
+            return text[:80] + ("..." if len(text) > 80 else "")
+        except Exception:
+            return "(invalid comment)"
+
+    def _format_ts(self, ts_value: Any) -> str:
+        try:
+            ts = int(ts_value)
+        except Exception:
+            return "-"
+        if ts <= 0:
+            return "-"
+        return time.strftime("%Y-%m-%d %H:%M", time.localtime(ts))
+
+    def _format_tsar(self, sats: Any) -> str:
+        try:
+            dec = Decimal(int(sats)) / Decimal(CFG.TSAR)
+        except Exception:
+            return "0"
+        quant = Decimal("1").scaleb(-CFG.MAX_DECIMALS)
+        val = dec.quantize(quant, rounding=ROUND_DOWN)
+        txt = format(val, "f").rstrip("0").rstrip(".")
+        return txt or "0"
+
+    def _parse_amount_str(self, raw: str, default: int) -> int:
+        txt = (raw or "").strip()
+        if not txt:
+            return int(default)
+        txt = txt.replace(" ", "").replace(",", ".")
+        if txt.startswith("."):
+            txt = "0" + txt
+        try:
+            dec = Decimal(txt)
+        except InvalidOperation:
+            raise ValueError("Format jumlah tidak valid")
+        if dec <= 0:
+            raise ValueError("Jumlah harus > 0")
+        quant = Decimal("1").scaleb(-CFG.MAX_DECIMALS)
+        dec_q = dec.quantize(quant, rounding=ROUND_DOWN)
+        sats = int(dec_q * Decimal(CFG.TSAR))
+        if sats <= 0:
+            raise ValueError("Jumlah terlalu kecil")
+        return sats
+
+    def _update_comment_split_preview(self) -> None:
+        try:
+            base = self._parse_amount_str(self.comment_amount_var.get(), int(CFG.GRAFFITI_COMMENT_MIN_FEE))
+        except Exception as exc:
+            self.comment_split_var.set(f"Amount error: {exc}")
+            return
+        try:
+            tip = self._parse_amount_str(self.comment_tip_var.get(), 0) if self.comment_tip_var.get().strip() else 0
+        except Exception as exc:
+            self.comment_split_var.set(f"Tip error: {exc}")
+            return
+        split = calc_comment_split(base, tip)
+        creator = self._format_tsar(split["creator_total"])
+        storage = self._format_tsar(split["storage"])
+        miner = self._format_tsar(split["miner"])
+        self.comment_split_var.set(f"Creator: {creator} TSAR | Storage pool: {storage} TSAR | Miner fee: {miner} TSAR")
+
+    def _broadcast_comment_tx(self) -> None:
+        art = self._selected_art
+        if not art:
+            messagebox.showwarning("Graffiti", "Pilih karya terlebih dahulu.")
+            return
+        commenter = (self.comment_wallet_var.get() or "").strip().lower()
+        if not commenter:
+            messagebox.showwarning("Graffiti", "Pilih wallet untuk komentar.")
+            return
+        comment_txt = self.comment_text.get("1.0", tk.END).strip() if self.comment_text else ""
+        if not comment_txt:
+            messagebox.showwarning("Graffiti", "Teks komentar belum diisi.")
+            return
+        try:
+            base_sats = self._parse_amount_str(self.comment_amount_var.get(), int(CFG.GRAFFITI_COMMENT_MIN_FEE))
+        except Exception as exc:
+            messagebox.showerror("Graffiti", f"Jumlah komentar tidak valid: {exc}")
+            return
+        if base_sats < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
+            base_sats = int(CFG.GRAFFITI_COMMENT_MIN_FEE)
+        try:
+            tip_sats = self._parse_amount_str(self.comment_tip_var.get(), 0) if self.comment_tip_var.get().strip() else 0
+        except Exception as exc:
+            messagebox.showerror("Graffiti", f"Tip tidak valid: {exc}")
+            return
+        creator_addr = str(art.get("creator") or "").strip().lower()
+        if not creator_addr:
+            messagebox.showwarning("Graffiti", "Creator address tidak tersedia untuk karya ini.")
+            return
+        pool_addr = str(art.get("pool_address") or derive_pool_address(art.get("art_id"))).strip().lower()
+        try:
+            meta = build_comment_metadata(
+                art_id=str(art.get("art_id") or ""),
+                comment_text=comment_txt,
+                amount_sats=base_sats,
+                creator_addr=creator_addr,
+                commenter_addr=commenter,
+                tip_sats=tip_sats,
+            )
+        except ValueError as exc:
+            messagebox.showerror("Graffiti", f"Metadata komentar invalid: {exc}")
+            return
+        opret_hex = build_opret_hex(meta)
+        split = calc_comment_split(base_sats, tip_sats)
+        outputs = []
+        if split["creator_total"] > 0:
+            outputs.append({"address": creator_addr, "amount": split["creator_total"]})
+        if split["storage"] > 0:
+            outputs.append({"address": pool_addr, "amount": split["storage"]})
+        if not outputs:
+            messagebox.showerror("Graffiti", "Tidak ada output pembayaran yang valid.")
+            return
+        svc = getattr(self.app, "send_svc", None)
+        rpc_send = getattr(self.app, "rpc_send", None)
+        if not rpc_send:
+            rpc_send = getattr(getattr(self.app, "rpc", None), "send_async", None)
+        if not svc or not rpc_send:
+            messagebox.showerror("Graffiti", "Send service tidak tersedia.")
+            return
+        fee_rate = None
+        try:
+            fee_rate = int(getattr(self.app.send_tab, "fee_rate_var", None).get())
+        except Exception:
+            fee_rate = None
+        ask_pwd = getattr(self.app, "_ask_password", None)
+        if ask_pwd:
+            pw_provider = lambda addr: ask_pwd("Unlock Address", f"Masukkan password untuk {addr}:")
+        else:
+            pw_provider = lambda _addr: None
+
+        self.comment_status_var.set("Broadcasting COMMENT transaction...")
+        if self.comment_send_btn:
+            self.comment_send_btn.config(state="disabled")
+
+        def on_progress(msg: str) -> None:
+            self.comment_status_var.set(msg)
+
+        def on_done(resp: Optional[Dict[str, Any]]) -> None:
+            def finish():
+                if isinstance(resp, dict) and resp.get("status") in (None, "ok"):
+                    txid = resp.get("txid") or resp.get("data", {}).get("txid") or "?"
+                    self.comment_status_var.set(f"COMMENT broadcasted (txid: {txid})")
+                    if self.comment_text:
+                        self.comment_text.delete("1.0", tk.END)
+                    self._refresh_current_comments()
+                else:
+                    self.comment_status_var.set(f"COMMENT failed: {resp}")
+                if self.comment_send_btn:
+                    self.comment_send_btn.config(state="normal")
+            self.after(0, finish)
+
+        first_output = outputs[0]
+        try:
+            svc.create_sign_broadcast(
+                from_addr=commenter,
+                to_addr="",
+                amount_sats=0,
+                password_provider=pw_provider,
+                rpc_send=rpc_send,
+                fee_rate=fee_rate,
+                on_progress=on_progress,
+                on_done=on_done,
+                opret_hex=opret_hex,
+                extra_outputs=outputs,
+            )
+        except Exception as exc:
+            messagebox.showerror("Graffiti", f"Broadcast COMMENT gagal: {exc}")
+            if self.comment_send_btn:
+                self.comment_send_btn.config(state="normal")
 
     def apply_theme(self, theme: GraffitiTheme) -> None:
         """Rebuild the tab using a new theme palette."""

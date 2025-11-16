@@ -8,7 +8,7 @@ import threading
 import time
 from collections import defaultdict
 from typing import Any
-from bech32 import bech32_decode, convertbits
+from bech32 import bech32_decode, bech32_encode, convertbits
 
 # ---------------- Local Project ----------------
 from ..core.tx import TxOut
@@ -90,7 +90,7 @@ class UTXODB(BaseDatabase):
                               txid_hex: str, block_height: int) -> None:
         sha_hex = str(meta.get("sha256") or "")
         creator = meta.get("creator")
-        art_id = GRAFFITI.compute_art_id(sha_hex, creator, str(block_height))
+        art_id = GRAFFITI.compute_art_id(sha_hex, creator)
         pool_addr = GRAFFITI.derive_pool_address(art_id)
         min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
         paid = sum(int(info.get("amount") or 0) for info in outputs_info if info.get("address") == pool_addr)
@@ -908,3 +908,16 @@ class UTXODB(BaseDatabase):
         with self._lock:
             return self.utxos.get(key)
 
+    def script_to_address(self, script) -> str | None:
+        """
+        Attempt to turn common script types (currently P2WPKH) into a bech32 address.
+        Needed for Graffiti payout validation.
+        """
+        b = self._script_bytes(script)
+        if len(b) == 22 and b[0] == 0x00 and b[1] == 0x14:
+            try:
+                data = [0] + list(convertbits(b[2:], 8, 5, True))
+                return bech32_encode(CFG.ADDRESS_PREFIX, data)
+            except Exception:
+                return None
+        return None

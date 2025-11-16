@@ -47,6 +47,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         "PING", "GET_BALANCES", "CREATE_TX", "CREATE_TX_MULTI", "GET_INFO",
         "GET_TX_HISTORY", "GET_TX_DETAIL", "NEW_TX", "GET_UTXOS", "GET_PEERS",
         "GET_NETWORK_INFO", "GET_BLOCK_AT", "GET_BLOCK", "GET_BLOCK_HASH", "STOR_LIST",
+        "GRAFFITI_GET_POSTS", "GRAFFITI_GET_COMMENTS",
 
         # Chat & storage listing
         "CHAT_REGISTER", "CHAT_LOOKUP_PUB", "CHAT_PRESENCE", "CHAT_SEND", "CHAT_PULL", "CHAT_RELAY", "CHAT_READ",
@@ -1020,6 +1021,23 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         except Exception:
             log.exception("[process_message] CREATE_TX_MULTI error from %s", addr)
             return {"error": "CREATE_TX_MULTI failed"}
+
+    elif mtype == "GRAFFITI_GET_POSTS":
+        limit = int(message.get("limit", 50) or 50)
+        limit = max(1, min(limit, 500))
+        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
+        posts = reg.list_posts(limit) if reg else []
+        return {"type": "GRAFFITI_GET_POSTS", "posts": posts}
+
+    elif mtype == "GRAFFITI_GET_COMMENTS":
+        art_id = str(message.get("art_id") or "").strip().lower()
+        if not art_id:
+            return {"type": "GRAFFITI_GET_COMMENTS", "comments": []}
+        limit = int(message.get("limit", 100) or 100)
+        limit = max(1, min(limit, 500))
+        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
+        comments = reg.list_comments(art_id, limit) if reg else []
+        return {"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id, "comments": comments}
         
         
     # =============== STORAGE RPC (ROLE: NODE_STORAGE) ===============

@@ -320,13 +320,14 @@ class StorageService:
         idx = self._idx()
         return {"status":"ok","files": idx.get("files",{}), "bytes_used": idx.get("bytes_used",0)}
 
-    def mark_paid(self, graffiti_id: str, txid: str) -> Dict[str, Any]:
+    def mark_paid(self, graffiti_id: str, txid: str | None) -> Dict[str, Any]:
         idx = self._idx()
         meta = idx.get("files",{}).get(graffiti_id)
         if not meta:
             return {"status":"not_found"}
         meta["paid"] = True
-        meta["paid_txid"] = txid
+        if txid:
+            meta["paid_txid"] = txid
         idx["files"][graffiti_id] = meta
         self._flush(idx)
         return {"status":"ok"}

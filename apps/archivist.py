@@ -6,7 +6,7 @@
 import os, json, socket, threading, sys, time, tkinter as tk
 import base64, hashlib
 import multiprocessing as mp
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 from typing import Optional, Dict, Any, List, Sequence, Tuple
 from bech32 import bech32_encode, convertbits
 from tsarchain.utils.helpers import hash160
@@ -580,6 +580,9 @@ class TsarStorageGUI:
             self.tree.heading(c, text=c)
             self.tree.column(c, width=w, stretch=(c=="path"))
         self.tree.pack(fill=tk.BOTH, expand=True)
+        action_row = ttk.Frame(table, padding=(0, 4))
+        action_row.pack(fill=tk.X)
+        ttk.Button(action_row, text="Mark Selected Paid", command=self._mark_selected_paid).pack(side=tk.LEFT, padx=6)
 
         # Log
         logf = ttk.Frame(self.root, padding=10)
@@ -744,6 +747,29 @@ class TsarStorageGUI:
                 meta.get("state"),
                 meta.get("path")
             ))
+
+    def _mark_selected_paid(self) -> None:
+        if not self.connected:
+            messagebox.showwarning("Payout", "Hubungkan ke node terlebih dahulu.")
+            return
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showwarning("Payout", "Pilih entri pada tabel.")
+            return
+        gid = self.tree.item(sel[0], "values")[0]
+        txid = simpledialog.askstring("Payout TXID", "Masukkan TXID payout (opsional):", parent=self.root)
+        if txid is None:
+            return
+        try:
+            resp = self.rpc.call({"type":"STOR_PAID", "graffiti_id": gid, "txid": (txid or "").strip()}, timeout=6.0)
+        except Exception as exc:
+            messagebox.showerror("Payout", f"RPC error: {exc}")
+            return
+        if isinstance(resp, dict) and resp.get("status") in ("ok", None):
+            self.logln(f"[Payout] {gid} ditandai paid.")
+            self.refresh_all()
+        else:
+            messagebox.showerror("Payout", f"Gagal menandai paid: {resp}")
 
     def _start_retention_loop(self) -> None:
         if self._retention_thread and self._retention_thread.is_alive():

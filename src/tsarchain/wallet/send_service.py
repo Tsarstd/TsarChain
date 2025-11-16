@@ -80,18 +80,33 @@ class SendService:
         on_progress,
         on_done,
         opret_hex: str | None = None,
+        extra_outputs: Optional[list[dict]] = None,
     ) -> None:
         
-        use_multi = bool(opret_hex)
+        outputs_payload: list[dict[str, Any]] = []
+        if extra_outputs:
+            for item in extra_outputs:
+                if not isinstance(item, dict):
+                    continue
+                out = {}
+                if item.get("address"):
+                    out["address"] = str(item["address"]).strip().lower()
+                if "amount" in item:
+                    out["amount"] = int(item["amount"])
+                if out:
+                    outputs_payload.append(out)
+        base_addr = (to_addr or "").strip().lower()
+        use_multi = bool(extra_outputs) or bool(opret_hex)
         if use_multi:
+            if base_addr and int(amount_sats) > 0:
+                outputs_payload.insert(0, {"address": base_addr, "amount": int(amount_sats)})
+            if opret_hex:
+                outputs_payload.append({"amount": 0, "opret_hex": (opret_hex or "").strip().lower()})
             payload = {
                 "type": "CREATE_TX_MULTI",
                 "from": (from_addr or "").strip().lower(),
                 "fee_rate": None,
-                "outputs": [
-                    { "address": (to_addr or "").strip().lower(), "amount": int(amount_sats) },
-                    { "amount": 0, "opret_hex": (opret_hex or "").strip().lower() },
-                ],
+                "outputs": outputs_payload or [{"address": base_addr, "amount": int(amount_sats)}],
             }
         else:
             payload = {

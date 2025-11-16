@@ -10,7 +10,12 @@ class GraffitiRegistry:
     def __init__(self) -> None:
         os.makedirs(os.path.dirname(CFG.GRAFFITI_FILE), exist_ok=True)
         self.store = AtomicJSONFile(CFG.GRAFFITI_FILE, keep_backups=2, checksum=True)
-        self.data = self.store.load(default={"posts": {}, "comments": {}, "payouts": {}})
+        default = {"posts": {}, "comments": {}, "payouts": {}}
+        try:
+            self.data = self.store.load(default=default)
+        except FileNotFoundError:
+            self.store.save(default)
+            self.data = dict(default)
 
     def _flush(self) -> None:
         self.store.save(self.data)
@@ -19,6 +24,7 @@ class GraffitiRegistry:
         posts = self.data.setdefault("posts", {})
         entry = dict(meta)
         entry.update({
+            "art_id": art_id,
             "txid": txid,
             "block_height": int(block_height),
             "pool_address": pool_addr,
@@ -77,6 +83,34 @@ class GraffitiRegistry:
             "amount": int(total),
         })
         self._flush()
+
+    def list_posts(self, limit: int = 50) -> list[Dict[str, Any]]:
+        posts = self.data.get("posts") or {}
+        items: list[Dict[str, Any]] = []
+        for art_id, entry in posts.items():
+            try:
+                rec = dict(entry)
+                rec["art_id"] = art_id
+                stats = rec.get("stats") or {}
+                rec["stats"] = stats
+                items.append(rec)
+            except Exception:
+                continue
+        items.sort(key=lambda r: (int(r.get("block_height") or 0), int(r.get("ts") or 0)), reverse=True)
+        if isinstance(limit, int) and limit > 0:
+            return items[:limit]
+        return items
+
+    def list_comments(self, art_id: str, limit: int = 50) -> list[Dict[str, Any]]:
+        art_id = (art_id or "").strip().lower()
+        if not art_id:
+            return []
+        comments = (self.data.get("comments") or {}).get(art_id, [])
+        items = [dict(entry) for entry in comments]
+        items.sort(key=lambda r: (int(r.get("block_height") or 0), int(r.get("ts") or 0)), reverse=True)
+        if isinstance(limit, int) and limit > 0:
+            return items[:limit]
+        return items
 
 
 __all__ = ["GraffitiRegistry"]
