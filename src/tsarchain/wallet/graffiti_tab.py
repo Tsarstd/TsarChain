@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from tkinter import ttk, filedialog, messagebox, StringVar
 import tkinter as tk
 
-from .graffiti import (
+from ..contracts.graffiti import (
     build_metadata,
     build_opret_hex,
     calc_upload_fee_sats,
@@ -365,17 +365,19 @@ class GraffitiTab(ttk.Frame):
             raise RuntimeError("upload metadata incomplete")
         storer_meta = upload_result.get("storer") or {}
         storer_addr = str(storer_meta.get("addr") or storer_meta.get("address") or "").strip().lower()
+        creator = (self.creator_var.get() or "").strip().lower()
         meta = build_metadata(
             sha256_hex=self.selected_sha,
             size_bytes=int(self.selected_size),
             mime=self.selected_mime,
             storer_addr=storer_addr or "unknown",
             receipt_id=self.receipt_id,
+            creator_addr=creator or None,
         )
         opret_hex = build_opret_hex(meta)
         self.opret_hex = opret_hex
 
-        art_id = compute_art_id(self.selected_sha)
+        art_id = compute_art_id(self.selected_sha, creator or None)
         pool_addr = derive_pool_address(art_id)
         fee_sats = calc_upload_fee_sats(int(self.selected_size))
         tsar_fee = fee_sats / CFG.TSAR

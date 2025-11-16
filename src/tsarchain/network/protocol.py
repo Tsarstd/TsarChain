@@ -212,6 +212,7 @@ def load_or_create_keypair_at(path: str) -> tuple[str, str, str]:
         record = load_user_key_record()
         if record and record.get("id") and record.get("pubkey") and record.get("privkey"):
             return record["id"], record["pubkey"], record["privkey"]
+        
     if use_node_store:
         record = load_node_key()
         if record and record.get("id") and record.get("pubkey") and record.get("privkey"):

@@ -14,12 +14,44 @@ from ..core.coinbase import CoinbaseTx
 from ..mempool.pool import TxPoolDB
 from ..storage.utxo import UTXODB
 from ..utils import config as CFG
+from ..contracts import graffiti as GRAFFITI
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.consensus.mining')
 
 class MiningMixin:
+    def _select_graffiti_sha(self, txs) -> str | None:
+        """
+        Inspect candidate transactions for a Graffiti POST event and return its SHA256 hash.
+        Only the first valid POST per block is used to anchor the block_id.
+        """
+        for tx in txs or []:
+            outputs = getattr(tx, "outputs", []) or []
+            for txout in outputs:
+                script = getattr(txout, "script_pubkey", None)
+                if script is None:
+                    continue
+                try:
+                    meta = GRAFFITI.parse_from_script(script)
+                except Exception:
+                    meta = None
+                if not meta:
+                    continue
+                event = str(meta.get("event", "POST")).strip().upper()
+                if event != "POST":
+                    continue
+                sha_hex = str(meta.get("sha256") or "").strip().lower()
+                if len(sha_hex) == 64:
+                    txid = getattr(tx, "txid", None)
+                    if isinstance(txid, (bytes, bytearray)):
+                        txid_hex = txid.hex()
+                    else:
+                        txid_hex = str(txid)
+                    log.debug("[mine_block] Graffiti POST found tx=%s sha=%s", (txid_hex or "")[:12], sha_hex[:24])
+                    return sha_hex
+        return None
+
     def mine_block(self, miner_address, use_cores: int | None = None, cancel_event: MpEvent | None = None, pow_backend: str = "auto", progress_queue: mp.Queue | None = None,):
         if not self.chain and not CFG.ALLOW_AUTO_GENESIS:
             log.warning("[mine_block] refusing to mine genesis; sync from peers first.")
@@ -87,7 +119,13 @@ class MiningMixin:
         total_fee      = sum(int(getattr(tx, "fee", 0)) for tx in valid_txs)
         coinbase_value = int(reward + total_fee)
 
-        coinbase = CoinbaseTx(to_address=miner_address, reward=coinbase_value, height=height)
+        graffiti_sha = self._select_graffiti_sha(valid_txs)
+        coinbase_kwargs = dict(to_address=miner_address, reward=coinbase_value, height=height)
+        if graffiti_sha:
+            coinbase_kwargs["block_id"] = graffiti_sha
+            log.info("[mine_block] Anchoring block_id to graffiti sha %s", graffiti_sha[:32])
+
+        coinbase = CoinbaseTx(**coinbase_kwargs)
         coinbase.compute_txid()
 
         block_txs = [coinbase] + valid_txs

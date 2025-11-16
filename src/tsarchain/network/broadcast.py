@@ -628,7 +628,7 @@ class Broadcast:
                     self._processing_blocks.discard(block_id)
                     if not accepted:
                         self.seen_blocks.discard(block_id)
-        return accepted
+                    return accepted
 
     def receive_tx(self, message: Dict[str, Any], addr, peers: Set[Tuple[str, int]]) -> bool:
         try:

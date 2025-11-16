@@ -262,6 +262,21 @@ class TxPoolDB(BaseDatabase):
         self._dirty = True
         self._change_seq += 1
 
+    def _maybe_flush_after_mutation(self) -> None:
+        """
+        Flush mempool snapshot to persistent store when interval elapsed.
+        Prevents stale JSON without forcing flush per transaction.
+        """
+        if not self._dirty:
+            return
+        now = time.time()
+        if (now - self._last_flush) < self._auto_flush_interval:
+            return
+        try:
+            self.flush(force=False)
+        except Exception:
+            log.exception("[mempool] auto-flush failed after mutation")
+
     def _compute_fee_rate(self, tx_obj: Tx, tx_size: int | None = None) -> float:
         fee = float(getattr(tx_obj, "fee", 0) or 0)
         if tx_size is None:
@@ -455,6 +470,7 @@ class TxPoolDB(BaseDatabase):
         txid = self._normalize_txid(tx_obj.txid)
         tx_size = self._estimate_tx_size(tx_obj)
         self._ensure_space(tx_size)
+        
         with self._lock:
             prev_size = 0
             old_tx = self._pool.get(txid)
@@ -468,6 +484,7 @@ class TxPoolDB(BaseDatabase):
             self._index_tx_prevouts(tx_obj)
             self._record_fee_rate(txid, tx_obj, tx_size)
             self._mark_dirty()
+        self._maybe_flush_after_mutation()
 
     def remove_tx(self, txid_hex: str) -> bool:
         norm = self._normalize_txid(txid_hex)
@@ -483,6 +500,7 @@ class TxPoolDB(BaseDatabase):
                 self.current_size = 0
             self._mark_dirty()
             return True
+        self._maybe_flush_after_mutation()
 
     def remove_many(self, txids) -> int:
         removed = 0
@@ -500,6 +518,8 @@ class TxPoolDB(BaseDatabase):
                 if self.current_size < 0:
                     self.current_size = 0
                 self._mark_dirty()
+        if removed:
+            self._maybe_flush_after_mutation()
         return removed
 
     def clear(self) -> None:
@@ -542,6 +562,8 @@ class TxPoolDB(BaseDatabase):
                 if self.current_size < 0:
                     self.current_size = 0
                 self._mark_dirty()
+        if removed:
+            self._maybe_flush_after_mutation()
         return removed
 
     def prune_stale_entries(self) -> int:

@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP173
+
 from __future__ import annotations
 import json, re, time, hashlib, math
 from typing import Any, Dict, Optional
@@ -10,6 +11,8 @@ from bech32 import bech32_decode, bech32_encode, convertbits
 from ..utils.helpers import Script, OP_RETURN, hash160
 from ..utils import config as CFG
 
+from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.contracts(graffiti)")
 
 # -----------------------------
 # Internal helpers / validation
@@ -47,17 +50,11 @@ def _is_valid_tsar_address(addr: str) -> bool:
 def _compact_json(obj: Dict[str, Any]) -> bytes:
     return json.dumps(obj, separators=(',', ':'), ensure_ascii=True).encode('ascii')
 
-def _max_graffiti_limit() -> int:
-    if hasattr(CFG, "MAX_GRAFFITI_OPRET"):
-        return int(CFG.MAX_GRAFFITI_OPRET)
-    if hasattr(CFG, "OPRET_MAX_BYTES"):
-        return int(CFG.OPRET_MAX_BYTES)
-    return 80
-
 def _guard_payload_size(data: bytes) -> None:
-    limit = _max_graffiti_limit()
+    limit = CFG.MAX_GRAFFITI_OPRET
     if len(data) > limit:
         raise ValueError(f"graffiti_opreturn_too_large: {len(data)} > {limit}")
+    log.info("OP_RETURN data: %s bytes, with limit %s bytes", len(data), limit)
 
 
 # -----------------------------
@@ -66,6 +63,7 @@ def _guard_payload_size(data: bytes) -> None:
 
 def build_metadata(sha256_hex: str, size_bytes: int, mime: str,
                    storer_addr: str, receipt_id: str,
+                   creator_addr: str | None = None,
                    ts: Optional[int] = None, height: Optional[int] = None,
                    extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     
@@ -79,6 +77,8 @@ def build_metadata(sha256_hex: str, size_bytes: int, mime: str,
         raise ValueError("bad_storer_addr")
     if not isinstance(receipt_id, str) or not receipt_id.strip():
         raise ValueError("bad_receipt_id")
+    if creator_addr and not _is_valid_tsar_address(creator_addr):
+        raise ValueError("bad_creator_addr")
 
     meta: Dict[str, Any] = {
         "sha256": sha256_hex.strip().lower(),
@@ -86,7 +86,10 @@ def build_metadata(sha256_hex: str, size_bytes: int, mime: str,
         "mime": mime.strip(),
         "storer": storer_addr.strip().lower(),
         "receipt": receipt_id.strip(),
+        "event": "POST",
     }
+    if creator_addr:
+        meta["creator"] = creator_addr.strip().lower()
     # Anchor opsional
     if ts is None:
         ts = int(time.time())
@@ -213,7 +216,7 @@ def derive_pool_address(art_id_hex: str) -> str:
 def calc_upload_fee_sats(size_bytes: int) -> int:
     billable = max(int(size_bytes), int(CFG.GRAFFITI_MIN_BILLABLE_SIZE))
     chunks = max(1, math.ceil(billable / float(CFG.GRAFFITI_MIN_BILLABLE_SIZE)))
-    return chunks * float(CFG.GRAFFITI_UPLOAD_FEE_PER_CHUNK)
+    return int(chunks * float(CFG.GRAFFITI_UPLOAD_FEE_PER_CHUNK))
 
 
 __all__ = [

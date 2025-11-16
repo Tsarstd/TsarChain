@@ -80,7 +80,7 @@ WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wal
 # =============================================================================
 # ---- KV BACKEND ----
 DB_DIR             = "data/DB"  # LMDB root folder
-KV_BACKEND         = "lmdb"  # active key-value backend implementation
+KV_BACKEND         = "json"  # active key-value backend implementation (lmdb & json)
 LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
 LMDB_DATA_FILE     = os.path.join(DB_DIR, "data.mdb")  # main LMDB data file path
@@ -155,7 +155,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "000eb0d2fa96b56bd8667e465f3b785e5d32de835f6895cdaab30255700d5ff7"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "0012b8b0ba3dc1a4d132b6959dbc15be5ffab6ab9cefea0b3e4869e05508e102"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -469,8 +469,7 @@ GRAFFITI_MAGIC = b"TSAR_GRAF1|"  # domain separator for graffiti commitments
 GRAFFITI_POOL_SALT = b"TSAR_GRAFFITI_POOL|"  # seed when deriving deterministic pool addresses
 
 # ---- OP_RETURN POLICY ----
-OPRET_MAX_BYTES       = 352  # OP_RETURN payload ceiling (bytes)
-MAX_GRAFFITI_OPRET    = min(OPRET_MAX_BYTES, 320)  # graffiti payload limit capped under script limit
+MAX_GRAFFITI_OPRET    = 400  # graffiti payload limit capped under script limit
 OPRET_REQUIRE_LAST    = True  # enforce OP_RETURN as final output
 OPRET_ONLY_ONE        = True  # restrict transactions to a single OP_RETURN
 OPRET_ALLOW_PUSHDATA1 = True  # allow PUSHDATA1 opcodes inside OP_RETURN handler

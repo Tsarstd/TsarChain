@@ -7,6 +7,7 @@ import json
 import threading
 import time
 from collections import defaultdict
+from typing import Any
 from bech32 import bech32_decode, convertbits
 
 # ---------------- Local Project ----------------
@@ -15,6 +16,8 @@ from .db import BaseDatabase
 from .db import AtomicJSONFile
 from ..utils import config as CFG
 from .kv import kv_enabled, iter_prefix, batch, clear_db
+from ..contracts.graffiti_registry import GraffitiRegistry
+from ..contracts import graffiti as GRAFFITI
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
@@ -45,6 +48,91 @@ class UTXODB(BaseDatabase):
             self._load()
         else:
             self.utxos.clear()
+        self._graffiti_registry = GraffitiRegistry()
+        
+    @staticmethod
+    def _script_bytes(spk) -> bytes:
+        if hasattr(spk, "serialize"):
+            try:
+                return spk.serialize()
+            except Exception:
+                return b""
+        if isinstance(spk, (bytes, bytearray)):
+            return bytes(spk)
+        if isinstance(spk, str):
+            try:
+                return bytes.fromhex(spk)
+            except Exception:
+                return b""
+        return b""
+
+    def _maybe_record_graffiti_post(self, tx, outputs_info: list[dict[str, Any]], block_height: int | None) -> None:
+        if block_height is None:
+            return
+        try:
+            txid_hex = self._txid_hex(getattr(tx, "txid", None))
+            meta = None
+            for info in outputs_info:
+                script_bytes = info.get("script_bytes") or b""
+                if script_bytes and script_bytes[0] == 0x6a:
+                    payload = self._read_opreturn_payload(script_bytes)
+                    if payload:
+                        candidate = GRAFFITI.parse_payload(payload)
+                        if candidate and str(candidate.get("event", "POST")).upper() == "POST":
+                            meta = candidate
+                            break
+            if not meta:
+                return
+            sha_hex = str(meta.get("sha256") or "")
+            creator = meta.get("creator")
+            art_id = GRAFFITI.compute_art_id(sha_hex, creator, str(block_height))
+            pool_addr = GRAFFITI.derive_pool_address(art_id)
+            min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
+            paid = sum(int(info.get("amount") or 0) for info in outputs_info if info.get("address") == pool_addr)
+            if paid < min_fee:
+                log.warning("[graffiti] POST fee too low: paid=%s required=%s tx=%s", paid, min_fee, txid_hex)
+                return
+            entry = {
+                "sha256": sha_hex,
+                "size": int(meta.get("size") or 0),
+                "mime": meta.get("mime"),
+                "storer": meta.get("storer"),
+                "receipt": meta.get("receipt"),
+                "creator": creator,
+            }
+            self._graffiti_registry.record_post(art_id, entry, txid_hex, block_height, pool_addr, paid)
+        except Exception:
+            log.exception("[graffiti] failed to record POST tx=%s", getattr(tx, "txid", None))
+
+    @staticmethod
+    def _read_opreturn_payload(script_bytes: bytes) -> bytes | None:
+        if not script_bytes or script_bytes[0] != 0x6a:
+            return None
+        i = 1
+        if i >= len(script_bytes):
+            return None
+        first = script_bytes[i]
+        i += 1
+        if 1 <= first <= 75:
+            n = first
+            end = i + n
+        elif first == 0x4c:
+            if i >= len(script_bytes):
+                return None
+            n = script_bytes[i]
+            i += 1
+            end = i + n
+        elif first == 0x4d:
+            if i + 1 >= len(script_bytes):
+                return None
+            n = int.from_bytes(script_bytes[i:i+2], "little")
+            i += 2
+            end = i + n
+        else:
+            return None
+        if end > len(script_bytes):
+            return None
+        return script_bytes[i:end]
 
     # ===================== SERIALIZE =====================
     def _serialize_entry(self, entry):
@@ -304,11 +392,24 @@ class UTXODB(BaseDatabase):
                             self._dirty_keys.discard(spent_key)
                             self._drop_index_entry(spent_key)
 
+                outputs_info = []
                 for index, tx_out in enumerate(getattr(tx, "outputs", [])):
+                    script_bytes = self._script_bytes(getattr(tx_out, "script_pubkey", None))
                     self.add(txid_hex, index, tx_out,
                              is_coinbase=is_coinbase,
                              block_height=block_height,
                              autosave=False)
+                    amount = int(getattr(tx_out, "amount", 0))
+                    address = None
+                    try:
+                        if hasattr(self, "script_to_address"):
+                            address = self.script_to_address(getattr(tx_out, "script_pubkey", None))
+                        elif hasattr(tx_out, "address"):
+                            address = getattr(tx_out, "address")
+                    except Exception:
+                        address = None
+                    outputs_info.append({"script_bytes": script_bytes, "amount": amount, "address": address})
+                self._maybe_record_graffiti_post(tx, outputs_info, block_height)
             self._dirty = True
             if autosave:
                 self._save()
@@ -335,8 +436,21 @@ class UTXODB(BaseDatabase):
                             spent_key = f"{prev_txid_hex}:{int(vout)}"
                             if self.utxos.pop(spent_key, None) is not None:
                                 self._drop_index_entry(spent_key)
+                    outputs_info = []
                     for index, tx_out in enumerate(getattr(tx, "outputs", []) or []):
                         self.add(txid_hex, index, tx_out, is_coinbase=is_coinbase, block_height=height, autosave=False)
+                        amount = int(getattr(tx_out, "amount", 0))
+                        script_bytes = self._script_bytes(getattr(tx_out, "script_pubkey", None))
+                        address = None
+                        try:
+                            if hasattr(self, "script_to_address"):
+                                address = self.script_to_address(getattr(tx_out, "script_pubkey", None))
+                            elif hasattr(tx_out, "address"):
+                                address = getattr(tx_out, "address")
+                        except Exception:
+                            address = None
+                        outputs_info.append({"script_bytes": script_bytes, "amount": amount, "address": address})
+                    self._maybe_record_graffiti_post(tx, outputs_info, height)
             self._dirty = True
             if self._persist_enabled:
                 self._save(force=True)
@@ -524,6 +638,7 @@ class UTXODB(BaseDatabase):
                             pass
             return removed
         
+        outputs_info: list[dict[str, Any]] = []
         for n, txout in enumerate(getattr(tx, "outputs", [])):
             try:
                 spk = getattr(txout, "script_pubkey", None)
@@ -617,6 +732,7 @@ class UTXODB(BaseDatabase):
             except Exception:
                 address = None
 
+            outputs_info.append({"script_bytes": b, "address": address, "amount": amount})
             entry = {
                 "txid": txid_hex,
                 "vout": int(n),
@@ -627,6 +743,10 @@ class UTXODB(BaseDatabase):
                 "address": address,
             }
             _insert_output(utxos, txid_hex, n, entry, address)
+            
+        if block_height is not None:
+            self._maybe_record_graffiti_post(tx, outputs_info, block_height)
+
         return utxos
 
     def get(self, identifier: str):
