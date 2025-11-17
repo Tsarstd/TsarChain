@@ -20,7 +20,7 @@ from .peers_storage import load_node_key, save_node_key
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network(protocol)")
+log = get_ctx_logger("tsarchain.network.protocol")
 
 
 def _ensure_dir(path = str) -> None:

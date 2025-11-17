@@ -53,7 +53,7 @@ class Block:
         short_prev = (self.prev_block_hash.hex()[:8]
               if isinstance(self.prev_block_hash, (bytes, bytearray))
               else str(self.prev_block_hash)[:8])
-        self.log = get_ctx_logger("tsarchain.core(block)", height=self.height, block=short_prev)
+        self.log = get_ctx_logger("tsarchain.core.block", height=self.height, block=short_prev)
         
 
     def to_dict(self):

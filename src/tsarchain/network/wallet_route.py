@@ -15,7 +15,7 @@ from ..utils import config as CFG
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network(wallet_route)")
+log = get_ctx_logger("tsarchain.network.wallet_route")
 
 
 # ------------------------------ P2P Chat ------------------------------

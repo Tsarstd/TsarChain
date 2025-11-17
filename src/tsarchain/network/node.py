@@ -1,7 +1,7 @@
 ﻿# SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
-# Refs: BIP173; Merkle; Signal-X3DH
+# Refs: Merkle; Signal-X3DH
 
 from __future__ import annotations
 import socket, threading, json, time, random
@@ -21,7 +21,7 @@ from .peers_storage import load_peer_keys, save_peer_keys
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network(node)")
+log = get_ctx_logger("tsarchain.network.node")
     
 
 # ---- Handshake rate-limit per IP (anti-DoS) ----

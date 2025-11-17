@@ -89,7 +89,7 @@ remains responsible for complying with the laws in their own jurisdiction.
 
 	• Replication factor R: (default 5) using consistent hashing on a node ring keyed by art_id.
 
-	• Storage Pool Address: A deterministic address per art_id: pool_addr = GRV_POOL(art_id).
+	• Storage Pool Address: A deterministic address per art_id: pool_addr = GRF_POOL(art_id).
 
 	• Proof of Retention: every EPOCH_BLOCKS, each storing node proves possession via random
 		byte range challenges; the current epoch's pool_addr balance is split among successful provers.
@@ -101,12 +101,12 @@ remains responsible for complying with the laws in their own jurisdiction.
 6. Wire Format (On Chain Hints)
 
 Use a compact data carrier tag (OP_RETURN style) for simple & deterministic indexing.
-GRV_MAGIC = 0x47525631 ("GRV1") Events: POST, COMMENT 
+GRF_MAGIC = 0x47525631 ("GRV1") Events: POST, COMMENT 
 
-POST payload (pseudo): { magic: GRV_MAGIC, event: POST, Hc, size_kb, mime, addr_c, R_hint, meta_short }
+POST payload (pseudo): { magic: GRF_MAGIC, event: POST, Hc, size_kb, mime, addr_c, R_hint, meta_short }
 Outputs: [ pool_addr (upload endowment) ] 
 
-COMMENT payload (pseudo): { magic: GRV_MAGIC, event: COMMENT, art_id, comment_utf8_hex }
+COMMENT payload (pseudo): { magic: GRF_MAGIC, event: COMMENT, art_id, comment_utf8_hex }
 Outputs: [ 80% -> addr_c, 10% -> pool_addr ]; 10% miner fee via input-output delta.
 
 

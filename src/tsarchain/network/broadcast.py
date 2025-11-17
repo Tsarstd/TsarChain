@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network(broadcast)")
+log = get_ctx_logger("tsarchain.network.broadcast")
 
 
 class Broadcast:
