@@ -191,4 +191,11 @@ Payout: Per epoch, storage nodes passing proofs split the available pool for thi
 
 	• Content Takedown: protocol has none. Storage is voluntary; diverse nodes = resilience.
 		Buzzers must pay to speak - artists earn.
+
+
+### --- Next Implementation Steps (Dev Notes) --- 
+
+	- Retention Proof Scheduler: rancang worker storage node yang periodik menjalankan byte-range challenge sebelum pool balance dibagikan; log penalti jika bukti absen.
+ 
+	- Storage Automation: definisikan template transaksi on-chain untuk payout pool (mis. script khusus) sehingga klaim bisa otomatis mengikuti aturan konsensus.
 '''
