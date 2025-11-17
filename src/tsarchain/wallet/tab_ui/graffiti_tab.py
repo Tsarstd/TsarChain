@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 from tkinter import ttk, filedialog, messagebox, StringVar
 import tkinter as tk
 
-from ..contracts.graffiti import (
+from ...contracts.graffiti import (
     build_metadata,
     build_comment_metadata,
     build_opret_hex,
@@ -19,9 +19,9 @@ from ..contracts.graffiti import (
     compute_art_id,
     derive_pool_address,
 )
-from .storage_client import upload_graffiti
-from .theme import GraffitiTheme, lighten
-from ..utils import config as CFG
+from ..services.graffiti_service import upload_graffiti
+from ..theme import GraffitiTheme, lighten
+from ...utils import config as CFG
 
 
 # ========= Util kecil =========
@@ -755,6 +755,7 @@ class GraffitiTab(ttk.Frame):
             dec = Decimal(int(sats)) / Decimal(CFG.TSAR)
         except Exception:
             return "0"
+        
         quant = Decimal("1").scaleb(-CFG.MAX_DECIMALS)
         val = dec.quantize(quant, rounding=ROUND_DOWN)
         txt = format(val, "f").rstrip("0").rstrip(".")
@@ -763,9 +764,11 @@ class GraffitiTab(ttk.Frame):
     def _refresh_payouts_for(self, art_id: Optional[str]) -> None:
         if not art_id:
             return
+        
         rpc = getattr(self.app, "rpc", None)
         if not rpc:
             return
+        
         def handle(resp: Optional[Dict[str, Any]]):
             self.after(0, lambda: self._apply_payouts(resp))
         try:
@@ -776,6 +779,7 @@ class GraffitiTab(ttk.Frame):
     def _apply_payouts(self, resp: Optional[Dict[str, Any]]) -> None:
         if not self.payout_tree:
             return
+        
         rows = []
         try:
             rows = (resp or {}).get("payouts") or []
@@ -811,11 +815,13 @@ class GraffitiTab(ttk.Frame):
             raise ValueError("Format jumlah tidak valid")
         if dec <= 0:
             raise ValueError("Jumlah harus > 0")
+        
         quant = Decimal("1").scaleb(-CFG.MAX_DECIMALS)
         dec_q = dec.quantize(quant, rounding=ROUND_DOWN)
         sats = int(dec_q * Decimal(CFG.TSAR))
         if sats <= 0:
             raise ValueError("Jumlah terlalu kecil")
+        
         return sats
 
     def _update_comment_split_preview(self) -> None:
@@ -824,11 +830,13 @@ class GraffitiTab(ttk.Frame):
         except Exception as exc:
             self.comment_split_var.set(f"Amount error: {exc}")
             return
+        
         try:
             tip = self._parse_amount_str(self.comment_tip_var.get(), 0) if self.comment_tip_var.get().strip() else 0
         except Exception as exc:
             self.comment_split_var.set(f"Tip error: {exc}")
             return
+        
         split = calc_comment_split(base, tip)
         creator = self._format_tsar(split["creator_total"])
         storage = self._format_tsar(split["storage"])
@@ -840,10 +848,12 @@ class GraffitiTab(ttk.Frame):
         if not art:
             messagebox.showwarning("Graffiti", "Pilih karya terlebih dahulu.")
             return
+        
         commenter = (self.comment_wallet_var.get() or "").strip().lower()
         if not commenter:
             messagebox.showwarning("Graffiti", "Pilih wallet untuk komentar.")
             return
+        
         comment_txt = self.comment_text.get("1.0", tk.END).strip() if self.comment_text else ""
         if not comment_txt:
             messagebox.showwarning("Graffiti", "Teks komentar belum diisi.")
@@ -853,6 +863,7 @@ class GraffitiTab(ttk.Frame):
         except Exception as exc:
             messagebox.showerror("Graffiti", f"Jumlah komentar tidak valid: {exc}")
             return
+        
         if base_sats < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
             base_sats = int(CFG.GRAFFITI_COMMENT_MIN_FEE)
         try:
@@ -860,10 +871,12 @@ class GraffitiTab(ttk.Frame):
         except Exception as exc:
             messagebox.showerror("Graffiti", f"Tip tidak valid: {exc}")
             return
+        
         creator_addr = str(art.get("creator") or "").strip().lower()
         if not creator_addr:
             messagebox.showwarning("Graffiti", "Creator address tidak tersedia untuk karya ini.")
             return
+        
         pool_addr = str(art.get("pool_address") or derive_pool_address(art.get("art_id"))).strip().lower()
         try:
             meta = build_comment_metadata(
@@ -877,6 +890,7 @@ class GraffitiTab(ttk.Frame):
         except ValueError as exc:
             messagebox.showerror("Graffiti", f"Metadata komentar invalid: {exc}")
             return
+        
         opret_hex = build_opret_hex(meta)
         split = calc_comment_split(base_sats, tip_sats)
         outputs = []
@@ -887,6 +901,7 @@ class GraffitiTab(ttk.Frame):
         if not outputs:
             messagebox.showerror("Graffiti", "Tidak ada output pembayaran yang valid.")
             return
+        
         svc = getattr(self.app, "send_svc", None)
         rpc_send = getattr(self.app, "rpc_send", None)
         if not rpc_send:
@@ -894,6 +909,7 @@ class GraffitiTab(ttk.Frame):
         if not svc or not rpc_send:
             messagebox.showerror("Graffiti", "Send service tidak tersedia.")
             return
+        
         fee_rate = None
         try:
             fee_rate = int(getattr(self.app.send_tab, "fee_rate_var", None).get())
@@ -926,7 +942,6 @@ class GraffitiTab(ttk.Frame):
                     self.comment_send_btn.config(state="normal")
             self.after(0, finish)
 
-        first_output = outputs[0]
         try:
             svc.create_sign_broadcast(
                 from_addr=commenter,

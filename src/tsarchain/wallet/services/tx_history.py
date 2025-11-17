@@ -6,7 +6,7 @@
 from typing import Callable, Optional, Dict, Any, List
 
 # ---------------- Local Project (Wallet Only) ----------------
-from .data_security import Wallet
+from ..security.data_security import Wallet
 
 
 class HistoryService:
@@ -29,9 +29,6 @@ class HistoryService:
             "status": status,
         }
         rpc_send(payload, on_done)
-
-    def fetch_tx_detail(self, txid: str, rpc_send, on_done: Callable[[Optional[Dict[str, Any]]], None]) -> None:
-        rpc_send({"type": "GET_TX_DETAIL", "txid": (txid or "").lower()}, on_done)
 
     # --------- history cache wrappers ---------
 

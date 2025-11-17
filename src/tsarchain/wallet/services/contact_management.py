@@ -9,9 +9,9 @@ from tkinter import ttk, messagebox
 from typing import Callable, Optional, Dict, Tuple, List
 
 # ---------------- Local Project (Wallet Only) ----------------
-from .data_security import list_contacts_in_keystore, upsert_contact_in_keystore, delete_contact_from_keystore
-from .ui_utils import center_window
-from .theme import ContactsTheme
+from ..security.data_security import list_contacts_in_keystore, upsert_contact_in_keystore, delete_contact_from_keystore
+from ..ui_utils import center_window
+from ..theme import ContactsTheme, get_theme
 
 Mask = Tuple[str, str]
 
@@ -84,8 +84,6 @@ class ContactManager:
         theme: ContactsTheme | None = None,
     ) -> None:
         if theme is None:
-            from .theme import get_theme
-
             theme = get_theme().contacts
         self.theme = theme
         self.root = root

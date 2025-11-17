@@ -11,11 +11,11 @@ from typing import Callable, Dict, Any, Optional, Sequence, List
 from tkinter import ttk, messagebox as mb
 
 # ---------------- Local Project (Wallet Only) ----------------
-from .send_service import SendService
-from .theme import SendTheme
+from ..services.send_service import SendService
+from ..theme import SendTheme
 
 # ---------------- Local Project (With Node) ----------------
-from ..utils import config as CFG
+from ...utils import config as CFG
 
 
 class SendTab:

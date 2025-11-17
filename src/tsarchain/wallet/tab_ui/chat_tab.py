@@ -11,10 +11,12 @@ from tkinter import font as tkfont
 from datetime import datetime
 
 from tsarchain.utils import config as CFG
-from tsarchain.wallet.chat_security import ChatManager
-from tsarchain.wallet.data_security import load_chat_state, save_chat_state
-from tsarchain.wallet.theme import ChatTheme
-from ..utils.tsar_logging import get_ctx_logger
+from ..security.chat_security import ChatManager
+from ..security.data_security import load_chat_state, save_chat_state
+from ..theme import ChatTheme
+
+from ...utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.wallet.tab_ui.chat_tab")
 
 
 class ChatTab:
@@ -35,7 +37,6 @@ class ChatTab:
         self.toast = toast_cb
         self.get_wallets_cb = get_wallets_cb
         self.contact_mgr = contact_mgr
-        self.log = logger or get_ctx_logger("tsarchain.wallet.chat_tab")
         self.set_palette(theme)
         try:
             if hasattr(self.chat_mgr, "key_ttl_sec"):

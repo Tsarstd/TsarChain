@@ -11,7 +11,7 @@ import re
 
 # ---------------- Local Project (With Node) ----------------
 from tsarchain.utils import config as CFG
-from .theme import ExplorerTheme
+from ..theme import ExplorerTheme, get_theme
 
 
 MONO     = ("Consolas", 10)
@@ -63,8 +63,6 @@ def _fmt_tsar_amount(v: Union[int, str, float, None]) -> str:
 class ExplorePanel(tk.Frame):
     def __init__(self, master, app=None, theme: ExplorerTheme | None = None):
         if theme is None:
-            from .theme import get_theme
-
             theme = get_theme().explorer
         self.theme = theme
         self.app = app

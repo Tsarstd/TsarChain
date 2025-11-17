@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 from datetime import datetime
 
 # ---------------- Local Project (Wallet Only) ----------------
-from tsarchain.wallet.data_security import (
+from ..security.data_security import (
     Wallet,
     Security,
     restore_keystore_bytes,
@@ -24,14 +24,14 @@ from tsarchain.wallet.data_security import (
     save_wallet_registry,
     WALLET_FILE,
 )
-from tsarchain.wallet.ui_utils import center_window
-from tsarchain.wallet.tx_history import HistoryService
+from ..ui_utils import center_window
+from ..services.tx_history import HistoryService
 
 # ---------------- Local Project (With Node) ----------------
-from ..utils.tsar_logging import get_ctx_logger
+from ...utils.tsar_logging import get_ctx_logger
 from tsarchain.utils import config as CFG
 
-log = get_ctx_logger("tsarchain.wallet.(address_management)")
+log = get_ctx_logger("tsarchain.wallet.tab_ui.wallet_tab")
 
 
 # ---------------- Amount formatting (local) ----------------

@@ -17,17 +17,17 @@ from tkinter import messagebox, scrolledtext, filedialog, simpledialog, ttk
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # ---------------- Local Project (Wallet Only) ----------------
-from tsarchain.wallet.rpc_client import NodeClient
-from tsarchain.wallet.address_management import WalletsMixin, load_registry
-from tsarchain.wallet.contact_management import ContactManager
-from tsarchain.wallet.chat_security import ChatManager
-from tsarchain.wallet.graffiti_tab import GraffitiTab
-from tsarchain.wallet.chat_tab import ChatTab
-from tsarchain.wallet.send_service import SendService
-from tsarchain.wallet.send_tab import SendTab
-from tsarchain.wallet.tx_history import HistoryService
-from tsarchain.wallet.explorer_tab import ExplorePanel
-from tsarchain.wallet.data_security import list_addresses_in_keystore, WALLET_FILE
+from tsarchain.wallet.services.rpc_client import NodeClient
+from tsarchain.wallet.tab_ui.wallet_tab import WalletsMixin, load_registry
+from tsarchain.wallet.services.contact_management import ContactManager
+from tsarchain.wallet.security.chat_security import ChatManager
+from tsarchain.wallet.tab_ui.graffiti_tab import GraffitiTab
+from tsarchain.wallet.tab_ui.chat_tab import ChatTab
+from tsarchain.wallet.services.send_service import SendService
+from tsarchain.wallet.tab_ui.send_tab import SendTab
+from tsarchain.wallet.services.tx_history import HistoryService
+from tsarchain.wallet.tab_ui.explorer_tab import ExplorePanel
+from tsarchain.wallet.security.data_security import list_addresses_in_keystore, WALLET_FILE
 from tsarchain.wallet.theme import get_theme, lighten
 from tsarchain.wallet.ui_utils import center_window
 

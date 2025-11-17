@@ -252,11 +252,6 @@ def little_endian_to_int(b: bytes) -> int:
 def sha256(b: bytes) -> bytes:
     return hashlib.sha256(b).digest()
 
-def ripemd160(b: bytes) -> bytes:
-    h = hashlib.new('ripemd160')
-    h.update(b)
-    return h.digest()
-
 def hash160(b: bytes) -> bytes:
     return bytes(_native_hash160(bytes(b)))
 

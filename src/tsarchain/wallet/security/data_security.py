@@ -10,6 +10,7 @@ from ecdsa import SECP256k1, SigningKey
 from ecdsa.util import sigencode_der
 from bech32 import bech32_encode, convertbits
 from mnemonic import Mnemonic
+
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
@@ -21,10 +22,10 @@ from cryptography.fernet import Fernet
 
 
 # ---------------- Local Project (With Node) ----------------
-from ..storage.kv import kv_enabled, get as kv_get, put as kv_put, delete as kv_delete
-from ..utils.helpers import hash160
-from ..core.tx import Tx
-from ..utils import config as CFG
+from tsarchain.storage.kv import kv_enabled, get as kv_get, put as kv_put, delete as kv_delete
+from ...utils.helpers import hash160
+from ...core.tx import Tx
+from ...utils import config as CFG
 
 
 _CHAT_KEYS_DIR = os.path.join("data_user", "chat_keys")
@@ -834,7 +835,7 @@ class Security:
     @staticmethod
     def check_attempt(address: str) -> bool:
         if address in Security._attempts:
-            attempts, lockout_until = Security._attempts[address]
+            lockout_until = Security._attempts[address]
             if time.time() < lockout_until:
                 raise ValueError(f"Account locked. Try again in {int(lockout_until - time.time())} seconds")
         return True
@@ -906,7 +907,6 @@ class Security:
         
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(log_entry)
-
 
 
 # ---------------- Wallet API ----------------

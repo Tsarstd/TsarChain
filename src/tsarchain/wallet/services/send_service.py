@@ -7,10 +7,10 @@ from decimal import Decimal, ROUND_DOWN, InvalidOperation
 from typing import Optional, Dict, Any
 
 # ---------------- Local Project (Wallet Only) ----------------
-from .data_security import Wallet
+from ..security.data_security import Wallet
 
 # ---------------- Local Project (With Node) ----------------
-from ..utils import config as CFG
+from ...utils import config as CFG
 
 
 class SendService:

@@ -5,15 +5,12 @@
 
 from __future__ import annotations
 
-import base64, json, os, socket, time
+import base64, json, os, socket, time, hashlib
 from typing import Any, Callable, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 from tsarchain.network.protocol import send_message, recv_message
 from tsarchain.utils import config as CFG
-
-
-DEFAULT_CHUNK = int(CFG.STORAGE_UPLOAD_CHUNK)
 
 
 def _pick_endpoint(meta: Dict[str, Any]) -> Optional[Tuple[str, int]]:
@@ -87,8 +84,6 @@ def fetch_storers(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]
 
 
 def _sha256_file(path: str, chunk: int = 1024 * 1024) -> str:
-    import hashlib
-
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for part in iter(lambda: f.read(chunk), b""):
@@ -139,7 +134,7 @@ def upload_graffiti(
     if init_resp.get("status") not in ("ok", "accepted"):
         return {"status": "error", "stage": "init", "resp": init_resp}
 
-    chunk_size = int(init_resp.get("chunk_size") or DEFAULT_CHUNK)
+    chunk_size = int(init_resp.get("chunk_size") or CFG.STORAGE_UPLOAD_CHUNK)
     sent = 0
     with open(file_path, "rb") as f:
         while True:

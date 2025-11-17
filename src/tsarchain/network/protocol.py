@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives import serialization
 
 # ---------------- Local Project ----------------
 from ..utils import config as CFG
-from ..wallet.data_security import load_user_key_record, save_user_key_record
+from ..wallet.security.data_security import load_user_key_record, save_user_key_record
 from .peers_storage import load_node_key, save_node_key
 
 # ---------------- Logger ----------------
