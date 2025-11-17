@@ -3,15 +3,16 @@
 # Part of TsarChain - see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173; libsecp256k1; Signal-X3DH; RFC7748-X25519
 
+import hashlib
 import time, secrets, json
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from bech32 import convertbits, bech32_decode
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import hashes
-from cryptography.exceptions import InvalidSignature
 
 from ...utils.helpers import hash160
+from ...utils.helpers import batch_verify_der_low_s
 from ...utils import config as CFG
 
 # ---------------- Logger ----------------
@@ -20,6 +21,47 @@ log = get_ctx_logger("tsarchain.network.rpc(user_rpc)")
 
 if TYPE_CHECKING:
     from ..node import Network
+
+
+def _verify_chat_signatures(tasks: list[tuple[str, str, bytes, str]]) -> dict[str, bool]:
+    """
+    tasks: [(label, pub_hex, payload_bytes, sig_hex), ...]
+    Returns mapping label -> bool
+    """
+    verdict: dict[str, bool] = {}
+    normalized: list[tuple[str, bytes, bytes, bytes]] = []
+    for label, pub_hex, payload, sig_hex in tasks:
+        verdict[label] = False
+        if not (pub_hex and sig_hex and isinstance(payload, (bytes, bytearray)) and payload):
+            continue
+        try:
+            pub_b = bytes.fromhex(pub_hex)
+            sig_b = bytes.fromhex(sig_hex)
+        except Exception:
+            continue
+        normalized.append((label, pub_b, bytes(payload), sig_b))
+
+    if not normalized:
+        return verdict
+
+    try:
+        log.info("[chat-verify] native batch verifier on %d signature(s)", len(normalized))
+    except Exception:
+        log.info("[chat-verify] native batch verifier engaged")
+
+    triples = [
+        (pub_b, hashlib.sha256(payload).digest(), sig_b)
+        for _, pub_b, payload, sig_b in normalized
+    ]
+    try:
+        results = batch_verify_der_low_s(triples, enforce_low_s=True, parallel=False)
+    except Exception:
+        log.exception("[chat] native signature verifier error")
+        return verdict
+
+    for (label, _, _, _), ok in zip(normalized, results):
+        verdict[label] = bool(ok)
+    return verdict
 
 
 __all__ = ["handle_user_rpc"]
@@ -442,34 +484,30 @@ def handle_user_rpc(
         except Exception:
             log.exception("[process_message] CHAT_REGISTER addr decode failed from %s", addr)
             return {"error": "addr decode failed"}
-        try:
-            pub_obj = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(spend_pk))
-            # signature presence verification
-            pres_bytes = b"|".join([
-                b"CHAT_PRESENCE",
-                addr_s.encode(),
-                bytes.fromhex(chat_pub),
-                bytes.fromhex(spend_pk),
-                str(ts_val).encode()
-            ])
-            try:
-                pub_obj.verify(bytes.fromhex(presence_sig), pres_bytes, ec.ECDSA(hashes.SHA256()))
-            except InvalidSignature:
-                return {"error": "bad_presence_sig"}
-            except Exception:
-                return {"error": "presence_sig_verify_failed"}
+        
+        pres_bytes = b"|".join([
+            b"CHAT_PRESENCE",
+            addr_s.encode(),
+            bytes.fromhex(chat_pub),
+            bytes.fromhex(spend_pk),
+            str(ts_val).encode()
+        ])
+        reg_bytes = b"|".join([
+            b"CHAT_REG",
+            addr_s.encode(),
+            bytes.fromhex(spend_pk),
+            bytes.fromhex(chat_pub),
+            str(int(ts_val)).encode()
+        ])
 
-            reg_bytes = b"|".join([
-                b"CHAT_REG",
-                addr_s.encode(),
-                bytes.fromhex(spend_pk),
-                bytes.fromhex(chat_pub),
-                str(int(ts_val)).encode()
-            ])
-            pub_obj.verify(bytes.fromhex(reg_sig), reg_bytes, ec.ECDSA(hashes.SHA256()))
-
-        except Exception:
-            log.exception("[process_message] CHAT_REGISTER bad reg_sig from %s", addr)
+        sig_check = _verify_chat_signatures([
+            ("presence", spend_pk, pres_bytes, presence_sig),
+            ("register", spend_pk, reg_bytes, reg_sig),
+        ])
+        if not sig_check.get("presence"):
+            return {"error": "bad_presence_sig"}
+        if not sig_check.get("register"):
+            log.debug("[process_message] CHAT_REGISTER bad reg_sig from %s", addr)
             return {"error": "bad reg_sig"}
 
         now = time.time()
@@ -531,11 +569,10 @@ def handle_user_rpc(
                 return {"error": "presence_addr_mismatch"}
         except Exception:
             return {"error": "presence_addr_decode_failed"}
-        try:
-            vk = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(spend_pk))
-            pres_bytes = b"|".join([b"CHAT_PRESENCE", addr_s.encode(), bytes.fromhex(pubhex), bytes.fromhex(spend_pk), str(ts_val).encode()])
-            vk.verify(bytes.fromhex(presence_sig), pres_bytes, ec.ECDSA(hashes.SHA256()))
-        except Exception:
+        
+        pres_bytes = b"|".join([b"CHAT_PRESENCE", addr_s.encode(), bytes.fromhex(pubhex), bytes.fromhex(spend_pk), str(ts_val).encode()])
+        sig_ok = _verify_chat_signatures([("presence", spend_pk, pres_bytes, presence_sig)])
+        if not sig_ok.get("presence"):
             return {"error": "presence_bad_sig"}
 
         if hops >= CFG.PRESENCE_MAX_HOPS:
@@ -585,11 +622,9 @@ def handle_user_rpc(
         # validasi: addr -> spend_pub ada? dan signature SPK ditandatangani oleh spend key
         sp = (self.chat_spend_pub.get(addr_s) or "").strip().lower()
         if not sp: return {"error":"unknown_address"}
-        try:
-            pub_obj = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(sp))
-            payload = b"TSAR-SPK|" + bytes.fromhex(spk) + b"|" + bytes.fromhex(sp)
-            pub_obj.verify(bytes.fromhex(sig), payload, ec.ECDSA(hashes.SHA256()))
-        except Exception:
+        payload = b"TSAR-SPK|" + bytes.fromhex(spk) + b"|" + bytes.fromhex(sp)
+        sig_ok = _verify_chat_signatures([("spk", sp, payload, sig)])
+        if not sig_ok.get("spk"):
             return {"error":"bad_spk_sig"}
         with self.chat_lock:
             rec = self.chat_prekeys.get(addr_s) or {}
@@ -683,18 +718,17 @@ def handle_user_rpc(
         sp = (self.chat_spend_pub.get(frm) or "").strip().lower()
         if not sp:
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "no_spend_pub"}
-        try:
-            vk = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(sp))
-            chat_bytes = b"|".join([
-                b"CHAT_SEND",
-                frm.encode(), to.encode(),
-                str(mid).encode(), str(ts).encode(),
-                bytes.fromhex(fp_hex), bytes.fromhex(fs_hex),
-                str(ratchet_pn).encode(), str(ratchet_n).encode(),
-                bytes.fromhex(nonce_hex), bytes.fromhex(ct_hex)
-            ])
-            vk.verify(bytes.fromhex(chat_sig), chat_bytes, ec.ECDSA(hashes.SHA256()))
-        except Exception:
+        
+        chat_bytes = b"|".join([
+            b"CHAT_SEND",
+            frm.encode(), to.encode(),
+            str(mid).encode(), str(ts).encode(),
+            bytes.fromhex(fp_hex), bytes.fromhex(fs_hex),
+            str(ratchet_pn).encode(), str(ratchet_n).encode(),
+            bytes.fromhex(nonce_hex), bytes.fromhex(ct_hex)
+        ])
+        chat_verify = _verify_chat_signatures([("chat_send", sp, chat_bytes, chat_sig)])
+        if not chat_verify.get("chat_send"):
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_sig"}
 
         # === Onion-lite relay (opsional) ===
@@ -773,12 +807,9 @@ def handle_user_rpc(
         if not spend_pk:
             return {"type": "CHAT_NONE", "items": [], "error": "not_registered"}
 
-        try:
-            vk = ec.EllipticCurvePublicKey.from_encoded_point(
-                ec.SECP256K1(), bytes.fromhex(spend_pk))
-            msg_bytes = b"|".join([b"CHAT_PULL", me.encode(), str(ts).encode()])
-            vk.verify(bytes.fromhex(pull_sig), msg_bytes, ec.ECDSA(hashes.SHA256()))
-        except Exception:
+        msg_bytes = b"|".join([b"CHAT_PULL", me.encode(), str(ts).encode()])
+        pull_check = _verify_chat_signatures([("pull", spend_pk, msg_bytes, pull_sig)])
+        if not pull_check.get("pull"):
             return {"type": "CHAT_NONE", "items": [], "error": "bad_sig"}
 
         items = self._mailbox_pull(me, n)
@@ -832,18 +863,14 @@ def handle_user_rpc(
         sp = (self.chat_spend_pub.get(reader) or "").strip().lower()
         if not sp:
             return {"error": "no_spend_pub"}
-        try:
-            vk = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(sp))
-            rr = b"|".join([
-                b"CHAT_READ",
-                sender.encode(), reader.encode(),
-                str(mid).encode(), str(ts_val).encode()
-            ])
-            vk.verify(bytes.fromhex(read_sig), rr, ec.ECDSA(hashes.SHA256()))
-        except InvalidSignature:
+        rr = b"|".join([
+            b"CHAT_READ",
+            sender.encode(), reader.encode(),
+            str(mid).encode(), str(ts_val).encode()
+        ])
+        read_check = _verify_chat_signatures([("read", sp, rr, read_sig)])
+        if not read_check.get("read"):
             return {"error": "bad_sig"}
-        except Exception:
-            return {"error": "sig_verify_failed"}
 
         try:
             self._enqueue_rcpt(sender, "read", mid, sender, reader, int(time.time()))
