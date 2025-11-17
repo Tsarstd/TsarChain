@@ -6,32 +6,28 @@
 # ---------------- Imports (Module) ----------------
 import os
 import sys
+import csv
 import time
 import json
 import random
+import subprocess
 import tkinter as tk
 import tkinter.font as tkfont
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import messagebox, scrolledtext, filedialog, simpledialog, ttk
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # ---------------- Local Project (Wallet Only) ----------------
-from tsarchain.wallet.tab_ui.wallet_tab import WalletsMixin, load_registry
-from tsarchain.wallet.tab_ui.graffiti_tab import GraffitiTab
-from tsarchain.wallet.tab_ui.chat_tab import ChatTab
-from tsarchain.wallet.tab_ui.send_tab import SendTab
-from tsarchain.wallet.tab_ui.explorer_tab import ExplorePanel
-from tsarchain.wallet.tab_ui.network_tab import NetworkTab
-from tsarchain.wallet.tab_ui.history_tab import HistoryTab
-from tsarchain.wallet.tab_ui.dev_tab import DevTab
-
-from tsarchain.wallet.security.chat_security import ChatManager
-from tsarchain.wallet.security.data_security import list_addresses_in_keystore, WALLET_FILE
-
-from tsarchain.wallet.services.rpc_client import NodeClient
-from tsarchain.wallet.services.contact_management import ContactManager
-from tsarchain.wallet.services.send_service import SendService
-from tsarchain.wallet.services.tx_history import HistoryService
-
+from tsarchain.wallet.rpc_client import NodeClient
+from tsarchain.wallet.address_management import WalletsMixin, load_registry
+from tsarchain.wallet.contact_management import ContactManager
+from tsarchain.wallet.chat_security import ChatManager
+from tsarchain.wallet.graffiti_tab import GraffitiTab
+from tsarchain.wallet.chat_tab import ChatTab
+from tsarchain.wallet.send_service import SendService
+from tsarchain.wallet.send_tab import SendTab
+from tsarchain.wallet.tx_history import HistoryService
+from tsarchain.wallet.explorer_tab import ExplorePanel
+from tsarchain.wallet.data_security import list_addresses_in_keystore, WALLET_FILE
 from tsarchain.wallet.theme import get_theme, lighten
 from tsarchain.wallet.ui_utils import center_window
 
@@ -792,13 +788,18 @@ class KremlinWalletGUI(WalletsMixin):
                 if self.log:
                     self.log.debug("[reload_addresses] wallet_count_label update skipped", exc_info=True)
 
-        history_tab = getattr(self, "history_tab", None)
-        if self._widget_exists(history_tab):
+        combo = getattr(self, "history_addr_combo", None)
+        if self._widget_exists(combo):
             try:
-                history_tab.reload_addresses(values)
+                combo["values"] = values
+                if hasattr(self, "history_addr_var") and self.history_addr_var is not None:
+                    if values and self.history_addr_var.get() not in values:
+                        self.history_addr_var.set(values[0])
+                    elif not values:
+                        self.history_addr_var.set("")
             except Exception:
                 if self.log:
-                    self.log.debug("[reload_addresses] history tab update skipped", exc_info=True)
+                    self.log.debug("[reload_addresses] history combo update skipped", exc_info=True)
 
         try:
             if hasattr(self, "chat_tab"):
@@ -912,9 +913,412 @@ class KremlinWalletGUI(WalletsMixin):
 
     # ---------------- History Frame ----------------
     def _build_history_frame(self) -> None:
-        tab = HistoryTab(self, self.exp_svc, master=self.main)
-        self.frames["history"] = tab
-        self.history_tab = tab
+        f = tk.Frame(self.main, bg=self.bg)
+        self.frames["history"] = f
+
+        self.hist_offset = 0
+        self.hist_limit = 50
+        self.hist_total = 0
+
+        top = tk.Frame(f, bg=self.bg)
+        top.pack(fill=tk.X, padx=12, pady=8)
+
+        tk.Label(top, text="Address:", bg=self.bg, fg=self.fg).pack(side=tk.LEFT)
+        self.history_addr_var = tk.StringVar()
+        self.history_addr_combo = ttk.Combobox(
+            top, textvariable=self.history_addr_var, values=self.wallets, state="readonly", width=54
+        )
+        self.history_addr_combo.pack(side=tk.LEFT, padx=6)
+        self.history_addr_combo.bind("<<ComboboxSelected>>", lambda _e: self._hist_on_addr_changed())
+        self.history_addr_combo.bind("<Return>", lambda _e: self._hist_on_addr_changed())
+
+        tk.Label(top, text="Direction:", bg=self.bg, fg=self.fg).pack(side=tk.LEFT, padx=(12, 2))
+        self.hist_dir_var = tk.StringVar(value="all")
+        self.hist_dir_combo = ttk.Combobox(top, textvariable=self.hist_dir_var, values=["all", "in", "out"],
+                                           state="readonly", width=8)
+        self.hist_dir_combo.pack(side=tk.LEFT)
+
+        tk.Label(top, text="Status:", bg=self.bg, fg=self.fg).pack(side=tk.LEFT, padx=(12, 2))
+        self.hist_status_var = tk.StringVar(value="all")
+        self.hist_status_combo = ttk.Combobox(
+            top, textvariable=self.hist_status_var, values=["all", "confirmed", "unconfirmed"],
+            state="readonly", width=12
+        )
+        self.hist_status_combo.pack(side=tk.LEFT)
+
+        tk.Label(top, text="Per page:", bg=self.bg, fg=self.fg).pack(side=tk.LEFT, padx=(12, 2))
+        self.hist_limit_var = tk.IntVar(value=self.hist_limit)
+        self.hist_limit_spin = tk.Spinbox(
+            top, from_=10, to=500, increment=10, width=6, textvariable=self.hist_limit_var,
+            command=self._hist_change_limit
+        )
+        self.hist_limit_spin.pack(side=tk.LEFT)
+
+        self.hist_refresh_btn = ttk.Button(top, text="Refresh", command=self._hist_reset_and_refresh)
+        self.hist_refresh_btn.pack(side=tk.LEFT, padx=6)
+
+        pager = tk.Frame(f, bg=self.bg)
+        pager.pack(fill=tk.X, padx=12, pady=(0, 8))
+        self.hist_info = tk.Label(pager, text="History", bg=self.bg, fg=self.fg)
+        self.hist_info.pack(side=tk.LEFT)
+
+        self.hist_next_btn = ttk.Button(pager, text="Next ⏭️", command=self._hist_next)
+        self.hist_next_btn.pack(side=tk.RIGHT, padx=4)
+        self.hist_prev_btn = ttk.Button(pager, text="⏮️ Prev", command=self._hist_prev)
+        self.hist_prev_btn.pack(side=tk.RIGHT, padx=4)
+
+        table_frame = tk.Frame(f, bg=self.bg)
+        table_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
+        cols = ("txid", "address", "to", "amount", "status", "confirmations", "height", "direction")
+        self.history_tree = ttk.Treeview(table_frame, columns=cols, show="headings", height=16)
+        for c, w in [
+            ("txid", 260), ("address", 300), ("to", 300), ("amount", 150),
+            ("status", 120), ("confirmations", 120), ("height", 80), ("direction", 90)
+        ]:
+            self.history_tree.heading(c, text=c.upper())
+            self.history_tree.column(c, width=w, anchor="w")
+        self.history_tree.heading("address", text="FROM")
+
+        vs = ttk.Scrollbar(table_frame, orient="vertical", command=self.history_tree.yview)
+        self.history_tree.configure(yscrollcommand=vs.set)
+        self.history_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vs.pack(side=tk.RIGHT, fill=tk.Y)
+
+        palette = getattr(self.theme_set, "palette", None)
+        conf_color = palette.success if palette else "#17c964"
+        unconf_color = palette.warning if palette else "#f5a524"
+        self.history_tree.tag_configure("CONF", foreground=conf_color)
+        self.history_tree.tag_configure("UNCONF", foreground=unconf_color)
+
+        self._hist_menu = tk.Menu(
+            self.root,
+            tearoff=0,
+            bg=self.panel_bg,
+            fg=self.fg,
+            activebackground=self.border_color,
+            activeforeground=self.fg,
+        )
+        self._hist_menu.add_command(label="Open in Explorer", command=self._hist_ctx_open)
+        
+        def _hist_ctx_menu(event):
+            tv = self.history_tree
+            iid = tv.identify_row(event.y)
+            if iid:
+                tv.selection_set(iid)
+                self._hist_menu.tk_popup(event.x_root, event.y_root)
+                self._hist_menu.grab_release()
+                
+        self.history_tree.bind("<Button-3>", _hist_ctx_menu)
+        
+        self._hist_menu.add_separator()
+        self._hist_menu.add_command(label="Copy TXID",   command=lambda: self._hist_ctx_copy(col=0))
+        self._hist_menu.add_command(label="Copy FROM",   command=lambda: self._hist_ctx_copy(col=1))
+        self._hist_menu.add_command(label="Copy TO",     command=lambda: self._hist_ctx_copy(col=2))
+
+        self._tv_enable_hover(self.history_tree)
+
+        self._history_rows_cache: List[Dict[str, Any]] = []
+
+        bottom = tk.Frame(f, bg=self.bg)
+        bottom.pack(fill=tk.X, padx=12, pady=8)
+        ttk.Button(bottom, text="Export CSV", command=self._hist_export_csv).pack(side=tk.LEFT)
+        ttk.Button(bottom, text="Clear Cache", command=self._hist_clear_cache).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(bottom, text="📂 Open Cache File", command=self._hist_open_cache_file).pack(side=tk.RIGHT)
+        ttk.Button(bottom, text="🧹 Clear All Caches", command=self._hist_clear_all_caches).pack(side=tk.RIGHT, padx=5)
+
+    # ---------------- History: Context Menu & Helpers ----------------
+
+    def _hist_ctx_open(self):
+        tv = self.history_tree
+        sel = tv.selection()
+        if not sel: 
+            return
+        item = sel[0]
+        try:
+            txid = tv.set(item, "txid")
+        except Exception:
+            txid = tv.item(item, "values")[0]
+        if not txid:
+            return
+        self.show_explorer_frame()
+        self.explore_panel.navigate_to_tx(txid)
+        
+    def _hist_ctx_copy(self, col: int = 0) -> None:
+        sel = self.history_tree.selection()
+        if not sel:
+            return
+        vals = self.history_tree.item(sel[0], "values")
+        if not vals or col >= len(vals):
+            return
+        self.copy_to_clipboard(vals[col], label="Copied")
+
+    def _hist_change_limit(self) -> None:
+        try:
+            self.hist_limit = int(self.hist_limit_var.get())
+        except Exception:
+            self.hist_limit = 50
+
+    def _hist_reset_and_refresh(self) -> None:
+        self._hist_change_limit()
+        self.hist_offset = 0
+        self.refresh_history()
+        
+    def _hist_on_addr_changed(self) -> None:
+        self.hist_offset = 0
+        try:
+            for i in self.history_tree.get_children():
+                self.history_tree.delete(i)
+            self.hist_info.configure(text="Loading...")
+        except Exception:
+            pass
+        self.refresh_history()
+
+    def _hist_prev(self) -> None:
+        if self.hist_offset <= 0:
+            return
+        self.hist_offset = max(0, self.hist_offset - self.hist_limit)
+        self.refresh_history()
+
+    def _hist_next(self) -> None:
+        if self.hist_offset + self.hist_limit >= self.hist_total:
+            return
+        self.hist_offset += self.hist_limit
+        self.refresh_history()
+
+    def _hist_export_csv(self) -> None:
+        path = filedialog.asksaveasfilename(
+            title="Save history as CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV", "*.csv"), ("All files", "*.*")])
+        if not path:
+            return
+        rows = self._history_rows_cache or []
+        with open(path, "w", newline="", encoding="utf-8") as fp:
+            w = csv.writer(fp)
+            w.writerow([
+                "txid", "from", "to", "amount_sat", "amount_tsar",
+                "status", "confirmations", "height", "direction"
+            ])
+            for r in rows:
+                amt = int(r.get("amount", 0))
+                from_addr = r.get("from") or r.get("address", "")
+                height = "" if r.get("height") is None else int(r.get("height"))
+                w.writerow([
+                    r.get("txid", ""),
+                    from_addr,
+                    r.get("to", ""),
+                    amt,
+                    amt / CFG.TSAR,
+                    r.get("status", ""),
+                    int(r.get("confirmations", 0) or 0),
+                    height,
+                    r.get("direction", ""),
+                ])
+        messagebox.showinfo("Exported", f"Saved to {path}")
+
+    def _hist_clear_all_caches(self) -> None:
+        addrs = list(self.wallets or [])
+        if not addrs:
+            messagebox.showinfo("Nothing to clear", "No wallets in the list.")
+            return
+        if not messagebox.askyesno(
+            "Clear ALL caches",
+            "Delete local history cache for ALL listed addresses?\n\n"
+            "This only removes local cache files on your disk."):
+            return
+        removed = 0
+        for a in addrs:
+            try:
+                if HistoryService.cache_clear(a):
+                    removed += 1
+            except Exception:
+                pass
+        try:
+            self._hist_render_from_cache()
+        except Exception:
+            pass
+        messagebox.showinfo("Done", f"Cleared {removed} cache file(s).")
+
+    def _hist_clear_cache(self) -> None:
+        addr = self.history_addr_var.get()
+        if not addr:
+            messagebox.showerror("Missing", "Select address first")
+            return
+        if not messagebox.askyesno(
+            "Clear cache",
+            f"Delete cached history for:\n\n{addr}\n\nLocal file only"):
+            return
+        ok = HistoryService.cache_clear(addr)
+        if ok:
+            self._hist_render_from_cache()
+            messagebox.showinfo("Cleared", "Local history cache removed.")
+        else:
+            messagebox.showerror("Error", "Failed to remove cache file.")
+
+    def _hist_open_cache_file(self) -> None:
+        addr = self.history_addr_var.get()
+        if not addr:
+            messagebox.showerror("Missing", "Select address first")
+            return
+
+        path = HistoryService.cache_path(addr)
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            if not os.path.exists(path):
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump({"version": 1, "address": addr, "last_updated": 0, "items": {}}, f, indent=2)
+
+            if os.name == "nt":
+                os.startfile(path)  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.run(["open", path], check=False)
+            else:
+                rc = subprocess.call(["xdg-open", path])
+                if rc != 0:
+                    import webbrowser
+                    webbrowser.open(f"file://{path}")
+        except Exception as e:
+            messagebox.showerror("Open failed", str(e))
+
+    def _hist_render_from_cache(self) -> None:
+        addr = self.history_addr_var.get()
+        if not addr:
+            return
+
+        direction = self.hist_dir_var.get()
+        status = self.hist_status_var.get()
+        direction = None if direction == "all" else direction
+        status = None if status == "all" else status
+
+        try:
+            res = HistoryService.cache_list(
+                addr, direction=direction, status=status,
+                limit=int(self.hist_limit), offset=int(self.hist_offset)
+            )
+        except Exception:
+            self.log.exception("[cache] read error:")
+            return
+
+        items = res.get("items", [])
+        self.hist_total = int(res.get("total", len(items)))
+
+        for i in self.history_tree.get_children():
+            self.history_tree.delete(i)
+
+        shown = len(items)
+        start = 0 if self.hist_total == 0 else (self.hist_offset + 1)
+        end = self.hist_offset + shown
+        self.hist_info.configure(text=f"Showing {start}-{end} of {self.hist_total} (cached)")
+
+        rows: list[tuple[tuple, tuple]] = []
+        for it in items:
+            txid = it.get("txid", "")
+            owner = it.get("from") or it.get("address", "")   # FROM
+            to = it.get("to", "")
+            amt = int(it.get("amount", 0))
+            status_txt = it.get("status", "")
+            conf = int(it.get("confirmations", 0))
+            h = it.get("height", None)
+            h = "" if h is None else int(h)
+            direc = it.get("direction", "")
+            tag = ("CONF",) if status_txt == "confirmed" else ("UNCONF",)
+            rows.append((
+                (txid, owner, to, sat_to_tsar(amt), status_txt, conf, h, direc),
+                tag
+            ))
+
+        self._tv_insert_chunked(self.history_tree, rows)
+
+    def refresh_history(self) -> None:
+        addr = self.history_addr_var.get()
+        if not addr:
+            messagebox.showerror("Missing", "Select address first")
+            return
+
+        for i in self.history_tree.get_children():
+            self.history_tree.delete(i)
+        try:
+            self.hist_info.configure(text="Loading latest history... (showing cache if any)")
+        except Exception:
+            pass
+        try:
+            self.history_tree.insert(
+                "", "end",
+                values=("Loading...", "", "", "", "", "", "", ""),
+            )
+        except Exception:
+            pass
+
+        direction = self.hist_dir_var.get()
+        status = self.hist_status_var.get()
+        direction = None if direction == "all" else direction
+        status = None if status == "all" else status
+
+        try:
+            self._hist_render_from_cache()
+        except Exception:
+            pass
+
+        def _on_hist(resp: Optional[Dict[str, Any]]) -> None:
+            try:
+                if not resp or resp.get("type") != "TX_HISTORY":
+                    messagebox.showerror("Error", f"Failed to load history: {resp}")
+                    try: self._toast("Failed to Load History", ms=1800, kind="error")
+                    except Exception:
+                        pass
+                    return
+                
+                items = resp.get("items", [])
+                self._history_rows_cache = items
+                try:
+                    HistoryService.cache_merge(addr, items)
+                except Exception:
+                    self.log.exception("[cache] merge error:")
+                try:
+                    self._hist_render_from_cache()
+                except Exception as e:
+                    messagebox.showerror("Error", f"Render error: {e}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Render error: {e}")
+
+        widgets = [getattr(self, "hist_refresh_btn", None),
+                getattr(self, "hist_prev_btn", None),
+                getattr(self, "hist_next_btn", None)]
+        if not self._busy_start("history_list", widgets):
+            return
+
+        def _wrapped_on_hist(resp):
+            try:
+                _on_hist(resp)
+            finally:
+                self._busy_end("history_list")
+
+        try:
+            self.exp_svc.fetch_history(
+                address=addr,
+                direction=direction,
+                status=status,
+                limit=int(self.hist_limit),
+                rpc_send=self.rpc.send_async,
+                offset=int(self.hist_offset),
+                on_done=_wrapped_on_hist)
+            
+        except Exception as e:
+            self._busy_end("history_list")
+            messagebox.showerror("Error", str(e))
+
+
+    def _hist_open_detail(self, _event: Optional[tk.Event] = None) -> None:
+        sel = self.history_tree.selection()
+        if not sel:
+            return
+        vals = self.history_tree.item(sel[0], "values")
+        txid = vals[0] if vals else ""
+        if not txid:
+            return
+        self.show_explorer_frame()
+        if hasattr(self, "explore_panel") and self.explore_panel:
+            self.explore_panel._nav(f"tsar://tx/{txid}")
 
     # === Explorer (BERSIH, SATU VERSI SAJA) ===
 
@@ -1098,7 +1502,7 @@ class KremlinWalletGUI(WalletsMixin):
             get_mempool=_prov_get_mempool,
         )
 
-    # ---------------- Graffiti Frame ----------------
+    # ---------------- Network Frame ----------------
     
     def _build_graffiti_frame(self) -> None:
         f = tk.Frame(self.main, bg=self.bg)
@@ -1111,18 +1515,456 @@ class KremlinWalletGUI(WalletsMixin):
         except Exception as e:
             tk.Label(f, text=f"Graffiti UI failed: {e}", bg=self.bg, fg="red").pack(fill="both", expand=True, padx=20, pady=20)
             
-    # ---------------- Network Frame ----------------
     def _build_network_frame(self) -> None:
-        tab = NetworkTab(self, master=self.main)
-        self.frames["network"] = tab
-        self.network_tab = tab
+            f = tk.Frame(self.main, bg=self.bg)
+            self.frames["network"] = f
+
+            top = tk.Frame(f, bg=self.bg)
+            top.pack(fill=tk.X, padx=12, pady=8)
+            
+            self.net_refresh_btn = tk.Button(top, text="Refresh Network Info", command=self.refresh_network_info,
+                bg=self.panel_bg, fg=self.fg)
+            self.net_refresh_btn.pack(side=tk.LEFT)
+
+            self.net_text = scrolledtext.ScrolledText(
+                f,
+                height=20,
+                bg=self.panel_bg,
+                fg=self.fg,
+                insertbackground=self.fg,
+                state="disabled",
+                takefocus=1,
+            )
+
+            self.net_text.bind("<Button-1>", lambda e: (self.net_text.focus_set(), None))
+            self.net_text.bind("<Control-c>", lambda e: (self.net_text.event_generate("<<Copy>>"), "break"))
+            self.net_text.bind("<Control-a>", lambda e: (self.net_text.tag_add("sel", "1.0", "end-1c"), "break"))
+            self.net_text.bind("<<Cut>>",   lambda e: "break")
+            self.net_text.bind("<<Paste>>", lambda e: "break")
+            self.net_text.bind("<Control-v>", lambda e: "break")
+            self.net_text.bind("<Button-2>", lambda e: "break")
+            
+            _copy_menu = tk.Menu(self.net_text, tearoff=False)
+            _copy_menu.add_command(label="Copy", command=lambda: self.net_text.event_generate("<<Copy>>"))
+            self.net_text.bind("<Button-3>", lambda e: (_copy_menu.tk_popup(e.x_root, e.y_root), "break"))
+            
+            self.net_text.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
+
+            self.net_text.tag_configure("h1",  font=("Segoe UI", 46, "bold"), foreground=self.accent, spacing3=6)
+            self.net_text.tag_configure("Leaderboards",  font=("Segoe UI", 36, "bold"), foreground=self.accent, spacing3=6)
+            self.net_text.tag_configure("center", justify="center")
+            palette = getattr(self.theme_set, "palette", None)
+            accent = self.accent
+            info = self.inf
+            muted = self.muted
+            success = palette.success if palette else "#319E4D"
+            self.net_text.tag_configure("h2",  font=("Consolas", 17, "bold"), foreground=accent, spacing3=2)
+            self.net_text.tag_configure("lab", font=("Consolas", 13, "bold"), foreground=info)
+            self.net_text.tag_configure("val", font=("Consolas", 11), foreground=muted)
+            self.net_text.tag_configure("mut", font=("Consolas", 10), foreground=success)
+            self.net_text.tag_configure("sep", font=("Consolas", 11), foreground=accent)
+            self.net_text.tag_configure("sep2", font=("Consolas", 11), foreground=muted)
+            # Rank-specific styles for Top #10 miners
+            self.net_text.tag_configure("rank1", font=("Consolas", 17), foreground="#F8B31F")  # Gold
+            self.net_text.tag_configure("rank2", font=("Consolas", 15), foreground="#646464")  # Silver
+            self.net_text.tag_configure("rank3", font=("Consolas", 13), foreground="#96622D")  # Bronze
+            
+    def _net_text_enable(self) -> None:
+        try:
+            self.net_text.config(state="normal")
+        except Exception:
+            pass
+
+    def _net_text_disable(self) -> None:
+        try:
+            self.net_text.config(state="disabled")
+        except Exception:
+            pass
+
+    def _net_text_write(self, text: str, tags: tuple[str, ...] = ()) -> None:
+        try:
+            self._net_text_enable()
+            self.net_text.insert(tk.END, text, tags)
+        finally:
+            self._net_text_disable()
+
+    def refresh_network_info(self) -> None:
+        self._net_text_enable()
+        try:
+            self.net_text.delete("1.0", tk.END)
+            self.net_text.insert(tk.END, "[*] Requesting network info.\n")
+        finally:
+            self._net_text_disable()
+
+        if not self._busy_start("netinfo", [getattr(self, "net_refresh_btn", None)]):
+            return
+
+        pending = {"n": 2}
+        store = {"snap": None, "peers": 0}
+
+        def maybe_done():
+            pending["n"] -= 1
+            if pending["n"] <= 0:
+                try:
+                    self._render_network_snapshot(store.get("snap"), int(store.get("peers", 0)))
+                except Exception as e:
+                    self._net_text_write(f"\n[-] Render error: {e}\n")
+                finally:
+                    self._busy_end("netinfo")
+
+        def on_info(resp: Optional[Dict[str, Any]]) -> None:
+            try:
+                if not resp:
+                    self._net_text_write("[-] Failed to fetch network info\n")
+                    return
+                if resp.get("type") == "NETWORK_INFO" and isinstance(resp.get("data"), dict):
+                    store["snap"] = resp["data"]
+                else:
+                    store["snap"] = {
+                        "schema_version": 1,
+                        "identity": {},
+                        "chain": {"tip_height": resp.get('height'), "total_blocks": resp.get('blocks')},
+                        "transactions": {"mempool_txs": resp.get('mempool')},
+                        "utxo": {"utxo_set_size": resp.get('utxos')},
+                    }
+            finally:
+                maybe_done()
+
+        def on_peers(resp: Optional[Dict[str, Any]]) -> None:
+            try:
+                if resp and "peers" in resp:
+                    store["peers"] = len(resp["peers"]) or 0
+                else:
+                    store["peers"] = 0
+            finally:
+                maybe_done()
+
+        # Ask for rich snapshot if node supports it; older nodes return INFO
+        self.rpc.send_async({"type": "GET_NETWORK_INFO"}, on_info)
+        self.rpc.send_async({"type": "GET_PEERS"}, on_peers)
+
+    # ---------- Network Info Rendering ----------
+    def _fmt_num(self, x: int | float | None) -> str:
+        try:
+            n = int(x or 0)
+            return f"{n:,}".replace(",", ".")
+        except Exception:
+            return str(x)
+
+    def _fmt_tsar(self, sat: int | float | None) -> str:
+        try:
+            sat = int(sat or 0)
+            whole = sat // CFG.TSAR
+            frac  = sat % CFG.TSAR
+            if frac == 0:
+                return f"{self._fmt_num(whole)} TSAR"
+            sfrac = str(frac).rjust(8, '0').rstrip('0')
+            return f"{self._fmt_num(whole)},{sfrac} TSAR"
+        except Exception:
+            return str(sat)
+
+    def _fmt_hashrate(self, hps: int | float | None) -> str:
+        try:
+            v = float(hps or 0)
+            if v >= 1e12:
+                return f"{v/1e12:.3f} TH/s".replace(",", ".")
+            if v >= 1e9:
+                return f"{v/1e9:.3f} GH/s".replace(",", ".")
+            if v >= 1e6:
+                return f"{v/1e6:.3f} MH/s".replace(",", ".")
+            if v >= 1e3:
+                return f"{v/1e3:.3f} kH/s".replace(",", ".")
+            return f"{v:.0f} H/s".replace(",", ".")
+        except Exception:
+            return str(hps)
+
+    def _fmt_time(self, ts: int | float | None) -> str:
+        try:
+            import datetime as _dt
+            if ts is None:
+                return "-"
+            dt = _dt.datetime.fromtimestamp(int(ts))
+            return dt.strftime("%H:%M:%S")
+        except Exception:
+            return str(ts)
+
+    def _fmt_last_update(self, last_up: Any) -> str:
+        try:
+            import datetime as _dt
+            if last_up in (None, "", "-"):
+                return "-"
+            dt: _dt.datetime
+            if isinstance(last_up, (int, float)):
+                dt = _dt.datetime.fromtimestamp(int(last_up), tz=_dt.timezone.utc)
+            else:
+                s = str(last_up)
+                try:
+                    dt = _dt.datetime.fromisoformat(s)
+                except Exception:
+                    if s.endswith("Z"):
+                        try:
+                            dt = _dt.datetime.fromisoformat(s[:-1]).replace(tzinfo=_dt.timezone.utc)
+                        except Exception:
+                            dt = _dt.datetime.utcnow().replace(tzinfo=_dt.timezone.utc)
+                    else:
+                        return s
+
+            if dt.tzinfo is None:
+                dt = dt.astimezone()
+
+            d = dt.day
+            if 11 <= (d % 100) <= 13:
+                suf = "th"
+            else:
+                suf = {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
+
+            month_name = dt.strftime("%B")
+            date_part = f"{month_name} {d}{suf} {dt.year}"
+            time_part = dt.strftime("%H:%M:%S")
+
+            off = dt.utcoffset() or _dt.timedelta(0)
+            hours = int(round(off.total_seconds() / 3600))
+            sign = "+" if hours >= 0 else "-"
+            hours_abs = abs(hours)
+            return f"{date_part} . {time_part} GMT {sign} {hours_abs}"
+        except Exception:
+            try:
+                return str(last_up)
+            except Exception:
+                return "-"
+
+    def _render_network_snapshot(self, snap: Optional[Dict[str, Any]], peers_cnt: int) -> None:
+        self._net_text_enable()
+        self.net_text.delete("1.0", tk.END)
+        if not isinstance(snap, dict):
+            self.net_text.insert(tk.END, "[-] Snapshot not available\n")
+            self._net_text_disable()
+            return
+
+        ident = snap.get("identity", {}) or {}
+        chain = snap.get("chain", {}) or {}
+        supply= snap.get("supply", {}) or {}
+        txs  = snap.get("transactions", {}) or {}
+        utxo = snap.get("utxo", {}) or {}
+        miners = ((snap.get("miners_snapshot", {}) or {}).get("top_miners") or [])
+
+        # Header
+        self.net_text.insert(tk.END, "🌐 Network Informations 🌐", ("h1","center"))
+        self.net_text.insert(tk.END, "\n")
+        # Subheader line
+        last_up = snap.get("last_updated") or "-"
+        schema_v = snap.get("schema_version")
+        last_up_fmt = self._fmt_last_update(last_up)
+        sub = f"Last Update : {last_up_fmt}  |  Schema Version : {schema_v}  |  Peers : {int(peers_cnt)}\n"
+        self.net_text.insert(tk.END, ("="*87) + "\n", ("sep","center"))
+        self.net_text.insert(tk.END, sub, ("mut","center"))
+        self.net_text.insert(tk.END, ("="*87) + "\n\n\n", ("sep","center"))
+
+        # Network Identity
+        self.net_text.insert(tk.END, ("-"*45) + "\n", ("sep2","center"))
+        self.net_text.insert(tk.END, "NETWORK IDENTITY\n", ("h2","center"))
+        self.net_text.insert(tk.END, ("-"*45) + "\n", ("sep2","center"))
+        self.net_text.insert(tk.END, f"\nNetwork Id\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{ident.get('network_id','-')}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Network Magic\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{ident.get('network_magic_hex','-')}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Address Prefix\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{ident.get('address_prefix','-')}\n\n\n", ("val","center"))
+
+        # Blockchain Informations
+        self.net_text.insert(tk.END, ("-"*45) + "\n", ("sep2","center"))
+        self.net_text.insert(tk.END, "BLOCKCHAIN INFORMATIONS\n", ("h2","center"))
+        self.net_text.insert(tk.END, ("-"*45) + "\n", ("sep2","center"))
+        self.net_text.insert(tk.END, f"\nGenesis Message\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{chain.get('genesis_message','-')}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Genesis Hash\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{chain.get('genesis_hash','-')}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Network Hashrate\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_hashrate(chain.get('est_network_hashrate_hps_window'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Average Block Time\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{chain.get('avg_block_time_sec_window','-')} s\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Total Blocks\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_num(chain.get('total_blocks'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Tip Height\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_num(chain.get('tip_height'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Tip Hash\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{chain.get('tip_hash','-')}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Tip Target (hex)\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{chain.get('tip_target_hex','-')}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Tip Timestamp\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_time(chain.get('tip_timestamp'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Tip Bits\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{chain.get('tip_bits','-')}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Tip Difficulty\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_num(chain.get('tip_difficulty'))}\n\n\n", ("val","center"))
+
+        # Blockchain Economy
+        self.net_text.insert(tk.END, ("-"*45) + "\n", ("sep2","center"))
+        self.net_text.insert(tk.END, "BLOCKCHAIN ECONOMY\n", ("h2","center"))
+        self.net_text.insert(tk.END, ("-"*45) + "\n", ("sep2","center"))
+        self.net_text.insert(tk.END, f"\nMax Supply\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_tsar(supply.get('max_supply'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Circulating Supply\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_tsar(supply.get('circulating_estimate'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Coinbase Reward\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_tsar(chain.get('current_block_subsidy') or supply.get('current_block_subsidy'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Maturity Rule\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{supply.get('coinbase_maturity','-')} Block\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Immature Coinbase\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_tsar(supply.get('immature_coinbase'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Emitted Subsidy\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_tsar(supply.get('emitted_subsidy'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Current Epoch\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_num(supply.get('current_epoch'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Halving\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_num(supply.get('next_halving_height'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Block To Halving\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_num(supply.get('blocks_to_halving'))}\n\n\n", ("val","center"))
+
+        # Blockchain Transactions
+        self.net_text.insert(tk.END, ("-"*45) + "\n", ("sep2","center"))
+        self.net_text.insert(tk.END, "BLOCKCHAIN TRANSACTIONS\n", ("h2","center"))
+        self.net_text.insert(tk.END, ("-"*45) + "\n", ("sep2","center"))
+        self.net_text.insert(tk.END, f"\nTransaction On Mempool\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_num(txs.get('mempool_txs'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Mempool Vbytes Estimate\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_num(txs.get('mempool_vbytes_estimate'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Total Fee's Paid\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_tsar(txs.get('total_fees_paid'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Total Transactions\n", ("lab","center"))
+        total_txs = int(txs.get('total_txs') or 0)
+        self.net_text.insert(tk.END, f"{self._fmt_num(total_txs)}\n\n", ("val","center"))
+
+        # Show non-coinbase transactions under 'Transactions'
+        try:
+            noncb = int(txs.get('total_non_coinbase_txs')) if txs.get('total_non_coinbase_txs') is not None else total_txs
+        except Exception:
+            noncb = total_txs
+        self.net_text.insert(tk.END, f"Transactions\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_num(noncb)}\n\n", ("val","center"))
+
+        # Coinbase = total - non-coinbase
+        cbt = max(total_txs - int(noncb or 0), 0)
+        self.net_text.insert(tk.END, f"Coinbase Transactions\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_num(cbt)}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"UTXO Set Size\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_num(utxo.get('utxo_set_size'))}\n\n\n\n", ("val","center"))
+
+        # Top Miners Leaderboards
+        self.net_text.insert(tk.END, ("="*84) + "\n", ("sep","center"))
+        self.net_text.insert(tk.END, "TOP #10 Miners Leaderboards\n", ("Leaderboards","center"))
+        self.net_text.insert(tk.END, ("="*84) + "\n\n", ("sep","center"))
+        if isinstance(miners, list) and miners:
+            top = miners[:10]
+            for i, (addr, found) in enumerate(top, start=1):
+                if i == 1:
+                    tags = ("rank1", "center")
+                elif i == 2:
+                    tags = ("rank2", "center")
+                elif i == 3:
+                    tags = ("rank3", "center")
+                else:
+                    tags = ("val", "center")
+                self.net_text.insert(
+                    tk.END,
+                    f"RANK {i:>2} : ( {addr} ) Has Found : ( {self._fmt_num(found)} ) Block\n",
+                    tags,
+                )
+                if i < len(top):
+                    self.net_text.insert(tk.END, ("-"*72) + "\n", ("sep2", "center"))
+        try:
+            self.net_text.insert(tk.END, "No Miners Data Found\n", ("mut","center"))
+        except Exception:
+            pass
+        self._net_text_disable()
+
 
     # ---------------- Dev Frame ----------------
     def _build_dev_frame(self) -> None:
-        tab = DevTab(self, master=self.main)
-        self.frames["dev"] = tab
-        self.dev_tab = tab
+        f = tk.Frame(self.main, bg=self.bg)
+        self.frames["dev"] = f
 
+        top = tk.Frame(f, bg=self.bg)
+        top.pack(fill=tk.X, padx=12, pady=8)
+        tk.Label(top, text="Built by Tsar Studio | Open Source on GitHub",
+                 bg=self.bg, fg=self.accent, font=("Consolas", 8, "bold")).pack(side=tk.RIGHT)
+        tk.Label(top, text="Kremlin Wallet v.1", bg=self.bg, fg=self.accent,
+                 font=("Consolas", 8, "bold")).pack(side=tk.LEFT)
+
+        info_area = tk.Frame(f, bg=self.bg)
+        info_area.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
+
+        tk.Label(info_area, text="🌐Tsar Chain🌐", bg=self.bg, fg=self.accent,
+                 font=("Segoe UI", 40, "bold")).pack(pady=(0, 0))
+        tk.Label(info_area, text="--- Long Live The Voice Sovereignty Monetary System ---\n",
+                 bg=self.bg, fg=self.accent, font=("Consolas", 12, "bold")).pack(pady=(0, 0))
+        
+        tk.Button(f, text="Open Log Viewer", command=self._open_log_viewer).pack(side=tk.RIGHT, padx=4)
+
+        self.dev_text = scrolledtext.ScrolledText(
+            info_area, height=10, bg=self.panel_bg, fg=self.fg,
+            insertbackground=self.fg, font=("Consolas", 11))
+        self.dev_text.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
+
+        palette = getattr(self.theme_set, "palette", None)
+        self.dev_text.tag_configure("title", font=("Consolas", 16, "bold"), foreground=self.accent)
+        self.dev_text.tag_configure("center", justify="center")
+        self.dev_text.tag_configure("info", font=("Consolas", 10), foreground=self.muted)
+        alert_color = palette.danger if palette else self.accent
+        status_color = palette.success if palette else self.accent
+        self.dev_text.tag_configure("alert", font=("Consolas", 13, "bold"), foreground=alert_color)
+        self.dev_text.tag_configure("status", font=("Consolas", 10, "bold"), foreground=status_color)
+        self.dev_text.tag_configure("on_develop", font=("Consolas", 10, "bold"), foreground=self.accent)
+        self.dev_text.tag_configure("dev", font=("Consolas", 10, "bold"), foreground=self.accent)
+        
+        self.dev_text.insert(tk.END, "\nWhat is TsarChain?\n", ("title", "center"))
+        self.dev_text.insert(tk.END, "----------------------------------\n\n", ("info", "center"))
+        self.dev_text.insert(tk.END, "⚠️ This is a Voice Sovereignty chain ⚠️\n\n", ("alert", "center"))
+        self.dev_text.insert(
+            tk.END,
+            "A from-scratch, UTXO-based L1 that records **expressive value** graffiti, testimony, evidence—immutably.\n"
+            "You pay a small TSAR fee to publish; miners timestamp it; the network verifies it forever.\n"
+            "No gatekeepers. No permission. Just math, proof, and a public memory that cannot be silenced.\n",
+            ("info", "center"),
+        )
+        self.dev_text.insert(tk.END, "\nIs \"Graffiti\" an NFT Platform?\n", ("alert", "center"))
+        self.dev_text.insert(
+            tk.END,
+            "\nNo. Graffiti is a permanent on-chain record—expression treated as value, not a tradable collectible.\n"
+            "Each graffiti is paid with TSAR as a fee for speech; miners timestamp it, and the network verifies it forever.\n"
+            "No drops, No royalties, No lamborghini, No mint/burn mechanics\nthis layer is for public memory, not marketplace hype.\n",
+            ("info", "center"),
+        )
+        self.dev_text.insert(tk.END, "\n⚠️ Status ⚠️\n", ("alert", "center"))
+        self.dev_text.insert(
+            tk.END,
+            "\n-- Wallet generation (with SegWit Bech32) --\n-- Address prefix 'tsar1' --\n-- Genesis block --\n"
+            "-- Proof-of-Work --\n-- Chat Feature (3XDH & Double Rachet) --\n-- Coinbase reward --\n-- UTXO system --\n-- SegWit transactions --\n"
+            "-- Fee mechanism --\n-- Mempool --\n-- Multi-node networking --\n-- Transaction & block validation --\n"
+            "-- Chain validation --\n",
+            ("status", "center"),
+        )
+        self.dev_text.insert(tk.END, "\n⚠️ On Development ⚠️\n", ("alert", "center"))
+        self.dev_text.insert(
+            tk.END,
+            "\n-- Storage Node --\n-- Graffiti --\n-- Some Security --\n-- Some UI/UX Wallet --\n"
+            "-- etc. --\n",
+            ("on_develop", "center"),
+        )
+        self.dev_text.insert(tk.END, "\n⚠️ Disclaimer ⚠️\n", ("alert", "center"))
+        self.dev_text.insert(
+            tk.END,
+            "\nPublished data becomes part of the chain and cannot be removed.\n"
+            "By submitting graffiti or transactions, you accept full responsibility for your content and its legality.\n"
+            "This network preserves records. it does not moderate speech.\n",
+            ("info", "center"),
+        )
+        self.dev_text.insert(tk.END, "\nDeveloper Note\n", ("alert", "center"))
+        self.dev_text.insert(tk.END, "TsarChain is a lab for Voice Sovereignty.\nan engineering study of how speech can be treated as value and time-stamped as public memory.\n", ("info", "center"))
+        self.dev_text.insert(tk.END, "> We don’t sell coins. we mint courage <", ("dev", "center"))
+        self.dev_text.config(state="disabled")
+
+    
     # Quick tab switcher (used by GraffitiTab Prefill)
     def switch_tab(self, name: str) -> None:
         m = {
@@ -1249,23 +2091,18 @@ class KremlinWalletGUI(WalletsMixin):
     def show_history_frame(self) -> None:
         if not self._is_wallet_ready():
             return self._show_locked_screen("History")
-
+        
         self._hide_all_frames()
-        history_frame = self.frames.get("history")
-        if history_frame is None or not self._widget_exists(history_frame):
+        if "history" not in self.frames:
             self._build_history_frame()
-            history_frame = self.frames["history"]
-
         try:
-            history_frame.reload_addresses(self.wallets)
-            history_frame.on_show()
+            if (not self.history_addr_var.get()) and self.wallets:
+                self.history_addr_var.set(self.wallets[0])
         except Exception:
-            if self.log:
-                self.log.debug("[history] on_show failed", exc_info=True)
-
-        history_frame.pack(fill=tk.BOTH, expand=True)
+            pass
+        self.frames["history"].pack(fill=tk.BOTH, expand=True)
         try:
-            self._activate_tab("history")
+            self._hist_render_from_cache()
         except Exception:
             pass
 
