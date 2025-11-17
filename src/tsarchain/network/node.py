@@ -13,7 +13,7 @@ from ..utils import config as CFG
 from ..core.block import Block
 from ..core.tx import Tx
 from .broadcast import Broadcast
-from .processing_msg import process_message
+from .rpc.processing_msg import process_message
 from .protocol import (send_message, recv_message,build_envelope, verify_and_unwrap,
                         load_or_create_node_keys, is_envelope, sniff_first_json_frame, SecureChannel)
 from .wallet_route import install_wallet_routes

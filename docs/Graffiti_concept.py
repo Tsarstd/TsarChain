@@ -6,19 +6,19 @@ Each work is a digital monument - permanently archived by
 TsarChain Storage Nodes and anchored to a block. 
 
 Public comments are permanent too: once broadcast, they cannot be edited or silently removed at the
-protocol level. Instead of chasing viral views, GRAVITY focuses on **durability, traceability, and fair
+protocol level. Instead of chasing viral views, GRAFFITI focuses on **durability, traceability, and fair
 rewards for creators**.
 
 There is no central moderator with a “ban” button. If someone wants to speak here, they contribute to the
 cost of storage — and the artist earns a share.
 
-GRAVITY is a **pro digital sovereignty archival layer** within the broader TsarChain ecosystem
+GRAFFITI is a **pro digital sovereignty archival layer** within the broader TsarChain ecosystem
 a way for communities to preserve culture and conversation over time, while each node operator and user
 remains responsible for complying with the laws in their own jurisdiction.
 
 1. Core Ideas
 
-	• Not an NFT: No transferable ownership. GRAVITY is an archive of art & voice, not a speculation. 
+	• Not an NFT: No transferable ownership. GRAFFITI is an archive of art & voice, not a speculation. 
 
 	• Block Anchor: A work's identity binds its content hash with the block hash in which
 		the upload TX is included. 
@@ -45,7 +45,7 @@ remains responsible for complying with the laws in their own jurisdiction.
 	• Storage Node: Permanently stores replicated copies (R). Earns 10% from comments plus a share
 		of the upload endowment. 
 
-	• Indexer/Explorer: Indexes GRAVITY events and renders works & comment threads.
+	• Indexer/Explorer: Indexes GRAFFITI events and renders works & comment threads.
  
 3. Economic Flows
 
@@ -74,7 +74,7 @@ remains responsible for complying with the laws in their own jurisdiction.
 	• File hash: Hc = SHA256(file_blob).
 	• Anchor block: Hb = block hash where the upload TX is confirmed.
 	• Creator: addr_c (P2WPKH/P2SH depending on TsarChain config).
-	• art_id: SHA256("GRAVITY" || Hc || Hb || addr_c).
+	• art_id: SHA256("GRAFFITI" || Hc || Hb || addr_c).
 	• Optional metadata: mime_type, size_kb, title (≤ 64B), tags (≤ 128B).
 
 4.2 Comment Object
@@ -175,7 +175,7 @@ Payout: Per epoch, storage nodes passing proofs split the available pool for thi
  
 12. Security Model (Short)
 
-	• TX signing follows TsarChain standards (P2WPKH/P2SH). GRAVITY adds new event types,
+	• TX signing follows TsarChain standards (P2WPKH/P2SH). GRAFFITI adds new event types,
 		not a new consensus.
 
 	• Clients validate file downloads via content hash Hc and block anchor Hb.

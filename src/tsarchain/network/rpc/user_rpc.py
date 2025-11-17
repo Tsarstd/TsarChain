@@ -1,154 +1,44 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
-# Part of TsarChain — see LICENSE and TRADEMARKS.md
-# Refs: BIP141; BIP173; libsecp256k1; Signal-X3DH; RFC7748-X25519
+# Part of TsarChain - see LICENSE and TRADEMARKS.md
 
-import time, secrets, base64, random, json
-from typing import TYPE_CHECKING, Any, Optional
+import time, secrets, json
+from typing import TYPE_CHECKING, Any, Callable, Optional
+
 from bech32 import convertbits, bech32_decode
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import hashes
 from cryptography.exceptions import InvalidSignature
 
-# ---------------- Local Project ----------------
-from ..utils.helpers import hash160
-from ..utils import config as CFG
+from ...utils.helpers import hash160
+from ...utils import config as CFG
 
 # ---------------- Logger ----------------
-from ..utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network(processing_msg)")
-
+from ...utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.network.rpc(user_rpc)")
 
 if TYPE_CHECKING:
-    from .node import Network
-
-__all__ = ["process_message"]
+    from ..node import Network
 
 
-def process_message(self: "Network", message: dict[str, Any], addr: Optional[tuple]=None) -> dict | None:
-    if not isinstance(message, dict):
-        return {"error": "invalid message: expected JSON object"}
+__all__ = ["handle_user_rpc"]
 
-    mtype = message.get("type")
-    if not isinstance(mtype, str):
-        return {"error": "missing or invalid 'type'"}
-    mtype = mtype.strip().upper()
 
-    # ----------------------------------------------------------------------------------
-    # GUARDIANS: role-based gate + limits
-    # ----------------------------------------------------------------------------------
-    MINERS = {"HELLO", "NEW_BLOCK", "GET_FULL_SYNC", "FULL_SYNC", "CHAIN", "MEMPOOL",
-              "GET_HEADERS", "HEADERS", "GET_BLOCKS", "BLOCKS"}
+def handle_user_rpc(
+    self: "Network",
+    message: dict[str, Any],
+    addr: Optional[tuple],
+    mtype: str,
+    *,
+    client_ip: Callable[[], str],
+    is_miner_sender: Callable[[], bool],
+    overlay_realtime_mempool_stats: Callable[[dict, "Network"], None],
+    choose_relay_route: Callable[["Network", int], list[tuple]],
+    relay_chain: Callable[["Network", list[tuple], dict, Optional[tuple]], None],
+    send_chat_relay: Callable[["Network", tuple, dict], dict],
+) -> dict | None:
     
-    NODE_STORAGE = {"STOR_INIT", "STOR_PUT", "STOR_COMMIT", "STOR_STATUS", "STOR_GC", "STOR_PAID"}
-    STORAGE_PRIV_OPS = {"STOR_PUT", "STOR_COMMIT", "STOR_STATUS", "STOR_INDEX", "STOR_GC", "STOR_PAID"}
-
-    USER = {
-        "PING", "GET_BALANCES", "CREATE_TX", "CREATE_TX_MULTI", "GET_INFO",
-        "GET_TX_HISTORY", "GET_TX_DETAIL", "NEW_TX", "GET_UTXOS", "GET_PEERS",
-        "GET_NETWORK_INFO", "GET_BLOCK_AT", "GET_BLOCK", "GET_BLOCK_HASH", "STOR_LIST",
-        "GRAFFITI_GET_POSTS", "GRAFFITI_GET_COMMENTS",
-        "GRAFFITI_GET_PAYOUTS", "GRAFFITI_POOL_PAYOUT",
-        "GRAFFITI_GET_POSTS", "GRAFFITI_GET_COMMENTS",
-
-        # Chat & storage listing
-        "CHAT_REGISTER", "CHAT_LOOKUP_PUB", "CHAT_PRESENCE", "CHAT_SEND", "CHAT_PULL", "CHAT_RELAY", "CHAT_READ",
-        "CHAT_GET_PREKEY", "CHAT_PUBLISH_PREKEYS",
-
-        # Mempool utilities
-        "GET_MEMPOOL",
-    }
-
-    def _is_miner_sender() -> bool:
-        if not isinstance(addr, tuple):
-            return False
-        if addr in self.peers:
-            return True
-        try:
-            peer_port = int(message.get("port", -1))
-        except Exception:
-            log.exception("[_is_miner_sender] bad port in message from %s", addr)
-            peer_port = -1
-        return (peer_port > 0) and ((addr[0], peer_port) in self.peers)
-
-    def _client_ip() -> str:
-        if isinstance(addr, tuple) and addr:
-            return addr[0]
-        return "0.0.0.0"
-
-    def _storage_request_allowed() -> tuple[bool, Optional[dict]]:
-        if getattr(self, "storage_service", None) is None:
-            return False, {"type": "STOR_ACK", "status": "rejected", "reason": "storage_disabled"}
-
-        token_expected = getattr(CFG, "STORAGE_RPC_TOKEN", None)
-        supplied_token = str(message.get("storage_token") or message.get("token") or "").strip()
-        if token_expected:
-            try:
-                if not supplied_token or not secrets.compare_digest(supplied_token, str(token_expected)):
-                    log.warning("[process_message] storage RPC token mismatch from %s", addr)
-                    return False, {"type": "STOR_ACK", "status": "rejected", "reason": "forbidden"}
-            except Exception:
-                return False, {"type": "STOR_ACK", "status": "rejected", "reason": "forbidden"}
-            
-        elif getattr(CFG, "STORAGE_RPC_LOCAL_ONLY", False):
-            allowed_ips = tuple(getattr(CFG, "STORAGE_RPC_ALLOWED_IPS", ("127.0.0.1", "::1")))
-            if not (isinstance(addr, tuple) and addr[0] in allowed_ips):
-                log.warning("[process_message] storage RPC rejected non-local caller %s", addr)
-                return False, {"type": "STOR_ACK", "status": "rejected", "reason": "forbidden"}
-
-        return True, None
-
-    BOOTSTRAP_ALLOW = {"HELLO", "GET_FULL_SYNC", "FULL_SYNC", "GET_HEADERS", "HEADERS"}
-    if (mtype in MINERS) and (mtype not in BOOTSTRAP_ALLOW) and (not _is_miner_sender()):
-        log.debug("[process_message] rejecting unauthorized miner RPC %s from %s", mtype, addr)
-        return {"error": "forbidden: miners-only endpoint"}
-    
-    if (mtype not in MINERS) and (mtype not in USER) and (mtype not in NODE_STORAGE):
-        return {"error": "unknown type"}
-    
-    if mtype in STORAGE_PRIV_OPS:
-        allowed, deny_resp = _storage_request_allowed()
-        if not allowed:
-            return deny_resp
-
-    # =============== NODE MESSAGES ===============
-    if mtype == "HELLO":
-        return self._handle_hello(message, addr)
-
-    elif mtype == "NEW_BLOCK":
-        self.broadcast.receive_block(message, addr, self.peers)
-        return {"status": "ok"}
-
-    elif mtype == "GET_FULL_SYNC":
-        if not CFG.ENABLE_FULL_SYNC:
-            return {"type": "SYNC_REDIRECT", "reason": "full_sync_disabled"}
-        return self._handle_get_full_sync(message, addr)
-
-    elif mtype == "GET_HEADERS":
-        return self._handle_get_headers(message, addr)
-
-    elif mtype == "GET_BLOCKS":
-        return self._handle_get_blocks(message, addr)
-
-    elif mtype in ("HEADERS", "BLOCKS"):
-        return {"status": "ok"}
-
-    elif mtype == "FULL_SYNC":
-        if not CFG.ENABLE_FULL_SYNC:
-            return {"status": "ignored", "reason": "full_sync_disabled"}
-        return self._handle_full_sync(message, addr)
-
-    elif mtype == "CHAIN":
-        if self._validate_incoming_chain(message):
-            return {"status": "ok"}
-
-    elif mtype == "MEMPOOL":
-        self.broadcast.receive_mempool(message)
-        return {"status": "mempool received"}
-
-    # =============== USER MESSAGES ===============
-
-    elif mtype == "PING":
+    if mtype == "PING":
         return {"type": "PONG"}
 
     elif mtype in ("GET_BALANCES"):
@@ -157,7 +47,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         if not self._tb_allow(self.rl_ip, rl_key, CFG.BALANCE_RL_IP_BURST, CFG.BALANCE_RL_IP_WINDOW_S, CFG.BALANCE_RL_IP_BURST, backoff_key=rl_key):
             self._backoff(rl_key, CFG.BALANCE_RL_BACKOFF_S)
             return {"error": "rate_limited"}
-        
+
         addrs_raw = message.get("addresses") or []
         if not addrs_raw and message.get("address"):
             addrs_raw = [message["address"]]
@@ -165,7 +55,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             return {"error": "missing addresses"}
         if len(addrs_raw) > CFG.MAX_ADDRS_PER_REQ:
             return {"error": "too many addresses (max %d)" % CFG.MAX_ADDRS_PER_REQ}
-        
+
         norm = []
         for a in addrs_raw:
             if not a:
@@ -263,12 +153,12 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             log.exception("[process_message] CREATE_TX error")
 
     elif mtype == "GET_INFO":
-        ip = _client_ip()
+        ip = client_ip()
         rl_key = f"info:{ip}"
         if not self._tb_allow(self.rl_ip, rl_key, CFG.INFO_RL_IP_BURST, CFG.INFO_RL_IP_WINDOW_S, CFG.INFO_RL_IP_BURST, backoff_key=rl_key):
             self._backoff(rl_key, CFG.INFO_RL_BACKOFF_S)
             return {"error": "rate_limited"}
-        
+
         info = {
             "type": "INFO",
             "height": self.broadcast.blockchain.height,
@@ -286,14 +176,14 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         return info
 
     elif mtype == "GET_NETWORK_INFO":
-        ip = _client_ip()
+        ip = client_ip()
         rl_key = f"info:{ip}"
         if not self._tb_allow(self.rl_ip, rl_key, CFG.INFO_RL_IP_BURST, CFG.INFO_RL_IP_WINDOW_S, CFG.INFO_RL_IP_BURST, backoff_key=rl_key):
             self._backoff(rl_key, CFG.INFO_RL_BACKOFF_S)
             return {"error": "rate_limited"}
         try:
             snap = self.broadcast.blockchain._compute_state_snapshot()
-            _overlay_realtime_mempool_stats(snap, self)
+            overlay_realtime_mempool_stats(snap, self)
             try:
                 with self.lock:
                     peers_sane = [(ip,p) for (ip,p) in self.peers if isinstance(p,int) and p>0]
@@ -307,7 +197,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             return {"type": "NETWORK_INFO", "data": snap}
         except Exception:
             log.exception("[process_message] GET_NETWORK_INFO error")
-        
+
     elif mtype == "GET_BLOCK_AT":
         try:
             h = int(message.get("height"))
@@ -315,7 +205,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             log.debug("[process_message] GET_BLOCK_AT invalid height from %s", addr)
             return {"error": "invalid height"}
         return self._handle_get_block_at(h)
-    
+
     elif mtype == "GET_BLOCK_HASH":
         try:
             h = int(message.get("height"))
@@ -336,7 +226,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         return self._handle_get_block_by_hash(hx)
 
     elif mtype == "GET_PEERS":
-        if not _is_miner_sender():
+        if not is_miner_sender():
             return {"type": "PEERS", "peers": []}
         return {"type": "PEERS", "peers": list(self.peers)}
 
@@ -353,7 +243,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
     elif mtype == "GET_MEMPOOL":
         mode = str(message.get("mode", "")).strip().lower()
         if mode == "snapshot":
-            if not _is_miner_sender():
+            if not is_miner_sender():
                 return {"error": "forbidden: miners-only endpoint"}
             try:
                 peer_port = int(message.get("port", 0))
@@ -380,9 +270,9 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             except Exception:
                 log.exception("[process_message] GET_MEMPOOL snapshot push error to %s", target)
                 return {"type": "MEMPOOL_SYNC", "count": 0, "status": "error"}
-            
+
         if mode in ("inline", "inline_full"):
-            ip = _client_ip()
+            ip = client_ip()
             mp_key = f"mempool:{ip}"
             if not self._tb_allow(self.rl_ip, mp_key, CFG.MEMPOOL_INLINE_RL_BURST, CFG.MEMPOOL_INLINE_RL_WINDOW_S, CFG.MEMPOOL_INLINE_RL_BURST, backoff_key=mp_key):
                 self._backoff(mp_key, CFG.MEMPOOL_INLINE_RL_BACKOFF)
@@ -392,13 +282,13 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             except Exception:
                 log.exception("[process_message] GET_MEMPOOL inline read error")
                 return {"error": "mempool_unavailable"}
-            
+
             inline: list[dict] = []
             total = len(all_txs)
             hard_cap = max(1024, CFG.MAX_MSG) - len(CFG.NETWORK_MAGIC)
             limit = CFG.MEMPOOL_INLINE_MAX_TX
             base = {"type": "MEMPOOL", "mode": "inline_full", "total": total, "txs": []}
-            
+
             for tx in all_txs:
                 if len(inline) >= limit:
                     break
@@ -409,7 +299,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
                         tx_dict = dict(tx)
                     else:
                         continue
-                    
+
                     if not tx_dict.get("txid") and getattr(tx, "txid", None):
                         txid_attr = getattr(tx, "txid")
                         tx_dict["txid"] = txid_attr.hex() if isinstance(txid_attr, (bytes, bytearray)) else str(txid_attr)
@@ -428,7 +318,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
                         break
                     # Single tx too large, skip it
                     continue
-                
+
                 inline.append(tx_dict)
 
             return {
@@ -452,7 +342,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             log.exception("[process_message] GET_MEMPOOL error")
 
     elif mtype == "GET_TX_HISTORY":
-        ip = _client_ip()
+        ip = client_ip()
         hist_key = f"hist:{ip}"
         if not self._tb_allow(self.rl_ip, hist_key, CFG.HISTORY_RL_IP_BURST, CFG.HISTORY_RL_IP_WINDOW_S, CFG.HISTORY_RL_IP_BURST, backoff_key=hist_key):
             self._backoff(hist_key, CFG.HISTORY_RL_BACKOFF_S)
@@ -473,7 +363,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         return {"type": "TX_HISTORY", "address": addr_str, **history}
 
     elif mtype == "GET_TX_DETAIL":
-        ip = _client_ip()
+        ip = client_ip()
         hist_key = f"hist:{ip}"
         if not self._tb_allow(self.rl_ip, hist_key, CFG.HISTORY_RL_IP_BURST, CFG.HISTORY_RL_IP_WINDOW_S, CFG.HISTORY_RL_IP_BURST, backoff_key=hist_key):
             self._backoff(hist_key, CFG.HISTORY_RL_BACKOFF_S)
@@ -484,7 +374,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         return self._get_tx_detail(txid_hex)
 
     elif mtype == "GET_UTXOS":
-        ip = _client_ip()
+        ip = client_ip()
         hist_key = f"hist:{ip}"
         if not self._tb_allow(self.rl_ip, hist_key, CFG.HISTORY_RL_IP_BURST, CFG.HISTORY_RL_IP_WINDOW_S, CFG.HISTORY_RL_IP_BURST, backoff_key=hist_key):
             self._backoff(hist_key, CFG.HISTORY_RL_BACKOFF_S)
@@ -492,28 +382,28 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         address = (message.get("address") or "").strip().lower()
         if not address:
             return {"error": "missing address"}
-        
+
         if len(address) > CFG.MAX_UTXO_ADDR_LEN:
             return {"error": "address too long"}
-        
+
         utxos = self.broadcast.utxodb.get(address)
         return {"type": "UTXOS", "address": address, "utxos": utxos}
-    
+
     # ========= P2P CHAT =========
-    
+
     elif mtype == "CHAT_REGISTER":
-        ip = _client_ip()
+        ip = client_ip()
         reg_key = f"chatreg:{ip}"
         if not self._tb_allow(self.rl_ip, reg_key, CFG.CHAT_REG_RL_IP_BURST, CFG.CHAT_REG_RL_WINDOW_S, CFG.CHAT_REG_RL_IP_BURST, backoff_key=reg_key):
             self._backoff(reg_key, CFG.CHAT_REG_RL_BACKOFF_S)
             return {"error": "rate_limited"}
         addr_s   = (message.get("address")  or "").strip().lower()
         chat_pub = ((message.get("chat_pub") or message.get("pubkey") or "").strip().lower())
-        
+
         presence_sig = (message.get("presence_sig") or "").strip().lower()
         if not presence_sig:
             return {"error": "presence_sig_required"}
-        
+
         spend_pk = (message.get("spend_pub") or "").strip().lower()
         reg_sig  = (message.get("reg_sig")  or "")
         ts_val   = int(message.get("ts", 0))
@@ -521,19 +411,19 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         if not addr_s or not chat_pub or not spend_pk or not reg_sig or not ts_val:
             log.debug("[process_message] CHAT_REGISTER missing fields from %s", addr)
             return {"error": "missing fields"}
-        
+
         if not addr_s.startswith(CFG.ADDRESS_PREFIX):
             log.debug("[process_message] CHAT_REGISTER bad address format from %s", addr)
             return {"error": "bad address format"}
-        
+
         if not (len(chat_pub) == 64 and all(c in "0123456789abcdef" for c in chat_pub)):
             log.debug("[process_message] CHAT_REGISTER bad chat_pub from %s", addr)
             return {"error": "bad chat_pub"}
-        
+
         if not (len(spend_pk) == 66 and all(c in "0123456789abcdef" for c in spend_pk)):
             log.debug("[process_message] CHAT_REGISTER bad spend_pub from %s", addr)
             return {"error": "bad spend_pub"}
-        
+
         # Anti replay time window (±5 minutes)
         if abs(time.time() - ts_val) > 300:
             log.debug("[process_message] CHAT_REGISTER stale ts from %s", addr)
@@ -567,7 +457,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
                 return {"error": "bad_presence_sig"}
             except Exception:
                 return {"error": "presence_sig_verify_failed"}
-            
+
             reg_bytes = b"|".join([
                 b"CHAT_REG",
                 addr_s.encode(),
@@ -576,11 +466,11 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
                 str(int(ts_val)).encode()
             ])
             pub_obj.verify(bytes.fromhex(reg_sig), reg_bytes, ec.ECDSA(hashes.SHA256()))
-            
+
         except Exception:
             log.exception("[process_message] CHAT_REGISTER bad reg_sig from %s", addr)
             return {"error": "bad reg_sig"}
-        
+
         now = time.time()
         pid = secrets.token_hex(16)
         with self.chat_lock:
@@ -592,7 +482,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
                 b["ik"] = chat_pub
                 b["ts"] = int(now)
                 self.chat_prekeys[addr_s] = b
-                
+
         pres = {"pid": pid, "address": addr_s, "pubkey": chat_pub, "spend_pub": spend_pk, "presence_sig": presence_sig, "ts": int(now), "hops": 0}
         try:
             self._relay_presence_async(pres, exclude=addr)
@@ -608,7 +498,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         pubhex = self.chat_presence_pub.get(addr_s)
         log.debug("[process_message] CHAT_LOOKUP_PUB for %s from %s", addr_s, addr)
         return {"type": "CHAT_PUBKEY", "address": addr_s, "pubkey": pubhex, "found": bool(pubhex)}
-    
+
     elif mtype == "CHAT_PRESENCE":
         addr_s = (message.get("address") or "").strip().lower()
         pubhex = (message.get("pubkey")  or "").strip().lower()
@@ -621,7 +511,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         if abs(time.time() - ts_val) > CFG.PRESENCE_TTL_S:
             log.debug("[process_message] CHAT_PRESENCE stale ts from %s", addr)
             return {"error": "presence_stale"}
-        
+
         # signature presence verification
         if not (pubhex and spend_pk and presence_sig):
             return {"error": "presence_missing_fields"}
@@ -646,17 +536,17 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             vk.verify(bytes.fromhex(presence_sig), pres_bytes, ec.ECDSA(hashes.SHA256()))
         except Exception:
             return {"error": "presence_bad_sig"}
-        
+
         if hops >= CFG.PRESENCE_MAX_HOPS:
             log.debug("[process_message] CHAT_PRESENCE max hops from %s", addr)
             return {"error": "presence_hops"}
-        
+
         if not self._tb_allow(self.rl_ip, ip, CFG.CHAT_RL_IP_BURST, CFG.CHAT_RL_IP_WINDOWS, CFG.CHAT_RL_IP_BURST, backoff_key=ip):
             self._backoff(ip, CFG.CHAT_BACKOFF_S); return {"error": "presence_rate_ip"}
-            
+
         if not self._tb_allow(self.rl_addr, addr_s, CFG.PRESENCE_RL_ADDR_BURST, CFG.PRESENCE_RL_ADDR_WINDOWS, CFG.PRESENCE_RL_ADDR_BURST, backoff_key=addr_s):
             self._backoff(addr_s, CFG.CHAT_BACKOFF_S); return {"error": "presence_rate_addr"}
-            
+
         pid = message.get("pid") or secrets.token_hex(16)
         with self.chat_lock:
             self.chat_presence_pub[addr_s] = pubhex
@@ -678,12 +568,12 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
 
     # ====== PREKEY BUNDLE ======
     elif mtype == "CHAT_PUBLISH_PREKEYS":
-        ip = _client_ip()
+        ip = client_ip()
         reg_key = f"chatreg:{ip}"
         if not self._tb_allow(self.rl_ip, reg_key, CFG.CHAT_REG_RL_IP_BURST, CFG.CHAT_REG_RL_WINDOW_S, CFG.CHAT_REG_RL_IP_BURST, backoff_key=reg_key):
             self._backoff(reg_key, CFG.CHAT_REG_RL_BACKOFF_S)
             return {"error": "rate_limited"}
-        
+
         addr_s = (message.get("address") or "").strip().lower()
         ik  = (message.get("ik")  or "").strip().lower()
         spk = (message.get("spk") or "").strip().lower()
@@ -743,7 +633,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         if not self._tb_allow(self.rl_ip, ip, CFG.CHAT_RL_IP_BURST, CFG.CHAT_RL_IP_WINDOWS, CFG.CHAT_RL_IP_BURST, backoff_key=ip):
             self._backoff(ip, CFG.CHAT_BACKOFF_S)
             return {"type": "CHAT_ACK", "status": "rate_limited", "scope": "ip"}
-        
+
         if not self._tb_allow(self.rl_addr, frm, CFG.CHAT_RL_ADDR_BURST, CFG.CHAT_RL_ADDR_WINDOWS, CFG.CHAT_RL_ADDR_BURST, backoff_key=frm):
             self._backoff(frm, CFG.CHAT_BACKOFF_S)
             return {"type": "CHAT_ACK", "status": "rate_limited", "scope": "address"}
@@ -765,27 +655,27 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             fp_hex    = (message.get("from_pub")    or "").strip().lower()     # eph X25519
             fs_hex = (message.get("from_static") or "").strip().lower()
             exp = self.chat_presence_pub.get(frm)
-            
+
             if not exp:
                 return {"type": "CHAT_ACK", "status": "rejected", "reason": "no_presence"}
             if fs_hex != exp:
                 return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}
-            
+
         except Exception:
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_enc"}
 
         if not (len(ct_hex) // 2 <= CFG.CHAT_MAX_CT_BYTES):
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "too_large"}
-        
+
         if not (len(nonce_hex) == 24 and all(c in "0123456789abcdef" for c in nonce_hex)):
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_nonce"}
-        
+
         if not (len(fp_hex) == 64 and all(c in "0123456789abcdef" for c in fp_hex)):
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_pub"}
-        
+
         if not (len(fs_hex) == 64 and all(c in "0123456789abcdef" for c in fs_hex)):
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}
-        
+
         # routing authenticity signature verification (without decryption)
         if not chat_sig:
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "sig_required"}
@@ -809,7 +699,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         # === Onion-lite relay (opsional) ===
         relay_hops = int(CFG.CHAT_NUM_HOPS)
         if CFG.CHAT_FORCE_RELAY and len(self.peers) >= max(1, relay_hops):
-            route = _choose_relay_route(self, hops=relay_hops)
+            route = choose_relay_route(self, hops=relay_hops)
             if not route:
                 log.debug("[process_message] CHAT_SEND relay requested but no peers available; falling back to direct queue")
             else:
@@ -828,7 +718,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
                         "ratchet_n": ratchet_n,
                     },
                 }
-                _relay_chain(self, route, inner)
+                relay_chain(self, route, inner)
                 return {"type": "CHAT_ACK", "status": "relayed", "hops": len(route)}
 
         ok = self._mailbox_put(to, {
@@ -900,7 +790,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         inner = message.get("inner") or {}
         if route:
             nxt = route.pop(0)
-            return _send_chat_relay(self, nxt, {"type": "CHAT_RELAY", "route": route, "inner": inner})
+            return send_chat_relay(self, nxt, {"type": "CHAT_RELAY", "route": route, "inner": inner})
         # last hop: deliver inner ke mailbox
         if (inner or {}).get("type") == "CHAT_SEND_INNER":
             to  = (inner.get("to") or "").strip().lower()
@@ -920,23 +810,23 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             }, CFG.CHAT_TTL_S, CFG.CHAT_MAILBOX_MAX, CFG.CHAT_GLOBAL_QUEUE_MAX)
             return {"type": "CHAT_RELAY_ACK", "status": ("queued" if ok else "rejected")}
         return {"error": "bad_inner"}
-    
+
     elif mtype == "CHAT_READ":
         sender = (message.get("sender") or "").strip().lower()
         reader = (message.get("reader") or "").strip().lower()
         mid    = message.get("msg_id")
         ts_val = int(message.get("ts") or 0)
         read_sig = (message.get("read_sig") or "").strip().lower()
-        
+
         if not sender or not reader or mid is None or ts_val <= 0:
             return {"error": "bad_fields"}
         if not read_sig:
             return {"error": "sig_required"}
         ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
-        
+
         if not self._tb_allow(self.rl_ip, ip, 8, 10, 8, backoff_key=ip):
             return {"error": "rate_limited"}
-        
+
         # read receipt verification
         sp = (self.chat_spend_pub.get(reader) or "").strip().lower()
         if not sp:
@@ -953,16 +843,16 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             return {"error": "bad_sig"}
         except Exception:
             return {"error": "sig_verify_failed"}
-        
+
         try:
             self._enqueue_rcpt(sender, "read", mid, sender, reader, int(time.time()))
         except Exception:
             log.exception("[process_message] CHAT_READ enqueue_rcpt error from %s", addr)
             pass
         return {"type": "CHAT_READ_OK"}
-    
+
     # -------------- [NEW] GRAFFITI ---------- #
-        
+
     elif mtype == "STOR_LIST":
         now = time.time()
         by_addr = {}
@@ -992,7 +882,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
                     "alive": bool(meta.get("alive",False)),
                 })
         return {"type":"STOR_LIST","storers": items}
-        
+
     elif mtype == "CREATE_TX_MULTI":
         from_addr = (message.get("from") or "").strip().lower()
         outputs   = message.get("outputs") or []
@@ -1001,134 +891,18 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         except Exception:
             log.debug("[process_message] CREATE_TX_MULTI bad fee_rate from %s", addr)
             fee_rate = CFG.DEFAULT_FEE_RATE_SATVB
-            
+
         force_inputs = message.get("force_inputs") or None
-        
+
         if not from_addr or not outputs:
             return {"error": "missing from/outputs"}
         try:
             tpl = self._handle_create_tx_multi(from_addr, outputs, fee_rate, force_inputs)
             return {"type": "TX_TEMPLATE", "data": tpl}
-        
+
         except Exception:
             log.exception("[process_message] CREATE_TX_MULTI error from %s", addr)
             return {"error": "CREATE_TX_MULTI failed"}
 
-    # =============== STORAGE RPC (ROLE: NODE_STORAGE) ===============
+    return None
 
-    elif mtype == "GRAFFITI_GET_POSTS":
-        limit = int(message.get("limit", 50) or 50)
-        limit = max(1, min(limit, 500))
-        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
-        posts = reg.list_posts(limit) if reg else []
-        return {"type": "GRAFFITI_GET_POSTS", "posts": posts}
-
-    elif mtype == "GRAFFITI_GET_COMMENTS":
-        art_id = str(message.get("art_id") or "").strip().lower()
-        if not art_id:
-            return {"type": "GRAFFITI_GET_COMMENTS", "comments": []}
-        limit = int(message.get("limit", 100) or 100)
-        limit = max(1, min(limit, 500))
-        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
-        comments = reg.list_comments(art_id, limit) if reg else []
-        return {"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id, "comments": comments}
-
-    elif mtype == "GRAFFITI_GET_PAYOUTS":
-        art_id = str(message.get("art_id") or "").strip().lower()
-        if not art_id:
-            return {"type": "GRAFFITI_GET_PAYOUTS", "payouts": []}
-        limit = int(message.get("limit", 100) or 100)
-        limit = max(1, min(limit, 500))
-        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
-        payouts = reg.list_payouts(art_id, limit) if reg else []
-        return {"type": "GRAFFITI_GET_PAYOUTS", "art_id": art_id, "payouts": payouts}
-
-    elif mtype == "GRAFFITI_POOL_PAYOUT":
-        art_id = str(message.get("art_id") or "").strip().lower()
-        try:
-            amount = int(message.get("amount", 0))
-        except Exception:
-            amount = 0
-        recipient = str(message.get("recipient") or "").strip().lower() or "storage"
-        txid = str(message.get("txid") or "").strip() or "offchain"
-        if not art_id or amount <= 0:
-            return {"error": "bad_request"}
-        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
-        if not reg:
-            return {"error": "registry_unavailable"}
-        post = reg.get_post(art_id)
-        if not post:
-            return {"error": "unknown_art_id"}
-        stats = post.setdefault("stats", {})
-        pool_balance = int(stats.get("pool_balance", 0))
-        if pool_balance < amount:
-            return {"error": "insufficient_pool_balance", "pool_balance": pool_balance}
-        height = getattr(getattr(self.broadcast, "blockchain", None), "height", 0)
-        reg.record_payout(art_id, {recipient: amount}, txid, height)
-        return {"status": "ok", "art_id": art_id, "pool_balance": int(stats.get("pool_balance", 0))}
-    
-    else:
-        return {"error": "Unknown message type"}
-
-    # -------- HELPERS ----------
-def _overlay_realtime_mempool_stats(snapshot: dict, network: "Network") -> None:
-    """Inject live mempool stats into the snapshot returned to clients."""
-    if not isinstance(snapshot, dict):
-        return
-
-    tx_section = snapshot.setdefault("transactions", {})
-    if not isinstance(tx_section, dict):
-        return
-
-    broadcast = getattr(network, "broadcast", None)
-    pool = getattr(broadcast, "mempool", None) if broadcast else None
-    if pool is None:
-        return
-
-    tx_count = None
-    try:
-        store = getattr(pool, "_pool", None)
-        if isinstance(store, dict):
-            tx_count = len(store)
-        else:
-            txs = pool.get_all_txs() or []
-            tx_count = len(txs)
-    except Exception:
-        log.exception("[_overlay_realtime_mempool_stats] Failed to read mempool entries")
-        return
-
-    try:
-        tx_section["mempool_txs"] = int(tx_count)
-    except Exception:
-        tx_section["mempool_txs"] = tx_count
-
-    size_est = getattr(pool, "current_size", None)
-    if size_est is not None:
-        try:
-            tx_section["mempool_vbytes_estimate"] = int(size_est)
-        except Exception:
-            tx_section["mempool_vbytes_estimate"] = size_est
-    
-def _choose_relay_route(self, hops: int = 2) -> list[tuple]:
-    try:
-        with self.lock:
-            pool = list(self.peers)
-        random.shuffle(pool)
-        return pool[:max(1,hops)]
-    except Exception:
-        return []
-
-def _relay_chain(self, route: list[tuple], inner: dict, src_addr=None):
-    if not route:
-        return
-    first = route[0]
-    payload = {"type":"CHAT_RELAY","route": route[1:], "inner": inner}
-    self._send_chat_relay(first, payload)
-
-def _send_chat_relay(self, peer: tuple, payload: dict):
-    try:
-        self._send_to_peer(peer, payload)
-        return {"status":"ok"}
-    except Exception:
-        log.exception("[_send_chat_relay] send error to %s", peer)
-        return {"status":"error"}
