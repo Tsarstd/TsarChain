@@ -195,6 +195,8 @@ Payout: Per epoch, storage nodes passing proofs split the available pool for thi
 
 ### --- Next Implementation Steps (Dev Notes) --- 
 
+	- archivist tidak dapat membaca file graffiti yang diterima di storagenya sendiri, tidak tampil di UI, padahal di storage sudah ada
+
 	- Retention Proof Scheduler: rancang worker storage node yang periodik menjalankan byte-range challenge sebelum pool balance dibagikan; log penalti jika bukti absen.
  
 	- Storage Automation: definisikan template transaksi on-chain untuk payout pool (mis. script khusus) sehingga klaim bisa otomatis mengikuti aturan konsensus.

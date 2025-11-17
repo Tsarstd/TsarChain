@@ -512,11 +512,6 @@ STORAGE_MAX_BYTES                  = 10 * 1024 * 1024 * 1024  # cap on cumulativ
 STORAGE_MIN_CONFIRM                = 2  # confirmations required before serving stored data
 ALLOW_UNREGISTERED_STORAGE_UPLOADS = True  # permit uploads from nodes without registry entries
 
-# ---- STORAGE RPC SECURITY ----
-STORAGE_RPC_LOCAL_ONLY = True  # restrict privileged storage RPCs to localhost when no token is supplied
-STORAGE_RPC_ALLOWED_IPS = ("127.0.0.1", "::1")  # loopback addresses permitted during local-only mode
-STORAGE_RPC_TOKEN = (os.getenv("TSAR_STORAGE_RPC_TOKEN") or "").strip() or None  # optional shared secret for remote storage RPCs
-
 
 # =============================================================================
 # 13. LOGGING
