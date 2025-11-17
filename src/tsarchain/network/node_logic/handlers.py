@@ -1,0 +1,262 @@
+from __future__ import annotations
+
+import json
+import time
+from typing import List
+
+from ...utils import config as CFG
+from ...utils.tsar_logging import get_ctx_logger
+from .storage_registry import register_storage_peer
+
+log = get_ctx_logger("tsarchain.network.node_logic.handlers")
+
+
+def _handle_hello(self, message, addr):
+    peer_ip = addr[0] if isinstance(addr, tuple) and len(addr) > 0 else str(message.get("ip", "")).strip()
+    try:
+        peer_port = int(message.get("port", 0))
+    except Exception:
+        peer_port = 0
+    peer_tuple = (peer_ip, peer_port) if peer_ip and isinstance(peer_port, int) and peer_port > 0 else None
+
+    role = str(message.get("role", "")).strip().upper()
+    now = time.time()
+    try:
+        advertised_height = int(message.get("height", -1))
+    except Exception:
+        advertised_height = -1
+
+    is_storage = role == "NODE_STORAGE"
+    if is_storage:
+        meta = {
+            "addr": (message.get("address") or "").strip().lower(),
+            "url": (message.get("url") or "").strip(),
+            "ip": peer_ip,
+            "port": int(peer_port or 0),
+            "last_seen": int(now),
+            "alive": True,
+            "trusted": bool(message.get("trusted", False)),
+        }
+        register_storage_peer(self, peer_ip, meta)
+
+    incoming_peers = message.get("peers") or []
+    normalized_incoming = []
+    for entry in incoming_peers:
+        if isinstance(entry, dict):
+            ip = str(entry.get("ip") or entry.get("host") or "").strip()
+            try:
+                port = int(entry.get("port", 0))
+            except Exception:
+                port = 0
+            if not ip or port <= 0:
+                continue
+            if self._is_local_address(ip) and port == self.port:
+                continue
+            normalized_incoming.append((ip, port))
+
+    with self.lock:
+        if (not is_storage) and peer_tuple and not (self._is_local_address(peer_tuple[0]) and peer_tuple[1] == self.port):
+            self.peers.add(peer_tuple)
+            self.peer_scores.setdefault(peer_tuple, CFG.PEER_SCORE_START)
+            if advertised_height >= 0:
+                self._peer_best_height[peer_tuple] = advertised_height
+
+        if not is_storage:
+            for cand in normalized_incoming:
+                if cand == peer_tuple:
+                    continue
+                self.peers.add(cand)
+                self.peer_scores.setdefault(cand, CFG.PEER_SCORE_START // 2)
+
+        sane_peers = [{"ip": ip, "port": port} for ip, port in self.peers if isinstance(port, int) and port > 0]
+        height = int(self.broadcast.blockchain.height)
+
+        try:
+            peer_port = int(message.get("port", -1))
+        except Exception:
+            peer_port = -1
+        if (not is_storage) and isinstance(addr, tuple) and peer_port > 0:
+            dst = (addr[0], peer_port)
+            try:
+                self.broadcast.send_mempool_to_peer(dst)
+            except Exception:
+                log.exception("[_handle_hello] failed to push mempool to %s", dst)
+
+    if (not is_storage) and peer_tuple:
+        self._reward_peer(peer_tuple)
+
+    return {
+        "type": "HELLO_RESPONSE",
+        "port": self.port,
+        "height": height,
+        "peers": sane_peers,
+    }
+
+
+def _handle_get_headers(self, message, addr):
+    locator = message.get("locator") or []
+    try:
+        limit = int(message.get("limit", CFG.HEADERS_BATCH_MAX))
+    except Exception:
+        limit = CFG.HEADERS_BATCH_MAX
+
+    limit = max(1, min(limit, CFG.HEADERS_BATCH_MAX))
+    with self.broadcast.lock:
+        chain = list(self.broadcast.blockchain.chain)
+    start_idx = 0
+    if locator:
+        known = {}
+        for idx, blk in enumerate(chain):
+            try:
+                known[blk.hash().hex()] = idx
+            except Exception:
+                continue
+
+        for cand in locator:
+            idx = known.get(str(cand))
+            if idx is not None:
+                start_idx = idx + 1
+                break
+
+    headers = []
+    for blk in chain[start_idx : start_idx + limit]:
+        try:
+            prev_hash = (
+                blk.prev_block_hash.hex()
+                if isinstance(blk.prev_block_hash, (bytes, bytearray))
+                else str(blk.prev_block_hash)
+            )
+        except Exception:
+            prev_hash = None
+
+        headers.append(
+            {
+                "height": getattr(blk, "height", start_idx),
+                "hash": blk.hash().hex() if hasattr(blk, "hash") else getattr(blk, "hash", ""),
+                "prev_hash": prev_hash,
+                "timestamp": getattr(blk, "timestamp", 0),
+                "bits": getattr(blk, "bits", 0),
+            }
+        )
+    more = (start_idx + limit) < len(chain)
+    return {
+        "type": "HEADERS",
+        "headers": headers,
+        "more": more,
+        "best_height": max(-1, len(chain) - 1),
+    }
+
+
+def _handle_get_blocks(self, message, addr):
+    heights = message.get("heights") or []
+    if not isinstance(heights, list):
+        return {"type": "BLOCKS", "blocks": []}
+
+    limit = min(len(heights), CFG.BLOCK_DOWNLOAD_BATCH_MAX)
+    blocks: List[dict] = []
+    with self.broadcast.lock:
+        chain = list(self.broadcast.blockchain.chain)
+
+    for raw_h in heights[:limit]:
+        try:
+            h = int(raw_h)
+        except Exception:
+            continue
+        if 0 <= h < len(chain):
+            try:
+                blocks.append(chain[h].to_dict())
+            except Exception:
+                continue
+    return {"type": "BLOCKS", "blocks": blocks}
+
+
+def _handle_get_full_sync(self, message, addr):
+    ip = addr[0] if isinstance(addr, tuple) and len(addr) > 0 else "unknown"
+    now = time.time()
+    min_iv = CFG.FULL_SYNC_MIN_INTERVAL
+    last_served = self._full_sync_served_at.get(ip, 0.0)
+    if now - last_served < min_iv:
+        retry_after = max(30.0, min_iv - (now - last_served))
+        return {"type": "SYNC_REJECT", "reason": "rate_limited", "retry_after": retry_after}
+
+    self._full_sync_served_at[ip] = now
+    try:
+        blocks_available = max(0, self.broadcast.blockchain.height + 1)
+        if blocks_available > CFG.FULL_SYNC_MAX_BLOCKS:
+            return {
+                "type": "SYNC_REDIRECT",
+                "reason": "too_large_chain",
+                "limit_blocks": CFG.FULL_SYNC_MAX_BLOCKS,
+            }
+        full_obj, _, _, _ = self.broadcast.build_full_sync_payload()
+        try:
+            enc = json.dumps(full_obj, separators=CFG.CANONICAL_SEP, ensure_ascii=False).encode("utf-8")
+        except Exception as e:
+            return {"type": "SYNC_REDIRECT", "reason": "serialize_failed", "detail": str(e)}
+
+        hard_cap = min(CFG.MAX_MSG - len(CFG.NETWORK_MAGIC))
+        if len(enc) > hard_cap:
+            return {
+                "type": "SYNC_REDIRECT",
+                "reason": "payload_would_exceed_limit",
+                "limit_bytes": hard_cap,
+            }
+        return full_obj
+    except Exception as e:
+        return {"type": "SYNC_REDIRECT", "reason": "internal_error", "detail": str(e)}
+
+
+def _handle_full_sync(self, message, addr):
+    try:
+        now = time.time()
+        if now - getattr(self, "_last_fullsync_log", 0.0) > 5.0:
+            log.trace("[_handle_full_sync] Received full sync from %s:%s", addr[0], addr[1] if len(addr) > 1 else 0)
+            self._last_fullsync_log = now
+    except Exception:
+        pass
+
+    payload = message.get("data", message)
+    self.broadcast.receive_full_sync(payload)
+    return {"status": "ok"}
+
+
+def _handle_get_block_at(self, height: int) -> dict:
+    try:
+        with self.broadcast.lock:
+            chain = list(self.broadcast.blockchain.chain)
+        if height < 0 or height >= len(chain):
+            return {"type": "BLOCK", "error": "height_out_of_range"}
+
+        b = chain[height]
+        d = self._serialize_block(b)
+        d["type"] = "BLOCK"
+        return d
+    except Exception as e:
+        return {"type": "BLOCK", "error": str(e)}
+
+
+def _handle_get_block_by_hash(self, hx: str) -> dict:
+    try:
+        hx = (hx or "").strip().lower()
+        with self.broadcast.lock:
+            chain = list(self.broadcast.blockchain.chain)
+        for b in chain:
+            if self._bhash_hex(b).lower() == hx:
+                d = self._serialize_block(b)
+                d["type"] = "BLOCK"
+                return d
+        return {"type": "BLOCK", "error": "not_found"}
+
+    except Exception as e:
+        return {"type": "BLOCK", "error": str(e)}
+
+
+__all__ = (
+    "_handle_hello",
+    "_handle_get_headers",
+    "_handle_get_blocks",
+    "_handle_get_full_sync",
+    "_handle_full_sync",
+    "_handle_get_block_at",
+    "_handle_get_block_by_hash",
+)

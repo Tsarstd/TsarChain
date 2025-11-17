@@ -104,9 +104,6 @@ class Broadcast:
             
         except OSError as e:
             log.warning("[_send] OSError sending to %s: %s", peer, getattr(e, "strerror", e))
-            
-        except Exception:
-            log.warning("[_send] Send to %s failed (unexpected)", peer, exc_info=True)
 
         try:
             fm = self._failmap.get(peer) or {"fails": 0, "last": 0.0}
@@ -115,7 +112,9 @@ class Broadcast:
             self._failmap[peer] = fm
             
         except Exception:
+            log.warning("[_send] Send to %s failed (unexpected)", peer, exc_info=True)
             pass
+        
         return False
 
     def _request_full_sync(self, peer: Tuple[str, int]) -> bool:

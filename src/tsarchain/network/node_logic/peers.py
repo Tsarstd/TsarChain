@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+from typing import Any, Optional, Set, Tuple, TYPE_CHECKING
+from ...utils import config as CFG
+
+if TYPE_CHECKING:
+    from ...core.block import Block
+
+
+def normalize_peer(self, peer: Any) -> Optional[Tuple[str, int]]:
+    if not peer:
+        return None
+    if isinstance(peer, tuple) and len(peer) == 2:
+        try:
+            return (str(peer[0]), int(peer[1]))
+        except Exception:
+            return None
+    if isinstance(peer, list) and len(peer) == 2:
+        try:
+            return (str(peer[0]), int(peer[1]))
+        except Exception:
+            return None
+    return None
+
+
+def penalize_peer(self, peer: Any, amount: int) -> None:
+    norm = self._normalize_peer(peer)
+    if norm is None:
+        return
+    delta = max(1, int(amount))
+    with self.lock:
+        score = self.peer_scores.get(norm, CFG.PEER_SCORE_START) - delta
+        self.peer_scores[norm] = score
+        if score <= CFG.PEER_SCORE_MIN:
+            self.peers.discard(norm)
+            self.outbound_peers.discard(norm)
+            self._peer_best_height.pop(norm, None)
+            self._peer_last_sync.pop(norm, None)
+            self._peer_last_mempool_sync.pop(norm, None)
+
+
+def reward_peer(self, peer: Any, amount: int = CFG.PEER_SCORE_REWARD) -> None:
+    norm = self._normalize_peer(peer)
+    if norm is None:
+        return
+    delta = max(0, int(amount))
+    with self.lock:
+        score = self.peer_scores.get(norm, CFG.PEER_SCORE_START) + delta
+        self.peer_scores[norm] = min(score, CFG.PEER_SCORE_START * 5)
+        self.peers.add(norm)
+        if len(self.outbound_peers) < CFG.MAX_OUTBOUND_PEERS or norm in self.outbound_peers:
+            self.outbound_peers.add(norm)
+
+
+def collect_broadcast_peers(self) -> Set[Tuple[str, int]]:
+    with self.lock:
+        targets: Set[Tuple[str, int]] = set(self.outbound_peers)
+        targets.update(self.inbound_peers)
+        if not targets:
+            targets.update(self.peers)
+    return targets
+
+
+def publish_block(self, block: "Block", exclude: Optional[Tuple[str, int]] = None, force: bool = True) -> int:
+    Block = None
+    if Block is not None and not isinstance(block, Block):
+        raise TypeError("block must be a Block instance")
+    peers = self._collect_broadcast_peers()
+    if not peers:
+        return 0
+    return self.broadcast.broadcast_block(block, peers, exclude=exclude, force=force)
+
+
+__all__ = (
+    "normalize_peer",
+    "penalize_peer",
+    "reward_peer",
+    "collect_broadcast_peers",
+    "publish_block",
+)
