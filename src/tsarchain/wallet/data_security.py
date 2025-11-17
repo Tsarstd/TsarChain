@@ -178,6 +178,7 @@ def _secure_store(namespace: str, key: str, path: Optional[Path], data: Dict, pa
     enc = encrypt_blob(json.dumps(data, separators=(",", ":")).encode("utf-8"), pwd)
     payload = {"version": 1, "enc": enc}
     _secure_backend_write(namespace, key, path, payload)
+    
 def load_chat_state(default: Optional[Dict] = None) -> Dict:
     fallback = default or {"blocked": [], "pubcache": {}, "textsize": "Medium"}
     path_obj = Path(CFG.CHAT_STATE)
