@@ -16,24 +16,8 @@ __all__ = ["handle_storage_rpc"]
 
 
 def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[tuple], mtype: str) -> dict | None:
-    if mtype == "GRAFFITI_GET_POSTS":
-        limit = int(message.get("limit", 50) or 50)
-        limit = max(1, min(limit, 500))
-        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
-        posts = reg.list_posts(limit) if reg else []
-        return {"type": "GRAFFITI_GET_POSTS", "posts": posts}
 
-    elif mtype == "GRAFFITI_GET_COMMENTS":
-        art_id = str(message.get("art_id") or "").strip().lower()
-        if not art_id:
-            return {"type": "GRAFFITI_GET_COMMENTS", "comments": []}
-        limit = int(message.get("limit", 100) or 100)
-        limit = max(1, min(limit, 500))
-        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
-        comments = reg.list_comments(art_id, limit) if reg else []
-        return {"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id, "comments": comments}
-
-    elif mtype == "GRAFFITI_GET_PAYOUTS":
+    if mtype == "GRAFFITI_GET_PAYOUTS":
         art_id = str(message.get("art_id") or "").strip().lower()
         if not art_id:
             return {"type": "GRAFFITI_GET_PAYOUTS", "payouts": []}

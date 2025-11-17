@@ -40,14 +40,14 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
 
     NODE_STORAGE = {
         "STOR_INIT", "STOR_PUT", "STOR_COMMIT", "STOR_STATUS", "STOR_GC", "STOR_PAID",
-        "GRAFFITI_GET_POSTS", "GRAFFITI_GET_COMMENTS", "GRAFFITI_GET_PAYOUTS", "GRAFFITI_POOL_PAYOUT",
+        "GRAFFITI_GET_PAYOUTS", "GRAFFITI_POOL_PAYOUT",
     }
-    STORAGE_PRIV_OPS = {"STOR_PUT", "STOR_COMMIT", "STOR_STATUS", "STOR_INDEX", "STOR_GC", "STOR_PAID"}
 
     USER = {
         "PING", "GET_BALANCES", "CREATE_TX", "CREATE_TX_MULTI", "GET_INFO",
         "GET_TX_HISTORY", "GET_TX_DETAIL", "NEW_TX", "GET_UTXOS", "GET_PEERS",
         "GET_NETWORK_INFO", "GET_BLOCK_AT", "GET_BLOCK", "GET_BLOCK_HASH", "STOR_LIST",
+        "GRAFFITI_GET_POSTS", "GRAFFITI_GET_COMMENTS", 
 
         # Chat & storage listing
         "CHAT_REGISTER", "CHAT_LOOKUP_PUB", "CHAT_PRESENCE", "CHAT_SEND", "CHAT_PULL", "CHAT_RELAY", "CHAT_READ",
@@ -104,21 +104,11 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
     if (mtype not in MINERS) and (mtype not in USER) and (mtype not in NODE_STORAGE):
         return {"error": "unknown type"}
 
-    if mtype in STORAGE_PRIV_OPS:
-        allowed, deny_resp = _storage_request_allowed()
-        if not allowed:
-            return deny_resp
-
-    dispatch_result = None
     if mtype in MINERS:
-        dispatch_result = handle_miner_rpc(self, message, addr, mtype)
-        if dispatch_result is not None:
-            return dispatch_result
+        return handle_miner_rpc(self, message, addr, mtype)
 
     if mtype in NODE_STORAGE:
-        dispatch_result = handle_storage_rpc(self, message, addr, mtype)
-        if dispatch_result is not None:
-            return dispatch_result
+        return handle_storage_rpc(self, message, addr, mtype)
 
     dispatch_result = handle_user_rpc(
         self,
