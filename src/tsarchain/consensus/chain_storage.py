@@ -16,7 +16,6 @@ import hashlib
 import threading
 
 from ..core.block import Block
-from ..mempool.pool import TxPoolDB
 from ..storage.utxo import UTXODB
 from ..storage.kv import kv_enabled, batch, iter_prefix, clear_db, delete, _ensure_env
 from ..utils import config as CFG

@@ -503,6 +503,7 @@ class TsarStorageGUI:
         self._retention_stop = threading.Event()
         self._retention_thread: Optional[threading.Thread] = None
         self._pending_paid: set[str] = set()
+        self._pool_data: dict[str, Dict[str, Any]] = {}
         self._storage_port: Optional[int] = None
         self._server: Optional[StorageServer] = None
         self.addr_var = tk.StringVar(value=self.rpc.address or "")
@@ -583,6 +584,20 @@ class TsarStorageGUI:
         action_row = ttk.Frame(table, padding=(0, 4))
         action_row.pack(fill=tk.X)
         ttk.Button(action_row, text="Mark Selected Paid", command=self._mark_selected_paid).pack(side=tk.LEFT, padx=6)
+
+        pool_fr = ttk.LabelFrame(self.root, text="Storage Pool Balances", padding=(10, 6))
+        pool_fr.pack(fill=tk.BOTH, expand=False, padx=10, pady=(4, 4))
+        pool_cols = ("graffiti_id","pool","size","creator","comments")
+        self.pool_tree = ttk.Treeview(pool_fr, columns=pool_cols, show="headings", height=6)
+        for c, w in [("graffiti_id",220),("pool",120),("size",100),("creator",120),("comments",80)]:
+            self.pool_tree.heading(c, text=c)
+            self.pool_tree.column(c, width=w, stretch=(c=="graffiti_id"))
+        self.pool_tree.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0,4))
+        pool_btn = ttk.Frame(pool_fr)
+        pool_btn.pack(fill=tk.X, pady=(0,4))
+        ttk.Button(pool_btn, text="Claim Pool Payout", command=self._claim_pool_payout).pack(side=tk.LEFT, padx=4)
+        self.pool_status_var = tk.StringVar(value="Pool status pending.")
+        ttk.Label(pool_fr, textvariable=self.pool_status_var).pack(anchor="w", padx=4)
 
         # Log
         logf = ttk.Frame(self.root, padding=10)
@@ -747,6 +762,52 @@ class TsarStorageGUI:
                 meta.get("state"),
                 meta.get("path")
             ))
+        self._refresh_pool_listing(files)
+
+    def _refresh_pool_listing(self, files: Dict[str, Any]) -> None:
+        if not getattr(self, "pool_tree", None):
+            return
+        rpc = getattr(self, "rpc", None)
+        if not rpc:
+            self.pool_status_var.set("RPC unavailable.")
+            return
+        try:
+            resp = rpc.call({"type":"GRAFFITI_GET_POSTS","limit":500}, timeout=6.0) or {}
+        except Exception:
+            self.pool_status_var.set("Pool fetch failed.")
+            return
+        posts = resp.get("posts") or []
+        self.pool_tree.delete(*self.pool_tree.get_children())
+        self._pool_data = {}
+        files_by_sha = {}
+        for aid, meta in (files or {}).items():
+            sha = str(meta.get("sha256") or "").lower()
+            if sha:
+                files_by_sha[sha] = {"id": aid, "meta": meta}
+
+        for art in posts:
+            aid = art.get("art_id")
+            sha = str(art.get("sha256") or "").lower()
+            file_meta = files_by_sha.get(sha)
+            if not (aid and file_meta):
+                continue
+            stats = art.get("stats") or {}
+            pool_balance = stats.get("pool_balance", 0)
+            creator = (art.get("creator") or "")[:18]
+            comments = stats.get("comments", 0)
+            size_bytes = int(file_meta["meta"].get("size_bytes", 0))
+            self._pool_data[aid] = {"post": art, "stats": stats, "file": file_meta["meta"]}
+            self.pool_tree.insert("", tk.END, values=(
+                aid[:16] + ("..." if len(aid) > 16 else ""),
+                f"{pool_balance / CFG.TSAR:.8f}",
+                f"{size_bytes:,}",
+                creator,
+                comments,
+            ))
+        if self._pool_data:
+            self.pool_status_var.set(f"{len(self._pool_data)} karya dengan saldo pool.")
+        else:
+            self.pool_status_var.set("Belum ada saldo pool untuk karya tersimpan.")
 
     def _mark_selected_paid(self) -> None:
         if not self.connected:
@@ -779,6 +840,7 @@ class TsarStorageGUI:
         self._retention_thread = t
         t.start()
         log.info("Started retention worker thread")
+        
     def _attempt_reconnect(self) -> bool:
         target = getattr(self, "_target_node", None)
         storage_port = self._storage_port
@@ -861,6 +923,59 @@ class TsarStorageGUI:
                 self.logln(f"[Payout] Cleared for {aid}")
                 log.info("[Payout] cleared - %s", aid)
         self._pending_paid = current
+
+    def _claim_pool_payout(self) -> None:
+        if not self.connected or not getattr(self, "pool_tree", None):
+            messagebox.showwarning("Pool", "Hubungkan node terlebih dahulu.")
+            return
+        sel = self.pool_tree.selection()
+        if not sel:
+            messagebox.showinfo("Pool", "Pilih karya dari daftar pool.")
+            return
+        art_id = self.pool_tree.item(sel[0], "values")[0]
+        entry = self._pool_data.get(art_id)
+        if not entry:
+            messagebox.showerror("Pool", "Data pool tidak ditemukan.")
+            return
+        stats = entry.get("stats") or {}
+        pool_balance = int(stats.get("pool_balance", 0))
+        if pool_balance <= 0:
+            messagebox.showinfo("Pool", "Saldo pool nol.")
+            return
+        amount_str = simpledialog.askstring("Claim Pool",
+                                            f"Saldo tersedia {pool_balance / CFG.TSAR:.8f} TSAR.\nMasukkan jumlah TSAR yang ingin diklaim:",
+                                            parent=self.root,
+                                            initialvalue=f"{pool_balance / CFG.TSAR:.8f}")
+        if amount_str is None:
+            return
+        try:
+            amount = float(amount_str.replace(",", "."))
+            amount_sats = int(amount * CFG.TSAR)
+        except Exception:
+            messagebox.showerror("Pool", "Jumlah tidak valid.")
+            return
+        if amount_sats <= 0 or amount_sats > pool_balance:
+            messagebox.showerror("Pool", "Jumlah melebihi saldo.")
+            return
+        txid = simpledialog.askstring("Claim Pool", "Masukkan TXID payout (opsional):", parent=self.root) or ""
+        recipient = (self.addr_var.get() or self.rpc.address or "").strip().lower()
+        try:
+            resp = self.rpc.call({
+                "type":"GRAFFITI_POOL_PAYOUT",
+                "art_id": art_id,
+                "amount": amount_sats,
+                "recipient": recipient,
+                "txid": txid.strip(),
+            }, timeout=6.0)
+        except Exception as exc:
+            messagebox.showerror("Pool", f"RPC error: {exc}")
+            return
+        if isinstance(resp, dict) and resp.get("status") in (None, "ok"):
+            self.logln(f"[Pool] Claimed {amount:.8f} TSAR for {art_id[:10]}...")
+            self.pool_status_var.set("Payout recorded.")
+            self.refresh_all()
+        else:
+            messagebox.showerror("Pool", f"Gagal klaim: {resp}")
 
     # ---------- Heartbeat ------------
     def _heartbeat(self):

@@ -16,7 +16,6 @@ from ..storage.kv import kv_enabled, iter_prefix, batch, clear_db
 from ..storage.db import BaseDatabase
 from ..core.tx import Tx
 from ..storage.utxo import UTXODB
-from ..contracts.storage_nodes import StorageNodeRegistry
 from ..utils.helpers import is_p2wpkh_script, bip143_sig_hash, hash160, hash256, serialize_tx_for_txid
 from ..utils import helpers as H
 from ..utils import config as CFG
@@ -885,17 +884,7 @@ class TxPoolDB(BaseDatabase):
                 log.warning("[validate_transaction] Unsupported scriptPubKey type in vin %d", i)
                 self.last_error_reason = "unsupported_spk_type"
                 return False
-        try:
-            reg = StorageNodeRegistry()
-            if not reg.validate_tx(tx):
-                self.last_error_reason = "storage_reg_invalid"
-                return False
             
-        except Exception:
-            log.warning("[validate_transaction] Storage REG check exception")
-            self.last_error_reason = "storage_reg_error"
-            return False
-
         return True
 
 

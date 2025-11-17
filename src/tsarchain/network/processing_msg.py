@@ -48,6 +48,8 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         "GET_TX_HISTORY", "GET_TX_DETAIL", "NEW_TX", "GET_UTXOS", "GET_PEERS",
         "GET_NETWORK_INFO", "GET_BLOCK_AT", "GET_BLOCK", "GET_BLOCK_HASH", "STOR_LIST",
         "GRAFFITI_GET_POSTS", "GRAFFITI_GET_COMMENTS",
+        "GRAFFITI_GET_PAYOUTS", "GRAFFITI_POOL_PAYOUT",
+        "GRAFFITI_GET_POSTS", "GRAFFITI_GET_COMMENTS",
 
         # Chat & storage listing
         "CHAT_REGISTER", "CHAT_LOOKUP_PUB", "CHAT_PRESENCE", "CHAT_SEND", "CHAT_PULL", "CHAT_RELAY", "CHAT_READ",
@@ -281,16 +283,6 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         except Exception:
             log.exception("[process_message] GET_INFO peers count error")
             info["peers"] = 0
-        if self.storage_service:
-            idx = self.storage_service.index()
-            files = idx.get("files", {}) if isinstance(idx, dict) else {}
-            info["storage_address"] = self.storage_address
-            info["storage_files"] = len(files)
-            info["storage_bytes_used"] = int(idx.get("bytes_used", 0)) if isinstance(idx, dict) else 0
-        else:
-            info["storage_address"] = self.storage_address
-            info["storage_files"] = 0
-            info["storage_bytes_used"] = 0
         return info
 
     elif mtype == "GET_NETWORK_INFO":
@@ -1022,6 +1014,8 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             log.exception("[process_message] CREATE_TX_MULTI error from %s", addr)
             return {"error": "CREATE_TX_MULTI failed"}
 
+    # =============== STORAGE RPC (ROLE: NODE_STORAGE) ===============
+
     elif mtype == "GRAFFITI_GET_POSTS":
         limit = int(message.get("limit", 50) or 50)
         limit = max(1, min(limit, 500))
@@ -1038,56 +1032,41 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
         comments = reg.list_comments(art_id, limit) if reg else []
         return {"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id, "comments": comments}
-        
-        
-    # =============== STORAGE RPC (ROLE: NODE_STORAGE) ===============
 
-    elif mtype == "STOR_PUT":
-        upid = message.get("upload_id")
-        
-        if "b64" in message or "chunk_index" in message:
-            idx = int(message.get("chunk_index") or 0)
-            b64 = message.get("b64") or ""
-        else:
-            hexdata = (message.get("data") or "")
-            try:
-                raw = bytes.fromhex(hexdata)
-                b64 = base64.b64encode(raw).decode("ascii")
-                idx = 0
-            except Exception:
-                log.exception("[process_message] STOR_PUT bad hex data from %s", addr)
-                return {"type": "STOR_ACK", "status":"rejected", "reason":"bad_hex"}
+    elif mtype == "GRAFFITI_GET_PAYOUTS":
+        art_id = str(message.get("art_id") or "").strip().lower()
+        if not art_id:
+            return {"type": "GRAFFITI_GET_PAYOUTS", "payouts": []}
+        limit = int(message.get("limit", 100) or 100)
+        limit = max(1, min(limit, 500))
+        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
+        payouts = reg.list_payouts(art_id, limit) if reg else []
+        return {"type": "GRAFFITI_GET_PAYOUTS", "art_id": art_id, "payouts": payouts}
 
-        resp = self.storage_service.put_chunk(upid, int(idx), b64)
-        return {"type":"STOR_ACK", **resp}
-
-    elif mtype == "STOR_COMMIT":
-        upid = message.get("upload_id")
-        resp = self.storage_service.commit_upload(upid)
-        return {"type":"STOR_ACK", **resp}
-
-    elif mtype == "STOR_STATUS":
-        gid = message.get("graffiti_id")
-        resp = self.storage_service.status(gid)
-        return {"type":"STOR_ACK", **resp}
-
-    elif mtype == "STOR_INDEX":
-        resp = self.storage_service.index()
-        return {"type":"STOR_ACK", **resp}
-
-    elif mtype == "STOR_GC":
-        if not self.storage_service:
-            return {"type":"STOR_ACK","status":"rejected","reason":"storage_disabled"}
-        tip = int(message.get("tip_height") or 0)
-        resp = self.storage_service.gc(tip)
-        return {"type":"STOR_ACK", **resp}
-
-    elif mtype == "STOR_PAID":
-        gid  = message.get("graffiti_id")
-        txid = message.get("txid")
-        resp = self.storage_service.mark_paid(gid, txid)
-        return {"type":"STOR_ACK", **resp}
-
+    elif mtype == "GRAFFITI_POOL_PAYOUT":
+        art_id = str(message.get("art_id") or "").strip().lower()
+        try:
+            amount = int(message.get("amount", 0))
+        except Exception:
+            amount = 0
+        recipient = str(message.get("recipient") or "").strip().lower() or "storage"
+        txid = str(message.get("txid") or "").strip() or "offchain"
+        if not art_id or amount <= 0:
+            return {"error": "bad_request"}
+        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
+        if not reg:
+            return {"error": "registry_unavailable"}
+        post = reg.get_post(art_id)
+        if not post:
+            return {"error": "unknown_art_id"}
+        stats = post.setdefault("stats", {})
+        pool_balance = int(stats.get("pool_balance", 0))
+        if pool_balance < amount:
+            return {"error": "insufficient_pool_balance", "pool_balance": pool_balance}
+        height = getattr(getattr(self.broadcast, "blockchain", None), "height", 0)
+        reg.record_payout(art_id, {recipient: amount}, txid, height)
+        return {"status": "ok", "art_id": art_id, "pool_balance": int(stats.get("pool_balance", 0))}
+    
     else:
         return {"error": "Unknown message type"}
 

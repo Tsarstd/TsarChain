@@ -4,8 +4,7 @@
 # Refs: BIP173; Merkle; Signal-X3DH
 
 from __future__ import annotations
-import socket, threading, json, time, os, random
-from bech32 import convertbits, bech32_encode
+import socket, threading, json, time, random
 from typing import Any, Dict, List, Optional, Tuple, Set
 from collections import deque
 
@@ -14,8 +13,6 @@ from ..utils import config as CFG
 from ..core.block import Block
 from ..core.tx import Tx
 from .broadcast import Broadcast
-from ..contracts.storage_nodes import StorageService
-from ..utils.helpers import hash160
 from .processing_msg import process_message
 from .protocol import (send_message, recv_message,build_envelope, verify_and_unwrap,
                         load_or_create_node_keys, is_envelope, sniff_first_json_frame, SecureChannel)
@@ -82,22 +79,9 @@ class Network:
             "node_id": self.node_id,
             "pubkey": self.pubkey,
             "privkey": self.privkey,}
-        self.storage_service = None
-        self.storage_peers = {}
-        try:
-            pkh = hash160(bytes.fromhex(self.pubkey))
-            data = [0] + list(convertbits(pkh, 8, 5, True))
-            self.storage_address = bech32_encode(CFG.ADDRESS_PREFIX, data)
-        except Exception:
-            self.storage_address = None
-            
-        try:
-            self.storage_service = StorageService(self.storage_address or "unknown", self.node_id)
-        except Exception:
-            log.exception("[__init__] Failed to init StorageService")
-            self.storage_service = None
-            
+        self.storage_peers = {} 
         self.peer_pubkeys: dict[str, str] = {}
+        
         try:
             self.broadcast._encode = lambda inner: build_envelope(inner, self.node_ctx, extra={"pubkey": self.pubkey})
         except Exception:

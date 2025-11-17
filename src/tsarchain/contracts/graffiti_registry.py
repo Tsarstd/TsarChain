@@ -50,6 +50,9 @@ class GraffitiRegistry:
 
     def record_post(self, art_id: str, meta: Dict[str, Any], txid: str, block_height: int, pool_addr: str, amount_paid: int) -> None:
         posts = self.data.setdefault("posts", {})
+        existing = posts.get(art_id)
+        if existing and existing.get("txid") == txid:
+            return
         entry = dict(meta)
         entry.update({
             "art_id": art_id,
@@ -84,6 +87,9 @@ class GraffitiRegistry:
             "storage_paid": int(storage_paid),
             "ts": int(meta.get("ts") or time.time()),
         }
+        existing_txids = {item.get("txid") for item in thread}
+        if txid in existing_txids:
+            return
         thread.append(entry)
         post = self.get_post(art_id)
         if post:
@@ -111,6 +117,15 @@ class GraffitiRegistry:
             "amount": int(total),
         })
         self._flush()
+
+    def list_payouts(self, art_id: str, limit: int = 100) -> list[Dict[str, Any]]:
+        art_id = (art_id or "").strip().lower()
+        payouts = (self.data.get("payouts") or {}).get(art_id, [])
+        items = [dict(entry) for entry in payouts]
+        items.sort(key=lambda r: int(r.get("block_height") or 0), reverse=True)
+        if isinstance(limit, int) and limit > 0:
+            return items[:limit]
+        return items
 
     def list_posts(self, limit: int = 50) -> list[Dict[str, Any]]:
         posts = self.data.get("posts") or {}

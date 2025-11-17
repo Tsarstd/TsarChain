@@ -140,7 +140,6 @@ LEGACY_PEER_KEYS_PATH = "data_user/peer_keys.json"  # legacy peer key cache kept
 # ---- CONTRACT STORAGE ----
 CONTRACTS_DIR      = "data/Contracts"  # storage root for contract-like payloads
 GRAFFITI_FILE      = os.path.join(CONTRACTS_DIR, "graffiti.json")  # graffiti metadata archive path
-STORAGE_NODES_FILE = os.path.join(CONTRACTS_DIR, "storage_nodes.json")  # known storage provider registry
 
 
 # =============================================================================
@@ -157,7 +156,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "0001a66b6c8859103bd553cea2f5deefb74df9f1b83c09da2251a073ee6cea49"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "000703efc3753e208f771ea7cd38d938e8338d45b8b70f4dd230c458378c9c91"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 

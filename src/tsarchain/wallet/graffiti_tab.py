@@ -76,6 +76,8 @@ class GraffitiTab(ttk.Frame):
         self.comment_split_var = StringVar(value="")
         self.comment_send_btn: ttk.Button | None = None
         self._comment_plan: Optional[Dict[str, Any]] = None
+        self.payout_tree: ttk.Treeview | None = None
+        self.payout_status_var = StringVar(value="Payout history pending.")
 
         self._build_style()
         self.configure(style="Tsar.TFrame")
@@ -216,53 +218,99 @@ class GraffitiTab(ttk.Frame):
         left_top.pack(fill="x")
         ttk.Button(left_top, text="Refresh Catalog", style="Tsar.TButton", command=self._refresh_catalog).pack(side=tk.LEFT, padx=4, pady=4)
         ttk.Label(left_top, textvariable=self.catalog_status_var, style="Tsar.Card.Mono.TLabel").pack(side=tk.LEFT, padx=4)
+        tree_holder = ttk.Frame(left, style="Tsar.Card.TFrame")
+        tree_holder.pack(fill="both", expand=True, padx=4, pady=4)
         cols = ("art_id", "creator", "height", "size")
-        self.catalog_tree = ttk.Treeview(left, columns=cols, show="headings", height=8)
+        self.catalog_tree = ttk.Treeview(tree_holder, columns=cols, show="headings", height=6)
         for c, w in [("art_id", 160), ("creator", 120), ("height", 70), ("size", 80)]:
             self.catalog_tree.heading(c, text=c)
             self.catalog_tree.column(c, width=w, stretch=(c == "art_id"))
-        self.catalog_tree.pack(fill="both", expand=True, padx=4, pady=4)
+        catalog_scroll = ttk.Scrollbar(tree_holder, orient=tk.VERTICAL, command=self.catalog_tree.yview)
+        self.catalog_tree.configure(yscrollcommand=catalog_scroll.set)
+        self.catalog_tree.pack(side=tk.LEFT, fill="both", expand=True)
+        catalog_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.catalog_tree.bind("<<TreeviewSelect>>", lambda _e: self._on_catalog_select())
 
         right = ttk.Frame(explore_fr, style="Tsar.Card.TFrame")
         right.pack(side=tk.LEFT, fill="both", expand=True)
-        ttk.Label(right, textvariable=self.art_info_var, style="Tsar.Card.Mono.TLabel", wraplength=360)\
-            .pack(fill="x", padx=4, pady=(4, 2))
+        
+        art_info_frame = ttk.Frame(right, style="Tsar.Card.TFrame")
+        art_info_frame.pack(fill="x", padx=4, pady=(4, 2))
+        art_info_box = tk.Text(art_info_frame, height=4, wrap="word", borderwidth=0, background=self.theme.card_bg,
+                               foreground=self.theme.fg, font=("Consolas", 10))
+        art_info_box.pack(fill="x")
+        art_info_box.configure(state="disabled")
+        self.art_info_box = art_info_box
 
-        comments_frame = ttk.LabelFrame(right, text="Comments", style="Tsar.TLabelframe")
-        comments_frame.pack(fill="both", expand=True, padx=4, pady=(0, 4))
+        pane = ttk.Panedwindow(right, orient=tk.VERTICAL)
+        pane.pack(fill="both", expand=True, padx=4, pady=(0, 4))
+
+        notebook_holder = ttk.Frame(pane, style="Tsar.Card.TFrame")
+        pane.add(notebook_holder, weight=3)
+        notebook = ttk.Notebook(notebook_holder)
+        notebook.pack(fill="both", expand=True)
+
+        comments_tab = ttk.Frame(notebook)
+        notebook.add(comments_tab, text="Comments")
         cols_c = ("time", "from", "amt", "excerpt")
-        self.comment_tree = ttk.Treeview(comments_frame, columns=cols_c, show="headings", height=5)
+        comment_wrap = ttk.Frame(comments_tab)
+        comment_wrap.pack(fill="both", expand=True, padx=4, pady=4)
+        self.comment_tree = ttk.Treeview(comment_wrap, columns=cols_c, show="headings", height=4)
         for c, w in [("time", 110), ("from", 130), ("amt", 80), ("excerpt", 220)]:
             self.comment_tree.heading(c, text=c)
             self.comment_tree.column(c, width=w, stretch=(c == "excerpt"))
-        self.comment_tree.pack(fill="both", expand=True, padx=4, pady=4)
-        ttk.Button(comments_frame, text="Refresh Comments", style="Tsar.Secondary.TButton",
+        comment_scroll = ttk.Scrollbar(comment_wrap, orient=tk.VERTICAL, command=self.comment_tree.yview)
+        self.comment_tree.configure(yscrollcommand=comment_scroll.set)
+        self.comment_tree.pack(side=tk.LEFT, fill="both", expand=True)
+        comment_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        ttk.Button(comments_tab, text="Refresh", style="Tsar.Secondary.TButton",
                    command=self._refresh_current_comments).pack(anchor="e", padx=6, pady=(0, 4))
 
-        form = ttk.LabelFrame(right, text="Write Comment", style="Tsar.TLabelframe")
-        form.pack(fill="x", padx=4, pady=(0, 4))
+        payouts_tab = ttk.Frame(notebook)
+        notebook.add(payouts_tab, text="Payouts")
+        cols_p = ("height", "amount", "recipient", "txid")
+        payout_wrap = ttk.Frame(payouts_tab)
+        payout_wrap.pack(fill="both", expand=True, padx=4, pady=4)
+        self.payout_tree = ttk.Treeview(payout_wrap, columns=cols_p, show="headings", height=3)
+        for c, w in [("height", 70), ("amount", 110), ("recipient", 140), ("txid", 220)]:
+            self.payout_tree.heading(c, text=c)
+            self.payout_tree.column(c, width=w, stretch=(c == "txid"))
+        payout_scroll = ttk.Scrollbar(payout_wrap, orient=tk.VERTICAL, command=self.payout_tree.yview)
+        self.payout_tree.configure(yscrollcommand=payout_scroll.set)
+        self.payout_tree.pack(side=tk.LEFT, fill="both", expand=True)
+        payout_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        ttk.Button(payouts_tab, text="Refresh", style="Tsar.Secondary.TButton",
+                   command=lambda: self._refresh_payouts_for((self._selected_art or {}).get("art_id"))).pack(anchor="e", padx=6, pady=(0, 2))
+        ttk.Label(payouts_tab, textvariable=self.payout_status_var, style="Tsar.Card.Mono.TLabel").pack(anchor="w", padx=6, pady=(0, 4))
+
+        form_holder = ttk.Frame(pane, style="Tsar.Card.TFrame")
+        pane.add(form_holder, weight=1)
+        form = ttk.LabelFrame(form_holder, text="Write Comment", style="Tsar.TLabelframe")
+        form.pack(fill="both", expand=True, padx=4, pady=4)
         row1 = ttk.Frame(form, style="Tsar.Card.TFrame"); row1.pack(fill="x", padx=6, pady=(4, 2))
         ttk.Label(row1, text="Commenter Wallet:", style="Tsar.Card.TLabel").pack(side=tk.LEFT)
+        
         self.comment_wallet_cb = ttk.Combobox(row1, textvariable=self.comment_wallet_var, state="readonly", width=36, style="Tsar.TCombobox")
         self.comment_wallet_cb.pack(side=tk.LEFT, padx=6, fill="x", expand=True)
         row2 = ttk.Frame(form, style="Tsar.Card.TFrame"); row2.pack(fill="x", padx=6, pady=(2, 2))
         ttk.Label(row2, text="Base Amount (TSAR):", width=18, style="Tsar.Card.TLabel").pack(side=tk.LEFT)
+        
         amt_entry = ttk.Entry(row2, textvariable=self.comment_amount_var, width=14, style="Tsar.TEntry")
         amt_entry.pack(side=tk.LEFT, padx=(0, 8))
         ttk.Label(row2, text="Tip (TSAR):", style="Tsar.Card.TLabel").pack(side=tk.LEFT)
+        
         tip_entry = ttk.Entry(row2, textvariable=self.comment_tip_var, width=10, style="Tsar.TEntry")
         tip_entry.pack(side=tk.LEFT)
         self.comment_split_var.set("")
         ttk.Label(form, textvariable=self.comment_split_var, style="Tsar.Card.Mono.TLabel").pack(anchor="w", padx=6, pady=(0, 2))
-        self.comment_text = tk.Text(form, height=4, wrap="word")
+        self.comment_text = tk.Text(form, height=3, wrap="word")
         self.comment_text.pack(fill="x", padx=6, pady=(2, 2))
         btn_row = ttk.Frame(form, style="Tsar.Card.TFrame"); btn_row.pack(fill="x", padx=6, pady=(2, 4))
-        self.comment_send_btn = ttk.Button(btn_row, text="Broadcast COMMENT", style="Tsar.TButton",
+        
+        self.comment_send_btn = ttk.Button(btn_row, text="Comment", style="Tsar.TButton",
                                            state="disabled", command=self._broadcast_comment_tx)
         self.comment_send_btn.pack(side=tk.LEFT)
-        ttk.Button(btn_row, text="Clear", style="Tsar.Secondary.TButton",
-                   command=lambda: self.comment_text.delete("1.0", tk.END)).pack(side=tk.LEFT, padx=(8, 0))
+        
         ttk.Label(form, textvariable=self.comment_status_var, style="Tsar.Card.Mono.TLabel").pack(anchor="w", padx=6, pady=(2, 0))
 
         self.comment_amount_var.set(self._format_tsar(CFG.GRAFFITI_COMMENT_MIN_FEE))
@@ -629,20 +677,26 @@ class GraffitiTab(ttk.Frame):
         block_h = int(art.get("block_height") or 0)
         stats = art.get("stats") or {}
         pool_balance = stats.get("pool_balance", 0)
-        info = [
+        info = "\n".join([
             f"Art ID: {art_id}",
             f"Creator: {creator or '-'}",
             f"Block Height: {block_h}",
             f"Size: {size:,} bytes | sha256: {sha}...",
             f"Pool Address: {pool}",
-            f"Pool Balance: {self._format_tsar(pool_balance)} TSAR",
-        ]
-        self.art_info_var.set("\n".join(info))
+            f"Pool Balance: {self._format_tsar(pool_balance)} TSAR | Comments: {stats.get('comments',0)}",
+            f"Creator paid: {self._format_tsar(stats.get('creator_paid',0))} TSAR | Storage paid: {self._format_tsar(stats.get('storage_paid',0))} TSAR",
+        ])
+        if getattr(self, "art_info_box", None):
+            self.art_info_box.configure(state="normal")
+            self.art_info_box.delete("1.0", tk.END)
+            self.art_info_box.insert("1.0", info)
+            self.art_info_box.configure(state="disabled")
         if self.comment_send_btn:
             self.comment_send_btn.config(state="normal")
         self.comment_status_var.set("Ready to comment.")
         self._update_comment_split_preview()
         self._refresh_comments_for(art_id)
+        self._refresh_payouts_for(art_id)
 
     def _refresh_current_comments(self) -> None:
         if self._selected_art:
@@ -676,6 +730,8 @@ class GraffitiTab(ttk.Frame):
             amt_tsar = self._format_tsar(entry.get("amount", 0))
             excerpt = self._decode_comment_hex(entry.get("comment"))
             self.comment_tree.insert("", tk.END, values=(ts, commenter, f"{amt_tsar} TSAR", excerpt))
+        if not comments:
+            self.comment_status_var.set("Belum ada komentar untuk karya ini.")
 
     def _decode_comment_hex(self, comment_hex: Optional[str]) -> str:
         try:
@@ -703,6 +759,44 @@ class GraffitiTab(ttk.Frame):
         val = dec.quantize(quant, rounding=ROUND_DOWN)
         txt = format(val, "f").rstrip("0").rstrip(".")
         return txt or "0"
+
+    def _refresh_payouts_for(self, art_id: Optional[str]) -> None:
+        if not art_id:
+            return
+        rpc = getattr(self.app, "rpc", None)
+        if not rpc:
+            return
+        def handle(resp: Optional[Dict[str, Any]]):
+            self.after(0, lambda: self._apply_payouts(resp))
+        try:
+            rpc.send_async({"type":"GRAFFITI_GET_PAYOUTS","art_id": art_id}, handle)
+        except Exception:
+            self.payout_status_var.set("RPC payout error")
+
+    def _apply_payouts(self, resp: Optional[Dict[str, Any]]) -> None:
+        if not self.payout_tree:
+            return
+        rows = []
+        try:
+            rows = (resp or {}).get("payouts") or []
+        except Exception:
+            rows = []
+        self.payout_tree.delete(*self.payout_tree.get_children())
+        for entry in rows:
+            amt = self._format_tsar(entry.get("amount", 0))
+            rec = entry.get("recipients") or {}
+            recipient = ",".join(rec.keys()) or "-"
+            txid = entry.get("txid") or "-"
+            self.payout_tree.insert("", tk.END, values=(
+                entry.get("block_height") or "-",
+                f"{amt} TSAR",
+                recipient[:24],
+                txid[:32] + ("..." if txid and len(txid) > 32 else "")
+            ))
+        if rows:
+            self.payout_status_var.set(f"{len(rows)} payout record(s) ditemukan.")
+        else:
+            self.payout_status_var.set("Belum ada payout untuk karya ini.")
 
     def _parse_amount_str(self, raw: str, default: int) -> int:
         txt = (raw or "").strip()
