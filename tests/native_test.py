@@ -15,7 +15,7 @@ from tsarchain.core.tx import Tx, TxIn, TxOut
 from tsarchain.utils import config as CFG
 import tsarchain.utils.helpers as H
 from tsarchain.utils.helpers import Script
-from tsarchain.wallet.data_security import pubkey_from_privhex, pubkey_to_tsar_address
+from tsarchain.wallet.security.data_security import pubkey_from_privhex, pubkey_to_tsar_address
 
 
 def _configure_randomx_pow(use_lite: bool, cache_cap: int):
@@ -35,7 +35,7 @@ def _configure_randomx_pow(use_lite: bool, cache_cap: int):
 
     H._POW_ALGO = (CFG.POW_ALGO or "sha256").lower()
     H._RANDOMX_EPOCH_BLOCKS = max(1, int(CFG.RANDOMX_KEY_EPOCH_BLOCKS))
-    H._RANDOMX_SALT = (CFG.RANDOMX_KEY_SALT or "tsar-randomx").encode("utf-8")
+    H._RANDOMX_SALT = (CFG.RANDOMX_KEY_SALT or "tsar-randomx").decode("utf-8")
     H._RANDOMX_ROOT = H._resolve_randomx_root()
     mode = "lite" if use_lite else "full"
     print(f"[randomx] configured {mode} mode (cache_max={CFG.RANDOMX_CACHE_MAX})")

@@ -4,9 +4,9 @@ build-backend = "maturin"
 
 [project]
 name = "tsarcore_native"
-version = "0.1.2"
+version = "0.1.3"
 requires-python = ">=3.8"
-description = "Native acceleration for TsarChain (pyo3): low-S secp verify, sigops counter, merkle_root, BIP143 SIGHASH (ALL), hash256/hash160, optional parallel batch verify, native block tx validation"
+description = "Native acceleration for TsarChain (pyo3): low-S secp verify, sigops counter, merkle_root, BIP143 SIGHASH (ALL), hash256/hash160, RandomX PoW, SecureChannel (X25519/HKDF/AES-GCM), native block tx validation"
 authors = [{ name = "Tsar Studio" }]
 license = { file = "LICENSE" }
 readme = "README.md"

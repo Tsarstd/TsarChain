@@ -391,6 +391,7 @@ Pull requests are welcome. Please start with small, well‑scoped changes (docs,
 
 **Graffiti Protocol**
 - [`Graffiti Protocol - Draft v0.1 (EN)`](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(EN).pdf)
+- [`Graffiti Protocol - Draft v0.1 (ID)`](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(ID).pdf)
 
 ---
 

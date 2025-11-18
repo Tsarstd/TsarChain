@@ -1,8 +1,8 @@
 [package]
 name = "tsarcore_native"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
-description = "Native accel for TsarChain: secp256k1 verify (low-S), sigops counter, merkle_root, BIP143 SIGHASH (ALL), hash256/hash160, optional parallel batch verify"
+description = "Native accel for TsarChain: secp256k1 verify (low-S), sigops counter, merkle_root, BIP143 SIGHASH (ALL), hash256/hash160, RandomX PoW, and SecureChannel (X25519/HKDF/AES-GCM)"
 license = "MIT"
 
 [lib]
@@ -17,6 +17,11 @@ ripemd = "0.1"
 rayon = { version = "1.10", optional = true }
 hex = "0.4"
 randomx-rs = { version = "1.4", default-features = false }
+aes-gcm = "0.10"
+hkdf = "0.12"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+ed25519-dalek = { version = "1", features = ["std"] }
+rand = "0.8"
 
 [features]
 # Enable parallel verification in `secp_verify_der_low_s_many` when the `parallel` feature is set.

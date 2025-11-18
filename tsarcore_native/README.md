@@ -34,8 +34,12 @@ Native acceleration module for **TsarChain**.
 
 - `validate_block_txs_native(block: Mapping, utxo_snapshot: Mapping, spend_height: int, opts: Mapping) -> tuple[bool, str|None, list[int]|None]`  
   Full block-level transaction validation (sigops, coinbase rules, witness verification, fee projection, etc.). Returns `(ok, reason, fees)` where `fees` is per-non-coinbase once `ok` is `True`.
+
 - `randomx_pow_hash(header: bytes, seed: bytes, *, full_mem: bool, large_pages: bool, jit: bool, hard_aes: bool, secure_jit: bool, cache_entries: int) -> bytes32`  
   Stateless RandomX hashing used by TsarChain PoW. The binding internally caches VMs per thread/seed to avoid rebuilding datasets on every call.
+
+- `SecureChannelNative(role, net_id, node_id, node_pub_hex, session_ttl, session_max_msg, key_bytes, nonce_bytes, node_priv_hex=None, aad_prefix=None)`  
+  Native X25519 + Ed25519 authenticated handshake + HKDF + AES-256-GCM transport for TsarChain P2P links. Provides `client_build_hs1`, `client_accept_hs2`, `server_accept_hs1`, `encrypt`, and `decrypt`, enforcing TTL/msg-count/sequence windows entirely in Rust.
 
 - `set_py_logger(callable)`  
   Optional hook so Rust logs can piggyback on TsarChain’s logger.
@@ -107,5 +111,7 @@ digest = tc.randomx_pow_hash(
 
 ## Changelog
 
+- **0.1.3** — Added `SecureChannelNative` (X25519 handshake + HKDF + AES-256-GCM) so TsarChain P2P crypto now runs entirely in Rust, lowering latency and hardening TTL/msg quotas.
+- **0.1.2** — `Stateless RandomX` hashing used by TsarChain PoW.
 - **0.1.1** — Docs synced with code: expose `hash256`, `hash160`, `secp_verify_der_low_s_many`, native `sighash_bip143` (ALL); clarify merkle root behavior & parallel feature.
 - **0.1.0** — Initial release.

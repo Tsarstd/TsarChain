@@ -14,25 +14,25 @@
 //! pip uninstall -y tsarcore_native
 //! cargo clean
 
+use pyo3::exceptions;
+use pyo3::prelude::*;
 use pyo3::sync::GILOnceCell;
+use pyo3::types::{PyAny, PyBytes, PyIterator, PyList, PyModule, PyTuple};
+use pyo3::Py;
+use pyo3::{Bound, PyErr};
+use randomx_rs::{RandomXCache, RandomXDataset, RandomXError, RandomXFlag, RandomXVM};
+use ripemd::Ripemd160;
+use secp256k1::ecdsa::Signature;
+use secp256k1::{Message, PublicKey, Secp256k1};
+use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::thread_local;
 use std::time::Instant;
-use pyo3::{Py};
-use pyo3::prelude::*;
-use pyo3::exceptions;
-use pyo3::types::{PyModule, PyAny, PyBytes, PyIterator, PyList, PyTuple};
-use pyo3::{Bound, PyErr};
-use randomx_rs::{RandomXCache, RandomXDataset, RandomXError, RandomXFlag, RandomXVM};
-use sha2::{Sha256, Digest};
-use ripemd::Ripemd160;
-use secp256k1::{Secp256k1, Message, PublicKey};
-use secp256k1::ecdsa::Signature;
 use validation::validate_block_txs_native;
 
+mod networking;
 mod validation;
-
 
 // ---------------------
 // RandomX VM cache
@@ -83,7 +83,11 @@ fn with_cached_vm<R>(
     RANDOMX_VM_CACHE.with(|cell| -> Result<R, RandomXError> {
         let mut cache = cell.borrow_mut();
         let now = Instant::now();
-        let cap = if flags.contains(RandomXFlag::FLAG_FULL_MEM) { 1 } else { max_entries.max(1) };
+        let cap = if flags.contains(RandomXFlag::FLAG_FULL_MEM) {
+            1
+        } else {
+            max_entries.max(1)
+        };
         let mut needs_purge = false;
         if let Some(entry) = cache.get_mut(key) {
             if entry.flags == flags {
@@ -112,9 +116,11 @@ fn with_cached_vm<R>(
             }
         }
 
-        let entry = cache
-            .entry(key.to_vec())
-            .or_insert(RandomxVmEntry { vm, flags, last_used: now });
+        let entry = cache.entry(key.to_vec()).or_insert(RandomxVmEntry {
+            vm,
+            flags,
+            last_used: now,
+        });
         entry.last_used = now;
         f(&entry.vm)
     })
@@ -196,14 +202,20 @@ fn randomx_pow_hash<'py>(
         max_cache_entries
     };
 
-    let hash = match with_cached_vm(key_bytes, flags, max_entries, |vm| vm.calculate_hash(header_bytes)) {
+    let hash = match with_cached_vm(key_bytes, flags, max_entries, |vm| {
+        vm.calculate_hash(header_bytes)
+    }) {
         Ok(h) => h,
         Err(e) if large_pages => {
-            log_warning(&format!("[randomx] large pages unavailable ({e}); retrying without large pages"));
+            log_warning(&format!(
+                "[randomx] large pages unavailable ({e}); retrying without large pages"
+            ));
             let mut fallback_flags = flags;
             fallback_flags.remove(RandomXFlag::FLAG_LARGE_PAGES);
-            with_cached_vm(key_bytes, fallback_flags, max_entries, |vm| vm.calculate_hash(header_bytes))
-                .map_err(map_randomx_err)?
+            with_cached_vm(key_bytes, fallback_flags, max_entries, |vm| {
+                vm.calculate_hash(header_bytes)
+            })
+            .map_err(map_randomx_err)?
         }
         Err(e) => return Err(map_randomx_err(e)),
     };
@@ -233,14 +245,21 @@ fn py_logger_call(level: &str, msg: &str) {
 }
 
 // Shortcut level
-#[inline] fn log_trace(msg: &str)    { py_logger_call("trace", msg); }
-#[inline] fn log_debug(msg: &str)    { py_logger_call("debug", msg); }
+#[inline]
+fn log_trace(msg: &str) {
+    py_logger_call("trace", msg);
+}
+#[inline]
+fn log_debug(msg: &str) {
+    py_logger_call("debug", msg);
+}
 //#[inline] fn log_info(msg: &str)     { py_logger_call("info",  msg); }
-#[inline] fn log_warning(msg: &str)  { py_logger_call("warning", msg); }
+#[inline]
+fn log_warning(msg: &str) {
+    py_logger_call("warning", msg);
+}
 //#[inline] fn log_error(msg: &str)    { py_logger_call("error", msg); }
 //#[inline] fn log_critical(msg: &str) { py_logger_call("critical", msg); }
-
-
 
 // ---------------------
 // Script / Sigops utils
@@ -255,9 +274,10 @@ const OP_CHECKSIGVERIFY: u8 = 0xad;
 const OP_CHECKMULTISIG: u8 = 0xae;
 const OP_CHECKMULTISIGVERIFY: u8 = 0xaf;
 
-
 fn small_int(op: u8) -> Option<u32> {
-    if op == OP_0 { return Some(0); }
+    if op == OP_0 {
+        return Some(0);
+    }
     if (OP_1..=0x60).contains(&op) {
         return Some((op - OP_1 + 1) as u32);
     }
@@ -277,7 +297,10 @@ fn parse_pubkey_any(bytes: &[u8]) -> Option<PublicKey> {
             return Some(pk);
         }
     }
-    log_warning(&format!("parse_pubkey_any: invalid public key bytes: {:?}", bytes));
+    log_warning(&format!(
+        "parse_pubkey_any: invalid public key bytes: {:?}",
+        bytes
+    ));
     None
 }
 
@@ -288,7 +311,6 @@ fn sha256d(bytes: &[u8]) -> [u8; 32] {
     out.copy_from_slice(&second);
     out
 }
-
 
 fn parse_ops(script: &[u8]) -> Vec<(Option<u8>, bool, usize)> {
     let mut v = Vec::new();
@@ -305,24 +327,37 @@ fn parse_ops(script: &[u8]) -> Vec<(Option<u8>, bool, usize)> {
             v.push((None, true, n));
             i += n;
         } else if op == OP_PUSHDATA1 {
-            if i >= script.len() { break; }
+            if i >= script.len() {
+                break;
+            }
             let n = script[i] as usize;
             i += 1;
-            if i + n > script.len() { break; }
+            if i + n > script.len() {
+                break;
+            }
             v.push((None, true, n));
             i += n;
         } else if op == OP_PUSHDATA2 {
-            if i + 2 > script.len() { break; }
-            let n = u16::from_le_bytes([script[i], script[i+1]]) as usize;
+            if i + 2 > script.len() {
+                break;
+            }
+            let n = u16::from_le_bytes([script[i], script[i + 1]]) as usize;
             i += 2;
-            if i + n > script.len() { break; }
+            if i + n > script.len() {
+                break;
+            }
             v.push((None, true, n));
             i += n;
         } else if op == OP_PUSHDATA4 {
-            if i + 4 > script.len() { break; }
-            let n = u32::from_le_bytes([script[i], script[i+1], script[i+2], script[i+3]]) as usize;
+            if i + 4 > script.len() {
+                break;
+            }
+            let n = u32::from_le_bytes([script[i], script[i + 1], script[i + 2], script[i + 3]])
+                as usize;
             i += 4;
-            if i + n > script.len() { break; }
+            if i + n > script.len() {
+                break;
+            }
             v.push((None, true, n));
             i += n;
         } else {
@@ -383,10 +418,12 @@ fn hash160<'py>(py: Python<'py>, data: &'py [u8]) -> PyResult<Bound<'py, PyBytes
 // ---------------------
 #[pyfunction]
 fn secp_verify_der_low_s(pubkey: &[u8], digest32: &[u8], der_sig: &[u8]) -> PyResult<bool> {
-    use secp256k1::{Secp256k1, Message, ecdsa::Signature};
+    use secp256k1::{ecdsa::Signature, Message, Secp256k1};
 
     if digest32.len() != 32 {
-        return Err(PyErr::new::<exceptions::PyValueError, _>("digest32 must be 32 bytes"));
+        return Err(PyErr::new::<exceptions::PyValueError, _>(
+            "digest32 must be 32 bytes",
+        ));
     }
 
     // parse pubkey (33B compressed atau 65B uncompressed)
@@ -466,8 +503,7 @@ mod bip143_native {
                 if *i + 4 > data.len() {
                     return Err(PyErr::new::<exceptions::PyValueError, _>("varint OOB"));
                 }
-                let v =
-                    u32::from_le_bytes([data[*i], data[*i + 1], data[*i + 2], data[*i + 3]]);
+                let v = u32::from_le_bytes([data[*i], data[*i + 1], data[*i + 2], data[*i + 3]]);
                 *i += 4;
                 Ok(v as u64)
             }
@@ -576,7 +612,6 @@ mod bip143_native {
         })
     }
 
-
     pub fn compute_sighash(
         tx_bytes: &[u8],
         input_index: u32,
@@ -625,9 +660,8 @@ mod bip143_native {
         let (prev, vout, seq) = tx.inputs[idx];
 
         // preimage
-        let mut pre = Vec::with_capacity(
-            4 + 32 + 32 + 36 + (script_code.len() + 9) + 8 + 4 + 32 + 4 + 4,
-        );
+        let mut pre =
+            Vec::with_capacity(4 + 32 + 32 + 36 + (script_code.len() + 9) + 8 + 4 + 32 + 4 + 4);
         pre.extend_from_slice(&tx.version.to_le_bytes());
         pre.extend_from_slice(&hash_prevouts);
         pre.extend_from_slice(&hash_sequence);
@@ -671,11 +705,14 @@ fn sighash_bip143<'py>(
     sighash_type: u32,
 ) -> PyResult<Bound<'py, PyBytes>> {
     let digest = bip143_native::compute_sighash(
-        tx_bytes, input_index, script_code, value_sat, sighash_type
+        tx_bytes,
+        input_index,
+        script_code,
+        value_sat,
+        sighash_type,
     )?;
     Ok(PyBytes::new_bound(py, &digest))
 }
-
 
 // -----------------------------------------------------
 // Batch verify ECDSA (DER) with optional low-S enforce
@@ -746,14 +783,23 @@ fn secp_verify_der_low_s_many<'py>(
         #[cfg(feature = "parallel")]
         {
             use rayon::prelude::*;
-            tasks.par_iter().map(|(pk,d32,sg)| verify_one(pk,d32,sg)).collect()
+            tasks
+                .par_iter()
+                .map(|(pk, d32, sg)| verify_one(pk, d32, sg))
+                .collect()
         }
         #[cfg(not(feature = "parallel"))]
         {
-            tasks.iter().map(|(pk,d32,sg)| verify_one(pk,d32,sg)).collect()
+            tasks
+                .iter()
+                .map(|(pk, d32, sg)| verify_one(pk, d32, sg))
+                .collect()
         }
     } else {
-        tasks.iter().map(|(pk,d32,sg)| verify_one(pk,d32,sg)).collect()
+        tasks
+            .iter()
+            .map(|(pk, d32, sg)| verify_one(pk, d32, sg))
+            .collect()
     };
 
     // === Logging ===
@@ -775,7 +821,10 @@ fn secp_verify_der_low_s_many<'py>(
 // ---------------------
 
 #[pyfunction]
-fn merkle_root<'py>(py: Python<'py>, txids_any: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
+fn merkle_root<'py>(
+    py: Python<'py>,
+    txids_any: Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyBytes>> {
     let t0 = Instant::now();
     let iter = PyIterator::from_bound_object(&txids_any)?;
     let mut layer: Vec<[u8; 32]> = Vec::new();
@@ -785,7 +834,9 @@ fn merkle_root<'py>(py: Python<'py>, txids_any: Bound<'py, PyAny>) -> PyResult<B
         let b: &Bound<'py, PyBytes> = obj.downcast()?;
         let raw = b.as_bytes();
         if raw.len() != 32 {
-            return Err(PyErr::new::<exceptions::PyValueError, _>("txid must be 32 bytes"));
+            return Err(PyErr::new::<exceptions::PyValueError, _>(
+                "txid must be 32 bytes",
+            ));
         }
         let mut d = [0u8; 32];
         d.copy_from_slice(raw);
@@ -836,7 +887,6 @@ fn merkle_root<'py>(py: Python<'py>, txids_any: Bound<'py, PyAny>) -> PyResult<B
     Ok(PyBytes::new_bound(py, &layer[0]))
 }
 
-
 // ---------------
 // Module binding
 // ---------------
@@ -852,5 +902,6 @@ fn tsarcore_native(_py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(set_py_logger, m)?)?;
     m.add_function(wrap_pyfunction!(validate_block_txs_native, m)?)?;
     m.add_function(wrap_pyfunction!(randomx_pow_hash, m)?)?;
+    m.add_class::<networking::SecureChannelNative>()?;
     Ok(())
 }
