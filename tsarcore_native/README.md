@@ -46,20 +46,6 @@ Native acceleration module for **TsarChain**.
 
 > Endianness note: pass **little-endian txids** to `merkle_root` if you want a Bitcoin-compatible block header merkle root.
 
-## Build & install
-
-```bash
-# Dev install (local editable wheel)
-pip install maturin
-maturin develop --release
-# optional: enable parallel batch verify
-maturin develop --release --features parallel
-
-# Build wheel only
-maturin build --release
-# wheel will appear under target/wheels/
-```
-
 ## Usage (Python)
 
 ```python
@@ -107,7 +93,7 @@ digest = tc.randomx_pow_hash(
 
 - No `unsafe`, no panics, strict bounds checks when parsing transaction bytes & varints.
 - `secp_verify_der_low_s` and the batch verifier reject **high‑S** by default (set `enforce_low_s=False` in batch mode for legacy).
-- `sighash_bip143` currently supports **`SIGHASH_ALL`** natively; use your Python fallback for others (e.g., `ANYONECANPAY`, `SINGLE`, `NONE`).
+- `sighash_bip143` currently supports **`SIGHASH_ALL`** natively.
 
 ## Changelog
 

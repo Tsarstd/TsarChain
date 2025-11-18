@@ -3,8 +3,7 @@
 `tsarcore_native` is the Rust + PyO3 native acceleration module for **TsarChain**.
 TsarChain now **requires** this module: all consensus-critical routines (sigops counting,
 ECDSA verify (low-S) incl. batch, BIP143 sighash, hashing, block validation, etc.) call the
-Rust bindings directly. If the module is missing or fails to import, TsarChain will raise
-at startup—there is no longer a Python fallback or runtime toggle.
+Rust bindings directly.
 
 ---
 
@@ -14,30 +13,6 @@ For deterministic consensus across platforms/architectures, every node now runs 
 Rust implementation shipped in `tsarcore_native` for operations such as `merkle_root`,
 `sighash_bip143`, sigops counting, and block validation. The historical Python implementations have
 been removed to avoid divergence, so keeping the native library installed is mandatory.
-
----
-
-## TL;DR
-
-```bash
-# From your repo root
-python -m venv .venv
-# Windows: .venv\Scripts\activate
-# macOS/Linux: source .venv/bin/activate
-
-pip install --upgrade pip maturin
-
-cd tsarcore_native
-maturin develop --release      # build & install into the active venv
-```
-
-Want a distributable wheel?
-
-```bash
-cd tsarcore_native
-maturin build --release
-pip install target/wheels/tsarcore_native-*.whl
-```
 
 ---
 
@@ -57,9 +32,18 @@ Platform notes:
 
 ---
 
-## 2) Installation Options
+## 2. Installation Options
 
-### A) Dev‑friendly (editable)
+#### A) Install CMake
+
+```bash
+# Powershell (Windows)
+winget install -e --id Kitware.CMake
+# Linux
+sudo apt install cmake
+```
+
+#### B) Dev‑friendly (editable)
 
 ```bash
 python -m venv .venv
@@ -71,7 +55,7 @@ cd tsarcore_native
 maturin develop --release
 ```
 
-### B) Build a wheel (for distribution)
+#### C) Build a wheel (for distribution)
 
 ```bash
 # with your venv active
@@ -81,7 +65,7 @@ maturin build --release
 pip install target/wheels/tsarcore_native-*.whl
 ```
 
-### C) PEP 517 install via `pip`
+#### D) PEP 517 install via `pip`
 
 ```bash
 # from repo root (venv active)
@@ -89,7 +73,7 @@ pip install --upgrade pip maturin
 pip install ./tsarcore_native
 ```
 
-### (Optional) Enable parallel code paths
+#### (Optional) Enable parallel code paths
 
 If you added conditional parallel implementations in Rust, you can expose them with a feature flag:
 
@@ -105,8 +89,7 @@ maturin build --release --features parallel
 ## 3) Integrate with TsarChain
 
 Install `tsarcore_native` inside the same environment that runs TsarChain. On startup the code
-imports the module and will abort with a descriptive error if the binding is unavailable. Nothing
-else needs to be toggled in `config.py`.
+imports the module and will abort with a descriptive error if the binding is unavailable.
 
 ---
 
@@ -194,6 +177,14 @@ Any deviation (e.g., `[block] …` showing a failure reason) means the native va
   - Verify you built inside the **same venv** you’re running.
   - Re‑activate venv and check with `pip show tsarcore_native`.
 
+- **`ModuleNotFoundError: No module named 'tsarchain'`**
+  - make sure your `PYTHONPATH` includes the `src` directory.
+  ```bash
+  export PYTHONPATH="$PWD/src"
+  # Windows
+  $env:PYTHONPATH = "$PWD/src"
+  set PYTHONPATH=%cd%\src
+  ```
 - **Toolchain/linker errors**
   - `rustup update` to ensure a fresh stable toolchain.
   - **Windows**: make sure *MSVC Build Tools* are installed; open the “x64 Native Tools” prompt if needed.
@@ -213,18 +204,10 @@ Any deviation (e.g., `[block] …` showing a failure reason) means the native va
 
 ---
 
-## 7) CI / Release (optional)
-
-You can use GitHub Actions with `maturin-action` to build wheels for macOS, manylinux, and Windows,
-then upload artifacts to a release. Keep your workflow minimal at first; expand once basics are green.
-
----
-
-## 8) Notes
+## 7) Notes
 
 - Built with **PyO3**; ABI compatibility follows the wheel built by `maturin`.
 - The biggest wins from native are: sigops, ECDSA verify (low‑S), BIP143 sighash, batch verify, and hashing.
-- **Consensus Merkle Root is Python‑locked** by design; native Merkle should be treated as a diagnostic helper only.
 
 ---
 

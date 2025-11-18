@@ -1,5 +1,3 @@
-<img src="assets/references/paper.png" width="100%">
-
 ### Bitcoin improvement proposals (BIPs)
 - [BIP-141: Segregated Witness (Consensus layer)](https://bips.dev/141/)
 - [BIP-143: Transaction Signature Verification for Version 0 Witness Program](https://bips.dev/143/)
