@@ -288,7 +288,7 @@ TsarChain/
 ├── src/
 │   └── tsarchain/           # Python main packages
 │       ├── consensus/       # Blockchain Logic (PoW, Difficulty, Validation, etc.)
-│       ├── contracts/       # Smart Contracts (Graffiti)
+│       ├── contracts/       # Smart Contracts (Graffiti) & Archivist Module
 │       ├── core/            # Core data structure (Block, Transaction, Coinbase)
 │       ├── mempool/         # MemPool Management & Policy
 │       ├── network/         # P2P Networking, RPC, & Gossip Protocol
@@ -302,7 +302,7 @@ TsarChain/
     └── src/                 # Source code Rust (lib.rs, networking.rs, validation.rs)
 ```
 
-The example data of `block, utxo's & mempool` below, shows a transaction flow of 2 address and 1 miner that validating those transaction.
+The example data of `block, utxo's & mempool` below, shows a transaction between 1 sender and 1 miner recipient.
 - ***Block Data Structure (.json):***
   <details>
     <summary>See Preview</summary>

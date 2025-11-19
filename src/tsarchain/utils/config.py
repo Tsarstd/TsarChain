@@ -4,19 +4,19 @@
 # Refs: BIP141; BIP173; LWMA-Zawy; Signal-DoubleRatchet; NIST-800-38D-AES-GCM
 
 '''
-     ██     ██   ███   ██ ██  ██  ██   ███   ██     ██   ███   ██ ██ 
-     ███   ███  ██ ██  ██ ██  ██ ██   ██ ██  ███   ███  ██ ██  ██ ██ 
-     ██ ███ ██  █████  █████  ████    █████  ██ ███ ██  █████  █████ 
-     ██     ██  ██ ██  ██ ██  ████    ██ ██  ██     ██  ██ ██  ██ ██ 
-     ██     ██  ██ ██  ██ ██  ██ ██   ██ ██  ██     ██  ██ ██  ██ ██ 
-     ██     ██  ██ ██  ██ ██  ██  ██  ██ ██  ██     ██  ██ ██  ██ ██ 
+    ██     ██   ████   ██  ██  ██  ██   ████   ██     ██   ████   ██  ██ 
+    ███   ███  ██  ██  ██  ██  ██ ██   ██  ██  ███   ███  ██  ██  ██  ██ 
+    ██ ███ ██  ██████  ██████  ████    ██████  ██ ███ ██  ██████  ██████ 
+    ██     ██  ██  ██  ██  ██  ████    ██  ██  ██     ██  ██  ██  ██  ██ 
+    ██     ██  ██  ██  ██  ██  ██ ██   ██  ██  ██     ██  ██  ██  ██  ██ 
+    ██     ██  ██  ██  ██  ██  ██  ██  ██  ██  ██     ██  ██  ██  ██  ██ 
 
- ██  ██   ███   ██  ██   ████  ██████  ████  ██████  ██ ██   ████  ████ 
- ██ ██   ██ ██  ███ ██  ██       ██     ██     ██    ██ ██  ██      ██  
- ████    ██ ██  ██ ███  ██       ██     ██     ██    ██ ██  ██      ██  
- ████    ██ ██  ██ ███   ███     ██     ██     ██    ██ ██   ███    ██  
- ██ ██   ██ ██  ██  ██     ██    ██     ██     ██    ██ ██     ██   ██  
- ██  ██   ███   ██  ██  ████     ██    ████    ██     ███   ████   ████ 
+ ██  ██   ████   ██   ██   ████  ████████  ████  ████████  ██  ██   ████  ████ 
+ ██ ██   ██  ██  ███  ██  ██        ██      ██      ██     ██  ██  ██      ██  
+ ████    ██  ██  ██ ████  ██        ██      ██      ██     ██  ██  ██      ██  
+ ████    ██  ██  ██  ███   ███      ██      ██      ██     ██  ██   ███    ██  
+ ██ ██   ██  ██  ██   ██     ██     ██      ██      ██     ██  ██     ██   ██  
+ ██  ██   ████   ██   ██  ████      ██     ████     ██      ████   ████   ████ 
  
 =============================================================================
  -------- !!! CONSENSUS-CRITICAL REMINDER - READ BEFORE EDITING !!! --------
@@ -148,10 +148,6 @@ NODE_KEY_PATH         = os.path.join(NODE_DATA_DIR, "node_key.json")  # primary 
 PEER_KEYS_PATH        = os.path.join(NODE_DATA_DIR, "peer_keys.json")  # known peer key cache linked to node_data
 LEGACY_NODE_KEY_PATH  = "data_user/node_key.json"  # backward-compatible node key path for migration
 LEGACY_PEER_KEYS_PATH = "data_user/peer_keys.json"  # legacy peer key cache kept for upgrade smoothness
-
-# ---- CONTRACT STORAGE ----
-CONTRACTS_DIR      = "data/Contracts"  # storage root for contract-like payloads
-GRAFFITI_FILE      = os.path.join(CONTRACTS_DIR, "graffiti.json")  # graffiti metadata archive path
 
 
 # =============================================================================
@@ -518,11 +514,15 @@ MAX_STORAGE_OPRET             = 180  # storage proof payload bound for OP_RETURN
 STORAGE_MIN_SIZE              = 100 * 1024  # minimum bytes required for storage contracts
 STORAGE_UPLOAD_CHUNK          = 100 * 1024  # chunk size used when slicing storage payloads
 
-# ---- STORAGE PATHS ----
-STORAGE_DIR                        = "data/storage"  # folder holding uploaded storage blobs
-STORAGE_MAX_BYTES                  = 10 * 1024 * 1024 * 1024  # cap on cumulative storage usage (10GB)
-STORAGE_MIN_CONFIRM                = 2  # confirmations required before serving stored data
-ALLOW_UNREGISTERED_STORAGE_UPLOADS = True  # permit uploads from nodes without registry entries
+# ---- CONTRACT METADATA ----
+CONTRACTS_DIR      = "data/Contracts"  # storage root for contract-like payloads
+GRAFFITI_FILE      = os.path.join(CONTRACTS_DIR, "graffiti.json")  # graffiti metadata archive path
+
+# ---- ARCHIVIST ----
+ARCHIV_PEER_KEYS               = "data_peer/storage_peer_keys.json"
+STORAGE_DIR                    = "data/storage"  # folder holding uploaded storage blobs
+STORAGE_MAX_BYTES              = 10 * 1024 * 1024 * 1024  # cap on cumulative storage usage (10GB)
+STORAGE_MIN_CONFIRM            = 2  # confirmations required before serving stored data
 
 
 # =============================================================================
