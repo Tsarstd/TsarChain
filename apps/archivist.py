@@ -29,6 +29,7 @@ class TsarStorageGUI:
         self.root.title(APP_TITLE)
         self.root.geometry("980x680")
         self.rpc = RPC()
+        self.directory = NodeDirectory()
         global SCAN_KP
         
         SCAN_KP = {"net_id": CFG.DEFAULT_NET_ID, "node_id": self.rpc.ctx["node_id"],
@@ -206,15 +207,15 @@ class TsarStorageGUI:
 
         ok = self.rpc.connect(host, miner_port, my_listen_port=storage_port)
         if not ok:
-            peers = NodeDirectory.get_nodes() or []
+            peers = self.directory.get_nodes() or []
             for ip, p in peers:
                 if self.rpc.connect(ip, p, my_listen_port=storage_port):
-                    NodeDirectory.mark_good((ip, p))
+                    self.directory.mark_good((ip, p))
                     ok = True
                     break
 
         if ok:
-            NodeDirectory.mark_good((host, miner_port))
+            self.directory.mark_good((host, miner_port))
             self.connected = True
             self.status_lbl.configure(text="● Connected", foreground="#1a8")
             self.btn_connect.config(state=tk.DISABLED)
