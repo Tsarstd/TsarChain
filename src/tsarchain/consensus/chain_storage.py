@@ -390,7 +390,7 @@ class StorageMixin:
                         new_blocks = [self.chain[h] for h in range(start_height, tip_height + 1)]
                         self._append_chain_journal(start_height, new_blocks)
                         self._persisted_height = tip_height
-                        if self._chain_journal_size() > int(getattr(CFG, "CHAIN_JOURNAL_MAX_BYTES", 8 * 1024 * 1024)):
+                        if self._chain_journal_size() > int(CFG.CHAIN_JOURNAL_MAX_BYTES):
                             self._chain_store.save([block.to_dict() for block in self.chain])
                             self._persisted_height = tip_height
                             self._clear_chain_journal()

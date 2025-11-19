@@ -78,7 +78,7 @@ def _detect_height_from_lmdb(path: Path) -> Optional[int]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate snapshot manifest for TsarChain data.mdb")
     parser.add_argument("--data", default="data/snapshot/data.mdb", help="Path ke file data.mdb yang akan dipublikasikan")
-    parser.add_argument("--meta", default="data/DB/snapshot.meta.json", help="Path snapshot.meta.json untuk mengambil info tambahan")
+    parser.add_argument("--meta", default="data/tsarchain_db/snapshot.meta.json", help="Path snapshot.meta.json untuk mengambil info tambahan")
     parser.add_argument("--output", default="data/snapshot/snapshot.manifest.json", help="File output manifest")
     parser.add_argument("--timestamp", type=int, help="Unix timestamp saat snapshot dibuat")
     parser.add_argument("--url", help="URL publik tempat data.mdb akan tersedia (http(s)://...)")

@@ -94,7 +94,7 @@ WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wal
 # =============================================================================
 # ---- KV BACKEND ----
 KV_BACKEND         = "lmdb"  # active key-value backend implementation (lmdb & json)
-LMDB_DATA_FILE     = "data/tsachain_db"  # main LMDB data file path
+LMDB_DATA_FILE     = "data/tsarchain_db"  # main LMDB data file path
 LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
 
@@ -120,7 +120,7 @@ SNAPSHOT_USER_AGENT      = "TsarChainSnapshot/1.0"  # UA string used when fetchi
 # ---- SNAPSHOT BACKUP ----
 SNAPSHOT_BACKUP_DIR   = "data/snapshot"  # folder storing backup snapshots
 BACKUP_SNAPSHOT       = True  # toggle to keep automatic backup copies
-BLOCK_BACKUP_SNAPSHOT = 25  # interval in blocks between snapshot backups
+BLOCK_BACKUP_SNAPSHOT = 2  # interval in blocks between snapshot backups
 
 
 # =============================================================================
@@ -133,7 +133,7 @@ UTXOS_FILE              = "data/UTXOS/utxos.json"  # fallback UTXO dump for ligh
 MEMPOOL_FILE            = "data/Mempools/txpools.json"  # persistent mempool cache file
 
 CHAIN_JOURNAL_FILE      = os.path.join(os.path.dirname(BLOCK_FILE), "blockchain.journal")  # append-only delta log for JSON mode
-CHAIN_JOURNAL_MAX_BYTES = int(os.getenv("TSAR_CHAIN_JOURNAL_MAX_BYTES", 8 * 1024 * 1024))
+CHAIN_JOURNAL_MAX_BYTES = 8 * 1024
 STATE_HEIGHT_CACHE_TTL  = 2.0  # height for utxo validation & cache
 
 # ---- WALLET FILES ----
@@ -167,8 +167,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 1  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = "001925fe43d9aac51ef8b41f1a7408d95bc9dcadc6f8642a9b2f64140f1ae962"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -370,7 +370,7 @@ BLOCK_DOWNLOAD_BATCH_MAX  = 2048  # concurrent block download cap
 CHAIN_FLUSH_INTERVAL      = 1  # blocks between lightweight chain persistence
 CHAIN_FORCE_FULL_FLUSH    = False  # force full persistence on every save when True
 ADD_BLOCK_LOG_THRESHOLD   = 0.1  # log add_block timings slower than this (seconds)
-UTXO_FLUSH_INTERVAL       = 25  # block interval between UTXO set flushes
+UTXO_FLUSH_INTERVAL       = 2  # block interval between UTXO set flushes
 
 # ---- PEER QUOTAS ----
 MAX_OUTBOUND_PEERS         = 14  # outbound connection ceiling

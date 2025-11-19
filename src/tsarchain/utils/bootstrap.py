@@ -54,14 +54,10 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
         return SnapshotBootstrapResult(status="skipped", reason="cli_disabled")
 
     manifest = _fetch_manifest()
-    if manifest is None and not CFG.SNAPSHOT_FILE_URL:
-        return SnapshotBootstrapResult(status="skipped", reason="no_source")
-
     expected_sha = _safe_lower(manifest, "sha256")
     snapshot_url = (
         (manifest or {}).get("snapshot_url")
         or (manifest or {}).get("url")
-        or CFG.SNAPSHOT_FILE_URL
     )
     height = _safe_int(manifest, "height")
     generated_at = _safe_int(manifest, "generated_at")
