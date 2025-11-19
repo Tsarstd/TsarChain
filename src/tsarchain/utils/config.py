@@ -4,6 +4,20 @@
 # Refs: BIP141; BIP173; LWMA-Zawy; Signal-DoubleRatchet; NIST-800-38D-AES-GCM
 
 '''
+     ██     ██   ███   ██ ██  ██  ██   ███   ██     ██   ███   ██ ██ 
+     ███   ███  ██ ██  ██ ██  ██ ██   ██ ██  ███   ███  ██ ██  ██ ██ 
+     ██ ███ ██  █████  █████  ████    █████  ██ ███ ██  █████  █████ 
+     ██     ██  ██ ██  ██ ██  ████    ██ ██  ██     ██  ██ ██  ██ ██ 
+     ██     ██  ██ ██  ██ ██  ██ ██   ██ ██  ██     ██  ██ ██  ██ ██ 
+     ██     ██  ██ ██  ██ ██  ██  ██  ██ ██  ██     ██  ██ ██  ██ ██ 
+
+ ██  ██   ███   ██  ██   ████  ██████  ████  ██████  ██ ██   ████  ████ 
+ ██ ██   ██ ██  ███ ██  ██       ██     ██     ██    ██ ██  ██      ██  
+ ████    ██ ██  ██ ███  ██       ██     ██     ██    ██ ██  ██      ██  
+ ████    ██ ██  ██ ███   ███     ██     ██     ██    ██ ██   ███    ██  
+ ██ ██   ██ ██  ██  ██     ██    ██     ██     ██    ██ ██     ██   ██  
+ ██  ██   ███   ██  ██  ████     ██    ████    ██     ███   ████   ████ 
+ 
 =============================================================================
  -------- !!! CONSENSUS-CRITICAL REMINDER - READ BEFORE EDITING !!! --------
 =============================================================================
@@ -156,7 +170,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "0012de8832a4f54b9f316b6cac270c772e5bfcae2d3a3a2d942e968465aa34db"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "001787dea9e29d1f8991abddb3df849dd7262ade1ea8a40c52c4932e3e586c3d"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -321,8 +335,8 @@ BOOTSTRAP_NODE           = BOOTSTRAP_NODES[0]  # preferred bootstrap peer entry
 BUFFER_SIZE              = 65536  # socket buffer size for P2P reads
 HANDSHAKE_TIMEOUT        = 10  # seconds allowed to finish handshake
 DISCOVERY_INTERVAL       = 5  # seconds between peer discovery scans
-SYNC_INTERVAL            = 10  # seconds between standard sync pulls
-FAST_SYNC_INTERVAL       = 2  # seconds between fast-sync loops
+SYNC_INTERVAL            = 20  # seconds between standard sync pulls
+FAST_SYNC_INTERVAL       = 5  # seconds between fast-sync loops
 SYNC_TIMEOUT             = 10  # seconds before abandoning slow sync requests
 CONNECT_TIMEOUT          = 1.5  # TCP dial timeout per peer attempt
 BROADCAST_FAIL_THRESHOLD = 2  # consecutive failures before backing off broadcasting
@@ -354,11 +368,11 @@ HEADERS_BATCH_MAX         = 4096  # number of headers requested per batch
 HEADERS_LOCATOR_DEPTH     = 64  # entries kept in locator list when syncing
 HEADERS_FANOUT            = 32  # peers to fan out header requests to
 HEADERS_SYNC_MIN_INTERVAL = 1  # seconds between header sync loops
-BLOCK_DOWNLOAD_BATCH_MAX  = 4096  # concurrent block download cap
+BLOCK_DOWNLOAD_BATCH_MAX  = 2048  # concurrent block download cap
 CHAIN_FLUSH_INTERVAL      = 1  # blocks between lightweight chain persistence
 CHAIN_FORCE_FULL_FLUSH    = False  # force full persistence on every save when True
 ADD_BLOCK_LOG_THRESHOLD   = 0.1  # log add_block timings slower than this (seconds)
-UTXO_FLUSH_INTERVAL       = 1000  # block interval between UTXO set flushes
+UTXO_FLUSH_INTERVAL       = 25  # block interval between UTXO set flushes
 
 # ---- PEER QUOTAS ----
 MAX_OUTBOUND_PEERS         = 14  # outbound connection ceiling

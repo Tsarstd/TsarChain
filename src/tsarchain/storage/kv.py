@@ -9,6 +9,9 @@ from typing import Iterator, Tuple, Optional
 
 from ..utils import config as CFG
 
+from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger('tsarchain.storage.kv')
+
 
 def kv_enabled() -> bool:
     return CFG.KV_BACKEND == "lmdb"
@@ -28,7 +31,6 @@ def _ensure_env():
     _env = lmdb.open(CFG.DB_DIR, map_size=int(CFG.LMDB_MAP_SIZE_INIT), max_dbs=16, create=True, lock=True, subdir=True)
     return _env
 
-
 def _grow_env_map(min_target: int | None = None) -> int:
     env = _ensure_env()
     if env is None:
@@ -41,7 +43,10 @@ def _grow_env_map(min_target: int | None = None) -> int:
         new = min_target
     if new > int(CFG.LMDB_MAP_SIZE_MAX):
         new = int(CFG.LMDB_MAP_SIZE_MAX)
+        log.warning("LMDB map size reached maximum: %s bytes", new)
     if new <= cur:
+        if cur >= int(CFG.LMDB_MAP_SIZE_MAX):
+            log.error("[_grow_env_map] Cannot grow further! Operations may fail!")
         return cur
     env.set_mapsize(new)
     return new

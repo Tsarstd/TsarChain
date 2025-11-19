@@ -21,6 +21,61 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.consensus.validation')
 
 class ValidationMixin:
+
+# =============================================================================
+# 1. VALIDATION PROCESSING
+# =============================================================================
+    def validate_block(self, block: Block) -> bool:
+        try:
+            if not all([block.height is not None, block.prev_block_hash, block.transactions]):
+                return False
+
+            if not self._validate_pow(block):
+                return False
+
+            if not self._validate_merkle(block):
+                return False
+
+            if not self._ensure_unique_txids(block):
+                return False
+
+            if not self._check_block_limits(block):
+                return False
+
+            store = None
+            utxo_view = None
+            state_token = None
+            with self.lock:
+                if not self._validate_chain_context_locked(block):
+                    return False
+                store = self._ensure_utxodb() or UTXODB()
+                if not callable(getattr(store, "lookup_entry", None)):
+                    try:
+                        utxo_view = getattr(store, "utxos", None)
+                        if utxo_view is None:
+                            utxo_view = store.load_utxo_set()
+                    except Exception:
+                        utxo_view = None
+                state_token = self._chain_state_token_locked()
+
+            if not self._check_sigops_budget(block, store, utxo_view):
+                return False
+
+            if block.height > 0 and not self._validate_transactions(block, store):
+                return False
+
+            with self.lock:
+                if state_token != self._chain_state_token_locked():
+                    self._last_block_validation_error = "chain_state_changed_during_validation"
+                    return False
+                self._last_block_validation_error = None
+
+            return True
+
+        except Exception:
+            log.exception("[validate_block] Unexpected error during block validation")
+            return False
+    
     def _validate_pow(self, block: Block) -> bool:
         try:
             header_hash = block.hash()
@@ -278,6 +333,10 @@ class ValidationMixin:
         self._last_block_validation_error = None
         return True
 
+
+# =============================================================================
+# 2. HELPER
+# =============================================================================
     def _estimate_block_size(self, block: Block) -> Optional[int]:
         try:
             size = 80  # header
@@ -444,53 +503,3 @@ class ValidationMixin:
                 return False
             return True
 
-    def validate_block(self, block: Block) -> bool:
-        try:
-            if not all([block.height is not None, block.prev_block_hash, block.transactions]):
-                return False
-
-            if not self._validate_pow(block):
-                return False
-
-            if not self._validate_merkle(block):
-                return False
-
-            if not self._ensure_unique_txids(block):
-                return False
-
-            if not self._check_block_limits(block):
-                return False
-
-            store = None
-            utxo_view = None
-            state_token = None
-            with self.lock:
-                if not self._validate_chain_context_locked(block):
-                    return False
-                store = self._ensure_utxodb() or UTXODB()
-                if not callable(getattr(store, "lookup_entry", None)):
-                    try:
-                        utxo_view = getattr(store, "utxos", None)
-                        if utxo_view is None:
-                            utxo_view = store.load_utxo_set()
-                    except Exception:
-                        utxo_view = None
-                state_token = self._chain_state_token_locked()
-
-            if not self._check_sigops_budget(block, store, utxo_view):
-                return False
-
-            if block.height > 0 and not self._validate_transactions(block, store):
-                return False
-
-            with self.lock:
-                if state_token != self._chain_state_token_locked():
-                    self._last_block_validation_error = "chain_state_changed_during_validation"
-                    return False
-                self._last_block_validation_error = None
-
-            return True
-
-        except Exception:
-            log.exception("[validate_block] Unexpected error during block validation")
-            return False

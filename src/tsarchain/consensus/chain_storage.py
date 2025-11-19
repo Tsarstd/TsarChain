@@ -21,13 +21,16 @@ from ..storage.kv import kv_enabled, batch, iter_prefix, clear_db, delete, _ensu
 from ..utils import config as CFG
 from ..utils.bootstrap import annotate_local_snapshot_meta
 from ..utils.helpers import bits_to_target, target_to_difficulty
-from ..utils.tsar_logging import get_ctx_logger
 from .genesis import GENESIS_HASH
 
+from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.consensus.chain_storage')
 
 class StorageMixin:
-    
+
+# =============================================================================
+# 1. HELPER
+# =============================================================================
     def _mark_chain_dirty(self, height: int = 0) -> None:
         if height < 0:
             height = 0
@@ -89,10 +92,34 @@ class StorageMixin:
         except Exception:
             pass
 
+
+# =============================================================================
+# 2. SNAPSHOTS BACKUP (FOR FAST SYNC)
+# =============================================================================
     def _backup_snapshot_enabled(self) -> bool:
         if self.in_memory:
             return False
         return bool(CFG.BACKUP_SNAPSHOT)
+
+    def _write_snapshot_manifest(self, target_dir: str, meta: dict, height: int) -> None:
+        data_basename = os.path.basename(CFG.LMDB_DATA_FILE)
+        data_path = os.path.join(target_dir, data_basename)
+        sha = meta.get("sha256")
+        size = meta.get("size")
+        if (not sha or not size) and os.path.exists(data_path):
+            size = size or os.path.getsize(data_path)
+            sha = sha or self._hash_file(data_path)
+        manifest = {
+            "version": 1,
+            "snapshot_url": meta.get("source") or CFG.SNAPSHOT_FILE_URL,
+            "size": int(size or 0),
+            "sha256": sha or "",
+            "height": int(meta.get("height", height)),
+            "generated_at": int(meta.get("generated_at") or int(time.time())),
+        }
+        manifest_path = os.path.join(target_dir, "snapshot.manifest.json")
+        with open(manifest_path, "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh, indent=2, sort_keys=True)
 
     def _maybe_backup_snapshot(self, tip_height: int, *, tip_timestamp: int | None = None) -> None:
         if tip_height < 0 or not kv_enabled():
@@ -187,7 +214,24 @@ class StorageMixin:
         if os.path.exists(target_dir):
             shutil.rmtree(target_dir, ignore_errors=True)
         os.replace(tmp_dir, target_dir)
+    
+    @staticmethod
+    def _hash_file(path: str) -> Optional[str]:
+        try:
+            digest = hashlib.sha256()
+            with open(path, "rb") as fh:
+                for chunk in iter(lambda: fh.read(4 * 1024 * 1024), b""):
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+            return digest.hexdigest()
+        except Exception:
+            return None
 
+
+# =============================================================================
+# 3. JOURNAL (.json)
+# =============================================================================
     def _chain_journal_enabled(self) -> bool:
         return (not self.in_memory) and (not kv_enabled()) and bool(getattr(self, "_chain_journal_path", None))
 
@@ -264,39 +308,10 @@ class StorageMixin:
             return chain_data or []
         return result
 
-    @staticmethod
-    def _hash_file(path: str) -> Optional[str]:
-        try:
-            digest = hashlib.sha256()
-            with open(path, "rb") as fh:
-                for chunk in iter(lambda: fh.read(4 * 1024 * 1024), b""):
-                    if not chunk:
-                        break
-                    digest.update(chunk)
-            return digest.hexdigest()
-        except Exception:
-            return None
 
-    def _write_snapshot_manifest(self, target_dir: str, meta: dict, height: int) -> None:
-        data_basename = os.path.basename(CFG.LMDB_DATA_FILE)
-        data_path = os.path.join(target_dir, data_basename)
-        sha = meta.get("sha256")
-        size = meta.get("size")
-        if (not sha or not size) and os.path.exists(data_path):
-            size = size or os.path.getsize(data_path)
-            sha = sha or self._hash_file(data_path)
-        manifest = {
-            "version": 1,
-            "snapshot_url": meta.get("source") or CFG.SNAPSHOT_FILE_URL,
-            "size": int(size or 0),
-            "sha256": sha or "",
-            "height": int(meta.get("height", height)),
-            "generated_at": int(meta.get("generated_at") or int(time.time())),
-        }
-        manifest_path = os.path.join(target_dir, "snapshot.manifest.json")
-        with open(manifest_path, "w", encoding="utf-8") as fh:
-            json.dump(manifest, fh, indent=2, sort_keys=True)
-
+# =============================================================================
+# 4. SAVE & LOAD CHAIN
+# =============================================================================
     def save_chain(self, *, force_full: bool = False):
         if CFG.CHAIN_FORCE_FULL_FLUSH:
             force_full = True
@@ -462,6 +477,10 @@ class StorageMixin:
             except Exception:
                 log.debug("[load_chain] snapshot meta annotate failed", exc_info=True)
 
+
+# =============================================================================
+# 5. STATE I/O & COMPUTE
+# =============================================================================
     def load_state(self):
         if self.in_memory:
             return

@@ -371,7 +371,8 @@ class ChainOpsMixin:
                     'heights_sequential': True,
                     'hash_linkages_valid': True,
                     'block_hashes_valid': True,
-                    'genesis_valid': True,}
+                    'genesis_valid': True,
+                    }
 
                 genesis = self.chain[0]
                 if genesis.height != 0:
