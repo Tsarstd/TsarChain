@@ -39,6 +39,12 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
     meta_path = CFG.SNAPSHOT_META_PATH
     os.makedirs(os.path.dirname(target_file), exist_ok=True)
 
+    if CFG.BACKUP_SNAPSHOT and CFG.SNAPSHOT_BACKUP_DIR:
+        try:
+            os.makedirs(CFG.SNAPSHOT_BACKUP_DIR, exist_ok=True)
+        except Exception:
+            pass
+
     if not CFG.SNAPSHOT_BOOTSTRAP_ENABLED:
         return SnapshotBootstrapResult(status="skipped", reason="disabled")
 
@@ -52,7 +58,6 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
         return SnapshotBootstrapResult(status="skipped", reason="no_source")
 
     expected_sha = _safe_lower(manifest, "sha256")
-    expected_size = _safe_int(manifest, "size")
     snapshot_url = (
         (manifest or {}).get("snapshot_url")
         or (manifest or {}).get("url")
@@ -109,14 +114,12 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
         log.info("[bootstrap.%s] %s", ctx, message)
 
     tmp_path = None
-    bytes_written = 0
     backup_path: Optional[str] = None
     replaced = False
     try:
         tmp_fd, tmp_path = tempfile.mkstemp(prefix="tsar_snapshot_", suffix=".mdb")
         os.close(tmp_fd)
 
-        bytes_written = _download_snapshot(snapshot_url, tmp_path, expected_size, _emit)
         actual_sha = _hash_file(tmp_path)
         if expected_sha and actual_sha != expected_sha:
             raise ValueError(f"sha256 mismatch (expected {expected_sha}, got {actual_sha})")
@@ -207,7 +210,6 @@ def _fetch_manifest() -> Optional[dict]:
         return None
     return manifest
 
-
 def _verify_manifest_signature(manifest: dict | None) -> bool:
     if not manifest:
         return True
@@ -232,34 +234,6 @@ def _verify_manifest_signature(manifest: dict | None) -> bool:
         log.warning("[bootstrap] manifest signature invalid: %s", exc)
         return False
 
-
-def _download_snapshot(url: str, dest: str, expected_size: int, emit: Callable[[str], None]) -> int:
-    req = urllib.request.Request(url, headers={"User-Agent": CFG.SNAPSHOT_USER_AGENT})
-    bytes_written = 0
-    next_report = 0
-    expected = max(0, int(expected_size or 0))
-    with urllib.request.urlopen(req, timeout=CFG.SNAPSHOT_HTTP_TIMEOUT) as resp, open(dest, "wb") as handle:
-        while True:
-            chunk = resp.read(CFG.SNAPSHOT_CHUNK_BYTES)
-            if not chunk:
-                break
-            
-            handle.write(chunk)
-            bytes_written += len(chunk)
-            if expected:
-                progress = bytes_written / expected
-                if bytes_written >= next_report:
-                    emit(f"Mengunduh snapshot {progress:.0%} ({bytes_written/1_048_576:.1f} MB)")
-                    next_report = bytes_written + max(CFG.SNAPSHOT_CHUNK_BYTES * 4, expected // 10 or CFG.SNAPSHOT_CHUNK_BYTES * 4)
-            else:
-                if bytes_written >= next_report:
-                    emit(f"Mengunduh snapshot {bytes_written/1_048_576:.1f} MB")
-                    next_report = bytes_written + CFG.SNAPSHOT_CHUNK_BYTES * 4
-    if expected and bytes_written < expected:
-        emit(f"Snapshot download smaller than expected ({bytes_written} < {expected})")
-    return bytes_written
-
-
 def _hash_file(path: str) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
@@ -270,7 +244,6 @@ def _hash_file(path: str) -> str:
             digest.update(chunk)
     return digest.hexdigest()
 
-
 def _load_meta(path: str) -> dict:
     if not os.path.exists(path):
         return {}
@@ -280,13 +253,11 @@ def _load_meta(path: str) -> dict:
     except Exception:
         return {}
 
-
 def _write_meta(path: str, data: dict) -> None:
     tmp_path = f"{path}.tmp"
     with open(tmp_path, "w", encoding="utf-8") as handle:
         json.dump(data, handle, indent=2, sort_keys=True)
     os.replace(tmp_path, path)
-
 
 def _safe_lower(source: Optional[dict], key: str) -> str:
     if not source:
@@ -296,7 +267,6 @@ def _safe_lower(source: Optional[dict], key: str) -> str:
         return val.strip().lower()
     return ""
 
-
 def _safe_int(source: Optional[dict], key: str) -> int:
     if not source:
         return 0
@@ -304,7 +274,6 @@ def _safe_int(source: Optional[dict], key: str) -> int:
         return int(source.get(key, 0))
     except Exception:
         return 0
-
 
 def annotate_local_snapshot_meta(height: Optional[int], tip_timestamp: Optional[int] = None) -> Optional[dict]:
     meta_path = CFG.SNAPSHOT_META_PATH
@@ -358,13 +327,14 @@ __all__ = ["maybe_bootstrap_snapshot", "SnapshotBootstrapResult", "annotate_loca
 
 
 def _validate_snapshot_chain() -> tuple[bool, Optional[str]]:
-    db_dir = getattr(CFG, "DB_DIR", "")
+    db_dir = CFG.LMDB_DATA_FILE
     if not db_dir or not os.path.exists(db_dir):
         return False, "DB directory missing"
     try:
         env = lmdb.open(db_dir, readonly=True, max_dbs=16, lock=False)
     except Exception as exc:
         return False, f"cannot open LMDB: {exc}"
+
     entry: Optional[dict] = None
     try:
         try:
@@ -374,7 +344,7 @@ def _validate_snapshot_chain() -> tuple[bool, Optional[str]]:
         with env.begin(db=chain_db, write=False) as txn:
             cur = txn.cursor()
             if not cur.first():
-                return False, "chain db kosong"
+                return False, "empty chain db"
             try:
                 entry = json.loads(cur.value().decode("utf-8"))
             except Exception as exc:
@@ -390,9 +360,19 @@ def _validate_snapshot_chain() -> tuple[bool, Optional[str]]:
 
     height = int(entry.get("height", -1))
     if height != 0:
-        return False, f"snapshot tidak memuat genesis (height pertama {height})"
+        return False, f"genesis block not include in snapshot (first height {height})"
+
     prev = (entry.get("prev_block_hash") or "").strip().lower()
     zero_hex = getattr(CFG.ZERO_HASH, "hex", lambda: bytes(CFG.ZERO_HASH).hex())()
     if prev != zero_hex:
-        return False, "prev_block_hash genesis tidak sesuai"
+        return False, "prev_block_hash genesis missmatch"
+
+    expected_genesis = CFG.GENESIS_HASH_HEX
+    if expected_genesis:
+        entry_hash = (entry.get("hash") or "").strip().lower()
+        if not entry_hash:
+            return False, "genesis hash not available in snapshot"
+        if entry_hash != expected_genesis:
+            return False, "genesis hash snapshot was not same in tsarchain network"
+
     return True, None

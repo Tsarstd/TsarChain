@@ -32,7 +32,7 @@ class UTXOGraffitiMixin:
 
     def script_to_address(self, script) -> str | None:
         """
-        Attempt to turn common script types (currently P2WPKH) into a bech32 address.
+        Attempt to turn common script types (P2WPKH) into a bech32 address.
         Needed for Graffiti payout validation.
         """
         b = self._script_bytes(script)
@@ -61,25 +61,35 @@ class UTXOGraffitiMixin:
                             break
             if not meta:
                 return
+            
             event = str(meta.get("event", "POST")).upper()
             if event == "POST":
                 self._handle_graffiti_post(meta, outputs_info, txid_hex, block_height)
             elif event == "COMMENT":
                 self._handle_graffiti_comment(meta, outputs_info, txid_hex, block_height)
+                
         except Exception:
             log.exception("[graffiti] failed to record event tx=%s", getattr(tx, "txid", None))
 
-    def _handle_graffiti_post(self, meta: dict[str, Any], outputs_info: list[dict[str, Any]],
-                              txid_hex: str, block_height: int) -> None:
+    def _handle_graffiti_post(
+        self,
+        meta: dict[str, Any],
+        outputs_info: list[dict[str, Any]],
+        txid_hex: str,
+        block_height: int
+        ) -> None:
+        
         sha_hex = str(meta.get("sha256") or "")
         creator = meta.get("creator")
         art_id = GRAFFITI.compute_art_id(sha_hex, creator)
         pool_addr = GRAFFITI.derive_pool_address(art_id)
         min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
+        
         paid = sum(int(info.get("amount") or 0) for info in outputs_info if info.get("address") == pool_addr)
         if paid < min_fee:
             log.warning("[graffiti] POST fee too low: paid=%s required=%s tx=%s", paid, min_fee, txid_hex)
             return
+        
         entry = {
             "sha256": sha_hex,
             "size": int(meta.get("size") or 0),
@@ -90,8 +100,13 @@ class UTXOGraffitiMixin:
         }
         self._graffiti_registry.record_post(art_id, entry, txid_hex, block_height, pool_addr, paid)
 
-    def _handle_graffiti_comment(self, meta: dict[str, Any], outputs_info: list[dict[str, Any]],
-                                 txid_hex: str, block_height: int) -> None:
+    def _handle_graffiti_comment(
+        self,
+        meta: dict[str, Any],
+        outputs_info: list[dict[str, Any]],
+        txid_hex: str,
+        block_height: int) -> None:
+        
         art_id = str(meta.get("art_id") or "").lower()
         if not art_id:
             return
@@ -116,10 +131,12 @@ class UTXOGraffitiMixin:
         split = GRAFFITI.calc_comment_split(base_amount, tip)
         paid_creator = sum(int(info.get("amount") or 0) for info in outputs_info if info.get("address") == creator_addr)
         paid_pool = sum(int(info.get("amount") or 0) for info in outputs_info if info.get("address") == pool_addr)
+
         if paid_creator < split["creator_total"]:
             log.warning("[graffiti] COMMENT royalty shortfall for art_id=%s paid=%s req=%s", art_id, paid_creator, split["creator_total"])
         if paid_pool < split["storage"]:
             log.warning("[graffiti] COMMENT storage share shortfall for art_id=%s paid=%s req=%s", art_id, paid_pool, split["storage"])
+            
         self._graffiti_registry.record_comment(
             art_id=art_id,
             meta=meta,

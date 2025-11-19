@@ -43,6 +43,7 @@ class UTXOBalanceMixin:
     def _ensure_index_locked(self):
         if self._address_index is not None:
             return
+        
         self._address_index = defaultdict(set)
         self._key_to_spk.clear()
         for key, entry in self.utxos.items():
@@ -61,6 +62,7 @@ class UTXOBalanceMixin:
     def _index_entry(self, key: str, tx_out):
         if self._address_index is None:
             return
+        
         spk_hex = self._script_hex_from_tx_out(tx_out)
         if spk_hex:
             self._address_index.setdefault(spk_hex, set()).add(key)

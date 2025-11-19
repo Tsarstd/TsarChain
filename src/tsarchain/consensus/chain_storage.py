@@ -207,9 +207,6 @@ class StorageMixin:
             data_file = CFG.LMDB_DATA_FILE
             if data_file and os.path.exists(data_file):
                 shutil.copy2(data_file, os.path.join(tmp_dir, os.path.basename(data_file)))
-            lock_file = CFG.LMDB_LOCK_FILE
-            if lock_file and os.path.exists(lock_file):
-                shutil.copy2(lock_file, os.path.join(tmp_dir, os.path.basename(lock_file)))
                 
         if os.path.exists(target_dir):
             shutil.rmtree(target_dir, ignore_errors=True)

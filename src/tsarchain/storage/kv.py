@@ -27,8 +27,8 @@ def _ensure_env():
         return _env
     if not kv_enabled():
         return None
-    os.makedirs(CFG.DB_DIR, exist_ok=True)
-    _env = lmdb.open(CFG.DB_DIR, map_size=int(CFG.LMDB_MAP_SIZE_INIT), max_dbs=16, create=True, lock=True, subdir=True)
+    os.makedirs(CFG.LMDB_DATA_FILE, exist_ok=True)
+    _env = lmdb.open(CFG.LMDB_DATA_FILE, map_size=int(CFG.LMDB_MAP_SIZE_INIT), max_dbs=16, create=True, lock=True, subdir=True)
     return _env
 
 def _grow_env_map(min_target: int | None = None) -> int:

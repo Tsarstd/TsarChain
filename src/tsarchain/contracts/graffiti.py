@@ -126,24 +126,34 @@ def build_metadata(sha256_hex: str, size_bytes: int, mime: str,
             meta[k] = v
     return meta
 
-def build_comment_metadata(art_id: str, comment_text: str, amount_sats: int,
-                           creator_addr: str,
-                           commenter_addr: str | None = None,
-                           tip_sats: int = 0,
-                           ts: Optional[int] = None,
-                           extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def build_comment_metadata(
+    art_id: str,
+    comment_text: str,
+    amount_sats: int,
+    creator_addr: str,
+    commenter_addr: str | None = None,
+    tip_sats: int = 0,
+    ts: Optional[int] = None,
+    extra: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+    
     if not _is_valid_art_id(art_id):
         raise ValueError("bad_art_id")
+    
     if not _is_valid_tsar_address(creator_addr):
         raise ValueError("bad_creator_addr")
+    
     if commenter_addr and not _is_valid_tsar_address(commenter_addr):
         raise ValueError("bad_commenter_addr")
+    
     base_amount = int(amount_sats)
     if base_amount < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
         raise ValueError("comment_fee_too_low")
+    
     tip = int(tip_sats or 0)
     if tip < 0:
         raise ValueError("bad_tip")
+    
     comment_hex = _encode_comment(comment_text)
     meta: Dict[str, Any] = {
         "event": "COMMENT",
@@ -171,6 +181,7 @@ def calc_comment_split(base_amount: int, tip: int = 0) -> Dict[str, int]:
     amt = int(base_amount)
     if amt < 0:
         raise ValueError("base_amount_negative")
+    
     tip_amt = max(0, int(tip))
     denom = max(1, int(CFG.GRAFFITI_COMMENT_BP_DENOM))
     creator_bp = max(0, min(denom, int(CFG.GRAFFITI_COMMENT_CREATOR_BP)))
@@ -178,6 +189,7 @@ def calc_comment_split(base_amount: int, tip: int = 0) -> Dict[str, int]:
     creator_share = (amt * creator_bp) // denom
     storage_share = (amt * storage_bp) // denom
     miner_share = max(0, amt - creator_share - storage_share)
+    
     return {
         "creator_base": int(creator_share),
         "creator_total": int(creator_share + tip_amt),

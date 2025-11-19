@@ -93,12 +93,10 @@ WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wal
 # 2. DATABASE & SNAPSHOTS
 # =============================================================================
 # ---- KV BACKEND ----
-DB_DIR             = "data/DB"  # LMDB root folder
 KV_BACKEND         = "lmdb"  # active key-value backend implementation (lmdb & json)
+LMDB_DATA_FILE     = "data/tsachain_db"  # main LMDB data file path
 LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
-LMDB_DATA_FILE     = os.path.join(DB_DIR, "data.mdb")  # main LMDB data file path
-LMDB_LOCK_FILE     = os.path.join(DB_DIR, "lock.mdb")  # LMDB lock file path
 
 # ---- SNAPSHOT SIGNING ----
 SNAPSHOT_REQUIRE_SIGNATURE = False  # demand signed snapshot manifests when True
@@ -115,12 +113,12 @@ SNAPSHOT_BOOTSTRAP_FOR_CLI = False  # enable snapshot bootstrap path for cli_nod
 SNAPSHOT_HTTP_TIMEOUT    = 90  # HTTP timeout applied to snapshot downloads
 SNAPSHOT_CHUNK_BYTES     = 2 * 1024 * 1024  # chunk size when streaming snapshot data
 SNAPSHOT_MIN_SIZE_BYTES  = 4 * 1024  # ignore snapshot files smaller than this
-SNAPSHOT_META_PATH       = os.path.join(DB_DIR, "snapshot.meta.json")  # cached metadata file for snapshots
+SNAPSHOT_META_PATH       = os.path.join(LMDB_DATA_FILE, "snapshot.meta.json")  # cached metadata file for snapshots
 SNAPSHOT_MAX_AGE_SECONDS = 12 * 3600  # maximum tolerated snapshot age (12h)
 SNAPSHOT_USER_AGENT      = "TsarChainSnapshot/1.0"  # UA string used when fetching snapshots
 
 # ---- SNAPSHOT BACKUP ----
-SNAPSHOT_BACKUP_DIR   = os.path.join("data", "snapshot")  # folder storing backup snapshots
+SNAPSHOT_BACKUP_DIR   = "data/snapshot"  # folder storing backup snapshots
 BACKUP_SNAPSHOT       = True  # toggle to keep automatic backup copies
 BLOCK_BACKUP_SNAPSHOT = 25  # interval in blocks between snapshot backups
 
@@ -169,8 +167,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "001787dea9e29d1f8991abddb3df849dd7262ade1ea8a40c52c4932e3e586c3d"  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 1  # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 

@@ -22,16 +22,17 @@ class UTXOValidationMixin:
         prev_txid = getattr(tx_input, "txid", None)
         if prev_txid is None:
             prev_txid = getattr(tx_input, "prev_tx", None)
+            
         prev_txid_hex = self._txid_hex(prev_txid)
-
+        
         vout = getattr(tx_input, "vout", None)
         if vout is None:
-            vout = getattr(tx_input, "prev_index", None)
+            vout = getattr(tx_input, "prev_index", None)     
         try:
             vout = int(vout)
         except Exception:
             vout = None
-
+            
         return prev_txid_hex, vout
 
     def _is_unspendable_opreturn(self, tx_out) -> bool:
@@ -47,6 +48,7 @@ class UTXOValidationMixin:
                 b = bytes.fromhex(spk)
             else:
                 return False
+            
             return len(b) >= 1 and b[0] == 0x6A
         except Exception:
             log.exception("[_is_unspendable_opreturn] Error checking OP_RETURN in scriptPubKey")
@@ -55,6 +57,7 @@ class UTXOValidationMixin:
     def update(self, transactions, block_height: int, *, autosave: bool = True):
         if not transactions:
             return
+        
         with self._lock:
             for tx in transactions:
                 txid_hex = self._txid_hex(getattr(tx, "txid", None))
@@ -65,6 +68,7 @@ class UTXOValidationMixin:
                         prev_txid_hex, vout = self._prevout_from_txin(tx_input)
                         if prev_txid_hex is None or vout is None:
                             continue
+                        
                         spent_key = f"{prev_txid_hex}:{int(vout)}"
                         if self.utxos.pop(spent_key, None) is not None:
                             self._removed_keys.add(spent_key)
@@ -111,9 +115,11 @@ class UTXOValidationMixin:
                             prev_txid_hex, vout = self._prevout_from_txin(tx_input)
                             if prev_txid_hex is None or vout is None:
                                 continue
+                            
                             spent_key = f"{prev_txid_hex}:{int(vout)}"
                             if self.utxos.pop(spent_key, None) is not None:
                                 self._drop_index_entry(spent_key)
+                                
                     outputs_info = []
                     for index, tx_out in enumerate(getattr(tx, "outputs", []) or []):
                         self.add(txid_hex, index, tx_out, is_coinbase=is_coinbase, block_height=height, autosave=False)
@@ -162,6 +168,7 @@ class UTXOValidationMixin:
                 self._removed_keys.add(key)
                 if autosave:
                     self._save()
+                    
                 self._drop_index_entry(key)
                 self._bump_version()
 
@@ -204,6 +211,7 @@ class UTXOValidationMixin:
                     log.exception("[apply_tx_to_utxoset] Error removing prevout from dict")
                     pass
                 return True
+            
             removed = False
             for addr, lst in list(snapshot.items()):
                 if isinstance(lst, list):

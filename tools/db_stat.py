@@ -42,7 +42,7 @@ def _default_db_dir() -> str:
     try:
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         sys.path.append(os.path.join(here, 'src'))
-        return CFG.DB_DIR
+        return CFG.LMDB_DATA_FILE
     except Exception:
         return os.path.join('data', 'DB')
 

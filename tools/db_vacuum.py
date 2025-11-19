@@ -20,14 +20,11 @@ Notes:
 """
 import os
 import sys
+import lmdb
 import time
 import argparse
 
-try:
-    import lmdb  # type: ignore
-except Exception:
-    print("lmdb module not available. Install with: pip install lmdb")
-    sys.exit(1)
+from tsarchain.utils import config as CFG
 
 
 def _sum_dir_bytes(path: str) -> int:
@@ -50,8 +47,7 @@ def _default_src() -> str:
     try:
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         sys.path.append(os.path.join(here, 'src'))
-        from tsarchain.utils.config import DB_DIR  # type: ignore
-        return DB_DIR
+        return CFG.LMDB_DATA_FILE
     except Exception:
         return os.path.join('data', 'DB')
 
