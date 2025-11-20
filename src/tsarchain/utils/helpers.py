@@ -56,20 +56,6 @@ SECP256K1_P = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
 SECP256K1_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 HALF_N = SECP256K1_N // 2
 
-def print_banner():
-    banner = r"""
-    ████████╗███████╗ █████╗ ██████╗    ██████╗██╗  ██╗ █████╗ ██╗███╗   ██╗
-    ╚══██╔══╝██╔════╝██╔══██╗██╔══██╗  ██╔════╝██║  ██║██╔══██╗██║████╗  ██║
-       ██║   ███████╗███████║██████╔╝  ██║     ███████║███████║██║██╔██╗ ██║
-       ██║   ╚════██║██╔══██║██╔══██╗  ██║     ██╔══██║██╔══██║██║██║╚██╗██║
-       ██║   ███████║██║  ██║██║  ██║  ╚██████╗██║  ██║██║  ██║██║██║ ╚████║
-       ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ 
-                                                                          
-                            Tsar Chain Mining CLI
-                       Long Live The Voice Sovereignty
-    """
-    print(banner)
-
 # -----------------------------
 # RANDOMX MINING ALGO
 # -----------------------------

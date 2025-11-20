@@ -22,7 +22,9 @@ Notes
 - For full-node duties and transaction inclusion, use `cli_node_miner.py`.
 """
 
-import argparse, psutil, errno, signal, time, threading, queue, colorama, platform, shutil, subprocess, os, sys
+from __future__ import annotations
+
+import argparse, psutil, errno, signal, time, threading, queue, os, sys
 import multiprocessing as mp
 from datetime import datetime
 
@@ -30,7 +32,10 @@ from datetime import datetime
 from tsarchain.consensus.blockchain import Blockchain
 from tsarchain.network.node import Network
 from tsarchain.utils import config as CFG
-from tsarchain.utils.helpers import print_banner
+
+from .cosmetic import interface as COL
+from .cosmetic.tui import MinerTUI, create_tui_logger
+
 from tsarchain.utils.tsar_logging import setup_logging
 
 INTERRUPTED_ERRNOS = {
@@ -42,25 +47,18 @@ INTERRUPTED_ERRNOS = {
     if code is not None
 }
 
-# ---------- Simple color + timestamp utilities ----------
-
-colorama.init()
-RESET  = "\033[0m"
-BLUE   = "\033[34m"
-YELLOW = "\033[33m"
-GREEN  = "\033[32m"
-RED    = "\033[31m"
-CYAN   = "\033[36m"
-DIM    = "\033[2m"
-
 def _stamp() -> str:
     now = datetime.now()
     d = f"{now.year:04d}.{now.month:02d}.{now.day:02d}"
     t = f"{now.hour:02d}.{now.minute:02d}.{now.second:02d}"
-    return f"[{BLUE}{d}{RESET}] - [{YELLOW}{t}{RESET}]"
+    return f"{COL.BOLD}{COL.bg_rgb_color(43, 128, 197)} {d} {COL.RESET}{COL.BOLD}{COL.bg_rgb_color(197, 168, 43)} {t} {COL.RESET}"
 
-def clog(message: str, color: str = GREEN):
-    print(f"{_stamp()} : {color}{message}{RESET}")
+def clog(message: str, color: str = COL.GREEN):
+    # Gunakan TUI logger jika ada, fallback ke print biasa
+    if 'tui_logger' in globals():
+        tui_logger(f"{_stamp()} : {color}{message}{COL.RESET}")
+    else:
+        print(f"{_stamp()} : {color}{message}{COL.RESET}")
 
 def human_hps(hps: float) -> str:
     try:
@@ -78,137 +76,6 @@ def human_hps(hps: float) -> str:
         return f"{hps:,.1f} {units[i]}"
     return f"{hps:,.2f} {units[i]}"
 
-def _human_bytes(n: int) -> str:
-    try:
-        n = float(n)
-    except Exception:
-        return "?"
-    for unit in ("B","KB","MB","GB","TB","PB","EB"):
-        if n < 1024.0:
-            return f"{n:.1f} {unit}"
-        n /= 1024.0
-    return f"{n:.1f} ZB"
-
-def _cpu_brand() -> str:
-    try:
-        sysname = platform.system()
-        if sysname == "Windows":
-            # Registry
-            try:
-                import winreg  # type: ignore
-                with winreg.OpenKey(
-                    winreg.HKEY_LOCAL_MACHINE,
-                    r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as k:
-                    name, _ = winreg.QueryValueEx(k, "ProcessorNameString")
-                    name = " ".join(str(name).split())
-                    if name:
-                        return name
-            except Exception:
-                pass
-
-            # WMIC
-            try:
-                out = subprocess.check_output(
-                    ["wmic", "cpu", "get", "Name"],
-                    stderr=subprocess.DEVNULL
-                )
-                lines = [l.strip() for l in out.decode(errors="ignore").splitlines() if l.strip()]
-                if len(lines) >= 2:
-                    name = " ".join(lines[1].split())
-                    if name:
-                        return name
-            except Exception:
-                pass
-
-            # PowerShell
-            try:
-                out = subprocess.check_output(
-                    ["powershell", "-NoProfile", "-Command",
-                     "Get-CimInstance Win32_Processor | Select-Object -ExpandProperty Name"],
-                    stderr=subprocess.DEVNULL
-                )
-                name = " ".join(out.decode(errors="ignore").strip().split())
-                if name:
-                    return name
-            except Exception:
-                pass
-        
-        if sysname == "Darwin":
-            try:
-                out = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"])
-                return out.decode().strip()
-            except Exception:
-                pass
-            
-        elif sysname == "Linux":
-            try:
-                with open("/proc/cpuinfo", "r", encoding="utf-8", errors="ignore") as f:
-                    for line in f:
-                        if "model name" in line:
-                            return line.split(":", 1)[1].strip()
-            except Exception:
-                pass
-            
-            # lscpu
-            try:
-                out = subprocess.check_output(["lscpu"], stderr=subprocess.DEVNULL)
-                for line in out.decode(errors="ignore").splitlines():
-                    if "Model name:" in line:
-                        name = " ".join(line.split(":", 1)[1].strip().split())
-                        if name:
-                            return name
-            except Exception:
-                pass
-            
-        # Windows / fallback
-        name = platform.processor() or getattr(platform.uname(), "processor", "") or ""
-        name = " ".join(str(name).strip().split())
-        return name or "Unknown CPU"
-    except Exception:
-        return "Unknown CPU"
-
-def print_system_snapshot(cores_hint: int | None = None):
-    try:
-        uname = platform.uname()
-        vm = psutil.virtual_memory()
-        du = shutil.disk_usage("/")  # root fs
-        freq = None
-        try:
-            freq = psutil.cpu_freq()
-        except Exception:
-            pass
-
-        phys = psutil.cpu_count(logical=False) or 0
-        logi = psutil.cpu_count(logical=True) or 0
-        try:
-            la = os.getloadavg()  # Unix
-            la_str = f"{la[0]:.2f} {la[1]:.2f} {la[2]:.2f}"
-        except Exception:
-            la_str = "n/a"
-
-        clog("System snapshot:", color=CYAN)
-        clog(f"  CPU     : {_cpu_brand()}")
-        line_core = f"  Cores   : {phys} phys / {logi} logical"
-        if cores_hint:
-            line_core += f"  |  use {cores_hint}"
-        clog(line_core)
-        if freq:
-            try:
-                base = f"{(freq.min or 0)/1000:.2f}"
-                cur  = f"{(freq.current or 0)/1000:.2f}"
-                mx   = f"{(freq.max or 0)/1000:.2f}"
-                clog(f"  Speed   : {cur} GHz (base ~{base} / boost ~{mx})")
-            except Exception:
-                pass
-        clog(f"  RAM     : {_human_bytes(vm.total)} total, {_human_bytes(vm.available)} free")
-        clog(f"  Disk    : {_human_bytes(du.free)} free of {_human_bytes(du.total)}")
-        clog(f"  OS      : {uname.system} {uname.release} ({uname.machine})")
-        clog(f"  Python  : {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
-        clog("-" * 40, color=RED)
-    except Exception as e:
-        clog(f"[snapshot] failed: {e}", color=YELLOW)
-
-
 class HashrateReporter(threading.Thread):
     def __init__(self, q: mp.Queue, name="HashrateReporter"):
         super().__init__(name=name, daemon=True)
@@ -225,9 +92,9 @@ class HashrateReporter(threading.Thread):
                     continue
                 if isinstance(msg, tuple) and len(msg) == 2 and msg[0] == "TOTAL_HPS":
                     hps = human_hps(msg[1])
-                    line = f"Hashrate ~ {hps} {DIM}{RESET}"
+                    line = f"Hashrate ~ {hps} {COL.DIM}{COL.RESET}"
                     if line != last_line:
-                        clog(line, color=CYAN)
+                        clog(line, color=COL.CYAN)
                         last_line = line
         except Exception:
             pass
@@ -249,32 +116,35 @@ def _register_bootstrap_peers(network: Network) -> int:
 
 
 class LightMiner:
-    """
-    Miner that keeps blockchain/UTXO data only in-memory.
-    It relies on peers for the latest tip and does not create/persist genesis locally.
-    """
-    def __init__(self, address: str, cores: int):
+    def __init__(
+        self,
+        address: str,
+        cores: int,
+        *,
+        progress_queue: mp.Queue | None = None,
+        tui: MinerTUI | None = None,
+    ):
         self.address = address
         self.cores = cores
         self.blockchain: Blockchain | None = None
         self.network: Network | None = None
         self.mining_alive = True
         self.cancel_mining = mp.Event()
-        self._progress_q: mp.Queue | None = None
-        self._hr_thread: HashrateReporter | None = None
+        self._progress_q: mp.Queue = progress_queue or mp.Queue()
+        self.tui = tui
 
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
 
     # -------- lifecycle --------
     def _handle_signal(self, signum, _frame):
-        clog(f"[signal] Received {signum}; stopping miner...", color=YELLOW)
+        clog(f"[signal] Received {signum}; stopping miner...", color=COL.YELLOW)
         self.mining_alive = False
         self.cancel_mining.set()
 
     def validate_address(self) -> bool:
         if not self.address or not self.address.lower().startswith("tsar1"):
-            clog("Error: Address must start with 'tsar1...' (bech32)", color=RED)
+            clog("Error: Address must start with 'tsar1...' (bech32)", color=COL.RED)
             return False
         return True
 
@@ -292,7 +162,7 @@ class LightMiner:
             clog(f"Connected to TsarChain Network [{peer_count} bootstrap peers]")
             return True
         except Exception as exc:
-            clog(f"Failed to connect: {exc}", color=RED)
+            clog(f"Failed to connect: {exc}", color=COL.RED)
             return False
 
     def wait_for_sync(self, timeout: int = 600) -> bool:
@@ -312,7 +182,7 @@ class LightMiner:
 
                 if not active_peers:
                     if not notified_no_peer:
-                        clog("[sync] Waiting for peer connection...", color=YELLOW)
+                        clog("[sync] Waiting for peer connection...", color=COL.YELLOW)
                         notified_no_peer = True
                     time.sleep(2)
                     continue
@@ -357,18 +227,11 @@ class LightMiner:
                 time.sleep(2)
 
             except Exception as exc:
-                clog(f"[sync] Error: {exc}", color=RED)
+                clog(f"[sync] Error: {exc}", color=COL.RED)
                 time.sleep(2)
                 
-        clog("[sync] Failed to obtain chain tip within timeout.", color=RED)
+        clog("[sync] Failed to obtain chain tip within timeout.", color=COL.RED)
         return False
-
-    def _start_hashrate_thread(self):
-        if self._progress_q is None:
-            self._progress_q = mp.Queue()
-
-        self._hr_thread = HashrateReporter(self._progress_q, self.cancel_mining)
-        self._hr_thread.start()
 
     def start_mining(self, timeout: int = 600) -> bool:
         if not self.validate_address():
@@ -380,10 +243,10 @@ class LightMiner:
 
         current_height = int(getattr(self.blockchain, "height", -1))
         if current_height < 0:
-            clog("[sync] No chain data available from peers; cannot strating mining", color=RED)
+            clog("[sync] No chain data available from peers; cannot strating mining", color=COL.RED)
             return False
 
-        clog("=== Mining Informations ===", color=CYAN)
+        clog("=== Mining Informations ===", color=COL.CYAN)
         clog(f"Address : {self.address}")
         clog(f"Cores   : {self.cores}")
         try:
@@ -392,10 +255,7 @@ class LightMiner:
         except Exception:
             pass
         
-        clog("NOTE    : No local DB is kept. Use cli_node_miner.py for full-node duties.", color=YELLOW)
-
-        # Start hashrate reporter (prints every ~10–15s when Block.mine emits progress)
-        self._start_hashrate_thread()
+        clog("NOTE    : No local DB is kept. Use cli_node_miner.py for full-node duties.", color=COL.YELLOW)
 
         while self.mining_alive:
             try:
@@ -407,34 +267,40 @@ class LightMiner:
                     use_cores=self.cores,
                     cancel_event=self.cancel_mining,
                     pow_backend="randomx",
-                    progress_queue=self._progress_q,  # << enable TOTAL_HPS feed
+                    progress_queue=self._progress_q,  # TOTAL_HPS -> TUI
                 )
 
                 if not self.mining_alive:
                     break
 
                 if block:
+                    if self.tui is not None:
+                        try:
+                            self.tui.note_block_mined(getattr(block, "height", None))
+                        except Exception:
+                            pass
+
                     h = getattr(block, "height", "?")
                     clog(f"Block mined at height {h} : {block.hash().hex()[:18]}…  broadcasting...")
                     try:
                         sent = self.network.publish_block(block, exclude=None, force=True) if self.network else 0
                         if sent <= 0:
-                            clog("[broadcast] No peers reached; forcing fast sync.", color=YELLOW)
+                            clog("[broadcast] No peers reached; forcing fast sync.", color=COL.YELLOW)
                             if self.network:
                                 self.network.request_sync(fast=True)
                     except Exception as exc:
-                        clog(f"[broadcast] Error: {exc}", color=RED)
+                        clog(f"[broadcast] Error: {exc}", color=COL.RED)
             except KeyboardInterrupt:
                 self.mining_alive = False
                 self.cancel_mining.set()
-                clog("[signal] Mining interrupted by user; stopping workers...", color=YELLOW)
+                clog("[signal] Mining interrupted by user; stopping workers...", color=COL.YELLOW)
             except Exception as exc:
                 if isinstance(exc, OSError) and getattr(exc, "errno", None) in INTERRUPTED_ERRNOS:
-                    clog("[mining] Interrupted system call; stopping miners...", color=YELLOW)
+                    clog("[mining] Interrupted system call; stopping miners...", color=COL.YELLOW)
                     self.mining_alive = False
                     self.cancel_mining.set()
                     break
-                clog(f"[mining] Error: {exc}", color=RED)
+                clog(f"[mining] Error: {exc}", color=COL.RED)
                 time.sleep(1)
         return True
 
@@ -447,23 +313,22 @@ class LightMiner:
             except Exception:
                 pass
             self.network = None
-        clog("[light-node] Shutdown complete.", color=YELLOW)
+        clog("[light-node] Shutdown complete.", color=COL.YELLOW)
+
 
 
 # -------- CLI helpers --------
 def _prompt_address_and_cores() -> tuple[str, int]:
-    print_banner()
-    clog("CLI Miner (RandomX)")
-    clog("Only mines + validates tip. For full node duties use cli_node_miner.py.")
-    print_system_snapshot(cores_hint=None)
-    clog("Please enter your mining details:", color=CYAN)
-    clog("-" * 40, color=RED)
+    COL.print_banner()
+    COL.print_system_snapshot(cores_hint=None)
+    clog("Please enter your mining details:", color=COL.CYAN)
+    clog("-" * 40, color=COL.RED)
 
     while True:
         addr = input("Miner address (tsar1...): ").strip()
         if addr.lower().startswith("tsar1"):
             break
-        clog("Invalid address. Example: tsar1qyourwalletaddresshere", color=YELLOW)
+        clog("Invalid address. Example: tsar1qyourwalletaddresshere", color=COL.YELLOW)
 
     while True:
         core_default = psutil.cpu_count(logical=True)
@@ -475,25 +340,25 @@ def _prompt_address_and_cores() -> tuple[str, int]:
             cores = int(entry)
             if cores > 0:
                 break
-            clog("Cores must be positive.", color=YELLOW)
+            clog("Cores must be positive.", color=COL.YELLOW)
         except ValueError:
-            clog("Enter a number.", color=YELLOW)
+            clog("Enter a number.", color=COL.YELLOW)
 
     return addr, cores
 
 def _prompt_rx_full_mem() -> bool:
-    clog("RandomX Memory Boost", color=CYAN)
-    clog("-" * 40, color=RED)
+    clog("RandomX Memory Boost", color=COL.CYAN)
+    clog("-" * 40, color=COL.RED)
     clog("if you choose 'y' your PC will consume 2.5GB - 7GB RAM Usage")
     clog("if you choose 'N' RAM Usage will stable in 2.5GB")
-    clog("-" * 40, color=RED)
+    clog("-" * 40, color=COL.RED)
     while True:
         ans = input("Enable RandomX FULL MEMORY mode (+2.5GB)? [y/N]: ").strip().lower()
         if ans in ("y", "yes", "1"):
             return True
         if ans in ("n", "no", "0", ""):
             return False
-        clog("Please answer y or n.", color=YELLOW)
+        clog("Please answer y or n.", color=COL.YELLOW)
 
 
 def parse_args():
@@ -514,15 +379,10 @@ def main():
         addr_prompt, cores_prompt = _prompt_address_and_cores()
         address = address or addr_prompt
         cores = cores or cores_prompt
-    
-    if not address or not cores:
-        addr_prompt, cores_prompt = _prompt_address_and_cores()
-        address = address or addr_prompt
-        cores = cores or cores_prompt
 
     # Decide RandomX memory mode
     if args.rx_full and args.rx_light:
-        clog("Cannot set both --rx-full and --rx-light. Choose one.", color=RED)
+        clog("Cannot set both --rx-full and --rx-light. Choose one.", color=COL.RED)
         sys.exit(2)
     if args.rx_full:
         rx_full_mem = True
@@ -537,14 +397,43 @@ def main():
     mode_label = "FULL-MEM (+2.5GB)" if CFG.RANDOMX_FULL_MEM else "LIGHT"
     clog(f"RandomX mode set to: {mode_label}")
 
-    miner = LightMiner(address=address, cores=max(1, int(cores)))
+    progress_q: mp.Queue = mp.Queue()
+    miner: LightMiner | None = None
+
+    tui = MinerTUI(
+        title="Stateless Miner",
+        address=address,
+        cores=max(1, int(cores)),
+        mode="Mining...",
+        randomx_mode=mode_label,
+        hashrate_queue=progress_q,
+        chain_height_fn=lambda: int(getattr(miner.blockchain, "height", -1))
+        if miner and miner.blockchain
+        else -1,
+        peer_counts_fn=lambda: (
+            len(getattr(miner.network, "inbound_peers", ())) if miner and miner.network else 0,
+            len(getattr(miner.network, "outbound_peers", ())) if miner and miner.network else 0,
+        ),
+    )
+    tui.start()
+    global tui_logger
+    tui_logger = create_tui_logger(tui)
+    
+    miner = LightMiner(
+        address=address,
+        cores=max(1, int(cores)),
+        progress_queue=progress_q,
+        tui=tui,
+    )
     try:
         miner.start_mining(timeout=max(120, int(args.timeout or 600)))
     except KeyboardInterrupt:
         miner.cancel_mining.set()
-        clog("Interrupted by user.", color=YELLOW)
+        clog("Interrupted by user.", color=COL.YELLOW)
     finally:
         miner.shutdown()
+        tui.stop()
+
 
 
 if __name__ == "__main__":
