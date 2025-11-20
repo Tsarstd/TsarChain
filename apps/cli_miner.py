@@ -33,8 +33,8 @@ from tsarchain.consensus.blockchain import Blockchain
 from tsarchain.network.node import Network
 from tsarchain.utils import config as CFG
 
-from .cosmetic import interface as COL
-from .cosmetic.tui import MinerTUI, create_tui_logger
+from tsarchain.utils.cosmetic import interface as COL
+from tsarchain.utils.cosmetic.tui import MinerTUI, create_tui_logger
 
 from tsarchain.utils.tsar_logging import setup_logging
 

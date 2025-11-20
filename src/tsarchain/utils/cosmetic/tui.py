@@ -22,7 +22,7 @@ import shutil
 import queue
 from typing import Callable, Optional
 
-from cosmetic import interface as COL
+from ..cosmetic import interface as COL
 
 
 def _human_bytes(n: float) -> str:
