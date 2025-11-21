@@ -24,8 +24,9 @@ Notes
 
 from __future__ import annotations
 
-import argparse, psutil, errno, signal, time, threading, queue, os, sys
+import argparse, errno, signal, time, threading, queue, os, sys
 import multiprocessing as mp
+import tempfile
 from datetime import datetime
 
 # ---------- Local Project ----------
@@ -132,6 +133,8 @@ class LightMiner:
         self.cancel_mining = mp.Event()
         self._progress_q: mp.Queue = progress_queue or mp.Queue()
         self.tui = tui
+        self._pending_blocks: list = []
+        self._pending_block_hashes: set[str] = set()
 
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
@@ -164,6 +167,67 @@ class LightMiner:
         except Exception as exc:
             clog(f"Failed to connect: {exc}")
             return False
+
+    def _ensure_ephemeral_mempool(self) -> None:
+        if not self.blockchain or not hasattr(self.blockchain, "attach_mempool"):
+            return
+        try:
+            from tsarchain.mempool.pool import TxPoolDB
+        except Exception:
+            return
+        try:
+            tmp_path = os.path.join(
+                tempfile.gettempdir(),
+                f"tsar_mempool_tmp_{os.getpid()}_{int(time.time())}.json",
+            )
+            pool = TxPoolDB(
+                filepath=tmp_path,
+                max_size_mb=getattr(CFG, "MEMPOOL_MAX_SIZE", 1 * 1024 * 1024),
+                utxo_store=self.blockchain._ensure_utxodb(),  # type: ignore[attr-defined]
+                inherit_state=False,
+            )
+            self.blockchain.attach_mempool(pool)  # type: ignore[arg-type]
+        except Exception:
+            pass
+
+    def _queue_block_for_broadcast(self, block) -> None:
+        try:
+            hx = block.hash().hex()
+        except Exception:
+            hx = None
+        if hx and hx in self._pending_block_hashes:
+            return
+        self._pending_blocks.append(block)
+        if hx:
+            self._pending_block_hashes.add(hx)
+        # batasi backlog supaya tidak tak terbatas
+        while len(self._pending_blocks) > 5:
+            old = self._pending_blocks.pop(0)
+            try:
+                h_old = old.hash().hex()
+                self._pending_block_hashes.discard(h_old)
+            except Exception:
+                pass
+        clog(f"[broadcast] queued mined block (backlog={len(self._pending_blocks)})", color=COL.BG_YELLOW)
+
+    def _flush_pending_blocks(self) -> None:
+        if not self.network or not self._pending_blocks:
+            return
+        remaining = []
+        for blk in self._pending_blocks:
+            try:
+                sent = self.network.publish_block(blk, exclude=None, force=True)
+                if sent and sent > 0:
+                    clog(f"[broadcast] pending block sent to {sent} peers")
+                    try:
+                        self._pending_block_hashes.discard(blk.hash().hex())
+                    except Exception:
+                        pass
+                    continue
+            except Exception as exc:
+                clog(f"[broadcast] retry failed: {exc}")
+            remaining.append(blk)
+        self._pending_blocks = remaining
 
     def wait_for_sync(self, timeout: int = 600) -> bool:
         if not self.blockchain or not self.network:
@@ -238,6 +302,7 @@ class LightMiner:
             return False
         if not self.start_node():
             return False
+        self._ensure_ephemeral_mempool()
         if not self.wait_for_sync(timeout=timeout):
             return False
 
@@ -246,7 +311,7 @@ class LightMiner:
             clog("[sync] No chain data available from peers; cannot strating mining")
             return False
 
-        clog("=== Mining Informations ===", color=COL.CYAN)
+        clog("=== Mining Informations ===")
         clog(f"Address : {self.address}")
         clog(f"Cores   : {self.cores}")
         try:
@@ -259,6 +324,8 @@ class LightMiner:
 
         while self.mining_alive:
             try:
+                # kirim ulang backlog jika ada
+                self._flush_pending_blocks()
                 if self.network and self.network.peers:
                     self.network.request_sync(fast=True)
 
@@ -286,10 +353,12 @@ class LightMiner:
                         sent = self.network.publish_block(block, exclude=None, force=True) if self.network else 0
                         if sent <= 0:
                             clog("[broadcast] No peers reached; forcing fast sync.", color=COL.BG_YELLOW)
+                            self._queue_block_for_broadcast(block)
                             if self.network:
                                 self.network.request_sync(fast=True)
                     except Exception as exc:
                         clog(f"[broadcast] Error: {exc}")
+                        self._queue_block_for_broadcast(block)
             except KeyboardInterrupt:
                 self.mining_alive = False
                 self.cancel_mining.set()

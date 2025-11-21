@@ -59,7 +59,6 @@ def _stamp() -> str:
     return f"{COL.BOLD}{COL.GREY} {d} {COL.RESET}{COL.BOLD}{COL.GREY} {t} {COL.RESET}"
 
 def clog(message: str, color: str = COL.GREY):
-    # Gunakan TUI logger jika ada, fallback ke print biasa
     if 'tui_logger' in globals():
         tui_logger(f"{_stamp()}{color}{message}{COL.RESET}")
     else:
@@ -157,6 +156,8 @@ class SimpleMiner:
         self.network = None
         self._progress_q: mp.Queue = progress_queue or mp.Queue()
         self.tui = tui
+        self._pending_blocks: list = []
+        self._pending_block_hashes: set[str] = set()
 
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
@@ -172,6 +173,43 @@ class SimpleMiner:
             clog("Error: Address should start with 'tsar1...'")
             return False
         return True
+
+    def _queue_block_for_broadcast(self, block) -> None:
+        try:
+            hx = block.hash().hex()
+        except Exception:
+            hx = None
+        if hx and hx in self._pending_block_hashes:
+            return
+        self._pending_blocks.append(block)
+        if hx:
+            self._pending_block_hashes.add(hx)
+        while len(self._pending_blocks) > 5:
+            old = self._pending_blocks.pop(0)
+            try:
+                self._pending_block_hashes.discard(old.hash().hex())
+            except Exception:
+                pass
+        clog(f"[broadcast] queued mined block (backlog={len(self._pending_blocks)})", color=COL.BG_YELLOW)
+
+    def _flush_pending_blocks(self) -> None:
+        if not self.network or not self._pending_blocks:
+            return
+        remaining = []
+        for blk in self._pending_blocks:
+            try:
+                sent = self.network.publish_block(blk, exclude=None, force=True)
+                if sent and sent > 0:
+                    clog(f"[broadcast] pending block sent to {sent} peers")
+                    try:
+                        self._pending_block_hashes.discard(blk.hash().hex())
+                    except Exception:
+                        pass
+                    continue
+            except Exception as exc:
+                clog(f"[broadcast] retry failed: {exc}")
+            remaining.append(blk)
+        self._pending_blocks = remaining
 
     def _has_active_peers(self) -> bool:
         if not self.network:
@@ -295,6 +333,7 @@ class SimpleMiner:
         # Mulai loop mining
         while self.mining_alive:
             try:
+                self._flush_pending_blocks()
                 if self.network.peers:
                     self.network.request_sync(fast=True)
 
@@ -321,8 +360,10 @@ class SimpleMiner:
                         sent = self.network.publish_block(block, exclude=None, force=True)
                         if sent <= 0:
                             self.network.request_sync(fast=True)
+                            self._queue_block_for_broadcast(block)
                     except Exception as exc:
                         clog(f"Broadcast error: {exc}")
+                        self._queue_block_for_broadcast(block)
             except Exception as exc:
                 if isinstance(exc, OSError) and getattr(exc, "errno", None) in INTERRUPTED_ERRNOS:
                     clog("[mining] Interrupted system call; stopping miners...")
@@ -362,6 +403,17 @@ class NodeRunner:
     def _handle_signal(self, *_args):
         clog("Stopping node...")
         self.running = False
+
+    def _has_active_peers(self) -> bool:
+        if not self.network:
+            return False
+        try:
+            peers = getattr(self.network, "peers", set()) or set()
+            inbound = getattr(self.network, "inbound_peers", set()) or set()
+            outbound = getattr(self.network, "outbound_peers", set()) or set()
+            return bool(peers or inbound or outbound)
+        except Exception:
+            return False
 
     def start(self):
         clog("Starting TsarChain node (no mining)...")
@@ -411,7 +463,7 @@ class NodeRunner:
         while self.running and self.blockchain and self.network:
             try:
                 # No peers yet
-                if not getattr(self.network, "peers", None):
+                if not self._has_active_peers():
                     msg = "[Sync] Waiting for peer connection..."
                     if msg != last_status:
                         clog(msg)
