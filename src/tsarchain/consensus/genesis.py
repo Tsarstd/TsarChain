@@ -17,6 +17,7 @@ log = get_ctx_logger('tsarchain.consensus.genesis')
 
 def _resolve_genesis_hash():
     cfg_hex = CFG.GENESIS_HASH_HEX
+    log.info("genesis hash on config : %s", cfg_hex)
     if cfg_hex.startswith("0x"):
         cfg_hex = cfg_hex[2:]
     if cfg_hex:
@@ -109,4 +110,5 @@ class GenesisMixin:
                 self.total_supply = self.calculate_total_supply()
             except Exception:
                 pass
+        log.info("genesis block cerated, hash : %s", genesis)
         return genesis

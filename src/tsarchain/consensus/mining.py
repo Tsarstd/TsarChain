@@ -53,6 +53,13 @@ class MiningMixin:
         return None
 
     def mine_block(self, miner_address, use_cores: int | None = None, cancel_event: MpEvent | None = None, pow_backend: str = "auto", progress_queue: mp.Queue | None = None,):
+        if not self.chain:
+            try:
+                reloaded = getattr(self, "_reload_chain_from_kv", lambda: False)()
+                if reloaded:
+                    log.info("[mine_block] chain reloaded from LMDB; continuing mining")
+            except Exception:
+                pass
         if not self.chain and not CFG.ALLOW_AUTO_GENESIS:
             log.warning("[mine_block] refusing to mine genesis; sync from peers first.")
             return None

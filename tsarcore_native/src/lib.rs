@@ -31,8 +31,8 @@ use std::thread_local;
 use std::time::Instant;
 use validation::validate_block_txs_native;
 
-mod storage;
 mod networking;
+mod storage;
 mod validation;
 
 // ---------------------

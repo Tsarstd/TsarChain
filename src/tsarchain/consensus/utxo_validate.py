@@ -8,6 +8,8 @@ from typing import Optional
 
 # ---------------- Local Project ----------------
 from ..storage.utxo import UTXODB
+from ..utils import config as CFG
+from .genesis import GENESIS_HASH
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
@@ -53,6 +55,9 @@ class UTXOMixin:
         store = self._ensure_utxodb()
         if store is None:
             return
+        # Saat genesis lock dan chain kosong, hindari flush paksa yang bisa mengosongkan DB yang sudah ada
+        if (not self.chain) and not force and GENESIS_HASH is not None and not CFG.ALLOW_AUTO_GENESIS:
+            return
         current_height = self.height
         if force:
             did_flush = store.flush(force=True)
@@ -72,11 +77,18 @@ class UTXOMixin:
         if self._utxo_synced and not force:
             return
         try:
-            if self.chain:
-                self._utxodb.rebuild_from_chain(self.chain)
-            else:
+            if not self.chain:
+                # Hindari mengosongkan UTXO saat chain belum termuat (mis. saat genesis lock menunggu sync)
+                if getattr(self._utxodb, "utxos", None):
+                    log.warning("[_sync_utxo_store] Chain kosong; skip clear_db agar snapshot UTXO tidak hilang")
+                    self._utxo_synced = True
+                    self._utxo_dirty = False
+                    self._utxo_last_flush_height = self.height
+                    return
                 self._utxodb.utxos.clear()
                 self._utxodb.flush(force=True)
+            else:
+                self._utxodb.rebuild_from_chain(self.chain)
         except Exception:
             log.exception("[_sync_utxo_store] Failed to rebuild UTXO snapshot")
             return

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import json
 import threading
 import queue
 from typing import List, Optional
@@ -15,6 +16,7 @@ from ..core.block import Block
 from ..storage.db import AtomicJSONFile
 from ..storage.utxo import UTXODB
 from ..mempool.pool import TxPoolDB
+from ..storage.kv import kv_enabled, iter_prefix
 from ..utils import config as CFG
 from .chain_ops import ChainOpsMixin
 from .difficulty import DifficultyMixin
@@ -77,6 +79,7 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
             "save_state": True,
         }
         self._persist_pending = False
+        self._cold_reload_attempted: bool = False
 
         if not self.in_memory:
             if self.db_path:
@@ -85,15 +88,14 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
             self._start_persist_worker()
             self.load_chain()
             self.load_state()
+            if not self.chain:
+                self._cold_reload_attempted = True
+                self._reload_chain_from_kv()
             if self.chain:
                 self._enforce_genesis_lock()
                 return
             if GENESIS_HASH is not None and not CFG.ALLOW_AUTO_GENESIS:
                 log.info("[__init__] Genesis lock set; auto-genesis disabled. Waiting for peer sync.")
-                self.chain = []
-                self.total_blocks = 0
-                self.total_supply = 0
-                self._persist_empty_state_if_needed()
                 return
             if CFG.ALLOW_AUTO_GENESIS:
                 log.info("[__init__] Auto-genesis enabled (use_cores=%s)", self.use_cores)
@@ -127,6 +129,39 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
             daemon=True,
         )
         self._persist_thread.start()
+
+    def _reload_chain_from_kv(self) -> bool:
+        if self.in_memory or not kv_enabled():
+            return False
+        try:
+            items = list(iter_prefix('chain', b'h:'))
+            if not items:
+                return False
+            items.sort(key=lambda kv: kv[0])
+            data_list = [json.loads(v.decode('utf-8')) for _, v in items]
+            if not data_list:
+                return False
+            chain = [Block.from_dict(d) for d in data_list]
+            if not chain:
+                return False
+            self.chain = chain
+            self.total_blocks = len(self.chain)
+            try:
+                self.total_supply = self.calculate_total_supply()
+            except Exception:
+                self.total_supply = 0
+            self.supply_in_tsar = self.total_supply / CFG.TSAR if self.total_supply else 0
+            self._persisted_height = len(self.chain) - 1
+            self._chain_dirty_from = None
+            # UTXO akan disinkronkan ulang saat _ensure_utxodb dipanggil
+            self._utxo_last_flush_height = self.height
+            self._utxo_dirty = False
+            self._utxo_synced = False
+            log.info("[reload_chain] Loaded %s blocks from LMDB fallback", len(self.chain))
+            return True
+        except Exception:
+            log.exception("[reload_chain] Failed to reload chain from LMDB")
+            return False
 
     def _persist_loop(self) -> None:
         assert self._persist_queue is not None
@@ -195,6 +230,9 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
             log.warning("[persist_worker] did not stop gracefully within timeout")
         self._persist_thread = None
         self._persist_queue = None
+        if (not self.chain) and GENESIS_HASH is not None and not CFG.ALLOW_AUTO_GENESIS:
+            log.debug("[_stop_persist_worker] Skip final persistence (genesis locked & chain empty)")
+            return
         # Final synchronous persistence to ensure no data loss
         try:
             self.save_chain(force_full=True)

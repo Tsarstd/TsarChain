@@ -187,6 +187,7 @@ def setup_logging(
         rotate_max_bytes = int(CFG.LOG_ROTATE_MAX_BYTES)
     if backup_count is None:
         backup_count = int(CFG.LOG_BACKUP_COUNT)
+    enable_redact = bool(CFG.FILTER_REDAX)
 
     log_path = Path(log_file)
     if log_path.parent and not log_path.parent.exists():
@@ -204,7 +205,8 @@ def setup_logging(
     )
     file_fmt = JsonFormatter() if as_json else SafeFormatter(fmt, datefmt)
     fh.setFormatter(file_fmt)
-    fh.addFilter(RedactFilter())
+    if enable_redact:
+        fh.addFilter(RedactFilter())
     if rate_seconds_file > 0.0:
         fh.addFilter(RateLimitFilter(rate_seconds_file))
     handlers.append(fh)
@@ -214,7 +216,8 @@ def setup_logging(
         console_fmt = JsonFormatter() if as_json else SafeFormatter(fmt, datefmt)
         sh = logging.StreamHandler()
         sh.setFormatter(console_fmt)
-        sh.addFilter(RedactFilter())
+        if enable_redact:
+            sh.addFilter(RedactFilter())
         if rate_seconds_console > 0.0:
             sh.addFilter(RateLimitFilter(rate_seconds_console))
         handlers.append(sh)

@@ -163,8 +163,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 1  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = "0017185c6d329631e9738f319886f784e4fa0a8885b3eeb046de70441245fdab"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -543,6 +543,7 @@ if IS_DEV:
     LOG_FILE_RATE_LIMIT_SECONDS = 0.0  # disable file throttling in dev
     LOG_ROTATE_MAX_BYTES        = 5_000_000  # rollover log files after ~5MB in dev
     LOG_BACKUP_COUNT            = 3  # retain a few rotated dev log files
+    FILTER_REDAX                = False # sensitive area, priv_key, .etc (debuging only)
 else:
     # ---- PROD PROFILE ----
     LOG_LEVEL                   = "INFO"  # balanced verbosity for production
@@ -552,6 +553,7 @@ else:
     LOG_FILE_RATE_LIMIT_SECONDS = 1.0  # throttle file spam in prod
     LOG_ROTATE_MAX_BYTES        = 10_000_000  # rollover log files after ~10MB in prod
     LOG_BACKUP_COUNT            = 7  # keep more history on production nodes
+    FILTER_REDAX                = True # true for prod
     
 # ---- LOG PATH NORMALIZATION ----
 try:

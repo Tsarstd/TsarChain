@@ -3,24 +3,24 @@
 // Part of TsarChain - see LICENSE and TRADEMARKS.md
 // Refs: LMDB; Atomic JSON; serde_json; pyo3
 
-use lmdb::{Cursor, Database, DatabaseFlags, Environment, Transaction, WriteFlags};
 use libc::size_t;
+use lmdb::{Cursor, Database, DatabaseFlags, Environment, Transaction, WriteFlags};
+use lmdb_sys as ffi;
 use parking_lot::Mutex;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::ffi::CString;
 use std::collections::HashMap;
+use std::ffi::CString;
 use std::fs;
 use std::io::{BufReader, BufWriter, Read, Write};
+use std::os::raw::c_uint;
 use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::Arc;
-use std::os::raw::c_uint;
 use tempfile::NamedTempFile;
-use lmdb_sys as ffi;
 
 const DEFAULT_LMDB_MAP_INIT: usize = 4 * 1024 * 1024; // 4 MB
 const DEFAULT_LMDB_MAP_MAX: u64 = 64 * 1024 * 1024 * 1024; // 64 GB
@@ -85,21 +85,20 @@ pub fn json_write_file(path: &str, data: &str, pretty: bool) -> PyResult<()> {
     let p = Path::new(path);
     ensure_parent(p)?;
     // Optional pretty formatting (reformat for consistency)
-        let payload = if pretty {
-            match serde_json::from_str::<JsonValue>(data) {
-                Ok(val) => {
-                    let mut s = serde_json::to_string_pretty(&val)
-                        .unwrap_or_else(|_| data.to_string());
-                    if !s.ends_with('\n') {
-                        s.push('\n');
-                    }
-                    s
+    let payload = if pretty {
+        match serde_json::from_str::<JsonValue>(data) {
+            Ok(val) => {
+                let mut s = serde_json::to_string_pretty(&val).unwrap_or_else(|_| data.to_string());
+                if !s.ends_with('\n') {
+                    s.push('\n');
                 }
-                Err(_) => data.to_string(),
+                s
             }
-        } else {
-            data.to_string()
-        };
+            Err(_) => data.to_string(),
+        }
+    } else {
+        data.to_string()
+    };
 
     let tmp = NamedTempFile::new_in(p.parent().unwrap_or(Path::new(".")))
         .map_err(|e| map_err("json_write_file tmp", e))?;
@@ -108,7 +107,9 @@ pub fn json_write_file(path: &str, data: &str, pretty: bool) -> PyResult<()> {
         writer
             .write_all(payload.as_bytes())
             .map_err(|e| map_err("json_write_file write", e))?;
-        writer.flush().map_err(|e| map_err("json_write_file flush", e))?;
+        writer
+            .flush()
+            .map_err(|e| map_err("json_write_file flush", e))?;
     }
     tmp.persist(p)
         .map_err(|e| map_err("json_write_file persist", e.error))?;
@@ -144,9 +145,7 @@ impl LmdbBackend {
         let mut builder = Environment::new();
         builder.set_max_dbs(DEFAULT_MAX_DBS);
         let _ = builder.set_map_size(map_size_init);
-        let env = builder
-            .open(path)
-            .map_err(|e| map_err("lmdb open", e))?;
+        let env = builder.open(path).map_err(|e| map_err("lmdb open", e))?;
 
         Ok(Self {
             env: Arc::new(env),
@@ -209,9 +208,7 @@ impl LmdbBackend {
                 retry_txn
                     .put(db, &key, &val, WriteFlags::empty())
                     .map_err(|e| map_err("lmdb put retry", e))?;
-                retry_txn
-                    .commit()
-                    .map_err(|e| map_err("lmdb commit", e))
+                retry_txn.commit().map_err(|e| map_err("lmdb commit", e))
             }
             Err(e) => Err(map_err("lmdb put", e)),
         }
@@ -248,9 +245,7 @@ impl LmdbBackend {
                         lmdb::Error::NotFound => Ok(false),
                         other => Err(map_err("lmdb delete", other)),
                     })?;
-                retry
-                    .commit()
-                    .map_err(|e| map_err("lmdb commit", e))?;
+                retry.commit().map_err(|e| map_err("lmdb commit", e))?;
                 Ok(result)
             }
             Err(e) => Err(map_err("lmdb delete", e)),
@@ -277,7 +272,9 @@ impl LmdbBackend {
             .env
             .begin_ro_txn()
             .map_err(|e| map_err("lmdb begin_ro_txn", e))?;
-        let mut cursor = txn.open_ro_cursor(db).map_err(|e| map_err("lmdb cursor", e))?;
+        let mut cursor = txn
+            .open_ro_cursor(db)
+            .map_err(|e| map_err("lmdb cursor", e))?;
         let mut items = Vec::new();
         for (k, v) in cursor.iter() {
             if k.starts_with(prefix) {
@@ -305,7 +302,6 @@ impl LmdbBackend {
         txn.clear_db(db).map_err(|e| map_err("lmdb clear_db", e))?;
         // No stat available; removed count is unknown here.
         txn.commit().map_err(|e| map_err("lmdb commit", e))?;
-        log_info(&format!("[lmdb] clear_db db={}", db_name));
         Ok(0)
     }
 
@@ -316,7 +312,11 @@ impl LmdbBackend {
         }
         let c_path = CString::new(path.to_string_lossy().as_bytes())
             .map_err(|e| map_err("lmdb copy path", e))?;
-        let flags: c_uint = if compact { ffi::MDB_CP_COMPACT as c_uint } else { 0 };
+        let flags: c_uint = if compact {
+            ffi::MDB_CP_COMPACT as c_uint
+        } else {
+            0
+        };
         let rc = unsafe { ffi::mdb_env_copy2(self.env.env(), c_path.as_ptr(), flags) };
         if rc != 0 {
             return Err(PyErr::new::<PyRuntimeError, _>(format!(
@@ -420,12 +420,12 @@ impl JsonBackend {
                 serde_json::to_writer_pretty(&mut writer, snap)
                     .map_err(|e| map_err("json write", e))?;
             } else {
-                serde_json::to_writer(&mut writer, snap)
-                    .map_err(|e| map_err("json write", e))?;
+                serde_json::to_writer(&mut writer, snap).map_err(|e| map_err("json write", e))?;
             }
             writer.flush().map_err(|e| map_err("json flush", e))?;
         }
-        tmp.persist(&path).map_err(|e| map_err("json persist", e.error))?;
+        tmp.persist(&path)
+            .map_err(|e| map_err("json persist", e.error))?;
         Ok(())
     }
 
@@ -466,8 +466,7 @@ impl JsonBackend {
             serde_json::from_str(json_text).map_err(|e| map_err("json parse input", e))?;
         let _guard = self.lock.lock();
         let mut snap = self.load(db)?;
-        snap.entries
-            .insert(hex::encode(key), JsonEntry::Json(val));
+        snap.entries.insert(hex::encode(key), JsonEntry::Json(val));
         self.persist(db, &snap)
     }
 
@@ -528,8 +527,7 @@ impl JsonBackend {
                         .map_err(|e| map_err("json encode", e));
                 }
                 JsonEntry::Bytes(raw_hex) => {
-                    let bytes =
-                        hex::decode(raw_hex).map_err(|e| map_err("json decode hex", e))?;
+                    let bytes = hex::decode(raw_hex).map_err(|e| map_err("json decode hex", e))?;
                     if let Ok(text) = str::from_utf8(&bytes) {
                         if let Ok(val) = serde_json::from_str::<JsonValue>(text) {
                             return serde_json::to_string(&val)
@@ -656,12 +654,7 @@ impl NativeStorage {
         Ok(res.map(|v| PyBytes::new_bound(py, &v)))
     }
 
-    fn get_json<'py>(
-        &self,
-        py: Python<'py>,
-        db: &str,
-        key: &[u8],
-    ) -> PyResult<Option<PyObject>> {
+    fn get_json<'py>(&self, py: Python<'py>, db: &str, key: &[u8]) -> PyResult<Option<PyObject>> {
         let json_text_opt = match &self.backend {
             Backend::Json(b) => b.get_json_string(db, key)?,
             Backend::Lmdb(b) => {

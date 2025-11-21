@@ -5,9 +5,9 @@
 
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyAnyMethods, PyDict, PyDictMethods, PyList, PyListMethods};
+use ripemd::Ripemd160;
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 use sha2::{Digest, Sha256};
-use ripemd::Ripemd160;
 use std::collections::{HashMap, HashSet};
 
 use crate::bip143_native;
@@ -166,12 +166,13 @@ fn parse_hex_field(value: &Bound<'_, PyAny>, field: &str) -> Result<Vec<u8>, Str
     if hex_str.is_empty() {
         return Ok(Vec::new());
     }
-    hex::decode(hex_str)
-        .map_err(|_| format!("failed decoding hex in field {}", field))
+    hex::decode(hex_str).map_err(|_| format!("failed decoding hex in field {}", field))
 }
 
 fn parse_witness_field(value: Option<Bound<'_, PyAny>>) -> Result<Vec<Vec<u8>>, String> {
-    let Some(obj) = value else { return Ok(Vec::new()); };
+    let Some(obj) = value else {
+        return Ok(Vec::new());
+    };
     let list = obj
         .downcast::<PyList>()
         .map_err(|_| "witness must be list".to_string())?;
@@ -180,8 +181,7 @@ fn parse_witness_field(value: Option<Bound<'_, PyAny>>) -> Result<Vec<Vec<u8>>, 
         let hex_item: String = item
             .extract()
             .map_err(|_| "witness element must be hex string".to_string())?;
-        let bytes = hex::decode(hex_item)
-            .map_err(|_| "invalid witness hex".to_string())?;
+        let bytes = hex::decode(hex_item).map_err(|_| "invalid witness hex".to_string())?;
         out.push(bytes);
     }
     Ok(out)
@@ -210,9 +210,7 @@ impl TxParts {
             .extract()
             .map_err(|_| "tx_invalid_version".to_string())?;
         let locktime: u32 = match get_optional(tx, "locktime")? {
-            Some(v) => v
-                .extract()
-                .map_err(|_| "tx_invalid_locktime".to_string())?,
+            Some(v) => v.extract().map_err(|_| "tx_invalid_locktime".to_string())?,
             None => 0,
         };
 
@@ -235,8 +233,8 @@ impl TxParts {
             let txid_hex: String = get_required(&inp, "txid", "tx_input_missing_txid")?
                 .extract()
                 .map_err(|_| "tx_input_invalid_txid".to_string())?;
-            let txid_bytes = hex::decode(&txid_hex)
-                .map_err(|_| "tx_input_invalid_txid".to_string())?;
+            let txid_bytes =
+                hex::decode(&txid_hex).map_err(|_| "tx_input_invalid_txid".to_string())?;
             if txid_bytes.len() != 32 {
                 return Err("tx_input_invalid_txid".to_string());
             }
@@ -300,17 +298,25 @@ impl TxParts {
 }
 
 fn parse_validation_options(opts: &Bound<'_, PyDict>) -> Result<ValidationOptions, String> {
-    let coinbase_maturity = get_required(opts, "coinbase_maturity", "opts_missing_coinbase_maturity")?
-        .extract::<i64>()
-        .map_err(|_| "opts_invalid_coinbase_maturity".to_string())?;
-    let max_sigops_per_tx = get_required(opts, "max_sigops_per_tx", "opts_missing_max_sigops_per_tx")?
-        .extract::<u32>()
-        .map_err(|_| "opts_invalid_max_sigops_per_tx".to_string())?;
-    let max_sigops_per_block = get_required(opts, "max_sigops_per_block", "opts_missing_max_sigops_per_block")?
-        .extract::<u32>()
-        .map_err(|_| "opts_invalid_max_sigops_per_block".to_string())?;
+    let coinbase_maturity =
+        get_required(opts, "coinbase_maturity", "opts_missing_coinbase_maturity")?
+            .extract::<i64>()
+            .map_err(|_| "opts_invalid_coinbase_maturity".to_string())?;
+    let max_sigops_per_tx =
+        get_required(opts, "max_sigops_per_tx", "opts_missing_max_sigops_per_tx")?
+            .extract::<u32>()
+            .map_err(|_| "opts_invalid_max_sigops_per_tx".to_string())?;
+    let max_sigops_per_block = get_required(
+        opts,
+        "max_sigops_per_block",
+        "opts_missing_max_sigops_per_block",
+    )?
+    .extract::<u32>()
+    .map_err(|_| "opts_invalid_max_sigops_per_block".to_string())?;
     let enforce_low_s = match get_optional(opts, "enforce_low_s")? {
-        Some(v) => v.extract().map_err(|_| "opts_invalid_enforce_low_s".to_string())?,
+        Some(v) => v
+            .extract()
+            .map_err(|_| "opts_invalid_enforce_low_s".to_string())?,
         None => true,
     };
     Ok(ValidationOptions {
@@ -611,9 +617,7 @@ pub fn validate_block_txs_native(
             let total_fee: u64 = fees.iter().copied().sum();
             log_info(&format!(
                 "[validate_block] height={} txs={} total_fee={}",
-                spend_height,
-                tx_len,
-                total_fee
+                spend_height, tx_len, total_fee
             ));
             Ok((true, None, Some(fees)))
         }

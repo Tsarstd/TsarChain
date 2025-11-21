@@ -324,14 +324,9 @@ class StorageMixin:
                 self._persisted_height = -1
 
             if tip_height < 0:
+                # Jangan hapus isi LMDB ketika chain kosong; biarkan data on-disk tetap aman
                 if force_full:
-                    if kv_enabled():
-                        try:
-                            clear_db('chain')
-                        except Exception:
-                            pass
-                    else:
-                        self._chain_store.save([])
+                    log.debug("[save_chain] Chain kosong; skip clear_db untuk menghindari wipe")
                 self._chain_dirty_from = None
                 self._persisted_height = -1
                 return
