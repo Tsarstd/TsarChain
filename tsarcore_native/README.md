@@ -1,6 +1,6 @@
 # tsarcore_native (Rust + pyo3)
 
-Native acceleration module for **TsarChain**.
+Native acceleration module for **TsarChain** with crypto, PoW, validation, and fused LMDB/JSON storage bindings.
 
 **Build prerequisites**
 
@@ -9,10 +9,10 @@ Native acceleration module for **TsarChain**.
 - `maturin`
 - `cmake` 3.20+ (required to build the bundled RandomX backend)
 
-## What’s inside (current API)
+## What's inside (current API)
 
 - `count_sigops(script: bytes) -> int`  
-  Counts `CHECKSIG` (+1) and `CHECKMULTISIG` (+min(n or 20, 20)) including their `VERIFY` variants, mirroring TsarChain’s consensus rules.
+  Counts `CHECKSIG` (+1) and `CHECKMULTISIG` (+min(n or 20, 20)) including their `VERIFY` variants, mirroring TsarChain's consensus rules.
 
 - `hash256(data: bytes) -> bytes32`  
   SHA256d (double-SHA256).
@@ -42,7 +42,13 @@ Native acceleration module for **TsarChain**.
   Native X25519 + Ed25519 authenticated handshake + HKDF + AES-256-GCM transport for TsarChain P2P links. Provides `client_build_hs1`, `client_accept_hs2`, `server_accept_hs1`, `encrypt`, and `decrypt`, enforcing TTL/msg-count/sequence windows entirely in Rust.
 
 - `set_py_logger(callable)`  
-  Optional hook so Rust logs can piggyback on TsarChain’s logger.
+  Optional hook so Rust logs can piggyback on TsarChain's logger.
+
+- `json_read_file(path: str) -> str | None` and `json_write_file(path: str, data: str, pretty: bool = True)`  
+  Helpers for existing on-disk JSON snapshots; reads return `None` when missing and writes are atomic (temp-file swap) with optional pretty formatting.
+
+- `NativeStorage(backend, path, map_size_init=None, map_size_max=None, pretty_json=True)` / `open_storage(...)`  
+  Thread-safe storage facade over LMDB or atomic JSON files. Exposes `put_bytes`, `put_json`, `get_bytes`, `get_json`, `delete`, `clear_db`, `iter_prefix`, and LMDB `copy`. LMDB automatically retries after `MapFull` by growing to `map_size_max`; JSON backend pretty-prints (optional) and persists via temp-file rename for durability.
 
 > Endianness note: pass **little-endian txids** to `merkle_root` if you want a Bitcoin-compatible block header merkle root.
 
@@ -76,7 +82,7 @@ assert ok, reason
 
 # RandomX hashing (80-byte block header + seed)
 header80 = block_header_bytes
-seed = b\"seed-deriv\"  # derived from height/epoch in TsarChain
+seed = b"seed-deriv"  # derived from height/epoch in TsarChain
 digest = tc.randomx_pow_hash(
     header80,
     seed,
@@ -87,17 +93,31 @@ digest = tc.randomx_pow_hash(
     secure_jit=False,
     cache_entries=1,
 )
+
+# Storage (LMDB backend; set backend="json" for atomic JSON files)
+store = tc.open_storage(
+    "lmdb",
+    "/tmp/tsar.db",
+    map_size_init=4 * 1024 * 1024,
+    map_size_max=64 * 1024 * 1024,
+    pretty_json=True,
+)
+store.put_json("utxo", b"\x01", '{"height": 1, "amount": 5000}')
+assert store.get_json("utxo", b"\x01")["height"] == 1
+rows = store.iter_prefix("utxo", b"")
+store.copy("/tmp/tsar.db.backup", compact=True)  # LMDB only
 ```
 
 ## Safety notes
 
-- No `unsafe`, no panics, strict bounds checks when parsing transaction bytes & varints.
-- `secp_verify_der_low_s` and the batch verifier reject **high‑S** by default (set `enforce_low_s=False` in batch mode for legacy).
+- No `unsafe`, no panics, strict bounds checks when parsing transaction bytes and varints.
+- `secp_verify_der_low_s` and the batch verifier reject high-`S` by default (set `enforce_low_s=False` in batch mode for legacy).
 - `sighash_bip143` currently supports **`SIGHASH_ALL`** natively.
 
 ## Changelog
 
-- **0.1.3** — Added `SecureChannelNative` (X25519 handshake + HKDF + AES-256-GCM) so TsarChain P2P crypto now runs entirely in Rust, lowering latency and hardening TTL/msg quotas.
-- **0.1.2** — `Stateless RandomX` hashing used by TsarChain PoW.
-- **0.1.1** — Docs synced with code: expose `hash256`, `hash160`, `secp_verify_der_low_s_many`, native `sighash_bip143` (ALL); clarify merkle root behavior & parallel feature.
-- **0.1.0** — Initial release.
+- **0.1.4** - Added `NativeStorage`/`open_storage` with LMDB or atomic JSON backends (prefix scans, temp-file persistence, optional pretty JSON, LMDB auto-grow + copy), plus `json_read_file`/`json_write_file` helpers.
+- **0.1.3** - Added `SecureChannelNative` (X25519 handshake + HKDF + AES-256-GCM) so TsarChain P2P crypto now runs entirely in Rust, lowering latency and hardening TTL/msg quotas.
+- **0.1.2** - Stateless RandomX hashing used by TsarChain PoW.
+- **0.1.1** - Docs synced with code: expose `hash256`, `hash160`, `secp_verify_der_low_s_many`, native `sighash_bip143` (ALL); clarify merkle root behavior and parallel feature.
+- **0.1.0** - Initial release.

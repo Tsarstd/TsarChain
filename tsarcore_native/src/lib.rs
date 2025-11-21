@@ -31,6 +31,7 @@ use std::thread_local;
 use std::time::Instant;
 use validation::validate_block_txs_native;
 
+mod storage;
 mod networking;
 mod validation;
 
@@ -902,6 +903,10 @@ fn tsarcore_native(_py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(set_py_logger, m)?)?;
     m.add_function(wrap_pyfunction!(validate_block_txs_native, m)?)?;
     m.add_function(wrap_pyfunction!(randomx_pow_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(storage::open_storage, m)?)?;
+    m.add_function(wrap_pyfunction!(storage::json_read_file, m)?)?;
+    m.add_function(wrap_pyfunction!(storage::json_write_file, m)?)?;
+    m.add_class::<storage::NativeStorage>()?;
     m.add_class::<networking::SecureChannelNative>()?;
     Ok(())
 }

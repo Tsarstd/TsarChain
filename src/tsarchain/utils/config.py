@@ -93,7 +93,7 @@ WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wal
 # 2. DATABASE & SNAPSHOTS
 # =============================================================================
 # ---- KV BACKEND ----
-KV_BACKEND         = "lmdb"  # active key-value backend implementation (lmdb & json)
+KV_BACKEND         = "json"  # active key-value backend implementation (lmdb & json)
 LMDB_DATA_FILE     = "data/tsarchain_db"  # main LMDB data file path
 LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
@@ -133,7 +133,7 @@ UTXOS_FILE              = "data/UTXOS/utxos.json"  # fallback UTXO dump for ligh
 MEMPOOL_FILE            = "data/Mempools/txpools.json"  # persistent mempool cache file
 
 CHAIN_JOURNAL_FILE      = os.path.join(os.path.dirname(BLOCK_FILE), "blockchain.journal")  # append-only delta log for JSON mode
-CHAIN_JOURNAL_MAX_BYTES = 8 * 1024
+CHAIN_JOURNAL_MAX_BYTES = 8 * 1024 * 1024
 STATE_HEIGHT_CACHE_TTL  = 2.0  # height for utxo validation & cache
 
 # ---- WALLET FILES ----

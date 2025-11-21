@@ -382,7 +382,21 @@ class StorageMixin:
             else:
                 if not self._chain_journal_enabled() or full_flush or start_height in (None, 0):
                     if full_flush or start_height is not None or tip_height != self._persisted_height:
-                        self._chain_store.save([block.to_dict() for block in self.chain])
+                        ordered_blocks = []
+                        for blk in sorted(self.chain, key=lambda b: getattr(b, "height", 0)):
+                            d = blk.to_dict()
+                            ordered_blocks.append({
+                                "version": d.get("version"),
+                                "height": d.get("height"),
+                                "timestamp": d.get("timestamp"),
+                                "bits": d.get("bits"),
+                                "prev_block_hash": d.get("prev_block_hash"),
+                                "hash": d.get("hash"),
+                                "nonce": d.get("nonce"),
+                                "merkle_root": d.get("merkle_root"),
+                                "transactions": d.get("transactions") or [],
+                            })
+                        self._chain_store.save(ordered_blocks)
                         self._persisted_height = tip_height
                         self._clear_chain_journal()
                 else:
@@ -520,7 +534,21 @@ class StorageMixin:
             except Exception:
                 log.exception("[save_state] LMDB save_state failed")
         else:
-            self._state_store.save(data)
+            # Reorder keys for consistent JSON
+            ordered = {
+                "schema_version": data.get("schema_version") if isinstance(data, dict) else 1,
+                "last_updated": data.get("last_updated") if isinstance(data, dict) else None,
+                "total_blocks": data.get("total_blocks") if isinstance(data, dict) else self.total_blocks,
+                "total_supply": data.get("total_supply") if isinstance(data, dict) else self.total_supply,
+                "identity": data.get("identity", {}),
+                "chain": data.get("chain", {}),
+                "supply": data.get("supply", {}),
+                "transactions": data.get("transactions", {}),
+                "utxo": data.get("utxo", {}),
+                "files": data.get("files", {}),
+                "miners_snapshot": data.get("miners_snapshot", {}),
+            }
+            self._state_store.save(ordered)
 
     def _compute_state_snapshot(self) -> dict:
         tip_height = self.height

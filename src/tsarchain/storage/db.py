@@ -10,7 +10,18 @@ import hashlib
 import tempfile
 from typing import Any, Optional, Callable
 
-# Cross-platform file locking
+from tsarcore_native import json_read_file as _native_json_read_file, json_write_file as _native_json_write_file
+
+from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger('tsarchain.storage.db')
+
+
+
+try:
+    _HAS_NATIVE_JSON = True
+except Exception:
+    _HAS_NATIVE_JSON = False
+
 try:
     import fcntl  # POSIX
     _HAS_FCNTL = True
@@ -164,6 +175,55 @@ class AtomicJSONFile:
             except Exception: pass
 
     def _write_bytes_atomic(self, data: bytes) -> None:
+        # Fast path: native writer (optional)
+        if _HAS_NATIVE_JSON:
+            try:
+                make_backup = os.path.exists(self.path) and self.keep_backups > 0
+                if make_backup:
+                    now = time.time()
+                    old_raw = None
+                    old_chk = None
+                    try:
+                        with open(self.path, "rb") as rf:
+                            old_raw = rf.read()
+                            old_chk = hashlib.sha256(old_raw).hexdigest()
+                    except Exception:
+                        pass
+
+                    _, _, last_mtime, last_chk = self._latest_backup_info()
+                    if last_mtime is not None and self.backup_interval_sec > 0:
+                        if (now - float(last_mtime)) < float(self.backup_interval_sec):
+                            make_backup = False
+                    if make_backup and self.dedup_backups and last_chk is not None and old_chk is not None:
+                        if last_chk == old_chk:
+                            make_backup = False
+                    if make_backup:
+                        ts = time.strftime("%Y%m%d-%H%M%S")
+                        bak_path = f"{self.path}.bak-{ts}"
+                        try:
+                            os.replace(self.path, bak_path)
+                        except Exception:
+                            try:
+                                with open(self.path, "rb") as rf, open(bak_path, "wb") as wf:
+                                    wf.write(rf.read()); wf.flush(); os.fsync(wf.fileno())
+                            except Exception:
+                                pass
+
+                _native_json_write_file(self.path, data.decode("utf-8", errors="ignore"), pretty=self.pretty)
+                if self.checksum:
+                    try:
+                        chk = _sha256_bytes(data)
+                        os.makedirs(os.path.dirname(self.sha_path) or ".", exist_ok=True)
+                        with open(self.sha_path, "w", encoding="utf-8") as cf:
+                            cf.write(chk + "\n"); cf.flush(); os.fsync(cf.fileno())
+                    except Exception:
+                        log.debug("[DB] Checksum invalid: %s", chk)
+                        pass
+                self._prune_old_backups()
+                return
+            except Exception:
+                pass
+
         fd, tmp_path = tempfile.mkstemp(prefix=os.path.basename(self.path) + ".", dir=self.dir)
         try:
             with os.fdopen(fd, "wb") as f:
@@ -188,7 +248,7 @@ class AtomicJSONFile:
                 except Exception:
                     pass
 
-                _, last_path, last_mtime, last_chk = self._latest_backup_info()
+                _, last_mtime, last_chk = self._latest_backup_info()
 
                 if last_mtime is not None and self.backup_interval_sec > 0:
                     if (now - float(last_mtime)) < float(self.backup_interval_sec):
@@ -254,13 +314,6 @@ class AtomicJSONFile:
             try:
                 with open(self.path, "rb") as f:
                     raw = f.read()
-                if self.checksum and os.path.exists(self.sha_path):
-                    try:
-                        recorded = open(self.sha_path, "r", encoding="utf-8").read().strip()
-                        if recorded and recorded != _sha256_bytes(raw):
-                            raise ValueError("Checksum mismatch")
-                    except Exception as e:
-                        print(f"[DB] Checksum verification skipped: {e}")
                 data = json.loads(raw.decode("utf-8"))
                 if validate is not None:
                     ok = False

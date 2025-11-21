@@ -22,7 +22,7 @@ use rand::RngCore;
 use sha2::{Digest, Sha256};
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum Role {
     Client,
     Server,
@@ -194,7 +194,7 @@ impl SecureChannelNative {
         let mut aad = aad_prefix.unwrap_or(&[]).to_vec();
         aad.extend_from_slice(net_id.as_bytes());
 
-        Ok(Self {
+        let inst = Self {
             role,
             net_id: net_id.to_string(),
             aad,
@@ -216,7 +216,8 @@ impl SecureChannelNative {
             established_at: 0.0,
             client_eph: None,
             client_salt: None,
-        })
+        };
+        Ok(inst)
     }
 
     pub fn client_build_hs1(&mut self, py: Python<'_>) -> PyResult<Py<PyDict>> {
@@ -528,6 +529,7 @@ impl SecureChannelNative {
             .map_err(|_| PyValueError::new_err("encryption failed"))?;
         self.send_ctr = seq;
         self.msg_count += 1;
+
         Ok((seq, PyBytes::new_bound(py, &ciphertext)))
     }
 
@@ -558,6 +560,7 @@ impl SecureChannelNative {
             .map_err(|_| PyValueError::new_err("decryption failed"))?;
         self.recv_ctr = seq as i64;
         self.msg_count += 1;
+
         Ok(PyBytes::new_bound(py, &plaintext))
     }
 

@@ -12,6 +12,24 @@ use std::collections::{HashMap, HashSet};
 
 use crate::bip143_native;
 
+fn log_py(level: &str, msg: &str) {
+    Python::with_gil(|py| {
+        if let Ok(logging) = py.import_bound("logging") {
+            if let Ok(logger) = logging.call_method1("getLogger", ("tsarchain.native",)) {
+                let _ = logger.call_method1(level, (msg,));
+            }
+        }
+    });
+}
+#[inline]
+fn log_info(msg: &str) {
+    log_py("info", msg);
+}
+#[inline]
+fn log_warning(msg: &str) {
+    log_py("warning", msg);
+}
+
 #[derive(Clone, Debug)]
 struct UtxoEntry {
     amount: u64,
@@ -584,8 +602,27 @@ pub fn validate_block_txs_native(
     spend_height: u64,
     opts: &Bound<PyDict>,
 ) -> PyResult<(bool, Option<String>, Option<Vec<u64>>)> {
+    let tx_len = match block.get_item("transactions") {
+        Ok(Some(v)) => v.downcast::<PyList>().map(|l| l.len()).unwrap_or(0),
+        _ => 0,
+    };
     match validate_block_impl(block, utxo, spend_height, opts) {
-        Ok(fees) => Ok((true, None, Some(fees))),
-        Err(reason) => Ok((false, Some(reason), None)),
+        Ok(fees) => {
+            let total_fee: u64 = fees.iter().copied().sum();
+            log_info(&format!(
+                "[validate_block] height={} txs={} total_fee={}",
+                spend_height,
+                tx_len,
+                total_fee
+            ));
+            Ok((true, None, Some(fees)))
+        }
+        Err(reason) => {
+            log_warning(&format!(
+                "[validate_block] fail height={} txs={} reason={}",
+                spend_height, tx_len, reason
+            ));
+            Ok((false, Some(reason), None))
+        }
     }
 }

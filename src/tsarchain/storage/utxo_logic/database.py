@@ -200,7 +200,14 @@ class UTXODatabaseMixin:
                 except Exception as e:
                     log.warning("[UTXODB] LMDB save failed: %s", e)
             else:
-                payload = {k: self._serialize_entry(v) for k, v in self.utxos.items()}
+                items_sorted = sorted(
+                    self.utxos.items(),
+                    key=lambda kv: (
+                        int(kv[1].get("block_height", 0) if isinstance(kv[1], dict) else 0),
+                        kv[0],
+                    ),
+                )
+                payload = {k: self._serialize_entry(v) for k, v in items_sorted}
                 self.save_json(self.filepath, payload)
             self._dirty = False
             self._dirty_keys.clear()
