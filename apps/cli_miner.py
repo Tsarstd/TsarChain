@@ -4,10 +4,12 @@
 # Refs: BIP173
 
 """
-TsarChain — CLI Miner (Light)
+TsarChain — CLI Miner (Light, Stateless)
 
 Role
-- Mining only: no mempool/transaction processing, no full DB persistence.
+- Mining with in-memory chain; no on-disk chain persistence.
+- Ephemeral mempool: accepts/validates tx from peers but not persisted.
+- Keeps a small pending queue to retry broadcast if peers are absent.
 
 Intended environment
 - Dedicated mining rigs.
@@ -15,7 +17,7 @@ Intended environment
 Safety & behavior
 - Sync-gated: starts hashing only after at least 1 peer and caught-up tip.
 - Validates header/consensus core locally (prev-hash, target, timestamp, etc.).
-- Typically mines empty/near-empty blocks (lower fee capture by design).
+- Typically mines empty/near-empty blocks; any tx included come from ephemeral mempool.
 - Reorg-safe: stops current job when best tip changes.
 
 Notes
