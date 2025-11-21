@@ -190,9 +190,9 @@ class MinerTUI:
             uptime_str = f"{up_h:02d}:{up_m:02d}:{up_s:02d}"
 
             parts: list[str] = []
-            parts.append(f"{COL.MAGENTA}{self.title}{COL.RESET}")
+            parts.append(f"{COL.GREY}{self.title}{COL.RESET}")
             if self.mode:
-                parts.append(f"{COL.BOLD}{COL.WHITE}{COL.BACK_YELLOW}{self.mode}{COL.RESET}")
+                parts.append(f"{COL.BOLD}{COL.GREY}{self.mode}{COL.RESET}")
             if peers_in is not None and peers_out is not None:
                 parts.append(f"peers: {peers_in}/{peers_out}")
             parts.append(f"{_human_hps(self._last_hashrate)}")
@@ -203,8 +203,8 @@ class MinerTUI:
                     f"{_human_bytes(mem_used)}/{_human_bytes(mem_total)} ({mem_pct:.0f}%)"
                 )
                 
-            parts.append(f"Uptime {COL.GREEN}{uptime_str}{COL.RESET}")
-            line = (f"{COL.BRIGHT_CYAN} | {COL.RESET}").join(parts)
+            parts.append(f"Uptime {uptime_str}")
+            line = (f" | ").join(parts)
             try:
                 width = shutil.get_terminal_size((120, 20)).columns
             except Exception:

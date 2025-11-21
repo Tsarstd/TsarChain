@@ -27,7 +27,7 @@ Notes
 """
 from __future__ import annotations
 
-import argparse, time, signal, threading, psutil, errno, queue, os, sys
+import argparse, time, signal, threading, errno, queue, os, sys
 import multiprocessing as mp
 from datetime import datetime
 
@@ -56,12 +56,12 @@ def _stamp() -> str:
     now = datetime.now()
     d = f"{now.year:04d}.{now.month:02d}.{now.day:02d}"
     t = f"{now.hour:02d}.{now.minute:02d}.{now.second:02d}"
-    return f"{COL.BOLD}{COL.bg_rgb_color(43, 128, 197)} {d} {COL.RESET}{COL.BOLD}{COL.bg_rgb_color(197, 168, 43)} {t} {COL.RESET}"
+    return f"{COL.BOLD}{COL.GREY} {d} {COL.RESET}{COL.BOLD}{COL.GREY} {t} {COL.RESET}"
 
-def clog(message: str, color: str = COL.GREEN):
+def clog(message: str, color: str = COL.GREY):
     # Gunakan TUI logger jika ada, fallback ke print biasa
     if 'tui_logger' in globals():
-        tui_logger(f"{_stamp()} : {color}{message}{COL.RESET}")
+        tui_logger(f"{_stamp()}{color}{message}{COL.RESET}")
     else:
         print(f"{_stamp()} : {color}{message}{COL.RESET}")
 
@@ -99,7 +99,7 @@ class HashrateReporter(threading.Thread):
                     hps = human_hps(msg[1])
                     line = f"Hashrate ~ {hps} {COL.DIM}{COL.RESET}"
                     if line != last_line:
-                        clog(line, color=COL.CYAN)
+                        clog(line)
                         last_line = line
         except Exception:
             pass
@@ -129,7 +129,7 @@ def _run_snapshot_bootstrap(context: str, enabled: bool):
 
     result = maybe_bootstrap_snapshot(context=context, progress_cb=_printer)
     if result.status == "failed":
-        clog(f"[Bootstrap] Snapshot bootstrap failed: {result.reason}. Continuing with normal sync.", color=COL.YELLOW)
+        clog(f"[Bootstrap] Snapshot bootstrap failed: {result.reason}. Continuing with normal sync.")
     elif result.status == "installed":
         clog(f"[Bootstrap] Finished Instaling Snapshot")
     else:
@@ -162,14 +162,14 @@ class SimpleMiner:
         signal.signal(signal.SIGTERM, self.signal_handler)
 
     def signal_handler(self, signum, _frame):
-        clog(f"Received signal {signum}, shutting down...", color=COL.YELLOW)
+        clog(f"Received signal {signum}, shutting down...")
         self.mining_alive = False
         if self.cancel_mining:
             self.cancel_mining.set()
 
     def validate_address(self):
         if not self.address or not self.address.lower().startswith("tsar1"):
-            clog("Error: Address should start with 'tsar1...'", color=COL.RED)
+            clog("Error: Address should start with 'tsar1...'")
             return False
         return True
 
@@ -181,7 +181,6 @@ class SimpleMiner:
         return bool(inbound or outbound)
 
     def start_node(self):
-        clog("Starting node...")
         try:
             _run_snapshot_bootstrap("cli", self.bootstrap_snapshot)
             self.blockchain = Blockchain(
@@ -195,7 +194,7 @@ class SimpleMiner:
             clog(f"Node started with {peer_count} bootstrap peers")
             return True
         except Exception as exc:
-            clog(f"Failed to start node: {exc}", color=COL.RED)
+            clog(f"Failed to start node: {exc}")
             return False
 
     def wait_for_sync(self, timeout=560):
@@ -214,10 +213,10 @@ class SimpleMiner:
                 active_peers = self._has_active_peers()
                 if not active_peers:
                     if height >= 0:
-                        clog(f"No active peers detected (local height {height}). Proceeding with local chain.", color=COL.YELLOW)
+                        clog(f"No active peers detected (local height {height}). Proceeding with local chain.")
                         return True
                     if not notified_no_peer:
-                        clog("[Sync] Waiting for peer connection...", color=COL.YELLOW)
+                        clog("[Sync] Waiting for peer connection...")
                         notified_no_peer = True
                     time.sleep(3)
                     continue
@@ -257,14 +256,14 @@ class SimpleMiner:
                             last_progress = progress
                 else:
                     if not notified_no_peer:
-                        clog("Waiting for peer connection...", color=COL.YELLOW)
+                        clog("Waiting for peer connection...")
                         notified_no_peer = True
                 time.sleep(2)
             except Exception as exc:
-                clog(f"Sync error: {exc}", color=COL.RED)
+                clog(f"Sync error: {exc}")
                 time.sleep(2)
 
-        clog("Sync timeout or interrupted", color=COL.RED)
+        clog("Sync timeout or interrupted")
         return False
 
     def start_mining(self, timeout=560):
@@ -278,29 +277,19 @@ class SimpleMiner:
         except Exception:
             local_height = -1
         if not self._has_active_peers() and local_height >= 0:
-            clog(f"No active peer connections detected (local height {local_height}). Skipping sync wait.", color=COL.YELLOW)
+            clog(f"No active peer connections detected (local height {local_height}). Skipping sync wait.")
             need_sync = False
         if need_sync and not self.wait_for_sync(timeout=timeout):
             return False
-
-        clog("Starting mining with:", color=COL.CYAN)
-        clog(f"  Address: {self.address}")
-        clog(f"  Cores:   {self.cores}")
-        try:
-            mode_label = "FULL-MEM (+2.5GB)" if bool(CFG.RANDOMX_FULL_MEM) else "LIGHT"
-            clog(f"  RandomX: {mode_label}")
-        except Exception:
-            pass
         
-        clog("Press Ctrl+C to stop mining", color=COL.YELLOW)
-        clog("-" * 50)
+        clog(f"{COL.BOLD}{COL.BG_WHITE} Press {COL.RESET}{COL.BOLD}{COL.BG_RED} Ctrl+C {COL.RESET}{COL.BG_WHITE}{COL.BOLD}{COL.ORANGE} to stop mining {COL.RESET}")
 
         if getattr(self.blockchain, "height", -1) < 0:
             created = self.blockchain.ensure_genesis(self.address, use_cores=self.cores)
             if created:
                 clog("Genesis block created")
             else:
-                clog("Failed to create genesis block", color=COL.RED)
+                clog("Failed to create genesis block")
                 return False
 
         # Mulai loop mining
@@ -333,14 +322,14 @@ class SimpleMiner:
                         if sent <= 0:
                             self.network.request_sync(fast=True)
                     except Exception as exc:
-                        clog(f"Broadcast error: {exc}", color=COL.RED)
+                        clog(f"Broadcast error: {exc}")
             except Exception as exc:
                 if isinstance(exc, OSError) and getattr(exc, "errno", None) in INTERRUPTED_ERRNOS:
-                    clog("[mining] Interrupted system call; stopping miners...", color=COL.YELLOW)
+                    clog("[mining] Interrupted system call; stopping miners...")
                     self.mining_alive = False
                     self.cancel_mining.set()
                     break
-                clog(f"Mining error: {exc}", color=COL.RED)
+                clog(f"Mining error: {exc}")
                 time.sleep(1)
 
         return True
@@ -356,7 +345,7 @@ class SimpleMiner:
             except Exception:
                 pass
 
-        clog("Miner stopped", color=COL.YELLOW)
+        clog("Miner stopped")
 
 
 class NodeRunner:
@@ -371,7 +360,7 @@ class NodeRunner:
         signal.signal(signal.SIGTERM, self._handle_signal)
 
     def _handle_signal(self, *_args):
-        clog("Stopping node...", color=COL.YELLOW)
+        clog("Stopping node...")
         self.running = False
 
     def start(self):
@@ -408,12 +397,11 @@ class NodeRunner:
             # == Background sync daemon ==
             threading.Thread(target=self._sync_daemon, daemon=True).start()
 
-            clog("Press Ctrl+C to stop.", color=COL.YELLOW)
             while self.running:
                 time.sleep(2)
                 
         except Exception as exc:
-            clog(f"Node error: {exc}", color=COL.RED)
+            clog(f"Node error: {exc}")
             
         finally:
             self.shutdown()
@@ -426,7 +414,7 @@ class NodeRunner:
                 if not getattr(self.network, "peers", None):
                     msg = "[Sync] Waiting for peer connection..."
                     if msg != last_status:
-                        clog(msg, color=COL.YELLOW)
+                        clog(msg)
                         last_status = msg
                     self._sync_ready = False
                     time.sleep(5)
@@ -473,7 +461,7 @@ class NodeRunner:
                     last_status = status
 
             except Exception as e:
-                clog(f"[node-only] sync error: {e}", color=COL.RED)
+                clog(f"[node-only] sync error: {e}")
             time.sleep(5)
 
     def shutdown(self):
@@ -483,69 +471,30 @@ class NodeRunner:
             except Exception:
                 pass
             self.network = None
-        clog("Node stopped.", color=COL.YELLOW)
-
-def get_user_input():
-    clog("Please enter your mining details:")
-    clog("-" * 40, color=COL.RED)
-
-    while True:
-        address = input("Miner address (tsar1...): ").strip()
-        if address and address.lower().startswith("tsar1"):
-            break
-        clog("Error: Address must start with 'tsar1...'", color=COL.YELLOW)
-        clog("Example: tsar1qyourwalletaddresshere", color=COL.YELLOW)
-
-    while True:
-        cores = psutil.cpu_count(logical=True)
-        cores_input = input(f"CPU cores to use [{cores}]: ").strip()
-        if not cores_input:
-            cores = 1
-            break
-        try:
-            cores = int(cores_input)
-            if cores > 0:
-                break
-            clog("Error: Cores must be a positive number", color=COL.YELLOW)
-        except ValueError:
-            clog("Error: Please enter a valid number", color=COL.YELLOW)
-    return address, cores
+        clog("Node stopped.")
 
 def choose_mode() -> int:
-    print(f"{COL.BOLD}{COL.BACK_BRIGHT_BLACK}       Please Choose Mode       {COL.RESET}")
-    print(f"{COL.BOLD}{COL.BACK_BRIGHT_BLACK}                                {COL.RESET}")
-    print(f"{COL.BOLD}{COL.BACK_YELLOW} 0 {COL.RESET}{COL.BOLD}{COL.BACK_TSAR_COLOR} Mining Mode {COL.RESET}  {COL.BOLD}{COL.BACK_GREEN} 1 {COL.RESET}{COL.BOLD}{COL.BACK_BLUE} Node Only {COL.RESET}")
+    print(f"{COL.BOLD}{COL.GREY}       Please Choose Mode       {COL.RESET}")
+    print(f"{COL.BOLD}{COL.GREY}                                {COL.RESET}")
+    print(f"{COL.BOLD}{COL.GREY} 0 {COL.RESET}{COL.BOLD}{COL.BG_ORANGE} Mining Mode {COL.RESET}  {COL.BOLD}{COL.GREY} 1 {COL.RESET}{COL.BOLD}{COL.GREY} Node Only {COL.RESET}")
     while True:
         try:
-            sel = input(f"{COL.BOLD}{COL.BACK_BRIGHT_BLACK}Select 0/1 {COL.RESET}").strip()
+            sel = input(f"{COL.BOLD}{COL.GREY}Select 0/1 {COL.RESET}").strip()
         except EOFError:
-            print(f"\033[1A\033[2K{COL.BOLD}{COL.BACK_BRIGHT_BLACK}Your're Choosing: {COL.BOLD}{COL.BACK_YELLOW} 0 {COL.RESET}{COL.BOLD}{COL.BACK_TSAR_COLOR} Mining Mode {COL.RESET}")
+            print(f"\033[1A\033[2K{COL.BOLD}{COL.GREY} You're Choosing: {COL.BOLD}{COL.GREY} 0 {COL.RESET}{COL.BOLD}{COL.BG_ORANGE} Mining Mode {COL.RESET}")
             return 0
         
         if sel == "0":
-            print(f"\033[1A\033[2K{COL.BOLD}{COL.COMP_PC}        Your're Choosing        {COL.RESET}")
-            print(f"{COL.BOLD}{COL.BACK_YELLOW} 0 {COL.RESET}{COL.BOLD}{COL.BACK_TSAR_COLOR} Mining Mode {COL.RESET}")
+            print(f"\033[1A\033[2K{COL.BOLD}{COL.GREY}         You're Choosing        {COL.RESET}")
+            print(f"{COL.BOLD}{COL.BG_ORANGE}           Mining Mode          {COL.RESET}")
             return 0
         elif sel == "1":
-            print(f"\033[1A\033[2K{COL.BOLD}{COL.BACK_BRIGHT_BLACK}Your're Choosing{COL.RESET}")
-            print(f"{COL.BOLD}{COL.BACK_GREEN} 1 {COL.RESET}{COL.BOLD}{COL.BACK_BLUE} Node Only {COL.RESET}")
+            print(f"\033[1A\033[2K{COL.BOLD}{COL.GREY}         You're Choosing        {COL.RESET}")
+            print(f"{COL.BOLD}{COL.GREY}            Node Only           {COL.RESET}")
+            print(f" ")
             return 1
         else:
-            clog("Invalid selection. Enter 0 or 1.", color=COL.YELLOW)
-        
-def _prompt_rx_full_mem() -> bool:
-    clog("RandomX Memory Boost", color=COL.CYAN)
-    clog("-" * 40, color=COL.RED)
-    clog("if you choose 'y' your PC will consume 2.5GB - 7GB RAM Usage")
-    clog("if you choose 'N' RAM Usage will stable in 2.5GB")
-    clog("-" * 40, color=COL.RED)
-    while True:
-        ans = input("Enable RandomX FULL MEMORY mode (+2.5GB)? [y/N]: ").strip().lower()
-        if ans in ("y", "yes", "1"):
-            return True
-        if ans in ("n", "no", "0", ""):
-            return False
-        clog("Please answer y or n.", color=COL.YELLOW)
+            clog("Invalid selection. Enter 0 or 1.")
         
 def parse_args():
     parser = argparse.ArgumentParser(description="TsarChain CLI miner / node runner")
@@ -579,24 +528,23 @@ def main():
     cores = args.cores
 
     if not address or not cores:
-        input_address, input_cores = get_user_input()
+        input_address, input_cores = COL.get_user_input()
         address = address or input_address
         cores = cores or input_cores
 
     # Decide RandomX memory mode (mining mode only)
     if args.rx_full and args.rx_light:
-        clog("Cannot set both --rx-full and --rx-light. Choose one.", color=COL.RED)
+        clog("Cannot set both --rx-full and --rx-light. Choose one.")
         sys.exit(2)
     if args.rx_full:
         rx_full_mem = True
     elif args.rx_light:
         rx_full_mem = False
     else:
-        rx_full_mem = _prompt_rx_full_mem()
+        rx_full_mem = COL.prompt_rx_full_mem()
     CFG.RANDOMX_FULL_MEM = bool(rx_full_mem)
     os.environ["TSAR_RANDOMX_FULL_MEM"] = "1" if rx_full_mem else "0"
     mode_label = "FULL-MEM (+2.5GB)" if CFG.RANDOMX_FULL_MEM else "LIGHT"
-    clog(f"RandomX mode set to: {mode_label}")
 
     # --- TUI + progress queue ---
     progress_q: mp.Queue = mp.Queue()
@@ -631,9 +579,9 @@ def main():
     try:
         miner.start_mining(timeout=args.timeout)
     except KeyboardInterrupt:
-        clog("Interrupted by user", color=COL.YELLOW)
+        clog("Interrupted by user")
     except Exception as exc:
-        clog(f"Fatal error: {exc}", color=COL.RED)
+        clog(f"Fatal error: {exc}")
     finally:
         miner.stop()
         tui.stop()

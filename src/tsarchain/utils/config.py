@@ -252,7 +252,7 @@ RANDOMX_LARGE_PAGES      = False  # set True only if huge pages configured OS-wi
 RANDOMX_JIT              = True
 RANDOMX_SECURE_JIT       = True
 RANDOMX_HARD_AES         = True
-RANDOMX_CACHE_MAX        = 3      # max RandomX VM entries cached in rust binding
+RANDOMX_CACHE_MAX        = 2      # max RandomX VM entries cached in rust binding
 
 # ---- BLOCK & TX LIMITS ----
 MAX_BLOCK_BYTES      = 1_200_000  # block size limit (approx 1.2 MB)
