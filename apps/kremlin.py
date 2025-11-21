@@ -268,8 +268,10 @@ class KremlinWalletGUI(WalletsMixin):
             self._ks_pwd_cache = (initial_keystore_password, time.time() + self._ks_pwd_ttl_sec)
 
         self._conn_online = False
-        self._balance_poll_interval_ms = 15000
+        self._balance_poll_interval_ms = 30000
         self._balance_poll_job: Optional[str] = None
+        self._balance_countdown_job: Optional[str] = None
+        self._balance_next_sec: int = 0
 
         # 4) Tab state
         self._active_tab = "wallets"
@@ -545,9 +547,9 @@ class KremlinWalletGUI(WalletsMixin):
         self._sidebar_buttons = {}
         self._create_sidebar_button("Wallets",  "wallets",  self.show_wallets_frame)
         self._create_sidebar_button("Send",     "send",     self.show_send_frame)
-        self._create_sidebar_button("Graffiti",  "graffiti",  self.show_graffiti_frame)
-        self._create_sidebar_button("Chat",     "chat",     self.show_chat_frame)
         self._create_sidebar_button("History",  "history",  self.show_history_frame)
+        self._create_sidebar_button("Chat",     "chat",     self.show_chat_frame)
+        self._create_sidebar_button("Graffiti",  "graffiti",  self.show_graffiti_frame)
         self._create_sidebar_button("Explorer", "explorer", self.show_explorer_frame)
         self._create_sidebar_button("Network",  "network",  self.show_network_frame)
         self._create_sidebar_button("Dev",      "dev",      self.show_dev_frame)
@@ -720,7 +722,60 @@ class KremlinWalletGUI(WalletsMixin):
         except Exception:
             pass
 
+    # ---------------- Balance refresh helpers ----------------
+    def _set_balance_refresh_label(self, text: str) -> None:
+        try:
+            if getattr(self, "wallet_refresh_label", None):
+                self.wallet_refresh_label.config(text=text)
+        except Exception:
+            pass
+
+    def _cancel_balance_countdown(self) -> None:
+        if self._balance_countdown_job:
+            try:
+                self.root.after_cancel(self._balance_countdown_job)
+            except Exception:
+                pass
+            self._balance_countdown_job = None
+
+    def _start_balance_countdown(self, seconds: int) -> None:
+        self._cancel_balance_countdown()
+        if getattr(self, "_active_tab", "") != "wallets":
+            return
+        self._balance_next_sec = max(int(seconds), 0)
+
+        def _tick():
+            if getattr(self, "_active_tab", "") != "wallets":
+                self._cancel_balance_countdown()
+                return
+            if self._balance_next_sec <= 0:
+                self._set_balance_refresh_label("Refresh: now")
+                self._balance_countdown_job = None
+                return
+            self._set_balance_refresh_label(f"Refresh: {self._balance_next_sec}s")
+            self._balance_next_sec -= 1
+            try:
+                self._balance_countdown_job = self.root.after(1000, _tick)
+            except Exception:
+                self._balance_countdown_job = None
+
+        _tick()
+
+    def _cancel_balance_poll(self) -> None:
+        if self._balance_poll_job:
+            try:
+                self.root.after_cancel(self._balance_poll_job)
+            except Exception:
+                pass
+            self._balance_poll_job = None
+        self._cancel_balance_countdown()
+        self._set_balance_refresh_label("Refresh: paused")
+
     def _schedule_balance_refresh(self, delay_ms: Optional[int] = None) -> None:
+        # Only poll when Wallet tab is active
+        if getattr(self, "_active_tab", "") != "wallets":
+            self._cancel_balance_poll()
+            return
         if delay_ms is None:
             delay_ms = self._balance_poll_interval_ms
         delay = int(max(0, delay_ms))
@@ -731,11 +786,16 @@ class KremlinWalletGUI(WalletsMixin):
                 pass
         try:
             self._balance_poll_job = self.root.after(delay, self._run_balance_poll)
+            self._start_balance_countdown(delay // 1000)
         except Exception:
             self._balance_poll_job = None
+            self._set_balance_refresh_label("Refresh: paused (error)")
 
     def _run_balance_poll(self) -> None:
         self._balance_poll_job = None
+        if getattr(self, "_active_tab", "") != "wallets":
+            self._cancel_balance_countdown()
+            return
         if not self._conn_online:
             self._schedule_balance_refresh()
             return
@@ -758,8 +818,14 @@ class KremlinWalletGUI(WalletsMixin):
         if immediate:
             if self._conn_online:
                 self._request_balance_update(addresses=addrs)
-                if self._balance_poll_job is None:
+                if self._active_tab == "wallets" and self._balance_poll_job is None:
                     self._schedule_balance_refresh()
+                else:
+                    self._cancel_balance_countdown()
+            return
+
+        if getattr(self, "_active_tab", "") != "wallets":
+            self._cancel_balance_poll()
             return
 
         if self._conn_online:
@@ -1152,6 +1218,11 @@ class KremlinWalletGUI(WalletsMixin):
                 self.chat_tab._chat_poll_job = None
         except Exception:
             pass
+        try:
+            if getattr(self, "_active_tab", "") == "wallets":
+                self._cancel_balance_poll()
+        except Exception:
+            pass
         for fr in self.frames.values():
             try:
                 fr.pack_forget()
@@ -1162,10 +1233,28 @@ class KremlinWalletGUI(WalletsMixin):
                 self.explore_panel.on_deactivated()
         except Exception:
             pass
+        try:
+            if hasattr(self, "network_tab"):
+                self.network_tab.on_hide()
+        except Exception:
+            pass
 
     def show_wallets_frame(self) -> None:
         self._hide_all_frames()
+        # mark active tab early so schedulers see the right state
+        try:
+            self._active_tab = "wallets"
+            self._refresh_sidebar_styles()
+        except Exception:
+            pass
         self.frames["wallets"].pack(fill=tk.BOTH, expand=True)
+        try:
+            if self._conn_online:
+                self._schedule_balance_refresh()
+            else:
+                self._set_balance_refresh_label("Refresh: offline")
+        except Exception:
+            pass
 
     def show_send_frame(self) -> None:
         if not self._is_wallet_ready():
@@ -1245,6 +1334,11 @@ class KremlinWalletGUI(WalletsMixin):
                 self.chat_tab.reload_addresses()
             except Exception:
                 pass
+            try:
+                if getattr(self.chat_tab, "_chat_online", False):
+                    self.chat_tab._chat_schedule_next()
+            except Exception:
+                pass
     
     def show_history_frame(self) -> None:
         if not self._is_wallet_ready():
@@ -1272,6 +1366,11 @@ class KremlinWalletGUI(WalletsMixin):
     def show_network_frame(self) -> None:
         self._hide_all_frames()
         self.frames["network"].pack(fill=tk.BOTH, expand=True)
+        try:
+            if hasattr(self, "network_tab"):
+                self.network_tab.on_show()
+        except Exception:
+            pass
 
     def show_dev_frame(self) -> None:
         self._hide_all_frames()
@@ -1283,6 +1382,8 @@ class KremlinWalletGUI(WalletsMixin):
         self._busy_widgets: dict[str, list[tk.Widget]] = {}
         self._busy_timers: dict[str, str | int] = {}
         self._toasts = []
+        self._balance_countdown_job = None
+        self._balance_next_sec = 0
 
     def _set_enabled(self, w: tk.Widget, enabled: bool) -> None:
         try:

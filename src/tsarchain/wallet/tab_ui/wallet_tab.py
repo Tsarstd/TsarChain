@@ -289,6 +289,10 @@ class WalletsMixin:
             bg=self.bg, fg=self.muted, font=("Consolas", 10)
         )
         self.wallet_count_label.pack(side=tk.RIGHT, padx=8)
+        self.wallet_refresh_label = tk.Label(
+            right, text="Refresh: --s", bg=self.bg, fg=self.muted, font=("Consolas", 10)
+        )
+        self.wallet_refresh_label.pack(side=tk.RIGHT, padx=8)
 
         container = tk.Frame(self._wallets_compact, bg=self.bg)
         container.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0,8))

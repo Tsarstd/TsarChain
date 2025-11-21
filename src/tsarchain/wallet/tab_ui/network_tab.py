@@ -20,23 +20,27 @@ class NetworkTab(tk.Frame):
     def __init__(self, app: "KremlinWalletGUI", master: tk.Misc | None = None):
         super().__init__(master, bg=app.bg)
         self.app = app
-        self.net_refresh_btn: tk.Button | None = None
         self.net_text: scrolledtext.ScrolledText | None = None
+        self._auto_job: str | None = None
+        self._countdown_job: str | None = None
+        self._next_refresh_sec: int = 0
+        self._auto_interval_ms = 30000
+        self._active = False
+        self._status_label: tk.Label | None = None
         self._build_ui()
 
-    # ------------------------------------------------------------------ UI
+    # --------------------------------- UI ---------------------------------
     def _build_ui(self) -> None:
         top = tk.Frame(self, bg=self.app.bg)
         top.pack(fill=tk.X, padx=12, pady=8)
 
-        self.net_refresh_btn = tk.Button(
+        self._status_label = tk.Label(
             top,
-            text="Refresh Network Info",
-            command=self.refresh_network_info,
-            bg=self.app.panel_bg,
+            text="Auto Refresh in 30s.",
+            bg=self.app.bg,
             fg=self.app.fg,
         )
-        self.net_refresh_btn.pack(side=tk.LEFT)
+        self._status_label.pack(side=tk.LEFT, anchor="w")
 
         self.net_text = scrolledtext.ScrolledText(
             self,
@@ -96,11 +100,11 @@ class NetworkTab(tk.Frame):
         try:
             self.net_text.delete("1.0", tk.END)
             self.net_text.insert(tk.END, "[*] Requesting network info.\n")
+            self._set_status("Merefresh...")
         finally:
             self._net_text_disable()
 
-        widgets = [self.net_refresh_btn] if self.net_refresh_btn else []
-        if not self.app._busy_start("netinfo", widgets):
+        if not self.app._busy_start("netinfo", []):
             return
 
         pending = {"n": 2}
@@ -145,6 +149,18 @@ class NetworkTab(tk.Frame):
 
         self.app.rpc.send_async({"type": "GET_NETWORK_INFO"}, on_info)
         self.app.rpc.send_async({"type": "GET_PEERS"}, on_peers)
+
+        def _reschedule_after(_resp=None):
+            if self._active:
+                self._schedule_auto()
+        self.after(0, _reschedule_after)
+
+    def _set_status(self, text: str) -> None:
+        if self._status_label:
+            try:
+                self._status_label.config(text=text)
+            except Exception:
+                pass
 
     # ------------------------------------------------------------ Text helpers
     def _net_text_enable(self) -> None:
@@ -407,3 +423,76 @@ class NetworkTab(tk.Frame):
         except Exception:
             pass
         self._net_text_disable()
+
+    # ----------------------------- Auto refresh ----------------------------
+    def _cancel_auto(self) -> None:
+        if self._auto_job:
+            try:
+                self.after_cancel(self._auto_job)
+            except Exception:
+                pass
+            self._auto_job = None
+        self._cancel_countdown()
+
+    def _schedule_auto(self, delay_ms: int | None = None) -> None:
+        self._cancel_auto()
+        if not self._active:
+            return
+        delay = delay_ms if delay_ms is not None else self._auto_interval_ms
+        self._next_refresh_sec = max(int(delay // 1000), 0)
+        self._start_countdown()
+        try:
+            self._auto_job = self.after(delay, self._auto_tick)
+        except Exception:
+            self._auto_job = None
+
+    def _auto_tick(self) -> None:
+        self._auto_job = None
+        if not self._active:
+            return
+        self._next_refresh_sec = 0
+        self._start_countdown()
+        try:
+            self.refresh_network_info()
+        except Exception:
+            # If refresh fails, still schedule next to avoid lockup
+            self._schedule_auto()
+
+    def on_show(self) -> None:
+        self._active = True
+        self._schedule_auto(delay_ms=0)
+
+    def on_hide(self) -> None:
+        self._active = False
+        self._cancel_auto()
+
+    # ----------------------------- Countdown helpers -----------------------
+    def _start_countdown(self) -> None:
+        self._cancel_countdown()
+        if not self._active:
+            return
+
+        def _tick():
+            if not self._active:
+                self._countdown_job = None
+                return
+            if self._next_refresh_sec <= 0:
+                self._set_status("Refreshing...")
+                self._countdown_job = None
+                return
+            self._set_status(f"Auto Refresh in {self._next_refresh_sec}s")
+            self._next_refresh_sec -= 1
+            try:
+                self._countdown_job = self.after(1000, _tick)
+            except Exception:
+                self._countdown_job = None
+
+        _tick()
+
+    def _cancel_countdown(self) -> None:
+        if self._countdown_job:
+            try:
+                self.after_cancel(self._countdown_job)
+            except Exception:
+                pass
+            self._countdown_job = None

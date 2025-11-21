@@ -164,7 +164,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "0015386ba8644b026564d2b00df3fbc9d9e99d84faaa64f4d9ad8a65e4b135ca"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "001939343912da9c89121e6578c3fa7bc33787bd05db277be862c3c90b1e5d1e"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -414,7 +414,7 @@ CHAT_GLOBAL_QUEUE_MAX = 20_000  # max pending chat messages globally
 CHAT_PULL_MAX_ITEMS   = 50  # entries returned per chat pull request
 
 # ---- CHAT POLLING ----
-CHAT_POLL_INTERVAL_MS       = 2000  # default polling interval for chat client
+CHAT_POLL_INTERVAL_MS       = 3000  # default polling interval for chat client
 CHAT_POLL_INITIAL_MS        = 4000  # initial backoff before first poll
 CHAT_PUBLISH_MIN_INTERVAL_S = 10  # throttle between chat publish attempts
 CHAT_PUBLISH_SELF_CHECK     = False  # skip self-loopback validation by default
@@ -456,7 +456,7 @@ RPC_TIMEOUT          = 4.0  # wallet RPC request timeout in seconds
 
 # ---- CLIENT THROTTLING ----
 NODE_CACHE_TTL          = 60  # seconds cached node metadata stays valid
-WALLET_RPC_MIN_INTERVAL = 0.35  # minimum spacing between wallet RPC calls
+WALLET_RPC_MIN_INTERVAL = 0.45  # minimum spacing between wallet RPC calls
 
 # ---- BALANCE LOOKUP THROTTLING ----
 BALANCE_RL_IP_BURST    = 8   # balance queries allowed per IP before throttling

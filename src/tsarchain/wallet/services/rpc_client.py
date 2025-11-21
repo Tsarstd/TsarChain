@@ -188,9 +188,8 @@ class NodeClient:
         if found:
             self.dir.set(found)
 
-        level = logging.DEBUG if found else logging.INFO
-        log.log(
-            level,
+
+        log.debug(
             "[scan] done: %d node(s) found, %d timeout, %d refused, %d other over %d candidates",
             len(found), n_timeout, n_refused, n_other, len(uniq)
         )

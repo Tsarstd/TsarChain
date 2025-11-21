@@ -43,7 +43,8 @@ def _guess_kind(q: str) -> str:
     if q.isdigit() and 1 <= len(q) <= 7:
         return "block_height"
     if re.fullmatch(r"[0-9a-fA-F]{64}", q):
-        return "block_hash" if q.startswith(("00",)) else "txid_hash"
+        # 64 hex starting with "00" treated as block hash (e.g., genesis), otherwise assume TXID
+        return "block_hash" if q.startswith("00") else "txid_hash"
     return "unknown"
 
 def _fmt_tsar_amount(v: Union[int, str, float, None]) -> str:
@@ -69,6 +70,8 @@ class ExplorePanel(tk.Frame):
         self.providers: Dict[str, callable] = {}
         self._active = False
         self._lock = threading.Lock()
+        self._search_inflight = False
+        self._last_search = ("", 0.0)
 
         self.bg = theme.bg
         self.card_bg = theme.card_bg
@@ -379,6 +382,18 @@ class ExplorePanel(tk.Frame):
         if status:
             self.status_var.set(status)
 
+    def _finish_search(self, ok: bool):
+        # Reset inflight flag and update status
+        self._search_inflight = False
+        try:
+            self.search_btn.config(state="normal")
+        except Exception:
+            pass
+        if ok:
+            self.status_var.set("Search done.")
+        else:
+            self.status_var.set("Search finished (no result).")
+
     # ---------- default pages ----------
     def _render_welcome(self):
         self._enter_hero()
@@ -415,6 +430,22 @@ class ExplorePanel(tk.Frame):
         q = (self.search_var.get() or "").strip()
         if not q or q == HINT_TEXT:
             return
+        # simple debounce per query (2s)
+        import time
+        now = time.time()
+        if self._search_inflight:
+            self.status_var.set("Search in progress, please wait...")
+            return
+        if q == self._last_search[0] and now - self._last_search[1] < 2.0:
+            self.status_var.set("Please wait a moment before searching the same item.")
+            return
+        self._last_search = (q, now)
+        self._search_inflight = True
+        try:
+            self.search_btn.config(state="disabled")
+        except Exception:
+            pass
+        self.status_var.set("Searching...")
         self._enter_compact()
         kind = _guess_kind(q)
         if kind == "block_height":
@@ -424,10 +455,13 @@ class ExplorePanel(tk.Frame):
         if kind == "txid_hash":
             q = (self.search_var.get() or "").strip()
             if not self._ensure_txid_64(q):
+                self._search_inflight = False
                 return
             return self._open_tx(q)
         if kind == "address":
             return self._open_address(q)
+        self.status_var.set("Input tidak dikenali, isi block height/hash/txid/alamat.")
+        self._search_inflight = False
         messagebox.showinfo("Search", "Enter: block height, block hash (64 hex starting with 0000...), TXID (64 hex), or tsar1 address...")
         
     # ---------- layout mode switchers ----------
@@ -503,57 +537,79 @@ class ExplorePanel(tk.Frame):
     def _open_block(self, idx: str):
         get_block = self.providers.get("get_block")
         if not callable(get_block):
-            return self._render_error("Provider get_block not available")
+            self._render_error("Provider get_block not available")
+            self._finish_search(False)
+            return
         def worker():
+            done = False
             try:
                 b = get_block(idx)
+                if not b or (isinstance(b, dict) and b.get("error")):
+                    self._ui(self._render_error, "Block not found")
+                else:
+                    done = True
+                    self._ui(self._render_block, b)
             except Exception as e:
-                return self._ui(self._render_error, f"get_block error: {e}")
-            if not b or (isinstance(b, dict) and b.get("error")):
-                return self._ui(self._render_error, "Block not found")
-            self._ui(self._render_block, b)
+                self._ui(self._render_error, f"get_block error: {e}")
+            finally:
+                self._ui(self._finish_search, done)
         threading.Thread(target=worker, daemon=True).start()
 
     def _open_tx(self, txid: str):
         get_tx = self.providers.get("get_tx")
         if not callable(get_tx):
-            return self._render_error("Provider get_tx not available")
+            self._render_error("Provider get_tx not available")
+            self._finish_search(False)
+            return
         def worker():
+            done = False
             try:
                 t = get_tx(txid)
+                if not isinstance(t, dict) or t.get("error"):
+                    self._ui(self._render_error, "Tx not found")
+                else:
+                    if "tx" in t and isinstance(t["tx"], dict): t = t["tx"]
+                    if "transaction" in t and isinstance(t["transaction"], dict): t = t["transaction"]
+                    if "inputs" not in t and "vin" in t:  t["inputs"]  = t["vin"]
+                    if "outputs" not in t and "vout" in t: t["outputs"] = t["vout"]
+                    if "txid" not in t: t["txid"] = t.get("id") or t.get("hash") or txid
+                    done = True
+                    self._ui(self._render_tx, t["txid"], t)
             except Exception as e:
-                return self._ui(self._render_error, f"get_tx error: {e}")
-            if not isinstance(t, dict) or t.get("error"):
-                return self._ui(self._render_error, "Tx not found")
-            if "tx" in t and isinstance(t["tx"], dict): t = t["tx"]
-            if "transaction" in t and isinstance(t["transaction"], dict): t = t["transaction"]
-            if "inputs" not in t and "vin" in t:  t["inputs"]  = t["vin"]
-            if "outputs" not in t and "vout" in t: t["outputs"] = t["vout"]
-            if "txid" not in t: t["txid"] = t.get("id") or t.get("hash") or txid
-            self._ui(self._render_tx, t["txid"], t)
+                self._ui(self._render_error, f"get_tx error: {e}")
+            finally:
+                self._ui(self._finish_search, done)
         threading.Thread(target=worker, daemon=True).start()
 
     def _open_tx_or_block(self, hx: str):
         get_tx = self.providers.get("get_tx")
         get_block = self.providers.get("get_block")
         if not callable(get_block) and not callable(get_tx):
-            return self._render_error("Providers not available")
+            self._render_error("Providers not available")
+            self._finish_search(False)
+            return
 
         def worker():
+            done = False
             b = None
             if callable(get_block):
                 try:
                     b = get_block(hx)
                 except Exception as e:
-                    return self._ui(self._render_error, f"get_block error: {e}")
+                    self._ui(self._render_error, f"get_block error: {e}")
             if isinstance(b, dict) and b and not b.get("error") and (b.get("hash") or b.get("transactions") or b.get("tx")):
-                return self._ui(self._render_block, b)
+                done = True
+                self._ui(self._render_block, b)
+                self._ui(self._finish_search, True)
+                return
 
             if callable(get_tx):
                 try:
                     t = get_tx(hx)
                 except Exception as e:
-                    return self._render_error(f"get_tx error: {e}")
+                    self._ui(self._render_error, f"get_tx error: {e}")
+                    self._ui(self._finish_search, False)
+                    return
 
                 if isinstance(t, dict) and not t.get("error"):
                     if "tx" in t and isinstance(t["tx"], dict):
@@ -566,9 +622,13 @@ class ExplorePanel(tk.Frame):
                         t["outputs"] = t.get("vout") or []
 
                     txid_disp = t.get("txid") or t.get("id") or t.get("hash") or hx
-                    return self._render_tx(txid_disp, t)
+                    done = True
+                    self._ui(self._render_tx, txid_disp, t)
+                    self._ui(self._finish_search, True)
+                    return
                     
             self._ui(self._render_error, "Not found")
+            self._ui(self._finish_search, done)
         threading.Thread(target=worker, daemon=True).start()
 
     def _open_address(self, addr: str):
