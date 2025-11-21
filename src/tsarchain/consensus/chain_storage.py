@@ -227,7 +227,7 @@ class StorageMixin:
 
 
 # =============================================================================
-# 3. JOURNAL (.json)
+# 3. JOURNAL (.json)        NOTE: journal is Python-only fallback for non-LMDB mode; not performance-critical, no plan to port to Rust for now.
 # =============================================================================
     def _chain_journal_enabled(self) -> bool:
         return (not self.in_memory) and (not kv_enabled()) and bool(getattr(self, "_chain_journal_path", None))
@@ -324,9 +324,6 @@ class StorageMixin:
                 self._persisted_height = -1
 
             if tip_height < 0:
-                # Jangan hapus isi LMDB ketika chain kosong; biarkan data on-disk tetap aman
-                if force_full:
-                    log.debug("[save_chain] Chain kosong; skip clear_db untuk menghindari wipe")
                 self._chain_dirty_from = None
                 self._persisted_height = -1
                 return

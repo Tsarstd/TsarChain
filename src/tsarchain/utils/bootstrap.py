@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import os, json, shutil, hashlib, tempfile, time
-import lmdb
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -16,6 +15,7 @@ from ecdsa import BadSignatureError, SECP256k1, VerifyingKey
 # ---------------- Local Project ----------------
 from . import config as CFG
 from .tsar_logging import get_ctx_logger
+from ..storage.kv import iter_prefix, kv_enabled
 
 log = get_ctx_logger("tsarchain.utils.bootstrap")
 
@@ -323,33 +323,26 @@ __all__ = ["maybe_bootstrap_snapshot", "SnapshotBootstrapResult", "annotate_loca
 
 
 def _validate_snapshot_chain() -> tuple[bool, Optional[str]]:
+    if not kv_enabled():
+        return False, "KV backend disabled"
     db_dir = CFG.LMDB_DATA_FILE
     if not db_dir or not os.path.exists(db_dir):
         return False, "DB directory missing"
-    try:
-        env = lmdb.open(db_dir, readonly=True, max_dbs=16, lock=False)
-    except Exception as exc:
-        return False, f"cannot open LMDB: {exc}"
 
-    entry: Optional[dict] = None
     try:
-        try:
-            chain_db = env.open_db(b"chain")
-        except Exception as exc:
-            return False, f"chain db open failed: {exc}"
-        with env.begin(db=chain_db, write=False) as txn:
-            cur = txn.cursor()
-            if not cur.first():
-                return False, "empty chain db"
-            try:
-                entry = json.loads(cur.value().decode("utf-8"))
-            except Exception as exc:
-                return False, f"chain entry invalid: {exc}"
-    finally:
-        try:
-            env.close()
-        except Exception:
-            pass
+        items = list(iter_prefix("chain", b"h:"))
+    except Exception as exc:
+        return False, f"native iter_prefix failed: {exc}"
+
+    if not items:
+        return False, "empty chain db"
+
+    items.sort(key=lambda kv: kv[0])
+    _, first_val = items[0]
+    try:
+        entry = json.loads(first_val.decode("utf-8"))
+    except Exception as exc:
+        return False, f"chain entry invalid: {exc}"
 
     if not entry:
         return False, "chain entry missing"

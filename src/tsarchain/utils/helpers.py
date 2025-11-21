@@ -242,7 +242,7 @@ def hash160(b: bytes) -> bytes:
     return bytes(_native_hash160(bytes(b)))
 
 def double_sha256(data: bytes) -> bytes:
-    return sha256(sha256(data))
+    return bytes(_native_hash256(bytes(data)))
 
 def hash256(data: bytes) -> bytes:
     return bytes(_native_hash256(bytes(data)))
@@ -428,7 +428,7 @@ def der_encode_sig(r, s):
 def util_compute_txid(tx, include_txid: bool = False):
     tx_dict = tx.to_dict(include_txid=include_txid)
     serialized = serialize(tx_dict)
-    return double_sha256(serialized)
+    return hash256(serialized)
     
 def util_compute_wtxid(tx) -> bytes:
     raw = serialize_tx(tx, include_witness=True)

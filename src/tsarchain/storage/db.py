@@ -2,12 +2,12 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
+
 import os
 import io
 import json
 import time
 import hashlib
-import tempfile
 from typing import Any, Optional, Callable
 
 from tsarcore_native import json_read_file as _native_json_read_file, json_write_file as _native_json_write_file
@@ -15,12 +15,6 @@ from tsarcore_native import json_read_file as _native_json_read_file, json_write
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.storage.db')
 
-
-
-try:
-    _HAS_NATIVE_JSON = True
-except Exception:
-    _HAS_NATIVE_JSON = False
 
 try:
     import fcntl  # POSIX
@@ -175,121 +169,48 @@ class AtomicJSONFile:
             except Exception: pass
 
     def _write_bytes_atomic(self, data: bytes) -> None:
-        # Fast path: native writer (optional)
-        if _HAS_NATIVE_JSON:
-            try:
-                make_backup = os.path.exists(self.path) and self.keep_backups > 0
-                if make_backup:
-                    now = time.time()
-                    old_raw = None
-                    old_chk = None
-                    try:
-                        with open(self.path, "rb") as rf:
-                            old_raw = rf.read()
-                            old_chk = hashlib.sha256(old_raw).hexdigest()
-                    except Exception:
-                        pass
+        # Require native JSON writer; no Python I/O fallback.
+        data_text = data.decode("utf-8", errors="ignore")
 
-                    _, _, last_mtime, last_chk = self._latest_backup_info()
-                    if last_mtime is not None and self.backup_interval_sec > 0:
-                        if (now - float(last_mtime)) < float(self.backup_interval_sec):
-                            make_backup = False
-                    if make_backup and self.dedup_backups and last_chk is not None and old_chk is not None:
-                        if last_chk == old_chk:
-                            make_backup = False
-                    if make_backup:
-                        ts = time.strftime("%Y%m%d-%H%M%S")
-                        bak_path = f"{self.path}.bak-{ts}"
-                        try:
-                            os.replace(self.path, bak_path)
-                        except Exception:
-                            try:
-                                with open(self.path, "rb") as rf, open(bak_path, "wb") as wf:
-                                    wf.write(rf.read()); wf.flush(); os.fsync(wf.fileno())
-                            except Exception:
-                                pass
+        make_backup = os.path.exists(self.path) and self.keep_backups > 0
+        if make_backup:
+            now = time.time()
+            old_txt = _native_json_read_file(self.path)
+            old_chk = hashlib.sha256(old_txt.encode("utf-8")).hexdigest() if old_txt is not None else None
 
-                _native_json_write_file(self.path, data.decode("utf-8", errors="ignore"), pretty=self.pretty)
-                if self.checksum:
-                    try:
-                        chk = _sha256_bytes(data)
-                        os.makedirs(os.path.dirname(self.sha_path) or ".", exist_ok=True)
-                        with open(self.sha_path, "w", encoding="utf-8") as cf:
-                            cf.write(chk + "\n"); cf.flush(); os.fsync(cf.fileno())
-                    except Exception:
-                        log.debug("[DB] Checksum invalid: %s", chk)
-                        pass
-                self._prune_old_backups()
-                return
-            except Exception:
-                pass
-
-        fd, tmp_path = tempfile.mkstemp(prefix=os.path.basename(self.path) + ".", dir=self.dir)
-        try:
-            with os.fdopen(fd, "wb") as f:
-                f.write(data); f.flush(); os.fsync(f.fileno())
-
-            try:
-                with open(self.journal_path, "w", encoding="utf-8") as jf:
-                    jf.write(json.dumps({"tmp": tmp_path, "target": self.path}))
-                    jf.flush(); os.fsync(jf.fileno())
-            except Exception:
-                pass
-
-            make_backup = os.path.exists(self.path) and self.keep_backups > 0
+            _, _, last_mtime, last_chk = self._latest_backup_info()
+            if last_mtime is not None and self.backup_interval_sec > 0:
+                if (now - float(last_mtime)) < float(self.backup_interval_sec):
+                    make_backup = False
+            if make_backup and self.dedup_backups and last_chk is not None and old_chk is not None:
+                if last_chk == old_chk:
+                    make_backup = False
             if make_backup:
-                now = time.time()
-                old_raw = None
-                old_chk = None
+                ts = time.strftime("%Y%m%d-%H%M%S")
+                bak_path = f"{self.path}.bak-{ts}"
                 try:
-                    with open(self.path, "rb") as rf:
-                        old_raw = rf.read()
-                        old_chk = hashlib.sha256(old_raw).hexdigest()
+                    os.replace(self.path, bak_path)
                 except Exception:
-                    pass
-
-                _, last_mtime, last_chk = self._latest_backup_info()
-
-                if last_mtime is not None and self.backup_interval_sec > 0:
-                    if (now - float(last_mtime)) < float(self.backup_interval_sec):
-                        make_backup = False
-
-                if make_backup and self.dedup_backups and last_chk is not None and old_chk is not None:
-                    if last_chk == old_chk:
-                        make_backup = False
-
-                if make_backup:
-                    ts = time.strftime("%Y%m%d-%H%M%S")
-                    bak_path = f"{self.path}.bak-{ts}"
                     try:
-                        os.replace(self.path, bak_path)
+                        with open(self.path, "rb") as rf, open(bak_path, "wb") as wf:
+                            wf.write(rf.read()); wf.flush(); os.fsync(wf.fileno())
                     except Exception:
-                        try:
-                            with open(self.path, "rb") as rf, open(bak_path, "wb") as wf:
-                                wf.write(rf.read()); wf.flush(); os.fsync(wf.fileno())
-                        except Exception:
-                            pass
+                        pass
 
-            os.replace(tmp_path, self.path)
-            _fsync_dir(self.dir)
+        _native_json_write_file(self.path, data_text, pretty=self.pretty)
 
-            if self.checksum:
-                try:
-                    chk = _sha256_bytes(open(self.path, "rb").read())
+        if self.checksum:
+            try:
+                written_txt = _native_json_read_file(self.path)
+                if written_txt is not None:
+                    chk = hashlib.sha256(written_txt.encode("utf-8")).hexdigest()
+                    os.makedirs(os.path.dirname(self.sha_path) or ".", exist_ok=True)
                     with open(self.sha_path, "w", encoding="utf-8") as cf:
                         cf.write(chk + "\n"); cf.flush(); os.fsync(cf.fileno())
-                except Exception:
-                    pass
+            except Exception:
+                log.debug("[DB] checksum write failed", exc_info=True)
 
-            self._prune_old_backups()
-
-        finally:
-            try:
-                if os.path.exists(tmp_path): os.remove(tmp_path)
-            except Exception: pass
-            try:
-                if os.path.exists(self.journal_path): os.remove(self.journal_path)
-            except Exception: pass
+        self._prune_old_backups()
 
     def _cleanup_journal(self) -> None:
         try:
@@ -309,12 +230,12 @@ class AtomicJSONFile:
     def load(self, default: Any = None, *, validate: Optional[Callable[[Any], bool]] = None) -> Any:
         self._cleanup_journal()
         with _FileLock(self.lock_path, shared=True):
-            if not os.path.exists(self.path):
-                return default
             try:
-                with open(self.path, "rb") as f:
-                    raw = f.read()
-                data = json.loads(raw.decode("utf-8"))
+                raw_txt = _native_json_read_file(self.path)
+                if raw_txt is None:
+                    return default
+
+                data = json.loads(raw_txt)
                 if validate is not None:
                     ok = False
                     try: ok = bool(validate(data))
@@ -323,10 +244,14 @@ class AtomicJSONFile:
                         raise ValueError("Validation failed")
                 return data
             except Exception:
+                # Fallback only to existing backups, still via native reader.
                 for b in self._list_backups():
                     try:
-                        with open(os.path.join(self.dir, b), "rb") as f:
-                            return json.loads(f.read().decode("utf-8"))
+                        backup_path = os.path.join(self.dir, b)
+                        raw_txt = _native_json_read_file(backup_path)
+                        if raw_txt is None:
+                            continue
+                        return json.loads(raw_txt)
                     except Exception:
                         continue
                 return default

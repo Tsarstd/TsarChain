@@ -18,7 +18,7 @@ for path in (PROJECT_ROOT, SRC_ROOT):
     if path not in sys.path:
         sys.path.append(path)
 
-from tsarchain.wallet.chat_security import RatchetSession  # noqa: E402
+from tsarchain.wallet.security.chat_security import RatchetSession  # noqa: E402
 
 
 def _derive_root_key():
