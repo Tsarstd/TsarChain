@@ -30,6 +30,8 @@ use std::collections::HashMap;
 use std::thread_local;
 use std::time::Instant;
 use validation::validate_block_txs_native;
+use hex;
+use secp256k1::SecretKey;
 
 mod networking;
 mod storage;
@@ -454,6 +456,35 @@ fn secp_verify_der_low_s(pubkey: &[u8], digest32: &[u8], der_sig: &[u8]) -> PyRe
 
     let secp = Secp256k1::verification_only();
     Ok(secp.verify_ecdsa(&msg, &norm, &pk).is_ok())
+}
+
+// ---------------------
+// ECDSA sign (low-S)
+// ---------------------
+#[pyfunction]
+fn secp_sign_der_low_s<'py>(
+    py: Python<'py>,
+    privkey_hex: &str,
+    digest32: &[u8],
+) -> PyResult<Bound<'py, PyBytes>> {
+    if digest32.len() != 32 {
+        return Err(PyErr::new::<exceptions::PyValueError, _>(
+            "digest32 must be 32 bytes",
+        ));
+    }
+    let sk_bytes = hex::decode(privkey_hex)
+        .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("invalid privkey hex"))?;
+    let sk = SecretKey::from_slice(&sk_bytes).map_err(|_| {
+        PyErr::new::<exceptions::PyValueError, _>("privkey must be 32-byte secp256k1 key")
+    })?;
+    let msg = Message::from_digest_slice(digest32)
+        .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("invalid digest32"))?;
+    let secp = Secp256k1::signing_only();
+    let sig = secp.sign_ecdsa(&msg, &sk);
+    let mut norm = sig;
+    norm.normalize_s();
+    let der = norm.serialize_der();
+    Ok(PyBytes::new_bound(py, &der))
 }
 
 // ------------------------
@@ -900,6 +931,7 @@ fn tsarcore_native(_py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hash256, m)?)?;
     m.add_function(wrap_pyfunction!(hash160, m)?)?;
     m.add_function(wrap_pyfunction!(secp_verify_der_low_s_many, m)?)?;
+    m.add_function(wrap_pyfunction!(secp_sign_der_low_s, m)?)?;
     m.add_function(wrap_pyfunction!(set_py_logger, m)?)?;
     m.add_function(wrap_pyfunction!(validate_block_txs_native, m)?)?;
     m.add_function(wrap_pyfunction!(randomx_pow_hash, m)?)?;

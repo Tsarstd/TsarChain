@@ -8,7 +8,7 @@ from ecdsa import SECP256k1, SigningKey
 # ---------------- Local Project ----------------
 from ..utils.helpers import Script
 from ..utils.helpers import (util_compute_txid, util_compute_wtxid, SIGHASH_ALL, bip143_sig_hash, to_bytes, is_p2pkh, is_p2wpkh, is_p2wsh, is_p2sh,
-                             count_sigops_in_script, last_pushdata, sign_digest_der_low_s_strict)
+                             count_sigops_in_script, last_pushdata, sign_digest_der_low_s_native)
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
@@ -76,12 +76,12 @@ class Tx:
 
         z = bip143_sig_hash(self, index, script_code, int(amount), SIGHASH_ALL)
 
-        sk = SigningKey.from_string(bytes.fromhex(priv_key_hex), curve=SECP256k1)
-        der = sign_digest_der_low_s_strict(sk, z)
+        der = sign_digest_der_low_s_native(priv_key_hex, z)
         sig = der + bytes([SIGHASH_ALL])
         
         log.debug("Signature for input %d: %s", index, sig.hex())
 
+        sk = SigningKey.from_string(bytes.fromhex(priv_key_hex), curve=SECP256k1)
         vk = sk.get_verifying_key()
         try:
             pubkey_bytes = vk.to_string("compressed")

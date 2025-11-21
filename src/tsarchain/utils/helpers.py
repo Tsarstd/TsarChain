@@ -7,7 +7,7 @@ from __future__ import annotations
 import hashlib, json, secrets, string, unicodedata, os
 from bech32 import bech32_decode, convertbits
 from typing import Union, Tuple, Optional
-from ecdsa import SECP256k1, util, VerifyingKey
+from ecdsa import VerifyingKey
 
 from ..utils import config as CFG
 
@@ -19,6 +19,7 @@ try:
         merkle_root as _native_merkle_root,
         secp_verify_der_low_s as _native_verify_der_low_s,
         secp_verify_der_low_s_many as _native_verify_many,
+        secp_sign_der_low_s as _native_sign_der_low_s,
         sighash_bip143 as _native_sighash_bip143,
         validate_block_txs_native as _native_validate_block_txs,
         randomx_pow_hash as _native_randomx_hash,
@@ -406,23 +407,6 @@ def serialize_tx_for_txid(tx) -> bytes:
 def is_p2wpkh_script(script_bytes: bytes) -> bool:
     return isinstance(script_bytes, (bytes, bytearray)) and len(script_bytes) == 22 and script_bytes[0] == 0x00 and script_bytes[1] == 0x14
 
-def der_encode_sig(r, s):
-    # Enforce low-S normalization to avoid malleability and pass mempool policy
-    try:
-        N = SECP256k1.order
-        if s > (N // 2):
-            s = N - s
-    except Exception:
-        pass
-    def encode_int(x):
-        b = x.to_bytes((x.bit_length() + 7) // 8, 'big')
-        if b[0] & 0x80:
-            b = b'\x00' + b
-        return b
-    rb = encode_int(r)
-    sb = encode_int(s)
-    return b'\x30' + (len(rb) + len(sb) + 4).to_bytes(1, 'big') + b'\x02' + len(rb).to_bytes(1, 'big') + rb + b'\x02' + len(sb).to_bytes(1, 'big') + sb
-
 # ========== Compute ==========
 
 def util_compute_txid(tx, include_txid: bool = False):
@@ -729,47 +713,6 @@ def strip_sighash_flag(sig_with_type: bytes) -> Tuple[bytes, int]:
         raise DerSigError("signature missing sighash byte")
     return sig_with_type[:-1], sig_with_type[-1]
 
-def sign_digest_der_low_s_strict(sk, digest32):
-    if not isinstance(digest32, (bytes, bytearray)) or len(digest32) != 32:
-        raise ValueError("sign_digest_der_low_s_strict expects a 32-byte digest")
-    
-    sigencode_canon = getattr(util, "sigencode_der_canonize", None)
-    if sigencode_canon is not None:
-        try:
-            return sk.sign_digest_deterministic(
-                digest32,
-                sigencode=sigencode_canon,
-                allow_truncate=False,
-                hashfunc=hashlib.sha256,)
-        except TypeError:
-            return sk.sign_digest_deterministic(
-                digest32,
-                sigencode=sigencode_canon,
-                hashfunc=hashlib.sha256,)
-
-    try:
-        r_b, s_b = sk.sign_digest_deterministic(
-            digest32,
-            sigencode=util.sigencode_strings,
-            allow_truncate=False,
-            hashfunc=hashlib.sha256,)
-    except TypeError:
-        r_b, s_b = sk.sign_digest_deterministic(
-            digest32,
-            sigencode=util.sigencode_strings,
-            hashfunc=hashlib.sha256,)
-        
-    r = int.from_bytes(r_b, "big")
-    s = int.from_bytes(s_b, "big")
-    
-    if s > HALF_N:
-        s = SECP256K1_N - s
-
-    try:
-        return der_encode_sig_strict(r, s)
-    except NameError:
-        return der_encode_sig(r, s)
-
 
 def is_signature_canonical_low_s(der_sig: bytes) -> bool:
     try:
@@ -793,17 +736,14 @@ def _vk_to_bytes(vk: "VerifyingKey") -> Optional[bytes]:
     except Exception:
         return None
 
-
 def count_sigops_in_script(script: bytes) -> int:
     data = to_bytes(script)
     if not data:
         return 0
     return int(_native_count_sigops(data))
 
-
 def batch_verify_der_low_s(items, enforce_low_s: bool = True, parallel: bool = True):
     return list(_native_verify_many(items, enforce_low_s, parallel))
-
 
 def bip143_sig_hash(tx, input_index: int, script_code: bytes, value: int, sighash: int = SIGHASH_ALL) -> bytes:
     tx_bytes = serialize_tx(tx, include_witness=True)
@@ -817,7 +757,6 @@ def bip143_sig_hash(tx, input_index: int, script_code: bytes, value: int, sighas
     )
     return bytes(digest32)
 
-
 def verify_der_strict_low_s(vk: "VerifyingKey", digest32: bytes, der_sig: bytes) -> bool:
     if not isinstance(digest32, (bytes, bytearray)) or len(digest32) != 32:
         raise ValueError("digest32 must be 32-byte")
@@ -826,6 +765,10 @@ def verify_der_strict_low_s(vk: "VerifyingKey", digest32: bytes, der_sig: bytes)
         raise ValueError("verifying key conversion failed")
     return bool(_native_verify_der_low_s(pub, bytes(digest32), bytes(der_sig)))
 
+def sign_digest_der_low_s_native(priv_hex: str, digest32: bytes) -> bytes:
+    if not isinstance(digest32, (bytes, bytearray)) or len(digest32) != 32:
+        raise ValueError("digest32 must be 32-byte")
+    return bytes(_native_sign_der_low_s(priv_hex, bytes(digest32)))
 
 def merkle_root(transactions):
     txids = []
