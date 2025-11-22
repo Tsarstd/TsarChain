@@ -526,27 +526,26 @@ class NodeRunner:
         clog("Node stopped.")
 
 def choose_mode() -> int:
-    print(f"{COL.BOLD}{COL.GREY}       Please Choose Mode       {COL.RESET}")
-    print(f"{COL.BOLD}{COL.GREY}                                {COL.RESET}")
-    print(f"{COL.BOLD}{COL.GREY} 0 {COL.RESET}{COL.BOLD}{COL.BG_ORANGE} Mining Mode {COL.RESET}  {COL.BOLD}{COL.GREY} 1 {COL.RESET}{COL.BOLD}{COL.GREY} Node Only {COL.RESET}")
+    print(f"{COL.BOLD}{COL.TXT_HEADER}{COL.BG_HEADER}       Please Choose Mode       {COL.RESET}")
+    print(f"{COL.BOLD}{COL.TXT_INFO}{COL.BG_YELLOW} 0 {COL.RESET}{COL.BOLD}{COL.BG_ORANGE} Mining Mode {COL.RESET}  {COL.BOLD}{COL.TXT_INFO}{COL.BG_GREEN} 1 {COL.BOLD}{COL.TXT_INFO}{COL.BG_BLUE} Node Only {COL.RESET}")
     while True:
         try:
-            sel = input(f"{COL.BOLD}{COL.GREY}Select 0/1 {COL.RESET}").strip()
+            sel = input(f"{COL.BOLD}{COL.TXT_INFO}{COL.BG_WHITE} Select {COL.RESET}{COL.BOLD}{COL.TXT_INFO}{COL.BG_YELLOW} 0 {COL.RESET}{COL.BOLD}{COL.TXT_INFO}{COL.BG_GREEN} 1 {COL.RESET} ").strip()
         except EOFError:
-            print(f"\033[1A\033[2K{COL.BOLD}{COL.GREY} You're Choosing: {COL.BOLD}{COL.GREY} 0 {COL.RESET}{COL.BOLD}{COL.BG_ORANGE} Mining Mode {COL.RESET}")
+            print(f"\033[1A\033[2K{COL.BOLD}{COL.DIM}{COL.TXT_INFO}{COL.BG_WHITE} You're Choosing: {COL.RESET}{COL.TXT_INFO}{COL.BG_YELLOW} 0 {COL.RESET}{COL.BOLD}{COL.BG_ORANGE} Mining Mode {COL.RESET}")
             return 0
         
         if sel == "0":
-            print(f"\033[1A\033[2K{COL.BOLD}{COL.GREY}         You're Choosing        {COL.RESET}")
-            print(f"{COL.BOLD}{COL.BG_ORANGE}           Mining Mode          {COL.RESET}")
+            print(f"\033[1A\033[2K{COL.BOLD}{COL.TXT_INFO}{COL.BG_GREY} ------------------------------ {COL.RESET}")
+            print(f"{COL.RESET}{COL.BOLD}{COL.BG_ORANGE}           Mining Mode          {COL.RESET}")
             return 0
         elif sel == "1":
-            print(f"\033[1A\033[2K{COL.BOLD}{COL.GREY}         You're Choosing        {COL.RESET}")
-            print(f"{COL.BOLD}{COL.GREY}            Node Only           {COL.RESET}")
+            print(f"\033[1A\033[2K{COL.BOLD}{COL.TXT_INFO}{COL.BG_GREY} ------------------------------ {COL.RESET}")
+            print(f"{COL.BOLD}{COL.TXT_INFO}{COL.BG_BLUE}            Node Only           {COL.RESET}")
             print(f" ")
             return 1
         else:
-            clog("Invalid selection. Enter 0 or 1.")
+            print(f"{COL.BOLD}{COL.TXT_HEADER}{COL.BG_HEADER} Invalid {COL.RESET}{COL.BOLD}{COL.TXT_INFO}{COL.BG_WHITE} Enter 0 or 1 {COL.RESET}")
         
 def parse_args():
     parser = argparse.ArgumentParser(description="TsarChain CLI miner / node runner")
@@ -603,10 +602,9 @@ def main():
     miner: SimpleMiner | None = None
 
     tui = MinerTUI(
-        title="Full Node CLI",
         address=address,
         cores=cores,
-        mode="Mining...",
+        mode=" Mining...",
         randomx_mode=mode_label,
         hashrate_queue=progress_q,
         chain_height_fn=lambda: int(getattr(miner.blockchain, "height", -1))

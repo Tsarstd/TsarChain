@@ -57,7 +57,6 @@ def _stamp() -> str:
     return f"{COL.BOLD}{COL.bg_rgb_color(43, 128, 197)} {d} {COL.RESET}{COL.BOLD}{COL.bg_rgb_color(197, 168, 43)} {t} {COL.RESET}"
 
 def clog(message: str, color: str = COL.GREY):
-    # Gunakan TUI logger jika ada, fallback ke print biasa
     if 'tui_logger' in globals():
         tui_logger(f"{_stamp()} : {color}{message}{COL.RESET}")
     else:
@@ -154,7 +153,6 @@ class LightMiner:
         return True
 
     def start_node(self) -> bool:
-        clog("Starting to Connect Tsarchain Network...")
         try:
             self.blockchain = Blockchain(
                 db_path=CFG.BLOCK_FILE,
@@ -164,7 +162,7 @@ class LightMiner:
             )
             self.network = Network(blockchain=self.blockchain)
             peer_count = _register_bootstrap_peers(self.network)
-            clog(f"Connected to TsarChain Network [{peer_count} bootstrap peers]")
+            clog(f"Connected to TsarChain Network...")
             return True
         except Exception as exc:
             clog(f"Failed to connect: {exc}")
@@ -428,10 +426,9 @@ def main():
     miner: LightMiner | None = None
 
     tui = MinerTUI(
-        title="Stateless Miner",
         address=address,
         cores=max(1, int(cores)),
-        mode="Mining...",
+        mode=" Mining...",
         randomx_mode=mode_label,
         hashrate_queue=progress_q,
         chain_height_fn=lambda: int(getattr(miner.blockchain, "height", -1))

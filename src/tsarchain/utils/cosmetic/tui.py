@@ -58,7 +58,6 @@ class MinerTUI:
     def __init__(
         self,
         *,
-        title: str = "TsarChain Miner",
         address: str = "",
         cores: int = 0,
         mode: str = "",
@@ -67,7 +66,6 @@ class MinerTUI:
         chain_height_fn: Optional[Callable[[], int]] = None,
         peer_counts_fn: Optional[Callable[[], tuple[int, int]]] = None,
     ) -> None:
-        self.title = title
         self.address = address
         self.cores = cores
         self.mode = mode
@@ -190,9 +188,8 @@ class MinerTUI:
             uptime_str = f"{up_h:02d}:{up_m:02d}:{up_s:02d}"
 
             parts: list[str] = []
-            parts.append(f"{COL.GREY}{self.title}{COL.RESET}")
             if self.mode:
-                parts.append(f"{COL.BOLD}{COL.GREY}{self.mode}{COL.RESET}")
+                parts.append(f"{COL.BOLD}{COL.DIM}{COL.BG_YELLOW}{self.mode}{COL.RESET}")
             if peers_in is not None and peers_out is not None:
                 parts.append(f"peers: {peers_in}/{peers_out}")
             parts.append(f"{_human_hps(self._last_hashrate)}")
