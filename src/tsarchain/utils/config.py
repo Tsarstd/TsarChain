@@ -163,8 +163,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "00045551c83299dc5dce78a898a5321fd60e03cd4a045257a17ca95a751a8cae"  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 1  # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -250,7 +250,7 @@ RANDOMX_KEY_EPOCH_BLOCKS = 64     # rotate RandomX seed every N blocks
 RANDOMX_FULL_MEM         = False  # allocate ~2GB dataset for mining/validation - default 'False' can be changed in CLI
 RANDOMX_LARGE_PAGES      = False  # set True only if huge pages configured OS-wide
 RANDOMX_JIT              = True
-RANDOMX_SECURE_JIT       = True
+RANDOMX_SECURE_JIT       = False
 RANDOMX_HARD_AES         = True
 RANDOMX_CACHE_MAX        = 2      # max RandomX VM entries cached in rust binding
 

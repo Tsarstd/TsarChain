@@ -5,15 +5,6 @@
 
 from __future__ import annotations
 
-"""
-Plain TUI helper for TsarChain CLI miners.
-
-- Tanpa curses, hanya ANSI + carriage return.
-- Cross-platform (Windows + Linux, Python 3.10+ / 3.13).
-- Cosmetic only: kalau terminal tidak support ANSI, tetap aman,
-  cuma tampilannya kurang cantik.
-"""
-
 import sys
 import time
 import psutil
