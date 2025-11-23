@@ -410,13 +410,10 @@ def is_p2wpkh_script(script_bytes: bytes) -> bool:
 # ========== Compute ==========
 
 def util_compute_txid(tx, include_txid: bool = False):
-    tx_dict = tx.to_dict(include_txid=include_txid)
-    serialized = serialize(tx_dict)
-    return hash256(serialized)
+    return hash256(serialize_tx(tx, include_witness=False))
     
 def util_compute_wtxid(tx) -> bytes:
-    raw = serialize_tx(tx, include_witness=True)
-    return hash256(raw)
+    return hash256(serialize_tx(tx, include_witness=True))
 
 
 # ====== Block Id (Voice Sovereignty flavored) ======

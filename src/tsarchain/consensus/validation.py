@@ -25,12 +25,43 @@ class ValidationMixin:
 # =============================================================================
 # 1. VALIDATION PROCESSING
 # =============================================================================
+    def _compute_txids_for_block(self, block: Block) -> bool:
+        try:
+            txs = getattr(block, "transactions", []) or []
+            for tx in txs:
+                raw_no_witness = H.serialize_tx_for_txid(tx)
+                txid_bytes = H.hash256(raw_no_witness)
+                existing = getattr(tx, "txid", None)
+                existing_bytes = None
+                if isinstance(existing, (bytes, bytearray)):
+                    existing_bytes = bytes(existing)
+                elif isinstance(existing, str):
+                    try:
+                        existing_bytes = bytes.fromhex(existing)
+                    except Exception:
+                        existing_bytes = None
+                if existing_bytes is not None and existing_bytes != txid_bytes:
+                    self._last_block_validation_error = "txid_mismatch"
+                    return False
+                try:
+                    setattr(tx, "txid", txid_bytes)
+                    setattr(tx, "txid_hex", txid_bytes.hex())
+                except Exception:
+                    pass
+            return True
+        except Exception:
+            self._last_block_validation_error = "txid_compute_failed"
+            return False
+
     def validate_block(self, block: Block) -> bool:
         try:
             if not all([block.height is not None, block.prev_block_hash, block.transactions]):
                 return False
 
             if not self._validate_pow(block):
+                return False
+
+            if not self._compute_txids_for_block(block):
                 return False
 
             if not self._validate_merkle(block):
@@ -123,6 +154,17 @@ class ValidationMixin:
             return False
         
         spend_height = int(getattr(block, "height", 0))
+
+        # Guardrail: ensure each tx serializes and is not absurdly large
+        for tx in txs:
+            try:
+                raw_full = H.serialize_tx(tx, include_witness=True)
+            except Exception:
+                self._last_block_validation_error = "tx_serialize_failed"
+                return False
+            if len(raw_full) > int(CFG.MAX_BLOCK_BYTES):
+                self._last_block_validation_error = "tx_too_large"
+                return False
 
         def _script_to_hex(spk_obj):
             if spk_obj is None:

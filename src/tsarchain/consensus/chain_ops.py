@@ -435,6 +435,12 @@ class ChainOpsMixin:
                 return False
             if not _pow_ok(g):
                 return False
+            if hasattr(self, "_compute_txids_for_block"):
+                try:
+                    if not self._compute_txids_for_block(g):
+                        return False
+                except Exception:
+                    return False
             if not _merkle_ok(g):
                 return False
 
@@ -487,6 +493,12 @@ class ChainOpsMixin:
 
                 if not _pow_ok(cur):
                     return False
+                if hasattr(self, "_compute_txids_for_block"):
+                    try:
+                        if not self._compute_txids_for_block(cur):
+                            return False
+                    except Exception:
+                        return False
                 if not _merkle_ok(cur):
                     return False
 
