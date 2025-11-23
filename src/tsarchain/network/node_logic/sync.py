@@ -70,22 +70,42 @@ def sync_with_peers(self):
             continue
         try:
             synced = self._sync_peer(norm)
-            inline_status = self._request_mempool_inline(norm)
-            if inline_status is False:
-                retry_inline = self._request_mempool_inline(norm, force=True)
-                if retry_inline is True:
-                    inline_status = True
-                elif retry_inline is not None:
-                    inline_status = retry_inline
+
+            allow_mempool = False
+            try:
+                allow_mempool = self.is_caught_up(freshness=20.0, height_slack=0)
+            except Exception:
+                allow_mempool = False
+
+            pending_mempool_pull = bool(getattr(self, "_pending_mempool_pull", False))
+            inline_status: Optional[bool] = None
+            if allow_mempool:
+                if pending_mempool_pull:
+                    pulled = self._request_mempool_inline(norm, force=True)
+                    if pulled is False or pulled is None:
+                        pulled = self._request_mempool_snapshot(norm, force=True)
+                    if pulled:
+                        try:
+                            self._pending_mempool_pull = False
+                        except Exception:
+                            pass
+                inline_status = self._request_mempool_inline(norm)
+                if inline_status is False:
+                    retry_inline = self._request_mempool_inline(norm, force=True)
+                    if retry_inline is True:
+                        inline_status = True
+                    elif retry_inline is not None:
+                        inline_status = retry_inline
+
             if not synced:
                 if CFG.ENABLE_FULL_SYNC:
                     self._request_full_sync(norm)
-                elif inline_status is False:
+                elif allow_mempool and inline_status is False:
                     if norm not in self._snapshot_unreachable:
                         self._request_mempool_snapshot(norm)
                     else:
                         log.debug("[sync_with_peers] Skipping snapshot pull for %s (unreachable)", norm)
-            elif inline_status is False:
+            elif allow_mempool and inline_status is False:
                 if norm not in self._snapshot_unreachable:
                     self._request_mempool_snapshot(norm)
                 else:
@@ -102,14 +122,8 @@ def _sync_peer(self, peer: Tuple[str, int]) -> bool:
         return False
 
     locator = self._build_locator()
-    headers_started = time.time()
     headers_resp = self._request_headers(peer, locator)
-    headers_elapsed = time.time() - headers_started
     if not headers_resp:
-        try:
-            log.info("[_sync_peer] %s returned no headers (elapsed=%.2fs)", peer, headers_elapsed)
-        except Exception:
-            pass
         self._penalize_peer(peer, CFG.PEER_SCORE_FAILURE_PENALTY)
         return False
 
@@ -133,15 +147,6 @@ def _sync_peer(self, peer: Tuple[str, int]) -> bool:
         self._peer_last_sync[peer] = now
         self._reward_peer(peer)
         return True
-    try:
-        first_missing = missing[0]
-        last_missing = missing[-1]
-    except Exception:
-        first_missing = last_missing = "-"
-    try:
-        log.info("[_sync_peer] %s missing %d blocks (range %s -> %s)", peer, len(missing), first_missing, last_missing)
-    except Exception:
-        pass
 
     downloaded_count, download_elapsed = self._download_blocks(peer, missing)
     if downloaded_count > 0:

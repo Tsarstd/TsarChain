@@ -52,7 +52,6 @@ class GossipMixin:
 
                 except Exception:
                     pass
-                log.debug("[_send] delivered to %s", peer)
                 return True
 
         except TimeoutError:

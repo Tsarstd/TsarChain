@@ -40,10 +40,11 @@ fn log_py(level: &str, msg: &str) {
     });
 }
 
-#[inline]
-fn log_debug(msg: &str) {
-    log_py("debug", msg);
-}
+//#[inline]
+//fn log_debug(msg: &str) {
+//    log_py("debug", msg);
+//} Note: Database creation log removed for performance/cleanliness
+
 #[inline]
 fn log_info(msg: &str) {
     log_py("info", msg);
@@ -178,8 +179,8 @@ impl LmdbBackend {
             Err(lmdb::Error::NotFound) => self
                 .env
                 .create_db(Some(name), DatabaseFlags::default())
-                .map_err(|e| map_err("lmdb create_db", e))
-                .inspect(|_| log_info(&format!("[lmdb] created db '{}'", name))),
+                .map_err(|e| map_err("lmdb create_db", e)),
+                //.inspect(|_| log_info(&format!("[lmdb] created db '{}'", name))),   Note: Database creation log removed for performance/cleanliness
             Err(e) => Err(map_err("lmdb open_db", e)),
         }
     }
@@ -284,12 +285,12 @@ impl LmdbBackend {
                 break;
             }
         }
-        log_debug(&format!(
-            "[lmdb] iter_prefix db={} prefix_len={} items={}",
-            db_name,
-            prefix.len(),
-            items.len()
-        ));
+        //log_debug(&format!(
+        //    "[lmdb] iter_prefix db={} prefix_len={} items={}",
+        //    db_name,
+        //    prefix.len(),
+        //    items.len()
+        //));  Note: Database creation log removed for performance/cleanliness
         Ok(items)
     }
 
@@ -323,11 +324,11 @@ impl LmdbBackend {
                 "lmdb copy failed rc={rc}"
             )));
         }
-        log_info(&format!(
-            "[lmdb] copy env -> {} (compact={})",
-            path.display(),
-            compact
-        ));
+        //log_info(&format!(
+        //    "[lmdb] copy env -> {} (compact={})",
+        //    path.display(),
+        //    compact
+        //)); Note: Database creation log removed for performance/cleanliness
         Ok(())
     }
 }

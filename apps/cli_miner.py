@@ -136,6 +136,7 @@ class LightMiner:
         self.tui = tui
         self._pending_blocks: list = []
         self._pending_block_hashes: set[str] = set()
+        self._mempool_tip_height: int | None = None
 
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
@@ -176,17 +177,30 @@ class LightMiner:
         except Exception:
             return
         try:
+            tip_height = int(getattr(self.blockchain, "height", -1))
+        except Exception:
+            tip_height = -1
+        if tip_height < 0:
+            return
+        if self._mempool_tip_height == tip_height and getattr(self.blockchain, "get_mempool", None):
+            try:
+                if self.blockchain.get_mempool() is not None:  # type: ignore[attr-defined]
+                    return
+            except Exception:
+                pass
+        try:
             tmp_path = os.path.join(
                 tempfile.gettempdir(),
                 f"tsar_mempool_tmp_{os.getpid()}_{int(time.time())}.json",
             )
             pool = TxPoolDB(
                 filepath=tmp_path,
-                max_size_mb=getattr(CFG, "MEMPOOL_MAX_SIZE", 1 * 1024 * 1024),
+                max_size_mb=CFG.MEMPOOL_MAX_SIZE,
                 utxo_store=self.blockchain._ensure_utxodb(),  # type: ignore[attr-defined]
-                inherit_state=False,
+                inherit_state=True,
             )
             self.blockchain.attach_mempool(pool)  # type: ignore[arg-type]
+            self._mempool_tip_height = tip_height
         except Exception:
             pass
 
@@ -302,9 +316,9 @@ class LightMiner:
             return False
         if not self.start_node():
             return False
-        self._ensure_ephemeral_mempool()
         if not self.wait_for_sync(timeout=timeout):
             return False
+        self._ensure_ephemeral_mempool()
 
         current_height = int(getattr(self.blockchain, "height", -1))
         if current_height < 0:
@@ -324,7 +338,7 @@ class LightMiner:
 
         while self.mining_alive:
             try:
-                # kirim ulang backlog jika ada
+                self._ensure_ephemeral_mempool()
                 self._flush_pending_blocks()
                 if self.network and self.network.peers:
                     self.network.request_sync(fast=True)

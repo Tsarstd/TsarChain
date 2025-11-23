@@ -170,10 +170,6 @@ class ReceiveMixin:
                 block._native_fee_hint = [int(f) for f in fees]  # type: ignore[attr-defined]
             except Exception:
                 block._native_fee_hint = fees  # type: ignore[attr-defined]
-        try:
-            log.info("[native-precheck] block height=%s accepted by Rust validator", getattr(block, "height", "?"))
-        except Exception:
-            log.info("[native-precheck] block accepted by Rust validator")
         return True
 
     def receive_chain(self, message: Dict[str, Any]) -> bool:
@@ -450,6 +446,28 @@ class ReceiveMixin:
 
     def receive_mempool(self, message: Dict[str, Any]):
         try:
+            try:
+                if self.network and hasattr(self.network, "is_caught_up"):
+                    if not self.network.is_caught_up(freshness=20.0, height_slack=0):
+                        try:
+                            setattr(self.network, "_pending_mempool_pull", True)
+                            self.network.request_sync(fast=True)
+                        except Exception:
+                            pass
+                        return
+            except Exception:
+                pass
+            try:
+                if int(getattr(self.blockchain, "height", -1)) < 0:
+                    try:
+                        setattr(self.network, "_pending_mempool_pull", True)
+                        self.network.request_sync(fast=True)
+                    except Exception:
+                        pass
+                    return
+            except Exception:
+                pass
+
             txs_data = message.get("data", [])
             added_count = 0
             for tx_data in txs_data:

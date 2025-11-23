@@ -169,6 +169,12 @@ class ChainOpsMixin:
                 log.info("[add_block.metrics] height=%s txs=%s total=%.4fs utxo=%.4fs mempool=%.4fs persist=%.4fs",
                          block.height, tx_count, total, utxo_sec, mempool_sec, persist_sec)
 
+        if self.in_memory:
+            try:
+                self._ensure_utxodb()
+            except Exception:
+                log.exception("[add_block] Failed to refresh in-memory UTXO after adding block")
+
         return True
 
     def swap_tip_if_better(self, block: Block):

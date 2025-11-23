@@ -125,6 +125,7 @@ class TxMempoolValidator:
         utxo_set: dict[str, Any],
         spend_at_height: int | None = None,
     ) -> bool:
+        
         if getattr(tx, "is_coinbase", False):
             return False
 
@@ -160,14 +161,6 @@ class TxMempoolValidator:
             utxo_entry = self._lookup_utxo_entry(utxo_set, prev_txid_hex, prev_index)
             if utxo_entry is None:
                 self.last_error_reason = f"prevout_missing {prev_txid_hex}:{prev_index}"
-                short_prev = (
-                    prev_txid_hex[:8] + ".." + prev_txid_hex[-8:]
-                    if isinstance(prev_txid_hex, str) and len(prev_txid_hex) > 16
-                    else prev_txid_hex
-                )
-                log.warning(
-                    "[validate_transaction] Missing prevout %s:%d", short_prev, prev_index
-                )
                 return False
 
             try:
