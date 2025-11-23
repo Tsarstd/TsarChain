@@ -682,7 +682,12 @@ class StorageMixin:
         self._persisted_height = len(self.chain) - 1
         self._chain_dirty_from = None
         try:
-            self._snapshot_last_backup_height = self._persisted_height
+            # Align last backup marker to nearest interval to avoid drift across restarts
+            interval = int(CFG.BLOCK_BACKUP_SNAPSHOT)
+            if interval > 0 and self._persisted_height >= 0:
+                self._snapshot_last_backup_height = (self._persisted_height // interval) * interval
+            else:
+                self._snapshot_last_backup_height = self._persisted_height
         except Exception:
             pass
         if not self.in_memory:

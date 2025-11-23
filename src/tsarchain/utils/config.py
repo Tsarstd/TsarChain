@@ -124,7 +124,7 @@ SNAPSHOT_USER_AGENT      = "TsarChainSnapshot/1.0"  # UA string used when fetchi
 # ---- SNAPSHOT BACKUP ----
 SNAPSHOT_BACKUP_DIR   = "data/snapshot"  # folder storing backup snapshots
 BACKUP_SNAPSHOT       = True  # toggle to keep automatic backup copies
-BLOCK_BACKUP_SNAPSHOT = 15  # interval in blocks between snapshot backups
+BLOCK_BACKUP_SNAPSHOT = 15  # Align last backup marker to nearest interval to avoid drift across restarts
 
 
 # =============================================================================
