@@ -22,6 +22,8 @@ from ..storage.kv import kv_enabled, batch, iter_prefix, clear_db, delete, _ensu
 from ..utils import config as CFG
 from ..utils.bootstrap import annotate_local_snapshot_meta
 from ..utils.helpers import bits_to_target, target_to_difficulty
+from ..contracts import graffiti as GRAFFITI
+from ..contracts.graffiti_registry import GraffitiRegistry
 from .genesis import GENESIS_HASH
 
 from ..utils.tsar_logging import get_ctx_logger
@@ -139,9 +141,56 @@ class StorageMixin:
             "blocks": int(tip_height + 1 if tip_height >= 0 else 0),
         }
 
+    def _extract_graffiti_events(self, block: Block) -> tuple[list[dict], list[dict]]:
+        posts: list[dict] = []
+        comments: list[dict] = []
+
+        def _txid_hex(tx_obj):
+            txid = getattr(tx_obj, "txid", None)
+            if isinstance(txid, (bytes, bytearray)):
+                return txid.hex()
+            return str(txid) if txid is not None else None
+
+        for tx in getattr(block, "transactions", []) or []:
+            txid_hex = _txid_hex(tx)
+            for tx_out in getattr(tx, "outputs", []) or []:
+                spk = getattr(tx_out, "script_pubkey", None)
+                try:
+                    meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+                except Exception:
+                    meta = None
+                if not meta:
+                    continue
+                event = str(meta.get("event", "")).upper()
+                if event == "POST":
+                    posts.append({
+                        "txid": txid_hex,
+                        "sha256": meta.get("sha256"),
+                        "size": meta.get("size"),
+                        "mime": meta.get("mime"),
+                        "storer": meta.get("storer"),
+                        "receipt": meta.get("receipt"),
+                    })
+                elif event == "COMMENT":
+                    comments.append({
+                        "txid": txid_hex,
+                        "art_id": meta.get("art_id"),
+                        "comment_len": meta.get("comment_len"),
+                        "amount": meta.get("amount"),
+                        "tip": meta.get("tip"),
+                        "creator": meta.get("creator"),
+                        "commenter": meta.get("commenter"),
+                    })
+        return posts, comments
+
     def _serialize_block_for_store(self, block: Block, prev_chainwork: int = 0) -> tuple[dict, int]:
         blk_dict = block.to_dict()
         meta = self._build_block_meta(block, chainwork_so_far=prev_chainwork)
+        graff_posts, graff_comments = self._extract_graffiti_events(block)
+        meta["graffiti"] = graff_posts
+        meta["comments"] = graff_comments
+        meta["graffiti_post_count"] = len(graff_posts)
+        meta["comment_count"] = len(graff_comments)
         blk_dict["_meta"] = meta
         cw = meta.get("chainwork", prev_chainwork)
         try:
@@ -712,6 +761,7 @@ class StorageMixin:
             "transactions": data.get("transactions", {}),
             "utxo": data.get("utxo", {}),
             "files": data.get("files", {}),
+            "graffiti": data.get("graffiti", {}),
             "miners_snapshot": data.get("miners_snapshot", {}),
         }
 
@@ -867,6 +917,18 @@ class StorageMixin:
         except Exception:
             log.exception("[_compute_state_snapshot] UTXO stats failed")
 
+        graffiti_posts = 0
+        total_comments = 0
+        try:
+            reg = getattr(utxo, "_graffiti_registry", None)
+            if reg is None:
+                reg = GraffitiRegistry()
+            data_g = getattr(reg, "data", {}) or {}
+            graffiti_posts = len(data_g.get("posts") or {})
+            total_comments = sum(len(v or []) for v in (data_g.get("comments") or {}).values())
+        except Exception:
+            log.exception("[_compute_state_snapshot] graffiti aggregation failed")
+
         try:
             emitted_subsidy = self.calculate_total_supply()
         except Exception:
@@ -940,6 +1002,10 @@ class StorageMixin:
             },
             "utxo": {
                 "utxo_set_size": int(utxo_set_size),
+            },
+            "graffiti": {
+                "posts": int(graffiti_posts),
+                "comments": int(total_comments),
             },
             "miners_snapshot": {
                 "top_miners": [(miner, count) for miner, count in miner_counter.most_common() if miner]

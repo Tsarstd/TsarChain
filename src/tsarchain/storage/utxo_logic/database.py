@@ -305,7 +305,7 @@ class UTXODatabaseMixin:
         except Exception:
             height_hint = 0
         return {
-            "schema_version": int(getattr(CFG, "DATA_SCHEMA_VERSION", 1)),
+            "schema_version": int(CFG.DATA_SCHEMA_VERSION),
             "generated_at": int(time.time()),
             "backend": "lmdb" if kv_enabled() else "json",
             "utxo_set_size": len(self.utxos),
