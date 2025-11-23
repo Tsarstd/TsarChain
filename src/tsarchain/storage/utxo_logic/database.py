@@ -39,10 +39,32 @@ class UTXODatabaseMixin:
                 elif isinstance(spk, str):
                     spk_hex = spk
             tx_out_dict = {"amount": amount, "script_pubkey": spk_hex}
+        address = None
+        script_type = None
+        spk_bytes = None
+        try:
+            if hasattr(tx_out, "script_pubkey"):
+                spk_bytes = tx_out.script_pubkey.serialize()
+            elif isinstance(tx_out_dict.get("script_pubkey"), str):
+                spk_bytes = bytes.fromhex(tx_out_dict["script_pubkey"])
+        except Exception:
+            spk_bytes = None
+        if spk_bytes:
+            if len(spk_bytes) == 22 and spk_bytes[0] == 0x00 and spk_bytes[1] == 0x14:
+                script_type = "p2wpkh"
+            elif len(spk_bytes) == 34 and spk_bytes[0] == 0x00 and spk_bytes[1] == 0x20:
+                script_type = "p2wsh"
+        try:
+            if hasattr(self, "script_to_address"):
+                address = self.script_to_address(getattr(tx_out, "script_pubkey", None))
+        except Exception:
+            address = None
         return {
             "tx_out": tx_out_dict,
             "is_coinbase": bool(entry.get("is_coinbase", False)),
             "block_height": int(entry.get("block_height", 0)),
+            "address": address,
+            "script_type": script_type,
         }
 
     def to_dict(self):
@@ -123,8 +145,15 @@ class UTXODatabaseMixin:
             self.utxos.clear()
             self._address_index = None
             self._key_to_spk.clear()
+            self._meta = {}
             if kv_enabled():
                 for k, v in iter_prefix('utxo', b''):
+                    if k == b'__meta__':
+                        try:
+                            self._meta = json.loads(v.decode('utf-8')) or {}
+                        except Exception:
+                            log.debug("[UTXODB] failed to parse meta entry")
+                        continue
                     try:
                         key = k.decode('utf-8')
                         obj = json.loads(v.decode('utf-8'))
@@ -142,6 +171,12 @@ class UTXODatabaseMixin:
                         continue
             else:
                 data = self.load_json(self.filepath) or {}
+                if not isinstance(data, dict):
+                    data = {}
+                if isinstance(data, dict):
+                    meta = data.pop("_meta", None)
+                    if isinstance(meta, dict):
+                        self._meta = meta
                 for key, value in data.items():
                     if not isinstance(value, dict):
                         continue
@@ -183,11 +218,16 @@ class UTXODatabaseMixin:
                 return
             rewrite = bool(force or self._rewrite_all)
             target_keys = self.utxos.keys() if rewrite else set(self._dirty_keys)
+            meta = self._build_meta()
             if kv_enabled():
                 try:
                     if rewrite:
                         clear_db('utxo')
                     with batch('utxo') as b:
+                        try:
+                            b.put(b'__meta__', json.dumps(meta, separators=(",", ":")).encode('utf-8'))
+                        except Exception:
+                            log.debug("[UTXODB] failed to write meta entry")
                         for key in target_keys:
                             entry = self.utxos.get(key)
                             if entry is None:
@@ -208,6 +248,7 @@ class UTXODatabaseMixin:
                     ),
                 )
                 payload = {k: self._serialize_entry(v) for k, v in items_sorted}
+                payload["_meta"] = meta
                 self.save_json(self.filepath, payload)
             self._dirty = False
             self._dirty_keys.clear()
@@ -257,3 +298,16 @@ class UTXODatabaseMixin:
 
     def version(self) -> int:
         return self._version
+
+    def _build_meta(self) -> dict:
+        try:
+            height_hint = self._get_tip_height_from_state(use_cache=False)
+        except Exception:
+            height_hint = 0
+        return {
+            "schema_version": int(getattr(CFG, "DATA_SCHEMA_VERSION", 1)),
+            "generated_at": int(time.time()),
+            "backend": "lmdb" if kv_enabled() else "json",
+            "utxo_set_size": len(self.utxos),
+            "tip_height_hint": int(height_hint),
+        }

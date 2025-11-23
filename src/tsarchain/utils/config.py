@@ -92,6 +92,10 @@ WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wal
 # =============================================================================
 # 2. DATABASE & SNAPSHOTS
 # =============================================================================
+# ---- DATA SCHEMA ----
+# Bump when changing on-disk JSON/LMDB structures (state, utxo, mempool, block cache)
+DATA_SCHEMA_VERSION = 1
+
 # ---- KV BACKEND ----
 KV_BACKEND         = "lmdb"  # active key-value backend implementation (lmdb & json)
 LMDB_DATA_FILE     = "data/tsarchain_db"  # main LMDB data file path

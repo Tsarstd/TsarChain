@@ -30,6 +30,7 @@ class UTXODB(
         self._removed_keys = set()
         self._rewrite_all = False
         self._version = 0
+        self._meta: dict = {}
         self._address_index: dict[str, set[str]] | None = None
         self._key_to_spk: dict[str, str] = {}
         self._tip_cache = {"height": 0, "ts": 0.0}

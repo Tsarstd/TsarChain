@@ -57,7 +57,9 @@ class TxPool(
         self._last_prune_version: int | None = None
         self._last_prune_reload_ts = 0.0
 
-        storage_items = self._load_storage_pool()
+        self._meta: dict = {}
+        storage_items, storage_meta = self._load_storage_pool()
+        self._meta = storage_meta or {}
         self._hydrate_pool(storage_items)
         self.current_size = sum(self._size_map.values())
 

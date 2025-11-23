@@ -44,6 +44,7 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
         self.total_supply = 0
         self.total_blocks = 0
         self.supply_in_tsar = 0
+        self._chain_meta: dict | None = None
         
         self.miner_address = miner_address
         self.use_cores = use_cores
@@ -134,17 +135,32 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
         if self.in_memory or not kv_enabled():
             return False
         try:
-            items = list(iter_prefix('chain', b'h:'))
+            items = list(iter_prefix('chain', b''))
             if not items:
                 return False
-            items.sort(key=lambda kv: kv[0])
-            data_list = [json.loads(v.decode('utf-8')) for _, v in items]
+            blocks = []
+            meta = {}
+            for k, v in items:
+                if k == b'__meta__':
+                    try:
+                        meta = json.loads(v.decode('utf-8')) or {}
+                    except Exception:
+                        log.debug("[reload_chain] failed to parse chain meta", exc_info=True)
+                    continue
+                if k.startswith(b'h:'):
+                    blocks.append((k, v))
+            blocks.sort(key=lambda kv: kv[0])
+            data_list = [json.loads(v.decode('utf-8')) for _, v in blocks]
             if not data_list:
                 return False
             chain = [Block.from_dict(d) for d in data_list]
             if not chain:
                 return False
             self.chain = chain
+            try:
+                self._chain_meta = meta
+            except Exception:
+                self._chain_meta = {}
             self.total_blocks = len(self.chain)
             try:
                 self.total_supply = self.calculate_total_supply()

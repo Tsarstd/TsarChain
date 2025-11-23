@@ -16,6 +16,7 @@ import hashlib
 import threading
 
 from ..core.block import Block
+from ..core.tx import Tx
 from ..storage.utxo import UTXODB
 from ..storage.kv import kv_enabled, batch, iter_prefix, clear_db, delete, _ensure_env
 from ..utils import config as CFG
@@ -31,6 +32,124 @@ class StorageMixin:
 # =============================================================================
 # 1. HELPER
 # =============================================================================
+    def _estimate_tx_size_bytes(self, tx: Tx) -> int:
+        size = 0
+        for txin in getattr(tx, "inputs", []) or []:
+            size += 40
+            if getattr(txin, "script_sig", None):
+                try:
+                    size += len(txin.script_sig.serialize())
+                except Exception:
+                    size += len(getattr(txin.script_sig, "asm", "") or "")
+            if getattr(txin, "witness", None):
+                try:
+                    size += sum(len(w) for w in txin.witness)
+                except Exception:
+                    pass
+        for txout in getattr(tx, "outputs", []) or []:
+            size += 8
+            if getattr(txout, "script_pubkey", None):
+                try:
+                    size += len(txout.script_pubkey.serialize())
+                except Exception:
+                    pass
+        try:
+            size = max(size, len(tx.to_dict(include_txid=True)))
+        except Exception:
+            pass
+        return int(size)
+
+    def _estimate_block_size_bytes(self, block: Block) -> int:
+        txs = getattr(block, "transactions", []) or []
+        total = 80  # header bytes
+        for tx in txs:
+            if isinstance(tx, Tx):
+                total += self._estimate_tx_size_bytes(tx)
+            else:
+                try:
+                    total += len(json.dumps(tx))
+                except Exception:
+                    total += 0
+        try:
+            total = max(total, len(json.dumps(block.to_dict())))
+        except Exception:
+            pass
+        return int(total)
+
+    def _build_block_meta(self, block: Block, chainwork_so_far: int = 0) -> dict:
+        txs = getattr(block, "transactions", []) or []
+        tx_count = len(txs)
+        size_b = self._estimate_block_size_bytes(block)
+        cw = getattr(block, "chainwork", None)
+        if cw is None:
+            try:
+                cw = int(chainwork_so_far) + int(self._work_from_bits(getattr(block, "bits", CFG.MAX_BITS)))
+            except Exception:
+                cw = None
+        target_val = None
+        difficulty_val = None
+        try:
+            tgt = bits_to_target(int(getattr(block, "bits", CFG.MAX_BITS)))
+            target_val = int(tgt)
+            difficulty_val = int(target_to_difficulty(tgt))
+        except Exception:
+            pass
+        meta = {
+            "schema_version": int(CFG.DATA_SCHEMA_VERSION),
+            "tx_count": tx_count,
+            "size_bytes": int(size_b),
+            "vbytes": int(size_b),
+            "weight": int(size_b * 4),
+            "chainwork": None if cw is None else int(cw),
+            "target": target_val,
+            "difficulty": difficulty_val,
+        }
+        try:
+            meta["hash"] = block.hash().hex()
+        except Exception:
+            pass
+        try:
+            if isinstance(block.prev_block_hash, (bytes, bytearray)):
+                meta["prev_block_hash"] = block.prev_block_hash.hex()
+            else:
+                meta["prev_block_hash"] = str(block.prev_block_hash)
+        except Exception:
+            pass
+        try:
+            meta["merkle_root"] = block.merkle_root.hex() if isinstance(block.merkle_root, (bytes, bytearray)) else str(block.merkle_root)
+        except Exception:
+            pass
+        meta["height"] = int(getattr(block, "height", 0) or 0)
+        meta["timestamp"] = int(getattr(block, "timestamp", 0) or 0)
+        meta["bits"] = int(getattr(block, "bits", CFG.MAX_BITS))
+        meta["nonce"] = int(getattr(block, "nonce", 0) or 0)
+        meta["version"] = int(getattr(block, "version", 1) or 1)
+        return meta
+
+    def _build_chain_meta(self, tip_height: int, tip_hash: str | None = None) -> dict:
+        return {
+            "schema_version": int(CFG.DATA_SCHEMA_VERSION),
+            "generated_at": int(time.time()),
+            "tip_height": int(tip_height),
+            "tip_hash": tip_hash,
+            "network_id": getattr(CFG, "DEFAULT_NET_ID", None),
+            "pow_algo": getattr(CFG, "POW_ALGO", None),
+            "max_bits": int(getattr(CFG, "MAX_BITS", 0)),
+            "target_block_time_sec": int(getattr(CFG, "TARGET_BLOCK_TIME", 0)),
+            "blocks": int(tip_height + 1 if tip_height >= 0 else 0),
+        }
+
+    def _serialize_block_for_store(self, block: Block, prev_chainwork: int = 0) -> tuple[dict, int]:
+        blk_dict = block.to_dict()
+        meta = self._build_block_meta(block, chainwork_so_far=prev_chainwork)
+        blk_dict["_meta"] = meta
+        cw = meta.get("chainwork", prev_chainwork)
+        try:
+            cw_int = int(cw) if cw is not None else int(prev_chainwork)
+        except Exception:
+            cw_int = int(prev_chainwork)
+        return blk_dict, cw_int
+
     def _mark_chain_dirty(self, height: int = 0) -> None:
         if height < 0:
             height = 0
@@ -318,6 +437,12 @@ class StorageMixin:
         backup_ts = None
         with self.lock:
             tip_height = len(self.chain) - 1
+            tip_hash = None
+            try:
+                tip_hash = self.chain[-1].hash().hex() if tip_height >= 0 else None
+            except Exception:
+                tip_hash = None
+            chain_meta = self._build_chain_meta(tip_height, tip_hash)
             full_flush = force_full or self._persisted_height < 0
             if force_full:
                 self._chain_dirty_from = 0
@@ -359,14 +484,28 @@ class StorageMixin:
                     if full_flush:
                         clear_db('chain')
                         self._persisted_height = -1
+                    cw_prev = 0
+                    if start_height and start_height > 0:
+                        try:
+                            prev_blk = self.chain[start_height - 1]
+                            cw_prev = int(getattr(prev_blk, "chainwork", 0) or 0)
+                            if cw_prev == 0:
+                                cw_prev = int(self._compute_chainwork_for_chain(self.chain[:start_height]))
+                        except Exception:
+                            cw_prev = 0
                     if tip_height < self._persisted_height:
                         self._prune_chain_store(tip_height + 1)
                         self._persisted_height = tip_height
                     if start_height is not None and start_height <= tip_height:
                         with batch('chain') as b:
+                            try:
+                                b.put(b'__meta__', json.dumps(chain_meta, separators=(",", ":")).encode('utf-8'))
+                            except Exception:
+                                log.debug("[save_chain] failed writing chain meta")
                             for height in range(start_height, tip_height + 1):
                                 key = f"h:{height:012d}".encode('utf-8')
-                                payload = json.dumps(self.chain[height].to_dict(), separators=(",", ":")).encode('utf-8')
+                                blk_dict, cw_prev = self._serialize_block_for_store(self.chain[height], cw_prev)
+                                payload = json.dumps(blk_dict, separators=(",", ":")).encode('utf-8')
                                 b.put(key, payload)
                         self._persisted_height = tip_height
                 except Exception:
@@ -375,20 +514,16 @@ class StorageMixin:
                 if not self._chain_journal_enabled() or full_flush or start_height in (None, 0):
                     if full_flush or start_height is not None or tip_height != self._persisted_height:
                         ordered_blocks = []
+                        cw_prev = 0
                         for blk in sorted(self.chain, key=lambda b: getattr(b, "height", 0)):
-                            d = blk.to_dict()
-                            ordered_blocks.append({
-                                "version": d.get("version"),
-                                "height": d.get("height"),
-                                "timestamp": d.get("timestamp"),
-                                "bits": d.get("bits"),
-                                "prev_block_hash": d.get("prev_block_hash"),
-                                "hash": d.get("hash"),
-                                "nonce": d.get("nonce"),
-                                "merkle_root": d.get("merkle_root"),
-                                "transactions": d.get("transactions") or [],
-                            })
-                        self._chain_store.save(ordered_blocks)
+                            blk_dict, cw_prev = self._serialize_block_for_store(blk, cw_prev)
+                            ordered_blocks.append(blk_dict)
+                        payload = {
+                            "schema_version": int(chain_meta.get("schema_version", 1)),
+                            "meta": chain_meta,
+                            "blocks": ordered_blocks,
+                        }
+                        self._chain_store.save(payload)
                         self._persisted_height = tip_height
                         self._clear_chain_journal()
                 else:
@@ -397,7 +532,17 @@ class StorageMixin:
                         self._append_chain_journal(start_height, new_blocks)
                         self._persisted_height = tip_height
                         if self._chain_journal_size() > int(CFG.CHAIN_JOURNAL_MAX_BYTES):
-                            self._chain_store.save([block.to_dict() for block in self.chain])
+                            ordered_blocks = []
+                            cw_prev = 0
+                            for blk in sorted(self.chain, key=lambda b: getattr(b, "height", 0)):
+                                blk_dict, cw_prev = self._serialize_block_for_store(blk, cw_prev)
+                                ordered_blocks.append(blk_dict)
+                            payload = {
+                                "schema_version": int(chain_meta.get("schema_version", 1)),
+                                "meta": chain_meta,
+                                "blocks": ordered_blocks,
+                            }
+                            self._chain_store.save(payload)
                             self._persisted_height = tip_height
                             self._clear_chain_journal()
 
@@ -415,18 +560,40 @@ class StorageMixin:
     def load_chain(self):
         if self.in_memory:
             return
+        meta = {}
         data_list = []
         if kv_enabled():
             try:
-                # Collect and sort by height key
-                items = list(iter_prefix('chain', b'h:'))
-                items.sort(key=lambda kv: kv[0])
-                data_list = [json.loads(v.decode('utf-8')) for _, v in items]
+                # Collect and sort by height key, plus optional meta
+                items = list(iter_prefix('chain', b''))
+                blocks: list[tuple[bytes, bytes]] = []
+                for k, v in items:
+                    if k == b'__meta__':
+                        try:
+                            meta = json.loads(v.decode('utf-8')) or {}
+                        except Exception:
+                            log.debug("[load_chain] failed to parse chain meta from LMDB")
+                        continue
+                    if k.startswith(b'h:'):
+                        blocks.append((k, v))
+                blocks.sort(key=lambda kv: kv[0])
+                data_list = [json.loads(v.decode('utf-8')) for _, v in blocks]
             except Exception:
                 log.exception("[load_chain] LMDB load_chain failed")
                 data_list = []
         if not data_list:
-            data_list = self._chain_store.load(default=[])
+            raw = self._chain_store.load(default=[])
+            if isinstance(raw, dict):
+                meta = raw.get("meta") or {}
+                blk_list = raw.get("blocks")
+                if isinstance(blk_list, list):
+                    data_list = blk_list
+                elif isinstance(raw.get("chain"), list):
+                    data_list = raw.get("chain")  # legacy name safeguard
+            else:
+                data_list = raw
+        if not isinstance(data_list, list):
+            data_list = []
         data_list = self._apply_chain_journal(data_list)
         if not data_list:
             return
@@ -456,6 +623,10 @@ class StorageMixin:
             return
 
         self.chain = chain
+        try:
+            self._chain_meta = meta or {}
+        except Exception:
+            self._chain_meta = {}
         self.total_blocks = len(self.chain)
         self.total_supply = self.calculate_total_supply()
         self.supply_in_tsar = self.total_supply / CFG.TSAR if self.total_supply else 0
@@ -492,7 +663,13 @@ class StorageMixin:
             try:
                 # State stored as individual keys
                 items = dict((k.decode('utf-8'), v.decode('utf-8')) for k, v in iter_prefix('state', b'k:'))
-                if items:
+                snap_raw = items.get('k:snapshot')
+                if snap_raw:
+                    try:
+                        data = json.loads(snap_raw)
+                    except Exception:
+                        log.exception("[load_state] Failed to parse snapshot JSON from LMDB")
+                if not data and items:
                     data["total_supply"] = int(items.get('k:total_supply', '0'))
                     data["total_blocks"] = int(items.get('k:total_blocks', '0'))
             except Exception:
@@ -517,29 +694,37 @@ class StorageMixin:
             data["total_blocks"] = int(self.total_blocks)
         except Exception:
             pass
+
+        # Normalize schema version from config
+        try:
+            data["schema_version"] = int(CFG.DATA_SCHEMA_VERSION)
+        except Exception:
+            data["schema_version"] = data.get("schema_version", 1)
+
+        ordered = {
+            "schema_version": data.get("schema_version"),
+            "last_updated": data.get("last_updated"),
+            "total_blocks": data.get("total_blocks", self.total_blocks),
+            "total_supply": data.get("total_supply", self.total_supply),
+            "identity": data.get("identity", {}),
+            "chain": data.get("chain", {}),
+            "supply": data.get("supply", {}),
+            "transactions": data.get("transactions", {}),
+            "utxo": data.get("utxo", {}),
+            "files": data.get("files", {}),
+            "miners_snapshot": data.get("miners_snapshot", {}),
+        }
+
         # Save to LMDB
         if kv_enabled():
             try:
                 with batch('state') as b:
                     b.put(b'k:total_supply', str(int(self.total_supply)).encode('utf-8'))
                     b.put(b'k:total_blocks', str(int(self.total_blocks)).encode('utf-8'))
+                    b.put(b'k:snapshot', json.dumps(ordered, separators=(",", ":")).encode('utf-8'))
             except Exception:
                 log.exception("[save_state] LMDB save_state failed")
         else:
-            # Reorder keys for consistent JSON
-            ordered = {
-                "schema_version": data.get("schema_version") if isinstance(data, dict) else 1,
-                "last_updated": data.get("last_updated") if isinstance(data, dict) else None,
-                "total_blocks": data.get("total_blocks") if isinstance(data, dict) else self.total_blocks,
-                "total_supply": data.get("total_supply") if isinstance(data, dict) else self.total_supply,
-                "identity": data.get("identity", {}),
-                "chain": data.get("chain", {}),
-                "supply": data.get("supply", {}),
-                "transactions": data.get("transactions", {}),
-                "utxo": data.get("utxo", {}),
-                "files": data.get("files", {}),
-                "miners_snapshot": data.get("miners_snapshot", {}),
-            }
             self._state_store.save(ordered)
 
     def _compute_state_snapshot(self) -> dict:
@@ -555,6 +740,21 @@ class StorageMixin:
         total_blocks = len(chain)
         tip_block = chain[-1] if chain else None
         genesis_block = chain[0] if chain else None
+
+        tip_chainwork = None
+        try:
+            cw = getattr(tip_block, "chainwork", None)
+            if cw is None:
+                cw = self._compute_chainwork_for_chain(chain)
+            tip_chainwork = int(cw)
+        except Exception:
+            pass
+
+        median_time_past_val = None
+        try:
+            median_time_past_val = int(self.median_time_past())
+        except Exception:
+            pass
 
         tip_bits = int(getattr(tip_block, "bits", 0)) if tip_block else None
         tip_target = None
@@ -618,18 +818,21 @@ class StorageMixin:
 
         mempool_count = 0
         mempool_vbytes_est = None
+        mempool_bytes_est = None
         pool = getattr(self, "get_mempool", lambda: None)()
         if pool:
             try:
                 stats = pool.stats()
                 mempool_count = int(stats.get("count", 0))
                 mempool_vbytes_est = int(stats.get("virtual_size", 0))
+                mempool_bytes_est = int(stats.get("virtual_size", 0))
             except Exception:
                 pass
 
         utxo_set_size = 0
         circulating_estimate = 0
         immature_coinbase = 0
+        utxo_total_value = 0
         maturity = int(CFG.COINBASE_MATURITY)
         try:
             with utxo._lock:  # type: ignore[attr-defined]
@@ -650,6 +853,7 @@ class StorageMixin:
                     continue
                 if amount <= 0:
                     continue
+                utxo_total_value += amount
                 is_cb = bool(entry.get("is_coinbase", False)) if isinstance(entry, dict) else bool(getattr(entry, "is_coinbase", False))
                 born = int(entry.get("block_height", entry.get("height", 0)) if isinstance(entry, dict) else getattr(entry, "block_height", getattr(entry, "height", 0)) or 0)
                 if is_cb:
@@ -688,12 +892,13 @@ class StorageMixin:
         tip_dict = tip_block.to_dict() if tip_block else {}
 
         snapshot = {
-            "schema_version": 1,
+            "schema_version": int(CFG.DATA_SCHEMA_VERSION),
             "last_updated": dt.datetime.now().astimezone().isoformat(),
             "identity": {
                 "network_id": CFG.DEFAULT_NET_ID,
                 "address_prefix": CFG.ADDRESS_PREFIX,
                 "network_magic_hex": CFG.NETWORK_MAGIC.hex(),
+                "pow_algo": CFG.POW_ALGO,
             },
             "chain": {
                 "total_blocks": total_blocks,
@@ -705,6 +910,10 @@ class StorageMixin:
                 "tip_bits": tip_bits,
                 "tip_target_hex": (None if tip_target is None else hex(tip_target)),
                 "tip_difficulty": tip_difficulty,
+                "tip_chainwork": tip_chainwork,
+                "median_time_past": median_time_past_val,
+                "max_bits": int(CFG.MAX_BITS),
+                "target_block_time_sec": int(CFG.TARGET_BLOCK_TIME),
                 "avg_block_time_sec_window": None if avg_block_time_sec is None else round(float(avg_block_time_sec), 3),
                 "est_network_hashrate_hps_window": est_hashrate_hps,
             },
@@ -713,6 +922,7 @@ class StorageMixin:
                 "emitted_subsidy": int(emitted_subsidy),
                 "circulating_estimate": int(circulating_estimate),
                 "immature_coinbase": int(immature_coinbase),
+                "utxo_total_value": int(utxo_total_value),
                 "coinbase_maturity": int(CFG.COINBASE_MATURITY),
                 "current_block_subsidy": int(current_block_subsidy),
                 "current_epoch": int(cur_epoch),
@@ -725,6 +935,8 @@ class StorageMixin:
                 "total_fees_paid": int(total_fees_paid),
                 "mempool_txs": int(mempool_count),
                 "mempool_vbytes_estimate": mempool_vbytes_est,
+                "mempool_bytes_estimate": mempool_bytes_est,
+                "mempool_max_bytes": int(CFG.MEMPOOL_MAX_SIZE),
             },
             "utxo": {
                 "utxo_set_size": int(utxo_set_size),

@@ -11,6 +11,7 @@ from collections import OrderedDict
 
 from ..core.tx import Tx
 from ..storage.kv import kv_enabled, iter_prefix, batch, clear_db
+from ..utils import config as CFG
 from ..utils.tsar_logging import get_ctx_logger
 
 log = get_ctx_logger("tsarchain.mempool.storage")
@@ -19,32 +20,74 @@ __all__ = ["MempoolStorageMixin"]
 
 
 class MempoolStorageMixin:
-    def _load_storage_pool(self) -> list:
+    def _load_storage_pool(self) -> tuple[list, dict]:
+        meta = {}
         if kv_enabled():
             out = []
             try:
-                for _k, v in iter_prefix("mempool", b""):
+                for k, v in iter_prefix("mempool", b""):
+                    try:
+                        key = k.decode("utf-8")
+                    except Exception:
+                        key = None
+                    if key == "__meta__":
+                        try:
+                            meta = json.loads(v.decode("utf-8")) or {}
+                        except Exception:
+                            log.warning("[load_pool] failed to parse mempool meta")
+                        continue
                     try:
                         out.append(json.loads(v.decode("utf-8")))
                     except Exception:
                         continue
             except Exception:
                 log.error("[load_pool] LMDB read failed, falling back to file storage")
-                return []
-            return out
-        return self.load_json(self.filepath) or []
+                return [], {}
+            return out, meta
+        raw = self.load_json(self.filepath) or []
+        if isinstance(raw, dict):
+            meta = raw.get("meta") or {}
+            if "schema_version" in raw and "schema_version" not in meta:
+                meta["schema_version"] = raw.get("schema_version")
+            entries = raw.get("txs") or []
+        else:
+            entries = raw
+        return entries, meta
 
     def _hydrate_pool(self, entries: list) -> None:
         for entry in entries:
+            meta = {}
+            if isinstance(entry, dict):
+                meta = entry.get("_meta") or {}
             try:
                 tx_obj = self._tx_from_any(entry)
             except Exception:
                 log.warning("[mempool] Failed to hydrate entry, skipping")
                 continue
             txid = self._normalize_txid(tx_obj.txid)
+            recv_at = meta.get("received_at") if isinstance(meta, dict) else None
+            if recv_at:
+                try:
+                    setattr(tx_obj, "_received_at", float(recv_at))
+                except Exception:
+                    pass
+
+            hinted_size = None
+            if isinstance(meta, dict):
+                hinted_size = meta.get("vbytes") or meta.get("virtual_size")
+
+            size = None
+            try:
+                size = int(hinted_size) if hinted_size is not None else None
+            except Exception:
+                size = None
+
+            if size is None:
+                size = self._estimate_tx_size(tx_obj)
+
             self._pool[txid] = tx_obj
-            self._size_map[txid] = self._estimate_tx_size(tx_obj)
-            self._record_fee_rate(txid, tx_obj, self._size_map[txid])
+            self._size_map[txid] = size
+            self._record_fee_rate(txid, tx_obj, size)
             self._index_tx_prevouts(tx_obj)
 
     def _normalize_txid(self, txid) -> str:
@@ -69,7 +112,25 @@ class MempoolStorageMixin:
         tx_dict = tx_obj.to_dict(include_txid=True)
         if not tx_dict.get("txid") and getattr(tx_obj, "txid", None):
             tx_dict["txid"] = tx_obj.txid.hex()
+        tx_size = self._estimate_tx_size(tx_obj)
+        meta = {
+            "schema_version": int(getattr(CFG, "DATA_SCHEMA_VERSION", 1)),
+            "received_at": getattr(tx_obj, "_received_at", None),
+            "vbytes": int(tx_size),
+            "weight": int(tx_size * 4),
+            "fee_rate": self._compute_fee_rate(tx_obj, tx_size),
+        }
+        tx_dict["_meta"] = meta
         return tx_dict
+
+    def _build_meta_snapshot(self) -> dict:
+        return {
+            "schema_version": int(getattr(CFG, "DATA_SCHEMA_VERSION", 1)),
+            "generated_at": int(time.time()),
+            "count": len(self._pool),
+            "virtual_size": int(self.current_size),
+            "max_size_bytes": int(self.max_size_mb),
+        }
 
     def _mark_dirty(self) -> None:
         self._dirty = True
@@ -113,6 +174,7 @@ class MempoolStorageMixin:
                 return False
 
             snapshot = [self._serialize_tx(tx) for tx in self._pool.values()]
+            meta = self._build_meta_snapshot()
             self._dirty = False
             self._last_flush = now
 
@@ -124,6 +186,10 @@ class MempoolStorageMixin:
                     pass
                 try:
                     with batch("mempool") as b:
+                        b.put(
+                            b"__meta__",
+                            json.dumps(meta, separators=(",", ":")).encode("utf-8"),
+                        )
                         for entry in snapshot:
                             txid = entry.get("txid")
                             if not txid:
@@ -134,9 +200,19 @@ class MempoolStorageMixin:
                             )
                 except Exception:
                     log.error("[flush] LMDB write failed, falling back to file storage")
-                    self.save_json(self.filepath, snapshot)
+                    payload = {
+                        "schema_version": meta.get("schema_version"),
+                        "meta": meta,
+                        "txs": snapshot,
+                    }
+                    self.save_json(self.filepath, payload)
             else:
-                self.save_json(self.filepath, snapshot)
+                payload = {
+                    "schema_version": meta.get("schema_version"),
+                    "meta": meta,
+                    "txs": snapshot,
+                }
+                self.save_json(self.filepath, payload)
         except Exception:
             log.exception("[flush] Failed to persist mempool")
             with self._lock:
@@ -212,6 +288,11 @@ class MempoolStorageMixin:
 
     def add_tx(self, tx: Tx) -> None:
         tx_obj = self._tx_from_any(tx)
+        if not hasattr(tx_obj, "_received_at"):
+            try:
+                setattr(tx_obj, "_received_at", time.time())
+            except Exception:
+                pass
         txid = self._normalize_txid(tx_obj.txid)
         tx_size = self._estimate_tx_size(tx_obj)
         self._ensure_space(tx_size)
