@@ -33,6 +33,10 @@ def request_sync(self, fast: bool = False) -> None:
 
 
 def sync_with_peers(self):
+    """
+    Run a single round of sync: select outbound peers (plus high-ranking candidates),
+    call _sync_peer for headers/blocks, then pull an inline/snapshot or full sync mempool if needed.
+    """
     with self.lock:
         selected = [p for p in self.outbound_peers if p in self.peers]
         if len(selected) < CFG.MAX_OUTBOUND_PEERS:
@@ -116,6 +120,11 @@ def sync_with_peers(self):
 
 
 def _sync_peer(self, peer: Tuple[str, int]) -> bool:
+    """
+    Single-peer sync: respect intervals, request headers, calculate lost/reorg blocks,
+    download and apply blocks, set backoff on rejection, and reward/penalty for peers.
+    Returns True if up-to-date or a new block is applied.
+    """
     now = time.time()
     min_iv = 0.0 if now < getattr(self, "_sync_fast_until", 0.0) else float(CFG.HEADERS_SYNC_MIN_INTERVAL)
     if now - self._peer_last_sync.get(peer, 0.0) < min_iv:
@@ -168,6 +177,10 @@ def _sync_peer(self, peer: Tuple[str, int]) -> bool:
 
 
 def _build_locator(self) -> List[str]:
+    """
+    Build a block locator for request headers: take the block hash from the end of the chain in exponential steps (up to the depth),
+    then ensure ZERO_HASH is also listed as the lowest anchor.
+    """
     locator: List[str] = []
     with self.broadcast.lock:
         chain = list(self.broadcast.blockchain.chain)
@@ -201,6 +214,11 @@ def _request_headers(self, peer: Tuple[str, int], locator: List[str]) -> Optiona
 
 
 def _determine_missing_blocks(self, headers: List[dict]) -> List[int]:
+    """
+    Calculate the height of missing blocks or reorgs: compare the remote header
+    with the local chain, record mismatches as reorg points,
+    and return a unique list of heights to be downloaded (sorted).
+    """
     missing: List[int] = []
     reorg_point: Optional[int] = None
     max_remote_height = -1
@@ -380,6 +398,10 @@ def handle_block_gap(self, block, origin: Optional[Tuple[str, int]]) -> None:
 
 
 def is_caught_up(self, freshness: float = 10.0, height_slack: int = 0) -> bool:
+    """
+    Check if the node is sufficiently synchronized: it needs a recent peer sync (freshness)
+    and the local block height difference to the best peer <= slack.
+    """
     now = time.time()
     freshness = max(0.0, float(freshness))
     slack = max(0, int(height_slack))

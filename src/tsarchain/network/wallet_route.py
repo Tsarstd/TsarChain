@@ -1008,7 +1008,6 @@ def _handle_create_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, 
         try:
             is_opret = (isinstance(spk, Script) and getattr(spk, "cmds", None) and spk.cmds and spk.cmds[0] == OP_RETURN)
         except Exception:
-
             is_opret = False
         (opret_outs if is_opret else non_opret).append(TxOut(amt, spk))
     outs = non_opret

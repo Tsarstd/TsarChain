@@ -70,7 +70,7 @@ class Broadcast(
         self.network: Optional["Network"] = None
         self._failmap: Dict[Tuple[str, int], Dict[str, float | int]] = {}  # {peer: {"fails": int, "last": ts}}
         self._last_mempool_seq: Dict[Tuple[str, int], int] = {}
-        self._utxo_flush_interval = max(1, int(getattr(CFG, "UTXO_FLUSH_INTERVAL", 1)))
+        self._utxo_flush_interval = max(1, int(CFG.UTXO_FLUSH_INTERVAL))
         self._utxo_last_flush_height = -1
 
     def _request_full_sync(self, peer: Tuple[str, int]) -> bool:
