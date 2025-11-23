@@ -791,6 +791,12 @@ class StorageMixin:
         tip_block = chain[-1] if chain else None
         genesis_block = chain[0] if chain else None
 
+        total_block_size_bytes = 0
+        try:
+            total_block_size_bytes = sum(self._estimate_block_size_bytes(b) for b in chain)
+        except Exception:
+            total_block_size_bytes = 0
+
         tip_chainwork = None
         try:
             cw = getattr(tip_block, "chainwork", None)
@@ -976,6 +982,7 @@ class StorageMixin:
                 "median_time_past": median_time_past_val,
                 "max_bits": int(CFG.MAX_BITS),
                 "target_block_time_sec": int(CFG.TARGET_BLOCK_TIME),
+                "total_block_size_bytes": int(total_block_size_bytes),
                 "avg_block_time_sec_window": None if avg_block_time_sec is None else round(float(avg_block_time_sec), 3),
                 "est_network_hashrate_hps_window": est_hashrate_hps,
             },

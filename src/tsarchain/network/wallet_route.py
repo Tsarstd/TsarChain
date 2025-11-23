@@ -10,6 +10,7 @@ from bech32 import convertbits, bech32_decode, bech32_encode
 # ---------------- Local Project ----------------
 from ..core.tx import Tx, TxIn, TxOut
 from ..utils.helpers import Script, OP_RETURN, last_pushdata
+from ..contracts import graffiti as GRAFFITI
 from .protocol import (send_message, recv_message,build_envelope, SecureChannel)
 from ..utils import config as CFG
 
@@ -686,9 +687,56 @@ def _serialize_block(self, b) -> dict:
 
     # Transactions (light)
     txs = []
+    graffiti_posts = []
+    graffiti_comments = []
     try:
         for tx in getattr(b, "transactions", []) or []:
             txs.append(self._serialize_tx_basic(tx))
+            txid_hex = ""
+            try:
+                tid = getattr(tx, "txid", None)
+                if isinstance(tid, (bytes, bytearray)):
+                    txid_hex = tid.hex()
+                elif isinstance(tid, str):
+                    txid_hex = tid
+            except Exception:
+                txid_hex = ""
+            for tx_out in getattr(tx, "outputs", []) or []:
+                spk = getattr(tx_out, "script_pubkey", None)
+                try:
+                    meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+                except Exception:
+                    meta = None
+                if not meta:
+                    continue
+                ev = str(meta.get("event", "")).upper()
+                if ev == "POST":
+                    graffiti_posts.append({
+                        "txid": txid_hex,
+                        "sha256": meta.get("sha256"),
+                        "size": meta.get("size"),
+                        "mime": meta.get("mime"),
+                        "storer": meta.get("storer"),
+                        "receipt": meta.get("receipt"),
+                    })
+                elif ev == "COMMENT":
+                    comment_hex = meta.get("comment") or ""
+                    comment_text = ""
+                    try:
+                        comment_text = bytes.fromhex(comment_hex).decode("utf-8", errors="ignore")
+                    except Exception:
+                        comment_text = ""
+                    graffiti_comments.append({
+                        "txid": txid_hex,
+                        "art_id": meta.get("art_id"),
+                        "comment_hex": comment_hex,
+                        "comment_text": comment_text,
+                        "amount": meta.get("amount"),
+                        "tip": meta.get("tip"),
+                        "creator": meta.get("creator"),
+                        "commenter": meta.get("commenter"),
+                        "comment_len": meta.get("comment_len"),
+                    })
     except Exception:
         pass
 
@@ -707,6 +755,8 @@ def _serialize_block(self, b) -> dict:
         "merkle_root": mroot_hex,
         "tx": txs,
         "tx_count": len(txs),
+        "graffiti": graffiti_posts,
+        "comments": graffiti_comments,
     }
 
 

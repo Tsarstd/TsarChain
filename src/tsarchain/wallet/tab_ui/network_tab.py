@@ -278,6 +278,21 @@ class NetworkTab(tk.Frame):
             except Exception:
                 return "-"
 
+    @staticmethod
+    def _fmt_bytes(num_bytes: int | float | None) -> str:
+        try:
+            n = float(num_bytes or 0)
+            units = ["B", "KB", "MB", "GB", "TB"]
+            i = 0
+            while n >= 1024 and i < len(units) - 1:
+                n /= 1024.0
+                i += 1
+            if i == 0:
+                return f"{int(n)} B"
+            return f"{n:.2f} {units[i]}"
+        except Exception:
+            return str(num_bytes)
+
     # ---------------- Rendering ----------------
     def _render_network_snapshot(self, snap: Optional[Dict[str, Any]], peers_cnt: int) -> None:
         self._net_text_enable()
@@ -293,6 +308,7 @@ class NetworkTab(tk.Frame):
         txs  = snap.get("transactions", {}) or {}
         utxo = snap.get("utxo", {}) or {}
         miners = ((snap.get("miners_snapshot", {}) or {}).get("top_miners") or [])
+        graffiti = snap.get("graffiti", {}) or {}
 
         # Header
         self.net_text.insert(tk.END, "🌐 Network Informations 🌐", ("h1","center"))
@@ -342,7 +358,9 @@ class NetworkTab(tk.Frame):
         self.net_text.insert(tk.END, f"Tip Bits\n", ("lab","center"))
         self.net_text.insert(tk.END, f"{chain.get('tip_bits','-')}\n\n", ("val","center"))
         self.net_text.insert(tk.END, f"Tip Difficulty\n", ("lab","center"))
-        self.net_text.insert(tk.END, f"{self._fmt_num(chain.get('tip_difficulty'))}\n\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_num(chain.get('tip_difficulty'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Total Block Size\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_bytes(chain.get('total_block_size_bytes'))}\n\n\n", ("val","center"))
 
         # Blockchain Economy
         self.net_text.insert(tk.END, ("-"*45) + "\n", ("sep2","center"))
@@ -394,7 +412,16 @@ class NetworkTab(tk.Frame):
         self.net_text.insert(tk.END, f"Coinbase Transactions\n", ("lab","center"))
         self.net_text.insert(tk.END, f"{self._fmt_num(cbt)}\n\n", ("val","center"))
         self.net_text.insert(tk.END, f"UTXO Set Size\n", ("lab","center"))
-        self.net_text.insert(tk.END, f"{self._fmt_num(utxo.get('utxo_set_size'))}\n\n\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_num(utxo.get('utxo_set_size'))}\n\n\n", ("val","center"))
+
+        # Graffiti stats
+        self.net_text.insert(tk.END, ("-"*45) + "\n", ("sep2","center"))
+        self.net_text.insert(tk.END, "GRAFFITI\n", ("h2","center"))
+        self.net_text.insert(tk.END, ("-"*45) + "\n", ("sep2","center"))
+        self.net_text.insert(tk.END, f"\nTotal Graffiti\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_num(graffiti.get('posts'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Total Comments\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_num(graffiti.get('comments'))}\n\n\n\n", ("val","center"))
 
         # Top Miners Leaderboards
         self.net_text.insert(tk.END, ("="*84) + "\n", ("sep","center"))

@@ -672,6 +672,40 @@ class ExplorePanel(tk.Frame):
         if ver  is not None: self._kv("Version", str(ver), mono=True, vtag="val_num")
         if mroot is not None: self._kv("Merkle Root", str(mroot), mono=True, vtag="val_hex")
 
+        # Graffiti / comments
+        graff = b.get("graffiti") or []
+        comments = b.get("comments") or []
+        if graff or comments:
+            self._section("Graffiti Activity")
+            if graff:
+                for g in graff:
+                    art = g.get("sha256") or "-"
+                    self._kv("Art ID", str(art), mono=True, vtag="val_hex")
+                    self._kv("TxID", str(g.get("txid") or "-"), mono=True, vtag="val_hex")
+                    mime = g.get("mime") or "-"
+                    sz = g.get("size")
+                    size_s = f"{int(sz)} bytes" if isinstance(sz, (int, float)) else "-"
+                    self._kv("Meta", f"{mime} | {size_s}", mono=True)
+            if comments:
+                for c in comments:
+                    art = c.get("art_id") or "-"
+                    comment_text = c.get("comment_text")
+                    if not comment_text:
+                        try:
+                            ch = c.get("comment_hex") or ""
+                            comment_text = bytes.fromhex(ch).decode("utf-8", errors="ignore")
+                        except Exception:
+                            comment_text = ""
+                    self._kv("Art ID", str(art), mono=True, vtag="val_hex")
+                    if comment_text:
+                        self._kv("Comment", comment_text, mono=False)
+                    else:
+                        self._kv("Comment", "(unavailable)", mono=False)
+                    self._kv("Commenter", str(c.get("commenter") or "-"), mono=True, vtag="val_addr")
+                    amt = c.get("amount")
+                    if amt is not None:
+                        self._kv("Amount", _fmt_tsar_amount(amt), mono=True, vtag="val_num")
+
         self._section(f"Transactions ({len(txs)})")
         if not txs:
             self._writeln("No transactions.", "muted")

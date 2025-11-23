@@ -167,8 +167,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 1  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = "00167d080b2ba6ab68c1916f04d3328e4893e37a659326cc10acdabb88947ccb"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -507,7 +507,7 @@ OPRET_ALLOW_PUSHDATA2 = True  # allow PUSHDATA2 opcodes for >255B payloads
 GRAFFITI_MIN_BILLABLE_SIZE    = 100 * 1024
 GRAFFITI_UPLOAD_FEE_PER_CHUNK = 0.8 * TSAR
 GRAFFITI_REPLICATION_R        = 3
-GRAFFITI_COMMENT_MAX_BYTES    = 280
+GRAFFITI_COMMENT_MAX_BYTES    = 140
 GRAFFITI_COMMENT_MIN_FEE      = 1 * TSAR
 GRAFFITI_COMMENT_BP_DENOM     = 10_000  # denominator (basis points) for split percentages
 GRAFFITI_COMMENT_CREATOR_BP   = 8_000   # 80%
