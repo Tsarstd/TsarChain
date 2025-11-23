@@ -48,7 +48,7 @@ def _default_db_dir() -> str:
 
 
 SUBDBS = [
-    'chain', 'state', 'utxo', 'mempool',
+    'chain', 'state', 'utxo', 'mempool', 'graffiti',
 ]
 
 
@@ -297,6 +297,24 @@ def _peek_keys(env, name: str, limit: int = 5):
     return out
 
 
+def _graffiti_summary(env) -> dict | None:
+    try:
+        dbi = env.open_db(b'graffiti', create=False)
+    except Exception:
+        return None
+    try:
+        with env.begin(db=dbi, write=False) as txn:
+            raw = txn.get(b"data:data")
+            if not raw:
+                return {"posts": 0, "comments": 0}
+            obj = json.loads(raw.decode("utf-8"))
+            posts = len(obj.get("posts") or {})
+            comments = sum(len(v or []) for v in (obj.get("comments") or {}).values())
+            return {"posts": posts, "comments": comments}
+    except Exception:
+        return None
+
+
 # ---- CLI core ----
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -330,7 +348,7 @@ Examples:
     ap.add_argument(
         '--detail',
         dest='detail',
-        choices=['utxo', 'mempool', 'chain', 'state'],
+        choices=['utxo', 'mempool', 'chain', 'state', 'graffiti'],
         help='Show detailed items for a subdb',
     )
 
@@ -490,6 +508,16 @@ def run_tool(args) -> int:
              f"{color_text('mempool txs  : ', CYAN)}"
              f"{n_mempool}"
         )
+        gstats = _graffiti_summary(env)
+        if gstats:
+            clog(f"🖌️ "
+                 f"{color_text(' graffiti     : ', CYAN)}"
+                 f"{gstats.get('posts', 0)}"
+            )
+            clog(f"💬 "
+                 f"{color_text('comments     : ', CYAN)}"
+                 f"{gstats.get('comments', 0)}"
+            )
 
         # Optional peeks
         if getattr(args, "peek", 0) > 0:
@@ -504,7 +532,7 @@ def run_tool(args) -> int:
                     show = [str(k) for k in keys]
                 clog(f"  {name}: {show}")
 
-        # Optional detail dump (UTXO-focused for now)
+        # Optional detail dump
         if getattr(args, "detail", None) == 'utxo':
             try:
                 dbi = env.open_db(b'utxo', create=False)
@@ -543,6 +571,26 @@ def run_tool(args) -> int:
                         cnt += 1
                         if not cur.next():
                             break
+        elif getattr(args, "detail", None) == 'graffiti':
+            try:
+                dbi = env.open_db(b'graffiti', create=False)
+            except Exception:
+                clog('No graffiti subdb found')
+                return 0
+            clog(f"{color_text('\n[detail:graffiti]', CYAN)}")
+            with env.begin(db=dbi, write=False) as txn:
+                raw = txn.get(b"data:data")
+                if not raw:
+                    clog("empty graffiti registry")
+                    return 0
+                try:
+                    obj = json.loads(raw.decode("utf-8"))
+                    posts = obj.get("posts") or {}
+                    comments = obj.get("comments") or {}
+                    clog(f"posts   : {len(posts)}")
+                    clog(f"comments: {sum(len(v or []) for v in comments.values())}")
+                except Exception as e:
+                    clog(f"decode error: {e}")
 
         return 0
 
