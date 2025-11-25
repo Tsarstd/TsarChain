@@ -231,7 +231,7 @@ COINBASE_MATURITY      = 3  # required confirmations before spending coinbase
 MAX_COINBASE_EXTRADATA = 95  # soft limit for coinbase metadata bytes (based on GENESIS_BLOCK_ID_DEFAULT length)
 
 # ---- GENESIS BONUSES ----
-GENESIS_REWARD        = True  # toggle to allow special-case payouts at genesis
+GENESIS_REWARD        = True  # well, this is actually pre-mine. use for developing purposes only
 GENESIS_REWARD_AMOUNT = 2_500_000 * TSAR  # allocation granted when genesis reward is enabled
 
 
