@@ -424,6 +424,8 @@ def _ascii_slug(s: str, maxlen: int = 32) -> str:
     while "__" in s:
         s = s.replace("__", "_")
     s = s.strip("_")
+    if not s:
+        s = "unnamed"
     return s[:maxlen] if maxlen else s
 
 def block_id_generator(length: int = 9, with_year: bool = True) -> str:
@@ -436,6 +438,7 @@ def block_id_generator(length: int = 9, with_year: bool = True) -> str:
 
     patterns = [
         f"{name_slug}_{year_part}{rand}",
+        f"{year_part}_{name_slug}{rand}",
     ]
     
     for p in patterns:
