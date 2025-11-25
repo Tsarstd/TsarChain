@@ -7,7 +7,9 @@
   <img alt="Python" src="https://img.shields.io/badge/Python-3.11%2B-blue">
   <img alt="Rust" src="https://img.shields.io/badge/Rust-Pyo3-black">
   <img alt="Consensus" src="https://img.shields.io/badge/Consensus-PoW-lightgrey">
+  <img alt="Algo" src="https://img.shields.io/badge/Algo-RandomX-red">
   <img alt="Ledger" src="https://img.shields.io/badge/Ledger-UTXO-blueviolet">
+  <img alt="TX" src="https://img.shields.io/badge/TX-Segwit-lightyellow">
   <img alt="Address" src="https://img.shields.io/badge/Address-tsar1%20(Bech32)-orange">
   <img alt="Network" src="https://img.shields.io/badge/Network-Devnet-yellow">
 </p>
