@@ -550,6 +550,9 @@ State - is a database for overall network information. for user requests in the 
 - Chat privacy uses X3DH + Double Ratchet (simple implementation).
 - This is experimental software; there haven't been many network security audits, a independet project with little experience in low-level engineering.
 - If you run validators/miners publicly, just **mining it!** **fork it!** **learn it!** **Look for vulnerabilities!** and see how blockchain work.
+- There's no **testnet** yet, no **mainnet** yet,
+- There are no promises of **riches** here.
+- There are still many **bugs to fix**. If you want to test publicly, use your own private VPS.
 
 ---
 
