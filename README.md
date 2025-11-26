@@ -27,17 +27,29 @@ TsarChain focuses on **Voice Sovereignty**: preserving *cultural archives*, *art
 - [Demo](#️-demo)
 - [ScreenShoots](#️-screenshoots)
 - [Project Status](#️-project-status)
+  - [Implemented](#-implemented)
+  - [In Development](#-in-development)
 - [Features at a Glance](#-features-at-a-glance)
 - [Why Voice Sovereignty](#-why-voice-sovereignty)
 - [Getting Started](#-getting-started)
+  - [1.Setup](#1-setup)
+  - [2.Build Native Extension](#2-build-native-extension)
 - [Quickstart](#️-quickstart)
 - [Config Codebase (Preview)](#️-config-codebase-preview)
 - [Mining Modes](#️-mining-modes)
 - [Project & Data Structure's](#️-project--data-structures)
+  - [Example of a Transaction Data Structure](#1--example-of-a-transaction-data-structure)
+  - [Example of a Graffiti Activity Data Structure](#2--example-of-a-graffiti-activity-data-structure)
+  - [Example of a State Data Structure](#3--example-of-a-state-data-structure)
 - [Security Notes](#-security-notes)
 - [Contributing](#-contributing)
+  - [Development Support](#development-support)
 - [Roadmap](#️-roadmap)
 - [Documentation](#-documentation)
+  - [Grungepaper](#grungepaper)
+  - [Graffiti Protocol](#graffiti-protocol)
+  - [Rust](#rust)
+  - [Trademarks & References](#trademarks--references)
 - [License](#-license)
 
 ---
@@ -117,27 +129,47 @@ TsarChain focuses on **Voice Sovereignty**: preserving *cultural archives*, *art
 ## ⚠️ Project Status
 
 #### ✅ Implemented
-- Kremlin Wallet (Light Wallet)
-- Wallet generation (Bech32)
-- Address prefix `tsar1`
-- Genesis Block
-- Proof-of-Work (RandomX)
-- Chat Feature (X3DH & Double Ratchet)
-- Coinbase Reward
-- UTXO System
-- SegWit Transactions (P2WPKH)
-- Fee Mechanism
-- Mempools
-- Multi-node Networking
-- Transaction & Block Validation
-- Chain Validation
+- **Kremlin Wallet (Light Wallet)**
+  - Address generation `Bech32`
+  - Address prefix `tsar1`
+  - Chat Feature `X3DH & Double Ratchet`
+  - Explore Tab `Exploring the Tsarchain Ecosystem`
+  - Contact Management
+  - History Transactions
+  - Mnemonic, Private Key & Backup management for wallet
+- **TsarChain (Consensus)**
+  - Genesis Block Generating
+  - Proof-of-Work `RandomX`
+  - Difficulty Adjustment Consensus
+  - Coinbase Reward
+  - UTXO System
+  - SegWit Transactions `P2WPKH`
+  - Fee Mechanism
+  - Mempools
+  - Multi-node Networking
+  - Transaction & Block Validation
+  - P2P Networking Protocol
+  - Chain Validation
+  - Some Native Rust for acceleration module for TsarChain
+- **Graffiti (MVP)**
+  - Graffiti upload Mechanism in Graffiti Tab `Kremlin`
+  - Put a Comment and Giving a tip to graffiti creator
+  - Anchoring Graffiti File Hash to Block Id
+  - Comment and tip have been successfully received by the creator
+  - See Graffiti Activity in Explore Tab `Kremlin`
 
 #### 🚧 In Development
-- Storage Node
-- Graffiti
-- Some Security
-- Some UI/UX Wallet
-- etc.
+- **Archivist (Storage Node)**
+  - Storage Node (Proof of Retention) Payout
+  - Validating Graffiti file payment status
+- **Kremlin Wallet (Light Wallet)**
+  - Graffiti art View `.jpg` in Kremlin Wallet
+  - Some UI/UX Wallet
+- **TsarChain (Consensus)**
+  - Epoch Pool mechanism for Storage Node incentives
+  - Some Security
+  - Some Native Rust Implemented `Pyo3`
+  - etc.
 
 ---
 
@@ -199,7 +231,7 @@ pip install -r requirements.txt
 # GUI (lite-friendly, limited to 1 core)
 python apps/miner_gui.py
 
-# Stateless CLI miner (no on-disk blockchain, just hashing)
+# Stateless CLI miner (no on-disk blockchain, just hashing & receive ephemeral mempool)
 python apps/cli_miner.py
 
 # Full node + miner (keeps blockchain DB + snapshot gateway)
@@ -266,7 +298,7 @@ EDA_EASE_MULTIPLIER     = 2.0
 ## ⛏️ Mining Modes
 
 - **GUI Miner (`apps/miner_gui.py`)** ships with Lite GUI mode enabled and limits RandomX to one core by default so the Tkinter UI stays responsive.
-- **Stateless CLI Miner (`apps/cli_miner.py`)** keeps chain data in-memory, fetches the latest tip from peers, mines, then broadcasts (no snapshots or DB).
+- **Stateless CLI Miner (`apps/cli_miner.py`)** keeps chain data in-memory, fetches the latest tip from peers, ephemeral mempool, mines, then broadcasts (no snapshots or DB).
 - **Full Node CLI Miner (`apps/cli_node_miner.py`)** persists the entire blockchain, handles snapshot bootstrap, wallet gateway traffic, and can run `--node-only` for infra roles.
 
 Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node_miner.py` when you need full-node responsibilities.
@@ -303,91 +335,105 @@ TsarChain/
 └── tsarcore_native/         # Native Module (Rust + PyO3)
     └── src/                 # Source code Rust (lib.rs, networking.rs, validation.rs)
 ```
-
-The example data of `block, utxo's & mempool` below, shows a transaction between 1 sender and 1 miner recipient.
+#### 1. 💸 Example of a Transaction Data Structure
+The example data of `block, utxo's & mempool` below, shows a transaction :
+> address `tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07` sent 800 coins + 0,00006300 fee to address`tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23`,
+then validated by miner `tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss` in block height 6
 - ***Block Data Structure (.json):***
   <details>
     <summary>See Preview</summary>
 
   ```json
-  {
-    "height": 9,
-    "version": 1,
-    "prev_block_hash": "000a0638cc7d73011bc4db7616eba7badacfa3f1c3cadaa61385b38e0cf629be",
-    "merkle_root": "3cbf3c045716ad5890d064a34cf187f12444b36a9de24a656a87375bacf7eca5",
-    "timestamp": 1763488189,
-    "bits": 522190847,
-    "nonce": 229,
-    "hash": "000a17e45cddd85cf6a41744050ba9026c99df6424b9a2e8aa93592dda2ff8c8",
-    "transactions": [
-      {
+    {
+      "_meta": {
+        "bits": 522190847,
+        "chainwork": 14336,
+        "comment_count": 0,
+        "comments": [],
+        "difficulty": 2048,
+        "graffiti": [],
+        "graffiti_post_count": 0,
+        "hash": "001144e85e6612772663760a519eb8d4aeb1d8bd34fbf2b9d32dd99b901d476a",
+        "height": 6,
+        "merkle_root": "b1c473c9372ed27bdb00a9ce0840bd7765f8175347a6d52f7683db88673d14ed",
+        "nonce": 1413,
+        "prev_block_hash": "0011103c1311c22c629f2d05fe05f3cbb63eb66ac0f498ae200a803e0c054f12",
+        "schema_version": 1,
+        "size_bytes": 1669,
+        "target": 5.653907911296163e73,
+        "timestamp": 1764112364,
+        "tx_count": 2,
+        "vbytes": 1669,
         "version": 1,
-        "inputs": [
-          {
-            "txid": "0000000000000000000000000000000000000000000000000000000000000000",
-            "vout": 4294967295,
-            "amount": 0,
-            "script_sig": "01091d506176656c5f53686572656d65745f323031365f346b46525350626276",
-            "witness": []
-          }
-        ],
-        "outputs": [
-          {
-            "amount": 25000007280,
-            "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
-          }
-        ],
-        "locktime": 0,
-        "txid": "00d219b3fa137584aa808e546bbc7f939f74125e5c6aaf287e1e0eeec996ac33",
-        "fee": 0,
-        "is_coinbase": true,
-        "type": "Coinbase",
-        "to_address": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr",
-        "reward": 25000007280,
-        "block_id": "Pavel_Sheremet_2016_4kFRSPbbv",
-        "height": 9
+        "weight": 6676
       },
-      {
-        "version": 1,
-        "inputs": [
-          {
-            "txid": "c3f8cfe9961bc02f619f2074240777936cef3cba0495aebd13cd1f0e8b775c77",
-            "vout": 0,
-            "amount": 25000000000,
-            "script_sig": "",
-            "witness": [
-              "3045022100d59497380ca6e007fe5490e786d4be10ed958a246f0680ba559d57817e87b8b8022009a04fac29973744ee9bc9528c76206755466b435427bd2aa50eb4bf7d5f7ca601",
-              "0317e6da93b8800805abbdf88533d8c3729acdcee1f4d3fcf8c4587f16c3437654"
-            ]
-          },
-          {
-            "txid": "1e06c0b7d7b41f8f940a4ea7b8289829d80660df79bc9fa2b1448621c9cfb119",
-            "vout": 0,
-            "amount": 250000000000000,
-            "script_sig": "",
-            "witness": [
-              "3045022100e82db6d6b09cd72d2b23e8b96b6e07e8996be5b4f941b90537bfdbea702b9b9202207c14783f79ce4df23e50d117cf1760e13ba676ff30f179420cf497c972934cb701",
-              "0317e6da93b8800805abbdf88533d8c3729acdcee1f4d3fcf8c4587f16c3437654"
-            ]
-          }
-        ],
-        "outputs": [
-          {
-            "amount": 1200000000000,
-            "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
-          },
-          {
-            "amount": 248824999992720,
-            "script_pubkey": "0014266dd5c8b1fb3a0d18710146713af668b762dc6f"
-          }
-        ],
-        "locktime": 0,
-        "txid": "80817285aaf676697420b857d58afa8da19f3b1e785d12cc05bd30ab6b0d1b2f",
-        "fee": 7280,
-        "is_coinbase": false
-      }
-    ]
-  }
+      "bits": 522190847,
+      "hash": "001144e85e6612772663760a519eb8d4aeb1d8bd34fbf2b9d32dd99b901d476a",
+      "height": 6,
+      "merkle_root": "b1c473c9372ed27bdb00a9ce0840bd7765f8175347a6d52f7683db88673d14ed",
+      "nonce": 1413,
+      "prev_block_hash": "0011103c1311c22c629f2d05fe05f3cbb63eb66ac0f498ae200a803e0c054f12",
+      "timestamp": 1764112364,
+      "transactions": [
+        {
+          "block_id": "Ai_Weiwei_2011_bV2RuWnkj",
+          "fee": 0,
+          "height": 6,
+          "inputs": [
+            {
+              "amount": 0,
+              "script_sig": "01061841695f5765697765695f323031315f6256325275576e6b6a",
+              "txid": "0000000000000000000000000000000000000000000000000000000000000000",
+              "vout": 4294967295,
+              "witness": []
+            }
+          ],
+          "is_coinbase": true,
+          "locktime": 0,
+          "outputs": [
+            {
+              "amount": 25000006300,
+              "script_pubkey": "0014266dd5c8b1fb3a0d18710146713af668b762dc6f"
+            }
+          ],
+          "reward": 25000006300,
+          "to_address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss",
+          "txid": "7297a1ad705ace269d5961645bd4e769e1360fd2eb03913309b59410523fd057",
+          "type": "Coinbase",
+          "version": 1
+        },
+        {
+          "fee": 6300,
+          "inputs": [
+            {
+              "amount": 1200000000000,
+              "script_sig": "",
+              "txid": "eeaa5304e4b3ee8fb51e69765c5d42fa43fbf8930fe3376f8bf403a9a28102c5",
+              "vout": 0,
+              "witness": [
+                "304402205784c27abddf8e29d0cc337358973dd7b125f7aa33a030d7246a9caa5427586802201e9c3c472c3cbd3fc1a3d5480363917fd06c2c83200a5049b918ce7d08d1108d01",
+                "0359c3eab29ad7feb9fad33caae30e9e7a9bbbc1291748a851bb1e6d3bc81c0143"
+              ]
+            }
+          ],
+          "is_coinbase": false,
+          "locktime": 0,
+          "outputs": [
+            {
+              "amount": 80000000000,
+              "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
+            },
+            {
+              "amount": 1119999993700,
+              "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+            }
+          ],
+          "txid": "8257f8942b0b97220dd9a14f2473e6e82324266f4f16194c7a7561e643e93e77",
+          "version": 1
+        }
+      ],
+      "version": 1
+    }
   ```
   </details>
 
@@ -396,154 +442,592 @@ The example data of `block, utxo's & mempool` below, shows a transaction between
     <summary>See Preview</summary>
 
   ```json
-    },
-    "00d219b3fa137584aa808e546bbc7f939f74125e5c6aaf287e1e0eeec996ac33:0": {
-      "tx_out": {
-        "amount": 25000007280,
-        "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
-      },
+    "7297a1ad705ace269d5961645bd4e769e1360fd2eb03913309b59410523fd057:0": {
+      "address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss",
+      "block_height": 6,
       "is_coinbase": true,
-      "block_height": 9
-    },
-    "80817285aaf676697420b857d58afa8da19f3b1e785d12cc05bd30ab6b0d1b2f:0": {
+      "script_type": "p2wpkh",
       "tx_out": {
-        "amount": 1200000000000,
-        "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
-      },
-      "is_coinbase": false,
-      "block_height": 9
-    },
-    "80817285aaf676697420b857d58afa8da19f3b1e785d12cc05bd30ab6b0d1b2f:1": {
-      "tx_out": {
-        "amount": 248824999992720,
+        "amount": 25000006300,
         "script_pubkey": "0014266dd5c8b1fb3a0d18710146713af668b762dc6f"
-      },
-      "is_coinbase": false,
-      "block_height": 9
+      }
     },
+    "8257f8942b0b97220dd9a14f2473e6e82324266f4f16194c7a7561e643e93e77:0": {
+      "address": "tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23",
+      "block_height": 6,
+      "is_coinbase": false,
+      "script_type": "p2wpkh",
+      "tx_out": {
+        "amount": 80000000000,
+        "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
+      }
+    },
+    "8257f8942b0b97220dd9a14f2473e6e82324266f4f16194c7a7561e643e93e77:1": {
+      "address": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07",
+      "block_height": 6,
+      "is_coinbase": false,
+      "script_type": "p2wpkh",
+      "tx_out": {
+        "amount": 1119999993700,
+        "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+      }
+    }
   ```
   </details>
 
 - ***MemPool Data Structure (.json):***
   <details>
     <summary>See Preview</summary>
-  
+
   ```json
   {
-    "version": 1,
-    "inputs": [
+    "meta": {
+      "count": 1,
+      "generated_at": 1764112250,
+      "max_size_bytes": 1048576,
+      "schema_version": 1,
+      "virtual_size": 204
+    },
+    "schema_version": 1,
+    "txs": [
       {
-        "txid": "c3f8cfe9961bc02f619f2074240777936cef3cba0495aebd13cd1f0e8b775c77",
-        "vout": 0,
-        "amount": 25000000000,
-        "script_sig": "",
-        "witness": [
-          "3045022100d59497380ca6e007fe5490e786d4be10ed958a246f0680ba559d57817e87b8b8022009a04fac29973744ee9bc9528c76206755466b435427bd2aa50eb4bf7d5f7ca601",
-          "0317e6da93b8800805abbdf88533d8c3729acdcee1f4d3fcf8c4587f16c3437654"
-        ]
-      },
-      {
-        "txid": "1e06c0b7d7b41f8f940a4ea7b8289829d80660df79bc9fa2b1448621c9cfb119",
-        "vout": 0,
-        "amount": 250000000000000,
-        "script_sig": "",
-        "witness": [
-          "3045022100e82db6d6b09cd72d2b23e8b96b6e07e8996be5b4f941b90537bfdbea702b9b9202207c14783f79ce4df23e50d117cf1760e13ba676ff30f179420cf497c972934cb701",
-          "0317e6da93b8800805abbdf88533d8c3729acdcee1f4d3fcf8c4587f16c3437654"
-        ]
+        "_meta": {
+          "fee_rate": 30.88235294117647,
+          "received_at": 1764112250.2801704,
+          "schema_version": 1,
+          "vbytes": 204,
+          "weight": 816
+        },
+        "fee": 6300,
+        "inputs": [
+          {
+            "amount": 1200000000000,
+            "script_sig": "",
+            "txid": "eeaa5304e4b3ee8fb51e69765c5d42fa43fbf8930fe3376f8bf403a9a28102c5",
+            "vout": 0,
+            "witness": [
+              "304402205784c27abddf8e29d0cc337358973dd7b125f7aa33a030d7246a9caa5427586802201e9c3c472c3cbd3fc1a3d5480363917fd06c2c83200a5049b918ce7d08d1108d01",
+              "0359c3eab29ad7feb9fad33caae30e9e7a9bbbc1291748a851bb1e6d3bc81c0143"
+            ]
+          }
+        ],
+        "is_coinbase": false,
+        "locktime": 0,
+        "outputs": [
+          {
+            "amount": 80000000000,
+            "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
+          },
+          {
+            "amount": 1119999993700,
+            "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+          }
+        ],
+        "txid": "8257f8942b0b97220dd9a14f2473e6e82324266f4f16194c7a7561e643e93e77",
+        "version": 1
       }
-    ],
-    "outputs": [
-      {
-        "amount": 1200000000000,
-        "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
-      },
-      {
-        "amount": 248824999992720,
-        "script_pubkey": "0014266dd5c8b1fb3a0d18710146713af668b762dc6f"
-      }
-    ],
-    "locktime": 0,
-    "txid": "80817285aaf676697420b857d58afa8da19f3b1e785d12cc05bd30ab6b0d1b2f",
-    "fee": 7280,
-    "is_coinbase": false
+    ]
   }
   ```
   </details>
 
+#### 2. 🎨 Example of a Graffiti Activity Data Structure
+The example data of `block (height 12), block (height 17) metadata & indexer` below, shows a graffiti activity :
+> creator `tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07` upload the graffiti art 465 kb and pay 4 coins to the network and `validated in block height 12`
+
+>then someone `tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23` commented on the graffiti art with 1 coin (standard billable comment in network) and gave a tip (optional) of 2 coins for creator `validated in height 17`
+- ***Block (graffiti) Data Structure (.json):***
+  <details>
+    <summary>See Preview</summary>
+
+  ```json
+    {
+      "_meta": {
+        "bits": 522190847,
+        "chainwork": 26624,
+        "comment_count": 0,
+        "comments": [],
+        "difficulty": 2048,
+        "graffiti": [
+          {
+            "mime": "image/jpeg",
+            "receipt": "rcpt_f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b_1764113579_1764113579",
+            "sha256": "f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b",
+            "size": 476342,
+            "storer": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr",
+            "txid": "f1ad4333826fc1d6f116a4567b062b1e96ff8b5fd4ad01a5d739ed0a0e5c5923"
+          }
+        ],
+        "graffiti_post_count": 1,
+        "hash": "0001a3fe9d229e90a17bd4bdd6bc97f438a0b9531d979361a468edec6a1f415f",
+        "height": 12,
+        "merkle_root": "61899c9a0fec4a248a2c7251eae705bd16c70decd0e49cbad5ab32d2c0978826",
+        "nonce": 2817,
+        "prev_block_hash": "000c689337e021e72b39f4992e2b5aca8342972b5071437d9ba2c881a3ffbbe8",
+        "schema_version": 1,
+        "size_bytes": 2572,
+        "target": 5.653907911296163e73,
+        "timestamp": 1764113603,
+        "tx_count": 2,
+        "vbytes": 2572,
+        "version": 1,
+        "weight": 10288
+      },
+      "bits": 522190847,
+      "hash": "0001a3fe9d229e90a17bd4bdd6bc97f438a0b9531d979361a468edec6a1f415f",
+      "height": 12,
+      "merkle_root": "61899c9a0fec4a248a2c7251eae705bd16c70decd0e49cbad5ab32d2c0978826",
+      "nonce": 2817,
+      "prev_block_hash": "000c689337e021e72b39f4992e2b5aca8342972b5071437d9ba2c881a3ffbbe8",
+      "timestamp": 1764113603,
+      "transactions": [
+        {
+          "block_id": "f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b", // graffiti hash
+          "fee": 0,
+          "height": 12,
+          "inputs": [
+            {
+              "amount": 0,
+              "script_sig": "010c4066386432363535666465306432336463623537376430616165366135636562616435623836323837376139643361633535373035656639353832306361353062",
+              "txid": "0000000000000000000000000000000000000000000000000000000000000000",
+              "vout": 4294967295,
+              "witness": []
+            }
+          ],
+          "is_coinbase": true,
+          "locktime": 0,
+          "outputs": [
+            {
+              "amount": 25000000171,
+              "script_pubkey": "0014266dd5c8b1fb3a0d18710146713af668b762dc6f"
+            }
+          ],
+          "reward": 25000000171,
+          "to_address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss",
+          "txid": "c663f694004a17acd7cb26ced584f2577d9f8a1c2c6b30b29ad066922101c892",
+          "type": "Coinbase",
+          "version": 1
+        },
+        {
+          "fee": 171,
+          "inputs": [
+            {
+              "amount": 1119999993700,
+              "script_sig": "",
+              "txid": "8257f8942b0b97220dd9a14f2473e6e82324266f4f16194c7a7561e643e93e77",
+              "vout": 1,
+              "witness": [
+                "304402204ed7c8bea3e677bb9b6045688fc4280b7b0230c15cf429300d311028d33152fd022000820608d9908d4de3c85086707cd1cc6283f1d2fff2507e6de62ae18421157a01",
+                "0359c3eab29ad7feb9fad33caae30e9e7a9bbbc1291748a851bb1e6d3bc81c0143"
+              ]
+            }
+          ],
+          "is_coinbase": false,
+          "locktime": 0,
+          "outputs": [
+            {
+              "amount": 400000000,
+              "script_pubkey": "001411383653903eef75aa11a13a6cc145a5b623c74d"
+            },
+            {
+              "amount": 1119599993529,
+              "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+            },
+            {
+              "amount": 0,
+              "script_pubkey": "6a4d7201545341525f47524146317c7b22736861323536223a2266386432363535666465306432336463623537376430616165366135636562616435623836323837376139643361633535373035656639353832306361353062222c2273697a65223a3437363334322c226d696d65223a22696d6167652f6a706567222c2273746f726572223a22747361723171616b66366d6c65363036616d6e3778756d767a346b36797536637a306d787136706535717772222c2272656365697074223a22726370745f663864323635356664653064323364636235373764306161653661356365626164356238363238373761396433616335353730356566393538323063613530625f313736343131333537395f31373634313133353739222c226576656e74223a22504f5354222c2263726561746f72223a227473617231717a787a7a6635617a3567756b34336d66307a346439347575676174346a63656a77676c703037222c227473223a313736343131333537397d"
+            }
+          ],
+          "txid": "f1ad4333826fc1d6f116a4567b062b1e96ff8b5fd4ad01a5d739ed0a0e5c5923",
+          "version": 1
+        }
+      ],
+      "version": 1
+    },
+  ```
+  </details>
+
+- ***Block (comment) Data Structure (.json):***
+  <details>
+    <summary>See Preview</summary>
+
+  ```json
+    {
+      "_meta": {
+        "bits": 522190847,
+        "chainwork": 36864,
+        "comment_count": 1,
+        "comments": [
+          {
+            "amount": 100000000,
+            "art_id": "7e2e0bb6f17c56c62dac7a41f77fa5d84e355c55f53901704044b3a19cac782b",
+            "comment_len": 18,
+            "commenter": "tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23",
+            "creator": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07",
+            "tip": 200000000,
+            "txid": "1650f49f628d87a4b1bb8dbf72f3803ed77f72b694c67f7de37472a02401a974"
+          }
+        ],
+        "difficulty": 2048,
+        "graffiti": [],
+        "graffiti_post_count": 0,
+        "hash": "00078716d870b0cf5ebaec6e5374a7172705c5cf91d34409e39245862a8c1639",
+        "height": 17,
+        "merkle_root": "f783409a400881ad0c25aa90ccf2767c0ab42eff81b03d21a04ab8280ba8892f",
+        "nonce": 469,
+        "prev_block_hash": "00126d136dcd5867b17218d1023eaf29fbf9fa76ca8e4a20d4c37c63e53c0550",
+        "schema_version": 1,
+        "size_bytes": 2456,
+        "target": 5.653907911296163e73,
+        "timestamp": 1764113711,
+        "tx_count": 2,
+        "vbytes": 2456,
+        "version": 1,
+        "weight": 9824
+      },
+      "bits": 522190847,
+      "hash": "00078716d870b0cf5ebaec6e5374a7172705c5cf91d34409e39245862a8c1639",
+      "height": 17,
+      "merkle_root": "f783409a400881ad0c25aa90ccf2767c0ab42eff81b03d21a04ab8280ba8892f",
+      "nonce": 469,
+      "prev_block_hash": "00126d136dcd5867b17218d1023eaf29fbf9fa76ca8e4a20d4c37c63e53c0550",
+      "timestamp": 1764113711,
+      "transactions": [
+        {
+          "block_id": "Jamal_Khashoggi_2018_UOPI0hvfP",
+          "fee": 0,
+          "height": 17,
+          "inputs": [
+            {
+              "amount": 0,
+              "script_sig": "01111e4a616d616c5f4b686173686f6767695f323031385f554f50493068766650",
+              "txid": "0000000000000000000000000000000000000000000000000000000000000000",
+              "vout": 4294967295,
+              "witness": []
+            }
+          ],
+          "is_coinbase": true,
+          "locktime": 0,
+          "outputs": [
+            {
+              "amount": 25000000202,
+              "script_pubkey": "0014266dd5c8b1fb3a0d18710146713af668b762dc6f"
+            }
+          ],
+          "reward": 25000000202,
+          "to_address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss",
+          "txid": "1642bf745fce19422faecc971d0582289ac115afd08fa37e07bbfbf8c1c49c66",
+          "type": "Coinbase",
+          "version": 1
+        },
+        {
+          "fee": 202,
+          "inputs": [
+            {
+              "amount": 80000000000,
+              "script_sig": "",
+              "txid": "8257f8942b0b97220dd9a14f2473e6e82324266f4f16194c7a7561e643e93e77",
+              "vout": 0,
+              "witness": [
+                "3044022062011db7242425ffabb02059350ad0c3d8ab1cb4380253ed9ce2f5a899dfd0a102200be841197fe65fc5d3187135b99577e8a4494b85c8818435cf4e6a82bf9a440f01",
+                "020f4c2347cb74eee085bae4d7579305ca58beeb1a2797493e371efb78e7e7d558"
+              ]
+            }
+          ],
+          "is_coinbase": false,
+          "locktime": 0,
+          "outputs": [
+            {
+              "amount": 280000000,
+              "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+            },
+            {
+              "amount": 10000000,
+              "script_pubkey": "001411383653903eef75aa11a13a6cc145a5b623c74d"
+            },
+            {
+              "amount": 79709999798,
+              "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
+            },
+            {
+              "amount": 0,
+              "script_pubkey": "6a4d4201545341525f47524146317c7b226576656e74223a22434f4d4d454e54222c226172745f6964223a2237653265306262366631376335366336326461633761343166373766613564383465333535633535663533393031373034303434623361313963616337383262222c22636f6d6d656e74223a22363737323635363137343230363137323734323036323732366636663666326532653263222c22616d6f756e74223a3130303030303030302c22746970223a3230303030303030302c2263726561746f72223a227473617231717a787a7a6635617a3567756b34336d66307a346439347575676174346a63656a77676c703037222c22636f6d6d656e746572223a227473617231716e3736663564333278653934303568737465756a6a79797561687263796e683563786a773233222c227473223a313736343131333638367d"
+            }
+          ],
+          "txid": "1650f49f628d87a4b1bb8dbf72f3803ed77f72b694c67f7de37472a02401a974",
+          "version": 1
+        }
+      ],
+      "version": 1
+    },
+  ```
+  </details>
+
+- ***Graffiti (metadata) Structure (.json):***
+  <details>
+    <summary>See Preview</summary>
+
+  ```json
+  {
+    "comments": {
+      "7e2e0bb6f17c56c62dac7a41f77fa5d84e355c55f53901704044b3a19cac782b": [
+        {
+          "amount": 100000000,
+          "block_height": 17,
+          "comment": "6772656174206172742062726f6f6f2e2e2c", // in hexadecimal (great art brooo...,)
+          "commenter": "tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23",
+          "creator_paid": 280000000,
+          "storage_paid": 10000000,
+          "tip": 200000000,
+          "ts": 1764113686,
+          "txid": "1650f49f628d87a4b1bb8dbf72f3803ed77f72b694c67f7de37472a02401a974"
+        }
+      ]
+    },
+    "payouts": {},
+    "posts": {
+      "7e2e0bb6f17c56c62dac7a41f77fa5d84e355c55f53901704044b3a19cac782b": {
+        "amount_paid": 400000000,
+        "art_id": "7e2e0bb6f17c56c62dac7a41f77fa5d84e355c55f53901704044b3a19cac782b",
+        "block_height": 12,
+        "creator": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07",
+        "mime": "image/jpeg",
+        "pool_address": "tsar1qzyurv5us8mhht2s35yaxes295kmz836duderc0",
+        "receipt": "rcpt_f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b_1764113579_1764113579",
+        "sha256": "f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b",
+        "size": 476342,
+        "stats": {
+          "comments": 1,
+          "creator_paid": 280000000,
+          "pool_balance": 410000000,
+          "storage_paid": 10000000
+        },
+        "storer": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr", // storage node
+        "txid": "f1ad4333826fc1d6f116a4567b062b1e96ff8b5fd4ad01a5d739ed0a0e5c5923"
+      }
+    }
+  }
+  ```
+  </details>
+
+- ***Graffiti (indexer) in Storage Node (.json):***
+  <details>
+    <summary>See Preview</summary>
+
+  ```json
+  {
+    "files": {
+      "f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b_1764113579": {
+        "size_bytes": 476342,
+        "sha256": "f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b",
+        "filename": "test_graffiti.jpg",
+        "paid": false,
+        "expire_at_height": 0,
+        "state": "stored",
+        "path": "data/storage\\final\\f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b_1764113579.bin",
+        "received_bytes": 476342,
+        "chunk_size": 102400,
+        "created_ts": 1764113579,
+        "updated_ts": 1764113579,
+        "receipt_id": "rcpt_f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b_1764113579_1764113579",
+        "receipt": {
+          "id": "rcpt_f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b_1764113579_1764113579",
+          "graffiti_id": "f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b_1764113579",
+          "sha256": "f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b",
+          "size_bytes": 476342,
+          "filename": "test_graffiti.jpg",
+          "ts": 1764113579
+        },
+        "stored_ts": 1764113579
+      }
+    },
+    "bytes_used": 476342
+  }
+  ```
+  </details>
+
+- ***UTXO data when graffiti activity occurs (.json):***
+  <details>
+    <summary>See Preview</summary>
+
+  ```json
+  // This the flow when creator start uploading the graffiti
+  "f1ad4333826fc1d6f116a4567b062b1e96ff8b5fd4ad01a5d739ed0a0e5c5923:1": {
+    "address": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07", // creator
+    "block_height": 12,
+    "is_coinbase": false,
+    "script_type": "p2wpkh",
+    "tx_out": {
+      "amount": 1119599993529,
+      "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+    }
+  },
+  "c663f694004a17acd7cb26ced584f2577d9f8a1c2c6b30b29ad066922101c892:0": {
+    "address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss", // miner
+    "block_height": 12,
+    "is_coinbase": true,
+    "script_type": "p2wpkh",
+    "tx_out": {
+      "amount": 25000000171,
+      "script_pubkey": "0014266dd5c8b1fb3a0d18710146713af668b762dc6f"
+    }
+  },
+  "f1ad4333826fc1d6f116a4567b062b1e96ff8b5fd4ad01a5d739ed0a0e5c5923:0": {
+    "address": "tsar1qzyurv5us8mhht2s35yaxes295kmz836duderc0", // pool
+    "block_height": 12,
+    "is_coinbase": false,
+    "script_type": "p2wpkh",
+    "tx_out": {
+      "amount": 400000000,
+      "script_pubkey": "001411383653903eef75aa11a13a6cc145a5b623c74d"
+    }
+  },
+
+  ///////////////////////////////////////////////////////////////////
+
+  // This the flow when citizen start put a comment in graffiti
+  "1650f49f628d87a4b1bb8dbf72f3803ed77f72b694c67f7de37472a02401a974:2": {
+    "address": "tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23", // commenter
+    "block_height": 17,
+    "is_coinbase": false,
+    "script_type": "p2wpkh",
+    "tx_out": {
+      "amount": 79709999798,
+      "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
+    }
+  },
+  "1650f49f628d87a4b1bb8dbf72f3803ed77f72b694c67f7de37472a02401a974:0": {
+    "address": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07", // creator
+    "block_height": 17,
+    "is_coinbase": false,
+    "script_type": "p2wpkh",
+    "tx_out": {
+      "amount": 280000000,
+      "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+    }
+  },
+  "1642bf745fce19422faecc971d0582289ac115afd08fa37e07bbfbf8c1c49c66:0": {
+    "address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss", // miner
+    "block_height": 17,
+    "is_coinbase": true,
+    "script_type": "p2wpkh",
+    "tx_out": {
+      "amount": 25000000202,
+      "script_pubkey": "0014266dd5c8b1fb3a0d18710146713af668b762dc6f"
+    }
+  },
+  "1650f49f628d87a4b1bb8dbf72f3803ed77f72b694c67f7de37472a02401a974:1": {
+    "address": "tsar1qzyurv5us8mhht2s35yaxes295kmz836duderc0", // pool
+    "block_height": 17,
+    "is_coinbase": false,
+    "script_type": "p2wpkh",
+    "tx_out": {
+      "amount": 10000000,
+      "script_pubkey": "001411383653903eef75aa11a13a6cc145a5b623c74d"
+    }
+  },
+  ```
+  </details>
+
+- ***🖼️ Graffiti & Comment Activity in Explorer Tab Wallet:***
+  <details>
+    <summary>Graffiti</summary>
+    <img src="assets/screenshoot/graffiti.png">
+  </details>
+  <details>
+    <summary>Comment</summary>
+    <img src="assets/screenshoot/comment.png">
+  </details>
+> ⚠️ The graffiti data evidence above is still `under development`.
+There is no `'Proof of Retention'` mechanism & epoch `pool storage payment` mechanism yet.
+
+> ⚠️ even the `indexer` data in the storage node still has `'false'` payment status even though graffiti validation has been carried out on the chain
+  
+
+#### 3. 🌐 Example of a State Data Structure
 State - is a database for overall network information. for user requests in the wallet section `Network Info Tab`
 - ***State Data Structure (.json):***
   <details>
     <summary>See Preview</summary>
 
   ```json
-    {
-    "schema_version": 1,
-    "last_updated": "2025-11-19T00:50:21.990876+07:00",
-    "identity": {
-      "network_id": "gulag-net",
-      "address_prefix": "tsar",
-      "network_magic_hex": "54534152434841494e"
-    },
+  {
     "chain": {
-      "total_blocks": 11,
-      "tip_height": 10,
-      "genesis_hash": "0012de8832a4f54b9f316b6cac270c772e5bfcae2d3a3a2d942e968465aa34db",
+      "avg_block_time_sec_window": 100.0,
+      "est_network_hashrate_hps_window": 20,
+      "genesis_hash": "00172ceef3126b7e1e941335b950ab68b7a8d070df602cab8cd331bfad49c9ad",
       "genesis_message": "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)",
-      "tip_hash": "001a5ff14ab67010d7b92f2c7a2c032563dd04111c5f3d223e90bc552167e70a",
-      "tip_timestamp": 1763488199,
+      "max_bits": 530579455,
+      "median_time_past": 1764113693,
+      "target_block_time_sec": 37,
       "tip_bits": 522190847,
-      "tip_target_hex": "0x1fffff00000000000000000000000000000000000000000000000000000000",
+      "tip_chainwork": 45056,
       "tip_difficulty": 2048,
-      "avg_block_time_sec_window": 179.4,
-      "est_network_hashrate_hps_window": 11
+      "tip_hash": "0017f73ac7cf1a2dd29b927b9894f44608f4b8729b28fb9158825f9b0b529536",
+      "tip_height": 21,
+      "tip_target_hex": "0x1fffff00000000000000000000000000000000000000000000000000000000",
+      "tip_timestamp": 1764113938,
+      "total_block_size_bytes": 26432,
+      "total_blocks": 22
     },
-    "supply": {
-      "max_supply": 25250000000000000,
-      "emitted_subsidy": 250250000000000,
-      "circulating_estimate": 250199999992720,
-      "immature_coinbase": 50000007280,
-      "coinbase_maturity": 3,
-      "current_block_subsidy": 25000000000,
-      "current_epoch": 0,
-      "next_halving_height": 235000,
-      "blocks_to_halving": 234989
+    "files": {
+      "blockchain_json_sha256": "8170449c6ea6d08f707fee3c7aea3649d9fc33fc26761b8bd4502796f2f6560e"
     },
-    "transactions": {
-      "total_txs": 12,
-      "total_non_coinbase_txs": 1,
-      "total_fees_paid": 7280,
-      "mempool_txs": 0,
-      "mempool_vbytes_estimate": 0
+    "graffiti": {
+      "comments": 1,
+      "posts": 1
     },
-    "utxo": {
-      "utxo_set_size": 11
+    "identity": {
+      "address_prefix": "tsar",
+      "network_id": "gulag-net",
+      "network_magic_hex": "54534152434841494e",
+      "pow_algo": "randomx"
     },
+    "last_updated": "2025-11-26T06:39:17.480144+07:00",
     "miners_snapshot": {
       "top_miners": [
         [
-          "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07",
-          6
+          "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss",
+          19
         ],
         [
           "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr",
           3
-        ],
-        [
-          "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss",
-          2
         ]
       ]
     },
-    "files": {
-      "blockchain_json_sha256": "46f1c89ba64a15a40ea58c9a629f899f486a9d42a7b8462038a6611836299711"
+    "schema_version": 1,
+    "supply": {
+      "blocks_to_halving": 234978,
+      "circulating_estimate": 250475000000000,
+      "coinbase_maturity": 3,
+      "current_block_subsidy": 25000000000,
+      "current_epoch": 0,
+      "emitted_subsidy": 250525000000000,
+      "immature_coinbase": 50000000000,
+      "max_supply": 25250000000000000,
+      "next_halving_height": 235000,
+      "utxo_total_value": 250525000000000
     },
-    "total_supply": 250250000000000,
-    "total_blocks": 11
+    "total_blocks": 22,
+    "total_supply": 250525000000000,
+    "transactions": {
+      "mempool_bytes_estimate": 0,
+      "mempool_max_bytes": 1048576,
+      "mempool_txs": 0,
+      "mempool_vbytes_estimate": 0,
+      "total_fees_paid": 16033,
+      "total_non_coinbase_txs": 4,
+      "total_txs": 26
+    },
+    "utxo": {
+      "utxo_set_size": 26
+    }
   }
   ```
-
   </details>
+> ℹ️ All of the above data structure evidence uses the `.json` storage backend (debugging mode).
+The default storage model in this project is `.mdb` LMDB.
 
 ---
 
@@ -563,12 +1047,27 @@ State - is a database for overall network information. for user requests in the 
 Pull requests are welcome. Please start with small, well‑scoped changes (docs, tests, logging), then propose larger work via issues. Be respectful: the mission is **Voice Sovereignty**.
 > I've provided a logging tool. For easier debugging, you can check [`src/tsarchain/utils/tsar_logging.py`](src/tsarchain/utils/tsar_logging.py)
 
+- #### Development Support
+  > If you want to accelerate development of TsarChain,
+  infrastructure, testing, and documentation require fuel.
+  <details>
+    <summary>Supporting address</summary>
+
+    ```json
+    BTC : bc1qr2shk3fp80g7xjkg65q6cmvdgsdgmy953esfs6
+    ```
+  > Donations are voluntary, anonymous, and respected.
+  No promises. No expectations. No manipulation.
+  Funds go straight into development — not hype.
+  </details>
+
+
 ---
 
 ## 🗺️ Roadmap
 
 - Graffiti & Storage Node incentives
-- Exploring Graffiti art & Put Graffiti Comment in Kremlin Wallet
+- Exploring & View Graffiti art in Kremlin Wallet
 - Mobile app 'Graffiti'
 - The Voice Sovereignty
 
@@ -576,15 +1075,18 @@ Pull requests are welcome. Please start with small, well‑scoped changes (docs,
 
 ## 📄 Documentation
 
-**Whitepaper**
+##### Grungepaper
 - [`Grungepaper - The Voice Sovereignty (EN)`](docs/Grungepaper%20-%20The%20Voice%20Sovereignty%20(EN).pdf) | [*Download*](docs/Grungepaper%20-%20The%20Voice%20Sovereignty%20(EN).pdf?raw=true)
 - [`Grungepaper - The Voice Sovereignty (ID)`](docs/Grungepaper%20-%20The%20Voice%20Sovereignty%20(ID).pdf) | [*Download*](docs/Grungepaper%20-%20The%20Voice%20Sovereignty%20(ID).pdf?raw=true)
 
-**Graffiti Protocol**
+##### Graffiti Protocol
 - [`Graffiti Protocol - Draft v0.1 (EN)`](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(EN).pdf) | [*Download*](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(EN).pdf?raw=true)
 - [`Graffiti Protocol - Draft v0.1 (ID)`](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(ID).pdf) | [*Download*](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(ID).pdf?raw=true)
 
-**Trademarks & References**
+##### Rust
+- [`README.md`](tsarcore_native/README.md) [`INSTALL_NATIVE.md`](INSTALL_NATIVE.md)
+
+##### Trademarks & References
 - [`TRADEMARKS.md`](TRADEMARKS.md) [`REFERENCES.md`](REFERENCES.md)
 
 ---
