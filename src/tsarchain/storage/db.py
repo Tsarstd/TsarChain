@@ -12,6 +12,8 @@ from typing import Any, Optional, Callable
 
 from tsarcore_native import json_read_file as _native_json_read_file, json_write_file as _native_json_write_file
 
+from ..utils import config as CFG
+
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.storage.db')
 
@@ -88,24 +90,6 @@ class _FileLock:
         self.release()
 
 
-def _fsync_dir(dir_path: str) -> None:
-    try:
-        if hasattr(os, "O_RDONLY"):
-            fd = os.open(dir_path or ".", os.O_RDONLY)
-            try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-    except Exception:
-        pass
-
-
-def _sha256_bytes(b: bytes) -> str:
-    h = hashlib.sha256()
-    h.update(b)
-    return h.hexdigest()
-
-
 class AtomicJSONFile:
     def __init__(self, path: str,*, pretty: bool = True, keep_backups: int | None = None, checksum: bool = True, backup_interval_sec: int | None = None, dedup_backups: bool = True,):
         self.path = os.path.abspath(path)
@@ -131,7 +115,7 @@ class AtomicJSONFile:
     def _serialize(self, obj: Any) -> bytes:
         if self.pretty:
             return (json.dumps(obj, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
-        return json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        return json.dumps(obj, ensure_ascii=False, separators=CFG.CANONICAL_SEP).encode("utf-8")
 
     def _list_backups(self) -> list[str]:
         base = os.path.basename(self.path) + ".bak-"

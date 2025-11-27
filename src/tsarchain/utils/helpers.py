@@ -278,7 +278,7 @@ def serialize(obj: Union[dict, list, object]) -> bytes:
         elif isinstance(o, bytes):
             return o.hex()
         raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
-    return json.dumps(obj, default=convert, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+    return json.dumps(obj, default=convert, separators=CFG.CANONICAL_SEP, ensure_ascii=False).encode('utf-8')
 
 
 # -----------------------------

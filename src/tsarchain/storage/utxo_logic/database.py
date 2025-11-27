@@ -225,7 +225,7 @@ class UTXODatabaseMixin:
                         clear_db('utxo')
                     with batch('utxo') as b:
                         try:
-                            b.put(b'__meta__', json.dumps(meta, separators=(",", ":")).encode('utf-8'))
+                            b.put(b'__meta__', json.dumps(meta, separators=CFG.CANONICAL_SEP).encode('utf-8'))
                         except Exception:
                             log.debug("[UTXODB] failed to write meta entry")
                         for key in target_keys:
@@ -233,7 +233,7 @@ class UTXODatabaseMixin:
                             if entry is None:
                                 continue
                             payload = self._serialize_entry(entry)
-                            b.put(key.encode('utf-8'), json.dumps(payload, separators=(",", ":")).encode('utf-8'))
+                            b.put(key.encode('utf-8'), json.dumps(payload, separators=CFG.CANONICAL_SEP).encode('utf-8'))
                         if not rewrite and self._removed_keys:
                             for key in self._removed_keys:
                                 b.delete(key.encode('utf-8'))

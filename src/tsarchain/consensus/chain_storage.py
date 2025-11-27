@@ -432,7 +432,7 @@ class StorageMixin:
                         "height": int(start_height + offset),
                         "block": block.to_dict(),
                     }
-                    fh.write(json.dumps(entry, separators=(",", ":")) + "\n")
+                    fh.write(json.dumps(entry, separators=CFG.CANONICAL_SEP) + "\n")
         except Exception:
             log.exception("[_append_chain_journal] Failed to write journal entries")
 
@@ -548,13 +548,13 @@ class StorageMixin:
                     if start_height is not None and start_height <= tip_height:
                         with batch('chain') as b:
                             try:
-                                b.put(b'__meta__', json.dumps(chain_meta, separators=(",", ":")).encode('utf-8'))
+                                b.put(b'__meta__', json.dumps(chain_meta, separators=CFG.CANONICAL_SEP).encode('utf-8'))
                             except Exception:
                                 log.debug("[save_chain] failed writing chain meta")
                             for height in range(start_height, tip_height + 1):
                                 key = f"h:{height:012d}".encode('utf-8')
                                 blk_dict, cw_prev = self._serialize_block_for_store(self.chain[height], cw_prev)
-                                payload = json.dumps(blk_dict, separators=(",", ":")).encode('utf-8')
+                                payload = json.dumps(blk_dict, separators=CFG.CANONICAL_SEP).encode('utf-8')
                                 b.put(key, payload)
                         self._persisted_height = tip_height
                 except Exception:
@@ -776,7 +776,7 @@ class StorageMixin:
                 with batch('state') as b:
                     b.put(b'k:total_supply', str(int(self.total_supply)).encode('utf-8'))
                     b.put(b'k:total_blocks', str(int(self.total_blocks)).encode('utf-8'))
-                    b.put(b'k:snapshot', json.dumps(ordered, separators=(",", ":")).encode('utf-8'))
+                    b.put(b'k:snapshot', json.dumps(ordered, separators=CFG.CANONICAL_SEP).encode('utf-8'))
             except Exception:
                 log.exception("[save_state] LMDB save_state failed")
         else:

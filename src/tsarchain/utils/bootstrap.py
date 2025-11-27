@@ -221,7 +221,7 @@ def _verify_manifest_signature(manifest: dict | None) -> bool:
     try:
         payload_dict = dict(manifest)
         payload_dict.pop("signature", None)
-        payload = json.dumps(payload_dict, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        payload = json.dumps(payload_dict, sort_keys=True, separators=CFG.CANONICAL_SEP).encode("utf-8")
         vk = VerifyingKey.from_string(bytes.fromhex(pubkey_hex), curve=SECP256k1)
         vk.verify(bytes.fromhex(signature_hex), payload, hashfunc=hashlib.sha256)
         return True

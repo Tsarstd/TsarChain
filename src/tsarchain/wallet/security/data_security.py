@@ -101,7 +101,7 @@ def _secure_backend_read(namespace: str, key: str, path: Optional[Path]) -> Tupl
 
 
 def _secure_backend_write(namespace: str, key: str, path: Optional[Path], payload: Dict) -> None:
-    data = json.dumps(payload, separators=(",", ":"))
+    data = json.dumps(payload, separators=CFG.CANONICAL_SEP)
     if kv_enabled():
         kv_put(_SECURE_KV_DB, _secure_kv_key(namespace, key), data.encode("utf-8"))
         if path is not None and path.exists():
@@ -176,7 +176,7 @@ def _secure_store(namespace: str, key: str, path: Optional[Path], data: Dict, pa
     pwd = password_provider(prompt)
     if not pwd:
         raise ValueError("password required")
-    enc = encrypt_blob(json.dumps(data, separators=(",", ":")).encode("utf-8"), pwd)
+    enc = encrypt_blob(json.dumps(data, separators=CFG.CANONICAL_SEP).encode("utf-8"), pwd)
     payload = {"version": 1, "enc": enc}
     _secure_backend_write(namespace, key, path, payload)
     

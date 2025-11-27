@@ -67,7 +67,7 @@ def _encode_comment(comment_text: str) -> str:
     return data.hex()
 
 def _compact_json(obj: Dict[str, Any]) -> bytes:
-    return json.dumps(obj, separators=(',', ':'), ensure_ascii=True).encode('ascii')
+    return json.dumps(obj, separators=CFG.CANONICAL_SEP, ensure_ascii=True).encode('ascii')
 
 def _guard_payload_size(data: bytes) -> None:
     limit = CFG.MAX_GRAFFITI_OPRET

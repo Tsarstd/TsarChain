@@ -391,7 +391,7 @@ class SecureChannel:
         hs1 = self.native.client_build_hs1()
         send_message(self.sock, json.dumps(hs1).encode("utf-8"))
 
-        raw = recv_message(self.sock, timeout=5.0)
+        raw = recv_message(self.sock, timeout=float(CFG.HANDSHAKE_TIMEOUT))
         if not raw:
             raise ConnectionError("no handshake response from peer")
         hs2 = json.loads(raw.decode("utf-8"))
@@ -407,7 +407,7 @@ class SecureChannel:
             self.set_pinned(peer_node_id, peer_node_pub)
 
     def _hs_server_auth(self):
-        raw = recv_message(self.sock, timeout=5.0)
+        raw = recv_message(self.sock, timeout=float(CFG.HANDSHAKE_TIMEOUT))
         if not raw:
             raise ConnectionError("no handshake payload from peer")
         hs1 = json.loads(raw.decode("utf-8"))

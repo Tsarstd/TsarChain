@@ -47,7 +47,7 @@ class GraffitiRegistry:
         if self._kv:
             try:
                 with batch("graffiti") as b:
-                    b.put(b"data:data", json.dumps(self.data, separators=(",", ":")).encode("utf-8"))
+                    b.put(b"data:data", json.dumps(self.data, separators=CFG.CANONICAL_SEP).encode("utf-8"))
             except Exception:
                 pass
         else:

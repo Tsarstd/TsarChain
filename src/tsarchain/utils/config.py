@@ -167,7 +167,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "0000de095fcb5811d75bc7e89ec9a6c1c917a8134c8ee737d63d21eaee60a633"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "0007180494ad8589bc0ca3f7fde150a455d0997c50699ab45b14b39a664ea965"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -340,7 +340,7 @@ BROADCAST_FAIL_THRESHOLD = 2  # consecutive failures before backing off broadcas
 BROADCAST_FAIL_BACKOFF_S = 120  # seconds to wait when broadcast keeps failing
 
 # ---- ANTI-DOS LIMITS ----
-MAX_ADDRS_PER_REQ            = 64  # max addresses accepted per addr message
+MAX_ADDRS_PER_REQ            = 15  # max addresses accepted per addr message
 MAX_HISTORY_LIMIT            = 200  # cap on stored addr history per peer
 MAX_UTXO_ADDR_LEN            = 128  # sanity limit for UTXO address strings
 NONCE_PER_SENDER_MAX         = 4096  # per-sender nonce cache bound
@@ -355,7 +355,7 @@ FULL_SYNC_MAX_BLOCKS      = 15_000  # cap on blocks served per full-sync round
 FULL_SYNC_MIN_INTERVAL    = 60  # seconds a peer must wait between full-sync requests
 FULL_SYNC_BACKOFF_INITIAL = 120  # starting backoff between full sync retries
 FULL_SYNC_BACKOFF_MAX     = 600  # maximum backoff delay between full sync retries
-MAX_MSG                   = 35 * 1024 * 1024  # upper bound for inbound message payloads
+MAX_MSG                   = 3 * 1024 * 1024  # upper bound for inbound message payloads
 MEMPOOL_SYNC_MIN_INTERVAL = 20  # seconds between mempool sync batches
 MEMPOOL_INLINE_MAX_TX     = 600  # tx count allowed inline before streaming
 MEMPOOL_FLUSH_INTERVAL    = 5.0  # seconds between mempool flush to disk

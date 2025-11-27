@@ -196,7 +196,7 @@ class StorageServer:
 
     def _handle_conn(self, conn):
         try:
-            raw = recv_message(conn, timeout=5.0)
+            raw = recv_message(conn, timeout=float(CFG.HANDSHAKE_TIMEOUT))
             if not raw:
                 return
             outer = json.loads(raw.decode("utf-8"))

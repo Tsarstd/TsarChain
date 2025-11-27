@@ -94,7 +94,7 @@ def handle_connection(self, conn, addr):
             ip = peer[0]
             self._inbound_ips[ip] = self._inbound_ips.get(ip, 0) + 1
             self.peer_scores.setdefault(peer, CFG.PEER_SCORE_START // 2)
-            first = sniff_first_json_frame(conn, timeout=float(CFG.HANDSHAKE_TIMEOUT))
+            raw_first, first = sniff_first_json_frame(conn, timeout=float(CFG.HANDSHAKE_TIMEOUT))
 
         if isinstance(first, dict) and first.get("type") == "P2P_HS1":
             try:

@@ -188,7 +188,7 @@ class MempoolStorageMixin:
                     with batch("mempool") as b:
                         b.put(
                             b"__meta__",
-                            json.dumps(meta, separators=(",", ":")).encode("utf-8"),
+                            json.dumps(meta, separators=CFG.CANONICAL_SEP).encode("utf-8"),
                         )
                         for entry in snapshot:
                             txid = entry.get("txid")
@@ -196,7 +196,7 @@ class MempoolStorageMixin:
                                 continue
                             b.put(
                                 txid.encode("utf-8"),
-                                json.dumps(entry, separators=(",", ":")).encode("utf-8"),
+                                json.dumps(entry, separators=CFG.CANONICAL_SEP).encode("utf-8"),
                             )
                 except Exception:
                     log.error("[flush] LMDB write failed, falling back to file storage")
