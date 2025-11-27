@@ -160,15 +160,41 @@ impl LmdbBackend {
                 "map_size_max not configured for growth",
             ));
         }
-        let rc = unsafe { ffi::mdb_env_set_mapsize(self.env.env(), self.map_size_max as size_t) };
+
+        // Inspect current map size
+        let mut info: ffi::MDB_envinfo = unsafe { std::mem::zeroed() };
+        let rc_info = unsafe { ffi::mdb_env_info(self.env.env(), &mut info) };
+        if rc_info != 0 {
+            return Err(PyErr::new::<PyRuntimeError, _>(format!(
+                "lmdb env_info failed rc={rc_info}"
+            )));
+        }
+        let current = info.me_mapsize as usize;
+        let target = {
+            let doubled = current.saturating_mul(2);
+            let max_allowed = self.map_size_max;
+            let next = std::cmp::min(doubled.max(current + 1), max_allowed);
+            if next <= current {
+                max_allowed
+            } else {
+                next
+            }
+        };
+        if target <= current {
+            return Err(PyErr::new::<PyRuntimeError, _>(
+                "lmdb map already at or above configured max",
+            ));
+        }
+
+        let rc = unsafe { ffi::mdb_env_set_mapsize(self.env.env(), target as size_t) };
         if rc != 0 {
             return Err(PyErr::new::<PyRuntimeError, _>(format!(
                 "lmdb set_mapsize failed rc={rc}"
             )));
         }
         log_warning(&format!(
-            "[lmdb] map size increased to {} bytes (max)",
-            self.map_size_max
+            "[lmdb] map size increased from {} to {} bytes (max={})",
+            current, target, self.map_size_max
         ));
         Ok(())
     }
@@ -292,6 +318,92 @@ impl LmdbBackend {
         //    items.len()
         //));  Note: Database creation log removed for performance/cleanliness
         Ok(items)
+    }
+
+    fn iter_prefix_chunk(
+        &self,
+        db_name: &str,
+        prefix: &[u8],
+        start_after: Option<&[u8]>,
+        limit: usize,
+    ) -> PyResult<Vec<(Vec<u8>, Vec<u8>)>> {
+        let db = self.open_db(db_name)?;
+        let txn = self
+            .env
+            .begin_ro_txn()
+            .map_err(|e| map_err("lmdb begin_ro_txn", e))?;
+        let mut cursor = txn
+            .open_ro_cursor(db)
+            .map_err(|e| map_err("lmdb cursor", e))?;
+
+        let mut items = Vec::with_capacity(limit);
+        let start_after = start_after.map(|s| s.to_vec());
+        for (k, v) in cursor.iter() {
+            if !prefix.is_empty() && !k.starts_with(prefix) {
+                if k > prefix {
+                    break;
+                }
+                continue;
+            }
+            if let Some(ref after) = start_after {
+                if k <= &after[..] {
+                    continue;
+                }
+            }
+            items.push((k.to_vec(), v.to_vec()));
+            if items.len() >= limit {
+                break;
+            }
+        }
+        Ok(items)
+    }
+
+    fn put_batch(&self, db_name: &str, ops: Vec<(Vec<u8>, Option<Vec<u8>>)>) -> PyResult<()> {
+        if ops.is_empty() {
+            return Ok(());
+        }
+        let db = self.open_db(db_name)?;
+        let mut txn = self
+            .env
+            .begin_rw_txn()
+            .map_err(|e| map_err("lmdb begin_rw_txn", e))?;
+        let mut map_full = false;
+        for (k, maybe_v) in ops.iter() {
+            let res = match maybe_v {
+                Some(v) => txn.put(db, &k, &v, WriteFlags::empty()),
+                None => txn.del(db, &k, None),
+            };
+            match res {
+                Ok(_) => {}
+                Err(lmdb::Error::MapFull) => {
+                    map_full = true;
+                    break;
+                }
+                Err(e) => return Err(map_err("lmdb put_batch", e)),
+            }
+        }
+        if map_full {
+            drop(txn);
+            self.grow_to_max()?;
+            let db_retry = self.open_db(db_name)?;
+            let mut txn2 = self
+                .env
+                .begin_rw_txn()
+                .map_err(|e| map_err("lmdb begin_rw_txn", e))?;
+            for (k, maybe_v) in ops {
+                let res = match maybe_v {
+                    Some(v) => txn2.put(db_retry, &k, &v, WriteFlags::empty()),
+                    None => txn2.del(db_retry, &k, None),
+                };
+                res.map_err(|e| map_err("lmdb put_batch retry", e))?;
+            }
+            txn2
+                .commit()
+                .map_err(|e| map_err("lmdb commit batch", e))
+        } else {
+            txn.commit()
+                .map_err(|e| map_err("lmdb commit batch", e))
+        }
     }
 
     fn clear_db(&self, db_name: &str) -> PyResult<u64> {
@@ -689,6 +801,42 @@ impl NativeStorage {
         match &self.backend {
             Backend::Lmdb(b) => b.clear_db(db),
             Backend::Json(b) => b.clear_db(db),
+        }
+    }
+
+    #[pyo3(signature = (db, prefix, limit=1000, start_after=None))]
+    fn iter_prefix_chunk<'py>(
+        &self,
+        py: Python<'py>,
+        db: &str,
+        prefix: &[u8],
+        limit: usize,
+        start_after: Option<&[u8]>,
+    ) -> PyResult<Bound<'py, PyList>> {
+        let items: Vec<(Vec<u8>, Vec<u8>)> = match &self.backend {
+            Backend::Lmdb(b) => b.iter_prefix_chunk(db, prefix, start_after, limit)?,
+            Backend::Json(b) => b.iter_prefix(db, prefix)?,
+        };
+        let out = PyList::empty_bound(py);
+        for (k, v) in items {
+            out.append((PyBytes::new_bound(py, &k), PyBytes::new_bound(py, &v)))?;
+        }
+        Ok(out)
+    }
+
+    fn put_batch(&self, db: &str, ops: Vec<(Vec<u8>, Option<Vec<u8>>)>) -> PyResult<()> {
+        match &self.backend {
+            Backend::Lmdb(b) => b.put_batch(db, ops),
+            Backend::Json(b) => {
+                for (k, maybe_v) in ops {
+                    if let Some(v) = maybe_v {
+                        b.put_bytes(db, &k, &v)?;
+                    } else {
+                        b.delete(db, &k)?;
+                    }
+                }
+                Ok(())
+            }
         }
     }
 

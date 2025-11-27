@@ -101,6 +101,7 @@ KV_BACKEND         = "lmdb"  # active key-value backend implementation (lmdb & j
 LMDB_DATA_FILE     = "data/tsarchain_db"  # main LMDB data file path
 LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
+KV_ITER_CHUNK      = 512 # number of entries per chunk when iterating prefix scans (LMDB)
 
 # ---- SNAPSHOT SIGNING ----
 SNAPSHOT_REQUIRE_SIGNATURE = False  # demand signed snapshot manifests when True
@@ -167,7 +168,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "0007180494ad8589bc0ca3f7fde150a455d0997c50699ab45b14b39a664ea965"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "000c6e5a930559fcd2a627957ab065e5401e69632cc92cbf64de64250c3695db"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 

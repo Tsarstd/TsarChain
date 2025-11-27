@@ -5,6 +5,7 @@
 
 from contextlib import contextmanager
 from typing import Iterator, Tuple, Optional
+import threading
 
 from tsarcore_native import open_storage as _native_open_storage
 from ..utils import config as CFG
@@ -18,6 +19,7 @@ def kv_enabled() -> bool:
 
 
 _native_store = None
+_init_lock = threading.RLock()
 
 def _init_native_store():
     global _native_store
@@ -25,19 +27,22 @@ def _init_native_store():
         return _native_store
     if not kv_enabled():
         return None
-    try:
-        _native_store = _native_open_storage(
-            "lmdb",
-            CFG.LMDB_DATA_FILE,
-            map_size_init=int(CFG.LMDB_MAP_SIZE_INIT),
-            map_size_max=int(CFG.LMDB_MAP_SIZE_MAX),
-            pretty_json=False,
-        )
-        log.debug("[kv] using native storage backend (lmdb)")
-    except Exception as e:
-        log.error("[kv] native storage init failed (native required): %s", e)
-        _native_store = None
-        raise
+    with _init_lock:
+        if _native_store is not None:
+            return _native_store
+        try:
+            _native_store = _native_open_storage(
+                "lmdb",
+                CFG.LMDB_DATA_FILE,
+                map_size_init=int(CFG.LMDB_MAP_SIZE_INIT),
+                map_size_max=int(CFG.LMDB_MAP_SIZE_MAX),
+                pretty_json=False,
+            )
+            log.debug("[kv] using native storage backend (lmdb)")
+        except Exception as e:
+            log.error("[kv] native storage init failed (native required): %s", e)
+            _native_store = None
+            raise
     return _native_store
 
 def _ensure_env():
@@ -78,11 +83,18 @@ def iter_prefix(name: str, prefix: bytes) -> Iterator[Tuple[bytes, bytes]]:
     store = _ensure_env()
     if store is None:
         return iter(())
-    items = store.iter_prefix(name, prefix) or []
-    def _iter_native():
-        for k, v in items:
-            yield bytes(k), bytes(v)
-    return _iter_native()
+    def _generator():
+        start_after: Optional[bytes] = None
+        while True:
+            chunk = store.iter_prefix_chunk(name, prefix, limit=CFG.KV_ITER_CHUNK, start_after=start_after) or []
+            if not chunk:
+                break
+            for k, v in chunk:
+                yield bytes(k), bytes(v)
+                start_after = bytes(k)
+            if len(chunk) < CFG.KV_ITER_CHUNK:
+                break
+    return _generator()
 
 
 class WriteBatch:
@@ -118,17 +130,21 @@ def batch(name: str):
 
     class _NativeBatch:
         def __init__(self, native_store, db_name):
-            self.store = native_store; self.db_name = db_name
+            self.store = native_store; self.db_name = db_name; self._ops = []
         def put(self, key: bytes, val: bytes) -> None:
-            self.store.put_bytes(self.db_name, key, val)
+            self._ops.append((bytes(key), bytes(val)))
         def delete(self, key: bytes) -> None:
-            self.store.delete(self.db_name, key)
+            self._ops.append((bytes(key), None))
 
     nb = _NativeBatch(store, name)
     try:
         yield nb
     finally:
-        pass
+        try:
+            if nb._ops:
+                store.put_batch(name, nb._ops)
+        except Exception:
+            log.exception("[kv] batch commit failed")
 
 
 # Convenience single-put with auto-grow
