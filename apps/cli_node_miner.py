@@ -355,7 +355,12 @@ class SimpleMiner:
                         except Exception:
                             pass
 
-                    clog(f"Block mined ( height :{getattr(block, 'height')}): {block.hash().hex()[:18]}…  broadcasting...")
+                    h = getattr(block, "height", "?")
+                    txs = getattr(block, "transactions", None) or []
+                    confirmed = max(len(txs) - 1, 0)
+                    clog(
+                        f"Block mined at height {h}: {block.hash().hex()[:18]}... ( conf {confirmed} tx{'' if confirmed == 1 else 's'} from mempool)"
+                    )
                     try:
                         sent = self.network.publish_block(block, exclude=None, force=True)
                         if sent <= 0:

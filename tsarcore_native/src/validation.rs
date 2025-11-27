@@ -10,8 +10,6 @@ use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 
-use crate::bip143_native;
-
 fn log_py(level: &str, msg: &str) {
     Python::with_gil(|py| {
         if let Ok(logging) = py.import_bound("logging") {
@@ -51,7 +49,6 @@ struct InputParts {
     txid_hex: String,
     txid_le: [u8; 32],
     vout: u32,
-    script_sig: Vec<u8>,
     sequence: u32,
     witness: Vec<Vec<u8>>,
 }
@@ -95,7 +92,6 @@ fn detect_script_kind(script: &[u8]) -> Option<ScriptKind> {
 
 fn build_p2wpkh_script_code(hash20: &[u8; 20]) -> Vec<u8> {
     let mut code = Vec::with_capacity(25);
-    code.push(0x19);
     code.push(0x76);
     code.push(0xa9);
     code.push(0x14);
@@ -118,45 +114,6 @@ fn encode_varint(v: u64, out: &mut Vec<u8>) {
         out.push(0xff);
         out.extend_from_slice(&v.to_le_bytes());
     }
-}
-
-fn serialize_tx_parts(tx: &TxParts, include_witness: bool) -> Vec<u8> {
-    let mut buf = Vec::new();
-    buf.extend_from_slice(&tx.version.to_le_bytes());
-
-    let has_witness = include_witness && tx.inputs.iter().any(|inp| !inp.witness.is_empty());
-    if has_witness {
-        buf.extend_from_slice(&[0x00, 0x01]);
-    }
-
-    encode_varint(tx.inputs.len() as u64, &mut buf);
-    for inp in &tx.inputs {
-        buf.extend_from_slice(&inp.txid_le);
-        buf.extend_from_slice(&inp.vout.to_le_bytes());
-        encode_varint(inp.script_sig.len() as u64, &mut buf);
-        buf.extend_from_slice(&inp.script_sig);
-        buf.extend_from_slice(&inp.sequence.to_le_bytes());
-    }
-
-    encode_varint(tx.outputs.len() as u64, &mut buf);
-    for outp in &tx.outputs {
-        buf.extend_from_slice(&outp.amount.to_le_bytes());
-        encode_varint(outp.script_pubkey.len() as u64, &mut buf);
-        buf.extend_from_slice(&outp.script_pubkey);
-    }
-
-    if has_witness {
-        for inp in &tx.inputs {
-            encode_varint(inp.witness.len() as u64, &mut buf);
-            for item in &inp.witness {
-                encode_varint(item.len() as u64, &mut buf);
-                buf.extend_from_slice(item);
-            }
-        }
-    }
-
-    buf.extend_from_slice(&tx.locktime.to_le_bytes());
-    buf
 }
 
 fn parse_hex_field(value: &Bound<'_, PyAny>, field: &str) -> Result<Vec<u8>, String> {
@@ -185,6 +142,79 @@ fn parse_witness_field(value: Option<Bound<'_, PyAny>>) -> Result<Vec<Vec<u8>>, 
         out.push(bytes);
     }
     Ok(out)
+}
+
+fn sha256d(data: &[u8]) -> [u8; 32] {
+    let first = Sha256::digest(data);
+    let second = Sha256::digest(&first);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&second);
+    out
+}
+
+#[derive(Clone)]
+struct SighashCache {
+    hash_prevouts: [u8; 32],
+    hash_sequence: [u8; 32],
+    hash_outputs: [u8; 32],
+}
+
+fn build_sighash_cache(tx: &TxParts) -> SighashCache {
+    let mut prevouts_cat = Vec::with_capacity(tx.inputs.len() * 36);
+    let mut seq_cat = Vec::with_capacity(tx.inputs.len() * 4);
+    for inp in &tx.inputs {
+        prevouts_cat.extend_from_slice(&inp.txid_le);
+        prevouts_cat.extend_from_slice(&inp.vout.to_le_bytes());
+        seq_cat.extend_from_slice(&inp.sequence.to_le_bytes());
+    }
+    let hash_prevouts = sha256d(&prevouts_cat);
+    let hash_sequence = sha256d(&seq_cat);
+
+    let mut outs_cat = Vec::new();
+    for outp in &tx.outputs {
+        outs_cat.extend_from_slice(&outp.amount.to_le_bytes());
+        encode_varint(outp.script_pubkey.len() as u64, &mut outs_cat);
+        outs_cat.extend_from_slice(&outp.script_pubkey);
+    }
+    let hash_outputs = sha256d(&outs_cat);
+
+    SighashCache {
+        hash_prevouts,
+        hash_sequence,
+        hash_outputs,
+    }
+}
+
+fn bip143_sighash_from_parts(
+    tx: &TxParts,
+    cache: &SighashCache,
+    input_index: usize,
+    script_code: &[u8],
+    value_sat: u64,
+    sighash_type: u32,
+) -> Result<[u8; 32], String> {
+    if input_index >= tx.inputs.len() {
+        return Err("input_index_out_of_range".to_string());
+    }
+    let mut pre = Vec::new();
+    pre.extend_from_slice(&tx.version.to_le_bytes());
+    pre.extend_from_slice(&cache.hash_prevouts);
+    pre.extend_from_slice(&cache.hash_sequence);
+
+    let inp = &tx.inputs[input_index];
+    pre.extend_from_slice(&inp.txid_le);
+    pre.extend_from_slice(&inp.vout.to_le_bytes());
+
+    encode_varint(script_code.len() as u64, &mut pre);
+    pre.extend_from_slice(script_code);
+
+    pre.extend_from_slice(&value_sat.to_le_bytes());
+    pre.extend_from_slice(&inp.sequence.to_le_bytes());
+    pre.extend_from_slice(&cache.hash_outputs);
+    pre.extend_from_slice(&tx.locktime.to_le_bytes());
+    pre.extend_from_slice(&sighash_type.to_le_bytes());
+
+    Ok(sha256d(&pre))
 }
 
 fn get_required<'py>(
@@ -245,11 +275,6 @@ impl TxParts {
             let vout: u32 = get_required(&inp, "vout", "tx_input_missing_vout")?
                 .extract()
                 .map_err(|_| "tx_input_invalid_vout".to_string())?;
-            let script_sig = if let Some(sig_any) = get_optional(inp, "script_sig")? {
-                parse_hex_field(&sig_any, "script_sig")?
-            } else {
-                Vec::new()
-            };
             let sequence: u32 = match get_optional(inp, "sequence")? {
                 Some(v) => v
                     .extract()
@@ -261,7 +286,6 @@ impl TxParts {
                 txid_hex: txid_hex.to_lowercase(),
                 txid_le,
                 vout,
-                script_sig,
                 sequence,
                 witness,
             });
@@ -447,10 +471,10 @@ fn validate_transaction_parts(
     opts: &ValidationOptions,
 ) -> Result<(u64, u32), String> {
     let secp = Secp256k1::verification_only();
-    let tx_bytes = serialize_tx_parts(tx, true);
     let mut seen_prevouts = HashSet::new();
     let mut input_sum: u128 = 0;
     let mut sigops_tx: u32 = 0;
+    let cache = build_sighash_cache(tx);
 
     for (idx, inp) in tx.inputs.iter().enumerate() {
         let key = format!("{}:{}", inp.txid_hex, inp.vout);
@@ -484,7 +508,7 @@ fn validate_transaction_parts(
                     return Err("invalid_signature".to_string());
                 }
                 let sighash_type = sig_full[sig_full.len() - 1];
-                if (sighash_type & 0x1f) != 0x01 {
+                if (sighash_type & 0x1f) != 0x01 || (sighash_type & 0x80) != 0 {
                     return Err("unsupported_sighash".to_string());
                 }
                 let sig_der = &sig_full[..sig_full.len() - 1];
@@ -493,9 +517,10 @@ fn validate_transaction_parts(
                     return Err("pubkey_hash_mismatch".to_string());
                 }
                 let script_code = build_p2wpkh_script_code(&hash20);
-                let digest = bip143_native::compute_sighash(
-                    &tx_bytes,
-                    idx as u32,
+                let digest = bip143_sighash_from_parts(
+                    tx,
+                    &cache,
+                    idx,
                     &script_code,
                     entry.amount,
                     sighash_type as u32,

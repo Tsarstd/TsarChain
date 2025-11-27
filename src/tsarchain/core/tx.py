@@ -72,7 +72,8 @@ class Tx:
             raise ValueError("Not a P2WPKH")
 
         pubkey_hash = script_pubkey_bytes[2:22]
-        script_code = b"\x19\x76\xa9\x14" + pubkey_hash + b"\x88\xac"
+        # scriptCode tanpa prefix varint; panjang akan ditambahkan di fungsi sighash
+        script_code = b"\x76\xa9\x14" + pubkey_hash + b"\x88\xac"
 
         z = bip143_sig_hash(self, index, script_code, int(amount), SIGHASH_ALL)
 

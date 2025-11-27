@@ -652,9 +652,9 @@ mod bip143_native {
         sighash_type: u32,
     ) -> Result<[u8; 32], PyErr> {
         // TESTNET fokus: SIGHASH_ALL saja (yang umum P2WPKH)
-        if (sighash_type & 0x1f) != SIGHASH_ALL {
+        if (sighash_type & 0x1f) != SIGHASH_ALL || (sighash_type & 0x80) != 0 {
             return Err(PyErr::new::<exceptions::PyNotImplementedError, _>(
-                "Only SIGHASH_ALL supported natively; use Python fallback for others",
+                "Only SIGHASH_ALL (no ANYONECANPAY) supported natively; use Python fallback for others",
             ));
         }
 

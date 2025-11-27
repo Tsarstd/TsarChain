@@ -159,7 +159,8 @@ def p2wpkh_script_code_from_spk(spk_bytes: bytes) -> bytes:
         raise ValueError("Not a P2WPKH script")
 
     pkhash = spk_bytes[2:22]
-    return b"\x19\x76\xa9\x14" + pkhash + b"\x88\xac"
+    # scriptCode tanpa varint prefix; varint ditambahkan di fungsi sighash
+    return b"\x76\xa9\x14" + pkhash + b"\x88\xac"
 
 
 def legacy_sighash(tx: "Tx", vin_index: int, script_code: bytes, sighash_type: int) -> bytes:

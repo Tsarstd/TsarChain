@@ -362,7 +362,11 @@ class LightMiner:
                             pass
 
                     h = getattr(block, "height", "?")
-                    clog(f"Block mined at height {h} : {block.hash().hex()[:18]}…  broadcasting...")
+                    txs = getattr(block, "transactions", None) or []
+                    confirmed = max(len(txs) - 1, 0)
+                    clog(
+                        f"Block mined at height {h}: {block.hash().hex()[:18]}... ( conf {confirmed} tx{'' if confirmed == 1 else 's'} from mempool)"
+                    )
                     try:
                         sent = self.network.publish_block(block, exclude=None, force=True) if self.network else 0
                         if sent <= 0:

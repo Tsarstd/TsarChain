@@ -142,17 +142,6 @@ class ValidationMixin:
             self._last_block_validation_error = "duplicate_coinbase"
             return False
 
-        total_fee = sum(int(getattr(t, "fee", 0)) for t in txs[1:])
-        minted_before = self._cumulative_supply_until(block.height)
-        base = self._scheduled_reward(block.height)
-        reward = min(max(0, base), max(0, CFG.MAX_SUPPLY - minted_before))
-        expected_cb = reward + total_fee
-
-        actual_cb = sum(int(o.amount) for o in getattr(cb, "outputs", []))
-        if actual_cb != expected_cb:
-            self._last_block_validation_error = f"coinbase_amount_mismatch expected={expected_cb} actual={actual_cb}"
-            return False
-        
         spend_height = int(getattr(block, "height", 0))
 
         # Guardrail: ensure each tx serializes and is not absurdly large
@@ -365,12 +354,31 @@ class ValidationMixin:
             self._last_block_validation_error = reason or "native_validation_failed"
             return False
 
+        fees_list = []
         if isinstance(fees, (list, tuple)):
+            if len(fees) != max(len(txs) - 1, 0):
+                self._last_block_validation_error = "fee_mismatch"
+                return False
             for tx_obj, fee_val in zip(txs[1:], fees):
+                fee_int = int(fee_val)
+                fees_list.append(fee_int)
                 try:
-                    tx_obj.fee = int(fee_val)
+                    tx_obj.fee = fee_int
                 except Exception:
-                    setattr(tx_obj, "fee", int(fee_val))
+                    setattr(tx_obj, "fee", fee_int)
+        else:
+            fees_list = [int(getattr(t, "fee", 0)) for t in txs[1:]]
+
+        minted_before = self._cumulative_supply_until(block.height)
+        base = self._scheduled_reward(block.height)
+        reward = min(max(0, base), max(0, CFG.MAX_SUPPLY - minted_before))
+        total_fee = sum(fees_list)
+        expected_cb = reward + total_fee
+
+        actual_cb = sum(int(o.amount) for o in getattr(cb, "outputs", []))
+        if actual_cb != expected_cb:
+            self._last_block_validation_error = f"coinbase_amount_mismatch expected={expected_cb} actual={actual_cb}"
+            return False
 
         self._last_block_validation_error = None
         return True
