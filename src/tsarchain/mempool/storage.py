@@ -114,7 +114,7 @@ class MempoolStorageMixin:
             tx_dict["txid"] = tx_obj.txid.hex()
         tx_size = self._estimate_tx_size(tx_obj)
         meta = {
-            "schema_version": int(getattr(CFG, "DATA_SCHEMA_VERSION", 1)),
+            "schema_version": int(CFG.DATA_SCHEMA_VERSION),
             "received_at": getattr(tx_obj, "_received_at", None),
             "vbytes": int(tx_size),
             "weight": int(tx_size * 4),
@@ -125,7 +125,7 @@ class MempoolStorageMixin:
 
     def _build_meta_snapshot(self) -> dict:
         return {
-            "schema_version": int(getattr(CFG, "DATA_SCHEMA_VERSION", 1)),
+            "schema_version": int(CFG.DATA_SCHEMA_VERSION),
             "generated_at": int(time.time()),
             "count": len(self._pool),
             "virtual_size": int(self.current_size),

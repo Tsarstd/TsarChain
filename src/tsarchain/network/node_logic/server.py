@@ -30,6 +30,11 @@ def start_server(self):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         self._server_sock = s
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
+        except Exception:
+            pass
         s.bind(("0.0.0.0", self.port))
         s.listen(8)
         s.settimeout(1.0)
@@ -78,12 +83,18 @@ def start_server(self):
 def handle_connection(self, conn, addr):
     peer = (addr[0], int(addr[1]) if len(addr) > 1 else 0)
     try:
+        try:
+            conn.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
+            conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
+            conn.settimeout(float(CFG.HANDSHAKE_TIMEOUT))
+        except Exception:
+            pass
         with self.lock:
             self.inbound_peers.add(peer)
             ip = peer[0]
             self._inbound_ips[ip] = self._inbound_ips.get(ip, 0) + 1
             self.peer_scores.setdefault(peer, CFG.PEER_SCORE_START // 2)
-        raw, first = sniff_first_json_frame(conn, timeout=2.0)
+            first = sniff_first_json_frame(conn, timeout=float(CFG.HANDSHAKE_TIMEOUT))
 
         if isinstance(first, dict) and first.get("type") == "P2P_HS1":
             try:
@@ -104,6 +115,10 @@ def handle_connection(self, conn, addr):
                     now = time.time()
                     if now - getattr(self, "_last_p2p_log", 0.0) > 5.0:
                         self._last_p2p_log = now
+                except Exception:
+                    pass
+                try:
+                    conn.settimeout(None)
                 except Exception:
                     pass
             except Exception:

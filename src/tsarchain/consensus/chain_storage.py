@@ -134,10 +134,10 @@ class StorageMixin:
             "generated_at": int(time.time()),
             "tip_height": int(tip_height),
             "tip_hash": tip_hash,
-            "network_id": getattr(CFG, "DEFAULT_NET_ID", None),
-            "pow_algo": getattr(CFG, "POW_ALGO", None),
-            "max_bits": int(getattr(CFG, "MAX_BITS", 0)),
-            "target_block_time_sec": int(getattr(CFG, "TARGET_BLOCK_TIME", 0)),
+            "network_id": CFG.DEFAULT_NET_ID,
+            "pow_algo": CFG.POW_ALGO,
+            "max_bits": int(CFG.MAX_BITS),
+            "target_block_time_sec": int(CFG.TARGET_BLOCK_TIME),
             "blocks": int(tip_height + 1 if tip_height >= 0 else 0),
         }
 

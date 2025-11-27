@@ -57,7 +57,12 @@ def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
 
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            timeout = 3.5 if norm in self.persistent_peers else 2.0
+            try:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
+            except Exception:
+                pass
+            timeout = float(CFG.HANDSHAKE_TIMEOUT)
             s.settimeout(timeout)
             s.connect(norm)
             if CFG.P2P_ENC_REQUIRED:
@@ -71,12 +76,20 @@ def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
                     set_pinned=self._set_pinned,
                 )
                 chan.handshake()
+                try:
+                    s.settimeout(1.0)
+                except Exception:
+                    pass
                 chan.send(json.dumps(env).encode("utf-8"))
                 try:
                     chan.recv(1)
                 except Exception:
                     pass
             else:
+                try:
+                    s.settimeout(1.0)
+                except Exception:
+                    pass
                 send_message(s, json.dumps(env).encode("utf-8"))
                 try:
                     recv_message(s, timeout=1)

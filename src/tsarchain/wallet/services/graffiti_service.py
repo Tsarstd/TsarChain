@@ -43,7 +43,7 @@ def _pick_endpoint(meta: Dict[str, Any]) -> Optional[Tuple[str, int]]:
 
 
 def _send_storage_request(host: str, port: int, payload: Dict[str, Any], timeout: float | None = None) -> Dict[str, Any]:
-    timeout = timeout or getattr(CFG, "RPC_TIMEOUT", 5.0)
+    timeout = timeout or CFG.RPC_TIMEOUT
     resp: Dict[str, Any] = {}
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

@@ -141,7 +141,6 @@ CHAIN_JOURNAL_MAX_BYTES = 8 * 1024 * 1024
 STATE_HEIGHT_CACHE_TTL  = 2.0  # height for utxo validation & cache
 
 # ---- WALLET FILES ----
-WALLETS_DIR   = "data_user"  # root folder for local wallet assets
 USER_KEY_PATH = "data_user/user_key.json"  # default user keypair location
 REGISTRY_PATH = "data_user/wallet_registry.json"  # registry of created wallets
 CHAT_STATE    = "data_user/chat_config.json"  # cached chat preferences and pointers
@@ -330,7 +329,7 @@ else:
 BOOTSTRAP_NODE           = BOOTSTRAP_NODES[0]  # preferred bootstrap peer entry
 
 # ---- SOCKET DEFAULTS ----
-BUFFER_SIZE              = 65536  # socket buffer size for P2P reads
+BUFFER_SIZE              = 65536  # socket buffer size for P2P reads (~64 KB)
 HANDSHAKE_TIMEOUT        = 10  # seconds allowed to finish handshake
 DISCOVERY_INTERVAL       = 5  # seconds between peer discovery scans
 SYNC_INTERVAL            = 20  # seconds between standard sync pulls
@@ -357,7 +356,7 @@ FULL_SYNC_MIN_INTERVAL    = 60  # seconds a peer must wait between full-sync req
 FULL_SYNC_BACKOFF_INITIAL = 120  # starting backoff between full sync retries
 FULL_SYNC_BACKOFF_MAX     = 600  # maximum backoff delay between full sync retries
 MAX_MSG                   = 35 * 1024 * 1024  # upper bound for inbound message payloads
-MEMPOOL_SYNC_MIN_INTERVAL = 60  # seconds between mempool sync batches
+MEMPOOL_SYNC_MIN_INTERVAL = 20  # seconds between mempool sync batches
 MEMPOOL_INLINE_MAX_TX     = 600  # tx count allowed inline before streaming
 MEMPOOL_FLUSH_INTERVAL    = 5.0  # seconds between mempool flush to disk
 

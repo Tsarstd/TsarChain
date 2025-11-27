@@ -352,7 +352,7 @@ def _validate_snapshot_chain() -> tuple[bool, Optional[str]]:
         return False, f"genesis block not include in snapshot (first height {height})"
 
     prev = (entry.get("prev_block_hash") or "").strip().lower()
-    zero_hex = getattr(CFG.ZERO_HASH, "hex", lambda: bytes(CFG.ZERO_HASH).hex())()
+    zero_hex = CFG.ZERO_HASH.hex()
     if prev != zero_hex:
         return False, "prev_block_hash genesis missmatch"
 

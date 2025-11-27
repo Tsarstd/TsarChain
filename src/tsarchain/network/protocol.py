@@ -171,7 +171,7 @@ def recv_message(sock, timeout: float | None = None):
 def recv_exact(sock: socket.socket, n: int) -> bytes:
     buf = b""
     while len(buf) < n:
-        part = sock.recv(n - len(buf))
+        part = sock.recv(min(n - len(buf), int(CFG.BUFFER_SIZE)))
         if not part:
             raise ConnectionError("Connection closed")
         buf += part

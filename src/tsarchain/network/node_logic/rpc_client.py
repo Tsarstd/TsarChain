@@ -36,7 +36,12 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
     timeout = float(timeout or CFG.SYNC_TIMEOUT)
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(timeout)
+            try:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
+            except Exception:
+                pass
+            s.settimeout(float(CFG.HANDSHAKE_TIMEOUT))
             s.connect(norm)
             if CFG.P2P_ENC_REQUIRED:
                 chan = SecureChannel(
@@ -49,9 +54,17 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
                     set_pinned=self._set_pinned,
                 )
                 chan.handshake()
+                try:
+                    s.settimeout(timeout)
+                except Exception:
+                    pass
                 chan.send(json.dumps(env).encode("utf-8"))
                 resp = chan.recv(timeout)
             else:
+                try:
+                    s.settimeout(timeout)
+                except Exception:
+                    pass
                 send_message(s, json.dumps(env).encode("utf-8"))
                 resp = recv_message(s, timeout=timeout)
     except (socket.timeout, ConnectionRefusedError, OSError):

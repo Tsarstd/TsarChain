@@ -74,28 +74,6 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             return addr[0]
         return "0.0.0.0"
 
-    def _storage_request_allowed() -> tuple[bool, Optional[dict]]:
-        if getattr(self, "storage_service", None) is None:
-            return False, {"type": "STOR_ACK", "status": "rejected", "reason": "storage_disabled"}
-
-        token_expected = getattr(CFG, "STORAGE_RPC_TOKEN", None)
-        supplied_token = str(message.get("storage_token") or message.get("token") or "").strip()
-        if token_expected:
-            try:
-                if not supplied_token or not secrets.compare_digest(supplied_token, str(token_expected)):
-                    log.warning("[process_message] storage RPC token mismatch from %s", addr)
-                    return False, {"type": "STOR_ACK", "status": "rejected", "reason": "forbidden"}
-            except Exception:
-                return False, {"type": "STOR_ACK", "status": "rejected", "reason": "forbidden"}
-
-        elif getattr(CFG, "STORAGE_RPC_LOCAL_ONLY", False):
-            allowed_ips = tuple(getattr(CFG, "STORAGE_RPC_ALLOWED_IPS", ("127.0.0.1", "::1")))
-            if not (isinstance(addr, tuple) and addr[0] in allowed_ips):
-                log.warning("[process_message] storage RPC rejected non-local caller %s", addr)
-                return False, {"type": "STOR_ACK", "status": "rejected", "reason": "forbidden"}
-
-        return True, None
-
     BOOTSTRAP_ALLOW = {"HELLO", "GET_FULL_SYNC", "FULL_SYNC", "GET_HEADERS", "HEADERS"}
     if (mtype in MINERS) and (mtype not in BOOTSTRAP_ALLOW) and (not _is_miner_sender()):
         log.debug("[process_message] rejecting unauthorized miner RPC %s from %s", mtype, addr)
