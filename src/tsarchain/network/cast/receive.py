@@ -10,7 +10,7 @@ from ...core.block import Block
 from ...core.tx import Tx
 from ...storage.utxo import UTXODB
 from ...utils import config as CFG
-from ...utils.helpers import native_validate_block_txs
+from ...utils.helpers import native_validate_block_txs, native_validate_block_txs_compact
 
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.cast.receive")
@@ -35,17 +35,38 @@ class ReceiveMixin:
             return ReceiveMixin._native_script_hex(script_attr)
         return None
 
-    def _normalize_native_prevout(self, entry, key_desc: str) -> dict | None:
+    @staticmethod
+    def _native_script_bytes(candidate) -> bytes | None:
+        if candidate is None:
+            return None
+        if hasattr(candidate, "serialize"):
+            try:
+                return candidate.serialize()
+            except Exception:
+                return None
+        if isinstance(candidate, (bytes, bytearray)):
+            return bytes(candidate)
+        if isinstance(candidate, str):
+            try:
+                return bytes.fromhex(candidate)
+            except Exception:
+                return None
+        script_attr = getattr(candidate, "script_pubkey", None)
+        if script_attr is not None:
+            return ReceiveMixin._native_script_bytes(script_attr)
+        return None
+
+    def _normalize_native_prevout(self, entry, key_desc: str):
         candidate = entry
         if isinstance(candidate, dict):
             tx_out = candidate.get("tx_out") or candidate
         else:
             tx_out = getattr(candidate, "tx_out", None) or candidate
 
-        script_hex = self._native_script_hex(tx_out)
-        if script_hex is None and isinstance(candidate, dict):
-            script_hex = self._native_script_hex(candidate.get("script_pubkey"))
-        if script_hex is None:
+        script_bytes = self._native_script_bytes(tx_out)
+        if script_bytes is None and isinstance(candidate, dict):
+            script_bytes = self._native_script_bytes(candidate.get("script_pubkey"))
+        if script_bytes is None:
             log.debug("[native-prevout] entry %s missing script", key_desc)
             return None
 
@@ -68,14 +89,9 @@ class ReceiveMixin:
             is_cb = bool(getattr(candidate, "is_coinbase", False))
             born = int(getattr(candidate, "block_height", getattr(candidate, "height", 0)) or 0)
 
-        return {
-            "amount": amount_int,
-            "script_pubkey": script_hex,
-            "is_coinbase": is_cb,
-            "block_height": born,
-        }
+        return amount_int, script_bytes, is_cb, born
 
-    def _build_native_prevout_snapshot(self, block: Block) -> dict | None:
+    def _build_native_prevout_snapshot(self, block: Block):
         lookup = getattr(self.utxodb, "lookup_entry", None)
         if not callable(lookup):
             return None
@@ -85,6 +101,7 @@ class ReceiveMixin:
             return {}
 
         snapshot: dict[str, dict] = {}
+        utxo_items: list[tuple] = []
         processed_txids: set[str] = set()
 
         def _txid_lower(value) -> str | None:
@@ -123,12 +140,23 @@ class ReceiveMixin:
                 normalized = self._normalize_native_prevout(entry, snap_key)
                 if normalized is None:
                     return None
-                snapshot[snap_key] = normalized
+                amount_int, script_bytes, is_cb, born = normalized
+                snapshot[snap_key] = {
+                    "amount": amount_int,
+                    "script_pubkey": script_bytes,
+                    "is_coinbase": is_cb,
+                    "block_height": born,
+                }
+                try:
+                    txid_b = bytes.fromhex(prev_txid_lower)
+                    utxo_items.append((txid_b, int(prev_index), amount_int, script_bytes, is_cb, born))
+                except Exception:
+                    utxo_items.append((prev_txid_lower, int(prev_index), amount_int, script_bytes, is_cb, born))
 
             if txid_lower:
                 processed_txids.add(txid_lower)
 
-        return snapshot
+        return snapshot, utxo_items
 
     def _native_precheck_block(self, block: Block) -> bool:
         try:
@@ -138,6 +166,10 @@ class ReceiveMixin:
             return True
         if snapshot is None:
             return True
+        if isinstance(snapshot, tuple) and len(snapshot) == 2:
+            snapshot_dict, utxo_items = snapshot
+        else:
+            snapshot_dict, utxo_items = snapshot, None
 
         opts = {
             "coinbase_maturity": int(CFG.COINBASE_MATURITY),
@@ -146,12 +178,68 @@ class ReceiveMixin:
             "enforce_low_s": True,
         }
         try:
-            ok, reason, fees = native_validate_block_txs(
-                block.to_dict(),
-                snapshot,
-                int(getattr(block, "height", 0) or 0),
-                opts,
-            )
+            if utxo_items is not None:
+                tx_payloads = []
+                for tx in getattr(block, "transactions", []) or []:
+                    try:
+                        version = int(getattr(tx, "version", 1))
+                        locktime = int(getattr(tx, "locktime", 0))
+                        inputs_payload = []
+                        for tx_input in getattr(tx, "inputs", []) or []:
+                            prev_txid_b = getattr(tx_input, "txid", None) or getattr(tx_input, "prev_tx", None)
+                            if isinstance(prev_txid_b, str):
+                                prev_txid_b = bytes.fromhex(prev_txid_b)
+                            if not isinstance(prev_txid_b, (bytes, bytearray)) or len(prev_txid_b) != 32:
+                                raise ValueError("txid_missing")
+                            prev_index = int(getattr(tx_input, "vout", getattr(tx_input, "prev_index", 0)))
+                            seq = int(getattr(tx_input, "sequence", 0xffffffff))
+                            wit_vec = []
+                            for w in getattr(tx_input, "witness", None) or []:
+                                if isinstance(w, (bytes, bytearray)):
+                                    wit_vec.append(bytes(w))
+                                elif isinstance(w, str):
+                                    wit_vec.append(bytes.fromhex(w))
+                                else:
+                                    raise ValueError("witness_invalid")
+                            inputs_payload.append((bytes(prev_txid_b), prev_index, seq, wit_vec))
+                        outputs_payload = []
+                        for tx_out in getattr(tx, "outputs", []) or []:
+                            amt = int(getattr(tx_out, "amount", tx_out.get("amount") if isinstance(tx_out, dict) else 0))
+                            spk_obj = getattr(tx_out, "script_pubkey", tx_out.get("script_pubkey") if isinstance(tx_out, dict) else None)
+                            spk_bytes = self._native_script_bytes(spk_obj)
+                            if spk_bytes is None:
+                                raise ValueError("spk_missing")
+                            outputs_payload.append((amt, spk_bytes))
+                        txid_b = getattr(tx, "txid", None)
+                        if isinstance(txid_b, str):
+                            txid_b = bytes.fromhex(txid_b)
+                        if not isinstance(txid_b, (bytes, bytearray)) or len(txid_b) != 32:
+                            raise ValueError("txid_missing")
+                        tx_payloads.append((version, locktime, inputs_payload, outputs_payload, bytes(txid_b), bool(getattr(tx, "is_coinbase", False))))
+                    except Exception:
+                        tx_payloads = None
+                        break
+                if tx_payloads is not None:
+                    ok, reason, fees = native_validate_block_txs_compact(
+                        tx_payloads,
+                        utxo_items,
+                        int(getattr(block, "height", 0) or 0),
+                        opts,
+                    )
+                else:
+                    ok, reason, fees = native_validate_block_txs(
+                        block.to_dict(),
+                        snapshot_dict,
+                        int(getattr(block, "height", 0) or 0),
+                        opts,
+                    )
+            else:
+                ok, reason, fees = native_validate_block_txs(
+                    block.to_dict(),
+                    snapshot_dict,
+                    int(getattr(block, "height", 0) or 0),
+                    opts,
+                )
         except Exception:
             log.debug("[native-precheck] validator failed; falling back", exc_info=True)
             return True
