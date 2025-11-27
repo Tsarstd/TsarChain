@@ -186,12 +186,53 @@ class ValidationMixin:
                     return None
             return None
 
+        def _script_to_bytes(spk_obj):
+            if spk_obj is None:
+                return None
+            if isinstance(spk_obj, dict):
+                spk_obj = spk_obj.get("script_pubkey", spk_obj.get("script"))
+            if isinstance(spk_obj, (bytes, bytearray)):
+                return bytes(spk_obj)
+            if isinstance(spk_obj, str):
+                try:
+                    return bytes.fromhex(spk_obj)
+                except Exception:
+                    return None
+            script_attr = getattr(spk_obj, "script_pubkey", None)
+            if script_attr is not None:
+                spk_obj = script_attr
+            if hasattr(spk_obj, "serialize"):
+                try:
+                    return spk_obj.serialize()
+                except Exception:
+                    return None
+            if hasattr(spk_obj, "to_bytes"):
+                try:
+                    return bytes(spk_obj.to_bytes())
+                except Exception:
+                    return None
+            return None
+
         def _txid_hex(value):
             if value is None:
                 return None
             if isinstance(value, (bytes, bytearray)):
                 return value.hex()
             return str(value)
+
+        def _txid_bytes(value):
+            if value is None:
+                return None
+            if isinstance(value, (bytes, bytearray)):
+                b = bytes(value)
+                return b if len(b) == 32 else None
+            if isinstance(value, str):
+                try:
+                    b = bytes.fromhex(value)
+                    return b if len(b) == 32 else None
+                except Exception:
+                    return None
+            return None
 
         store_lookup = getattr(store, "lookup_entry", None)
         utxo_view = None
@@ -267,10 +308,10 @@ class ValidationMixin:
                 tx_out = candidate.get("tx_out") or candidate
             else:
                 tx_out = getattr(candidate, "tx_out", None) or candidate
-            script_hex = _script_to_hex(tx_out)
-            if script_hex is None and isinstance(candidate, dict):
-                script_hex = _script_to_hex(candidate.get("script_pubkey"))
-            if script_hex is None:
+            script_bytes = _script_to_bytes(tx_out)
+            if script_bytes is None and isinstance(candidate, dict):
+                script_bytes = _script_to_bytes(candidate.get("script_pubkey"))
+            if script_bytes is None:
                 log.debug("[native_snapshot] entry %s missing script", key_desc)
                 return None
             if isinstance(tx_out, dict):
@@ -292,7 +333,7 @@ class ValidationMixin:
                 born = int(getattr(candidate, "block_height", getattr(candidate, "height", 0)) or 0)
             return {
                 "amount": amt,
-                "script_pubkey": script_hex,
+                "script_pubkey": script_bytes,
                 "is_coinbase": is_cb,
                 "block_height": born,
             }
@@ -339,15 +380,79 @@ class ValidationMixin:
             if txid_lower:
                 processed_txids.add(txid_lower)
 
+        def _build_block_payload_native(block_obj, tx_list):
+            payload_txs = []
+            for tx in tx_list:
+                try:
+                    version = int(getattr(tx, "version", 1))
+                    locktime = int(getattr(tx, "locktime", 0))
+                    txid_b = _txid_bytes(getattr(tx, "txid", None))
+                    if txid_b is None:
+                        return None
+                    inputs_payload = []
+                    for tx_input in getattr(tx, "inputs", []) or []:
+                        prev_txid_b = _txid_bytes(getattr(tx_input, "txid", None) or getattr(tx_input, "prev_tx", None))
+                        if prev_txid_b is None:
+                            return None
+                        try:
+                            prev_index = int(getattr(tx_input, "vout", getattr(tx_input, "prev_index", 0)))
+                        except Exception:
+                            return None
+                        seq = getattr(tx_input, "sequence", 0xffffffff)
+                        witness_raw = getattr(tx_input, "witness", None) or []
+                        wit_vec = []
+                        try:
+                            for w in witness_raw:
+                                if isinstance(w, (bytes, bytearray)):
+                                    wit_vec.append(bytes(w))
+                                elif isinstance(w, str):
+                                    wit_vec.append(bytes.fromhex(w))
+                                else:
+                                    return None
+                        except Exception:
+                            return None
+                        inputs_payload.append({
+                            "txid": prev_txid_b,
+                            "vout": int(prev_index),
+                            "sequence": int(seq),
+                            "witness": wit_vec,
+                        })
+                    outputs_payload = []
+                    for tx_out in getattr(tx, "outputs", []) or []:
+                        try:
+                            amt = int(getattr(tx_out, "amount", tx_out.get("amount") if isinstance(tx_out, dict) else 0))
+                        except Exception:
+                            return None
+                        spk_obj = getattr(tx_out, "script_pubkey", tx_out.get("script_pubkey") if isinstance(tx_out, dict) else None)
+                        spk_bytes = _script_to_bytes(spk_obj)
+                        if spk_bytes is None:
+                            return None
+                        outputs_payload.append({
+                            "amount": amt,
+                            "script_pubkey": spk_bytes,
+                        })
+                    payload_txs.append({
+                        "version": version,
+                        "locktime": locktime,
+                        "txid": txid_b,
+                        "inputs": inputs_payload,
+                        "outputs": outputs_payload,
+                        "is_coinbase": bool(getattr(tx, "is_coinbase", False)),
+                    })
+                except Exception:
+                    return None
+            return {"transactions": payload_txs, "height": getattr(block_obj, "height", None)}
+
         opts = {
             "coinbase_maturity": int(CFG.COINBASE_MATURITY),
             "max_sigops_per_tx": int(CFG.MAX_SIGOPS_PER_TX),
             "max_sigops_per_block": int(CFG.MAX_SIGOPS_PER_BLOCK),
             "enforce_low_s": True,
         }
+        payload_block = _build_block_payload_native(block, txs) or block.to_dict()
         try:
             ok, reason, fees = H.native_validate_block_txs(
-                block.to_dict(),
+                payload_block,
                 snapshot,
                 spend_height,
                 opts,

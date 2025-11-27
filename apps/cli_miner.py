@@ -34,6 +34,7 @@ from datetime import datetime
 # ---------- Local Project ----------
 from tsarchain.consensus.blockchain import Blockchain
 from tsarchain.network.node import Network
+from tsarchain.mempool.pool import TxPoolDB
 from tsarchain.utils import config as CFG
 
 from tsarchain.utils.cosmetic import interface as COL
@@ -137,6 +138,8 @@ class LightMiner:
         self._pending_blocks: list = []
         self._pending_block_hashes: set[str] = set()
         self._mempool_tip_height: int | None = None
+        self._mempool_path: str | None = None
+        self._last_mempool_pull: float = 0.0
 
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
@@ -173,36 +176,48 @@ class LightMiner:
         if not self.blockchain or not hasattr(self.blockchain, "attach_mempool"):
             return
         try:
-            from tsarchain.mempool.pool import TxPoolDB
-        except Exception:
-            return
-        try:
-            tip_height = int(getattr(self.blockchain, "height", -1))
-        except Exception:
-            tip_height = -1
-        if tip_height < 0:
-            return
-        if self._mempool_tip_height == tip_height and getattr(self.blockchain, "get_mempool", None):
+            utxo_store = None
             try:
-                if self.blockchain.get_mempool() is not None:  # type: ignore[attr-defined]
-                    return
+                utxo_store = self.blockchain._ensure_utxodb()  # type: ignore[attr-defined]
+            except Exception:
+                utxo_store = None
+            # sinkronkan hint height untuk utxo in-memory agar validation mempool pakai tip terbaru
+            try:
+                if utxo_store is not None:
+                    utxo_store._tip_cache = {"height": int(getattr(self.blockchain, "height", 0)), "ts": time.time()}
             except Exception:
                 pass
+            if getattr(self.blockchain, "get_mempool", None):
+                existing = self.blockchain.get_mempool()  # type: ignore[attr-defined]
+                if existing is not None:
+                    if utxo_store is not None:
+                        try:
+                            existing.utxo = utxo_store  # keep snapshot fresh
+                        except Exception:
+                            pass
+                    return
+        except Exception:
+            pass
         try:
-            tmp_path = os.path.join(
-                tempfile.gettempdir(),
-                f"tsar_mempool_tmp_{os.getpid()}_{int(time.time())}.json",
-            )
+            if not self._mempool_path:
+                self._mempool_path = os.path.join(
+                    tempfile.gettempdir(),
+                    f"tsar_mempool_tmp_{os.getpid()}.json",
+                )
             pool = TxPoolDB(
-                filepath=tmp_path,
+                filepath=self._mempool_path,
                 max_size_mb=CFG.MEMPOOL_MAX_SIZE,
-                utxo_store=self.blockchain._ensure_utxodb(),  # type: ignore[attr-defined]
+                utxo_store=utxo_store,
                 inherit_state=True,
             )
             self.blockchain.attach_mempool(pool)  # type: ignore[arg-type]
-            self._mempool_tip_height = tip_height
-        except Exception:
-            pass
+            try:
+                self._mempool_tip_height = int(getattr(self.blockchain, "height", -1))
+            except Exception:
+                self._mempool_tip_height = None
+            clog("[mempool] Ephemeral mempool attached ")
+        except Exception as exc:
+            clog(f"[mempool] attach failed: {exc}", color=COL.BG_YELLOW)
 
     def _queue_block_for_broadcast(self, block) -> None:
         try:
@@ -242,6 +257,41 @@ class LightMiner:
                 clog(f"[broadcast] retry failed: {exc}")
             remaining.append(blk)
         self._pending_blocks = remaining
+
+    def _refresh_mempool_from_peers(self) -> None:
+        if not self.network:
+            return
+        now = time.time()
+        # membatasi frekuensi pull supaya tidak flood
+        if now - self._last_mempool_pull < 5.0:
+            return
+        try:
+            utxo_store = self.blockchain._ensure_utxodb() if self.blockchain else None  # type: ignore[attr-defined]
+            if utxo_store and getattr(self.blockchain, "get_mempool", None):
+                pool = self.blockchain.get_mempool()  # type: ignore[attr-defined]
+                if pool is not None:
+                    try:
+                        pool.utxo = utxo_store  # type: ignore[attr-defined]
+                    except Exception:
+                        pass
+            if utxo_store is not None:
+                try:
+                    utxo_store._tip_cache = {"height": int(getattr(self.blockchain, "height", 0)), "ts": time.time()}
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        peers = list(getattr(self.network, "peers", ()) or ())
+        if not peers:
+            return
+        for peer in peers:
+            try:
+                ok = self.network._request_mempool_inline(peer, force=True)  # type: ignore[attr-defined]
+                if not ok:
+                    self.network._request_mempool_snapshot(peer, force=True)  # type: ignore[attr-defined]
+            except Exception:
+                continue
+        self._last_mempool_pull = now
 
     def wait_for_sync(self, timeout: int = 600) -> bool:
         if not self.blockchain or not self.network:
@@ -339,6 +389,21 @@ class LightMiner:
         while self.mining_alive:
             try:
                 self._ensure_ephemeral_mempool()
+                # tarik mempool dari peers jika kosong/baru
+                try:
+                    pool = self.blockchain.get_mempool() if self.blockchain else None  # type: ignore[attr-defined]
+                    if pool is not None:
+                        try:
+                            tx_count = len(pool.get_all_txs())
+                        except Exception:
+                            tx_count = 0
+                        if tx_count == 0:
+                            self._refresh_mempool_from_peers()
+                    else:
+                        self._refresh_mempool_from_peers()
+                except Exception:
+                    self._refresh_mempool_from_peers()
+                    
                 self._flush_pending_blocks()
                 if self.network and self.network.peers:
                     self.network.request_sync(fast=True)
@@ -400,6 +465,12 @@ class LightMiner:
             except Exception:
                 pass
             self.network = None
+        # optional cleanup mempool temp file
+        if self._mempool_path:
+            try:
+                os.remove(self._mempool_path)
+            except Exception:
+                pass
         clog("[light-node] Shutdown complete.", color=COL.BG_YELLOW)
 
 
@@ -475,8 +546,6 @@ def main():
     finally:
         miner.shutdown()
         tui.stop()
-
-
 
 if __name__ == "__main__":
     mp.freeze_support()

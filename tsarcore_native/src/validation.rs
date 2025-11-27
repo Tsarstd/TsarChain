@@ -4,7 +4,7 @@
 // Refs: BIP141; libsecp256k1
 
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyAnyMethods, PyDict, PyDictMethods, PyList, PyListMethods};
+use pyo3::types::{PyAny, PyAnyMethods, PyBytes, PyDict, PyDictMethods, PyList, PyListMethods};
 use ripemd::Ripemd160;
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 use sha2::{Digest, Sha256};
@@ -116,14 +116,17 @@ fn encode_varint(v: u64, out: &mut Vec<u8>) {
     }
 }
 
-fn parse_hex_field(value: &Bound<'_, PyAny>, field: &str) -> Result<Vec<u8>, String> {
-    let hex_str: String = value
-        .extract()
-        .map_err(|_| format!("field {} must be hex string", field))?;
-    if hex_str.is_empty() {
-        return Ok(Vec::new());
+fn parse_bytes_or_hex(value: &Bound<'_, PyAny>, field: &str) -> Result<Vec<u8>, String> {
+    if let Ok(b) = value.downcast::<PyBytes>() {
+        return Ok(b.as_bytes().to_vec());
     }
-    hex::decode(hex_str).map_err(|_| format!("failed decoding hex in field {}", field))
+    if let Ok(hex_str) = value.extract::<String>() {
+        if hex_str.is_empty() {
+            return Ok(Vec::new());
+        }
+        return hex::decode(&hex_str).map_err(|_| format!("failed decoding hex in field {}", field));
+    }
+    Err(format!("field {} must be bytes or hex string", field))
 }
 
 fn parse_witness_field(value: Option<Bound<'_, PyAny>>) -> Result<Vec<Vec<u8>>, String> {
@@ -135,13 +138,43 @@ fn parse_witness_field(value: Option<Bound<'_, PyAny>>) -> Result<Vec<Vec<u8>>, 
         .map_err(|_| "witness must be list".to_string())?;
     let mut out = Vec::with_capacity(list.len());
     for item in list.iter() {
+        if let Ok(b) = item.downcast::<PyBytes>() {
+            out.push(b.as_bytes().to_vec());
+            continue;
+        }
         let hex_item: String = item
             .extract()
-            .map_err(|_| "witness element must be hex string".to_string())?;
+            .map_err(|_| "witness element must be hex string/bytes".to_string())?;
         let bytes = hex::decode(hex_item).map_err(|_| "invalid witness hex".to_string())?;
         out.push(bytes);
     }
     Ok(out)
+}
+
+fn parse_txid_field(value: &Bound<'_, PyAny>, field: &str) -> Result<([u8; 32], String), String> {
+    if let Ok(b) = value.downcast::<PyBytes>() {
+        let slice = b.as_bytes();
+        if slice.len() != 32 {
+            return Err(format!("{} must be 32-byte txid", field));
+        }
+        let mut le = [0u8; 32];
+        for (i, byte) in slice.iter().enumerate() {
+            le[31 - i] = *byte;
+        }
+        return Ok((le, hex::encode(slice).to_lowercase()));
+    }
+    let hex_str: String = value
+        .extract()
+        .map_err(|_| format!("{} must be txid hex/bytes", field))?;
+    let txid_bytes = hex::decode(&hex_str).map_err(|_| format!("{} invalid txid hex", field))?;
+    if txid_bytes.len() != 32 {
+        return Err(format!("{} invalid txid length", field));
+    }
+    let mut le = [0u8; 32];
+    for (i, b) in txid_bytes.iter().enumerate() {
+        le[31 - i] = *b;
+    }
+    Ok((le, hex_str.to_lowercase()))
 }
 
 fn sha256d(data: &[u8]) -> [u8; 32] {
@@ -246,9 +279,9 @@ impl TxParts {
             None => 0,
         };
 
-        let txid_hex: String = get_required(tx, "txid", "tx_missing_txid")?
-            .extract()
-            .map_err(|_| "tx_invalid_txid".to_string())?;
+        let txid_field = get_required(tx, "txid", "tx_missing_txid")?;
+        let (_txid_le, txid_hex) =
+            parse_txid_field(&txid_field, "txid").map_err(|_| "tx_invalid_txid".to_string())?;
 
         let inputs_any = get_required(tx, "inputs", "tx_missing_inputs")?;
         let inputs_list = inputs_any
@@ -262,25 +295,16 @@ impl TxParts {
             let inp = item
                 .downcast::<PyDict>()
                 .map_err(|_| "tx_input_not_dict".to_string())?;
-            let txid_hex: String = get_required(&inp, "txid", "tx_input_missing_txid")?
-                .extract()
-                .map_err(|_| "tx_input_invalid_txid".to_string())?;
-            let txid_bytes =
-                hex::decode(&txid_hex).map_err(|_| "tx_input_invalid_txid".to_string())?;
-            if txid_bytes.len() != 32 {
-                return Err("tx_input_invalid_txid".to_string());
-            }
-            let mut txid_le = [0u8; 32];
-            for (i, b) in txid_bytes.iter().enumerate() {
-                txid_le[31 - i] = *b;
-            }
+            let txid_field = get_required(&inp, "txid", "tx_input_missing_txid")?;
+            let (txid_le, txid_hex) =
+                parse_txid_field(&txid_field, "tx_input_txid").map_err(|_| "tx_input_invalid_txid".to_string())?;
             let vout: u32 = get_required(&inp, "vout", "tx_input_missing_vout")?
                 .extract()
                 .map_err(|_| "tx_input_invalid_vout".to_string())?;
             let sequence: u32 = match get_optional(inp, "sequence")? {
                 Some(v) => v
                     .extract()
-                    .map_err(|_| "tx_input_invalid_sequence".to_string())?,
+                .map_err(|_| "tx_input_invalid_sequence".to_string())?,
                 None => 0xffffffff,
             };
             let witness = parse_witness_field(get_optional(inp, "witness")?)?;
@@ -306,7 +330,7 @@ impl TxParts {
                 .extract()
                 .map_err(|_| "tx_output_invalid_amount".to_string())?;
             let script_hex = get_required(&out, "script_pubkey", "tx_output_missing_spk")?;
-            let script_pubkey = parse_hex_field(&script_hex, "script_pubkey")?;
+            let script_pubkey = parse_bytes_or_hex(&script_hex, "script_pubkey")?;
             outputs.push(OutputParts {
                 amount,
                 script_pubkey,
@@ -365,7 +389,7 @@ fn build_utxo_index(utxo: &Bound<'_, PyDict>) -> Result<HashMap<String, UtxoEntr
             Ok(d) => d,
             Err(_) => continue,
         };
-        let mut script_hex = None;
+        let mut script_bytes: Option<Vec<u8>> = None;
         let mut amount_val = None;
         if let Some(tx_out) = entry_dict
             .get_item("tx_out")
@@ -376,7 +400,7 @@ fn build_utxo_index(utxo: &Bound<'_, PyDict>) -> Result<HashMap<String, UtxoEntr
                     .get_item("script_pubkey")
                     .map_err(|_| "utxo_pyerr".to_string())?
                 {
-                    script_hex = spk.extract::<String>().ok();
+                    script_bytes = parse_bytes_or_hex(&spk, "utxo_spk").ok();
                 }
                 if let Some(am) = tx_out_dict
                     .get_item("amount")
@@ -386,12 +410,12 @@ fn build_utxo_index(utxo: &Bound<'_, PyDict>) -> Result<HashMap<String, UtxoEntr
                 }
             }
         }
-        if script_hex.is_none() {
+        if script_bytes.is_none() {
             if let Some(spk) = entry_dict
                 .get_item("script_pubkey")
                 .map_err(|_| "utxo_pyerr".to_string())?
             {
-                script_hex = spk.extract::<String>().ok();
+                script_bytes = parse_bytes_or_hex(&spk, "utxo_spk").ok();
             }
         }
         if amount_val.is_none() {
@@ -402,17 +426,13 @@ fn build_utxo_index(utxo: &Bound<'_, PyDict>) -> Result<HashMap<String, UtxoEntr
                 amount_val = am.extract::<u64>().ok();
             }
         }
-        let script_hex = match script_hex {
+        let script = match script_bytes {
             Some(s) => s,
             None => continue,
         };
         let amount = match amount_val {
             Some(a) => a,
             None => continue,
-        };
-        let script = match hex::decode(script_hex) {
-            Ok(v) => v,
-            Err(_) => continue,
         };
         let is_coinbase = entry_dict
             .get_item("is_coinbase")
