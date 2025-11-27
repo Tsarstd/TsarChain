@@ -107,13 +107,10 @@ def sync_with_peers(self):
                 elif allow_mempool and inline_status is False:
                     if norm not in self._snapshot_unreachable:
                         self._request_mempool_snapshot(norm)
-                    else:
-                        log.debug("[sync_with_peers] Skipping snapshot pull for %s (unreachable)", norm)
+                        
             elif allow_mempool and inline_status is False:
                 if norm not in self._snapshot_unreachable:
                     self._request_mempool_snapshot(norm)
-                else:
-                    log.debug("[sync_with_peers] Snapshot push skipped for %s (unreachable)", norm)
         except Exception:
             log.exception("[sync_with_peers] Error syncing with peer %s", norm)
             self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY * 2)

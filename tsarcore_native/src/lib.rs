@@ -29,7 +29,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::thread_local;
 use std::time::Instant;
-use validation::validate_block_txs_native;
+use validation::{validate_block_txs_native, validate_block_txs_compact};
 use hex;
 use secp256k1::SecretKey;
 
@@ -934,6 +934,7 @@ fn tsarcore_native(_py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(secp_sign_der_low_s, m)?)?;
     m.add_function(wrap_pyfunction!(set_py_logger, m)?)?;
     m.add_function(wrap_pyfunction!(validate_block_txs_native, m)?)?;
+    m.add_function(wrap_pyfunction!(validate_block_txs_compact, m)?)?;
     m.add_function(wrap_pyfunction!(randomx_pow_hash, m)?)?;
     m.add_function(wrap_pyfunction!(storage::open_storage, m)?)?;
     m.add_function(wrap_pyfunction!(storage::json_read_file, m)?)?;

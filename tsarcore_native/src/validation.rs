@@ -4,7 +4,7 @@
 // Refs: BIP141; libsecp256k1
 
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyAnyMethods, PyBytes, PyDict, PyDictMethods, PyList, PyListMethods};
+use pyo3::types::{PyAny, PyAnyMethods, PyBytes, PyDict, PyDictMethods, PyList, PyListMethods, PyTuple};
 use ripemd::Ripemd160;
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 use sha2::{Digest, Sha256};
@@ -732,4 +732,266 @@ pub fn validate_block_txs_native(
             Ok((false, Some(reason), None))
         }
     }
+}
+
+fn parse_compact_input(obj: &Bound<'_, PyAny>) -> Result<InputParts, String> {
+    let tuple = obj
+        .downcast::<PyTuple>()
+        .map_err(|_| "tx_input_not_tuple".to_string())?;
+    if tuple.len() < 4 {
+        return Err("tx_input_tuple_arity".to_string());
+    }
+    let txid_item = tuple
+        .get_item(0)
+        .map_err(|_| "tx_input_tuple_txid".to_string())?;
+    let txid_bytes = txid_item
+        .downcast::<PyBytes>()
+        .map_err(|_| "tx_input_txid_not_bytes".to_string())?;
+    let txid_slice = txid_bytes.as_bytes();
+    if txid_slice.len() != 32 {
+        return Err("tx_input_txid_length".to_string());
+    }
+    let mut txid_be = [0u8; 32];
+    txid_be.copy_from_slice(txid_slice);
+    let mut txid_le = [0u8; 32];
+    for (i, b) in txid_slice.iter().enumerate() {
+        txid_le[31 - i] = *b;
+    }
+    let vout: u32 = tuple
+        .get_item(1)
+        .map_err(|_| "tx_input_tuple_vout".to_string())?
+        .extract()
+        .map_err(|_| "tx_input_invalid_vout".to_string())?;
+    let sequence: u32 = tuple
+        .get_item(2)
+        .map_err(|_| "tx_input_tuple_sequence".to_string())?
+        .extract()
+        .map_err(|_| "tx_input_invalid_sequence".to_string())?;
+    let wit_any = tuple
+        .get_item(3)
+        .map_err(|_| "tx_input_tuple_witness".to_string())?;
+    let witness = parse_witness_field(Some(wit_any))?;
+    Ok(InputParts {
+        txid_hex: hex::encode(txid_slice),
+        txid_be,
+        txid_le,
+        vout,
+        sequence,
+        witness,
+    })
+}
+
+fn parse_compact_output(obj: &Bound<'_, PyAny>) -> Result<OutputParts, String> {
+    let tuple = obj
+        .downcast::<PyTuple>()
+        .map_err(|_| "tx_output_not_tuple".to_string())?;
+    if tuple.len() < 2 {
+        return Err("tx_output_tuple_arity".to_string());
+    }
+    let amount_item = tuple
+        .get_item(0)
+        .map_err(|_| "tx_output_tuple_amount".to_string())?;
+    let amount: u64 = amount_item
+        .extract()
+        .map_err(|_| "tx_output_invalid_amount".to_string())?;
+    let spk_item = tuple
+        .get_item(1)
+        .map_err(|_| "tx_output_tuple_script".to_string())?;
+    let spk_bytes = spk_item
+        .downcast::<PyBytes>()
+        .map_err(|_| "tx_output_script_not_bytes".to_string())?
+        .as_bytes()
+        .to_vec();
+    Ok(OutputParts {
+        amount,
+        script_pubkey: spk_bytes,
+    })
+}
+
+fn parse_compact_tx(obj: &Bound<'_, PyAny>) -> Result<(TxParts, bool), String> {
+    let tuple = obj
+        .downcast::<PyTuple>()
+        .map_err(|_| "tx_not_tuple".to_string())?;
+    if tuple.len() < 6 {
+        return Err("tx_tuple_arity".to_string());
+    }
+    let version_item = tuple
+        .get_item(0)
+        .map_err(|_| "tx_tuple_version".to_string())?;
+    let version: i32 = version_item
+        .extract()
+        .map_err(|_| "tx_invalid_version".to_string())?;
+    let locktime_item = tuple
+        .get_item(1)
+        .map_err(|_| "tx_tuple_locktime".to_string())?;
+    let locktime: u32 = locktime_item
+        .extract()
+        .map_err(|_| "tx_invalid_locktime".to_string())?;
+    let inputs_item = tuple
+        .get_item(2)
+        .map_err(|_| "tx_tuple_inputs".to_string())?;
+    let inputs_any = inputs_item
+        .downcast::<PyList>()
+        .map_err(|_| "tx_inputs_not_list".to_string())?;
+    if inputs_any.is_empty() {
+        return Err("tx_missing_inputs".to_string());
+    }
+    let mut inputs = Vec::with_capacity(inputs_any.len());
+    for item in inputs_any {
+        inputs.push(parse_compact_input(&item)?);
+    }
+    let outputs_item = tuple
+        .get_item(3)
+        .map_err(|_| "tx_tuple_outputs".to_string())?;
+    let outputs_any = outputs_item
+        .downcast::<PyList>()
+        .map_err(|_| "tx_outputs_not_list".to_string())?;
+    let mut outputs = Vec::with_capacity(outputs_any.len());
+    for item in outputs_any {
+        outputs.push(parse_compact_output(&item)?);
+    }
+    let txid_item = tuple
+        .get_item(4)
+        .map_err(|_| "tx_tuple_txid".to_string())?;
+    let txid_bytes = txid_item
+        .downcast::<PyBytes>()
+        .map_err(|_| "tx_txid_not_bytes".to_string())?;
+    let txid_slice = txid_bytes.as_bytes();
+    if txid_slice.len() != 32 {
+        return Err("tx_txid_length".to_string());
+    }
+    let mut txid_be = [0u8; 32];
+    txid_be.copy_from_slice(txid_slice);
+    let coinbase_item = tuple
+        .get_item(5)
+        .map_err(|_| "tx_tuple_coinbase".to_string())?;
+    let is_coinbase: bool = coinbase_item
+        .extract()
+        .map_err(|_| "tx_coinbase_invalid".to_string())?;
+
+    let tx_parts = TxParts {
+        version,
+        locktime,
+        inputs,
+        outputs,
+        txid_be,
+    };
+    Ok((tx_parts, is_coinbase))
+}
+
+fn parse_compact_utxo_list(utxo: &Bound<'_, PyList>) -> Result<AHashMap<PrevoutKey, UtxoEntry>, String> {
+    let mut out: AHashMap<PrevoutKey, UtxoEntry> = AHashMap::with_capacity(utxo.len());
+    for item in utxo {
+        let tuple = item.downcast::<PyTuple>().map_err(|_| "utxo_not_tuple".to_string())?;
+        if tuple.len() < 6 {
+            return Err("utxo_tuple_arity".to_string());
+        }
+        let txid_item = tuple
+            .get_item(0)
+            .map_err(|_| "utxo_tuple_txid".to_string())?;
+        let txid_b = txid_item
+            .downcast::<PyBytes>()
+            .map_err(|_| "utxo_txid_not_bytes".to_string())?
+            .as_bytes();
+        if txid_b.len() != 32 {
+            return Err("utxo_txid_length".to_string());
+        }
+        let mut txid_be = [0u8; 32];
+        txid_be.copy_from_slice(txid_b);
+        let vout_item = tuple
+            .get_item(1)
+            .map_err(|_| "utxo_tuple_vout".to_string())?;
+        let vout: u32 = vout_item
+            .extract()
+            .map_err(|_| "utxo_invalid_vout".to_string())?;
+        let amount_item = tuple
+            .get_item(2)
+            .map_err(|_| "utxo_tuple_amount".to_string())?;
+        let amount: u64 = amount_item
+            .extract()
+            .map_err(|_| "utxo_invalid_amount".to_string())?;
+        let script_item = tuple
+            .get_item(3)
+            .map_err(|_| "utxo_tuple_script".to_string())?;
+        let script = script_item
+            .downcast::<PyBytes>()
+            .map_err(|_| "utxo_script_not_bytes".to_string())?
+            .as_bytes()
+            .to_vec();
+        let coinbase_item = tuple
+            .get_item(4)
+            .map_err(|_| "utxo_tuple_coinbase".to_string())?;
+        let is_coinbase: bool = coinbase_item
+            .extract()
+            .map_err(|_| "utxo_invalid_coinbase".to_string())?;
+        let height_item = tuple
+            .get_item(5)
+            .map_err(|_| "utxo_tuple_height".to_string())?;
+        let block_height: i64 = height_item
+            .extract()
+            .map_err(|_| "utxo_invalid_height".to_string())?;
+        out.insert(
+            PrevoutKey { txid: txid_be, vout },
+            UtxoEntry {
+                amount,
+                script,
+                is_coinbase,
+                block_height,
+            },
+        );
+    }
+    Ok(out)
+}
+
+#[pyfunction]
+pub fn validate_block_txs_compact(
+    block_txs: &Bound<PyList>,
+    utxo: &Bound<PyList>,
+    spend_height: u64,
+    opts: &Bound<PyDict>,
+) -> PyResult<(bool, Option<String>, Option<Vec<u64>>)> {
+    let opts = match parse_validation_options(opts) {
+        Ok(o) => o,
+        Err(e) => return Ok((false, Some(e), None)),
+    };
+    let mut utxo_map = match parse_compact_utxo_list(utxo) {
+        Ok(m) => m,
+        Err(e) => return Ok((false, Some(e), None)),
+    };
+    if block_txs.is_empty() {
+        return Ok((false, Some("empty_block_transactions".to_string()), None));
+    }
+    let mut fees = Vec::with_capacity(block_txs.len().saturating_sub(1));
+    let mut total_sigops = 0u32;
+    let secp = Secp256k1::verification_only();
+
+    for (idx, item) in block_txs.iter().enumerate() {
+        let (tx_parts, is_coinbase) = match parse_compact_tx(&item) {
+            Ok(t) => t,
+            Err(e) => return Ok((false, Some(e), None)),
+        };
+        if idx == 0 {
+            if !is_coinbase {
+                return Ok((false, Some("missing_coinbase".to_string()), None));
+            }
+            continue;
+        } else if is_coinbase {
+            return Ok((false, Some("duplicate_coinbase".to_string()), None));
+        }
+        let (fee, sigops) =
+            match validate_transaction_parts(&tx_parts, spend_height, &mut utxo_map, &opts, &secp) {
+                Ok(v) => v,
+                Err(e) => return Ok((false, Some(e), None)),
+            };
+        fees.push(fee);
+        total_sigops = total_sigops.saturating_add(sigops);
+        if total_sigops > opts.max_sigops_per_block {
+            return Ok((false, Some("block_sigops_limit".to_string()), None));
+        }
+    }
+
+    if fees.len() != block_txs.len().saturating_sub(1) {
+        return Ok((false, Some("fee_mismatch".to_string()), None));
+    }
+    Ok((true, None, Some(fees)))
 }

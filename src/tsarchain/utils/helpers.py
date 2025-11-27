@@ -22,6 +22,7 @@ try:
         secp_sign_der_low_s as _native_sign_der_low_s,
         sighash_bip143 as _native_sighash_bip143,
         validate_block_txs_native as _native_validate_block_txs,
+        validate_block_txs_compact as _native_validate_block_txs_compact,
         randomx_pow_hash as _native_randomx_hash,
     )
 except ImportError as exc:
@@ -795,4 +796,7 @@ def merkle_root(transactions):
 
 def native_validate_block_txs(block_dict: dict, utxo_snapshot: dict, spend_height: int, options: dict):
     return _native_validate_block_txs(block_dict, utxo_snapshot, int(spend_height), options)
+
+def native_validate_block_txs_compact(block_txs, utxo_items, spend_height: int, options: dict):
+    return _native_validate_block_txs_compact(block_txs, utxo_items, int(spend_height), options)
 

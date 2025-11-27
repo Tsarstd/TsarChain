@@ -380,15 +380,12 @@ class ValidationMixin:
             if txid_lower:
                 processed_txids.add(txid_lower)
 
-        def _build_block_payload_native(block_obj, tx_list):
-            payload_txs = []
+        def _build_block_payload_compact(tx_list, snapshot_dict):
+            tx_payloads = []
             for tx in tx_list:
                 try:
                     version = int(getattr(tx, "version", 1))
                     locktime = int(getattr(tx, "locktime", 0))
-                    txid_b = _txid_bytes(getattr(tx, "txid", None))
-                    if txid_b is None:
-                        return None
                     inputs_payload = []
                     for tx_input in getattr(tx, "inputs", []) or []:
                         prev_txid_b = _txid_bytes(getattr(tx_input, "txid", None) or getattr(tx_input, "prev_tx", None))
@@ -411,12 +408,7 @@ class ValidationMixin:
                                     return None
                         except Exception:
                             return None
-                        inputs_payload.append({
-                            "txid": prev_txid_b,
-                            "vout": int(prev_index),
-                            "sequence": int(seq),
-                            "witness": wit_vec,
-                        })
+                        inputs_payload.append((prev_txid_b, int(prev_index), int(seq), wit_vec))
                     outputs_payload = []
                     for tx_out in getattr(tx, "outputs", []) or []:
                         try:
@@ -427,21 +419,35 @@ class ValidationMixin:
                         spk_bytes = _script_to_bytes(spk_obj)
                         if spk_bytes is None:
                             return None
-                        outputs_payload.append({
-                            "amount": amt,
-                            "script_pubkey": spk_bytes,
-                        })
-                    payload_txs.append({
-                        "version": version,
-                        "locktime": locktime,
-                        "txid": txid_b,
-                        "inputs": inputs_payload,
-                        "outputs": outputs_payload,
-                        "is_coinbase": bool(getattr(tx, "is_coinbase", False)),
-                    })
+                        outputs_payload.append((amt, spk_bytes))
+                    txid_b = _txid_bytes(getattr(tx, "txid", None))
+                    if txid_b is None:
+                        return None
+                    tx_payloads.append((version, locktime, inputs_payload, outputs_payload, txid_b, bool(getattr(tx, "is_coinbase", False))))
                 except Exception:
                     return None
-            return {"transactions": payload_txs, "height": getattr(block_obj, "height", None)}
+
+            utxo_items = []
+            for key, entry in snapshot_dict.items():
+                try:
+                    if isinstance(key, bytes):
+                        key = key.decode("utf-8")
+                    if ":" not in key:
+                        continue
+                    txid_hex, vout_str = key.split(":", 1)
+                    txid_b = bytes.fromhex(txid_hex)
+                    vout_i = int(vout_str)
+                    utxo_items.append((
+                        txid_b,
+                        vout_i,
+                        int(entry.get("amount", 0)),
+                        bytes(entry.get("script_pubkey", b"")),
+                        bool(entry.get("is_coinbase", False)),
+                        int(entry.get("block_height", 0)),
+                    ))
+                except Exception:
+                    continue
+            return tx_payloads, utxo_items
 
         opts = {
             "coinbase_maturity": int(CFG.COINBASE_MATURITY),
@@ -449,14 +455,22 @@ class ValidationMixin:
             "max_sigops_per_block": int(CFG.MAX_SIGOPS_PER_BLOCK),
             "enforce_low_s": True,
         }
-        payload_block = _build_block_payload_native(block, txs) or block.to_dict()
+        payload_txs, payload_utxo = _build_block_payload_compact(txs, snapshot) or (None, None)
         try:
-            ok, reason, fees = H.native_validate_block_txs(
-                payload_block,
-                snapshot,
-                spend_height,
-                opts,
-            )
+            if payload_txs is not None and payload_utxo is not None:
+                ok, reason, fees = H.native_validate_block_txs_compact(
+                    payload_txs,
+                    payload_utxo,
+                    spend_height,
+                    opts,
+                )
+            else:
+                ok, reason, fees = H.native_validate_block_txs(
+                    block.to_dict(),
+                    snapshot,
+                    spend_height,
+                    opts,
+                )
         except Exception:
             log.exception("[_validate_transactions] Native block validator failed")
             self._last_block_validation_error = "native_validation_failed"

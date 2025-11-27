@@ -126,17 +126,9 @@ def _request_mempool_inline(self, peer: Tuple[str, int], *, force: bool = False)
 
     resp = self._rpc_request(norm, payload, timeout=max(10.0, CFG.SYNC_TIMEOUT))
     if not resp:
-        try:
-            log.debug("[_request_mempool_inline] no response from %s", norm)
-        except Exception:
-            pass
         return None
 
     if resp.get("type") != "MEMPOOL":
-        try:
-            log.debug("[_request_mempool_inline] unexpected response %s from %s", resp.get("type"), norm)
-        except Exception:
-            pass
         return False
 
     resp_mode = str(resp.get("mode", "")).strip().lower()
