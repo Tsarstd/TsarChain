@@ -21,7 +21,6 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.consensus.validation')
 
 class ValidationMixin:
-
 # =============================================================================
 # 1. VALIDATION PROCESSING
 # =============================================================================
@@ -29,7 +28,10 @@ class ValidationMixin:
         try:
             txs = getattr(block, "transactions", []) or []
             for tx in txs:
-                raw_no_witness = H.serialize_tx_for_txid(tx)
+                raw_no_witness = self._serialize_tx_cached(tx, include_witness=False)
+                if raw_no_witness is None:
+                    self._last_block_validation_error = "tx_serialize_failed"
+                    return False
                 txid_bytes = H.hash256(raw_no_witness)
                 existing = getattr(tx, "txid", None)
                 existing_bytes = None
@@ -44,6 +46,8 @@ class ValidationMixin:
                     self._last_block_validation_error = "txid_mismatch"
                     return False
                 try:
+                    setattr(tx, "_cached_txid_bytes", txid_bytes)
+                    setattr(tx, "_cached_raw_tx_nowit", raw_no_witness)
                     setattr(tx, "txid", txid_bytes)
                     setattr(tx, "txid_hex", txid_bytes.hex())
                 except Exception:
@@ -147,8 +151,11 @@ class ValidationMixin:
         # Guardrail: ensure each tx serializes and is not absurdly large
         for tx in txs:
             try:
-                raw_full = H.serialize_tx(tx, include_witness=True)
+                raw_full = self._serialize_tx_cached(tx, include_witness=True)
             except Exception:
+                self._last_block_validation_error = "tx_serialize_failed"
+                return False
+            if raw_full is None:
                 self._last_block_validation_error = "tx_serialize_failed"
                 return False
             if len(raw_full) > int(CFG.MAX_BLOCK_BYTES):
@@ -387,10 +394,32 @@ class ValidationMixin:
 # =============================================================================
 # 2. HELPER
 # =============================================================================
+    def _serialize_tx_cached(self, tx, *, include_witness: bool) -> bytes | None:
+        """
+        Cache serialize_tx hasil untuk menghindari hashing/serialisasi berulang
+        pada jalur panas validasi.
+        """
+        attr = "_cached_raw_tx_w" if include_witness else "_cached_raw_tx_nowit"
+        buf = getattr(tx, attr, None)
+        if isinstance(buf, (bytes, bytearray)):
+            return bytes(buf)
+        try:
+            raw = H.serialize_tx(tx, include_witness=include_witness)
+        except Exception:
+            return None
+        try:
+            setattr(tx, attr, raw)
+        except Exception:
+            pass
+        return raw
+
     def _estimate_block_size(self, block: Block) -> Optional[int]:
         try:
             size = 80  # header
             for tx in block.transactions or []:
+                cached = getattr(tx, "_cached_raw_tx_w", None)
+                if isinstance(cached, (bytes, bytearray)):
+                    size += len(cached); continue
                 if hasattr(tx, 'serialize') and callable(getattr(tx, 'serialize', None)):
                     try:
                         raw = tx.serialize()

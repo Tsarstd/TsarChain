@@ -170,7 +170,8 @@ fn build_sighash_cache(tx: &TxParts) -> SighashCache {
     let hash_prevouts = sha256d(&prevouts_cat);
     let hash_sequence = sha256d(&seq_cat);
 
-    let mut outs_cat = Vec::new();
+    // setiap output: 8 byte amount + varint + script
+    let mut outs_cat = Vec::with_capacity(tx.outputs.len().saturating_mul(16));
     for outp in &tx.outputs {
         outs_cat.extend_from_slice(&outp.amount.to_le_bytes());
         encode_varint(outp.script_pubkey.len() as u64, &mut outs_cat);
@@ -196,7 +197,8 @@ fn bip143_sighash_from_parts(
     if input_index >= tx.inputs.len() {
         return Err("input_index_out_of_range".to_string());
     }
-    let mut pre = Vec::new();
+    // 4 (ver) + 32*3 + 36 + script + 8 + 4 + 32 + 4 + 4
+    let mut pre = Vec::with_capacity(156 + script_code.len());
     pre.extend_from_slice(&tx.version.to_le_bytes());
     pre.extend_from_slice(&cache.hash_prevouts);
     pre.extend_from_slice(&cache.hash_sequence);
@@ -352,7 +354,7 @@ fn parse_validation_options(opts: &Bound<'_, PyDict>) -> Result<ValidationOption
 }
 
 fn build_utxo_index(utxo: &Bound<'_, PyDict>) -> Result<HashMap<String, UtxoEntry>, String> {
-    let mut out = HashMap::new();
+    let mut out = HashMap::with_capacity(utxo.len());
     let mut iter = utxo.iter();
     while let Some((key_obj, value_obj)) = iter.next() {
         let key: String = match key_obj.extract::<String>() {
@@ -469,8 +471,8 @@ fn validate_transaction_parts(
     spend_height: u64,
     utxo_map: &mut HashMap<String, UtxoEntry>,
     opts: &ValidationOptions,
+    secp: &Secp256k1<secp256k1::VerifyOnly>,
 ) -> Result<(u64, u32), String> {
-    let secp = Secp256k1::verification_only();
     let mut seen_prevouts = HashSet::new();
     let mut input_sum: u128 = 0;
     let mut sigops_tx: u32 = 0;
@@ -584,6 +586,7 @@ fn validate_block_impl(
 ) -> Result<Vec<u64>, String> {
     let opts = parse_validation_options(opts)?;
     let mut utxo_map = build_utxo_index(utxo)?;
+    let secp = Secp256k1::verification_only();
     let txs_any = get_required(block, "transactions", "empty_block_transactions")?;
     let txs = txs_any
         .downcast::<PyList>()
@@ -612,7 +615,7 @@ fn validate_block_impl(
         }
         let tx_parts = TxParts::from_dict(&tx_dict)?;
         let (fee, sigops) =
-            validate_transaction_parts(&tx_parts, spend_height, &mut utxo_map, &opts)?;
+            validate_transaction_parts(&tx_parts, spend_height, &mut utxo_map, &opts, &secp)?;
         fees.push(fee);
         total_sigops = total_sigops.saturating_add(sigops);
         if total_sigops > opts.max_sigops_per_block {
