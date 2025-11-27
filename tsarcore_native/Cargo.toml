@@ -29,6 +29,7 @@ parking_lot = "0.12"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tempfile = "3.10"
+ahash = "0.8"
 
 [features]
 # Enable parallel verification in `secp_verify_der_low_s_many` when the `parallel` feature is set.

@@ -8,7 +8,7 @@ use pyo3::types::{PyAny, PyAnyMethods, PyBytes, PyDict, PyDictMethods, PyList, P
 use ripemd::Ripemd160;
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use ahash::{AHashMap, AHashSet};
 
 fn log_py(level: &str, msg: &str) {
     Python::with_gil(|py| {
@@ -47,6 +47,7 @@ struct ValidationOptions {
 #[derive(Clone)]
 struct InputParts {
     txid_hex: String,
+    txid_be: [u8; 32],
     txid_le: [u8; 32],
     vout: u32,
     sequence: u32,
@@ -65,12 +66,18 @@ struct TxParts {
     locktime: u32,
     inputs: Vec<InputParts>,
     outputs: Vec<OutputParts>,
-    txid_hex: String,
+    txid_be: [u8; 32],
 }
 
 #[derive(Clone, Copy)]
 enum ScriptKind {
     P2wpkh([u8; 20]),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct PrevoutKey {
+    txid: [u8; 32], // big-endian as provided by hex/bytes
+    vout: u32,
 }
 
 fn hash160_bytes(data: &[u8]) -> [u8; 20] {
@@ -151,30 +158,44 @@ fn parse_witness_field(value: Option<Bound<'_, PyAny>>) -> Result<Vec<Vec<u8>>, 
     Ok(out)
 }
 
-fn parse_txid_field(value: &Bound<'_, PyAny>, field: &str) -> Result<([u8; 32], String), String> {
-    if let Ok(b) = value.downcast::<PyBytes>() {
+struct TxidParts {
+    be: [u8; 32],
+    le: [u8; 32],
+    hex_lower: String,
+}
+
+fn parse_txid_field(value: &Bound<'_, PyAny>, field: &str) -> Result<TxidParts, String> {
+    let (be_bytes, hex_lower) = if let Ok(b) = value.downcast::<PyBytes>() {
         let slice = b.as_bytes();
         if slice.len() != 32 {
             return Err(format!("{} must be 32-byte txid", field));
         }
-        let mut le = [0u8; 32];
-        for (i, byte) in slice.iter().enumerate() {
-            le[31 - i] = *byte;
+        let mut be = [0u8; 32];
+        be.copy_from_slice(slice);
+        (be, hex::encode(slice).to_lowercase())
+    } else {
+        let hex_str: String = value
+            .extract()
+            .map_err(|_| format!("{} must be txid hex/bytes", field))?;
+        let txid_bytes = hex::decode(&hex_str).map_err(|_| format!("{} invalid txid hex", field))?;
+        if txid_bytes.len() != 32 {
+            return Err(format!("{} invalid txid length", field));
         }
-        return Ok((le, hex::encode(slice).to_lowercase()));
-    }
-    let hex_str: String = value
-        .extract()
-        .map_err(|_| format!("{} must be txid hex/bytes", field))?;
-    let txid_bytes = hex::decode(&hex_str).map_err(|_| format!("{} invalid txid hex", field))?;
-    if txid_bytes.len() != 32 {
-        return Err(format!("{} invalid txid length", field));
-    }
+        let mut be = [0u8; 32];
+        be.copy_from_slice(&txid_bytes);
+        (be, hex_str.to_lowercase())
+    };
+
     let mut le = [0u8; 32];
-    for (i, b) in txid_bytes.iter().enumerate() {
+    for (i, b) in be_bytes.iter().enumerate() {
         le[31 - i] = *b;
     }
-    Ok((le, hex_str.to_lowercase()))
+
+    Ok(TxidParts {
+        be: be_bytes,
+        le,
+        hex_lower,
+    })
 }
 
 fn sha256d(data: &[u8]) -> [u8; 32] {
@@ -280,7 +301,7 @@ impl TxParts {
         };
 
         let txid_field = get_required(tx, "txid", "tx_missing_txid")?;
-        let (_txid_le, txid_hex) =
+        let txid_parts =
             parse_txid_field(&txid_field, "txid").map_err(|_| "tx_invalid_txid".to_string())?;
 
         let inputs_any = get_required(tx, "inputs", "tx_missing_inputs")?;
@@ -296,21 +317,22 @@ impl TxParts {
                 .downcast::<PyDict>()
                 .map_err(|_| "tx_input_not_dict".to_string())?;
             let txid_field = get_required(&inp, "txid", "tx_input_missing_txid")?;
-            let (txid_le, txid_hex) =
-                parse_txid_field(&txid_field, "tx_input_txid").map_err(|_| "tx_input_invalid_txid".to_string())?;
+            let txid_parts_inp = parse_txid_field(&txid_field, "tx_input_txid")
+                .map_err(|_| "tx_input_invalid_txid".to_string())?;
             let vout: u32 = get_required(&inp, "vout", "tx_input_missing_vout")?
                 .extract()
                 .map_err(|_| "tx_input_invalid_vout".to_string())?;
             let sequence: u32 = match get_optional(inp, "sequence")? {
                 Some(v) => v
                     .extract()
-                .map_err(|_| "tx_input_invalid_sequence".to_string())?,
+                    .map_err(|_| "tx_input_invalid_sequence".to_string())?,
                 None => 0xffffffff,
             };
             let witness = parse_witness_field(get_optional(inp, "witness")?)?;
             inputs.push(InputParts {
-                txid_hex: txid_hex.to_lowercase(),
-                txid_le,
+                txid_hex: txid_parts_inp.hex_lower.clone(),
+                txid_be: txid_parts_inp.be,
+                txid_le: txid_parts_inp.le,
                 vout,
                 sequence,
                 witness,
@@ -342,7 +364,7 @@ impl TxParts {
             locktime,
             inputs,
             outputs,
-            txid_hex: txid_hex.to_lowercase(),
+            txid_be: txid_parts.be,
         })
     }
 }
@@ -377,13 +399,34 @@ fn parse_validation_options(opts: &Bound<'_, PyDict>) -> Result<ValidationOption
     })
 }
 
-fn build_utxo_index(utxo: &Bound<'_, PyDict>) -> Result<HashMap<String, UtxoEntry>, String> {
-    let mut out = HashMap::with_capacity(utxo.len());
+fn parse_prevout_key_str(s: &str) -> Option<PrevoutKey> {
+    let mut parts = s.split(':');
+    let tx_part = parts.next()?;
+    let vout_part = parts.next()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    let tx_bytes = hex::decode(tx_part).ok()?;
+    if tx_bytes.len() != 32 {
+        return None;
+    }
+    let mut be = [0u8; 32];
+    be.copy_from_slice(&tx_bytes);
+    let vout = vout_part.parse::<u32>().ok()?;
+    Some(PrevoutKey { txid: be, vout })
+}
+
+fn build_utxo_index(utxo: &Bound<'_, PyDict>) -> Result<AHashMap<PrevoutKey, UtxoEntry>, String> {
+    let mut out: AHashMap<PrevoutKey, UtxoEntry> = AHashMap::with_capacity(utxo.len());
     let mut iter = utxo.iter();
     while let Some((key_obj, value_obj)) = iter.next() {
-        let key: String = match key_obj.extract::<String>() {
-            Ok(s) => s.to_lowercase(),
+        let key_raw: String = match key_obj.extract::<String>() {
+            Ok(s) => s,
             Err(_) => continue,
+        };
+        let key = match parse_prevout_key_str(&key_raw) {
+            Some(k) => k,
+            None => continue,
         };
         let entry_dict = match value_obj.downcast::<PyDict>() {
             Ok(d) => d,
@@ -489,23 +532,32 @@ fn verify_signature(
 fn validate_transaction_parts(
     tx: &TxParts,
     spend_height: u64,
-    utxo_map: &mut HashMap<String, UtxoEntry>,
+    utxo_map: &mut AHashMap<PrevoutKey, UtxoEntry>,
     opts: &ValidationOptions,
     secp: &Secp256k1<secp256k1::VerifyOnly>,
 ) -> Result<(u64, u32), String> {
-    let mut seen_prevouts = HashSet::new();
+    let mut seen_prevouts: AHashSet<PrevoutKey> = AHashSet::with_capacity(tx.inputs.len());
     let mut input_sum: u128 = 0;
     let mut sigops_tx: u32 = 0;
     let cache = build_sighash_cache(tx);
 
     for (idx, inp) in tx.inputs.iter().enumerate() {
-        let key = format!("{}:{}", inp.txid_hex, inp.vout);
-        if !seen_prevouts.insert(key.clone()) {
+        let key = PrevoutKey {
+            txid: inp.txid_be,
+            vout: inp.vout,
+        };
+        if !seen_prevouts.insert(key) {
             return Err("duplicate_prevout_in_tx".to_string());
         }
         let entry = match utxo_map.remove(&key) {
             Some(e) => e,
-            None => return Err(format!("prevout_missing {}", key)),
+            None => {
+                return Err(format!(
+                    "prevout_missing {}:{}",
+                    inp.txid_hex,
+                    inp.vout
+                ))
+            }
         };
         if entry.is_coinbase {
             let confs = (spend_height as i64).saturating_sub(entry.block_height);
@@ -576,7 +628,10 @@ fn validate_transaction_parts(
         } else {
             output_sum += outp.amount as u128;
         }
-        let key = format!("{}:{}", tx.txid_hex, idx);
+        let key = PrevoutKey {
+            txid: tx.txid_be,
+            vout: idx as u32,
+        };
         utxo_map.insert(
             key,
             UtxoEntry {
