@@ -510,18 +510,20 @@ class GraffitiTab(ttk.Frame):
         storer_meta = upload_result.get("storer") or {}
         storer_addr = str(storer_meta.get("addr") or storer_meta.get("address") or "").strip().lower()
         creator = (self.creator_var.get() or "").strip().lower()
+        if not creator:
+            raise RuntimeError("creator wallet belum dipilih")
         meta = build_metadata(
             sha256_hex=self.selected_sha,
             size_bytes=int(self.selected_size),
             mime=self.selected_mime,
             storer_addr=storer_addr or "unknown",
             receipt_id=self.receipt_id,
-            creator_addr=creator or None,
+            creator_addr=creator,
         )
         opret_hex = build_opret_hex(meta)
         self.opret_hex = opret_hex
 
-        art_id = compute_art_id(self.selected_sha, creator or None)
+        art_id = compute_art_id(self.selected_sha, creator)
         pool_addr = derive_pool_address(art_id)
         fee_sats = calc_upload_fee_sats(int(self.selected_size))
         tsar_fee = fee_sats / CFG.TSAR

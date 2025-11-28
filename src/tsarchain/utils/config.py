@@ -97,7 +97,7 @@ WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wal
 DATA_SCHEMA_VERSION = 1
 
 # ---- KV BACKEND ----
-KV_BACKEND         = "lmdb"  # active key-value backend implementation (lmdb & json)
+KV_BACKEND         = "json"  # active key-value backend implementation (lmdb & json)
 LMDB_DATA_FILE     = "data/tsarchain_db"  # main LMDB data file path
 LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
@@ -168,7 +168,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "000c6e5a930559fcd2a627957ab065e5401e69632cc92cbf64de64250c3695db"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "000092d62b38aa4c353e7a030cc4fc9fbd37b4bbad50bd2407dbe41659a3e18a"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -250,7 +250,7 @@ MTP_WINDOWS       = 11  # number of blocks in median time past calculation
 POW_ALGO                 = "randomx"
 RANDOMX_STATIC_KEY       = "tsar-dev-seed"
 RANDOMX_KEY_SALT         = b"tsar-randomx"
-RANDOMX_KEY_EPOCH_BLOCKS = 64     # rotate RandomX seed every N blocks
+RANDOMX_KEY_EPOCH_BLOCKS = 128     # rotate RandomX seed every N blocks
 RANDOMX_FULL_MEM         = False  # allocate ~2GB dataset for mining/validation - default 'False' can be changed in CLI
 RANDOMX_LARGE_PAGES      = False  # set True only if huge pages configured OS-wide
 RANDOMX_JIT              = True
@@ -497,7 +497,7 @@ GRAFFITI_MAGIC = b"TSAR_GRAF1|"  # domain separator for graffiti commitments
 GRAFFITI_POOL_SALT = b"TSAR_GRAFFITI_POOL|"  # seed when deriving deterministic pool addresses
 
 # ---- OP_RETURN POLICY ----
-MAX_GRAFFITI_OPRET    = 400  # graffiti payload limit capped under script limit
+MAX_GRAFFITI_OPRET    = 500  # graffiti payload limit capped under script limit
 OPRET_REQUIRE_LAST    = True  # enforce OP_RETURN as final output
 OPRET_ONLY_ONE        = True  # restrict transactions to a single OP_RETURN
 OPRET_ALLOW_PUSHDATA1 = True  # allow PUSHDATA1 opcodes inside OP_RETURN handler

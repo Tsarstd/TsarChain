@@ -53,7 +53,7 @@ class GraffitiRegistry:
         else:
             self.store.save(self.data)
 
-    def record_post(self, art_id: str, meta: Dict[str, Any], txid: str, block_height: int, pool_addr: str, amount_paid: int) -> None:
+    def record_post(self, art_id: str, meta: Dict[str, Any], txid: str, block_height: int, pool_addr: str, amount_paid: int, *, block_hash: str | None = None) -> None:
         posts = self.data.setdefault("posts", {})
         existing = posts.get(art_id)
         if existing and existing.get("txid") == txid:
@@ -65,6 +65,7 @@ class GraffitiRegistry:
             "block_height": int(block_height),
             "pool_address": pool_addr,
             "amount_paid": int(amount_paid),
+            "block_hash": block_hash,
         })
         stats = entry.setdefault("stats", {})
         stats["pool_balance"] = int(stats.get("pool_balance", 0)) + int(amount_paid)

@@ -82,7 +82,7 @@ def _guard_payload_size(data: bytes) -> None:
 
 def build_metadata(sha256_hex: str, size_bytes: int, mime: str,
                    storer_addr: str, receipt_id: str,
-                   creator_addr: str | None = None,
+                   creator_addr: str,
                    ts: Optional[int] = None, height: Optional[int] = None,
                    extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     
@@ -96,19 +96,20 @@ def build_metadata(sha256_hex: str, size_bytes: int, mime: str,
         raise ValueError("bad_storer_addr")
     if not isinstance(receipt_id, str) or not receipt_id.strip():
         raise ValueError("bad_receipt_id")
-    if creator_addr and not _is_valid_tsar_address(creator_addr):
+    if not _is_valid_tsar_address(creator_addr):
         raise ValueError("bad_creator_addr")
 
+    art_id = compute_art_id(sha256_hex, creator_addr)
     meta: Dict[str, Any] = {
         "sha256": sha256_hex.strip().lower(),
+        "art_id": art_id,
         "size": int(size_bytes),
         "mime": mime.strip(),
         "storer": storer_addr.strip().lower(),
         "receipt": receipt_id.strip(),
         "event": "POST",
     }
-    if creator_addr:
-        meta["creator"] = creator_addr.strip().lower()
+    meta["creator"] = creator_addr.strip().lower()
     # Anchor opsional
     if ts is None:
         ts = int(time.time())
@@ -242,6 +243,19 @@ def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
             receipt = obj.get("receipt", "")
             if not isinstance(receipt, str) or not receipt.strip():
                 return None
+            creator_addr = obj.get("creator")
+            if creator_addr and not _is_valid_tsar_address(creator_addr):
+                return None
+            art_id = obj.get("art_id")
+            if art_id and not _is_valid_art_id(art_id):
+                return None
+            if creator_addr:
+                computed = compute_art_id(obj.get("sha256", ""), creator_addr)
+                if art_id is None:
+                    art_id = computed
+                    obj["art_id"] = art_id
+                elif art_id.lower() != computed:
+                    return None
         elif event == "COMMENT":
             art_id = obj.get("art_id", "")
             if not _is_valid_art_id(art_id):
@@ -310,21 +324,28 @@ def parse_from_script(script: Script) -> Optional[Dict[str, Any]]:
         return None
 
 
-def compute_art_id(sha256_hex: str, creator_addr: str | None = None, block_hint: str | None = None) -> str:
+def compute_art_id(sha256_hex: str, creator_addr: str, block_hash: str | None = None) -> str:
     """
-    Deterministic art identifier. Spec ideally mixes block hash, but prior to confirmation
-    we derive a provisional id using creator + file hash. Once anchored, explorers can
-    append block hash for final ID.
+    Deterministic art identifier anchored to creator and file hash, with optional block_hash
+    salt if caller already knows the confirmed block. The default (without block_hash) is
+    used for block_id anchoring so it can be computed before mining.
     """
-    payload = [
+    if not _is_valid_sha256_hex(sha256_hex):
+        raise ValueError("bad_sha256_hex")
+    if not _is_valid_tsar_address(creator_addr):
+        raise ValueError("bad_creator_addr")
+    parts = [
         b"TSAR_GRAFFITI_ART",
         bytes.fromhex(sha256_hex.strip().lower()),
+        creator_addr.strip().lower().encode("utf-8"),
     ]
-    if creator_addr:
-        payload.append(creator_addr.strip().lower().encode("utf-8"))
-    if block_hint:
-        payload.append(block_hint.strip().lower().encode("utf-8"))
-    blob = b"|".join(payload)
+    if block_hash:
+        try:
+            block_hash_bytes = bytes.fromhex(block_hash.strip())
+        except Exception:
+            block_hash_bytes = block_hash.strip().encode("utf-8")
+        parts.append(block_hash_bytes)
+    blob = b"|".join(parts)
     return hashlib.sha256(blob).hexdigest()
 
 

@@ -54,7 +54,7 @@ class UTXOValidationMixin:
             log.exception("[_is_unspendable_opreturn] Error checking OP_RETURN in scriptPubKey")
             return False
 
-    def update(self, transactions, block_height: int, *, autosave: bool = True):
+    def update(self, transactions, block_height: int, *, block_hash: str | None = None, autosave: bool = True):
         if not transactions:
             return
         
@@ -92,7 +92,7 @@ class UTXOValidationMixin:
                     except Exception:
                         address = None
                     outputs_info.append({"script_bytes": script_bytes, "amount": amount, "address": address})
-                self._record_graffiti_event(tx, outputs_info, block_height)
+                self._record_graffiti_event(tx, outputs_info, block_height, block_hash)
             self._dirty = True
             if autosave:
                 self._save()
@@ -107,6 +107,10 @@ class UTXOValidationMixin:
             for block in blocks or []:
                 txs = getattr(block, "transactions", []) or []
                 height = int(getattr(block, "height", 0))
+                try:
+                    blk_hash = block.hash().hex()
+                except Exception:
+                    blk_hash = None
                 for tx in txs:
                     txid_hex = self._txid_hex(getattr(tx, "txid", None))
                     is_coinbase = bool(getattr(tx, "is_coinbase", False))
@@ -134,7 +138,7 @@ class UTXOValidationMixin:
                         except Exception:
                             address = None
                         outputs_info.append({"script_bytes": script_bytes, "amount": amount, "address": address})
-                    self._record_graffiti_event(tx, outputs_info, height)
+                    self._record_graffiti_event(tx, outputs_info, height, blk_hash)
             self._dirty = True
             if self._persist_enabled:
                 self._save(force=True)
@@ -178,7 +182,7 @@ class UTXOValidationMixin:
             raise AttributeError("TxIn missing prevout (txid/vout)")
         self.remove(prev_txid_hex, int(vout))
 
-    def apply_tx_to_utxoset(self, tx, utxos: dict, block_height: int | None = None) -> dict:
+    def apply_tx_to_utxoset(self, tx, utxos: dict, block_height: int | None = None, block_hash: str | None = None) -> dict:
         if utxos is None:
             return utxos
 
@@ -336,6 +340,6 @@ class UTXOValidationMixin:
             _insert_output(utxos, txid_hex, n, entry, address)
 
         if block_height is not None:
-            self._record_graffiti_event(tx, outputs_info, block_height)
+            self._record_graffiti_event(tx, outputs_info, block_height, block_hash)
 
         return utxos

@@ -190,7 +190,6 @@ class SimpleMiner:
                 self._pending_block_hashes.discard(old.hash().hex())
             except Exception:
                 pass
-        clog(f"[broadcast] queued mined block (backlog={len(self._pending_blocks)})", color=COL.BG_YELLOW)
 
     def _flush_pending_blocks(self) -> None:
         if not self.network or not self._pending_blocks:

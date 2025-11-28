@@ -44,7 +44,7 @@ class UTXOGraffitiMixin:
                 return None
         return None
 
-    def _record_graffiti_event(self, tx, outputs_info: list[dict[str, Any]], block_height: int | None) -> None:
+    def _record_graffiti_event(self, tx, outputs_info: list[dict[str, Any]], block_height: int | None, block_hash: str | None = None) -> None:
         if block_height is None:
             return
         try:
@@ -64,7 +64,7 @@ class UTXOGraffitiMixin:
             
             event = str(meta.get("event", "POST")).upper()
             if event == "POST":
-                self._handle_graffiti_post(meta, outputs_info, txid_hex, block_height)
+                self._handle_graffiti_post(meta, outputs_info, txid_hex, block_height, block_hash)
             elif event == "COMMENT":
                 self._handle_graffiti_comment(meta, outputs_info, txid_hex, block_height)
                 
@@ -76,12 +76,21 @@ class UTXOGraffitiMixin:
         meta: dict[str, Any],
         outputs_info: list[dict[str, Any]],
         txid_hex: str,
-        block_height: int
+        block_height: int,
+        block_hash: str | None = None,
         ) -> None:
         
         sha_hex = str(meta.get("sha256") or "")
-        creator = meta.get("creator")
-        art_id = GRAFFITI.compute_art_id(sha_hex, creator)
+        creator = (meta.get("creator") or "").strip().lower()
+        art_id = str(meta.get("art_id") or "").strip().lower()
+        if not art_id and sha_hex and creator:
+            try:
+                art_id = GRAFFITI.compute_art_id(sha_hex, creator)
+            except Exception:
+                art_id = ""
+        if not art_id:
+            log.warning("[graffiti] POST missing art_id/creator sha=%s tx=%s", sha_hex[:16], txid_hex)
+            return
         pool_addr = GRAFFITI.derive_pool_address(art_id)
         min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
         
@@ -97,8 +106,9 @@ class UTXOGraffitiMixin:
             "storer": meta.get("storer"),
             "receipt": meta.get("receipt"),
             "creator": creator,
+            "block_hash": block_hash,
         }
-        self._graffiti_registry.record_post(art_id, entry, txid_hex, block_height, pool_addr, paid)
+        self._graffiti_registry.record_post(art_id, entry, txid_hex, block_height, pool_addr, paid, block_hash=block_hash)
 
     def _handle_graffiti_comment(
         self,

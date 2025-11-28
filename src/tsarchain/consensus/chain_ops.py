@@ -91,7 +91,11 @@ class ChainOpsMixin:
                     store = self._ensure_utxodb()
                     if store is not None:
                         utxo_start = time.perf_counter() if metrics_enabled else None
-                        store.update(block.transactions, block_height=0, autosave=False)
+                        try:
+                            blk_hash = block.hash().hex()
+                        except Exception:
+                            blk_hash = None
+                        store.update(block.transactions, block_height=0, block_hash=blk_hash, autosave=False)
                         if metrics_enabled and utxo_start is not None:
                             utxo_sec = time.perf_counter() - utxo_start
                         self._mark_utxo_dirty()
@@ -143,7 +147,11 @@ class ChainOpsMixin:
                     store = self._ensure_utxodb()
                     if store is not None:
                         utxo_start = time.perf_counter() if metrics_enabled else None
-                        store.update(block.transactions, block_height=block.height, autosave=False)
+                        try:
+                            blk_hash = block.hash().hex()
+                        except Exception:
+                            blk_hash = None
+                        store.update(block.transactions, block_height=block.height, block_hash=blk_hash, autosave=False)
                         if metrics_enabled and utxo_start is not None:
                             utxo_sec = time.perf_counter() - utxo_start
                         self._mark_utxo_dirty()

@@ -21,9 +21,9 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.consensus.mining')
 
 class MiningMixin:
-    def _select_graffiti_sha(self, txs) -> str | None:
+    def _select_graffiti_art_id(self, txs) -> str | None:
         """
-        Inspect candidate transactions for a Graffiti POST event and return its SHA256 hash.
+        Inspect candidate transactions for a Graffiti POST event and return its art_id.
         Only the first valid POST per block is used to anchor the block_id.
         """
         for tx in txs or []:
@@ -41,15 +41,22 @@ class MiningMixin:
                 event = str(meta.get("event", "POST")).strip().upper()
                 if event != "POST":
                     continue
-                sha_hex = str(meta.get("sha256") or "").strip().lower()
-                if len(sha_hex) == 64:
+                art_id = str(meta.get("art_id") or "").strip().lower()
+                if not art_id:
+                    sha_hex = str(meta.get("sha256") or "").strip().lower()
+                    creator = str(meta.get("creator") or "").strip().lower()
+                    try:
+                        art_id = GRAFFITI.compute_art_id(sha_hex, creator) if sha_hex and creator else ""
+                    except Exception:
+                        art_id = ""
+                if art_id:
                     txid = getattr(tx, "txid", None)
                     if isinstance(txid, (bytes, bytearray)):
                         txid_hex = txid.hex()
                     else:
                         txid_hex = str(txid)
-                    log.debug("[mine_block] Graffiti POST found tx=%s sha=%s", (txid_hex or "")[:12], sha_hex[:24])
-                    return sha_hex
+                    log.debug("[mine_block] Graffiti POST found tx=%s art_id=%s", (txid_hex or "")[:12], art_id[:24])
+                    return art_id
         return None
 
     def mine_block(self, miner_address, use_cores: int | None = None, cancel_event: MpEvent | None = None, pow_backend: str = "auto", progress_queue: mp.Queue | None = None,):
@@ -126,11 +133,11 @@ class MiningMixin:
         total_fee      = sum(int(getattr(tx, "fee", 0)) for tx in valid_txs)
         coinbase_value = int(reward + total_fee)
 
-        graffiti_sha = self._select_graffiti_sha(valid_txs)
+        graffiti_art_id = self._select_graffiti_art_id(valid_txs)
         coinbase_kwargs = dict(to_address=miner_address, reward=coinbase_value, height=height)
-        if graffiti_sha:
-            coinbase_kwargs["block_id"] = graffiti_sha
-            log.info("[mine_block] Anchoring block_id to graffiti sha %s", graffiti_sha[:32])
+        if graffiti_art_id:
+            coinbase_kwargs["block_id"] = graffiti_art_id
+            log.info("[mine_block] Anchoring block_id to graffiti art_id %s", graffiti_art_id[:32])
 
         coinbase = CoinbaseTx(**coinbase_kwargs)
         coinbase.compute_txid()

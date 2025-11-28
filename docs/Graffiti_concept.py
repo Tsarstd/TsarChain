@@ -166,7 +166,7 @@ Payout: Per epoch, storage nodes passing proofs split the available pool for thi
 	MIN_BILLABLE_SIZE				    100 KB						    Minimum billable chunk
 	REPLICATION_R						5						        Permanent replication factor
 	EPOCH_BLOCKS						720						        Retention epoch (~1 day @2m/block)
-	COMMENT_MAX_BYTES					280								Max on chain comment bytes
+	COMMENT_MAX_BYTES					140								Max on chain comment bytes
 	COMMENT_FEE_MIN						1 TSAR						    Minimum comment fee
 	ROYALTY_CREATOR						0.80							Creator share of comment fee
 	SHARE_STORAGE						0.10						    Storage pool share of comment fee
@@ -191,13 +191,4 @@ Payout: Per epoch, storage nodes passing proofs split the available pool for thi
 
 	• Content Takedown: protocol has none. Storage is voluntary; diverse nodes = resilience.
 		Buzzers must pay to speak - artists earn.
-
-
-### --- Next Implementation Steps (Dev Notes) --- 
-
-	- archivist tidak dapat membaca file graffiti yang diterima di storagenya sendiri, tidak tampil di UI, padahal di storage sudah ada
-
-	- Retention Proof Scheduler: rancang worker storage node yang periodik menjalankan byte-range challenge sebelum pool balance dibagikan; log penalti jika bukti absen.
- 
-	- Storage Automation: definisikan template transaksi on-chain untuk payout pool (mis. script khusus) sehingga klaim bisa otomatis mengikuti aturan konsensus.
 '''

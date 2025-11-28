@@ -145,6 +145,11 @@ class StorageMixin:
         posts: list[dict] = []
         comments: list[dict] = []
 
+        try:
+            blk_hash = block.hash().hex()
+        except Exception:
+            blk_hash = None
+
         def _txid_hex(tx_obj):
             txid = getattr(tx_obj, "txid", None)
             if isinstance(txid, (bytes, bytearray)):
@@ -163,13 +168,24 @@ class StorageMixin:
                     continue
                 event = str(meta.get("event", "")).upper()
                 if event == "POST":
+                    sha_hex = meta.get("sha256")
+                    creator = meta.get("creator")
+                    art_id = meta.get("art_id")
+                    if not art_id and sha_hex and creator:
+                        try:
+                            art_id = GRAFFITI.compute_art_id(sha_hex, creator)
+                        except Exception:
+                            art_id = None
                     posts.append({
                         "txid": txid_hex,
+                        "art_id": art_id,
                         "sha256": meta.get("sha256"),
                         "size": meta.get("size"),
                         "mime": meta.get("mime"),
                         "storer": meta.get("storer"),
                         "receipt": meta.get("receipt"),
+                        "creator": creator,
+                        "block_hash": blk_hash,
                     })
                 elif event == "COMMENT":
                     comments.append({

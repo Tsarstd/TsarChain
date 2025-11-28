@@ -453,7 +453,11 @@ class ReceiveMixin:
 
             if not self._utxo_shared:
                 try:
-                    self.utxodb.update(block.transactions, block.height, autosave=False)
+                    try:
+                        blk_hash = block.hash().hex()
+                    except Exception:
+                        blk_hash = None
+                    self.utxodb.update(block.transactions, block.height, block_hash=blk_hash, autosave=False)
                     self._maybe_flush_local_utxo(block.height)
                 except Exception:
                     log.exception("[receive_block] Error updating UTXO after block acceptance")
