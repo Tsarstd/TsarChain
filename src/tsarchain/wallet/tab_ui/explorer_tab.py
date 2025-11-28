@@ -649,17 +649,28 @@ class ExplorePanel(tk.Frame):
     # ---------- renderers ----------
     def _render_block(self, b: Dict):
         self._clear_text()
-        h   = b.get("height") or "Genesis"
-        hh  = b.get("hash")
-        blkid = b.get("block_id")
-        ts  = _fmt_ts(b.get("timestamp"))
-        prev= b.get("prev_block_hash")
-        nn  = b.get("nonce")
-        dif = b.get("difficulty")
-        bits= b.get("bits")
-        ver = b.get("version")
-        mroot = b.get("merkle_root")
-        txs = b.get("transactions") or b.get("tx") or []
+        meta = b.get("_meta") if isinstance(b, dict) else {}
+
+        def _pick(*keys):
+            for k in keys:
+                v = b.get(k) if isinstance(b, dict) else None
+                if v is None and isinstance(meta, dict):
+                    v = meta.get(k)
+                if v not in (None, ""):
+                    return v
+            return None
+
+        h     = _pick("height", "index") or "Genesis"
+        hh    = _pick("hash")
+        blkid = _pick("block_id")
+        ts    = _fmt_ts(_pick("timestamp", "time"))
+        prev  = _pick("prev_block_hash", "prev_hash", "previous_hash", "previousblockhash")
+        nn    = _pick("nonce")
+        dif   = _pick("difficulty")
+        bits  = _pick("bits")
+        ver   = _pick("version")
+        mroot = _pick("merkle_root")
+        txs   = b.get("transactions") or b.get("tx") or []
 
         self._section(f"Block #{h}")
         if not blkid:
