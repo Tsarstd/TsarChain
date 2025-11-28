@@ -291,8 +291,9 @@ class TsarStorageGUI:
         self.info_vars["files"].set(str(len(files)))
         self.info_vars["bytes"].set(f"{used} bytes")
         for aid, meta in files.items():
+            display_id = meta.get("art_id") or aid
             self.tree.insert("", tk.END, values=(
-                aid,
+                display_id,
                 int(meta.get("size_bytes",0)),
                 "yes" if meta.get("paid") else "no",
                 meta.get("expire_at_height"),
@@ -316,16 +317,32 @@ class TsarStorageGUI:
         posts = resp.get("posts") or []
         self.pool_tree.delete(*self.pool_tree.get_children())
         self._pool_data = {}
-        files_by_sha = {}
-        for aid, meta in (files or {}).items():
+        files_by_sha: dict[str, dict] = {}
+        files_by_art: dict[str, dict] = {}
+        art_map = {}
+        try:
+            art_map = (rpc.call({"type":"STOR_INDEX"}, timeout=3.0) or {}).get("art_map", {})
+        except Exception:
+            art_map = {}
+        for gid, meta in (files or {}).items():
             sha = str(meta.get("sha256") or "").lower()
             if sha:
-                files_by_sha[sha] = {"id": aid, "meta": meta}
+                files_by_sha[sha] = {"id": gid, "meta": meta}
+            art_id = str(meta.get("art_id") or "").lower()
+            if art_id:
+                files_by_art[art_id] = {"id": gid, "meta": meta}
+        if isinstance(art_map, dict):
+            for art_id, gid in art_map.items():
+                if art_id in files_by_art:
+                    continue
+                meta = files.get(gid) if isinstance(files, dict) else None
+                if isinstance(meta, dict):
+                    files_by_art[str(art_id).lower()] = {"id": gid, "meta": meta}
 
         for art in posts:
             aid = art.get("art_id")
             sha = str(art.get("sha256") or "").lower()
-            file_meta = files_by_sha.get(sha)
+            file_meta = files_by_art.get(str(aid).lower()) or files_by_sha.get(sha)
             if not (aid and file_meta):
                 continue
             stats = art.get("stats") or {}

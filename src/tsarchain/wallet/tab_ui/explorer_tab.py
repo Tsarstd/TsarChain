@@ -649,19 +649,25 @@ class ExplorePanel(tk.Frame):
     # ---------- renderers ----------
     def _render_block(self, b: Dict):
         self._clear_text()
-        h   = b.get("height") or b.get("index") or "Genesis"
-        hh  = b.get("hash") or b.get("block_hash") or "-"
+        h   = b.get("height") or "Genesis"
+        hh  = b.get("hash")
         blkid = b.get("block_id")
-        ts  = _fmt_ts(b.get("time") or b.get("timestamp"))
-        prev= b.get("prev_hash") or b.get("previous") or b.get("prev_block_hash") or "-"
+        ts  = _fmt_ts(b.get("timestamp"))
+        prev= b.get("prev_block_hash")
         nn  = b.get("nonce")
-        dif = b.get("difficulty") or b.get("target")
-        bits= b.get("bits") or (b.get("header", {}) or {}).get("bits")
-        ver = b.get("version") or (b.get("header", {}) or {}).get("version")
-        mroot = b.get("merkle_root") or (b.get("header", {}) or {}).get("merkle_root")
+        dif = b.get("difficulty")
+        bits= b.get("bits")
+        ver = b.get("version")
+        mroot = b.get("merkle_root")
         txs = b.get("transactions") or b.get("tx") or []
 
         self._section(f"Block #{h}")
+        if not blkid:
+            try:
+                cb = (txs[0] if txs else {}) or {}
+                blkid = cb.get("block_id")
+            except Exception:
+                blkid = None
         self._kv("Block ID", (blkid if blkid else "-"), mono=True, vtag="val_id")
         self._kv("Hash", str(hh), mono=True, vtag="val_hex")
         self._kv("Previous", str(prev), mono=True, vtag="val_hex")
@@ -679,8 +685,8 @@ class ExplorePanel(tk.Frame):
             self._section("Graffiti Activity")
             if graff:
                 for g in graff:
-                    art = g.get("sha256") or "-"
-                    self._kv("Art ID", str(art), mono=True, vtag="val_hex")
+                    sha = g.get("sha256") or "-"
+                    self._kv("SHA256", str(sha), mono=True, vtag="val_hex")
                     self._kv("TxID", str(g.get("txid") or "-"), mono=True, vtag="val_hex")
                     mime = g.get("mime") or "-"
                     sz = g.get("size")

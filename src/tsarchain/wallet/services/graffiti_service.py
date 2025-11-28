@@ -99,6 +99,7 @@ def upload_graffiti(
     *,
     graffiti_id: Optional[str] = None,
     sha256_hex: Optional[str] = None,
+    art_id: Optional[str] = None,
     progress_cb: Optional[Callable[[int, int], None]] = None,
 ) -> Dict[str, Any]:
     """
@@ -130,6 +131,8 @@ def upload_graffiti(
         "sha256": sha_hex,
         "filename": os.path.basename(file_path) or "blob.bin",
     }
+    if art_id:
+        init_payload["art_id"] = str(art_id).strip().lower()
     init_resp = _send_storage_request(host, port, init_payload)
     if init_resp.get("status") not in ("ok", "accepted"):
         return {"status": "error", "stage": "init", "resp": init_resp}

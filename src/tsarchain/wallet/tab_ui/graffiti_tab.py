@@ -438,6 +438,11 @@ class GraffitiTab(ttk.Frame):
         if not creator_addr:
             messagebox.showwarning("Graffiti", "Select a creator wallet first.")
             return
+        try:
+            art_id = compute_art_id(self.selected_sha, creator_addr)
+        except Exception as exc:
+            messagebox.showerror("Graffiti", f"Failed to compute art_id: {exc}")
+            return
 
         self.uploading = True
         self.upload_btn["state"] = "disabled"
@@ -466,6 +471,7 @@ class GraffitiTab(ttk.Frame):
                     file_path=path,
                     graffiti_id=gid,
                     sha256_hex=sha,
+                    art_id=art_id,
                     progress_cb=progress,
                 )
             except Exception as exc:

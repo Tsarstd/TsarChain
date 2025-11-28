@@ -31,7 +31,11 @@ class StorageServer:
             with open(self.idx_path, "r", encoding="utf-8") as f:
                 self.index = json.load(f)
         except Exception:
-            self.index = {"files": {}, "bytes_used": 0}
+            self.index = {"files": {}, "bytes_used": 0, "art_map": {}}
+        # pastikan struktur dasar ada
+        self.index.setdefault("files", {})
+        self.index.setdefault("bytes_used", 0)
+        self.index.setdefault("art_map", {})
 
     def _save_index(self):
         tmp = self.idx_path + ".tmp"
@@ -66,6 +70,7 @@ class StorageServer:
             size  = int(msg.get("size_bytes",0))
             sha   = str(msg.get("sha256","")).lower()
             fname = str(msg.get("filename","")).strip() or "blob.bin"
+            art_id = str(msg.get("art_id","")).strip().lower()
             chunk = int(CFG.STORAGE_UPLOAD_CHUNK)
             if not aid or size <= 0 or len(sha) != 64:
                 return {"type":"STOR_ACK","status":"rejected","reason":"bad_fields"}
@@ -84,6 +89,9 @@ class StorageServer:
                 "chunk_size": chunk,
                 "created_ts": int(time.time()),
             }
+            if art_id:
+                meta["art_id"] = art_id
+                self.index.setdefault("art_map", {})[art_id] = aid
             self.index["files"][aid] = meta
             self._save_index()
             # buat file kosong
@@ -168,6 +176,9 @@ class StorageServer:
                     "receipt": receipt,
                     "stored_ts": now_ts,
                 })
+                art_id = str(meta.get("art_id","")).strip().lower()
+                if art_id:
+                    self.index.setdefault("art_map", {})[art_id] = aid
                 self.index["files"][aid] = meta
                 self.index["bytes_used"] = sum(int(v.get("size_bytes",0)) for v in self.index["files"].values())
                 self._save_index()
@@ -179,6 +190,33 @@ class StorageServer:
             aid = str(msg.get("graffiti_id","")).strip()
             meta = self.index.get("files",{}).get(aid)
             return {"type":"STOR_STATUS","found": bool(meta), "meta": meta}
+
+        if t == "STOR_TAG_ART":
+            aid = str(msg.get("graffiti_id","")).strip()
+            art_id = str(msg.get("art_id","")).strip().lower()
+            if not aid or not art_id:
+                return {"type":"STOR_ACK","status":"rejected","reason":"missing_art_id"}
+            meta = self.index.get("files",{}).get(aid)
+            if not meta:
+                return {"type":"STOR_ACK","status":"rejected","reason":"no_such"}
+            meta["art_id"] = art_id
+            for fld in ("block_height","block_hash","creator","pool_address","paid"):
+                if fld in msg:
+                    meta[fld] = msg.get(fld)
+            self.index.setdefault("art_map", {})[art_id] = aid
+            self.index["files"][aid] = meta
+            self._save_index()
+            return {"type":"STOR_ACK","status":"ok","graffiti_id": aid, "art_id": art_id}
+
+        if t == "STOR_GET_BY_ART" or t == "GRAFFITI_GET_FILE":
+            art_id = str(msg.get("art_id","")).strip().lower()
+            if not art_id:
+                return {"type":t,"found": False}
+            gid = (self.index.get("art_map") or {}).get(art_id)
+            meta = None
+            if gid:
+                meta = (self.index.get("files") or {}).get(gid)
+            return {"type":t,"found": bool(meta), "graffiti_id": gid, "meta": meta}
 
         return {"error":"unknown type"}
 
