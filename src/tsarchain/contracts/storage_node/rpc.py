@@ -231,7 +231,10 @@ class RPC:
             }
             _ = self.call(hello, timeout=3.0)
             pong = self.call({"type":"PING"}, timeout=3.0)
-            return isinstance(pong, dict) and (pong.get("type") == "PONG")
+            ok = isinstance(pong, dict) and (pong.get("type") == "PONG")
+            if ok:
+                log.info("[RPC.connect] storage handshake ok to %s:%s listen_port=%s", ip, port, my_listen_port)
+            return ok
         except Exception:
             log.exception("[RPC.connect] handshake failed to %s:%s", ip, port)
             return False
@@ -263,6 +266,7 @@ class RPC:
                 send_message(s, json.dumps(payload).encode("utf-8"))
                 raw = recv_message(s, timeout)
             if not raw:
+                log.debug("[RPC.call] no response type=%s to %s:%s", inner.get("type"), ip, port)
                 return None
             outer = json.loads(raw.decode("utf-8"))
             if not isinstance(outer, dict):
@@ -271,5 +275,6 @@ class RPC:
                 try:
                     return verify_and_unwrap(outer, lambda nid: None)
                 except Exception:
+                    log.debug("[RPC.call] unwrap failed type=%s", inner.get("type"))
                     return None
             return outer

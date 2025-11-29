@@ -3,7 +3,7 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173
 
-import os, threading, sys
+import os, threading, sys, json, socket
 import tkinter as tk
 import multiprocessing as mp
 from tkinter import ttk, messagebox, simpledialog
@@ -12,6 +12,7 @@ from typing import Optional, Dict, Any
 # ---------------- Local Project ----------------
 from tsarchain.contracts.storage_node.server import StorageServer
 from tsarchain.contracts.storage_node.rpc import RPC, NodeDirectory
+from tsarchain.network.protocol import send_message, recv_message
 
 from tsarchain.utils import config as CFG
 
@@ -20,7 +21,7 @@ log = get_ctx_logger("apps.archivist")
 
 APP_TITLE = "TsarChain • Archivist"
 HEARTBEAT_SEC = 10
-RETENTION_GC_SEC = 800
+RETENTION_GC_SEC = 180
 STORAGE_PORT_OFFSET = 100
 
 class TsarStorageGUI:
@@ -43,13 +44,33 @@ class TsarStorageGUI:
         self._pool_data: dict[str, Dict[str, Any]] = {}
         self._storage_port: Optional[int] = None
         self._server: Optional[StorageServer] = None
-        self.addr_var = tk.StringVar(value=self.rpc.address or "")
+        self.addr_var = tk.StringVar(value="")
         self._target_node: Optional[tuple[str,int]] = None
         self._build_ui()
         self._heartbeat()
 
 
     # ---------------- UI -----------------
+    def _call_storage_local(self, payload: Dict[str, Any], timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+        """
+        Kirim RPC langsung ke storage server lokal (bukan node) bila port tersedia.
+        """
+        port = self._storage_port
+        if port is None:
+            return None
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(timeout)
+                s.connect(("127.0.0.1", int(port)))
+                send_message(s, json.dumps(payload).encode("utf-8"))
+                raw = recv_message(s, timeout)
+                if not raw:
+                    return None
+                obj = json.loads(raw.decode("utf-8"))
+                return obj if isinstance(obj, dict) else None
+        except Exception:
+            return None
+
     def _build_ui(self):
         self.style = ttk.Style()
         self.style.theme_use("default")
@@ -59,14 +80,6 @@ class TsarStorageGUI:
 
         self.status_lbl = ttk.Label(top, text="● Offline", foreground="#d33", font=("Consolas", 10, "bold"))
         self.status_lbl.pack(side=tk.LEFT)
-
-        ttk.Label(top, text="  Host:").pack(side=tk.LEFT)
-        self.host_var = tk.StringVar(value="127.0.0.1")
-        ttk.Entry(top, textvariable=self.host_var, width=14).pack(side=tk.LEFT)
-
-        ttk.Label(top, text="  Port:").pack(side=tk.LEFT)
-        self.port_var = tk.IntVar(value=CFG.PORT_START)
-        ttk.Entry(top, textvariable=self.port_var, width=6).pack(side=tk.LEFT)
 
         ttk.Label(top, text="  Payout addr:").pack(side=tk.LEFT)
         ttk.Entry(top, textvariable=self.addr_var, width=46).pack(side=tk.LEFT, padx=(4, 0))
@@ -88,7 +101,6 @@ class TsarStorageGUI:
             "peers": tk.StringVar(value="0"),
             "bytes": tk.StringVar(value="0 B"),
             "files": tk.StringVar(value="0"),
-            "saddr": tk.StringVar(value=""),
         }
         for key, label in [
             ("role", "Role"),("tip", "Tip Height"),("peers","Peers"),
@@ -99,13 +111,6 @@ class TsarStorageGUI:
             ttk.Label(f, text=f"{label}", font=("Consolas",9)).pack(anchor="w")
             ttk.Label(f, textvariable=self.info_vars[key], font=("Consolas", 11, "bold")).pack(anchor="w")
 
-        row = ttk.Frame(info)  # or your custom info panel
-        row.pack(fill=tk.X, pady=2)
-        ttk.Label(row, text="Storage Address:", width=18).pack(side=tk.LEFT)
-        addr_entry = ttk.Entry(row, textvariable=self.info_vars["saddr"])
-        addr_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Button(row, text="Copy", command=self._copy_addr).pack(side=tk.LEFT, padx=4)
-        
         # Actions
         ttk.Frame(self.root, height=4).pack(fill=tk.X)
 
@@ -149,10 +154,6 @@ class TsarStorageGUI:
             self.log.see(tk.END)
         except Exception:
             pass
-    
-    def _copy_addr(self):
-        self.root.clipboard_clear()
-        self.root.clipboard_append(self.info_vars["saddr"].get())
 
     def _launch_storage_server(self, fallback_start: Optional[int] = None) -> int:
         cand_ports: list[int] = []
@@ -182,12 +183,18 @@ class TsarStorageGUI:
 
     # ------------- Events --------------
     def on_connect(self):
-        host = self.host_var.get().strip()
-        miner_port = int(self.port_var.get())
+        # gunakan konfigurasi default (bootstrap) tanpa input host/port manual
+        try:
+            host, miner_port = CFG.BOOTSTRAP_NODE
+        except Exception:
+            host, miner_port = ("127.0.0.1", CFG.PORT_START)
         self._target_node = (host, miner_port)
 
         try:
             override = (self.addr_var.get() or "").strip()
+            if not override:
+                messagebox.showerror("Storage address", "Isi payout address terlebih dahulu.")
+                return
             self.rpc.set_address_override(override)
         except ValueError as e:
             messagebox.showerror("Storage address", str(e))
@@ -268,12 +275,13 @@ class TsarStorageGUI:
             self.last_info = info
             self.info_vars["tip"].set(str(info.get("height","-")))
             self.info_vars["peers"].set(str(info.get("peers","0")))
-            self.info_vars["saddr"].set(str(info.get("storage_address","-")))
         except Exception:
             self._handle_rpc_drop("refresh")
             return
         try:
-            idx = self.rpc.call({"type":"STOR_INDEX"}, timeout=6.0)
+            idx = self._call_storage_local({"type":"STOR_INDEX"}, timeout=6.0)
+            if not isinstance(idx, dict):
+                idx = self.rpc.call({"type":"STOR_INDEX"}, timeout=6.0)
             if not isinstance(idx, dict):
                 raise RuntimeError("rpc_failure")
             self._render_index(idx)
@@ -321,7 +329,9 @@ class TsarStorageGUI:
         files_by_art: dict[str, dict] = {}
         art_map = {}
         try:
-            art_map = (rpc.call({"type":"STOR_INDEX"}, timeout=3.0) or {}).get("art_map", {})
+            art_map = (self._call_storage_local({"type":"STOR_INDEX"}, timeout=3.0) or {}).get("art_map", {})
+            if not art_map:
+                art_map = (rpc.call({"type":"STOR_INDEX"}, timeout=3.0) or {}).get("art_map", {})
         except Exception:
             art_map = {}
         for gid, meta in (files or {}).items():
@@ -362,6 +372,8 @@ class TsarStorageGUI:
             self.pool_status_var.set(f"{len(self._pool_data)} karya dengan saldo pool.")
         else:
             self.pool_status_var.set("Belum ada saldo pool untuk karya tersimpan.")
+        # tandai otomatis paid berdasarkan blok yang sudah ada
+        self._auto_mark_paid(posts, files_by_art)
 
     def _mark_selected_paid(self) -> None:
         if not self.connected:
@@ -376,7 +388,9 @@ class TsarStorageGUI:
         if txid is None:
             return
         try:
-            resp = self.rpc.call({"type":"STOR_PAID", "graffiti_id": gid, "txid": (txid or "").strip()}, timeout=6.0)
+            resp = self._call_storage_local({"type":"STOR_PAID", "graffiti_id": gid, "txid": (txid or "").strip()}, timeout=6.0)
+            if resp is None:
+                resp = self.rpc.call({"type":"STOR_PAID", "graffiti_id": gid, "txid": (txid or "").strip()}, timeout=6.0)
         except Exception as exc:
             messagebox.showerror("Payout", f"RPC error: {exc}")
             return
@@ -394,6 +408,38 @@ class TsarStorageGUI:
         self._retention_thread = t
         t.start()
         log.info("Started retention worker thread")
+
+    def _auto_mark_paid(self, posts: list[dict], files_by_art: dict[str, dict]) -> None:
+        """
+        Tandai otomatis file lokal sebagai paid ketika blok POST sudah diketahui.
+        """
+        if not posts or not files_by_art:
+            return
+        marked = False
+        for art in posts:
+            try:
+                aid = str(art.get("art_id") or "").lower()
+                if not aid:
+                    continue
+                file_entry = files_by_art.get(aid)
+                if not file_entry:
+                    continue
+                meta = file_entry.get("meta") or {}
+                if meta.get("paid"):
+                    continue
+                bh = int(art.get("block_height", 0) or 0)
+                if bh <= 0:
+                    continue
+                gid = file_entry.get("id") or aid
+                txid = (art.get("txid") or "").strip()
+                resp = self._call_storage_local({"type":"STOR_PAID", "graffiti_id": gid, "txid": txid, "block_height": bh}, timeout=4.0)
+                if isinstance(resp, dict) and resp.get("status") in ("ok", None):
+                    marked = True
+                    self.logln(f"[Auto-Paid] {gid} (h={bh})")
+            except Exception:
+                continue
+        if marked:
+            self.refresh_all()
         
     def _attempt_reconnect(self) -> bool:
         target = getattr(self, "_target_node", None)
@@ -441,8 +487,12 @@ class TsarStorageGUI:
                 continue
             tip = int((self.last_info or {}).get("height") or 0)
             try:
-                gc_resp = self.rpc.call({"type":"STOR_GC","tip_height": tip}, timeout=6.0)
-                idx = self.rpc.call({"type":"STOR_INDEX"}, timeout=6.0)
+                gc_resp = self._call_storage_local({"type":"STOR_GC","tip_height": tip}, timeout=6.0)
+                idx = self._call_storage_local({"type":"STOR_INDEX"}, timeout=6.0)
+                if not isinstance(gc_resp, dict):
+                    gc_resp = self.rpc.call({"type":"STOR_GC","tip_height": tip}, timeout=6.0)
+                if not isinstance(idx, dict):
+                    idx = self.rpc.call({"type":"STOR_INDEX"}, timeout=6.0)
                 if not isinstance(gc_resp, dict) or not isinstance(idx, dict):
                     raise RuntimeError("rpc_failure")
                 self.root.after(0, lambda r=gc_resp, i=idx: self._on_retention_cycle(r, i))

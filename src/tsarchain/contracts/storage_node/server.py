@@ -25,6 +25,23 @@ class StorageServer:
         self.thread = threading.Thread(target=self._serve, daemon=True)
         self.thread.start()
 
+    def _normalize_file_meta(self, aid: str, meta: dict) -> dict:
+        if not isinstance(meta, dict):
+            return {}
+        meta.setdefault("paid", False)
+        meta.setdefault("expire_at_height", 0)
+        meta.setdefault("confirmed_at_height", 0)
+        meta.setdefault("state", meta.get("state") or "stored")
+        meta.setdefault("received_bytes", int(meta.get("received_bytes", 0)))
+        meta.setdefault("chunk_size", int(meta.get("chunk_size", CFG.STORAGE_UPLOAD_CHUNK)))
+        if "path" not in meta:
+            meta["path"] = ""
+        # Keep art_map in sync when art_id is present
+        art_id = str(meta.get("art_id", "")).strip().lower()
+        if art_id:
+            self.index.setdefault("art_map", {})[art_id] = aid
+        return meta
+
     def _load_index(self):
         os.makedirs(self.storage_dir, exist_ok=True)
         try:
@@ -32,10 +49,23 @@ class StorageServer:
                 self.index = json.load(f)
         except Exception:
             self.index = {"files": {}, "bytes_used": 0, "art_map": {}}
-        # pastikan struktur dasar ada
+
         self.index.setdefault("files", {})
         self.index.setdefault("bytes_used", 0)
         self.index.setdefault("art_map", {})
+        try:
+            files = dict(self.index.get("files") or {})
+            for aid, meta in list(files.items()):
+                files[aid] = self._normalize_file_meta(aid, meta)
+            self.index["files"] = files
+            self.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in files.values())
+        except Exception:
+            pass
+        # persist normalization for older indexes
+        try:
+            self._save_index()
+        except Exception:
+            pass
 
     def _save_index(self):
         tmp = self.idx_path + ".tmp"
@@ -63,6 +93,10 @@ class StorageServer:
             }
 
         if t == "STOR_INDEX":
+            try:
+                self.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (self.index.get("files") or {}).values())
+            except Exception:
+                pass
             return {"type":"STOR_INDEX", "status":"ok", **self.index}
 
         if t == "STOR_INIT":
@@ -80,14 +114,15 @@ class StorageServer:
             meta = {
                 "size_bytes": size,
                 "sha256": sha,
-                "filename": fname,
-                "paid": False,
-                "expire_at_height": 0,
-                "state": "receiving",
-                "path": path,
-                "received_bytes": 0,
-                "chunk_size": chunk,
-                "created_ts": int(time.time()),
+            "filename": fname,
+            "paid": False,
+            "expire_at_height": 0,
+            "confirmed_at_height": 0,
+            "state": "receiving",
+            "path": path,
+            "received_bytes": 0,
+            "chunk_size": chunk,
+            "created_ts": int(time.time()),
             }
             if art_id:
                 meta["art_id"] = art_id
@@ -97,6 +132,7 @@ class StorageServer:
             # buat file kosong
             with open(path, "wb"):
                 pass
+            log.info("[STOR_INIT] aid=%s size=%s art_id=%s state=receiving", aid[:16], size, (art_id[:16] if art_id else "-"))
             return {
                 "type": "STOR_ACK",
                 "status": "ok",
@@ -156,8 +192,9 @@ class StorageServer:
                     return {"type":"STOR_ACK","status":"rejected","reason":"size_mismatch"}
                 if digest.hexdigest().lower() != meta.get("sha256"):
                     return {"type":"STOR_ACK","status":"rejected","reason":"hash_mismatch"}
-                fin_dir = os.path.join(self.storage_dir, "final"); os.makedirs(fin_dir, exist_ok=True)
-                fin = os.path.join(fin_dir, f"{aid}.bin")
+                # Tahan di folder incoming sampai ada konfirmasi STOR_PAID
+                inc_dir = os.path.join(self.storage_dir, "incoming"); os.makedirs(inc_dir, exist_ok=True)
+                fin = os.path.join(inc_dir, f"{aid}.bin")
                 os.replace(tmp_path, fin)
                 now_ts = int(time.time())
                 receipt_id = meta.get("receipt_id") or f"rcpt_{aid}_{now_ts}"
@@ -171,7 +208,7 @@ class StorageServer:
                 }
                 meta.update({
                     "path": fin,
-                    "state": "stored",
+                    "state": "pending_confirm",
                     "receipt_id": receipt_id,
                     "receipt": receipt,
                     "stored_ts": now_ts,
@@ -182,6 +219,7 @@ class StorageServer:
                 self.index["files"][aid] = meta
                 self.index["bytes_used"] = sum(int(v.get("size_bytes",0)) for v in self.index["files"].values())
                 self._save_index()
+                log.info("[STOR_COMMIT] aid=%s size=%s -> pending_confirm", aid[:16], expected_size)
                 return {"type":"STOR_ACK","status":"ok","receipt": receipt}
             except Exception as e:
                 return {"type":"STOR_ACK","status":"rejected","reason":str(e)}
@@ -190,6 +228,90 @@ class StorageServer:
             aid = str(msg.get("graffiti_id","")).strip()
             meta = self.index.get("files",{}).get(aid)
             return {"type":"STOR_STATUS","found": bool(meta), "meta": meta}
+
+        if t == "STOR_PAID":
+            aid = str(msg.get("graffiti_id","")).strip()
+            txid = str(msg.get("txid","")).strip()
+            try:
+                block_h = int(msg.get("block_height", 0) or 0)
+            except Exception:
+                block_h = 0
+            meta = self.index.get("files", {}).get(aid)
+            if not aid or not meta:
+                return {"type": "STOR_PAID", "status": "error", "reason": "no_such"}
+            # jika file masih di incoming, pastikan dipindah ke final
+            try:
+                path = meta.get("path")
+                if path and os.path.isfile(path) and ("incoming" in path):
+                    fin_dir = os.path.join(self.storage_dir, "final"); os.makedirs(fin_dir, exist_ok=True)
+                    fin = os.path.join(fin_dir, os.path.basename(path).replace(".part", ".bin"))
+                    os.replace(path, fin)
+                    meta["path"] = fin
+                    meta["state"] = "stored"
+            except Exception as e:
+                return {"type": "STOR_PAID", "status": "error", "reason": str(e)}
+
+            meta["paid"] = True
+            if txid:
+                meta["txid_paid"] = txid
+            if block_h > 0:
+                meta["confirmed_at_height"] = block_h
+                # disable automatic expiry for paid files (keep persisted)
+                meta["expire_at_height"] = 0
+            self.index["files"][aid] = self._normalize_file_meta(aid, meta)
+            try:
+                self.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in self.index["files"].values())
+            except Exception:
+                pass
+            self._save_index()
+            log.info("[STOR_PAID] aid=%s h=%s expire=%s", aid[:16], meta.get("confirmed_at_height"), meta.get("expire_at_height"))
+            return {
+                "type": "STOR_PAID",
+                "status": "ok",
+                "graffiti_id": aid,
+                "expire_at_height": meta.get("expire_at_height", 0),
+                "confirmed_at_height": meta.get("confirmed_at_height", 0),
+            }
+
+        if t == "STOR_GC":
+            try:
+                tip_h = int(msg.get("tip_height", 0) or 0)
+            except Exception:
+                tip_h = 0
+            files = self.index.get("files", {}) or {}
+            expired = 0
+            remove_keys: list[str] = []
+            for gid, meta in files.items():
+                try:
+                    expire_h = int(meta.get("expire_at_height", 0) or 0)
+                except Exception:
+                    expire_h = 0
+                if expire_h and tip_h and expire_h <= tip_h and not meta.get("paid"):
+                    remove_keys.append(gid)
+            for gid in remove_keys:
+                meta = files.pop(gid, None) or {}
+                expired += 1
+                try:
+                    path = meta.get("path")
+                    if path and os.path.isfile(path):
+                        os.remove(path)
+                except Exception:
+                    pass
+                art_id = str(meta.get("art_id", "")).strip().lower()
+                if art_id and self.index.get("art_map", {}).get(art_id) == gid:
+                    try:
+                        self.index["art_map"].pop(art_id, None)
+                    except Exception:
+                        pass
+            self.index["files"] = files
+            try:
+                self.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in files.values())
+            except Exception:
+                self.index["bytes_used"] = 0
+            self._save_index()
+            if expired:
+                log.info("[STOR_GC] expired=%s tip=%s", expired, tip_h)
+            return {"type":"STOR_GC","status":"ok","expired": expired}
 
         if t == "STOR_TAG_ART":
             aid = str(msg.get("graffiti_id","")).strip()

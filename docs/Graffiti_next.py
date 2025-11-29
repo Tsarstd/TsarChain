@@ -14,10 +14,13 @@ NOTE: untuk mendalami struktur data, bisa cek di :
        - Implementasi: compute_art_id kini mengembalikan art_id dengan prefix graf (kompatibel legacy), parse/comment/derive_pool men-strip prefix secara otomatis.
        - Terverifikasi di block height 7 (post) dan 11 (comment).
 
-	2. archivist tidak dapat membaca file graffiti yang diterima di storagenya sendiri, tidak tampil di UI, padahal di storage sudah ada
-       - Status: sebagian. Archivist sudah memanggil STOR_INDEX/PAID/GC; node sudah memberi handler fallback sehingga RPC tidak error.
-       - TODO: tambahkan STOR_PAID/GC di storage_node/server.py agar index storage yang asli ikut terupdate tanpa membuat folder baru di node non-storage.
-       - TODO: mengubah status "paid": false, menjadi "paid": true, di index.json . saat graffiti tersebut sudah divalidasi di block node memberitahu storage node (archivist) untuk mengupdate status paid di index.json
+	2. (DONE) archivist tidak dapat membaca file graffiti yang diterima di storagenya sendiri, tidak tampil di UI, padahal di storage sudah ada
+       - Status: StorageServer kini punya handler STOR_PAID/GC sendiri; fallback node tidak lagi membuat folder data/storage (storage_rpc mengembalikan storage_disabled bila index tidak ada).
+       - Index menambah field confirmed_at_height, expire_at_height, paid; expire hanya digunakan untuk file pending (tidak paid). cfg: GRAFFITI_EXPIRE_AFTER_BLOCKS=5.
+       - Alur baru: STOR_COMMIT menaruh blob di storage/incoming (state=pending_confirm). STOR_PAID memindahkan ke storage/final, set paid=true, confirmed_at_height, expire_at_height=0 (tidak di-GC).
+       - GC hanya menghapus entry yang expire_at_height tercapai dan paid==false (membersihkan incoming yang tidak pernah dibayar).
+       - Archivist auto-mark paid: ketika melihat POST terkonfirmasi via GRAFFITI_GET_POSTS, ia memanggil STOR_PAID ke storage server lokal (block_height + txid), sehingga index ter-update dan file berpindah incoming→final tanpa manual.
+       - Logging ditambah di StorageServer (STOR_INIT/COMMIT/PAID/GC) dan RPC connect untuk melacak alur.
 
 	3. Retention Proof Scheduler: rancang worker storage node yang periodik menjalankan byte-range challenge sebelum pool balance dibagikan; log penalti jika bukti absen.
  

@@ -37,6 +37,9 @@ def _load_storage_index() -> dict[str, Any]:
 
 def _save_storage_index(data: dict[str, Any]) -> None:
     path = _storage_index_path()
+    # Hindari membuat folder index pada node non-storage; hanya simpan jika file sudah ada.
+    if not os.path.isfile(path):
+        raise FileNotFoundError("storage_index_absent")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
@@ -64,6 +67,12 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[
     if mtype == "STOR_PAID":
         aid = str(message.get("graffiti_id") or "").strip()
         txid = str(message.get("txid") or "").strip()
+        try:
+            block_h = int(message.get("block_height", 0) or 0)
+        except Exception:
+            block_h = 0
+        if not os.path.isfile(_storage_index_path()):
+            return {"status": "error", "reason": "storage_disabled"}
         idx = _load_storage_index()
         files = idx.setdefault("files", {})
         meta = files.get(aid)
@@ -72,6 +81,12 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[
         meta["paid"] = True
         if txid:
             meta["txid_paid"] = txid
+        if block_h > 0:
+            meta["confirmed_at_height"] = block_h
+            try:
+                meta["expire_at_height"] = block_h + int(CFG.GRAFFITI_EXPIRE_AFTER_BLOCKS)
+            except Exception:
+                meta["expire_at_height"] = block_h
         files[aid] = meta
         try:
             idx["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in files.values())
@@ -81,6 +96,8 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[
         return {"status": "ok", "graffiti_id": aid}
 
     if mtype == "STOR_GC":
+        if not os.path.isfile(_storage_index_path()):
+            return {"type": "STOR_GC", "status": "error", "reason": "storage_disabled", "expired": 0}
         try:
             tip_h = int(message.get("tip_height", 0) or 0)
         except Exception:

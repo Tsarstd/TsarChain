@@ -18,11 +18,8 @@ log = get_ctx_logger("tsarchain.contracts(graffiti)")
 # Internal helpers / validation
 # -----------------------------
 
-ART_ID_PREFIX = "graf"
-ART_ID_PREFIX_LEN = len(ART_ID_PREFIX)
-ART_ID_BODY_LEN = 60  # hex chars retained after adding prefix to keep 64 chars total
 HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
-ART_ID_RE = re.compile(rf"^({ART_ID_PREFIX}[0-9a-f]{{{ART_ID_BODY_LEN}}}|[0-9a-f]{{64}})$")
+ART_ID_RE = re.compile(rf"^({CFG.ART_ID_PREFIX}[0-9a-f]{{{CFG.ART_ID_BODY_LEN}}}|[0-9a-f]{{64}})$")
 MIME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+/_-]{0,63}$")  # konservatif
 
 def _is_valid_sha256_hex(x: str) -> bool:
@@ -61,15 +58,15 @@ def _is_valid_art_id(art_id: str) -> bool:
 
 def _strip_art_prefix(art_id: str) -> str:
     aid = (art_id or "").strip().lower()
-    if aid.startswith(ART_ID_PREFIX):
-        return aid[ART_ID_PREFIX_LEN:]
+    if aid.startswith(CFG.ART_ID_PREFIX):
+        return aid[CFG.ART_ID_PREFIX_LEN:]
     return aid
 
 def _decorate_art_id(base_hex: str) -> str:
     base = (base_hex or "").strip().lower()
     if not HEX64_RE.fullmatch(base):
         raise ValueError("bad_art_id_hash")
-    return ART_ID_PREFIX + base[:ART_ID_BODY_LEN]
+    return CFG.ART_ID_PREFIX + base[:CFG.ART_ID_BODY_LEN]
 
 def _normalize_art_id(art_id: str, *, prefer_prefix: bool = True) -> str:
     """
@@ -79,9 +76,9 @@ def _normalize_art_id(art_id: str, *, prefer_prefix: bool = True) -> str:
     if not isinstance(art_id, str):
         raise ValueError("bad_art_id")
     aid = art_id.strip().lower()
-    if aid.startswith(ART_ID_PREFIX):
-        body = aid[ART_ID_PREFIX_LEN:]
-        if len(body) != ART_ID_BODY_LEN or not re.fullmatch(r"[0-9a-f]+", body):
+    if aid.startswith(CFG.ART_ID_PREFIX):
+        body = aid[CFG.ART_ID_PREFIX_LEN:]
+        if len(body) != CFG.ART_ID_BODY_LEN or not re.fullmatch(r"[0-9a-f]+", body):
             raise ValueError("bad_art_id")
         return aid
     if HEX64_RE.fullmatch(aid):

@@ -492,9 +492,14 @@ CHAT_REG_RL_BACKOFF_S   = 20  # cooldown after chat register limiter trips
 # 12. SCRIPT, GRAFFITI & STORAGE POLICY
 # =============================================================================
 # ---- MAGIC CONSTANTS ----
-STORAGE_MAGIC  = b"TSAR_GRAF1|"  # domain separator for storage commitments
-GRAFFITI_MAGIC = b"TSAR_GRAF1|"  # domain separator for graffiti commitments
+STORAGE_MAGIC      = b"TSAR_GRAF1|"  # domain separator for storage commitments
+GRAFFITI_MAGIC     = b"TSAR_GRAF1|"  # domain separator for graffiti commitments
 GRAFFITI_POOL_SALT = b"TSAR_GRAFFITI_POOL|"  # seed when deriving deterministic pool addresses
+
+# ---- ART ID ----
+ART_ID_PREFIX      = "graf"
+ART_ID_PREFIX_LEN  = len(ART_ID_PREFIX)
+ART_ID_BODY_LEN    = 60  # hex chars retained after adding prefix to keep 64 chars total
 
 # ---- OP_RETURN POLICY ----
 MAX_GRAFFITI_OPRET    = 500  # graffiti payload limit capped under script limit
@@ -512,6 +517,7 @@ GRAFFITI_COMMENT_MIN_FEE      = 1 * TSAR
 GRAFFITI_COMMENT_BP_DENOM     = 10_000  # denominator (basis points) for split percentages
 GRAFFITI_COMMENT_CREATOR_BP   = 8_000   # 80%
 GRAFFITI_COMMENT_STORAGE_BP   = 1_000   # 10% (remaining -> miners as fee tip)
+GRAFFITI_EXPIRE_AFTER_BLOCKS  = 5       # default retention window after graffiti confirmed on-chain
 
 # ---- STORAGE POLICY ----
 MAX_STORAGE_OPRET             = 180  # storage proof payload bound for OP_RETURN
