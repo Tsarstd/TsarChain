@@ -21,9 +21,18 @@ NOTE: untuk mendalami struktur data, bisa cek di :
        - GC hanya menghapus entry yang expire_at_height tercapai dan paid==false (membersihkan incoming yang tidak pernah dibayar).
        - Archivist auto-mark paid: ketika melihat POST terkonfirmasi via GRAFFITI_GET_POSTS, ia memanggil STOR_PAID ke storage server lokal (block_height + txid), sehingga index ter-update dan file berpindah incoming→final tanpa manual.
        - Logging ditambah di StorageServer (STOR_INIT/COMMIT/PAID/GC) dan RPC connect untuk melacak alur.
-
-	3. Retention Proof Scheduler: rancang worker storage node yang periodik menjalankan byte-range challenge sebelum pool balance dibagikan; log penalti jika bukti absen.
+       
+    3. Buat supaya wallet mencari informasi graffiti di 'Explore Tab' dengan menggunakan input art_id dengan prefix 'graf' , lalu menampilkan view graffiti dengan membaca file .jpg dari archivist node yang terhubung.
+        dan sekaligus menampilkan comment yang ada di graffiti tersebut.
+        
+	4. Retention Proof Scheduler: rancang worker storage node yang periodik menjalankan byte-range challenge sebelum pool balance dibagikan; log penalti jika bukti absen.
  
-	4. Storage Automation: definisikan template transaksi on-chain untuk payout pool (mis. script khusus) sehingga klaim bisa otomatis mengikuti aturan konsensus.
+	5. Storage Automation: definisikan template transaksi on-chain untuk payout pool (mis. script khusus) sehingga klaim bisa otomatis mengikuti aturan konsensus.
  
- '''
+	6. CLI Archivist Headless:
+       - Sudah ada dua varian: apps/archivist_node.py (storage publik/VPS) dan apps/archivist_client.py (cache-only CGNAT).
+       - Next: tambahkan fetch file & cache untuk client (STOR_GET_BY_ART), dan proof-of-retention worker + jalur payout bagi partisipan non-publik.
+       - Dokumentasi argumen CLI & contoh run di README/INSTALL.
+       - Opsional: monitoring/logging ringkas (metrics) dan opsi auto-discovery storer.
+ 
+'''

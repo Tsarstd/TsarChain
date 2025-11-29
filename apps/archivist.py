@@ -21,7 +21,6 @@ log = get_ctx_logger("apps.archivist")
 
 APP_TITLE = "TsarChain • Archivist"
 HEARTBEAT_SEC = 10
-RETENTION_GC_SEC = 180
 STORAGE_PORT_OFFSET = 100
 
 class TsarStorageGUI:
@@ -483,7 +482,7 @@ class TsarStorageGUI:
     def _retention_worker(self) -> None:
         while not self._retention_stop.is_set():
             if not self.connected:
-                self._retention_stop.wait(RETENTION_GC_SEC)
+                self._retention_stop.wait(CFG.RETENTION_GC_SEC)
                 continue
             tip = int((self.last_info or {}).get("height") or 0)
             try:
@@ -499,7 +498,7 @@ class TsarStorageGUI:
             except Exception as exc:
                 log.warning("[Retention] rpc error at height %s: %s", tip, exc)
                 self.root.after(0, self._handle_rpc_drop, "retention")
-            self._retention_stop.wait(max(30, RETENTION_GC_SEC))
+            self._retention_stop.wait(max(30, CFG.RETENTION_GC_SEC))
 
     def _on_retention_cycle(self, gc_resp: Optional[Dict[str, Any]], idx: Optional[Dict[str, Any]]) -> None:
         if isinstance(gc_resp, dict) and gc_resp.get("status") == "ok":

@@ -533,6 +533,7 @@ ARCHIV_PEER_KEYS               = "data_peer/storage_peer_keys.json"
 STORAGE_DIR                    = "data/storage"  # folder holding uploaded storage blobs
 STORAGE_MAX_BYTES              = 10 * 1024 * 1024 * 1024  # cap on cumulative storage usage (10GB)
 STORAGE_MIN_CONFIRM            = 2  # confirmations required before serving stored data
+RETENTION_GC_SEC               = 180
 
 
 # =============================================================================
