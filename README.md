@@ -333,7 +333,7 @@ TsarChain/
 ├── tests/                   # Unit testing (native & double rachet)
 ├── tools/                   # LMDB database tools & Snapshot maintenance
 └── tsarcore_native/         # Native Module (Rust + PyO3)
-    └── src/                 # Source code Rust (lib.rs, networking.rs, validation.rs)
+    └── src/                 # Source code Rust (lib.rs, networking.rs, validation.rs, storage.rs)
 ```
 #### 1. 💸 Example of a Transaction Data Structure
 The example data of `block, utxo's & mempool` below, shows a transaction :
