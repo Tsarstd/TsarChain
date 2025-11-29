@@ -39,7 +39,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
               "GET_HEADERS", "HEADERS", "GET_BLOCKS", "BLOCKS"}
 
     NODE_STORAGE = {
-        "STOR_INIT", "STOR_PUT", "STOR_COMMIT", "STOR_STATUS", "STOR_GC", "STOR_PAID",
+        "STOR_INIT", "STOR_PUT", "STOR_COMMIT", "STOR_STATUS", "STOR_GC", "STOR_PAID", "STOR_INDEX",
         "GRAFFITI_GET_PAYOUTS", "GRAFFITI_POOL_PAYOUT",
     }
 

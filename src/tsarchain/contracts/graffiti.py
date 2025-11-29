@@ -18,8 +18,11 @@ log = get_ctx_logger("tsarchain.contracts(graffiti)")
 # Internal helpers / validation
 # -----------------------------
 
+ART_ID_PREFIX = "graf"
+ART_ID_PREFIX_LEN = len(ART_ID_PREFIX)
+ART_ID_BODY_LEN = 60  # hex chars retained after adding prefix to keep 64 chars total
 HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
-ART_ID_RE = HEX64_RE
+ART_ID_RE = re.compile(rf"^({ART_ID_PREFIX}[0-9a-f]{{{ART_ID_BODY_LEN}}}|[0-9a-f]{{64}})$")
 MIME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+/_-]{0,63}$")  # konservatif
 
 def _is_valid_sha256_hex(x: str) -> bool:
@@ -55,6 +58,35 @@ def _is_valid_art_id(art_id: str) -> bool:
         return bool(ART_ID_RE.fullmatch(art_id.strip().lower()))
     except Exception:
         return False
+
+def _strip_art_prefix(art_id: str) -> str:
+    aid = (art_id or "").strip().lower()
+    if aid.startswith(ART_ID_PREFIX):
+        return aid[ART_ID_PREFIX_LEN:]
+    return aid
+
+def _decorate_art_id(base_hex: str) -> str:
+    base = (base_hex or "").strip().lower()
+    if not HEX64_RE.fullmatch(base):
+        raise ValueError("bad_art_id_hash")
+    return ART_ID_PREFIX + base[:ART_ID_BODY_LEN]
+
+def _normalize_art_id(art_id: str, *, prefer_prefix: bool = True) -> str:
+    """
+    Accept legacy 64-hex art_id or new prefixed form.
+    If prefer_prefix=True and legacy is provided, return prefixed variant; otherwise preserve legacy.
+    """
+    if not isinstance(art_id, str):
+        raise ValueError("bad_art_id")
+    aid = art_id.strip().lower()
+    if aid.startswith(ART_ID_PREFIX):
+        body = aid[ART_ID_PREFIX_LEN:]
+        if len(body) != ART_ID_BODY_LEN or not re.fullmatch(r"[0-9a-f]+", body):
+            raise ValueError("bad_art_id")
+        return aid
+    if HEX64_RE.fullmatch(aid):
+        return _decorate_art_id(aid) if prefer_prefix else aid
+    raise ValueError("bad_art_id")
 
 def _encode_comment(comment_text: str) -> str:
     if not isinstance(comment_text, str):
@@ -138,7 +170,9 @@ def build_comment_metadata(
     extra: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
     
-    if not _is_valid_art_id(art_id):
+    try:
+        art_id_norm = _normalize_art_id(art_id, prefer_prefix=False)
+    except Exception:
         raise ValueError("bad_art_id")
     
     if not _is_valid_tsar_address(creator_addr):
@@ -158,7 +192,7 @@ def build_comment_metadata(
     comment_hex = _encode_comment(comment_text)
     meta: Dict[str, Any] = {
         "event": "COMMENT",
-        "art_id": art_id.strip().lower(),
+        "art_id": art_id_norm,
         "comment": comment_hex,
         "amount": base_amount,
         "tip": tip,
@@ -230,6 +264,7 @@ def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
         obj = json.loads(blob.decode('ascii'))
         if not isinstance(obj, dict):
             return None
+        
         event = str(obj.get("event", "POST")).strip().upper()
         if event == "POST":
             if not _is_valid_sha256_hex(obj.get("sha256", "")):
@@ -250,15 +285,21 @@ def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
             if art_id and not _is_valid_art_id(art_id):
                 return None
             if creator_addr:
-                computed = compute_art_id(obj.get("sha256", ""), creator_addr)
+                base_hash = compute_art_id(obj.get("sha256", ""), creator_addr, decorate=False)
+                decorated = _decorate_art_id(base_hash)
                 if art_id is None:
-                    art_id = computed
-                    obj["art_id"] = art_id
-                elif art_id.lower() != computed:
-                    return None
+                    obj["art_id"] = decorated
+                else:
+                    aid_norm = art_id.strip().lower()
+                    if aid_norm not in (decorated, base_hash):
+                        return None
+                    obj["art_id"] = decorated if aid_norm == decorated else aid_norm
+                    
         elif event == "COMMENT":
             art_id = obj.get("art_id", "")
-            if not _is_valid_art_id(art_id):
+            try:
+                obj["art_id"] = _normalize_art_id(art_id, prefer_prefix=False)
+            except Exception:
                 return None
             comment_hex = obj.get("comment", "")
             if not isinstance(comment_hex, str):
@@ -282,6 +323,7 @@ def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
             if commenter and not _is_valid_tsar_address(commenter):
                 return None
             obj["comment_len"] = len(comment_bytes)
+            
         else:
             return None
         obj["event"] = event
@@ -324,11 +366,13 @@ def parse_from_script(script: Script) -> Optional[Dict[str, Any]]:
         return None
 
 
-def compute_art_id(sha256_hex: str, creator_addr: str, block_hash: str | None = None) -> str:
+def compute_art_id(sha256_hex: str, creator_addr: str, block_hash: str | None = None, *, decorate: bool = True) -> str:
     """
     Deterministic art identifier anchored to creator and file hash, with optional block_hash
     salt if caller already knows the confirmed block. The default (without block_hash) is
     used for block_id anchoring so it can be computed before mining.
+
+    Returns prefixed art_id (64 chars) by default; use decorate=False for legacy raw digest.
     """
     if not _is_valid_sha256_hex(sha256_hex):
         raise ValueError("bad_sha256_hex")
@@ -346,11 +390,19 @@ def compute_art_id(sha256_hex: str, creator_addr: str, block_hash: str | None = 
             block_hash_bytes = block_hash.strip().encode("utf-8")
         parts.append(block_hash_bytes)
     blob = b"|".join(parts)
-    return hashlib.sha256(blob).hexdigest()
+    base_hex = hashlib.sha256(blob).hexdigest()
+    if not decorate:
+        return base_hex
+    return _decorate_art_id(base_hex)
 
 
 def derive_pool_address(art_id_hex: str) -> str:
-    seed = CFG.GRAFFITI_POOL_SALT + bytes.fromhex(art_id_hex.strip().lower())
+    art_hex = _strip_art_prefix(art_id_hex)
+    try:
+        art_bytes = bytes.fromhex(art_hex)
+    except Exception:
+        raise ValueError("bad_art_id_hex")
+    seed = CFG.GRAFFITI_POOL_SALT + art_bytes
     pkh = hash160(seed)
     data = [0] + list(convertbits(pkh, 8, 5, True))
     return bech32_encode(CFG.ADDRESS_PREFIX, data)
