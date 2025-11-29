@@ -8,21 +8,13 @@ from __future__ import annotations
 from typing import Any
 
 from ..core.tx import Tx
-from ..utils import helpers as H
-from ..utils.helpers import hash160, is_p2wpkh_script, bip143_sig_hash, tx_to_compact_tuple, sighash_bip143_compact
-from ..utils.tsar_logging import get_ctx_logger
-from ..utils import config as CFG
+from ..utils.helpers import (tx_to_compact_tuple, native_validate_tx_p2wpkh_compact,)
 from ..storage.utxo import UTXODB
-from .scripts import (
-    extract_p2pkh_scriptsig,
-    get_utxo_script_bytes,
-    is_p2pkh_script,
-    legacy_sighash,
-    p2wpkh_script_code_from_spk,
-    vk_from_pubkey_bytes,
-)
-from .types import PrevoutRef, PrevoutMeta
+from .scripts import get_utxo_script_bytes
+from ..utils import config as CFG
 
+
+from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.mempool.validation")
 
 __all__ = ["TxMempoolValidator"]
@@ -119,184 +111,58 @@ class TxMempoolValidator:
         except Exception:
             return 0
 
-    def validate_transaction(
-        self,
-        tx: Tx,
-        utxo_set: dict[str, Any],
-        spend_at_height: int | None = None,
-    ) -> bool:
-        
+    def _utxo_snapshot_to_items(self, snapshot) -> list[tuple]:
+        items = []
+        if not isinstance(snapshot, dict):
+            return items
+        for key, entry in snapshot.items():
+            try:
+                if isinstance(key, bytes):
+                    key_str = key.decode("utf-8")
+                else:
+                    key_str = str(key)
+                if ":" not in key_str:
+                    continue
+                txid_hex, vout_str = key_str.split(":", 1)
+                txid_b = bytes.fromhex(txid_hex)
+                vout_i = int(vout_str)
+                amt = self._get_utxo_amount(entry)
+                spk_bytes = get_utxo_script_bytes(entry)
+                is_cb, born = self.utxo._get_utxo_meta(entry)
+                items.append((txid_b, vout_i, int(amt), spk_bytes, bool(is_cb), int(born)))
+            except Exception:
+                continue
+        return items
+
+    def validate_transaction(self, tx: Tx, utxo_set: dict[str, Any], spend_at_height: int | None = None,) -> bool:
         if getattr(tx, "is_coinbase", False):
             return False
 
-        input_sum = 0
-        output_sum = 0
-        current_height = (
-            spend_at_height if spend_at_height is not None else self.utxo._get_tip_height_from_state()
-        )
-        prevouts: list[PrevoutMeta] = []
-        seen_prevouts: set[PrevoutRef] = set()
+        current_height = (spend_at_height if spend_at_height is not None else self.utxo._get_tip_height_from_state())
 
-        for tx_in in tx.inputs:
-            prev_txid_hex = self._txin_prev_txid(tx_in)
-            if prev_txid_hex is None:
-                self.last_error_reason = "missing_prev_txid"
-                return False
-            prev_index_val = getattr(tx_in, "vout", getattr(tx_in, "prev_index", None))
-            if prev_index_val is None:
-                self.last_error_reason = "missing_prev_index"
-                return False
-            try:
-                prev_index = int(prev_index_val)
-            except Exception:
-                self.last_error_reason = "invalid_prev_index"
-                return False
-
-            ref = PrevoutRef(prev_txid_hex, prev_index)
-            if ref in seen_prevouts:
-                self.last_error_reason = "duplicate_prevout_in_tx"
-                return False
-            seen_prevouts.add(ref)
-
-            utxo_entry = self._lookup_utxo_entry(utxo_set, prev_txid_hex, prev_index)
-            if utxo_entry is None:
-                self.last_error_reason = f"prevout_missing {prev_txid_hex}:{prev_index}"
-                return False
-
-            try:
-                amount = self._get_utxo_amount(utxo_entry)
-            except ValueError:
-                self.last_error_reason = "invalid_utxo_amount"
-                return False
-
-            is_cb, born_height = self.utxo._get_utxo_meta(utxo_entry)
-            if is_cb:
-                effective_height = (
-                    int(spend_at_height) if spend_at_height is not None else int(current_height) + 1
-                )
-                confirmations = self._coinbase_confirmations(born_height, effective_height)
-                if confirmations < int(CFG.COINBASE_MATURITY):
-                    self.last_error_reason = (
-                        f"coinbase_immature conf={confirmations} need>={CFG.COINBASE_MATURITY}"
-                    )
-                    return False
-
-            input_sum += int(amount)
-            try:
-                tx_in.amount = int(amount)
-            except Exception:
-                pass
-
-            try:
-                spk_bytes = get_utxo_script_bytes(utxo_entry)
-            except Exception:
-                log.warning(
-                    "[validate_transaction] Error extracting script_pubkey from UTXO %s:%d",
-                    prev_txid_hex,
-                    prev_index,
-                )
-                self.last_error_reason = "invalid_utxo_script"
-                return False
-
-            prevouts.append(
-                PrevoutMeta(
-                    amount=int(amount),
-                    script_pubkey=spk_bytes,
-                    is_coinbase=is_cb,
-                    born_height=int(born_height),
-                )
-            )
-
-        for tx_out in tx.outputs:
-            amt = int(tx_out.amount)
-            is_opret = False
-            try:
-                spk_bytes = tx_out.script_pubkey.serialize()
-                is_opret = (
-                    isinstance(tx_out.script_pubkey, H.Script)
-                    and spk_bytes
-                    and spk_bytes[0] == H.OP_RETURN
-                )
-            except Exception:
-                is_opret = False
-
-            if amt <= 0:
-                if is_opret and amt == 0:
-                    continue
-
-                self.last_error_reason = "nonpositive_output_amount"
-                return False
-
-            output_sum += amt
-
-        if input_sum < output_sum:
-            log.warning(
-                "[validate_transaction] inputs < outputs: in=%d out=%d",
-                input_sum,
-                output_sum,
-            )
-            self.last_error_reason = f"inputs_less_than_outputs in={input_sum} out={output_sum}"
-            return False
-
-        fee_value = int(input_sum - output_sum)
         try:
-            tx.fee = fee_value
-        except Exception:
-            setattr(tx, "fee", fee_value)
-
-        for i, tx_in in enumerate(tx.inputs):
-            meta = prevouts[i]
-            amount = meta.amount
-            spk_bytes = meta.script_pubkey
-
-            if is_p2wpkh_script(spk_bytes):
-                wit = getattr(tx_in, "witness", None) or []
-                if len(wit) < 2:
-                    self.last_error_reason = "missing_witness"
-                    return False
-                sig = wit[0]
-                pubkey = wit[1]
-                if isinstance(sig, str):
-                    sig = bytes.fromhex(sig)
-                if isinstance(pubkey, str):
-                    pubkey = bytes.fromhex(pubkey)
-                if len(sig) < 2:
-                    return False
-
-                sighash_type = sig[-1]
-                sig_der = sig[:-1]
-                if sighash_type != H.SIGHASH_ALL:
-                    self.last_error_reason = "unsupported_sighash"
-                    return False
-
-                pkhash = spk_bytes[2:22]
-                if hash160(pubkey) != pkhash:
-                    self.last_error_reason = "pubkey_hash_mismatch"
-                    return False
-
+            compact_tx = tx_to_compact_tuple(tx)
+            utxo_items = self._utxo_snapshot_to_items(utxo_set)
+            ok, reason, fee = native_validate_tx_p2wpkh_compact(
+                compact_tx,
+                utxo_items,
+                int(current_height if spend_at_height is None else spend_at_height),
+                int(CFG.COINBASE_MATURITY),
+            )
+            if ok:
                 try:
-                    script_code = p2wpkh_script_code_from_spk(spk_bytes)
-                    compact = tx_to_compact_tuple(tx)
-                    digest32 = sighash_bip143_compact(compact, i, script_code, int(amount), sighash_type)
-                except Exception as e:
-                    log.warning("[validate_transaction] Failed to compute BIP143 sighash in vin %d", i)
-                    self.last_error_reason = f"bip143_sighash_error:{e}"
-                    return False
-
-                vk = vk_from_pubkey_bytes(pubkey)
-                if not H.is_signature_canonical_low_s(sig_der):
-                    self.last_error_reason = "sighash_or_der_non_canonical"
-                    return False
-
-                if not H.verify_der_strict_low_s(vk, digest32, sig_der):
-                    self.last_error_reason = "ecdsa_verify_failed"
-                    return False
-
+                    tx.fee = int(fee or 0)
+                except Exception:
+                    setattr(tx, "fee", int(fee or 0))
+                return True
             else:
+                self.last_error_reason = reason or "native_mempool_reject"
                 log.warning(
-                    "[validate_transaction] Unsupported scriptPubKey type in vin %d", i
+                    "[validate_transaction] Native reject txid=%s reason=%s",
+                    getattr(tx, "txid", None),
+                    self.last_error_reason,
                 )
-                self.last_error_reason = "unsupported_spk_type"
-                return False
-
-        return True
+        except Exception:
+            log.exception("[validate_transaction] Native validation error for tx %s", getattr(tx, "txid", None))
+            self.last_error_reason = "native_mempool_failed"
+            return False

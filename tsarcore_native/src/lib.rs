@@ -946,6 +946,7 @@ fn tsarcore_native(_py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(txcodec::txid_from_compact, m)?)?;
     m.add_function(wrap_pyfunction!(txcodec::wtxid_from_compact, m)?)?;
     m.add_function(wrap_pyfunction!(txcodec::sighash_bip143_compact, m)?)?;
+    m.add_function(wrap_pyfunction!(txcodec::validate_tx_p2wpkh_compact, m)?)?;
     m.add_class::<storage::NativeStorage>()?;
     m.add_class::<networking::SecureChannelNative>()?;
     Ok(())

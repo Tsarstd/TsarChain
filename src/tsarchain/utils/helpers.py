@@ -9,6 +9,7 @@ from bech32 import bech32_decode, convertbits
 from typing import Union, Tuple, Optional
 from ecdsa import VerifyingKey
 
+from ..storage import kv
 from ..utils import config as CFG
 
 try:
@@ -29,6 +30,7 @@ try:
         txid_from_compact as _native_txid_from_compact,
         wtxid_from_compact as _native_wtxid_from_compact,
         sighash_bip143_compact as _native_sighash_bip143_compact,
+        validate_tx_p2wpkh_compact as _native_validate_tx_p2wpkh_compact,
     )
 except ImportError as exc:
     raise ImportError(
@@ -828,4 +830,39 @@ def tx_to_compact_tuple(tx) -> tuple:
     except Exception:
         txid = b"\x00" * 32
     return (version, locktime, inputs_c, outputs_c, txid, bool(getattr(tx, "is_coinbase", False)))
+
+def native_validate_tx_p2wpkh_compact(tx_tuple, utxo_items, spend_height: int, coinbase_maturity: int):
+    return _native_validate_tx_p2wpkh_compact(tx_tuple, utxo_items, int(spend_height), int(coinbase_maturity))
+
+# =======================
+# LMDB UTXO streaming helpers Native (full-sync)
+# =======================
+
+def kv_load_utxo_dict_native(limit: int = 1000) -> dict:   # this module is not used directly
+    """
+    Stream UTXO entries dari LMDB via native iter_prefix_chunk.
+    dict key -> parsed JSON entry. Ignored __meta__.
+    """
+    if not kv.kv_enabled():
+        return {}
+    store = kv._ensure_env()
+    out = {}
+    start_after = None
+    while True:
+        chunk = store.iter_prefix_chunk("utxo", b"", limit, start_after) or []
+        if not chunk:
+            break
+        for k, v in chunk:
+            try:
+                if k == b"__meta__":
+                    continue
+                key = k.decode("utf-8")
+                val = json.loads(v.decode("utf-8"))
+                out[key] = val
+                start_after = k
+            except Exception:
+                continue
+        if len(chunk) < limit:
+            break
+    return out
 

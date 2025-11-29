@@ -9,6 +9,7 @@ from typing import Any, Dict, Tuple
 from ...consensus.blockchain import Blockchain
 from ...core.tx import Tx
 from ...utils import config as CFG
+from ...utils import helpers as H
 
 
 from ...utils.tsar_logging import get_ctx_logger
@@ -49,7 +50,10 @@ class FullSyncMixin:
                 continue
             
         try:
-            utxo_dict = self.utxodb.to_dict()
+            if CFG.KV_BACKEND == "lmdb":
+                utxo_dict = H.kv_load_utxo_dict_native(limit=CFG.KV_ITER_CHUNK)
+            else:
+                utxo_dict = self.utxodb.to_dict()
         except Exception:
             utxo_dict = {}
             
@@ -84,7 +88,7 @@ class FullSyncMixin:
         )
         return payload, len(chain_data), len(utxo_dict), len(mempool_data)
 
-    def send_full_sync(self, peer: Tuple[str, int]):
+    def send_full_sync(self, peer: Tuple[str, int]):  # non used directly
         try:
             payload, blocks_cnt, utxo_cnt, mempool_cnt = self.build_full_sync_payload()
             send_start = time.time()
