@@ -294,52 +294,6 @@ class TxMempoolValidator:
                     self.last_error_reason = "ecdsa_verify_failed"
                     return False
 
-            elif is_p2pkh_script(spk_bytes):
-                ss_bytes = getattr(tx_in, "script_sig", None)
-                if ss_bytes is None:
-                    self.last_error_reason = "missing_scriptsig"
-                    return False
-
-                if hasattr(ss_bytes, "serialize"):
-                    ss_bytes = ss_bytes.serialize()
-                if isinstance(ss_bytes, str):
-                    ss_bytes = bytes.fromhex(ss_bytes)
-                try:
-                    sig_der, sighash_type, pubkey = extract_p2pkh_scriptsig(ss_bytes)
-                except Exception as e:
-                    log.warning(
-                        "[validate_transaction] Failed to parse scriptSig in vin %d", i
-                    )
-                    self.last_error_reason = f"scriptsig_parse_error:{e}"
-                    return False
-
-                if sighash_type != H.SIGHASH_ALL:
-                    self.last_error_reason = "unsupported_sighash"
-                    return False
-
-                pkhash = spk_bytes[3:23]
-                if hash160(pubkey) != pkhash:
-                    self.last_error_reason = "pubkey_hash_mismatch"
-                    return False
-
-                try:
-                    digest32 = legacy_sighash(tx, i, spk_bytes, sighash_type)
-                except Exception as e:
-                    log.warning(
-                        "[validate_transaction] Failed to compute legacy sighash in vin %d",
-                        i,
-                    )
-                    self.last_error_reason = f"legacy_sighash_error:{e}"
-                    return False
-
-                vk = vk_from_pubkey_bytes(pubkey)
-                if not H.is_signature_canonical_low_s(sig_der):
-                    self.last_error_reason = "sighash_or_der_non_canonical"
-                    return False
-
-                if not H.verify_der_strict_low_s(vk, digest32, sig_der):
-                    self.last_error_reason = "ecdsa_verify_failed"
-                    return False
             else:
                 log.warning(
                     "[validate_transaction] Unsupported scriptPubKey type in vin %d", i

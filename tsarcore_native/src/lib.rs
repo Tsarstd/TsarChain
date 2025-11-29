@@ -36,6 +36,7 @@ use secp256k1::SecretKey;
 mod networking;
 mod storage;
 mod validation;
+mod utxo;
 
 // ---------------------
 // RandomX VM cache
@@ -939,6 +940,7 @@ fn tsarcore_native(_py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(storage::open_storage, m)?)?;
     m.add_function(wrap_pyfunction!(storage::json_read_file, m)?)?;
     m.add_function(wrap_pyfunction!(storage::json_write_file, m)?)?;
+    m.add_function(wrap_pyfunction!(utxo::utxo_build_ops_compact, m)?)?;
     m.add_class::<storage::NativeStorage>()?;
     m.add_class::<networking::SecureChannelNative>()?;
     Ok(())

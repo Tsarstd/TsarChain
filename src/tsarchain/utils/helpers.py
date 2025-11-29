@@ -24,6 +24,7 @@ try:
         validate_block_txs_native as _native_validate_block_txs,
         validate_block_txs_compact as _native_validate_block_txs_compact,
         randomx_pow_hash as _native_randomx_hash,
+        utxo_build_ops_compact as _native_utxo_build_ops_compact,
     )
 except ImportError as exc:
     raise ImportError(
@@ -799,4 +800,7 @@ def native_validate_block_txs(block_dict: dict, utxo_snapshot: dict, spend_heigh
 
 def native_validate_block_txs_compact(block_txs, utxo_items, spend_height: int, options: dict):
     return _native_validate_block_txs_compact(block_txs, utxo_items, int(spend_height), options)
+
+def native_utxo_build_ops_compact(block_txs, spend_height: int):
+    return _native_utxo_build_ops_compact(block_txs, int(spend_height))
 

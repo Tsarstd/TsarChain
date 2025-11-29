@@ -54,8 +54,13 @@ class UTXODatabaseMixin:
                 script_type = "p2wpkh"
             elif len(spk_bytes) == 34 and spk_bytes[0] == 0x00 and spk_bytes[1] == 0x20:
                 script_type = "p2wsh"
+            if address is None and hasattr(self, "script_to_address"):
+                try:
+                    address = self.script_to_address(spk_bytes)
+                except Exception:
+                    address = None
         try:
-            if hasattr(self, "script_to_address"):
+            if address is None and hasattr(self, "script_to_address"):
                 address = self.script_to_address(getattr(tx_out, "script_pubkey", None))
         except Exception:
             address = None

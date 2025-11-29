@@ -12,6 +12,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use hex;
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::fs;
@@ -836,6 +837,46 @@ impl NativeStorage {
                     }
                 }
                 Ok(())
+            }
+        }
+    }
+
+    fn apply_utxo_ops(
+        &self,
+        ops: Vec<(String, Option<u64>, Option<Vec<u8>>, Option<bool>, Option<i64>)>,
+    ) -> PyResult<(u64, u64)> {
+        match &self.backend {
+            Backend::Json(_) => Err(PyErr::new::<PyRuntimeError, _>(
+                "apply_utxo_ops only supported for LMDB backend",
+            )),
+            Backend::Lmdb(b) => {
+                let mut batch_ops: Vec<(Vec<u8>, Option<Vec<u8>>)> = Vec::with_capacity(ops.len());
+                let mut put_count: u64 = 0;
+                let mut del_count: u64 = 0;
+
+                for (key_str, amount_opt, spk_opt, is_cb_opt, h_opt) in ops {
+                    if amount_opt.is_none() {
+                        batch_ops.push((key_str.into_bytes(), None));
+                        del_count = del_count.saturating_add(1);
+                        continue;
+                    }
+                    let amount = amount_opt.unwrap_or(0);
+                    let spk_hex = spk_opt.as_ref().map(|b| hex::encode(b));
+                    let payload = serde_json::json!({
+                        "tx_out": {
+                            "amount": amount,
+                            "script_pubkey": spk_hex,
+                        },
+                        "is_coinbase": is_cb_opt.unwrap_or(false),
+                        "block_height": h_opt.unwrap_or(0),
+                    });
+                    let bytes = serde_json::to_vec(&payload)
+                        .map_err(|e| PyErr::new::<PyRuntimeError, _>(format!("utxo json encode: {e}")))?;
+                    batch_ops.push((key_str.into_bytes(), Some(bytes)));
+                    put_count = put_count.saturating_add(1);
+                }
+                b.put_batch("utxo", batch_ops)?;
+                Ok((put_count, del_count))
             }
         }
     }
