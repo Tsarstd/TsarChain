@@ -384,46 +384,8 @@ class ValidationMixin:
             tx_payloads = []
             for tx in tx_list:
                 try:
-                    version = int(getattr(tx, "version", 1))
-                    locktime = int(getattr(tx, "locktime", 0))
-                    inputs_payload = []
-                    for tx_input in getattr(tx, "inputs", []) or []:
-                        prev_txid_b = _txid_bytes(getattr(tx_input, "txid", None) or getattr(tx_input, "prev_tx", None))
-                        if prev_txid_b is None:
-                            return None
-                        try:
-                            prev_index = int(getattr(tx_input, "vout", getattr(tx_input, "prev_index", 0)))
-                        except Exception:
-                            return None
-                        seq = getattr(tx_input, "sequence", 0xffffffff)
-                        witness_raw = getattr(tx_input, "witness", None) or []
-                        wit_vec = []
-                        try:
-                            for w in witness_raw:
-                                if isinstance(w, (bytes, bytearray)):
-                                    wit_vec.append(bytes(w))
-                                elif isinstance(w, str):
-                                    wit_vec.append(bytes.fromhex(w))
-                                else:
-                                    return None
-                        except Exception:
-                            return None
-                        inputs_payload.append((prev_txid_b, int(prev_index), int(seq), wit_vec))
-                    outputs_payload = []
-                    for tx_out in getattr(tx, "outputs", []) or []:
-                        try:
-                            amt = int(getattr(tx_out, "amount", tx_out.get("amount") if isinstance(tx_out, dict) else 0))
-                        except Exception:
-                            return None
-                        spk_obj = getattr(tx_out, "script_pubkey", tx_out.get("script_pubkey") if isinstance(tx_out, dict) else None)
-                        spk_bytes = _script_to_bytes(spk_obj)
-                        if spk_bytes is None:
-                            return None
-                        outputs_payload.append((amt, spk_bytes))
-                    txid_b = _txid_bytes(getattr(tx, "txid", None))
-                    if txid_b is None:
-                        return None
-                    tx_payloads.append((version, locktime, inputs_payload, outputs_payload, txid_b, bool(getattr(tx, "is_coinbase", False))))
+                    compact = H.tx_to_compact_tuple(tx)
+                    tx_payloads.append(compact)
                 except Exception:
                     return None
 

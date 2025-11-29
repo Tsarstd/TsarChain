@@ -50,6 +50,15 @@ Native acceleration module for **TsarChain** with crypto, PoW, validation, and f
 - `NativeStorage(backend, path, map_size_init=None, map_size_max=None, pretty_json=True)` / `open_storage(...)`  
   Thread-safe storage facade over LMDB or atomic JSON files. Exposes `put_bytes`, `put_json`, `get_bytes`, `get_json`, `delete`, `clear_db`, `iter_prefix`, and LMDB `copy`. LMDB automatically retries after `MapFull` by growing to `map_size_max`; JSON backend pretty-prints (optional) and persists via temp-file rename for durability.
 
+- UTXO delta + apply (LMDB):  
+  - `utxo_build_ops_compact(block_txs, spend_height)` -> list of ops (delete/insert) from compact tx tuples  
+  - `NativeStorage.apply_utxo_ops(ops)` (LMDB backend) batch-apply UTXO ops in one transaction
+
+- Compact tx codec (P2WPKH-focused):  
+  - `serialize_tx_compact(tx_tuple, include_witness=True) -> bytes`  
+  - `txid_from_compact(tx_tuple) -> bytes`, `wtxid_from_compact(tx_tuple) -> bytes`  
+  - `sighash_bip143_compact(tx_tuple, input_index, script_code, value_sat, sighash_type)` (SIGHASH_ALL, no ANYONECANPAY)
+
 > Endianness note: pass **little-endian txids** to `merkle_root` if you want a Bitcoin-compatible block header merkle root.
 
 ## Usage (Python)
@@ -116,6 +125,7 @@ store.copy("/tmp/tsar.db.backup", compact=True)  # LMDB only
 
 ## Changelog
 
+- **0.1.6** - Native UTXO apply (LMDB batch) now default (no Python fallback); compact tx codec exposed (serialize/txid/wtxid/sighash) and wired into txid/wtxid compute, mempool BIP143, and payload compact consensus; P2PKH legacy path deleted (only P2WPKH).
 - **0.1.5** - LMDB storage enhancements: batch put/delete API, chunked prefix iteration, smoother map growth (doubling up to max) to avoid MapFull; thread-safe KV init and streaming iterators exposed to Python for lower memory use.
 - **0.1.4** - Added `NativeStorage`/`open_storage` with LMDB or atomic JSON backends (prefix scans, temp-file persistence, optional pretty JSON, LMDB auto-grow + copy), plus `json_read_file`/`json_write_file` helpers.
 - **0.1.3** - Added `SecureChannelNative` (X25519 handshake + HKDF + AES-256-GCM) so TsarChain P2P crypto now runs entirely in Rust, lowering latency and hardening TTL/msg quotas.

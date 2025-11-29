@@ -7,8 +7,23 @@ from ecdsa import SECP256k1, SigningKey
 
 # ---------------- Local Project ----------------
 from ..utils.helpers import Script
-from ..utils.helpers import (util_compute_txid, util_compute_wtxid, SIGHASH_ALL, bip143_sig_hash, to_bytes, is_p2pkh, is_p2wpkh, is_p2wsh, is_p2sh,
-                             count_sigops_in_script, last_pushdata, sign_digest_der_low_s_native)
+from ..utils.helpers import (
+    util_compute_txid,
+    util_compute_wtxid,
+    SIGHASH_ALL,
+    bip143_sig_hash,
+    to_bytes,
+    is_p2pkh,
+    is_p2wpkh,
+    is_p2wsh,
+    is_p2sh,
+    count_sigops_in_script,
+    last_pushdata,
+    sign_digest_der_low_s_native,
+    tx_to_compact_tuple,
+    txid_from_compact,
+    wtxid_from_compact,
+)
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
@@ -142,11 +157,20 @@ class Tx:
     # -------- IDs ----------
 
     def compute_txid(self) -> bytes:
-        self.txid = util_compute_txid(self, include_txid=False)
-        return self.txid
+        try:
+            compact = tx_to_compact_tuple(self)
+            self.txid = txid_from_compact(compact)
+            return self.txid
+        except Exception:
+            self.txid = util_compute_txid(self, include_txid=False)
+            return self.txid
 
     def compute_wtxid(self) -> bytes:
-        return util_compute_wtxid(self)
+        try:
+            compact = tx_to_compact_tuple(self)
+            return wtxid_from_compact(compact)
+        except Exception:
+            return util_compute_wtxid(self)
 
     # -------- Serde ----------
 

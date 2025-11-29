@@ -9,7 +9,7 @@ from typing import Any
 
 from ..core.tx import Tx
 from ..utils import helpers as H
-from ..utils.helpers import hash160, is_p2wpkh_script, bip143_sig_hash
+from ..utils.helpers import hash160, is_p2wpkh_script, bip143_sig_hash, tx_to_compact_tuple, sighash_bip143_compact
 from ..utils.tsar_logging import get_ctx_logger
 from ..utils import config as CFG
 from ..storage.utxo import UTXODB
@@ -276,12 +276,10 @@ class TxMempoolValidator:
 
                 try:
                     script_code = p2wpkh_script_code_from_spk(spk_bytes)
-                    digest32 = bip143_sig_hash(tx, i, script_code, int(amount), sighash_type)
+                    compact = tx_to_compact_tuple(tx)
+                    digest32 = sighash_bip143_compact(compact, i, script_code, int(amount), sighash_type)
                 except Exception as e:
-                    log.warning(
-                        "[validate_transaction] Failed to compute BIP143 sighash in vin %d",
-                        i,
-                    )
+                    log.warning("[validate_transaction] Failed to compute BIP143 sighash in vin %d", i)
                     self.last_error_reason = f"bip143_sighash_error:{e}"
                     return False
 

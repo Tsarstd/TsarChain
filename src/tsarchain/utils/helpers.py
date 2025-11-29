@@ -25,6 +25,10 @@ try:
         validate_block_txs_compact as _native_validate_block_txs_compact,
         randomx_pow_hash as _native_randomx_hash,
         utxo_build_ops_compact as _native_utxo_build_ops_compact,
+        serialize_tx_compact as _native_serialize_tx_compact,
+        txid_from_compact as _native_txid_from_compact,
+        wtxid_from_compact as _native_wtxid_from_compact,
+        sighash_bip143_compact as _native_sighash_bip143_compact,
     )
 except ImportError as exc:
     raise ImportError(
@@ -349,57 +353,9 @@ def difficulty_to_target(diff: int) -> int:
 
 # ========== Low-level serializers ===========
 
-def _serialize_outpoint(txid: bytes, vout: int) -> bytes:
-    if len(txid) == 32:
-        out = txid[::-1]
-    else:
-        out = txid
-    out += (vout if vout >= 0 else 0xffffffff).to_bytes(4, 'little')
-    return out
-
-
-def _serialize_txin(txin) -> bytes:
-    out = b''
-    out += _serialize_outpoint(txin.txid, txin.vout)
-    script_bytes = getattr(txin.script_sig, 'serialize', lambda: b'')()
-    out += serialize_bytes_with_len(script_bytes)
-    seq = getattr(txin, 'sequence', 0xffffffff)
-    out += seq.to_bytes(4, 'little')
-    return out
-
-
-def _serialize_txout(txout) -> bytes:
-    out = int(txout.amount).to_bytes(8, 'little')
-    script_bytes = getattr(txout.script_pubkey, 'serialize', lambda: b'')()
-    out += serialize_bytes_with_len(script_bytes)
-    return out
-
-
-def _serialize_witness_for_txin(txin) -> bytes:
-    wit = getattr(txin, 'witness', None) or []
-    out = encode_varint(len(wit))
-    for item in wit:
-        out += serialize_bytes_with_len(item)
-    return out
-
-
 def serialize_tx(tx, include_witness: bool = True) -> bytes:
-    res = b''
-    res += int(tx.version).to_bytes(4, 'little')
-    has_witness = include_witness and any(getattr(txin, 'witness', None) for txin in tx.inputs)
-    if has_witness:
-        res += b'\x00' + b'\x01'
-    res += encode_varint(len(tx.inputs))
-    for txin in tx.inputs:
-        res += _serialize_txin(txin)
-    res += encode_varint(len(tx.outputs))
-    for txout in tx.outputs:
-        res += _serialize_txout(txout)
-    if has_witness:
-        for txin in tx.inputs:
-            res += _serialize_witness_for_txin(txin)
-    res += int(getattr(tx, 'locktime', 0)).to_bytes(4, 'little')
-    return res
+    compact = tx_to_compact_tuple(tx)
+    return serialize_tx_compact(compact, include_witness)
 
 def serialize_tx_for_txid(tx) -> bytes:
     return serialize_tx(tx, include_witness=False)
@@ -803,4 +759,73 @@ def native_validate_block_txs_compact(block_txs, utxo_items, spend_height: int, 
 
 def native_utxo_build_ops_compact(block_txs, spend_height: int):
     return _native_utxo_build_ops_compact(block_txs, int(spend_height))
+
+# =======================
+# Codec helpers (compact native tx serializer)
+# =======================
+
+def serialize_tx_compact(tx_tuple, include_witness: bool = True) -> bytes:  # Not used directly
+    return bytes(_native_serialize_tx_compact(tx_tuple, bool(include_witness)))
+
+def txid_from_compact(tx_tuple) -> bytes:
+    return bytes(_native_txid_from_compact(tx_tuple))
+
+def wtxid_from_compact(tx_tuple) -> bytes:
+    return bytes(_native_wtxid_from_compact(tx_tuple))
+
+def sighash_bip143_compact(tx_tuple, input_index: int, script_code: bytes, value_sat: int, sighash_type: int = SIGHASH_ALL) -> bytes:
+    return bytes(_native_sighash_bip143_compact(tx_tuple, int(input_index), bytes(script_code), int(value_sat), int(sighash_type)))
+
+def tx_to_compact_tuple(tx) -> tuple:
+    version = int(getattr(tx, "version", 1))
+    locktime = int(getattr(tx, "locktime", 0))
+    inputs_c = []
+    for txin in getattr(tx, "inputs", []) or []:
+        prev = getattr(txin, "txid", None) or getattr(txin, "prev_tx", None)
+        if isinstance(prev, str):
+            prev = bytes.fromhex(prev)
+        prev_b = bytes(prev) if isinstance(prev, (bytes, bytearray)) else b""
+        vout = int(getattr(txin, "vout", getattr(txin, "prev_index", 0)) or 0)
+        seq = int(getattr(txin, "sequence", 0xffffffff))
+        wit_vec = []
+        for w in getattr(txin, "witness", None) or []:
+            if isinstance(w, str):
+                try:
+                    wit_vec.append(bytes.fromhex(w))
+                    continue
+                except Exception:
+                    wit_vec.append(b"")
+                    continue
+            if isinstance(w, (bytes, bytearray)):
+                wit_vec.append(bytes(w))
+            else:
+                wit_vec.append(b"")
+        inputs_c.append((prev_b, vout, seq, wit_vec))
+
+    outputs_c = []
+    for txout in getattr(tx, "outputs", []) or []:
+        amt = int(getattr(txout, "amount", 0))
+        spk = getattr(txout, "script_pubkey", None)
+        if hasattr(spk, "serialize"):
+            try:
+                spk_b = spk.serialize()
+            except Exception:
+                spk_b = b""
+        elif isinstance(spk, (bytes, bytearray)):
+            spk_b = bytes(spk)
+        elif isinstance(spk, str):
+            try:
+                spk_b = bytes.fromhex(spk)
+            except Exception:
+                spk_b = b""
+        else:
+            spk_b = b""
+        outputs_c.append((amt, spk_b))
+
+    tx_tuple = (version, locktime, inputs_c, outputs_c, b"\x00" * 32, bool(getattr(tx, "is_coinbase", False)))
+    try:
+        txid = txid_from_compact(tx_tuple)
+    except Exception:
+        txid = b"\x00" * 32
+    return (version, locktime, inputs_c, outputs_c, txid, bool(getattr(tx, "is_coinbase", False)))
 
