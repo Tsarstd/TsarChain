@@ -4,13 +4,13 @@
 # Refs: see REFERENCES.md
 
 import multiprocessing as mp
-import struct, time, queue, psutil
+import time
 from typing import List, Optional
 from multiprocessing.synchronize import Event as MpEvent
 
 
 # ---------------- Local Project ----------------
-from ..utils.helpers import int_to_little_endian, merkle_root, pow_hash_miner, pow_hash_verify_light, bits_to_target, pow_key_for_height
+from ..utils.helpers import int_to_little_endian, merkle_root, pow_hash_verify_light, bits_to_target, pow_key_for_height, native_randomx_mine
 from ..core.coinbase import CoinbaseTx
 from ..core.tx import Tx
 from ..utils import config as CFG
@@ -19,8 +19,7 @@ from ..utils import config as CFG
 from ..utils.tsar_logging import get_ctx_logger
 
 class BlockHeader:
-    def __init__(self, version: int, prev_block_hash: bytes, merkle_root: bytes,
-                 timestamp: int, bits: int, nonce: int):
+    def __init__(self, version: int, prev_block_hash: bytes, merkle_root: bytes, timestamp: int, bits: int, nonce: int):
         self.version = version
         self.prev_block_hash = prev_block_hash
         self.merkle_root = merkle_root
@@ -134,6 +133,9 @@ class Block:
 
     def mine(self, use_cores: int = None, stop_event: Optional[MpEvent] = None, pow_backend: str = "auto", progress_queue: Optional[mp.Queue] = None):
         self.nonce = 0
+        if stop_event is not None and stop_event.is_set():
+            return None
+
         total_cores = mp.cpu_count()
         if not isinstance(use_cores, int) or use_cores < 1:
             use_cores = 1
@@ -154,258 +156,45 @@ class Block:
         pow_key = pow_key_for_height(self.height)
         if not pow_key:
             raise RuntimeError("RandomX key derivation failed; check RANDOMX_* configuration.")
-        
-        self.log.info(
-            "[mine] Mining with %s/%s cores, Target: %s, Backend=%s",
-            num_cores,
-            total_cores,
-            hex(target),
-            backend,
-        )
 
-        header_without_nonce = self.header()[:-4]
-        start_time = time.time()
-        result_queue = mp.Queue()
-        processes: list[mp.Process] = []
-        found_event = mp.Event()
-        created_local_stop = False
-        if stop_event is None:
-            stop_event = mp.Event()
-            created_local_stop = True
+        header_prefix = self.header()[:-4]
+        target_be = int(target).to_bytes(32, "big", signed=False)
+        threads = num_cores
 
-        worker_target = type(self).mine_worker_randomx
-        
-        if num_cores == 1:
-            nonce = 0
-            max_nonce = (2**32 - 1)
-            hash_count = 0
-            last_report_time = time.time()
-            header = bytearray(header_without_nonce)
-            header.extend(b"\x00\x00\x00\x00")
-            nonce_offset = len(header) - 4
-            while nonce <= max_nonce:
-                if stop_event is not None and stop_event.is_set():
-                    return None
-                struct.pack_into("<I", header, nonce_offset, nonce & 0xFFFFFFFF)
-                block_hash = pow_hash_miner(header, key_hint=pow_key)
-                if int.from_bytes(block_hash, "big") < target:
-                    self.nonce = nonce & 0xFFFFFFFF
-                    
-                    # LIGHT verification to prevent second dataset in parent
-                    if pow_hash_verify_light(self.header(), key_hint=pow_key) != block_hash:
-                        return None
-                    self.log.info("[mine] Block mined: nonce=%s, hash=%s", self.nonce, block_hash.hex())
-                    return block_hash
-                
-                # progress every ~5 second
-                now = time.time()
-                hash_count += 1
-                if now - last_report_time >= 5.0:
-                    if progress_queue is not None:
-                        try:
-                            hps = hash_count / max(1e-9, (now - last_total_print))
-                        except NameError:
-                            hps = hash_count / max(1e-9, (now - last_report_time))
-                        try:
-                            progress_queue.put(('TOTAL_HPS', float(hps)))
-                        except Exception:
-                            pass
-                    hash_count = 0
-                    last_report_time = now
-                nonce += 1
+        try:
+            found = native_randomx_mine(
+                header_prefix,
+                target_be,
+                pow_key,
+                threads=threads,
+                full_mem=bool(CFG.RANDOMX_FULL_MEM),
+                large_pages=bool(CFG.RANDOMX_LARGE_PAGES),
+                jit=bool(CFG.RANDOMX_JIT),
+                hard_aes=bool(CFG.RANDOMX_HARD_AES),
+                secure_jit=bool(CFG.RANDOMX_SECURE_JIT),
+                progress_queue=progress_queue,
+                progress_interval_ms=2000,
+                stop_event=stop_event,
+            )
+        except Exception:
+            self.log.exception("[mine] native miner raised an error")
             return None
 
-        cpu_ids = list(range(total_cores))
-        for i in range(num_cores):
-            p = mp.Process(
-                target=worker_target,
-                args=(i, num_cores, header_without_nonce, target,
-                      result_queue, found_event, stop_event, pow_key))
-            p.daemon = True
-            p.start()
-            processes.append(p)
-
-            try:
-                proc = psutil.Process(p.pid)
-                if hasattr(proc, "cpu_affinity"):
-                    proc.cpu_affinity([cpu_ids[i % len(cpu_ids)]])
-                if hasattr(psutil, "HIGH_PRIORITY_CLASS"):
-                    proc.nice(psutil.HIGH_PRIORITY_CLASS)
-            except Exception:
-                self.log.exception("[mine] psutil affinity/nice failed for pid=%s", p.pid)
-
-        alive_after_launch = sum(1 for p in processes if p.is_alive())
-        if alive_after_launch < num_cores:
-            self.log.warning("[mine] Only %s/%s worker alive.", alive_after_launch, num_cores)
-
-        timeout_sec = 3600
-        deadline = start_time + timeout_sec
-        nonce, found_hash = None, None
-        total_hps_accum = 0.0
-        reports_since_print = 0
-        last_total_print = time.time()
-        REPORT_WINDOW = 15
-
-        try:
-            while True:
-                if stop_event.is_set():
-                    return None
-
-                try:
-                    msg = result_queue.get(timeout=0.2)
-                except queue.Empty:
-                    alive_now = sum(1 for p in processes if p.is_alive())
-                    if alive_now == 0 and not found_event.is_set():
-                        return None
-                    if time.time() >= deadline:
-                        return None
-                    nowp = time.time()
-                    if (nowp - last_total_print) >= REPORT_WINDOW and reports_since_print > 0:
-                        #self.log.trace("[mine] ⛏️ Total Hashrate: %s H/s", f"{total_hps_accum:,.0f}")
-                        if progress_queue is not None:
-                            try:
-                                progress_queue.put(('TOTAL_HPS', total_hps_accum))
-                            except Exception:
-                                pass
-                        total_hps_accum = 0.0
-                        reports_since_print = 0
-                        last_total_print = nowp
-                    continue
-
-                if isinstance(msg, tuple) and len(msg) == 2 and msg[0] == 'PROGRESS':
-                    try:
-                        total_hps_accum += float(msg[1])
-                        reports_since_print += 1
-                    except Exception:
-                        pass
-                    nowp = time.time()
-                    if reports_since_print >= num_cores or (nowp - last_total_print) >= REPORT_WINDOW:
-                        #self.log.trace("[mine] ⛏️ Total Hashrate: %s H/s", f"{total_hps_accum:,.0f}")
-                        if progress_queue is not None:
-                            try:
-                                progress_queue.put(('TOTAL_HPS', total_hps_accum))
-                            except Exception:
-                                pass
-                        total_hps_accum = 0.0
-                        reports_since_print = 0
-                        last_total_print = nowp
-                    continue
-
-                if isinstance(msg, tuple) and len(msg) == 2 and msg[0] == 'ERR':
-                    self.log.error("[mine] Worker error: %s", msg[1])
-                    continue
-
-                nonce, found_hash = msg
-                break
-
-            elapsed = time.time() - start_time
-            if nonce is not None and found_hash:
-                self.nonce = nonce
-                if pow_hash_verify_light(self.header(), key_hint=pow_key) != found_hash:
-                    return None
-                self.log.info("[mine] Block mined: nonce=%s, hash=%s (time=%.2fs)", self.nonce, found_hash.hex(), elapsed)
-                return found_hash
-            else:
-                self.log.warning("[mine] Mining failed: no valid nonce found (time=%.2fs)", elapsed)
+        if isinstance(found, tuple) and len(found) == 2:
+            nonce, h = found
+            self.nonce = int(nonce)
+            if pow_hash_verify_light(self.header(), key_hint=pow_key) != h:
+                self.log.error("[mine] native hash verification failed (nonce=%s)", self.nonce)
                 return None
+            self.log.info("[mine] Found: nonce=%s, hash=%s", self.nonce, h.hex())
+            return h
 
-        finally:
-            try:
-                found_event.set()
-                if created_local_stop:
-                    stop_event.set()
-            except Exception:
-                pass
-
-            for p in processes:
-                try:
-                    p.join(timeout=1.0)
-                except Exception:
-                    pass
-
-            for p in processes:
-                if p.is_alive():
-                    try:
-                        p.terminate()
-                        p.join(timeout=1.0)
-                    except Exception:
-                        self.log.exception("[mine] terminate failed pid=%s", p.pid)
-
-            for p in processes:
-                if p.is_alive():
-                    try:
-                        p.kill()
-                    except Exception:
-                        self.log.exception("[mine] kill failed pid=%s", p.pid)
-
-            try:
-                result_queue.close()
-            except Exception:
-                pass
-            try:
-                result_queue.join_thread()
-            except Exception:
-                pass
-
-    # ==== RandomX workers: kirim ('PROGRESS', hps) setiap ~5 detik ====
-
-    @staticmethod
-    def mine_worker_randomx(start_nonce, step, header_template, target, result_queue, found_event: MpEvent, stop_event: MpEvent, pow_key: bytes):
-        try:
-            nonce = start_nonce
-            max_nonce = (2**32 - 1)
-            hash_count = 0
-            last_report_time = time.time()
-
-            header = bytearray(header_template)
-            header.extend(b"\x00\x00\x00\x00")
-            nonce_offset = len(header) - 4
-
-            while nonce <= max_nonce:
-                if stop_event.is_set() or found_event.is_set():
-                    break
-
-                struct.pack_into("<I", header, nonce_offset, nonce & 0xFFFFFFFF)
-                block_hash = pow_hash_miner(header, key_hint=pow_key)
-                hash_int = int.from_bytes(block_hash, "big")
-                hash_count += 1
-
-                now = time.time()
-                if now - last_report_time >= 5.0:
-                    if stop_event.is_set() or found_event.is_set():
-                        break
-                    elapsed = now - last_report_time
-                    hps = (hash_count / elapsed) if elapsed > 0 else 0.0
-                    try:
-                        result_queue.put(('PROGRESS', hps))
-                    except Exception:
-                        pass
-                    last_report_time = now
-                    hash_count = 0
-
-                if hash_int < target:
-                    if not found_event.is_set() and not stop_event.is_set():
-                        found_event.set()
-                        result_queue.put((nonce & 0xFFFFFFFF, block_hash))
-                    return
-
-                nonce += step
-
-            if not stop_event.is_set() and not found_event.is_set():
-                result_queue.put((None, None))
-
-        except KeyboardInterrupt:
-            try:
-                stop_event.set()
-            except Exception:
-                pass
-            return
-        
-        except Exception as e:
-            try:
-                result_queue.put(('ERR', f"RX-Core {start_nonce % max(1, step)} -> {e!r}"))
-            except Exception:
-                pass
+        self.log.warning(
+            "[mine] Native miner returned no valid nonce (threads=%s, target=%s)",
+            threads,
+            hex(target),
+        )
+        return None
 
 
     def __repr__(self):

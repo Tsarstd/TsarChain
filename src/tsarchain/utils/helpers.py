@@ -31,7 +31,8 @@ try:
         wtxid_from_compact as _native_wtxid_from_compact,
         sighash_bip143_compact as _native_sighash_bip143_compact,
         validate_tx_p2wpkh_compact as _native_validate_tx_p2wpkh_compact,
-    )
+        randomx_mine as _native_randomx_mine,
+)
 except ImportError as exc:
     raise ImportError(
         "tsarcore_native is required: build/install the Rust extension to run TsarChain"
@@ -833,6 +834,45 @@ def tx_to_compact_tuple(tx) -> tuple:
 
 def native_validate_tx_p2wpkh_compact(tx_tuple, utxo_items, spend_height: int, coinbase_maturity: int):
     return _native_validate_tx_p2wpkh_compact(tx_tuple, utxo_items, int(spend_height), int(coinbase_maturity))
+
+# =======================
+# Mining (RandomX)
+# =======================
+
+def native_randomx_mine(
+    header_prefix: bytes,
+    target_be: bytes,
+    key: bytes,
+    threads: int = 0,
+    *,
+    full_mem: bool = False,
+    large_pages: bool = False,
+    jit: bool = True,
+    hard_aes: bool = True,
+    secure_jit: bool = False,
+    progress_queue=None,
+    progress_interval_ms: int | None = None,
+    stop_event=None,
+):
+    """
+    Native RandomX miner. header_prefix must be 76-byte header without nonce.
+    target_be must be 32-byte big-endian target.
+    Returns (nonce, hash) or None if not found.
+    """
+    return _native_randomx_mine(
+        bytes(header_prefix),
+        bytes(target_be),
+        bytes(key),
+        int(threads),
+        bool(full_mem),
+        bool(large_pages),
+        bool(jit),
+        bool(hard_aes),
+        bool(secure_jit),
+        progress_queue,
+        progress_interval_ms if progress_interval_ms is None else int(progress_interval_ms),
+        stop_event,
+    )
 
 # =======================
 # LMDB UTXO streaming helpers Native (full-sync)
