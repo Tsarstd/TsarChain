@@ -857,25 +857,28 @@ class ExplorePanel(tk.Frame):
                 self._img_refs.append(photo)
                 try:
                     self.text.update_idletasks()
-                    width = int(self.text.winfo_width())
+                    text_w = int(self.text.winfo_width() or 0)
                 except Exception:
-                    width = 0
-                if width <= 0:
+                    text_w = 0
+                if text_w <= 0:
                     try:
                         self.card.update_idletasks()
-                        width = int(self.card.winfo_width())
+                        text_w = int(self.card.winfo_width() or 0)
                     except Exception:
-                        width = 0
-                width = max(photo.width() + 40, width or 0, 600)
-                frame = tk.Frame(self.text, bg=self.card_bg, width=width, height=photo.height())
+                        text_w = 0
+
+                img_w = photo.width()
+                padx = max((text_w - img_w) // 2, 0)
+
+                frame = tk.Frame(self.text, bg=self.card_bg)
                 lbl = tk.Label(frame, image=photo, bg=self.card_bg)
-                lbl.pack(anchor="center")
-                self.text.window_create("end", window=frame)
+                lbl.pack()
+                self.text.window_create("end", window=frame, padx=padx)
                 self._writeln()
             except Exception as e:
-                _w_center(f"[preview gagal] {e}", "muted")
+                _w_center(f"[preview failed] {e}", "muted")
         else:
-            _w_center("(file tidak tersedia dari archivist)", "muted")
+            _w_center("(graffiti not found)", "muted")
 
         # comments
         self._writeln()
