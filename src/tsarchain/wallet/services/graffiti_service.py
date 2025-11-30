@@ -176,4 +176,88 @@ def upload_graffiti(
     }
 
 
+def fetch_graffiti_file(
+    rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
+    art_id: str,
+    *,
+    storer_addr: Optional[str] = None,
+    cache_dir: Optional[str] = None,
+    max_bytes: int = 10 * 1024 * 1024,
+    timeout: float = 5.0,
+) -> Dict[str, Any]:
+    """
+    Ambil file graffiti dari storage node berdasarkan art_id.
+    - rpc_call: fungsi sinkron ke node (mis. NodeClient.send)
+    - storer_addr: preferensi alamat storage (bech32) bila tersedia
+    - cache_dir: lokasi cache lokal (default data_user/graffiti_cache)
+    Return: {"status": "ok", "bytes": b"...", "meta": {...}, "cache_path": "..."} atau {"status": "error", "reason": "..."}
+    """
+    art_norm = (art_id or "").strip().lower()
+    if not art_norm:
+        return {"status": "error", "reason": "missing_art_id"}
+
+    try:
+        max_bytes = int(max_bytes)
+    except Exception:
+        max_bytes = 10 * 1024 * 1024
+    max_bytes = max(32 * 1024, min(max_bytes, 50 * 1024 * 1024))  # clamp 32KB..50MB
+
+    try:
+        storers = fetch_storers(rpc_call)  # type: ignore[arg-type]
+    except Exception as e:
+        return {"status": "error", "reason": f"storers_unavailable:{e}"}
+
+    if not storers:
+        return {"status": "error", "reason": "no_storers"}
+
+    preferred, others = [], []
+    storer_target = (storer_addr or "").strip().lower()
+    for meta in storers:
+        addr = str(meta.get("addr") or meta.get("address") or "").strip().lower()
+        (preferred if storer_target and addr == storer_target else others).append(meta)
+    candidates = preferred + others
+
+    cache_root = cache_dir or os.path.join("data_user", "graffiti_cache")
+    os.makedirs(cache_root, exist_ok=True)
+
+    last_error = None
+    for meta in candidates:
+        endpoint = _pick_endpoint(meta)
+        if not endpoint:
+            continue
+        host, port = endpoint
+        payload = {"type": "STOR_GET_BY_ART", "art_id": art_norm, "include_data": True, "max_bytes": max_bytes}
+        resp = _send_storage_request(host, port, payload, timeout=timeout)
+        if not isinstance(resp, dict):
+            last_error = "bad_response"
+            continue
+        if not resp.get("found"):
+            last_error = resp.get("reason") or "not_found"
+            continue
+        if resp.get("status") == "error":
+            last_error = resp.get("reason") or "error"
+            continue
+        data_b64 = resp.get("data_b64")
+        meta_resp = resp.get("meta") or {}
+        if not data_b64:
+            last_error = "no_data"
+            continue
+        try:
+            raw = base64.b64decode(data_b64)
+        except Exception:
+            last_error = "decode_failed"
+            continue
+        fname = meta_resp.get("filename") or f"{art_norm}.bin"
+        ext = ".jpg" if str(meta_resp.get("mime") or "").startswith("image/") else os.path.splitext(fname)[1] or ".bin"
+        cache_path = os.path.join(cache_root, f"{art_norm}{ext}")
+        try:
+            with open(cache_path, "wb") as fh:
+                fh.write(raw)
+        except Exception:
+            cache_path = ""
+        return {"status": "ok", "bytes": raw, "meta": meta_resp, "cache_path": cache_path}
+
+    return {"status": "error", "reason": last_error or "unavailable"}
+
+
 __all__ = ["fetch_storers", "upload_graffiti"]

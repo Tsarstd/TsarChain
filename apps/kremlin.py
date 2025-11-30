@@ -31,6 +31,7 @@ from tsarchain.wallet.services.rpc_client import NodeClient
 from tsarchain.wallet.services.contact_management import ContactManager
 from tsarchain.wallet.services.send_service import SendService
 from tsarchain.wallet.services.tx_history import HistoryService
+from tsarchain.wallet.services.graffiti_service import fetch_graffiti_file
 
 from tsarchain.wallet.theme import get_theme, lighten
 from tsarchain.wallet.ui_utils import center_window
@@ -1140,12 +1141,26 @@ class KremlinWalletGUI(WalletsMixin):
         def _prov_get_mempool():
             return _rpc({"type": "GET_MEMPOOL"})
 
+        def _prov_get_graffiti(art_id: str):
+            return _rpc({"type": "GRAFFITI_GET_ART", "art_id": art_id})
+
+        def _prov_get_graffiti_comments(art_id: str):
+            return _rpc({"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id})
+
+        def _prov_fetch_graffiti_file(post: dict | None, art_id: str):
+            aid = art_id or (post or {}).get("art_id") or ""
+            storer_addr = (post or {}).get("storer") or (post or {}).get("storage")
+            return fetch_graffiti_file(_rpc, aid, storer_addr=storer_addr)
+
         self.explore_panel.set_provider(
             get_info=_prov_get_info,
             get_block=_prov_get_block,
             get_tx=_prov_get_tx,
             get_address=_prov_get_address,
             get_mempool=_prov_get_mempool,
+            get_graffiti=_prov_get_graffiti,
+            get_graffiti_comments=_prov_get_graffiti_comments,
+            fetch_graffiti_file=_prov_fetch_graffiti_file,
         )
 
     # ---------------- Graffiti Frame ----------------

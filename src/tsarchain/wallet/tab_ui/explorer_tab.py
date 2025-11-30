@@ -2,12 +2,14 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: Merkle
+import re
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime
 from typing import Optional, Union, Dict
-import re
+from io import BytesIO
+from PIL import Image, ImageTk
 
 # ---------------- Local Project (With Node) ----------------
 from tsarchain.utils import config as CFG
@@ -38,6 +40,8 @@ def _guess_kind(q: str) -> str:
     q = (q or "").strip()
     if not q:
         return "unknown"
+    if q.startswith(str(CFG.ART_ID_PREFIX)) and len(q) == (CFG.ART_ID_PREFIX_LEN + CFG.ART_ID_BODY_LEN):
+        return "art_id"
     if q.startswith("tsar") and len(q) >= 20:
         return "address"
     if q.isdigit() and 1 <= len(q) <= 7:
@@ -258,6 +262,9 @@ class ExplorePanel(tk.Frame):
         self.text.tag_configure("val_id", foreground=self.value_id)
         self.text.tag_configure("unconfirmed", foreground=self.unconfirm_color)
         self.text.tag_configure("confirmed", foreground=self.confirm_color)
+        self.text.tag_configure("center", justify="center")
+        self.text.tag_configure("mono_center", font=MONO, justify="center")
+        self._img_refs: list = []
 
         self.menu = tk.Menu(
             self,
@@ -460,6 +467,8 @@ class ExplorePanel(tk.Frame):
             return self._open_tx(q)
         if kind == "address":
             return self._open_address(q)
+        if kind == "art_id":
+            return self._open_graffiti(q)
         self.status_var.set("Input tidak dikenali, isi block height/hash/txid/alamat.")
         self._search_inflight = False
         messagebox.showinfo("Search", "Enter: block height, block hash (64 hex starting with 0000...), TXID (64 hex), or tsar1 address...")
@@ -645,6 +654,59 @@ class ExplorePanel(tk.Frame):
             self._ui(self._render_address, addr, a)
         threading.Thread(target=worker, daemon=True).start()
 
+    def _open_graffiti(self, art_id: str):
+        get_graffiti = self.providers.get("get_graffiti")
+        get_comments = self.providers.get("get_graffiti_comments")
+        fetch_file = self.providers.get("fetch_graffiti_file")
+        if not callable(get_graffiti):
+            self._render_error("Provider get_graffiti not available")
+            self._finish_search(False)
+            return
+
+        def worker():
+            done = False
+            try:
+                post_resp = get_graffiti(art_id)
+                post = None
+                if isinstance(post_resp, dict):
+                    if post_resp.get("error"):
+                        self._ui(self._render_error, f"Graffiti error: {post_resp.get('error')}")
+                        return
+                    post = post_resp.get("post") or post_resp
+                if not post:
+                    self._ui(self._render_error, "Graffiti tidak ditemukan.")
+                    return
+                comments = []
+                if callable(get_comments):
+                    try:
+                        c = get_comments(post.get("art_id") or art_id)
+                        if isinstance(c, dict):
+                            comments = c.get("comments") or []
+                        elif isinstance(c, list):
+                            comments = c
+                    except Exception:
+                        comments = []
+
+                img_bytes = None
+                img_meta = None
+                if callable(fetch_file):
+                    try:
+                        f = fetch_file(post, art_id)
+                        if isinstance(f, dict) and f.get("status") == "ok":
+                            img_bytes = f.get("bytes")
+                            img_meta = f.get("meta")
+                    except Exception:
+                        pass
+
+                done = True
+                self._ui(self._render_graffiti, post, comments, img_bytes, img_meta or {})
+            except Exception as e:
+                self._ui(self._render_error, f"get_graffiti error: {e}")
+            finally:
+                self._ui(self._finish_search, done)
+
+        threading.Thread(target=worker, daemon=True).start()
+
 
     # ---------- renderers ----------
     def _render_block(self, b: Dict):
@@ -739,6 +801,113 @@ class ExplorePanel(tk.Frame):
                 self.text.insert("end", txid, ("mono","val_hex"))
                 self.text.insert("end", f"   ({vin} → {vout})\n", ("mono",))
         self._finish_render(f"Block {h}")
+
+    def _render_graffiti(self, post: Dict, comments: list[Dict], img_bytes: bytes | None, img_meta: Dict):
+        self._clear_text()
+        self._img_refs.clear()
+
+        art_id = str((post or {}).get("art_id") or "-")
+        creator = str((post or {}).get("creator") or "-")
+        mime = str((post or {}).get("mime") or img_meta.get("mime") or "-")
+        size = int((post or {}).get("size") or (post or {}).get("size_bytes") or img_meta.get("size_bytes") or 0)
+        block_h = int((post or {}).get("block_height") or 0)
+        txid = str((post or {}).get("txid") or "-")
+        stats = (post or {}).get("stats") or {}
+
+        def _fmt_size_h(bytes_val: int) -> str:
+            try:
+                b = int(bytes_val)
+            except Exception:
+                return "-"
+            units = ["bytes", "KB", "MB", "GB"]
+            val = float(b)
+            u = 0
+            while val >= 1024 and u < len(units) - 1:
+                val /= 1024
+                u += 1
+            if u == 0:
+                return f"{int(val):,} {units[u]}"
+            return f"{val:.2f} {units[u]}"
+
+        def _w_center(s: str, *tags):
+            self._writeln(s, *(tags + ("center",)))
+
+        def _kv_center(label: str, value: str, *tags):
+            tag_list = ("mono_center",) + tags
+            self._writeln(f"{label}: {value}", *tag_list)
+
+        self._writeln("Graffiti", "title", "center")
+        self._writeln("=" * 12, "sep", "center")
+        _kv_center("Art ID", art_id or "-")
+        _kv_center("Creator", creator or "-", "val_addr")
+        _kv_center("File Info", f"{mime} | {_fmt_size_h(size)}")
+        if block_h:
+            _kv_center("Block", str(block_h), "val_num")
+        _kv_center("TxID", txid or "-", "val_hex")
+        if stats:
+            _kv_center("Total Comments", str(stats.get("comments", 0)), "val_num")
+
+        # image preview
+        if img_bytes:
+            try:
+                buf = BytesIO(img_bytes)
+                img = Image.open(buf)
+                img.thumbnail((780, 520))
+                photo = ImageTk.PhotoImage(img)
+                self._img_refs.append(photo)
+                try:
+                    self.text.update_idletasks()
+                    width = int(self.text.winfo_width())
+                except Exception:
+                    width = 0
+                if width <= 0:
+                    try:
+                        self.card.update_idletasks()
+                        width = int(self.card.winfo_width())
+                    except Exception:
+                        width = 0
+                width = max(photo.width() + 40, width or 0, 600)
+                frame = tk.Frame(self.text, bg=self.card_bg, width=width, height=photo.height())
+                lbl = tk.Label(frame, image=photo, bg=self.card_bg)
+                lbl.pack(anchor="center")
+                self.text.window_create("end", window=frame)
+                self._writeln()
+            except Exception as e:
+                _w_center(f"[preview gagal] {e}", "muted")
+        else:
+            _w_center("(file tidak tersedia dari archivist)", "muted")
+
+        # comments
+        self._writeln()
+        self._writeln(f"Comments ({len(comments)})", "title", "center")
+        self._writeln("=" * 16, "sep", "center")
+
+        def _decode_comment(hx: str) -> str:
+            try:
+                return bytes.fromhex(hx or "").decode("utf-8", errors="replace")
+            except Exception:
+                return ""
+
+        if not comments:
+            _w_center("No Comments yet.", "muted")
+        else:
+            for c in comments:
+                ts = c.get("ts")
+                ts_fmt = _fmt_ts(ts)
+                commenter = str(c.get("commenter") or "-")
+                amt = _fmt_tsar_amount(c.get("amount"))
+                tip = c.get("tip")
+                text = _decode_comment(c.get("comment") or c.get("comment_hex") or "")
+                excerpt = text if len(text) <= 200 else text[:200] + "..."
+                _kv_center("Time", ts_fmt)
+                _kv_center("From", commenter, "val_addr")
+                _kv_center("Amount", amt, "val_num")
+                if tip:
+                    _kv_center("Tip", _fmt_tsar_amount(tip), "val_num")
+                _kv_center("Comment", excerpt, "confirmed")
+                _w_center("-----", "sep")
+
+        self._finish_render("Graffiti detail")
 
     def _render_tx(self, txid: str, t: Dict):
         self._clear_text()

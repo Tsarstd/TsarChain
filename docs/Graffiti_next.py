@@ -1,5 +1,5 @@
 '''
-NOTE: aktivitas upload graffiti tervalidasi di block height 7, dan comment di block height 11
+NOTE: aktivitas upload graffiti tervalidasi di block height 9, dan comment di block height 11
 NOTE: untuk mendalami struktur data, bisa cek di :
 
     - data/Contracts/graffiti.json - untuk metadata graffiti
@@ -22,7 +22,7 @@ NOTE: untuk mendalami struktur data, bisa cek di :
        - Archivist auto-mark paid: ketika melihat POST terkonfirmasi via GRAFFITI_GET_POSTS, ia memanggil STOR_PAID ke storage server lokal (block_height + txid), sehingga index ter-update dan file berpindah incoming→final tanpa manual.
        - Logging ditambah di StorageServer (STOR_INIT/COMMIT/PAID/GC) dan RPC connect untuk melacak alur.
        
-    3. Buat supaya wallet mencari informasi graffiti di 'Explore Tab' dengan menggunakan input art_id dengan prefix 'graf' , lalu menampilkan view graffiti dengan membaca file .jpg dari archivist node yang terhubung.
+    3. (DONE) Buat supaya wallet mencari informasi graffiti di 'Explore Tab' dengan menggunakan input art_id dengan prefix 'graf' , lalu menampilkan view graffiti dengan membaca file .jpg dari archivist node yang terhubung.
         dan sekaligus menampilkan comment yang ada di graffiti tersebut.
         
 	4. Retention Proof Scheduler: rancang worker storage node yang periodik menjalankan byte-range challenge sebelum pool balance dibagikan; log penalti jika bukti absen.

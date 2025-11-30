@@ -338,7 +338,34 @@ class StorageServer:
             meta = None
             if gid:
                 meta = (self.index.get("files") or {}).get(gid)
-            return {"type":t,"found": bool(meta), "graffiti_id": gid, "meta": meta}
+            found = bool(meta)
+            resp = {"type": t, "found": found, "graffiti_id": gid, "meta": meta}
+            include_data = bool(msg.get("include_data"))
+            if include_data and meta:
+                path = meta.get("path")
+                try:
+                    max_bytes = int(msg.get("max_bytes", 0) or 0)
+                except Exception:
+                    max_bytes = 0
+                if max_bytes <= 0:
+                    max_bytes = 10 * 1024 * 1024  # 10 MB default guard
+                if path and os.path.isfile(path):
+                    try:
+                        size = os.path.getsize(path)
+                    except Exception:
+                        size = 0
+                    if size > max_bytes:
+                        resp["status"] = "error"
+                        resp["reason"] = "file_too_large"
+                    else:
+                        with open(path, "rb") as fh:
+                            data_b64 = base64.b64encode(fh.read()).decode("ascii")
+                        resp["data_b64"] = data_b64
+                        resp["status"] = "ok"
+                else:
+                    resp["status"] = "error"
+                    resp["reason"] = "file_missing"
+            return resp
 
         return {"error":"unknown type"}
 

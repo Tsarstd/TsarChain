@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives import hashes
 from ...utils.helpers import hash160
 from ...utils.helpers import batch_verify_der_low_s
 from ...utils import config as CFG
+from ...contracts import graffiti as GRAFFITI
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
@@ -949,5 +950,18 @@ def handle_user_rpc(
         comments = reg.list_comments(art_id, limit) if reg else []
         return {"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id, "comments": comments}
 
-    return None
+    elif mtype == "GRAFFITI_GET_ART":
+        art_id_raw = str(message.get("art_id") or "").strip()
+        if not art_id_raw:
+            return {"type": "GRAFFITI_GET_ART", "error": "missing_art_id"}
+        try:
+            art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
+        except Exception:
+            return {"type": "GRAFFITI_GET_ART", "error": "bad_art_id"}
+        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
+        post = reg.get_post(art_id) if reg else None
+        if not post:
+            return {"type": "GRAFFITI_GET_ART", "art_id": art_id, "error": "not_found"}
+        return {"type": "GRAFFITI_GET_ART", "art_id": art_id, "post": post}
 
+    return None

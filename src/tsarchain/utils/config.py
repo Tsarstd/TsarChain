@@ -97,7 +97,7 @@ WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wal
 DATA_SCHEMA_VERSION = 1
 
 # ---- KV BACKEND ----
-KV_BACKEND         = "lmdb"  # active key-value backend implementation (lmdb & json)
+KV_BACKEND         = "json"  # active key-value backend implementation (lmdb & json)
 LMDB_DATA_FILE     = "data/tsarchain_db"  # main LMDB data file path
 LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
@@ -167,8 +167,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 1  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = "001b7c2dcd3b6608f66ec9bb14251d48ee0fa47f262c41178d1ccb4c2d91b917"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
