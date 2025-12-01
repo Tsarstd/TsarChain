@@ -99,7 +99,39 @@ class MiningMixin:
                 except Exception:
                     pass
                 
-        txs_from_mempool = pool.get_all_txs()
+        txs_raw = pool.get_all_txs()
+
+        def _is_graffiti_post(tx_obj) -> bool:
+            for tx_out in getattr(tx_obj, "outputs", []) or []:
+                spk = getattr(tx_out, "script_pubkey", None)
+                try:
+                    meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+                except Exception:
+                    meta = None
+                if meta and str(meta.get("event", "")).upper() == "POST":
+                    return True
+            return False
+
+        def _received_at(tx_obj) -> float:
+            try:
+                return float(getattr(tx_obj, "_received_at", 0) or 0)
+            except Exception:
+                return 0.0
+
+        def _fee(tx_obj) -> int:
+            try:
+                return int(getattr(tx_obj, "fee", 0) or 0)
+            except Exception:
+                return 0
+
+        graff_posts = [tx for tx in txs_raw if _is_graffiti_post(tx)]
+        other_txs   = [tx for tx in txs_raw if tx not in graff_posts]
+
+        graff_posts.sort(key=_received_at)  # earliest first
+        other_txs.sort(key=lambda t: (-_fee(t), _received_at(t)))  # fee desc, then arrival
+
+        # Include all POST's (sorted); 1-GRAFFITI-per-block guard applies during validation.
+        txs_from_mempool = graff_posts + other_txs
         store = self._ensure_utxodb() or UTXODB()
         try:
             current_utxos = getattr(store, "utxos", store.load_utxo_set())
@@ -120,6 +152,12 @@ class MiningMixin:
 
             if not pool.validate_transaction(tx, temp_utxos, spend_at_height=height):
                 invalid_txids.append(tx.txid.hex())
+                try:
+                    reason = getattr(pool, "last_error_reason", None)
+                    if reason:
+                        log.debug("[mine_block] tx %s rejected: %s", tx.txid.hex()[:12], reason)
+                except Exception:
+                    pass
                 continue
 
             # Allow a maximum of one Graffiti POST per block: skip other Graffiti POST's to queue them in the next block.

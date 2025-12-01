@@ -421,7 +421,12 @@ class NetworkTab(tk.Frame):
         self.net_text.insert(tk.END, f"\nTotal Graffiti\n", ("lab","center"))
         self.net_text.insert(tk.END, f"{self._fmt_num(graffiti.get('posts'))}\n\n", ("val","center"))
         self.net_text.insert(tk.END, f"Total Comments\n", ("lab","center"))
-        self.net_text.insert(tk.END, f"{self._fmt_num(graffiti.get('comments'))}\n\n\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_num(graffiti.get('comments'))}\n\n", ("val","center"))
+        on_mem = int(graffiti.get("graffiti_on_mempool", 0) or 0)
+        max_mem = int(CFG.MAX_GRAFFITI_ON_MEMPOOL)
+        label = f"{on_mem} - (max {max_mem})"
+        self.net_text.insert(tk.END, f"Graffiti on Mempool\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{label}\n\n\n", ("val","center"))
 
         # Top Miners Leaderboards
         self.net_text.insert(tk.END, ("="*84) + "\n", ("sep","center"))

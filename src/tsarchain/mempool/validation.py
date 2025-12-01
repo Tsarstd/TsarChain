@@ -11,6 +11,7 @@ from ..core.tx import Tx
 from ..utils.helpers import (tx_to_compact_tuple, native_validate_tx_p2wpkh_compact,)
 from ..storage.utxo import UTXODB
 from .scripts import get_utxo_script_bytes
+from ..contracts import graffiti as GRAFFITI
 from ..utils import config as CFG
 
 
@@ -154,6 +155,37 @@ class TxMempoolValidator:
                     tx.fee = int(fee or 0)
                 except Exception:
                     setattr(tx, "fee", int(fee or 0))
+                # Graffiti queue limit: only enforced when inserting into mempool (spend_at_height None).
+                enforce_limit = spend_at_height is None
+                if enforce_limit:
+                    try:
+                        is_post = False
+                        for tx_out in getattr(tx, "outputs", []) or []:
+                            spk = getattr(tx_out, "script_pubkey", None)
+                            meta = None
+                            try:
+                                meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+                            except Exception:
+                                meta = None
+                            if meta and str(meta.get("event", "")).upper() == "POST":
+                                is_post = True
+                                break
+                        if is_post and int(CFG.MAX_GRAFFITI_ON_MEMPOOL) > 0:
+                            current_posts = 0
+                            for existing in getattr(self, "_pool", {}).values():
+                                for out in getattr(existing, "outputs", []) or []:
+                                    spk2 = getattr(out, "script_pubkey", None)
+                                    try:
+                                        meta2 = GRAFFITI.parse_from_script(spk2) if spk2 is not None else None
+                                    except Exception:
+                                        meta2 = None
+                                    if meta2 and str(meta2.get("event", "")).upper() == "POST":
+                                        current_posts += 1
+                                        if current_posts >= int(CFG.MAX_GRAFFITI_ON_MEMPOOL):
+                                            self.last_error_reason = "mempool_graffiti_full"
+                                            return False
+                    except Exception:
+                        pass
                 return True
             else:
                 self.last_error_reason = reason or "native_mempool_reject"

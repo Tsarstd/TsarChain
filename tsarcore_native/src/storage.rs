@@ -115,12 +115,6 @@ pub fn json_write_file(path: &str, data: &str, pretty: bool) -> PyResult<()> {
     }
     tmp.persist(p)
         .map_err(|e| map_err("json_write_file persist", e.error))?;
-    log_info(&format!(
-        "[json_write] path={} pretty={} bytes={}",
-        p.display(),
-        pretty,
-        payload.len()
-    ));
     Ok(())
 }
 

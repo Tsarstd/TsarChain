@@ -118,6 +118,21 @@ class StorageServer:
             chunk = int(CFG.STORAGE_UPLOAD_CHUNK)
             if not aid or size <= 0 or len(sha) != 64:
                 return {"type":"STOR_ACK","status":"rejected","reason":"bad_fields"}
+            if int(CFG.MAX_GRAFFITI_ON_MEMPOOL) > 0:
+                try:
+                    active = 0
+                    for meta in (self.index.get("files") or {}).values():
+                        if not isinstance(meta, dict):
+                            continue
+                        if meta.get("paid"):
+                            continue
+                        state = str(meta.get("state") or "").lower()
+                        if state in ("receiving", "appending", "pending_confirm") or not meta.get("paid"):
+                            active += 1
+                    if active >= int(CFG.MAX_GRAFFITI_ON_MEMPOOL):
+                        return {"type":"STOR_ACK","status":"rejected","reason":"mempool_graffiti_full"}
+                except Exception:
+                    pass
             
             inc_dir = os.path.join(self.storage_dir, "incoming"); os.makedirs(inc_dir, exist_ok=True)
             path    = os.path.join(inc_dir, f"{aid}.part")

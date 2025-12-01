@@ -741,7 +741,7 @@ def _serialize_block(self, b) -> dict:
         pass
 
     blk_id = self._extract_block_id_from_block(b)
-    return {
+    block_dict = {
         "type": "BLOCK",
         "block_id": blk_id,
         "hash": self._bhash_hex(b),
@@ -758,6 +758,25 @@ def _serialize_block(self, b) -> dict:
         "graffiti": graffiti_posts,
         "comments": graffiti_comments,
     }
+    try:
+        mem = getattr(self, "mempool", None)
+        if mem:
+            count = 0
+            for tx in mem.get_all_txs():
+                for tx_out in getattr(tx, "outputs", []) or []:
+                    spk = getattr(tx_out, "script_pubkey", None)
+                    meta = None
+                    try:
+                        meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+                    except Exception:
+                        meta = None
+                    if meta and str(meta.get("event", "")).upper() == "POST":
+                        count += 1
+                        break
+            block_dict["graffiti_on_mempool"] = count
+    except Exception:
+        pass
+    return block_dict
 
 
 # ----------------------- TX template (wallet) -------------------------

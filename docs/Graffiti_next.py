@@ -26,6 +26,8 @@
         
 	4. (DONE) Retention Proof Scheduler: rancang worker storage node yang periodik menjalankan byte-range challenge sebelum pool balance dibagikan; log penalti jika bukti absen.
  
+    5. (DONE) Mempool graffiti POST: modifikasi mempool agar menolak tx graffiti POST ganda per blok, sehingga graffiti tx tersebut bisa masuk ke blok berikutnya.
+ 
 	5. Storage Automation: definisikan template transaksi on-chain untuk payout pool (mis. script khusus) sehingga klaim bisa otomatis mengikuti aturan konsensus.
  
 	6. CLI Archivist Headless:

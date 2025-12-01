@@ -946,6 +946,7 @@ class StorageMixin:
 
         graffiti_posts = 0
         total_comments = 0
+        graffiti_on_mempool = 0
         try:
             reg = getattr(utxo, "_graffiti_registry", None)
             if reg is None:
@@ -955,6 +956,21 @@ class StorageMixin:
             total_comments = sum(len(v or []) for v in (data_g.get("comments") or {}).values())
         except Exception:
             log.exception("[_compute_state_snapshot] graffiti aggregation failed")
+        try:
+            mem = getattr(self, "mempool", None)
+            if mem:
+                for tx in mem.get_all_txs():
+                    for tx_out in getattr(tx, "outputs", []) or []:
+                        spk = getattr(tx_out, "script_pubkey", None)
+                        meta = None
+                        try:
+                            meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+                        except Exception:
+                            meta = None
+                        if meta and str(meta.get("event", "")).upper() == "POST":
+                            graffiti_on_mempool += 1
+        except Exception:
+            log.exception("[_compute_state_snapshot] graffiti mempool count failed")
 
         try:
             emitted_subsidy = self.calculate_total_supply()
@@ -1034,6 +1050,7 @@ class StorageMixin:
             "graffiti": {
                 "posts": int(graffiti_posts),
                 "comments": int(total_comments),
+                "graffiti_on_mempool": int(graffiti_on_mempool),
             },
             "miners_snapshot": {
                 "top_miners": [(miner, count) for miner, count in miner_counter.most_common() if miner]
