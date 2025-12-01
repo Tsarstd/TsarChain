@@ -110,6 +110,7 @@ class MiningMixin:
 
         # --- double-spend guard ---
         valid_txs, invalid_txids, used_utxos_in_block = [], [], set()
+        graffiti_post_seen = False
         for tx in txs_from_mempool:
             # prevent double-spend within the same candidate block
             ds_in_block = any((txin.txid, txin.vout) in used_utxos_in_block for txin in tx.inputs)
@@ -121,10 +122,27 @@ class MiningMixin:
                 invalid_txids.append(tx.txid.hex())
                 continue
 
+            # Allow a maximum of one Graffiti POST per block: skip other Graffiti POST's to queue them in the next block.
+            is_graff_post = False
+            for tx_out in getattr(tx, "outputs", []) or []:
+                spk = getattr(tx_out, "script_pubkey", None)
+                try:
+                    meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+                except Exception:
+                    meta = None
+                if meta and str(meta.get("event", "")).upper() == "POST":
+                    is_graff_post = True
+                    break
+            if is_graff_post and graffiti_post_seen:
+                log.debug("[mine_block] skip extra Graffiti POST tx=%s (quota per block = 1)", tx.txid.hex()[:12])
+                continue
+
             # Passed all checks - include and update temp UTXO snapshot
             for txin in tx.inputs:
                 used_utxos_in_block.add((txin.txid, txin.vout))
             valid_txs.append(tx)
+            if is_graff_post:
+                graffiti_post_seen = True
             try:
                 self._utxodb.apply_tx_to_utxoset(tx, temp_utxos)
             except Exception:

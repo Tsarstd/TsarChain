@@ -1,8 +1,8 @@
 '''
-NOTE: aktivitas upload graffiti tervalidasi di block height 8, Retention Proof Scheduler sudah terimplementasi, silahkan cek data (data/storage/index.json | archivist) & (data/Contracts/graffiti.json | node)
-
-    - data/Contracts/graffiti.json - untuk metadata graffiti
+    NOTE: aktivitas upload graffiti tervalidasi di block height 8, Retention Proof Scheduler sudah terimplementasi, silahkan cek data (data/storage/index.json | archivist) & (data/Contracts/graffiti.json | node)
+    NOTE: untuk mendalami struktur data, bisa cek di :
     - data/Block/blockchain.json - untuk melihat block yang sudah mengandung graffiti
+    - data/Contracts/graffiti.json - untuk metadata graffiti
     - data/storage/index.json - untuk melihat index graffiti yang sudah tersimpan di storage node (archivist)
 
 

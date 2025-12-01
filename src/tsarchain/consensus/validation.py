@@ -14,6 +14,7 @@ from ..storage.utxo import UTXODB
 from ..utils import config as CFG
 from ..utils.helpers import bits_to_target, merkle_root
 from ..utils import helpers as H
+from ..contracts import graffiti as GRAFFITI
 from .genesis import GENESIS_HASH
 
 # ---------------- Logger ----------------
@@ -162,29 +163,46 @@ class ValidationMixin:
                 self._last_block_validation_error = "tx_too_large"
                 return False
 
-        def _script_to_hex(spk_obj):
-            if spk_obj is None:
-                return None
-            if isinstance(spk_obj, dict):
-                spk_obj = spk_obj.get("script_pubkey")
-            if isinstance(spk_obj, str):
-                return spk_obj.lower()
-            if isinstance(spk_obj, (bytes, bytearray)):
-                return spk_obj.hex()
-            script_attr = getattr(spk_obj, "script_pubkey", None)
-            if script_attr is not None:
-                spk_obj = script_attr
-            if hasattr(spk_obj, "serialize"):
+        # Graffiti rule: maximum one POST per block; if there is a POST, the block_id must match its art_id.
+        graffiti_posts = 0
+        first_art_id = None
+        for tx in txs[1:]:  # skip coinbase
+            for tx_out in getattr(tx, "outputs", []) or []:
+                spk = getattr(tx_out, "script_pubkey", None)
                 try:
-                    return spk_obj.serialize().hex()
+                    meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
                 except Exception:
-                    return None
-            if hasattr(spk_obj, "to_hex"):
-                try:
-                    return spk_obj.to_hex().lower()
-                except Exception:
-                    return None
-            return None
+                    meta = None
+                if not meta:
+                    continue
+                if str(meta.get("event", "")).upper() != "POST":
+                    continue
+                graffiti_posts += 1
+                if not first_art_id:
+                    sha_hex = meta.get("sha256")
+                    creator = meta.get("creator")
+                    art_id = meta.get("art_id")
+                    if not art_id and sha_hex and creator:
+                        try:
+                            art_id = GRAFFITI.compute_art_id(sha_hex, creator)
+                        except Exception:
+                            art_id = None
+                    first_art_id = (art_id or "").strip().lower() if art_id else None
+        if graffiti_posts > 1:
+            self._last_block_validation_error = "too_many_graffiti_posts"
+            return False
+
+        cb_block_id = None
+        try:
+            cb_block_id = getattr(cb, "block_id", None)
+            if isinstance(cb_block_id, str):
+                cb_block_id = cb_block_id.strip().lower()
+        except Exception:
+            cb_block_id = None
+        if graffiti_posts == 1 and first_art_id:
+            if not cb_block_id or cb_block_id.strip().lower() != first_art_id:
+                self._last_block_validation_error = "block_id_mismatch_graffiti"
+                return False
 
         def _script_to_bytes(spk_obj):
             if spk_obj is None:
@@ -219,20 +237,6 @@ class ValidationMixin:
             if isinstance(value, (bytes, bytearray)):
                 return value.hex()
             return str(value)
-
-        def _txid_bytes(value):
-            if value is None:
-                return None
-            if isinstance(value, (bytes, bytearray)):
-                b = bytes(value)
-                return b if len(b) == 32 else None
-            if isinstance(value, str):
-                try:
-                    b = bytes.fromhex(value)
-                    return b if len(b) == 32 else None
-                except Exception:
-                    return None
-            return None
 
         store_lookup = getattr(store, "lookup_entry", None)
         utxo_view = None
