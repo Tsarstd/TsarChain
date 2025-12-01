@@ -167,8 +167,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "001b7c2dcd3b6608f66ec9bb14251d48ee0fa47f262c41178d1ccb4c2d91b917"  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 1  # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -518,6 +518,8 @@ GRAFFITI_COMMENT_BP_DENOM     = 10_000  # denominator (basis points) for split p
 GRAFFITI_COMMENT_CREATOR_BP   = 8_000   # 80%
 GRAFFITI_COMMENT_STORAGE_BP   = 1_000   # 10% (remaining -> miners as fee tip)
 GRAFFITI_EXPIRE_AFTER_BLOCKS  = 5       # default retention window after graffiti confirmed on-chain
+GRAFFITI_PROOF_EPOCH_BLOCKS   = 15     # block interval between retention proofs
+GRAFFITI_PROOF_CHUNK_BYTES    = 4 * 1024  # bytes challenged per proof (deterministic)
 
 # ---- STORAGE POLICY ----
 MAX_STORAGE_OPRET             = 180  # storage proof payload bound for OP_RETURN

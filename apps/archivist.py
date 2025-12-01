@@ -15,6 +15,7 @@ from tsarchain.contracts.storage_node.rpc import RPC, NodeDirectory
 from tsarchain.network.protocol import send_message, recv_message
 
 from tsarchain.utils import config as CFG
+from tsarchain.contracts import graffiti as GRAFFITI
 
 from tsarchain.utils.tsar_logging import setup_logging, get_ctx_logger
 log = get_ctx_logger("apps.archivist")
@@ -494,6 +495,7 @@ class TsarStorageGUI:
                     idx = self.rpc.call({"type":"STOR_INDEX"}, timeout=6.0)
                 if not isinstance(gc_resp, dict) or not isinstance(idx, dict):
                     raise RuntimeError("rpc_failure")
+                self._run_retention_proofs(idx, tip)
                 self.root.after(0, lambda r=gc_resp, i=idx: self._on_retention_cycle(r, i))
             except Exception as exc:
                 log.warning("[Retention] rpc error at height %s: %s", tip, exc)
@@ -509,6 +511,75 @@ class TsarStorageGUI:
         if isinstance(idx, dict):
             self._render_index(idx)
             self._mark_pending_payouts(idx)
+
+    def _run_retention_proofs(self, idx: Dict[str, Any], tip_height: int) -> None:
+        files = idx.get("files", {}) if isinstance(idx, dict) else {}
+        if not files:
+            return
+        epoch_target = GRAFFITI.compute_proof_epoch(tip_height)
+        for gid, meta in files.items():
+            if not isinstance(meta, dict):
+                continue
+            if not meta.get("paid") or meta.get("state") != "stored":
+                continue
+            try:
+                last_epoch = int(meta.get("last_proof_epoch", -1))
+            except Exception:
+                last_epoch = -1
+            if last_epoch >= epoch_target:
+                continue
+            art_id = str(meta.get("art_id") or "").strip().lower()
+            if not art_id:
+                self.logln(f"[Proof] skip {gid[:10]} (missing art_id)")
+                continue
+            payload = {
+                "type": "STOR_PROOF_RUN",
+                "graffiti_id": gid,
+                "art_id": art_id,
+                "tip_height": tip_height,
+            }
+            resp = None
+            try:
+                resp = self._call_storage_local(payload, timeout=10.0)
+                if resp is None:
+                    resp = self.rpc.call(payload, timeout=10.0)
+            except Exception as exc:
+                self.logln(f"[Proof] {gid[:10]} error: {exc}")
+                continue
+            if not isinstance(resp, dict) or resp.get("status") != "ok":
+                reason = (resp or {}).get("reason") if isinstance(resp, dict) else "rpc_error"
+                self.logln(f"[Proof] {gid[:10]} failed ({reason})")
+                continue
+            try:
+                proof_epoch = int(resp.get("epoch", epoch_target))
+                offset = int(resp.get("offset", 0))
+                length = int(resp.get("length", 0))
+                phash = str(resp.get("hash") or "")
+                seed = str(resp.get("seed") or "")
+            except Exception:
+                continue
+            self.logln(f"[Proof] {gid[:10]} epoch {proof_epoch} offset {offset} len {length}")
+            if not self.connected:
+                continue
+            try:
+                submit = {
+                    "type": "GRAFFITI_PROOF_SUBMIT",
+                    "art_id": art_id,
+                    "epoch": proof_epoch,
+                    "offset": offset,
+                    "length": length,
+                    "hash": phash,
+                    "height": tip_height,
+                    "seed": seed,
+                    "storer": (self.addr_var.get() or self.rpc.address or "").strip().lower(),
+                }
+                ack = self.rpc.call(submit, timeout=8.0)
+                if isinstance(ack, dict) and ack.get("status") == "ok":
+                    self.logln(f"[Proof] submitted epoch {proof_epoch} for {art_id[:12]}...")
+                else:
+                    self.logln(f"[Proof] submit failed: {ack}")
+            except Exception as exc:
+                self.logln(f"[Proof] submit error: {exc}")
 
     def _mark_pending_payouts(self, idx: Dict[str, Any]) -> None:
         files = idx.get("files", {}) if isinstance(idx, dict) else {}

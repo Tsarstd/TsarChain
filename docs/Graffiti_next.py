@@ -1,6 +1,5 @@
 '''
-NOTE: aktivitas upload graffiti tervalidasi di block height 9, dan comment di block height 11
-NOTE: untuk mendalami struktur data, bisa cek di :
+NOTE: aktivitas upload graffiti tervalidasi di block height 8, Retention Proof Scheduler sudah terimplementasi, silahkan cek data (data/storage/index.json | archivist) & (data/Contracts/graffiti.json | node)
 
     - data/Contracts/graffiti.json - untuk metadata graffiti
     - data/Block/blockchain.json - untuk melihat block yang sudah mengandung graffiti
@@ -25,7 +24,7 @@ NOTE: untuk mendalami struktur data, bisa cek di :
     3. (DONE) Buat supaya wallet mencari informasi graffiti di 'Explore Tab' dengan menggunakan input art_id dengan prefix 'graf' , lalu menampilkan view graffiti dengan membaca file .jpg dari archivist node yang terhubung.
         dan sekaligus menampilkan comment yang ada di graffiti tersebut.
         
-	4. Retention Proof Scheduler: rancang worker storage node yang periodik menjalankan byte-range challenge sebelum pool balance dibagikan; log penalti jika bukti absen.
+	4. (DONE) Retention Proof Scheduler: rancang worker storage node yang periodik menjalankan byte-range challenge sebelum pool balance dibagikan; log penalti jika bukti absen.
  
 	5. Storage Automation: definisikan template transaksi on-chain untuk payout pool (mis. script khusus) sehingga klaim bisa otomatis mengikuti aturan konsensus.
  

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.rpc(storage_rpc)")
 from ...utils import config as CFG
+from ...contracts import graffiti as GRAFFITI
 
 if TYPE_CHECKING:
     from ..node import Network
@@ -37,7 +38,6 @@ def _load_storage_index() -> dict[str, Any]:
 
 def _save_storage_index(data: dict[str, Any]) -> None:
     path = _storage_index_path()
-    # Hindari membuat folder index pada node non-storage; hanya simpan jika file sudah ada.
     if not os.path.isfile(path):
         raise FileNotFoundError("storage_index_absent")
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -161,8 +161,81 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[
         if pool_balance < amount:
             return {"error": "insufficient_pool_balance", "pool_balance": pool_balance}
         height = getattr(getattr(self.broadcast, "blockchain", None), "height", 0)
+        required_epoch = GRAFFITI.compute_proof_epoch(height)
+        last_epoch = reg.get_latest_proof_epoch(art_id, recipient)
+        if last_epoch < required_epoch:
+            return {"error": "missing_proof", "required_epoch": required_epoch, "last_epoch": last_epoch}
         reg.record_payout(art_id, {recipient: amount}, txid, height)
         return {"status": "ok", "art_id": art_id, "pool_balance": int(stats.get("pool_balance", 0))}
 
-    return None
+    elif mtype == "GRAFFITI_PROOF_SUBMIT":
+        art_id_raw = str(message.get("art_id") or "").strip()
+        try:
+            art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
+        except Exception:
+            return {"error": "bad_art_id"}
+        try:
+            epoch = int(message.get("epoch", -1))
+        except Exception:
+            epoch = -1
+        try:
+            offset = int(message.get("offset", -1))
+            length = int(message.get("length", -1))
+        except Exception:
+            offset = -1; length = -1  # noqa: E702
+        proof_hash = str(message.get("hash") or "").strip().lower()
+        storer = str(message.get("storer") or "").strip().lower()
+        try:
+            height = int(message.get("height", 0) or 0)
+        except Exception:
+            height = 0
+        seed = str(message.get("seed") or "").strip().lower()
+        if epoch < 0 or offset < 0 or length <= 0 or len(proof_hash) != 64:
+            return {"error": "bad_fields"}
+        if not storer:
+            return {"error": "missing_storer"}
+        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
+        if not reg:
+            return {"error": "registry_unavailable"}
+        post = reg.get_post(art_id)
+        if not post:
+            return {"error": "unknown_art_id"}
+        size = int(post.get("size") or 0)
+        if size <= 0 or (offset + length) > size:
+            return {"error": "out_of_range", "size": size}
+        # Validate challenge deterministically
+        if height < 0:
+            height = 0
+        if GRAFFITI.compute_proof_epoch(height) != epoch:
+            return {"error": "epoch_mismatch"}
+        challenge = GRAFFITI.calc_proof_challenge(art_id, size, height)
+        if int(challenge.get("offset", -1)) != offset or int(challenge.get("length", -1)) != length:
+            return {"error": "challenge_mismatch"}
+        if seed and seed != challenge.get("seed"):
+            return {"error": "seed_mismatch"}
+        reg.record_proof(
+            art_id=art_id,
+            storer=storer,
+            epoch=epoch,
+            offset=offset,
+            length=length,
+            proof_hash=proof_hash,
+            height=height,
+            seed=str(challenge.get("seed", "")),
+        )
+        return {"status": "ok", "art_id": art_id, "epoch": epoch}
 
+    elif mtype == "GRAFFITI_PROOF_STATUS":
+        art_id_raw = str(message.get("art_id") or "").strip()
+        storer = str(message.get("storer") or "").strip().lower()
+        try:
+            art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
+        except Exception:
+            return {"error": "bad_art_id"}
+        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
+        if not reg:
+            return {"error": "registry_unavailable"}
+        proof = reg.get_latest_proof(art_id, storer or None)
+        return {"status": "ok", "art_id": art_id, "proof": proof or {}}
+
+    return None

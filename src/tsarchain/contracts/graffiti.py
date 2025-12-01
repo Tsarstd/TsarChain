@@ -105,6 +105,51 @@ def _guard_payload_size(data: bytes) -> None:
     log.info("OP_RETURN data: %s bytes, with limit %s bytes", len(data), limit)
 
 
+def compute_proof_epoch(height: int) -> int:
+    try:
+        h = int(height)
+    except Exception:
+        return 0
+    return max(0, h // int(CFG.GRAFFITI_PROOF_EPOCH_BLOCKS))
+
+
+def calc_proof_challenge(art_id: str, size_bytes: int, height: int) -> Dict[str, int | str]:
+    """
+    Deterministic byte-range challenge for retention proof.
+    Returns mapping with epoch, offset, length, and seed hash.
+    """
+    art_norm = _normalize_art_id(art_id, prefer_prefix=False)
+    size = int(size_bytes)
+    if size <= 0:
+        raise ValueError("bad_size_bytes")
+    epoch = compute_proof_epoch(height)
+    seed = hashlib.sha256(b"|".join([
+        CFG.GRAFFITI_MAGIC,
+        b"PROOF",
+        _strip_art_prefix(art_norm).encode("ascii"),
+        str(epoch).encode("ascii"),
+    ])).digest()
+    offset = int.from_bytes(seed[:8], "big") % max(1, size)
+    max_len = max(1, int(CFG.GRAFFITI_PROOF_CHUNK_BYTES))
+    length = min(max_len, size - offset)
+    if length <= 0:
+        length = min(max_len, size)
+    return {
+        "epoch": int(epoch),
+        "offset": int(offset),
+        "length": int(length),
+        "seed": seed.hex(),
+    }
+
+
+def hash_proof_chunk(chunk: bytes) -> str:
+    if not isinstance(chunk, (bytes, bytearray)):
+        raise ValueError("chunk_must_be_bytes")
+    if not chunk:
+        raise ValueError("empty_chunk")
+    return hashlib.sha256(bytes(chunk)).hexdigest()
+
+
 # -----------------------------
 # Public API
 # -----------------------------
@@ -423,4 +468,7 @@ __all__ = [
     "derive_pool_address",
     "calc_upload_fee_sats",
     "calc_comment_split",
+    "compute_proof_epoch",
+    "calc_proof_challenge",
+    "hash_proof_chunk",
 ]

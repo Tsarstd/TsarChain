@@ -9,6 +9,7 @@ import base64, hashlib
 # ---------------- Local Project ----------------
 from tsarchain.network.protocol import send_message, recv_message, verify_and_unwrap, is_envelope
 from tsarchain.utils import config as CFG
+from tsarchain.contracts import graffiti as GRAFFITI
 
 # ---------------- Logger ----------------
 from tsarchain.utils.tsar_logging import get_ctx_logger
@@ -34,6 +35,15 @@ class StorageServer:
         meta.setdefault("state", meta.get("state") or "stored")
         meta.setdefault("received_bytes", int(meta.get("received_bytes", 0)))
         meta.setdefault("chunk_size", int(meta.get("chunk_size", CFG.STORAGE_UPLOAD_CHUNK)))
+        meta.setdefault("last_proof_epoch", -1)
+        meta.setdefault("last_proof_ts", 0)
+        meta.setdefault("last_proof_offset", 0)
+        meta.setdefault("last_proof_length", 0)
+        meta.setdefault("last_proof_hash", "")
+        meta.setdefault("last_proof_height", 0)
+        meta.setdefault("missed_proofs", 0)
+        meta.setdefault("proof_fail_reason", "")
+        meta.setdefault("proof_status", "")
         if "path" not in meta:
             meta["path"] = ""
         # Keep art_map in sync when art_id is present
@@ -329,6 +339,87 @@ class StorageServer:
             self.index["files"][aid] = meta
             self._save_index()
             return {"type":"STOR_ACK","status":"ok","graffiti_id": aid, "art_id": art_id}
+
+        if t == "STOR_PROOF_RUN":
+            aid = str(msg.get("graffiti_id","")).strip()
+            art_id = str(msg.get("art_id","")).strip().lower()
+            try:
+                tip_h = int(msg.get("tip_height", 0) or 0)
+            except Exception:
+                tip_h = 0
+            files = self.index.get("files", {}) or {}
+            if art_id and not aid:
+                aid = (self.index.get("art_map") or {}).get(art_id, "")
+            meta = files.get(aid) if aid else None
+            if not meta:
+                return {"type": "STOR_PROOF_RUN", "status": "error", "reason": "no_such"}
+            path = meta.get("path")
+            size = int(meta.get("size_bytes", 0) or 0)
+            art_norm = str(meta.get("art_id") or art_id or "").strip().lower()
+            if not art_norm:
+                meta["missed_proofs"] = int(meta.get("missed_proofs", 0)) + 1
+                meta["proof_fail_reason"] = "missing_art_id"
+                self.index["files"][aid] = self._normalize_file_meta(aid, meta)
+                self._save_index()
+                return {"type": "STOR_PROOF_RUN", "status": "error", "reason": "missing_art_id"}
+            try:
+                challenge = GRAFFITI.calc_proof_challenge(art_norm, size, tip_h)
+            except Exception as exc:
+                meta["missed_proofs"] = int(meta.get("missed_proofs", 0)) + 1
+                meta["proof_fail_reason"] = str(exc)
+                self.index["files"][aid] = self._normalize_file_meta(aid, meta)
+                self._save_index()
+                return {"type": "STOR_PROOF_RUN", "status": "error", "reason": "bad_challenge"}
+            if not path or not os.path.isfile(path):
+                meta["missed_proofs"] = int(meta.get("missed_proofs", 0)) + 1
+                meta["proof_fail_reason"] = "file_missing"
+                self.index["files"][aid] = self._normalize_file_meta(aid, meta)
+                self._save_index()
+                return {"type": "STOR_PROOF_RUN", "status": "error", "reason": "file_missing"}
+            offset = int(challenge.get("offset", 0))
+            length = int(challenge.get("length", 0))
+            try:
+                with open(path, "rb") as fh:
+                    fh.seek(offset)
+                    chunk = fh.read(length)
+                proof_hash = GRAFFITI.hash_proof_chunk(chunk)
+            except Exception as exc:
+                meta["missed_proofs"] = int(meta.get("missed_proofs", 0)) + 1
+                meta["proof_fail_reason"] = str(exc)
+                self.index["files"][aid] = self._normalize_file_meta(aid, meta)
+                self._save_index()
+                return {"type": "STOR_PROOF_RUN", "status": "error", "reason": "read_fail"}
+
+            now_ts = int(time.time())
+            meta.update({
+                "last_proof_epoch": int(challenge.get("epoch", 0)),
+                "last_proof_ts": now_ts,
+                "last_proof_offset": offset,
+                "last_proof_length": length,
+                "last_proof_hash": proof_hash,
+                "proof_fail_reason": "",
+                "proof_status": "ok",
+                "missed_proofs": max(0, int(meta.get("missed_proofs", 0))),
+                "last_proof_height": tip_h,
+            })
+            if art_norm:
+                self.index.setdefault("art_map", {})[art_norm] = aid
+                meta["art_id"] = art_norm
+            self.index["files"][aid] = self._normalize_file_meta(aid, meta)
+            self._save_index()
+            log.info("[STOR_PROOF_RUN] aid=%s epoch=%s offset=%s len=%s", aid[:16], meta.get("last_proof_epoch"), offset, length)
+            return {
+                "type": "STOR_PROOF_RUN",
+                "status": "ok",
+                "graffiti_id": aid,
+                "art_id": art_norm,
+                "epoch": int(challenge.get("epoch", 0)),
+                "offset": offset,
+                "length": length,
+                "hash": proof_hash,
+                "seed": challenge.get("seed"),
+                "height": tip_h,
+            }
 
         if t == "STOR_GET_BY_ART" or t == "GRAFFITI_GET_FILE":
             art_id = str(msg.get("art_id","")).strip().lower()

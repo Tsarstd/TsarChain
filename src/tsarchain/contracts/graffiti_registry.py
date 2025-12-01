@@ -23,12 +23,13 @@ class GraffitiRegistry:
         else:
             os.makedirs(os.path.dirname(CFG.GRAFFITI_FILE), exist_ok=True)
             self.store = AtomicJSONFile(CFG.GRAFFITI_FILE, keep_backups=2, checksum=True)
-        default = {"posts": {}, "comments": {}, "payouts": {}}
+        default = {"posts": {}, "comments": {}, "payouts": {}, "proofs": {}}
         self.data = self._load(default)
+        self.data.setdefault("proofs", {})
 
     def _load(self, default: dict) -> dict:
         if self._kv:
-            data = {"posts": {}, "comments": {}, "payouts": {}}
+            data = {"posts": {}, "comments": {}, "payouts": {}, "proofs": {}}
             try:
                 for k, v in iter_prefix("graffiti", b"data:"):
                     if k.decode("utf-8") == "data:data":
@@ -123,6 +124,57 @@ class GraffitiRegistry:
             "amount": int(total),
         })
         self._flush()
+
+    def record_proof(self, art_id: str, storer: str, epoch: int, offset: int, length: int,
+                     proof_hash: str, height: int = 0, seed: str = "") -> None:
+        art_id = (art_id or "").strip().lower()
+        storer = (storer or "").strip().lower()
+        if not art_id or not storer:
+            return
+        proofs = self.data.setdefault("proofs", {})
+        art_proofs = proofs.setdefault(art_id, [])
+        entry = {
+            "storer": storer,
+            "epoch": int(epoch),
+            "offset": int(offset),
+            "length": int(length),
+            "hash": proof_hash,
+            "height": int(height),
+            "seed": seed,
+            "ts": int(time.time()),
+        }
+        # Replace existing entry for same storer+epoch
+        replaced = False
+        for idx, item in enumerate(art_proofs):
+            if item.get("storer") == storer and int(item.get("epoch", -1)) == int(epoch):
+                art_proofs[idx] = entry
+                replaced = True
+                break
+        if not replaced:
+            art_proofs.append(entry)
+        self.data["proofs"][art_id] = art_proofs
+        self._flush()
+
+    def get_latest_proof(self, art_id: str, storer: str | None = None) -> Dict[str, Any] | None:
+        art_id = (art_id or "").strip().lower()
+        storer = (storer or "").strip().lower() if storer else None
+        proofs = (self.data.get("proofs") or {}).get(art_id, [])
+        if not proofs:
+            return None
+        filtered = [dict(p) for p in proofs if (not storer or p.get("storer") == storer)]
+        if not filtered:
+            return None
+        filtered.sort(key=lambda r: (int(r.get("epoch", -1)), int(r.get("ts", 0))), reverse=True)
+        return filtered[0]
+
+    def get_latest_proof_epoch(self, art_id: str, storer: str | None = None) -> int:
+        proof = self.get_latest_proof(art_id, storer)
+        if not proof:
+            return -1
+        try:
+            return int(proof.get("epoch", -1))
+        except Exception:
+            return -1
 
     def list_payouts(self, art_id: str, limit: int = 100) -> list[Dict[str, Any]]:
         art_id = (art_id or "").strip().lower()
