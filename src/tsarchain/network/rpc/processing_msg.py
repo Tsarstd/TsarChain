@@ -3,11 +3,10 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: Signal-X3DH; RFC7748-X25519
 
-import secrets, random
+import random
 from typing import TYPE_CHECKING, Any, Optional
 
 # ---------------- Local Project ----------------
-from ...utils import config as CFG
 from .miner_rpc import handle_miner_rpc
 from .storage_rpc import handle_storage_rpc
 from .user_rpc import handle_user_rpc

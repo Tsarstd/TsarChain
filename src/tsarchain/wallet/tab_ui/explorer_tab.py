@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: Merkle
+
 import re
 import threading
 import tkinter as tk

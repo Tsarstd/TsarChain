@@ -8,8 +8,6 @@ import time, secrets, json
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from bech32 import convertbits, bech32_decode
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives import hashes
 
 from ...utils.helpers import hash160
 from ...utils.helpers import batch_verify_der_low_s
