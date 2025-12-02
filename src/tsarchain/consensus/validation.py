@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import time
 from typing import Optional
+from bech32 import bech32_encode, convertbits
 
 # ---------------- Local Project ----------------
 from ..core.block import Block
@@ -15,6 +16,8 @@ from ..utils import config as CFG
 from ..utils.helpers import bits_to_target, merkle_root
 from ..utils import helpers as H
 from ..contracts import graffiti as GRAFFITI
+from ..contracts.graffiti_registry import GraffitiRegistry
+from ..mempool.validation import TxMempoolValidator
 from .genesis import GENESIS_HASH
 
 # ---------------- Logger ----------------
@@ -166,6 +169,32 @@ class ValidationMixin:
         # Graffiti rule: maximum one POST per block; if there is a POST, the block_id must match its art_id.
         graffiti_posts = 0
         first_art_id = None
+        reg = getattr(store, "_graffiti_registry", None)
+        if reg is None:
+            reg = GraffitiRegistry()
+
+        def _spk_to_address(spk_obj) -> str | None:
+            try:
+                if hasattr(spk_obj, "serialize"):
+                    spk_bytes = spk_obj.serialize()
+                elif isinstance(spk_obj, (bytes, bytearray)):
+                    spk_bytes = bytes(spk_obj)
+                elif isinstance(spk_obj, str):
+                    spk_bytes = bytes.fromhex(spk_obj)
+                else:
+                    return None
+                if len(spk_bytes) == 22 and spk_bytes[0] == 0x00 and spk_bytes[1] == 0x14:
+                    prog = spk_bytes[2:]
+                    data = [0] + list(convertbits(prog, 8, 5, True))
+                    return bech32_encode(CFG.ADDRESS_PREFIX, data)
+                if len(spk_bytes) == 34 and spk_bytes[0] == 0x00 and spk_bytes[1] == 0x20:
+                    prog = spk_bytes[2:]
+                    data = [0] + list(convertbits(prog, 8, 5, True))
+                    return bech32_encode(CFG.ADDRESS_PREFIX, data)
+            except Exception:
+                return None
+            return None
+
         for tx in txs[1:]:  # skip coinbase
             for tx_out in getattr(tx, "outputs", []) or []:
                 spk = getattr(tx_out, "script_pubkey", None)
@@ -203,6 +232,77 @@ class ValidationMixin:
             if not cb_block_id or cb_block_id.strip().lower() != first_art_id:
                 self._last_block_validation_error = "block_id_mismatch_graffiti"
                 return False
+
+        # Graffiti payout validation: enforce epoch monotonic + payout shortfall/overdraw checks.
+        for tx in txs[1:]:
+            # Map outputs by address for quick lookup
+            paymap: dict[str, int] = {}
+            for out in getattr(tx, "outputs", []) or []:
+                addr = _spk_to_address(getattr(out, "script_pubkey", None))
+                if not addr:
+                    continue
+                try:
+                    amt = int(getattr(out, "amount", 0))
+                except Exception:
+                    amt = 0
+                if amt <= 0:
+                    continue
+                paymap[addr.strip().lower()] = paymap.get(addr.strip().lower(), 0) + amt
+
+            for out in getattr(tx, "outputs", []) or []:
+                spk = getattr(out, "script_pubkey", None)
+                try:
+                    meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+                except Exception:
+                    meta = None
+                if not meta or str(meta.get("event", "")).upper() != "PAYOUT":
+                    continue
+                art_id = str(meta.get("art_id") or "").strip().lower()
+                if not art_id:
+                    self._last_block_validation_error = "payout_bad_art_id"
+                    return False
+                post = reg.get_post(art_id) if reg else None
+                if not post:
+                    self._last_block_validation_error = "payout_unknown_art"
+                    return False
+                stats = post.get("stats") or {}
+                pool_balance = int(stats.get("pool_balance", 0))
+                last_epoch = int(stats.get("last_paid_epoch", -1))
+                try:
+                    epoch = int(meta.get("epoch", -1))
+                except Exception:
+                    epoch = -1
+                if epoch >= 0 and epoch <= last_epoch:
+                    self._last_block_validation_error = "payout_epoch_rewind"
+                    return False
+                # Proof gating: require latest proof epoch >= payout epoch when epoch is provided
+                if epoch >= 0:
+                    latest_proof = reg.get_latest_proof_epoch(art_id)
+                    if latest_proof < epoch:
+                        self._last_block_validation_error = "payout_missing_proof"
+                        return False
+                recs = meta.get("recipients") or []
+                if not isinstance(recs, list) or not recs:
+                    self._last_block_validation_error = "payout_no_recipients"
+                    return False
+                total_req = 0
+                for rec in recs:
+                    addr = str(rec.get("addr") or rec.get("address") or "").strip().lower()
+                    try:
+                        amt_req = int(rec.get("amount", 0))
+                    except Exception:
+                        amt_req = 0
+                    if not addr or amt_req <= 0:
+                        self._last_block_validation_error = "payout_bad_recipient"
+                        return False
+                    total_req += amt_req
+                    paid = paymap.get(addr, 0)
+                    if paid < amt_req:
+                        self._last_block_validation_error = "payout_shortfall"
+                        return False
+                if total_req > pool_balance:
+                    self._last_block_validation_error = "payout_exceeds_pool"
+                    return False
 
         def _script_to_bytes(spk_obj):
             if spk_obj is None:
@@ -422,16 +522,19 @@ class ValidationMixin:
             "enforce_low_s": True,
         }
         payload_txs, payload_utxo = _build_block_payload_compact(txs, snapshot) or (None, None)
+        native_ok = False
+        fees_list: list[int] = []
+        reason = None
         try:
             if payload_txs is not None and payload_utxo is not None:
-                ok, reason, fees = H.native_validate_block_txs_compact(
+                native_ok, reason, fees = H.native_validate_block_txs_compact(
                     payload_txs,
                     payload_utxo,
                     spend_height,
                     opts,
                 )
             else:
-                ok, reason, fees = H.native_validate_block_txs(
+                native_ok, reason, fees = H.native_validate_block_txs(
                     block.to_dict(),
                     snapshot,
                     spend_height,
@@ -439,27 +542,41 @@ class ValidationMixin:
                 )
         except Exception:
             log.exception("[_validate_transactions] Native block validator failed")
-            self._last_block_validation_error = "native_validation_failed"
-            return False
+            native_ok = False
+            reason = "native_validation_failed"
 
-        if not ok:
+        if not native_ok and (reason or "").strip().lower() == "unsupported_script":
+            # Fallback: validate each tx via mempool validator (supports Graffiti payout P2WSH)
+            validator = TxMempoolValidator()
+            validator.utxo = store
+            utxo_snapshot = utxo_view or getattr(store, "utxos", None) or {}
+            fees_list = []
+            for tx_obj in txs[1:]:
+                ok_tx = validator.validate_transaction(tx_obj, utxo_snapshot, spend_at_height=spend_height)
+                if not ok_tx:
+                    self._last_block_validation_error = validator.last_error_reason or "fallback_validate_failed"
+                    return False
+                try:
+                    fees_list.append(int(getattr(tx_obj, "fee", 0) or 0))
+                except Exception:
+                    fees_list.append(0)
+        elif not native_ok:
             self._last_block_validation_error = reason or "native_validation_failed"
             return False
-
-        fees_list = []
-        if isinstance(fees, (list, tuple)):
-            if len(fees) != max(len(txs) - 1, 0):
-                self._last_block_validation_error = "fee_mismatch"
-                return False
-            for tx_obj, fee_val in zip(txs[1:], fees):
-                fee_int = int(fee_val)
-                fees_list.append(fee_int)
-                try:
-                    tx_obj.fee = fee_int
-                except Exception:
-                    setattr(tx_obj, "fee", fee_int)
         else:
-            fees_list = [int(getattr(t, "fee", 0)) for t in txs[1:]]
+            if isinstance(fees, (list, tuple)):
+                if len(fees) != max(len(txs) - 1, 0):
+                    self._last_block_validation_error = "fee_mismatch"
+                    return False
+                for tx_obj, fee_val in zip(txs[1:], fees):
+                    fee_int = int(fee_val)
+                    fees_list.append(fee_int)
+                    try:
+                        tx_obj.fee = fee_int
+                    except Exception:
+                        setattr(tx_obj, "fee", fee_int)
+            else:
+                fees_list = [int(getattr(t, "fee", 0)) for t in txs[1:]]
 
         minted_before = self._cumulative_supply_until(block.height)
         base = self._scheduled_reward(block.height)

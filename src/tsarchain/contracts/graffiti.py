@@ -10,6 +10,7 @@ from bech32 import bech32_decode, bech32_encode, convertbits
 
 from ..utils.helpers import Script, OP_RETURN, hash160
 from ..utils import config as CFG
+from ..core.tx import Tx, TxIn, TxOut
 
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.contracts(graffiti)")
@@ -197,6 +198,162 @@ def hash_pool_redeem_script(art_id_hex: str) -> str:
     Return sha256(redeem_script) hex for the pool covenant.
     """
     return hashlib.sha256(_pool_redeem_script(art_id_hex)).hexdigest()
+
+
+def _pool_spk_bytes(art_id_hex: str) -> bytes:
+    redeem = _pool_redeem_script(art_id_hex)
+    prog = hashlib.sha256(redeem).digest()
+    return Script([0, prog]).serialize()
+
+
+def find_pool_utxos(utxo_db, art_id: str) -> list[dict]:
+    """
+    Cari UTXO yang script_pubkey-nya sesuai pool P2WSH untuk art_id.
+    utxo_db: instance UTXODB (punya .utxos dict).
+    """
+    spk_hex = _pool_spk_bytes(art_id).hex()
+    out: list[dict] = []
+    # Coba via index get() jika tersedia
+    try:
+        bucket = utxo_db.get(spk_hex) or {}
+        if isinstance(bucket, dict):
+            for key, entry in bucket.items():
+                try:
+                    txid_hex, idx_str = key.split(":")
+                    amt = int(entry.get("amount", entry.get("tx_out", {}).get("amount", 0)))
+                    out.append({
+                        "txid": txid_hex,
+                        "vout": int(idx_str),
+                        "amount": amt,
+                        "script_pubkey": spk_hex,
+                    })
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    # Fallback: scan utxo_db.utxos in-memory
+    for key, entry in getattr(utxo_db, "utxos", {}).items():
+        try:
+            tx_out = entry.get("tx_out") if isinstance(entry, dict) else None
+            if not isinstance(tx_out, dict):
+                continue
+            spk = tx_out.get("script_pubkey")
+            if spk and str(spk).lower() == spk_hex:
+                amt = int(tx_out.get("amount", 0))
+                txid_hex, idx_str = key.split(":")
+                out.append({
+                    "txid": txid_hex,
+                    "vout": int(idx_str),
+                    "amount": amt,
+                    "script_pubkey": spk_hex,
+                })
+        except Exception:
+            continue
+    # dedup by outpoint
+    uniq = {}
+    for item in out:
+        k = f"{item.get('txid')}:{item.get('vout')}"
+        uniq[k] = item
+    out = list(uniq.values())
+    out.sort(key=lambda r: r.get("amount", 0))
+    return out
+
+
+def build_payout_tx(
+    utxo_db,
+    art_id: str,
+    recipients: list[dict[str, Any]] | dict[str, int],
+    *,
+    fee_rate: int | None = None,
+    epoch: int | None = None,
+    dust_threshold: int | None = None,
+) -> Tx:
+    """
+    Bangun transaksi payout dari UTXO pool P2WSH untuk art_id.
+    - recipients: list dict {"addr","amount"} atau mapping addr->amount (sats)
+    - fee_rate: sat/vbyte; default CFG.DEFAULT_FEE_RATE_SATVB
+    """
+    art_norm = _normalize_art_id(art_id, prefer_prefix=False)
+    dust = int(CFG.DUST_THRESHOLD_SAT if dust_threshold is None else dust_threshold)
+    rate = int(fee_rate if fee_rate is not None else CFG.DEFAULT_FEE_RATE_SATVB)
+    try:
+        utxo_db._load()
+    except Exception:
+        pass
+
+    rec_list: list[dict[str, Any]] = []
+    if isinstance(recipients, dict):
+        recipients = [{"addr": a, "amount": v} for a, v in recipients.items()]
+    if not isinstance(recipients, list) or not recipients:
+        raise ValueError("recipients_empty")
+    for item in recipients:
+        addr = str(item.get("addr") or item.get("address") or "").strip().lower()
+        try:
+            amt = int(item.get("amount", 0))
+        except Exception:
+            amt = 0
+        if not _is_valid_tsar_address(addr) or amt <= 0:
+            raise ValueError("bad_recipient")
+        rec_list.append({"addr": addr, "amount": amt})
+
+    utxos = find_pool_utxos(utxo_db, art_norm)
+    if not utxos:
+        raise ValueError("no_pool_utxo")
+
+    redeem_script = _pool_redeem_script(art_norm)
+    art_digest = bytes.fromhex(_strip_art_prefix(art_norm))
+    if len(art_digest) > 75:
+        art_digest = hashlib.sha256(art_digest).digest()
+
+    total_needed = sum(r["amount"] for r in rec_list)
+    selected = None
+    fee_final = None
+    change_amt = 0
+    outputs: list[TxOut] = []
+
+    # Greedy: coba kombinasi satu UTXO besar dulu, jika kurang coba tambahkan utxo kecil sebagai input kedua.
+    # Untuk kesederhanaan, saat ini pilih satu utxo terbesar yang cukup; jika tidak cukup, raise.
+    utxos_sorted = sorted(utxos, key=lambda u: u.get("amount", 0), reverse=True)
+    for utxo in utxos_sorted:
+        amount_in = int(utxo.get("amount", 0))
+        # Build outputs (recipients)
+        outs = []
+        for rec in rec_list:
+            spk = Script.p2wpkh_script(rec["addr"])
+            outs.append(TxOut(int(rec["amount"]), spk))
+        # OP_RETURN payout metadata
+        meta = build_payout_metadata(art_norm, epoch if epoch is not None else 0, rec_list)
+        opret_spk = build_script(meta)
+        outs.append(TxOut(0, opret_spk))
+
+        # temp tx for fee estimate
+        txin = TxIn(bytes.fromhex(utxo["txid"]), int(utxo["vout"]), amount=amount_in, script_sig=Script([]), witness=[art_digest, redeem_script])
+        tx_tmp = Tx(version=1, inputs=[txin], outputs=list(outs), locktime=0, auto_compute_txid=False)
+        try:
+            raw = tx_tmp.serialize()
+            raw_wit = tx_tmp.serialize(include_witness=True)
+            vbytes = int((len(raw) * 3 + len(raw_wit)) / 4)
+        except Exception:
+            vbytes = 200
+        fee_est = rate * max(1, vbytes)
+        change = amount_in - total_needed - fee_est
+        if change >= dust:
+            outs.insert(0, TxOut(change, Script.deserialize(_pool_spk_bytes(art_norm))))
+        elif change < 0:
+            continue  # utxo kecil, coba berikutnya
+
+        tx_final = Tx(version=1, inputs=[txin], outputs=outs, locktime=0, auto_compute_txid=True)
+        selected = tx_final
+        fee_final = fee_est
+        change_amt = max(0, change)
+        break
+
+    if selected is None:
+        raise ValueError("insufficient_pool")
+
+    selected.fee = fee_final
+    return selected
 
 
 # -----------------------------
@@ -603,6 +760,8 @@ __all__ = [
     "build_metadata",
     "build_comment_metadata",
     "build_payout_metadata",
+    "build_payout_tx",
+    "find_pool_utxos",
     "encode_payload",
     "build_script",
     "build_opret_hex",

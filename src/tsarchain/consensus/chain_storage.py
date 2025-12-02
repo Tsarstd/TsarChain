@@ -1006,6 +1006,12 @@ class StorageMixin:
         genesis_dict = genesis_block.to_dict() if genesis_block else {}
         tip_dict = tip_block.to_dict() if tip_block else {}
 
+        total_payouts = 0
+        try:
+            total_payouts = sum(len(v or []) for v in (data_g.get("payouts") or {}).values())
+        except Exception:
+            total_payouts = 0
+
         snapshot = {
             "schema_version": int(CFG.DATA_SCHEMA_VERSION),
             "last_updated": dt.datetime.now().astimezone().isoformat(),
@@ -1061,6 +1067,7 @@ class StorageMixin:
                 "posts": int(graffiti_posts),
                 "comments": int(total_comments),
                 "graffiti_on_mempool": int(graffiti_on_mempool),
+                "payouts": int(total_payouts),
             },
             "miners_snapshot": {
                 "top_miners": [(miner, count) for miner, count in miner_counter.most_common() if miner]

@@ -89,12 +89,16 @@ class UTXOBalanceMixin:
                 if hrp != "tsar" or data is None:
                     raise ValueError("invalid tsar bech32 address")
                 prog = convertbits(data[1:], 5, 8, False)
-                if prog is None or len(prog) != 20:
-                    raise ValueError("invalid witness program length for P2WPKH")
-                return "0014" + bytes(prog).hex()
-            if x.startswith("00") and len(x) == 42:
-                return "0014" + x[2:]
+                if prog is None or len(prog) not in (20, 32):
+                    raise ValueError("invalid witness program length")
+                if len(prog) == 20:
+                    return "0014" + bytes(prog).hex()
+                return "0020" + bytes(prog).hex()
+            if x.startswith("00") and len(x) in (42, 66):
+                return "00" + x[2:]
             if x.startswith("0014") and len(x) == 44:
+                return x
+            if x.startswith("0020") and len(x) == 68:
                 return x
             return x
 
@@ -139,12 +143,16 @@ class UTXOBalanceMixin:
                 if hrp != "tsar" or data is None:
                     raise ValueError("invalid tsar bech32 address")
                 prog = convertbits(data[1:], 5, 8, False)
-                if prog is None or len(prog) != 20:
-                    raise ValueError("invalid witness program length for P2WPKH")
-                return "0014" + bytes(prog).hex()
-            if x.startswith("00") and len(x) == 42:
-                return "0014" + x[2:]
+                if prog is None or len(prog) not in (20, 32):
+                    raise ValueError("invalid witness program length")
+                if len(prog) == 20:
+                    return "0014" + bytes(prog).hex()
+                return "0020" + bytes(prog).hex()
+            if x.startswith("00") and len(x) in (42, 66):
+                return "00" + x[2:]
             if x.startswith("0014") and len(x) == 44:
+                return x
+            if x.startswith("0020") and len(x) == 68:
                 return x
             return x
 

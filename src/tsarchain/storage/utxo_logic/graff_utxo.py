@@ -178,9 +178,19 @@ class UTXOGraffitiMixin:
         if not post_entry:
             log.warning("[graffiti] PAYOUT references unknown art_id=%s tx=%s", art_id, txid_hex)
             return
+        stats = post_entry.setdefault("stats", {})
+        pool_balance = int(stats.get("pool_balance", 0))
+        last_epoch = int(stats.get("last_paid_epoch", -1))
         recs = meta.get("recipients") or []
         if not isinstance(recs, list) or not recs:
             log.warning("[graffiti] PAYOUT missing recipients art_id=%s tx=%s", art_id, txid_hex)
+            return
+        try:
+            epoch = int(meta.get("epoch", -1))
+        except Exception:
+            epoch = -1
+        if epoch >= 0 and last_epoch >= 0 and epoch <= last_epoch:
+            log.warning("[graffiti] PAYOUT epoch rewind art_id=%s epoch=%s last=%s tx=%s", art_id, epoch, last_epoch, txid_hex)
             return
         # Aggregate payments to recipients observed on-chain
         paid_map: dict[str, int] = {}
@@ -199,7 +209,11 @@ class UTXOGraffitiMixin:
         if not paid_map:
             log.warning("[graffiti] PAYOUT no valid recipients art_id=%s tx=%s", art_id, txid_hex)
             return
-        self._graffiti_registry.record_payout(art_id, paid_map, txid_hex, block_height)
+        total_paid = sum(paid_map.values())
+        if total_paid > pool_balance:
+            log.warning("[graffiti] PAYOUT exceeds pool balance art_id=%s total=%s pool=%s tx=%s", art_id, total_paid, pool_balance, txid_hex)
+            return
+        self._graffiti_registry.record_payout(art_id, paid_map, txid_hex, block_height, epoch=epoch if epoch >= 0 else None)
 
     @staticmethod
     def _read_opreturn_payload(script_bytes: bytes) -> bytes | None:

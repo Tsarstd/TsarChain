@@ -11,6 +11,7 @@ from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.rpc(storage_rpc)")
 from ...utils import config as CFG
 from ...contracts import graffiti as GRAFFITI
+from bech32 import convertbits, bech32_encode
 
 if TYPE_CHECKING:
     from ..node import Network
@@ -45,6 +46,24 @@ def _save_storage_index(data: dict[str, Any]) -> None:
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2)
     os.replace(tmp, path)
+
+
+def _spkhex_to_address(spk_hex: str) -> str | None:
+    try:
+        if isinstance(spk_hex, bytes):
+            spk_hex = spk_hex.hex()
+        spk_hex = spk_hex.lower()
+        if spk_hex.startswith("0014") and len(spk_hex) == 44:
+            prog = bytes.fromhex(spk_hex[4:])
+            data = [0] + convertbits(list(prog), 8, 5, True)
+            return bech32_encode(CFG.ADDRESS_PREFIX, data)
+        if spk_hex.startswith("0020") and len(spk_hex) == 68:
+            prog = bytes.fromhex(spk_hex[4:])
+            data = [0] + convertbits(list(prog), 8, 5, True)
+            return bech32_encode(CFG.ADDRESS_PREFIX, data)
+    except Exception:
+        return None
+    return None
 
 
 def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[tuple], mtype: str) -> dict | None:
@@ -237,5 +256,77 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[
             return {"error": "registry_unavailable"}
         proof = reg.get_latest_proof(art_id, storer or None)
         return {"status": "ok", "art_id": art_id, "proof": proof or {}}
+
+    elif mtype == "GRAFFITI_BUILD_PAYOUT":
+        art_id_raw = str(message.get("art_id") or "").strip()
+        try:
+            art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
+        except Exception:
+            return {"error": "bad_art_id"}
+        recipients = message.get("recipients") or []
+        # shorthand recipient/amount fields
+        if not recipients and message.get("recipient") and message.get("amount"):
+            try:
+                amt = int(message.get("amount", 0))
+            except Exception:
+                amt = 0
+            recipients = [{"addr": str(message.get("recipient")).strip(), "amount": amt}]
+        try:
+            fee_rate = int(message.get("fee_rate", CFG.DEFAULT_FEE_RATE_SATVB))
+        except Exception:
+            fee_rate = CFG.DEFAULT_FEE_RATE_SATVB
+        try:
+            epoch = int(message.get("epoch", -1))
+        except Exception:
+            epoch = -1
+        utxo = getattr(self.broadcast, "utxodb", None)
+        if utxo is None:
+            return {"error": "utxo_unavailable"}
+        try:
+            utxo._load()
+        except Exception:
+            pass
+        log.info("[payout] build request art=%s recips=%s epoch=%s fee_rate=%s", art_id[:16], len(recipients), epoch, fee_rate)
+        try:
+            tx_obj = GRAFFITI.build_payout_tx(
+                utxo_db=utxo,
+                art_id=art_id,
+                recipients=recipients,
+                fee_rate=fee_rate,
+                epoch=epoch if epoch >= 0 else None,
+            )
+        except Exception as exc:
+            log.warning("[payout] build failed art=%s err=%s", art_id[:16], exc)
+            return {"error": str(exc)}
+        # Log ringkas outputs
+        try:
+            outs = []
+            for o in getattr(tx_obj, "outputs", []) or []:
+                amt = int(getattr(o, "amount", 0) or 0)
+                addr = None
+                try:
+                    addr = _spkhex_to_address(o.script_pubkey.serialize().hex())
+                except Exception:
+                    try:
+                        addr = _spkhex_to_address(o.script_pubkey.hex())
+                    except Exception:
+                        addr = None
+                outs.append((amt, addr))
+            log.info("[payout] tx outputs art=%s %s", art_id[:16], outs)
+        except Exception:
+            pass
+
+        broadcast_flag = bool(message.get("broadcast"))
+        if broadcast_flag:
+            try:
+                ok = self.broadcast.receive_tx({"type": "NEW_TX", "data": tx_obj.to_dict(include_txid=True)}, None, self.peers)
+                if not ok:
+                    log.warning("[payout] broadcast failed art=%s", art_id[:16])
+                    return {"error": "broadcast_failed"}
+            except Exception as exc:
+                log.exception("[payout] broadcast error art=%s", art_id[:16])
+                return {"error": f"broadcast_error:{exc}"}
+        log.info("[payout] build ok art=%s txid=%s", art_id[:16], tx_obj.txid.hex() if getattr(tx_obj, "txid", None) else "?")
+        return {"status": "ok", "tx": tx_obj.to_dict(include_txid=True)}
 
     return None

@@ -213,9 +213,19 @@ class MiningMixin:
         if not found:
             return None
         if not self.validate_block(new_block):
+            try:
+                reason = getattr(self, "_last_block_validation_error", None)
+                log.warning("[mine_block] Candidate block rejected at height=%s reason=%s", height, reason)
+            except Exception:
+                pass
             return None
         ok = self.add_block(new_block)
         if not ok:
+            try:
+                reason = getattr(self, "_last_block_validation_error", None)
+                log.warning("[mine_block] add_block failed at height=%s reason=%s", height, reason)
+            except Exception:
+                pass
             return None
 
         log.info("[mine_block] Block mined: height=%d reward=%d fee=%d", new_block.height, reward, total_fee)

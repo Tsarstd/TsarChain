@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from ecdsa import VerifyingKey, SECP256k1
 
 from ..utils import helpers as H
-from ..utils.helpers import hash256, is_p2wpkh_script, serialize_tx_for_txid
+from ..utils.helpers import Script, hash256, is_p2wpkh_script, serialize_tx_for_txid
 
 if TYPE_CHECKING:
     from ..core.tx import Tx
@@ -109,13 +109,18 @@ def get_utxo_script_bytes(utxo_entry) -> bytes:
             # tx_out dict
             if isinstance(tx_out, dict) and "script_pubkey" in tx_out:
                 spk = tx_out["script_pubkey"]
-                if isinstance(spk, (bytes, bytearray)):
-                    return bytes(spk)
-                if isinstance(spk, str):
-                    try:
-                        return bytes.fromhex(spk)
-                    except Exception:
-                        pass
+            if isinstance(spk, (bytes, bytearray)):
+                return bytes(spk)
+            if isinstance(spk, str):
+                try:
+                    return bytes.fromhex(spk)
+                except Exception:
+                    pass
+            if isinstance(spk, Script):
+                try:
+                    return spk.serialize()
+                except Exception:
+                    pass
 
         # flat dict
         if "script_pubkey" in utxo_entry:
@@ -127,6 +132,11 @@ def get_utxo_script_bytes(utxo_entry) -> bytes:
                     return bytes.fromhex(spk)
                 except Exception:
                     pass
+            if isinstance(spk, Script):
+                try:
+                    return spk.serialize()
+                except Exception:
+                    pass
 
     # object level (namedtuple/dataclass)
     if hasattr(utxo_entry, "tx_out") and hasattr(utxo_entry.tx_out, "script_pubkey"):
@@ -136,7 +146,11 @@ def get_utxo_script_bytes(utxo_entry) -> bytes:
                 return spk_obj.serialize()
             except Exception:
                 pass
-
+        if isinstance(spk_obj, Script):
+            try:
+                return spk_obj.serialize()
+            except Exception:
+                pass
         if isinstance(spk_obj, (bytes, bytearray)):
             return bytes(spk_obj)
 
@@ -147,9 +161,19 @@ def get_utxo_script_bytes(utxo_entry) -> bytes:
                 return spk_obj.serialize()
             except Exception:
                 pass
-
+        if isinstance(spk_obj, Script):
+            try:
+                return spk_obj.serialize()
+            except Exception:
+                pass
         if isinstance(spk_obj, (bytes, bytearray)):
             return bytes(spk_obj)
+
+    if isinstance(utxo_entry, Script):
+        try:
+            return utxo_entry.serialize()
+        except Exception:
+            pass
 
     raise ValueError("script_pubkey not found in UTXO entry")
 

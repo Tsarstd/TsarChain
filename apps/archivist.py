@@ -361,8 +361,9 @@ class TsarStorageGUI:
             comments = stats.get("comments", 0)
             size_bytes = int(file_meta["meta"].get("size_bytes", 0))
             self._pool_data[aid] = {"post": art, "stats": stats, "file": file_meta["meta"]}
-            self.pool_tree.insert("", tk.END, values=(
-                aid[:16] + ("..." if len(aid) > 16 else ""),
+            display_id = aid[:16] + ("..." if len(aid) > 16 else "")
+            self.pool_tree.insert("", tk.END, iid=aid, values=(
+                display_id,
                 f"{pool_balance / CFG.TSAR:.8f}",
                 f"{size_bytes:,}",
                 creator,
@@ -606,7 +607,10 @@ class TsarStorageGUI:
         if not sel:
             messagebox.showinfo("Pool", "Pilih karya dari daftar pool.")
             return
-        art_id = self.pool_tree.item(sel[0], "values")[0]
+        # gunakan iid (full art_id) supaya tidak terpotong
+        art_id = sel[0] if sel else None
+        if not art_id:
+            art_id = self.pool_tree.item(sel[0], "values")[0]
         entry = self._pool_data.get(art_id)
         if not entry:
             messagebox.showerror("Pool", "Data pool tidak ditemukan.")
@@ -616,10 +620,12 @@ class TsarStorageGUI:
         if pool_balance <= 0:
             messagebox.showinfo("Pool", "Saldo pool nol.")
             return
-        amount_str = simpledialog.askstring("Claim Pool",
-                                            f"Saldo tersedia {pool_balance / CFG.TSAR:.8f} TSAR.\nMasukkan jumlah TSAR yang ingin diklaim:",
-                                            parent=self.root,
-                                            initialvalue=f"{pool_balance / CFG.TSAR:.8f}")
+        amount_str = simpledialog.askstring(
+            "Claim Pool",
+            f"Saldo tersedia {pool_balance / CFG.TSAR:.8f} TSAR.\nMasukkan jumlah TSAR yang ingin diklaim:",
+            parent=self.root,
+            initialvalue=f"{pool_balance / CFG.TSAR:.8f}",
+        )
         if amount_str is None:
             return
         try:
@@ -631,22 +637,25 @@ class TsarStorageGUI:
         if amount_sats <= 0 or amount_sats > pool_balance:
             messagebox.showerror("Pool", "Jumlah melebihi saldo.")
             return
-        txid = simpledialog.askstring("Claim Pool", "Masukkan TXID payout (opsional):", parent=self.root) or ""
         recipient = (self.addr_var.get() or self.rpc.address or "").strip().lower()
+        payload = {
+            "type": "GRAFFITI_BUILD_PAYOUT",
+            "art_id": art_id,
+            "recipients": [{"addr": recipient, "amount": amount_sats}],
+            "epoch": stats.get("last_paid_epoch", -1) + 1,
+            "broadcast": True,
+        }
+        self.logln(f"[Pool] build payout art={art_id[:16]} amt={amount_sats} sats -> {recipient}")
         try:
-            resp = self.rpc.call({
-                "type":"GRAFFITI_POOL_PAYOUT",
-                "art_id": art_id,
-                "amount": amount_sats,
-                "recipient": recipient,
-                "txid": txid.strip(),
-            }, timeout=6.0)
+            resp = self.rpc.call(payload, timeout=8.0)
         except Exception as exc:
             messagebox.showerror("Pool", f"RPC error: {exc}")
             return
-        if isinstance(resp, dict) and resp.get("status") in (None, "ok"):
-            self.logln(f"[Pool] Claimed {amount:.8f} TSAR for {art_id[:10]}...")
-            self.pool_status_var.set("Payout recorded.")
+        if isinstance(resp, dict) and resp.get("status") == "ok":
+            tx = resp.get("tx") or {}
+            txid = tx.get("txid") or "?"
+            self.logln(f"[Pool] Broadcast payout tx {txid[:16]}... for {art_id[:12]}...")
+            self.pool_status_var.set("Payout tx broadcasted.")
             self.refresh_all()
         else:
             messagebox.showerror("Pool", f"Gagal klaim: {resp}")
@@ -666,7 +675,6 @@ class TsarStorageGUI:
                     self._handle_rpc_drop("heartbeat")
             self.root.after(HEARTBEAT_SEC * 1000, run)
         self.root.after(HEARTBEAT_SEC * 1000, run)
-
 
 
 if __name__ == "__main__":

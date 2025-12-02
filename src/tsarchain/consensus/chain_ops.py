@@ -520,6 +520,16 @@ class ChainOpsMixin:
                 actual_cb = sum(int(o.amount) for o in getattr(txs[0], "outputs", []) or [])
                 expected_cb = reward + fees
                 if actual_cb != expected_cb:
+                    try:
+                        log.warning(
+                            "[_validate_complete_chain] bad coinbase at height=%s expected=%s got=%s fees=%s",
+                            getattr(cur, "height", None),
+                            expected_cb,
+                            actual_cb,
+                            fees,
+                        )
+                    except Exception:
+                        pass
                     return False
                 cumulative_supply += reward
 

@@ -12,7 +12,10 @@ from ..utils.helpers import (tx_to_compact_tuple, native_validate_tx_p2wpkh_comp
 from ..storage.utxo import UTXODB
 from .scripts import get_utxo_script_bytes
 from ..contracts import graffiti as GRAFFITI
+from ..contracts.graffiti_registry import GraffitiRegistry
 from ..utils import config as CFG
+from ..utils.helpers import is_p2wpkh, is_p2wsh
+from bech32 import bech32_encode, convertbits
 
 
 from ..utils.tsar_logging import get_ctx_logger
@@ -24,6 +27,33 @@ __all__ = ["TxMempoolValidator"]
 class TxMempoolValidator:
     utxo: UTXODB
     last_error_reason: str | None
+    
+    def script_to_address(self, script) -> str | None:
+        """
+        Convert P2WPKH/P2WSH scriptPubKey to bech32 address.
+        """
+        b = None
+        try:
+            if hasattr(script, "serialize"):
+                b = script.serialize()
+            elif isinstance(script, (bytes, bytearray)):
+                b = bytes(script)
+            elif isinstance(script, str):
+                b = bytes.fromhex(script)
+        except Exception:
+            b = None
+        if not b:
+            return None
+        try:
+            if len(b) == 22 and b[0] == 0x00 and b[1] == 0x14:
+                data = [0] + list(convertbits(b[2:], 8, 5, True))
+                return bech32_encode(CFG.ADDRESS_PREFIX, data)
+            if len(b) == 34 and b[0] == 0x00 and b[1] == 0x20:
+                data = [0] + list(convertbits(b[2:], 8, 5, True))
+                return bech32_encode(CFG.ADDRESS_PREFIX, data)
+        except Exception:
+            return None
+        return None
 
     def _get_utxo_amount(self, utxo_data):
         if isinstance(utxo_data, dict):
@@ -142,6 +172,132 @@ class TxMempoolValidator:
         current_height = (spend_at_height if spend_at_height is not None else self.utxo._get_tip_height_from_state())
 
         try:
+            # ---- Special handling for Graffiti PAYOUT (P2WSH pool) ----
+            payout_meta = None
+            for tx_out in getattr(tx, "outputs", []) or []:
+                spk = getattr(tx_out, "script_pubkey", None)
+                meta = None
+                try:
+                    meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+                except Exception:
+                    meta = None
+                if meta and str(meta.get("event", "")).upper() == "PAYOUT":
+                    payout_meta = meta
+                    break
+
+            if payout_meta:
+                reg = getattr(self.utxo, "_graffiti_registry", None) or GraffitiRegistry()
+                art_id = str(payout_meta.get("art_id") or "").strip().lower()
+                post = reg.get_post(art_id)
+                if not post:
+                    self.last_error_reason = "payout_unknown_art"
+                    log.debug("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
+                    return False
+                stats = post.get("stats") or {}
+                pool_balance = int(stats.get("pool_balance", 0))
+                last_epoch = int(stats.get("last_paid_epoch", -1))
+                try:
+                    epoch = int(payout_meta.get("epoch", -1))
+                except Exception:
+                    epoch = -1
+                if epoch >= 0 and epoch <= last_epoch:
+                    self.last_error_reason = "payout_epoch_rewind"
+                    log.debug("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
+                    return False
+                if epoch >= 0:
+                    latest_proof = reg.get_latest_proof_epoch(art_id)
+                    if latest_proof < epoch:
+                        self.last_error_reason = "payout_missing_proof"
+                        log.debug("[mempool] payout reject art=%s reason=%s last_proof=%s epoch=%s", art_id[:16], self.last_error_reason, latest_proof, epoch)
+                        return False
+
+                # Collect payout recipients
+                recs = payout_meta.get("recipients") or []
+                if not isinstance(recs, list) or not recs:
+                    self.last_error_reason = "payout_no_recipients"
+                    log.debug("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
+                    return False
+
+                # Build paymap from outputs
+                paymap: dict[str, int] = {}
+                for out in getattr(tx, "outputs", []) or []:
+                    amt = int(getattr(out, "amount", 0) or 0)
+                    if amt <= 0:
+                        continue
+                    try:
+                        spk_bytes = get_utxo_script_bytes({"tx_out": {"script_pubkey": getattr(out, "script_pubkey", None)}})
+                    except Exception:
+                        spk_bytes = b""
+                    if is_p2wpkh(spk_bytes) or is_p2wsh(spk_bytes):
+                        try:
+                            addr = self.script_to_address(getattr(out, "script_pubkey", None))
+                        except Exception:
+                            addr = None
+                        if addr:
+                            paymap[addr.strip().lower()] = paymap.get(addr.strip().lower(), 0) + amt
+                    # ignore OP_RETURN
+
+                # Sum required + shortfall check
+                total_req = 0
+                for rec in recs:
+                    addr = str(rec.get("addr") or rec.get("address") or "").strip().lower()
+                    try:
+                        amt_req = int(rec.get("amount", 0))
+                    except Exception:
+                        amt_req = 0
+                    if not addr or amt_req <= 0:
+                        self.last_error_reason = "payout_bad_recipient"
+                        log.debug("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
+                        return False
+                    total_req += amt_req
+                    if paymap.get(addr, 0) < amt_req:
+                        self.last_error_reason = "payout_shortfall"
+                        log.debug("[mempool] payout reject art=%s reason=%s paid=%s req=%s", art_id[:16], self.last_error_reason, paymap.get(addr, 0), amt_req)
+                        return False
+                if total_req > pool_balance:
+                    self.last_error_reason = "payout_exceeds_pool"
+                    log.debug("[mempool] payout reject art=%s reason=%s total=%s pool=%s", art_id[:16], self.last_error_reason, total_req, pool_balance)
+                    return False
+
+                # Validate inputs: must spend pool P2WSH for this art_id
+                total_in = 0
+                pool_script_hash = GRAFFITI.hash_pool_redeem_script(art_id)
+                for txin in getattr(tx, "inputs", []) or []:
+                    prev_txid_hex = self._txin_prev_txid(txin)
+                    vout = int(getattr(txin, "vout", getattr(txin, "prev_index", 0)))
+                    utxo_entry = self._lookup_utxo_entry(utxo_set, prev_txid_hex, vout)
+                    if not utxo_entry:
+                        self.last_error_reason = "missing_prevout"
+                        log.debug("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
+                        return False
+                    try:
+                        spk_bytes = get_utxo_script_bytes(utxo_entry)
+                    except Exception:
+                        spk_bytes = b""
+                    amt_prev = self._get_utxo_amount(utxo_entry)
+                    total_in += int(amt_prev)
+                    if not (is_p2wsh(spk_bytes) and len(spk_bytes) == 34):
+                        self.last_error_reason = "payout_prev_not_pool"
+                        log.debug("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
+                        return False
+                    prog = spk_bytes[2:]
+                    if prog.hex() != pool_script_hash:
+                        self.last_error_reason = "payout_wrong_pool"
+                        log.debug("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
+                        return False
+
+                total_out = sum(int(getattr(o, "amount", 0) or 0) for o in getattr(tx, "outputs", []) or [])
+                if total_out > total_in:
+                    self.last_error_reason = "payout_fee_negative"
+                    log.debug("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
+                    return False
+                try:
+                    tx.fee = int(total_in - total_out)
+                except Exception:
+                    setattr(tx, "fee", int(total_in - total_out))
+                log.info("[mempool] payout accepted art=%s fee=%s", art_id[:16], tx.fee)
+                return True
+
             compact_tx = tx_to_compact_tuple(tx)
             utxo_items = self._utxo_snapshot_to_items(utxo_set)
             ok, reason, fee = native_validate_tx_p2wpkh_compact(
@@ -184,6 +340,74 @@ class TxMempoolValidator:
                                         if current_posts >= int(CFG.MAX_GRAFFITI_ON_MEMPOOL):
                                             self.last_error_reason = "mempool_graffiti_full"
                                             return False
+                    except Exception:
+                        pass
+                    # Payout sanity check (soft, mirrors consensus)
+                    try:
+                        reg = getattr(self.utxo, "_graffiti_registry", None) or GraffitiRegistry()
+                        paymap: dict[str, int] = {}
+                        for out in getattr(tx, "outputs", []) or []:
+                            addr = self.script_to_address(getattr(out, "script_pubkey", None))
+                            if not addr:
+                                continue
+                            amt = int(getattr(out, "amount", 0) or 0)
+                            if amt <= 0:
+                                continue
+                            paymap[addr.strip().lower()] = paymap.get(addr.strip().lower(), 0) + amt
+                        for out in getattr(tx, "outputs", []) or []:
+                            spk = getattr(out, "script_pubkey", None)
+                            meta = None
+                            try:
+                                meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+                            except Exception:
+                                meta = None
+                            if not meta or str(meta.get("event", "")).upper() != "PAYOUT":
+                                continue
+                            art_id = str(meta.get("art_id") or "").strip().lower()
+                            if not art_id:
+                                self.last_error_reason = "payout_bad_art_id"
+                                return False
+                            post = reg.get_post(art_id)
+                            if not post:
+                                self.last_error_reason = "payout_unknown_art"
+                                return False
+                            stats = post.get("stats") or {}
+                            pool_balance = int(stats.get("pool_balance", 0))
+                            last_epoch = int(stats.get("last_paid_epoch", -1))
+                            try:
+                                epoch = int(meta.get("epoch", -1))
+                            except Exception:
+                                epoch = -1
+                            if epoch >= 0 and epoch <= last_epoch:
+                                self.last_error_reason = "payout_epoch_rewind"
+                                return False
+                            if epoch >= 0:
+                                latest_proof = reg.get_latest_proof_epoch(art_id)
+                                if latest_proof < epoch:
+                                    self.last_error_reason = "payout_missing_proof"
+                                    return False
+                            recs = meta.get("recipients") or []
+                            if not isinstance(recs, list) or not recs:
+                                self.last_error_reason = "payout_no_recipients"
+                                return False
+                            total_req = 0
+                            for rec in recs:
+                                addr = str(rec.get("addr") or rec.get("address") or "").strip().lower()
+                                try:
+                                    amt_req = int(rec.get("amount", 0))
+                                except Exception:
+                                    amt_req = 0
+                                if not addr or amt_req <= 0:
+                                    self.last_error_reason = "payout_bad_recipient"
+                                    return False
+                                total_req += amt_req
+                                paid = paymap.get(addr, 0)
+                                if paid < amt_req:
+                                    self.last_error_reason = "payout_shortfall"
+                                    return False
+                            if total_req > pool_balance:
+                                self.last_error_reason = "payout_exceeds_pool"
+                                return False
                     except Exception:
                         pass
                 return True
