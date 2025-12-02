@@ -117,6 +117,11 @@ class UTXOGraffitiMixin:
             "block_hash": block_hash,
         }
         self._graffiti_registry.record_post(art_id, entry, txid_hex, block_height, pool_addr, paid, block_hash=block_hash)
+        try:
+            current_pool_balance = self.get_balance(pool_addr, mode="total")
+            self._graffiti_registry.set_pool_balance(art_id, current_pool_balance)
+        except Exception:
+            pass
 
     def _handle_graffiti_comment(
         self,
@@ -163,6 +168,11 @@ class UTXOGraffitiMixin:
             creator_paid=paid_creator,
             storage_paid=paid_pool,
         )
+        try:
+            current_pool_balance = self.get_balance(pool_addr, mode="total")
+            self._graffiti_registry.set_pool_balance(art_id, current_pool_balance)
+        except Exception:
+            pass
 
     def _handle_graffiti_payout(
         self,
@@ -174,6 +184,7 @@ class UTXOGraffitiMixin:
         art_id = str(meta.get("art_id") or "").lower()
         if not art_id:
             return
+        pool_addr = GRAFFITI.derive_pool_address(art_id)
         post_entry = self._graffiti_registry.get_post(art_id)
         if not post_entry:
             log.warning("[graffiti] PAYOUT references unknown art_id=%s tx=%s", art_id, txid_hex)
@@ -213,7 +224,19 @@ class UTXOGraffitiMixin:
         if total_paid > pool_balance:
             log.warning("[graffiti] PAYOUT exceeds pool balance art_id=%s total=%s pool=%s tx=%s", art_id, total_paid, pool_balance, txid_hex)
             return
-        self._graffiti_registry.record_payout(art_id, paid_map, txid_hex, block_height, epoch=epoch if epoch >= 0 else None)
+        # Recalculate pool balance from UTXO set (total, not just mature)
+        try:
+            current_pool_balance = self.get_balance(pool_addr, mode="total")
+        except Exception:
+            current_pool_balance = max(0, pool_balance - total_paid)
+        self._graffiti_registry.record_payout(
+            art_id,
+            paid_map,
+            txid_hex,
+            block_height,
+            epoch=epoch if epoch >= 0 else None,
+            pool_balance=current_pool_balance,
+        )
 
     @staticmethod
     def _read_opreturn_payload(script_bytes: bytes) -> bytes | None:

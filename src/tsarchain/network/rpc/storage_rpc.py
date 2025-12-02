@@ -184,8 +184,9 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[
         last_epoch = reg.get_latest_proof_epoch(art_id, recipient)
         if last_epoch < required_epoch:
             return {"error": "missing_proof", "required_epoch": required_epoch, "last_epoch": last_epoch}
-        reg.record_payout(art_id, {recipient: amount}, txid, height)
-        return {"status": "ok", "art_id": art_id, "pool_balance": int(stats.get("pool_balance", 0))}
+        new_pool_balance = max(0, pool_balance - amount)
+        reg.record_payout(art_id, {recipient: amount}, txid, height, pool_balance=new_pool_balance)
+        return {"status": "ok", "art_id": art_id, "pool_balance": int(new_pool_balance)}
 
     elif mtype == "GRAFFITI_PROOF_SUBMIT":
         art_id_raw = str(message.get("art_id") or "").strip()

@@ -107,14 +107,17 @@ class GraffitiRegistry:
             stats["comments"] = int(stats.get("comments", 0)) + 1
         self._flush()
 
-    def record_payout(self, art_id: str, recipients: Dict[str, int], txid: str, block_height: int, epoch: int | None = None) -> None:
+    def record_payout(self, art_id: str, recipients: Dict[str, int], txid: str, block_height: int, epoch: int | None = None, pool_balance: int | None = None) -> None:
         posts = self.data.setdefault("posts", {})
         post = posts.get(art_id)
         if not post:
             return
         stats = post.setdefault("stats", {})
         total = sum(int(v) for v in recipients.values())
-        stats["pool_balance"] = max(0, int(stats.get("pool_balance", 0)) - total)
+        if pool_balance is not None:
+            stats["pool_balance"] = max(0, int(pool_balance))
+        else:
+            stats["pool_balance"] = max(0, int(stats.get("pool_balance", 0)) - total)
         if epoch is not None:
             try:
                 stats["last_paid_epoch"] = max(int(stats.get("last_paid_epoch", -1)), int(epoch))
@@ -129,6 +132,15 @@ class GraffitiRegistry:
             "amount": int(total),
             "epoch": None if epoch is None else int(epoch),
         })
+        self._flush()
+
+    def set_pool_balance(self, art_id: str, pool_balance: int) -> None:
+        posts = self.data.setdefault("posts", {})
+        post = posts.get(art_id)
+        if not post:
+            return
+        stats = post.setdefault("stats", {})
+        stats["pool_balance"] = max(0, int(pool_balance))
         self._flush()
 
     def record_proof(self, art_id: str, storer: str, epoch: int, offset: int, length: int,

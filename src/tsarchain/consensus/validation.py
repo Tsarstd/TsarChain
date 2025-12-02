@@ -17,7 +17,6 @@ from ..utils.helpers import bits_to_target, merkle_root
 from ..utils import helpers as H
 from ..contracts import graffiti as GRAFFITI
 from ..contracts.graffiti_registry import GraffitiRegistry
-from ..mempool.validation import TxMempoolValidator
 from .genesis import GENESIS_HASH
 
 # ---------------- Logger ----------------
@@ -522,19 +521,16 @@ class ValidationMixin:
             "enforce_low_s": True,
         }
         payload_txs, payload_utxo = _build_block_payload_compact(txs, snapshot) or (None, None)
-        native_ok = False
-        fees_list: list[int] = []
-        reason = None
         try:
             if payload_txs is not None and payload_utxo is not None:
-                native_ok, reason, fees = H.native_validate_block_txs_compact(
+                ok, reason, fees = H.native_validate_block_txs_compact(
                     payload_txs,
                     payload_utxo,
                     spend_height,
                     opts,
                 )
             else:
-                native_ok, reason, fees = H.native_validate_block_txs(
+                ok, reason, fees = H.native_validate_block_txs(
                     block.to_dict(),
                     snapshot,
                     spend_height,
@@ -542,41 +538,27 @@ class ValidationMixin:
                 )
         except Exception:
             log.exception("[_validate_transactions] Native block validator failed")
-            native_ok = False
-            reason = "native_validation_failed"
+            self._last_block_validation_error = "native_validation_failed"
+            return False
 
-        if not native_ok and (reason or "").strip().lower() == "unsupported_script":
-            # Fallback: validate each tx via mempool validator (supports Graffiti payout P2WSH)
-            validator = TxMempoolValidator()
-            validator.utxo = store
-            utxo_snapshot = utxo_view or getattr(store, "utxos", None) or {}
-            fees_list = []
-            for tx_obj in txs[1:]:
-                ok_tx = validator.validate_transaction(tx_obj, utxo_snapshot, spend_at_height=spend_height)
-                if not ok_tx:
-                    self._last_block_validation_error = validator.last_error_reason or "fallback_validate_failed"
-                    return False
-                try:
-                    fees_list.append(int(getattr(tx_obj, "fee", 0) or 0))
-                except Exception:
-                    fees_list.append(0)
-        elif not native_ok:
+        if not ok:
             self._last_block_validation_error = reason or "native_validation_failed"
             return False
+
+        fees_list = []
+        if isinstance(fees, (list, tuple)):
+            if len(fees) != max(len(txs) - 1, 0):
+                self._last_block_validation_error = "fee_mismatch"
+                return False
+            for tx_obj, fee_val in zip(txs[1:], fees):
+                fee_int = int(fee_val)
+                fees_list.append(fee_int)
+                try:
+                    tx_obj.fee = fee_int
+                except Exception:
+                    setattr(tx_obj, "fee", fee_int)
         else:
-            if isinstance(fees, (list, tuple)):
-                if len(fees) != max(len(txs) - 1, 0):
-                    self._last_block_validation_error = "fee_mismatch"
-                    return False
-                for tx_obj, fee_val in zip(txs[1:], fees):
-                    fee_int = int(fee_val)
-                    fees_list.append(fee_int)
-                    try:
-                        tx_obj.fee = fee_int
-                    except Exception:
-                        setattr(tx_obj, "fee", fee_int)
-            else:
-                fees_list = [int(getattr(t, "fee", 0)) for t in txs[1:]]
+            fees_list = [int(getattr(t, "fee", 0)) for t in txs[1:]]
 
         minted_before = self._cumulative_supply_until(block.height)
         base = self._scheduled_reward(block.height)

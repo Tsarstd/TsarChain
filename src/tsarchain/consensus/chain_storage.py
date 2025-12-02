@@ -1011,6 +1011,15 @@ class StorageMixin:
             total_payouts = sum(len(v or []) for v in (data_g.get("payouts") or {}).values())
         except Exception:
             total_payouts = 0
+        total_pool_balances = 0
+        try:
+            for post in (data_g.get("posts") or {}).values():
+                if not isinstance(post, dict):
+                    continue
+                stats = post.get("stats") or {}
+                total_pool_balances += int(stats.get("pool_balance", 0) or 0)
+        except Exception:
+            total_pool_balances = 0
 
         snapshot = {
             "schema_version": int(CFG.DATA_SCHEMA_VERSION),
@@ -1068,6 +1077,7 @@ class StorageMixin:
                 "comments": int(total_comments),
                 "graffiti_on_mempool": int(graffiti_on_mempool),
                 "payouts": int(total_payouts),
+                "pool_balances": int(total_pool_balances),
             },
             "miners_snapshot": {
                 "top_miners": [(miner, count) for miner, count in miner_counter.most_common() if miner]

@@ -72,6 +72,7 @@ struct TxParts {
 #[derive(Clone, Copy)]
 enum ScriptKind {
     P2wpkh([u8; 20]),
+    P2wsh([u8; 32]),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -93,6 +94,11 @@ fn detect_script_kind(script: &[u8]) -> Option<ScriptKind> {
         let mut h = [0u8; 20];
         h.copy_from_slice(&script[2..22]);
         return Some(ScriptKind::P2wpkh(h));
+    }
+    if script.len() == 34 && script[0] == 0x00 && script[1] == 0x20 {
+        let mut h = [0u8; 32];
+        h.copy_from_slice(&script[2..34]);
+        return Some(ScriptKind::P2wsh(h));
     }
     None
 }
@@ -604,6 +610,32 @@ fn validate_transaction_parts(
                     return Err(format!("sig_verify_failed index={}", idx));
                 }
                 sigops_tx = sigops_tx.saturating_add(1);
+            }
+            ScriptKind::P2wsh(hash32) => {
+                // Graffiti payout covenant: witness [art_digest, redeem_script]; redeem_script: <push art_digest> OP_EQUAL
+                if inp.witness.len() < 2 {
+                    return Err("missing_witness".to_string());
+                }
+                let art_digest = &inp.witness[0];
+                let redeem_script = &inp.witness[1];
+                if Sha256::digest(redeem_script).as_slice() != hash32 {
+                    return Err("witness_script_hash_mismatch".to_string());
+                }
+                if redeem_script.len() < 2 {
+                    return Err("redeem_script_too_short".to_string());
+                }
+                let push_len = redeem_script[0] as usize;
+                if push_len + 2 != redeem_script.len() {
+                    return Err("redeem_script_malformed".to_string());
+                }
+                let pushed = &redeem_script[1..1 + push_len];
+                if redeem_script[redeem_script.len() - 1] != 0x87 {
+                    return Err("redeem_script_missing_equal".to_string());
+                }
+                if pushed != art_digest {
+                    return Err("redeem_script_data_mismatch".to_string());
+                }
+                // No additional sigops for OP_EQUAL covenant
             }
         }
     }

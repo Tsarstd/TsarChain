@@ -422,6 +422,10 @@ class NetworkTab(tk.Frame):
         self.net_text.insert(tk.END, f"{self._fmt_num(graffiti.get('posts'))}\n\n", ("val","center"))
         self.net_text.insert(tk.END, f"Total Comments\n", ("lab","center"))
         self.net_text.insert(tk.END, f"{self._fmt_num(graffiti.get('comments'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Total Pool Balances\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_tsar(graffiti.get('pool_balances'))}\n\n", ("val","center"))
+        self.net_text.insert(tk.END, f"Total Payouts\n", ("lab","center"))
+        self.net_text.insert(tk.END, f"{self._fmt_num(graffiti.get('payouts'))}\n\n", ("val","center"))
         on_mem = int(graffiti.get("graffiti_on_mempool", 0) or 0)
         max_mem = int(CFG.MAX_GRAFFITI_ON_MEMPOOL)
         label = f"{on_mem} - (max {max_mem})"

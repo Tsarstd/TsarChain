@@ -160,13 +160,13 @@ TsarChain focuses on **Voice Sovereignty**: preserving *cultural archives*, *art
 
 #### 🚧 In Development
 - **Archivist (Storage Node)**
-  - Storage Node (Proof of Retention) Payout
-  - Validating Graffiti file payment status
+  - More Consensus Security
+  - Implementing resilience from rogue Archivists
 - **Kremlin Wallet (Light Wallet)**
-  - Graffiti art View `.jpg` in Kremlin Wallet
   - Some UI/UX Wallet
+  - improve Graffiti feature
 - **TsarChain (Consensus)**
-  - Epoch Pool mechanism for Storage Node incentives
+  - Validating Graffiti Activity each node
   - Some Security
   - Some Native Rust Implemented `Pyo3`
   - etc.
@@ -337,8 +337,8 @@ TsarChain/
 ```
 #### 1. 💸 Example of a Transaction Data Structure
 The example data of `block, utxo's & mempool` below, shows a transaction :
-> address `tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07` sent 800 coins + 0,00006300 fee to address`tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23`,
-then validated by miner `tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss` in block height 6
+> address `tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr` sent 2300 coins + 0,00004900 fee to address`tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23`,
+then validated by miner `tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss` in block height 10
 - ***Block Data Structure (.json):***
   <details>
     <summary>See Preview</summary>
@@ -346,43 +346,45 @@ then validated by miner `tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss` in block 
   ```json
     {
       "_meta": {
-        "bits": 522190847,
-        "chainwork": 14336,
+        "bits": 520891868,
+        "chainwork": 42774,
         "comment_count": 0,
         "comments": [],
-        "difficulty": 2048,
+        "difficulty": 5381,
         "graffiti": [],
         "graffiti_post_count": 0,
-        "hash": "001144e85e6612772663760a519eb8d4aeb1d8bd34fbf2b9d32dd99b901d476a",
-        "height": 6,
-        "merkle_root": "b1c473c9372ed27bdb00a9ce0840bd7765f8175347a6d52f7683db88673d14ed",
-        "nonce": 1413,
-        "prev_block_hash": "0011103c1311c22c629f2d05fe05f3cbb63eb66ac0f498ae200a803e0c054f12",
+        "hash": "0002ad9c5a26748032625d4a95d1df44e9bd4f7d69064c0dcc7e52673706c128",
+        "height": 10,
+        "merkle_root": "9042794daf2d482b486f912cbb043f22c1505c7d1f7fd07cceea8a55b9b2feaa",
+        "nonce": 4030,
+        "payout_count": 0,
+        "payouts": [],
+        "prev_block_hash": "0008509a86bf895c69201986b7fad8ac3013dec48020aab8975f835d812dcd38",
         "schema_version": 1,
-        "size_bytes": 1669,
-        "target": 5.653907911296163e73,
-        "timestamp": 1764112364,
+        "size_bytes": 1695,
+        "target": 2.151867455121296e73,
+        "timestamp": 1764669449,
         "tx_count": 2,
-        "vbytes": 1669,
+        "vbytes": 1695,
         "version": 1,
-        "weight": 6676
+        "weight": 6780
       },
-      "bits": 522190847,
-      "hash": "001144e85e6612772663760a519eb8d4aeb1d8bd34fbf2b9d32dd99b901d476a",
-      "height": 6,
-      "merkle_root": "b1c473c9372ed27bdb00a9ce0840bd7765f8175347a6d52f7683db88673d14ed",
-      "nonce": 1413,
-      "prev_block_hash": "0011103c1311c22c629f2d05fe05f3cbb63eb66ac0f498ae200a803e0c054f12",
-      "timestamp": 1764112364,
+      "bits": 520891868,
+      "hash": "0002ad9c5a26748032625d4a95d1df44e9bd4f7d69064c0dcc7e52673706c128",
+      "height": 10,
+      "merkle_root": "9042794daf2d482b486f912cbb043f22c1505c7d1f7fd07cceea8a55b9b2feaa",
+      "nonce": 4030,
+      "prev_block_hash": "0008509a86bf895c69201986b7fad8ac3013dec48020aab8975f835d812dcd38",
+      "timestamp": 1764669449,
       "transactions": [
         {
-          "block_id": "Ai_Weiwei_2011_bV2RuWnkj",
+          "block_id": "Evan_Gershkovich_2023_fv8Zsb0I4",
           "fee": 0,
-          "height": 6,
+          "height": 10,
           "inputs": [
             {
               "amount": 0,
-              "script_sig": "01061841695f5765697765695f323031315f6256325275576e6b6a",
+              "script_sig": "010a1f4576616e5f47657273686b6f766963685f323032335f6676385a7362304934",
               "txid": "0000000000000000000000000000000000000000000000000000000000000000",
               "vout": 4294967295,
               "witness": []
@@ -392,27 +394,27 @@ then validated by miner `tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss` in block 
           "locktime": 0,
           "outputs": [
             {
-              "amount": 25000006300,
+              "amount": 25000004900,
               "script_pubkey": "0014266dd5c8b1fb3a0d18710146713af668b762dc6f"
             }
           ],
-          "reward": 25000006300,
-          "to_address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss",
-          "txid": "7297a1ad705ace269d5961645bd4e769e1360fd2eb03913309b59410523fd057",
+          "reward": 25000004900,
+          "to_address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss", // miner
+          "txid": "4a5aa34596685b8eeff5f40ce6cf53fece1cd57e6a8cce9c984c7334ea36d2b4",
           "type": "Coinbase",
           "version": 1
         },
         {
-          "fee": 6300,
+          "fee": 4900,
           "inputs": [
             {
-              "amount": 1200000000000,
+              "amount": 2500000000000,
               "script_sig": "",
-              "txid": "eeaa5304e4b3ee8fb51e69765c5d42fa43fbf8930fe3376f8bf403a9a28102c5",
+              "txid": "9555fe396baf338bb3b8c27fa30b414ce1eeecd830a416895ab12eecf5188e45",
               "vout": 0,
               "witness": [
-                "304402205784c27abddf8e29d0cc337358973dd7b125f7aa33a030d7246a9caa5427586802201e9c3c472c3cbd3fc1a3d5480363917fd06c2c83200a5049b918ce7d08d1108d01",
-                "0359c3eab29ad7feb9fad33caae30e9e7a9bbbc1291748a851bb1e6d3bc81c0143"
+                "3045022100d51d37097042d95a552218df5130347e9b090630447b9e00d88a7eb52af4599b0220501544279d82de6d795588b538e5e3461cd962c25339ba723a7541f942a68a5d01",
+                "0338e4581fec6cee44675bae99ff4eabe31d1ef412e54bb16f96ee97d796515e58"
               ]
             }
           ],
@@ -420,15 +422,15 @@ then validated by miner `tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss` in block 
           "locktime": 0,
           "outputs": [
             {
-              "amount": 80000000000,
-              "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
+              "amount": 230000000000,
+              "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"  // recipient
             },
             {
-              "amount": 1119999993700,
-              "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+              "amount": 2269999995100,
+              "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"  // sender
             }
           ],
-          "txid": "8257f8942b0b97220dd9a14f2473e6e82324266f4f16194c7a7561e643e93e77",
+          "txid": "88bc192050945f1723ab416d8c53bc1b332d2d8fa737d3dfb26c931df9fc04b5",
           "version": 1
         }
       ],
@@ -442,34 +444,34 @@ then validated by miner `tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss` in block 
     <summary>See Preview</summary>
 
   ```json
-    "7297a1ad705ace269d5961645bd4e769e1360fd2eb03913309b59410523fd057:0": {
-      "address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss",
-      "block_height": 6,
+    "4a5aa34596685b8eeff5f40ce6cf53fece1cd57e6a8cce9c984c7334ea36d2b4:0": {
+      "address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss", // miner
+      "block_height": 10,
       "is_coinbase": true,
       "script_type": "p2wpkh",
       "tx_out": {
-        "amount": 25000006300,
+        "amount": 25000004900,
         "script_pubkey": "0014266dd5c8b1fb3a0d18710146713af668b762dc6f"
       }
     },
-    "8257f8942b0b97220dd9a14f2473e6e82324266f4f16194c7a7561e643e93e77:0": {
-      "address": "tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23",
-      "block_height": 6,
+    "88bc192050945f1723ab416d8c53bc1b332d2d8fa737d3dfb26c931df9fc04b5:0": {
+      "address": "tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23", // recipient
+      "block_height": 10,
       "is_coinbase": false,
       "script_type": "p2wpkh",
       "tx_out": {
-        "amount": 80000000000,
+        "amount": 230000000000,
         "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
       }
     },
-    "8257f8942b0b97220dd9a14f2473e6e82324266f4f16194c7a7561e643e93e77:1": {
-      "address": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07",
-      "block_height": 6,
+    "88bc192050945f1723ab416d8c53bc1b332d2d8fa737d3dfb26c931df9fc04b5:1": {
+      "address": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr", // sender
+      "block_height": 10,
       "is_coinbase": false,
       "script_type": "p2wpkh",
       "tx_out": {
-        "amount": 1119999993700,
-        "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+        "amount": 2269999995100,
+        "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
       }
     }
   ```
@@ -483,31 +485,31 @@ then validated by miner `tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss` in block 
   {
     "meta": {
       "count": 1,
-      "generated_at": 1764112250,
+      "generated_at": 1764669428,
       "max_size_bytes": 1048576,
       "schema_version": 1,
-      "virtual_size": 204
+      "virtual_size": 205
     },
     "schema_version": 1,
     "txs": [
       {
         "_meta": {
-          "fee_rate": 30.88235294117647,
-          "received_at": 1764112250.2801704,
+          "fee_rate": 23.902439024390244,
+          "received_at": 1764669428.5156598,
           "schema_version": 1,
-          "vbytes": 204,
-          "weight": 816
+          "vbytes": 205,
+          "weight": 820
         },
-        "fee": 6300,
+        "fee": 4900,
         "inputs": [
           {
-            "amount": 1200000000000,
+            "amount": 2500000000000,
             "script_sig": "",
-            "txid": "eeaa5304e4b3ee8fb51e69765c5d42fa43fbf8930fe3376f8bf403a9a28102c5",
+            "txid": "9555fe396baf338bb3b8c27fa30b414ce1eeecd830a416895ab12eecf5188e45",
             "vout": 0,
             "witness": [
-              "304402205784c27abddf8e29d0cc337358973dd7b125f7aa33a030d7246a9caa5427586802201e9c3c472c3cbd3fc1a3d5480363917fd06c2c83200a5049b918ce7d08d1108d01",
-              "0359c3eab29ad7feb9fad33caae30e9e7a9bbbc1291748a851bb1e6d3bc81c0143"
+              "3045022100d51d37097042d95a552218df5130347e9b090630447b9e00d88a7eb52af4599b0220501544279d82de6d795588b538e5e3461cd962c25339ba723a7541f942a68a5d01",
+              "0338e4581fec6cee44675bae99ff4eabe31d1ef412e54bb16f96ee97d796515e58"
             ]
           }
         ],
@@ -515,15 +517,15 @@ then validated by miner `tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss` in block 
         "locktime": 0,
         "outputs": [
           {
-            "amount": 80000000000,
-            "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
+            "amount": 230000000000,
+            "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4" // recipient
           },
           {
-            "amount": 1119999993700,
-            "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+            "amount": 2269999995100,
+            "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a" // sender
           }
         ],
-        "txid": "8257f8942b0b97220dd9a14f2473e6e82324266f4f16194c7a7561e643e93e77",
+        "txid": "88bc192050945f1723ab416d8c53bc1b332d2d8fa737d3dfb26c931df9fc04b5",
         "version": 1
       }
     ]
@@ -532,10 +534,12 @@ then validated by miner `tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss` in block 
   </details>
 
 #### 2. 🎨 Example of a Graffiti Activity Data Structure
-The example data of `block (height 12), block (height 17) metadata & indexer` below, shows a graffiti activity :
-> creator `tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07` upload the graffiti art 465 kb and pay 4 coins to the network and `validated in block height 12`
+The example data of `block (height 18), block (height 22), block (29), metadata & indexer` below, shows a graffiti activity :
+> creator `tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr` upload the graffiti art 80358 bytes (80 kb) and pay 0.8 coins to the network and validated in `block height 18`
 
->then someone `tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23` commented on the graffiti art with 1 coin (standard billable comment in network) and gave a tip (optional) of 2 coins for creator `validated in height 17`
+>then someone `tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23` commented on the graffiti art with 1 coin (standard billable comment in network) and gave a tip (optional) of 2 coins for creator validated in `block height 22`
+
+> archivist `tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07` (storage node) make payouts of 0.6 coin, to pool address `tsar1qm0vgpssx8w95ddktmfg86ahhy863nu2u42w5qceh3n24xkvk83mqqa2jng` validated in `block height 29`
 - ***Block (graffiti) Data Structure (.json):***
   <details>
     <summary>See Preview</summary>
@@ -543,52 +547,57 @@ The example data of `block (height 12), block (height 17) metadata & indexer` be
   ```json
     {
       "_meta": {
-        "bits": 522190847,
-        "chainwork": 26624,
+        "bits": 521525829,
+        "chainwork": 73967,
         "comment_count": 0,
         "comments": [],
-        "difficulty": 2048,
+        "difficulty": 2999,
         "graffiti": [
           {
+            "art_id": "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8", // art_id
+            "block_hash": "0000c537b986eb97881f942e6f5e716cbe544029fd3ea697eb85c99ee9f636f8",
+            "creator": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr", // creator
             "mime": "image/jpeg",
-            "receipt": "rcpt_f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b_1764113579_1764113579",
-            "sha256": "f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b",
-            "size": 476342,
-            "storer": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr",
-            "txid": "f1ad4333826fc1d6f116a4567b062b1e96ff8b5fd4ad01a5d739ed0a0e5c5923"
+            "receipt": "rcpt_9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701_1764670929_1764670929",
+            "sha256": "9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701", // hash file (.jpg)
+            "size": 80358,
+            "storer": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07", // archivist (storage_node)
+            "txid": "d852811a7ff8dc4c6502936dd0f0e0707693828da8a0cb973a7695ef0624472a"
           }
         ],
         "graffiti_post_count": 1,
-        "hash": "0001a3fe9d229e90a17bd4bdd6bc97f438a0b9531d979361a468edec6a1f415f",
-        "height": 12,
-        "merkle_root": "61899c9a0fec4a248a2c7251eae705bd16c70decd0e49cbad5ab32d2c0978826",
-        "nonce": 2817,
-        "prev_block_hash": "000c689337e021e72b39f4992e2b5aca8342972b5071437d9ba2c881a3ffbbe8",
+        "hash": "0000c537b986eb97881f942e6f5e716cbe544029fd3ea697eb85c99ee9f636f8",
+        "height": 18,
+        "merkle_root": "35331b2172cff6289e0f3f85db0d441f8e760531fe92f493b7c08ef9b9c3a06c",
+        "nonce": 2816,
+        "payout_count": 0,
+        "payouts": [],
+        "prev_block_hash": "00012e0e71f14de12c889b94c5459cead2a93fca5ba1a281a4dd1053a844b6a4",
         "schema_version": 1,
-        "size_bytes": 2572,
-        "target": 5.653907911296163e73,
-        "timestamp": 1764113603,
+        "size_bytes": 2747,
+        "target": 3.861022930026645e73,
+        "timestamp": 1764670983,
         "tx_count": 2,
-        "vbytes": 2572,
+        "vbytes": 2747,
         "version": 1,
-        "weight": 10288
+        "weight": 10988
       },
-      "bits": 522190847,
-      "hash": "0001a3fe9d229e90a17bd4bdd6bc97f438a0b9531d979361a468edec6a1f415f",
-      "height": 12,
-      "merkle_root": "61899c9a0fec4a248a2c7251eae705bd16c70decd0e49cbad5ab32d2c0978826",
-      "nonce": 2817,
-      "prev_block_hash": "000c689337e021e72b39f4992e2b5aca8342972b5071437d9ba2c881a3ffbbe8",
-      "timestamp": 1764113603,
+      "bits": 521525829,
+      "hash": "0000c537b986eb97881f942e6f5e716cbe544029fd3ea697eb85c99ee9f636f8",
+      "height": 18,
+      "merkle_root": "35331b2172cff6289e0f3f85db0d441f8e760531fe92f493b7c08ef9b9c3a06c",
+      "nonce": 2816,
+      "prev_block_hash": "00012e0e71f14de12c889b94c5459cead2a93fca5ba1a281a4dd1053a844b6a4",
+      "timestamp": 1764670983,
       "transactions": [
         {
-          "block_id": "f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b", // graffiti hash
+          "block_id": "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8", // art_id (anchoring)
           "fee": 0,
-          "height": 12,
+          "height": 18,
           "inputs": [
             {
               "amount": 0,
-              "script_sig": "010c4066386432363535666465306432336463623537376430616165366135636562616435623836323837376139643361633535373035656639353832306361353062",
+              "script_sig": "01124067726166643939663136646465343361386332373430333936626136613731643866313636363631326334613937393064373036306564666532333663666438",
               "txid": "0000000000000000000000000000000000000000000000000000000000000000",
               "vout": 4294967295,
               "witness": []
@@ -603,8 +612,8 @@ The example data of `block (height 12), block (height 17) metadata & indexer` be
             }
           ],
           "reward": 25000000171,
-          "to_address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss",
-          "txid": "c663f694004a17acd7cb26ced584f2577d9f8a1c2c6b30b29ad066922101c892",
+          "to_address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss", // miner
+          "txid": "04fcd1e79630b9fa6c72fa6dea902eba662a6f8dd0ecb63fb9e0f308117d85ae",
           "type": "Coinbase",
           "version": 1
         },
@@ -612,13 +621,13 @@ The example data of `block (height 12), block (height 17) metadata & indexer` be
           "fee": 171,
           "inputs": [
             {
-              "amount": 1119999993700,
+              "amount": 2269999995100,
               "script_sig": "",
-              "txid": "8257f8942b0b97220dd9a14f2473e6e82324266f4f16194c7a7561e643e93e77",
+              "txid": "88bc192050945f1723ab416d8c53bc1b332d2d8fa737d3dfb26c931df9fc04b5",
               "vout": 1,
               "witness": [
-                "304402204ed7c8bea3e677bb9b6045688fc4280b7b0230c15cf429300d311028d33152fd022000820608d9908d4de3c85086707cd1cc6283f1d2fff2507e6de62ae18421157a01",
-                "0359c3eab29ad7feb9fad33caae30e9e7a9bbbc1291748a851bb1e6d3bc81c0143"
+                "3045022100886859c0595f78167d8e914be72ca17a4ae6e51c3c61fe8ab3370f1148364aa802200860248bd8f8e7aa94d761acb76571cc3503d188080aa965c9bcc532af321e6c01",
+                "0338e4581fec6cee44675bae99ff4eabe31d1ef412e54bb16f96ee97d796515e58"
               ]
             }
           ],
@@ -626,19 +635,19 @@ The example data of `block (height 12), block (height 17) metadata & indexer` be
           "locktime": 0,
           "outputs": [
             {
-              "amount": 400000000,
-              "script_pubkey": "001411383653903eef75aa11a13a6cc145a5b623c74d"
+              "amount": 80000000,
+              "script_pubkey": "0020dbd880c2063b8b46b6cbda507d76f721f519f15caa9d4063378cd55359963c76" // pool
             },
             {
-              "amount": 1119599993529,
-              "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+              "amount": 2269919994929,
+              "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a" // creator
             },
             {
               "amount": 0,
-              "script_pubkey": "6a4d7201545341525f47524146317c7b22736861323536223a2266386432363535666465306432336463623537376430616165366135636562616435623836323837376139643361633535373035656639353832306361353062222c2273697a65223a3437363334322c226d696d65223a22696d6167652f6a706567222c2273746f726572223a22747361723171616b66366d6c65363036616d6e3778756d767a346b36797536637a306d787136706535717772222c2272656365697074223a22726370745f663864323635356664653064323364636235373764306161653661356365626164356238363238373761396433616335353730356566393538323063613530625f313736343131333537395f31373634313133353739222c226576656e74223a22504f5354222c2263726561746f72223a227473617231717a787a7a6635617a3567756b34336d66307a346439347575676174346a63656a77676c703037222c227473223a313736343131333537397d"
+              "script_pubkey": "6a4dbd01545341525f47524146317c7b22736861323536223a2239623239636637393561663630653737656537303764663233356632373665383235666330656530663063373562386237366430646432396637636466373031222c226172745f6964223a2267726166643939663136646465343361386332373430333936626136613731643866313636363631326334613937393064373036306564666532333663666438222c2273697a65223a38303335382c226d696d65223a22696d6167652f6a706567222c2273746f726572223a227473617231717a787a7a6635617a3567756b34336d66307a346439347575676174346a63656a77676c703037222c2272656365697074223a22726370745f396232396366373935616636306537376565373037646632333566323736653832356663306565306630633735623862373664306464323966376364663730315f313736343637303932395f31373634363730393239222c226576656e74223a22504f5354222c2263726561746f72223a22747361723171616b66366d6c65363036616d6e3778756d767a346b36797536637a306d787136706535717772222c227473223a313736343637303932397d"
             }
           ],
-          "txid": "f1ad4333826fc1d6f116a4567b062b1e96ff8b5fd4ad01a5d739ed0a0e5c5923",
+          "txid": "d852811a7ff8dc4c6502936dd0f0e0707693828da8a0cb973a7695ef0624472a",
           "version": 1
         }
       ],
@@ -654,53 +663,55 @@ The example data of `block (height 12), block (height 17) metadata & indexer` be
   ```json
     {
       "_meta": {
-        "bits": 522190847,
-        "chainwork": 36864,
+        "bits": 521422584,
+        "chainwork": 86006,
         "comment_count": 1,
         "comments": [
           {
             "amount": 100000000,
-            "art_id": "7e2e0bb6f17c56c62dac7a41f77fa5d84e355c55f53901704044b3a19cac782b",
-            "comment_len": 18,
-            "commenter": "tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23",
-            "creator": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07",
+            "art_id": "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8", // art id
+            "comment_len": 5,
+            "commenter": "tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23", // commenter
+            "creator": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr", // creator
             "tip": 200000000,
-            "txid": "1650f49f628d87a4b1bb8dbf72f3803ed77f72b694c67f7de37472a02401a974"
+            "txid": "a0ad4ea081325a40e61926b3657533750ed704ace00dadc0b087ea8d5fb20576"
           }
         ],
-        "difficulty": 2048,
+        "difficulty": 3232,
         "graffiti": [],
         "graffiti_post_count": 0,
-        "hash": "00078716d870b0cf5ebaec6e5374a7172705c5cf91d34409e39245862a8c1639",
-        "height": 17,
-        "merkle_root": "f783409a400881ad0c25aa90ccf2767c0ab42eff81b03d21a04ab8280ba8892f",
-        "nonce": 469,
-        "prev_block_hash": "00126d136dcd5867b17218d1023eaf29fbf9fa76ca8e4a20d4c37c63e53c0550",
+        "hash": "000e99f426c6a97a5e9cd21def839b67b7d4321e9b99b62fdeec08fbb01cc59b",
+        "height": 22,
+        "merkle_root": "6d643a32a10e392b12a6d96362e7ce018cc55e6339f2754e561324bd42b995fc",
+        "nonce": 12779,
+        "payout_count": 0,
+        "payouts": [],
+        "prev_block_hash": "0013520d85a20b56918c0b39257b40c016d75d98d0a71508589e7278cdb4b7f3",
         "schema_version": 1,
-        "size_bytes": 2456,
-        "target": 5.653907911296163e73,
-        "timestamp": 1764113711,
+        "size_bytes": 2431,
+        "target": 3.582674960661648e73,
+        "timestamp": 1764671129,
         "tx_count": 2,
-        "vbytes": 2456,
+        "vbytes": 2431,
         "version": 1,
-        "weight": 9824
+        "weight": 9724
       },
-      "bits": 522190847,
-      "hash": "00078716d870b0cf5ebaec6e5374a7172705c5cf91d34409e39245862a8c1639",
-      "height": 17,
-      "merkle_root": "f783409a400881ad0c25aa90ccf2767c0ab42eff81b03d21a04ab8280ba8892f",
-      "nonce": 469,
-      "prev_block_hash": "00126d136dcd5867b17218d1023eaf29fbf9fa76ca8e4a20d4c37c63e53c0550",
-      "timestamp": 1764113711,
+      "bits": 521422584,
+      "hash": "000e99f426c6a97a5e9cd21def839b67b7d4321e9b99b62fdeec08fbb01cc59b",
+      "height": 22,
+      "merkle_root": "6d643a32a10e392b12a6d96362e7ce018cc55e6339f2754e561324bd42b995fc",
+      "nonce": 12779,
+      "prev_block_hash": "0013520d85a20b56918c0b39257b40c016d75d98d0a71508589e7278cdb4b7f3",
+      "timestamp": 1764671129,
       "transactions": [
         {
-          "block_id": "Jamal_Khashoggi_2018_UOPI0hvfP",
+          "block_id": "Pavel_Sheremet_2016_gC33ZOrDr",
           "fee": 0,
-          "height": 17,
+          "height": 22,
           "inputs": [
             {
               "amount": 0,
-              "script_sig": "01111e4a616d616c5f4b686173686f6767695f323031385f554f50493068766650",
+              "script_sig": "01161d506176656c5f53686572656d65745f323031365f674333335a4f724472",
               "txid": "0000000000000000000000000000000000000000000000000000000000000000",
               "vout": 4294967295,
               "witness": []
@@ -716,7 +727,7 @@ The example data of `block (height 12), block (height 17) metadata & indexer` be
           ],
           "reward": 25000000202,
           "to_address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss",
-          "txid": "1642bf745fce19422faecc971d0582289ac115afd08fa37e07bbfbf8c1c49c66",
+          "txid": "f5b26376d8947c2744dbaea9bafcda36845e474046a4a3371a7a36bdfc171e7d",
           "type": "Coinbase",
           "version": 1
         },
@@ -724,12 +735,12 @@ The example data of `block (height 12), block (height 17) metadata & indexer` be
           "fee": 202,
           "inputs": [
             {
-              "amount": 80000000000,
+              "amount": 230000000000,
               "script_sig": "",
-              "txid": "8257f8942b0b97220dd9a14f2473e6e82324266f4f16194c7a7561e643e93e77",
+              "txid": "88bc192050945f1723ab416d8c53bc1b332d2d8fa737d3dfb26c931df9fc04b5",
               "vout": 0,
               "witness": [
-                "3044022062011db7242425ffabb02059350ad0c3d8ab1cb4380253ed9ce2f5a899dfd0a102200be841197fe65fc5d3187135b99577e8a4494b85c8818435cf4e6a82bf9a440f01",
+                "3045022100aef1008b30c5ea7baf0fa75934c2e6a5d8b27d4ab6d0bd8c1832d3ed5ed5489202206fd8436385a4830c6461b0a838d32c57bd209c1030a803c5f605fb9279af382c01",
                 "020f4c2347cb74eee085bae4d7579305ca58beeb1a2797493e371efb78e7e7d558"
               ]
             }
@@ -739,22 +750,138 @@ The example data of `block (height 12), block (height 17) metadata & indexer` be
           "outputs": [
             {
               "amount": 280000000,
-              "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+              "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a" // creator
             },
             {
               "amount": 10000000,
-              "script_pubkey": "001411383653903eef75aa11a13a6cc145a5b623c74d"
+              "script_pubkey": "0020dbd880c2063b8b46b6cbda507d76f721f519f15caa9d4063378cd55359963c76" // pool
             },
             {
-              "amount": 79709999798,
-              "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
+              "amount": 229709999798,
+              "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4" // commenter
             },
             {
               "amount": 0,
-              "script_pubkey": "6a4d4201545341525f47524146317c7b226576656e74223a22434f4d4d454e54222c226172745f6964223a2237653265306262366631376335366336326461633761343166373766613564383465333535633535663533393031373034303434623361313963616337383262222c22636f6d6d656e74223a22363737323635363137343230363137323734323036323732366636663666326532653263222c22616d6f756e74223a3130303030303030302c22746970223a3230303030303030302c2263726561746f72223a227473617231717a787a7a6635617a3567756b34336d66307a346439347575676174346a63656a77676c703037222c22636f6d6d656e746572223a227473617231716e3736663564333278653934303568737465756a6a79797561687263796e683563786a773233222c227473223a313736343131333638367d"
+              "script_pubkey": "6a4d2801545341525f47524146317c7b226576656e74223a22434f4d4d454e54222c226172745f6964223a2267726166643939663136646465343361386332373430333936626136613731643866313636363631326334613937393064373036306564666532333663666438222c22636f6d6d656e74223a2236343631366436653231222c22616d6f756e74223a3130303030303030302c22746970223a3230303030303030302c2263726561746f72223a22747361723171616b66366d6c65363036616d6e3778756d767a346b36797536637a306d787136706535717772222c22636f6d6d656e746572223a227473617231716e3736663564333278653934303568737465756a6a79797561687263796e683563786a773233222c227473223a313736343637313035327d"
             }
           ],
-          "txid": "1650f49f628d87a4b1bb8dbf72f3803ed77f72b694c67f7de37472a02401a974",
+          "txid": "a0ad4ea081325a40e61926b3657533750ed704ace00dadc0b087ea8d5fb20576",
+          "version": 1
+        }
+      ],
+      "version": 1
+    },
+  ```
+  </details>
+
+- ***Block (payouts) Data Structure (.json):***
+  <details>
+    <summary>See Preview</summary>
+
+  ```json
+    {
+      "_meta": {
+        "bits": 521872887,
+        "chainwork": 104971,
+        "comment_count": 0,
+        "comments": [],
+        "difficulty": 2414,
+        "graffiti": [],
+        "graffiti_post_count": 0,
+        "hash": "0002b13e5a9b9b19098eb1d7fd9aa2ab7e5a9869bb20d038ef823a54790fc5d0",
+        "height": 29,
+        "merkle_root": "6d29e9debd645f783d81342f5c8d5ab3906284ede9b6244476c9c737fd907896",
+        "nonce": 5935,
+        "payout_count": 1,
+        "payouts": [
+          {
+            "art_id": "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8",
+            "epoch": 0,
+            "recipients": [
+              {
+                "addr": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07",
+                "amount": 60000000
+              }
+            ],
+            "txid": "cf5a20bfc3ac20250b1556cad466c4d1a6e937a6e7c8f645a6ff961e78dfe46d"
+          }
+        ],
+        "prev_block_hash": "000a4682f35b9c4465f0d584c85d8bbbe6bdb319b0c5ab5b9cdf464f3644b2b2",
+        "schema_version": 1,
+        "size_bytes": 2066,
+        "target": 4.7966894470674414e73,
+        "timestamp": 1764672702,
+        "tx_count": 2,
+        "vbytes": 2066,
+        "version": 1,
+        "weight": 8264
+      },
+      "bits": 521872887,
+      "hash": "0002b13e5a9b9b19098eb1d7fd9aa2ab7e5a9869bb20d038ef823a54790fc5d0",
+      "height": 29,
+      "merkle_root": "6d29e9debd645f783d81342f5c8d5ab3906284ede9b6244476c9c737fd907896",
+      "nonce": 5935,
+      "prev_block_hash": "000a4682f35b9c4465f0d584c85d8bbbe6bdb319b0c5ab5b9cdf464f3644b2b2",
+      "timestamp": 1764672702,
+      "transactions": [
+        {
+          "block_id": "Chelsea_Manning_2010_3M9K1XpeJ",
+          "fee": 0,
+          "height": 29,
+          "inputs": [
+            {
+              "amount": 0,
+              "script_sig": "011d1e4368656c7365615f4d616e6e696e675f323031305f334d394b315870654a",
+              "txid": "0000000000000000000000000000000000000000000000000000000000000000",
+              "vout": 4294967295,
+              "witness": []
+            }
+          ],
+          "is_coinbase": true,
+          "locktime": 0,
+          "outputs": [
+            {
+              "amount": 25000007000,
+              "script_pubkey": "0014266dd5c8b1fb3a0d18710146713af668b762dc6f"
+            }
+          ],
+          "reward": 25000007000,
+          "to_address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss",
+          "txid": "b5b7cf44c7377ce91b324b5b1b1d6e9baad5716c4b5905607b2a8b6175ee4b33",
+          "type": "Coinbase",
+          "version": 1
+        },
+        {
+          "fee": 7000,
+          "inputs": [
+            {
+              "amount": 80000000,
+              "script_sig": "",
+              "txid": "d852811a7ff8dc4c6502936dd0f0e0707693828da8a0cb973a7695ef0624472a",
+              "vout": 0,
+              "witness": [
+                "d99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8",
+                "1ed99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd887"
+              ]
+            }
+          ],
+          "is_coinbase": false,
+          "locktime": 0,
+          "outputs": [
+            {
+              "amount": 19993000,
+              "script_pubkey": "0020dbd880c2063b8b46b6cbda507d76f721f519f15caa9d4063378cd55359963c76"
+            },
+            {
+              "amount": 60000000,
+              "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+            },
+            {
+              "amount": 0,
+              "script_pubkey": "6a4ccc545341525f47524146317c7b226576656e74223a225041594f5554222c226172745f6964223a2267726166643939663136646465343361386332373430333936626136613731643866313636363631326334613937393064373036306564666532333663666438222c2265706f6368223a302c22726563697069656e7473223a5b7b2261646472223a227473617231717a787a7a6635617a3567756b34336d66307a346439347575676174346a63656a77676c703037222c22616d6f756e74223a36303030303030307d5d7d"
+            }
+          ],
+          "txid": "cf5a20bfc3ac20250b1556cad466c4d1a6e937a6e7c8f645a6ff961e78dfe46d",
           "version": 1
         }
       ],
@@ -770,41 +897,79 @@ The example data of `block (height 12), block (height 17) metadata & indexer` be
   ```json
   {
     "comments": {
-      "7e2e0bb6f17c56c62dac7a41f77fa5d84e355c55f53901704044b3a19cac782b": [
+      "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8": [
         {
           "amount": 100000000,
-          "block_height": 17,
-          "comment": "6772656174206172742062726f6f6f2e2e2c", // in hexadecimal (great art brooo...,)
-          "commenter": "tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23",
+          "block_height": 22,
+          "comment": "64616d6e21", // in hexadecimal (damn!)
+          "commenter": "tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23", // commenter
           "creator_paid": 280000000,
           "storage_paid": 10000000,
           "tip": 200000000,
-          "ts": 1764113686,
-          "txid": "1650f49f628d87a4b1bb8dbf72f3803ed77f72b694c67f7de37472a02401a974"
+          "ts": 1764671052,
+          "txid": "a0ad4ea081325a40e61926b3657533750ed704ace00dadc0b087ea8d5fb20576"
         }
       ]
     },
-    "payouts": {},
+    "payouts": {
+      "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8": [
+        {
+          "amount": 60000000,
+          "block_height": 29,
+          "epoch": 0,
+          "recipients": {
+            "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07": 60000000 // archivist (storage_node)
+          },
+          "txid": "cf5a20bfc3ac20250b1556cad466c4d1a6e937a6e7c8f645a6ff961e78dfe46d"
+        }
+      ]
+    },
     "posts": {
-      "7e2e0bb6f17c56c62dac7a41f77fa5d84e355c55f53901704044b3a19cac782b": {
-        "amount_paid": 400000000,
-        "art_id": "7e2e0bb6f17c56c62dac7a41f77fa5d84e355c55f53901704044b3a19cac782b",
-        "block_height": 12,
-        "creator": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07",
+      "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8": {
+        "amount_paid": 80000000,
+        "art_id": "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8",
+        "block_hash": "0000c537b986eb97881f942e6f5e716cbe544029fd3ea697eb85c99ee9f636f8",
+        "block_height": 18,
+        "creator": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr", // creator
         "mime": "image/jpeg",
-        "pool_address": "tsar1qzyurv5us8mhht2s35yaxes295kmz836duderc0",
-        "receipt": "rcpt_f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b_1764113579_1764113579",
-        "sha256": "f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b",
-        "size": 476342,
+        "pool_address": "tsar1qm0vgpssx8w95ddktmfg86ahhy863nu2u42w5qceh3n24xkvk83mqqa2jng", // pool
+        "receipt": "rcpt_9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701_1764670929_1764670929",
+        "sha256": "9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701", // hash file (.jpg)
+        "size": 80358,
         "stats": {
           "comments": 1,
           "creator_paid": 280000000,
-          "pool_balance": 410000000,
+          "last_paid_epoch": 0,
+          "pool_balance": 29993000,
           "storage_paid": 10000000
         },
-        "storer": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr", // storage node
-        "txid": "f1ad4333826fc1d6f116a4567b062b1e96ff8b5fd4ad01a5d739ed0a0e5c5923"
+        "storer": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07",
+        "txid": "d852811a7ff8dc4c6502936dd0f0e0707693828da8a0cb973a7695ef0624472a"
       }
+    },
+    "proofs": { // Proof of Retention
+      "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8": [
+        {
+          "epoch": 1,
+          "hash": "4da974820fa3deac4f0925e845835f32623176054676a3cc28d318b45ee6d8ca",
+          "height": 20,
+          "length": 4096,
+          "offset": 38125,
+          "seed": "f85e9f9f688c31a10420b4e53dff4b32897ee7d1b57f65cc65d22c7e866ede05",
+          "storer": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07",
+          "ts": 1764671085
+        },
+        {
+          "epoch": 2,
+          "hash": "561aa6cabaeb6aebf7a40b469707a91ac5ca4a549efc96ffeb7bf3b654f3f164",
+          "height": 30,
+          "length": 4096,
+          "offset": 39894,
+          "seed": "24b28bae39021760f0a06df9701dfb49888dcd50d698f1d12c7fc145187af0fe",
+          "storer": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07",
+          "ts": 1764672806
+        }
+      ]
     }
   }
   ```
@@ -817,31 +982,46 @@ The example data of `block (height 12), block (height 17) metadata & indexer` be
   ```json
   {
     "files": {
-      "f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b_1764113579": {
-        "size_bytes": 476342,
-        "sha256": "f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b",
-        "filename": "test_graffiti.jpg",
-        "paid": false,
+      "9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701_1764670929": {
+        "size_bytes": 80358,
+        "sha256": "9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701",
+        "filename": "graff_test.jpg",
+        "paid": true,
         "expire_at_height": 0,
+        "confirmed_at_height": 18,
         "state": "stored",
-        "path": "data/storage\\final\\f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b_1764113579.bin",
-        "received_bytes": 476342,
+        "path": "data/storage\\final\\9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701_1764670929.bin",
+        "received_bytes": 80358,
         "chunk_size": 102400,
-        "created_ts": 1764113579,
-        "updated_ts": 1764113579,
-        "receipt_id": "rcpt_f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b_1764113579_1764113579",
+        "created_ts": 1764670929,
+        "art_id": "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8",
+        "updated_ts": 1764670929,
+        "receipt_id": "rcpt_9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701_1764670929_1764670929",
         "receipt": {
-          "id": "rcpt_f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b_1764113579_1764113579",
-          "graffiti_id": "f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b_1764113579",
-          "sha256": "f8d2655fde0d23dcb577d0aae6a5cebad5b862877a9d3ac55705ef95820ca50b",
-          "size_bytes": 476342,
-          "filename": "test_graffiti.jpg",
-          "ts": 1764113579
+          "id": "rcpt_9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701_1764670929_1764670929",
+          "graffiti_id": "9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701_1764670929",
+          "sha256": "9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701",
+          "size_bytes": 80358,
+          "filename": "graff_test.jpg",
+          "ts": 1764670929
         },
-        "stored_ts": 1764113579
+        "stored_ts": 1764670929,
+        "txid_paid": "d852811a7ff8dc4c6502936dd0f0e0707693828da8a0cb973a7695ef0624472a",
+        "last_proof_epoch": 2,
+        "last_proof_ts": 1764672806,
+        "last_proof_offset": 39894,
+        "last_proof_length": 4096,
+        "last_proof_hash": "561aa6cabaeb6aebf7a40b469707a91ac5ca4a549efc96ffeb7bf3b654f3f164",
+        "last_proof_height": 30,
+        "missed_proofs": 0,
+        "proof_fail_reason": "",
+        "proof_status": "ok"
       }
     },
-    "bytes_used": 476342
+    "bytes_used": 80358,
+    "art_map": {
+      "grafd99f16dde43a8c2740396ba6a71d8f1666612c4a9790d7060edfe236cfd8": "9b29cf795af60e77ee707df235f276e825fc0ee0f0c75b8b76d0dd29f7cdf701_1764670929"
+    }
   }
   ```
   </details>
@@ -851,64 +1031,40 @@ The example data of `block (height 12), block (height 17) metadata & indexer` be
     <summary>See Preview</summary>
 
   ```json
-  // This the flow when creator start uploading the graffiti
-  "f1ad4333826fc1d6f116a4567b062b1e96ff8b5fd4ad01a5d739ed0a0e5c5923:1": {
-    "address": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07", // creator
-    "block_height": 12,
-    "is_coinbase": false,
-    "script_type": "p2wpkh",
-    "tx_out": {
-      "amount": 1119599993529,
-      "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
-    }
-  },
-  "c663f694004a17acd7cb26ced584f2577d9f8a1c2c6b30b29ad066922101c892:0": {
-    "address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss", // miner
-    "block_height": 12,
-    "is_coinbase": true,
-    "script_type": "p2wpkh",
-    "tx_out": {
-      "amount": 25000000171,
-      "script_pubkey": "0014266dd5c8b1fb3a0d18710146713af668b762dc6f"
-    }
-  },
-  "f1ad4333826fc1d6f116a4567b062b1e96ff8b5fd4ad01a5d739ed0a0e5c5923:0": {
-    "address": "tsar1qzyurv5us8mhht2s35yaxes295kmz836duderc0", // pool
-    "block_height": 12,
-    "is_coinbase": false,
-    "script_type": "p2wpkh",
-    "tx_out": {
-      "amount": 400000000,
-      "script_pubkey": "001411383653903eef75aa11a13a6cc145a5b623c74d"
-    }
-  },
-
-  ///////////////////////////////////////////////////////////////////
-
   // This the flow when citizen start put a comment in graffiti
-  "1650f49f628d87a4b1bb8dbf72f3803ed77f72b694c67f7de37472a02401a974:2": {
-    "address": "tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23", // commenter
-    "block_height": 17,
-    "is_coinbase": false,
-    "script_type": "p2wpkh",
-    "tx_out": {
-      "amount": 79709999798,
-      "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
-    }
-  },
-  "1650f49f628d87a4b1bb8dbf72f3803ed77f72b694c67f7de37472a02401a974:0": {
-    "address": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07", // creator
-    "block_height": 17,
+  "a0ad4ea081325a40e61926b3657533750ed704ace00dadc0b087ea8d5fb20576:0": {
+    "address": "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr", // creator
+    "block_height": 22,
     "is_coinbase": false,
     "script_type": "p2wpkh",
     "tx_out": {
       "amount": 280000000,
-      "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+      "script_pubkey": "0014ed93adff3a7ebbb9f8dcdb055b689cd604fd981a"
     }
   },
-  "1642bf745fce19422faecc971d0582289ac115afd08fa37e07bbfbf8c1c49c66:0": {
+  "a0ad4ea081325a40e61926b3657533750ed704ace00dadc0b087ea8d5fb20576:1": {
+    "address": "tsar1qm0vgpssx8w95ddktmfg86ahhy863nu2u42w5qceh3n24xkvk83mqqa2jng", // pool
+    "block_height": 22,
+    "is_coinbase": false,
+    "script_type": "p2wsh",
+    "tx_out": {
+      "amount": 10000000,
+      "script_pubkey": "0020dbd880c2063b8b46b6cbda507d76f721f519f15caa9d4063378cd55359963c76"
+    }
+  },
+  "a0ad4ea081325a40e61926b3657533750ed704ace00dadc0b087ea8d5fb20576:2": {
+    "address": "tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23", // commenter
+    "block_height": 22,
+    "is_coinbase": false,
+    "script_type": "p2wpkh",
+    "tx_out": {
+      "amount": 229709999798,
+      "script_pubkey": "00149fb49a362a364b57d2f05e7929109cedc7824ef4"
+    }
+  },
+    "f5b26376d8947c2744dbaea9bafcda36845e474046a4a3371a7a36bdfc171e7d:0": {
     "address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss", // miner
-    "block_height": 17,
+    "block_height": 22,
     "is_coinbase": true,
     "script_type": "p2wpkh",
     "tx_out": {
@@ -916,14 +1072,38 @@ The example data of `block (height 12), block (height 17) metadata & indexer` be
       "script_pubkey": "0014266dd5c8b1fb3a0d18710146713af668b762dc6f"
     }
   },
-  "1650f49f628d87a4b1bb8dbf72f3803ed77f72b694c67f7de37472a02401a974:1": {
-    "address": "tsar1qzyurv5us8mhht2s35yaxes295kmz836duderc0", // pool
-    "block_height": 17,
+
+  /////////////////////////////////////////////////////////////////////////
+
+  // This the flow when archivist doing payouts
+  "cf5a20bfc3ac20250b1556cad466c4d1a6e937a6e7c8f645a6ff961e78dfe46d:0": {
+    "address": "tsar1qm0vgpssx8w95ddktmfg86ahhy863nu2u42w5qceh3n24xkvk83mqqa2jng", // pool
+    "block_height": 29,
+    "is_coinbase": false,
+    "script_type": "p2wsh",
+    "tx_out": {
+      "amount": 19993000,
+      "script_pubkey": "0020dbd880c2063b8b46b6cbda507d76f721f519f15caa9d4063378cd55359963c76"
+    }
+  },
+  "cf5a20bfc3ac20250b1556cad466c4d1a6e937a6e7c8f645a6ff961e78dfe46d:1": {
+    "address": "tsar1qzxzzf5az5guk43mf0z4d94uugat4jcejwglp07", // archivist
+    "block_height": 29,
     "is_coinbase": false,
     "script_type": "p2wpkh",
     "tx_out": {
-      "amount": 10000000,
-      "script_pubkey": "001411383653903eef75aa11a13a6cc145a5b623c74d"
+      "amount": 60000000,
+      "script_pubkey": "0014118424d3a2a2396ac76978aad2d79c4757596332"
+    }
+  },
+  "b5b7cf44c7377ce91b324b5b1b1d6e9baad5716c4b5905607b2a8b6175ee4b33:0": {
+    "address": "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss", // miner
+    "block_height": 29,
+    "is_coinbase": true,
+    "script_type": "p2wpkh",
+    "tx_out": {
+      "amount": 25000007000,
+      "script_pubkey": "0014266dd5c8b1fb3a0d18710146713af668b762dc6f"
     }
   },
   ```
@@ -931,18 +1111,20 @@ The example data of `block (height 12), block (height 17) metadata & indexer` be
 
 - ***🖼️ Graffiti & Comment Activity in Explorer Tab Wallet:***
   <details>
-    <summary>Graffiti</summary>
+    <summary>Graffiti (block 18)</summary>
     <img src="assets/screenshoot/graffiti.png">
   </details>
   <details>
-    <summary>Comment</summary>
+    <summary>Comment (block 22)</summary>
     <img src="assets/screenshoot/comment.png">
   </details>
+  <details>
+    <summary>Graffiti Examples</summary>
+    <img src="assets/screenshoot/ss_graf1.png">
+    <img src="assets/screenshoot/ss_graff2.png">
+  </details>
 > ⚠️ The graffiti data evidence above is still `under development`.
-There is no `'Proof of Retention'` mechanism & epoch `pool storage payment` mechanism yet.
-
-> ⚠️ even the `indexer` data in the storage node still has `'false'` payment status even though graffiti validation has been carried out on the chain
-  
+There are still many things that need to be improved in terms of consensus security, etc.
 
 #### 3. 🌐 Example of a State Data Structure
 State - is a database for overall network information. for user requests in the wallet section `Network Info Tab`
@@ -953,29 +1135,32 @@ State - is a database for overall network information. for user requests in the 
   ```json
   {
     "chain": {
-      "avg_block_time_sec_window": 100.0,
-      "est_network_hashrate_hps_window": 20,
-      "genesis_hash": "00172ceef3126b7e1e941335b950ab68b7a8d070df602cab8cd331bfad49c9ad",
+      "avg_block_time_sec_window": 166.05,
+      "est_network_hashrate_hps_window": 14,
+      "genesis_hash": "00118ebfac2f0cbde5b21f1a53568fbf9f35e5ea1dce95ee502ba05e6f4adea0",
       "genesis_message": "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)",
       "max_bits": 530579455,
-      "median_time_past": 1764113693,
+      "median_time_past": 1764672601,
       "target_block_time_sec": 37,
-      "tip_bits": 522190847,
-      "tip_chainwork": 45056,
-      "tip_difficulty": 2048,
-      "tip_hash": "0017f73ac7cf1a2dd29b927b9894f44608f4b8729b28fb9158825f9b0b529536",
-      "tip_height": 21,
-      "tip_target_hex": "0x1fffff00000000000000000000000000000000000000000000000000000000",
-      "tip_timestamp": 1764113938,
-      "total_block_size_bytes": 26432,
-      "total_blocks": 22
+      "tip_bits": 521845313,
+      "tip_chainwork": 109900,
+      "tip_difficulty": 2452,
+      "tip_hash": "0001ddd2caf5065dde3c16022ce70311de291552c634f1341e507c3307f27ffa",
+      "tip_height": 31,
+      "tip_target_hex": "0x1aba4100000000000000000000000000000000000000000000000000000000",
+      "tip_timestamp": 1764672801,
+      "total_block_size_bytes": 37101,
+      "total_blocks": 32
     },
     "files": {
-      "blockchain_json_sha256": "8170449c6ea6d08f707fee3c7aea3649d9fc33fc26761b8bd4502796f2f6560e"
+      "blockchain_json_sha256": "6334a8b55841c733020e16e304d9d3bc9ed96391ed2d4730f34dbd74278ecd4f"
     },
     "graffiti": {
-      "comments": 1,
-      "posts": 1
+      "comments": 1, // total comment
+      "graffiti_on_mempool": 0, // total graffiti tx on mempool
+      "payouts": 1, // total payouts activity
+      "pool_balances": 29993000, // 0,29993000 TSAR (total pool balances)
+      "posts": 1 // total graffiti
     },
     "identity": {
       "address_prefix": "tsar",
@@ -983,45 +1168,41 @@ State - is a database for overall network information. for user requests in the 
       "network_magic_hex": "54534152434841494e",
       "pow_algo": "randomx"
     },
-    "last_updated": "2025-11-26T06:39:17.480144+07:00",
+    "last_updated": "2025-12-02T17:54:28.275075+07:00",
     "miners_snapshot": {
-      "top_miners": [
+      "top_miners": [  // miners TOP 10 Leaderboards
         [
           "tsar1qyekatj93lvaq6xr3q9r8zwhkdzmk9hr0fmfrss",
-          19
-        ],
-        [
-          "tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr",
-          3
+          32
         ]
       ]
     },
     "schema_version": 1,
     "supply": {
-      "blocks_to_halving": 234978,
-      "circulating_estimate": 250475000000000,
+      "blocks_to_halving": 234968, // countdown halving
+      "circulating_estimate": 250125000000000,
       "coinbase_maturity": 3,
       "current_block_subsidy": 25000000000,
       "current_epoch": 0,
-      "emitted_subsidy": 250525000000000,
-      "immature_coinbase": 50000000000,
+      "emitted_subsidy": 250775000000000,
+      "immature_coinbase": 25000000000,
       "max_supply": 25250000000000000,
       "next_halving_height": 235000,
-      "utxo_total_value": 250525000000000
+      "utxo_total_value": 250150000000000
     },
-    "total_blocks": 22,
-    "total_supply": 250525000000000,
+    "total_blocks": 32,
+    "total_supply": 250775000000000,
     "transactions": {
       "mempool_bytes_estimate": 0,
       "mempool_max_bytes": 1048576,
       "mempool_txs": 0,
       "mempool_vbytes_estimate": 0,
-      "total_fees_paid": 16033,
-      "total_non_coinbase_txs": 4,
-      "total_txs": 26
+      "total_fees_paid": 18573,
+      "total_non_coinbase_txs": 5, // comment & regular tx
+      "total_txs": 37
     },
     "utxo": {
-      "utxo_set_size": 26
+      "utxo_set_size": 13
     }
   }
   ```
