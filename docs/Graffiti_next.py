@@ -1,5 +1,5 @@
 '''
-    NOTE: aktivitas upload graffiti tervalidasi di block height 8, Retention Proof Scheduler sudah terimplementasi, silahkan cek data (data/storage/index.json | archivist) & (data/Contracts/graffiti.json | node)
+    NOTE: aktivitas upload graffiti tervalidasi di block height 7 dan comment di block height 12, Retention Proof Scheduler sudah terimplementasi, silahkan cek data (data/storage/index.json | archivist) & (data/Contracts/graffiti.json | node)
     NOTE: untuk mendalami struktur data, bisa cek di :
     - data/Block/blockchain.json - untuk melihat block yang sudah mengandung graffiti
     - data/Contracts/graffiti.json - untuk metadata graffiti
@@ -28,9 +28,9 @@
  
     5. (DONE) Mempool graffiti POST: modifikasi mempool agar menolak tx graffiti POST ganda per blok, sehingga graffiti tx tersebut bisa masuk ke blok berikutnya.
  
-	5. Storage Automation: definisikan template transaksi on-chain untuk payout pool (mis. script khusus) sehingga klaim bisa otomatis mengikuti aturan konsensus.
+	6. Storage Automation: definisikan template transaksi on-chain untuk payout pool (mis. script khusus) sehingga klaim bisa otomatis mengikuti aturan konsensus.
  
-	6. CLI Archivist Headless:
+	7. CLI Archivist Headless:
        - Sudah ada dua varian: apps/archivist_node.py (storage publik/VPS) dan apps/archivist_client.py (cache-only CGNAT).
        - Next: tambahkan fetch file & cache untuk client (STOR_GET_BY_ART), dan proof-of-retention worker + jalur payout bagi partisipan non-publik.
        - Dokumentasi argumen CLI & contoh run di README/INSTALL.

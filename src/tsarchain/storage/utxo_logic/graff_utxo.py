@@ -42,6 +42,12 @@ class UTXOGraffitiMixin:
                 return bech32_encode(CFG.ADDRESS_PREFIX, data)
             except Exception:
                 return None
+        if len(b) == 34 and b[0] == 0x00 and b[1] == 0x20:
+            try:
+                data = [0] + list(convertbits(b[2:], 8, 5, True))
+                return bech32_encode(CFG.ADDRESS_PREFIX, data)
+            except Exception:
+                return None
         return None
 
     def _record_graffiti_event(self, tx, outputs_info: list[dict[str, Any]], block_height: int | None, block_hash: str | None = None) -> None:
@@ -67,6 +73,8 @@ class UTXOGraffitiMixin:
                 self._handle_graffiti_post(meta, outputs_info, txid_hex, block_height, block_hash)
             elif event == "COMMENT":
                 self._handle_graffiti_comment(meta, outputs_info, txid_hex, block_height)
+            elif event == "PAYOUT":
+                self._handle_graffiti_payout(meta, outputs_info, txid_hex, block_height)
                 
         except Exception:
             log.exception("[graffiti] failed to record event tx=%s", getattr(tx, "txid", None))
@@ -155,6 +163,43 @@ class UTXOGraffitiMixin:
             creator_paid=paid_creator,
             storage_paid=paid_pool,
         )
+
+    def _handle_graffiti_payout(
+        self,
+        meta: dict[str, Any],
+        outputs_info: list[dict[str, Any]],
+        txid_hex: str,
+        block_height: int,
+    ) -> None:
+        art_id = str(meta.get("art_id") or "").lower()
+        if not art_id:
+            return
+        post_entry = self._graffiti_registry.get_post(art_id)
+        if not post_entry:
+            log.warning("[graffiti] PAYOUT references unknown art_id=%s tx=%s", art_id, txid_hex)
+            return
+        recs = meta.get("recipients") or []
+        if not isinstance(recs, list) or not recs:
+            log.warning("[graffiti] PAYOUT missing recipients art_id=%s tx=%s", art_id, txid_hex)
+            return
+        # Aggregate payments to recipients observed on-chain
+        paid_map: dict[str, int] = {}
+        for rec in recs:
+            addr = str(rec.get("addr") or rec.get("address") or "").strip().lower()
+            try:
+                amt_req = int(rec.get("amount", 0))
+            except Exception:
+                amt_req = 0
+            if not addr or amt_req <= 0:
+                continue
+            paid_actual = sum(int(info.get("amount") or 0) for info in outputs_info if (info.get("address") or "").strip().lower() == addr)
+            if paid_actual < amt_req:
+                log.warning("[graffiti] PAYOUT shortfall to %s for art_id=%s paid=%s req=%s", addr, art_id, paid_actual, amt_req)
+            paid_map[addr] = max(paid_actual, amt_req)
+        if not paid_map:
+            log.warning("[graffiti] PAYOUT no valid recipients art_id=%s tx=%s", art_id, txid_hex)
+            return
+        self._graffiti_registry.record_payout(art_id, paid_map, txid_hex, block_height)
 
     @staticmethod
     def _read_opreturn_payload(script_bytes: bytes) -> bytes | None:

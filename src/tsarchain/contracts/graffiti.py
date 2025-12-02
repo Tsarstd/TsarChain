@@ -44,7 +44,7 @@ def _is_valid_tsar_address(addr: str) -> bool:
         if hrp is None or hrp != CFG.ADDRESS_PREFIX:
             return False
         prog = bytes(convertbits(data[1:], 5, 8, False))
-        return len(prog) == 20
+        return len(prog) in (20, 32)
     except Exception:
         return False
 
@@ -105,6 +105,23 @@ def _guard_payload_size(data: bytes) -> None:
     log.info("OP_RETURN data: %s bytes, with limit %s bytes", len(data), limit)
 
 
+def _pool_redeem_script(art_id: str) -> bytes:
+    """
+    Deterministic redeem script for storage pool payouts (P2WSH).
+    Script: <push art_digest> OP_EQUAL
+    Witness must push matching art_digest to spend.
+    """
+    art_raw = _strip_art_prefix(_normalize_art_id(art_id, prefer_prefix=False))
+    try:
+        art_bytes = bytes.fromhex(art_raw)
+    except Exception:
+        art_bytes = hashlib.sha256(art_raw.encode("ascii")).digest()
+    if len(art_bytes) > 75:
+        art_bytes = hashlib.sha256(art_bytes).digest()
+    push_len = len(art_bytes)
+    return bytes([push_len]) + art_bytes + b"\x87"  # OP_EQUAL
+
+
 def compute_proof_epoch(height: int) -> int:
     try:
         h = int(height)
@@ -148,6 +165,38 @@ def hash_proof_chunk(chunk: bytes) -> str:
     if not chunk:
         raise ValueError("empty_chunk")
     return hashlib.sha256(bytes(chunk)).hexdigest()
+
+
+def derive_pool_address_p2wpkh(art_id_hex: str) -> str:
+    """
+    Legacy pool address derivation (P2WPKH) retained for backward compatibility.
+    """
+    art_hex = _strip_art_prefix(art_id_hex)
+    try:
+        art_bytes = bytes.fromhex(art_hex)
+    except Exception:
+        raise ValueError("bad_art_id_hex")
+    seed = CFG.GRAFFITI_POOL_SALT + art_bytes
+    pkh = hash160(seed)
+    data = [0] + list(convertbits(pkh, 8, 5, True))
+    return bech32_encode(CFG.ADDRESS_PREFIX, data)
+
+
+def derive_pool_address_p2wsh(art_id_hex: str) -> str:
+    """
+    Deterministic P2WSH pool address for storage payouts.
+    """
+    redeem = _pool_redeem_script(art_id_hex)
+    prog = hashlib.sha256(redeem).digest()
+    data = [0] + list(convertbits(prog, 8, 5, True))
+    return bech32_encode(CFG.ADDRESS_PREFIX, data)
+
+
+def hash_pool_redeem_script(art_id_hex: str) -> str:
+    """
+    Return sha256(redeem_script) hex for the pool covenant.
+    """
+    return hashlib.sha256(_pool_redeem_script(art_id_hex)).hexdigest()
 
 
 # -----------------------------
@@ -254,6 +303,60 @@ def build_comment_metadata(
             meta[k] = v
     return meta
 
+def build_payout_metadata(
+    art_id: str,
+    epoch: int,
+    recipients: list[dict[str, Any]] | dict[str, int],
+    proof: Optional[Dict[str, Any]] = None,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Build on-chain metadata for storage pool payout (P2WSH pool).
+    recipients: list of {"addr": str, "amount": int} or mapping addr->amount (sats).
+    proof: optional {"offset","length","hash","seed","height"} for retention epoch.
+    """
+    art_id_norm = _normalize_art_id(art_id, prefer_prefix=False)
+    try:
+        ep = int(epoch)
+    except Exception:
+        raise ValueError("bad_epoch")
+    if ep < 0:
+        raise ValueError("bad_epoch")
+
+    rec_list: list[dict[str, Any]] = []
+    if isinstance(recipients, dict):
+        recipients = [{"addr": a, "amount": v} for a, v in recipients.items()]
+    if not isinstance(recipients, list) or not recipients:
+        raise ValueError("bad_recipients")
+    for item in recipients:
+        addr = str(item.get("addr") or item.get("address") or "").strip().lower()
+        try:
+            amt = int(item.get("amount", 0))
+        except Exception:
+            amt = 0
+        if not _is_valid_tsar_address(addr) or amt <= 0:
+            raise ValueError("bad_recipients")
+        rec_list.append({"addr": addr, "amount": amt})
+
+    meta: Dict[str, Any] = {
+        "event": "PAYOUT",
+        "art_id": art_id_norm,
+        "epoch": ep,
+        "recipients": rec_list,
+    }
+    if proof and isinstance(proof, dict):
+        for k in ("offset", "length", "hash", "seed", "height"):
+            if k in proof:
+                meta[f"proof_{k}"] = proof.get(k)
+    if extra:
+        for k, v in extra.items():
+            if k in meta:
+                continue
+            if isinstance(v, (str, bytes)) and len(str(v)) > 128:
+                continue
+            meta[k] = v
+    return meta
+
 def calc_comment_split(base_amount: int, tip: int = 0) -> Dict[str, int]:
     amt = int(base_amount)
     if amt < 0:
@@ -274,7 +377,6 @@ def calc_comment_split(base_amount: int, tip: int = 0) -> Dict[str, int]:
         "miner": int(miner_share),
         "tip": tip_amt,
     }
-
 
 def encode_payload(meta: Dict[str, Any]) -> bytes:
     if not isinstance(meta, dict):
@@ -366,6 +468,52 @@ def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
                 return None
             obj["comment_len"] = len(comment_bytes)
             
+        elif event == "PAYOUT":
+            art_id = obj.get("art_id", "")
+            try:
+                obj["art_id"] = _normalize_art_id(art_id, prefer_prefix=False)
+            except Exception:
+                return None
+            try:
+                epoch = int(obj.get("epoch", -1))
+            except Exception:
+                epoch = -1
+            if epoch < 0:
+                return None
+            recipients = obj.get("recipients") or []
+            if not isinstance(recipients, list) or not recipients:
+                return None
+            parsed_rec: list[dict[str, Any]] = []
+            for item in recipients:
+                if not isinstance(item, dict):
+                    return None
+                addr = str(item.get("addr") or item.get("address") or "").strip().lower()
+                try:
+                    amt = int(item.get("amount", 0))
+                except Exception:
+                    return None
+                if amt <= 0 or not _is_valid_tsar_address(addr):
+                    return None
+                parsed_rec.append({"addr": addr, "amount": amt})
+            obj["recipients"] = parsed_rec
+            # optional proof hints
+            for k in ("offset", "length", "hash", "seed", "height"):
+                plain_key = k
+                pref_key = f"proof_{k}"
+                use_key = pref_key if pref_key in obj else plain_key
+                if use_key in obj:
+                    try:
+                        val = obj[use_key]
+                        if k in ("offset", "length", "height"):
+                            obj[pref_key] = int(val)
+                        elif k == "hash":
+                            if not isinstance(val, str) or len(val) != 64:
+                                return None
+                            obj[pref_key] = val
+                        else:
+                            obj[pref_key] = str(val)
+                    except Exception:
+                        return None
         else:
             return None
         obj["event"] = event
@@ -439,15 +587,10 @@ def compute_art_id(sha256_hex: str, creator_addr: str, block_hash: str | None = 
 
 
 def derive_pool_address(art_id_hex: str) -> str:
-    art_hex = _strip_art_prefix(art_id_hex)
-    try:
-        art_bytes = bytes.fromhex(art_hex)
-    except Exception:
-        raise ValueError("bad_art_id_hex")
-    seed = CFG.GRAFFITI_POOL_SALT + art_bytes
-    pkh = hash160(seed)
-    data = [0] + list(convertbits(pkh, 8, 5, True))
-    return bech32_encode(CFG.ADDRESS_PREFIX, data)
+    """
+    Default pool address derivation (P2WSH). Use derive_pool_address_p2wpkh for legacy.
+    """
+    return derive_pool_address_p2wsh(art_id_hex)
 
 
 def calc_upload_fee_sats(size_bytes: int) -> int:
@@ -459,6 +602,7 @@ def calc_upload_fee_sats(size_bytes: int) -> int:
 __all__ = [
     "build_metadata",
     "build_comment_metadata",
+    "build_payout_metadata",
     "encode_payload",
     "build_script",
     "build_opret_hex",
@@ -466,6 +610,9 @@ __all__ = [
     "parse_from_script",
     "compute_art_id",
     "derive_pool_address",
+    "derive_pool_address_p2wpkh",
+    "derive_pool_address_p2wsh",
+    "hash_pool_redeem_script",
     "calc_upload_fee_sats",
     "calc_comment_split",
     "compute_proof_epoch",

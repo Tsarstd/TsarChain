@@ -141,9 +141,10 @@ class StorageMixin:
             "blocks": int(tip_height + 1 if tip_height >= 0 else 0),
         }
 
-    def _extract_graffiti_events(self, block: Block) -> tuple[list[dict], list[dict]]:
+    def _extract_graffiti_events(self, block: Block) -> tuple[list[dict], list[dict], list[dict]]:
         posts: list[dict] = []
         comments: list[dict] = []
+        payouts: list[dict] = []
 
         try:
             blk_hash = block.hash().hex()
@@ -197,16 +198,25 @@ class StorageMixin:
                         "creator": meta.get("creator"),
                         "commenter": meta.get("commenter"),
                     })
-        return posts, comments
+                elif event == "PAYOUT":
+                    payouts.append({
+                        "txid": txid_hex,
+                        "art_id": meta.get("art_id"),
+                        "epoch": meta.get("epoch"),
+                        "recipients": meta.get("recipients"),
+                    })
+        return posts, comments, payouts
 
     def _serialize_block_for_store(self, block: Block, prev_chainwork: int = 0) -> tuple[dict, int]:
         blk_dict = block.to_dict()
         meta = self._build_block_meta(block, chainwork_so_far=prev_chainwork)
-        graff_posts, graff_comments = self._extract_graffiti_events(block)
+        graff_posts, graff_comments, graff_payouts = self._extract_graffiti_events(block)
         meta["graffiti"] = graff_posts
         meta["comments"] = graff_comments
+        meta["payouts"] = graff_payouts
         meta["graffiti_post_count"] = len(graff_posts)
         meta["comment_count"] = len(graff_comments)
+        meta["payout_count"] = len(graff_payouts)
         blk_dict["_meta"] = meta
         cw = meta.get("chainwork", prev_chainwork)
         try:

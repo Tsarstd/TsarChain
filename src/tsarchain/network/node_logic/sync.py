@@ -50,20 +50,12 @@ def sync_with_peers(self):
                     break
                 selected.append(peer)
     if not selected:
-        try:
-            log.info("[sync_with_peers] No peers available for sync round")
-        except Exception:
-            pass
         return
 
     now = time.time()
     if (len(selected) != getattr(self, "_last_sync_count", -1)) or (
         now - self._last_sync_log > float(CFG.SYNC_INFO_MIN_INTERVAL)
     ):
-        try:
-            log.info("[sync_with_peers] syncing %s peers", len(selected))
-        except Exception:
-            pass
         self._last_sync_count = len(selected)
         self._last_sync_log = now
 

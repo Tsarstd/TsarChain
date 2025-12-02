@@ -303,8 +303,8 @@ def decode_address(address: str) -> bytes:
     if witver != 0:
         raise ValueError(f"Unsupported witness version: {witver}")
     decoded = convertbits(data[1:], 5, 8, False)
-    if len(decoded) != 20:
-        raise ValueError(f"Invalid witness program length: {len(decoded)} (expected 20 for P2WPKH)")
+    if len(decoded) not in (20, 32):
+        raise ValueError(f"Invalid witness program length: {len(decoded)} (expected 20 or 32)")
     return bytes(decoded)
 
 def decode_der_sig(signature: bytes):

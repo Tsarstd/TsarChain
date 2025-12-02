@@ -248,6 +248,10 @@ def _spkhex_to_address(self, spk_hex: str) -> str | None:
             prog = bytes.fromhex(spk_hex[4:])
             data = [0] + convertbits(list(prog), 8, 5, True)
             return bech32_encode(CFG.ADDRESS_PREFIX, data)
+        if spk_hex.startswith("0020") and len(spk_hex) == 68:
+            prog = bytes.fromhex(spk_hex[4:])
+            data = [0] + convertbits(list(prog), 8, 5, True)
+            return bech32_encode(CFG.ADDRESS_PREFIX, data)
     except Exception:
         pass
     return None

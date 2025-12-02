@@ -167,8 +167,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "0002bde032c12da84ab59ced88067495e5ecdf08bb356ba6581119d649d4ab58"  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 1  # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -298,7 +298,7 @@ MAX_DECIMALS         = 8  # UI precision for wallet rendering
 
 # ---- MEMPOOL LIMITS ----
 MEMPOOL_MAX_SIZE = 1 * 1024 * 1024  # maximum in-memory mempool footprint (bytes)
-MAX_GRAFFITI_ON_MEMPOOL = 2        # NOTE: do not change the value above GRAFFITI_EXPIRE_AFTER_BLOCKS
+MAX_GRAFFITI_ON_MEMPOOL = 7        # NOTE: do not change the value above GRAFFITI_EXPIRE_AFTER_BLOCKS
 
 
 # =============================================================================
