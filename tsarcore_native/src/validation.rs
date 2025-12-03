@@ -4,7 +4,7 @@
 // Refs: BIP141; libsecp256k1
 
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyAnyMethods, PyBytes, PyDict, PyDictMethods, PyList, PyListMethods, PyTuple};
+use pyo3::types::{PyAny, PyAnyMethods, PyByteArray, PyBytes, PyDict, PyDictMethods, PyList, PyListMethods, PyTuple};
 use ripemd::Ripemd160;
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 use sha2::{Digest, Sha256};
@@ -51,6 +51,8 @@ struct InputParts {
     txid_le: [u8; 32],
     vout: u32,
     sequence: u32,
+    #[allow(dead_code)] // script_sig disimpan untuk konsistensi/serialisasi txid coinbase, belum dipakai validator
+    script_sig: Vec<u8>,
     witness: Vec<Vec<u8>>,
 }
 
@@ -341,6 +343,7 @@ impl TxParts {
                 txid_le: txid_parts_inp.le,
                 vout,
                 sequence,
+                script_sig: Vec::new(),
                 witness,
             });
         }
@@ -799,9 +802,27 @@ fn parse_compact_input(obj: &Bound<'_, PyAny>) -> Result<InputParts, String> {
         .map_err(|_| "tx_input_tuple_sequence".to_string())?
         .extract()
         .map_err(|_| "tx_input_invalid_sequence".to_string())?;
-    let wit_any = tuple
-        .get_item(3)
-        .map_err(|_| "tx_input_tuple_witness".to_string())?;
+    let (script_sig, wit_any) = if tuple.len() >= 5 {
+        let ss_any = tuple
+            .get_item(3)
+            .map_err(|_| "tx_input_tuple_scriptsig".to_string())?;
+        let ss_bytes = if let Ok(b) = ss_any.downcast::<PyBytes>() {
+            b.as_bytes().to_vec()
+        } else if let Ok(b) = ss_any.downcast::<PyByteArray>() {
+            b.to_vec()
+        } else {
+            return Err("tx_input_scriptsig_not_bytes".to_string());
+        };
+        let wit = tuple
+            .get_item(4)
+            .map_err(|_| "tx_input_tuple_witness".to_string())?;
+        (ss_bytes, wit)
+    } else {
+        let wit = tuple
+            .get_item(3)
+            .map_err(|_| "tx_input_tuple_witness".to_string())?;
+        (Vec::new(), wit)
+    };
     let witness = parse_witness_field(Some(wit_any))?;
     Ok(InputParts {
         txid_hex: hex::encode(txid_slice),
@@ -809,6 +830,7 @@ fn parse_compact_input(obj: &Bound<'_, PyAny>) -> Result<InputParts, String> {
         txid_le,
         vout,
         sequence,
+        script_sig,
         witness,
     })
 }

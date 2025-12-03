@@ -5,7 +5,7 @@
 
 use pyo3::exceptions;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyList, PyTuple};
+use pyo3::types::{PyByteArray, PyBytes, PyList, PyTuple};
 use sha2::{Digest, Sha256};
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 use ripemd::Ripemd160;
@@ -42,7 +42,7 @@ fn hash160_bytes(data: &[u8]) -> [u8; 20] {
     out
 }
 
-fn parse_input_tuple(t: &Bound<'_, PyTuple>) -> PyResult<(Vec<u8>, u32, u32, Vec<Vec<u8>>)> {
+fn parse_input_tuple(t: &Bound<'_, PyTuple>) -> PyResult<(Vec<u8>, u32, u32, Vec<u8>, Vec<Vec<u8>>)> {
     if t.len() < 4 {
         return Err(PyErr::new::<exceptions::PyValueError, _>("tx_input_tuple_arity"));
     }
@@ -66,9 +66,27 @@ fn parse_input_tuple(t: &Bound<'_, PyTuple>) -> PyResult<(Vec<u8>, u32, u32, Vec
         .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_input_tuple_sequence"))?
         .extract()
         .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_input_invalid_sequence"))?;
-    let wit_any = t
-        .get_item(3)
-        .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_input_tuple_witness"))?;
+    let (script_sig, wit_any) = if t.len() >= 5 {
+        let ss_any = t
+            .get_item(3)
+            .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_input_tuple_scriptsig"))?;
+        let ss_bytes = if let Ok(b) = ss_any.downcast::<PyBytes>() {
+            b.as_bytes().to_vec()
+        } else if let Ok(b) = ss_any.downcast::<PyByteArray>() {
+            b.to_vec()
+        } else {
+            return Err(PyErr::new::<exceptions::PyValueError, _>("tx_input_scriptsig_not_bytes"));
+        };
+        let wit = t
+            .get_item(4)
+            .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_input_tuple_witness"))?;
+        (ss_bytes, wit)
+    } else {
+        let wit = t
+            .get_item(3)
+            .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_input_tuple_witness"))?;
+        (Vec::new(), wit)
+    };
     let wit_list = wit_any
         .downcast::<PyList>()
         .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_input_witness_not_list"))?;
@@ -79,7 +97,7 @@ fn parse_input_tuple(t: &Bound<'_, PyTuple>) -> PyResult<(Vec<u8>, u32, u32, Vec
             .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("witness_not_bytes"))?;
         wit_vec.push(b.as_bytes().to_vec());
     }
-    Ok((prev_raw.to_vec(), vout, seq, wit_vec))
+    Ok((prev_raw.to_vec(), vout, seq, script_sig, wit_vec))
 }
 
 fn parse_output_tuple(t: &Bound<'_, PyTuple>) -> PyResult<(u64, Vec<u8>)> {
@@ -102,7 +120,7 @@ fn parse_output_tuple(t: &Bound<'_, PyTuple>) -> PyResult<(u64, Vec<u8>)> {
 
 fn parse_compact_tx<'py>(
     tx: &Bound<'py, PyTuple>,
-) -> PyResult<(i32, u32, Vec<(Vec<u8>, u32, u32, Vec<Vec<u8>>)>, Vec<(u64, Vec<u8>)>)> {
+) -> PyResult<(i32, u32, Vec<(Vec<u8>, u32, u32, Vec<u8>, Vec<Vec<u8>>)>, Vec<(u64, Vec<u8>)>)> {
     if tx.len() < 6 {
         return Err(PyErr::new::<exceptions::PyValueError, _>("tx_tuple_arity"));
     }
@@ -148,24 +166,25 @@ fn parse_compact_tx<'py>(
 fn serialize_compact_inner(
     version: i32,
     locktime: u32,
-    inputs: &[(Vec<u8>, u32, u32, Vec<Vec<u8>>)],
+    inputs: &[(Vec<u8>, u32, u32, Vec<u8>, Vec<Vec<u8>>)],
     outputs: &[(u64, Vec<u8>)],
     include_witness: bool,
 ) -> Vec<u8> {
     let mut buf = Vec::with_capacity(4 + inputs.len() * 60 + outputs.len() * 40);
     buf.extend_from_slice(&version.to_le_bytes());
-    let has_wit = include_witness && inputs.iter().any(|(_, _, _, wit)| !wit.is_empty());
+    let has_wit = include_witness && inputs.iter().any(|(_, _, _, _, wit)| !wit.is_empty());
     if has_wit {
         buf.push(0x00);
         buf.push(0x01);
     }
     encode_varint(inputs.len(), &mut buf);
-    for (prev_txid, vout, seq, _wit) in inputs {
+    for (prev_txid, vout, seq, script_sig, _wit) in inputs {
         let mut prev_le = prev_txid.clone();
         prev_le.reverse();
         buf.extend_from_slice(&prev_le);
         buf.extend_from_slice(&vout.to_le_bytes());
-        buf.push(0x00); // empty scriptsig for segwit
+        encode_varint(script_sig.len(), &mut buf);
+        buf.extend_from_slice(script_sig);
         buf.extend_from_slice(&seq.to_le_bytes());
     }
     encode_varint(outputs.len(), &mut buf);
@@ -175,7 +194,7 @@ fn serialize_compact_inner(
         buf.extend_from_slice(spk);
     }
     if has_wit {
-        for (_, _, _, wit) in inputs {
+        for (_, _, _, _, wit) in inputs {
             encode_varint(wit.len(), &mut buf);
             for w in wit {
                 encode_varint(w.len(), &mut buf);
@@ -247,7 +266,7 @@ pub fn sighash_bip143_compact<'py>(
 
     let mut prevouts_cat = Vec::with_capacity(inputs.len() * 36);
     let mut seq_cat = Vec::with_capacity(inputs.len() * 4);
-    for (prev, vout, seq, _) in &inputs {
+    for (prev, vout, seq, _ss, _) in &inputs {
         let mut prev_le = prev.clone();
         prev_le.reverse();
         prevouts_cat.extend_from_slice(&prev_le);
@@ -265,7 +284,7 @@ pub fn sighash_bip143_compact<'py>(
     }
     let hash_outputs = sha256d(&outs_cat);
 
-    let (prev_txid, vout, seq, _wit) = &inputs[idx];
+    let (prev_txid, vout, seq, _ss, _wit) = &inputs[idx];
     let mut preimage = Vec::with_capacity(156 + script_code.len());
     preimage.extend_from_slice(&ver.to_le_bytes());
     preimage.extend_from_slice(&hash_prevouts);
@@ -381,7 +400,7 @@ pub fn validate_tx_p2wpkh_compact<'py>(
     // precompute hashes
     let mut prevouts_cat = Vec::with_capacity(inputs.len() * 36);
     let mut seq_cat = Vec::with_capacity(inputs.len() * 4);
-    for (prev, vout, seq, _) in &inputs {
+    for (prev, vout, seq, _ss, _) in &inputs {
         let mut prev_le = prev.clone();
         prev_le.reverse();
         prevouts_cat.extend_from_slice(&prev_le);
@@ -405,7 +424,7 @@ pub fn validate_tx_p2wpkh_compact<'py>(
     let mut input_sum: u128 = 0;
     let mut sigops: u32 = 0;
 
-    for (_idx, (prev, vout, seq, wit)) in inputs.iter().enumerate() {
+    for (_idx, (prev, vout, seq, _ss, wit)) in inputs.iter().enumerate() {
         let key = (prev.clone(), *vout);
         if seen.contains_key(&key) {
             return Ok((false, Some("duplicate_prevout_in_tx".to_string()), None));

@@ -945,7 +945,8 @@ class StorageMixin:
                 born = int(entry.get("block_height", entry.get("height", 0)) if isinstance(entry, dict) else getattr(entry, "block_height", getattr(entry, "height", 0)) or 0)
                 if is_cb:
                     conf = max(0, (tip_height - born) + 1)
-                    if conf >= maturity:
+                    # Coinbase boleh dianggap beredar hanya setelah melewati jumlah blok maturity penuh
+                    if conf > maturity:
                         circulating_estimate += amount
                     else:
                         immature_coinbase += amount

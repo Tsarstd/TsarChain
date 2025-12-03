@@ -790,6 +790,21 @@ def tx_to_compact_tuple(tx) -> tuple:
         prev_b = bytes(prev) if isinstance(prev, (bytes, bytearray)) else b""
         vout = int(getattr(txin, "vout", getattr(txin, "prev_index", 0)) or 0)
         seq = int(getattr(txin, "sequence", 0xffffffff))
+        # Preserve scriptsig so coinbase txid includes block-specific entropy
+        script_sig_bytes = b""
+        script_sig = getattr(txin, "script_sig", None)
+        if hasattr(script_sig, "serialize"):
+            try:
+                script_sig_bytes = script_sig.serialize()
+            except Exception:
+                script_sig_bytes = b""
+        elif isinstance(script_sig, (bytes, bytearray)):
+            script_sig_bytes = bytes(script_sig)
+        elif isinstance(script_sig, str):
+            try:
+                script_sig_bytes = bytes.fromhex(script_sig)
+            except Exception:
+                script_sig_bytes = b""
         wit_vec = []
         for w in getattr(txin, "witness", None) or []:
             if isinstance(w, str):
@@ -803,7 +818,7 @@ def tx_to_compact_tuple(tx) -> tuple:
                 wit_vec.append(bytes(w))
             else:
                 wit_vec.append(b"")
-        inputs_c.append((prev_b, vout, seq, wit_vec))
+        inputs_c.append((prev_b, vout, seq, script_sig_bytes, wit_vec))
 
     outputs_c = []
     for txout in getattr(tx, "outputs", []) or []:
