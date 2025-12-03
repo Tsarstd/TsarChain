@@ -4,6 +4,7 @@
 
 import json
 import time
+from collections import OrderedDict
 
 from ...core.tx import TxOut
 from ...utils import config as CFG
@@ -130,6 +131,8 @@ class UTXODatabaseMixin:
                 data = self.load_json(self.filepath) or {}
                 nested = {}
                 for key, val in data.items():
+                    if isinstance(key, str) and key.startswith("_"):
+                        continue
                     try:
                         txid, index = key.split(":")
                         index = int(index)
@@ -252,8 +255,10 @@ class UTXODatabaseMixin:
                         kv[0],
                     ),
                 )
-                payload = {k: self._serialize_entry(v) for k, v in items_sorted}
+                payload = OrderedDict()
                 payload["_meta"] = meta
+                for k, v in items_sorted:
+                    payload[k] = self._serialize_entry(v)
                 self.save_json(self.filepath, payload)
             self._dirty = False
             self._dirty_keys.clear()
