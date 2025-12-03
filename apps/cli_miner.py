@@ -51,6 +51,17 @@ INTERRUPTED_ERRNOS = {
     if code is not None
 }
 
+
+def _enable_siginterrupt():
+    for sig in (getattr(signal, "SIGINT", None), getattr(signal, "SIGTERM", None)):
+        if sig is None:
+            continue
+        try:
+            signal.siginterrupt(sig, True)
+        except Exception:
+            continue
+
+
 def _stamp() -> str:
     now = datetime.now()
     d = f"{now.year:04d}.{now.month:02d}.{now.day:02d}"
@@ -132,7 +143,7 @@ class LightMiner:
         self.blockchain: Blockchain | None = None
         self.network: Network | None = None
         self.mining_alive = True
-        self.cancel_mining = mp.Event()
+        self.cancel_mining = threading.Event()
         self._progress_q: mp.Queue = progress_queue or mp.Queue()
         self.tui = tui
         self._pending_blocks: list = []
@@ -143,6 +154,7 @@ class LightMiner:
 
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
+        _enable_siginterrupt()
 
     # -------- lifecycle --------
     def _handle_signal(self, signum, _frame):

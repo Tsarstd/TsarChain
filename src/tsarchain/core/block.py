@@ -173,7 +173,7 @@ class Block:
                 hard_aes=bool(CFG.RANDOMX_HARD_AES),
                 secure_jit=bool(CFG.RANDOMX_SECURE_JIT),
                 progress_queue=progress_queue,
-                progress_interval_ms=2000,
+                progress_interval_ms=250,
                 stop_event=stop_event,
             )
         except Exception:

@@ -52,6 +52,16 @@ INTERRUPTED_ERRNOS = {
 }
 
 
+def _enable_siginterrupt():
+    for sig in (getattr(signal, "SIGINT", None), getattr(signal, "SIGTERM", None)):
+        if sig is None:
+            continue
+        try:
+            signal.siginterrupt(sig, True)
+        except Exception:
+            continue
+
+
 def _stamp() -> str:
     now = datetime.now()
     d = f"{now.year:04d}.{now.month:02d}.{now.day:02d}"
@@ -151,7 +161,7 @@ class SimpleMiner:
         self.cores = cores
         self.bootstrap_snapshot = bootstrap_snapshot
         self.mining_alive = True
-        self.cancel_mining = mp.Event()
+        self.cancel_mining = threading.Event()
         self.blockchain = None
         self.network = None
         self._progress_q: mp.Queue = progress_queue or mp.Queue()
@@ -161,6 +171,7 @@ class SimpleMiner:
 
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
+        _enable_siginterrupt()
 
     def signal_handler(self, signum, _frame):
         clog(f"Received signal {signum}, shutting down...")
@@ -368,6 +379,12 @@ class SimpleMiner:
                     except Exception as exc:
                         clog(f"Broadcast error: {exc}")
                         self._queue_block_for_broadcast(block)
+            except KeyboardInterrupt:
+                self.mining_alive = False
+                if self.cancel_mining:
+                    self.cancel_mining.set()
+                clog("[signal] Mining interrupted by user")
+                break
             except Exception as exc:
                 if isinstance(exc, OSError) and getattr(exc, "errno", None) in INTERRUPTED_ERRNOS:
                     clog("[mining] Interrupted system call; stopping miners...")
@@ -403,6 +420,7 @@ class NodeRunner:
         self.bootstrap_snapshot = bootstrap_snapshot
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
+        _enable_siginterrupt()
 
     def _handle_signal(self, *_args):
         clog("Stopping node...")

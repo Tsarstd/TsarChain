@@ -120,7 +120,7 @@ pub fn randomx_mine<'py>(
             let counters = Arc::clone(&hash_counters);
             let found_local = Arc::clone(&found);
             let stop_local = Arc::clone(&stop_flag);
-            let interval_ms = progress_interval_ms.unwrap_or(2_000).max(250);
+            let interval_ms = progress_interval_ms.unwrap_or(500).max(100);
             Some(thread::spawn(move || {
                 let mut last_total: u64 = 0;
                 let mut last_ts = Instant::now();
