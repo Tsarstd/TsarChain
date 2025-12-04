@@ -298,7 +298,7 @@ EDA_EASE_MULTIPLIER     = 2.0
 ## ⛏️ Mining Modes
 
 - **GUI Miner (`apps/miner_gui.py`)** ships with Lite GUI mode enabled and limits RandomX to one core by default so the Tkinter UI stays responsive.
-- **Stateless CLI Miner (`apps/cli_miner.py`)** keeps chain data in-memory, fetches the latest tip from peers, ephemeral mempool, mines, then broadcasts (no snapshots or DB).
+- **Stateless CLI Miner (`apps/cli_miner.py`)** keeps chain data in-memory, pulls the latest tip + a small header window from trusted seeds to derive difficulty, mines empty blocks (coinbase only), and rechecks tip height/hash before broadcasting to avoid duplicating a moved tip. No mempool, no snapshots/DB.
 - **Full Node CLI Miner (`apps/cli_node_miner.py`)** persists the entire blockchain, handles snapshot bootstrap, wallet gateway traffic, and can run `--node-only` for infra roles.
 
 Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node_miner.py` when you need full-node responsibilities.

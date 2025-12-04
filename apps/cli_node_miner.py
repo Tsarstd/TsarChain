@@ -168,6 +168,10 @@ class SimpleMiner:
         self.tui = tui
         self._pending_blocks: list = []
         self._pending_block_hashes: set[str] = set()
+        self._trusted_height_cache: int = -1
+        self._last_trusted_probe: float = 0.0
+        self._bootstrap_self_only: bool | None = None
+        self._last_trusted_hash: str | None = None
 
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
@@ -228,6 +232,142 @@ class SimpleMiner:
         outbound = getattr(self.network, "outbound_peers", None) or set()
         return bool(inbound or outbound)
 
+    def _bootstrap_seeds(self) -> list[tuple[str, int]]:
+        seeds = []
+        try:
+            raw = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
+        except Exception:
+            raw = ()
+        for peer in raw:
+            if not peer or len(peer) != 2:
+                continue
+            host, port = peer
+            try:
+                seeds.append((str(host), int(port)))
+            except Exception:
+                continue
+        return seeds
+
+    def _bootstrap_is_self_only(self) -> bool:
+        if self._bootstrap_self_only is not None:
+            return self._bootstrap_self_only
+        seeds = self._bootstrap_seeds()
+        if not seeds or not self.network:
+            self._bootstrap_self_only = False
+            return False
+        self._bootstrap_self_only = all(
+            getattr(self.network, "_is_self_bootstrap", lambda h, p: False)(h, p) for h, p in seeds
+        )
+        return bool(self._bootstrap_self_only)
+
+    def _get_local_tip(self) -> tuple[int, str | None]:
+        try:
+            h = int(getattr(self.blockchain, "height", -1))
+        except Exception:
+            h = -1
+        hx = None
+        try:
+            tip = self.blockchain.get_last_block() if self.blockchain else None
+            if tip:
+                hx = tip.hash().hex()
+        except Exception:
+            hx = None
+        return h, hx
+
+    def _trusted_best_height(self, force_refresh: bool = False) -> int:
+        """
+        Return best height seen from bootstrap peers (trusted seeds).
+        Falls back to cached value unless forced or cache is stale.
+        """
+        if not self.network:
+            return -1
+        now = time.time()
+        if (not force_refresh) and (now - self._last_trusted_probe < 5.0):
+            return self._trusted_height_cache
+        seeds = self._bootstrap_seeds()
+        peers = list(getattr(self.network, "persistent_peers", ())) or []
+        if seeds:
+            peers = seeds
+        heights: list[int] = []
+
+        # Use recorded best heights first
+        try:
+            best_map = getattr(self.network, "_peer_best_height", {}) or {}
+        except Exception:
+            best_map = {}
+        for peer in peers:
+            try:
+                h = int(best_map.get(peer, -1))
+            except Exception:
+                h = -1
+            if h >= 0:
+                heights.append(h)
+
+        # Self-bootstrap fallback: trust local height if all seeds are self
+        if self._bootstrap_is_self_only():
+            try:
+                local_h = int(getattr(self.blockchain, "height", -1))
+            except Exception:
+                local_h = -1
+            if local_h >= 0:
+                best = local_h
+                self._trusted_height_cache = best
+                self._last_trusted_probe = now
+                # cache local tip hash
+                try:
+                    tip = self.blockchain.get_last_block()
+                    self._last_trusted_hash = tip.hash().hex() if tip else None
+                except Exception:
+                    self._last_trusted_hash = None
+                return best
+
+        # If nothing recorded, query seeds directly
+        if not heights:
+            for peer in peers:
+                try:
+                    info = self.network._rpc_request(peer, {"type": "GET_INFO"}, timeout=max(8.0, CFG.SYNC_TIMEOUT))
+                except Exception:
+                    info = None
+                if not info:
+                    continue
+                try:
+                    h = int(info.get("height", -1))
+                except Exception:
+                    h = -1
+                if h >= 0:
+                    try:
+                        best_map[peer] = h  # keep network state aware of trusted height
+                        self.network._peer_best_height[peer] = h
+                    except Exception:
+                        pass
+                    heights.append(h)
+
+        best = max(heights) if heights else -1
+        self._trusted_height_cache = best
+        self._last_trusted_probe = now
+        return best
+
+    def _trusted_tip_hash(self, height: int) -> str | None:
+        if height < 0 or not self.network:
+            return None
+        if self._bootstrap_is_self_only():
+            return self._get_local_tip()[1]
+        seeds = self._bootstrap_seeds()
+        if not seeds:
+            return None
+        peer = seeds[0]
+        try:
+            resp = self.network._rpc_request(
+                peer, {"type": "GET_BLOCK_HASH", "height": int(height)}, timeout=max(8.0, CFG.SYNC_TIMEOUT)
+            )
+        except Exception:
+            resp = None
+        if resp and resp.get("type") == "BLOCK":
+            hx = resp.get("hash")
+            if isinstance(hx, str) and hx:
+                return hx.lower()
+        return None
+
     def start_node(self):
         try:
             _run_snapshot_bootstrap("cli", self.bootstrap_snapshot)
@@ -248,8 +388,7 @@ class SimpleMiner:
     def wait_for_sync(self, timeout=560):
         clog("Waiting for blockchain sync...")
         start_time = time.time()
-        last_progress = (-1, -1)
-        notified_no_peer = False
+        last_progress = (-1, -1, -1)
 
         while self.mining_alive and (time.time() - start_time) < timeout:
             try:
@@ -258,54 +397,54 @@ class SimpleMiner:
                 except Exception:
                     height = -1
 
+                trusted_height = self._trusted_best_height(force_refresh=True)
+                trusted_hash = self._trusted_tip_hash(trusted_height) if trusted_height >= 0 else None
+                best_height = -1
+                if hasattr(self.network, "get_best_peer_height"):
+                    try:
+                        best_height = int(self.network.get_best_peer_height())
+                    except Exception:
+                        best_height = -1
+
                 active_peers = self._has_active_peers()
-                if not active_peers:
-                    if height >= 0:
-                        clog(f"No active peers detected (local height {height}). Proceeding with local chain.")
-                        return True
-                    if not notified_no_peer:
-                        clog("[Sync] Waiting for peer connection...")
-                        notified_no_peer = True
+                if not active_peers and not self._bootstrap_is_self_only():
+                    clog("[Sync] Waiting for peer connection...")
                     time.sleep(3)
                     continue
 
                 if self.network.peers:
-                    if notified_no_peer:
-                        clog("Peer connection restored, resuming sync...")
-                        notified_no_peer = False
                     self.network.request_sync(fast=True)
 
-                    best_height = -1
-                    if hasattr(self.network, "get_best_peer_height"):
+                best_known = trusted_height if trusted_height >= 0 else best_height
+                local_h, local_hash = self._get_local_tip()
+                if (
+                    best_known >= 0
+                    and local_h >= best_known
+                    and (trusted_hash is None or (local_hash and local_hash.lower() == trusted_hash))
+                ):
+                    clog(f"Chain synced to height {local_h} (trusted tip {best_known})")
+                    return True
+                if trusted_hash and local_hash and local_hash.lower() != trusted_hash:
+                    clog("[Sync] Local tip hash differs from trusted; requesting resync...")
+                    if self.network:
                         try:
-                            best_height = int(self.network.get_best_peer_height())
+                            seeds = self._bootstrap_seeds()
+                            peer = seeds[0] if seeds else None
+                            if peer:
+                                self.network._request_full_sync(peer, force=True)
                         except Exception:
-                            best_height = -1
+                            try:
+                                self.network.request_sync(fast=True)
+                            except Exception:
+                                pass
+                    time.sleep(2)
+                    continue
 
-                    caught_up = False
-                    if hasattr(self.network, "is_caught_up"):
-                        try:
-                            caught_up = self.network.is_caught_up(freshness=20.0, height_slack=0)
-                        except Exception:
-                            caught_up = height >= 0
-                    else:
-                        caught_up = height >= 0
-
-                    if caught_up and height >= 0:
-                        if best_height < height:
-                            best_height = height
-                        clog(f"Chain synced to height {height}")
-                        return True
-
-                    if best_height >= 0:
-                        progress = (height, best_height)
-                        if progress != last_progress:
-                            clog(f"Sync progress - local height: {height}, best known peer: {best_height}")
-                            last_progress = progress
-                else:
-                    if not notified_no_peer:
-                        clog("Waiting for peer connection...")
-                        notified_no_peer = True
+                progress = (height, best_known, trusted_height)
+                if best_known >= 0 and progress != last_progress:
+                    tip_label = trusted_height if trusted_height >= 0 else best_known
+                    clog(f"Sync progress - local {height}, trusted best {tip_label}")
+                    last_progress = progress
                 time.sleep(2)
             except Exception as exc:
                 clog(f"Sync error: {exc}")
@@ -319,15 +458,7 @@ class SimpleMiner:
             return False
         if not self.start_node():
             return False
-        need_sync = True
-        try:
-            local_height = int(getattr(self.blockchain, "height", -1))
-        except Exception:
-            local_height = -1
-        if not self._has_active_peers() and local_height >= 0:
-            clog(f"No active peer connections detected (local height {local_height}). Skipping sync wait.")
-            need_sync = False
-        if need_sync and not self.wait_for_sync(timeout=timeout):
+        if not self.wait_for_sync(timeout=timeout):
             return False
         
         clog(f"{COL.BOLD}{COL.BG_WHITE} Press {COL.RESET}{COL.BOLD}{COL.BG_RED} Ctrl+C {COL.RESET}{COL.BG_WHITE}{COL.BOLD}{COL.ORANGE} to stop mining {COL.RESET}")
@@ -341,8 +472,61 @@ class SimpleMiner:
                 return False
 
         # Mulai loop mining
+        last_gap_log = None
         while self.mining_alive:
             try:
+                if not self._has_active_peers() and not self._bootstrap_is_self_only():
+                    if last_gap_log != "no_peers":
+                        clog("[mining] No active peers; pausing mining until peers are back.")
+                        last_gap_log = "no_peers"
+                    time.sleep(2)
+                    continue
+
+                try:
+                    local_height = int(getattr(self.blockchain, "height", -1))
+                except Exception:
+                    local_height = -1
+
+                trusted_height = self._trusted_best_height(force_refresh=True)
+                trusted_hash = self._trusted_tip_hash(trusted_height) if trusted_height >= 0 else None
+                _, local_hash = self._get_local_tip()
+                if trusted_height < 0:
+                    if last_gap_log != "no_trusted":
+                        clog("[mining] Waiting for trusted bootstrap height before mining...")
+                        last_gap_log = "no_trusted"
+                    if self.network:
+                        self.network.request_sync(fast=True)
+                    time.sleep(2)
+                    continue
+
+                gap = trusted_height - local_height
+                if gap > 0:
+                    if last_gap_log != gap:
+                        clog(f"[mining] Local height {local_height} behind trusted {trusted_height} (gap {gap}); syncing before mining...")
+                        last_gap_log = gap
+                    if self.network:
+                        self.network.request_sync(fast=True)
+                    time.sleep(2)
+                    continue
+                if trusted_hash and local_hash and local_hash.lower() != trusted_hash:
+                    if last_gap_log != "hash_mismatch":
+                        clog("[mining] Local tip hash differs from trusted; syncing before mining...")
+                        last_gap_log = "hash_mismatch"
+                    if self.network:
+                        try:
+                            seeds = self._bootstrap_seeds()
+                            peer = seeds[0] if seeds else None
+                            if peer:
+                                self.network._request_full_sync(peer, force=True)
+                        except Exception:
+                            try:
+                                self.network.request_sync(fast=True)
+                            except Exception:
+                                pass
+                    time.sleep(2)
+                    continue
+
+                last_gap_log = None
                 self._flush_pending_blocks()
                 if self.network.peers:
                     self.network.request_sync(fast=True)

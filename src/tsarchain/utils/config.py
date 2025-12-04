@@ -168,7 +168,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "0003cf8002fe9b480be8089563e467552d8ac3181446b180f29eb75570d6d194"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "001a885a4e8ac63b99e8bfa800610b0d9e7279d61ec9bbdd275f3580cf5c5ba4"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 

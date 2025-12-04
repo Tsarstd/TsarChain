@@ -8,17 +8,17 @@ TsarChain — CLI Miner (Light, Stateless)
 
 Role
 - Mining with in-memory chain; no on-disk chain persistence.
-- Ephemeral mempool: accepts/validates tx from peers but not persisted.
-- Keeps a small pending queue to retry broadcast if peers are absent.
+- Stateless tip-sync: only pulls latest tip + a small header window for difficulty.
+- Mines empty blocks (coinbase only); no mempool handling or tx inclusion.
 
 Intended environment
 - Dedicated mining rigs.
 
 Safety & behavior
-- Sync-gated: starts hashing only after at least 1 peer and caught-up tip.
-- Validates header/consensus core locally (prev-hash, target, timestamp, etc.).
-- Typically mines empty/near-empty blocks; any tx included come from ephemeral mempool.
-- Reorg-safe: stops current job when best tip changes.
+- Sync-gated: starts hashing only after at least 1 peer and a retrieved tip window.
+- Validates header/consensus core locally for the mined block (prev-hash, target, timestamp).
+- Mines empty blocks (coinbase only).
+- Reorg-safe: refreshes tip window each round before hashing.
 
 Notes
 - For full-node duties and transaction inclusion, use `cli_node_miner.py`.
@@ -28,13 +28,13 @@ from __future__ import annotations
 
 import argparse, errno, signal, time, threading, queue, os, sys
 import multiprocessing as mp
-import tempfile
 from datetime import datetime
 
 # ---------- Local Project ----------
 from tsarchain.consensus.blockchain import Blockchain
 from tsarchain.network.node import Network
-from tsarchain.mempool.pool import TxPoolDB
+from tsarchain.core.block import Block
+from tsarchain.core.coinbase import CoinbaseTx
 from tsarchain.utils import config as CFG
 
 from tsarchain.utils.cosmetic import interface as COL
@@ -146,11 +146,8 @@ class LightMiner:
         self.cancel_mining = threading.Event()
         self._progress_q: mp.Queue = progress_queue or mp.Queue()
         self.tui = tui
-        self._pending_blocks: list = []
-        self._pending_block_hashes: set[str] = set()
-        self._mempool_tip_height: int | None = None
-        self._mempool_path: str | None = None
-        self._last_mempool_pull: float = 0.0
+        self.tip_height: int = -1
+        self._best_peer: tuple[str, int] | None = None
 
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
@@ -184,208 +181,216 @@ class LightMiner:
             clog(f"Failed to connect: {exc}")
             return False
 
-    def _ensure_ephemeral_mempool(self) -> None:
-        if not self.blockchain or not hasattr(self.blockchain, "attach_mempool"):
-            return
-        try:
-            utxo_store = None
-            try:
-                utxo_store = self.blockchain._ensure_utxodb()  # type: ignore[attr-defined]
-            except Exception:
-                utxo_store = None
-            # sinkronkan hint height untuk utxo in-memory agar validation mempool pakai tip terbaru
-            try:
-                if utxo_store is not None:
-                    utxo_store._tip_cache = {"height": int(getattr(self.blockchain, "height", 0)), "ts": time.time()}
-            except Exception:
-                pass
-            if getattr(self.blockchain, "get_mempool", None):
-                existing = self.blockchain.get_mempool()  # type: ignore[attr-defined]
-                if existing is not None:
-                    if utxo_store is not None:
-                        try:
-                            existing.utxo = utxo_store  # keep snapshot fresh
-                        except Exception:
-                            pass
-                    return
-        except Exception:
-            pass
-        try:
-            if not self._mempool_path:
-                self._mempool_path = os.path.join(
-                    tempfile.gettempdir(),
-                    f"tsar_mempool_tmp_{os.getpid()}.json",
-                )
-            pool = TxPoolDB(
-                filepath=self._mempool_path,
-                max_size_mb=CFG.MEMPOOL_MAX_SIZE,
-                utxo_store=utxo_store,
-                inherit_state=True,
-            )
-            self.blockchain.attach_mempool(pool)  # type: ignore[arg-type]
-            try:
-                self._mempool_tip_height = int(getattr(self.blockchain, "height", -1))
-            except Exception:
-                self._mempool_tip_height = None
-            clog("[mempool] Ephemeral mempool attached ")
-        except Exception as exc:
-            clog(f"[mempool] attach failed: {exc}", color=COL.BG_YELLOW)
-
-    def _queue_block_for_broadcast(self, block) -> None:
-        try:
-            hx = block.hash().hex()
-        except Exception:
-            hx = None
-        if hx and hx in self._pending_block_hashes:
-            return
-        self._pending_blocks.append(block)
-        if hx:
-            self._pending_block_hashes.add(hx)
-        # batasi backlog supaya tidak tak terbatas
-        while len(self._pending_blocks) > 5:
-            old = self._pending_blocks.pop(0)
-            try:
-                h_old = old.hash().hex()
-                self._pending_block_hashes.discard(h_old)
-            except Exception:
-                pass
-        clog(f"[broadcast] queued mined block (backlog={len(self._pending_blocks)})", color=COL.BG_YELLOW)
-
-    def _flush_pending_blocks(self) -> None:
-        if not self.network or not self._pending_blocks:
-            return
-        remaining = []
-        for blk in self._pending_blocks:
-            try:
-                sent = self.network.publish_block(blk, exclude=None, force=True)
-                if sent and sent > 0:
-                    clog(f"[broadcast] pending block sent to {sent} peers")
-                    try:
-                        self._pending_block_hashes.discard(blk.hash().hex())
-                    except Exception:
-                        pass
-                    continue
-            except Exception as exc:
-                clog(f"[broadcast] retry failed: {exc}")
-            remaining.append(blk)
-        self._pending_blocks = remaining
-
-    def _refresh_mempool_from_peers(self) -> None:
+    def _disable_sync_loop(self) -> None:
+        """Stop background header/full sync from running a full chain download."""
         if not self.network:
             return
-        now = time.time()
-        # membatasi frekuensi pull supaya tidak flood
-        if now - self._last_mempool_pull < 5.0:
-            return
         try:
-            utxo_store = self.blockchain._ensure_utxodb() if self.blockchain else None  # type: ignore[attr-defined]
-            if utxo_store and getattr(self.blockchain, "get_mempool", None):
-                pool = self.blockchain.get_mempool()  # type: ignore[attr-defined]
-                if pool is not None:
-                    try:
-                        pool.utxo = utxo_store  # type: ignore[attr-defined]
-                    except Exception:
-                        pass
-            if utxo_store is not None:
-                try:
-                    utxo_store._tip_cache = {"height": int(getattr(self.blockchain, "height", 0)), "ts": time.time()}
-                except Exception:
-                    pass
+            self.network.sync_with_peers = lambda: None  # type: ignore[assignment]
+            self.network.request_sync = lambda fast=False: None  # type: ignore[assignment]
+            self.network._sync_event.clear()
+            self.network._sync_fast_until = 0.0
         except Exception:
             pass
-        peers = list(getattr(self.network, "peers", ()) or ())
+
+    def _pick_peer(self) -> tuple[str, int] | None:
+        if not self.network:
+            return None
+        peers = list(getattr(self.network, "peers", ()))
         if not peers:
-            return
-        for peer in peers:
+            peers = list(getattr(self.network, "persistent_peers", ()))
+        if not peers:
+            return None
+        try:
+            peers.sort(key=lambda p: self.network.peer_scores.get(p, 0), reverse=True)
+        except Exception:
+            pass
+        return peers[0]
+
+    def _hello_peer(self, peer: tuple[str, int]) -> dict | None:
+        if not self.network:
+            return None
+        payload = {
+            "type": "HELLO",
+            "role": "NODE_MINER",
+            "height": max(-1, self.tip_height),
+            "port": getattr(self.network, "port", 0),
+            "peers": [],
+        }
+        resp = self.network._rpc_request(peer, payload, timeout=max(8.0, CFG.SYNC_TIMEOUT))
+        if resp and resp.get("type") == "HELLO_RESPONSE":
             try:
-                ok = self.network._request_mempool_inline(peer, force=True)  # type: ignore[attr-defined]
-                if not ok:
-                    self.network._request_mempool_snapshot(peer, force=True)  # type: ignore[attr-defined]
+                self.network.peers.add(peer)
+                self.network.outbound_peers.add(peer)
+                self.network.peer_scores.setdefault(peer, CFG.PEER_SCORE_START)
             except Exception:
-                continue
-        self._last_mempool_pull = now
-
-    def wait_for_sync(self, timeout: int = 600) -> bool:
-        if not self.blockchain or not self.network:
-            return False
-        clog("[sync] Requesting latest tip height for mining...")
-        start = time.time()
-        notified_no_peer = False
-        last_progress: tuple[int, int] = (-2, -2)
-
-        while self.mining_alive and (time.time() - start) < timeout:
+                pass
             try:
-                peers = getattr(self.network, "peers", set()) or set()
-                inbound = getattr(self.network, "inbound_peers", set()) or set()
-                outbound = getattr(self.network, "outbound_peers", set()) or set()
-                active_peers = bool(peers or inbound or outbound)
+                h = int(resp.get("height", -1))
+                self.network._peer_best_height[peer] = h
+            except Exception:
+                pass
+        return resp
 
-                if not active_peers:
-                    if not notified_no_peer:
-                        clog("[sync] Waiting for peer connection...", color=COL.BG_YELLOW)
-                        notified_no_peer = True
-                    time.sleep(2)
-                    continue
+    def _fetch_tip_height(self, peer: tuple[str, int]) -> int:
+        resp = self._hello_peer(peer)
+        height = -1
+        if resp:
+            try:
+                height = int(resp.get("height", -1))
+            except Exception:
+                height = -1
+        if height >= 0:
+            return height
+        if not self.network:
+            return -1
+        info = self.network._rpc_request(peer, {"type": "GET_INFO"}, timeout=max(8.0, CFG.SYNC_TIMEOUT))
+        if info and isinstance(info, dict):
+            try:
+                return int(info.get("height", -1))
+            except Exception:
+                return -1
+        return -1
 
-                self.network.request_sync(fast=True)
-                notified_no_peer = False
+    def _fetch_recent_blocks(self, peer: tuple[str, int], tip_height: int) -> list[dict]:
+        if not self.network or tip_height < 0:
+            return []
+        window = max(2, int(CFG.LWMA_WINDOW) + 2)
+        start_h = max(0, tip_height - window + 1)
+        heights = list(range(start_h, tip_height + 1))
+        chunk_size = max(1, min(256, int(CFG.BLOCK_DOWNLOAD_BATCH_MAX)))
+        blocks: list[dict] = []
+        for i in range(0, len(heights), chunk_size):
+            chunk = heights[i : i + chunk_size]
+            payload = {"type": "GET_BLOCKS", "heights": chunk, "port": getattr(self.network, "port", 0)}
+            resp = self.network._rpc_request(peer, payload, timeout=max(15.0, CFG.SYNC_TIMEOUT))
+            if not resp or resp.get("type") != "BLOCKS":
+                return []
+            items = resp.get("blocks") or []
+            if not isinstance(items, list):
+                return []
+            blocks.extend(items)
+        try:
+            blocks.sort(key=lambda b: int(b.get("height", 0)))
+        except Exception:
+            pass
+        return blocks
 
-                try:
-                    height = int(getattr(self.blockchain, "height", -1))
-                except Exception:
-                    height = -1
+    def _get_block_hash(self, peer: tuple[str, int], height: int) -> str | None:
+        if not self.network or height < 0:
+            return None
+        payload = {"type": "GET_BLOCK_HASH", "height": int(height), "port": getattr(self.network, "port", 0)}
+        try:
+            resp = self.network._rpc_request(peer, payload, timeout=max(6.0, CFG.SYNC_TIMEOUT))
+        except Exception:
+            resp = None
+        if resp and resp.get("type") == "BLOCK":
+            hx = resp.get("hash")
+            if isinstance(hx, str) and hx:
+                return hx.lower()
+        return None
 
-                best_height = -1
-                if hasattr(self.network, "get_best_peer_height"):
-                    try:
-                        best_height = int(self.network.get_best_peer_height())
-                    except Exception:
-                        best_height = -1
+    def _headers_from_blocks(self, blocks: list[dict]):
+        class HeaderView:
+            __slots__ = ("height", "bits", "timestamp")
 
-                caught_up = False
-                if hasattr(self.network, "is_caught_up"):
-                    try:
-                        caught_up = self.network.is_caught_up(freshness=20.0, height_slack=0)
-                    except Exception:
-                        caught_up = False
+            def __init__(self, height: int, bits: int, timestamp: int):
+                self.height = height
+                self.bits = bits
+                self.timestamp = timestamp
 
-                if not caught_up and height >= 0 and best_height >= 0:
-                    caught_up = (best_height - height) <= 0
+        views = []
+        for obj in blocks:
+            try:
+                h = int(obj.get("height", -1))
+            except Exception:
+                h = -1
+            try:
+                bits_raw = obj.get("bits", CFG.MAX_BITS)
+                bits_val = Block._parse_bits(bits_raw)  # type: ignore[arg-type]
+            except Exception:
+                bits_val = int(CFG.MAX_BITS)
+            try:
+                ts = int(obj.get("timestamp", 0) or 0)
+            except Exception:
+                ts = 0
+            views.append(HeaderView(h, bits_val, ts))
+        return views
 
-                if caught_up and height >= 0:
-                    if best_height < height:
-                        best_height = height
-                    clog(f"[sync] Chain synced to height {height}")
-                    return True
+    def _compute_expected_bits(self, headers, next_height: int) -> int:
+        if not headers:
+            return int(CFG.MAX_BITS)
+        try:
+            return int(self.blockchain._expected_bits_on_prefix(headers, next_height))  # type: ignore[attr-defined]
+        except Exception:
+            try:
+                return int(getattr(headers[-1], "bits", CFG.MAX_BITS))
+            except Exception:
+                return int(CFG.MAX_BITS)
 
-                if best_height >= 0:
-                    progress = (height, best_height)
-                    if progress != last_progress:
-                        clog(f"[sync] progress: local {height}, best peer {best_height}")
-                        last_progress = progress
+    def _median_time(self, headers) -> int:
+        if not headers:
+            return int(time.time())
+        window = headers[-min(len(headers), int(CFG.MTP_WINDOWS)) :]
+        ts_sorted = sorted(int(getattr(h, "timestamp", 0) or 0) for h in window)
+        if not ts_sorted:
+            return int(time.time())
+        return ts_sorted[len(ts_sorted) // 2]
 
-                time.sleep(2)
+    def _build_empty_block(self, tip_block: dict, next_height: int, expected_bits: int, mtp_ts: int) -> Block | None:
+        if not self.blockchain:
+            return None
+        prev_hex = str(tip_block.get("hash") or "").strip()
+        if not prev_hex:
+            return None
+        try:
+            prev_hash = bytes.fromhex(prev_hex)
+        except Exception:
+            return None
 
-            except Exception as exc:
-                clog(f"[sync] Error: {exc}")
-                time.sleep(2)
-                
-        clog("[sync] Failed to obtain chain tip within timeout.")
-        return False
+        ts_tip = 0
+        try:
+            ts_tip = int(tip_block.get("timestamp", 0) or 0)
+        except Exception:
+            ts_tip = 0
+        now_ts = int(time.time())
+        timestamp = max(now_ts, ts_tip + 1, int(mtp_ts) + 1)
+
+        reward = 0
+        try:
+            reward = int(self.blockchain.get_block_reward(next_height))
+        except Exception:
+            reward = 0
+        if reward <= 0:
+            clog(f"[mining] reward is zero at height {next_height}; stopping.")
+            self.mining_alive = False
+            return None
+
+        try:
+            coinbase = CoinbaseTx(to_address=self.address, reward=reward, height=next_height)
+        except Exception as exc:
+            clog(f"[mining] failed to build coinbase: {exc}")
+            return None
+        try:
+            coinbase.compute_txid()
+        except Exception:
+            pass
+
+        block = Block(
+            height=next_height,
+            prev_block_hash=prev_hash,
+            transactions=[coinbase],
+            bits=int(expected_bits),
+            timestamp=timestamp,
+        )
+        return block
 
     def start_mining(self, timeout: int = 600) -> bool:
         if not self.validate_address():
             return False
         if not self.start_node():
             return False
-        if not self.wait_for_sync(timeout=timeout):
-            return False
-        self._ensure_ephemeral_mempool()
-
-        current_height = int(getattr(self.blockchain, "height", -1))
-        if current_height < 0:
-            clog("[sync] No chain data available from peers; cannot strating mining")
-            return False
+        self._disable_sync_loop()
 
         clog("=== Mining Informations ===")
         clog(f"Address : {self.address}")
@@ -395,65 +400,86 @@ class LightMiner:
             clog(f"RandomX : {mode_label}")
         except Exception:
             pass
-        
-        clog("NOTE    : No local DB is kept. Use cli_node_miner.py for full-node duties.", color=COL.BG_YELLOW)
+        clog("NOTE    : Stateless mode. Fetches tip window only; mines empty blocks.", color=COL.BG_YELLOW)
+
+        reporter = HashrateReporter(self._progress_q)
+        reporter.start()
 
         while self.mining_alive:
             try:
-                self._ensure_ephemeral_mempool()
-                # tarik mempool dari peers jika kosong/baru
-                try:
-                    pool = self.blockchain.get_mempool() if self.blockchain else None  # type: ignore[attr-defined]
-                    if pool is not None:
-                        try:
-                            tx_count = len(pool.get_all_txs())
-                        except Exception:
-                            tx_count = 0
-                        if tx_count == 0:
-                            self._refresh_mempool_from_peers()
-                    else:
-                        self._refresh_mempool_from_peers()
-                except Exception:
-                    self._refresh_mempool_from_peers()
-                    
-                self._flush_pending_blocks()
-                if self.network and self.network.peers:
-                    self.network.request_sync(fast=True)
+                peer = self._pick_peer()
+                if not peer:
+                    clog("[sync] Waiting for peer connection...", color=COL.BG_YELLOW)
+                    time.sleep(2)
+                    continue
 
-                block = self.blockchain.mine_block(
-                    miner_address=self.address,
+                tip_h = self._fetch_tip_height(peer)
+                if tip_h < 0:
+                    clog(f"[sync] Failed to fetch tip height from {peer}", color=COL.BG_YELLOW)
+                    time.sleep(2)
+                    continue
+
+                self.tip_height = tip_h
+                blocks = self._fetch_recent_blocks(peer, tip_h)
+                if not blocks:
+                    clog(f"[sync] Failed to fetch recent blocks from {peer}", color=COL.BG_YELLOW)
+                    time.sleep(2)
+                    continue
+
+                tip_block = blocks[-1]
+                headers = self._headers_from_blocks(blocks)
+                expected_bits = self._compute_expected_bits(headers, tip_h + 1)
+                mtp_ts = self._median_time(headers)
+                candidate = self._build_empty_block(tip_block, tip_h + 1, expected_bits, mtp_ts)
+                if not candidate:
+                    time.sleep(1)
+                    continue
+
+                tip_hash = str(tip_block.get("hash") or "").strip().lower()
+                self._best_peer = peer
+                tip_hex = str(tip_block.get("hash", ""))[:18]
+                clog(f"[sync] Tip {tip_h} {tip_hex}... -> target bits {hex(expected_bits)}")
+                clog(f"[mining] Mining empty block at height {candidate.height}")
+
+                h = candidate.mine(
                     use_cores=self.cores,
-                    cancel_event=self.cancel_mining,
+                    stop_event=self.cancel_mining,
                     pow_backend="randomx",
-                    progress_queue=self._progress_q,  # TOTAL_HPS -> TUI
+                    progress_queue=self._progress_q,
                 )
 
-                if not self.mining_alive:
+                if not self.mining_alive or self.cancel_mining.is_set():
                     break
+                if not h:
+                    time.sleep(1)
+                    continue
 
-                if block:
-                    if self.tui is not None:
-                        try:
-                            self.tui.note_block_mined(getattr(block, "height", None))
-                        except Exception:
-                            pass
-
-                    h = getattr(block, "height", "?")
-                    txs = getattr(block, "transactions", None) or []
-                    confirmed = max(len(txs) - 1, 0)
-                    clog(
-                        f"Block mined at height {h}: {block.hash().hex()[:18]}... ( conf {confirmed} tx{'' if confirmed == 1 else 's'} from mempool)"
-                    )
+                if self.tui is not None:
                     try:
-                        sent = self.network.publish_block(block, exclude=None, force=True) if self.network else 0
-                        if sent <= 0:
-                            clog("[broadcast] No peers reached; forcing fast sync.", color=COL.BG_YELLOW)
-                            self._queue_block_for_broadcast(block)
-                            if self.network:
-                                self.network.request_sync(fast=True)
-                    except Exception as exc:
-                        clog(f"[broadcast] Error: {exc}")
-                        self._queue_block_for_broadcast(block)
+                        self.tui.note_block_mined(getattr(candidate, "height", None))
+                    except Exception:
+                        pass
+
+                clog(
+                    f"Block mined at height {candidate.height}: {candidate.hash().hex()[:18]}... (empty block, coinbase only)"
+                )
+                # Re-validate tip before broadcast to avoid stale height/hash
+                current_h = self._fetch_tip_height(peer)
+                current_hash = self._get_block_hash(peer, current_h) if current_h >= 0 else None
+                if current_h > tip_h:
+                    clog(f"[broadcast] Tip advanced to {current_h}; dropping stale block {candidate.height}", color=COL.BG_YELLOW)
+                    continue
+                if current_h == tip_h and current_hash and tip_hash and current_hash != tip_hash:
+                    clog("[broadcast] Tip hash changed at same height; dropping stale block", color=COL.BG_YELLOW)
+                    continue
+
+                try:
+                    sent = self.network.publish_block(candidate, exclude=None, force=True) if self.network else 0
+                    if sent <= 0:
+                        clog("[broadcast] No peers reached when publishing block.", color=COL.BG_YELLOW)
+                except Exception as exc:
+                    clog(f"[broadcast] Error: {exc}")
+
             except KeyboardInterrupt:
                 self.mining_alive = False
                 self.cancel_mining.set()
@@ -466,6 +492,10 @@ class LightMiner:
                     break
                 clog(f"[mining] Error: {exc}")
                 time.sleep(1)
+        try:
+            reporter.stop_event.set()
+        except Exception:
+            pass
         return True
 
     def shutdown(self):
@@ -477,12 +507,6 @@ class LightMiner:
             except Exception:
                 pass
             self.network = None
-        # optional cleanup mempool temp file
-        if self._mempool_path:
-            try:
-                os.remove(self._mempool_path)
-            except Exception:
-                pass
         clog("[light-node] Shutdown complete.", color=COL.BG_YELLOW)
 
 
@@ -532,9 +556,7 @@ def main():
         mode=" Mining...",
         randomx_mode=mode_label,
         hashrate_queue=progress_q,
-        chain_height_fn=lambda: int(getattr(miner.blockchain, "height", -1))
-        if miner and miner.blockchain
-        else -1,
+        chain_height_fn=lambda: int(getattr(miner, "tip_height", -1)) if miner else -1,
         peer_counts_fn=lambda: (
             len(getattr(miner.network, "inbound_peers", ())) if miner and miner.network else 0,
             len(getattr(miner.network, "outbound_peers", ())) if miner and miner.network else 0,
