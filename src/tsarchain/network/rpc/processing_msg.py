@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from .miner_rpc import handle_miner_rpc
 from .storage_rpc import handle_storage_rpc
 from .user_rpc import handle_user_rpc
+from ...contracts import graffiti as GRAFFITI
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
@@ -144,7 +145,26 @@ def _overlay_realtime_mempool_stats(snapshot: dict, network: "Network") -> None:
             tx_section["mempool_vbytes_estimate"] = int(size_est)
         except Exception:
             tx_section["mempool_vbytes_estimate"] = size_est
-    
+
+    # Update live graffiti_on_mempool to avoid stale cache when mempool changes
+    graff_section = snapshot.setdefault("graffiti", {})
+    if isinstance(graff_section, dict):
+        try:
+            on_mem = 0
+            for tx in pool.get_all_txs():
+                for tx_out in getattr(tx, "outputs", []) or []:
+                    spk = getattr(tx_out, "script_pubkey", None)
+                    meta = None
+                    try:
+                        meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+                    except Exception:
+                        meta = None
+                    if meta and str(meta.get("event", "")).upper() == "POST":
+                        on_mem += 1
+            graff_section["graffiti_on_mempool"] = int(on_mem)
+        except Exception:
+            log.exception("[_overlay_realtime_mempool_stats] Failed to compute graffiti_on_mempool")
+
 def _choose_relay_route(self, hops: int = 2) -> list[tuple]:
     try:
         with self.lock:

@@ -293,6 +293,28 @@ class NetworkTab(tk.Frame):
         except Exception:
             return str(num_bytes)
 
+    @staticmethod
+    def _extract_peers_count(snap: Optional[Dict[str, Any]], fallback: int) -> int:
+        if isinstance(snap, dict):
+            peers_section = snap.get("peers")
+            if isinstance(peers_section, dict):
+                try:
+                    val = peers_section.get("count")
+                    if val is None:
+                        val = peers_section.get("total")
+                    if val is None and len(peers_section) == 1:
+                        val = next(iter(peers_section.values()))
+                    if val is not None:
+                        return int(val)
+                except Exception:
+                    pass
+            else:
+                try:
+                    return int(peers_section)
+                except Exception:
+                    pass
+        return int(fallback)
+
     # ---------------- Rendering ----------------
     def _render_network_snapshot(self, snap: Optional[Dict[str, Any]], peers_cnt: int) -> None:
         self._net_text_enable()
@@ -309,6 +331,7 @@ class NetworkTab(tk.Frame):
         utxo = snap.get("utxo", {}) or {}
         miners = ((snap.get("miners_snapshot", {}) or {}).get("top_miners") or [])
         graffiti = snap.get("graffiti", {}) or {}
+        peers_total = self._extract_peers_count(snap, peers_cnt)
 
         # Header
         self.net_text.insert(tk.END, "🌐 Network Informations 🌐", ("h1","center"))
@@ -317,7 +340,7 @@ class NetworkTab(tk.Frame):
         last_up = snap.get("last_updated") or "-"
         schema_v = snap.get("schema_version")
         last_up_fmt = self._fmt_last_update(last_up)
-        sub = f"Last Update : {last_up_fmt}  |  Schema Version : {schema_v}  |  Peers : {int(peers_cnt)}\n"
+        sub = f"Last Update : {last_up_fmt}  |  Schema Version : {schema_v}  |  Peers : {int(peers_total)}\n"
         self.net_text.insert(tk.END, ("="*87) + "\n", ("sep","center"))
         self.net_text.insert(tk.END, sub, ("mut","center"))
         self.net_text.insert(tk.END, ("="*87) + "\n\n\n", ("sep","center"))
