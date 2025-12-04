@@ -376,7 +376,7 @@ UTXO_FLUSH_INTERVAL       = 2  # block interval between UTXO set flushes
 # ---- PEER QUOTAS ----
 MAX_OUTBOUND_PEERS         = 14  # outbound connection ceiling
 MAX_INBOUND_PEERS          = 16  # inbound connection ceiling
-MAX_INBOUND_PER_IP         = 4  # inbound peers allowed per IP
+MAX_INBOUND_PER_IP         = 8  # inbound peers allowed per IP
 PEER_SCORE_START           = 10  # initial trust score assigned to new peers
 PEER_SCORE_FAILURE_PENALTY = 5  # decrements applied on failure events
 PEER_SCORE_REWARD          = 1  # increments applied on good behavior
@@ -393,6 +393,12 @@ P2P_AEAD_NONCE_BYTES = 12  # nonce size for GCM packets
 P2P_AEAD_AAD_PREFIX  = b"TSAR|P2P|v1"  # additional data binding network id/version
 P2P_SESSION_TTL_S    = 3600  # seconds before rekeying P2P session
 P2P_SESSION_MAX_MSG  = 10000  # message count before forcing new keys
+
+# ---- DANDELION++ ----
+ENABLE_DANDELION_PP       = True  # enable Dandelion++ stem/fluff relay for transactions
+MIN_PEERS_FOR_DANDELION   = 5     # minimum peer count before enabling Dandelion++ path
+MIN_FLUFF_DELAY_S         = 1.5
+MAX_FLUFF_DELAY_S         = 6.0
 
 # ---- SYNC INFO CADENCE ----
 SYNC_INFO_MIN_INTERVAL           = 60  # seconds between sync-info gossip messages

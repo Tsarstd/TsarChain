@@ -130,13 +130,25 @@ class GossipMixin:
 
     def broadcast_tx(self, tx: Tx, peers: Set[Tuple[str, int]]):
         tx_id = tx.txid.hex()
+        # Dandelion++ stem handling (optional)
+        try:
+            if getattr(self, "dandelion", None):
+                handled = self.dandelion.handle_outbound(tx, tx_id, peers)
+                if handled:
+                    return 1
+        except Exception:
+            log.exception("[broadcast_tx] Dandelion++ outbound handler error for %s", tx_id[:16])
+
+        return self._broadcast_tx_fluff(tx, tx_id, peers)
+
+    def _broadcast_tx_fluff(self, tx: Tx, tx_id: str, peers: Set[Tuple[str, int]], exclude: Optional[Tuple[str, int]] = None):
         with self.lock:
             if tx_id in self.seen_txs:
                 return 0
             self.seen_txs.add(tx_id)
 
-        success = self._broadcast(peers, {"type": "NEW_TX", "data": tx.to_dict()})
-        return success
+        msg = {"type": "NEW_TX", "data": tx.to_dict(), "phase": "fluff"}
+        return self._broadcast(peers, msg, exclude)
 
 
 __all__ = ["GossipMixin"]

@@ -493,11 +493,22 @@ class ReceiveMixin:
             tx_data = message["data"]
             tx = Tx.from_dict(tx_data) if isinstance(tx_data, dict) else tx_data
             tx_id = tx.txid.hex()
+            phase = str(message.get("phase") or "fluff").strip().lower()
 
-            with self.lock:
-                if tx_id in self.seen_txs:
-                    return False
-                self.seen_txs.add(tx_id)
+            use_dandelion = False
+            try:
+                dpp = getattr(self, "dandelion", None)
+                use_dandelion = bool(dpp and dpp.enabled(len(peers)))
+            except Exception:
+                log.debug("[receive_tx] Dandelion++ availability check failed", exc_info=True)
+                use_dandelion = False
+
+            is_stem = use_dandelion and phase == "stem"
+            if not is_stem:
+                with self.lock:
+                    if tx_id in self.seen_txs:
+                        return False
+                    self.seen_txs.add(tx_id)
 
             try:
                 is_valid = self.mempool.add_valid_tx(tx)
@@ -506,7 +517,17 @@ class ReceiveMixin:
                 return False
 
             if is_valid:
-                self.broadcast_tx(tx, peers)
+                if is_stem:
+                    try:
+                        handled = self.dandelion.handle_inbound_stem(tx, tx_id, peers, origin=addr)
+                        if not handled:
+                            # fallback to fluff if handler declines
+                            self._broadcast_tx_fluff(tx, tx_id, peers)
+                    except Exception:
+                        log.exception("[receive_tx] Dandelion++ stem handler failed for %s", tx_id[:16])
+                        self._broadcast_tx_fluff(tx, tx_id, peers)
+                else:
+                    self._broadcast_tx_fluff(tx, tx_id, peers)
                 return True
             else:
                 return False

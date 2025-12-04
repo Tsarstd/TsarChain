@@ -273,6 +273,12 @@ def handle_user_rpc(
         return {"type": "PEERS", "peers": list(self.peers)}
 
     elif mtype == "NEW_TX":
+        if CFG.ENABLE_DANDELION_PP and "phase" not in message:
+            try:
+                message = dict(message)
+                message["phase"] = "stem"
+            except Exception:
+                pass
         success = self.broadcast.receive_tx(message, addr, self.peers)
         if success:
             txid = (message.get("data") or {}).get("txid")

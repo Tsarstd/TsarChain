@@ -14,6 +14,7 @@ from .cast.gossip import GossipMixin
 from .cast.mempool_sync import MempoolSyncMixin
 from .cast.receive import ReceiveMixin
 from .cast.utxo_local import UTXOLocalMixin
+from .dandelion_pp import DandelionPP
 
 from .protocol import SecureChannel, is_envelope, recv_message, send_message, verify_and_unwrap
 from ..consensus.blockchain import Blockchain
@@ -72,6 +73,7 @@ class Broadcast(
         self._last_mempool_seq: Dict[Tuple[str, int], int] = {}
         self._utxo_flush_interval = max(1, int(CFG.UTXO_FLUSH_INTERVAL))
         self._utxo_last_flush_height = -1
+        self.dandelion = DandelionPP(self)
 
     def _request_full_sync(self, peer: Tuple[str, int]) -> bool:
         if not CFG.ENABLE_FULL_SYNC:

@@ -350,7 +350,10 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[
         broadcast_flag = bool(message.get("broadcast"))
         if broadcast_flag:
             try:
-                ok = self.broadcast.receive_tx({"type": "NEW_TX", "data": tx_obj.to_dict(include_txid=True)}, None, self.peers)
+                tx_msg = {"type": "NEW_TX", "data": tx_obj.to_dict(include_txid=True)}
+                if CFG.ENABLE_DANDELION_PP:
+                    tx_msg["phase"] = "stem"
+                ok = self.broadcast.receive_tx(tx_msg, None, self.peers)
                 if not ok:
                     log.warning("[payout] broadcast failed art=%s", art_id[:16])
                     return {"error": "broadcast_failed"}
