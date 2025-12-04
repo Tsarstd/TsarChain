@@ -287,6 +287,35 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[
             utxo._load()
         except Exception:
             pass
+
+        reg = getattr(utxo, "_graffiti_registry", None)
+        proof_entry = reg.get_latest_proof(art_id) if reg else None
+        proof_meta = None
+        if proof_entry:
+            try:
+                proof_meta = {
+                    "offset": proof_entry.get("offset"),
+                    "length": proof_entry.get("length"),
+                    "hash": proof_entry.get("hash"),
+                    "seed": proof_entry.get("seed"),
+                    "height": proof_entry.get("height"),
+                    "epoch": proof_entry.get("epoch"),
+                    "storer": proof_entry.get("storer"),
+                }
+            except Exception:
+                proof_meta = None
+
+        # Enforce proof presence when epoch is provided to ensure stateless validation
+        if epoch >= 0:
+            if not proof_entry or int(proof_entry.get("epoch", -1)) < epoch:
+                return {"error": "missing_proof", "requested_epoch": epoch, "have": proof_entry.get("epoch", -1) if proof_entry else None}
+        else:
+            if proof_entry:
+                try:
+                    epoch = int(proof_entry.get("epoch", -1))
+                except Exception:
+                    epoch = -1
+
         log.info("[payout] build request art=%s recips=%s epoch=%s fee_rate=%s", art_id[:16], len(recipients), epoch, fee_rate)
         try:
             tx_obj = GRAFFITI.build_payout_tx(
@@ -295,6 +324,7 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[
                 recipients=recipients,
                 fee_rate=fee_rate,
                 epoch=epoch if epoch >= 0 else None,
+                proof=proof_meta,
             )
         except Exception as exc:
             log.warning("[payout] build failed art=%s err=%s", art_id[:16], exc)

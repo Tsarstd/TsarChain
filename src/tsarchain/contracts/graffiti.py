@@ -267,6 +267,7 @@ def build_payout_tx(
     *,
     fee_rate: int | None = None,
     epoch: int | None = None,
+    proof: Optional[Dict[str, Any]] = None,
     dust_threshold: int | None = None,
 ) -> Tx:
     """
@@ -323,7 +324,12 @@ def build_payout_tx(
             spk = Script.p2wpkh_script(rec["addr"])
             outs.append(TxOut(int(rec["amount"]), spk))
         # OP_RETURN payout metadata
-        meta = build_payout_metadata(art_norm, epoch if epoch is not None else 0, rec_list)
+        meta = build_payout_metadata(
+            art_norm,
+            epoch if epoch is not None else 0,
+            rec_list,
+            proof=proof,
+        )
         opret_spk = build_script(meta)
         outs.append(TxOut(0, opret_spk))
 
@@ -502,7 +508,7 @@ def build_payout_metadata(
         "recipients": rec_list,
     }
     if proof and isinstance(proof, dict):
-        for k in ("offset", "length", "hash", "seed", "height"):
+        for k in ("offset", "length", "hash", "seed", "height", "epoch", "storer"):
             if k in proof:
                 meta[f"proof_{k}"] = proof.get(k)
     if extra:
@@ -654,7 +660,7 @@ def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
                 parsed_rec.append({"addr": addr, "amount": amt})
             obj["recipients"] = parsed_rec
             # optional proof hints
-            for k in ("offset", "length", "hash", "seed", "height"):
+            for k in ("offset", "length", "hash", "seed", "height", "epoch", "storer"):
                 plain_key = k
                 pref_key = f"proof_{k}"
                 use_key = pref_key if pref_key in obj else plain_key
@@ -667,6 +673,11 @@ def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
                             if not isinstance(val, str) or len(val) != 64:
                                 return None
                             obj[pref_key] = val
+                        elif k == "storer":
+                            sval = str(val).strip().lower()
+                            if not sval:
+                                return None
+                            obj[pref_key] = sval
                         else:
                             obj[pref_key] = str(val)
                     except Exception:

@@ -114,6 +114,14 @@ class GraffitiRegistry:
             return
         stats = post.setdefault("stats", {})
         total = sum(int(v) for v in recipients.values())
+        payouts = self.data.setdefault("payouts", {})
+        art_payouts = payouts.setdefault(art_id, [])
+        # Idempotent replay: skip if already recorded
+        for existing in art_payouts:
+            if existing.get("txid") == txid:
+                if pool_balance is not None:
+                    stats["pool_balance"] = max(0, int(pool_balance))
+                return
         if pool_balance is not None:
             stats["pool_balance"] = max(0, int(pool_balance))
         else:
@@ -123,8 +131,6 @@ class GraffitiRegistry:
                 stats["last_paid_epoch"] = max(int(stats.get("last_paid_epoch", -1)), int(epoch))
             except Exception:
                 pass
-        payouts = self.data.setdefault("payouts", {})
-        art_payouts = payouts.setdefault(art_id, [])
         art_payouts.append({
             "txid": txid,
             "block_height": int(block_height),

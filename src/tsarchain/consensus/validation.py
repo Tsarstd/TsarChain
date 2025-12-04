@@ -278,8 +278,26 @@ class ValidationMixin:
                 if epoch >= 0:
                     latest_proof = reg.get_latest_proof_epoch(art_id)
                     if latest_proof < epoch:
-                        self._last_block_validation_error = "payout_missing_proof"
-                        return False
+                        # Allow inline proof metadata in payout OP_RETURN to satisfy gating for stateless peers.
+                        proof_epoch = None
+                        try:
+                            proof_epoch = int(meta.get("proof_epoch", -1))
+                        except Exception:
+                            proof_epoch = None
+                        if proof_epoch is None or proof_epoch < 0:
+                            try:
+                                proof_height = int(meta.get("proof_height", meta.get("height", -1)))
+                            except Exception:
+                                proof_height = -1
+                            if proof_height >= 0:
+                                try:
+                                    proof_epoch = GRAFFITI.compute_proof_epoch(proof_height)
+                                except Exception:
+                                    proof_epoch = None
+                        if proof_epoch is None or proof_epoch < epoch:
+                            self._last_block_validation_error = "payout_missing_proof"
+                            return False
+                        
                 recs = meta.get("recipients") or []
                 if not isinstance(recs, list) or not recs:
                     self._last_block_validation_error = "payout_no_recipients"

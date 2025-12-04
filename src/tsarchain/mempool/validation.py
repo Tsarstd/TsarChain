@@ -207,9 +207,25 @@ class TxMempoolValidator:
                 if epoch >= 0:
                     latest_proof = reg.get_latest_proof_epoch(art_id)
                     if latest_proof < epoch:
-                        self.last_error_reason = "payout_missing_proof"
-                        log.debug("[mempool] payout reject art=%s reason=%s last_proof=%s epoch=%s", art_id[:16], self.last_error_reason, latest_proof, epoch)
-                        return False
+                        proof_epoch = None
+                        try:
+                            proof_epoch = int(payout_meta.get("proof_epoch", -1))
+                        except Exception:
+                            proof_epoch = None
+                        if proof_epoch is None or proof_epoch < 0:
+                            try:
+                                proof_height = int(payout_meta.get("proof_height", payout_meta.get("height", -1)))
+                            except Exception:
+                                proof_height = -1
+                            if proof_height >= 0:
+                                try:
+                                    proof_epoch = GRAFFITI.compute_proof_epoch(proof_height)
+                                except Exception:
+                                    proof_epoch = None
+                        if proof_epoch is None or proof_epoch < epoch:
+                            self.last_error_reason = "payout_missing_proof"
+                            log.debug("[mempool] payout reject art=%s reason=%s last_proof=%s epoch=%s", art_id[:16], self.last_error_reason, latest_proof, epoch)
+                            return False
 
                 # Collect payout recipients
                 recs = payout_meta.get("recipients") or []

@@ -67,7 +67,6 @@ class ReceiveMixin:
         if script_bytes is None and isinstance(candidate, dict):
             script_bytes = self._native_script_bytes(candidate.get("script_pubkey"))
         if script_bytes is None:
-            log.debug("[native-prevout] entry %s missing script", key_desc)
             return None
 
         if isinstance(tx_out, dict):

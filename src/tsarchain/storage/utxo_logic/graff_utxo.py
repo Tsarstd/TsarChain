@@ -179,8 +179,8 @@ class UTXOGraffitiMixin:
         meta: dict[str, Any],
         outputs_info: list[dict[str, Any]],
         txid_hex: str,
-        block_height: int,
-    ) -> None:
+        block_height: int,) -> None:
+        
         art_id = str(meta.get("art_id") or "").lower()
         if not art_id:
             return
@@ -200,7 +200,22 @@ class UTXOGraffitiMixin:
             epoch = int(meta.get("epoch", -1))
         except Exception:
             epoch = -1
+        # Idempotent replay: allow same-epoch payout if txid already recorded; otherwise reject rewind.
         if epoch >= 0 and last_epoch >= 0 and epoch <= last_epoch:
+            already = False
+            try:
+                payouts = (self._graffiti_registry.data.get("payouts") or {}).get(art_id, [])
+                already = any(p.get("txid") == txid_hex for p in payouts)
+            except Exception:
+                already = False
+            if already:
+                # Ensure pool balance stays in sync with UTXO set even when we skip re-recording.
+                try:
+                    current_pool_balance = self.get_balance(pool_addr, mode="total")
+                    self._graffiti_registry.set_pool_balance(art_id, current_pool_balance)
+                except Exception:
+                    pass
+                return
             log.warning("[graffiti] PAYOUT epoch rewind art_id=%s epoch=%s last=%s tx=%s", art_id, epoch, last_epoch, txid_hex)
             return
         # Aggregate payments to recipients observed on-chain
@@ -224,6 +239,51 @@ class UTXOGraffitiMixin:
         if total_paid > pool_balance:
             log.warning("[graffiti] PAYOUT exceeds pool balance art_id=%s total=%s pool=%s tx=%s", art_id, total_paid, pool_balance, txid_hex)
             return
+
+        # Optional: record proof metadata embedded in payout so new nodes can replay state from chain data.
+        try:
+            proof_epoch = meta.get("proof_epoch")
+            proof_height = meta.get("proof_height", meta.get("height"))
+            proof_offset = meta.get("proof_offset")
+            proof_length = meta.get("proof_length")
+            proof_hash = meta.get("proof_hash")
+            proof_seed = meta.get("proof_seed", "")
+            proof_storer = meta.get("proof_storer")
+            # Derive epoch from height when explicit epoch is missing
+            if proof_epoch is None and proof_height is not None:
+                try:
+                    proof_epoch = GRAFFITI.compute_proof_epoch(int(proof_height))
+                except Exception:
+                    proof_epoch = None
+            if proof_epoch is not None:
+                try:
+                    pe = int(proof_epoch)
+                    poff = int(proof_offset) if proof_offset is not None else None
+                    plen = int(proof_length) if proof_length is not None else None
+                    ph = str(proof_hash).strip().lower() if proof_hash else None
+                    pstorer = str(proof_storer).strip().lower() if proof_storer else ""
+                    if (
+                        pstorer
+                        and poff is not None
+                        and plen is not None
+                        and ph
+                        and len(ph) == 64
+                    ):
+                        self._graffiti_registry.record_proof(
+                            art_id=art_id,
+                            storer=pstorer,
+                            epoch=pe,
+                            offset=poff,
+                            length=plen,
+                            proof_hash=ph,
+                            height=int(proof_height) if proof_height is not None else block_height or 0,
+                            seed=str(proof_seed or ""),
+                        )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         # Recalculate pool balance from UTXO set (total, not just mature)
         try:
             current_pool_balance = self.get_balance(pool_addr, mode="total")
