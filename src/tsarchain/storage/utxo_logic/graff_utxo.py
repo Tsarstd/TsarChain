@@ -280,8 +280,10 @@ class UTXOGraffitiMixin:
                             seed=str(proof_seed or ""),
                         )
                 except Exception:
+                    log.exception("[graffiti] PAYOUT failed to record proof for art_id=%s tx=%s", art_id, txid_hex)
                     pass
         except Exception:
+            log.exception("[graffiti] PAYOUT failed to record proof for art_id=%s tx=%s", art_id, txid_hex)
             pass
 
         # Recalculate pool balance from UTXO set (total, not just mature)

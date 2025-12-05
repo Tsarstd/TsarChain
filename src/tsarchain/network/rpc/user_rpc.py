@@ -240,14 +240,6 @@ def handle_user_rpc(
         except Exception:
             log.exception("[process_message] GET_NETWORK_INFO error")
 
-    elif mtype == "GET_BLOCK_AT":
-        try:
-            h = int(message.get("height"))
-        except Exception:
-            log.debug("[process_message] GET_BLOCK_AT invalid height from %s", addr)
-            return {"error": "invalid height"}
-        return self._handle_get_block_at(h)
-
     elif mtype == "GET_BLOCK_HASH":
         try:
             h = int(message.get("height"))

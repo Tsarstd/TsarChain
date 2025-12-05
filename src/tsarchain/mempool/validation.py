@@ -80,59 +80,53 @@ class TxMempoolValidator:
     def _lookup_utxo_entry(self, snapshot, prev_txid_hex: str, prev_index: int):
         if prev_txid_hex is None:
             return None
-        key_str = f"{prev_txid_hex}:{int(prev_index)}"
+        try:
+            idx = int(prev_index)
+        except Exception:
+            log.debug("[_lookup_utxo_entry] Invalid prev_index: %s", prev_index)
+            return None
+
+        txid_raw = str(prev_txid_hex)
+        txid = txid_raw.lower()
+        key_lower = f"{txid}:{idx}"
+        key_raw = f"{txid_raw}:{idx}"
+
         if isinstance(snapshot, dict):
-            entry = snapshot.get(key_str)
-            if entry is not None:
-                return entry
-            entry = snapshot.get(key_str.lower())
-            if entry is not None:
-                return entry
+            # Flat canonical key (used by both LMDB/JSON backend in memory)
+            for k in (key_lower, key_raw):
+                if k in snapshot:
+                    return snapshot[k]
             try:
-                entry = snapshot.get(key_str.encode("utf-8"))
-                if entry is not None:
-                    return entry
+                kb = key_lower.encode("utf-8")
+                if kb in snapshot:
+                    return snapshot[kb]
             except Exception:
                 pass
 
-            bucket = snapshot.get(prev_txid_hex) or snapshot.get(prev_txid_hex.lower())
-            if isinstance(bucket, dict) and int(prev_index) in bucket:
-                return bucket[int(prev_index)]
+            # Tuple key variant
+            for tk in ((txid, idx), (txid_raw, idx)):
+                if tk in snapshot:
+                    return snapshot[tk]
 
-            tuple_key = (prev_txid_hex, int(prev_index))
-            if tuple_key in snapshot:
-                return snapshot[tuple_key]
+            # Nested bucket variant (from load_utxo_set)
+            bucket = snapshot.get(txid) or snapshot.get(txid_raw)
+            if isinstance(bucket, dict):
+                if idx in bucket:
+                    return bucket[idx]
 
+            # Bytes txid tuple variant
             try:
-                tuple_b = (bytes.fromhex(prev_txid_hex), int(prev_index))
+                txid_bytes = bytes.fromhex(txid)
             except ValueError:
-                tuple_b = None
-            if tuple_b and tuple_b in snapshot:
-                return snapshot[tuple_b]
-
-            if len(snapshot) <= 2048:
-                lookup_key_ci = key_str.lower()
-                for key, value in snapshot.items():
-                    try:
-                        if isinstance(key, str) and key.lower() == lookup_key_ci:
-                            return value
-                        if isinstance(key, tuple) and len(key) == 2:
-                            k_txid = key[0]
-                            k_vout = int(key[1])
-                            if k_vout != int(prev_index):
-                                continue
-                            if isinstance(k_txid, (bytes, bytearray)):
-                                cmp = k_txid.hex().lower()
-                            else:
-                                cmp = str(k_txid).lower()
-                            if cmp == prev_txid_hex.lower():
-                                return value
-                    except Exception:
-                        continue
+                txid_bytes = None
+            if txid_bytes:
+                tuple_b = (txid_bytes, idx)
+                if tuple_b in snapshot:
+                    return snapshot[tuple_b]
 
         lookup_method = getattr(self.utxo, "lookup_entry", None)
         if callable(lookup_method):
-            return lookup_method(prev_txid_hex, int(prev_index))
+            return lookup_method(txid, idx)
         return None
 
     @staticmethod

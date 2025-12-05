@@ -47,7 +47,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
     USER = {
         "PING", "GET_BALANCES", "CREATE_TX", "CREATE_TX_MULTI", "GET_INFO",
         "GET_TX_HISTORY", "GET_TX_DETAIL", "NEW_TX", "GET_UTXOS", "GET_PEERS",
-        "GET_NETWORK_INFO", "GET_BLOCK_AT", "GET_BLOCK", "GET_BLOCK_HASH", "STOR_LIST",
+        "GET_NETWORK_INFO", "GET_BLOCK", "GET_BLOCK_HASH", "STOR_LIST",
         "GRAFFITI_GET_POSTS", "GRAFFITI_GET_COMMENTS", "GRAFFITI_GET_ART",
 
         # Chat & storage listing

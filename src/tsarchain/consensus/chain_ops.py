@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import datetime as dt
 import time
-from copy import deepcopy
 from typing import List, TYPE_CHECKING
 
 # ---------------- Local Project ----------------
@@ -47,8 +46,10 @@ class ChainOpsMixin:
                     if local_reorg_depth > CFG.REORG_LIMIT:
                         raise ValueError(f"Reject deep reorg: {local_reorg_depth} > {CFG.REORG_LIMIT}")
 
-            # 4) commit: ganti chain & rebuild state/utxo (persis alur lama)
-            self.chain = deepcopy(other_chain.chain)
+            # 4) Commit: Change chain & rebuild state/utxo
+                # A shallow copy is sufficient because blocks are considered immutable after validation;
+                # A deep copy will duplicate all tx/fields and can be heavy on long reorgs.
+            self.chain = list(other_chain.chain)
             self.total_supply = other_chain.total_supply
             self.total_blocks = len(self.chain)
 

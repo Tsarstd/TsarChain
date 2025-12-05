@@ -274,21 +274,6 @@ def encode_varint(i: int) -> bytes:
 def serialize_bytes_with_len(b: bytes) -> bytes:
     return encode_varint(len(b)) + b
 
-
-# -----------------------------
-# SERIALIZATION / DESERIALIZATION
-# -----------------------------
-
-def serialize(obj: Union[dict, list, object]) -> bytes:
-    def convert(o):
-        if hasattr(o, "to_dict"):
-            return o.to_dict()
-        elif isinstance(o, bytes):
-            return o.hex()
-        raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
-    return json.dumps(obj, default=convert, separators=CFG.CANONICAL_SEP, ensure_ascii=False).encode('utf-8')
-
-
 # -----------------------------
 # DECODE SIG
 # -----------------------------

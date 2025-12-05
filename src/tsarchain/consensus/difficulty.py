@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 from typing import List
+from fractions import Fraction
 
 # ---------------- Local Project ----------------
 from ..core.block import Block
@@ -62,14 +63,18 @@ class DifficultyMixin:
                 if CFG.ENABLE_DIFF_CLAMP:
                     prev_bits   = int(getattr(prefix[-1], "bits", CFG.MAX_BITS))
                     prev_target = bits_to_target(prev_bits)
-                    factor = float(next_target) / float(prev_target or 1)
-                    if factor > float(CFG.DIFF_CLAMP_MAX_UP):
-                        next_target = int(prev_target * float(CFG.DIFF_CLAMP_MAX_UP))
-                    elif factor < float(CFG.DIFF_CLAMP_MAX_DOWN):
-                        next_target = int(prev_target * float(CFG.DIFF_CLAMP_MAX_DOWN))
+                    prev_target = prev_target or 1
+                    factor = Fraction(next_target, prev_target)
+                    clamp_up = Fraction(str(CFG.DIFF_CLAMP_MAX_UP))
+                    clamp_down = Fraction(str(CFG.DIFF_CLAMP_MAX_DOWN))
+                    if factor > clamp_up:
+                        next_target = int(Fraction(prev_target) * clamp_up)
+                    elif factor < clamp_down:
+                        next_target = int(Fraction(prev_target) * clamp_down)
                     if next_target > max_target:
                         next_target = max_target
             except Exception:
+                log.exception("[_expected_bits_on_prefix] Error applying difficulty clamp")
                 pass
 
             try:
@@ -87,11 +92,17 @@ class DifficultyMixin:
                             if dt < 1: dt = 1
                             intervals.append(dt)
                         if intervals:
-                            avg_dt = sum(intervals) / len(intervals)
-                            if avg_dt > float(CFG.EDA_TRIGGER_RATIO) * T:
-                                eased = int(bits_to_target(int(getattr(prefix[-1], "bits", CFG.MAX_BITS))) * float(CFG.EDA_EASE_MULTIPLIER))
-                                next_target = min(int(eased), int(max_target))
+                            total_dt = sum(intervals)
+                            count_dt = len(intervals)
+                            trigger = Fraction(str(CFG.EDA_TRIGGER_RATIO))
+                            lhs = Fraction(total_dt, count_dt)
+                            rhs = trigger * T
+                            if lhs > rhs:
+                                prev_bits_val = int(getattr(prefix[-1], "bits", CFG.MAX_BITS))
+                                eased_target = Fraction(bits_to_target(prev_bits_val)) * Fraction(str(CFG.EDA_EASE_MULTIPLIER))
+                                next_target = min(int(eased_target), int(max_target))
             except Exception:
+                log.exception("[_expected_bits_on_prefix] Error applying EDA")
                 pass
 
         return int(target_to_bits(next_target))
@@ -121,6 +132,7 @@ class DifficultyMixin:
                 return 0
             return (1 << 256) // (target + 1)
         except Exception:
+            log.exception("[_work_from_bits] Error calculating work from bits")
             return 0
 
     def _compute_chainwork_for_chain(self, chain: List[Block]) -> int:
@@ -131,6 +143,7 @@ class DifficultyMixin:
             try:
                 setattr(b, 'chainwork', cw)
             except Exception:
+                log.exception("[_compute_chainwork_for_chain] Error setting chainwork attribute")
                 pass
         return cw
 

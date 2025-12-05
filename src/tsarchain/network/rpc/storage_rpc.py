@@ -159,7 +159,7 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[
         payouts = reg.list_payouts(art_id, limit) if reg else []
         return {"type": "GRAFFITI_GET_PAYOUTS", "art_id": art_id, "payouts": payouts}
 
-    elif mtype == "GRAFFITI_POOL_PAYOUT":
+    elif mtype == "GRAFFITI_POOL_PAYOUT": # NOTE: NOT USED YET
         art_id = str(message.get("art_id") or "").strip().lower()
         try:
             amount = int(message.get("amount", 0))
@@ -245,7 +245,7 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[
         )
         return {"status": "ok", "art_id": art_id, "epoch": epoch}
 
-    elif mtype == "GRAFFITI_PROOF_STATUS":
+    elif mtype == "GRAFFITI_PROOF_STATUS": # NOTE: NOT USED YET
         art_id_raw = str(message.get("art_id") or "").strip()
         storer = str(message.get("storer") or "").strip().lower()
         try:

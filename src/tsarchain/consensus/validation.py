@@ -44,6 +44,7 @@ class ValidationMixin:
                     try:
                         existing_bytes = bytes.fromhex(existing)
                     except Exception:
+                        log.debug("[_compute_txids_for_block] txid hex decode failed", exc_info=True)
                         existing_bytes = None
                 if existing_bytes is not None and existing_bytes != txid_bytes:
                     self._last_block_validation_error = "txid_mismatch"
@@ -54,9 +55,10 @@ class ValidationMixin:
                     setattr(tx, "txid", txid_bytes)
                     setattr(tx, "txid_hex", txid_bytes.hex())
                 except Exception:
-                    pass
+                    log.debug("[_compute_txids_for_block] failed to cache txid fields", exc_info=True)
             return True
         except Exception:
+            log.exception("[_compute_txids_for_block] Unexpected error while computing txids")
             self._last_block_validation_error = "txid_compute_failed"
             return False
 
@@ -93,6 +95,7 @@ class ValidationMixin:
                         if utxo_view is None:
                             utxo_view = store.load_utxo_set()
                     except Exception:
+                        log.exception("[validate_block] Failed to load utxo_view in validate_block")
                         utxo_view = None
                 state_token = self._chain_state_token_locked()
 
@@ -120,6 +123,7 @@ class ValidationMixin:
             target = bits_to_target(block.bits)
             return int.from_bytes(header_hash, "big") <= int(target)
         except Exception:
+            log.exception("[_validate_pow] failed to validate PoW")
             return False
 
     def _validate_merkle(self, block: Block) -> bool:
@@ -130,6 +134,7 @@ class ValidationMixin:
                 header_mr = bytes.fromhex(header_mr)
             return computed == header_mr
         except Exception:
+            log.exception("[_validate_merkle] failed to validate merkle root")
             return False
 
     def _validate_transactions(self, block: Block, utxo_store: UTXODB | None = None) -> bool:
@@ -156,6 +161,7 @@ class ValidationMixin:
             try:
                 raw_full = self._serialize_tx_cached(tx, include_witness=True)
             except Exception:
+                log.exception("[_validate_transactions] tx serialization threw")
                 self._last_block_validation_error = "tx_serialize_failed"
                 return False
             if raw_full is None:
@@ -191,6 +197,7 @@ class ValidationMixin:
                     data = [0] + list(convertbits(prog, 8, 5, True))
                     return bech32_encode(CFG.ADDRESS_PREFIX, data)
             except Exception:
+                log.debug("[_validate_transactions] spk_to_address failed", exc_info=True)
                 return None
             return None
 
@@ -200,6 +207,7 @@ class ValidationMixin:
                 try:
                     meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
                 except Exception:
+                    log.debug("[_validate_transactions] graffiti parse failed for tx output", exc_info=True)
                     meta = None
                 if not meta:
                     continue
@@ -214,6 +222,7 @@ class ValidationMixin:
                         try:
                             art_id = GRAFFITI.compute_art_id(sha_hex, creator)
                         except Exception:
+                            log.debug("[_validate_transactions] compute_art_id failed", exc_info=True)
                             art_id = None
                     first_art_id = (art_id or "").strip().lower() if art_id else None
         if graffiti_posts > 1:
@@ -226,6 +235,7 @@ class ValidationMixin:
             if isinstance(cb_block_id, str):
                 cb_block_id = cb_block_id.strip().lower()
         except Exception:
+            log.debug("[_validate_transactions] coinbase block_id parse failed", exc_info=True)
             cb_block_id = None
         if graffiti_posts == 1 and first_art_id:
             if not cb_block_id or cb_block_id.strip().lower() != first_art_id:
@@ -243,6 +253,7 @@ class ValidationMixin:
                 try:
                     amt = int(getattr(out, "amount", 0))
                 except Exception:
+                    log.debug("[_validate_transactions] payout paymap amount parse failed", exc_info=True)
                     amt = 0
                 if amt <= 0:
                     continue
@@ -253,6 +264,7 @@ class ValidationMixin:
                 try:
                     meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
                 except Exception:
+                    log.debug("[_validate_transactions] payout graffiti parse failed", exc_info=True)
                     meta = None
                 if not meta or str(meta.get("event", "")).upper() != "PAYOUT":
                     continue
@@ -270,6 +282,7 @@ class ValidationMixin:
                 try:
                     epoch = int(meta.get("epoch", -1))
                 except Exception:
+                    log.debug("[_validate_transactions] payout epoch parse failed", exc_info=True)
                     epoch = -1
                 if epoch >= 0 and epoch <= last_epoch:
                     self._last_block_validation_error = "payout_epoch_rewind"
@@ -283,16 +296,19 @@ class ValidationMixin:
                         try:
                             proof_epoch = int(meta.get("proof_epoch", -1))
                         except Exception:
+                            log.debug("[_validate_transactions] payout proof_epoch parse failed", exc_info=True)
                             proof_epoch = None
                         if proof_epoch is None or proof_epoch < 0:
                             try:
                                 proof_height = int(meta.get("proof_height", meta.get("height", -1)))
                             except Exception:
+                                log.debug("[_validate_transactions] payout proof_height parse failed", exc_info=True)
                                 proof_height = -1
                             if proof_height >= 0:
                                 try:
                                     proof_epoch = GRAFFITI.compute_proof_epoch(proof_height)
                                 except Exception:
+                                    log.debug("[_validate_transactions] compute_proof_epoch failed", exc_info=True)
                                     proof_epoch = None
                         if proof_epoch is None or proof_epoch < epoch:
                             self._last_block_validation_error = "payout_missing_proof"
@@ -308,6 +324,7 @@ class ValidationMixin:
                     try:
                         amt_req = int(rec.get("amount", 0))
                     except Exception:
+                        log.debug("[_validate_transactions] payout recipient amount parse failed", exc_info=True)
                         amt_req = 0
                     if not addr or amt_req <= 0:
                         self._last_block_validation_error = "payout_bad_recipient"
@@ -332,6 +349,7 @@ class ValidationMixin:
                 try:
                     return bytes.fromhex(spk_obj)
                 except Exception:
+                    log.debug("[_validate_transactions] script hex decode failed", exc_info=True)
                     return None
             script_attr = getattr(spk_obj, "script_pubkey", None)
             if script_attr is not None:
@@ -340,11 +358,13 @@ class ValidationMixin:
                 try:
                     return spk_obj.serialize()
                 except Exception:
+                    log.debug("[_validate_transactions] script serialize failed", exc_info=True)
                     return None
             if hasattr(spk_obj, "to_bytes"):
                 try:
                     return bytes(spk_obj.to_bytes())
                 except Exception:
+                    log.debug("[_validate_transactions] script to_bytes failed", exc_info=True)
                     return None
             return None
 
@@ -363,6 +383,7 @@ class ValidationMixin:
                 if utxo_view is None:
                     utxo_view = store.load_utxo_set()
             except Exception:
+                log.exception("[_validate_transactions] primary UTXO view load failed, trying fallback")
                 try:
                     utxo_view = store.load_utxo_set()
                 except Exception:
@@ -382,6 +403,7 @@ class ValidationMixin:
                 if entry is not None:
                     return entry
             except Exception:
+                log.debug("[_legacy_lookup] utf-8 key lookup failed", exc_info=True)
                 pass
             bucket = snapshot_map.get(prev_txid_hex) or snapshot_map.get(prev_txid_hex.lower())
             if isinstance(bucket, dict) and int(prev_index) in bucket:
@@ -412,6 +434,7 @@ class ValidationMixin:
                             if txid_cmp == prev_txid_hex.lower():
                                 return snapshot_map[candidate_key]
                     except Exception:
+                        log.debug("[_legacy_lookup] iter candidate compare failed", exc_info=True)
                         continue
             return None
 
@@ -420,6 +443,7 @@ class ValidationMixin:
                 try:
                     return store_lookup(prev_txid_hex, prev_index)
                 except Exception:
+                    log.exception("[_validate_transactions] store_lookup raised", extra={"prev_txid": prev_txid_hex, "prev_index": prev_index})
                     return None
             return _legacy_lookup(utxo_view, prev_txid_hex, prev_index)
 
@@ -468,6 +492,7 @@ class ValidationMixin:
                     tx.compute_txid()
                     txid_hex = _txid_hex(getattr(tx, "txid", None))
                 except Exception:
+                    log.exception("[_validate_transactions] compute_txid failed", extra={"tx_index": len(processed_txids)})
                     txid_hex = None
             txid_lower = txid_hex.lower() if txid_hex else None
             if getattr(tx, "is_coinbase", False):
@@ -482,6 +507,7 @@ class ValidationMixin:
                 try:
                     prev_index = int(getattr(tx_input, "vout", getattr(tx_input, "prev_index", 0)))
                 except Exception:
+                    log.exception("[_validate_transactions] invalid prev_index", exc_info=True)
                     self._last_block_validation_error = "tx_input_invalid_prev_index"
                     return False
                 if prev_txid_hex.lower() in processed_txids:
@@ -508,6 +534,7 @@ class ValidationMixin:
                     compact = H.tx_to_compact_tuple(tx)
                     tx_payloads.append(compact)
                 except Exception:
+                    log.exception("[_build_block_payload_compact] tx_to_compact_tuple failed")
                     return None
 
             utxo_items = []
@@ -529,6 +556,7 @@ class ValidationMixin:
                         int(entry.get("block_height", 0)),
                     ))
                 except Exception:
+                    log.debug("[_build_block_payload_compact] snapshot entry decode failed", exc_info=True)
                     continue
             return tx_payloads, utxo_items
 
@@ -574,6 +602,7 @@ class ValidationMixin:
                 try:
                     tx_obj.fee = fee_int
                 except Exception:
+                    log.debug("[_validate_transactions] failed to assign fee attribute", exc_info=True)
                     setattr(tx_obj, "fee", fee_int)
         else:
             fees_list = [int(getattr(t, "fee", 0)) for t in txs[1:]]
@@ -608,11 +637,12 @@ class ValidationMixin:
         try:
             raw = H.serialize_tx(tx, include_witness=include_witness)
         except Exception:
+            log.exception("[_serialize_tx_cached] serialize_tx failed")
             return None
         try:
             setattr(tx, attr, raw)
         except Exception:
-            pass
+            log.debug("[_serialize_tx_cached] failed to cache serialized tx", exc_info=True)
         return raw
 
     def _estimate_block_size(self, block: Block) -> Optional[int]:
@@ -628,7 +658,7 @@ class ValidationMixin:
                         size += len(raw if isinstance(raw, (bytes, bytearray)) else bytes.fromhex(raw))
                         continue
                     except Exception:
-                        pass
+                        log.debug("[_estimate_block_size] tx.serialize failed", exc_info=True)
                 if hasattr(tx, 'raw') and isinstance(getattr(tx, 'raw'), (bytes, bytearray)):
                     size += len(tx.raw); continue
                 if hasattr(tx, 'size_bytes'):
@@ -638,6 +668,7 @@ class ValidationMixin:
                 return None
             return int(size)
         except Exception:
+            log.exception("[_estimate_block_size] failed to estimate block size")
             return None
 
     def _count_block_sigops(self, block: Block) -> Optional[int]:
@@ -651,6 +682,7 @@ class ValidationMixin:
                 return None
             return total
         except Exception:
+            log.exception("[_count_block_sigops] failed to count sigops")
             return None
 
     def _chain_state_token_locked(self):
@@ -689,12 +721,14 @@ class ValidationMixin:
                     try:
                         tx.compute_txid()
                     except Exception:
+                        log.exception("[_ensure_unique_txids] compute_txid failed")
                         return False
                 txid_b = getattr(tx, 'txid', None)
                 if not isinstance(txid_b, (bytes, bytearray)):
                     try:
                         txid_b = bytes.fromhex(txid_b) if isinstance(txid_b, str) else None
                     except Exception:
+                        log.debug("[_ensure_unique_txids] txid hex decode failed", exc_info=True)
                         txid_b = None
                 if txid_b is None:
                     return False
@@ -703,6 +737,7 @@ class ValidationMixin:
                 seen_txids.add(txid_b)
             return True
         except Exception:
+            log.exception("[_ensure_unique_txids] unexpected error")
             return False
 
     def _check_block_limits(self, block: Block) -> bool:
@@ -715,6 +750,7 @@ class ValidationMixin:
                 return False
             return True
         except Exception:
+            log.exception("[_check_block_limits] unexpected error")
             return False
 
     def _entry_script_bytes(self, entry) -> bytes | None:
@@ -736,6 +772,7 @@ class ValidationMixin:
             try:
                 return spk.serialize()
             except Exception:
+                log.debug("[_entry_script_bytes] script serialize failed", exc_info=True)
                 return None
         if isinstance(spk, (bytes, bytearray)):
             return bytes(spk)
@@ -743,6 +780,7 @@ class ValidationMixin:
             try:
                 return bytes.fromhex(spk)
             except Exception:
+                log.debug("[_entry_script_bytes] script hex decode failed", exc_info=True)
                 return None
         return None
 
@@ -755,6 +793,7 @@ class ValidationMixin:
                 try:
                     entry = lookup_fn(txid_b.hex(), int(vout_i))
                 except Exception:
+                    log.debug("[_check_sigops_budget] lookup_fn failed", exc_info=True)
                     entry = None
             elif isinstance(utxo_view, dict):
                 key = f"{txid_b.hex()}:{int(vout_i)}"
@@ -779,6 +818,7 @@ class ValidationMixin:
                 return False
             return True
         except Exception:
+            log.exception("[_check_sigops_budget] sigops check failed", exc_info=True)
             est_sigops = self._count_block_sigops(block)
             if est_sigops is not None and est_sigops > int(CFG.MAX_SIGOPS_PER_BLOCK):
                 return False
