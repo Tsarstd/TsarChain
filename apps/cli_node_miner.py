@@ -27,7 +27,7 @@ Notes
 """
 from __future__ import annotations
 
-import argparse, time, signal, threading, errno, queue, os, sys
+import argparse, time, signal, threading, errno, queue, os, sys, re, logging
 import multiprocessing as mp
 from datetime import datetime
 
@@ -40,7 +40,8 @@ from tsarchain.utils.bootstrap import maybe_bootstrap_snapshot
 from tsarchain.utils.cosmetic import interface as COL
 from tsarchain.utils.cosmetic.tui import MinerTUI, create_tui_logger
 
-from tsarchain.utils.tsar_logging import setup_logging
+from tsarchain.utils.tsar_logging import setup_logging, get_ctx_logger
+log = get_ctx_logger("apps.cli_node_miner")
 
 INTERRUPTED_ERRNOS = {
     code
@@ -50,6 +51,8 @@ INTERRUPTED_ERRNOS = {
     )
     if code is not None
 }
+
+ADDRESS_PATTERN = re.compile(r"^tsar1[0-9a-z]{20,120}$")
 
 
 def _enable_siginterrupt():
@@ -161,7 +164,7 @@ class SimpleMiner:
         self.cores = cores
         self.bootstrap_snapshot = bootstrap_snapshot
         self.mining_alive = True
-        self.cancel_mining = threading.Event()
+        self.cancel_mining = mp.Event()
         self.blockchain = None
         self.network = None
         self._progress_q: mp.Queue = progress_queue or mp.Queue()
@@ -179,14 +182,23 @@ class SimpleMiner:
 
     def signal_handler(self, signum, _frame):
         clog(f"Received signal {signum}, shutting down...")
+        try:
+            log.info("Ctrl+C / signal %s received - stopping miner loop", signum)
+        except Exception:
+            pass
         self.mining_alive = False
         if self.cancel_mining:
             self.cancel_mining.set()
 
     def validate_address(self):
-        if not self.address or not self.address.lower().startswith("tsar1"):
-            clog("Error: Address should start with 'tsar1...'")
+        if not self.address:
+            clog("Error: Address is required (tsar1...).")
             return False
+        addr = self.address.strip().lower()
+        if not ADDRESS_PATTERN.match(addr):
+            clog("Error: Address must start with 'tsar1' and contain only lowercase base32 chars (length 24-124).")
+            return False
+        self.address = addr
         return True
 
     def _queue_block_for_broadcast(self, block) -> None:
@@ -273,6 +285,23 @@ class SimpleMiner:
         except Exception:
             hx = None
         return h, hx
+
+    def _mine_block_runner(self, result: dict):
+        """
+        Run a single mine_block call in a worker thread so the main loop
+        stays responsive to Ctrl+C and can flip cancel_mining immediately.
+        """
+        try:
+            blk = self.blockchain.mine_block(
+                miner_address=self.address,
+                use_cores=self.cores,
+                cancel_event=self.cancel_mining,
+                pow_backend="randomx",
+                progress_queue=self._progress_q,
+            )
+            result["block"] = blk
+        except Exception as exc:
+            result["exc"] = exc
 
     def _trusted_best_height(self, force_refresh: bool = False) -> int:
         """
@@ -531,15 +560,35 @@ class SimpleMiner:
                 if self.network.peers:
                     self.network.request_sync(fast=True)
 
-                block = self.blockchain.mine_block(
-                    miner_address=self.address,
-                    use_cores=self.cores,
-                    cancel_event=self.cancel_mining,
-                    pow_backend="randomx",
-                    progress_queue=self._progress_q,  # TOTAL_HPS -> TUI
+                result_holder: dict = {}
+                mine_thread = threading.Thread(
+                    target=self._mine_block_runner,
+                    args=(result_holder,),
+                    name="MineBlockWorker",
+                    daemon=True,
                 )
+                mine_thread.start()
 
-                if not self.mining_alive:
+                cancel_logged = False
+                while mine_thread.is_alive() and self.mining_alive:
+                    mine_thread.join(timeout=0.5)
+                    if self.cancel_mining.is_set() and not cancel_logged:
+                        clog("[mining] Cancellation requested; waiting for miner thread to stop...")
+                        try:
+                            log.info("Cancellation requested; waiting for miner thread to stop...")
+                        except Exception:
+                            pass
+                        cancel_logged = True
+
+                if mine_thread.is_alive():
+                    mine_thread.join(timeout=2.0)
+
+                block = result_holder.get("block")
+                exc = result_holder.get("exc")
+                if exc:
+                    raise exc
+
+                if not self.mining_alive or self.cancel_mining.is_set():
                     break
 
                 if block:
@@ -568,6 +617,10 @@ class SimpleMiner:
                 if self.cancel_mining:
                     self.cancel_mining.set()
                 clog("[signal] Mining interrupted by user")
+                try:
+                    log.info("Mining loop interrupted by KeyboardInterrupt (Ctrl+C).")
+                except Exception:
+                    pass
                 break
             except Exception as exc:
                 if isinstance(exc, OSError) and getattr(exc, "errno", None) in INTERRUPTED_ERRNOS:
@@ -592,6 +645,10 @@ class SimpleMiner:
                 pass
 
         clog("Miner stopped")
+        try:
+            log.info("Miner stopped (cleanup complete).")
+        except Exception:
+            pass
 
 
 class NodeRunner:
@@ -602,12 +659,17 @@ class NodeRunner:
         self._last_chain_height = -1
         self._sync_ready = False
         self.bootstrap_snapshot = bootstrap_snapshot
+        self._threads: list[threading.Thread] = []
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
         _enable_siginterrupt()
 
     def _handle_signal(self, *_args):
         clog("Stopping node...")
+        try:
+            log.info("Ctrl+C received - stopping node-only runner.")
+        except Exception:
+            pass
         self.running = False
 
     def _has_active_peers(self) -> bool:
@@ -650,10 +712,14 @@ class NodeRunner:
                     except Exception:
                         pass
                     time.sleep(1.0)
-            threading.Thread(target=_early_sync, daemon=True).start()
+            t_early = threading.Thread(target=_early_sync, daemon=True)
+            t_early.start()
+            self._threads.append(t_early)
 
             # == Background sync daemon ==
-            threading.Thread(target=self._sync_daemon, daemon=True).start()
+            t_sync = threading.Thread(target=self._sync_daemon, daemon=True)
+            t_sync.start()
+            self._threads.append(t_sync)
 
             while self.running:
                 time.sleep(2)
@@ -723,13 +789,25 @@ class NodeRunner:
             time.sleep(5)
 
     def shutdown(self):
+        self.running = False
         if self.network:
             try:
                 self.network.shutdown()
             except Exception:
                 pass
             self.network = None
+        for t in self._threads:
+            if t and t.is_alive():
+                try:
+                    t.join(timeout=2.5)
+                except Exception:
+                    pass
+        self._threads.clear()
         clog("Node stopped.")
+        try:
+            log.info("Node-only runner stopped (cleanup complete).")
+        except Exception:
+            pass
 
 def choose_mode() -> int:
     print(f"{COL.BOLD}{COL.TXT_HEADER}{COL.BG_HEADER}       Please Choose Mode       {COL.RESET}")
@@ -764,6 +842,25 @@ def parse_args():
     parser.add_argument("--rx-light", action="store_true", help="Force RandomX LIGHT mode (~<2.5GB, lower RAM)")
     return parser.parse_args()
 
+
+def _normalize_cores(cores: int | None) -> int | None:
+    try:
+        cpu_total = mp.cpu_count()
+    except Exception:
+        cpu_total = None
+    if cores is None:
+        return cpu_total or 1
+    try:
+        cores_int = int(cores)
+    except Exception:
+        return None
+    if cores_int <= 0:
+        return None
+    if cpu_total:
+        cores_int = min(cores_int, cpu_total)
+    return cores_int
+
+
 def main():
     args = parse_args()
     mode_selected = None
@@ -788,6 +885,11 @@ def main():
         input_address, input_cores = COL.get_user_input()
         address = address or input_address
         cores = cores or input_cores
+
+    cores = _normalize_cores(cores)
+    if cores is None:
+        clog("Invalid --cores value. Please provide a positive integer.")
+        sys.exit(2)
 
     # Decide RandomX memory mode (mining mode only)
     if args.rx_full and args.rx_light:

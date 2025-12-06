@@ -26,7 +26,7 @@ Notes
 
 from __future__ import annotations
 
-import argparse, errno, signal, time, threading, queue, os, sys
+import argparse, errno, signal, time, threading, queue, os, sys, logging
 import multiprocessing as mp
 from datetime import datetime
 
@@ -40,7 +40,8 @@ from tsarchain.utils import config as CFG
 from tsarchain.utils.cosmetic import interface as COL
 from tsarchain.utils.cosmetic.tui import MinerTUI, create_tui_logger
 
-from tsarchain.utils.tsar_logging import setup_logging
+from tsarchain.utils.tsar_logging import setup_logging, get_ctx_logger
+log = get_ctx_logger("apps.cli_miner")
 
 INTERRUPTED_ERRNOS = {
     code
@@ -143,7 +144,7 @@ class LightMiner:
         self.blockchain: Blockchain | None = None
         self.network: Network | None = None
         self.mining_alive = True
-        self.cancel_mining = threading.Event()
+        self.cancel_mining = mp.Event()
         self._progress_q: mp.Queue = progress_queue or mp.Queue()
         self.tui = tui
         self.tip_height: int = -1
@@ -156,6 +157,10 @@ class LightMiner:
     # -------- lifecycle --------
     def _handle_signal(self, signum, _frame):
         clog(f"[signal] Received {signum}; stopping miner...", color=COL.BG_YELLOW)
+        try:
+            log.info("Ctrl+C / signal %s received - stopping light miner loop", signum)
+        except Exception:
+            pass
         self.mining_alive = False
         self.cancel_mining.set()
 
@@ -385,6 +390,19 @@ class LightMiner:
         )
         return block
 
+    def _mine_block_runner(self, candidate: Block, result: dict):
+        """Worker to mine a block so main loop can react instantly to Ctrl+C."""
+        try:
+            h = candidate.mine(
+                use_cores=self.cores,
+                stop_event=self.cancel_mining,
+                pow_backend="randomx",
+                progress_queue=self._progress_q,
+            )
+            result["hash"] = h
+        except Exception as exc:
+            result["exc"] = exc
+
     def start_mining(self, timeout: int = 600) -> bool:
         if not self.validate_address():
             return False
@@ -441,12 +459,33 @@ class LightMiner:
                 clog(f"[sync] Tip {tip_h} {tip_hex}... -> target bits {hex(expected_bits)}")
                 clog(f"[mining] Mining empty block at height {candidate.height}")
 
-                h = candidate.mine(
-                    use_cores=self.cores,
-                    stop_event=self.cancel_mining,
-                    pow_backend="randomx",
-                    progress_queue=self._progress_q,
+                result_holder: dict = {}
+                mine_thread = threading.Thread(
+                    target=self._mine_block_runner,
+                    args=(candidate, result_holder),
+                    name="LightMineWorker",
+                    daemon=True,
                 )
+                mine_thread.start()
+
+                cancel_logged = False
+                while mine_thread.is_alive() and self.mining_alive:
+                    mine_thread.join(timeout=0.5)
+                    if self.cancel_mining.is_set() and not cancel_logged:
+                        clog("[mining] Cancellation requested; waiting for miner thread to stop...", color=COL.BG_YELLOW)
+                        try:
+                            log.info("Cancellation requested; waiting for light miner thread to stop...")
+                        except Exception:
+                            pass
+                        cancel_logged = True
+
+                if mine_thread.is_alive():
+                    mine_thread.join(timeout=2.0)
+
+                h = result_holder.get("hash")
+                exc = result_holder.get("exc")
+                if exc:
+                    raise exc
 
                 if not self.mining_alive or self.cancel_mining.is_set():
                     break
@@ -484,6 +523,10 @@ class LightMiner:
                 self.mining_alive = False
                 self.cancel_mining.set()
                 clog("[signal] Mining interrupted by user; stopping workers...", color=COL.BG_YELLOW)
+                try:
+                    log.info("Mining loop interrupted by KeyboardInterrupt (Ctrl+C).")
+                except Exception:
+                    pass
             except Exception as exc:
                 if isinstance(exc, OSError) and getattr(exc, "errno", None) in INTERRUPTED_ERRNOS:
                     clog("[mining] Interrupted system call; stopping miners...", color=COL.BG_YELLOW)
@@ -508,6 +551,10 @@ class LightMiner:
                 pass
             self.network = None
         clog("[light-node] Shutdown complete.", color=COL.BG_YELLOW)
+        try:
+            log.info("Light miner stopped (cleanup complete).")
+        except Exception:
+            pass
 
 
 def parse_args():
