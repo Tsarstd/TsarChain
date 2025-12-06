@@ -3,9 +3,10 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: Merkle
 
-import re
+import os, re
 import threading
 import tkinter as tk
+from glob import glob
 from tkinter import ttk, messagebox
 from datetime import datetime
 from typing import Optional, Union, Dict
@@ -15,6 +16,7 @@ from PIL import Image, ImageTk
 # ---------------- Local Project (With Node) ----------------
 from tsarchain.utils import config as CFG
 from ..theme import ExplorerTheme, get_theme
+from ..services.media import TkVLCPlayer
 
 
 MONO     = ("Consolas", 10)
@@ -266,6 +268,7 @@ class ExplorePanel(tk.Frame):
         self.text.tag_configure("center", justify="center")
         self.text.tag_configure("mono_center", font=MONO, justify="center")
         self._img_refs: list = []
+        self._media_players: list = []
 
         self.menu = tk.Menu(
             self,
@@ -343,7 +346,17 @@ class ExplorePanel(tk.Frame):
         self.clipboard_append(sel)
 
     # ---------- rendering helpers ----------
+    def _cleanup_media_players(self):
+        for player in list(self._media_players):
+            try:
+                player.dispose()
+            except Exception:
+                pass
+        self._media_players.clear()
+
     def _clear_text(self):
+        self._cleanup_media_players()
+        self._img_refs.clear()
         self.text.config(state="normal")
         self.text.delete("1.0", "end")
     
@@ -690,17 +703,23 @@ class ExplorePanel(tk.Frame):
 
                 img_bytes = None
                 img_meta = None
+                cache_path = None
                 if callable(fetch_file):
                     try:
                         f = fetch_file(post, art_id)
-                        if isinstance(f, dict) and f.get("status") == "ok":
-                            img_bytes = f.get("bytes")
-                            img_meta = f.get("meta")
+                        if isinstance(f, dict):
+                            if f.get("status") == "ok":
+                                img_bytes = f.get("bytes")
+                                img_meta = f.get("meta")
+                                cache_path = f.get("cache_path")
+                            else:
+                                err = f.get("reason") or f.get("error")
+                                self._ui(self._render_error, f"fetch_graffiti_file error: {err}")
                     except Exception:
                         pass
 
                 done = True
-                self._ui(self._render_graffiti, post, comments, img_bytes, img_meta or {})
+                self._ui(self._render_graffiti, post, comments, img_bytes, img_meta or {}, cache_path)
             except Exception as e:
                 self._ui(self._render_error, f"get_graffiti error: {e}")
             finally:
@@ -803,13 +822,13 @@ class ExplorePanel(tk.Frame):
                 self.text.insert("end", f"   ({vin} → {vout})\n", ("mono",))
         self._finish_render(f"Block {h}")
 
-    def _render_graffiti(self, post: Dict, comments: list[Dict], img_bytes: bytes | None, img_meta: Dict):
+    def _render_graffiti(self, post: Dict, comments: list[Dict], img_bytes: bytes | None, img_meta: Dict, cache_path: str | None = None):
         self._clear_text()
         self._img_refs.clear()
 
         art_id = str((post or {}).get("art_id") or "-")
         creator = str((post or {}).get("creator") or "-")
-        mime = str((post or {}).get("mime") or img_meta.get("mime") or "-")
+        mime = str((post or {}).get("mime") or post.get("mime_type") or img_meta.get("mime") or img_meta.get("mime_type") or "-").lower()
         size = int((post or {}).get("size") or (post or {}).get("size_bytes") or img_meta.get("size_bytes") or 0)
         block_h = int((post or {}).get("block_height") or 0)
         txid = str((post or {}).get("txid") or "-")
@@ -848,38 +867,155 @@ class ExplorePanel(tk.Frame):
         if stats:
             _kv_center("Total Comments", str(stats.get("comments", 0)), "val_num")
 
-        # image preview
-        if img_bytes:
+        # preview: image or video
+        cache_guess = cache_path
+        if not cache_guess:
             try:
-                buf = BytesIO(img_bytes)
-                img = Image.open(buf)
-                img.thumbnail((780, 520))
-                photo = ImageTk.PhotoImage(img)
-                self._img_refs.append(photo)
+                matches = glob(os.path.join("data_user", "graffiti_cache", f"{art_id}.*"))
+                for m in matches:
+                    if os.path.isfile(m):
+                        cache_guess = m
+                        break
+            except Exception:
+                cache_guess = cache_path
+        ext = os.path.splitext(cache_guess or "")[1].lower()
+        is_video = ("video" in mime) or ext == ".mp4" or mime.endswith("mp4")
+        if is_video:
+            _w_center("Video (MP4) detected", "muted")
+            if cache_guess and os.path.isfile(cache_guess):
+                video_container = tk.Frame(self.text, bg=self.card_bg)
+            
+                # Buat frame khusus untuk video player
+                video_inner_frame = tk.Frame(video_container, bg=self.card_bg)
+                video_inner_frame.pack(expand=True)
+                
+                # Buat frame untuk status di bawah video
+                status_row = tk.Frame(video_container, bg=self.card_bg)
+                status_row.pack(side="top", anchor="center", pady=(2, 2))
+                status_var = tk.StringVar(value="")
+                err_msg = ""
+                player_obj = None
                 try:
-                    self.text.update_idletasks()
-                    text_w = int(self.text.winfo_width() or 0)
-                except Exception:
-                    text_w = 0
-                if text_w <= 0:
+                    player_obj = TkVLCPlayer(
+                        video_inner_frame,
+                        bg=self.card_bg,
+                        fg=self.fg,
+                        accent=self.accent,
+                        on_error=lambda m: status_var.set(m),
+                    )
+                    # panel video di dalam video_wrap
+                    player_obj.frame.pack(fill="both", expand=True, pady=(6, 4))
+                    player_obj.load(cache_guess, autoplay=True)
+                    self._media_players.append(player_obj)
+                except Exception as exc:
+                    err_msg = f"Player error: {exc}"
+                    if player_obj:
+                        try:
+                            player_obj.dispose()
+                        except Exception:
+                            pass
+                        player_obj = None
+
+                # baris status di bawah video
+                status_row.pack(side="top", anchor="w", pady=(2, 2))
+                tk.Label(
+                    status_row,
+                    textvariable=status_var,
+                    bg=self.card_bg,
+                    fg=self.muted,
+                    font=("Consolas", 9),
+                ).pack(side="left", padx=(0, 0))
+                if err_msg:
+                    tk.Label(
+                        status_row,
+                        text=err_msg,
+                        bg=self.card_bg,
+                        fg=self.muted,
+                        font=("Consolas", 9),
+                    ).pack(side="left", padx=(8, 0))
+
+                # === BAGIAN PENTING: hitung padding supaya video di tengah ===
+                def center_video():
                     try:
-                        self.card.update_idletasks()
-                        text_w = int(self.card.winfo_width() or 0)
+                        # Dapatkan lebar text widget yang sebenarnya
+                        self.text.update_idletasks()
+                        text_w = self.text.winfo_width()
+                        
+                        if text_w <= 0:
+                            # Jika masih 0, coba dapatkan dari parent
+                            self.card.update_idletasks()
+                            text_w = self.card.winfo_width()
+                        
+                        # Dapatkan lebar video panel
+                        if player_obj and player_obj.video_panel.winfo_exists():
+                            video_w = player_obj.video_panel.winfo_width()
+                            
+                            # Jika video_w masih 0, gunakan ukuran default
+                            if video_w <= 0:
+                                video_w = 720  # fallback default width
+                            
+                            # Hitung padding untuk centering
+                            padx_left = max((text_w - video_w) // 2, 0)
+                            
+                            # Konfigurasi video_inner_frame dengan padding
+                            video_inner_frame.config(padx=padx_left)
+                            
+                            # Jika perlu, sesuaikan ukuran video panel
+                            try:
+                                player_obj.video_panel.config(width=video_w)
+                            except:
+                                pass
+                    except Exception as e:
+                        print(f"Center video error: {e}")
+                
+                # Panggil fungsi centering setelah UI dirender
+                self.text.after(100, center_video)
+                
+                # Juga panggil saat window di-resize
+                def on_resize(event=None):
+                    center_video()
+                
+                self.text.bind("<Configure>", on_resize)
+                video_inner_frame.bind("<Configure>", on_resize)
+                
+                # Sisipkan video container ke text widget
+                self.text.window_create("end", window=video_container)
+                self._writeln()
+            else:
+                _w_center("(cache video tidak ditemukan)", "muted")
+
+        else:
+            if img_bytes:
+                try:
+                    buf = BytesIO(img_bytes)
+                    img = Image.open(buf)
+                    img.thumbnail((780, 520))
+                    photo = ImageTk.PhotoImage(img)
+                    self._img_refs.append(photo)
+                    try:
+                        self.text.update_idletasks()
+                        text_w = int(self.text.winfo_width() or 0)
                     except Exception:
                         text_w = 0
+                    if text_w <= 0:
+                        try:
+                            self.card.update_idletasks()
+                            text_w = int(self.card.winfo_width() or 0)
+                        except Exception:
+                            text_w = 0
 
-                img_w = photo.width()
-                padx = max((text_w - img_w) // 2, 0)
+                    img_w = photo.width()
+                    padx = max((text_w - img_w) // 2, 0)
 
-                frame = tk.Frame(self.text, bg=self.card_bg)
-                lbl = tk.Label(frame, image=photo, bg=self.card_bg)
-                lbl.pack()
-                self.text.window_create("end", window=frame, padx=padx)
-                self._writeln()
-            except Exception as e:
-                _w_center(f"[preview failed] {e}", "muted")
-        else:
-            _w_center("(graffiti not found)", "muted")
+                    frame = tk.Frame(self.text, bg=self.card_bg)
+                    lbl = tk.Label(frame, image=photo, bg=self.card_bg)
+                    lbl.pack()
+                    self.text.window_create("end", window=frame, padx=padx)
+                    self._writeln()
+                except Exception as e:
+                    _w_center(f"[preview failed] {e}", "muted")
+            else:
+                _w_center("(graffiti not found)", "muted")
 
         # comments
         self._writeln()

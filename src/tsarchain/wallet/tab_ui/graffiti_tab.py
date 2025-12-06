@@ -18,6 +18,7 @@ from ...contracts.graffiti import (
     calc_comment_split,
     compute_art_id,
     derive_pool_address,
+    validate_graffiti_file,
 )
 from ..services.graffiti_service import upload_graffiti
 from ..theme import GraffitiTheme, lighten
@@ -408,7 +409,8 @@ class GraffitiTab(ttk.Frame):
         # compute
         try:
             size = os.path.getsize(path)
-            mime = detect_mime(path)
+            mime_raw = detect_mime(path)
+            mime = validate_graffiti_file(size, mime_raw, os.path.basename(path))
             sha = sha256_file(path)
         except Exception as e:
             messagebox.showerror("Graffiti", f"Failed to read file: {e}")
@@ -429,6 +431,11 @@ class GraffitiTab(ttk.Frame):
             return
         if not self.selected_path or not self.selected_sha or self.selected_size is None or not self.selected_mime:
             messagebox.showwarning("Graffiti", "Select a file first.")
+            return
+        try:
+            validate_graffiti_file(self.selected_size, self.selected_mime, os.path.basename(self.selected_path))
+        except Exception as exc:
+            messagebox.showerror("Graffiti", f"File tidak memenuhi syarat: {exc}")
             return
         if not self.assigned_storers:
             messagebox.showwarning("Graffiti", "No storage node selected. Refresh nodes first.")

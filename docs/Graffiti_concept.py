@@ -146,7 +146,7 @@ Outputs: [ 80% -> addr_c, 10% -> pool_addr ]; 10% miner fee via input-output del
 
 10. Worked Example
 
-File: 720KB -> billable = 800KB. UPLOAD_FEE (0.8 TSAR) * 8 = 6.4 TSAR upload_fee -> pool_addr. 
+File: 720KB -> billable = 800KB. GRAFFITI_UPLOAD_FEE_PER_CHUNK (0.8 TSAR) * 8 = 6.4 TSAR upload_fee -> pool_addr. 
 
 Comment A: 2 TSAR -> 1.6 to creator, 0.2 to pool_addr, 0.2 miner fee. 
 
@@ -162,15 +162,16 @@ Payout: Per epoch, storage nodes passing proofs split the available pool for thi
 
 	PARAM								Default (v0.1)					Notes
 
-	UPLOAD_FEE							0.8 TSAR				        Upload fee per 100KB (rounded up)
-	MIN_BILLABLE_SIZE				    100 KB						    Minimum billable chunk
-	REPLICATION_R						5						        Permanent replication factor
-	EPOCH_BLOCKS						720						        Retention epoch (~1 day @2m/block)
-	COMMENT_MAX_BYTES					140								Max on chain comment bytes
-	COMMENT_FEE_MIN						1 TSAR						    Minimum comment fee
-	ROYALTY_CREATOR						0.80							Creator share of comment fee
-	SHARE_STORAGE						0.10						    Storage pool share of comment fee
-	SHARE_MINER_FEE						~0.10							Miner fee via I/O delta
+	GRAFFITI_UPLOAD_FEE_PER_CHUNK		0.8 TSAR				        Upload fee per 100KB (rounded up)
+	GRAFFITI_MIN_BILLABLE_SIZE			100 KB						    Minimum billable chunk
+	GRAFFITI_REPLICATION_R				3						        Permanent replication factor
+	GRAFFITI_PROOF_EPOCH_BLOCKS			720						        Retention epoch (~1 day @2m/block)
+	GRAFFITI_COMMENT_MAX_BYTES			140								Max on chain comment bytes
+	GRAFFITI_COMMENT_MIN_FEE			1 TSAR						    Minimum comment fee
+ 	GRAFFITI_COMMENT_BP_DENOM			10_000							Fee basis points denominator
+	GRAFFITI_COMMENT_CREATOR_BP			0.80							Creator share of comment fee
+	GRAFFITI_COMMENT_STORAGE_BP			0.10						    10% (remaining -> miners as fee tip)
+	GRAFFITI_EXPIRE_AFTER_BLOCKS		20								retention after graffiti confirmed on-chain
  
  
 12. Security Model (Short)

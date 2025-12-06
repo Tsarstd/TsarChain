@@ -5,12 +5,16 @@
 
 from __future__ import annotations
 
-import base64, json, os, socket, time, hashlib
+import base64, json, os, socket, time, hashlib, mimetypes, tempfile
 from typing import Any, Callable, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 from tsarchain.network.protocol import send_message, recv_message
 from tsarchain.utils import config as CFG
+from tsarchain.contracts.graffiti import validate_graffiti_file
+from tsarchain.utils.tsar_logging import get_ctx_logger
+
+log = get_ctx_logger("tsarchain.wallet.graffiti_service")
 
 
 def _pick_endpoint(meta: Dict[str, Any]) -> Optional[Tuple[str, int]]:
@@ -42,16 +46,18 @@ def _pick_endpoint(meta: Dict[str, Any]) -> Optional[Tuple[str, int]]:
     return None
 
 
-def _send_storage_request(host: str, port: int, payload: Dict[str, Any], timeout: float | None = None) -> Dict[str, Any]:
+def _send_storage_request(host: str, port: int, payload: Dict[str, Any], timeout: float | None = None, max_len: int | None = None) -> Dict[str, Any]:
     timeout = timeout or CFG.RPC_TIMEOUT
+    if max_len is None:
+        max_len = int(CFG.GRAFFITI_MAX_MSG_BYTES, CFG.MAX_MSG)
     resp: Dict[str, Any] = {}
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(timeout)
             s.connect((host, int(port)))
             raw = json.dumps(payload).encode("utf-8")
-            send_message(s, raw)
-            data = recv_message(s, timeout)
+            send_message(s, raw, max_len=max_len)
+            data = recv_message(s, timeout, max_len=max_len)
             if not data:
                 return {"status": "error", "reason": "no_response"}
             obj = json.loads(data.decode("utf-8"))
@@ -116,6 +122,11 @@ def upload_graffiti(
         return {"status": "error", "reason": "file_not_found"}
 
     total_size = os.path.getsize(file_path)
+    mime_guess, _ = mimetypes.guess_type(file_path)
+    try:
+        mime_norm = validate_graffiti_file(total_size, mime_guess, os.path.basename(file_path))
+    except Exception as exc:
+        return {"status": "error", "reason": str(exc)}
     sha_hex = (sha256_hex or _sha256_file(file_path)).lower()
     gid = graffiti_id or sha_hex
     meta = dict(storer_meta or {})
@@ -130,6 +141,7 @@ def upload_graffiti(
         "size_bytes": int(total_size),
         "sha256": sha_hex,
         "filename": os.path.basename(file_path) or "blob.bin",
+        "mime": mime_norm,
     }
     if art_id:
         init_payload["art_id"] = str(art_id).strip().lower()
@@ -182,7 +194,7 @@ def fetch_graffiti_file(
     *,
     storer_addr: Optional[str] = None,
     cache_dir: Optional[str] = None,
-    max_bytes: int = 10 * 1024 * 1024,
+    max_bytes: int = CFG.GRAFFITI_MAX_SIZE_BYTES,
     timeout: float = 5.0,
 ) -> Dict[str, Any]:
     """
@@ -199,15 +211,20 @@ def fetch_graffiti_file(
     try:
         max_bytes = int(max_bytes)
     except Exception:
-        max_bytes = 10 * 1024 * 1024
-    max_bytes = max(32 * 1024, min(max_bytes, 50 * 1024 * 1024))  # clamp 32KB..50MB
+        max_bytes = int(CFG.GRAFFITI_MAX_SIZE_BYTES)
+    # Clamp by graffiti msg limit to avoid hitting generic MAX_MSG
+    msg_cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
+    data_cap = int(msg_cap * 3 // 4)  # guard for base64/json overhead
+    max_bytes = max(32 * 1024, min(max_bytes, int(CFG.GRAFFITI_MAX_SIZE_BYTES), data_cap))
 
     try:
         storers = fetch_storers(rpc_call)  # type: ignore[arg-type]
     except Exception as e:
+        log.warning("[fetch] storers_unavailable art=%s err=%s", art_norm[:16], e)
         return {"status": "error", "reason": f"storers_unavailable:{e}"}
 
     if not storers:
+        log.warning("[fetch] no_storers art=%s", art_norm[:16])
         return {"status": "error", "reason": "no_storers"}
 
     preferred, others = [], []
@@ -220,32 +237,40 @@ def fetch_graffiti_file(
     cache_root = cache_dir or os.path.join("data_user", "graffiti_cache")
     os.makedirs(cache_root, exist_ok=True)
 
+    msg_cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
+    data_cap = int(msg_cap * 3 // 4)  # approximate base64 overhead guard
+
     last_error = None
     for meta in candidates:
         endpoint = _pick_endpoint(meta)
         if not endpoint:
             continue
         host, port = endpoint
-        payload = {"type": "STOR_GET_BY_ART", "art_id": art_norm, "include_data": True, "max_bytes": max_bytes}
-        resp = _send_storage_request(host, port, payload, timeout=timeout)
+        payload = {"type": "STOR_GET_BY_ART", "art_id": art_norm, "include_data": True, "max_bytes": min(max_bytes, data_cap)}
+        resp = _send_storage_request(host, port, payload, timeout=timeout, max_len=msg_cap)
         if not isinstance(resp, dict):
             last_error = "bad_response"
+            log.warning("[fetch] bad_response art=%s host=%s port=%s meta=%s", art_norm[:16], host, port, meta)
             continue
         if not resp.get("found"):
             last_error = resp.get("reason") or "not_found"
+            log.info("[fetch] not_found art=%s host=%s port=%s reason=%s meta=%s", art_norm[:16], host, port, last_error, meta)
             continue
         if resp.get("status") == "error":
             last_error = resp.get("reason") or "error"
+            log.warning("[fetch] storage_error art=%s host=%s port=%s reason=%s meta=%s", art_norm[:16], host, port, last_error, meta)
             continue
         data_b64 = resp.get("data_b64")
         meta_resp = resp.get("meta") or {}
         if not data_b64:
             last_error = "no_data"
+            log.warning("[fetch] no_data art=%s host=%s port=%s", art_norm[:16], host, port)
             continue
         try:
             raw = base64.b64decode(data_b64)
         except Exception:
             last_error = "decode_failed"
+            log.warning("[fetch] decode_failed art=%s host=%s port=%s", art_norm[:16], host, port)
             continue
         fname = meta_resp.get("filename") or f"{art_norm}.bin"
         ext = ".jpg" if str(meta_resp.get("mime") or "").startswith("image/") else os.path.splitext(fname)[1] or ".bin"
@@ -254,7 +279,17 @@ def fetch_graffiti_file(
             with open(cache_path, "wb") as fh:
                 fh.write(raw)
         except Exception:
+            log.warning("[fetch] cache_write_failed art=%s path=%s", art_norm[:16], cache_path)
             cache_path = ""
+            try:
+                fd, tmp_path = tempfile.mkstemp(prefix=f"{art_norm}_", suffix=ext, dir=cache_root)
+                with os.fdopen(fd, "wb") as fh:
+                    fh.write(raw)
+                cache_path = tmp_path
+            except Exception as exc:
+                log.error("[fetch] cache_write_retry_failed art=%s err=%s", art_norm[:16], exc)
+                cache_path = ""
+        log.info("[fetch] ok art=%s host=%s size=%s cache=%s", art_norm[:16], host, len(raw), bool(cache_path))
         return {"status": "ok", "bytes": raw, "meta": meta_resp, "cache_path": cache_path}
 
     return {"status": "error", "reason": last_error or "unavailable"}

@@ -127,8 +127,9 @@ def _nonce_register(sender: str, nonce: str, ts_val: int) -> None:
 # -----------------------------
 # SEND & RECEIVE MESSAGE
 # -----------------------------
-def send_message(sock: socket.socket, payload: bytes):
-    if len(payload) + len(CFG.NETWORK_MAGIC) > CFG.MAX_MSG:
+def send_message(sock: socket.socket, payload: bytes, *, max_len: int | None = None):
+    cap = int(max_len) if max_len is not None else int(CFG.MAX_MSG)
+    if len(payload) + len(CFG.NETWORK_MAGIC) > cap:
         raise ValueError("Message too large")
     
     body = CFG.NETWORK_MAGIC + payload
@@ -146,7 +147,8 @@ def send_message(sock: socket.socket, payload: bytes):
     if log.isEnabledFor(5):  # TRACE
         log.trace("sent %s bytes", n)
 
-def recv_message(sock, timeout: float | None = None):
+def recv_message(sock, timeout: float | None = None, max_len: int | None = None):
+    cap = int(max_len) if max_len is not None else int(CFG.MAX_MSG)
     if timeout is not None:
         try:
             sock.settimeout(timeout)
@@ -155,7 +157,7 @@ def recv_message(sock, timeout: float | None = None):
     try:
         hdr = recv_exact(sock, 4)
         n = struct.unpack(">I", hdr)[0]
-        if n <= 0 or n > CFG.MAX_MSG:
+        if n <= 0 or n > cap:
             return None
         body = recv_exact(sock, n)
         if not body.startswith(CFG.NETWORK_MAGIC):

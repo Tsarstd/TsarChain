@@ -4,7 +4,7 @@
 # Refs: BIP173
 
 from __future__ import annotations
-import json, re, time, hashlib, math
+import json, re, time, hashlib, math, mimetypes, os
 from typing import Any, Dict, Optional
 from bech32 import bech32_decode, bech32_encode, convertbits
 
@@ -22,6 +22,8 @@ log = get_ctx_logger("tsarchain.contracts(graffiti)")
 HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 ART_ID_RE = re.compile(rf"^({CFG.ART_ID_PREFIX}[0-9a-f]{{{CFG.ART_ID_BODY_LEN}}}|[0-9a-f]{{64}})$")
 MIME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+/_-]{0,63}$")  # konservatif
+_MIME_ALLOWED = tuple(m.lower() for m in CFG.GRAFFITI_ALLOWED_MIME)
+_EXT_ALLOWED = tuple(e.lower() for e in CFG.GRAFFITI_ALLOWED_EXT)
 
 def _is_valid_sha256_hex(x: str) -> bool:
     try:
@@ -85,6 +87,48 @@ def _normalize_art_id(art_id: str, *, prefer_prefix: bool = True) -> str:
     if HEX64_RE.fullmatch(aid):
         return _decorate_art_id(aid) if prefer_prefix else aid
     raise ValueError("bad_art_id")
+
+
+def validate_graffiti_file(size_bytes: int, mime: str | None = None, filename: str | None = None) -> str:
+    """
+    Validasi ukuran & tipe file graffiti sesuai kebijakan.
+    Mengembalikan MIME ternormalisasi (lowercase) jika valid, atau raise ValueError jika melanggar.
+    """
+    try:
+        size_int = int(size_bytes)
+    except Exception:
+        raise ValueError("bad_size_bytes") from None
+    if size_int <= 0:
+        raise ValueError("bad_size_bytes")
+    if size_int > CFG.GRAFFITI_MAX_SIZE_BYTES:
+        raise ValueError("graffiti_too_large")
+
+    mime_norm = (mime or "").strip().lower()
+    if not mime_norm and filename:
+        guess, _ = mimetypes.guess_type(filename)
+        mime_norm = (guess or "").strip().lower()
+
+    ext = ""
+    if filename:
+        ext = os.path.splitext(filename)[1].lstrip(".").lower()
+
+    if mime_norm and _is_valid_mime(mime_norm):
+        if _MIME_ALLOWED and mime_norm not in _MIME_ALLOWED:
+            raise ValueError("mime_not_allowed")
+    elif ext:
+        if _EXT_ALLOWED and ext not in _EXT_ALLOWED:
+            raise ValueError("mime_not_allowed")
+        if not mime_norm:
+            if ext in ("jpg", "jpeg"):
+                mime_norm = "image"
+            elif ext == "mp4":
+                mime_norm = "video"
+    else:
+        raise ValueError("mime_not_allowed")
+
+    if not mime_norm:
+        raise ValueError("mime_not_allowed")
+    return mime_norm
 
 def _encode_comment(comment_text: str) -> str:
     if not isinstance(comment_text, str):
@@ -376,8 +420,7 @@ def build_metadata(sha256_hex: str, size_bytes: int, mime: str,
         raise ValueError("bad_sha256_hex")
     if not isinstance(size_bytes, int) or size_bytes < 0:
         raise ValueError("bad_size_bytes")
-    if not _is_valid_mime(mime):
-        raise ValueError("bad_mime")
+    mime_norm = validate_graffiti_file(size_bytes, mime)
     if not _is_valid_tsar_address(storer_addr):
         raise ValueError("bad_storer_addr")
     if not isinstance(receipt_id, str) or not receipt_id.strip():
@@ -390,7 +433,7 @@ def build_metadata(sha256_hex: str, size_bytes: int, mime: str,
         "sha256": sha256_hex.strip().lower(),
         "art_id": art_id,
         "size": int(size_bytes),
-        "mime": mime.strip(),
+        "mime": mime_norm,
         "storer": storer_addr.strip().lower(),
         "receipt": receipt_id.strip(),
         "event": "POST",
@@ -788,4 +831,5 @@ __all__ = [
     "compute_proof_epoch",
     "calc_proof_challenge",
     "hash_proof_chunk",
+    "validate_graffiti_file",
 ]

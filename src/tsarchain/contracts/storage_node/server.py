@@ -84,7 +84,19 @@ class StorageServer:
         os.replace(tmp, self.idx_path)
 
     def _respond(self, conn, obj):
-        send_message(conn, json.dumps(obj).encode("utf-8"))
+        cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
+        try:
+            raw = json.dumps(obj).encode("utf-8")
+        except Exception:
+            raw = b"{}"
+        if len(raw) + len(CFG.NETWORK_MAGIC) > cap:
+            try:
+                t = obj.get("type") if isinstance(obj, dict) else "unknown"
+            except Exception:
+                t = "unknown"
+            obj = {"type": t, "status": "error", "reason": "msg_too_large"}
+            raw = json.dumps(obj).encode("utf-8")
+        send_message(conn, raw, max_len=cap)
 
     def _handle(self, msg):
         t = str(msg.get("type","")).upper()
@@ -114,10 +126,15 @@ class StorageServer:
             size  = int(msg.get("size_bytes",0))
             sha   = str(msg.get("sha256","")).lower()
             fname = str(msg.get("filename","")).strip() or "blob.bin"
+            mime  = str(msg.get("mime","")).strip().lower()
             art_id = str(msg.get("art_id","")).strip().lower()
             chunk = int(CFG.STORAGE_UPLOAD_CHUNK)
             if not aid or size <= 0 or len(sha) != 64:
                 return {"type":"STOR_ACK","status":"rejected","reason":"bad_fields"}
+            try:
+                mime = GRAFFITI.validate_graffiti_file(size, mime, fname)
+            except Exception as exc:
+                return {"type":"STOR_ACK","status":"rejected","reason": str(exc)}
             if int(CFG.MAX_GRAFFITI_ON_MEMPOOL) > 0:
                 try:
                     active = 0
@@ -140,6 +157,7 @@ class StorageServer:
                 "size_bytes": size,
                 "sha256": sha,
             "filename": fname,
+            "mime": mime,
             "paid": False,
             "expire_at_height": 0,
             "confirmed_at_height": 0,
@@ -213,6 +231,10 @@ class StorageServer:
                             break
                         digest.update(chunk)
                         actual_size += len(chunk)
+                try:
+                    GRAFFITI.validate_graffiti_file(actual_size, meta.get("mime"), meta.get("filename"))
+                except Exception as exc:
+                    return {"type":"STOR_ACK","status":"rejected","reason": str(exc)}
                 if actual_size != expected_size:
                     return {"type":"STOR_ACK","status":"rejected","reason":"size_mismatch"}
                 if digest.hexdigest().lower() != meta.get("sha256"):
@@ -445,6 +467,9 @@ class StorageServer:
             if gid:
                 meta = (self.index.get("files") or {}).get(gid)
             found = bool(meta)
+            log.debug("[STOR_GET_BY_ART] art=%s gid=%s include_data=%s", art_id[:16], (gid or "")[:12], bool(msg.get("include_data")))
+            msg_cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
+            data_cap = int(msg_cap * 3 // 4)
             resp = {"type": t, "found": found, "graffiti_id": gid, "meta": meta}
             include_data = bool(msg.get("include_data"))
             if include_data and meta:
@@ -454,7 +479,8 @@ class StorageServer:
                 except Exception:
                     max_bytes = 0
                 if max_bytes <= 0:
-                    max_bytes = 10 * 1024 * 1024  # 10 MB default guard
+                    max_bytes = int(CFG.GRAFFITI_MAX_SIZE_BYTES)
+                max_bytes = max(32 * 1024, min(max_bytes, int(CFG.GRAFFITI_MAX_SIZE_BYTES), data_cap))
                 if path and os.path.isfile(path):
                     try:
                         size = os.path.getsize(path)
@@ -463,6 +489,7 @@ class StorageServer:
                     if size > max_bytes:
                         resp["status"] = "error"
                         resp["reason"] = "file_too_large"
+                        log.warning("[STOR_GET_BY_ART] file_too_large aid=%s size=%s limit=%s", art_id[:16], size, max_bytes)
                     else:
                         with open(path, "rb") as fh:
                             data_b64 = base64.b64encode(fh.read()).decode("ascii")
@@ -471,6 +498,7 @@ class StorageServer:
                 else:
                     resp["status"] = "error"
                     resp["reason"] = "file_missing"
+                    log.warning("[STOR_GET_BY_ART] file_missing aid=%s gid=%s path=%s", art_id[:16], gid, path)
             return resp
 
         return {"error":"unknown type"}
@@ -499,8 +527,8 @@ class StorageServer:
                 msg = outer if isinstance(outer, dict) else {}
             resp = self._handle(msg)
             self._respond(conn, resp)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.exception("[conn] error handling request: %s", exc)
         finally:
             try: conn.close()
             except: pass
