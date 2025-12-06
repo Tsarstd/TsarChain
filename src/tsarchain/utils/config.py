@@ -499,7 +499,7 @@ CHAT_REG_RL_BACKOFF_S   = 20  # cooldown after chat register limiter trips
 # 12. SCRIPT, GRAFFITI & STORAGE POLICY
 # =============================================================================
 # ---- MAGIC CONSTANTS ----
-STORAGE_MAGIC      = b"TSAR_GRAF1|"  # domain separator for storage commitments
+STORAGE_MAGIC      = b"TSAR_STOR1|"  # domain separator for storage commitments
 GRAFFITI_MAGIC     = b"TSAR_GRAF1|"  # domain separator for graffiti commitments
 GRAFFITI_POOL_SALT = b"TSAR_GRAFFITI_POOL|"  # seed when deriving deterministic pool addresses
 

@@ -28,10 +28,16 @@
  
     5. (DONE) Mempool graffiti POST: modifikasi mempool agar menolak tx graffiti POST ganda per blok, sehingga graffiti tx tersebut bisa masuk ke blok berikutnya.
  
-	6. Storage Automation: definisikan template transaksi on-chain untuk payout pool (mis. script khusus) sehingga klaim bisa otomatis mengikuti aturan konsensus.
+	6. (DONE) Storage Automation: definisikan template transaksi on-chain untuk payout pool (mis. script khusus) sehingga klaim bisa otomatis mengikuti aturan konsensus.
  
-	7. CLI Archivist Headless:
-       - Sudah ada dua varian: apps/archivist_node.py (storage publik/VPS) dan apps/archivist_client.py (cache-only CGNAT).
+    7. Perketat Ukuran & Jenis File Graffiti:
+       - Batasi ukuran maksimum file graffiti yang dapat diunggah (GRAFFITI_MAX_SIZE di config.py 10MB) buat guard ini di sisi wallet & storage_node (Archivist).
+       - Batasi jenis file yang diizinkan untuk graffiti (hanya JPEG,JPG & MP4) dengan memeriksa MIME type atau ekstensi file di wallet & storage_node.
+       - Tambahkan validasi di wallet saat mengunggah graffiti dan di storage_node saat menerima file untuk memastikan hanya file yang sesuai yang diproses.
+       - Buat supaya wallet mendukung view graffiti MP4 di 'Explore Tab' dengan menampilkan video dari archivist node yang terhubung.
+ 
+	8. CLI Archivist Headless:
+       - Buatkan 2 varian CLI dari archivist.py (GUI): apps/archivist_node.py (storage publik/VPS) dan apps/archivist_client.py (cache-only CGNAT).
        - Next: tambahkan fetch file & cache untuk client (STOR_GET_BY_ART), dan proof-of-retention worker + jalur payout bagi partisipan non-publik.
        - Dokumentasi argumen CLI & contoh run di README/INSTALL.
        - Opsional: monitoring/logging ringkas (metrics) dan opsi auto-discovery storer.
