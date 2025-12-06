@@ -30,7 +30,7 @@
  
 	6. (DONE) Storage Automation: definisikan template transaksi on-chain untuk payout pool (mis. script khusus) sehingga klaim bisa otomatis mengikuti aturan konsensus.
  
-    7. Perketat Ukuran & Jenis File Graffiti:
+    7. (DONE) Perketat Ukuran & Jenis File Graffiti:
        - Batasi ukuran maksimum file graffiti yang dapat diunggah (GRAFFITI_MAX_SIZE di config.py 10MB) buat guard ini di sisi wallet & storage_node (Archivist).
        - Batasi jenis file yang diizinkan untuk graffiti (hanya JPEG,JPG & MP4) dengan memeriksa MIME type atau ekstensi file di wallet & storage_node.
        - Tambahkan validasi di wallet saat mengunggah graffiti dan di storage_node saat menerima file untuk memastikan hanya file yang sesuai yang diproses.

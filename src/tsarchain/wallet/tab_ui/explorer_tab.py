@@ -360,6 +360,27 @@ class ExplorePanel(tk.Frame):
         self.text.config(state="normal")
         self.text.delete("1.0", "end")
     
+    def _bind_mousewheel_forward(self, widget):
+        def _forward(event):
+            delta = getattr(event, "delta", 0)
+            if delta != 0:
+                self.text.yview_scroll(-int(delta / 120), "units")
+            else:
+                step = 1 if getattr(event, "num", 0) == 5 else -1
+                self.text.yview_scroll(step, "units")
+            return "break"
+
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            try:
+                widget.bind(seq, _forward, add="+")
+            except Exception:
+                pass
+        try:
+            for child in widget.winfo_children():
+                self._bind_mousewheel_forward(child)
+        except Exception:
+            pass
+    
     def _ui(self, fn, *args, **kwargs):
         self.after(0, lambda: fn(*args, **kwargs))
         
@@ -881,15 +902,11 @@ class ExplorePanel(tk.Frame):
         ext = os.path.splitext(cache_guess or "")[1].lower()
         is_video = ("video" in mime) or ext == ".mp4" or mime.endswith("mp4")
         if is_video:
-            _w_center("Video (MP4) detected", "muted")
+            _w_center("\n=================================\n")
             if cache_guess and os.path.isfile(cache_guess):
                 video_container = tk.Frame(self.text, bg=self.card_bg)
-            
-                # Buat frame khusus untuk video player
                 video_inner_frame = tk.Frame(video_container, bg=self.card_bg)
                 video_inner_frame.pack(expand=True)
-                
-                # Buat frame untuk status di bawah video
                 status_row = tk.Frame(video_container, bg=self.card_bg)
                 status_row.pack(side="top", anchor="center", pady=(2, 2))
                 status_var = tk.StringVar(value="")
@@ -916,7 +933,6 @@ class ExplorePanel(tk.Frame):
                             pass
                         player_obj = None
 
-                # baris status di bawah video
                 status_row.pack(side="top", anchor="w", pady=(2, 2))
                 tk.Label(
                     status_row,
@@ -935,50 +951,29 @@ class ExplorePanel(tk.Frame):
                     ).pack(side="left", padx=(8, 0))
 
                 # === BAGIAN PENTING: hitung padding supaya video di tengah ===
-                def center_video():
-                    try:
-                        # Dapatkan lebar text widget yang sebenarnya
-                        self.text.update_idletasks()
-                        text_w = self.text.winfo_width()
+                def center_video(_event=None):
+                    self.text.update_idletasks()
+                    text_w = self.text.winfo_width()
+                    
+                    if text_w <= 0:
+                        self.card.update_idletasks()
+                        text_w = self.card.winfo_width()
+                    
+                    if player_obj and player_obj.video_panel.winfo_exists():
+                        video_w = player_obj.video_panel.winfo_width()
+                        if video_w <= 0:
+                            video_w = 720  # fallback default width
+                        padx_left = max((text_w - video_w) // 2, 0)
+                        video_inner_frame.config(padx=padx_left)
+                        try:
+                            player_obj.video_panel.config(width=video_w)
+                        except:
+                            pass
                         
-                        if text_w <= 0:
-                            # Jika masih 0, coba dapatkan dari parent
-                            self.card.update_idletasks()
-                            text_w = self.card.winfo_width()
-                        
-                        # Dapatkan lebar video panel
-                        if player_obj and player_obj.video_panel.winfo_exists():
-                            video_w = player_obj.video_panel.winfo_width()
-                            
-                            # Jika video_w masih 0, gunakan ukuran default
-                            if video_w <= 0:
-                                video_w = 720  # fallback default width
-                            
-                            # Hitung padding untuk centering
-                            padx_left = max((text_w - video_w) // 2, 0)
-                            
-                            # Konfigurasi video_inner_frame dengan padding
-                            video_inner_frame.config(padx=padx_left)
-                            
-                            # Jika perlu, sesuaikan ukuran video panel
-                            try:
-                                player_obj.video_panel.config(width=video_w)
-                            except:
-                                pass
-                    except Exception as e:
-                        print(f"Center video error: {e}")
-                
-                # Panggil fungsi centering setelah UI dirender
                 self.text.after(100, center_video)
-                
-                # Juga panggil saat window di-resize
-                def on_resize(event=None):
-                    center_video()
-                
-                self.text.bind("<Configure>", on_resize)
-                video_inner_frame.bind("<Configure>", on_resize)
-                
-                # Sisipkan video container ke text widget
+                self.text.bind("<Configure>", center_video)
+                video_inner_frame.bind("<Configure>", center_video)
+                self._bind_mousewheel_forward(video_container)
                 self.text.window_create("end", window=video_container)
                 self._writeln()
             else:
