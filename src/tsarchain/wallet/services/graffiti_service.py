@@ -49,7 +49,7 @@ def _pick_endpoint(meta: Dict[str, Any]) -> Optional[Tuple[str, int]]:
 def _send_storage_request(host: str, port: int, payload: Dict[str, Any], timeout: float | None = None, max_len: int | None = None) -> Dict[str, Any]:
     timeout = timeout or CFG.RPC_TIMEOUT
     if max_len is None:
-        max_len = int(CFG.GRAFFITI_MAX_MSG_BYTES, CFG.MAX_MSG)
+        max_len = int(CFG.GRAFFITI_MAX_MSG_BYTES)
     resp: Dict[str, Any] = {}
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

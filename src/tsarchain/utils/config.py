@@ -97,7 +97,7 @@ WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wal
 DATA_SCHEMA_VERSION = 1
 
 # ---- KV BACKEND ----
-KV_BACKEND         = "json"  # active key-value backend implementation (lmdb & json)
+KV_BACKEND         = "lmdb"  # active key-value backend implementation (lmdb & json)
 LMDB_DATA_FILE     = "data/tsarchain_db"  # main LMDB data file path
 LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
@@ -141,6 +141,12 @@ CHAIN_JOURNAL_FILE      = os.path.join(os.path.dirname(BLOCK_FILE), "blockchain.
 CHAIN_JOURNAL_MAX_BYTES = 8 * 1024 * 1024
 STATE_HEIGHT_CACHE_TTL  = 2.0  # height for utxo validation & cache
 
+# ---- ARCHIVIST LMDB PATH ----
+ARCHIVIST_INDEX_DB_PATH    = "data/storage/index_db"
+ARCHIVIST_INCOMING_DB_PATH = "data/storage/incoming_db"
+ARCHIVIST_FINAL_DB_PATH    = "data/storage/final_db"
+
+
 # ---- WALLET FILES ----
 USER_KEY_PATH = "data_user/user_key.json"  # default user keypair location
 REGISTRY_PATH = "data_user/wallet_registry.json"  # registry of created wallets
@@ -167,8 +173,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "000b85e8713677cd59350240c829c41685f30c5644fd27accc8fb0713cc3921a"  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 1  # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -308,8 +314,8 @@ MAX_GRAFFITI_ON_MEMPOOL = 7        # NOTE: do not change the value above GRAFFIT
 PORT_RANGE_DEV  = (38169, 38178)  # port span reserved for dev deployments
 PORT_RANGE_PROD = (40196, 40205)  # port span reserved for production nodes
 
-STORAGE_PORT_RANGE_DEV  = (39200, 39210)
-STORAGE_PORT_RANGE_PROD = (41200, 41210)
+STORAGE_PORT_RANGE_DEV  = (39200, 39209)
+STORAGE_PORT_RANGE_PROD = (41200, 41209)
 
 BOOTSTRAP_DEV = (
     ("127.0.0.1", 38169),
@@ -544,7 +550,8 @@ GRAFFITI_FILE      = os.path.join(CONTRACTS_DIR, "graffiti.json")  # graffiti me
 # ---- ARCHIVIST ----
 ARCHIV_PEER_KEYS               = "data_peer/storage_peer_keys.json"
 STORAGE_DIR                    = "data/storage"  # folder holding uploaded storage blobs
-STORAGE_MAX_BYTES              = 10 * 1024 * 1024 * 1024  # cap on cumulative storage usage (10GB)
+STORAGE_SIZE_INIT              = 256 * 1024 * 1024  # initial storage size allocation (256MB)
+STORAGE_MAX_BYTES              = 64 * 1024 * 1024 * 1024  # cap on cumulative storage usage (64GB)
 STORAGE_MIN_CONFIRM            = 2  # confirmations required before serving stored data
 RETENTION_GC_SEC               = 180
 

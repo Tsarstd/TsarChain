@@ -2,50 +2,24 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain - see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
+"""
+A limited RPC bridge between nodes and graffiti modules.
+Focus: payout & proof (no storage/archivist flow).
+"""
 
-import os, json
-from typing import TYPE_CHECKING, Any, Optional
-
-# ---------------- Logger ----------------
-from ...utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network.rpc(storage_rpc)")
-from ...utils import config as CFG
-from ...contracts import graffiti as GRAFFITI
+from typing import TYPE_CHECKING, Any
 from bech32 import convertbits, bech32_encode
+
+from ...contracts import graffiti as GRAFFITI
+from ...utils import config as CFG
+from ...utils.tsar_logging import get_ctx_logger
 
 if TYPE_CHECKING:
     from ..node import Network
 
+log = get_ctx_logger("tsarchain.network.rpc(storage_rpc)")
 
 __all__ = ["handle_storage_rpc"]
-
-
-def _storage_index_path() -> str:
-    return os.path.join(CFG.STORAGE_DIR, "index.json")
-
-def _load_storage_index() -> dict[str, Any]:
-    default = {"files": {}, "bytes_used": 0, "art_map": {}}
-    try:
-        with open(_storage_index_path(), "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-    except Exception:
-        data = {}
-    if not isinstance(data, dict):
-        data = {}
-    data.setdefault("files", {})
-    data.setdefault("bytes_used", 0)
-    data.setdefault("art_map", {})
-    return data
-
-def _save_storage_index(data: dict[str, Any]) -> None:
-    path = _storage_index_path()
-    if not os.path.isfile(path):
-        raise FileNotFoundError("storage_index_absent")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2)
-    os.replace(tmp, path)
 
 
 def _spkhex_to_address(spk_hex: str) -> str | None:
@@ -66,89 +40,7 @@ def _spkhex_to_address(spk_hex: str) -> str | None:
     return None
 
 
-def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[tuple], mtype: str) -> dict | None:
-
-    if mtype == "STOR_INDEX":
-        idx = _load_storage_index()
-        # Recompute bytes_used to avoid stale values
-        try:
-            idx["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (idx.get("files") or {}).values())
-        except Exception:
-            pass
-        return {"type": "STOR_INDEX", "status": "ok", **idx}
-
-    if mtype == "STOR_STATUS":
-        aid = str(message.get("graffiti_id") or "").strip()
-        idx = _load_storage_index()
-        meta = (idx.get("files") or {}).get(aid)
-        return {"type": "STOR_STATUS", "found": bool(meta), "meta": meta}
-
-    if mtype == "STOR_PAID":
-        aid = str(message.get("graffiti_id") or "").strip()
-        txid = str(message.get("txid") or "").strip()
-        try:
-            block_h = int(message.get("block_height", 0) or 0)
-        except Exception:
-            block_h = 0
-        if not os.path.isfile(_storage_index_path()):
-            return {"status": "error", "reason": "storage_disabled"}
-        idx = _load_storage_index()
-        files = idx.setdefault("files", {})
-        meta = files.get(aid)
-        if not aid or not isinstance(meta, dict):
-            return {"status": "error", "reason": "no_such"}
-        meta["paid"] = True
-        if txid:
-            meta["txid_paid"] = txid
-        if block_h > 0:
-            meta["confirmed_at_height"] = block_h
-            try:
-                meta["expire_at_height"] = block_h + int(CFG.GRAFFITI_EXPIRE_AFTER_BLOCKS)
-            except Exception:
-                meta["expire_at_height"] = block_h
-        files[aid] = meta
-        try:
-            idx["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in files.values())
-        except Exception:
-            pass
-        _save_storage_index(idx)
-        return {"status": "ok", "graffiti_id": aid}
-
-    if mtype == "STOR_GC":
-        if not os.path.isfile(_storage_index_path()):
-            return {"type": "STOR_GC", "status": "error", "reason": "storage_disabled", "expired": 0}
-        try:
-            tip_h = int(message.get("tip_height", 0) or 0)
-        except Exception:
-            tip_h = 0
-        idx = _load_storage_index()
-        files = idx.get("files") or {}
-        expired = 0
-        remove_keys: list[str] = []
-        for gid, meta in files.items():
-            try:
-                expire_h = int(meta.get("expire_at_height", 0) or 0)
-            except Exception:
-                expire_h = 0
-            if expire_h and tip_h and expire_h <= tip_h:
-                remove_keys.append(gid)
-        for gid in remove_keys:
-            meta = files.pop(gid, None) or {}
-            expired += 1
-            try:
-                path = meta.get("path")
-                if path and os.path.isfile(path):
-                    os.remove(path)
-            except Exception:
-                pass
-        idx["files"] = files
-        try:
-            idx["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in files.values())
-        except Exception:
-            idx["bytes_used"] = 0
-        _save_storage_index(idx)
-        return {"type": "STOR_GC", "status": "ok", "expired": expired}
-
+def handle_storage_rpc(self: "Network", message: dict[str, Any], addr, mtype: str) -> dict | None:
     if mtype == "GRAFFITI_GET_PAYOUTS":
         art_id = str(message.get("art_id") or "").strip().lower()
         if not art_id:
@@ -158,35 +50,6 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[
         reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
         payouts = reg.list_payouts(art_id, limit) if reg else []
         return {"type": "GRAFFITI_GET_PAYOUTS", "art_id": art_id, "payouts": payouts}
-
-    elif mtype == "GRAFFITI_POOL_PAYOUT": # NOTE: NOT USED YET
-        art_id = str(message.get("art_id") or "").strip().lower()
-        try:
-            amount = int(message.get("amount", 0))
-        except Exception:
-            amount = 0
-        recipient = str(message.get("recipient") or "").strip().lower() or "storage"
-        txid = str(message.get("txid") or "").strip() or "offchain"
-        if not art_id or amount <= 0:
-            return {"error": "bad_request"}
-        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
-        if not reg:
-            return {"error": "registry_unavailable"}
-        post = reg.get_post(art_id)
-        if not post:
-            return {"error": "unknown_art_id"}
-        stats = post.setdefault("stats", {})
-        pool_balance = int(stats.get("pool_balance", 0))
-        if pool_balance < amount:
-            return {"error": "insufficient_pool_balance", "pool_balance": pool_balance}
-        height = getattr(getattr(self.broadcast, "blockchain", None), "height", 0)
-        required_epoch = GRAFFITI.compute_proof_epoch(height)
-        last_epoch = reg.get_latest_proof_epoch(art_id, recipient)
-        if last_epoch < required_epoch:
-            return {"error": "missing_proof", "required_epoch": required_epoch, "last_epoch": last_epoch}
-        new_pool_balance = max(0, pool_balance - amount)
-        reg.record_payout(art_id, {recipient: amount}, txid, height, pool_balance=new_pool_balance)
-        return {"status": "ok", "art_id": art_id, "pool_balance": int(new_pool_balance)}
 
     elif mtype == "GRAFFITI_PROOF_SUBMIT":
         art_id_raw = str(message.get("art_id") or "").strip()
@@ -223,7 +86,6 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[
         size = int(post.get("size") or 0)
         if size <= 0 or (offset + length) > size:
             return {"error": "out_of_range", "size": size}
-        # Validate challenge deterministically
         if height < 0:
             height = 0
         if GRAFFITI.compute_proof_epoch(height) != epoch:
@@ -245,19 +107,6 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[
         )
         return {"status": "ok", "art_id": art_id, "epoch": epoch}
 
-    elif mtype == "GRAFFITI_PROOF_STATUS": # NOTE: NOT USED YET
-        art_id_raw = str(message.get("art_id") or "").strip()
-        storer = str(message.get("storer") or "").strip().lower()
-        try:
-            art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
-        except Exception:
-            return {"error": "bad_art_id"}
-        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
-        if not reg:
-            return {"error": "registry_unavailable"}
-        proof = reg.get_latest_proof(art_id, storer or None)
-        return {"status": "ok", "art_id": art_id, "proof": proof or {}}
-
     elif mtype == "GRAFFITI_BUILD_PAYOUT":
         art_id_raw = str(message.get("art_id") or "").strip()
         try:
@@ -265,7 +114,6 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[
         except Exception:
             return {"error": "bad_art_id"}
         recipients = message.get("recipients") or []
-        # shorthand recipient/amount fields
         if not recipients and message.get("recipient") and message.get("amount"):
             try:
                 amt = int(message.get("amount", 0))
@@ -305,7 +153,6 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[
             except Exception:
                 proof_meta = None
 
-        # Enforce proof presence when epoch is provided to ensure stateless validation
         if epoch >= 0:
             if not proof_entry or int(proof_entry.get("epoch", -1)) < epoch:
                 return {"error": "missing_proof", "requested_epoch": epoch, "have": proof_entry.get("epoch", -1) if proof_entry else None}
@@ -329,7 +176,7 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr: Optional[
         except Exception as exc:
             log.warning("[payout] build failed art=%s err=%s", art_id[:16], exc)
             return {"error": str(exc)}
-        # Log ringkas outputs
+
         try:
             outs = []
             for o in getattr(tx_obj, "outputs", []) or []:

@@ -11,7 +11,7 @@ from typing import Optional, Dict, Any
 
 # ---------------- Local Project ----------------
 from tsarchain.contracts.storage_node.server import StorageServer
-from tsarchain.contracts.storage_node.rpc import RPC, NodeDirectory
+from tsarchain.contracts.storage_node.node_rpc import RPC, NodeDirectory
 from tsarchain.network.protocol import send_message, recv_message
 
 from tsarchain.utils import config as CFG
@@ -52,9 +52,6 @@ class TsarStorageGUI:
 
     # ---------------- UI -----------------
     def _call_storage_local(self, payload: Dict[str, Any], timeout: float = 5.0) -> Optional[Dict[str, Any]]:
-        """
-        Kirim RPC langsung ke storage server lokal (bukan node) bila port tersedia.
-        """
         port = self._storage_port
         if port is None:
             return None
@@ -69,6 +66,7 @@ class TsarStorageGUI:
                 obj = json.loads(raw.decode("utf-8"))
                 return obj if isinstance(obj, dict) else None
         except Exception:
+            log.exception("Local storage RPC failed")
             return None
 
     def _build_ui(self):
@@ -174,7 +172,6 @@ class TsarStorageGUI:
             try:
                 self._server = StorageServer("0.0.0.0", port, CFG.STORAGE_DIR)
                 self.logln(f"[Storage] server listening on 0.0.0.0:{port}")
-                log.info("Storage server listening on 0.0.0.0:%s", port)
                 return port
             except OSError:
                 continue
@@ -183,7 +180,6 @@ class TsarStorageGUI:
 
     # ------------- Events --------------
     def on_connect(self):
-        # gunakan konfigurasi default (bootstrap) tanpa input host/port manual
         try:
             host, miner_port = CFG.BOOTSTRAP_NODE
         except Exception:
@@ -249,7 +245,6 @@ class TsarStorageGUI:
             if k != "role":
                 self.info_vars[k].set("-")
         self.logln("Disconnected")
-        log.info("Storage GUI disconnected from node")
 
     def on_open_dir(self):
         path = os.path.abspath(CFG.STORAGE_DIR)
@@ -280,8 +275,6 @@ class TsarStorageGUI:
             return
         try:
             idx = self._call_storage_local({"type":"STOR_INDEX"}, timeout=6.0)
-            if not isinstance(idx, dict):
-                idx = self.rpc.call({"type":"STOR_INDEX"}, timeout=6.0)
             if not isinstance(idx, dict):
                 raise RuntimeError("rpc_failure")
             self._render_index(idx)
@@ -373,7 +366,6 @@ class TsarStorageGUI:
             self.pool_status_var.set(f"{len(self._pool_data)} karya dengan saldo pool.")
         else:
             self.pool_status_var.set("Belum ada saldo pool untuk karya tersimpan.")
-        # tandai otomatis paid berdasarkan blok yang sudah ada
         self._auto_mark_paid(posts, files_by_art)
 
     def _mark_selected_paid(self) -> None:
@@ -390,8 +382,6 @@ class TsarStorageGUI:
             return
         try:
             resp = self._call_storage_local({"type":"STOR_PAID", "graffiti_id": gid, "txid": (txid or "").strip()}, timeout=6.0)
-            if resp is None:
-                resp = self.rpc.call({"type":"STOR_PAID", "graffiti_id": gid, "txid": (txid or "").strip()}, timeout=6.0)
         except Exception as exc:
             messagebox.showerror("Payout", f"RPC error: {exc}")
             return
@@ -408,7 +398,6 @@ class TsarStorageGUI:
         t = threading.Thread(target=self._retention_worker, daemon=True)
         self._retention_thread = t
         t.start()
-        log.info("Started retention worker thread")
 
     def _auto_mark_paid(self, posts: list[dict], files_by_art: dict[str, dict]) -> None:
         """
@@ -461,7 +450,6 @@ class TsarStorageGUI:
             self.btn_connect.config(state=tk.DISABLED)
             self.btn_disconnect.config(state=tk.NORMAL)
             self.refresh_all()
-            log.info("Reconnected to node %s:%s", host, miner_port)
             return True
         return False
 
@@ -490,10 +478,6 @@ class TsarStorageGUI:
             try:
                 gc_resp = self._call_storage_local({"type":"STOR_GC","tip_height": tip}, timeout=6.0)
                 idx = self._call_storage_local({"type":"STOR_INDEX"}, timeout=6.0)
-                if not isinstance(gc_resp, dict):
-                    gc_resp = self.rpc.call({"type":"STOR_GC","tip_height": tip}, timeout=6.0)
-                if not isinstance(idx, dict):
-                    idx = self.rpc.call({"type":"STOR_INDEX"}, timeout=6.0)
                 if not isinstance(gc_resp, dict) or not isinstance(idx, dict):
                     raise RuntimeError("rpc_failure")
                 self._run_retention_proofs(idx, tip)
@@ -508,7 +492,6 @@ class TsarStorageGUI:
             expired = int(gc_resp.get("expired", 0))
             if expired:
                 self.logln(f"[Retention] GC removed {expired} expired item(s)")
-                log.info("[Retention] removed %s expired files", expired)
         if isinstance(idx, dict):
             self._render_index(idx)
             self._mark_pending_payouts(idx)
@@ -593,10 +576,8 @@ class TsarStorageGUI:
                 if aid not in self._pending_paid:
                     size = int(meta.get("size_bytes", 0))
                     self.logln(f"[Payout] Pending for {aid} ({size} bytes)")
-                    log.info("[Payout] pending - %s (%s bytes)", aid, size)
             elif aid in self._pending_paid:
                 self.logln(f"[Payout] Cleared for {aid}")
-                log.info("[Payout] cleared - %s", aid)
         self._pending_paid = current
 
     def _claim_pool_payout(self) -> None:

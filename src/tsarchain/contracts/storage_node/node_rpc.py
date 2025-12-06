@@ -1,25 +1,27 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
-# Part of TsarChain — see LICENSE and TRADEMARKS.md
-# Refs: see REFERENCES.md
+# Part of TsarChain – see LICENSE and TRADEMARKS.md
+"""
+RPC client for archivist <-> node (storage role) communication.
+This channel is used by archivists for handshakes, info, and STOR_* RPCs to nodes/miners.
+"""
 
 import os, json, socket, threading, time
 from typing import Optional, Dict, Any, List, Tuple, Sequence
 from bech32 import bech32_encode, convertbits
 from tsarchain.utils.helpers import hash160
 
-# ---------------- Local Project ----------------
 from tsarchain.network.protocol import (
     send_message, recv_message, build_envelope, verify_and_unwrap,
-    is_envelope, load_or_create_keypair_at, SecureChannel,)
+    is_envelope, load_or_create_keypair_at, SecureChannel,
+)
 from tsarchain.storage.kv import kv_enabled, iter_prefix, batch
 from tsarchain.utils import config as CFG
 
-# ---------------- Logger ----------------
-from tsarchain.utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.contracts.storage_node.rpc")
 
-# --- Pinned peer keys store for SecureChannel (TOFU) ---
+from tsarchain.utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.contracts.storage_node.node_rpc")
+
 manual_bootstrap: Optional[Tuple[str, int]] = None
 
 if not kv_enabled():
@@ -27,7 +29,8 @@ if not kv_enabled():
         os.makedirs(os.path.dirname(CFG.ARCHIV_PEER_KEYS), exist_ok=True)
     except Exception:
         pass
-    
+
+
 def _load_stor_peer_keys() -> dict:
     if kv_enabled():
         m = {}
@@ -44,7 +47,8 @@ def _load_stor_peer_keys() -> dict:
             return obj if isinstance(obj, dict) else {}
     except Exception:
         return {}
-    
+
+
 def _save_stor_peer_keys() -> None:
     if kv_enabled():
         try:
@@ -62,6 +66,7 @@ def _save_stor_peer_keys() -> None:
     except Exception:
         pass
 
+
 def _scan_nodes(start: int = CFG.PORT_START, end: int = CFG.PORT_END, manual_nodes: Optional[Sequence[Tuple[str,int]]] = None) -> List[Tuple[str,int]]:
     candidates: List[Tuple[str,int]] = []
     if manual_bootstrap:
@@ -75,6 +80,7 @@ def _scan_nodes(start: int = CFG.PORT_START, end: int = CFG.PORT_END, manual_nod
 
     seen: set[Tuple[str,int]] = set()
     uniq: List[Tuple[str,int]] = []
+    log.debug("_scan_nodes: scanning %d candidates", len(candidates))
     for item in candidates:
         if item not in seen:
             seen.add(item)
@@ -131,12 +137,13 @@ def _scan_nodes(start: int = CFG.PORT_START, end: int = CFG.PORT_END, manual_nod
                             continue
         except Exception:
             continue
+    log.info("_scan_nodes: found %d storage nodes", len(found))
     return found
 
 
 _STOR_PEER_KEYS = _load_stor_peer_keys()
 
-# ---------------- Discovery ----------------
+
 class NodeDirectory:
     def __init__(self, ttl: int = 60):
         self.ttl = ttl
@@ -166,6 +173,7 @@ class NodeDirectory:
                 self.cache.insert(0, peer)
                 self.ts = time.time()
 
+
 class RPC:
     def __init__(self, key_dir: str | None = None):
         node_id, pub, priv = load_or_create_keypair_at(key_dir or os.path.join(os.getcwd(), "data", ".keys_storage"))
@@ -176,7 +184,6 @@ class RPC:
         self.sock = None
         self.lock = threading.RLock()
 
-        # derive storage address from pubkey (bech32 p2wpkh)
         try:
             pkh = hash160(bytes.fromhex(self.pub))
             data = [0] + list(convertbits(pkh, 8, 5, True))
@@ -232,6 +239,7 @@ class RPC:
             _ = self.call(hello, timeout=3.0)
             pong = self.call({"type":"PING"}, timeout=3.0)
             ok = isinstance(pong, dict) and (pong.get("type") == "PONG")
+            log.debug("[RPC.connect] handshake result %s to %s:%s", ok, ip, port)
             if ok:
                 log.info("[RPC.connect] storage handshake ok to %s:%s listen_port=%s", ip, port, my_listen_port)
             return ok
@@ -259,6 +267,7 @@ class RPC:
                 chan.handshake()
                 chan.send(json.dumps(payload).encode("utf-8"))
                 raw = chan.recv(timeout)
+                log.debug("[RPC.call] secure channel response %d bytes type=%s to %s:%s", len(raw) if raw else 0, inner.get("type"), ip, port)
             except Exception:
                 if CFG.P2P_ENC_REQUIRED:
                     log.exception("[RPC.call] secure channel failed %s:%s type=%s", ip, port, inner.get("type"))
@@ -278,3 +287,6 @@ class RPC:
                     log.debug("[RPC.call] unwrap failed type=%s", inner.get("type"))
                     return None
             return outer
+
+
+__all__ = ["RPC", "NodeDirectory"]

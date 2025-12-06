@@ -1,5 +1,5 @@
 '''
-    NOTE: aktivitas upload graffiti tervalidasi di block height 11, comment di block height 14, dan payouts di block height 20. Retention Proof Scheduler sudah terimplementasi, silahkan cek data (data/storage/index.json | archivist) & (data/Contracts/graffiti.json | node)
+    NOTE: aktivitas upload graffiti tervalidasi di block height 30, 33, dan seterusnya.
     NOTE: untuk mendalami struktur data, bisa cek di :
     - data/Block/blockchain.json - untuk melihat block yang sudah mengandung graffiti
     - data/Contracts/graffiti.json - untuk metadata graffiti
@@ -35,8 +35,20 @@
        - Batasi jenis file yang diizinkan untuk graffiti (hanya JPEG,JPG & MP4) dengan memeriksa MIME type atau ekstensi file di wallet & storage_node.
        - Tambahkan validasi di wallet saat mengunggah graffiti dan di storage_node saat menerima file untuk memastikan hanya file yang sesuai yang diproses.
        - Buat supaya wallet mendukung view graffiti MP4 di 'Explore Tab' dengan menampilkan video dari archivist node yang terhubung.
- 
-	8. CLI Archivist Headless:
+       
+    8. (DONE) Buat supaya storage node (archivist) juga bisa memakai storage LMDB saat backend diubah ke config.py KV_BACKEND = "lmdb" .
+       - buat penyimpana untuk archivist di lmdb secara terpisah berdasarkan folder
+       - data/storage/index.json  -> data/storage/index_db
+       - data/storage/incoming/  -> data/storage/incoming_db
+       - data/storage/final/     -> data/storage/final_db
+       - buat 3 path baru di config.py untuk archivist lmdb storage di kategoti 3. FILESYSTEM LAYOUT ,misal:
+         ARCHIVIST_INDEX_DB_PATH      = "data/storage/index_db"
+         ARCHIVIST_INCOMING_DB_PATH   = "data/storage/incoming_db"
+         ARCHIVIST_FINAL_DB_PATH      = "data/storage/final_db"
+       - modul storage sudah tersedia (src/tsarchain/storage/kv) dan sudah terintegrasi dengan module native, tinggal terapkan saja
+       - gunakan STORAGE_MAX_BYTES di config.py untuk membatasi ukuran maksimal lmdb archivist, dan STORAGE_SIZE_INIT untuk inisialisasi ukuran awal lmdb archivist
+        
+	9. CLI Archivist Headless:
        - Buatkan 2 varian CLI dari archivist.py (GUI): apps/archivist_node.py (storage publik/VPS) dan apps/archivist_client.py (cache-only CGNAT).
        - Next: tambahkan fetch file & cache untuk client (STOR_GET_BY_ART), dan proof-of-retention worker + jalur payout bagi partisipan non-publik.
        - Dokumentasi argumen CLI & contoh run di README/INSTALL.

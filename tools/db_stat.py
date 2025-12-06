@@ -306,13 +306,67 @@ def _graffiti_summary(env) -> dict | None:
         with env.begin(db=dbi, write=False) as txn:
             raw = txn.get(b"data:data")
             if not raw:
-                return {"posts": 0, "comments": 0}
+                return {"posts": 0, "comments": 0, "payouts": 0}
             obj = json.loads(raw.decode("utf-8"))
             posts = len(obj.get("posts") or {})
             comments = sum(len(v or []) for v in (obj.get("comments") or {}).values())
-            return {"posts": posts, "comments": comments}
+            payouts = sum(len(v or []) for v in (obj.get("payouts") or {}).values())
+            return {"posts": posts, "comments": comments, "payouts": payouts}
     except Exception:
         return None
+
+
+def _load_graffiti_registry(env) -> dict | None:
+    try:
+        dbi = env.open_db(b'graffiti', create=False)
+    except Exception:
+        return None
+    try:
+        with env.begin(db=dbi, write=False) as txn:
+            raw = txn.get(b"data:data")
+            if not raw:
+                return {}
+            return json.loads(raw.decode("utf-8"))
+    except Exception:
+        return None
+
+
+def _render_payouts(reg: dict, limit: int = 10) -> None:
+    payouts = reg.get("payouts") or {}
+    total_entries = sum(len(v or []) for v in payouts.values())
+    total_arts = len(payouts)
+    total_amount = 0
+    rows = []
+    for art_id, items in payouts.items():
+        for entry in items or []:
+            try:
+                amt = int(entry.get("amount", 0))
+            except Exception:
+                amt = 0
+            total_amount += amt
+            rows.append({
+                "art_id": art_id,
+                "txid": entry.get("txid"),
+                "height": int(entry.get("block_height", 0) or 0),
+                "amount": amt,
+                "epoch": entry.get("epoch"),
+            })
+    rows.sort(key=lambda r: (r.get("height", 0), r.get("epoch") or -1), reverse=True)
+
+    clog(f"payouts   : {total_entries}")
+    clog(f"arts paid : {total_arts}")
+    clog(f"amount sum: {total_amount}")
+    if not rows:
+        return
+    show = rows[:max(1, limit)]
+    clog("\nTop payouts (by height):")
+    for r in show:
+        art = (r.get("art_id") or "")[:16]
+        amt = r.get("amount", 0)
+        h = r.get("height", 0)
+        ep = r.get("epoch")
+        txid = (r.get("txid") or "")[:16]
+        clog(f"- h={h} ep={ep} amt={amt} art={art} txid={txid}")
 
 
 # ---- CLI core ----
@@ -348,7 +402,7 @@ Examples:
     ap.add_argument(
         '--detail',
         dest='detail',
-        choices=['utxo', 'mempool', 'chain', 'state', 'graffiti'],
+        choices=['utxo', 'mempool', 'chain', 'state', 'graffiti', 'payout'],
         help='Show detailed items for a subdb',
     )
 
@@ -510,16 +564,11 @@ def run_tool(args) -> int:
         )
         gstats = _graffiti_summary(env)
         if gstats:
-            clog(f"🖌️ "
-                 f"{color_text(' graffiti     : ', CYAN)}"
-                 f"{gstats.get('posts', 0)}"
-            )
-            clog(f"💬 "
-                 f"{color_text('comments     : ', CYAN)}"
-                 f"{gstats.get('comments', 0)}"
-            )
+            clog(f"{color_text('graffiti     : ', CYAN)}{gstats.get('posts', 0)}")
+            clog(f"{color_text('comments     : ', CYAN)}{gstats.get('comments', 0)}")
+            clog(f"{color_text('payouts      : ', CYAN)}{gstats.get('payouts', 0)}")
 
-        # Optional peeks
+# Optional peeks
         if getattr(args, "peek", 0) > 0:
             clog(f"\n🔍 Peeking {args.peek} keys per database:")
             for name in SUBDBS:
@@ -587,10 +636,19 @@ def run_tool(args) -> int:
                     obj = json.loads(raw.decode("utf-8"))
                     posts = obj.get("posts") or {}
                     comments = obj.get("comments") or {}
+                    payouts = obj.get("payouts") or {}
                     clog(f"posts   : {len(posts)}")
                     clog(f"comments: {sum(len(v or []) for v in comments.values())}")
+                    clog(f"payouts : {sum(len(v or []) for v in payouts.values())}")
                 except Exception as e:
                     clog(f"decode error: {e}")
+        elif getattr(args, "detail", None) == 'payout':
+            reg = _load_graffiti_registry(env)
+            if reg is None:
+                clog("No graffiti registry found")
+                return 0
+            clog(f"{color_text('\n[detail:payout]', CYAN)}")
+            _render_payouts(reg, limit=max(1, int(getattr(args, "peek", 3) or 3)))
 
         return 0
 

@@ -10,6 +10,7 @@ import base64, hashlib
 from tsarchain.network.protocol import send_message, recv_message, verify_and_unwrap, is_envelope
 from tsarchain.utils import config as CFG
 from tsarchain.contracts import graffiti as GRAFFITI
+from .database import ArchivistDatabase
 
 # ---------------- Logger ----------------
 from tsarchain.utils.tsar_logging import get_ctx_logger
@@ -20,6 +21,8 @@ class StorageServer:
         self.host = host
         self.port = int(port)
         self.storage_dir = storage_dir
+        self.db = ArchivistDatabase(storage_dir)
+        self.use_kv = bool(getattr(self.db, "use_kv", False))
         self.idx_path = os.path.join(storage_dir, "index.json")
         self._load_index()
         self._stop = False
@@ -55,33 +58,39 @@ class StorageServer:
     def _load_index(self):
         os.makedirs(self.storage_dir, exist_ok=True)
         try:
-            with open(self.idx_path, "r", encoding="utf-8") as f:
-                self.index = json.load(f)
+            self.index = self.db.load_index()
         except Exception:
             self.index = {"files": {}, "bytes_used": 0, "art_map": {}}
 
         self.index.setdefault("files", {})
         self.index.setdefault("bytes_used", 0)
         self.index.setdefault("art_map", {})
+        files = dict(self.index.get("files") or {})
+        for aid, meta in list(files.items()):
+            files[aid] = self._normalize_file_meta(aid, meta)
+        self.index["files"] = files
         try:
-            files = dict(self.index.get("files") or {})
-            for aid, meta in list(files.items()):
-                files[aid] = self._normalize_file_meta(aid, meta)
-            self.index["files"] = files
             self.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in files.values())
         except Exception:
-            pass
-        # persist normalization for older indexes
+            self.index["bytes_used"] = 0
         try:
             self._save_index()
         except Exception:
             pass
 
     def _save_index(self):
-        tmp = self.idx_path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(self.index, f, indent=2)
-        os.replace(tmp, self.idx_path)
+        try:
+            self.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (self.index.get("files") or {}).values())
+        except Exception:
+            self.index["bytes_used"] = 0
+        try:
+            self.db.save_index(self.index)
+        except Exception:
+            # Fallback hard-save JSON if LMDB gagal
+            tmp = self.idx_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self.index, f, indent=2)
+            os.replace(tmp, self.idx_path)
 
     def _respond(self, conn, obj):
         cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
@@ -102,9 +111,11 @@ class StorageServer:
         t = str(msg.get("type","")).upper()
 
         if t == "PING":
+            log.debug("Received PING")
             return {"type":"PONG"}
 
         if t == "GET_INFO":
+            log.debug("Received GET_INFO")
             return {
                 "type":"INFO",
                 "height": 0,
@@ -115,6 +126,7 @@ class StorageServer:
             }
 
         if t == "STOR_INDEX":
+            log.debug("Received STOR_INDEX")
             try:
                 self.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (self.index.get("files") or {}).values())
             except Exception:
@@ -122,6 +134,7 @@ class StorageServer:
             return {"type":"STOR_INDEX", "status":"ok", **self.index}
 
         if t == "STOR_INIT":
+            log.debug("Received STOR_INIT")
             aid   = str(msg.get("graffiti_id","")).strip()
             size  = int(msg.get("size_bytes",0))
             sha   = str(msg.get("sha256","")).lower()
@@ -135,6 +148,12 @@ class StorageServer:
                 mime = GRAFFITI.validate_graffiti_file(size, mime, fname)
             except Exception as exc:
                 return {"type":"STOR_ACK","status":"rejected","reason": str(exc)}
+            try:
+                projected = int(self.index.get("bytes_used", 0)) + size
+                if projected > int(CFG.STORAGE_MAX_BYTES):
+                    return {"type":"STOR_ACK","status":"rejected","reason":"storage_full"}
+            except Exception:
+                pass
             if int(CFG.MAX_GRAFFITI_ON_MEMPOOL) > 0:
                 try:
                     active = 0
@@ -150,9 +169,11 @@ class StorageServer:
                         return {"type":"STOR_ACK","status":"rejected","reason":"mempool_graffiti_full"}
                 except Exception:
                     pass
-            
-            inc_dir = os.path.join(self.storage_dir, "incoming"); os.makedirs(inc_dir, exist_ok=True)
-            path    = os.path.join(inc_dir, f"{aid}.part")
+            if self.use_kv:
+                path = f"lmdb://incoming/{aid}"
+            else:
+                inc_dir = os.path.join(self.storage_dir, "incoming"); os.makedirs(inc_dir, exist_ok=True)
+                path    = os.path.join(inc_dir, f"{aid}.part")
             meta = {
                 "size_bytes": size,
                 "sha256": sha,
@@ -172,9 +193,10 @@ class StorageServer:
                 self.index.setdefault("art_map", {})[art_id] = aid
             self.index["files"][aid] = meta
             self._save_index()
-            # buat file kosong
-            with open(path, "wb"):
-                pass
+            # buat file kosong (hanya filesystem backend)
+            if not self.use_kv:
+                with open(path, "wb"):
+                    pass
             log.info("[STOR_INIT] aid=%s size=%s art_id=%s state=receiving", aid[:16], size, (art_id[:16] if art_id else "-"))
             return {
                 "type": "STOR_ACK",
@@ -185,6 +207,7 @@ class StorageServer:
             }
 
         if t == "STOR_PUT":
+            log.debug("Received STOR_PUT")
             aid  = str(msg.get("graffiti_id","")).strip()
             b64  = str(msg.get("data",""))
             if not aid or not b64:
@@ -195,12 +218,17 @@ class StorageServer:
             try:
                 chunk_bytes = base64.b64decode(b64)
                 max_chunk = int(meta.get("chunk_size") or CFG.STORAGE_UPLOAD_CHUNK)
-                if len(chunk_bytes) > max_chunk:
-                    return {"type":"STOR_ACK","status":"rejected","reason":"chunk_too_big"}
-                with open(meta["path"], "ab") as f:
-                    f.write(chunk_bytes)
+                received_total = int(meta.get("received_bytes", 0))
+                if self.use_kv:
+                    received_total = self.db.append_incoming(aid, chunk_bytes, max_chunk)
+                else:
+                    if len(chunk_bytes) > max_chunk:
+                        return {"type":"STOR_ACK","status":"rejected","reason":"chunk_too_big"}
+                    with open(meta["path"], "ab") as f:
+                        f.write(chunk_bytes)
+                    received_total += len(chunk_bytes)
                 meta["state"] = "appending"
-                meta["received_bytes"] = int(meta.get("received_bytes", 0)) + len(chunk_bytes)
+                meta["received_bytes"] = int(received_total)
                 meta["updated_ts"] = int(time.time())
                 self.index["files"][aid] = meta
                 self._save_index()
@@ -214,35 +242,42 @@ class StorageServer:
                 return {"type":"STOR_ACK","status":"rejected","reason":str(e)}
 
         if t == "STOR_COMMIT":
+            log.debug("Received STOR_COMMIT")
             aid = str(msg.get("graffiti_id","")).strip()
             meta = self.index.get("files",{}).get(aid)
             if not meta:
                 return {"type":"STOR_ACK","status":"rejected","reason":"no_such"}
             try:
                 expected_size = int(meta.get("size_bytes", 0))
-                tmp_path = meta.get("path")
-                if not tmp_path or not os.path.isfile(tmp_path):
-                    return {"type":"STOR_ACK","status":"rejected","reason":"missing_file"}
-                digest = hashlib.sha256()
                 actual_size = 0
-                with open(tmp_path, "rb") as f:
-                    for chunk in iter(lambda: f.read(1024 * 1024), b""):
-                        if not chunk:
-                            break
-                        digest.update(chunk)
-                        actual_size += len(chunk)
+                digest_hex = ""
+                blob_bytes: bytes | None = None
+                if self.use_kv:
+                    blob_bytes = self.db.get_incoming_bytes(aid)
+                    if blob_bytes is None:
+                        return {"type":"STOR_ACK","status":"rejected","reason":"missing_file"}
+                    actual_size = len(blob_bytes)
+                    digest_hex = hashlib.sha256(blob_bytes).hexdigest().lower()
+                else:
+                    tmp_path = meta.get("path")
+                    if not tmp_path or not os.path.isfile(tmp_path):
+                        return {"type":"STOR_ACK","status":"rejected","reason":"missing_file"}
+                    digest = hashlib.sha256()
+                    with open(tmp_path, "rb") as f:
+                        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                            if not chunk:
+                                break
+                            digest.update(chunk)
+                            actual_size += len(chunk)
+                    digest_hex = digest.hexdigest().lower()
                 try:
                     GRAFFITI.validate_graffiti_file(actual_size, meta.get("mime"), meta.get("filename"))
                 except Exception as exc:
                     return {"type":"STOR_ACK","status":"rejected","reason": str(exc)}
                 if actual_size != expected_size:
                     return {"type":"STOR_ACK","status":"rejected","reason":"size_mismatch"}
-                if digest.hexdigest().lower() != meta.get("sha256"):
+                if digest_hex != meta.get("sha256"):
                     return {"type":"STOR_ACK","status":"rejected","reason":"hash_mismatch"}
-                # Tahan di folder incoming sampai ada konfirmasi STOR_PAID
-                inc_dir = os.path.join(self.storage_dir, "incoming"); os.makedirs(inc_dir, exist_ok=True)
-                fin = os.path.join(inc_dir, f"{aid}.bin")
-                os.replace(tmp_path, fin)
                 now_ts = int(time.time())
                 receipt_id = meta.get("receipt_id") or f"rcpt_{aid}_{now_ts}"
                 receipt = {
@@ -253,13 +288,27 @@ class StorageServer:
                     "filename": meta.get("filename"),
                     "ts": now_ts,
                 }
-                meta.update({
-                    "path": fin,
-                    "state": "pending_confirm",
-                    "receipt_id": receipt_id,
-                    "receipt": receipt,
-                    "stored_ts": now_ts,
-                })
+                if self.use_kv:
+                    meta.update({
+                        "path": f"lmdb://incoming/{aid}",
+                        "state": "pending_confirm",
+                        "receipt_id": receipt_id,
+                        "receipt": receipt,
+                        "stored_ts": now_ts,
+                        "received_bytes": actual_size,
+                    })
+                else:
+                    # Tahan di folder incoming sampai ada konfirmasi STOR_PAID
+                    inc_dir = os.path.join(self.storage_dir, "incoming"); os.makedirs(inc_dir, exist_ok=True)
+                    fin = os.path.join(inc_dir, f"{aid}.bin")
+                    os.replace(tmp_path, fin)
+                    meta.update({
+                        "path": fin,
+                        "state": "pending_confirm",
+                        "receipt_id": receipt_id,
+                        "receipt": receipt,
+                        "stored_ts": now_ts,
+                    })
                 art_id = str(meta.get("art_id","")).strip().lower()
                 if art_id:
                     self.index.setdefault("art_map", {})[art_id] = aid
@@ -272,11 +321,13 @@ class StorageServer:
                 return {"type":"STOR_ACK","status":"rejected","reason":str(e)}
 
         if t == "STOR_STATUS":
+            log.debug("Received STOR_STATUS")
             aid = str(msg.get("graffiti_id","")).strip()
             meta = self.index.get("files",{}).get(aid)
             return {"type":"STOR_STATUS","found": bool(meta), "meta": meta}
 
         if t == "STOR_PAID":
+            log.debug("Received STOR_PAID")
             aid = str(msg.get("graffiti_id","")).strip()
             txid = str(msg.get("txid","")).strip()
             try:
@@ -288,13 +339,23 @@ class StorageServer:
                 return {"type": "STOR_PAID", "status": "error", "reason": "no_such"}
             # jika file masih di incoming, pastikan dipindah ke final
             try:
-                path = meta.get("path")
-                if path and os.path.isfile(path) and ("incoming" in path):
-                    fin_dir = os.path.join(self.storage_dir, "final"); os.makedirs(fin_dir, exist_ok=True)
-                    fin = os.path.join(fin_dir, os.path.basename(path).replace(".part", ".bin"))
-                    os.replace(path, fin)
-                    meta["path"] = fin
+                if self.use_kv:
+                    already_final = self.db.get_final_bytes(aid) is not None
+                    if not already_final:
+                        data = self.db.pop_incoming(aid)
+                        if data is None:
+                            return {"type": "STOR_PAID", "status": "error", "reason": "missing_file"}
+                        self.db.put_final(aid, data)
+                    meta["path"] = f"lmdb://final/{aid}"
                     meta["state"] = "stored"
+                else:
+                    path = meta.get("path")
+                    if path and os.path.isfile(path) and ("incoming" in path):
+                        fin_dir = os.path.join(self.storage_dir, "final"); os.makedirs(fin_dir, exist_ok=True)
+                        fin = os.path.join(fin_dir, os.path.basename(path).replace(".part", ".bin"))
+                        os.replace(path, fin)
+                        meta["path"] = fin
+                        meta["state"] = "stored"
             except Exception as e:
                 return {"type": "STOR_PAID", "status": "error", "reason": str(e)}
 
@@ -321,6 +382,7 @@ class StorageServer:
             }
 
         if t == "STOR_GC":
+            log.debug("Received STOR_GC")
             try:
                 tip_h = int(msg.get("tip_height", 0) or 0)
             except Exception:
@@ -338,12 +400,18 @@ class StorageServer:
             for gid in remove_keys:
                 meta = files.pop(gid, None) or {}
                 expired += 1
-                try:
-                    path = meta.get("path")
-                    if path and os.path.isfile(path):
-                        os.remove(path)
-                except Exception:
-                    pass
+                if self.use_kv:
+                    try:
+                        self.db.delete_blob(gid, incoming=True, final=True)
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        path = meta.get("path")
+                        if path and os.path.isfile(path):
+                            os.remove(path)
+                    except Exception:
+                        pass
                 art_id = str(meta.get("art_id", "")).strip().lower()
                 if art_id and self.index.get("art_map", {}).get(art_id) == gid:
                     try:
@@ -361,6 +429,7 @@ class StorageServer:
             return {"type":"STOR_GC","status":"ok","expired": expired}
 
         if t == "STOR_TAG_ART":
+            log.debug("Received STOR_TAG_ART")
             aid = str(msg.get("graffiti_id","")).strip()
             art_id = str(msg.get("art_id","")).strip().lower()
             if not aid or not art_id:
@@ -378,6 +447,7 @@ class StorageServer:
             return {"type":"STOR_ACK","status":"ok","graffiti_id": aid, "art_id": art_id}
 
         if t == "STOR_PROOF_RUN":
+            log.debug("Received STOR_PROOF_RUN")
             aid = str(msg.get("graffiti_id","")).strip()
             art_id = str(msg.get("art_id","")).strip().lower()
             try:
@@ -390,7 +460,6 @@ class StorageServer:
             meta = files.get(aid) if aid else None
             if not meta:
                 return {"type": "STOR_PROOF_RUN", "status": "error", "reason": "no_such"}
-            path = meta.get("path")
             size = int(meta.get("size_bytes", 0) or 0)
             art_norm = str(meta.get("art_id") or art_id or "").strip().lower()
             if not art_norm:
@@ -407,18 +476,21 @@ class StorageServer:
                 self.index["files"][aid] = self._normalize_file_meta(aid, meta)
                 self._save_index()
                 return {"type": "STOR_PROOF_RUN", "status": "error", "reason": "bad_challenge"}
-            if not path or not os.path.isfile(path):
-                meta["missed_proofs"] = int(meta.get("missed_proofs", 0)) + 1
-                meta["proof_fail_reason"] = "file_missing"
-                self.index["files"][aid] = self._normalize_file_meta(aid, meta)
-                self._save_index()
-                return {"type": "STOR_PROOF_RUN", "status": "error", "reason": "file_missing"}
             offset = int(challenge.get("offset", 0))
             length = int(challenge.get("length", 0))
             try:
-                with open(path, "rb") as fh:
-                    fh.seek(offset)
-                    chunk = fh.read(length)
+                if self.use_kv:
+                    data_bytes = self.db.get_final_bytes(aid)
+                    if data_bytes is None:
+                        raise FileNotFoundError("file_missing")
+                    chunk = data_bytes[offset:offset+length]
+                else:
+                    path = meta.get("path")
+                    if not path or not os.path.isfile(path):
+                        raise FileNotFoundError("file_missing")
+                    with open(path, "rb") as fh:
+                        fh.seek(offset)
+                        chunk = fh.read(length)
                 proof_hash = GRAFFITI.hash_proof_chunk(chunk)
             except Exception as exc:
                 meta["missed_proofs"] = int(meta.get("missed_proofs", 0)) + 1
@@ -459,6 +531,7 @@ class StorageServer:
             }
 
         if t == "STOR_GET_BY_ART" or t == "GRAFFITI_GET_FILE":
+            log.debug("Received %s", t)
             art_id = str(msg.get("art_id","")).strip().lower()
             if not art_id:
                 return {"type":t,"found": False}
@@ -473,7 +546,6 @@ class StorageServer:
             resp = {"type": t, "found": found, "graffiti_id": gid, "meta": meta}
             include_data = bool(msg.get("include_data"))
             if include_data and meta:
-                path = meta.get("path")
                 try:
                     max_bytes = int(msg.get("max_bytes", 0) or 0)
                 except Exception:
@@ -481,24 +553,40 @@ class StorageServer:
                 if max_bytes <= 0:
                     max_bytes = int(CFG.GRAFFITI_MAX_SIZE_BYTES)
                 max_bytes = max(32 * 1024, min(max_bytes, int(CFG.GRAFFITI_MAX_SIZE_BYTES), data_cap))
-                if path and os.path.isfile(path):
-                    try:
-                        size = os.path.getsize(path)
-                    except Exception:
-                        size = 0
-                    if size > max_bytes:
+                if self.use_kv:
+                    data_bytes = self.db.get_final_bytes(gid) if gid else None
+                    size = len(data_bytes) if data_bytes is not None else 0
+                    if data_bytes is None:
+                        resp["status"] = "error"
+                        resp["reason"] = "file_missing"
+                        log.warning("[STOR_GET_BY_ART] file_missing aid=%s gid=%s", art_id[:16], gid)
+                    elif size > max_bytes:
                         resp["status"] = "error"
                         resp["reason"] = "file_too_large"
                         log.warning("[STOR_GET_BY_ART] file_too_large aid=%s size=%s limit=%s", art_id[:16], size, max_bytes)
                     else:
-                        with open(path, "rb") as fh:
-                            data_b64 = base64.b64encode(fh.read()).decode("ascii")
-                        resp["data_b64"] = data_b64
+                        resp["data_b64"] = base64.b64encode(data_bytes).decode("ascii")
                         resp["status"] = "ok"
                 else:
-                    resp["status"] = "error"
-                    resp["reason"] = "file_missing"
-                    log.warning("[STOR_GET_BY_ART] file_missing aid=%s gid=%s path=%s", art_id[:16], gid, path)
+                    path = meta.get("path")
+                    if path and os.path.isfile(path):
+                        try:
+                            size = os.path.getsize(path)
+                        except Exception:
+                            size = 0
+                        if size > max_bytes:
+                            resp["status"] = "error"
+                            resp["reason"] = "file_too_large"
+                            log.warning("[STOR_GET_BY_ART] file_too_large aid=%s size=%s limit=%s", art_id[:16], size, max_bytes)
+                        else:
+                            with open(path, "rb") as fh:
+                                data_b64 = base64.b64encode(fh.read()).decode("ascii")
+                            resp["data_b64"] = data_b64
+                            resp["status"] = "ok"
+                    else:
+                        resp["status"] = "error"
+                        resp["reason"] = "file_missing"
+                        log.warning("[STOR_GET_BY_ART] file_missing aid=%s gid=%s path=%s", art_id[:16], gid, path if 'path' in locals() else None)
             return resp
 
         return {"error":"unknown type"}
