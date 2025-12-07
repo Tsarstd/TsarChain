@@ -11,7 +11,7 @@ from typing import Optional, Dict, Any
 
 # ---------------- Local Project ----------------
 from tsarchain.contracts.storage_node.server import StorageServer
-from tsarchain.contracts.storage_node.node_rpc import RPC, NodeDirectory
+from tsarchain.contracts.storage_node.connect import RPC, NodeDirectory
 from tsarchain.network.protocol import send_message, recv_message
 
 from tsarchain.utils import config as CFG

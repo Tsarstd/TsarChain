@@ -226,7 +226,6 @@ class SimpleMiner:
             try:
                 sent = self.network.publish_block(blk, exclude=None, force=True)
                 if sent and sent > 0:
-                    clog(f"[broadcast] pending block sent to {sent} peers")
                     try:
                         self._pending_block_hashes.discard(blk.hash().hex())
                     except Exception:

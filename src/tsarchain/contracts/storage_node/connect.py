@@ -20,7 +20,7 @@ from tsarchain.utils import config as CFG
 
 
 from tsarchain.utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.contracts.storage_node.node_rpc")
+log = get_ctx_logger("tsarchain.contracts.storage_node.connect")
 
 manual_bootstrap: Optional[Tuple[str, int]] = None
 
