@@ -17,17 +17,11 @@ class UTXOGraffitiMixin:
     @staticmethod
     def _script_bytes(spk) -> bytes:
         if hasattr(spk, "serialize"):
-            try:
-                return spk.serialize()
-            except Exception:
-                return b""
+            return spk.serialize()
         if isinstance(spk, (bytes, bytearray)):
             return bytes(spk)
         if isinstance(spk, str):
-            try:
-                return bytes.fromhex(spk)
-            except Exception:
-                return b""
+            return bytes.fromhex(spk)
         return b""
 
     def script_to_address(self, script) -> str | None:
@@ -37,47 +31,37 @@ class UTXOGraffitiMixin:
         """
         b = self._script_bytes(script)
         if len(b) == 22 and b[0] == 0x00 and b[1] == 0x14:
-            try:
-                data = [0] + list(convertbits(b[2:], 8, 5, True))
-                return bech32_encode(CFG.ADDRESS_PREFIX, data)
-            except Exception:
-                return None
+            data = [0] + list(convertbits(b[2:], 8, 5, True))
+            return bech32_encode(CFG.ADDRESS_PREFIX, data)
         if len(b) == 34 and b[0] == 0x00 and b[1] == 0x20:
-            try:
-                data = [0] + list(convertbits(b[2:], 8, 5, True))
-                return bech32_encode(CFG.ADDRESS_PREFIX, data)
-            except Exception:
-                return None
+            data = [0] + list(convertbits(b[2:], 8, 5, True))
+            return bech32_encode(CFG.ADDRESS_PREFIX, data)
         return None
 
     def _record_graffiti_event(self, tx, outputs_info: list[dict[str, Any]], block_height: int | None, block_hash: str | None = None) -> None:
         if block_height is None:
             return
-        try:
-            txid_hex = self._txid_hex(getattr(tx, "txid", None))
-            meta = None
-            for info in outputs_info:
-                script_bytes = info.get("script_bytes") or b""
-                if script_bytes and script_bytes[0] == 0x6a:
-                    payload = self._read_opreturn_payload(script_bytes)
-                    if payload:
-                        candidate = GRAFFITI.parse_payload(payload)
-                        if candidate:
-                            meta = candidate
-                            break
-            if not meta:
-                return
-            
-            event = str(meta.get("event", "POST")).upper()
-            if event == "POST":
-                self._handle_graffiti_post(meta, outputs_info, txid_hex, block_height, block_hash)
-            elif event == "COMMENT":
-                self._handle_graffiti_comment(meta, outputs_info, txid_hex, block_height)
-            elif event == "PAYOUT":
-                self._handle_graffiti_payout(meta, outputs_info, txid_hex, block_height)
-                
-        except Exception:
-            log.exception("[graffiti] failed to record event tx=%s", getattr(tx, "txid", None))
+        txid_hex = self._txid_hex(getattr(tx, "txid", None))
+        meta = None
+        for info in outputs_info:
+            script_bytes = info.get("script_bytes") or b""
+            if script_bytes and script_bytes[0] == 0x6a:
+                payload = self._read_opreturn_payload(script_bytes)
+                if payload:
+                    candidate = GRAFFITI.parse_payload(payload)
+                    if candidate:
+                        meta = candidate
+                        break
+        if not meta:
+            return
+        
+        event = str(meta.get("event", "POST")).upper()
+        if event == "POST":
+            self._handle_graffiti_post(meta, outputs_info, txid_hex, block_height, block_hash)
+        elif event == "COMMENT":
+            self._handle_graffiti_comment(meta, outputs_info, txid_hex, block_height)
+        elif event == "PAYOUT":
+            self._handle_graffiti_payout(meta, outputs_info, txid_hex, block_height)
 
     def _handle_graffiti_post(
         self,
@@ -92,10 +76,7 @@ class UTXOGraffitiMixin:
         creator = (meta.get("creator") or "").strip().lower()
         art_id = str(meta.get("art_id") or "").strip().lower()
         if not art_id and sha_hex and creator:
-            try:
-                art_id = GRAFFITI.compute_art_id(sha_hex, creator)
-            except Exception:
-                art_id = ""
+            art_id = GRAFFITI.compute_art_id(sha_hex, creator)
         if not art_id:
             log.warning("[graffiti] POST missing art_id/creator sha=%s tx=%s", sha_hex[:16], txid_hex)
             return
@@ -117,11 +98,8 @@ class UTXOGraffitiMixin:
             "block_hash": block_hash,
         }
         self._graffiti_registry.record_post(art_id, entry, txid_hex, block_height, pool_addr, paid, block_hash=block_hash)
-        try:
-            current_pool_balance = self.get_balance(pool_addr, mode="total")
-            self._graffiti_registry.set_pool_balance(art_id, current_pool_balance)
-        except Exception:
-            pass
+        current_pool_balance = self.get_balance(pool_addr, mode="total")
+        self._graffiti_registry.set_pool_balance(art_id, current_pool_balance)
 
     def _handle_graffiti_comment(
         self,
@@ -168,11 +146,8 @@ class UTXOGraffitiMixin:
             creator_paid=paid_creator,
             storage_paid=paid_pool,
         )
-        try:
-            current_pool_balance = self.get_balance(pool_addr, mode="total")
-            self._graffiti_registry.set_pool_balance(art_id, current_pool_balance)
-        except Exception:
-            pass
+        current_pool_balance = self.get_balance(pool_addr, mode="total")
+        self._graffiti_registry.set_pool_balance(art_id, current_pool_balance)
 
     def _handle_graffiti_payout(
         self,
@@ -196,25 +171,16 @@ class UTXOGraffitiMixin:
         if not isinstance(recs, list) or not recs:
             log.warning("[graffiti] PAYOUT missing recipients art_id=%s tx=%s", art_id, txid_hex)
             return
-        try:
-            epoch = int(meta.get("epoch", -1))
-        except Exception:
-            epoch = -1
+        epoch = int(meta.get("epoch", -1))
         # Idempotent replay: allow same-epoch payout if txid already recorded; otherwise reject rewind.
         if epoch >= 0 and last_epoch >= 0 and epoch <= last_epoch:
             already = False
-            try:
-                payouts = (self._graffiti_registry.data.get("payouts") or {}).get(art_id, [])
-                already = any(p.get("txid") == txid_hex for p in payouts)
-            except Exception:
-                already = False
+            payouts = (self._graffiti_registry.data.get("payouts") or {}).get(art_id, [])
+            already = any(p.get("txid") == txid_hex for p in payouts)
             if already:
                 # Ensure pool balance stays in sync with UTXO set even when we skip re-recording.
-                try:
-                    current_pool_balance = self.get_balance(pool_addr, mode="total")
-                    self._graffiti_registry.set_pool_balance(art_id, current_pool_balance)
-                except Exception:
-                    pass
+                current_pool_balance = self.get_balance(pool_addr, mode="total")
+                self._graffiti_registry.set_pool_balance(art_id, current_pool_balance)
                 return
             log.warning("[graffiti] PAYOUT epoch rewind art_id=%s epoch=%s last=%s tx=%s", art_id, epoch, last_epoch, txid_hex)
             return
@@ -222,10 +188,7 @@ class UTXOGraffitiMixin:
         paid_map: dict[str, int] = {}
         for rec in recs:
             addr = str(rec.get("addr") or rec.get("address") or "").strip().lower()
-            try:
-                amt_req = int(rec.get("amount", 0))
-            except Exception:
-                amt_req = 0
+            amt_req = int(rec.get("amount", 0))
             if not addr or amt_req <= 0:
                 continue
             paid_actual = sum(int(info.get("amount") or 0) for info in outputs_info if (info.get("address") or "").strip().lower() == addr)
@@ -241,56 +204,42 @@ class UTXOGraffitiMixin:
             return
 
         # Optional: record proof metadata embedded in payout so new nodes can replay state from chain data.
-        try:
-            proof_epoch = meta.get("proof_epoch")
-            proof_height = meta.get("proof_height", meta.get("height"))
-            proof_offset = meta.get("proof_offset")
-            proof_length = meta.get("proof_length")
-            proof_hash = meta.get("proof_hash")
-            proof_seed = meta.get("proof_seed", "")
-            proof_storer = meta.get("proof_storer")
-            # Derive epoch from height when explicit epoch is missing
-            if proof_epoch is None and proof_height is not None:
-                try:
-                    proof_epoch = GRAFFITI.compute_proof_epoch(int(proof_height))
-                except Exception:
-                    proof_epoch = None
-            if proof_epoch is not None:
-                try:
-                    pe = int(proof_epoch)
-                    poff = int(proof_offset) if proof_offset is not None else None
-                    plen = int(proof_length) if proof_length is not None else None
-                    ph = str(proof_hash).strip().lower() if proof_hash else None
-                    pstorer = str(proof_storer).strip().lower() if proof_storer else ""
-                    if (
-                        pstorer
-                        and poff is not None
-                        and plen is not None
-                        and ph
-                        and len(ph) == 64
-                    ):
-                        self._graffiti_registry.record_proof(
-                            art_id=art_id,
-                            storer=pstorer,
-                            epoch=pe,
-                            offset=poff,
-                            length=plen,
-                            proof_hash=ph,
-                            height=int(proof_height) if proof_height is not None else block_height or 0,
-                            seed=str(proof_seed or ""),
-                        )
-                except Exception:
-                    log.exception("[graffiti] PAYOUT failed to record proof for art_id=%s tx=%s", art_id, txid_hex)
-                    pass
-        except Exception:
-            log.exception("[graffiti] PAYOUT failed to record proof for art_id=%s tx=%s", art_id, txid_hex)
-            pass
+        proof_epoch = meta.get("proof_epoch")
+        proof_height = meta.get("proof_height", meta.get("height"))
+        proof_offset = meta.get("proof_offset")
+        proof_length = meta.get("proof_length")
+        proof_hash = meta.get("proof_hash")
+        proof_seed = meta.get("proof_seed", "")
+        proof_storer = meta.get("proof_storer")
+        # Derive epoch from height when explicit epoch is missing
+        if proof_epoch is None and proof_height is not None:
+            proof_epoch = GRAFFITI.compute_proof_epoch(int(proof_height))
+        if proof_epoch is not None:
+            pe = int(proof_epoch)
+            poff = int(proof_offset) if proof_offset is not None else None
+            plen = int(proof_length) if proof_length is not None else None
+            ph = str(proof_hash).strip().lower() if proof_hash else None
+            pstorer = str(proof_storer).strip().lower() if proof_storer else ""
+            if (
+                pstorer
+                and poff is not None
+                and plen is not None
+                and ph
+                and len(ph) == 64
+            ):
+                self._graffiti_registry.record_proof(
+                    art_id=art_id,
+                    storer=pstorer,
+                    epoch=pe,
+                    offset=poff,
+                    length=plen,
+                    proof_hash=ph,
+                    height=int(proof_height) if proof_height is not None else block_height or 0,
+                    seed=str(proof_seed or ""),
+                )
 
         # Recalculate pool balance from UTXO set (total, not just mature)
-        try:
-            current_pool_balance = self.get_balance(pool_addr, mode="total")
-        except Exception:
-            current_pool_balance = max(0, pool_balance - total_paid)
+        current_pool_balance = self.get_balance(pool_addr, mode="total")
         self._graffiti_registry.record_payout(
             art_id,
             paid_map,

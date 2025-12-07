@@ -8,6 +8,9 @@ from __future__ import annotations
 from typing import Any, Optional, Set, Tuple, TYPE_CHECKING
 from ...utils import config as CFG
 
+from ...utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.network.node_logic.peers")
+
 if TYPE_CHECKING:
     from ...core.block import Block
 
@@ -16,15 +19,9 @@ def normalize_peer(self, peer: Any) -> Optional[Tuple[str, int]]:
     if not peer:
         return None
     if isinstance(peer, tuple) and len(peer) == 2:
-        try:
-            return (str(peer[0]), int(peer[1]))
-        except Exception:
-            return None
+        return (str(peer[0]), int(peer[1]))
     if isinstance(peer, list) and len(peer) == 2:
-        try:
-            return (str(peer[0]), int(peer[1]))
-        except Exception:
-            return None
+        return (str(peer[0]), int(peer[1]))
     return None
 
 

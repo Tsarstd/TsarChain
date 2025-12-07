@@ -21,6 +21,9 @@ from .validation import TxMempoolValidator
 from .orphan import OrphanPoolMixin
 from .types import PrevoutRef
 
+from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.mempool.pool")
+
 __all__ = ["TxPool", "TxPoolDB"]
 
 
@@ -66,21 +69,14 @@ class TxPool(
         utxo_store = utxo_store or UTXODB()
         self.utxo = utxo_store
         if inherit_state:
-            try:
-                self.utxo._load()
-            except Exception:
-                pass
+            self.utxo._load()
 
         self.last_error_reason: str | None = None
         self._orphan_pool: Dict[str, dict] = {}
         self._orphan_missing: Dict[str, str] = {}
 
     def __del__(self):
-        try:
-            self.flush(force=False)
-        except Exception:
-            pass
-
+        self.flush(force=False)
 
 # Backwards compatibility
 TxPoolDB = TxPool

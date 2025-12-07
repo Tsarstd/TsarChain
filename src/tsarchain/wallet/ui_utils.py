@@ -2,8 +2,11 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
+
 import tkinter as tk
 
+from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.wallet.ui_utils")
 
 def center_window(win: tk.Toplevel, parent: tk.Misc | None = None) -> None:
     try:
@@ -26,10 +29,12 @@ def center_window(win: tk.Toplevel, parent: tk.Misc | None = None) -> None:
                     pw = parent.winfo_reqwidth()
                     ph = parent.winfo_reqheight()
             except Exception:
+                log.exception("errorrr1")
                 try:
                     px = parent.winfo_rootx()
                     py = parent.winfo_rooty()
                 except Exception:
+                    log.exception("errroas2")
                     px = py = 0
                 pw = win.winfo_screenwidth()
                 ph = win.winfo_screenheight()
@@ -44,5 +49,6 @@ def center_window(win: tk.Toplevel, parent: tk.Misc | None = None) -> None:
         y = int(py + max((ph - wh) / 2, 0))
         win.geometry(f"+{x}+{y}")
     except Exception:
+        log.exception("bahayaaaa")
         pass
 

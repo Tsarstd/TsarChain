@@ -6,25 +6,19 @@ from __future__ import annotations
 
 from ..core.tx import Tx
 
+from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger('tsarchain.mempool.orphan')
+
 __all__ = ["OrphanPoolMixin"]
 
 class OrphanPoolMixin:
     def _queue_orphan(self, tx_obj: Tx, missing_key: str) -> None:
-        try:
-            tx_dict = tx_obj.to_dict(include_txid=True)
-        except Exception:
-            if isinstance(tx_obj, dict):
-                tx_dict = dict(tx_obj)
-            else:
-                return
+        tx_dict = tx_obj.to_dict(include_txid=True)
         txid_hex = tx_dict.get("txid")
         if not txid_hex:
-            try:
-                if getattr(tx_obj, "txid", None):
-                    txid_hex = tx_obj.txid.hex()
-                    tx_dict["txid"] = txid_hex
-            except Exception:
-                return
+            if getattr(tx_obj, "txid", None):
+                txid_hex = tx_obj.txid.hex()
+                tx_dict["txid"] = txid_hex
         if not txid_hex:
             return
         key = txid_hex.lower()
@@ -39,10 +33,7 @@ class OrphanPoolMixin:
         self._orphan_missing = {}
         added = 0
         for _, tx_dict in retry_items:
-            try:
-                tx_obj = Tx.from_dict(tx_dict)
-            except Exception:
-                continue
+            tx_obj = Tx.from_dict(tx_dict)
             if self.add_valid_tx(tx_obj):
                 added += 1
             else:

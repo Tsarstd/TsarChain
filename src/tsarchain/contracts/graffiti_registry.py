@@ -12,6 +12,8 @@ from ..storage.db import AtomicJSONFile
 from ..storage.kv import kv_enabled, iter_prefix, batch
 from ..utils import config as CFG
 
+from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger('tsarchain.contracts.graffiti_registry')
 
 class GraffitiRegistry:
     def __init__(self) -> None:
@@ -30,27 +32,17 @@ class GraffitiRegistry:
     def _load(self, default: dict) -> dict:
         if self._kv:
             data = {"posts": {}, "comments": {}, "payouts": {}, "proofs": {}}
-            try:
-                for k, v in iter_prefix("graffiti", b"data:"):
-                    if k.decode("utf-8") == "data:data":
-                        data = json.loads(v.decode("utf-8"))
-                        break
-            except Exception:
-                data = dict(default)
+            for k, v in iter_prefix("graffiti", b"data:"):
+                if k.decode("utf-8") == "data:data":
+                    data = json.loads(v.decode("utf-8"))
+                    break
             return data or dict(default)
-        try:
-            return self.store.load(default=default)
-        except FileNotFoundError:
-            self.store.save(default)
-            return dict(default)
+        return self.store.load(default=default)
 
     def _flush(self) -> None:
         if self._kv:
-            try:
-                with batch("graffiti") as b:
-                    b.put(b"data:data", json.dumps(self.data, separators=CFG.CANONICAL_SEP).encode("utf-8"))
-            except Exception:
-                pass
+            with batch("graffiti") as b:
+                b.put(b"data:data", json.dumps(self.data, separators=CFG.CANONICAL_SEP).encode("utf-8"))
         else:
             self.store.save(self.data)
 
@@ -127,10 +119,7 @@ class GraffitiRegistry:
         else:
             stats["pool_balance"] = max(0, int(stats.get("pool_balance", 0)) - total)
         if epoch is not None:
-            try:
-                stats["last_paid_epoch"] = max(int(stats.get("last_paid_epoch", -1)), int(epoch))
-            except Exception:
-                pass
+            stats["last_paid_epoch"] = max(int(stats.get("last_paid_epoch", -1)), int(epoch))
         art_payouts.append({
             "txid": txid,
             "block_height": int(block_height),
@@ -195,10 +184,7 @@ class GraffitiRegistry:
         proof = self.get_latest_proof(art_id, storer)
         if not proof:
             return -1
-        try:
-            return int(proof.get("epoch", -1))
-        except Exception:
-            return -1
+        return int(proof.get("epoch", -1))
 
     def list_payouts(self, art_id: str, limit: int = 100) -> list[Dict[str, Any]]:
         art_id = (art_id or "").strip().lower()
@@ -213,14 +199,11 @@ class GraffitiRegistry:
         posts = self.data.get("posts") or {}
         items: list[Dict[str, Any]] = []
         for art_id, entry in posts.items():
-            try:
-                rec = dict(entry)
-                rec["art_id"] = art_id
-                stats = rec.get("stats") or {}
-                rec["stats"] = stats
-                items.append(rec)
-            except Exception:
-                continue
+            rec = dict(entry)
+            rec["art_id"] = art_id
+            stats = rec.get("stats") or {}
+            rec["stats"] = stats
+            items.append(rec)
         items.sort(key=lambda r: (int(r.get("block_height") or 0), int(r.get("ts") or 0)), reverse=True)
         if isinstance(limit, int) and limit > 0:
             return items[:limit]

@@ -15,24 +15,21 @@ class UTXOBalanceMixin:
     def _script_hex_from_tx_out(self, tx_out) -> str | None:
         if tx_out is None:
             return None
-        try:
-            spk = None
-            if hasattr(tx_out, "script_pubkey"):
-                spk = tx_out.script_pubkey
-            elif isinstance(tx_out, dict):
-                spk = tx_out.get("script_pubkey")
-            elif hasattr(tx_out, "serialize"):
-                return tx_out.serialize().hex().lower()
-            if spk is None:
-                return None
-            if hasattr(spk, "serialize"):
-                return spk.serialize().hex().lower()
-            if isinstance(spk, (bytes, bytearray)):
-                return bytes(spk).hex().lower()
-            if isinstance(spk, str):
-                return spk.lower()
-        except Exception:
+        spk = None
+        if hasattr(tx_out, "script_pubkey"):
+            spk = tx_out.script_pubkey
+        elif isinstance(tx_out, dict):
+            spk = tx_out.get("script_pubkey")
+        elif hasattr(tx_out, "serialize"):
+            return tx_out.serialize().hex().lower()
+        if spk is None:
             return None
+        if hasattr(spk, "serialize"):
+            return spk.serialize().hex().lower()
+        if isinstance(spk, (bytes, bytearray)):
+            return bytes(spk).hex().lower()
+        if isinstance(spk, str):
+            return spk.lower()
         return None
 
     def _amount_from_tx_out(self, tx_out) -> int:

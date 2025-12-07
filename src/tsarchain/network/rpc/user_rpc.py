@@ -33,30 +33,18 @@ def _verify_chat_signatures(tasks: list[tuple[str, str, bytes, str]]) -> dict[st
         verdict[label] = False
         if not (pub_hex and sig_hex and isinstance(payload, (bytes, bytearray)) and payload):
             continue
-        try:
-            pub_b = bytes.fromhex(pub_hex)
-            sig_b = bytes.fromhex(sig_hex)
-        except Exception:
-            continue
+        pub_b = bytes.fromhex(pub_hex)
+        sig_b = bytes.fromhex(sig_hex)
         normalized.append((label, pub_b, bytes(payload), sig_b))
 
     if not normalized:
         return verdict
 
-    try:
-        log.info("[chat-verify] native batch verifier on %d signature(s)", len(normalized))
-    except Exception:
-        log.info("[chat-verify] native batch verifier engaged")
-
     triples = [
         (pub_b, hashlib.sha256(payload).digest(), sig_b)
         for _, pub_b, payload, sig_b in normalized
     ]
-    try:
-        results = batch_verify_der_low_s(triples, enforce_low_s=True, parallel=False)
-    except Exception:
-        log.exception("[chat] native signature verifier error")
-        return verdict
+    results = batch_verify_der_low_s(triples, enforce_low_s=True, parallel=False)
 
     for (label, _, _, _), ok in zip(normalized, results):
         verdict[label] = bool(ok)
@@ -114,51 +102,45 @@ def handle_user_rpc(
             chain = list(self.broadcast.blockchain.chain)
             tip_height = int(self.broadcast.blockchain.height)
             mem = self.broadcast.mempool.get_all_txs()
-        try:
-            self.broadcast.utxodb._load()
-        except Exception:
-            log.exception("[process_message] UTXO DB load error")
+        self.broadcast.utxodb._load()
 
         opmap = self._build_outpoint_map(chain, mem)
         pending_out_map: dict[str, int] = {}
         incoming_map: dict[str, int] = {}
-        try:
-            for tx in mem or []:
-                spent_local: dict[str, int] = {}
-                recv_local: dict[str, int] = {}
+        for tx in mem or []:
+            spent_local: dict[str, int] = {}
+            recv_local: dict[str, int] = {}
 
-                for tin in getattr(tx, "inputs", []) or []:
-                    key = self._txin_prevkey(tin)
-                    amt_owner = opmap.get(key)
-                    if not amt_owner:
-                        continue
-                    amt, owner = amt_owner
-                    if owner and amt:
-                        spent_local[owner] = spent_local.get(owner, 0) + int(amt)
+            for tin in getattr(tx, "inputs", []) or []:
+                key = self._txin_prevkey(tin)
+                amt_owner = opmap.get(key)
+                if not amt_owner:
+                    continue
+                amt, owner = amt_owner
+                if owner and amt:
+                    spent_local[owner] = spent_local.get(owner, 0) + int(amt)
 
-                for o in getattr(tx, "outputs", []) or []:
-                    amt = int(getattr(o, "amount", 0) or 0)
-                    if amt <= 0:
-                        continue
-                    addr_o = self._txout_to_address(o)
-                    if addr_o:
-                        recv_local[addr_o] = recv_local.get(addr_o, 0) + amt
+            for o in getattr(tx, "outputs", []) or []:
+                amt = int(getattr(o, "amount", 0) or 0)
+                if amt <= 0:
+                    continue
+                addr_o = self._txout_to_address(o)
+                if addr_o:
+                    recv_local[addr_o] = recv_local.get(addr_o, 0) + amt
 
-                # Treat change outputs (addr appears on both sides) as neutral.
-                for addr, spent_amt in list(spent_local.items()):
-                    change_amt = min(spent_amt, recv_local.get(addr, 0))
-                    if change_amt > 0:
-                        spent_local[addr] = spent_amt - change_amt
-                        recv_local[addr] = recv_local.get(addr, 0) - change_amt
+            # Treat change outputs (addr appears on both sides) as neutral.
+            for addr, spent_amt in list(spent_local.items()):
+                change_amt = min(spent_amt, recv_local.get(addr, 0))
+                if change_amt > 0:
+                    spent_local[addr] = spent_amt - change_amt
+                    recv_local[addr] = recv_local.get(addr, 0) - change_amt
 
-                for addr, spent_amt in spent_local.items():
-                    if spent_amt > 0:
-                        pending_out_map[addr] = pending_out_map.get(addr, 0) + spent_amt
-                for addr, recv_amt in recv_local.items():
-                    if recv_amt > 0:
-                        incoming_map[addr] = incoming_map.get(addr, 0) + recv_amt
-        except Exception:
-            log.exception("[process_message] pending/incoming map build error")
+            for addr, spent_amt in spent_local.items():
+                if spent_amt > 0:
+                    pending_out_map[addr] = pending_out_map.get(addr, 0) + spent_amt
+            for addr, recv_amt in recv_local.items():
+                if recv_amt > 0:
+                    incoming_map[addr] = incoming_map.get(addr, 0) + recv_amt
 
         items = {}
         for addr_str in addrs:
@@ -183,16 +165,10 @@ def handle_user_rpc(
         from_addr = (message.get("from") or "").strip().lower()
         to_addr   = (message.get("to")   or "").strip().lower()
         amount    = message.get("amount")
-        try:
-            fee_rate = int(message.get("fee_rate", CFG.DEFAULT_FEE_RATE_SATVB))
-        except Exception:
-            fee_rate = CFG.DEFAULT_FEE_RATE_SATVB
+        fee_rate = int(message.get("fee_rate", CFG.DEFAULT_FEE_RATE_SATVB))
         fee_rate = max(CFG.MIN_FEE_RATE_SATVB, min(fee_rate, CFG.MAX_FEE_RATE_SATVB))
-        try:
-            tpl = self._handle_create_tx(from_addr, to_addr, amount, fee_rate)
-            return {"type": "TX_TEMPLATE", "data": tpl}
-        except Exception:
-            log.exception("[process_message] CREATE_TX error")
+        tpl = self._handle_create_tx(from_addr, to_addr, amount, fee_rate)
+        return {"type": "TX_TEMPLATE", "data": tpl}
 
     elif mtype == "GET_INFO":
         ip = client_ip()
@@ -208,13 +184,9 @@ def handle_user_rpc(
             "mempool": len(self.broadcast.mempool.get_all_txs()),
             "utxos": len(self.broadcast.utxodb.utxos),
         }
-        try:
-            with self.lock:
-                peers_sane = [(ip,p) for (ip,p) in self.peers if isinstance(p,int) and p>0]
-            info["peers"] = len(peers_sane)
-        except Exception:
-            log.exception("[process_message] GET_INFO peers count error")
-            info["peers"] = 0
+        with self.lock:
+            peers_sane = [(ip,p) for (ip,p) in self.peers if isinstance(p,int) and p>0]
+        info["peers"] = len(peers_sane)
         return info
 
     elif mtype == "GET_NETWORK_INFO":
@@ -223,37 +195,24 @@ def handle_user_rpc(
         if not self._tb_allow(self.rl_ip, rl_key, CFG.INFO_RL_IP_BURST, CFG.INFO_RL_IP_WINDOW_S, CFG.INFO_RL_IP_BURST, backoff_key=rl_key):
             self._backoff(rl_key, CFG.INFO_RL_BACKOFF_S)
             return {"error": "rate_limited"}
-        try:
-            snap = self.broadcast.blockchain._compute_state_snapshot()
-            overlay_realtime_mempool_stats(snap, self)
-            try:
-                with self.lock:
-                    peers_sane = [(ip,p) for (ip,p) in self.peers if isinstance(p,int) and p>0]
-                snap.setdefault("peers", {})
-                if isinstance(snap["peers"], dict):
-                    snap["peers"]["count"] = len(peers_sane)
-                else:
-                    snap["peers"] = {"count": len(peers_sane)}
-            except Exception:
-                log.exception("[process_message] GET_NETWORK_INFO peers count error")
-            return {"type": "NETWORK_INFO", "data": snap}
-        except Exception:
-            log.exception("[process_message] GET_NETWORK_INFO error")
+        snap = self.broadcast.blockchain._compute_state_snapshot()
+        overlay_realtime_mempool_stats(snap, self)
+        with self.lock:
+            peers_sane = [(ip,p) for (ip,p) in self.peers if isinstance(p,int) and p>0]
+        snap.setdefault("peers", {})
+        if isinstance(snap["peers"], dict):
+            snap["peers"]["count"] = len(peers_sane)
+        else:
+            snap["peers"] = {"count": len(peers_sane)}
+        return {"type": "NETWORK_INFO", "data": snap}
 
     elif mtype == "GET_BLOCK_HASH":
-        try:
-            h = int(message.get("height"))
-        except Exception:
-            log.debug("[process_message] GET_BLOCK_HASH invalid height from %s", addr)
-            return {"error": "invalid height"}
+        h = int(message.get("height"))
         return self._handle_get_block_hash(h)
 
     elif mtype == "GET_BLOCK":
         if "height" in message:
-            try:
-                return self._handle_get_block_at(int(message["height"]))
-            except Exception:
-                log.exception("[process_message] GET_BLOCK invalid height from %s", addr)
+            return self._handle_get_block_at(int(message["height"]))
         hx = str(message.get("hash") or "").strip()
         if not hx:
             return {"type": "BLOCK", "error": "missing_height_or_hash"}
@@ -266,11 +225,8 @@ def handle_user_rpc(
 
     elif mtype == "NEW_TX":
         if CFG.ENABLE_DANDELION_PP and "phase" not in message:
-            try:
-                message = dict(message)
-                message["phase"] = "stem"
-            except Exception:
-                pass
+            message = dict(message)
+            message["phase"] = "stem"
         success = self.broadcast.receive_tx(message, addr, self.peers)
         if success:
             txid = (message.get("data") or {}).get("txid")
@@ -285,10 +241,7 @@ def handle_user_rpc(
         if mode == "snapshot":
             if not is_miner_sender():
                 return {"error": "forbidden: miners-only endpoint"}
-            try:
-                peer_port = int(message.get("port", 0))
-            except Exception:
-                peer_port = 0
+            peer_port = int(message.get("port", 0))
             target = None
             if isinstance(addr, tuple):
                 if peer_port > 0:
@@ -304,12 +257,8 @@ def handle_user_rpc(
                 return {"error": "missing_peer_port"}
             min_iv = message.get("min_interval")
             force = bool(message.get("force"))
-            try:
-                pushed = self.broadcast.send_mempool_to_peer(target, min_interval_s=min_iv, force=force)
-                return {"type": "MEMPOOL_SYNC", "count": int(pushed)}
-            except Exception:
-                log.exception("[process_message] GET_MEMPOOL snapshot push error to %s", target)
-                return {"type": "MEMPOOL_SYNC", "count": 0, "status": "error"}
+            pushed = self.broadcast.send_mempool_to_peer(target, min_interval_s=min_iv, force=force)
+            return {"type": "MEMPOOL_SYNC", "count": int(pushed)}
 
         if mode in ("inline", "inline_full"):
             ip = client_ip()
@@ -317,12 +266,7 @@ def handle_user_rpc(
             if not self._tb_allow(self.rl_ip, mp_key, CFG.MEMPOOL_INLINE_RL_BURST, CFG.MEMPOOL_INLINE_RL_WINDOW_S, CFG.MEMPOOL_INLINE_RL_BURST, backoff_key=mp_key):
                 self._backoff(mp_key, CFG.MEMPOOL_INLINE_RL_BACKOFF)
                 return {"error": "rate_limited"}
-            try:
-                all_txs = self.broadcast.mempool.get_all_txs() or []
-            except Exception:
-                log.exception("[process_message] GET_MEMPOOL inline read error")
-                return {"error": "mempool_unavailable"}
-
+            all_txs = self.broadcast.mempool.get_all_txs() or []
             inline: list[dict] = []
             total = len(all_txs)
             hard_cap = max(1024, CFG.MAX_MSG) - len(CFG.NETWORK_MAGIC)
@@ -332,26 +276,20 @@ def handle_user_rpc(
             for tx in all_txs:
                 if len(inline) >= limit:
                     break
-                try:
-                    if hasattr(tx, "to_dict"):
-                        tx_dict = tx.to_dict(include_txid=True)
-                    elif isinstance(tx, dict):
-                        tx_dict = dict(tx)
-                    else:
-                        continue
-
-                    if not tx_dict.get("txid") and getattr(tx, "txid", None):
-                        txid_attr = getattr(tx, "txid")
-                        tx_dict["txid"] = txid_attr.hex() if isinstance(txid_attr, (bytes, bytearray)) else str(txid_attr)
-                except Exception:
+                if hasattr(tx, "to_dict"):
+                    tx_dict = tx.to_dict(include_txid=True)
+                elif isinstance(tx, dict):
+                    tx_dict = dict(tx)
+                else:
                     continue
+
+                if not tx_dict.get("txid") and getattr(tx, "txid", None):
+                    txid_attr = getattr(tx, "txid")
+                    tx_dict["txid"] = txid_attr.hex() if isinstance(txid_attr, (bytes, bytearray)) else str(txid_attr)
 
                 candidate = dict(base)
                 candidate["txs"] = inline + [tx_dict]
-                try:
-                    enc = json.dumps(candidate, separators=CFG.CANONICAL_SEP).encode("utf-8")
-                except Exception:
-                    enc = b""
+                enc = json.dumps(candidate, separators=CFG.CANONICAL_SEP).encode("utf-8")
 
                 if hard_cap > 0 and enc and len(enc) > hard_cap:
                     if inline:
@@ -368,18 +306,15 @@ def handle_user_rpc(
                 "count": len(inline),
                 "txs": inline,
             }
-        try:
-            txs = self.broadcast.mempool.get_all_txs()
-            hexes = []
-            for t in txs:
-                txid = getattr(t, "txid", None)
-                if isinstance(txid, (bytes, bytearray)):
-                    hexes.append(txid.hex())
-                elif isinstance(txid, str):
-                    hexes.append(txid)
-            return {"type": "MEMPOOL", "mode": "txids", "txs": hexes}
-        except Exception:
-            log.exception("[process_message] GET_MEMPOOL error")
+        txs = self.broadcast.mempool.get_all_txs()
+        hexes = []
+        for t in txs:
+            txid = getattr(t, "txid", None)
+            if isinstance(txid, (bytes, bytearray)):
+                hexes.append(txid.hex())
+            elif isinstance(txid, str):
+                hexes.append(txid)
+        return {"type": "MEMPOOL", "mode": "txids", "txs": hexes}
 
     elif mtype == "GET_TX_HISTORY":
         ip = client_ip()
@@ -449,38 +384,29 @@ def handle_user_rpc(
         ts_val   = int(message.get("ts", 0))
 
         if not addr_s or not chat_pub or not spend_pk or not reg_sig or not ts_val:
-            log.debug("[process_message] CHAT_REGISTER missing fields from %s", addr)
             return {"error": "missing fields"}
 
         if not addr_s.startswith(CFG.ADDRESS_PREFIX):
-            log.debug("[process_message] CHAT_REGISTER bad address format from %s", addr)
             return {"error": "bad address format"}
 
         if not (len(chat_pub) == 64 and all(c in "0123456789abcdef" for c in chat_pub)):
-            log.debug("[process_message] CHAT_REGISTER bad chat_pub from %s", addr)
             return {"error": "bad chat_pub"}
 
         if not (len(spend_pk) == 66 and all(c in "0123456789abcdef" for c in spend_pk)):
-            log.debug("[process_message] CHAT_REGISTER bad spend_pub from %s", addr)
             return {"error": "bad spend_pub"}
 
         # Anti replay time window (±5 minutes)
         if abs(time.time() - ts_val) > 300:
-            log.debug("[process_message] CHAT_REGISTER stale ts from %s", addr)
             return {"error": "stale ts"}
-        try:
-            hrp, data = bech32_decode(addr_s)
-            if hrp != CFG.ADDRESS_PREFIX or not data:
-                return {"error": "bad address hrp"}
-            witver = data[0]
-            prog   = bytes(convertbits(data[1:], 5, 8, False))
-            if witver != 0 or len(prog) != 20:
-                return {"error": "address not p2wpkh"}
-            if hash160(bytes.fromhex(spend_pk)) != prog:
-                return {"error": "register proof mismatch"}
-        except Exception:
-            log.exception("[process_message] CHAT_REGISTER addr decode failed from %s", addr)
-            return {"error": "addr decode failed"}
+        hrp, data = bech32_decode(addr_s)
+        if hrp != CFG.ADDRESS_PREFIX or not data:
+            return {"error": "bad address hrp"}
+        witver = data[0]
+        prog   = bytes(convertbits(data[1:], 5, 8, False))
+        if witver != 0 or len(prog) != 20:
+            return {"error": "address not p2wpkh"}
+        if hash160(bytes.fromhex(spend_pk)) != prog:
+            return {"error": "register proof mismatch"}
         
         pres_bytes = b"|".join([
             b"CHAT_PRESENCE",
@@ -520,11 +446,7 @@ def handle_user_rpc(
                 self.chat_prekeys[addr_s] = b
 
         pres = {"pid": pid, "address": addr_s, "pubkey": chat_pub, "spend_pub": spend_pk, "presence_sig": presence_sig, "ts": int(now), "hops": 0}
-        try:
-            self._relay_presence_async(pres, exclude=addr)
-        except Exception:
-            log.exception("[process_message] CHAT_REGISTER relay error from %s", addr)
-            pass
+        self._relay_presence_async(pres, exclude=addr)
         return {"type": "CHAT_REGISTERED", "address": addr_s, "pubkey": chat_pub}
 
     elif mtype == "CHAT_LOOKUP_PUB":
@@ -565,6 +487,7 @@ def handle_user_rpc(
             if hash160(bytes.fromhex(spend_pk)) != prog:
                 return {"error": "presence_addr_mismatch"}
         except Exception:
+            log.exception("[handle_user_rpc] unexpected error")
             return {"error": "presence_addr_decode_failed"}
         
         pres_bytes = b"|".join([b"CHAT_PRESENCE", addr_s.encode(), bytes.fromhex(pubhex), bytes.fromhex(spend_pk), str(ts_val).encode()])
@@ -594,11 +517,7 @@ def handle_user_rpc(
                 self.chat_prekeys[addr_s] = b
 
         message["hops"] = hops + 1
-        try:
-            self._relay_presence_async(message, exclude=addr)
-        except Exception:
-            log.exception("[process_message] CHAT_PRESENCE relay error from %s", addr)
-            pass
+        self._relay_presence_async(message, exclude=addr)
         return {"type": "CHAT_PRESENCE_OK"}
 
     # ====== PREKEY BUNDLE ======
@@ -658,6 +577,7 @@ def handle_user_rpc(
             ratchet_pn = int(message.get("ratchet_pn") or 0)
             ratchet_n = int(message.get("ratchet_n") or 0)
         except Exception:
+            log.exception("[handle_user_rpc] unexpected error")
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_ratchet_index"}
         max_idx = CFG.CHAT_RATCHET_INDEX_MAX
         if not (0 <= ratchet_pn <= max_idx and 0 <= ratchet_n <= max_idx):
@@ -695,6 +615,7 @@ def handle_user_rpc(
                 return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}
 
         except Exception:
+            log.exception("[handle_user_rpc] unexpected error")
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_enc"}
 
         if not (len(ct_hex) // 2 <= CFG.CHAT_MAX_CT_BYTES):
@@ -769,11 +690,7 @@ def handle_user_rpc(
 
         if not ok:
             return {"type": "CHAT_ACK", "status": "mailbox_full"}
-        try:
-            self._enqueue_rcpt(frm, "delivered", mid, frm, to, ts)
-        except Exception:
-            log.exception("[process_message] CHAT_SEND enqueue_rcpt error from %s", addr)
-            pass
+        self._enqueue_rcpt(frm, "delivered", mid, frm, to, ts)
 
         return {"type": "CHAT_ACK", "status": "queued"}
 
@@ -782,18 +699,12 @@ def handle_user_rpc(
         if not me:
             return {"type": "CHAT_NONE", "items": [], "error": "bad_address"}
         n_raw = message.get("n", message.get("max", 20))
-        try:
-            n = int(n_raw)
-        except Exception:
-            n = 20
+        n = int(n_raw)
         if n > CFG.CHAT_PULL_MAX_ITEMS:
             n = CFG.CHAT_PULL_MAX_ITEMS
         if n < 0:
             n = 0
-        try:
-            ts = int(message.get("ts", 0))
-        except Exception:
-            ts = 0
+        ts = int(message.get("ts", 0))
         pull_sig = (message.get("pull_sig") or "").strip().lower()
 
         now = int(time.time())
@@ -869,11 +780,7 @@ def handle_user_rpc(
         if not read_check.get("read"):
             return {"error": "bad_sig"}
 
-        try:
-            self._enqueue_rcpt(sender, "read", mid, sender, reader, int(time.time()))
-        except Exception:
-            log.exception("[process_message] CHAT_READ enqueue_rcpt error from %s", addr)
-            pass
+        self._enqueue_rcpt(sender, "read", mid, sender, reader, int(time.time()))
         return {"type": "CHAT_READ_OK"}
 
     # -------------- [NEW] GRAFFITI ---------- #
@@ -911,14 +818,8 @@ def handle_user_rpc(
     elif mtype == "CREATE_TX_MULTI":
         from_addr = (message.get("from") or "").strip().lower()
         outputs   = message.get("outputs") or []
-        try:
-            fee_rate = int(message.get("fee_rate", CFG.DEFAULT_FEE_RATE_SATVB))
-        except Exception:
-            log.debug("[process_message] CREATE_TX_MULTI bad fee_rate from %s", addr)
-            fee_rate = CFG.DEFAULT_FEE_RATE_SATVB
-
+        fee_rate = int(message.get("fee_rate", CFG.DEFAULT_FEE_RATE_SATVB))
         force_inputs = message.get("force_inputs") or None
-
         if not from_addr or not outputs:
             return {"error": "missing from/outputs"}
         try:
@@ -953,6 +854,7 @@ def handle_user_rpc(
         try:
             art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
         except Exception:
+            log.exception("[handle_user_rpc] unexpected error")
             return {"type": "GRAFFITI_GET_ART", "error": "bad_art_id"}
         reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
         post = reg.get_post(art_id) if reg else None

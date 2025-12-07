@@ -6,7 +6,7 @@
 from __future__ import annotations
 import hashlib, json, secrets, string, unicodedata, os
 from bech32 import bech32_decode, convertbits
-from typing import Union, Tuple, Optional
+from typing import Tuple, Optional
 from ecdsa import VerifyingKey
 
 from ..storage import kv
@@ -77,11 +77,8 @@ def _resolve_randomx_root() -> bytes:
     lowered = raw.lower()
     if lowered.startswith("0x"):
         lowered = lowered[2:]
-    try:
-        if lowered and len(lowered) % 2 == 0 and all(c in "0123456789abcdef" for c in lowered):
-            return bytes.fromhex(lowered)
-    except Exception:
-        pass
+    if lowered and len(lowered) % 2 == 0 and all(c in "0123456789abcdef" for c in lowered):
+        return bytes.fromhex(lowered)
     return raw.encode("utf-8")
 
 _RANDOMX_ROOT = _resolve_randomx_root()
@@ -89,10 +86,7 @@ _RANDOMX_ROOT = _resolve_randomx_root()
 def _pow_epoch(height: int | None) -> int:
     if height is None:
         return 0
-    try:
-        h = int(height)
-    except Exception:
-        h = 0
+    h = int(height)
     if h < 0:
         h = 0
     return h // CFG.RANDOMX_KEY_EPOCH_BLOCKS
@@ -157,18 +151,12 @@ def pow_hash_verify_light(header: bytes, *, height: int | None = None, key_hint:
 # -----------------------------
 
 def to_bytes(x) -> bytes:
-    try:
-        if isinstance(x, Script):
-            return x.serialize()
-    except Exception:
-        pass
+    if isinstance(x, Script):
+        return x.serialize()
     if isinstance(x, (bytes, bytearray)):
         return bytes(x)
     if isinstance(x, str):
-        try:
-            return bytes.fromhex(x)
-        except Exception:
-            return x.encode("utf-8", "ignore")
+        return bytes.fromhex(x)
     return b""
 
 def read_push(script: bytes, i: int):
@@ -676,11 +664,8 @@ def sha256d(data: bytes) -> bytes:
 # ===========================================================================
 
 def _vk_to_bytes(vk: "VerifyingKey") -> Optional[bytes]:
-    try:
-        raw = vk.to_string()  # 64B (X||Y)
-        return b"\x04" + raw
-    except Exception:
-        return None
+    raw = vk.to_string()  # 64B (X||Y)
+    return b"\x04" + raw
 
 def count_sigops_in_script(script: bytes) -> int:
     data = to_bytes(script)
@@ -779,26 +764,16 @@ def tx_to_compact_tuple(tx) -> tuple:
         script_sig_bytes = b""
         script_sig = getattr(txin, "script_sig", None)
         if hasattr(script_sig, "serialize"):
-            try:
-                script_sig_bytes = script_sig.serialize()
-            except Exception:
-                script_sig_bytes = b""
+            script_sig_bytes = script_sig.serialize()
         elif isinstance(script_sig, (bytes, bytearray)):
             script_sig_bytes = bytes(script_sig)
         elif isinstance(script_sig, str):
-            try:
-                script_sig_bytes = bytes.fromhex(script_sig)
-            except Exception:
-                script_sig_bytes = b""
+            script_sig_bytes = bytes.fromhex(script_sig)
         wit_vec = []
         for w in getattr(txin, "witness", None) or []:
             if isinstance(w, str):
-                try:
-                    wit_vec.append(bytes.fromhex(w))
-                    continue
-                except Exception:
-                    wit_vec.append(b"")
-                    continue
+                wit_vec.append(bytes.fromhex(w))
+                continue
             if isinstance(w, (bytes, bytearray)):
                 wit_vec.append(bytes(w))
             else:
@@ -810,26 +785,17 @@ def tx_to_compact_tuple(tx) -> tuple:
         amt = int(getattr(txout, "amount", 0))
         spk = getattr(txout, "script_pubkey", None)
         if hasattr(spk, "serialize"):
-            try:
-                spk_b = spk.serialize()
-            except Exception:
-                spk_b = b""
+            spk_b = spk.serialize()
         elif isinstance(spk, (bytes, bytearray)):
             spk_b = bytes(spk)
         elif isinstance(spk, str):
-            try:
-                spk_b = bytes.fromhex(spk)
-            except Exception:
-                spk_b = b""
+            spk_b = bytes.fromhex(spk)
         else:
             spk_b = b""
         outputs_c.append((amt, spk_b))
 
     tx_tuple = (version, locktime, inputs_c, outputs_c, b"\x00" * 32, bool(getattr(tx, "is_coinbase", False)))
-    try:
-        txid = txid_from_compact(tx_tuple)
-    except Exception:
-        txid = b"\x00" * 32
+    txid = txid_from_compact(tx_tuple)
     return (version, locktime, inputs_c, outputs_c, txid, bool(getattr(tx, "is_coinbase", False)))
 
 def native_validate_tx_p2wpkh_compact(tx_tuple, utxo_items, spend_height: int, coinbase_maturity: int):
@@ -893,15 +859,12 @@ def kv_load_utxo_dict_native(limit: int = 1000) -> dict:   # this module is not 
         if not chunk:
             break
         for k, v in chunk:
-            try:
-                if k == b"__meta__":
-                    continue
-                key = k.decode("utf-8")
-                val = json.loads(v.decode("utf-8"))
-                out[key] = val
-                start_after = k
-            except Exception:
+            if k == b"__meta__":
                 continue
+            key = k.decode("utf-8")
+            val = json.loads(v.decode("utf-8"))
+            out[key] = val
+            start_after = k
         if len(chunk) < limit:
             break
     return out

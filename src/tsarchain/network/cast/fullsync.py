@@ -30,32 +30,19 @@ class FullSyncMixin:
         with self.lock:
             state_view = dict(self.state)
             
-        try:
-            mempool_objects = self.mempool.get_all_txs()
-        except Exception:
-            mempool_objects = []
-            
+        mempool_objects = self.mempool.get_all_txs()  
         chain_data = []
         for block in chain_objects:
-            try:
-                chain_data.append(block.to_dict())
-            except Exception:
-                continue
+            chain_data.append(block.to_dict())
             
         mempool_data = []
         for tx in mempool_objects:
-            try:
-                mempool_data.append(tx.to_dict())
-            except Exception:
-                continue
+            mempool_data.append(tx.to_dict())
             
-        try:
-            if CFG.KV_BACKEND == "lmdb":
-                utxo_dict = H.kv_load_utxo_dict_native(limit=CFG.KV_ITER_CHUNK)
-            else:
-                utxo_dict = self.utxodb.to_dict()
-        except Exception:
-            utxo_dict = {}
+        if CFG.KV_BACKEND == "lmdb":
+            utxo_dict = H.kv_load_utxo_dict_native(limit=CFG.KV_ITER_CHUNK)
+        else:
+            utxo_dict = self.utxodb.to_dict()
             
         duration = time.time() - snapshot_start
         log.info(
@@ -89,25 +76,19 @@ class FullSyncMixin:
         return payload, len(chain_data), len(utxo_dict), len(mempool_data)
 
     def send_full_sync(self, peer: Tuple[str, int]):  # non used directly
-        try:
-            payload, blocks_cnt, utxo_cnt, mempool_cnt = self.build_full_sync_payload()
-            send_start = time.time()
-            sent = self._send(peer, payload)
-            elapsed = time.time() - send_start
-            try:
-                log.info(
-                    "[full-sync-send] Snapshot to %s (%d blocks, %d utxos, %d mempool tx) status=%s elapsed=%.2fs",
-                    peer,
-                    blocks_cnt,
-                    utxo_cnt,
-                    mempool_cnt,
-                    "ok" if sent else "failed",
-                    elapsed,
-                )
-            except Exception:
-                pass
-        except Exception as e:
-            log.exception(f"[send_full_sync] Error sending full sync to {peer}: {e}")
+        payload, blocks_cnt, utxo_cnt, mempool_cnt = self.build_full_sync_payload()
+        send_start = time.time()
+        sent = self._send(peer, payload)
+        elapsed = time.time() - send_start
+        log.info(
+            "[full-sync-send] Snapshot to %s (%d blocks, %d utxos, %d mempool tx) status=%s elapsed=%.2fs",
+            peer,
+            blocks_cnt,
+            utxo_cnt,
+            mempool_cnt,
+            "ok" if sent else "failed",
+            elapsed,
+        )
 
     def receive_full_sync(self, payload: dict):
         if not CFG.ENABLE_FULL_SYNC:
@@ -164,30 +145,21 @@ class FullSyncMixin:
                 pool = payload.get("mempool") or []
                 if isinstance(pool, list) and pool:
                     for tx_data in pool:
-                        try:
-                            tx = Tx.from_dict(tx_data) if isinstance(tx_data, dict) else tx_data
-                            if self.mempool.add_valid_tx(tx):
-                                added += 1
-                        except Exception:
-                            log.exception("[receive_full_sync] Error adding tx from mempool during full sync")
+                        tx = Tx.from_dict(tx_data) if isinstance(tx_data, dict) else tx_data
+                        if self.mempool.add_valid_tx(tx):
+                            added += 1
                             
                     if added:
                         log.info("[receive_full_sync] Mempool updated: %s new transactions", added)
-                        try:
-                            self.mempool.flush()
-                        except Exception:
-                            log.exception("[receive_full_sync] Failed to flush mempool after update")
+                        self.mempool.flush()
 
                 self.last_sync_time = time.time()
-            try:
-                log.info(
-                    "[full-sync-recv] Applied snapshot (blocks=%d, height=%s, mempool_added=%d)",
-                    len(incoming),
-                    self.blockchain.height,
-                    added,
-                )
-            except Exception:
-                pass
+            log.info(
+                "[full-sync-recv] Applied snapshot (blocks=%d, height=%s, mempool_added=%d)",
+                len(incoming),
+                self.blockchain.height,
+                added,
+            )
             return True
 
         except Exception:

@@ -49,8 +49,8 @@ class GossipMixin:
                     fm = self._failmap.get(peer)
                     if fm:
                         self._failmap.pop(peer, None)
-
                 except Exception:
+                    log.exception("_failmap_err")
                     pass
                 return True
 
@@ -70,6 +70,7 @@ class GossipMixin:
             self._failmap[peer] = fm
 
         except Exception:
+            log.exception("fm_err")
             pass
 
         return False
@@ -131,14 +132,10 @@ class GossipMixin:
     def broadcast_tx(self, tx: Tx, peers: Set[Tuple[str, int]]):
         tx_id = tx.txid.hex()
         # Dandelion++ stem handling (optional)
-        try:
-            if getattr(self, "dandelion", None):
-                handled = self.dandelion.handle_outbound(tx, tx_id, peers)
-                if handled:
-                    return 1
-        except Exception:
-            log.exception("[broadcast_tx] Dandelion++ outbound handler error for %s", tx_id[:16])
-
+        if getattr(self, "dandelion", None):
+            handled = self.dandelion.handle_outbound(tx, tx_id, peers)
+            if handled:
+                return 1
         return self._broadcast_tx_fluff(tx, tx_id, peers)
 
     def _broadcast_tx_fluff(self, tx: Tx, tx_id: str, peers: Set[Tuple[str, int]], exclude: Optional[Tuple[str, int]] = None):

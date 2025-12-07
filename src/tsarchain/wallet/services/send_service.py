@@ -39,12 +39,9 @@ class SendService:
 
     @staticmethod
     def clamp_fee_rate(rate: Optional[int]) -> int:
-        try:
-            if rate is None:
-                return int(CFG.DEFAULT_FEE_RATE_SATVB)
-            return max(int(CFG.MIN_FEE_RATE_SATVB), min(int(rate), int(CFG.MAX_FEE_RATE_SATVB)))
-        except Exception:
+        if rate is None:
             return int(CFG.DEFAULT_FEE_RATE_SATVB)
+        return max(int(CFG.MIN_FEE_RATE_SATVB), min(int(rate), int(CFG.MAX_FEE_RATE_SATVB)))
 
     @staticmethod
     def estimate_vbytes(n_inputs: int = 1, n_outputs: int = 2) -> int:

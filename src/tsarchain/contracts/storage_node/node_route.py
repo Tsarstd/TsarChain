@@ -27,6 +27,7 @@ def handle_node_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             server.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (server.index.get("files") or {}).values())
         except Exception:
+            log.exception("Failed to compute bytes_used in STOR_INDEX")
             pass
         return {"type": "STOR_INDEX", "status": "ok", **server.index}
 
@@ -37,6 +38,7 @@ def handle_node_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             block_h = int(msg.get("block_height", 0) or 0)
         except Exception:
+            log.exception("Failed to parse block_height in STOR_PAID")
             block_h = 0
         meta = server.index.get("files", {}).get(aid)
         if not aid or not meta:
@@ -73,6 +75,7 @@ def handle_node_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             server.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in server.index["files"].values())
         except Exception:
+            log.exception("Failed to compute bytes_used in STOR_PAID")
             pass
         server._save_index()
         log.info("[STOR_PAID] aid=%s h=%s expire=%s", aid[:16], meta.get("confirmed_at_height"), meta.get("expire_at_height"))
@@ -89,11 +92,13 @@ def handle_node_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             tip_h = int(msg.get("tip_height", 0) or 0)
         except Exception:
+            log.exception("Failed to parse tip_height in STOR_GC")
             tip_h = 0
         expire_after = 0
         try:
             expire_after = max(0, int(CFG.GRAFFITI_EXPIRE_AFTER_BLOCKS))
         except Exception:
+            log.exception("Failed to parse GRAFFITI_EXPIRE_AFTER_BLOCKS config")
             expire_after = 0
         files = server.index.get("files", {}) or {}
         expired = 0
@@ -105,6 +110,7 @@ def handle_node_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 try:
                     expire_h = int(meta.get("expire_at_height", 0) or 0)
                 except Exception:
+                    log.exception("Failed to parse expire_at_height for gid=%s in STOR_GC", gid)
                     expire_h = 0
                 if expire_h <= 0:
                     expire_h = tip_h + expire_after
@@ -113,6 +119,7 @@ def handle_node_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             try:
                 expire_h = int(meta.get("expire_at_height", 0) or 0)
             except Exception:
+                log.exception("Failed to parse expire_at_height for gid=%s in STOR_GC", gid)
                 expire_h = 0
             if expire_h and tip_h and expire_h <= tip_h and not meta.get("paid"):
                 remove_keys.append(gid)
@@ -123,6 +130,7 @@ def handle_node_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 try:
                     server.db.delete_blob(gid, incoming=True, final=True)
                 except Exception:
+                    log.exception("Failed to delete_blob for gid=%s in STOR_GC", gid)
                     pass
             else:
                 try:
@@ -130,17 +138,20 @@ def handle_node_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                     if path and os.path.isfile(path):
                         os.remove(path)
                 except Exception:
+                    log.exception("Failed to remove file for gid=%s in STOR_GC", gid)
                     pass
             art_id = str(meta.get("art_id", "")).strip().lower()
             if art_id and server.index.get("art_map", {}).get(art_id) == gid:
                 try:
                     server.index["art_map"].pop(art_id, None)
                 except Exception:
+                    log.exception("Failed to remove art_map entry for art_id=%s in STOR_GC", art_id)
                     pass
         server.index["files"] = files
         try:
             server.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in files.values())
         except Exception:
+            log.exception("Failed to compute bytes_used in STOR_GC")
             server.index["bytes_used"] = 0
         server._save_index()
         if expired:
@@ -154,6 +165,7 @@ def handle_node_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             tip_h = int(msg.get("tip_height", 0) or 0)
         except Exception:
+            log.exception("Failed to parse tip_height in STOR_PROOF_RUN")
             tip_h = 0
         files = server.index.get("files", {}) or {}
         if art_id and not aid:

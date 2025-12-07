@@ -12,8 +12,8 @@ from urllib.parse import urlparse
 from tsarchain.network.protocol import send_message, recv_message
 from tsarchain.utils import config as CFG
 from tsarchain.contracts.graffiti import validate_graffiti_file
-from tsarchain.utils.tsar_logging import get_ctx_logger
 
+from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.graffiti_service")
 
 

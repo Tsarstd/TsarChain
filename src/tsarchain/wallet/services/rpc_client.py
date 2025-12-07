@@ -15,7 +15,7 @@ from ...utils import config as CFG
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.wallet(rpc_client)")
+log = get_ctx_logger("tsarchain.wallet.services.rpc_client")
 
 _last_log_gate = {}
 

@@ -10,8 +10,8 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from ...utils import config as CFG
-from ...utils.tsar_logging import get_ctx_logger
 
+from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.node_logic.sync")
 
 
@@ -66,13 +66,7 @@ def sync_with_peers(self):
             continue
         try:
             synced = self._sync_peer(norm)
-
-            allow_mempool = False
-            try:
-                allow_mempool = self.is_caught_up(freshness=20.0, height_slack=0)
-            except Exception:
-                allow_mempool = False
-
+            allow_mempool = self.is_caught_up(freshness=20.0, height_slack=0)
             pending_mempool_pull = bool(getattr(self, "_pending_mempool_pull", False))
             inline_status: Optional[bool] = None
             if allow_mempool:
@@ -81,10 +75,8 @@ def sync_with_peers(self):
                     if pulled is False or pulled is None:
                         pulled = self._request_mempool_snapshot(norm, force=True)
                     if pulled:
-                        try:
-                            self._pending_mempool_pull = False
-                        except Exception:
-                            pass
+                        self._pending_mempool_pull = False
+                        
                 inline_status = self._request_mempool_inline(norm)
                 if inline_status is False:
                     retry_inline = self._request_mempool_inline(norm, force=True)
@@ -128,10 +120,7 @@ def _sync_peer(self, peer: Tuple[str, int]) -> bool:
     if headers_resp.get("type") == "SYNC_REJECT":
         retry = float(headers_resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
         self._full_sync_backoff[peer] = now + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
-        try:
-            log.info("[_sync_peer] %s rejected header request (retry in %.1fs)", peer, min(retry, CFG.FULL_SYNC_BACKOFF_MAX))
-        except Exception:
-            pass
+        log.info("[_sync_peer] %s rejected header request (retry in %.1fs)", peer, min(retry, CFG.FULL_SYNC_BACKOFF_MAX))
         return False
 
     headers = headers_resp.get("headers") or []
@@ -150,18 +139,11 @@ def _sync_peer(self, peer: Tuple[str, int]) -> bool:
     if downloaded_count > 0:
         self._peer_last_sync[peer] = time.time()
         self._reward_peer(peer, CFG.PEER_SCORE_REWARD * 2)
-        try:
-            log.info("[_sync_peer] Applied %d blocks from %s in %.2fs", downloaded_count, peer, download_elapsed)
-        except Exception:
-            pass
+        log.info("[_sync_peer] Applied %d blocks from %s in %.2fs", downloaded_count, peer, download_elapsed)
         if headers_resp.get("more"):
             self.request_sync(fast=True)
         return True
-    try:
-        log.info("[_sync_peer] Failed to apply blocks from %s (elapsed=%.2fs)", peer, download_elapsed)
-    except Exception:
-        pass
-
+    log.info("[_sync_peer] Failed to apply blocks from %s (elapsed=%.2fs)", peer, download_elapsed)
     return False
 
 
@@ -179,10 +161,7 @@ def _build_locator(self) -> List[str]:
     idx = len(chain) - 1
     step = 1
     while idx >= 0 and len(locator) < CFG.HEADERS_LOCATOR_DEPTH:
-        try:
-            locator.append(chain[idx].hash().hex())
-        except Exception:
-            break
+        locator.append(chain[idx].hash().hex())
         if len(locator) >= 10:
             step *= 2
         idx -= step
@@ -214,19 +193,13 @@ def _determine_missing_blocks(self, headers: List[dict]) -> List[int]:
     with self.broadcast.lock:
         chain = list(self.broadcast.blockchain.chain)
     for header in headers:
-        try:
-            height = int(header.get("height", -1))
-        except Exception:
-            continue
+        height = int(header.get("height", -1))
         blk_hash = header.get("hash")
         if height < 0 or not isinstance(blk_hash, str):
             continue
         max_remote_height = max(max_remote_height, height)
         if height < len(chain):
-            try:
-                local_hash = chain[height].hash().hex()
-            except Exception:
-                local_hash = ""
+            local_hash = chain[height].hash().hex()
             if local_hash != blk_hash:
                 reorg_point = height if reorg_point is None else min(reorg_point, height)
         else:
@@ -236,7 +209,6 @@ def _determine_missing_blocks(self, headers: List[dict]) -> List[int]:
         end = max(max_remote_height, len(chain) - 1)
         missing.extend(range(start, end + 1))
     return sorted(set(missing))
-
 
 def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[int, float]:
     start_time = time.time()
@@ -254,104 +226,72 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
     for idx in range(0, len(unique_heights), batch_size):
         chunk = unique_heights[idx : idx + batch_size]
         chunk_start = time.time()
-        try:
-            log.info(
-                "[_download_blocks.chunk] requesting %d blocks (%s-%s) from %s",
-                len(chunk),
-                chunk[0],
-                chunk[-1],
-                peer,
-            )
-        except Exception:
-            pass
+        log.info(
+            "[_download_blocks.chunk] requesting %d blocks (%s-%s) from %s",
+            len(chunk),
+            chunk[0],
+            chunk[-1],
+            peer,
+        )
         payload = {"type": "GET_BLOCKS", "heights": chunk, "port": self.port}
         resp = self._rpc_request(peer, payload, timeout=max(15.0, CFG.SYNC_TIMEOUT))
         if not resp:
-            try:
-                log.info(
-                    "[_download_blocks] %s no response for chunk %d/%d (heights %s-%s)",
-                    peer,
-                    (idx // batch_size) + 1,
-                    total_chunks,
-                    chunk[0],
-                    chunk[-1],
-                )
-            except Exception:
-                pass
+            log.info(
+                "[_download_blocks] %s no response for chunk %d/%d (heights %s-%s)",
+                peer,
+                (idx // batch_size) + 1,
+                total_chunks,
+                chunk[0],
+                chunk[-1],
+            )
             break
 
         if resp.get("type") == "BLOCKS":
             blocks = resp.get("blocks") or []
-            try:
-                log.info(
-                    "[_download_blocks.chunk] received %d blocks from %s in %.2fs",
-                    len(blocks),
-                    peer,
-                    time.time() - chunk_start,
-                )
-            except Exception:
-                pass
+            log.info(
+                "[_download_blocks.chunk] received %d blocks from %s in %.2fs",
+                len(blocks),
+                peer,
+                time.time() - chunk_start,
+            )
             applied_in_chunk = 0
             for block_obj in blocks:
-                try:
-                    applied = self._apply_block_from_sync(block_obj, peer)
-                except Exception:
-                    log.exception("[_download_blocks] Failed applying block from %s", peer)
-                    return total_applied, time.time() - start_time
+                applied = self._apply_block_from_sync(block_obj, peer)
                 if applied:
                     total_applied += 1
                     applied_in_chunk += 1
                 else:
-                    blk_hash = None
-                    try:
-                        blk_hash = block_obj.get("hash")
-                    except Exception:
-                        blk_hash = None
-                    try:
-                        label = str(blk_hash or "unknown")
-                        log.warning("[_download_blocks] Block %s rejected during sync from %s", label[:12], peer)
-                    except Exception:
-                        pass
+                    blk_hash = block_obj.get("hash")
+                    label = str(blk_hash or "unknown")
+                    log.warning("[_download_blocks] Block %s rejected during sync from %s", label[:12], peer)
                     return total_applied, time.time() - start_time
-            try:
-                log.info(
-                    "[_download_blocks] %s chunk %d/%d applied %d/%d blocks in %.2fs (heights %s-%s)",
-                    peer,
-                    (idx // batch_size) + 1,
-                    total_chunks,
-                    applied_in_chunk,
-                    len(blocks),
-                    time.time() - chunk_start,
-                    chunk[0],
-                    chunk[-1],
-                )
-            except Exception:
-                pass
+            log.info(
+                "[_download_blocks] %s chunk %d/%d applied %d/%d blocks in %.2fs (heights %s-%s)",
+                peer,
+                (idx // batch_size) + 1,
+                total_chunks,
+                applied_in_chunk,
+                len(blocks),
+                time.time() - chunk_start,
+                chunk[0],
+                chunk[-1],
+            )
 
         elif resp.get("type") == "SYNC_REJECT":
             retry = float(resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
             self._full_sync_backoff[peer] = time.time() + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
-            try:
-                log.info(
-                    "[_download_blocks] %s asked to retry later (retry %.1fs)",
-                    peer,
-                    min(retry, CFG.FULL_SYNC_BACKOFF_MAX),
-                )
-            except Exception:
-                pass
+            log.info(
+                "[_download_blocks] %s asked to retry later (retry %.1fs)",
+                peer,
+                min(retry, CFG.FULL_SYNC_BACKOFF_MAX),
+            )
             break
         else:
-            try:
-                log.info("[_download_blocks] %s returned unexpected type=%s", peer, resp.get("type"))
-            except Exception:
-                pass
+            log.info("[_download_blocks] %s returned unexpected type=%s", peer, resp.get("type"))
             break
 
     elapsed = time.time() - start_time
-    try:
-        log.info("[_download_blocks] %s total applied %d/%d blocks in %.2fs", peer, total_applied, total_attempted, elapsed)
-    except Exception:
-        pass
+    log.info("[_download_blocks] %s total applied %d/%d blocks in %.2fs", peer, total_applied, total_attempted, elapsed)
     return total_applied, elapsed
 
 
@@ -376,11 +316,7 @@ def handle_block_gap(self, block, origin: Optional[Tuple[str, int]]) -> None:
         return
 
     self._recent_gap_requests[peer] = now
-    try:
-        height = int(getattr(block, "height", 0))
-    except Exception:
-        height = 0
-
+    height = int(getattr(block, "height", 0))
     span = max(1, int(CFG.HEADERS_FANOUT) // 2)
     missing = list(range(max(0, height - span), height + 1))
     self._download_blocks(peer, missing)

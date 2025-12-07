@@ -90,6 +90,7 @@ class ArchivistDatabase:
                 try:
                     meta = json.loads(v.decode("utf-8"))
                 except Exception:
+                    log.exception("[db] load_index failed to decode file meta for gid=%s", gid)
                     continue
                 files[gid] = meta
             for k, v in _iter_prefix(self._kv_index, "idx", b"art:"):
@@ -97,6 +98,7 @@ class ArchivistDatabase:
                 try:
                     art_map[art] = v.decode("utf-8")
                 except Exception:
+                    log.exception("[db] load_index failed to decode art map for art=%s", art)
                     continue
         except Exception as exc:
             log.error("[db] load_index lmdb error: %s", exc)
@@ -104,6 +106,7 @@ class ArchivistDatabase:
         try:
             bytes_used = sum(int(m.get("size_bytes", 0)) for m in files.values())
         except Exception:
+            log.exception("[db] load_index failed to compute bytes_used")
             bytes_used = 0
         return {"files": files, "bytes_used": bytes_used, "art_map": art_map}
 
@@ -128,11 +131,13 @@ class ArchivistDatabase:
             try:
                 ops.append((f"file:{gid}".encode("utf-8"), json.dumps(meta).encode("utf-8")))
             except Exception:
+                log.exception("[db] save_index failed to encode file meta for gid=%s", gid)
                 continue
         for art, gid in (index.get("art_map") or {}).items():
             try:
                 ops.append((f"art:{art}".encode("utf-8"), str(gid).encode("utf-8")))
             except Exception:
+                log.exception("[db] save_index failed to encode art map for art=%s", art)
                 continue
         if ops:
             try:
@@ -218,11 +223,13 @@ class ArchivistDatabase:
             try:
                 self._kv_incoming.delete("incoming", key)
             except Exception:
+                log.exception("[db] delete_blob incoming failed (ignore)")
                 pass
         if final:
             try:
                 self._kv_final.delete("final", key)
             except Exception:
+                log.exception("[db] delete_blob final failed (ignore)")
                 pass
 
     # ---------------- JSON fallback ----------------
@@ -236,6 +243,7 @@ class ArchivistDatabase:
             with open(path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
         except Exception:
+            log.exception("[db] load_index_json failed to load index.json")
             data = {}
         if not isinstance(data, dict):
             data = {}
@@ -245,6 +253,7 @@ class ArchivistDatabase:
         try:
             data["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (data.get("files") or {}).values())
         except Exception:
+            log.exception("[db] load_index_json failed to compute bytes_used")
             pass
         return data
 

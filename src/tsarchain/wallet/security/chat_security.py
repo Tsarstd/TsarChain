@@ -59,11 +59,7 @@ class ChatManager:
         self._sessions: Dict[tuple[str, str], "RatchetSession"] = {}
         self._pending_used_opk: Dict[tuple[str, str], str] = {}
         self.on_partner_key_changed: Optional[Callable[[str, str, str], None]] = None
-
-        try:
-            os.makedirs(CFG.CHAT_SESSION_DIR, exist_ok=True)
-        except Exception:
-            log.debug("unable to ensure chat session directory exists", exc_info=True)
+        os.makedirs(CFG.CHAT_SESSION_DIR, exist_ok=True)
 
     # ---------- helpers: EC (secp for register), X25519 for chat ----------
     def _pack(self, s: str, bucket_sizes=(128, 256, 512, 1024)) -> bytes:
@@ -128,21 +124,18 @@ class ChatManager:
         return {"nonce": nonce.hex(), "ct": ct.hex()}, eph_pub_hex
 
     def _chat_decrypt_with(self, my_dh_sk_hex: str, sender_eph_pub_hex: str, sender_static_pub_hex: str, enc: dict, aad: bytes) -> str | None:
-        try:
-            my_sk  = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_dh_sk_hex))
-            e_pub  = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(sender_eph_pub_hex))
-            s_pub  = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(sender_static_pub_hex))
-            
-            dh1 = my_sk.exchange(e_pub)
-            dh2 = my_sk.exchange(s_pub)
-            key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:chat:v2").derive(dh1 + dh2)
-            
-            nonce = bytes.fromhex(enc.get("nonce") or "")
-            ct    = bytes.fromhex(enc.get("ct") or "")
-            pt = AESGCM(key).decrypt(nonce, ct, aad)
-            return self._unpack(pt)
-        except Exception:
-            return None
+        my_sk  = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_dh_sk_hex))
+        e_pub  = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(sender_eph_pub_hex))
+        s_pub  = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(sender_static_pub_hex))
+        
+        dh1 = my_sk.exchange(e_pub)
+        dh2 = my_sk.exchange(s_pub)
+        key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:chat:v2").derive(dh1 + dh2)
+        
+        nonce = bytes.fromhex(enc.get("nonce") or "")
+        ct    = bytes.fromhex(enc.get("ct") or "")
+        pt = AESGCM(key).decrypt(nonce, ct, aad)
+        return self._unpack(pt)
 
     # ---------- key management ----------
     def _now(self) -> float:
@@ -169,34 +162,21 @@ class ChatManager:
 
     def _ensure_prekey_inventory(self, addr: str) -> None:
         provider = self._pwd_provider_for(addr)
-        try:
-            inv = get_prekey_inventory(addr, provider)
-        except Exception:
-            log.exception("[_ensure_prekey_inventory] inventory read failed for %s", addr)
-            return
+        inv = get_prekey_inventory(addr, provider)
         now = self._now()
         rotated = False
         rotate_after = CFG.CHAT_SPK_ROTATE_INTERVAL_S
         created = int(inv.get("created") or 0)
         if rotate_after and created and now - created >= rotate_after:
-            try:
-                rotate_signed_prekey(addr, provider)
-                add_one_time_prekeys(addr, CFG.CHAT_OPK_REFILL_COUNT, provider)
-                rotated = True
-                inv = get_prekey_inventory(addr, provider)
-            except Exception:
-                log.exception("[_ensure_prekey_inventory] rotate signed prekey failed for %s", addr)
+            rotate_signed_prekey(addr, provider)
+            add_one_time_prekeys(addr, CFG.CHAT_OPK_REFILL_COUNT, provider)
+            rotated = True
+            inv = get_prekey_inventory(addr, provider)
         if int(inv.get("opk_queue") or 0) < CFG.CHAT_OPK_MIN_THRESHOLD:
-            try:
-                add_one_time_prekeys(addr, CFG.CHAT_OPK_REFILL_COUNT, provider)
-            except Exception:
-                log.exception("[_ensure_prekey_inventory] refill OPK failed for %s", addr)
+            add_one_time_prekeys(addr, CFG.CHAT_OPK_REFILL_COUNT, provider)
         needs_publish = rotated or int(inv.get("opk_queue") or 0) < CFG.CHAT_OPK_MIN_THRESHOLD
         if needs_publish and self._can_publish_prekeys(addr):
-            try:
-                self.publish_prekeys(addr, on_done=lambda _resp: None)
-            except Exception:
-                log.debug("[_ensure_prekey_inventory] publish_prekeys defer for %s", addr, exc_info=True)
+            self.publish_prekeys(addr, on_done=lambda _resp: None)
 
     def _can_publish_prekeys(self, addr: str) -> bool:
         try:
@@ -221,31 +201,17 @@ class ChatManager:
 
     def _load_session_from_disk(self, me: str, peer: str) -> Optional["RatchetSession"]:
         provider = self._pwd_provider_for(me)
-        try:
-            data = load_chat_session(me, peer, provider)
-        except Exception:
-            log.exception("[_load_session_from_disk] failed loading chat session %s -> %s", me, peer)
-            return None
+        data = load_chat_session(me, peer, provider)
         if not data:
             return None
-        try:
-            return RatchetSession.from_dict(data)
-        except Exception:
-            log.exception("[_load_session_from_disk] failed decoding chat session %s -> %s", me, peer)
-            return None
+        return RatchetSession.from_dict(data)
 
     def _persist_session(self, me: str, peer: str, sess: "RatchetSession") -> None:
         provider = self._pwd_provider_for(me)
-        try:
-            store_chat_session(me, peer, sess.to_dict(), provider)
-        except Exception:
-            log.exception("[_persist_session] failed persisting chat session %s -> %s", me, peer)
+        store_chat_session(me, peer, sess.to_dict(), provider)
 
     def _delete_session(self, me: str, peer: str) -> None:
-        try:
-            delete_chat_session(me, peer)
-        except Exception:
-            log.exception("[_delete_session] failed deleting chat session %s -> %s", me, peer)
+        delete_chat_session(me, peer)
 
     def _get_session(self, me: str, peer: str) -> Optional["RatchetSession"]:
         key = self._session_key(me, peer)
@@ -813,8 +779,6 @@ class ChatManager:
 # ============ Double Ratchet (minimal) ============
 # ==================================================
 class RatchetSession:
-    MAX_SKIP = CFG.CHAT_RATCHET_MAX_SKIP
-
     def __init__(
         self,
         root_key: bytes,
@@ -958,7 +922,7 @@ class RatchetSession:
 
     def _store_skipped(self, dh_hex: str, index: int, mk: bytes) -> None:
         key = self._skip_key_id(dh_hex, index)
-        if len(self.skipped) >= self.MAX_SKIP:
+        if len(self.skipped) >= CFG.CHAT_RATCHET_MAX_SKIP:
             try:
                 oldest = next(iter(self.skipped))
                 self.skipped.pop(oldest, None)

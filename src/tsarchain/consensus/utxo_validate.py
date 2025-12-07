@@ -26,15 +26,12 @@ class UTXOMixin:
                 self._in_memory_utxo_tip = -1
             if tip_state != self.height:
                 # rebuild in-place (broadcast/mempool) stay valid
-                try:
-                    mem_store.utxos.clear()
-                    mem_store._dirty = False
-                    mem_store._dirty_keys.clear()
-                    mem_store._removed_keys.clear()
-                    mem_store._rewrite_all = False
-                    mem_store.rebuild_from_chain(self.chain)
-                except Exception:
-                    log.exception("[_ensure_utxodb] failed to rebuild in-memory UTXO store")
+                mem_store.utxos.clear()
+                mem_store._dirty = False
+                mem_store._dirty_keys.clear()
+                mem_store._removed_keys.clear()
+                mem_store._rewrite_all = False
+                mem_store.rebuild_from_chain(self.chain)
                 self._in_memory_utxo_tip = self.height
             return mem_store
         
@@ -82,22 +79,18 @@ class UTXOMixin:
             return
         if self._utxo_synced and not force:
             return
-        try:
-            if not self.chain:
-                # Hindari mengosongkan UTXO saat chain belum termuat (mis. saat genesis lock menunggu sync)
-                if getattr(self._utxodb, "utxos", None):
-                    log.warning("[_sync_utxo_store] Chain kosong; skip clear_db agar snapshot UTXO tidak hilang")
-                    self._utxo_synced = True
-                    self._utxo_dirty = False
-                    self._utxo_last_flush_height = self.height
-                    return
-                self._utxodb.utxos.clear()
-                self._utxodb.flush(force=True)
-            else:
-                self._utxodb.rebuild_from_chain(self.chain)
-        except Exception:
-            log.exception("[_sync_utxo_store] Failed to rebuild UTXO snapshot")
-            return
+        if not self.chain:
+            # Hindari mengosongkan UTXO saat chain belum termuat (mis. saat genesis lock menunggu sync)
+            if getattr(self._utxodb, "utxos", None):
+                log.warning("[_sync_utxo_store] Chain kosong; skip clear_db agar snapshot UTXO tidak hilang")
+                self._utxo_synced = True
+                self._utxo_dirty = False
+                self._utxo_last_flush_height = self.height
+                return
+            self._utxodb.utxos.clear()
+            self._utxodb.flush(force=True)
+        else:
+            self._utxodb.rebuild_from_chain(self.chain)
         self._utxo_dirty = False
         self._utxo_last_flush_height = self.height
         self._utxo_synced = True

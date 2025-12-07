@@ -25,6 +25,7 @@ class ReceiveMixin:
             try:
                 return candidate.serialize().hex()
             except Exception:
+                log.exception("[_native_script_hex] unexpected error")
                 return None
         if isinstance(candidate, (bytes, bytearray)):
             return bytes(candidate).hex()
@@ -43,6 +44,7 @@ class ReceiveMixin:
             try:
                 return candidate.serialize()
             except Exception:
+                log.exception("[_native_script_bytes] unexpected error")
                 return None
         if isinstance(candidate, (bytes, bytearray)):
             return bytes(candidate)
@@ -50,6 +52,7 @@ class ReceiveMixin:
             try:
                 return bytes.fromhex(candidate)
             except Exception:
+                log.exception("[_native_script_bytes] unexpected error")
                 return None
         script_attr = getattr(candidate, "script_pubkey", None)
         if script_attr is not None:
@@ -78,6 +81,7 @@ class ReceiveMixin:
         try:
             amount_int = int(amount_val if amount_val is not None else 0)
         except Exception:
+            log.exception("[_normalize_native_prevout] unexpected error")
             log.debug("[native-prevout] entry %s invalid amount=%s", key_desc, amount_val)
             return None
 
@@ -111,6 +115,7 @@ class ReceiveMixin:
             try:
                 return str(value).lower()
             except Exception:
+                log.exception("[_txid_lower] unexpected error")
                 return None
 
         for tx in txs:
@@ -127,6 +132,7 @@ class ReceiveMixin:
                 try:
                     prev_index = int(getattr(tx_input, "vout", getattr(tx_input, "prev_index", 0)))
                 except Exception:
+                    log.exception("[_txid_lower] unexpected error")
                     return None
                 if prev_txid_lower in processed_txids:
                     continue
@@ -150,6 +156,7 @@ class ReceiveMixin:
                     txid_b = bytes.fromhex(prev_txid_lower)
                     utxo_items.append((txid_b, int(prev_index), amount_int, script_bytes, is_cb, born))
                 except Exception:
+                    log.exception("[_txid_lower] unexpected error")
                     utxo_items.append((prev_txid_lower, int(prev_index), amount_int, script_bytes, is_cb, born))
 
             if txid_lower:
@@ -216,6 +223,7 @@ class ReceiveMixin:
                             raise ValueError("txid_missing")
                         tx_payloads.append((version, locktime, inputs_payload, outputs_payload, bytes(txid_b), bool(getattr(tx, "is_coinbase", False))))
                     except Exception:
+                        log.exception("[_native_precheck_block] unexpected error")
                         tx_payloads = None
                         break
                 if tx_payloads is not None:
@@ -240,6 +248,7 @@ class ReceiveMixin:
                     opts,
                 )
         except Exception:
+            log.exception("[_native_precheck_block] unexpected error")
             log.debug("[native-precheck] validator failed; falling back", exc_info=True)
             return True
 
@@ -248,6 +257,7 @@ class ReceiveMixin:
             try:
                 blk_label = block.hash().hex()[:12]
             except Exception:
+                log.exception("[_native_precheck_block] unexpected error")
                 blk_label = str(getattr(block, "height", "?"))
             log.warning("[native-precheck] block %s rejected (%s)", blk_label, reason or "unknown")
             return False
@@ -256,6 +266,7 @@ class ReceiveMixin:
             try:
                 block._native_fee_hint = [int(f) for f in fees]  # type: ignore[attr-defined]
             except Exception:
+                log.exception("[_native_precheck_block] unexpected error")
                 block._native_fee_hint = fees  # type: ignore[attr-defined]
         return True
 
@@ -423,6 +434,7 @@ class ReceiveMixin:
                                 if not self.mempool.remove_tx(txid):
                                     fail_rm += 1
                             except Exception:
+                                log.exception("[receive_block] unexpected error")
                                 fail_rm += 1
                         if fail_rm:
                             log.warning(
@@ -440,6 +452,7 @@ class ReceiveMixin:
                             try:
                                 self.mempool.add_valid_tx(tx)
                             except Exception:
+                                log.exception("[receive_block] unexpected error")
                                 pass
                     except Exception:
                         log.exception("[receive_block] Error requeueing transactions from orphaned tip")
@@ -455,6 +468,7 @@ class ReceiveMixin:
                     try:
                         blk_hash = block.hash().hex()
                     except Exception:
+                        log.exception("[receive_block] unexpected error")
                         blk_hash = None
                     self.utxodb.update(block.transactions, block.height, block_hash=blk_hash, autosave=False)
                     self._maybe_flush_local_utxo(block.height)
@@ -500,6 +514,7 @@ class ReceiveMixin:
                 dpp = getattr(self, "dandelion", None)
                 use_dandelion = bool(dpp and dpp.enabled(len(peers)))
             except Exception:
+                log.exception("[receive_tx] unexpected error")
                 log.debug("[receive_tx] Dandelion++ availability check failed", exc_info=True)
                 use_dandelion = False
 
@@ -565,9 +580,11 @@ class ReceiveMixin:
                             setattr(self.network, "_pending_mempool_pull", True)
                             self.network.request_sync(fast=True)
                         except Exception:
+                            log.exception("[receive_mempool] unexpected error")
                             pass
                         return
             except Exception:
+                log.exception("[receive_mempool] unexpected error")
                 pass
             try:
                 if int(getattr(self.blockchain, "height", -1)) < 0:
@@ -575,9 +592,11 @@ class ReceiveMixin:
                         setattr(self.network, "_pending_mempool_pull", True)
                         self.network.request_sync(fast=True)
                     except Exception:
+                        log.exception("[receive_mempool] unexpected error")
                         pass
                     return
             except Exception:
+                log.exception("[receive_mempool] unexpected error")
                 pass
 
             txs_data = message.get("data", [])

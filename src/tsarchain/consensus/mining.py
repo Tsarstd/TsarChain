@@ -32,10 +32,7 @@ class MiningMixin:
                 script = getattr(txout, "script_pubkey", None)
                 if script is None:
                     continue
-                try:
-                    meta = GRAFFITI.parse_from_script(script)
-                except Exception:
-                    meta = None
+                meta = GRAFFITI.parse_from_script(script)
                 if not meta:
                     continue
                 event = str(meta.get("event", "POST")).strip().upper()
@@ -45,10 +42,7 @@ class MiningMixin:
                 if not art_id:
                     sha_hex = str(meta.get("sha256") or "").strip().lower()
                     creator = str(meta.get("creator") or "").strip().lower()
-                    try:
-                        art_id = GRAFFITI.compute_art_id(sha_hex, creator) if sha_hex and creator else ""
-                    except Exception:
-                        art_id = ""
+                    art_id = GRAFFITI.compute_art_id(sha_hex, creator) if sha_hex and creator else ""
                 if art_id:
                     txid = getattr(tx, "txid", None)
                     if isinstance(txid, (bytes, bytearray)):
@@ -61,12 +55,10 @@ class MiningMixin:
 
     def mine_block(self, miner_address, use_cores: int | None = None, cancel_event: MpEvent | None = None, pow_backend: str = "auto", progress_queue: mp.Queue | None = None,):
         if not self.chain:
-            try:
-                reloaded = getattr(self, "_reload_chain_from_kv", lambda: False)()
-                if reloaded:
-                    log.info("[mine_block] chain reloaded from LMDB; continuing mining")
-            except Exception:
-                pass
+            reloaded = getattr(self, "_reload_chain_from_kv", lambda: False)()
+            if reloaded:
+                log.info("[mine_block] chain reloaded from LMDB; continuing mining")
+                
         if not self.chain and not CFG.ALLOW_AUTO_GENESIS:
             log.warning("[mine_block] refusing to mine genesis; sync from peers first.")
             return None
@@ -86,43 +78,28 @@ class MiningMixin:
             reward = max(0, CFG.MAX_SUPPLY - self.total_supply)
         pool = None
         if hasattr(self, "get_mempool"):
-            try:
-                pool = self.get_mempool()
-            except Exception:
-                pool = None
+            pool = self.get_mempool()
                 
         if pool is None:
             pool = TxPoolDB(utxo_store=self._ensure_utxodb())
             if hasattr(self, "attach_mempool"):
-                try:
-                    self.attach_mempool(pool)  # type: ignore[arg-type]
-                except Exception:
-                    pass
+                self.attach_mempool(pool)  # type: ignore[arg-type]
                 
         txs_raw = pool.get_all_txs()
 
         def _is_graffiti_post(tx_obj) -> bool:
             for tx_out in getattr(tx_obj, "outputs", []) or []:
                 spk = getattr(tx_out, "script_pubkey", None)
-                try:
-                    meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
-                except Exception:
-                    meta = None
+                meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
                 if meta and str(meta.get("event", "")).upper() == "POST":
                     return True
             return False
 
         def _received_at(tx_obj) -> float:
-            try:
-                return float(getattr(tx_obj, "_received_at", 0) or 0)
-            except Exception:
-                return 0.0
+            return float(getattr(tx_obj, "_received_at", 0) or 0)
 
         def _fee(tx_obj) -> int:
-            try:
-                return int(getattr(tx_obj, "fee", 0) or 0)
-            except Exception:
-                return 0
+            return int(getattr(tx_obj, "fee", 0) or 0)
 
         graff_posts = [tx for tx in txs_raw if _is_graffiti_post(tx)]
         other_txs   = [tx for tx in txs_raw if tx not in graff_posts]
@@ -133,11 +110,7 @@ class MiningMixin:
         # Include all POST's (sorted); 1-GRAFFITI-per-block guard applies during validation.
         txs_from_mempool = graff_posts + other_txs
         store = self._ensure_utxodb() or UTXODB()
-        try:
-            current_utxos = getattr(store, "utxos", store.load_utxo_set())
-        except Exception:
-            current_utxos = store.load_utxo_set()
-
+        current_utxos = getattr(store, "utxos", store.load_utxo_set())
         temp_utxos = current_utxos.copy() if isinstance(current_utxos, dict) else dict(current_utxos)
 
         # --- double-spend guard ---
@@ -152,22 +125,16 @@ class MiningMixin:
 
             if not pool.validate_transaction(tx, temp_utxos, spend_at_height=height):
                 invalid_txids.append(tx.txid.hex())
-                try:
-                    reason = getattr(pool, "last_error_reason", None)
-                    if reason:
-                        log.debug("[mine_block] tx %s rejected: %s", tx.txid.hex()[:12], reason)
-                except Exception:
-                    pass
+                reason = getattr(pool, "last_error_reason", None)
+                if reason:
+                    log.debug("[mine_block] tx %s rejected: %s", tx.txid.hex()[:12], reason)
                 continue
 
             # Allow a maximum of one Graffiti POST per block: skip other Graffiti POST's to queue them in the next block.
             is_graff_post = False
             for tx_out in getattr(tx, "outputs", []) or []:
                 spk = getattr(tx_out, "script_pubkey", None)
-                try:
-                    meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
-                except Exception:
-                    meta = None
+                meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
                 if meta and str(meta.get("event", "")).upper() == "POST":
                     is_graff_post = True
                     break
@@ -181,10 +148,7 @@ class MiningMixin:
             valid_txs.append(tx)
             if is_graff_post:
                 graffiti_post_seen = True
-            try:
-                self._utxodb.apply_tx_to_utxoset(tx, temp_utxos)
-            except Exception:
-                pass
+            self._utxodb.apply_tx_to_utxoset(tx, temp_utxos)
 
         total_fee      = sum(int(getattr(tx, "fee", 0)) for tx in valid_txs)
         coinbase_value = int(reward + total_fee)
@@ -213,20 +177,13 @@ class MiningMixin:
         if not found:
             return None
         if not self.validate_block(new_block):
-            try:
-                reason = getattr(self, "_last_block_validation_error", None)
-                log.warning("[mine_block] Candidate block rejected at height=%s reason=%s", height, reason)
-            except Exception:
-                pass
+            reason = getattr(self, "_last_block_validation_error", None)
+            log.warning("[mine_block] Candidate block rejected at height=%s reason=%s", height, reason)
             return None
         ok = self.add_block(new_block)
         if not ok:
-            try:
-                reason = getattr(self, "_last_block_validation_error", None)
-                log.warning("[mine_block] add_block failed at height=%s reason=%s", height, reason)
-            except Exception:
-                pass
+            reason = getattr(self, "_last_block_validation_error", None)
+            log.warning("[mine_block] add_block failed at height=%s reason=%s", height, reason)
             return None
-
         log.info("[mine_block] Block mined: height=%d reward=%d fee=%d", new_block.height, reward, total_fee)
         return new_block

@@ -34,10 +34,7 @@ class GenesisMixin:
         return bool(self.chain)
 
     def _persist_empty_state_if_needed(self):
-        try:
-            self.save_state()
-        except Exception:
-            log.exception("[_persist_empty_state_if_needed] failed to save empty state snapshot")
+        self.save_state()
 
     def _enforce_genesis_lock(self):
         if GENESIS_HASH is None or not self.chain:
@@ -79,15 +76,9 @@ class GenesisMixin:
         reward = self.get_block_reward(height)
         block_id = CFG.GENESIS_BLOCK_ID_DEFAULT
         coinbase = CoinbaseTx(to_address=miner_address, reward=reward, block_id=block_id, height=height,)
-        try:
-            coinbase.compute_txid()
-        except Exception:
-            pass
+        coinbase.compute_txid()
         genesis = Block(height=0, prev_block_hash=CFG.ZERO_HASH, transactions=[coinbase])
-        try:
-            genesis.bits = CFG.INITIAL_BITS
-        except Exception:
-            pass
+        genesis.bits = CFG.INITIAL_BITS
         genesis.mine(use_cores=use_cores)
         if not self.validate_block(genesis):
             raise ValueError("[Blockchain] Genesis block validation failed")
@@ -106,9 +97,6 @@ class GenesisMixin:
             self.save_state()
 
         else:
-            try:
-                self.total_supply = self.calculate_total_supply()
-            except Exception:
-                pass
+            self.total_supply = self.calculate_total_supply()
         log.info("genesis block cerated, hash : %s", genesis)
         return genesis

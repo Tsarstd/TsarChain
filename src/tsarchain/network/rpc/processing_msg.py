@@ -61,11 +61,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
             return False
         if addr in self.peers:
             return True
-        try:
-            peer_port = int(message.get("port", -1))
-        except Exception:
-            log.exception("[_is_miner_sender] bad port in message from %s", addr)
-            peer_port = -1
+        peer_port = int(message.get("port", -1))
         return (peer_port > 0) and ((addr[0], peer_port) in self.peers)
 
     def _client_ip() -> str:
@@ -121,56 +117,41 @@ def _overlay_realtime_mempool_stats(snapshot: dict, network: "Network") -> None:
         return
 
     tx_count = None
-    try:
-        store = getattr(pool, "_pool", None)
-        if isinstance(store, dict):
-            tx_count = len(store)
-        else:
-            txs = pool.get_all_txs() or []
-            tx_count = len(txs)
-    except Exception:
-        log.exception("[_overlay_realtime_mempool_stats] Failed to read mempool entries")
-        return
+    store = getattr(pool, "_pool", None)
+    if isinstance(store, dict):
+        tx_count = len(store)
+    else:
+        txs = pool.get_all_txs() or []
+        tx_count = len(txs)
 
-    try:
-        tx_section["mempool_txs"] = int(tx_count)
-    except Exception:
-        tx_section["mempool_txs"] = tx_count
+    tx_section["mempool_txs"] = int(tx_count)
 
     size_est = getattr(pool, "current_size", None)
     if size_est is not None:
-        try:
-            tx_section["mempool_vbytes_estimate"] = int(size_est)
-        except Exception:
-            tx_section["mempool_vbytes_estimate"] = size_est
+        tx_section["mempool_vbytes_estimate"] = int(size_est)
 
     # Update live graffiti_on_mempool to avoid stale cache when mempool changes
     graff_section = snapshot.setdefault("graffiti", {})
     if isinstance(graff_section, dict):
-        try:
-            on_mem = 0
-            for tx in pool.get_all_txs():
-                for tx_out in getattr(tx, "outputs", []) or []:
-                    spk = getattr(tx_out, "script_pubkey", None)
+        on_mem = 0
+        for tx in pool.get_all_txs():
+            for tx_out in getattr(tx, "outputs", []) or []:
+                spk = getattr(tx_out, "script_pubkey", None)
+                meta = None
+                try:
+                    meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+                except Exception:
+                    log.exception("[_overlay_realtime_mempool_stats] Failed to parse graffiti from script_pubkey")
                     meta = None
-                    try:
-                        meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
-                    except Exception:
-                        meta = None
-                    if meta and str(meta.get("event", "")).upper() == "POST":
-                        on_mem += 1
-            graff_section["graffiti_on_mempool"] = int(on_mem)
-        except Exception:
-            log.exception("[_overlay_realtime_mempool_stats] Failed to compute graffiti_on_mempool")
+                if meta and str(meta.get("event", "")).upper() == "POST":
+                    on_mem += 1
+        graff_section["graffiti_on_mempool"] = int(on_mem)
 
 def _choose_relay_route(self, hops: int = 2) -> list[tuple]:
-    try:
-        with self.lock:
-            pool = list(self.peers)
-        random.shuffle(pool)
-        return pool[:max(1,hops)]
-    except Exception:
-        return []
+    with self.lock:
+        pool = list(self.peers)
+    random.shuffle(pool)
+    return pool[:max(1,hops)]
 
 def _relay_chain(self, route: list[tuple], inner: dict, src_addr=None):
     if not route:

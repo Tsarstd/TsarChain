@@ -42,10 +42,7 @@ class Broadcast(
         self.blockchain = blockchain or Blockchain()
         shared_utxo = utxodb
         if shared_utxo is None and hasattr(self.blockchain, "get_utxo_store"):
-            try:
-                shared_utxo = self.blockchain.get_utxo_store()
-            except Exception:
-                shared_utxo = None
+            shared_utxo = self.blockchain.get_utxo_store()
 
         self._utxo_shared = shared_utxo is not None
         self.utxodb = shared_utxo or UTXODB()
@@ -56,10 +53,7 @@ class Broadcast(
         self._processing_blocks: Set[str] = set()
 
         if hasattr(self.blockchain, "attach_mempool"):
-            try:
-                self.blockchain.attach_mempool(self.mempool)  # type: ignore[arg-type]
-            except Exception:
-                pass
+            self.blockchain.attach_mempool(self.mempool)  # type: ignore[arg-type]
 
         self.last_sync_time = 0
         self.port: Optional[int] = None
@@ -78,59 +72,48 @@ class Broadcast(
     def _request_full_sync(self, peer: Tuple[str, int]) -> bool:
         if not CFG.ENABLE_FULL_SYNC:
             return False
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(CFG.SYNC_TIMEOUT)
-                s.connect(peer)
-                if CFG.P2P_ENC_REQUIRED:
-                    chan = SecureChannel(
-                        s,
-                        role="client",
-                        node_id=self.node_id,
-                        node_pub=self.pubkey,
-                        node_priv=self.privkey,
-                        get_pinned=lambda nid: self.peer_pubkeys.get(nid),
-                        set_pinned=lambda nid, pk: self.peer_pubkeys.__setitem__(nid, pk),
-                    )
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(CFG.SYNC_TIMEOUT)
+            s.connect(peer)
+            if CFG.P2P_ENC_REQUIRED:
+                chan = SecureChannel(
+                    s,
+                    role="client",
+                    node_id=self.node_id,
+                    node_pub=self.pubkey,
+                    node_priv=self.privkey,
+                    get_pinned=lambda nid: self.peer_pubkeys.get(nid),
+                    set_pinned=lambda nid, pk: self.peer_pubkeys.__setitem__(nid, pk),
+                )
 
-                    chan.handshake()
-                    send_fn = lambda b: chan.send(b)
-                    recv_fn = lambda t: chan.recv(t)
-                else:
-                    send_fn = lambda b: send_message(s, b)
-                    recv_fn = lambda t: recv_message(s, t)
+                chan.handshake()
+                send_fn = lambda b: chan.send(b)
+                recv_fn = lambda t: chan.recv(t)
+            else:
+                send_fn = lambda b: send_message(s, b)
+                recv_fn = lambda t: recv_message(s, t)
 
-                msg = {"type": "GET_FULL_SYNC", "port": getattr(self, "port", 0), "height": self.blockchain.height}
-                payload = json.dumps(self._encode(msg)).encode("utf-8")
-                send_fn(payload)
-                resp = recv_fn(CFG.SYNC_TIMEOUT)
-                if not resp:
-                    return False
-                outer = json.loads(resp.decode("utf-8"))
-                if not is_envelope(outer):
-                    return False
-                try:
-                    inner = verify_and_unwrap(outer, lambda nid: None)
-                except Exception:
-                    log.warning("[_request_full_sync] Invalid envelope from peer")
-                    return False
-                if isinstance(inner, dict) and inner.get("type") == "FULL_SYNC":
-                    self.receive_full_sync(inner.get("data", inner))
-                    return True
+            msg = {"type": "GET_FULL_SYNC", "port": getattr(self, "port", 0), "height": self.blockchain.height}
+            payload = json.dumps(self._encode(msg)).encode("utf-8")
+            send_fn(payload)
+            resp = recv_fn(CFG.SYNC_TIMEOUT)
+            if not resp:
                 return False
-        except Exception as e:
-            log.exception(f"[_request_full_sync] Full sync request to {peer} failed: {e}")
+            outer = json.loads(resp.decode("utf-8"))
+            if not is_envelope(outer):
+                return False
+            inner = verify_and_unwrap(outer, lambda nid: None)
+            if isinstance(inner, dict) and inner.get("type") == "FULL_SYNC":
+                self.receive_full_sync(inner.get("data", inner))
+                return True
             return False
 
     def shutdown(self):
         with self.lock:
             self.seen_blocks.clear()
             self.seen_txs.clear()
-        try:
-            if hasattr(self.blockchain, "shutdown"):
-                self.blockchain.shutdown()
-        except Exception:
-            log.exception("[shutdown] Blockchain shutdown failed")
+        if hasattr(self.blockchain, "shutdown"):
+            self.blockchain.shutdown()
         log.info("[shutdown] Shutdown complete")
 
 

@@ -10,6 +10,9 @@ from ..core.tx import Tx, TxIn, TxOut
 from ..utils.helpers import Script, block_id_generator
 from ..utils import config as CFG
 
+from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger('tsarchain.core.coinbase')
+
 # ---------- Helper ----------
 
 def _int_to_le_bytes(x: int) -> bytes:
@@ -40,11 +43,7 @@ class CoinbaseTx(Tx):
         graffiti_id = self.block_id.encode("utf-8")
         if len(graffiti_id) > CFG.MAX_COINBASE_EXTRADATA:
             graffiti_id = graffiti_id[:CFG.MAX_COINBASE_EXTRADATA]
-            try:
-                self.block_id = graffiti_id.decode("utf-8", errors="ignore")
-            except Exception:
-                self.block_id = graffiti_id.hex()
-
+            self.block_id = graffiti_id.decode("utf-8", errors="ignore")
 
         script_pubkey = Script.p2wpkh_script(self.to_address)
         txout = TxOut(amount=self.reward, script_pubkey=script_pubkey)
@@ -94,10 +93,7 @@ class CoinbaseTx(Tx):
         obj.fee = 0
 
         if data.get("txid"):
-            try:
-                obj.txid = bytes.fromhex(data["txid"])
-            except Exception:
-                obj.compute_txid()
+            obj.txid = bytes.fromhex(data["txid"])
         else:
             obj.compute_txid()
         return obj

@@ -39,6 +39,7 @@ def handle_wallet_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             if projected > int(CFG.STORAGE_MAX_BYTES):
                 return {"type": "STOR_ACK", "status": "rejected", "reason": "storage_full"}
         except Exception:
+            log.exception("Failed to check storage capacity")
             pass
         if int(CFG.MAX_GRAFFITI_ON_MEMPOOL) > 0:
             try:
@@ -54,6 +55,7 @@ def handle_wallet_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 if active >= int(CFG.MAX_GRAFFITI_ON_MEMPOOL):
                     return {"type": "STOR_ACK", "status": "rejected", "reason": "mempool_graffiti_full"}
             except Exception:
+                log.exception("Failed to check mempool graffiti count")
                 pass
         if server.use_kv:
             path = f"lmdb://incoming/{aid}"
@@ -204,15 +206,18 @@ def handle_wallet_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             try:
                 tip_h = int(msg.get("tip_height", 0) or msg.get("block_height", 0) or 0)
             except Exception:
+                log.exception("Failed to parse tip height from STOR_COMMIT")
                 tip_h = 0
             try:
                 expire_after = max(0, int(CFG.GRAFFITI_EXPIRE_AFTER_BLOCKS))
             except Exception:
+                log.exception("Failed to parse GRAFFITI_EXPIRE_AFTER_BLOCKS config")
                 expire_after = 0
             if (not meta.get("paid")) and expire_after > 0 and tip_h > 0:
                 try:
                     expire_h = int(meta.get("expire_at_height", 0) or 0)
                 except Exception:
+                    log.exception("Failed to parse existing expire_at_height from metadata")
                     expire_h = 0
                 if expire_h <= 0:
                     meta["expire_at_height"] = tip_h + expire_after
@@ -246,6 +251,7 @@ def handle_wallet_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             try:
                 max_bytes = int(msg.get("max_bytes", 0) or 0)
             except Exception:
+                log.exception("Failed to parse max_bytes from STOR_GET_BY_ART")
                 max_bytes = 0
             if max_bytes <= 0:
                 max_bytes = int(CFG.GRAFFITI_MAX_SIZE_BYTES)
@@ -270,6 +276,7 @@ def handle_wallet_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                     try:
                         size = os.path.getsize(path)
                     except Exception:
+                        log.exception("Failed to get file size for STOR_GET_BY_ART")
                         size = 0
                     if size > max_bytes:
                         resp["status"] = "error"

@@ -25,6 +25,7 @@ class MempoolSyncMixin:
             try:
                 d = tx.to_dict() if hasattr(tx, "to_dict") else tx
             except Exception:
+                log.exception("txc_dict_err")
                 continue
 
             test = dict(base)
@@ -32,6 +33,7 @@ class MempoolSyncMixin:
             try:
                 enc = json.dumps(self._encode(test), separators=CFG.CANONICAL_SEP).encode("utf-8")
             except Exception:
+                log.exception("enc_err")
                 continue
 
             hard_cap = max(1024, CFG.MAX_MSG) - len(CFG.NETWORK_MAGIC)

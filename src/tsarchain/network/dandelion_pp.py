@@ -30,10 +30,7 @@ class DandelionPP:
 
     # ------------ Public entrypoints ------------
     def enabled(self, peers_count: int) -> bool:
-        try:
-            min_peers = int(CFG.MIN_PEERS_FOR_DANDELION)
-        except Exception:
-            min_peers = 0
+        min_peers = int(CFG.MIN_PEERS_FOR_DANDELION)
         return bool(CFG.ENABLE_DANDELION_PP) and peers_count >= max(0, min_peers)
 
     def handle_outbound(self, tx, tx_id: str, peers: Set[Tuple[str, int]], exclude=None) -> bool:
@@ -57,9 +54,7 @@ class DandelionPP:
             # fallback to diffusion when first stem hop fails
             self.fluff(tx, tx_id, peers)
             return True
-
         self._schedule_fluff(tx, tx_id, peers)
-        log.debug("[DandelionPP] outbound stem sent to %s for %s", peer, tx_id[:16])
         return True
 
     def handle_inbound_stem(
@@ -98,15 +93,8 @@ class DandelionPP:
             self._fluffed.add(tx_id)
             timer = self._timers.pop(tx_id, None)
             if timer:
-                try:
-                    timer.cancel()
-                except Exception:
-                    pass
-        try:
-            return self.host._broadcast_tx_fluff(tx, tx_id, peers)
-        except Exception:
-            log.exception("[DandelionPP] fluff failed for %s", tx_id[:16])
-            return 0
+                timer.cancel()
+        return self.host._broadcast_tx_fluff(tx, tx_id, peers)
 
     # ------------ Internals ------------
     def _mark_stem(self, tx_id: str) -> bool:
@@ -125,15 +113,9 @@ class DandelionPP:
 
     def _send_stem(self, peer: Tuple[str, int], payload: dict, tx_id: str) -> bool:
         msg = {"type": "NEW_TX", "data": payload, "phase": "stem"}
-        try:
-            ok = self.host._send(peer, msg)
-            log.debug("[DandelionPP] stem send to %s for %s returned %s", peer, tx_id[:16], ok)
-            if not ok:
-                log.debug("[DandelionPP] stem send failed to %s for %s", peer, tx_id[:16])
-            return bool(ok)
-        except Exception:
-            log.exception("[DandelionPP] stem send error to %s for %s", peer, tx_id[:16])
-            return False
+        ok = self.host._send(peer, msg)
+        log.debug("[DandelionPP] stem send to %s for %s returned %s", peer, tx_id[:16], ok)
+        return bool(ok)
 
     def _schedule_fluff(self, tx, tx_id: str, peers: Set[Tuple[str, int]]) -> None:
         # Avoid multiple timers per tx
@@ -144,10 +126,7 @@ class DandelionPP:
         delay = self._compute_fluff_delay()
 
         def _do_fluff():
-            try:
-                self.fluff(tx, tx_id, peers)
-            except Exception:
-                log.exception("[DandelionPP] scheduled fluff error for %s", tx_id[:16])
+            self.fluff(tx, tx_id, peers)
 
         timer = threading.Timer(delay, _do_fluff)
         timer.daemon = True
@@ -165,6 +144,5 @@ class DandelionPP:
         jitter = random.uniform(0.25, 0.75) * base
         log.debug("[DandelionPP] computed fluff delay: %.2f seconds", base + jitter)
         return max(0.5, min(CFG.MAX_FLUFF_DELAY_S, base + jitter))
-
 
 __all__ = ["DandelionPP"]

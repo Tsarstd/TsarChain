@@ -7,6 +7,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.mempool.types")
+
 __all__ = [
     "PrevoutRef",
     "PrevoutMeta",
@@ -27,10 +30,7 @@ class PrevoutRef:
             txid_hex = txid_value.hex().lower()
         else:
             txid_hex = str(txid_value).lower()
-        try:
-            vout = int(vout_value)
-        except Exception:
-            return None
+        vout = int(vout_value)
         return cls(txid_hex, vout)
 
     def key(self) -> tuple[str, int]:

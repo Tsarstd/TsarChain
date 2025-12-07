@@ -38,14 +38,10 @@ def _send_to_peer(self, peer: tuple[str,int], payload: dict) -> None:
             )
             chan.handshake()
             chan.send(raw)
-            try: _ = chan.recv(1)
-            except Exception:
-                pass
+            _ = chan.recv(1)
         else:
             send_message(s, raw)
-            try: _ = recv_message(s, timeout=1)
-            except Exception:
-                pass
+            _ = recv_message(s, timeout=1)
 
 def _chat_enqueue_locked(self, to_addr: str, msg: dict) -> None:
     mb = self.chat_mailboxes.get(to_addr)
@@ -72,27 +68,21 @@ def _chat_rl_ok_locked(self, from_addr: str, now: float) -> bool:
     return cnt <= self.chat_burst_max
 
 def _relay_chat(self, msg: dict, exclude=None) -> None:
-    try:
-        hops = int(msg.get("hops", 0))
-        if hops >= 2: return
-        msg2 = dict(msg); msg2["hops"] = hops + 1
-        self.broadcast._broadcast(self.peers, {"type": "CHAT_RELAY", "data": msg2}, exclude=exclude)
-    except Exception:
-        pass
+    hops = int(msg.get("hops", 0))
+    if hops >= 2: return
+    msg2 = dict(msg); msg2["hops"] = hops + 1
+    self.broadcast._broadcast(self.peers, {"type": "CHAT_RELAY", "data": msg2}, exclude=exclude)
 
 def _relay_chat_async(self, msg: dict, exclude=None) -> None:
     threading.Thread(target=self._relay_chat, args=(msg, exclude), daemon=True).start()
     
 def _relay_presence(self, pres: dict, exclude=None) -> None:
-    try:
-        hops = int(pres.get("hops", 0))
-        if hops >= 2:
-            return
-        pres2 = dict(pres); pres2["hops"] = hops + 1
-        msg = {"type": "CHAT_PRESENCE", **pres2}
-        self.broadcast._broadcast(self.peers, msg, exclude=exclude)
-    except Exception:
-        pass
+    hops = int(pres.get("hops", 0))
+    if hops >= 2:
+        return
+    pres2 = dict(pres); pres2["hops"] = hops + 1
+    msg = {"type": "CHAT_PRESENCE", **pres2}
+    self.broadcast._broadcast(self.peers, msg, exclude=exclude)
 
 def _relay_presence_async(self, pres: dict, exclude=None) -> None:
     threading.Thread(target=self._relay_presence, args=(pres, exclude), daemon=True).start()
@@ -214,10 +204,7 @@ def _txin_prevkey(self, tin) -> str:
         else:
             ptx = str(p0 or "")
     idx = getattr(tin, "vout", getattr(tin, "prev_index", 0))
-    try:
-        idx = int(idx)
-    except Exception:
-        idx = 0
+    idx = int(idx)
     return f"{ptx}:{idx}"
 
 def _is_coinbase_tx(self, tx) -> bool:
@@ -229,10 +216,7 @@ def _is_coinbase_tx(self, tx) -> bool:
     if isinstance(p0, (bytes, bytearray)):
         b = p0
     elif isinstance(p0, str) and len(p0) == 64:
-        try:
-            b = bytes.fromhex(p0)
-        except Exception:
-            b = b""
+        b = bytes.fromhex(p0)
     else:
         b = getattr(first, "prev_tx", b"")
         if not isinstance(b, (bytes, bytearray)):
@@ -240,38 +224,32 @@ def _is_coinbase_tx(self, tx) -> bool:
     return b == b"\x00" * 32
 
 def _spkhex_to_address(self, spk_hex: str) -> str | None:
-    try:
-        if isinstance(spk_hex, bytes):
-            spk_hex = spk_hex.hex()
-        spk_hex = spk_hex.lower()
-        if spk_hex.startswith("0014") and len(spk_hex) == 44:
-            prog = bytes.fromhex(spk_hex[4:])
-            data = [0] + convertbits(list(prog), 8, 5, True)
-            return bech32_encode(CFG.ADDRESS_PREFIX, data)
-        if spk_hex.startswith("0020") and len(spk_hex) == 68:
-            prog = bytes.fromhex(spk_hex[4:])
-            data = [0] + convertbits(list(prog), 8, 5, True)
-            return bech32_encode(CFG.ADDRESS_PREFIX, data)
-    except Exception:
-        pass
+    if isinstance(spk_hex, bytes):
+        spk_hex = spk_hex.hex()
+    spk_hex = spk_hex.lower()
+    if spk_hex.startswith("0014") and len(spk_hex) == 44:
+        prog = bytes.fromhex(spk_hex[4:])
+        data = [0] + convertbits(list(prog), 8, 5, True)
+        return bech32_encode(CFG.ADDRESS_PREFIX, data)
+    if spk_hex.startswith("0020") and len(spk_hex) == 68:
+        prog = bytes.fromhex(spk_hex[4:])
+        data = [0] + convertbits(list(prog), 8, 5, True)
+        return bech32_encode(CFG.ADDRESS_PREFIX, data)
     return None
 
 def _txout_to_address(self, txout) -> str | None:
-    try:
-        spk = getattr(txout, "script_pubkey", None)
-        if spk is None:
-            return None
-        if hasattr(spk, "serialize"):
-            spk_hex = spk.serialize().hex()
-        elif isinstance(spk, (bytes, bytearray)):
-            spk_hex = bytes(spk).hex()
-        elif isinstance(spk, str):
-            spk_hex = spk
-        else:
-            return None
-        return self._spkhex_to_address(spk_hex)
-    except Exception:
+    spk = getattr(txout, "script_pubkey", None)
+    if spk is None:
         return None
+    if hasattr(spk, "serialize"):
+        spk_hex = spk.serialize().hex()
+    elif isinstance(spk, (bytes, bytearray)):
+        spk_hex = bytes(spk).hex()
+    elif isinstance(spk, str):
+        spk_hex = spk
+    else:
+        return None
+    return self._spkhex_to_address(spk_hex)
 
 def _build_outpoint_map_chain(self, chain) -> dict:
     m: dict[str, tuple[int, str]] = {}
@@ -322,124 +300,118 @@ def _find_tx_and_meta(self, txid_hex: str):
 
     return (None, None, None, 0, chain, mem, tip_height)
 
-def _get_tx_history(self, address: str, limit: int = 50, offset: int = 0,
-                direction: str | None = None, status: str | None = None) -> dict:
-    try:
-        if not isinstance(address, str):
-            return {"items": [], "total": 0, "limit": limit, "offset": offset}
-
-        with self.broadcast.lock:
-            chain = list(self.broadcast.blockchain.chain)
-            tip_height = int(self.broadcast.blockchain.height)
-            mem = self.broadcast.mempool.get_all_txs()
-            
-        opmap_all   = self._build_outpoint_map(chain, mem)
-        opmap_chain = self._build_outpoint_map_chain(chain)
-        items = []
-
-        def _append_item(tx, where, h_or_none):
-            txid = tx.txid.hex() if getattr(tx, "txid", None) else ""
-            is_cb = self._is_coinbase_tx(tx)
-            conf = 0
-            height = None
-            if where == "chain":
-                height = int(h_or_none or 0)
-                conf = max(0, tip_height - height + 1)
-
-            received_to_addr = 0
-            main_recipient, max_rec_amt = None, -1
-            for o in getattr(tx, "outputs", []) or []:
-                amt = int(getattr(o, "amount", 0))
-                addr_o = self._txout_to_address(o)
-                if addr_o == address:
-                    received_to_addr += amt
-                else:
-                    if amt > max_rec_amt:
-                        max_rec_amt = amt
-                        main_recipient = addr_o
-
-            spent_from_addr = 0
-            sources = set()
-            for tin in getattr(tx, "inputs", []) or []:
-                key = self._txin_prevkey(tin)
-                amt_addr = opmap_all.get(key) if where == "mempool" else opmap_chain.get(key)
-                if not amt_addr:
-                    continue
-                amt_prev, addr_prev = amt_addr
-                if addr_prev == address:
-                    spent_from_addr += int(amt_prev)
-                elif addr_prev:
-                    sources.add(addr_prev)
-
-            if spent_from_addr > 0:
-                net_amt = spent_from_addr - received_to_addr
-                if net_amt < 0:
-                    net_amt = 0
-                dirn = "out"
-                frm = address
-                to  = main_recipient if (main_recipient and main_recipient != address) else None
-            elif received_to_addr > 0:
-                dirn = "in"
-                net_amt = received_to_addr
-                frm = "coinbase" if is_cb else (next(iter(sources)) if sources else None)
-                to  = address
-            else:
-                return
-
-            st = "unconfirmed" if where == "mempool" else "confirmed"
-            items.append({
-                "txid": txid,
-                "direction": dirn,
-                "amount": int(net_amt),
-                "status": st,
-                "confirmations": conf,
-                "height": height,
-                "from": frm,
-                "to": to,
-            })
-
-        for tx in mem:
-            _append_item(tx, "mempool", None)
-        for b in chain:
-            h = int(getattr(b, "height", 0))
-            for tx in getattr(b, "transactions", []) or []:
-                _append_item(tx, "chain", h)
-                
-        by_id = {}
-        for it in items:
-            tid = it.get("txid")
-            if not tid:
-                continue
-            prev = by_id.get(tid)
-            if prev is None:
-                by_id[tid] = it
-                continue
-            rank_prev = (prev.get("status") == "confirmed", int(prev.get("height") or -1))
-            rank_new  = (it.get("status") == "confirmed", int(it.get("height") or -1))
-            if rank_new > rank_prev:
-                by_id[tid] = it
-        items = list(by_id.values())
-        
-        if direction in ("in", "out"):
-            items = [it for it in items if it["direction"] == direction]
-        if status in ("confirmed", "unconfirmed"):
-            items = [it for it in items if it["status"] == status]
-
-        def _key(it):
-            st = 0 if it["status"] == "unconfirmed" else 1
-            h  = it["height"] if it["height"] is not None else -1
-            return (st, -h)
-        items.sort(key=_key)
-
-        total = len(items)
-        start = max(0, int(offset))
-        end   = max(start, int(start + max(0, int(limit))))
-        items = items[start:end]
-
-        return {"items": items, "total": total, "limit": int(limit), "offset": int(offset)}
-    except Exception:
-        log.exception("[_get_tx_history] Error fetching tx history")
+def _get_tx_history(self, address: str, limit: int = 50, offset: int = 0, direction: str | None = None, status: str | None = None) -> dict:
+    if not isinstance(address, str):
         return {"items": [], "total": 0, "limit": limit, "offset": offset}
+
+    with self.broadcast.lock:
+        chain = list(self.broadcast.blockchain.chain)
+        tip_height = int(self.broadcast.blockchain.height)
+        mem = self.broadcast.mempool.get_all_txs()
+        
+    opmap_all   = self._build_outpoint_map(chain, mem)
+    opmap_chain = self._build_outpoint_map_chain(chain)
+    items = []
+
+    def _append_item(tx, where, h_or_none):
+        txid = tx.txid.hex() if getattr(tx, "txid", None) else ""
+        is_cb = self._is_coinbase_tx(tx)
+        conf = 0
+        height = None
+        if where == "chain":
+            height = int(h_or_none or 0)
+            conf = max(0, tip_height - height + 1)
+
+        received_to_addr = 0
+        main_recipient, max_rec_amt = None, -1
+        for o in getattr(tx, "outputs", []) or []:
+            amt = int(getattr(o, "amount", 0))
+            addr_o = self._txout_to_address(o)
+            if addr_o == address:
+                received_to_addr += amt
+            else:
+                if amt > max_rec_amt:
+                    max_rec_amt = amt
+                    main_recipient = addr_o
+
+        spent_from_addr = 0
+        sources = set()
+        for tin in getattr(tx, "inputs", []) or []:
+            key = self._txin_prevkey(tin)
+            amt_addr = opmap_all.get(key) if where == "mempool" else opmap_chain.get(key)
+            if not amt_addr:
+                continue
+            amt_prev, addr_prev = amt_addr
+            if addr_prev == address:
+                spent_from_addr += int(amt_prev)
+            elif addr_prev:
+                sources.add(addr_prev)
+
+        if spent_from_addr > 0:
+            net_amt = spent_from_addr - received_to_addr
+            if net_amt < 0:
+                net_amt = 0
+            dirn = "out"
+            frm = address
+            to  = main_recipient if (main_recipient and main_recipient != address) else None
+        elif received_to_addr > 0:
+            dirn = "in"
+            net_amt = received_to_addr
+            frm = "coinbase" if is_cb else (next(iter(sources)) if sources else None)
+            to  = address
+        else:
+            return
+
+        st = "unconfirmed" if where == "mempool" else "confirmed"
+        items.append({
+            "txid": txid,
+            "direction": dirn,
+            "amount": int(net_amt),
+            "status": st,
+            "confirmations": conf,
+            "height": height,
+            "from": frm,
+            "to": to,
+        })
+
+    for tx in mem:
+        _append_item(tx, "mempool", None)
+    for b in chain:
+        h = int(getattr(b, "height", 0))
+        for tx in getattr(b, "transactions", []) or []:
+            _append_item(tx, "chain", h)
+            
+    by_id = {}
+    for it in items:
+        tid = it.get("txid")
+        if not tid:
+            continue
+        prev = by_id.get(tid)
+        if prev is None:
+            by_id[tid] = it
+            continue
+        rank_prev = (prev.get("status") == "confirmed", int(prev.get("height") or -1))
+        rank_new  = (it.get("status") == "confirmed", int(it.get("height") or -1))
+        if rank_new > rank_prev:
+            by_id[tid] = it
+    items = list(by_id.values())
+    
+    if direction in ("in", "out"):
+        items = [it for it in items if it["direction"] == direction]
+    if status in ("confirmed", "unconfirmed"):
+        items = [it for it in items if it["status"] == status]
+
+    def _key(it):
+        st = 0 if it["status"] == "unconfirmed" else 1
+        h  = it["height"] if it["height"] is not None else -1
+        return (st, -h)
+    items.sort(key=_key)
+
+    total = len(items)
+    start = max(0, int(offset))
+    end   = max(start, int(start + max(0, int(limit))))
+    items = items[start:end]
+    return {"items": items, "total": total, "limit": int(limit), "offset": int(offset)}
 
 
 def _get_tx_detail(self, txid_hex: str) -> dict:
@@ -500,137 +472,100 @@ def _get_tx_detail(self, txid_hex: str) -> dict:
 
 def _bhash_hex(self, b) -> str:
     # 1) Method .hash()
-    try:
-        h = getattr(b, "hash", None)
-        if callable(h):
-            v = h()
-            if isinstance(v, (bytes, bytearray)):
-                return v.hex()
-            if isinstance(v, str) and len(v) >= 64:
-                return v
-        elif isinstance(h, (bytes, bytearray)):
-            return h.hex()
-        elif isinstance(h, str) and len(h) >= 64:
-            return h
-    except Exception:
-        pass
+    h = getattr(b, "hash", None)
+    if callable(h):
+        v = h()
+        if isinstance(v, (bytes, bytearray)):
+            return v.hex()
+        if isinstance(v, str) and len(v) >= 64:
+            return v
+    elif isinstance(h, (bytes, bytearray)):
+        return h.hex()
+    elif isinstance(h, str) and len(h) >= 64:
+        return h
 
     # 2) Method .header() -> bytes
-    try:
-        hdr_fn = getattr(b, "header", None)
-        if callable(hdr_fn):
-            bb = hdr_fn()
-            if isinstance(bb, (bytes, bytearray)) and len(bb) > 0:
-                return hashlib.sha256(hashlib.sha256(bb).digest()).hexdigest()
-    except Exception:
-        pass
+    hdr_fn = getattr(b, "header", None)
+    if callable(hdr_fn):
+        bb = hdr_fn()
+        if isinstance(bb, (bytes, bytearray)) and len(bb) > 0:
+            return hashlib.sha256(hashlib.sha256(bb).digest()).hexdigest()
 
     # 3) Header object with serialize method(s)
-    try:
-        hdr_obj = getattr(b, "header", None)
-        if hdr_obj is not None and not callable(hdr_obj):
-            for meth in ("serialize_block", "serialize", "to_bytes", "serialize_header", "serialize_header_only"):
-                fn = getattr(hdr_obj, meth, None)
-                if callable(fn):
-                    try:
-                        bb = fn()
-                        if isinstance(bb, (bytes, bytearray)) and len(bb) > 0:
-                            return hashlib.sha256(hashlib.sha256(bb).digest()).hexdigest()
-                    except Exception:
-                        pass
-    except Exception:
-        pass
+    hdr_obj = getattr(b, "header", None)
+    if hdr_obj is not None and not callable(hdr_obj):
+        for meth in ("serialize_block", "serialize", "to_bytes", "serialize_header", "serialize_header_only"):
+            fn = getattr(hdr_obj, meth, None)
+            if callable(fn):
+                bb = fn()
+                if isinstance(bb, (bytes, bytearray)) and len(bb) > 0:
+                    return hashlib.sha256(hashlib.sha256(bb).digest()).hexdigest()
     return ""
 
 def _extract_block_id_from_block(self, b) -> str | None:
-    try:
-        txs = getattr(b, "transactions", None) or []
-        if not txs:
-            return None
+    txs = getattr(b, "transactions", None) or []
+    if not txs:
+        return None
 
-        cb = txs[0]
-        if not getattr(cb, "is_coinbase", False):
-            for t in txs:
-                if getattr(t, "is_coinbase", False):
-                    cb = t
-                    break
-            else:
-                return None
-
-        if not getattr(cb, "inputs", None):
-            return None
-        vin0 = cb.inputs[0]
-
-        if hasattr(vin0.script_sig, "serialize"):
-            raw = vin0.script_sig.serialize()
-        elif isinstance(vin0.script_sig, (bytes, bytearray)):
-            raw = bytes(vin0.script_sig)
+    cb = txs[0]
+    if not getattr(cb, "is_coinbase", False):
+        for t in txs:
+            if getattr(t, "is_coinbase", False):
+                cb = t
+                break
         else:
             return None
 
-        data = last_pushdata(raw)
-        if not data:
-            return None
-        try:
-            return data.decode("utf-8", errors="ignore") or data.hex()
-        except Exception:
-            return data.hex()
-    except Exception:
+    if not getattr(cb, "inputs", None):
         return None
+    vin0 = cb.inputs[0]
+
+    if hasattr(vin0.script_sig, "serialize"):
+        raw = vin0.script_sig.serialize()
+    elif isinstance(vin0.script_sig, (bytes, bytearray)):
+        raw = bytes(vin0.script_sig)
+    else:
+        return None
+
+    data = last_pushdata(raw)
+    if not data:
+        return None
+    return data.decode("utf-8", errors="ignore") or data.hex()
 
 
 def _handle_get_block_hash(self, height: int) -> dict:
-    try:
-        with self.broadcast.lock:
-            chain = list(self.broadcast.blockchain.chain)
-        if height < 0 or height >= len(chain):
-            return {"type": "BLOCK_HASH", "error": "height_out_of_range"}
-        b = chain[height]
-        hx = self._bhash_hex(b)
-        return {"type": "BLOCK_HASH", "height": height, "hash": hx or ""}
-    except Exception as e:
-        return {"type": "BLOCK_HASH", "error": str(e)}
+    with self.broadcast.lock:
+        chain = list(self.broadcast.blockchain.chain)
+    if height < 0 or height >= len(chain):
+        return {"type": "BLOCK_HASH", "error": "height_out_of_range"}
+    b = chain[height]
+    hx = self._bhash_hex(b)
+    return {"type": "BLOCK_HASH", "height": height, "hash": hx or ""}
 
 def _prevhash_hex(self, b) -> str:
     for name in ("prev_hash", "previous_hash", "prev_block_hash"):
-        try:
-            v = getattr(b, name, None)
-            if isinstance(v, (bytes, bytearray)): return v.hex()
-            if isinstance(v, str): return v
-        except Exception:
-            pass
-    try:
-        hdr = getattr(b, "header", None)
-        if hdr is not None:
-            v = getattr(hdr, "prev_hash", None)
-            if isinstance(v, (bytes, bytearray)): return v.hex()
-            if isinstance(v, str): return v
-    except Exception:
-        pass
+        v = getattr(b, name, None)
+        if isinstance(v, (bytes, bytearray)): return v.hex()
+        if isinstance(v, str): return v
+    hdr = getattr(b, "header", None)
+    if hdr is not None:
+        v = getattr(hdr, "prev_hash", None)
+        if isinstance(v, (bytes, bytearray)): return v.hex()
+        if isinstance(v, str): return v
     return ""
 
 def _serialize_tx_basic(self, tx) -> dict:
     txid = ""
-    try:
-        tid = getattr(tx, "txid", None)
-        if isinstance(tid, (bytes, bytearray)): txid = tid.hex()
-        elif isinstance(tid, str): txid = tid
-    except Exception:
-        pass
-    try:
-        n_in  = len(getattr(tx, "inputs", []) or [])
-        n_out = len(getattr(tx, "outputs", []) or [])
-    except Exception:
-        n_in, n_out = 0, 0
-
+    tid = getattr(tx, "txid", None)
+    if isinstance(tid, (bytes, bytearray)): txid = tid.hex()
+    elif isinstance(tid, str): txid = tid
+    n_in  = len(getattr(tx, "inputs", []) or [])
+    n_out = len(getattr(tx, "outputs", []) or [])
     vout_list = []
-    try:
-        for idx, o in enumerate(getattr(tx, "outputs", []) or []):
-            amt = int(getattr(o, "amount", 0))
-            addr = self._txout_to_address(o) or ""
-            vout_list.append({"index": idx, "amount": amt, "address": addr})
-    except Exception:
-        pass
+    for idx, o in enumerate(getattr(tx, "outputs", []) or []):
+        amt = int(getattr(o, "amount", 0))
+        addr = self._txout_to_address(o) or ""
+        vout_list.append({"index": idx, "amount": amt, "address": addr})
     
     return {"txid": txid, "vin": [{} for _ in range(n_in)], "vout": vout_list}
 
@@ -643,41 +578,29 @@ def _serialize_block(self, b) -> dict:
         return None
 
     # Height / time / nonce / difficulty
-    try:
-        height = int(getattr(b, "height", getattr(b, "index", 0)))
-    except Exception:
-        height = None
+    height = int(getattr(b, "height", getattr(b, "index", 0)))
 
     ts = None
     for name in ("time", "timestamp"):
-        try:
-            v = getattr(b, name, None)
-            if v is not None:
-                ts = int(v); break
-        except Exception:
-            pass
+        v = getattr(b, name, None)
+        if v is not None:
+            ts = int(v); break
 
     nonce = None
     for obj in (b, getattr(b, "header", None)):
         if obj is None or callable(obj):
             continue
-        try:
-            v = getattr(obj, "nonce", None)
-            if v is not None:
-                nonce = int(v); break
-        except Exception:
-            pass
+        v = getattr(obj, "nonce", None)
+        if v is not None:
+            nonce = int(v); break
 
     diff = None
     for obj in (b, getattr(b, "header", None)):
         if obj is None or callable(obj):
             continue
-        try:
-            v = getattr(obj, "difficulty", None)
-            if v is not None:
-                diff = v; break
-        except Exception:
-            pass
+        v = getattr(obj, "difficulty", None)
+        if v is not None:
+            diff = v; break
 
     # Version / bits / merkle root
     version = getattr(b, "version", None)
@@ -693,56 +616,44 @@ def _serialize_block(self, b) -> dict:
     txs = []
     graffiti_posts = []
     graffiti_comments = []
-    try:
-        for tx in getattr(b, "transactions", []) or []:
-            txs.append(self._serialize_tx_basic(tx))
-            txid_hex = ""
-            try:
-                tid = getattr(tx, "txid", None)
-                if isinstance(tid, (bytes, bytearray)):
-                    txid_hex = tid.hex()
-                elif isinstance(tid, str):
-                    txid_hex = tid
-            except Exception:
-                txid_hex = ""
-            for tx_out in getattr(tx, "outputs", []) or []:
-                spk = getattr(tx_out, "script_pubkey", None)
-                try:
-                    meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
-                except Exception:
-                    meta = None
-                if not meta:
-                    continue
-                ev = str(meta.get("event", "")).upper()
-                if ev == "POST":
-                    graffiti_posts.append({
-                        "txid": txid_hex,
-                        "sha256": meta.get("sha256"),
-                        "size": meta.get("size"),
-                        "mime": meta.get("mime"),
-                        "storer": meta.get("storer"),
-                        "receipt": meta.get("receipt"),
-                    })
-                elif ev == "COMMENT":
-                    comment_hex = meta.get("comment") or ""
-                    comment_text = ""
-                    try:
-                        comment_text = bytes.fromhex(comment_hex).decode("utf-8", errors="ignore")
-                    except Exception:
-                        comment_text = ""
-                    graffiti_comments.append({
-                        "txid": txid_hex,
-                        "art_id": meta.get("art_id"),
-                        "comment_hex": comment_hex,
-                        "comment_text": comment_text,
-                        "amount": meta.get("amount"),
-                        "tip": meta.get("tip"),
-                        "creator": meta.get("creator"),
-                        "commenter": meta.get("commenter"),
-                        "comment_len": meta.get("comment_len"),
-                    })
-    except Exception:
-        pass
+    for tx in getattr(b, "transactions", []) or []:
+        txs.append(self._serialize_tx_basic(tx))
+        txid_hex = ""
+        tid = getattr(tx, "txid", None)
+        if isinstance(tid, (bytes, bytearray)):
+            txid_hex = tid.hex()
+        elif isinstance(tid, str):
+            txid_hex = tid
+        for tx_out in getattr(tx, "outputs", []) or []:
+            spk = getattr(tx_out, "script_pubkey", None)
+            meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+            if not meta:
+                continue
+            ev = str(meta.get("event", "")).upper()
+            if ev == "POST":
+                graffiti_posts.append({
+                    "txid": txid_hex,
+                    "sha256": meta.get("sha256"),
+                    "size": meta.get("size"),
+                    "mime": meta.get("mime"),
+                    "storer": meta.get("storer"),
+                    "receipt": meta.get("receipt"),
+                })
+            elif ev == "COMMENT":
+                comment_hex = meta.get("comment") or ""
+                comment_text = ""
+                comment_text = bytes.fromhex(comment_hex).decode("utf-8", errors="ignore")
+                graffiti_comments.append({
+                    "txid": txid_hex,
+                    "art_id": meta.get("art_id"),
+                    "comment_hex": comment_hex,
+                    "comment_text": comment_text,
+                    "amount": meta.get("amount"),
+                    "tip": meta.get("tip"),
+                    "creator": meta.get("creator"),
+                    "commenter": meta.get("commenter"),
+                    "comment_len": meta.get("comment_len"),
+                })
 
     blk_id = self._extract_block_id_from_block(b)
     block_dict = {
@@ -762,24 +673,22 @@ def _serialize_block(self, b) -> dict:
         "graffiti": graffiti_posts,
         "comments": graffiti_comments,
     }
-    try:
-        mem = getattr(self, "mempool", None)
-        if mem:
-            count = 0
-            for tx in mem.get_all_txs():
-                for tx_out in getattr(tx, "outputs", []) or []:
-                    spk = getattr(tx_out, "script_pubkey", None)
+    mem = getattr(self, "mempool", None)
+    if mem:
+        count = 0
+        for tx in mem.get_all_txs():
+            for tx_out in getattr(tx, "outputs", []) or []:
+                spk = getattr(tx_out, "script_pubkey", None)
+                meta = None
+                try:
+                    meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+                except Exception:
+                    log.exception("[_serialize_block] unexpected error")
                     meta = None
-                    try:
-                        meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
-                    except Exception:
-                        meta = None
-                    if meta and str(meta.get("event", "")).upper() == "POST":
-                        count += 1
-                        break
-            block_dict["graffiti_on_mempool"] = count
-    except Exception:
-        pass
+                if meta and str(meta.get("event", "")).upper() == "POST":
+                    count += 1
+                    break
+        block_dict["graffiti_on_mempool"] = count
     return block_dict
 
 
@@ -845,12 +754,8 @@ def _handle_create_tx(self, from_addr, to_addr, amount, fee_rate):
         raise ValueError("from/to address must be string")
 
     amt_sat = int(amount * CFG.TSAR) if isinstance(amount, float) else int(amount)
-
-    try:
-        # Ensure latest UTXO view from disk before building
-        self.broadcast.utxodb._load()
-    except Exception:
-        pass
+    # Ensure latest UTXO view from disk before building
+    self.broadcast.utxodb._load()
     utxos_map = self.broadcast.utxodb.get(from_addr) or {}
 
     tip_height = self.broadcast.blockchain.height
@@ -873,6 +778,7 @@ def _handle_create_tx(self, from_addr, to_addr, amount, fee_rate):
                 "is_coinbase": is_cb,
             })
         except Exception:
+            log.exception("[_handle_create_tx] unexpected error")
             continue
 
     if not utxos_list:
@@ -906,11 +812,8 @@ def _handle_create_tx(self, from_addr, to_addr, amount, fee_rate):
     }
 
 def _deserialize_spk_hex(self, spk_hex: str) -> Script:
-    try:
-        b = bytes.fromhex((spk_hex or "").strip())
-        return Script.deserialize(b)
-    except Exception:
-        raise ValueError("bad spk_hex")
+    b = bytes.fromhex((spk_hex or "").strip())
+    return Script.deserialize(b)
 
 def _handle_create_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, force_inputs: list[str] | None = None):
     if not isinstance(from_addr, str):
@@ -919,32 +822,26 @@ def _handle_create_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, 
         raise ValueError("outputs must be non-empty list")
 
     fee_rate = int(max(CFG.MIN_FEE_RATE_SATVB, min(fee_rate, CFG.MAX_FEE_RATE_SATVB)))
-    try:
-        self.broadcast.utxodb._load()
-    except Exception:
-        pass
+    self.broadcast.utxodb._load()
     utxos_map = self.broadcast.utxodb.get(from_addr) or {}
     tip_height = self.broadcast.blockchain.height
     utxos_list = []
     for k, v in (utxos_map.items() if isinstance(utxos_map, dict) else []):
-        try:
-            txid_hex, idx_str = k.split(":")
-            is_cb = bool(v.get("is_coinbase", False))
-            born  = int(v.get("block_height", 0))
-            if is_cb:
-                confirmations = max(0, (int(tip_height) - born) + 1)
-                if confirmations < CFG.COINBASE_MATURITY:
-                    continue
-            utxos_list.append({
-                "txid": txid_hex,
-                "index": int(idx_str),
-                "amount": int(v.get("amount", 0)),
-                "scriptPubKey": bytes.fromhex(v.get("script_pubkey", "")),
-                "height": born,
-                "is_coinbase": is_cb,
-            })
-        except Exception:
-            continue
+        txid_hex, idx_str = k.split(":")
+        is_cb = bool(v.get("is_coinbase", False))
+        born  = int(v.get("block_height", 0))
+        if is_cb:
+            confirmations = max(0, (int(tip_height) - born) + 1)
+            if confirmations < CFG.COINBASE_MATURITY:
+                continue
+        utxos_list.append({
+            "txid": txid_hex,
+            "index": int(idx_str),
+            "amount": int(v.get("amount", 0)),
+            "scriptPubKey": bytes.fromhex(v.get("script_pubkey", "")),
+            "height": born,
+            "is_coinbase": is_cb,
+        })
     
     fixed_outs: list[tuple[int, Script]] = []
     total_target = 0
@@ -979,65 +876,56 @@ def _handle_create_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, 
             # Global UTXO map stores entries as {"tx_out": TxOut, "is_coinbase": bool, "block_height": int}
             global_utxos = getattr(self.broadcast.utxodb, "utxos", {})
             for key in list(missing):
-                try:
-                    txid_hex, idx_str = key.split(":")
-                    entry = global_utxos.get(key)
-                    if not entry:
-                        continue
-                    tx_out = entry.get("tx_out")
-                    amt = int(getattr(tx_out, "amount", 0))
-                    spk = getattr(tx_out, "script_pubkey", None)
-                    spk_bytes = spk.serialize() if hasattr(spk, "serialize") else (spk if isinstance(spk, (bytes, bytearray)) else b"")
-                    is_cb = bool(entry.get("is_coinbase", False))
-                    born  = int(entry.get("block_height", 0))
-                    u = {
-                        "txid": txid_hex,
-                        "index": int(idx_str),
-                        "amount": amt,
-                        "scriptPubKey": spk_bytes,
-                        "height": born,
-                        "is_coinbase": is_cb,
-                    }
-                    utxos_list.append(u)
-                    utxo_by_key[key] = u
-                    preselected.append(u)
-                    pre_acc += amt
-                    missing.remove(key)
-                except Exception:
+                txid_hex, idx_str = key.split(":")
+                entry = global_utxos.get(key)
+                if not entry:
                     continue
+                tx_out = entry.get("tx_out")
+                amt = int(getattr(tx_out, "amount", 0))
+                spk = getattr(tx_out, "script_pubkey", None)
+                spk_bytes = spk.serialize() if hasattr(spk, "serialize") else (spk if isinstance(spk, (bytes, bytearray)) else b"")
+                is_cb = bool(entry.get("is_coinbase", False))
+                born  = int(entry.get("block_height", 0))
+                u = {
+                    "txid": txid_hex,
+                    "index": int(idx_str),
+                    "amount": amt,
+                    "scriptPubKey": spk_bytes,
+                    "height": born,
+                    "is_coinbase": is_cb,
+                }
+                utxos_list.append(u)
+                utxo_by_key[key] = u
+                preselected.append(u)
+                pre_acc += amt
+                missing.remove(key)
         if missing:
             locks = {}
-            try:
-                sender_spk = self._addr_to_spk(from_addr)
-                sender_spk_bytes = sender_spk.serialize()
-            except Exception:
-                sender_spk_bytes = b""
+            sender_spk = self._addr_to_spk(from_addr)
+            sender_spk_bytes = sender_spk.serialize()
             for key in list(missing):
-                try:
-                    meta = locks.get(key)
-                    if not isinstance(meta, dict):
-                        continue
-                    if str(meta.get("owner", "")).strip().lower() != str(from_addr).strip().lower():
-                        continue
-                    amt = int(meta.get("amount", 0))
-                    if amt <= 0 or not sender_spk_bytes:
-                        continue
-                    txid_hex, idx_str = key.split(":")
-                    u = {
-                        "txid": txid_hex,
-                        "index": int(idx_str),
-                        "amount": amt,
-                        "scriptPubKey": sender_spk_bytes,
-                        "height": 0,
-                        "is_coinbase": False,
-                    }
-                    utxos_list.append(u)
-                    utxo_by_key[key] = u
-                    preselected.append(u)
-                    pre_acc += amt
-                    missing.remove(key)
-                except Exception:
+                meta = locks.get(key)
+                if not isinstance(meta, dict):
                     continue
+                if str(meta.get("owner", "")).strip().lower() != str(from_addr).strip().lower():
+                    continue
+                amt = int(meta.get("amount", 0))
+                if amt <= 0 or not sender_spk_bytes:
+                    continue
+                txid_hex, idx_str = key.split(":")
+                u = {
+                    "txid": txid_hex,
+                    "index": int(idx_str),
+                    "amount": amt,
+                    "scriptPubKey": sender_spk_bytes,
+                    "height": 0,
+                    "is_coinbase": False,
+                }
+                utxos_list.append(u)
+                utxo_by_key[key] = u
+                preselected.append(u)
+                pre_acc += amt
+                missing.remove(key)
         if any(k not in utxo_by_key for k in forced_keys):
             raise ValueError("forced_input_missing")
 
@@ -1078,10 +966,7 @@ def _handle_create_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, 
     ins  = [TxIn(bytes.fromhex(u["txid"]), u["index"], amount=int(u["amount"])) for u in selected]
     non_opret, opret_outs = [], []
     for amt, spk in fixed_outs:
-        try:
-            is_opret = (isinstance(spk, Script) and getattr(spk, "cmds", None) and spk.cmds and spk.cmds[0] == OP_RETURN)
-        except Exception:
-            is_opret = False
+        is_opret = (isinstance(spk, Script) and getattr(spk, "cmds", None) and spk.cmds and spk.cmds[0] == OP_RETURN)
         (opret_outs if is_opret else non_opret).append(TxOut(amt, spk))
     outs = non_opret
     if change >= CFG.DUST_THRESHOLD_SAT:

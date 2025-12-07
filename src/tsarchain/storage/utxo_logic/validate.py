@@ -7,8 +7,9 @@ from typing import Any
 from ...core.tx import TxOut
 from ...utils import helpers as H
 from ..kv import kv_enabled, _ensure_env
+
 from ...utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.storage.utxo_logic(validate)")
+log = get_ctx_logger("tsarchain.storage.utxo_logic.validate")
 
 
 class UTXOValidationMixin:
@@ -29,108 +30,86 @@ class UTXOValidationMixin:
         vout = getattr(tx_input, "vout", None)
         if vout is None:
             vout = getattr(tx_input, "prev_index", None)     
-        try:
-            vout = int(vout)
-        except Exception:
-            vout = None
-            
+        vout = int(vout)
         return prev_txid_hex, vout
 
     def _is_unspendable_opreturn(self, tx_out) -> bool:
-        try:
-            spk = getattr(tx_out, "script_pubkey", None)
-            if spk is None:
-                return False
-            if hasattr(spk, "serialize"):
-                b = spk.serialize()
-            elif isinstance(spk, (bytes, bytearray)):
-                b = bytes(spk)
-            elif isinstance(spk, str):
-                b = bytes.fromhex(spk)
-            else:
-                return False
-            
-            return len(b) >= 1 and b[0] == 0x6A
-        except Exception:
-            log.exception("[_is_unspendable_opreturn] Error checking OP_RETURN in scriptPubKey")
+        spk = getattr(tx_out, "script_pubkey", None)
+        if spk is None:
             return False
+        if hasattr(spk, "serialize"):
+            b = spk.serialize()
+        elif isinstance(spk, (bytes, bytearray)):
+            b = bytes(spk)
+        elif isinstance(spk, str):
+            b = bytes.fromhex(spk)
+        else:
+            return False
+        
+        return len(b) >= 1 and b[0] == 0x6A
 
     # ---------------------------
     # Native UTXO delta apply
     # ---------------------------
     def _apply_native_ops_for_txs(self, txs, block_height: int, block_hash: str | None = None, *, autosave: bool = True) -> bool:
-        try:
-            block_txs = []
-            for tx in txs or []:
-                txid_raw = getattr(tx, "txid", None)
-                if isinstance(txid_raw, str):
-                    txid_raw = bytes.fromhex(txid_raw)
-                if not isinstance(txid_raw, (bytes, bytearray)) or len(txid_raw) != 32:
+        block_txs = []
+        for tx in txs or []:
+            txid_raw = getattr(tx, "txid", None)
+            if isinstance(txid_raw, str):
+                txid_raw = bytes.fromhex(txid_raw)
+            if not isinstance(txid_raw, (bytes, bytearray)) or len(txid_raw) != 32:
+                return False
+
+            inputs_compact = []
+            for txin in getattr(tx, "inputs", []) or []:
+                prev = getattr(txin, "txid", None) or getattr(txin, "prev_tx", None)
+                if isinstance(prev, str):
+                    prev = bytes.fromhex(prev)
+                if not isinstance(prev, (bytes, bytearray)) or len(prev) != 32:
                     return False
-
-                inputs_compact = []
-                for txin in getattr(tx, "inputs", []) or []:
-                    prev = getattr(txin, "txid", None) or getattr(txin, "prev_tx", None)
-                    if isinstance(prev, str):
-                        prev = bytes.fromhex(prev)
-                    if not isinstance(prev, (bytes, bytearray)) or len(prev) != 32:
-                        return False
-                    try:
-                        vout = int(getattr(txin, "vout", getattr(txin, "prev_index", 0)))
-                    except Exception:
-                        return False
-                    seq = getattr(txin, "sequence", 0xffffffff)
-                    wit_vec = []
-                    for w in getattr(txin, "witness", None) or []:
-                        if isinstance(w, str):
-                            try:
-                                wit_vec.append(bytes.fromhex(w))
-                                continue
-                            except Exception:
-                                return False
-                        if isinstance(w, (bytes, bytearray)):
-                            wit_vec.append(bytes(w))
-                        else:
+                vout = int(getattr(txin, "vout", getattr(txin, "prev_index", 0)))
+                seq = getattr(txin, "sequence", 0xffffffff)
+                wit_vec = []
+                for w in getattr(txin, "witness", None) or []:
+                    if isinstance(w, str):
+                        try:
+                            wit_vec.append(bytes.fromhex(w))
+                            continue
+                        except Exception:
+                            log.exception("[_apply_native_ops_for_txs] unexpected error")
                             return False
-                    inputs_compact.append((bytes(prev), int(vout), int(seq), wit_vec))
-
-                outputs_compact = []
-                for txout in getattr(tx, "outputs", []) or []:
-                    try:
-                        amt = int(getattr(txout, "amount", 0))
-                    except Exception:
-                        return False
-                    spk_obj = getattr(txout, "script_pubkey", None)
-                    if hasattr(spk_obj, "serialize"):
-                        try:
-                            spk_bytes = spk_obj.serialize()
-                        except Exception:
-                            spk_bytes = b""
-                    elif isinstance(spk_obj, (bytes, bytearray)):
-                        spk_bytes = bytes(spk_obj)
-                    elif isinstance(spk_obj, str):
-                        try:
-                            spk_bytes = bytes.fromhex(spk_obj)
-                        except Exception:
-                            spk_bytes = b""
+                    if isinstance(w, (bytes, bytearray)):
+                        wit_vec.append(bytes(w))
                     else:
-                        spk_bytes = b""
-                    outputs_compact.append((amt, spk_bytes))
+                        return False
+                inputs_compact.append((bytes(prev), int(vout), int(seq), wit_vec))
 
-                block_txs.append(
-                    (
-                        int(getattr(tx, "version", 1)),
-                        int(getattr(tx, "locktime", 0)),
-                        inputs_compact,
-                        outputs_compact,
-                        bytes(txid_raw),
-                        bool(getattr(tx, "is_coinbase", False)),
-                    )
+            outputs_compact = []
+            for txout in getattr(tx, "outputs", []) or []:
+                amt = int(getattr(txout, "amount", 0))
+                spk_obj = getattr(txout, "script_pubkey", None)
+                if hasattr(spk_obj, "serialize"):
+                    spk_bytes = spk_obj.serialize()
+                elif isinstance(spk_obj, (bytes, bytearray)):
+                    spk_bytes = bytes(spk_obj)
+                elif isinstance(spk_obj, str):
+                    spk_bytes = bytes.fromhex(spk_obj)
+                else:
+                    spk_bytes = b""
+                outputs_compact.append((amt, spk_bytes))
+
+            block_txs.append(
+                (
+                    int(getattr(tx, "version", 1)),
+                    int(getattr(tx, "locktime", 0)),
+                    inputs_compact,
+                    outputs_compact,
+                    bytes(txid_raw),
+                    bool(getattr(tx, "is_coinbase", False)),
                 )
+            )
 
-            ops = H.native_utxo_build_ops_compact(block_txs, int(block_height))
-        except Exception:
-            return False
+        ops = H.native_utxo_build_ops_compact(block_txs, int(block_height))
 
         with self._lock:
             for op in ops or []:
@@ -153,10 +132,7 @@ class UTXOValidationMixin:
                         self._dirty = True
                     continue
 
-                try:
-                    amt_int = int(amount)
-                except Exception:
-                    continue
+                amt_int = int(amount)
                 spk_hex = None
                 if isinstance(spk_bytes, (bytes, bytearray)):
                     spk_hex = bytes(spk_bytes).hex()
@@ -179,43 +155,25 @@ class UTXOValidationMixin:
                 self._removed_keys.clear()
                 self._rewrite_all = False
             elif autosave:
-                try:
-                    self._save()
-                except Exception:
-                    log.debug("[_apply_native_ops_for_txs] _save failed", exc_info=True)
+                self._save()
             self._bump_version()
 
-        try:
-            for tx in txs or []:
-                outputs_info = []
-                for tx_out in getattr(tx, "outputs", []) or []:
-                    script_bytes = getattr(tx_out, "script_pubkey", None)
-                    if hasattr(script_bytes, "serialize"):
-                        try:
-                            script_bytes = script_bytes.serialize()
-                        except Exception:
-                            script_bytes = None
-                    elif isinstance(script_bytes, str):
-                        try:
-                            script_bytes = bytes.fromhex(script_bytes)
-                        except Exception:
-                            script_bytes = None
-                    amount = int(getattr(tx_out, "amount", 0))
-                    address = None
-                    try:
-                        if hasattr(self, "script_to_address"):
-                            address = self.script_to_address(getattr(tx_out, "script_pubkey", None))
-                    except Exception:
-                        address = None
-                    outputs_info.append({"script_bytes": script_bytes, "amount": amount, "address": address})
-                try:
-                    blk_hash = block_hash
-                    self._record_graffiti_event(tx, outputs_info, block_height, blk_hash)
-                except Exception:
-                    pass
-                
-        except Exception:
-            pass
+        for tx in txs or []:
+            outputs_info = []
+            for tx_out in getattr(tx, "outputs", []) or []:
+                script_bytes = getattr(tx_out, "script_pubkey", None)
+                if hasattr(script_bytes, "serialize"):
+                    script_bytes = script_bytes.serialize()
+                elif isinstance(script_bytes, str):
+                    script_bytes = bytes.fromhex(script_bytes)
+                amount = int(getattr(tx_out, "amount", 0))
+                address = None
+                if hasattr(self, "script_to_address"):
+                    address = self.script_to_address(getattr(tx_out, "script_pubkey", None))
+                outputs_info.append({"script_bytes": script_bytes, "amount": amount, "address": address})
+            blk_hash = block_hash
+            self._record_graffiti_event(tx, outputs_info, block_height, blk_hash)
+    
         return True
 
 
@@ -235,10 +193,7 @@ class UTXOValidationMixin:
             for block in blocks or []:
                 txs = getattr(block, "transactions", []) or []
                 height = int(getattr(block, "height", 0))
-                try:
-                    blk_hash = block.hash().hex()
-                except Exception:
-                    blk_hash = None
+                blk_hash = block.hash().hex()
                 for tx in txs:
                     txid_hex = self._txid_hex(getattr(tx, "txid", None))
                     is_coinbase = bool(getattr(tx, "is_coinbase", False))
@@ -258,13 +213,10 @@ class UTXOValidationMixin:
                         amount = int(getattr(tx_out, "amount", 0))
                         script_bytes = self._script_bytes(getattr(tx_out, "script_pubkey", None))
                         address = None
-                        try:
-                            if hasattr(self, "script_to_address"):
-                                address = self.script_to_address(getattr(tx_out, "script_pubkey", None))
-                            elif hasattr(tx_out, "address"):
-                                address = getattr(tx_out, "address")
-                        except Exception:
-                            address = None
+                        if hasattr(self, "script_to_address"):
+                            address = self.script_to_address(getattr(tx_out, "script_pubkey", None))
+                        elif hasattr(tx_out, "address"):
+                            address = getattr(tx_out, "address")
                         outputs_info.append({"script_bytes": script_bytes, "amount": amount, "address": address})
                     self._record_graffiti_event(tx, outputs_info, height, blk_hash)
             self._dirty = True
@@ -335,13 +287,9 @@ class UTXOValidationMixin:
 
             m = snapshot.get(prev_txid_hex)
             if isinstance(m, dict) and int(vout) in m:
-                try:
-                    del m[int(vout)]
-                    if not m:
-                        snapshot.pop(prev_txid_hex, None)
-                except Exception:
-                    log.exception("[apply_tx_to_utxoset] Error removing prevout from dict")
-                    pass
+                del m[int(vout)]
+                if not m:
+                    snapshot.pop(prev_txid_hex, None)
                 return True
             
             removed = False
@@ -355,23 +303,15 @@ class UTXOValidationMixin:
                             lst.pop(i)
                             removed = True
                     if not lst:
-                        try:
-                            snapshot.pop(addr, None)
-                        except Exception:
-                            log.exception("[apply_tx_to_utxoset] Error removing empty address bucket")
-                            pass
+                        snapshot.pop(addr, None)
             return removed
 
         outputs_info: list[dict[str, Any]] = []
         for n, txout in enumerate(getattr(tx, "outputs", [])):
-            try:
-                spk = getattr(txout, "script_pubkey", None)
-                b = spk.serialize() if hasattr(spk, "serialize") else (spk if isinstance(spk,(bytes,bytearray)) else (bytes.fromhex(spk) if isinstance(spk,str) else b""))
-                if len(b) >= 1 and b[0] == 0x6A:
-                    continue
-            except Exception:
-                log.exception("[apply_tx_to_utxoset] Error checking OP_RETURN in scriptPubKey")
-                pass
+            spk = getattr(txout, "script_pubkey", None)
+            b = spk.serialize() if hasattr(spk, "serialize") else (spk if isinstance(spk,(bytes,bytearray)) else (bytes.fromhex(spk) if isinstance(spk,str) else b""))
+            if len(b) >= 1 and b[0] == 0x6A:
+                continue
 
         def _insert_output(snapshot: dict, txid_hex: str, n: int, entry: dict, address: str | None):
             layout = None
@@ -422,38 +362,28 @@ class UTXOValidationMixin:
                     _remove_prevout(utxos, prev_txid_hex, vout)
 
         for n, txout in enumerate(getattr(tx, "outputs", [])):
-            try:
-                spk = getattr(txout, "script_pubkey", None)
-                b = spk.serialize() if hasattr(spk, "serialize") else (
-                    spk if isinstance(spk, (bytes, bytearray)) else
-                    (bytes.fromhex(spk) if isinstance(spk, str) else b"")
-                )
-                if len(b) >= 1 and b[0] == 0x6A:
-                    continue
-            except Exception:
-                log.exception("[apply_tx_to_utxoset] Error checking OP_RETURN in scriptPubKey")
-                pass
+            spk = getattr(txout, "script_pubkey", None)
+            b = spk.serialize() if hasattr(spk, "serialize") else (
+                spk if isinstance(spk, (bytes, bytearray)) else
+                (bytes.fromhex(spk) if isinstance(spk, str) else b"")
+            )
+            if len(b) >= 1 and b[0] == 0x6A:
+                continue
 
             amount = int(getattr(txout, "amount", 0))
             spk = getattr(txout, "script_pubkey", None)
-            try:
-                if hasattr(spk, "serialize"):
-                    spk_hex = spk.serialize().hex()
-                elif isinstance(spk, (bytes, bytearray)):
-                    spk_hex = spk.hex()
-                else:
-                    spk_hex = str(spk) if spk is not None else None
-            except Exception:
-                spk_hex = None
+            if hasattr(spk, "serialize"):
+                spk_hex = spk.serialize().hex()
+            elif isinstance(spk, (bytes, bytearray)):
+                spk_hex = spk.hex()
+            else:
+                spk_hex = str(spk) if spk is not None else None
 
             address = None
-            try:
-                if hasattr(self, "script_to_address"):
-                    address = self.script_to_address(spk)
-                elif hasattr(txout, "address"):
-                    address = getattr(txout, "address")
-            except Exception:
-                address = None
+            if hasattr(self, "script_to_address"):
+                address = self.script_to_address(spk)
+            elif hasattr(txout, "address"):
+                address = getattr(txout, "address")
 
             outputs_info.append({"script_bytes": b, "address": address, "amount": amount})
             entry = {

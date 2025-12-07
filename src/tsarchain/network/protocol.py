@@ -53,12 +53,9 @@ def _nonce_total_entries() -> int:
 def _nonce_prune_expired_locked(now_ts: int):
     ttl = CFG.REPLAY_WINDOW_SEC
     for sender, rec in list(_nonce_cache.items()):
-        try:
-            for k, t in list(rec.items()):
-                if now_ts - int(t or 0) > ttl:
-                    rec.pop(k, None)
-        except Exception:
-            log.warning("[_nonce_prune_expired_locked] prune error", exc_info=True)
+        for k, t in list(rec.items()):
+            if now_ts - int(t or 0) > ttl:
+                rec.pop(k, None)
         if not rec:
             _nonce_cache.pop(sender, None)
 
@@ -71,11 +68,8 @@ def _nonce_prune_global_if_needed_locked():
     heads = []
     for sender, rec in _nonce_cache.items():
         if rec:
-            try:
-                oldest_nonce, oldest_ts = min(rec.items(), key=lambda it: it[1])
-                heads.append((oldest_ts, sender, oldest_nonce))
-            except Exception:
-                pass
+            oldest_nonce, oldest_ts = min(rec.items(), key=lambda it: it[1])
+            heads.append((oldest_ts, sender, oldest_nonce))
     heads.sort()  # oldest first
     to_evict = total - CFG.NONCE_GLOBAL_MAX
     i = 0
@@ -112,12 +106,9 @@ def _nonce_register(sender: str, nonce: str, ts_val: int) -> None:
 
         # 5) Bound per-sender size (evict tertua)
         if len(rec) > CFG.NONCE_PER_SENDER_MAX:
-            try:
-                extra = len(rec) - CFG.NONCE_PER_SENDER_MAX
-                for k, _t in sorted(rec.items(), key=lambda it: it[1])[:extra]:
-                    rec.pop(k, None)
-            except Exception:
-                log.exception("[_nonce_register] nonce prune error")
+            extra = len(rec) - CFG.NONCE_PER_SENDER_MAX
+            for k, _t in sorted(rec.items(), key=lambda it: it[1])[:extra]:
+                rec.pop(k, None)
 
         # 6) Enforce global cap
         _nonce_prune_global_if_needed_locked()
@@ -150,10 +141,7 @@ def send_message(sock: socket.socket, payload: bytes, *, max_len: int | None = N
 def recv_message(sock, timeout: float | None = None, max_len: int | None = None):
     cap = int(max_len) if max_len is not None else int(CFG.MAX_MSG)
     if timeout is not None:
-        try:
-            sock.settimeout(timeout)
-        except Exception:
-            pass
+        sock.settimeout(timeout)
     try:
         hdr = recv_exact(sock, 4)
         n = struct.unpack(">I", hdr)[0]
@@ -166,8 +154,6 @@ def recv_message(sock, timeout: float | None = None, max_len: int | None = None)
     except Exception as e:
         if _is_disconnect_exc(e):
             return None
-        
-        log.exception("[recv_message] unexpected error")
         return None
 
 def recv_exact(sock: socket.socket, n: int) -> bytes:
@@ -186,11 +172,7 @@ def sniff_first_json_frame(sock: socket.socket, timeout: float = 2.0) -> tuple[b
     raw = recv_message(sock, timeout=timeout)
     if not raw:
         return None, None
-    try:
-        return raw, json.loads(raw.decode("utf-8"))
-    except Exception:
-        log.exception("[sniff_first_json_frame] error")
-        return raw, None
+    return raw, json.loads(raw.decode("utf-8"))
 
 
 
@@ -220,30 +202,16 @@ def load_or_create_keypair_at(path: str) -> tuple[str, str, str]:
         with open(path, "r", encoding="utf-8") as f:
             obj = json.load(f)
         if use_secure_user:
-            try:
-                save_user_key_record(
-                    {
-                        "id": obj["id"],
-                        "pubkey": obj["pubkey"],
-                        "privkey": obj["privkey"],
-                        "migrated": int(time.time()),
-                    }
-                )
-            except Exception:
-                log.exception("[keys] failed migrating user_key to secure storage")
-            else:
-                return obj["id"], obj["pubkey"], obj["privkey"]
+            save_user_key_record(
+                {
+                    "id": obj["id"],
+                    "pubkey": obj["pubkey"],
+                    "privkey": obj["privkey"],
+                    "migrated": int(time.time()),
+                }
+            )
         elif use_node_store:
-            try:
-                save_node_key(obj)
-            except Exception:
-                log.exception("[keys] failed migrating node_key to node storage")
-            else:
-                try:
-                    os.remove(path)
-                except Exception:
-                    pass
-                return obj["id"], obj["pubkey"], obj["privkey"]
+            save_node_key(obj)
         return obj["id"], obj["pubkey"], obj["privkey"]
 
     sk = SigningKey.generate()
@@ -259,10 +227,7 @@ def load_or_create_keypair_at(path: str) -> tuple[str, str, str]:
     else:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
-        try:
-            os.chmod(path, 0o600)
-        except Exception:
-            log.debug("[keys] chmod 600 failed (non-POSIX or permissions)")
+        os.chmod(path, 0o600)
     return node_id, pub_hex, priv_hex
 
 def load_or_create_node_keys() -> tuple[str, str, str]:
@@ -284,12 +249,8 @@ def sign_message_hex(privkey_hex: str, payload: bytes) -> str:
     return sig
 
 def verify_signature(pubkey_hex: str, payload: bytes, sig_hex: str) -> bool:
-    try:
-        VerifyKey(bytes.fromhex(pubkey_hex)).verify(payload, bytes.fromhex(sig_hex))
-        return True
-    except Exception:
-        log.debug("[verify_signature] bad signature")
-        return False
+    VerifyKey(bytes.fromhex(pubkey_hex)).verify(payload, bytes.fromhex(sig_hex))
+    return True
 
 def is_envelope(obj: dict) -> bool:
     return isinstance(obj, dict) and \

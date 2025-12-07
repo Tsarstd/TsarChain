@@ -12,20 +12,16 @@ import time
 from typing import List, Set, Tuple
 
 from ...utils import config as CFG
-from ...utils.tsar_logging import get_ctx_logger
 from ..protocol import SecureChannel, build_envelope, recv_message, send_message
 
+from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.node_logic.discovery")
 
 
 def discover_peers_loop(self):
     while not self._stop.is_set():
-        try:
-            self._discover_peers()
-            time.sleep(CFG.DISCOVERY_INTERVAL)
-        except Exception:
-            log.exception("[discover_peers_loop] Peer discovery error")
-            time.sleep(CFG.DISCOVERY_INTERVAL * 2)
+        self._discover_peers()
+        time.sleep(CFG.DISCOVERY_INTERVAL)
 
 
 def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
@@ -57,11 +53,8 @@ def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
 
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
-                s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
-            except Exception:
-                pass
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
             timeout = float(CFG.HANDSHAKE_TIMEOUT)
             s.settimeout(timeout)
             s.connect(norm)
@@ -76,26 +69,14 @@ def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
                     set_pinned=self._set_pinned,
                 )
                 chan.handshake()
-                try:
-                    s.settimeout(1.0)
-                except Exception:
-                    pass
+                s.settimeout(1.0)
                 chan.send(json.dumps(env).encode("utf-8"))
-                try:
-                    chan.recv(1)
-                except Exception:
-                    pass
+                chan.recv(1)
             else:
-                try:
-                    s.settimeout(1.0)
-                except Exception:
-                    pass
+                s.settimeout(1.0)
                 send_message(s, json.dumps(env).encode("utf-8"))
-                try:
-                    recv_message(s, timeout=1)
-                except Exception:
-                    pass
-
+                recv_message(s, timeout=1)
+                
     except (socket.timeout, ConnectionRefusedError, OSError):
         return False
     except Exception:
@@ -104,15 +85,9 @@ def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
     finally:
         self._peer_last_dial[norm] = now
 
-    try:
-        self.broadcast.send_mempool_to_peer(norm)
-    except Exception:
-        log.exception("[_attempt_hello] mempool push error to %s", norm)
-    try:
-        if not CFG.ENABLE_FULL_SYNC:
-            self._request_mempool_snapshot(norm, force=True)
-    except Exception:
-        log.exception("[_attempt_hello] mempool pull error from %s", norm)
+    self.broadcast.send_mempool_to_peer(norm)
+    if not CFG.ENABLE_FULL_SYNC:
+        self._request_mempool_snapshot(norm, force=True)
 
     return True
 

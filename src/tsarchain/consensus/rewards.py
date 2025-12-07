@@ -8,19 +8,16 @@ from __future__ import annotations
 # ---------------- Local Project ----------------
 from ..utils import config as CFG
 
+from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger('tsarchain.consensus.rewards')
+
 class RewardMixin:
     def _scheduled_reward(self, height: int) -> int:
         if height < 0:
             return 0
         if height == 0 and CFG.GENESIS_REWARD:
-            try:
-                return int(CFG.GENESIS_REWARD_AMOUNT)
-            except Exception:
-                return int(CFG.INITIAL_REWARD)
-        try:
-            return int(CFG.INITIAL_REWARD) // (2 ** (int(max(0, height)) // int(CFG.BLOCKS_PER_HALVING)))
-        except Exception:
-            return 0
+            return int(CFG.GENESIS_REWARD_AMOUNT)
+        return int(CFG.INITIAL_REWARD) // (2 ** (int(max(0, height)) // int(CFG.BLOCKS_PER_HALVING)))
 
     def _cumulative_supply_until(self, height: int) -> int:
         total = 0

@@ -30,7 +30,6 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.consensus.chain_storage')
 
 class StorageMixin:
-
 # =============================================================================
 # 1. HELPER
 # =============================================================================
@@ -39,26 +38,14 @@ class StorageMixin:
         for txin in getattr(tx, "inputs", []) or []:
             size += 40
             if getattr(txin, "script_sig", None):
-                try:
-                    size += len(txin.script_sig.serialize())
-                except Exception:
-                    size += len(getattr(txin.script_sig, "asm", "") or "")
+                size += len(txin.script_sig.serialize())
             if getattr(txin, "witness", None):
-                try:
-                    size += sum(len(w) for w in txin.witness)
-                except Exception:
-                    pass
+                size += sum(len(w) for w in txin.witness)
         for txout in getattr(tx, "outputs", []) or []:
             size += 8
             if getattr(txout, "script_pubkey", None):
-                try:
-                    size += len(txout.script_pubkey.serialize())
-                except Exception:
-                    pass
-        try:
-            size = max(size, len(tx.to_dict(include_txid=True)))
-        except Exception:
-            pass
+                size += len(txout.script_pubkey.serialize())
+        size = max(size, len(tx.to_dict(include_txid=True)))
         return int(size)
 
     def _estimate_block_size_bytes(self, block: Block) -> int:
@@ -68,14 +55,8 @@ class StorageMixin:
             if isinstance(tx, Tx):
                 total += self._estimate_tx_size_bytes(tx)
             else:
-                try:
-                    total += len(json.dumps(tx))
-                except Exception:
-                    total += 0
-        try:
-            total = max(total, len(json.dumps(block.to_dict())))
-        except Exception:
-            pass
+                total += len(json.dumps(tx))
+        total = max(total, len(json.dumps(block.to_dict())))
         return int(total)
 
     def _build_block_meta(self, block: Block, chainwork_so_far: int = 0) -> dict:
@@ -84,18 +65,12 @@ class StorageMixin:
         size_b = self._estimate_block_size_bytes(block)
         cw = getattr(block, "chainwork", None)
         if cw is None:
-            try:
-                cw = int(chainwork_so_far) + int(self._work_from_bits(getattr(block, "bits", CFG.MAX_BITS)))
-            except Exception:
-                cw = None
+            cw = int(chainwork_so_far) + int(self._work_from_bits(getattr(block, "bits", CFG.MAX_BITS)))
         target_val = None
         difficulty_val = None
-        try:
-            tgt = bits_to_target(int(getattr(block, "bits", CFG.MAX_BITS)))
-            target_val = int(tgt)
-            difficulty_val = int(target_to_difficulty(tgt))
-        except Exception:
-            pass
+        tgt = bits_to_target(int(getattr(block, "bits", CFG.MAX_BITS)))
+        target_val = int(tgt)
+        difficulty_val = int(target_to_difficulty(tgt))
         meta = {
             "schema_version": int(CFG.DATA_SCHEMA_VERSION),
             "tx_count": tx_count,
@@ -106,21 +81,13 @@ class StorageMixin:
             "target": target_val,
             "difficulty": difficulty_val,
         }
-        try:
-            meta["hash"] = block.hash().hex()
-        except Exception:
-            pass
-        try:
-            if isinstance(block.prev_block_hash, (bytes, bytearray)):
-                meta["prev_block_hash"] = block.prev_block_hash.hex()
-            else:
-                meta["prev_block_hash"] = str(block.prev_block_hash)
-        except Exception:
-            pass
-        try:
-            meta["merkle_root"] = block.merkle_root.hex() if isinstance(block.merkle_root, (bytes, bytearray)) else str(block.merkle_root)
-        except Exception:
-            pass
+        meta["hash"] = block.hash().hex()
+        if isinstance(block.prev_block_hash, (bytes, bytearray)):
+            meta["prev_block_hash"] = block.prev_block_hash.hex()
+        else:
+            meta["prev_block_hash"] = str(block.prev_block_hash)
+            
+        meta["merkle_root"] = block.merkle_root.hex() if isinstance(block.merkle_root, (bytes, bytearray)) else str(block.merkle_root)
         meta["height"] = int(getattr(block, "height", 0) or 0)
         meta["timestamp"] = int(getattr(block, "timestamp", 0) or 0)
         meta["bits"] = int(getattr(block, "bits", CFG.MAX_BITS))
@@ -146,10 +113,7 @@ class StorageMixin:
         comments: list[dict] = []
         payouts: list[dict] = []
 
-        try:
-            blk_hash = block.hash().hex()
-        except Exception:
-            blk_hash = None
+        blk_hash = block.hash().hex()
 
         def _txid_hex(tx_obj):
             txid = getattr(tx_obj, "txid", None)
@@ -161,10 +125,7 @@ class StorageMixin:
             txid_hex = _txid_hex(tx)
             for tx_out in getattr(tx, "outputs", []) or []:
                 spk = getattr(tx_out, "script_pubkey", None)
-                try:
-                    meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
-                except Exception:
-                    meta = None
+                meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
                 if not meta:
                     continue
                 event = str(meta.get("event", "")).upper()
@@ -173,10 +134,7 @@ class StorageMixin:
                     creator = meta.get("creator")
                     art_id = meta.get("art_id")
                     if not art_id and sha_hex and creator:
-                        try:
-                            art_id = GRAFFITI.compute_art_id(sha_hex, creator)
-                        except Exception:
-                            art_id = None
+                        art_id = GRAFFITI.compute_art_id(sha_hex, creator)
                     posts.append({
                         "txid": txid_hex,
                         "art_id": art_id,
@@ -219,10 +177,7 @@ class StorageMixin:
         meta["payout_count"] = len(graff_payouts)
         blk_dict["_meta"] = meta
         cw = meta.get("chainwork", prev_chainwork)
-        try:
-            cw_int = int(cw) if cw is not None else int(prev_chainwork)
-        except Exception:
-            cw_int = int(prev_chainwork)
+        cw_int = int(cw) if cw is not None else int(prev_chainwork)
         return blk_dict, cw_int
 
     def _mark_chain_dirty(self, height: int = 0) -> None:
@@ -238,53 +193,30 @@ class StorageMixin:
             return
         if start_height < 0:
             start_height = 0
-        try:
-            keys_to_remove: list[bytes] = []
-            for key, _ in iter_prefix('chain', b'h:'):
-                try:
-                    h = int(key[2:].decode('utf-8'))
-                except Exception:
-                    continue
-                if h >= start_height:
-                    keys_to_remove.append(key)
-            for key in keys_to_remove:
-                try:
-                    delete('chain', key)
-                except Exception:
-                    pass
-        except Exception:
-            log.exception("[_prune_chain_store] Failed pruning chain entries from height %s", start_height)
+            
+        keys_to_remove: list[bytes] = []
+        for key, _ in iter_prefix('chain', b'h:'):
+            h = int(key[2:].decode('utf-8'))
+            if h >= start_height:
+                keys_to_remove.append(key)
+        for key in keys_to_remove:
+            delete('chain', key)
 
     def _reset_chain_store(self) -> None:
         if self.in_memory:
             return
         if kv_enabled():
-            try:
-                clear_db('chain')
-            except Exception:
-                log.exception("[_reset_chain_store] Failed clearing LMDB chain data")
-        try:
-            self._chain_store.save([])
-        except Exception:
-            log.exception("[_reset_chain_store] Failed clearing JSON chain data")
+            clear_db('chain')
+        self._chain_store.save([])
         meta_path = CFG.SNAPSHOT_META_PATH
         if meta_path and os.path.exists(meta_path):
-            try:
-                os.remove(meta_path)
-            except Exception:
-                log.warning("[_reset_chain_store] Failed removing snapshot meta file at %s", meta_path)
+            os.remove(meta_path)
         journal_path = getattr(self, "_chain_journal_path", None)
         if journal_path and os.path.exists(journal_path):
-            try:
-                os.remove(journal_path)
-            except Exception:
-                log.warning("[_reset_chain_store] Failed removing chain journal at %s", journal_path)
+            os.remove(journal_path)
         self._persisted_height = -1
         self._chain_dirty_from = None
-        try:
-            self._snapshot_last_backup_height = -1
-        except Exception:
-            pass
+        self._snapshot_last_backup_height = -1
 
 
 # =============================================================================
@@ -344,33 +276,19 @@ class StorageMixin:
                 self._copy_snapshot_env(target_dir)
                 tip_ts = ts_hint
                 if tip_ts is None:
-                    try:
-                        if self.chain:
-                            tip_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
-                    except Exception:
-                        tip_ts = None
+                    if self.chain:
+                        tip_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
                 meta = None
-                try:
-                    meta = annotate_local_snapshot_meta(height=height, tip_timestamp=tip_ts)
-                except Exception:
-                    log.debug("[backup_snapshot] annotate meta failed", exc_info=True)
+                meta = annotate_local_snapshot_meta(height=height, tip_timestamp=tip_ts)
                 backup_dir = os.path.abspath(target_dir)
                 if meta:
                     meta_name = os.path.basename(CFG.SNAPSHOT_META_PATH or "snapshot.meta.json")
                     backup_meta_path = os.path.join(backup_dir, meta_name)
-                    try:
-                        with open(backup_meta_path, "w", encoding="utf-8") as fh:
-                            json.dump(meta, fh, indent=2, sort_keys=True)
-                    except Exception:
-                        log.warning("[backup_snapshot] Failed to write snapshot meta copy at %s", backup_meta_path)
-                    try:
-                        self._write_snapshot_manifest(backup_dir, meta, height)
-                    except Exception:
-                        log.warning("[backup_snapshot] Failed to write snapshot manifest copy", exc_info=True)
+                    with open(backup_meta_path, "w", encoding="utf-8") as fh:
+                        json.dump(meta, fh, indent=2, sort_keys=True)
+                    self._write_snapshot_manifest(backup_dir, meta, height)
                 self._snapshot_last_backup_height = height
                 log.info("[backup_snapshot] Snapshot updated at height %s to %s", height, target_dir)
-            except Exception:
-                log.exception("[backup_snapshot] Failed to update snapshot backup")
             finally:
                 with self._snapshot_backup_lock:
                     self._snapshot_backup_active = False
@@ -417,6 +335,7 @@ class StorageMixin:
                     digest.update(chunk)
             return digest.hexdigest()
         except Exception:
+            log.exception("err_hash_file")
             return None
 
 
@@ -432,6 +351,7 @@ class StorageMixin:
             try:
                 return os.path.getsize(path)
             except Exception:
+                log.exception("[_chain_journal_size] Failed getting size for %s", path)
                 return 0
         return 0
 
@@ -439,10 +359,7 @@ class StorageMixin:
         path = getattr(self, "_chain_journal_path", None)
         if not path or not os.path.exists(path):
             return
-        try:
-            os.remove(path)
-        except Exception:
-            log.warning("[_clear_chain_journal] Failed removing %s", path)
+        os.remove(path)
 
     def _append_chain_journal(self, start_height: int, blocks: list[Block]) -> None:
         if not self._chain_journal_enabled() or not blocks:
@@ -451,52 +368,47 @@ class StorageMixin:
         if not path:
             return
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        try:
-            with open(path, "a", encoding="utf-8") as fh:
-                for offset, block in enumerate(blocks):
-                    entry = {
-                        "height": int(start_height + offset),
-                        "block": block.to_dict(),
-                    }
-                    fh.write(json.dumps(entry, separators=CFG.CANONICAL_SEP) + "\n")
-        except Exception:
-            log.exception("[_append_chain_journal] Failed to write journal entries")
+        with open(path, "a", encoding="utf-8") as fh:
+            for offset, block in enumerate(blocks):
+                entry = {
+                    "height": int(start_height + offset),
+                    "block": block.to_dict(),
+                }
+                fh.write(json.dumps(entry, separators=CFG.CANONICAL_SEP) + "\n")
 
     def _apply_chain_journal(self, chain_data: list[dict]) -> list[dict]:
         path = getattr(self, "_chain_journal_path", None)
         if not path or not os.path.exists(path):
             return chain_data or []
         result = list(chain_data or [])
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        rec = json.loads(line)
-                    except Exception:
-                        continue
-                    height = rec.get("height")
-                    block_dict = rec.get("block")
-                    if block_dict is None:
-                        continue
-                    try:
-                        height = int(height)
-                    except Exception:
-                        continue
-                    if height < 0:
-                        continue
-                    if height < len(result):
-                        result[height] = block_dict
-                    elif height == len(result):
-                        result.append(block_dict)
-                    else:
-                        # journal gap; skip to avoid corrupting chain
-                        continue
-        except Exception:
-            log.exception("[_apply_chain_journal] Failed to replay journal")
-            return chain_data or []
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    log.exception("[_apply_chain_journal] Failed parsing journal line")
+                    continue
+                height = rec.get("height")
+                block_dict = rec.get("block")
+                if block_dict is None:
+                    continue
+                try:
+                    height = int(height)
+                except Exception:
+                    log.exception("[_apply_chain_journal] Failed parsing journal height")
+                    continue
+                if height < 0:
+                    continue
+                if height < len(result):
+                    result[height] = block_dict
+                elif height == len(result):
+                    result.append(block_dict)
+                else:
+                    # journal gap; skip to avoid corrupting chain
+                    continue
         return result
 
 
@@ -512,11 +424,7 @@ class StorageMixin:
         backup_ts = None
         with self.lock:
             tip_height = len(self.chain) - 1
-            tip_hash = None
-            try:
-                tip_hash = self.chain[-1].hash().hex() if tip_height >= 0 else None
-            except Exception:
-                tip_hash = None
+            tip_hash = self.chain[-1].hash().hex() if tip_height >= 0 else None
             chain_meta = self._build_chain_meta(tip_height, tip_hash)
             full_flush = force_full or self._persisted_height < 0
             if force_full:
@@ -555,36 +463,27 @@ class StorageMixin:
                     return
 
             if kv_enabled():
-                try:
-                    if full_flush:
-                        clear_db('chain')
-                        self._persisted_height = -1
-                    cw_prev = 0
-                    if start_height and start_height > 0:
-                        try:
-                            prev_blk = self.chain[start_height - 1]
-                            cw_prev = int(getattr(prev_blk, "chainwork", 0) or 0)
-                            if cw_prev == 0:
-                                cw_prev = int(self._compute_chainwork_for_chain(self.chain[:start_height]))
-                        except Exception:
-                            cw_prev = 0
-                    if tip_height < self._persisted_height:
-                        self._prune_chain_store(tip_height + 1)
-                        self._persisted_height = tip_height
-                    if start_height is not None and start_height <= tip_height:
-                        with batch('chain') as b:
-                            try:
-                                b.put(b'__meta__', json.dumps(chain_meta, separators=CFG.CANONICAL_SEP).encode('utf-8'))
-                            except Exception:
-                                log.debug("[save_chain] failed writing chain meta")
-                            for height in range(start_height, tip_height + 1):
-                                key = f"h:{height:012d}".encode('utf-8')
-                                blk_dict, cw_prev = self._serialize_block_for_store(self.chain[height], cw_prev)
-                                payload = json.dumps(blk_dict, separators=CFG.CANONICAL_SEP).encode('utf-8')
-                                b.put(key, payload)
-                        self._persisted_height = tip_height
-                except Exception:
-                    log.exception("[save_chain] LMDB save_chain failed")
+                if full_flush:
+                    clear_db('chain')
+                    self._persisted_height = -1
+                cw_prev = 0
+                if start_height and start_height > 0:
+                    prev_blk = self.chain[start_height - 1]
+                    cw_prev = int(getattr(prev_blk, "chainwork", 0) or 0)
+                    if cw_prev == 0:
+                        cw_prev = int(self._compute_chainwork_for_chain(self.chain[:start_height]))
+                if tip_height < self._persisted_height:
+                    self._prune_chain_store(tip_height + 1)
+                    self._persisted_height = tip_height
+                if start_height is not None and start_height <= tip_height:
+                    with batch('chain') as b:
+                        b.put(b'__meta__', json.dumps(chain_meta, separators=CFG.CANONICAL_SEP).encode('utf-8'))
+                        for height in range(start_height, tip_height + 1):
+                            key = f"h:{height:012d}".encode('utf-8')
+                            blk_dict, cw_prev = self._serialize_block_for_store(self.chain[height], cw_prev)
+                            payload = json.dumps(blk_dict, separators=CFG.CANONICAL_SEP).encode('utf-8')
+                            b.put(key, payload)
+                    self._persisted_height = tip_height
             else:
                 if not self._chain_journal_enabled() or full_flush or start_height in (None, 0):
                     if full_flush or start_height is not None or tip_height != self._persisted_height:
@@ -624,10 +523,7 @@ class StorageMixin:
             self._chain_dirty_from = None
             if tip_height >= 0:
                 backup_tip = tip_height
-                try:
-                    backup_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
-                except Exception:
-                    backup_ts = None
+                backup_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
 
         if backup_tip is not None:
             self._maybe_backup_snapshot(backup_tip, tip_timestamp=backup_ts)
@@ -638,24 +534,16 @@ class StorageMixin:
         meta = {}
         data_list = []
         if kv_enabled():
-            try:
-                # Collect and sort by height key, plus optional meta
-                items = list(iter_prefix('chain', b''))
-                blocks: list[tuple[bytes, bytes]] = []
-                for k, v in items:
-                    if k == b'__meta__':
-                        try:
-                            meta = json.loads(v.decode('utf-8')) or {}
-                        except Exception:
-                            log.debug("[load_chain] failed to parse chain meta from LMDB")
-                        continue
-                    if k.startswith(b'h:'):
-                        blocks.append((k, v))
-                blocks.sort(key=lambda kv: kv[0])
-                data_list = [json.loads(v.decode('utf-8')) for _, v in blocks]
-            except Exception:
-                log.exception("[load_chain] LMDB load_chain failed")
-                data_list = []
+            # Collect and sort by height key, plus optional meta
+            items = list(iter_prefix('chain', b''))
+            blocks: list[tuple[bytes, bytes]] = []
+            for k, v in items:
+                if k == b'__meta__':
+                    meta = json.loads(v.decode('utf-8')) or {}
+                if k.startswith(b'h:'):
+                    blocks.append((k, v))
+            blocks.sort(key=lambda kv: kv[0])
+            data_list = [json.loads(v.decode('utf-8')) for _, v in blocks]
         if not data_list:
             raw = self._chain_store.load(default=[])
             if isinstance(raw, dict):
@@ -676,11 +564,7 @@ class StorageMixin:
         if not chain:
             return
         if chain[0].height != 0 or chain[0].prev_block_hash != CFG.ZERO_HASH:
-            prev_hex = None
-            try:
-                prev_hex = chain[0].prev_block_hash.hex()  # type: ignore[attr-defined]
-            except Exception:
-                prev_hex = str(chain[0].prev_block_hash)
+            prev_hex = chain[0].prev_block_hash.hex()  # type: ignore[attr-defined]
             log.error(
                 "[load_chain] Invalid on-disk genesis header fields (height=%s prev=%s); resetting chain store",
                 chain[0].height,
@@ -698,38 +582,26 @@ class StorageMixin:
             return
 
         self.chain = chain
-        try:
-            self._chain_meta = meta or {}
-        except Exception:
-            self._chain_meta = {}
+        self._chain_meta = meta or {}
         self.total_blocks = len(self.chain)
         self.total_supply = self.calculate_total_supply()
         self.supply_in_tsar = self.total_supply / CFG.TSAR if self.total_supply else 0
         self._persisted_height = len(self.chain) - 1
         self._chain_dirty_from = None
-        try:
-            # Align last backup marker to nearest interval to avoid drift across restarts
-            interval = int(CFG.BLOCK_BACKUP_SNAPSHOT)
-            if interval > 0 and self._persisted_height >= 0:
-                self._snapshot_last_backup_height = (self._persisted_height // interval) * interval
-            else:
-                self._snapshot_last_backup_height = self._persisted_height
-        except Exception:
-            pass
+        # Align last backup marker to nearest interval to avoid drift across restarts
+        interval = int(CFG.BLOCK_BACKUP_SNAPSHOT)
+        if interval > 0 and self._persisted_height >= 0:
+            self._snapshot_last_backup_height = (self._persisted_height // interval) * interval
+        else:
+            self._snapshot_last_backup_height = self._persisted_height
         if not self.in_memory:
             self._ensure_utxodb()
             self._utxo_last_flush_height = self.height
             self._utxo_dirty = False
-            try:
-                tip_ts = None
-                if self.chain:
-                    tip_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
-            except Exception:
-                tip_ts = None
-            try:
-                annotate_local_snapshot_meta(height=self.height, tip_timestamp=tip_ts)
-            except Exception:
-                log.debug("[load_chain] snapshot meta annotate failed", exc_info=True)
+            tip_ts = None
+            if self.chain:
+                tip_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
+            annotate_local_snapshot_meta(height=self.height, tip_timestamp=tip_ts)
 
 
 # =============================================================================
@@ -740,20 +612,14 @@ class StorageMixin:
             return
         data = {}
         if kv_enabled():
-            try:
-                # State stored as individual keys
-                items = dict((k.decode('utf-8'), v.decode('utf-8')) for k, v in iter_prefix('state', b'k:'))
-                snap_raw = items.get('k:snapshot')
-                if snap_raw:
-                    try:
-                        data = json.loads(snap_raw)
-                    except Exception:
-                        log.exception("[load_state] Failed to parse snapshot JSON from LMDB")
-                if not data and items:
-                    data["total_supply"] = int(items.get('k:total_supply', '0'))
-                    data["total_blocks"] = int(items.get('k:total_blocks', '0'))
-            except Exception:
-                log.exception("[load_state] LMDB load_state failed")
+            # State stored as individual keys
+            items = dict((k.decode('utf-8'), v.decode('utf-8')) for k, v in iter_prefix('state', b'k:'))
+            snap_raw = items.get('k:snapshot')
+            if snap_raw:
+                data = json.loads(snap_raw)
+            if not data and items:
+                data["total_supply"] = int(items.get('k:total_supply', '0'))
+                data["total_blocks"] = int(items.get('k:total_blocks', '0'))
         if not data:
             data = self._state_store.load(default={})
         self.total_supply = int(data.get("total_supply", 0) or 0)
@@ -769,17 +635,11 @@ class StorageMixin:
         self.total_supply = self.calculate_total_supply()
         self.supply_in_tsar = self.total_supply / CFG.TSAR if self.total_supply else 0
         data = self._compute_state_snapshot()
-        try:
-            data["total_supply"] = int(self.total_supply)
-            data["total_blocks"] = int(self.total_blocks)
-        except Exception:
-            pass
+        data["total_supply"] = int(self.total_supply)
+        data["total_blocks"] = int(self.total_blocks)
 
         # Normalize schema version from config
-        try:
-            data["schema_version"] = int(CFG.DATA_SCHEMA_VERSION)
-        except Exception:
-            data["schema_version"] = data.get("schema_version", 1)
+        data["schema_version"] = int(CFG.DATA_SCHEMA_VERSION)
 
         ordered = {
             "schema_version": data.get("schema_version"),
@@ -798,13 +658,10 @@ class StorageMixin:
 
         # Save to LMDB
         if kv_enabled():
-            try:
-                with batch('state') as b:
-                    b.put(b'k:total_supply', str(int(self.total_supply)).encode('utf-8'))
-                    b.put(b'k:total_blocks', str(int(self.total_blocks)).encode('utf-8'))
-                    b.put(b'k:snapshot', json.dumps(ordered, separators=CFG.CANONICAL_SEP).encode('utf-8'))
-            except Exception:
-                log.exception("[save_state] LMDB save_state failed")
+            with batch('state') as b:
+                b.put(b'k:total_supply', str(int(self.total_supply)).encode('utf-8'))
+                b.put(b'k:total_blocks', str(int(self.total_blocks)).encode('utf-8'))
+                b.put(b'k:snapshot', json.dumps(ordered, separators=CFG.CANONICAL_SEP).encode('utf-8'))
         else:
             self._state_store.save(ordered)
 
@@ -821,198 +678,141 @@ class StorageMixin:
         total_blocks = len(chain)
         tip_block = chain[-1] if chain else None
         genesis_block = chain[0] if chain else None
-
-        total_block_size_bytes = 0
-        try:
-            total_block_size_bytes = sum(self._estimate_block_size_bytes(b) for b in chain)
-        except Exception:
-            total_block_size_bytes = 0
+        total_block_size_bytes = sum(self._estimate_block_size_bytes(b) for b in chain)
 
         tip_chainwork = None
-        try:
-            cw = getattr(tip_block, "chainwork", None)
-            if cw is None:
-                cw = self._compute_chainwork_for_chain(chain)
-            tip_chainwork = int(cw)
-        except Exception:
-            pass
-
-        median_time_past_val = None
-        try:
-            median_time_past_val = int(self.median_time_past())
-        except Exception:
-            pass
+        cw = getattr(tip_block, "chainwork", None)
+        if cw is None:
+            cw = self._compute_chainwork_for_chain(chain)
+        tip_chainwork = int(cw)
+        median_time_past_val = int(self.median_time_past())
 
         tip_bits = int(getattr(tip_block, "bits", 0)) if tip_block else None
         tip_target = None
         tip_difficulty = None
-        try:
-            if tip_bits is not None:
-                tgt = bits_to_target(tip_bits)
-                tip_target = int(tgt)
-                tip_difficulty = int(target_to_difficulty(tgt))
-        except Exception:
-            pass
+        if tip_bits is not None:
+            tgt = bits_to_target(tip_bits)
+            tip_target = int(tgt)
+            tip_difficulty = int(target_to_difficulty(tgt))
 
         AVG_WINDOW = 20
         avg_block_time_sec = None
         est_hashrate_hps = None
-        try:
-            if total_blocks >= 2:
-                window = min(AVG_WINDOW, total_blocks - 1)
-                timestamps = [int(getattr(chain[i], "timestamp", 0) or 0) for i in range(total_blocks - window - 1, total_blocks)]
-                intervals = []
-                for i in range(1, len(timestamps)):
-                    delta = timestamps[i] - timestamps[i - 1]
-                    if isinstance(delta, (int, float)) and delta > 0:
-                        intervals.append(delta)
-                if intervals:
-                    avg_block_time_sec = sum(intervals) / len(intervals)
-                    if tip_difficulty:
-                        est_hashrate_hps = int(tip_difficulty / max(1, avg_block_time_sec))
-        except Exception:
-            pass
+        if total_blocks >= 2:
+            window = min(AVG_WINDOW, total_blocks - 1)
+            timestamps = [int(getattr(chain[i], "timestamp", 0) or 0) for i in range(total_blocks - window - 1, total_blocks)]
+            intervals = []
+            for i in range(1, len(timestamps)):
+                delta = timestamps[i] - timestamps[i - 1]
+                if isinstance(delta, (int, float)) and delta > 0:
+                    intervals.append(delta)
+            if intervals:
+                avg_block_time_sec = sum(intervals) / len(intervals)
+                if tip_difficulty:
+                    est_hashrate_hps = int(tip_difficulty / max(1, avg_block_time_sec))
 
         total_txs = 0
         total_non_coinbase_txs = 0
         total_fees_paid = 0
         miner_counter: Counter[str] = Counter()
-        try:
-            for blk in chain:
-                txs = getattr(blk, "transactions", []) or []
-                total_txs += len(txs)
-                total_non_coinbase_txs += max(0, len(txs) - 1)
-                if not txs:
-                    continue
-                coinbase = txs[0]
-                outputs = getattr(coinbase, "outputs", []) or []
-                cb_amt = 0
-                if outputs:
-                    try:
-                        cb_amt = int(getattr(outputs[0], "amount", 0) or 0)
-                    except Exception:
-                        cb_amt = 0
-                base = self._scheduled_reward(int(getattr(blk, "height", 0) or 0))
-                fee = max(0, cb_amt - base)
-                total_fees_paid += fee
-                miner_addr = getattr(coinbase, "to_address", None)
-                if not miner_addr and outputs:
-                    miner_addr = getattr(outputs[0], "address", None)
-                if miner_addr:
-                    miner_counter[str(miner_addr)] += 1
-        except Exception:
-            pass
+        for blk in chain:
+            txs = getattr(blk, "transactions", []) or []
+            total_txs += len(txs)
+            total_non_coinbase_txs += max(0, len(txs) - 1)
+            if not txs:
+                continue
+            coinbase = txs[0]
+            outputs = getattr(coinbase, "outputs", []) or []
+            cb_amt = 0
+            if outputs:
+                cb_amt = int(getattr(outputs[0], "amount", 0) or 0)
+            base = self._scheduled_reward(int(getattr(blk, "height", 0) or 0))
+            fee = max(0, cb_amt - base)
+            total_fees_paid += fee
+            miner_addr = getattr(coinbase, "to_address", None)
+            if not miner_addr and outputs:
+                miner_addr = getattr(outputs[0], "address", None)
+            if miner_addr:
+                miner_counter[str(miner_addr)] += 1
 
         mempool_count = 0
         mempool_vbytes_est = None
         mempool_bytes_est = None
         pool = getattr(self, "get_mempool", lambda: None)()
         if pool:
-            try:
-                stats = pool.stats()
-                mempool_count = int(stats.get("count", 0))
-                mempool_vbytes_est = int(stats.get("virtual_size", 0))
-                mempool_bytes_est = int(stats.get("virtual_size", 0))
-            except Exception:
-                pass
+            stats = pool.stats()
+            mempool_count = int(stats.get("count", 0))
+            mempool_vbytes_est = int(stats.get("virtual_size", 0))
+            mempool_bytes_est = int(stats.get("virtual_size", 0))
 
         utxo_set_size = 0
         circulating_estimate = 0
         immature_coinbase = 0
         utxo_total_value = 0
         maturity = int(CFG.COINBASE_MATURITY)
-        try:
-            with utxo._lock:  # type: ignore[attr-defined]
-                utxo_items = list(utxo.utxos.values())
-            utxo_set_size = len(utxo_items)
-            for entry in utxo_items:
-                tx_out = entry.get("tx_out") if isinstance(entry, dict) else getattr(entry, "tx_out", None)
-                amount_val = None
-                if isinstance(tx_out, dict):
-                    amount_val = tx_out.get("amount")
-                elif hasattr(tx_out, "amount"):
-                    amount_val = getattr(tx_out, "amount", None)
-                elif isinstance(entry, dict):
-                    amount_val = entry.get("amount")
-                try:
-                    amount = int(amount_val if amount_val is not None else 0)
-                except Exception:
-                    continue
-                if amount <= 0:
-                    continue
-                utxo_total_value += amount
-                is_cb = bool(entry.get("is_coinbase", False)) if isinstance(entry, dict) else bool(getattr(entry, "is_coinbase", False))
-                born = int(entry.get("block_height", entry.get("height", 0)) if isinstance(entry, dict) else getattr(entry, "block_height", getattr(entry, "height", 0)) or 0)
-                if is_cb:
-                    conf = max(0, (tip_height - born) + 1)
-                    # Coinbase boleh dianggap beredar hanya setelah melewati jumlah blok maturity penuh
-                    if conf > maturity:
-                        circulating_estimate += amount
-                    else:
-                        immature_coinbase += amount
-                else:
+        
+        with utxo._lock:  # type: ignore[attr-defined]
+            utxo_items = list(utxo.utxos.values())
+        utxo_set_size = len(utxo_items)
+        for entry in utxo_items:
+            tx_out = entry.get("tx_out") if isinstance(entry, dict) else getattr(entry, "tx_out", None)
+            amount_val = None
+            if isinstance(tx_out, dict):
+                amount_val = tx_out.get("amount")
+            elif hasattr(tx_out, "amount"):
+                amount_val = getattr(tx_out, "amount", None)
+            elif isinstance(entry, dict):
+                amount_val = entry.get("amount")
+            amount = int(amount_val if amount_val is not None else 0)
+            if amount <= 0:
+                continue
+            utxo_total_value += amount
+            is_cb = bool(entry.get("is_coinbase", False)) if isinstance(entry, dict) else bool(getattr(entry, "is_coinbase", False))
+            born = int(entry.get("block_height", entry.get("height", 0)) if isinstance(entry, dict) else getattr(entry, "block_height", getattr(entry, "height", 0)) or 0)
+            if is_cb:
+                conf = max(0, (tip_height - born) + 1)
+                # Coinbase boleh dianggap beredar hanya setelah melewati jumlah blok maturity penuh
+                if conf > maturity:
                     circulating_estimate += amount
-        except Exception:
-            log.exception("[_compute_state_snapshot] UTXO stats failed")
+                else:
+                    immature_coinbase += amount
+            else:
+                circulating_estimate += amount
 
         data_g = {}
         graffiti_posts = 0
         total_comments = 0
         total_graffiti_storage = 0
         graffiti_on_mempool = 0
-        try:
-            reg = getattr(utxo, "_graffiti_registry", None)
-            if reg is None:
-                reg = GraffitiRegistry()
-            data_g = getattr(reg, "data", {}) or {}
-            posts_data = data_g.get("posts") or {}
-            graffiti_posts = len(posts_data)
-            for post in posts_data.values():
-                if not isinstance(post, dict):
-                    continue
-                size_val = post.get("size")
-                if size_val is None:
-                    try:
-                        stats = post.get("stats") or {}
-                        size_val = stats.get("size") or {}
-                    except Exception:
-                        size_val = None
-                try:
-                    total_graffiti_storage += int(size_val or 0)
-                except Exception:
-                    continue
-            total_comments = sum(len(v or []) for v in (data_g.get("comments") or {}).values())
-        except Exception:
-            log.exception("[_compute_state_snapshot] graffiti aggregation failed")
-        try:
-            mem = getattr(self, "mempool", None)
-            if mem:
-                for tx in mem.get_all_txs():
-                    for tx_out in getattr(tx, "outputs", []) or []:
-                        spk = getattr(tx_out, "script_pubkey", None)
-                        meta = None
-                        try:
-                            meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
-                        except Exception:
-                            meta = None
-                        if meta and str(meta.get("event", "")).upper() == "POST":
-                            graffiti_on_mempool += 1
-        except Exception:
-            log.exception("[_compute_state_snapshot] graffiti mempool count failed")
+        reg = getattr(utxo, "_graffiti_registry", None)
+        if reg is None:
+            reg = GraffitiRegistry()
+        data_g = getattr(reg, "data", {}) or {}
+        posts_data = data_g.get("posts") or {}
+        graffiti_posts = len(posts_data)
+        for post in posts_data.values():
+            if not isinstance(post, dict):
+                continue
+            size_val = post.get("size")
+            if size_val is None:
+                stats = post.get("stats") or {}
+                size_val = stats.get("size") or {}
+            total_graffiti_storage += int(size_val or 0)
+        total_comments = sum(len(v or []) for v in (data_g.get("comments") or {}).values())
+        mem = getattr(self, "mempool", None)
+        if mem:
+            for tx in mem.get_all_txs():
+                for tx_out in getattr(tx, "outputs", []) or []:
+                    spk = getattr(tx_out, "script_pubkey", None)
+                    meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+                    if meta and str(meta.get("event", "")).upper() == "POST":
+                        graffiti_on_mempool += 1
 
-        try:
-            emitted_subsidy = self.calculate_total_supply()
-        except Exception:
-            log.exception("[_compute_state_snapshot] calculate_total_supply failed")
-            emitted_subsidy = self.total_supply or 0
-
+        emitted_subsidy = self.calculate_total_supply()
         chain_sha256 = None
-        try:
-            if hasattr(self._chain_store, "sha_path") and os.path.exists(self._chain_store.sha_path):
-                with open(self._chain_store.sha_path, "r", encoding="utf-8") as fh:
-                    chain_sha256 = fh.read().strip() or None
-        except Exception:
-            log.exception("[_compute_state_snapshot] cannot read chain SHA256")
+        if hasattr(self._chain_store, "sha_path") and os.path.exists(self._chain_store.sha_path):
+            with open(self._chain_store.sha_path, "r", encoding="utf-8") as fh:
+                chain_sha256 = fh.read().strip() or None
 
         cur_epoch = 0 if tip_height < 0 else int(tip_height // int(CFG.BLOCKS_PER_HALVING))
         next_halving_height = int((cur_epoch + 1) * int(CFG.BLOCKS_PER_HALVING))
@@ -1023,21 +823,13 @@ class StorageMixin:
         tip_timestamp = int(getattr(tip_block, "timestamp", 0) or 0) if tip_block else None
         genesis_dict = genesis_block.to_dict() if genesis_block else {}
         tip_dict = tip_block.to_dict() if tip_block else {}
-
-        total_payouts = 0
-        try:
-            total_payouts = sum(len(v or []) for v in (data_g.get("payouts") or {}).values())
-        except Exception:
-            total_payouts = 0
+        total_payouts = sum(len(v or []) for v in (data_g.get("payouts") or {}).values())
         total_pool_balances = 0
-        try:
-            for post in (data_g.get("posts") or {}).values():
-                if not isinstance(post, dict):
-                    continue
-                stats = post.get("stats") or {}
-                total_pool_balances += int(stats.get("pool_balance", 0) or 0)
-        except Exception:
-            total_pool_balances = 0
+        for post in (data_g.get("posts") or {}).values():
+            if not isinstance(post, dict):
+                continue
+            stats = post.get("stats") or {}
+            total_pool_balances += int(stats.get("pool_balance", 0) or 0)
 
         snapshot = {
             "schema_version": int(CFG.DATA_SCHEMA_VERSION),

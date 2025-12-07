@@ -21,6 +21,7 @@ def _handle_hello(self, message, addr):
     try:
         peer_port = int(message.get("port", 0))
     except Exception:
+        log.exception("[_handle_hello] unexpected error")
         peer_port = 0
     peer_tuple = (peer_ip, peer_port) if peer_ip and isinstance(peer_port, int) and peer_port > 0 else None
 
@@ -29,6 +30,7 @@ def _handle_hello(self, message, addr):
     try:
         advertised_height = int(message.get("height", -1))
     except Exception:
+        log.exception("[_handle_hello] unexpected error")
         advertised_height = -1
 
     is_storage = role == "NODE_STORAGE"
@@ -52,6 +54,7 @@ def _handle_hello(self, message, addr):
             try:
                 port = int(entry.get("port", 0))
             except Exception:
+                log.exception("[_handle_hello] unexpected error")
                 port = 0
             if not ip or port <= 0:
                 continue
@@ -79,13 +82,11 @@ def _handle_hello(self, message, addr):
         try:
             peer_port = int(message.get("port", -1))
         except Exception:
+            log.exception("[_handle_hello] unexpected error")
             peer_port = -1
         if (not is_storage) and isinstance(addr, tuple) and peer_port > 0:
             dst = (addr[0], peer_port)
-            try:
-                self.broadcast.send_mempool_to_peer(dst)
-            except Exception:
-                log.exception("[_handle_hello] failed to push mempool to %s", dst)
+            self.broadcast.send_mempool_to_peer(dst)
 
     if (not is_storage) and peer_tuple:
         self._reward_peer(peer_tuple)
@@ -103,6 +104,7 @@ def _handle_get_headers(self, message, addr):
     try:
         limit = int(message.get("limit", CFG.HEADERS_BATCH_MAX))
     except Exception:
+        log.exception("[_handle_get_headers] unexpected error")
         limit = CFG.HEADERS_BATCH_MAX
 
     limit = max(1, min(limit, CFG.HEADERS_BATCH_MAX))
@@ -115,6 +117,7 @@ def _handle_get_headers(self, message, addr):
             try:
                 known[blk.hash().hex()] = idx
             except Exception:
+                log.exception("[_handle_get_headers] unexpected error")
                 continue
 
         for cand in locator:
@@ -132,6 +135,7 @@ def _handle_get_headers(self, message, addr):
                 else str(blk.prev_block_hash)
             )
         except Exception:
+            log.exception("[_handle_get_headers] unexpected error")
             prev_hash = None
 
         headers.append(
@@ -163,15 +167,9 @@ def _handle_get_blocks(self, message, addr):
         chain = list(self.broadcast.blockchain.chain)
 
     for raw_h in heights[:limit]:
-        try:
-            h = int(raw_h)
-        except Exception:
-            continue
+        h = int(raw_h)
         if 0 <= h < len(chain):
-            try:
-                blocks.append(chain[h].to_dict())
-            except Exception:
-                continue
+            blocks.append(chain[h].to_dict())
     return {"type": "BLOCKS", "blocks": blocks}
 
 
@@ -197,6 +195,7 @@ def _handle_get_full_sync(self, message, addr):
         try:
             enc = json.dumps(full_obj, separators=CFG.CANONICAL_SEP, ensure_ascii=False).encode("utf-8")
         except Exception as e:
+            log.exception("[_handle_get_full_sync] unexpected error")
             return {"type": "SYNC_REDIRECT", "reason": "serialize_failed", "detail": str(e)}
 
         hard_cap = min(CFG.MAX_MSG - len(CFG.NETWORK_MAGIC))
@@ -208,22 +207,19 @@ def _handle_get_full_sync(self, message, addr):
             }
         return full_obj
     except Exception as e:
+        log.exception("[_handle_get_full_sync] unexpected error")
         return {"type": "SYNC_REDIRECT", "reason": "internal_error", "detail": str(e)}
 
 
 def _handle_full_sync(self, message, addr):
-    try:
-        now = time.time()
-        if now - getattr(self, "_last_fullsync_log", 0.0) > 5.0:
-            log.trace("[_handle_full_sync] Received full sync from %s:%s", addr[0], addr[1] if len(addr) > 1 else 0)
-            self._last_fullsync_log = now
-    except Exception:
-        pass
+    now = time.time()
+    if now - getattr(self, "_last_fullsync_log", 0.0) > 5.0:
+        log.trace("[_handle_full_sync] Received full sync from %s:%s", addr[0], addr[1] if len(addr) > 1 else 0)
+        self._last_fullsync_log = now
 
     payload = message.get("data", message)
     self.broadcast.receive_full_sync(payload)
     return {"status": "ok"}
-
 
 def _handle_get_block_at(self, height: int) -> dict:
     try:
@@ -237,8 +233,8 @@ def _handle_get_block_at(self, height: int) -> dict:
         d["type"] = "BLOCK"
         return d
     except Exception as e:
+        log.exception("[_handle_get_block_at] unexpected error")
         return {"type": "BLOCK", "error": str(e)}
-
 
 def _handle_get_block_by_hash(self, hx: str) -> dict:
     try:
@@ -253,6 +249,7 @@ def _handle_get_block_by_hash(self, hx: str) -> dict:
         return {"type": "BLOCK", "error": "not_found"}
 
     except Exception as e:
+        log.exception("[_handle_get_block_by_hash] unexpected error")
         return {"type": "BLOCK", "error": str(e)}
 
 

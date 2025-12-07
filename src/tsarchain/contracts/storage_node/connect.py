@@ -25,10 +25,7 @@ log = get_ctx_logger("tsarchain.contracts.storage_node.connect")
 manual_bootstrap: Optional[Tuple[str, int]] = None
 
 if not kv_enabled():
-    try:
-        os.makedirs(os.path.dirname(CFG.ARCHIV_PEER_KEYS), exist_ok=True)
-    except Exception:
-        pass
+    os.makedirs(os.path.dirname(CFG.ARCHIV_PEER_KEYS), exist_ok=True)
 
 
 def _load_stor_peer_keys() -> dict:
@@ -39,6 +36,7 @@ def _load_stor_peer_keys() -> dict:
                 nid = k.decode('utf-8')[4:]
                 m[nid] = v.decode('utf-8')
         except Exception:
+            log.exception("Failed to load stor_peer_keys from kv store")
             pass
         return m
     try:
@@ -46,6 +44,7 @@ def _load_stor_peer_keys() -> dict:
             obj = json.load(f)
             return obj if isinstance(obj, dict) else {}
     except Exception:
+        log.exception("Failed to load stor_peer_keys from file")
         return {}
 
 
@@ -56,6 +55,7 @@ def _save_stor_peer_keys() -> None:
                 for nid, pk in _STOR_PEER_KEYS.items():
                     b.put(f"nid:{nid}".encode('utf-8'), pk.encode('utf-8'))
         except Exception:
+            log.exception("Failed to save stor_peer_keys to kv store")
             pass
         return
     try:
@@ -64,6 +64,7 @@ def _save_stor_peer_keys() -> None:
             json.dump(_STOR_PEER_KEYS, f, indent=2)
         os.replace(tmp, CFG.ARCHIV_PEER_KEYS)
     except Exception:
+        log.exception("Failed to save stor_peer_keys to file")
         pass
 
 
@@ -190,6 +191,7 @@ class RPC:
             self._default_address = bech32_encode(CFG.ADDRESS_PREFIX, data)
             self.address = self._default_address
         except Exception:
+            log.exception("[RPC.__init__] failed to compute default storage address")
             self._default_address = ""
             self.address = ""
         self.trusted = False
@@ -269,8 +271,8 @@ class RPC:
                 raw = chan.recv(timeout)
                 log.debug("[RPC.call] secure channel response %d bytes type=%s to %s:%s", len(raw) if raw else 0, inner.get("type"), ip, port)
             except Exception:
+                log.exception("[RPC.call] secure channel failed type=%s to %s:%s", inner.get("type"), ip, port)
                 if CFG.P2P_ENC_REQUIRED:
-                    log.exception("[RPC.call] secure channel failed %s:%s type=%s", ip, port, inner.get("type"))
                     return None
                 send_message(s, json.dumps(payload).encode("utf-8"))
                 raw = recv_message(s, timeout)
@@ -284,7 +286,7 @@ class RPC:
                 try:
                     return verify_and_unwrap(outer, lambda nid: None)
                 except Exception:
-                    log.debug("[RPC.call] unwrap failed type=%s", inner.get("type"))
+                    log.exception("[RPC.call] failed to verify envelope type=%s from %s:%s", inner.get("type"), ip, port)
                     return None
             return outer
 

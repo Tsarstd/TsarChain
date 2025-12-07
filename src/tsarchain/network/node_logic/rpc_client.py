@@ -12,9 +12,9 @@ from typing import Optional, Tuple
 
 from ...core.tx import Tx
 from ...utils import config as CFG
-from ...utils.tsar_logging import get_ctx_logger
 from ..protocol import SecureChannel, build_envelope, is_envelope, recv_message, send_message, verify_and_unwrap
 
+from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.node_logic.rpc_client")
 
 
@@ -26,21 +26,15 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
     now = time.time()
     retry_at = self._rpc_backoff.get(norm, 0.0)
     if now < retry_at:
-        try:
-            log.debug("[_rpc_request] backoff active for %s (%.1fs remaining)", norm, retry_at - now)
-        except Exception:
-            pass
+        log.debug("[_rpc_request] backoff active for %s (%.1fs remaining)", norm, retry_at - now)
         return None
 
     env = build_envelope(payload, self.node_ctx, extra={"pubkey": self.pubkey})
     timeout = float(timeout or CFG.SYNC_TIMEOUT)
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
-                s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
-            except Exception:
-                pass
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
             s.settimeout(float(CFG.HANDSHAKE_TIMEOUT))
             s.connect(norm)
             if CFG.P2P_ENC_REQUIRED:
@@ -54,17 +48,11 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
                     set_pinned=self._set_pinned,
                 )
                 chan.handshake()
-                try:
-                    s.settimeout(timeout)
-                except Exception:
-                    pass
+                s.settimeout(timeout)
                 chan.send(json.dumps(env).encode("utf-8"))
                 resp = chan.recv(timeout)
             else:
-                try:
-                    s.settimeout(timeout)
-                except Exception:
-                    pass
+                s.settimeout(timeout)
                 send_message(s, json.dumps(env).encode("utf-8"))
                 resp = recv_message(s, timeout=timeout)
     except (socket.timeout, ConnectionRefusedError, OSError):
@@ -73,10 +61,7 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
     except Exception as exc:
         self._rpc_backoff[norm] = time.time() + max(5.0, float(CFG.TEMP_BAN_SECONDS))
         if isinstance(exc, AttributeError):
-            try:
-                log.warning("[_rpc_request] Handshake aborted by %s; backing off", norm)
-            except Exception:
-                pass
+            log.warning("[_rpc_request] Handshake aborted by %s; backing off", norm)
         else:
             log.exception("[_rpc_request] Error contacting %s", norm)
         return None
@@ -85,11 +70,7 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
     if not resp:
         return None
 
-    try:
-        outer = json.loads(resp.decode("utf-8"))
-    except Exception:
-        return None
-
+    outer = json.loads(resp.decode("utf-8"))
     if is_envelope(outer):
         nid = outer.get("from")
         pko = outer.get("pubkey")
@@ -146,10 +127,7 @@ def _request_mempool_inline(self, peer: Tuple[str, int], *, force: bool = False)
 
     resp_mode = str(resp.get("mode", "")).strip().lower()
     if resp_mode and resp_mode not in ("inline", "inline_full"):
-        try:
-            log.debug("[_request_mempool_inline] unsupported mode=%s from %s", resp_mode, norm)
-        except Exception:
-            pass
+        log.debug("[_request_mempool_inline] unsupported mode=%s from %s", resp_mode, norm)
         return False
 
     txs = resp.get("txs") or resp.get("data")
@@ -157,27 +135,18 @@ def _request_mempool_inline(self, peer: Tuple[str, int], *, force: bool = False)
         return False
 
     if txs and all(isinstance(x, (str, bytes)) for x in txs):
-        try:
-            log.debug("[_request_mempool_inline] txids-only response from %s", norm)
-        except Exception:
-            pass
+        log.debug("[_request_mempool_inline] txids-only response from %s", norm)
         return False
 
     added = 0
     for item in txs:
-        try:
-            tx_obj = Tx.from_dict(item) if isinstance(item, dict) else item
-            if self.broadcast.mempool.add_valid_tx(tx_obj):
-                added += 1
-        except Exception:
-            log.debug("[_request_mempool_inline] Failed to add tx from %s", norm, exc_info=True)
+        tx_obj = Tx.from_dict(item) if isinstance(item, dict) else item
+        if self.broadcast.mempool.add_valid_tx(tx_obj):
+            added += 1
 
     self._peer_last_mempool_sync[norm] = now
     self._snapshot_unreachable.discard(norm)
-    try:
-        log.debug("[_request_mempool_inline] added=%s total=%s from %s", added, len(txs), norm)
-    except Exception:
-        pass
+    log.debug("[_request_mempool_inline] added=%s total=%s from %s", added, len(txs), norm)
     if added:
         self._reward_peer(norm, CFG.PEER_SCORE_REWARD)
     return True
@@ -207,10 +176,7 @@ def _request_mempool_snapshot(self, peer: Tuple[str, int], *, force: bool = Fals
 
     resp = self._rpc_request(norm, payload, timeout=max(10.0, CFG.SYNC_TIMEOUT))
     if not resp:
-        try:
-            log.debug("[_request_mempool_snapshot] no response from %s", norm)
-        except Exception:
-            pass
+        log.debug("[_request_mempool_snapshot] no response from %s", norm)
         self._snapshot_unreachable.add(norm)
         self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
         return None
@@ -221,11 +187,8 @@ def _request_mempool_snapshot(self, peer: Tuple[str, int], *, force: bool = Fals
 
     self._peer_last_mempool_sync[norm] = now
     self._snapshot_unreachable.discard(norm)
-    try:
-        if int(resp.get("count", 0)) > 0:
-            self._reward_peer(norm, CFG.PEER_SCORE_REWARD)
-    except Exception:
-        pass
+    if int(resp.get("count", 0)) > 0:
+        self._reward_peer(norm, CFG.PEER_SCORE_REWARD)
     return True
 
 
@@ -254,27 +217,18 @@ def _request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> b
     resp = self._rpc_request(norm, payload, timeout=max(20.0, CFG.SYNC_TIMEOUT * 2))
     self._full_sync_last_request[norm] = now
     if not resp:
-        try:
-            log.info("[_request_full_sync] %s did not respond (elapsed=%.2fs)", norm, time.time() - sync_start)
-        except Exception:
-            pass
+        log.info("[_request_full_sync] %s did not respond (elapsed=%.2fs)", norm, time.time() - sync_start)
         self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
         return False
 
     if resp.get("type") == "SYNC_REJECT":
         retry = float(resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
         self._full_sync_backoff[norm] = now + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
-        try:
-            log.info("[_request_full_sync] %s rejected request (retry %.1fs)", norm, min(retry, CFG.FULL_SYNC_BACKOFF_MAX))
-        except Exception:
-            pass
+        log.info("[_request_full_sync] %s rejected request (retry %.1fs)", norm, min(retry, CFG.FULL_SYNC_BACKOFF_MAX))
         return False
 
     if resp.get("type") != "FULL_SYNC":
-        try:
-            log.info("[_request_full_sync] %s returned unexpected type=%s", norm, resp.get("type"))
-        except Exception:
-            pass
+        log.info("[_request_full_sync] %s returned unexpected type=%s", norm, resp.get("type"))
         return False
 
     data = resp.get("data", resp)
@@ -283,26 +237,20 @@ def _request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> b
         self._peer_last_sync[norm] = time.time()
         self._reward_peer(norm, CFG.PEER_SCORE_REWARD * 3)
         self._full_sync_backoff.pop(norm, None)
-        try:
-            chain_blocks = len(data.get("chain") or [])
-            utxo_entries = len(data.get("utxos") or {})
-            mempool_entries = len(data.get("mempool") or [])
-            log.info(
-                "[_request_full_sync] Applied snapshot from %s in %.2fs (blocks=%d, utxos=%d, mempool=%d)",
-                norm,
-                time.time() - sync_start,
-                chain_blocks,
-                utxo_entries,
-                mempool_entries,
-            )
-        except Exception:
-            pass
+        chain_blocks = len(data.get("chain") or [])
+        utxo_entries = len(data.get("utxos") or {})
+        mempool_entries = len(data.get("mempool") or [])
+        log.info(
+            "[_request_full_sync] Applied snapshot from %s in %.2fs (blocks=%d, utxos=%d, mempool=%d)",
+            norm,
+            time.time() - sync_start,
+            chain_blocks,
+            utxo_entries,
+            mempool_entries,
+        )
         return True
     self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
-    try:
-        log.info("[_request_full_sync] Snapshot from %s failed validation (elapsed=%.2fs)", norm, time.time() - sync_start)
-    except Exception:
-        pass
+    log.info("[_request_full_sync] Snapshot from %s failed validation (elapsed=%.2fs)", norm, time.time() - sync_start)
     return False
 
 

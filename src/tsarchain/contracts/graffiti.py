@@ -29,6 +29,7 @@ def _is_valid_sha256_hex(x: str) -> bool:
     try:
         return bool(HEX64_RE.fullmatch(x.strip().lower()))
     except Exception:
+        log.exception("[_is_valid_sha256_hex] unexpected error")
         return False
 
 def _is_valid_mime(x: str) -> bool:
@@ -49,6 +50,7 @@ def _is_valid_tsar_address(addr: str) -> bool:
         prog = bytes(convertbits(data[1:], 5, 8, False))
         return len(prog) in (20, 32)
     except Exception:
+        log.exception("[_is_valid_tsar_address] unexpected error")
         return False
 
 def _is_valid_art_id(art_id: str) -> bool:
@@ -57,6 +59,7 @@ def _is_valid_art_id(art_id: str) -> bool:
     try:
         return bool(ART_ID_RE.fullmatch(art_id.strip().lower()))
     except Exception:
+        log.exception("[_is_valid_art_id] unexpected error")
         return False
 
 def _strip_art_prefix(art_id: str) -> str:
@@ -97,6 +100,7 @@ def validate_graffiti_file(size_bytes: int, mime: str | None = None, filename: s
     try:
         size_int = int(size_bytes)
     except Exception:
+        log.exception("[validate_graffiti_file] unexpected error")
         raise ValueError("bad_size_bytes") from None
     if size_int <= 0:
         raise ValueError("bad_size_bytes")
@@ -160,6 +164,7 @@ def _pool_redeem_script(art_id: str) -> bytes:
     try:
         art_bytes = bytes.fromhex(art_raw)
     except Exception:
+        log.exception("[_pool_redeem_script] unexpected error")
         art_bytes = hashlib.sha256(art_raw.encode("ascii")).digest()
     if len(art_bytes) > 75:
         art_bytes = hashlib.sha256(art_bytes).digest()
@@ -171,6 +176,7 @@ def compute_proof_epoch(height: int) -> int:
     try:
         h = int(height)
     except Exception:
+        log.exception("[compute_proof_epoch] unexpected error")
         return 0
     return max(0, h // int(CFG.GRAFFITI_PROOF_EPOCH_BLOCKS))
 
@@ -220,6 +226,7 @@ def derive_pool_address_p2wpkh(art_id_hex: str) -> str:
     try:
         art_bytes = bytes.fromhex(art_hex)
     except Exception:
+        log.exception("[derive_pool_address_p2wpkh] unexpected error")
         raise ValueError("bad_art_id_hex")
     seed = CFG.GRAFFITI_POOL_SALT + art_bytes
     pkh = hash160(seed)
@@ -272,8 +279,10 @@ def find_pool_utxos(utxo_db, art_id: str) -> list[dict]:
                         "script_pubkey": spk_hex,
                     })
                 except Exception:
+                    log.exception("[find_pool_utxos] unexpected error")
                     continue
     except Exception:
+        log.exception("[find_pool_utxos] unexpected error")
         pass
 
     # Fallback: scan utxo_db.utxos in-memory
@@ -293,6 +302,7 @@ def find_pool_utxos(utxo_db, art_id: str) -> list[dict]:
                     "script_pubkey": spk_hex,
                 })
         except Exception:
+            log.exception("[find_pool_utxos] unexpected error")
             continue
     # dedup by outpoint
     uniq = {}
@@ -325,6 +335,7 @@ def build_payout_tx(
     try:
         utxo_db._load()
     except Exception:
+        log.exception("[build_payout_tx] unexpected error")
         pass
 
     rec_list: list[dict[str, Any]] = []
@@ -337,6 +348,7 @@ def build_payout_tx(
         try:
             amt = int(item.get("amount", 0))
         except Exception:
+            log.exception("[build_payout_tx] unexpected error")
             amt = 0
         if not _is_valid_tsar_address(addr) or amt <= 0:
             raise ValueError("bad_recipient")
@@ -379,14 +391,7 @@ def build_payout_tx(
 
         # temp tx for fee estimate
         txin = TxIn(bytes.fromhex(utxo["txid"]), int(utxo["vout"]), amount=amount_in, script_sig=Script([]), witness=[art_digest, redeem_script])
-        tx_tmp = Tx(version=1, inputs=[txin], outputs=list(outs), locktime=0, auto_compute_txid=False)
-        try:
-            raw = tx_tmp.serialize()
-            raw_wit = tx_tmp.serialize(include_witness=True)
-            vbytes = int((len(raw) * 3 + len(raw_wit)) / 4)
-        except Exception:
-            vbytes = 200
-        fee_est = rate * max(1, vbytes)
+        fee_est = rate * max(1, CFG.DEFAULT_FEE_RATE_SATVB)
         change = amount_in - total_needed - fee_est
         if change >= dust:
             outs.insert(0, TxOut(change, Script.deserialize(_pool_spk_bytes(art_norm))))
@@ -470,6 +475,7 @@ def build_comment_metadata(
     try:
         art_id_norm = _normalize_art_id(art_id, prefer_prefix=False)
     except Exception:
+        log.exception("[build_comment_metadata] unexpected error")
         raise ValueError("bad_art_id")
     
     if not _is_valid_tsar_address(creator_addr):
@@ -525,6 +531,7 @@ def build_payout_metadata(
     try:
         ep = int(epoch)
     except Exception:
+        log.exception("[build_payout_metadata] unexpected error")
         raise ValueError("bad_epoch")
     if ep < 0:
         raise ValueError("bad_epoch")
@@ -539,6 +546,7 @@ def build_payout_metadata(
         try:
             amt = int(item.get("amount", 0))
         except Exception:
+            log.exception("[build_payout_metadata] unexpected error")
             amt = 0
         if not _is_valid_tsar_address(addr) or amt <= 0:
             raise ValueError("bad_recipients")
@@ -650,6 +658,7 @@ def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
             try:
                 obj["art_id"] = _normalize_art_id(art_id, prefer_prefix=False)
             except Exception:
+                log.exception("[parse_payload] unexpected error")
                 return None
             comment_hex = obj.get("comment", "")
             if not isinstance(comment_hex, str):
@@ -657,6 +666,7 @@ def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
             try:
                 comment_bytes = bytes.fromhex(comment_hex)
             except Exception:
+                log.exception("[parse_payload] unexpected error")
                 return None
             if not comment_bytes or len(comment_bytes) > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
                 return None
@@ -679,10 +689,12 @@ def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
             try:
                 obj["art_id"] = _normalize_art_id(art_id, prefer_prefix=False)
             except Exception:
+                log.exception("[parse_payload] unexpected error")
                 return None
             try:
                 epoch = int(obj.get("epoch", -1))
             except Exception:
+                log.exception("[parse_payload] unexpected error")
                 epoch = -1
             if epoch < 0:
                 return None
@@ -697,6 +709,7 @@ def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
                 try:
                     amt = int(item.get("amount", 0))
                 except Exception:
+                    log.exception("[parse_payload] unexpected error")
                     return None
                 if amt <= 0 or not _is_valid_tsar_address(addr):
                     return None
@@ -724,12 +737,14 @@ def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
                         else:
                             obj[pref_key] = str(val)
                     except Exception:
+                        log.exception("[parse_payload] unexpected error")
                         return None
         else:
             return None
         obj["event"] = event
         return obj
     except Exception:
+        log.exception("[parse_payload] unexpected error")
         return None
 
 
@@ -764,6 +779,7 @@ def parse_from_script(script: Script) -> Optional[Dict[str, Any]]:
             return None
         return parse_payload(data)
     except Exception:
+        log.exception("[parse_from_script] unexpected error")
         return None
 
 
@@ -788,6 +804,7 @@ def compute_art_id(sha256_hex: str, creator_addr: str, block_hash: str | None = 
         try:
             block_hash_bytes = bytes.fromhex(block_hash.strip())
         except Exception:
+            log.exception("[compute_art_id] unexpected error")
             block_hash_bytes = block_hash.strip().encode("utf-8")
         parts.append(block_hash_bytes)
     blob = b"|".join(parts)

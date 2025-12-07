@@ -161,24 +161,20 @@ class Block:
         target_be = int(target).to_bytes(32, "big", signed=False)
         threads = num_cores
 
-        try:
-            found = native_randomx_mine(
-                header_prefix,
-                target_be,
-                pow_key,
-                threads=threads,
-                full_mem=bool(CFG.RANDOMX_FULL_MEM),
-                large_pages=bool(CFG.RANDOMX_LARGE_PAGES),
-                jit=bool(CFG.RANDOMX_JIT),
-                hard_aes=bool(CFG.RANDOMX_HARD_AES),
-                secure_jit=bool(CFG.RANDOMX_SECURE_JIT),
-                progress_queue=progress_queue,
-                progress_interval_ms=250,
-                stop_event=stop_event,
-            )
-        except Exception:
-            self.log.exception("[mine] native miner raised an error")
-            return None
+        found = native_randomx_mine(
+            header_prefix,
+            target_be,
+            pow_key,
+            threads=threads,
+            full_mem=bool(CFG.RANDOMX_FULL_MEM),
+            large_pages=bool(CFG.RANDOMX_LARGE_PAGES),
+            jit=bool(CFG.RANDOMX_JIT),
+            hard_aes=bool(CFG.RANDOMX_HARD_AES),
+            secure_jit=bool(CFG.RANDOMX_SECURE_JIT),
+            progress_queue=progress_queue,
+            progress_interval_ms=250,
+            stop_event=stop_event,
+        )
 
         if isinstance(found, tuple) and len(found) == 2:
             nonce, h = found

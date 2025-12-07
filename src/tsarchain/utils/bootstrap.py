@@ -14,9 +14,9 @@ from ecdsa import BadSignatureError, SECP256k1, VerifyingKey
 
 # ---------------- Local Project ----------------
 from . import config as CFG
-from .tsar_logging import get_ctx_logger
 from ..storage.kv import iter_prefix, kv_enabled
 
+from .tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.utils.bootstrap")
 
 ProgressCallback = Optional[Callable[[str], None]]
@@ -79,11 +79,7 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
     have_local = os.path.exists(target_file)
     actual_sha = None
     if expected_sha and have_local:
-        try:
-            actual_sha = _hash_file(target_file)
-        except Exception as exc:
-            log.warning("[bootstrap.%s] Failed hashing local snapshot: %s", ctx, exc)
-            actual_sha = None
+        actual_sha = _hash_file(target_file)
     if expected_sha and local_meta.get("sha256") == expected_sha and have_local:
         if actual_sha == expected_sha:
             return SnapshotBootstrapResult(
@@ -103,10 +99,7 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
 
     def _emit(message: str) -> None:
         if progress_cb:
-            try:
-                progress_cb(message)
-            except Exception:
-                pass
+            progress_cb(message)
         log.info("[bootstrap.%s] %s", ctx, message)
 
     tmp_path = None
@@ -126,10 +119,7 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
 
         if os.path.exists(target_file):
             backup_path = f"{target_file}.bak"
-            try:
-                shutil.move(target_file, backup_path)
-            except Exception:
-                backup_path = None
+            shutil.move(target_file, backup_path)
         os.replace(tmp_path, target_file)
         replaced = True
 
@@ -149,6 +139,7 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
             try:
                 os.remove(backup_path)
             except Exception:
+                log.warning("[bootstrap.%s] failed to remove backup snapshot", ctx)
                 pass
         duration = time.time() - start_time
         _emit(f"Snapshot applied ({final_size/1_048_576:.2f} MB in {duration:.1f}s)")
@@ -162,24 +153,16 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
         )
 
     except Exception as exc:
+        log.exception("[bootstrap.%s] Snapshot bootstrap failed", ctx)
         _emit(f"Snapshot bootstrap failed: {exc}")
         if replaced and os.path.exists(target_file):
-            try:
-                os.remove(target_file)
-            except Exception:
-                pass
+            os.remove(target_file)
         if backup_path and os.path.exists(backup_path):
-            try:
-                os.replace(backup_path, target_file)
-            except Exception:
-                pass
+            os.replace(backup_path, target_file)
         return SnapshotBootstrapResult(status="failed", reason=str(exc))
     finally:
         if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except Exception:
-                pass
+            os.remove(tmp_path)
 
 
 def _fetch_manifest() -> Optional[dict]:
@@ -193,17 +176,10 @@ def _fetch_manifest() -> Optional[dict]:
             "Accept": "application/json",
         },
     )
-    try:
-        with urllib.request.urlopen(req, timeout=CFG.SNAPSHOT_HTTP_TIMEOUT) as resp:
-            raw = resp.read()
-    except urllib.error.URLError as exc:
-        log.warning("[bootstrap] manifest fetch failed: %s", exc)
+    with urllib.request.urlopen(req, timeout=CFG.SNAPSHOT_HTTP_TIMEOUT) as resp:
+        raw = resp.read()
         return None
-    try:
-        manifest = json.loads(raw.decode("utf-8"))
-    except Exception:
-        log.warning("[bootstrap] manifest decode failed")
-        return None
+    manifest = json.loads(raw.decode("utf-8"))
     return manifest
 
 def _verify_manifest_signature(manifest: dict | None) -> bool:
@@ -218,17 +194,13 @@ def _verify_manifest_signature(manifest: dict | None) -> bool:
     if not pubkey_hex:
         return not CFG.SNAPSHOT_REQUIRE_SIGNATURE
     
-    try:
-        payload_dict = dict(manifest)
-        payload_dict.pop("signature", None)
-        payload = json.dumps(payload_dict, sort_keys=True, separators=CFG.CANONICAL_SEP).encode("utf-8")
-        vk = VerifyingKey.from_string(bytes.fromhex(pubkey_hex), curve=SECP256k1)
-        vk.verify(bytes.fromhex(signature_hex), payload, hashfunc=hashlib.sha256)
-        return True
+    payload_dict = dict(manifest)
+    payload_dict.pop("signature", None)
+    payload = json.dumps(payload_dict, sort_keys=True, separators=CFG.CANONICAL_SEP).encode("utf-8")
+    vk = VerifyingKey.from_string(bytes.fromhex(pubkey_hex), curve=SECP256k1)
+    vk.verify(bytes.fromhex(signature_hex), payload, hashfunc=hashlib.sha256)
+    return True
     
-    except (BadSignatureError, ValueError) as exc:
-        log.warning("[bootstrap] manifest signature invalid: %s", exc)
-        return False
 
 def _hash_file(path: str) -> str:
     digest = hashlib.sha256()
@@ -243,11 +215,8 @@ def _hash_file(path: str) -> str:
 def _load_meta(path: str) -> dict:
     if not os.path.exists(path):
         return {}
-    try:
-        with open(path, "r", encoding="utf-8") as handle:
-            return json.load(handle)
-    except Exception:
-        return {}
+    with open(path, "r", encoding="utf-8") as handle:
+        return json.load(handle)
 
 def _write_meta(path: str, data: dict) -> None:
     tmp_path = f"{path}.tmp"
@@ -266,10 +235,7 @@ def _safe_lower(source: Optional[dict], key: str) -> str:
 def _safe_int(source: Optional[dict], key: str) -> int:
     if not source:
         return 0
-    try:
-        return int(source.get(key, 0))
-    except Exception:
-        return 0
+    return int(source.get(key, 0))
 
 def annotate_local_snapshot_meta(height: Optional[int], tip_timestamp: Optional[int] = None) -> Optional[dict]:
     meta_path = CFG.SNAPSHOT_META_PATH
@@ -294,21 +260,16 @@ def annotate_local_snapshot_meta(height: Optional[int], tip_timestamp: Optional[
     file_size = None
     digest = None
     if data_file and os.path.exists(data_file):
-        try:
-            stat = os.stat(data_file)
-            file_size = int(stat.st_size)
-            if meta.get("size") != file_size:
-                meta["size"] = file_size
-                updated = True
-        except Exception:
-            pass
-        try:
-            digest = _hash_file(data_file)
-            if meta.get("sha256") != digest:
-                meta["sha256"] = digest
-                updated = True
-        except Exception:
-            pass
+        stat = os.stat(data_file)
+        file_size = int(stat.st_size)
+        if meta.get("size") != file_size:
+            meta["size"] = file_size
+            updated = True
+            
+        digest = _hash_file(data_file)
+        if meta.get("sha256") != digest:
+            meta["sha256"] = digest
+            updated = True
 
     if not updated:
         return meta

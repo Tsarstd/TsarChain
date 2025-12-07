@@ -56,12 +56,7 @@ class Network:
         }
         storage_registry.init_storage_registry(self)
         self.peer_pubkeys: dict[str, str] = {}
-        
-        try:
-            self.broadcast._encode = lambda inner: build_envelope(inner, self.node_ctx, extra={"pubkey": self.pubkey})
-        except Exception:
-            pass
-        
+        self.broadcast._encode = lambda inner: build_envelope(inner, self.node_ctx, extra={"pubkey": self.pubkey})
         self._peer_keys_lock = getattr(self, "_peer_keys_lock", None)
         if self._peer_keys_lock is None:
             self._peer_keys_lock = threading.RLock()
@@ -87,17 +82,10 @@ class Network:
         self._sync_fast_until = 0.0
         self.utxodb = self.broadcast.utxodb
 
-        try:
-            configured_bootstrap = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
-        except Exception as exc:
-            raise ValueError("Invalid BOOTSTRAP_NODES configuration") from exc
-
+        configured_bootstrap = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
         bootstrap_nodes: Set[Tuple[str, int]] = set()
         for host, port in configured_bootstrap:
-            try:
-                bootstrap_nodes.add((str(host), int(port)))
-            except Exception:
-                continue
+            bootstrap_nodes.add((str(host), int(port)))
 
         if not bootstrap_nodes:
             raise ValueError("No valid bootstrap peers configured")
@@ -110,10 +98,7 @@ class Network:
         else:
             self.persistent_peers = set(bootstrap_nodes)
             if self.port == primary_peer[1] and not self._is_local_address(primary_peer[0]):
-                try:
-                    log.info("[__init__] Port %s matches bootstrap but host differs (%s); treating as client node", self.port, primary_peer[0])
-                except Exception:
-                    pass
+                log.info("[__init__] Port %s matches bootstrap but host differs (%s); treating as client node", self.port, primary_peer[0])
 
         self.peers.update(self.persistent_peers)
         for peer in self.persistent_peers:
@@ -136,11 +121,7 @@ class Network:
         self._last_sync_count = -1
             
         # ---- Persisted peer key pins (TOFU)
-        try:
-            self.peer_pubkeys = load_peer_keys()
-        except Exception:
-            log.exception("[__init__] Failed to load peer keys store")
-            self.peer_pubkeys = {}
+        self.peer_pubkeys = load_peer_keys()
 
         # --- inject identity into Broadcast (setelah load TOFU) ---
         self.broadcast.node_id = self.node_id
@@ -170,10 +151,7 @@ class Network:
         return None
 
     def _is_self_bootstrap(self, host: str, port: int) -> bool:
-        try:
-            if int(port) != int(getattr(self, "port", -1)):
-                return False
-        except Exception:
+        if int(port) != int(getattr(self, "port", -1)):
             return False
         return self._is_local_address(host)
 
@@ -190,47 +168,27 @@ class Network:
             return True
 
         target_ips: set[str] = set()
-        try:
-            infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
-        except Exception:
-            infos = []
-            try:
-                resolved = socket.gethostbyname(host)
-                infos.append((None, None, None, None, (resolved, 0)))
-            except Exception:
-                return False
+        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
             
         for info in infos:
-            try:
-                ip = info[4][0]
-                if ip:
-                    target_ips.add(ip)
-            except Exception:
-                continue
+            ip = info[4][0]
+            if ip:
+                target_ips.add(ip)
             
         if not target_ips:
             return False
 
         local_ips: set[str] = {"127.0.0.1", "::1"}
-        try:
-            hn = socket.gethostname()
-            local_ips.update(socket.gethostbyname_ex(hn)[2])
-        except Exception:
-            pass
+        hn = socket.gethostname()
+        local_ips.update(socket.gethostbyname_ex(hn)[2])
         
-        try:
-            fqdn = socket.getfqdn()
-            local_ips.update(socket.gethostbyname_ex(fqdn)[2])
-        except Exception:
-            pass
+        fqdn = socket.getfqdn()
+        local_ips.update(socket.gethostbyname_ex(fqdn)[2])
         
-        try:
-            for info in socket.getaddrinfo(None, 0, proto=socket.IPPROTO_TCP):
-                ip = info[4][0]
-                if ip:
-                    local_ips.add(ip)
-        except Exception:
-            pass
+        for info in socket.getaddrinfo(None, 0, proto=socket.IPPROTO_TCP):
+            ip = info[4][0]
+            if ip:
+                local_ips.add(ip)
 
         return any(ip in local_ips for ip in target_ips)
 
@@ -248,20 +206,14 @@ class Network:
 
     def _get_pinned(self, nid: str):
         # may return None if not yet available
-        try:
-            return self.peer_pubkeys.get(nid)
-        except Exception:
-            return None
+        return self.peer_pubkeys.get(nid)
 
     def _set_pinned(self, nid: str, pk: str) -> None:
-        try:
-            with self._peer_keys_lock:
-                if self.peer_pubkeys.get(nid) == pk:
-                    return
-                self.peer_pubkeys[nid] = pk
-                save_peer_keys(self.peer_pubkeys)
-        except Exception:
-            log.exception("[_set_pinned] Error setting pinned peer key")
+        with self._peer_keys_lock:
+            if self.peer_pubkeys.get(nid) == pk:
+                return
+            self.peer_pubkeys[nid] = pk
+            save_peer_keys(self.peer_pubkeys)
 
     def handle_connection(self, conn, addr):
         return server_logic.handle_connection(self, conn, addr)
@@ -356,25 +308,16 @@ class Network:
 
     def shutdown(self):
         self._stop.set()
-        try:
-            if self._server_sock:
-                self._server_sock.close()
-        except Exception:
-            pass
+        if self._server_sock:
+            self._server_sock.close()
         
         for t in self._threads:
-            try:
-                if t.is_alive():
-                    t.join(timeout=1.5)
-            except Exception:
-                pass
+            if t.is_alive():
+                t.join(timeout=1.5)
             
         with self.lock:
             Network.active_ports.discard(self.port)
-        try:
-            self.broadcast.shutdown()
-        except Exception:
-            pass
+        self.broadcast.shutdown()
         
         log.info("[shutdown] Node at port %s stopped", self.port)
         

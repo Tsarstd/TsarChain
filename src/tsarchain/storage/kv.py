@@ -30,19 +30,14 @@ def _init_native_store():
     with _init_lock:
         if _native_store is not None:
             return _native_store
-        try:
-            _native_store = _native_open_storage(
-                "lmdb",
-                CFG.LMDB_DATA_FILE,
-                map_size_init=int(CFG.LMDB_MAP_SIZE_INIT),
-                map_size_max=int(CFG.LMDB_MAP_SIZE_MAX),
-                pretty_json=False,
-            )
-            log.debug("[kv] using native storage backend (lmdb)")
-        except Exception as e:
-            log.error("[kv] native storage init failed (native required): %s", e)
-            _native_store = None
-            raise
+        _native_store = _native_open_storage(
+            "lmdb",
+            CFG.LMDB_DATA_FILE,
+            map_size_init=int(CFG.LMDB_MAP_SIZE_INIT),
+            map_size_max=int(CFG.LMDB_MAP_SIZE_MAX),
+            pretty_json=False,
+        )
+        log.debug("[kv] using native storage backend (lmdb)")
     return _native_store
 
 def _ensure_env():
@@ -110,15 +105,9 @@ class WriteBatch:
         if self.txn is None:
             return
         if exc_type:
-            try:
-                self.txn.abort()
-            except Exception:
-                pass
+            self.txn.abort()
         else:
-            try:
-                self.txn.commit()
-            except Exception:
-                pass
+            self.txn.commit()
         self.txn = None
 
 
@@ -140,11 +129,8 @@ def batch(name: str):
     try:
         yield nb
     finally:
-        try:
-            if nb._ops:
-                store.put_batch(name, nb._ops)
-        except Exception:
-            log.exception("[kv] batch commit failed")
+        if nb._ops:
+            store.put_batch(name, nb._ops)
 
 
 # Convenience single-put with auto-grow

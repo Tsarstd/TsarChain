@@ -64,10 +64,8 @@ class ChainOpsMixin:
                     self._utxo_synced = True
                 self.save_state()
             else:
-                try:
-                    self.total_supply = self.calculate_total_supply()
-                except Exception as e:
-                    log.debug("[replace_with] calculate_total_supply skipped: %s", e)
+                self.total_supply = self.calculate_total_supply()
+
 
     def add_block(self, block: Block):
         log_threshold = float(CFG.ADD_BLOCK_LOG_THRESHOLD)
@@ -83,38 +81,28 @@ class ChainOpsMixin:
                 raise ValueError("[Blockchain] Incoming genesis does not match TSAR_GENESIS_HASH")
 
             self.chain.append(block)
-            try: setattr(block, 'chainwork', self._work_from_bits(block.bits))
-            except Exception:
-                log.exception("[add_block] Post-add hooks failed")
+            setattr(block, 'chainwork', self._work_from_bits(block.bits))
 
-            try:
-                if not self.in_memory:
-                    store = self._ensure_utxodb()
-                    if store is not None:
-                        utxo_start = time.perf_counter() if metrics_enabled else None
-                        try:
-                            blk_hash = block.hash().hex()
-                        except Exception:
-                            blk_hash = None
-                        store.update(block.transactions, block_height=0, block_hash=blk_hash, autosave=False)
-                        if metrics_enabled and utxo_start is not None:
-                            utxo_sec = time.perf_counter() - utxo_start
-                        self._mark_utxo_dirty()
-                        self._utxo_synced = True
-                        self._schedule_persist(force_full=True, flush_force=True, save_state=True)
-                try:
-                    mempool_start = time.perf_counter() if metrics_enabled else None
-                    self._prune_mempool_confirmed(block)
-                    if metrics_enabled and mempool_start is not None:
-                        mempool_sec = time.perf_counter() - mempool_start
-                except Exception:
-                    log.exception("[add_block] Failed to prune mempool after genesis")
-                if not self.in_memory:
-                    self._mark_chain_dirty(block.height)
-                if self.in_memory:
-                    self.total_supply = self.calculate_total_supply()
-            except Exception:
-                log.exception("[add_block] failed to calculate")
+            if not self.in_memory:
+                store = self._ensure_utxodb()
+                if store is not None:
+                    utxo_start = time.perf_counter() if metrics_enabled else None
+                    blk_hash = block.hash().hex()
+                    store.update(block.transactions, block_height=0, block_hash=blk_hash, autosave=False)
+                    if metrics_enabled and utxo_start is not None:
+                        utxo_sec = time.perf_counter() - utxo_start
+                    self._mark_utxo_dirty()
+                    self._utxo_synced = True
+                    self._schedule_persist(force_full=True, flush_force=True, save_state=True)
+                    
+            mempool_start = time.perf_counter() if metrics_enabled else None
+            self._prune_mempool_confirmed(block)
+            if metrics_enabled and mempool_start is not None:
+                mempool_sec = time.perf_counter() - mempool_start
+            if not self.in_memory:
+                self._mark_chain_dirty(block.height)
+            if self.in_memory:
+                self.total_supply = self.calculate_total_supply()
             if metrics_enabled:
                 total = time.perf_counter() - t_total_start
                 if total >= log_threshold:
@@ -130,48 +118,34 @@ class ChainOpsMixin:
 
         self.chain.append(block)
         # annotate cumulative chainwork for tip
-        try:
-            prev_cw = getattr(self.chain[-2], 'chainwork', None)
-            if prev_cw is None:
-                prev_cw = self._compute_chainwork_for_chain(self.chain[:-1])
-            self.chain[-1].chainwork = int(prev_cw) + self._work_from_bits(block.bits)
-        except Exception:
-            log.exception("[add_block] failed to compute chainworks")
-            pass
-
+        prev_cw = getattr(self.chain[-2], 'chainwork', None)
+        if prev_cw is None:
+            prev_cw = self._compute_chainwork_for_chain(self.chain[:-1])
+        self.chain[-1].chainwork = int(prev_cw) + self._work_from_bits(block.bits)
         self._mark_chain_dirty(block.height)
-
-        try:
-            # UTXO
-            if not self.in_memory:
+        # UTXO
+        if not self.in_memory:
+            store = self._ensure_utxodb()
+            if store is not None:
+                utxo_start = time.perf_counter() if metrics_enabled else None
                 try:
-                    store = self._ensure_utxodb()
-                    if store is not None:
-                        utxo_start = time.perf_counter() if metrics_enabled else None
-                        try:
-                            blk_hash = block.hash().hex()
-                        except Exception:
-                            blk_hash = None
-                        store.update(block.transactions, block_height=block.height, block_hash=blk_hash, autosave=False)
-                        if metrics_enabled and utxo_start is not None:
-                            utxo_sec = time.perf_counter() - utxo_start
-                        self._mark_utxo_dirty()
+                    blk_hash = block.hash().hex()
                 except Exception:
-                    pass
-            try:
-                mempool_start = time.perf_counter() if metrics_enabled else None
-                self._prune_mempool_confirmed(block)
-                if metrics_enabled and mempool_start is not None:
-                    mempool_sec = time.perf_counter() - mempool_start
-            except Exception:
-                log.exception("[add_block] Failed to prune mempool")
-
-            if not self.in_memory:
-                self._schedule_persist()
-            else:
-                self.total_supply = self.calculate_total_supply()
-        except Exception:
-            log.exception("[add_block] Failed to add block")
+                    blk_hash = None
+                store.update(block.transactions, block_height=block.height, block_hash=blk_hash, autosave=False)
+                if metrics_enabled and utxo_start is not None:
+                    utxo_sec = time.perf_counter() - utxo_start
+                self._mark_utxo_dirty()
+                
+        mempool_start = time.perf_counter() if metrics_enabled else None
+        self._prune_mempool_confirmed(block)
+        if metrics_enabled and mempool_start is not None:
+            mempool_sec = time.perf_counter() - mempool_start
+        if not self.in_memory:
+            self._schedule_persist()
+        else:
+            self.total_supply = self.calculate_total_supply()    
+            
         if metrics_enabled:
             total = time.perf_counter() - t_total_start
             if total >= log_threshold:
@@ -179,10 +153,7 @@ class ChainOpsMixin:
                          block.height, tx_count, total, utxo_sec, mempool_sec, persist_sec)
 
         if self.in_memory:
-            try:
-                self._ensure_utxodb()
-            except Exception:
-                log.exception("[add_block] Failed to refresh in-memory UTXO after adding block")
+            self._ensure_utxodb()
 
         return True
 
@@ -197,6 +168,7 @@ class ChainOpsMixin:
             try:
                 parent_hash = parent.hash()
             except Exception:
+                log.exception("parent_hash_err")
                 parent_hash = getattr(parent, "hash", lambda: None)()
 
             if not parent_hash or block.prev_block_hash != parent_hash:
@@ -216,22 +188,15 @@ class ChainOpsMixin:
                 if candidate_cw < current_cw:
                     return None
                 if candidate_cw == current_cw:
-                    try:
-                        if block.hash() >= current_tip.hash():
-                            return None
-                    except Exception:
+                    if block.hash() >= current_tip.hash():
                         return None
 
             old_tip = self.chain[-1]
             self.chain[-1] = block
-
-            try:
-                prev_cw = getattr(parent, "chainwork", None)
-                if prev_cw is None:
-                    prev_cw = self._compute_chainwork_for_chain(self.chain[:-1])
-                self.chain[-1].chainwork = int(prev_cw) + self._work_from_bits(block.bits)
-            except Exception:
-                pass
+            prev_cw = getattr(parent, "chainwork", None)
+            if prev_cw is None:
+                prev_cw = self._compute_chainwork_for_chain(self.chain[:-1])
+            self.chain[-1].chainwork = int(prev_cw) + self._work_from_bits(block.bits)
 
             self.total_blocks = len(self.chain)
 
@@ -245,16 +210,9 @@ class ChainOpsMixin:
                     self._utxo_last_flush_height = self.height
                 self.save_state()
             else:
-                try:
-                    self.total_supply = self.calculate_total_supply()
-                except Exception:
-                    pass
+                self.total_supply = self.calculate_total_supply()
 
-            try:
-                self._prune_mempool_confirmed(block)
-            except Exception:
-                log.exception("[swap_tip_if_better] Failed to prune mempool")
-
+            self._prune_mempool_confirmed(block)
             return old_tip
 
     def _prune_mempool_confirmed(self, block: Block) -> None:
@@ -279,6 +237,7 @@ class ChainOpsMixin:
                 try:
                     vout_index = int(getattr(txin, "vout", 0))
                 except Exception:
+                    log.exception("vout_err")
                     vout_index = 0
                 spent_prevouts.add((prev_hex.lower(), vout_index))
 
@@ -294,6 +253,7 @@ class ChainOpsMixin:
                 try:
                     txid_hex = getattr(tx, "txid_hex", lambda: None)()
                 except Exception:
+                    log.exception("txid_hex_err")
                     txid_hex = None
 
             if not txid_hex and hasattr(tx, "to_dict"):
@@ -301,6 +261,7 @@ class ChainOpsMixin:
                     d = tx.to_dict(include_txid=True)
                     txid_hex = d.get("txid")
                 except Exception:
+                    log.exception("txid_hex_err2")
                     txid_hex = None
 
             if txid_hex:
@@ -314,230 +275,175 @@ class ChainOpsMixin:
 
         pool = None
         owned_pool = False
-        try:
-            if hasattr(self, "get_mempool"):
-                pool = self.get_mempool()
-        except Exception:
-            pool = None
+        if hasattr(self, "get_mempool"):
+            pool = self.get_mempool()
         if pool is None:
             pool = TxPoolDB(utxo_store=self._ensure_utxodb())
             owned_pool = True
 
         pruned = 0
         seen: set[str] = set()
-        try:
-            if hasattr(pool, "remove_many"):
-                pruned = pool.remove_many(txids)
-            else:
-                for txid in txids:
-                    if txid in seen:
-                        continue
-                    seen.add(txid)
-                    try:
-                        if pool.remove_tx(txid):
-                            pruned += 1
-                    except Exception:
-                        log.debug("[_prune_mempool_confirmed] Failed to remove tx %s", txid)
-        except Exception:
-            log.exception("[_prune_mempool_confirmed] Error removing confirmed txs from mempool")
+        if hasattr(pool, "remove_many"):
+            pruned = pool.remove_many(txids)
+        else:
+            for txid in txids:
+                if txid in seen:
+                    continue
+                seen.add(txid)
+                if pool.remove_tx(txid):
+                    pruned += 1
 
         if pruned:
             log.debug("[_prune_mempool_confirmed] Removed %d confirmed txs from mempool", pruned)
 
-        try:
-            conflicts = pool.drop_conflicts(spent_prevouts)
-        except Exception:
-            log.exception("[_prune_mempool_confirmed] Failed to drop conflicting mempool entries")
-            conflicts = 0
-
+        conflicts = pool.drop_conflicts(spent_prevouts)
         stale_removed = 0
-        try:
-            stale_removed = pool.prune_stale_entries()
-        except Exception:
-            log.exception("[_prune_mempool_confirmed] Failed to prune stale mempool entries")
+        stale_removed = pool.prune_stale_entries()
 
         if conflicts or stale_removed:
             log.debug("[_prune_mempool_confirmed] pruned conflicts=%d stale=%d", conflicts, stale_removed)
-
-        try:
-            pool.flush()
-        except Exception:
-            log.exception("[_prune_mempool_confirmed] Failed to flush mempool after pruning")
+            
+        pool.flush()
 
         if owned_pool:
-            try:
-                pool.flush(force=True)
-            except Exception:
-                pass
+            pool.flush(force=True)
 
     def _has_pending_blocks(self) -> bool:
-        try:
-            with self.lock:
-                return bool(self.pending_blocks)
-        except Exception:
-            return False
+        with self.lock:
+            return bool(self.pending_blocks)
 
     def _is_chain_consistent(self) -> bool:
-        try:
-            with self.lock:
-                if not self.chain:
-                    return True
-                consistency_checks = {
-                    'heights_sequential': True,
-                    'hash_linkages_valid': True,
-                    'block_hashes_valid': True,
-                    'genesis_valid': True,
-                    }
+        with self.lock:
+            if not self.chain:
+                return True
+            consistency_checks = {
+                'heights_sequential': True,
+                'hash_linkages_valid': True,
+                'block_hashes_valid': True,
+                'genesis_valid': True,
+                }
 
-                genesis = self.chain[0]
-                if genesis.height != 0:
-                    consistency_checks['genesis_valid'] = False
-                if genesis.prev_block_hash != CFG.ZERO_HASH:
-                    consistency_checks['genesis_valid'] = False
+            genesis = self.chain[0]
+            if genesis.height != 0:
+                consistency_checks['genesis_valid'] = False
+            if genesis.prev_block_hash != CFG.ZERO_HASH:
+                consistency_checks['genesis_valid'] = False
 
-                for i in range(1, len(self.chain)):
-                    prev = self.chain[i - 1]
-                    cur = self.chain[i]
-                    if cur.height != prev.height + 1:
-                        consistency_checks['heights_sequential'] = False
-                    if cur.prev_block_hash != prev.hash():
-                        consistency_checks['hash_linkages_valid'] = False
+            for i in range(1, len(self.chain)):
+                prev = self.chain[i - 1]
+                cur = self.chain[i]
+                if cur.height != prev.height + 1:
+                    consistency_checks['heights_sequential'] = False
+                if cur.prev_block_hash != prev.hash():
+                    consistency_checks['hash_linkages_valid'] = False
 
-                ok = all(consistency_checks.values())
-                if ok:
-                    log.info("[_is_chain_consistent] Chain consistent: %d blocks", len(self.chain))
-                else:
-                    log.warning("[_is_chain_consistent] Chain inconsistent: %s", consistency_checks)
-                return ok
-        except Exception:
-            log.exception("[_is_chain_consistent] Error")
-            return False
+            ok = all(consistency_checks.values())
+            return ok
 
     def _validate_complete_chain(self, chain: List[Block]) -> bool:
-        try:
-            if not isinstance(chain, list) or not chain:
+        if not isinstance(chain, list) or not chain:
+            return False
+
+        def _pow_ok(b: Block) -> bool:
+            header_hash = b.hash()
+            tgt = bits_to_target(int(getattr(b, "bits")))
+            return int.from_bytes(header_hash, "big") <= int(tgt)
+
+        def _merkle_ok(b: Block) -> bool:
+            comp = merkle_root(getattr(b, "transactions", []) or [])
+            mr = getattr(b, "merkle_root", None)
+            if isinstance(mr, str):
+                mr = bytes.fromhex(mr)
+            return comp == mr
+
+        cumulative_supply = 0
+        g = chain[0]
+        if getattr(g, "height", None) != 0 or getattr(g, "prev_block_hash", None) != CFG.ZERO_HASH:
+            return False
+        if GENESIS_HASH is not None and g.hash() != GENESIS_HASH:
+            return False
+        if not _pow_ok(g):
+            return False
+        if hasattr(self, "_compute_txids_for_block"):
+            try:
+                if not self._compute_txids_for_block(g):
+                    return False
+            except Exception:
+                log.exception("[_validate_complete_chain] Error computing txids for genesis")
+                return False
+        if not _merkle_ok(g):
+            return False
+
+        base_reward = self._scheduled_reward(0)
+        reward = min(base_reward, max(0, CFG.MAX_SUPPLY - cumulative_supply))
+        fees = 0
+        cb = getattr(g, "transactions", [None])[0]
+        if cb is None or not getattr(cb, "is_coinbase", False):
+            return False
+        actual_cb = sum(int(o.amount) for o in getattr(cb, "outputs", []) or [])
+        if actual_cb != reward + fees:
+            return False
+        cumulative_supply += reward
+
+        for i in range(1, len(chain)):
+            prev = chain[i - 1]
+            cur  = chain[i]
+
+            if getattr(cur, "height", None) != getattr(prev, "height", -1) + 1:
                 return False
 
-            def _pow_ok(b: Block) -> bool:
-                try:
-                    header_hash = b.hash()
-                    tgt = bits_to_target(int(getattr(b, "bits")))
-                    return int.from_bytes(header_hash, "big") <= int(tgt)
-                except Exception:
+            if getattr(cur, "prev_block_hash", None) != prev.hash():
+                return False
+
+            # --- Timestamp checks (consistency with validate_block) ---
+            now_ts = int(time.time())
+            cur_ts = int(getattr(cur, "timestamp", 0) or 0)
+            if cur_ts > now_ts + CFG.FUTURE_DRIFT:
+                return False
+            k = CFG.MTP_WINDOWS
+            prefix = chain[:i]
+            if prefix:
+                window = prefix[-k:] if len(prefix) >= k else prefix
+                times = sorted(int(getattr(b, "timestamp", 0) or 0) for b in window)
+                mtp = times[len(times)//2] if times else 0
+                if cur_ts < int(mtp):
                     return False
 
-            def _merkle_ok(b: Block) -> bool:
-                try:
-                    comp = merkle_root(getattr(b, "transactions", []) or [])
-                    mr = getattr(b, "merkle_root", None)
-                    if isinstance(mr, str):
-                        mr = bytes.fromhex(mr)
-                    return comp == mr
-                except Exception:
-                    return False
+            expected_bits = self._expected_bits_on_prefix(chain[:i], int(getattr(cur, "height", i)))
+            got_bits = int(getattr(cur, "bits"))
+            if int(expected_bits) != int(got_bits):
+                return False
 
-            cumulative_supply = 0
-            g = chain[0]
-            if getattr(g, "height", None) != 0 or getattr(g, "prev_block_hash", None) != CFG.ZERO_HASH:
-                return False
-            if GENESIS_HASH is not None and g.hash() != GENESIS_HASH:
-                return False
-            if not _pow_ok(g):
+            if not _pow_ok(cur):
                 return False
             if hasattr(self, "_compute_txids_for_block"):
-                try:
-                    if not self._compute_txids_for_block(g):
-                        return False
-                except Exception:
+                if not self._compute_txids_for_block(cur):
                     return False
-            if not _merkle_ok(g):
+                
+            if not _merkle_ok(cur):
                 return False
 
-            base_reward = self._scheduled_reward(0)
-            reward = min(base_reward, max(0, CFG.MAX_SUPPLY - cumulative_supply))
-            fees = 0
-            cb = getattr(g, "transactions", [None])[0]
-            if cb is None or not getattr(cb, "is_coinbase", False):
+            txs = getattr(cur, "transactions", []) or []
+            if not txs or not getattr(txs[0], "is_coinbase", False) or any(getattr(t, "is_coinbase", False) for t in txs[1:]):
                 return False
-            actual_cb = sum(int(o.amount) for o in getattr(cb, "outputs", []) or [])
-            if actual_cb != reward + fees:
+
+            fees = sum(int(getattr(t, "fee", 0)) for t in txs[1:])
+            base_reward = self._scheduled_reward(int(getattr(cur, "height", 0)))
+            reward = min(base_reward, max(0, CFG.MAX_SUPPLY - cumulative_supply))
+            actual_cb = sum(int(o.amount) for o in getattr(txs[0], "outputs", []) or [])
+            expected_cb = reward + fees
+            if actual_cb != expected_cb:
+                log.warning(
+                    "[_validate_complete_chain] bad coinbase at height=%s expected=%s got=%s fees=%s",
+                    getattr(cur, "height", None),
+                    expected_cb,
+                    actual_cb,
+                    fees,
+                )
                 return False
             cumulative_supply += reward
 
-            for i in range(1, len(chain)):
-                prev = chain[i - 1]
-                cur  = chain[i]
-
-                if getattr(cur, "height", None) != getattr(prev, "height", -1) + 1:
-                    return False
-
-                if getattr(cur, "prev_block_hash", None) != prev.hash():
-                    return False
-
-                # --- Timestamp checks (consistency with validate_block) ---
-                try:
-                    now_ts = int(time.time())
-                    cur_ts = int(getattr(cur, "timestamp", 0) or 0)
-                    if cur_ts > now_ts + CFG.FUTURE_DRIFT:
-                        return False
-                    k = CFG.MTP_WINDOWS
-                    prefix = chain[:i]
-                    if prefix:
-                        window = prefix[-k:] if len(prefix) >= k else prefix
-                        times = sorted(int(getattr(b, "timestamp", 0) or 0) for b in window)
-                        mtp = times[len(times)//2] if times else 0
-                        if cur_ts < int(mtp):
-                            return False
-                except Exception:
-                    return False
-
-                try:
-                    expected_bits = self._expected_bits_on_prefix(chain[:i], int(getattr(cur, "height", i)))
-                    got_bits = int(getattr(cur, "bits"))
-                    if int(expected_bits) != int(got_bits):
-                        return False
-                except Exception:
-                    log.exception("[_validate_complete_chain] Error computing expected bits at %d", i)
-                    return False
-
-                if not _pow_ok(cur):
-                    return False
-                if hasattr(self, "_compute_txids_for_block"):
-                    try:
-                        if not self._compute_txids_for_block(cur):
-                            return False
-                    except Exception:
-                        return False
-                if not _merkle_ok(cur):
-                    return False
-
-                txs = getattr(cur, "transactions", []) or []
-                if not txs or not getattr(txs[0], "is_coinbase", False) or any(getattr(t, "is_coinbase", False) for t in txs[1:]):
-                    return False
-
-                fees = sum(int(getattr(t, "fee", 0)) for t in txs[1:])
-                base_reward = self._scheduled_reward(int(getattr(cur, "height", 0)))
-                reward = min(base_reward, max(0, CFG.MAX_SUPPLY - cumulative_supply))
-                actual_cb = sum(int(o.amount) for o in getattr(txs[0], "outputs", []) or [])
-                expected_cb = reward + fees
-                if actual_cb != expected_cb:
-                    try:
-                        log.warning(
-                            "[_validate_complete_chain] bad coinbase at height=%s expected=%s got=%s fees=%s",
-                            getattr(cur, "height", None),
-                            expected_cb,
-                            actual_cb,
-                            fees,
-                        )
-                    except Exception:
-                        pass
-                    return False
-                cumulative_supply += reward
-
-            return True
-        except Exception:
-            log.exception("[_validate_complete_chain] Error validating complete chain")
-            return False
+        return True
 
     def print_chain(
         self,
@@ -615,6 +521,7 @@ class ChainOpsMixin:
                         if bid:
                             return str(bid)
                 except Exception:
+                    log.exception("[_get_block_id] Failed to get coinbase block_id")
                     pass
                 if isinstance(cb, dict) and cb.get("is_coinbase"):
                     bid = cb.get("block_id")

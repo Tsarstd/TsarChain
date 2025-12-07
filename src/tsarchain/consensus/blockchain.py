@@ -212,13 +212,10 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
         if self.in_memory:
             return
         if wait or self._persist_queue is None:
-            try:
-                self.save_chain(force_full=force_full)
-                self._maybe_flush_utxo(force=flush_force)
-                if save_state:
-                    self.save_state()
-            except Exception:
-                log.exception("[_schedule_persist] synchronous persistence failed")
+            self.save_chain(force_full=force_full)
+            self._maybe_flush_utxo(force=flush_force)
+            if save_state:
+                self.save_state()
             return
         with self._persist_opts_lock:
             self._persist_opts["force_full"] = self._persist_opts["force_full"] or force_full
@@ -250,12 +247,9 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
             log.debug("[_stop_persist_worker] Skip final persistence (genesis locked & chain empty)")
             return
         # Final synchronous persistence to ensure no data loss
-        try:
-            self.save_chain(force_full=True)
-            self._maybe_flush_utxo(force=True)
-            self.save_state()
-        except Exception:
-            log.exception("[_stop_persist_worker] final persistence failed")
+        self.save_chain(force_full=True)
+        self._maybe_flush_utxo(force=True)
+        self.save_state()
 
     def attach_mempool(self, pool: TxPoolDB) -> None:
         self._mempool = pool

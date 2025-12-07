@@ -144,13 +144,17 @@ class AtomicJSONFile:
     def _prune_old_backups(self):
         if self.keep_backups <= 0:
             for f in self._list_backups():
-                try: os.remove(os.path.join(self.dir, f))
-                except Exception: pass
+                try:
+                    os.remove(os.path.join(self.dir, f))
+                except Exception:
+                    pass
             return
         baks = self._list_backups()
         for f in baks[self.keep_backups:]:
-            try: os.remove(os.path.join(self.dir, f))
-            except Exception: pass
+            try:
+                os.remove(os.path.join(self.dir, f))
+            except Exception:
+                pass
 
     def _write_bytes_atomic(self, data: bytes) -> None:
         # Require native JSON writer; no Python I/O fallback.
@@ -203,13 +207,19 @@ class AtomicJSONFile:
                     j = json.load(jf)
                 tmp = j.get("tmp")
                 if tmp and os.path.exists(tmp):
-                    try: os.remove(tmp)
-                    except Exception: pass
-                try: os.remove(self.journal_path)
-                except Exception: pass
+                    try:
+                        os.remove(tmp)
+                    except Exception:
+                        pass
+                try:
+                    os.remove(self.journal_path)
+                except Exception:
+                    pass
         except Exception:
-            try: os.remove(self.journal_path)
-            except Exception: pass
+            try:
+                os.remove(self.journal_path)
+            except Exception:
+                pass
 
     def load(self, default: Any = None, *, validate: Optional[Callable[[Any], bool]] = None) -> Any:
         self._cleanup_journal()

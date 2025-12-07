@@ -11,6 +11,9 @@ from typing import Dict, Optional
 
 from ..utils import config as CFG
 
+from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.network.peers_storage")
+
 _ENV = None
 _DB = None
 _LOCK = threading.RLock()
@@ -61,10 +64,7 @@ def _load_record(name: str) -> Optional[Dict]:
         with env.begin(write=False, db=db) as txn:
             raw = txn.get(name.encode("utf-8"))
         if raw:
-            try:
-                return json.loads(raw.decode("utf-8"))
-            except Exception:
-                return None
+            return json.loads(raw.decode("utf-8"))
 
     # JSON fallback / legacy migration
     paths = [
@@ -75,10 +75,7 @@ def _load_record(name: str) -> Optional[Dict]:
         if not path:
             continue
         if path.exists():
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-            except Exception:
-                return None
+            data = json.loads(path.read_text(encoding="utf-8"))
             if env and db:
                 _store_record(name, data)
             elif path == _LEGACY_PATHS.get(name) and path != _RECORD_PATHS.get(name):
@@ -99,10 +96,7 @@ def _store_record(name: str, data: Dict) -> None:
         # remove residual files once persisted to LMDB
         for path in (_RECORD_PATHS.get(name), _LEGACY_PATHS.get(name)):
             if path and path.exists():
-                try:
-                    path.unlink()
-                except Exception:
-                    pass
+                path.unlink()
         return
 
     # JSON fallback
@@ -113,10 +107,7 @@ def _store_record(name: str, data: Dict) -> None:
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     legacy = _LEGACY_PATHS.get(name)
     if legacy and legacy != path and legacy.exists():
-        try:
-            legacy.unlink()
-        except Exception:
-            pass
+        legacy.unlink()
 
 # ======== SAVE & LOAD KEYS ==============
 

@@ -59,6 +59,7 @@ class StorageServer:
         try:
             self.index = self.db.load_index()
         except Exception:
+            log.exception("Failed to load index from database, falling back to JSON file")
             self.index = {"files": {}, "bytes_used": 0, "art_map": {}}
 
         self.index.setdefault("files", {})
@@ -71,20 +72,24 @@ class StorageServer:
         try:
             self.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in files.values())
         except Exception:
+            log.exception("Failed to compute bytes_used in index")
             self.index["bytes_used"] = 0
         try:
             self._save_index()
         except Exception:
+            log.exception("Failed to save index after loading")
             pass
 
     def _save_index(self):
         try:
             self.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (self.index.get("files") or {}).values())
         except Exception:
+            log.exception("Failed to compute bytes_used in _save_index")
             self.index["bytes_used"] = 0
         try:
             self.db.save_index(self.index)
         except Exception:
+            log.exception("Failed to save index to database, falling back to JSON file")
             # Fallback hard-save JSON if LMDB gagal
             tmp = self.idx_path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
@@ -96,11 +101,13 @@ class StorageServer:
         try:
             raw = json.dumps(obj).encode("utf-8")
         except Exception:
+            log.exception("Failed to serialize response object to JSON")
             raw = b"{}"
         if len(raw) + len(CFG.NETWORK_MAGIC) > cap:
             try:
                 t = obj.get("type") if isinstance(obj, dict) else "unknown"
             except Exception:
+                log.exception("Failed to get type from response object")
                 t = "unknown"
             obj = {"type": t, "status": "error", "reason": "msg_too_large"}
             raw = json.dumps(obj).encode("utf-8")
@@ -125,6 +132,7 @@ class StorageServer:
                     conn, addr = s.accept()
                     threading.Thread(target=self._handle_conn, args=(conn,), daemon=True).start()
                 except Exception:
+                    log.exception("Error accepting connection")
                     time.sleep(0.1)
 
     def _handle_conn(self, conn):

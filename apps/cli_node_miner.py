@@ -59,11 +59,6 @@ def _enable_siginterrupt():
     for sig in (getattr(signal, "SIGINT", None), getattr(signal, "SIGTERM", None)):
         if sig is None:
             continue
-        try:
-            signal.siginterrupt(sig, True)
-        except Exception:
-            continue
-
 
 def _stamp() -> str:
     now = datetime.now()
@@ -78,10 +73,7 @@ def clog(message: str, color: str = COL.GREY):
         print(f"{_stamp()} : {color}{message}{COL.RESET}")
 
 def human_hps(hps: float) -> str:
-    try:
-        hps = float(hps)
-    except Exception:
-        return "? H/s"
+    hps = float(hps)
     units = ["H/s", "kH/s", "MH/s", "GH/s", "TH/s"]
     i = 0
     while hps >= 1000.0 and i < len(units)-1:
@@ -100,21 +92,18 @@ class HashrateReporter(threading.Thread):
         self.stop_event = mp.Event()
 
     def run(self):
-        try :
-            last_line = ""
-            while not self.stop_event.is_set():
-                try:
-                    msg = self.q.get(timeout=1.0)
-                except queue.Empty:
-                    continue
-                if isinstance(msg, tuple) and len(msg) == 2 and msg[0] == "TOTAL_HPS":
-                    hps = human_hps(msg[1])
-                    line = f"Hashrate ~ {hps} {COL.DIM}{COL.RESET}"
-                    if line != last_line:
-                        clog(line)
-                        last_line = line
-        except Exception:
-            pass
+        last_line = ""
+        while not self.stop_event.is_set():
+            try:
+                msg = self.q.get(timeout=1.0)
+            except queue.Empty:
+                continue
+            if isinstance(msg, tuple) and len(msg) == 2 and msg[0] == "TOTAL_HPS":
+                hps = human_hps(msg[1])
+                line = f"Hashrate ~ {hps} {COL.DIM}{COL.RESET}"
+                if line != last_line:
+                    clog(line)
+                    last_line = line
                     
 
 def _register_bootstrap_peers(network: Network) -> int:
@@ -123,12 +112,9 @@ def _register_bootstrap_peers(network: Network) -> int:
     for peer in fallback_nodes:
         if not peer:
             continue
-        try:
-            network.persistent_peers.add(peer)
-            network.peers.add(peer)
-            count += 1
-        except Exception:
-            continue
+        network.persistent_peers.add(peer)
+        network.peers.add(peer)
+        count += 1
     return count
 
 
@@ -182,10 +168,6 @@ class SimpleMiner:
 
     def signal_handler(self, signum, _frame):
         clog(f"Received signal {signum}, shutting down...")
-        try:
-            log.info("Ctrl+C / signal %s received - stopping miner loop", signum)
-        except Exception:
-            pass
         self.mining_alive = False
         if self.cancel_mining:
             self.cancel_mining.set()
@@ -205,6 +187,7 @@ class SimpleMiner:
         try:
             hx = block.hash().hex()
         except Exception:
+            log.exception("error_5")
             hx = None
         if hx and hx in self._pending_block_hashes:
             return
@@ -216,6 +199,7 @@ class SimpleMiner:
             try:
                 self._pending_block_hashes.discard(old.hash().hex())
             except Exception:
+                log.exception("error_6")
                 pass
 
     def _flush_pending_blocks(self) -> None:
@@ -229,6 +213,7 @@ class SimpleMiner:
                     try:
                         self._pending_block_hashes.discard(blk.hash().hex())
                     except Exception:
+                        log.exception("error_7")
                         pass
                     continue
             except Exception as exc:
@@ -245,18 +230,12 @@ class SimpleMiner:
 
     def _bootstrap_seeds(self) -> list[tuple[str, int]]:
         seeds = []
-        try:
-            raw = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
-        except Exception:
-            raw = ()
+        raw = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
         for peer in raw:
             if not peer or len(peer) != 2:
                 continue
             host, port = peer
-            try:
-                seeds.append((str(host), int(port)))
-            except Exception:
-                continue
+            seeds.append((str(host), int(port)))
         return seeds
 
     def _bootstrap_is_self_only(self) -> bool:
@@ -272,17 +251,11 @@ class SimpleMiner:
         return bool(self._bootstrap_self_only)
 
     def _get_local_tip(self) -> tuple[int, str | None]:
-        try:
-            h = int(getattr(self.blockchain, "height", -1))
-        except Exception:
-            h = -1
+        h = int(getattr(self.blockchain, "height", -1))
         hx = None
-        try:
-            tip = self.blockchain.get_last_block() if self.blockchain else None
-            if tip:
-                hx = tip.hash().hex()
-        except Exception:
-            hx = None
+        tip = self.blockchain.get_last_block() if self.blockchain else None
+        if tip:
+            hx = tip.hash().hex()
         return h, hx
 
     def _mine_block_runner(self, result: dict):
@@ -319,55 +292,34 @@ class SimpleMiner:
         heights: list[int] = []
 
         # Use recorded best heights first
-        try:
-            best_map = getattr(self.network, "_peer_best_height", {}) or {}
-        except Exception:
-            best_map = {}
+        best_map = getattr(self.network, "_peer_best_height", {}) or {}
         for peer in peers:
-            try:
-                h = int(best_map.get(peer, -1))
-            except Exception:
-                h = -1
+            h = int(best_map.get(peer, -1))
             if h >= 0:
                 heights.append(h)
 
         # Self-bootstrap fallback: trust local height if all seeds are self
         if self._bootstrap_is_self_only():
-            try:
-                local_h = int(getattr(self.blockchain, "height", -1))
-            except Exception:
-                local_h = -1
+            local_h = int(getattr(self.blockchain, "height", -1))
             if local_h >= 0:
                 best = local_h
                 self._trusted_height_cache = best
                 self._last_trusted_probe = now
                 # cache local tip hash
-                try:
-                    tip = self.blockchain.get_last_block()
-                    self._last_trusted_hash = tip.hash().hex() if tip else None
-                except Exception:
-                    self._last_trusted_hash = None
+                tip = self.blockchain.get_last_block()
+                self._last_trusted_hash = tip.hash().hex() if tip else None
                 return best
 
         # If nothing recorded, query seeds directly
         if not heights:
             for peer in peers:
-                try:
-                    info = self.network._rpc_request(peer, {"type": "GET_INFO"}, timeout=max(8.0, CFG.SYNC_TIMEOUT))
-                except Exception:
-                    info = None
+                info = self.network._rpc_request(peer, {"type": "GET_INFO"}, timeout=max(8.0, CFG.SYNC_TIMEOUT))
                 if not info:
                     continue
-                try:
-                    h = int(info.get("height", -1))
-                except Exception:
-                    h = -1
+                h = int(info.get("height", -1))
                 if h >= 0:
-                    try:
-                        best_map[peer] = h  # keep network state aware of trusted height
-                        self.network._peer_best_height[peer] = h
-                    except Exception:
-                        pass
+                    best_map[peer] = h  # keep network state aware of trusted height
+                    self.network._peer_best_height[peer] = h
                     heights.append(h)
 
         best = max(heights) if heights else -1
@@ -384,12 +336,9 @@ class SimpleMiner:
         if not seeds:
             return None
         peer = seeds[0]
-        try:
-            resp = self.network._rpc_request(
-                peer, {"type": "GET_BLOCK_HASH", "height": int(height)}, timeout=max(8.0, CFG.SYNC_TIMEOUT)
-            )
-        except Exception:
-            resp = None
+        resp = self.network._rpc_request(
+            peer, {"type": "GET_BLOCK_HASH", "height": int(height)}, timeout=max(8.0, CFG.SYNC_TIMEOUT)
+        )
         if resp and resp.get("type") == "BLOCK":
             hx = resp.get("hash")
             if isinstance(hx, str) and hx:
@@ -420,19 +369,13 @@ class SimpleMiner:
 
         while self.mining_alive and (time.time() - start_time) < timeout:
             try:
-                try:
-                    height = int(getattr(self.blockchain, "height", -1))
-                except Exception:
-                    height = -1
+                height = int(getattr(self.blockchain, "height", -1))
 
                 trusted_height = self._trusted_best_height(force_refresh=True)
                 trusted_hash = self._trusted_tip_hash(trusted_height) if trusted_height >= 0 else None
                 best_height = -1
                 if hasattr(self.network, "get_best_peer_height"):
-                    try:
-                        best_height = int(self.network.get_best_peer_height())
-                    except Exception:
-                        best_height = -1
+                    best_height = int(self.network.get_best_peer_height())
 
                 active_peers = self._has_active_peers()
                 if not active_peers and not self._bootstrap_is_self_only():
@@ -455,16 +398,11 @@ class SimpleMiner:
                 if trusted_hash and local_hash and local_hash.lower() != trusted_hash:
                     clog("[Sync] Local tip hash differs from trusted; requesting resync...")
                     if self.network:
-                        try:
-                            seeds = self._bootstrap_seeds()
-                            peer = seeds[0] if seeds else None
-                            if peer:
-                                self.network._request_full_sync(peer, force=True)
-                        except Exception:
-                            try:
-                                self.network.request_sync(fast=True)
-                            except Exception:
-                                pass
+                        seeds = self._bootstrap_seeds()
+                        peer = seeds[0] if seeds else None
+                        if peer:
+                            self.network._request_full_sync(peer, force=True)
+                        self.network.request_sync(fast=True)
                     time.sleep(2)
                     continue
 
@@ -510,10 +448,7 @@ class SimpleMiner:
                     time.sleep(2)
                     continue
 
-                try:
-                    local_height = int(getattr(self.blockchain, "height", -1))
-                except Exception:
-                    local_height = -1
+                local_height = int(getattr(self.blockchain, "height", -1))
 
                 trusted_height = self._trusted_best_height(force_refresh=True)
                 trusted_hash = self._trusted_tip_hash(trusted_height) if trusted_height >= 0 else None
@@ -541,16 +476,11 @@ class SimpleMiner:
                         clog("[mining] Local tip hash differs from trusted; syncing before mining...")
                         last_gap_log = "hash_mismatch"
                     if self.network:
-                        try:
-                            seeds = self._bootstrap_seeds()
-                            peer = seeds[0] if seeds else None
-                            if peer:
-                                self.network._request_full_sync(peer, force=True)
-                        except Exception:
-                            try:
-                                self.network.request_sync(fast=True)
-                            except Exception:
-                                pass
+                        seeds = self._bootstrap_seeds()
+                        peer = seeds[0] if seeds else None
+                        if peer:
+                            self.network._request_full_sync(peer, force=True)
+                        self.network.request_sync(fast=True)
                     time.sleep(2)
                     continue
 
@@ -573,10 +503,6 @@ class SimpleMiner:
                     mine_thread.join(timeout=0.5)
                     if self.cancel_mining.is_set() and not cancel_logged:
                         clog("[mining] Cancellation requested; waiting for miner thread to stop...")
-                        try:
-                            log.info("Cancellation requested; waiting for miner thread to stop...")
-                        except Exception:
-                            pass
                         cancel_logged = True
 
                 if mine_thread.is_alive():
@@ -592,10 +518,7 @@ class SimpleMiner:
 
                 if block:
                     if self.tui is not None:
-                        try:
-                            self.tui.note_block_mined(getattr(block, "height", None))
-                        except Exception:
-                            pass
+                        self.tui.note_block_mined(getattr(block, "height", None))
 
                     h = getattr(block, "height", "?")
                     txs = getattr(block, "transactions", None) or []
@@ -616,10 +539,6 @@ class SimpleMiner:
                 if self.cancel_mining:
                     self.cancel_mining.set()
                 clog("[signal] Mining interrupted by user")
-                try:
-                    log.info("Mining loop interrupted by KeyboardInterrupt (Ctrl+C).")
-                except Exception:
-                    pass
                 break
             except Exception as exc:
                 if isinstance(exc, OSError) and getattr(exc, "errno", None) in INTERRUPTED_ERRNOS:
@@ -638,16 +557,8 @@ class SimpleMiner:
             self.cancel_mining.set()
         
         if self.network:
-            try:
-                self.network.shutdown()
-            except Exception:
-                pass
-
+            self.network.shutdown()
         clog("Miner stopped")
-        try:
-            log.info("Miner stopped (cleanup complete).")
-        except Exception:
-            pass
 
 
 class NodeRunner:
@@ -665,22 +576,16 @@ class NodeRunner:
 
     def _handle_signal(self, *_args):
         clog("Stopping node...")
-        try:
-            log.info("Ctrl+C received - stopping node-only runner.")
-        except Exception:
-            pass
+        log.info("Ctrl+C received - stopping node-only runner.")
         self.running = False
 
     def _has_active_peers(self) -> bool:
         if not self.network:
             return False
-        try:
-            peers = getattr(self.network, "peers", set()) or set()
-            inbound = getattr(self.network, "inbound_peers", set()) or set()
-            outbound = getattr(self.network, "outbound_peers", set()) or set()
-            return bool(peers or inbound or outbound)
-        except Exception:
-            return False
+        peers = getattr(self.network, "peers", set()) or set()
+        inbound = getattr(self.network, "inbound_peers", set()) or set()
+        outbound = getattr(self.network, "outbound_peers", set()) or set()
+        return bool(peers or inbound or outbound)
 
     def start(self):
         clog("Starting TsarChain node (no mining)...")
@@ -693,10 +598,7 @@ class NodeRunner:
                 miner_address=None,
             )
             
-            try:
-                self._last_chain_height = int(getattr(self.blockchain, "height", -1))
-            except Exception:
-                self._last_chain_height = -1
+            self._last_chain_height = int(getattr(self.blockchain, "height", -1))
             clog(f"Local chain height: {self._last_chain_height}")
             
             self.network = Network(blockchain=self.blockchain)
@@ -709,6 +611,7 @@ class NodeRunner:
                     try:
                         self.network.request_sync(fast=True)
                     except Exception:
+                        log.exception("asuuuu")
                         pass
                     time.sleep(1.0)
             t_early = threading.Thread(target=_early_sync, daemon=True)
@@ -747,16 +650,10 @@ class NodeRunner:
                 self.network.request_sync(fast=True)
 
                 # Heights
-                try:
-                    height = int(getattr(self.blockchain, "height", -1))
-                except Exception:
-                    height = -1
+                height = int(getattr(self.blockchain, "height", -1))
                 best_height = -1
                 if hasattr(self.network, "get_best_peer_height"):
-                    try:
-                        best_height = int(self.network.get_best_peer_height())
-                    except Exception:
-                        best_height = -1
+                    best_height = int(self.network.get_best_peer_height())
 
                 # Progress print (only when changed)
                 if height != self._last_chain_height:
@@ -771,12 +668,9 @@ class NodeRunner:
                     self._sync_ready = True
                     clog("Chain has been confirmed. Node is live (no mining).")
 
-                try:
-                    inb = len(getattr(self.network, "inbound_peers", ()))
-                    outb = len(getattr(self.network, "outbound_peers", ()))
-                    known = len(getattr(self.network, "peers", ()))
-                except Exception:
-                    inb = outb = known = 0
+                inb = len(getattr(self.network, "inbound_peers", ()))
+                outb = len(getattr(self.network, "outbound_peers", ()))
+                known = len(getattr(self.network, "peers", ()))
                     
                 status = f"[peers in={inb} out={outb} known={known}] local={height} best={best_height if best_height>=0 else 'syncing...'}"
                 if status != last_status:
@@ -790,23 +684,14 @@ class NodeRunner:
     def shutdown(self):
         self.running = False
         if self.network:
-            try:
-                self.network.shutdown()
-            except Exception:
-                pass
+            self.network.shutdown()
             self.network = None
         for t in self._threads:
             if t and t.is_alive():
-                try:
-                    t.join(timeout=2.5)
-                except Exception:
-                    pass
+                t.join(timeout=2.5)
         self._threads.clear()
         clog("Node stopped.")
-        try:
-            log.info("Node-only runner stopped (cleanup complete).")
-        except Exception:
-            pass
+        log.info("Node-only runner stopped (cleanup complete).")
 
 def choose_mode() -> int:
     print(f"{COL.BOLD}{COL.TXT_HEADER}{COL.BG_HEADER}       Please Choose Mode       {COL.RESET}")
@@ -843,16 +728,10 @@ def parse_args():
 
 
 def _normalize_cores(cores: int | None) -> int | None:
-    try:
-        cpu_total = mp.cpu_count()
-    except Exception:
-        cpu_total = None
+    cpu_total = mp.cpu_count()
     if cores is None:
         return cpu_total or 1
-    try:
-        cores_int = int(cores)
-    except Exception:
-        return None
+    cores_int = int(cores)
     if cores_int <= 0:
         return None
     if cpu_total:
@@ -865,12 +744,9 @@ def main():
     mode_selected = None
     if not args.node_only:
         # Interactive mode selection
-        try:
-            COL.print_banner()
-            COL.print_system_snapshot(cores_hint=None)
-            mode_selected = choose_mode()
-        except Exception:
-            mode_selected = 0
+        COL.print_banner()
+        COL.print_system_snapshot(cores_hint=None)
+        mode_selected = choose_mode()
 
     if args.node_only or mode_selected == 1:
         runner = NodeRunner(bootstrap_snapshot=not args.no_bootstrap)

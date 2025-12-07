@@ -59,51 +59,43 @@ class DifficultyMixin:
         if next_target > max_target:
             next_target = max_target
 
-            try:
-                if CFG.ENABLE_DIFF_CLAMP:
-                    prev_bits   = int(getattr(prefix[-1], "bits", CFG.MAX_BITS))
-                    prev_target = bits_to_target(prev_bits)
-                    prev_target = prev_target or 1
-                    factor = Fraction(next_target, prev_target)
-                    clamp_up = Fraction(str(CFG.DIFF_CLAMP_MAX_UP))
-                    clamp_down = Fraction(str(CFG.DIFF_CLAMP_MAX_DOWN))
-                    if factor > clamp_up:
-                        next_target = int(Fraction(prev_target) * clamp_up)
-                    elif factor < clamp_down:
-                        next_target = int(Fraction(prev_target) * clamp_down)
-                    if next_target > max_target:
-                        next_target = max_target
-            except Exception:
-                log.exception("[_expected_bits_on_prefix] Error applying difficulty clamp")
-                pass
+            if CFG.ENABLE_DIFF_CLAMP:
+                prev_bits   = int(getattr(prefix[-1], "bits", CFG.MAX_BITS))
+                prev_target = bits_to_target(prev_bits)
+                prev_target = prev_target or 1
+                factor = Fraction(next_target, prev_target)
+                clamp_up = Fraction(str(CFG.DIFF_CLAMP_MAX_UP))
+                clamp_down = Fraction(str(CFG.DIFF_CLAMP_MAX_DOWN))
+                if factor > clamp_up:
+                    next_target = int(Fraction(prev_target) * clamp_up)
+                elif factor < clamp_down:
+                    next_target = int(Fraction(prev_target) * clamp_down)
+                if next_target > max_target:
+                    next_target = max_target
 
-            try:
-                if CFG.ENABLE_EDA:
-                    T = int(CFG.TARGET_BLOCK_TIME)
-                    M = min(int(CFG.EDA_WINDOW), len(prefix))
-                    if M >= 2:
-                        def _ts(b) -> int:
-                            t = getattr(b, "timestamp", 0)
-                            return int(t) if isinstance(t, (int, float)) else 0
-                        times = [_ts(b) for b in prefix[-M:]]
-                        intervals = []
-                        for i in range(1, len(times)):
-                            dt = times[i] - times[i-1]
-                            if dt < 1: dt = 1
-                            intervals.append(dt)
-                        if intervals:
-                            total_dt = sum(intervals)
-                            count_dt = len(intervals)
-                            trigger = Fraction(str(CFG.EDA_TRIGGER_RATIO))
-                            lhs = Fraction(total_dt, count_dt)
-                            rhs = trigger * T
-                            if lhs > rhs:
-                                prev_bits_val = int(getattr(prefix[-1], "bits", CFG.MAX_BITS))
-                                eased_target = Fraction(bits_to_target(prev_bits_val)) * Fraction(str(CFG.EDA_EASE_MULTIPLIER))
-                                next_target = min(int(eased_target), int(max_target))
-            except Exception:
-                log.exception("[_expected_bits_on_prefix] Error applying EDA")
-                pass
+            if CFG.ENABLE_EDA:
+                T = int(CFG.TARGET_BLOCK_TIME)
+                M = min(int(CFG.EDA_WINDOW), len(prefix))
+                if M >= 2:
+                    def _ts(b) -> int:
+                        t = getattr(b, "timestamp", 0)
+                        return int(t) if isinstance(t, (int, float)) else 0
+                    times = [_ts(b) for b in prefix[-M:]]
+                    intervals = []
+                    for i in range(1, len(times)):
+                        dt = times[i] - times[i-1]
+                        if dt < 1: dt = 1
+                        intervals.append(dt)
+                    if intervals:
+                        total_dt = sum(intervals)
+                        count_dt = len(intervals)
+                        trigger = Fraction(str(CFG.EDA_TRIGGER_RATIO))
+                        lhs = Fraction(total_dt, count_dt)
+                        rhs = trigger * T
+                        if lhs > rhs:
+                            prev_bits_val = int(getattr(prefix[-1], "bits", CFG.MAX_BITS))
+                            eased_target = Fraction(bits_to_target(prev_bits_val)) * Fraction(str(CFG.EDA_EASE_MULTIPLIER))
+                            next_target = min(int(eased_target), int(max_target))
 
         return int(target_to_bits(next_target))
 
@@ -116,35 +108,23 @@ class DifficultyMixin:
     def _validate_difficulty(self, block: Block) -> bool:
         if block.height == 0:
             return True
-        try:
-            expected_bits = self.calculate_expected_bits(block.height)
-            if int(block.bits) != int(expected_bits):
-                return False
-            return True
-        except Exception:
-            log.exception("[_validate_difficulty] Error calculating expected bits")
+        expected_bits = self.calculate_expected_bits(block.height)
+        if int(block.bits) != int(expected_bits):
             return False
+        return True
 
     def _work_from_bits(self, bits: int) -> int:
-        try:
-            target = int(bits_to_target(bits))
-            if target <= 0:
-                return 0
-            return (1 << 256) // (target + 1)
-        except Exception:
-            log.exception("[_work_from_bits] Error calculating work from bits")
+        target = int(bits_to_target(bits))
+        if target <= 0:
             return 0
+        return (1 << 256) // (target + 1)
 
     def _compute_chainwork_for_chain(self, chain: List[Block]) -> int:
         cw = 0
         for b in chain:
             w = self._work_from_bits(b.bits)
             cw += w
-            try:
-                setattr(b, 'chainwork', cw)
-            except Exception:
-                log.exception("[_compute_chainwork_for_chain] Error setting chainwork attribute")
-                pass
+            setattr(b, 'chainwork', cw)
         return cw
 
     def _common_ancestor_height(self, other_chain_blocks: List[Block]) -> int:

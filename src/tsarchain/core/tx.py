@@ -8,15 +8,11 @@ from ecdsa import SECP256k1, SigningKey
 # ---------------- Local Project ----------------
 from ..utils.helpers import Script
 from ..utils.helpers import (
-    util_compute_txid,
-    util_compute_wtxid,
     SIGHASH_ALL,
     bip143_sig_hash,
     to_bytes,
-    is_p2pkh,
     is_p2wpkh,
     is_p2wsh,
-    is_p2sh,
     count_sigops_in_script,
     last_pushdata,
     sign_digest_der_low_s_native,
@@ -46,6 +42,7 @@ class Tx:
             try:
                 self.compute_txid()
             except Exception:
+                log.exception("auto_compute_err")
                 pass
             
     # -------- Fee helpers ----------
@@ -85,24 +82,16 @@ class Tx:
             raise TypeError("prev_output must be TxOut, Script, or bytes")
         if not (len(script_pubkey_bytes) >= 22 and script_pubkey_bytes[0] == 0x00 and script_pubkey_bytes[1] == 0x14):
             raise ValueError("Not a P2WPKH")
-
         pubkey_hash = script_pubkey_bytes[2:22]
+        
         # scriptCode tanpa prefix varint; panjang akan ditambahkan di fungsi sighash
         script_code = b"\x76\xa9\x14" + pubkey_hash + b"\x88\xac"
-
         z = bip143_sig_hash(self, index, script_code, int(amount), SIGHASH_ALL)
-
         der = sign_digest_der_low_s_native(priv_key_hex, z)
         sig = der + bytes([SIGHASH_ALL])
-        
-        log.debug("Signature for input %d: %s", index, sig.hex())
-
         sk = SigningKey.from_string(bytes.fromhex(priv_key_hex), curve=SECP256k1)
         vk = sk.get_verifying_key()
-        try:
-            pubkey_bytes = vk.to_string("compressed")
-        except TypeError:
-            pubkey_bytes = vk.to_string()
+        pubkey_bytes = vk.to_string("compressed")
         self.inputs[index].witness = [sig, pubkey_bytes]
         return True
     
@@ -116,25 +105,19 @@ class Tx:
             prev_spk = None
 
             if utxo_lookup is not None:
-                try:
-                    prev_spk = utxo_lookup(vin.txid, vin.vout)
-                    if isinstance(prev_spk, str):
-                        prev_spk = bytes.fromhex(prev_spk)
-                except Exception:
-                    prev_spk = None
+                prev_spk = utxo_lookup(vin.txid, vin.vout)
+                if isinstance(prev_spk, str):
+                    prev_spk = bytes.fromhex(prev_spk)
 
             script_sig = to_bytes(getattr(vin, "script_sig", b""))
             wstack = [ to_bytes(w) for w in getattr(vin, "witness", []) or [] ]
 
             if prev_spk is not None:
-                if is_p2wpkh(prev_spk) or is_p2pkh(prev_spk):
+                if is_p2wpkh(prev_spk):
                     add = 1
                 elif is_p2wsh(prev_spk):
                     ws = wstack[-1] if wstack else b""
                     add = count_sigops_in_script(ws) or 1
-                elif is_p2sh(prev_spk):
-                    rs = last_pushdata(script_sig) or b""
-                    add = count_sigops_in_script(rs) or 1
                 else:
                     add = count_sigops_in_script(prev_spk) or 1
             else:
@@ -149,28 +132,19 @@ class Tx:
                     add = 1
 
             total += int(add)
-            
-        log.debug("Total sigops: %d", total)
         return int(total)
 
 
     # -------- IDs ----------
 
     def compute_txid(self) -> bytes:
-        try:
-            compact = tx_to_compact_tuple(self)
-            self.txid = txid_from_compact(compact)
-            return self.txid
-        except Exception:
-            self.txid = util_compute_txid(self, include_txid=False)
-            return self.txid
+        compact = tx_to_compact_tuple(self)
+        self.txid = txid_from_compact(compact)
+        return self.txid
 
     def compute_wtxid(self) -> bytes:
-        try:
-            compact = tx_to_compact_tuple(self)
-            return wtxid_from_compact(compact)
-        except Exception:
-            return util_compute_wtxid(self)
+        compact = tx_to_compact_tuple(self)
+        return wtxid_from_compact(compact)
 
     # -------- Serde ----------
 

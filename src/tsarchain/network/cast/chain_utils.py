@@ -55,23 +55,19 @@ class ChainUtilsMixin:
         return total
 
     def _validate_incoming_chain(self, message: Dict[str, Any]) -> bool:
-        try:
-            chain_data = message.get("data", [])
-            if not chain_data:
-                return False
-
-            if chain_data[0].get("height") != 0:
-                return False
-
-            for i in range(1, len(chain_data)):
-                if chain_data[i].get("height") != chain_data[i - 1].get("height") + 1:
-                    return False
-                if chain_data[i].get("prev_block_hash") != chain_data[i - 1].get("hash"):
-                    return False
-            return True
-        except Exception:
-            log.exception("[_validate_incoming_chain] Error validating incoming chain")
+        chain_data = message.get("data", [])
+        if not chain_data:
             return False
+
+        if chain_data[0].get("height") != 0:
+            return False
+
+        for i in range(1, len(chain_data)):
+            if chain_data[i].get("height") != chain_data[i - 1].get("height") + 1:
+                return False
+            if chain_data[i].get("prev_block_hash") != chain_data[i - 1].get("hash"):
+                return False
+        return True
 
 
 __all__ = ["ChainUtilsMixin"]
