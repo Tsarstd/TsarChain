@@ -130,6 +130,7 @@ def handle_wallet_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if t == "STOR_COMMIT":
         log.debug("Received STOR_COMMIT")
         aid = str(msg.get("graffiti_id", "")).strip()
+        req_receipt = str(msg.get("receipt_id", "")).strip()
         meta = server.index.get("files", {}).get(aid)
         if not meta:
             return {"type": "STOR_ACK", "status": "rejected", "reason": "no_such"}
@@ -165,7 +166,7 @@ def handle_wallet_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             if digest_hex != meta.get("sha256"):
                 return {"type": "STOR_ACK", "status": "rejected", "reason": "hash_mismatch"}
             now_ts = int(time.time())
-            receipt_id = meta.get("receipt_id") or f"rcpt_{aid}_{now_ts}"
+            receipt_id = meta.get("receipt_id") or req_receipt or f"rcpt_{aid}_{now_ts}"
             receipt = {
                 "id": receipt_id,
                 "graffiti_id": aid,
@@ -199,6 +200,22 @@ def handle_wallet_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                         "stored_ts": now_ts,
                     }
                 )
+            # set payment deadline height for unpaid blobs when caller supplies current tip height
+            try:
+                tip_h = int(msg.get("tip_height", 0) or msg.get("block_height", 0) or 0)
+            except Exception:
+                tip_h = 0
+            try:
+                expire_after = max(0, int(CFG.GRAFFITI_EXPIRE_AFTER_BLOCKS))
+            except Exception:
+                expire_after = 0
+            if (not meta.get("paid")) and expire_after > 0 and tip_h > 0:
+                try:
+                    expire_h = int(meta.get("expire_at_height", 0) or 0)
+                except Exception:
+                    expire_h = 0
+                if expire_h <= 0:
+                    meta["expire_at_height"] = tip_h + expire_after
             art_id = str(meta.get("art_id", "")).strip().lower()
             if art_id:
                 server.index.setdefault("art_map", {})[art_id] = aid

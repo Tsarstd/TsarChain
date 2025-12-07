@@ -4,7 +4,7 @@
 # Refs: see REFERENCES.md
 
 from __future__ import annotations
-import os, time, hashlib, mimetypes, threading
+import os, time, hashlib, mimetypes, threading, socket
 from decimal import Decimal, ROUND_DOWN, InvalidOperation
 from typing import Any, Dict, Optional
 from tkinter import ttk, filedialog, messagebox, StringVar
@@ -83,7 +83,6 @@ class GraffitiTab(ttk.Frame):
         self._build_style()
         self.configure(style="Tsar.TFrame")
         self._build_ui()
-        self.refresh_storers()
         self._refresh_creator_wallets()
 
     def _build_style(self):
@@ -131,15 +130,6 @@ class GraffitiTab(ttk.Frame):
         # Header
         ttk.Label(root, text="Graffiti Uploader (MVP)", style="Tsar.Header.TLabel").pack(anchor="w")
 
-        # Storage nodes (auto assigned)
-        stor_fr = ttk.LabelFrame(root, text="Storage Nodes (auto)", style="Tsar.TLabelframe")
-        stor_fr.pack(fill="x", pady=(8, 6))
-        self.storer_info_var = StringVar(value="Scanning storage nodes...")
-        ttk.Label(stor_fr, textvariable=self.storer_info_var, style="Tsar.Card.Mono.TLabel")\
-            .grid(row=0, column=0, padx=8, pady=(8, 2), sticky="w")
-        ttk.Button(stor_fr, text="Refresh nodes", style="Tsar.Secondary.TButton", command=self.refresh_storers)\
-            .grid(row=0, column=1, padx=6, pady=(8, 2), sticky="e")
-
         # Creator wallet
         creator_fr = ttk.LabelFrame(root, text="Creator Wallet", style="Tsar.TLabelframe")
         creator_fr.pack(fill="x", pady=(6, 6))
@@ -167,47 +157,34 @@ class GraffitiTab(ttk.Frame):
         self.meta_var = StringVar(value="size: -, mime: -, sha256: -")
         ttk.Label(file_fr, textvariable=self.meta_var, style="Tsar.Card.Mono.TLabel")\
             .grid(row=1, column=0, columnspan=2, padx=8, pady=(0, 8), sticky="w")
-
-        # Upload
-        up_fr = ttk.LabelFrame(root, text="Upload → Receipt", style="Tsar.TLabelframe")
-        up_fr.pack(fill="x", pady=(6, 6))
-        ttk.Label(up_fr, text="Protocol computes upload fee based on file size (100KB chunks).", style="Tsar.Card.Mono.TLabel")\
-            .grid(row=0, column=0, columnspan=2, padx=8, pady=(8, 2), sticky="w")
-
-        self.upload_btn = ttk.Button(up_fr, text="Upload to storage", style="Tsar.TButton", command=self._start_upload)
-        self.upload_btn.grid(row=0, column=2, padx=8, pady=(8, 2), sticky="e")
-
+        # Upload + Broadcast (combined)
+        post_fr = ttk.LabelFrame(root, text="Upload + Broadcast POST", style="Tsar.TLabelframe")
+        post_fr.pack(fill="x", pady=(6, 6))
+        self.post_info_var = StringVar(value="Select file, then click to upload & broadcast.")
+        ttk.Label(post_fr, textvariable=self.post_info_var, style="Tsar.Card.Mono.TLabel")\
+            .grid(row=0, column=0, columnspan=3, padx=8, pady=(8, 4), sticky="w")
+        self.post_send_btn = ttk.Button(
+            post_fr,
+            text="Upload & Broadcast POST",
+            style="Tsar.TButton",
+            state="disabled",
+            command=self._start_upload_and_broadcast,
+        )
+        self.post_send_btn.grid(row=1, column=0, padx=8, pady=(4, 8), sticky="w")
+        ttk.Label(post_fr, text="Send tab is also prefilled if you prefer manual review.", style="Tsar.Card.Mono.TLabel")\
+            .grid(row=1, column=1, padx=8, pady=(4, 8), sticky="e")
         self.pbar = ttk.Progressbar(
-            up_fr,
+            post_fr,
             mode="determinate",
             length=240,
             style="Horizontal.Tsar.TProgressbar",
             maximum=100,
             value=0,
         )
-        self.pbar.grid(row=1, column=0, columnspan=3, padx=8, pady=(4, 8), sticky="we")
-
+        self.pbar.grid(row=2, column=0, columnspan=3, padx=8, pady=(0, 6), sticky="we")
         self.receipt_var = StringVar(value="receipt: -")
-        ttk.Label(up_fr, textvariable=self.receipt_var, style="Tsar.Card.Mono.TLabel")\
-            .grid(row=2, column=0, columnspan=3, padx=8, pady=(0, 8), sticky="w")
-
-        # Post info / next steps
-        post_fr = ttk.LabelFrame(root, text="Step 2 — Broadcast POST transaction", style="Tsar.TLabelframe")
-        post_fr.pack(fill="x", pady=(6, 6))
-        self.post_info_var = StringVar(value="Upload first to generate metadata & fee details.")
-        ttk.Label(post_fr, textvariable=self.post_info_var, style="Tsar.Card.Mono.TLabel")\
-            .grid(row=0, column=0, columnspan=2, padx=8, pady=(8, 4), sticky="w")
-        self.post_send_btn = ttk.Button(
-            post_fr,
-            text="Broadcast POST now",
-            style="Tsar.TButton",
-            state="disabled",
-            command=self._broadcast_post_tx,
-        )
-        self.post_send_btn.grid(row=1, column=0, padx=8, pady=(4, 8), sticky="w")
-        ttk.Label(post_fr, text="Send tab is also prefilled if you prefer manual review.", style="Tsar.Card.Mono.TLabel")\
-            .grid(row=1, column=1, padx=8, pady=(4, 8), sticky="e")
-        ttk.Label(root, text="After upload completes, Send tab is prefilled automatically for review.", style="Tsar.Mono.TLabel").pack(anchor="w", pady=(4,0))
+        ttk.Label(post_fr, textvariable=self.receipt_var, style="Tsar.Card.Mono.TLabel")\
+            .grid(row=3, column=0, columnspan=3, padx=8, pady=(0, 8), sticky="w")
 
         # Explore & Comment
         explore_fr = ttk.LabelFrame(root, text="Explore & Comment", style="Tsar.TLabelframe")
@@ -330,46 +307,59 @@ class GraffitiTab(ttk.Frame):
             except Exception:
                 pass
         self._build_ui()
-        self.refresh_storers()
         self._refresh_creator_wallets()
 
     # ---- actions ----
     def refresh_storers(self):
-        if not self.storer_info_var:
-            return
         rpc = getattr(self.app, "rpc", None)
         if not rpc:
-            self.storer_info_var.set("Wallet offline - cannot fetch nodes.")
             return
 
-        self.storer_info_var.set("Refreshing storage nodes...")
-
         def handle(resp: Optional[Dict[str, Any]]):
-            storers = (resp or {}).get("storers") or []
-            usable = []
-            for meta in storers:
-                try:
-                    port = int(meta.get("port") or 0)
-                except Exception:
-                    port = 0
+            self.assigned_storers = self._filter_storers(resp)
+
+        try:
+            rpc.send_async({"type": "STOR_LIST"}, handle)
+        except Exception:
+            pass
+
+    def _fetch_storers_sync(self) -> list[Dict[str, Any]]:
+        rpc = getattr(self.app, "rpc", None)
+        if not rpc or not hasattr(rpc, "send"):
+            return []
+        try:
+            resp = rpc.send({"type": "STOR_LIST"}) or {}
+        except Exception:
+            return []
+        return self._filter_storers(resp)
+
+    def _filter_storers(self, resp: Optional[Dict[str, Any]]) -> list[Dict[str, Any]]:
+        storers = (resp or {}).get("storers") or (resp or {}).get("items") or []
+        usable = []
+        for meta in storers:
+            try:
+                port = int(meta.get("port") or 0)
+            except Exception:
+                port = 0
+            if port <= 0:
+                continue
+            usable.append(meta)
+        usable.sort(key=lambda m: int(m.get("trusted") or 0) * 1_000_000 + int(m.get("last_seen", 0)), reverse=True)
+        limit = max(1, int(CFG.GRAFFITI_REPLICATION_R))
+        return usable[:limit]
+
+    def _pick_online_storer(self, storers: list[Dict[str, Any]], timeout: float = 2.0) -> Optional[Dict[str, Any]]:
+        for meta in storers:
+            try:
+                host = str(meta.get("ip") or meta.get("host") or "").strip() or "127.0.0.1"
+                port = int(meta.get("port") or 0)
                 if port <= 0:
                     continue
-                usable.append(meta)
-            usable.sort(key=lambda m: int(m.get("trusted") or 0) * 1_000_000 + int(m.get("last_seen", 0)), reverse=True)
-            limit = max(1, int(CFG.GRAFFITI_REPLICATION_R))
-            assigned = usable[:limit]
-            self.assigned_storers = assigned
-            if not assigned:
-                self.storer_info_var.set("No storage nodes available. Ensure Archivist nodes are online.")
-                return
-            desc = []
-            for meta in assigned:
-                addr = str(meta.get("addr") or "")[:10]
-                flag = "[trusted] " if meta.get("trusted") else ""
-                desc.append(f"{flag}{addr}...@{meta.get('ip')}:{meta.get('port')}")
-            self.storer_info_var.set(f"Using {len(assigned)} node(s): " + "; ".join(desc))
-
-        rpc.send_async({"type": "STOR_LIST"}, handle)
+                with socket.create_connection((host, port), timeout=timeout):
+                    return meta
+            except Exception:
+                continue
+        return None
 
     def _refresh_creator_wallets(self):
         if not self.creator_cb:
@@ -424,9 +414,11 @@ class GraffitiTab(ttk.Frame):
         self.receipt_var.set("receipt: -")
         self.opret_hex = None
         if self.post_info_var:
-            self.post_info_var.set("Upload first to generate metadata & fee details.")
+            self.post_info_var.set("Select file, then click to upload & broadcast.")
+        if self.post_send_btn:
+            self.post_send_btn.config(state="normal")
 
-    def _start_upload(self):
+    def _start_upload_and_broadcast(self):
         if self.uploading:
             return
         if not self.selected_path or not self.selected_sha or self.selected_size is None or not self.selected_mime:
@@ -437,10 +429,12 @@ class GraffitiTab(ttk.Frame):
         except Exception as exc:
             messagebox.showerror("Graffiti", f"File tidak memenuhi syarat: {exc}")
             return
-        if not self.assigned_storers:
-            messagebox.showwarning("Graffiti", "No storage node selected. Refresh nodes first.")
+        storers = self._fetch_storers_sync()
+        storer = self._pick_online_storer(storers)
+        if not storer:
+            messagebox.showerror("Graffiti", "Storage node unavailable. Please try again when a storage node is online.")
             return
-        storer = self.assigned_storers[0]
+        self.assigned_storers = [storer]
         creator_addr = (self.creator_var.get() or "").strip()
         if not creator_addr:
             messagebox.showwarning("Graffiti", "Select a creator wallet first.")
@@ -451,21 +445,37 @@ class GraffitiTab(ttk.Frame):
             messagebox.showerror("Graffiti", f"Failed to compute art_id: {exc}")
             return
 
+        gid = f"{self.selected_sha}_{int(time.time())}"
+        receipt_id = f"rcpt_{gid}"
         self.uploading = True
-        self.upload_btn["state"] = "disabled"
         self._post_plan = None
         if self.post_send_btn:
             self.post_send_btn.config(state="disabled")
         self.opret_hex = None
         self.receipt_id = None
         self.pbar["value"] = 0
-        self.receipt_var.set("Uploading to storage...")
+        self.receipt_var.set("receipt: -")
         if self.post_info_var:
-            self.post_info_var.set("Uploading to storage node...")
+            self.post_info_var.set("Signing POST transaction...")
 
+        try:
+            self._prepare_post_plan_preupload(storer, receipt_id, art_id)
+        except Exception as exc:
+            self.uploading = False
+            if self.post_send_btn:
+                self.post_send_btn.config(state="normal")
+            messagebox.showerror("Graffiti", f"Prepare POST failed: {exc}")
+            return
+
+        def after_broadcast(txid: str):
+            self.post_info_var.set(f"POST broadcasted (txid: {txid}), uploading blob...")
+            self._begin_upload_after_sign(gid, receipt_id, storer, art_id, txid)
+
+        self._broadcast_post_tx(auto=True, after_success=after_broadcast)
+
+    def _begin_upload_after_sign(self, gid: str, receipt_id: str, storer: Dict[str, Any], art_id: str, txid: str) -> None:
         path = self.selected_path
         sha = self.selected_sha
-        gid = f"{sha}_{int(time.time())}"
         self._active_storer = storer
 
         def progress(sent: int, total: int):
@@ -479,11 +489,12 @@ class GraffitiTab(ttk.Frame):
                     graffiti_id=gid,
                     sha256_hex=sha,
                     art_id=art_id,
+                    receipt_id=receipt_id,
                     progress_cb=progress,
                 )
             except Exception as exc:
                 res = {"status": "error", "reason": str(exc)}
-            self.after(0, lambda: self._handle_upload_result(res))
+            self.after(0, lambda: self._handle_upload_result(res, trigger_broadcast=False, txid=txid))
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -493,9 +504,10 @@ class GraffitiTab(ttk.Frame):
         self.pbar["value"] = pct
         self.receipt_var.set(f"Uploading: {sent:,}/{total:,} bytes")
 
-    def _handle_upload_result(self, res: Optional[Dict[str, Any]]) -> None:
+    def _handle_upload_result(self, res: Optional[Dict[str, Any]], *, trigger_broadcast: bool = True, txid: Optional[str] = None) -> None:
         self.uploading = False
-        self.upload_btn["state"] = "normal"
+        if self.post_send_btn:
+            self.post_send_btn.config(state="disabled" if trigger_broadcast else "normal")
         if not isinstance(res, dict) or res.get("status") != "ok":
             self.pbar["value"] = 0
             detail = (res or {}).get("reason") or (res or {}).get("error") or (res or {}).get("stage") or "upload_failed"
@@ -504,6 +516,8 @@ class GraffitiTab(ttk.Frame):
                 detail = f"{detail} ({extra.get('reason')})"
             messagebox.showerror("Graffiti", f"Upload failed: {detail}")
             self.receipt_var.set("receipt: -")
+            if self.post_send_btn:
+                self.post_send_btn.config(state="normal")
             return
 
         receipt = res.get("receipt") or {}
@@ -513,9 +527,46 @@ class GraffitiTab(ttk.Frame):
         self.receipt_var.set(f"receipt: {rcpt_id}")
         self.pbar["value"] = 100
         try:
-            self._prepare_post_tx(res)
+            if trigger_broadcast:
+                self._prepare_post_tx(res)
+                self._broadcast_post_tx(auto=True)
+            else:
+                if txid:
+                    self.post_info_var.set(f"Upload complete (txid: {txid})")
+                else:
+                    self.post_info_var.set("Upload complete.")
         except Exception as exc:
             messagebox.showerror("Graffiti", f"Prepare POST failed: {exc}")
+
+    def _prepare_post_plan_preupload(self, storer_meta: Dict[str, Any], receipt_id: str, art_id: str) -> None:
+        if not (self.selected_sha and self.selected_size is not None and self.selected_mime):
+            raise RuntimeError("upload metadata incomplete")
+        storer_addr = str(storer_meta.get("addr") or storer_meta.get("address") or "").strip().lower()
+        creator = (self.creator_var.get() or "").strip().lower()
+        if not creator:
+            raise RuntimeError("creator wallet belum dipilih")
+        meta = build_metadata(
+            sha256_hex=self.selected_sha,
+            size_bytes=int(self.selected_size),
+            mime=self.selected_mime,
+            storer_addr=storer_addr or "unknown",
+            receipt_id=receipt_id,
+            creator_addr=creator,
+        )
+        opret_hex = build_opret_hex(meta)
+        self.opret_hex = opret_hex
+        pool_addr = derive_pool_address(art_id)
+        fee_sats = calc_upload_fee_sats(int(self.selected_size))
+        tsar_fee = fee_sats / CFG.TSAR
+        self._post_plan = {
+            "pool_addr": pool_addr,
+            "fee_sats": fee_sats,
+            "opret_hex": opret_hex,
+            "art_id": art_id,
+        }
+        info = f"Pool: {pool_addr} | Fee: {tsar_fee:.8f} TSAR ({fee_sats} sats)."
+        if self.post_info_var:
+            self.post_info_var.set(info + " Ready to sign.")
 
     def _prepare_post_tx(self, upload_result: Dict[str, Any]) -> None:
         if not (self.selected_sha and self.selected_size is not None and self.selected_mime and self.receipt_id):
@@ -549,8 +600,6 @@ class GraffitiTab(ttk.Frame):
         info = f"Pool: {pool_addr} | Fee: {tsar_fee:.8f} TSAR ({fee_sats} sats)."
         if self.post_info_var:
             self.post_info_var.set(info + " Ready to broadcast.")
-        if self.post_send_btn:
-            self.post_send_btn.config(state="normal")
 
         try:
             self.app.send_tab.set_recipient(pool_addr)
@@ -559,10 +608,11 @@ class GraffitiTab(ttk.Frame):
         except Exception as exc:
             raise RuntimeError(f"prefill send tab failed: {exc}") from exc
 
-    def _broadcast_post_tx(self) -> None:
+    def _broadcast_post_tx(self, auto: bool = False, after_success=None) -> None:
         plan = self._post_plan
         if not plan:
-            messagebox.showwarning("Graffiti", "Upload terlebih dahulu sebelum broadcast.")
+            if not auto:
+                messagebox.showwarning("Graffiti", "Upload terlebih dahulu sebelum broadcast.")
             return
         creator = (self.creator_var.get() or "").strip().lower()
         if not creator:
@@ -592,8 +642,11 @@ class GraffitiTab(ttk.Frame):
                     txid = resp.get("txid") or resp.get("data", {}).get("txid") or "?"
                     self.post_info_var.set(f"POST broadcasted (txid: {txid})")
                     self._post_plan = None
+                    if after_success:
+                        after_success(txid)
                 else:
                     self.post_info_var.set(f"POST failed: {resp}")
+                    self.uploading = False
                     if self.post_send_btn:
                         self.post_send_btn.config(state="normal")
             self.after(0, _update)

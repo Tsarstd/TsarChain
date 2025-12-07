@@ -97,7 +97,7 @@ WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wal
 DATA_SCHEMA_VERSION = 1
 
 # ---- KV BACKEND ----
-KV_BACKEND         = "lmdb"  # active key-value backend implementation (lmdb & json)
+KV_BACKEND         = "json"  # active key-value backend implementation (lmdb & json)
 LMDB_DATA_FILE     = "data/tsarchain_db"  # main LMDB data file path
 LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
@@ -173,8 +173,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "001dc452fa489b1421117116fec033006a3d84fd1cf92a6c200ebf5a5319e7b5"  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 1  # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -527,11 +527,11 @@ GRAFFITI_UPLOAD_FEE_PER_CHUNK = 0.8 * TSAR
 GRAFFITI_REPLICATION_R        = 3
 GRAFFITI_COMMENT_MAX_BYTES    = 140
 GRAFFITI_COMMENT_MIN_FEE      = 1 * TSAR
-GRAFFITI_COMMENT_BP_DENOM     = 10_000  # denominator (basis points) for split percentages
-GRAFFITI_COMMENT_CREATOR_BP   = 8_000   # 80%
-GRAFFITI_COMMENT_STORAGE_BP   = 1_000   # 10% (remaining -> miners as fee tip)
-GRAFFITI_EXPIRE_AFTER_BLOCKS  = 20       # default retention window after graffiti confirmed on-chain
-GRAFFITI_PROOF_EPOCH_BLOCKS   = 15     # block interval between retention proofs
+GRAFFITI_COMMENT_BP_DENOM     = 10_000    # denominator (basis points) for split percentages
+GRAFFITI_COMMENT_CREATOR_BP   = 8_000     # 80%
+GRAFFITI_COMMENT_STORAGE_BP   = 1_000     # 10% (remaining -> miners as fee tip)
+GRAFFITI_EXPIRE_AFTER_BLOCKS  = 25        # default retention window after graffiti confirmed on-chain
+GRAFFITI_PROOF_EPOCH_BLOCKS   = 15        # block interval between retention proofs
 GRAFFITI_PROOF_CHUNK_BYTES    = 4 * 1024  # bytes challenged per proof (deterministic)
 GRAFFITI_MAX_SIZE_BYTES       = 10 * 1024 * 1024  # hard cap for upload/download payload
 GRAFFITI_ALLOWED_MIME         = ("image/jpeg", "video/mp4")  # whitelist MIME types

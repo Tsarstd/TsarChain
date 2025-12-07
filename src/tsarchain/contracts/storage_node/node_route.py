@@ -6,6 +6,7 @@ import os, time
 from typing import Any, Dict, Optional
 
 from tsarchain.contracts import graffiti as GRAFFITI
+from tsarchain.utils import config as CFG
 
 from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.contracts.storage_node.node_route")
@@ -89,10 +90,26 @@ def handle_node_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             tip_h = int(msg.get("tip_height", 0) or 0)
         except Exception:
             tip_h = 0
+        expire_after = 0
+        try:
+            expire_after = max(0, int(CFG.GRAFFITI_EXPIRE_AFTER_BLOCKS))
+        except Exception:
+            expire_after = 0
         files = server.index.get("files", {}) or {}
         expired = 0
         remove_keys: list[str] = []
         for gid, meta in files.items():
+            if not isinstance(meta, dict):
+                continue
+            if (not meta.get("paid")) and expire_after > 0 and tip_h > 0:
+                try:
+                    expire_h = int(meta.get("expire_at_height", 0) or 0)
+                except Exception:
+                    expire_h = 0
+                if expire_h <= 0:
+                    expire_h = tip_h + expire_after
+                    meta["expire_at_height"] = expire_h
+                    files[gid] = meta
             try:
                 expire_h = int(meta.get("expire_at_height", 0) or 0)
             except Exception:

@@ -106,6 +106,7 @@ def upload_graffiti(
     graffiti_id: Optional[str] = None,
     sha256_hex: Optional[str] = None,
     art_id: Optional[str] = None,
+    receipt_id: Optional[str] = None,
     progress_cb: Optional[Callable[[int, int], None]] = None,
 ) -> Dict[str, Any]:
     """
@@ -172,6 +173,8 @@ def upload_graffiti(
                     pass
 
     commit_payload = {"type": "STOR_COMMIT", "graffiti_id": gid}
+    if receipt_id:
+        commit_payload["receipt_id"] = receipt_id
     commit_resp = _send_storage_request(host, port, commit_payload)
     if commit_resp.get("status") not in ("ok", "accepted"):
         return {"status": "error", "stage": "commit", "resp": commit_resp}
