@@ -955,15 +955,32 @@ class StorageMixin:
         except Exception:
             log.exception("[_compute_state_snapshot] UTXO stats failed")
 
+        data_g = {}
         graffiti_posts = 0
         total_comments = 0
+        total_graffiti_storage = 0
         graffiti_on_mempool = 0
         try:
             reg = getattr(utxo, "_graffiti_registry", None)
             if reg is None:
                 reg = GraffitiRegistry()
             data_g = getattr(reg, "data", {}) or {}
-            graffiti_posts = len(data_g.get("posts") or {})
+            posts_data = data_g.get("posts") or {}
+            graffiti_posts = len(posts_data)
+            for post in posts_data.values():
+                if not isinstance(post, dict):
+                    continue
+                size_val = post.get("size")
+                if size_val is None:
+                    try:
+                        stats = post.get("stats") or {}
+                        size_val = stats.get("size") or {}
+                    except Exception:
+                        size_val = None
+                try:
+                    total_graffiti_storage += int(size_val or 0)
+                except Exception:
+                    continue
             total_comments = sum(len(v or []) for v in (data_g.get("comments") or {}).values())
         except Exception:
             log.exception("[_compute_state_snapshot] graffiti aggregation failed")
@@ -1079,6 +1096,7 @@ class StorageMixin:
                 "graffiti_on_mempool": int(graffiti_on_mempool),
                 "payouts": int(total_payouts),
                 "pool_balances": int(total_pool_balances),
+                "total_graffiti_storage": int(total_graffiti_storage),
             },
             "miners_snapshot": {
                 "top_miners": [(miner, count) for miner, count in miner_counter.most_common() if miner]

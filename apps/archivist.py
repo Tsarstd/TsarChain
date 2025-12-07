@@ -46,6 +46,8 @@ class TsarStorageGUI:
         self._server: Optional[StorageServer] = None
         self.addr_var = tk.StringVar(value="")
         self._target_node: Optional[tuple[str,int]] = None
+        self._refresh_inflight = False
+        self._log_max_lines = 500
         self._build_ui()
         self._heartbeat()
 
@@ -150,6 +152,12 @@ class TsarStorageGUI:
         try:
             self.log.insert(tk.END, text + "\n")
             self.log.see(tk.END)
+            try:
+                lines = int(self.log.index("end-1c").split(".")[0])
+                if lines > self._log_max_lines:
+                    self.log.delete("1.0", f"{lines - self._log_max_lines}.0")
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -261,25 +269,44 @@ class TsarStorageGUI:
 
     # ------------- Refresh -------------
     def refresh_all(self):
-        if not self.connected:
+        if not self.connected or self._refresh_inflight:
             return
-        try:
-            info = self.rpc.call({"type":"GET_INFO"}, timeout=4.0) or {}
-            if not isinstance(info, dict):
-                raise RuntimeError("rpc_failure")
-            self.last_info = info
-            self.info_vars["tip"].set(str(info.get("height","-")))
-            self.info_vars["peers"].set(str(info.get("peers","0")))
-        except Exception:
-            self._handle_rpc_drop("refresh")
-            return
-        try:
-            idx = self._call_storage_local({"type":"STOR_INDEX"}, timeout=6.0)
-            if not isinstance(idx, dict):
-                raise RuntimeError("rpc_failure")
-            self._render_index(idx)
-        except Exception:
-            self._handle_rpc_drop("refresh")
+        self._refresh_inflight = True
+
+        def worker():
+            info = None
+            idx = None
+            info_ok = idx_ok = False
+            try:
+                info = self.rpc.call({"type":"GET_INFO"}, timeout=4.0) or {}
+                info_ok = isinstance(info, dict)
+            except Exception:
+                info_ok = False
+            try:
+                idx = self._call_storage_local({"type":"STOR_INDEX"}, timeout=6.0)
+                idx_ok = isinstance(idx, dict)
+            except Exception:
+                idx_ok = False
+
+            def apply():
+                if info_ok:
+                    self.last_info = info
+                    self.info_vars["tip"].set(str(info.get("height","-")))
+                    self.info_vars["peers"].set(str(info.get("peers","0")))
+                else:
+                    self._handle_rpc_drop("refresh_info")
+                if idx_ok:
+                    self._render_index(idx)
+                else:
+                    self._handle_rpc_drop("refresh_index")
+                self._refresh_inflight = False
+
+            try:
+                self.root.after(0, apply)
+            except Exception:
+                self._refresh_inflight = False
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _render_index(self, idx: Dict[str,Any] | None):
         self.tree.delete(*self.tree.get_children())
@@ -290,7 +317,7 @@ class TsarStorageGUI:
         files = idx.get("files", {})
         used  = int(idx.get("bytes_used", 0))
         self.info_vars["files"].set(str(len(files)))
-        self.info_vars["bytes"].set(f"{used} bytes")
+        self.info_vars["bytes"].set(self._fmt_bytes(used))
         for aid, meta in files.items():
             display_id = meta.get("art_id") or aid
             self.tree.insert("", tk.END, values=(
@@ -301,9 +328,9 @@ class TsarStorageGUI:
                 meta.get("state"),
                 meta.get("path")
             ))
-        self._refresh_pool_listing(files)
+        self._refresh_pool_listing(files, idx.get("art_map"))
 
-    def _refresh_pool_listing(self, files: Dict[str, Any]) -> None:
+    def _refresh_pool_listing(self, files: Dict[str, Any], art_map_idx: Optional[Dict[str, Any]] = None) -> None:
         if not getattr(self, "pool_tree", None):
             return
         rpc = getattr(self, "rpc", None)
@@ -320,13 +347,7 @@ class TsarStorageGUI:
         self._pool_data = {}
         files_by_sha: dict[str, dict] = {}
         files_by_art: dict[str, dict] = {}
-        art_map = {}
-        try:
-            art_map = (self._call_storage_local({"type":"STOR_INDEX"}, timeout=3.0) or {}).get("art_map", {})
-            if not art_map:
-                art_map = (rpc.call({"type":"STOR_INDEX"}, timeout=3.0) or {}).get("art_map", {})
-        except Exception:
-            art_map = {}
+        art_map = art_map_idx or {}
         for gid, meta in (files or {}).items():
             sha = str(meta.get("sha256") or "").lower()
             if sha:
@@ -367,6 +388,17 @@ class TsarStorageGUI:
         else:
             self.pool_status_var.set("Belum ada saldo pool untuk karya tersimpan.")
         self._auto_mark_paid(posts, files_by_art)
+
+    def _fmt_bytes(self, n: Any) -> str:
+        try:
+            size = float(n)
+        except Exception:
+            return "0 B"
+        units = ["B", "KB", "MB", "GB", "TB"]
+        for u in units:
+            if size < 1024.0 or u == units[-1]:
+                return f"{size:.2f} {u}" if u != "B" else f"{int(size)} {u}"
+            size /= 1024.0
 
     def _mark_selected_paid(self) -> None:
         if not self.connected:
@@ -645,18 +677,28 @@ class TsarStorageGUI:
     def _heartbeat(self):
         def run():
             if self.connected:
-                try:
-                    pong = self.rpc.call({"type":"PING"}, timeout=2.0)
-                    if isinstance(pong, dict) and pong.get("type") == "PONG":
-                        self.status_lbl.configure(text="● Connected", foreground="#1a8")
-                        self.refresh_all()
-                    else:
-                        self._handle_rpc_drop("heartbeat")
-                except Exception:
-                    self._handle_rpc_drop("heartbeat")
+                threading.Thread(target=self._heartbeat_worker, daemon=True).start()
             self.root.after(HEARTBEAT_SEC * 1000, run)
         self.root.after(HEARTBEAT_SEC * 1000, run)
 
+    def _heartbeat_worker(self):
+        ok = False
+        try:
+            pong = self.rpc.call({"type":"PING"}, timeout=2.0)
+            ok = isinstance(pong, dict) and pong.get("type") == "PONG"
+        except Exception:
+            ok = False
+        if ok:
+            try:
+                self.root.after(0, lambda: self.status_lbl.configure(text="? Connected", foreground="#1a8"))
+            except Exception:
+                pass
+            self.refresh_all()
+        else:
+            try:
+                self.root.after(0, self._handle_rpc_drop, "heartbeat")
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     mp.freeze_support()

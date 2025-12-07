@@ -51,20 +51,27 @@ class GraffitiTab(ttk.Frame):
         self.selected_sha: str | None = None
         self.selected_size: int | None = None
         self.selected_mime: str | None = None
+        
         self.receipt_id: str | None = None
         self.opret_hex: str | None = None
         self.uploading = False
+        
         self.assigned_storers: list[Dict[str, Any]] = []
         self.storer_info: StringVar | None = None
+        self._upload_candidates: list[Dict[str, Any]] = []
+        self._active_storer: Optional[Dict[str, Any]] = None
+        
+        self._upload_ctx: dict[str, Any] = {}
         self.creator_var = StringVar()
         self.creator_cb: ttk.Combobox | None = None
+        
         self.post_send_btn: ttk.Button | None = None
         self._post_plan: Optional[Dict[str, Any]] = None
-        self._active_storer: Optional[Dict[str, Any]] = None
         self.catalog_posts: list[Dict[str, Any]] = []
         self._catalog_map: dict[str, Dict[str, Any]] = {}
         self._selected_art: Optional[Dict[str, Any]] = None
         self.catalog_tree: ttk.Treeview | None = None
+        
         self.comment_tree: ttk.Treeview | None = None
         self.comment_text: tk.Text | None = None
         self.comment_wallet_var = StringVar()
@@ -72,6 +79,7 @@ class GraffitiTab(ttk.Frame):
         self.comment_amount_var = StringVar()
         self.comment_tip_var = StringVar(value="0")
         self.comment_status_var = StringVar(value="Select artwork to comment.")
+        
         self.catalog_status_var = StringVar(value="Catalog belum dimuat.")
         self.art_info_var = StringVar(value="Pilih karya untuk melihat detail.")
         self.comment_split_var = StringVar(value="")
@@ -348,7 +356,8 @@ class GraffitiTab(ttk.Frame):
         limit = max(1, int(CFG.GRAFFITI_REPLICATION_R))
         return usable[:limit]
 
-    def _pick_online_storer(self, storers: list[Dict[str, Any]], timeout: float = 2.0) -> Optional[Dict[str, Any]]:
+    def _filter_online_storers(self, storers: list[Dict[str, Any]], timeout: float = 2.0) -> list[Dict[str, Any]]:
+        online: list[Dict[str, Any]] = []
         for meta in storers:
             try:
                 host = str(meta.get("ip") or meta.get("host") or "").strip() or "127.0.0.1"
@@ -356,10 +365,10 @@ class GraffitiTab(ttk.Frame):
                 if port <= 0:
                     continue
                 with socket.create_connection((host, port), timeout=timeout):
-                    return meta
+                    online.append(meta)
             except Exception:
                 continue
-        return None
+        return online
 
     def _refresh_creator_wallets(self):
         if not self.creator_cb:
@@ -430,11 +439,12 @@ class GraffitiTab(ttk.Frame):
             messagebox.showerror("Graffiti", f"File tidak memenuhi syarat: {exc}")
             return
         storers = self._fetch_storers_sync()
-        storer = self._pick_online_storer(storers)
-        if not storer:
+        online = self._filter_online_storers(storers)
+        if not online:
             messagebox.showerror("Graffiti", "Storage node unavailable. Please try again when a storage node is online.")
             return
-        self.assigned_storers = [storer]
+        self.assigned_storers = online
+        storer = online[0]
         creator_addr = (self.creator_var.get() or "").strip()
         if not creator_addr:
             messagebox.showwarning("Graffiti", "Select a creator wallet first.")
@@ -447,6 +457,8 @@ class GraffitiTab(ttk.Frame):
 
         gid = f"{self.selected_sha}_{int(time.time())}"
         receipt_id = f"rcpt_{gid}"
+        self._upload_candidates = list(online)
+        self._upload_ctx = {"gid": gid, "receipt_id": receipt_id, "art_id": art_id}
         self.uploading = True
         self._post_plan = None
         if self.post_send_btn:
@@ -469,11 +481,18 @@ class GraffitiTab(ttk.Frame):
 
         def after_broadcast(txid: str):
             self.post_info_var.set(f"POST broadcasted (txid: {txid}), uploading blob...")
-            self._begin_upload_after_sign(gid, receipt_id, storer, art_id, txid)
+            self._begin_upload_after_sign(txid)
 
         self._broadcast_post_tx(auto=True, after_success=after_broadcast)
 
-    def _begin_upload_after_sign(self, gid: str, receipt_id: str, storer: Dict[str, Any], art_id: str, txid: str) -> None:
+    def _begin_upload_after_sign(self, txid: str) -> None:
+        if not self._upload_candidates:
+            self._reset_upload_state(f"Upload failed: no storage node available (txid: {txid})")
+            return
+        storer = self._upload_candidates.pop(0)
+        gid = self._upload_ctx.get("gid")
+        receipt_id = self._upload_ctx.get("receipt_id")
+        art_id = self._upload_ctx.get("art_id")
         path = self.selected_path
         sha = self.selected_sha
         self._active_storer = storer
@@ -516,8 +535,13 @@ class GraffitiTab(ttk.Frame):
                 detail = f"{detail} ({extra.get('reason')})"
             messagebox.showerror("Graffiti", f"Upload failed: {detail}")
             self.receipt_var.set("receipt: -")
-            if self.post_send_btn:
-                self.post_send_btn.config(state="normal")
+            if self._upload_candidates:
+                if self.post_info_var:
+                    self.post_info_var.set("Retrying upload on another storage node...")
+                self.uploading = True
+                self._begin_upload_after_sign(txid or "")
+                return
+            self._reset_upload_state("Upload failed. No storage node reachable.")
             return
 
         receipt = res.get("receipt") or {}
@@ -567,6 +591,8 @@ class GraffitiTab(ttk.Frame):
         info = f"Pool: {pool_addr} | Fee: {tsar_fee:.8f} TSAR ({fee_sats} sats)."
         if self.post_info_var:
             self.post_info_var.set(info + " Ready to sign.")
+        self._post_plan = self._post_plan or {}
+        self._post_plan.update({"pool_addr": pool_addr, "fee_sats": fee_sats, "opret_hex": opret_hex, "art_id": art_id})
 
     def _prepare_post_tx(self, upload_result: Dict[str, Any]) -> None:
         if not (self.selected_sha and self.selected_size is not None and self.selected_mime and self.receipt_id):
@@ -647,6 +673,7 @@ class GraffitiTab(ttk.Frame):
                 else:
                     self.post_info_var.set(f"POST failed: {resp}")
                     self.uploading = False
+                    self._upload_candidates = []
                     if self.post_send_btn:
                         self.post_send_btn.config(state="normal")
             self.after(0, _update)

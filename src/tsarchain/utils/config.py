@@ -97,7 +97,7 @@ WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wal
 DATA_SCHEMA_VERSION = 1
 
 # ---- KV BACKEND ----
-KV_BACKEND         = "json"  # active key-value backend implementation (lmdb & json)
+KV_BACKEND         = "lmdb"  # active key-value backend implementation (lmdb & json)
 LMDB_DATA_FILE     = "data/tsarchain_db"  # main LMDB data file path
 LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
@@ -260,7 +260,7 @@ RANDOMX_KEY_EPOCH_BLOCKS = 128     # rotate RandomX seed every N blocks
 RANDOMX_FULL_MEM         = False  # allocate ~2GB dataset for mining/validation - default 'False' can be changed in CLI
 RANDOMX_LARGE_PAGES      = False  # set True only if huge pages configured OS-wide
 RANDOMX_JIT              = True
-RANDOMX_SECURE_JIT       = False
+RANDOMX_SECURE_JIT       = True
 RANDOMX_HARD_AES         = True
 RANDOMX_CACHE_MAX        = 2      # max RandomX VM entries cached in rust binding
 
@@ -550,10 +550,10 @@ GRAFFITI_FILE      = os.path.join(CONTRACTS_DIR, "graffiti.json")  # graffiti me
 # ---- ARCHIVIST ----
 ARCHIV_PEER_KEYS               = "data_peer/storage_peer_keys.json"
 STORAGE_DIR                    = "data/storage"  # folder holding uploaded storage blobs
-STORAGE_SIZE_INIT              = 256 * 1024 * 1024  # initial storage size allocation (256MB)
+STORAGE_SIZE_INIT              = 100 * 1024 * 1024  # initial storage size allocation (100MB)
 STORAGE_MAX_BYTES              = 64 * 1024 * 1024 * 1024  # cap on cumulative storage usage (64GB)
 STORAGE_MIN_CONFIRM            = 2  # confirmations required before serving stored data
-RETENTION_GC_SEC               = 180
+RETENTION_GC_SEC               = 60  # interval between retention garbage collection runs
 
 
 # =============================================================================

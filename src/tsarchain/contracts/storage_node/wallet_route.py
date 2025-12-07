@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
-# Part of TsarChain ƒ?" see LICENSE and TRADEMARKS.md
+# Part of TsarChain — see LICENSE and TRADEMARKS.md
 
 import os, base64, hashlib, time
 from typing import Any, Dict, Optional
