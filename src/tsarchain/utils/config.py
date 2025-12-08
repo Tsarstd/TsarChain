@@ -80,7 +80,7 @@ MODE   = "dev"  # default runtime profile, switch to "prod" for live nodes
 IS_DEV = (MODE.lower() == "dev")  # cached boolean to simplify dev/prod toggles
 
 # ---- SYNC OVERRIDES ----
-FULL_SYNC_DEV  = False  # opt-in full sync flag for development builds
+FULL_SYNC_DEV  = True  # opt-in full sync flag for development builds
 FULL_SYNC_PROD = False  # opt-in full sync flag for production deployments
 
 # ---- APP METADATA ----
@@ -174,7 +174,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "001c80e13ab146563d0aed0bcf41c90c56f7fd728b64bdc824080cae9f0fd74d"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "001091973455b9cc5d9af783b6de39b0b871580ecbe424fa7be6db9c944a742f"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -359,7 +359,7 @@ TEMP_BAN_SECONDS             = 30  # duration for temporary ban entries
 
 # ---- FULL SYNC GUARD ----
 ENABLE_FULL_SYNC          = FULL_SYNC_DEV if IS_DEV else FULL_SYNC_PROD  # controls whether expensive full sync is allowed
-FULL_SYNC_MAX_BLOCKS      = 15_000  # cap on blocks served per full-sync round
+FULL_SYNC_MAX_BLOCKS      = 5_000  # cap on blocks served per full-sync round
 FULL_SYNC_MIN_INTERVAL    = 60  # seconds a peer must wait between full-sync requests
 FULL_SYNC_BACKOFF_INITIAL = 120  # starting backoff between full sync retries
 FULL_SYNC_BACKOFF_MAX     = 600  # maximum backoff delay between full sync retries

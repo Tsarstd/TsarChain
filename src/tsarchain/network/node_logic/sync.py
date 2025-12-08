@@ -317,8 +317,12 @@ def handle_block_gap(self, block, origin: Optional[Tuple[str, int]]) -> None:
 
     self._recent_gap_requests[peer] = now
     height = int(getattr(block, "height", 0))
-    span = max(1, int(CFG.HEADERS_FANOUT) // 2)
-    missing = list(range(max(0, height - span), height + 1))
+    # Enlarge the download window when it's far behind to avoid bouncing back and forth between small spans.
+    # Use the HEADERS_FANOUT factor and limit it with BLOCK_DOWNLOAD_BATCH_MAX.
+    span = max(32, int(CFG.HEADERS_FANOUT) * 2)
+    span = min(span, int(CFG.BLOCK_DOWNLOAD_BATCH_MAX))
+    start_h = max(0, height - span)
+    missing = list(range(start_h, height + 1))
     self._download_blocks(peer, missing)
 
 

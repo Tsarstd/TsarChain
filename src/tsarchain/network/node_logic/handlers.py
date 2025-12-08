@@ -163,7 +163,7 @@ def _handle_get_full_sync(self, message, addr):
     full_obj, _, _, _ = self.broadcast.build_full_sync_payload()
     enc = json.dumps(full_obj, separators=CFG.CANONICAL_SEP, ensure_ascii=False).encode("utf-8")
 
-    hard_cap = min(CFG.MAX_MSG - len(CFG.NETWORK_MAGIC))
+    hard_cap = CFG.MAX_MSG - len(CFG.NETWORK_MAGIC)
     if len(enc) > hard_cap:
         return {
             "type": "SYNC_REDIRECT",
