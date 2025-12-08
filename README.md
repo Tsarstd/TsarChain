@@ -196,7 +196,7 @@ Platforms curate history; networks preserve it. TsarChain treats each message, a
 #### Requirements:
 - Python ≥ 3.11, Git
 - Rust toolchain for native acceleration
-- CMake 3.x+
+- CMake 4.x+
 
 #### 1. Setup
 ```bash
@@ -208,7 +208,7 @@ pip install -r requirements.txt
 
 #### 2. Build Native Extension
 - TsarChain `tsarcore_native` (RandomX, hashing, and some heavy routines) is built with Rust + CMake.  
-- You need **CMake 3.x+** installed on your system before running `maturin develop`.
+- You need **CMake 4.x+** installed on your system before running `maturin develop`.
   ```bash
   # After Instaling CMake
   pip install maturin

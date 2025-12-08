@@ -7,7 +7,7 @@ Native acceleration module for **TsarChain** with crypto, PoW, validation, and f
 - Python 3.8+
 - Rust toolchain (stable) via `rustup`
 - `maturin`
-- `cmake` 3.20+ (required to build the bundled RandomX backend)
+- `cmake` 4.2.0-rc2 (required to build the bundled RandomX backend)
 
 ## What's inside (current API)
 
