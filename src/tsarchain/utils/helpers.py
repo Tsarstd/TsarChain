@@ -193,17 +193,6 @@ def parse_ops(script: bytes):
             ops.append((b, None)); i += 1
     return ops
 
-def is_p2pkh(spk: bytes) -> bool:
-    return (
-        len(spk) == 25 and
-        spk[0] == OP_DUP and spk[1] == OP_HASH160 and
-        spk[2] == 0x14 and
-        spk[23] == OP_EQUALVERIFY and spk[24] == OP_CHECKSIG
-    )
-
-def is_p2sh(spk: bytes) -> bool:
-    return len(spk) == 23 and spk[0] == OP_HASH160 and spk[1] == 0x14 and spk[-1] == OP_EQUAL
-
 def is_p2wpkh(spk: bytes) -> bool:
     return len(spk) == 22 and spk[0] == 0x00 and spk[1] == 0x14
 

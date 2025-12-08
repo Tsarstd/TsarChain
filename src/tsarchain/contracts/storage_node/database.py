@@ -84,30 +84,15 @@ class ArchivistDatabase:
             return self._load_index_json()
         files: Dict[str, Dict] = {}
         art_map: Dict[str, str] = {}
-        try:
-            for k, v in _iter_prefix(self._kv_index, "idx", b"file:"):
-                gid = k.decode("utf-8")[5:]
-                try:
-                    meta = json.loads(v.decode("utf-8"))
-                except Exception:
-                    log.exception("[db] load_index failed to decode file meta for gid=%s", gid)
-                    continue
-                files[gid] = meta
-            for k, v in _iter_prefix(self._kv_index, "idx", b"art:"):
-                art = k.decode("utf-8")[4:]
-                try:
-                    art_map[art] = v.decode("utf-8")
-                except Exception:
-                    log.exception("[db] load_index failed to decode art map for art=%s", art)
-                    continue
-        except Exception as exc:
-            log.error("[db] load_index lmdb error: %s", exc)
-        bytes_used = 0
-        try:
-            bytes_used = sum(int(m.get("size_bytes", 0)) for m in files.values())
-        except Exception:
-            log.exception("[db] load_index failed to compute bytes_used")
-            bytes_used = 0
+        for k, v in _iter_prefix(self._kv_index, "idx", b"file:"):
+            gid = k.decode("utf-8")[5:]
+            meta = json.loads(v.decode("utf-8"))
+            files[gid] = meta
+        for k, v in _iter_prefix(self._kv_index, "idx", b"art:"):
+            art = k.decode("utf-8")[4:]
+            art_map[art] = v.decode("utf-8")
+            
+        bytes_used = sum(int(m.get("size_bytes", 0)) for m in files.values())
         return {"files": files, "bytes_used": bytes_used, "art_map": art_map}
 
     def save_index(self, index: Dict) -> None:
@@ -122,28 +107,14 @@ class ArchivistDatabase:
         if not self.use_kv:
             self._save_index_json(index)
             return
-        try:
-            self._kv_index.clear_db("idx")
-        except Exception:
-            log.debug("[db] clear_db idx failed (ignore)")
+        self._kv_index.clear_db("idx")
         ops = []
         for gid, meta in (index.get("files") or {}).items():
-            try:
-                ops.append((f"file:{gid}".encode("utf-8"), json.dumps(meta).encode("utf-8")))
-            except Exception:
-                log.exception("[db] save_index failed to encode file meta for gid=%s", gid)
-                continue
+            ops.append((f"file:{gid}".encode("utf-8"), json.dumps(meta).encode("utf-8")))
         for art, gid in (index.get("art_map") or {}).items():
-            try:
-                ops.append((f"art:{art}".encode("utf-8"), str(gid).encode("utf-8")))
-            except Exception:
-                log.exception("[db] save_index failed to encode art map for art=%s", art)
-                continue
+            ops.append((f"art:{art}".encode("utf-8"), str(gid).encode("utf-8")))
         if ops:
-            try:
-                self._kv_index.put_batch("idx", ops)
-            except Exception as exc:
-                log.error("[db] save_index batch failed: %s", exc)
+            self._kv_index.put_batch("idx", ops)
 
     # ---------------- Blob operations (LMDB only) ----------------
     def append_incoming(self, gid: str, chunk: bytes, max_chunk: int) -> int:
@@ -220,41 +191,24 @@ class ArchivistDatabase:
             raise RuntimeError("blobs_disabled")
         key = f"blob:{gid}".encode("utf-8")
         if incoming:
-            try:
-                self._kv_incoming.delete("incoming", key)
-            except Exception:
-                log.exception("[db] delete_blob incoming failed (ignore)")
-                pass
+            self._kv_incoming.delete("incoming", key)
         if final:
-            try:
-                self._kv_final.delete("final", key)
-            except Exception:
-                log.exception("[db] delete_blob final failed (ignore)")
-                pass
+            self._kv_final.delete("final", key)
 
     # ---------------- JSON fallback ----------------
     def _idx_path(self) -> str:
         return os.path.join(self.storage_dir, "index.json")
 
     def _load_index_json(self) -> Dict:
-        default = {"files": {}, "bytes_used": 0, "art_map": {}}
         path = self._idx_path()
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                data = json.load(fh)
-        except Exception:
-            log.exception("[db] load_index_json failed to load index.json")
-            data = {}
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
         if not isinstance(data, dict):
             data = {}
         data.setdefault("files", {})
         data.setdefault("bytes_used", 0)
         data.setdefault("art_map", {})
-        try:
-            data["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (data.get("files") or {}).values())
-        except Exception:
-            log.exception("[db] load_index_json failed to compute bytes_used")
-            pass
+        data["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (data.get("files") or {}).values())
         return data
 
     def _save_index_json(self, data: Dict) -> None:

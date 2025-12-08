@@ -76,10 +76,7 @@ def clog(message: str, color: str = COL.GREY):
         print(f"{_stamp()} : {color}{message}{COL.RESET}")
 
 def human_hps(hps: float) -> str:
-    try:
-        hps = float(hps)
-    except Exception:
-        return "? H/s"
+    hps = float(hps)
     units = ["H/s", "kH/s", "MH/s", "GH/s", "TH/s"]
     i = 0
     while hps >= 1000.0 and i < len(units)-1:
@@ -98,21 +95,18 @@ class HashrateReporter(threading.Thread):
         self.stop_event = mp.Event()
 
     def run(self):
-        try :
-            last_line = ""
-            while not self.stop_event.is_set():
-                try:
-                    msg = self.q.get(timeout=1.0)
-                except queue.Empty:
-                    continue
-                if isinstance(msg, tuple) and len(msg) == 2 and msg[0] == "TOTAL_HPS":
-                    hps = human_hps(msg[1])
-                    line = f"Hashrate ~ {hps} {COL.DIM}{COL.RESET}"
-                    if line != last_line:
-                        clog(line, color=COL.CYAN)
-                        last_line = line
-        except Exception:
-            pass
+        last_line = ""
+        while not self.stop_event.is_set():
+            try:
+                msg = self.q.get(timeout=1.0)
+            except queue.Empty:
+                continue
+            if isinstance(msg, tuple) and len(msg) == 2 and msg[0] == "TOTAL_HPS":
+                hps = human_hps(msg[1])
+                line = f"Hashrate ~ {hps} {COL.DIM}{COL.RESET}"
+                if line != last_line:
+                    clog(line, color=COL.CYAN)
+                    last_line = line
 
 
 def _register_bootstrap_peers(network: Network) -> int:
@@ -121,12 +115,9 @@ def _register_bootstrap_peers(network: Network) -> int:
     for peer in fallback_nodes:
         if not peer:
             continue
-        try:
-            network.persistent_peers.add(peer)
-            network.peers.add(peer)
-            count += 1
-        except Exception:
-            continue
+        network.persistent_peers.add(peer)
+        network.peers.add(peer)
+        count += 1
     return count
 
 
@@ -157,10 +148,7 @@ class LightMiner:
     # -------- lifecycle --------
     def _handle_signal(self, signum, _frame):
         clog(f"[signal] Received {signum}; stopping miner...", color=COL.BG_YELLOW)
-        try:
-            log.info("Ctrl+C / signal %s received - stopping light miner loop", signum)
-        except Exception:
-            pass
+        log.info("Ctrl+C / signal %s received - stopping light miner loop", signum)
         self.mining_alive = False
         self.cancel_mining.set()
 
@@ -190,13 +178,10 @@ class LightMiner:
         """Stop background header/full sync from running a full chain download."""
         if not self.network:
             return
-        try:
-            self.network.sync_with_peers = lambda: None  # type: ignore[assignment]
-            self.network.request_sync = lambda fast=False: None  # type: ignore[assignment]
-            self.network._sync_event.clear()
-            self.network._sync_fast_until = 0.0
-        except Exception:
-            pass
+        self.network.sync_with_peers = lambda: None  # type: ignore[assignment]
+        self.network.request_sync = lambda fast=False: None  # type: ignore[assignment]
+        self.network._sync_event.clear()
+        self.network._sync_fast_until = 0.0
 
     def _pick_peer(self) -> tuple[str, int] | None:
         if not self.network:
@@ -206,10 +191,7 @@ class LightMiner:
             peers = list(getattr(self.network, "persistent_peers", ()))
         if not peers:
             return None
-        try:
-            peers.sort(key=lambda p: self.network.peer_scores.get(p, 0), reverse=True)
-        except Exception:
-            pass
+        peers.sort(key=lambda p: self.network.peer_scores.get(p, 0), reverse=True)
         return peers[0]
 
     def _hello_peer(self, peer: tuple[str, int]) -> dict | None:
@@ -224,37 +206,25 @@ class LightMiner:
         }
         resp = self.network._rpc_request(peer, payload, timeout=max(8.0, CFG.SYNC_TIMEOUT))
         if resp and resp.get("type") == "HELLO_RESPONSE":
-            try:
-                self.network.peers.add(peer)
-                self.network.outbound_peers.add(peer)
-                self.network.peer_scores.setdefault(peer, CFG.PEER_SCORE_START)
-            except Exception:
-                pass
-            try:
-                h = int(resp.get("height", -1))
-                self.network._peer_best_height[peer] = h
-            except Exception:
-                pass
+            self.network.peers.add(peer)
+            self.network.outbound_peers.add(peer)
+            self.network.peer_scores.setdefault(peer, CFG.PEER_SCORE_START)
+            h = int(resp.get("height", -1))
+            self.network._peer_best_height[peer] = h
         return resp
 
     def _fetch_tip_height(self, peer: tuple[str, int]) -> int:
         resp = self._hello_peer(peer)
         height = -1
         if resp:
-            try:
-                height = int(resp.get("height", -1))
-            except Exception:
-                height = -1
+            height = int(resp.get("height", -1))
         if height >= 0:
             return height
         if not self.network:
             return -1
         info = self.network._rpc_request(peer, {"type": "GET_INFO"}, timeout=max(8.0, CFG.SYNC_TIMEOUT))
         if info and isinstance(info, dict):
-            try:
-                return int(info.get("height", -1))
-            except Exception:
-                return -1
+            return int(info.get("height", -1))
         return -1
 
     def _fetch_recent_blocks(self, peer: tuple[str, int], tip_height: int) -> list[dict]:
@@ -275,20 +245,14 @@ class LightMiner:
             if not isinstance(items, list):
                 return []
             blocks.extend(items)
-        try:
-            blocks.sort(key=lambda b: int(b.get("height", 0)))
-        except Exception:
-            pass
+        blocks.sort(key=lambda b: int(b.get("height", 0)))
         return blocks
 
     def _get_block_hash(self, peer: tuple[str, int], height: int) -> str | None:
         if not self.network or height < 0:
             return None
         payload = {"type": "GET_BLOCK_HASH", "height": int(height), "port": getattr(self.network, "port", 0)}
-        try:
-            resp = self.network._rpc_request(peer, payload, timeout=max(6.0, CFG.SYNC_TIMEOUT))
-        except Exception:
-            resp = None
+        resp = self.network._rpc_request(peer, payload, timeout=max(6.0, CFG.SYNC_TIMEOUT))
         if resp and resp.get("type") == "BLOCK":
             hx = resp.get("hash")
             if isinstance(hx, str) and hx:
@@ -306,32 +270,17 @@ class LightMiner:
 
         views = []
         for obj in blocks:
-            try:
-                h = int(obj.get("height", -1))
-            except Exception:
-                h = -1
-            try:
-                bits_raw = obj.get("bits", CFG.MAX_BITS)
-                bits_val = Block._parse_bits(bits_raw)  # type: ignore[arg-type]
-            except Exception:
-                bits_val = int(CFG.MAX_BITS)
-            try:
-                ts = int(obj.get("timestamp", 0) or 0)
-            except Exception:
-                ts = 0
+            h = int(obj.get("height", -1))
+            bits_raw = obj.get("bits", CFG.MAX_BITS)
+            bits_val = Block._parse_bits(bits_raw)  # type: ignore[arg-type]
+            ts = int(obj.get("timestamp", 0) or 0)
             views.append(HeaderView(h, bits_val, ts))
         return views
 
     def _compute_expected_bits(self, headers, next_height: int) -> int:
         if not headers:
             return int(CFG.MAX_BITS)
-        try:
-            return int(self.blockchain._expected_bits_on_prefix(headers, next_height))  # type: ignore[attr-defined]
-        except Exception:
-            try:
-                return int(getattr(headers[-1], "bits", CFG.MAX_BITS))
-            except Exception:
-                return int(CFG.MAX_BITS)
+        return int(self.blockchain._expected_bits_on_prefix(headers, next_height))  # type: ignore[attr-defined]
 
     def _median_time(self, headers) -> int:
         if not headers:
@@ -348,39 +297,19 @@ class LightMiner:
         prev_hex = str(tip_block.get("hash") or "").strip()
         if not prev_hex:
             return None
-        try:
-            prev_hash = bytes.fromhex(prev_hex)
-        except Exception:
-            return None
-
-        ts_tip = 0
-        try:
-            ts_tip = int(tip_block.get("timestamp", 0) or 0)
-        except Exception:
-            ts_tip = 0
+        prev_hash = bytes.fromhex(prev_hex)
+        ts_tip = int(tip_block.get("timestamp", 0) or 0)
         now_ts = int(time.time())
         timestamp = max(now_ts, ts_tip + 1, int(mtp_ts) + 1)
-
         reward = 0
-        try:
-            reward = int(self.blockchain.get_block_reward(next_height))
-        except Exception:
-            reward = 0
+        reward = int(self.blockchain.get_block_reward(next_height))
         if reward <= 0:
             clog(f"[mining] reward is zero at height {next_height}; stopping.")
             self.mining_alive = False
             return None
 
-        try:
-            coinbase = CoinbaseTx(to_address=self.address, reward=reward, height=next_height)
-        except Exception as exc:
-            clog(f"[mining] failed to build coinbase: {exc}")
-            return None
-        try:
-            coinbase.compute_txid()
-        except Exception:
-            pass
-
+        coinbase = CoinbaseTx(to_address=self.address, reward=reward, height=next_height)
+        coinbase.compute_txid()
         block = Block(
             height=next_height,
             prev_block_hash=prev_hash,
@@ -392,16 +321,13 @@ class LightMiner:
 
     def _mine_block_runner(self, candidate: Block, result: dict):
         """Worker to mine a block so main loop can react instantly to Ctrl+C."""
-        try:
-            h = candidate.mine(
-                use_cores=self.cores,
-                stop_event=self.cancel_mining,
-                pow_backend="randomx",
-                progress_queue=self._progress_q,
-            )
-            result["hash"] = h
-        except Exception as exc:
-            result["exc"] = exc
+        h = candidate.mine(
+            use_cores=self.cores,
+            stop_event=self.cancel_mining,
+            pow_backend="randomx",
+            progress_queue=self._progress_q,
+        )
+        result["hash"] = h
 
     def start_mining(self, timeout: int = 600) -> bool:
         if not self.validate_address():
@@ -413,11 +339,8 @@ class LightMiner:
         clog("=== Mining Informations ===")
         clog(f"Address : {self.address}")
         clog(f"Cores   : {self.cores}")
-        try:
-            mode_label = "FULL-MEM (+2.5GB)" if bool(CFG.RANDOMX_FULL_MEM) else "LIGHT"
-            clog(f"RandomX : {mode_label}")
-        except Exception:
-            pass
+        mode_label = "FULL-MEM (+2.5GB)" if bool(CFG.RANDOMX_FULL_MEM) else "LIGHT"
+        clog(f"RandomX : {mode_label}")
         clog("NOTE    : Stateless mode. Fetches tip window only; mines empty blocks.", color=COL.BG_YELLOW)
 
         reporter = HashrateReporter(self._progress_q)
@@ -473,10 +396,7 @@ class LightMiner:
                     mine_thread.join(timeout=0.5)
                     if self.cancel_mining.is_set() and not cancel_logged:
                         clog("[mining] Cancellation requested; waiting for miner thread to stop...", color=COL.BG_YELLOW)
-                        try:
-                            log.info("Cancellation requested; waiting for light miner thread to stop...")
-                        except Exception:
-                            pass
+                        log.info("Cancellation requested; waiting for light miner thread to stop...")
                         cancel_logged = True
 
                 if mine_thread.is_alive():
@@ -494,10 +414,7 @@ class LightMiner:
                     continue
 
                 if self.tui is not None:
-                    try:
-                        self.tui.note_block_mined(getattr(candidate, "height", None))
-                    except Exception:
-                        pass
+                    self.tui.note_block_mined(getattr(candidate, "height", None))
 
                 clog(
                     f"Block mined at height {candidate.height}: {candidate.hash().hex()[:18]}... (empty block, coinbase only)"
@@ -512,21 +429,15 @@ class LightMiner:
                     clog("[broadcast] Tip hash changed at same height; dropping stale block", color=COL.BG_YELLOW)
                     continue
 
-                try:
-                    sent = self.network.publish_block(candidate, exclude=None, force=True) if self.network else 0
-                    if sent <= 0:
-                        clog("[broadcast] No peers reached when publishing block.", color=COL.BG_YELLOW)
-                except Exception as exc:
-                    clog(f"[broadcast] Error: {exc}")
+                sent = self.network.publish_block(candidate, exclude=None, force=True) if self.network else 0
+                if sent <= 0:
+                    clog("[broadcast] No peers reached when publishing block.", color=COL.BG_YELLOW)
 
             except KeyboardInterrupt:
                 self.mining_alive = False
                 self.cancel_mining.set()
                 clog("[signal] Mining interrupted by user; stopping workers...", color=COL.BG_YELLOW)
-                try:
-                    log.info("Mining loop interrupted by KeyboardInterrupt (Ctrl+C).")
-                except Exception:
-                    pass
+                log.info("Mining loop interrupted by KeyboardInterrupt (Ctrl+C).")
             except Exception as exc:
                 if isinstance(exc, OSError) and getattr(exc, "errno", None) in INTERRUPTED_ERRNOS:
                     clog("[mining] Interrupted system call; stopping miners...", color=COL.BG_YELLOW)
@@ -535,27 +446,17 @@ class LightMiner:
                     break
                 clog(f"[mining] Error: {exc}")
                 time.sleep(1)
-        try:
-            reporter.stop_event.set()
-        except Exception:
-            pass
+        reporter.stop_event.set()
         return True
 
     def shutdown(self):
         self.mining_alive = False
         self.cancel_mining.set()
         if self.network:
-            try:
-                self.network.shutdown()
-            except Exception:
-                pass
+            self.network.shutdown()
             self.network = None
         clog("[light-node] Shutdown complete.", color=COL.BG_YELLOW)
-        try:
-            log.info("Light miner stopped (cleanup complete).")
-        except Exception:
-            pass
-
+        log.info("Light miner stopped (cleanup complete).")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="TsarChain Stateless CLI Miner (RandomX)")
@@ -565,7 +466,6 @@ def parse_args():
     parser.add_argument("--rx-full", action="store_true", help="Enable RandomX FULL MEMORY mode (+2.5GB dataset)")
     parser.add_argument("--rx-light", action="store_true", help="Force RandomX LIGHT mode (~<2.5GB, lower RAM)")
     return parser.parse_args()
-
 
 def main():
     args = parse_args()

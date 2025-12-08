@@ -301,12 +301,9 @@ def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
         if not pub:
             raise ValueError("unknown peer pubkey and not provided")
     # Enforce binding: node_id must equal sha256(pubkey)
-    try:
-        derived = hashlib.sha256(bytes.fromhex(pub)).hexdigest()
-        if derived != node_id:
-            raise ValueError("node_id/pubkey mismatch")
-    except Exception:
-        raise ValueError("invalid pubkey in envelope")
+    derived = hashlib.sha256(bytes.fromhex(pub)).hexdigest()
+    if derived != node_id:
+        raise ValueError("node_id/pubkey mismatch")
     if not verify_signature(pub, to_sign, envelope.get("sig", "")):
         raise ValueError("bad signature")
     # Anti-replay within REPLAY_WINDOW_SEC using per-sender nonce cache

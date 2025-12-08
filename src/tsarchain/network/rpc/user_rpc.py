@@ -477,18 +477,14 @@ def handle_user_rpc(
             return {"error": "presence_bad_pub"}
         if not (len(spend_pk) == 66 and all(c in "0123456789abcdef" for c in spend_pk)):
             return {"error": "presence_bad_spend_pub"}
-        try:
-            hrp, data = bech32_decode(addr_s)
-            if hrp != CFG.ADDRESS_PREFIX or not data:
-                return {"error": "presence_bad_hrp"}
-            prog = bytes(convertbits(data[1:], 5, 8, False))
-            if len(prog) != 20:
-                return {"error": "presence_bad_prog"}
-            if hash160(bytes.fromhex(spend_pk)) != prog:
-                return {"error": "presence_addr_mismatch"}
-        except Exception:
-            log.exception("[handle_user_rpc] unexpected error")
-            return {"error": "presence_addr_decode_failed"}
+        hrp, data = bech32_decode(addr_s)
+        if hrp != CFG.ADDRESS_PREFIX or not data:
+            return {"error": "presence_bad_hrp"}
+        prog = bytes(convertbits(data[1:], 5, 8, False))
+        if len(prog) != 20:
+            return {"error": "presence_bad_prog"}
+        if hash160(bytes.fromhex(spend_pk)) != prog:
+            return {"error": "presence_addr_mismatch"}
         
         pres_bytes = b"|".join([b"CHAT_PRESENCE", addr_s.encode(), bytes.fromhex(pubhex), bytes.fromhex(spend_pk), str(ts_val).encode()])
         sig_ok = _verify_chat_signatures([("presence", spend_pk, pres_bytes, presence_sig)])
@@ -573,12 +569,8 @@ def handle_user_rpc(
         mid = message.get("msg_id")
         ts  = int(message.get("ts") or 0)
         chat_sig = (message.get("chat_sig") or "").strip().lower()
-        try:
-            ratchet_pn = int(message.get("ratchet_pn") or 0)
-            ratchet_n = int(message.get("ratchet_n") or 0)
-        except Exception:
-            log.exception("[handle_user_rpc] unexpected error")
-            return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_ratchet_index"}
+        ratchet_pn = int(message.get("ratchet_pn") or 0)
+        ratchet_n = int(message.get("ratchet_n") or 0)
         max_idx = CFG.CHAT_RATCHET_INDEX_MAX
         if not (0 <= ratchet_pn <= max_idx and 0 <= ratchet_n <= max_idx):
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "ratchet_index_out_of_range"}
@@ -602,21 +594,16 @@ def handle_user_rpc(
             return {"type": "CHAT_ACK", "status": "duplicate"}
 
         # ---- Encrypted only ----
-        try:
-            nonce_hex = str((enc or {}).get("nonce") or "")
-            ct_hex    = str((enc or {}).get("ct")    or "")
-            fp_hex    = (message.get("from_pub")    or "").strip().lower()     # eph X25519
-            fs_hex = (message.get("from_static") or "").strip().lower()
-            exp = self.chat_presence_pub.get(frm)
+        nonce_hex = str((enc or {}).get("nonce") or "")
+        ct_hex    = str((enc or {}).get("ct")    or "")
+        fp_hex    = (message.get("from_pub")    or "").strip().lower()     # eph X25519
+        fs_hex = (message.get("from_static") or "").strip().lower()
+        exp = self.chat_presence_pub.get(frm)
 
-            if not exp:
-                return {"type": "CHAT_ACK", "status": "rejected", "reason": "no_presence"}
-            if fs_hex != exp:
-                return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}
-
-        except Exception:
-            log.exception("[handle_user_rpc] unexpected error")
-            return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_enc"}
+        if not exp:
+            return {"type": "CHAT_ACK", "status": "rejected", "reason": "no_presence"}
+        if fs_hex != exp:
+            return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}
 
         if not (len(ct_hex) // 2 <= CFG.CHAT_MAX_CT_BYTES):
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "too_large"}
@@ -851,11 +838,7 @@ def handle_user_rpc(
         art_id_raw = str(message.get("art_id") or "").strip()
         if not art_id_raw:
             return {"type": "GRAFFITI_GET_ART", "error": "missing_art_id"}
-        try:
-            art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
-        except Exception:
-            log.exception("[handle_user_rpc] unexpected error")
-            return {"type": "GRAFFITI_GET_ART", "error": "bad_art_id"}
+        art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
         reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
         post = reg.get_post(art_id) if reg else None
         if not post:

@@ -168,10 +168,6 @@ class MempoolStorageMixin:
             self.save_json(self.filepath, payload)
         return True
 
-    def load_pool(self) -> list:
-        with self._lock:
-            return [self._serialize_tx(tx) for tx in self._pool.values()]
-
     def save_pool(self, pool: list) -> None:
         tx_objects = []
         for item in pool:

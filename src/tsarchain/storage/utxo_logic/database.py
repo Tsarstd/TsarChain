@@ -253,16 +253,11 @@ class UTXODatabaseMixin:
 
         height = 0
         if kv_enabled():
-            try:
-                items = dict((k.decode('utf-8'), v.decode('utf-8')) for k, v in iter_prefix('state', b'k:'))
-                tb = int(items.get('k:total_blocks', '0'))
-                height = max(0, tb - 1)
-            except Exception:
-                log.exception("[_get_tip_height_from_state] unexpected error")
-                pass
-            else:
-                self._tip_cache.update(height=height, ts=now)
-                return height
+            items = dict((k.decode('utf-8'), v.decode('utf-8')) for k, v in iter_prefix('state', b'k:'))
+            tb = int(items.get('k:total_blocks', '0'))
+            height = max(0, tb - 1)
+            self._tip_cache.update(height=height, ts=now)
+            return height
             
         data = AtomicJSONFile(CFG.STATE_FILE).load(default={})
         total_blocks = int(data.get("total_blocks", 0))
@@ -284,11 +279,7 @@ class UTXODatabaseMixin:
         return self._version
 
     def _build_meta(self) -> dict:
-        try:
-            height_hint = self._get_tip_height_from_state(use_cache=False)
-        except Exception:
-            log.exception("[_build_meta] unexpected error")
-            height_hint = 0
+        height_hint = self._get_tip_height_from_state(use_cache=False)
         return {
             "schema_version": int(CFG.DATA_SCHEMA_VERSION),
             "generated_at": int(time.time()),

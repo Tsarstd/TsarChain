@@ -62,10 +62,7 @@ class UTXOLocalMixin:
             self.mempool.clear()
             for tx in new_mempool:
                 self.mempool.add_tx(tx)
-            try:
-                self.mempool.flush()
-            except Exception:
-                pass
+            self.mempool.flush()
 
 
 __all__ = ["UTXOLocalMixin"]

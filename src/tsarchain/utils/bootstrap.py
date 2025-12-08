@@ -136,11 +136,7 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
         if not valid:
             raise ValueError(validate_reason or "snapshot validation failed")
         if backup_path and os.path.exists(backup_path):
-            try:
-                os.remove(backup_path)
-            except Exception:
-                log.warning("[bootstrap.%s] failed to remove backup snapshot", ctx)
-                pass
+            os.remove(backup_path)
         duration = time.time() - start_time
         _emit(f"Snapshot applied ({final_size/1_048_576:.2f} MB in {duration:.1f}s)")
 
@@ -290,11 +286,7 @@ def _validate_snapshot_chain() -> tuple[bool, Optional[str]]:
     if not db_dir or not os.path.exists(db_dir):
         return False, "DB directory missing"
 
-    try:
-        items = list(iter_prefix("chain", b"h:"))
-    except Exception as exc:
-        return False, f"native iter_prefix failed: {exc}"
-
+    items = list(iter_prefix("chain", b"h:"))
     if not items:
         return False, "empty chain db"
 

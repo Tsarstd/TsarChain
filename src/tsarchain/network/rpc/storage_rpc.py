@@ -95,10 +95,7 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr, mtype: st
 
     elif mtype == "GRAFFITI_BUILD_PAYOUT":
         art_id_raw = str(message.get("art_id") or "").strip()
-        try:
-            art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
-        except Exception:
-            return {"error": "bad_art_id"}
+        art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
         recipients = message.get("recipients") or []
         if not recipients and message.get("recipient") and message.get("amount"):
             amt = int(message.get("amount", 0))
@@ -129,11 +126,7 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr, mtype: st
                 return {"error": "missing_proof", "requested_epoch": epoch, "have": proof_entry.get("epoch", -1) if proof_entry else None}
         else:
             if proof_entry:
-                try:
-                    epoch = int(proof_entry.get("epoch", -1))
-                except Exception:
-                    log.exception("[payout] invalid proof epoch")
-                    epoch = -1
+                epoch = int(proof_entry.get("epoch", -1))
 
         log.info("[payout] build request art=%s recips=%s epoch=%s fee_rate=%s", art_id[:16], len(recipients), epoch, fee_rate)
         tx_obj = GRAFFITI.build_payout_tx(
@@ -148,16 +141,7 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr, mtype: st
         outs = []
         for o in getattr(tx_obj, "outputs", []) or []:
             amt = int(getattr(o, "amount", 0) or 0)
-            addr = None
-            try:
-                addr = _spkhex_to_address(o.script_pubkey.serialize().hex())
-            except Exception:
-                log.exception("[payout] error converting script_pubkey to address")
-                try:
-                    addr = _spkhex_to_address(o.script_pubkey.hex())
-                except Exception:
-                    log.exception("[payout] error converting script_pubkey hex to address")
-                    addr = None
+            addr = _spkhex_to_address(o.script_pubkey.serialize().hex())
             outs.append((amt, addr))
         log.info("[payout] tx outputs art=%s %s", art_id[:16], outs)
 

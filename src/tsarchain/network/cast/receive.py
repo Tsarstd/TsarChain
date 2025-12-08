@@ -41,19 +41,11 @@ class ReceiveMixin:
         if candidate is None:
             return None
         if hasattr(candidate, "serialize"):
-            try:
-                return candidate.serialize()
-            except Exception:
-                log.exception("[_native_script_bytes] unexpected error")
-                return None
+            return candidate.serialize()
         if isinstance(candidate, (bytes, bytearray)):
             return bytes(candidate)
         if isinstance(candidate, str):
-            try:
-                return bytes.fromhex(candidate)
-            except Exception:
-                log.exception("[_native_script_bytes] unexpected error")
-                return None
+            return bytes.fromhex(candidate)
         script_attr = getattr(candidate, "script_pubkey", None)
         if script_attr is not None:
             return ReceiveMixin._native_script_bytes(script_attr)
@@ -78,12 +70,7 @@ class ReceiveMixin:
             amount_val = getattr(tx_out, "amount", None)
         else:
             amount_val = getattr(candidate, "amount", None)
-        try:
-            amount_int = int(amount_val if amount_val is not None else 0)
-        except Exception:
-            log.exception("[_normalize_native_prevout] unexpected error")
-            log.debug("[native-prevout] entry %s invalid amount=%s", key_desc, amount_val)
-            return None
+        amount_int = int(amount_val if amount_val is not None else 0)
 
         if isinstance(candidate, dict):
             is_cb = bool(candidate.get("is_coinbase", False))
@@ -112,11 +99,7 @@ class ReceiveMixin:
                 return None
             if isinstance(value, (bytes, bytearray)):
                 return bytes(value).hex().lower()
-            try:
-                return str(value).lower()
-            except Exception:
-                log.exception("[_txid_lower] unexpected error")
-                return None
+            return str(value).lower()
 
         for tx in txs:
             txid_lower = _txid_lower(getattr(tx, "txid", None))
@@ -129,11 +112,7 @@ class ReceiveMixin:
                 prev_txid_lower = _txid_lower(getattr(tx_input, "txid", None) or getattr(tx_input, "prev_tx", None))
                 if prev_txid_lower is None:
                     return None
-                try:
-                    prev_index = int(getattr(tx_input, "vout", getattr(tx_input, "prev_index", 0)))
-                except Exception:
-                    log.exception("[_txid_lower] unexpected error")
-                    return None
+                prev_index = int(getattr(tx_input, "vout", getattr(tx_input, "prev_index", 0)))
                 if prev_txid_lower in processed_txids:
                     continue
                 snap_key = f"{prev_txid_lower}:{prev_index}"
@@ -152,12 +131,8 @@ class ReceiveMixin:
                     "is_coinbase": is_cb,
                     "block_height": born,
                 }
-                try:
-                    txid_b = bytes.fromhex(prev_txid_lower)
-                    utxo_items.append((txid_b, int(prev_index), amount_int, script_bytes, is_cb, born))
-                except Exception:
-                    log.exception("[_txid_lower] unexpected error")
-                    utxo_items.append((prev_txid_lower, int(prev_index), amount_int, script_bytes, is_cb, born))
+                txid_b = bytes.fromhex(prev_txid_lower)
+                utxo_items.append((txid_b, int(prev_index), amount_int, script_bytes, is_cb, born))
 
             if txid_lower:
                 processed_txids.add(txid_lower)
@@ -165,11 +140,7 @@ class ReceiveMixin:
         return snapshot, utxo_items
 
     def _native_precheck_block(self, block: Block) -> bool:
-        try:
-            snapshot = self._build_native_prevout_snapshot(block)
-        except Exception:
-            log.exception("[native-precheck] snapshot build failed")
-            return True
+        snapshot = self._build_native_prevout_snapshot(block)
         if snapshot is None:
             return True
         if isinstance(snapshot, tuple) and len(snapshot) == 2:
@@ -187,45 +158,41 @@ class ReceiveMixin:
             if utxo_items is not None:
                 tx_payloads = []
                 for tx in getattr(block, "transactions", []) or []:
-                    try:
-                        version = int(getattr(tx, "version", 1))
-                        locktime = int(getattr(tx, "locktime", 0))
-                        inputs_payload = []
-                        for tx_input in getattr(tx, "inputs", []) or []:
-                            prev_txid_b = getattr(tx_input, "txid", None) or getattr(tx_input, "prev_tx", None)
-                            if isinstance(prev_txid_b, str):
-                                prev_txid_b = bytes.fromhex(prev_txid_b)
-                            if not isinstance(prev_txid_b, (bytes, bytearray)) or len(prev_txid_b) != 32:
-                                raise ValueError("txid_missing")
-                            prev_index = int(getattr(tx_input, "vout", getattr(tx_input, "prev_index", 0)))
-                            seq = int(getattr(tx_input, "sequence", 0xffffffff))
-                            wit_vec = []
-                            for w in getattr(tx_input, "witness", None) or []:
-                                if isinstance(w, (bytes, bytearray)):
-                                    wit_vec.append(bytes(w))
-                                elif isinstance(w, str):
-                                    wit_vec.append(bytes.fromhex(w))
-                                else:
-                                    raise ValueError("witness_invalid")
-                            inputs_payload.append((bytes(prev_txid_b), prev_index, seq, wit_vec))
-                        outputs_payload = []
-                        for tx_out in getattr(tx, "outputs", []) or []:
-                            amt = int(getattr(tx_out, "amount", tx_out.get("amount") if isinstance(tx_out, dict) else 0))
-                            spk_obj = getattr(tx_out, "script_pubkey", tx_out.get("script_pubkey") if isinstance(tx_out, dict) else None)
-                            spk_bytes = self._native_script_bytes(spk_obj)
-                            if spk_bytes is None:
-                                raise ValueError("spk_missing")
-                            outputs_payload.append((amt, spk_bytes))
-                        txid_b = getattr(tx, "txid", None)
-                        if isinstance(txid_b, str):
-                            txid_b = bytes.fromhex(txid_b)
-                        if not isinstance(txid_b, (bytes, bytearray)) or len(txid_b) != 32:
+                    version = int(getattr(tx, "version", 1))
+                    locktime = int(getattr(tx, "locktime", 0))
+                    inputs_payload = []
+                    for tx_input in getattr(tx, "inputs", []) or []:
+                        prev_txid_b = getattr(tx_input, "txid", None) or getattr(tx_input, "prev_tx", None)
+                        if isinstance(prev_txid_b, str):
+                            prev_txid_b = bytes.fromhex(prev_txid_b)
+                        if not isinstance(prev_txid_b, (bytes, bytearray)) or len(prev_txid_b) != 32:
                             raise ValueError("txid_missing")
-                        tx_payloads.append((version, locktime, inputs_payload, outputs_payload, bytes(txid_b), bool(getattr(tx, "is_coinbase", False))))
-                    except Exception:
-                        log.exception("[_native_precheck_block] unexpected error")
-                        tx_payloads = None
-                        break
+                        prev_index = int(getattr(tx_input, "vout", getattr(tx_input, "prev_index", 0)))
+                        seq = int(getattr(tx_input, "sequence", 0xffffffff))
+                        wit_vec = []
+                        for w in getattr(tx_input, "witness", None) or []:
+                            if isinstance(w, (bytes, bytearray)):
+                                wit_vec.append(bytes(w))
+                            elif isinstance(w, str):
+                                wit_vec.append(bytes.fromhex(w))
+                            else:
+                                raise ValueError("witness_invalid")
+                        inputs_payload.append((bytes(prev_txid_b), prev_index, seq, wit_vec))
+                    outputs_payload = []
+                    for tx_out in getattr(tx, "outputs", []) or []:
+                        amt = int(getattr(tx_out, "amount", tx_out.get("amount") if isinstance(tx_out, dict) else 0))
+                        spk_obj = getattr(tx_out, "script_pubkey", tx_out.get("script_pubkey") if isinstance(tx_out, dict) else None)
+                        spk_bytes = self._native_script_bytes(spk_obj)
+                        if spk_bytes is None:
+                            raise ValueError("spk_missing")
+                        outputs_payload.append((amt, spk_bytes))
+                    txid_b = getattr(tx, "txid", None)
+                    if isinstance(txid_b, str):
+                        txid_b = bytes.fromhex(txid_b)
+                    if not isinstance(txid_b, (bytes, bytearray)) or len(txid_b) != 32:
+                        raise ValueError("txid_missing")
+                    tx_payloads.append((version, locktime, inputs_payload, outputs_payload, bytes(txid_b), bool(getattr(tx, "is_coinbase", False))))
+                    
                 if tx_payloads is not None:
                     ok, reason, fees = native_validate_block_txs_compact(
                         tx_payloads,
@@ -253,21 +220,12 @@ class ReceiveMixin:
             return True
 
         if not ok:
-            blk_label = ""
-            try:
-                blk_label = block.hash().hex()[:12]
-            except Exception:
-                log.exception("[_native_precheck_block] unexpected error")
-                blk_label = str(getattr(block, "height", "?"))
+            blk_label = block.hash().hex()[:12]
             log.warning("[native-precheck] block %s rejected (%s)", blk_label, reason or "unknown")
             return False
 
         if isinstance(fees, (list, tuple)):
-            try:
-                block._native_fee_hint = [int(f) for f in fees]  # type: ignore[attr-defined]
-            except Exception:
-                log.exception("[_native_precheck_block] unexpected error")
-                block._native_fee_hint = fees  # type: ignore[attr-defined]
+            block._native_fee_hint = [int(f) for f in fees]  # type: ignore[attr-defined]
         return True
 
     def receive_chain(self, message: Dict[str, Any]) -> bool:
@@ -339,18 +297,12 @@ class ReceiveMixin:
                 if block.height > last.height + 1:
                     handled = False
                     if self.network:
-                        try:
-                            self.network.handle_block_gap(block, origin)
-                            handled = True
-                        except Exception:
-                            log.exception("[receive_block] Network handle_block_gap failed")
+                        self.network.handle_block_gap(block, origin)
+                        handled = True
                     if not handled and CFG.ENABLE_FULL_SYNC:
                         targets = [origin] if origin else list(peers)
                         for p in targets:
-                            try:
-                                self._request_full_sync(p)
-                            except Exception:
-                                log.exception("[receive_block] Full sync request to %s failed", p)
+                            self._request_full_sync(p)
                     return False
                 if block.prev_block_hash != tip_h:
                     potential_fork = True
@@ -374,121 +326,61 @@ class ReceiveMixin:
                             f"{addr[0]}:{origin_port or 0}",
                         )
                     if reason and isinstance(reason, str) and reason.startswith("prevout_missing"):
-                        try:
-                            if self.network:
-                                target = origin if origin else (next(iter(peers)) if peers else None)
-                                if target:
-                                    self.network._request_full_sync(target, force=True)
-                                else:
-                                    self.network.request_sync(fast=True)
-                        except Exception:
-                            log.exception("[receive_block] Failed to trigger full sync after prevout missing")
+                        if self.network:
+                            target = origin if origin else (next(iter(peers)) if peers else None)
+                            if target:
+                                self.network._request_full_sync(target, force=True)
+                            else:
+                                self.network.request_sync(fast=True)
                     return False
 
             old_tip = None
-            try:
-                ok = self.blockchain.add_block(block)
-            except ValueError:
-                if potential_fork:
-                    old_tip = self.blockchain.swap_tip_if_better(block)
-                    ok = old_tip is not None
-                else:
-                    ok = False
+            ok = self.blockchain.add_block(block)
             if not ok:
                 log.warning("[receive_block] Block at height %s rejected by add_block", block.height)
                 if potential_fork:
                     targets = [origin] if origin else list(peers)
                     for p in targets:
-                        try:
-                            prev_flag = CFG.ENABLE_FULL_SYNC
-                            CFG.ENABLE_FULL_SYNC = True
-                            self._request_full_sync(p)
-                        except Exception:
-                            log.exception("[receive_block] Fallback full sync request to %s failed", p)
-                        finally:
-                            CFG.ENABLE_FULL_SYNC = prev_flag
+                        CFG.ENABLE_FULL_SYNC = True
+                        self._request_full_sync(p)
                 return False
-
+            
             accepted = True
+            removal_candidates: list[str] = []
+            for tx in (block.transactions[1:] or []):
+                txid = getattr(tx, "txid", None)
+                if not txid:
+                    continue
+                removal_candidates.append(txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid))
+                
+            if removal_candidates:
+                removed = self.mempool.remove_many(removal_candidates)
+                missing = len(removal_candidates) - removed
+                if missing > 0:
+                    log.debug(
+                        "[receive_block] %s mempool tx already absent when pruning confirmed set",
+                        missing,
+                    )
+            self.mempool.flush()
 
-            try:
-                removal_candidates: list[str] = []
-                for tx in (block.transactions[1:] or []):
-                    txid = getattr(tx, "txid", None)
-                    if not txid:
-                        continue
-                    removal_candidates.append(txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid))
-                if removal_candidates:
-                    try:
-                        removed = self.mempool.remove_many(removal_candidates)
-                        missing = len(removal_candidates) - removed
-                        if missing > 0:
-                            log.debug(
-                                "[receive_block] %s mempool tx already absent when pruning confirmed set",
-                                missing,
-                            )
-                    except AttributeError:
-                        fail_rm = 0
-                        for txid in removal_candidates:
-                            try:
-                                if not self.mempool.remove_tx(txid):
-                                    fail_rm += 1
-                            except Exception:
-                                log.exception("[receive_block] unexpected error")
-                                fail_rm += 1
-                        if fail_rm:
-                            log.warning(
-                                "[receive_block] %s tx failed to remove from mempool after block addition",
-                                fail_rm,
-                            )
-                try:
-                    self.mempool.flush()
-                except Exception:
-                    log.exception("[receive_block] Error flushing mempool after block acceptance")
-
-                if old_tip:
-                    try:
-                        for tx in (old_tip.transactions[1:] or []):
-                            try:
-                                self.mempool.add_valid_tx(tx)
-                            except Exception:
-                                log.exception("[receive_block] unexpected error")
-                                pass
-                    except Exception:
-                        log.exception("[receive_block] Error requeueing transactions from orphaned tip")
-                try:
-                    self.mempool.flush()
-                except Exception:
-                    log.exception("[receive_block] Failed to flush mempool after block handling")
-            except Exception:
-                log.exception("[receive_block] Error updating mempool after block acceptance")
+            if old_tip:
+                for tx in (old_tip.transactions[1:] or []):
+                    self.mempool.add_valid_tx(tx)
+            self.mempool.flush()
 
             if not self._utxo_shared:
-                try:
-                    try:
-                        blk_hash = block.hash().hex()
-                    except Exception:
-                        log.exception("[receive_block] unexpected error")
-                        blk_hash = None
-                    self.utxodb.update(block.transactions, block.height, block_hash=blk_hash, autosave=False)
-                    self._maybe_flush_local_utxo(block.height)
-                except Exception:
-                    log.exception("[receive_block] Error updating UTXO after block acceptance")
+                blk_hash = block.hash().hex()
+                self.utxodb.update(block.transactions, block.height, block_hash=blk_hash, autosave=False)
+                self._maybe_flush_local_utxo(block.height)
 
-            try:
-                recovered = self.mempool.recheck_orphans() if hasattr(self.mempool, "recheck_orphans") else 0
-                if recovered:
-                    log.info("[receive_block] Revalidated %s orphan mempool txs", recovered)
-            except Exception:
-                log.exception("[receive_block] Error rechecking orphan mempool txs after block")
+            recovered = self.mempool.recheck_orphans() if hasattr(self.mempool, "recheck_orphans") else 0
+            if recovered:
+                log.info("[receive_block] Revalidated %s orphan mempool txs", recovered)
 
             with self.lock:
                 self.seen_blocks.add(block_id)
 
-            try:
-                self.broadcast_block(block, peers, exclude=origin, force=True)
-            except Exception:
-                log.exception("[receive_block] Error broadcasting new block to peers")
+            self.broadcast_block(block, peers, exclude=origin, force=True)
 
             return True
         except Exception:
@@ -510,14 +402,8 @@ class ReceiveMixin:
             phase = str(message.get("phase") or "fluff").strip().lower()
 
             use_dandelion = False
-            try:
-                dpp = getattr(self, "dandelion", None)
-                use_dandelion = bool(dpp and dpp.enabled(len(peers)))
-            except Exception:
-                log.exception("[receive_tx] unexpected error")
-                log.debug("[receive_tx] Dandelion++ availability check failed", exc_info=True)
-                use_dandelion = False
-
+            dpp = getattr(self, "dandelion", None)
+            use_dandelion = bool(dpp and dpp.enabled(len(peers)))
             is_stem = use_dandelion and phase == "stem"
             if not is_stem:
                 with self.lock:
@@ -525,21 +411,13 @@ class ReceiveMixin:
                         return False
                     self.seen_txs.add(tx_id)
 
-            try:
-                is_valid = self.mempool.add_valid_tx(tx)
-            except Exception:
-                log.exception("[receive_tx] Error validating/adding incoming TX")
-                return False
+            is_valid = self.mempool.add_valid_tx(tx)
 
             if is_valid:
                 if is_stem:
-                    try:
-                        handled = self.dandelion.handle_inbound_stem(tx, tx_id, peers, origin=addr)
-                        if not handled:
-                            # fallback to fluff if handler declines
-                            self._broadcast_tx_fluff(tx, tx_id, peers)
-                    except Exception:
-                        log.exception("[receive_tx] Dandelion++ stem handler failed for %s", tx_id[:16])
+                    handled = self.dandelion.handle_inbound_stem(tx, tx_id, peers, origin=addr)
+                    if not handled:
+                        # fallback to fluff if handler declines
                         self._broadcast_tx_fluff(tx, tx_id, peers)
                 else:
                     self._broadcast_tx_fluff(tx, tx_id, peers)
@@ -551,76 +429,45 @@ class ReceiveMixin:
             return False
 
     def receive_utxos(self, message: Dict[str, Any]):
-        try:
-            utxo_data = message.get("data", {})
-            if utxo_data and not self.blockchain.chain:
-                self.utxodb = UTXODB.from_dict(utxo_data)
-                self._utxo_shared = False
-                self._utxo_last_flush_height = -1
-                if not self.blockchain.in_memory:
-                    self.utxodb.flush(force=True)
-            else:
-                if utxo_data:
-                    log.warning("[receive_utxos] Ignoring UTXO snapshot since we have a non-empty chain")
-        except Exception:
-            log.exception("[receive_utxos] Error updating UTXO DB")
+        utxo_data = message.get("data", {})
+        if utxo_data and not self.blockchain.chain:
+            self.utxodb = UTXODB.from_dict(utxo_data)
+            self._utxo_shared = False
+            self._utxo_last_flush_height = -1
+            if not self.blockchain.in_memory:
+                self.utxodb.flush(force=True)
+        else:
+            if utxo_data:
+                log.warning("[receive_utxos] Ignoring UTXO snapshot since we have a non-empty chain")
 
     def receive_state(self, message: Dict[str, Any]):
-        try:
-            self.state = message.get("data", {})
-        except Exception:
-            log.exception("[receive_state] Error updating state")
+        self.state = message.get("data", {})
 
     def receive_mempool(self, message: Dict[str, Any]):
         try:
-            try:
-                if self.network and hasattr(self.network, "is_caught_up"):
-                    if not self.network.is_caught_up(freshness=20.0, height_slack=0):
-                        try:
-                            setattr(self.network, "_pending_mempool_pull", True)
-                            self.network.request_sync(fast=True)
-                        except Exception:
-                            log.exception("[receive_mempool] unexpected error")
-                            pass
-                        return
-            except Exception:
-                log.exception("[receive_mempool] unexpected error")
-                pass
-            try:
-                if int(getattr(self.blockchain, "height", -1)) < 0:
-                    try:
-                        setattr(self.network, "_pending_mempool_pull", True)
-                        self.network.request_sync(fast=True)
-                    except Exception:
-                        log.exception("[receive_mempool] unexpected error")
-                        pass
+            if self.network and hasattr(self.network, "is_caught_up"):
+                if not self.network.is_caught_up(freshness=20.0, height_slack=0):
+                    setattr(self.network, "_pending_mempool_pull", True)
+                    self.network.request_sync(fast=True)
                     return
-            except Exception:
-                log.exception("[receive_mempool] unexpected error")
-                pass
+            if int(getattr(self.blockchain, "height", -1)) < 0:
+                setattr(self.network, "_pending_mempool_pull", True)
+                self.network.request_sync(fast=True)
+                return
 
             txs_data = message.get("data", [])
             added_count = 0
             for tx_data in txs_data:
-                try:
-                    tx = Tx.from_dict(tx_data) if isinstance(tx_data, dict) else tx_data
-                    if self.mempool.add_valid_tx(tx):
-                        added_count += 1
-                except Exception:
-                    log.exception("[receive_mempool] Error adding tx from mempool snapshot")
-            try:
-                rechecked = self.mempool.recheck_orphans() if hasattr(self.mempool, "recheck_orphans") else 0
-                if rechecked:
-                    added_count += rechecked
-                    log.debug("[receive_mempool] Revalidated %s orphan transactions", rechecked)
-            except Exception:
-                log.exception("[receive_mempool] Error rechecking orphan transactions")
+                tx = Tx.from_dict(tx_data) if isinstance(tx_data, dict) else tx_data
+                if self.mempool.add_valid_tx(tx):
+                    added_count += 1
+            rechecked = self.mempool.recheck_orphans() if hasattr(self.mempool, "recheck_orphans") else 0
+            if rechecked:
+                added_count += rechecked
+                log.debug("[receive_mempool] Revalidated %s orphan transactions", rechecked)
             if added_count:
                 log.info("[receive_mempool] Mempool updated: %s new transactions", added_count)
-                try:
-                    self.mempool.flush()
-                except Exception:
-                    log.exception("[receive_mempool] Failed to flush mempool after update")
+                self.mempool.flush()
         except Exception:
             log.exception("[receive_mempool] Error updating mempool")
 

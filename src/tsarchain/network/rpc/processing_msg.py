@@ -137,12 +137,7 @@ def _overlay_realtime_mempool_stats(snapshot: dict, network: "Network") -> None:
         for tx in pool.get_all_txs():
             for tx_out in getattr(tx, "outputs", []) or []:
                 spk = getattr(tx_out, "script_pubkey", None)
-                meta = None
-                try:
-                    meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
-                except Exception:
-                    log.exception("[_overlay_realtime_mempool_stats] Failed to parse graffiti from script_pubkey")
-                    meta = None
+                meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
                 if meta and str(meta.get("event", "")).upper() == "POST":
                     on_mem += 1
         graff_section["graffiti_on_mempool"] = int(on_mem)

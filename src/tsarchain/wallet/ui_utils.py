@@ -9,46 +9,31 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.ui_utils")
 
 def center_window(win: tk.Toplevel, parent: tk.Misc | None = None) -> None:
-    try:
-        win.update_idletasks()
-        if parent is None:
-            parent = getattr(win, "master", None)
+    win.update_idletasks()
+    if parent is None:
+        parent = getattr(win, "master", None)
 
-        px = py = 0
-        pw = win.winfo_screenwidth()
-        ph = win.winfo_screenheight()
+    px = py = 0
+    pw = win.winfo_screenwidth()
+    ph = win.winfo_screenheight()
 
-        if parent is not None:
-            try:
-                parent.update_idletasks()
-                px = parent.winfo_rootx()
-                py = parent.winfo_rooty()
-                pw = parent.winfo_width()
-                ph = parent.winfo_height()
-                if pw <= 1 or ph <= 1:
-                    pw = parent.winfo_reqwidth()
-                    ph = parent.winfo_reqheight()
-            except Exception:
-                log.exception("errorrr1")
-                try:
-                    px = parent.winfo_rootx()
-                    py = parent.winfo_rooty()
-                except Exception:
-                    log.exception("errroas2")
-                    px = py = 0
-                pw = win.winfo_screenwidth()
-                ph = win.winfo_screenheight()
+    if parent is not None:
+        parent.update_idletasks()
+        px = parent.winfo_rootx()
+        py = parent.winfo_rooty()
+        pw = parent.winfo_width()
+        ph = parent.winfo_height()
+        if pw <= 1 or ph <= 1:
+            pw = parent.winfo_reqwidth()
+            ph = parent.winfo_reqheight()
 
-        ww = win.winfo_width()
-        wh = win.winfo_height()
-        if ww <= 1 or wh <= 1:
-            ww = max(win.winfo_reqwidth(), 200)
-            wh = max(win.winfo_reqheight(), 120)
+    ww = win.winfo_width()
+    wh = win.winfo_height()
+    if ww <= 1 or wh <= 1:
+        ww = max(win.winfo_reqwidth(), 200)
+        wh = max(win.winfo_reqheight(), 120)
 
-        x = int(px + max((pw - ww) / 2, 0))
-        y = int(py + max((ph - wh) / 2, 0))
-        win.geometry(f"+{x}+{y}")
-    except Exception:
-        log.exception("bahayaaaa")
-        pass
+    x = int(px + max((pw - ww) / 2, 0))
+    y = int(py + max((ph - wh) / 2, 0))
+    win.geometry(f"+{x}+{y}")
 

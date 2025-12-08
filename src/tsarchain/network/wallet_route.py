@@ -761,25 +761,21 @@ def _handle_create_tx(self, from_addr, to_addr, amount, fee_rate):
     tip_height = self.broadcast.blockchain.height
     utxos_list = []
     for k, v in utxos_map.items():
-        try:
-            txid_hex, idx_str = k.split(":")
-            is_cb = bool(v.get("is_coinbase", False))
-            born  = int(v.get("block_height", 0))
-            if is_cb:
-                confirmations = max(0, (int(tip_height) - born) + 1)
-                if confirmations < CFG.COINBASE_MATURITY:
-                    continue
-            utxos_list.append({
-                "txid": txid_hex,
-                "index": int(idx_str),
-                "amount": int(v.get("amount", 0)),
-                "scriptPubKey": bytes.fromhex(v.get("script_pubkey", "")),
-                "height": born,
-                "is_coinbase": is_cb,
-            })
-        except Exception:
-            log.exception("[_handle_create_tx] unexpected error")
-            continue
+        txid_hex, idx_str = k.split(":")
+        is_cb = bool(v.get("is_coinbase", False))
+        born  = int(v.get("block_height", 0))
+        if is_cb:
+            confirmations = max(0, (int(tip_height) - born) + 1)
+            if confirmations < CFG.COINBASE_MATURITY:
+                continue
+        utxos_list.append({
+            "txid": txid_hex,
+            "index": int(idx_str),
+            "amount": int(v.get("amount", 0)),
+            "scriptPubKey": bytes.fromhex(v.get("script_pubkey", "")),
+            "height": born,
+            "is_coinbase": is_cb,
+        })
 
     if not utxos_list:
         raise ValueError("no spendable utxos")

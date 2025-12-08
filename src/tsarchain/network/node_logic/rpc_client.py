@@ -62,8 +62,6 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
         self._rpc_backoff[norm] = time.time() + max(5.0, float(CFG.TEMP_BAN_SECONDS))
         if isinstance(exc, AttributeError):
             log.warning("[_rpc_request] Handshake aborted by %s; backing off", norm)
-        else:
-            log.exception("[_rpc_request] Error contacting %s", norm)
         return None
 
     self._rpc_backoff.pop(norm, None)
@@ -84,12 +82,7 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
                 return pko
             return None
 
-        try:
-            inner = verify_and_unwrap(outer, resolver)
-        except Exception:
-            log.warning("[_rpc_request] verify failed from %s", norm)
-            return None
-
+        inner = verify_and_unwrap(outer, resolver)
         if isinstance(nid, str) and isinstance(pko, str):
             self.peer_pubkeys[nid] = pko
     else:

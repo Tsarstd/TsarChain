@@ -45,13 +45,9 @@ class GossipMixin:
                     chan.send(payload)
                 else:
                     send_message(s, payload)
-                try:
-                    fm = self._failmap.get(peer)
-                    if fm:
-                        self._failmap.pop(peer, None)
-                except Exception:
-                    log.exception("_failmap_err")
-                    pass
+                fm = self._failmap.get(peer)
+                if fm:
+                    self._failmap.pop(peer, None)
                 return True
 
         except TimeoutError:
@@ -63,16 +59,10 @@ class GossipMixin:
         except OSError as e:
             log.warning("[_send] OSError sending to %s: %s", peer, getattr(e, "strerror", e))
 
-        try:
-            fm = self._failmap.get(peer) or {"fails": 0, "last": 0.0}
-            fm["fails"] = int(fm["fails"]) + 1
-            fm["last"] = time.time()
-            self._failmap[peer] = fm
-
-        except Exception:
-            log.exception("fm_err")
-            pass
-
+        fm = self._failmap.get(peer) or {"fails": 0, "last": 0.0}
+        fm["fails"] = int(fm["fails"]) + 1
+        fm["last"] = time.time()
+        self._failmap[peer] = fm
         return False
 
     def _broadcast(

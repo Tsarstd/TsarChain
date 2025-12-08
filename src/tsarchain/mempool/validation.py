@@ -8,14 +8,13 @@ from __future__ import annotations
 from typing import Any
 
 from ..core.tx import Tx
-from ..utils.helpers import tx_to_compact_tuple, native_validate_tx_p2wpkh_compact
 from ..storage.utxo import UTXODB
 from .scripts import get_utxo_script_bytes
 from ..contracts import graffiti as GRAFFITI
 from ..contracts.graffiti_registry import GraffitiRegistry
-from ..utils import config as CFG
-from ..utils.helpers import is_p2wpkh, is_p2wsh
+from ..utils.helpers import is_p2wpkh, is_p2wsh, tx_to_compact_tuple, native_validate_tx_p2wpkh_compact
 from bech32 import bech32_encode, convertbits
+from ..utils import config as CFG
 
 
 from ..utils.tsar_logging import get_ctx_logger

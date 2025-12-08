@@ -150,5 +150,4 @@ class StorageServer:
         except Exception as exc:
             log.exception("[conn] error handling request: %s", exc)
         finally:
-            try: conn.close()
-            except: pass
+            conn.close()
