@@ -92,10 +92,7 @@ class NodeClient:
         candidates: List[Tuple[str, int]] = []
 
         def _within_range(port: int) -> bool:
-            try:
-                return start <= int(port) <= end
-            except Exception:
-                return False
+            return start <= int(port) <= end
 
         def _append(peer: Optional[Tuple[str, int]]) -> None:
             if not peer:
@@ -143,6 +140,7 @@ class NodeClient:
                         chan.send(json.dumps(ping_env).encode("utf-8"))
                         resp = chan.recv(CFG.CONNECT_TIMEOUT_SCAN)
                     except Exception:
+                        log.exception("Unhandled exception")
                         if CFG.P2P_ENC_REQUIRED:
                             raise
                         send_message(s, json.dumps(ping_env).encode("utf-8"))
@@ -161,6 +159,7 @@ class NodeClient:
                                 found.append((ip, port))
                                 continue
                         except Exception:
+                            log.exception("Unhandled exception")
                             if CFG.ENVELOPE_REQUIRED:
                                 continue
                             found.append((ip, port))
@@ -196,10 +195,7 @@ class NodeClient:
         return found
 
     def _pace(self) -> None:
-        try:
-            interval = float(CFG.WALLET_RPC_MIN_INTERVAL or 0.0)
-        except Exception:
-            interval = 0.0
+        interval = float(CFG.WALLET_RPC_MIN_INTERVAL or 0.0)
         if interval <= 0.0:
             return
         with self._send_lock:
@@ -229,10 +225,10 @@ class NodeClient:
                 chan.send(json.dumps(env).encode("utf-8"))
                 resp = chan.recv(CFG.RPC_TIMEOUT)
             except Exception:
+                log.exception("Unhandled exception")
                 if CFG.P2P_ENC_REQUIRED and not CFG.ALLOW_RPC_PLAINTEXT:
                     raise
                 log.warning("[_try_send_one] secure handshake failed, fallback to plaintext", extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type")))
-                
                 send_message(s, json.dumps(env).encode("utf-8"))
                 resp = recv_message(s, timeout=CFG.RPC_TIMEOUT)
 
@@ -245,6 +241,7 @@ class NodeClient:
                     self.dir.mark_good(peer)
                     return inner
                 except Exception:
+                    log.exception("Unhandled exception")
                     if CFG.ENVELOPE_REQUIRED:
                         log.warning("[_try_send_one] envelope verify failed (REQUIRED) -> drop", extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type")))
                         return None
@@ -268,15 +265,10 @@ class NodeClient:
         for round_idx in (0, 1):
             targets = peers if round_idx == 0 else self.scan()
             for peer in targets:
-                try:
-                    self._pace()
-                    resp = self._try_send_one(peer, message)
-                    if resp is not None:
-                        return resp
-                except Exception:
-                    if _throttle(f"send_err_{peer}", 5.0):
-                        log.exception("[send] send error", extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type"), req))
-                    continue
+                self._pace()
+                resp = self._try_send_one(peer, message)
+                if resp is not None:
+                    return resp
 
         if _throttle("no_response", 10.0):
             log.error("[send] no response from any node", extra=_mk_extra(req=req, rpc=message.get("type")))
@@ -284,21 +276,14 @@ class NodeClient:
 
     def send_async(self, message: Dict[str, Any], callback: Callable[[Optional[Dict[str, Any]]], None]) -> None:
         def _safe_ui_callback(resp: Optional[Dict[str, Any]]) -> None:
-            try:
-                callback(resp)
-            except Exception:
-                log.exception("[send_async] Async callback error")
-                pass
+            callback(resp)
 
         def worker():
             resp = self.send(message)
             root = self.root or (tk._get_default_root() if tk else None)
             if root is not None:
-                try:
-                    root.after(0, _safe_ui_callback, resp)
-                    return
-                except Exception:
-                    pass
+                root.after(0, _safe_ui_callback, resp)
+                return
             _safe_ui_callback(resp)
 
         threading.Thread(target=worker, daemon=True).start()

@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 import tkinter as tk
+import datetime as _dt
 from tkinter import scrolledtext
 
 from tsarchain.utils import config as CFG
@@ -115,8 +116,6 @@ class NetworkTab(tk.Frame):
             if pending["n"] <= 0:
                 try:
                     self._render_network_snapshot(store.get("snap"), int(store.get("peers", 0)))
-                except Exception as exc:
-                    self._net_text_write(f"\n[-] Render error: {exc}\n")
                 finally:
                     self.app._busy_end("netinfo")
 
@@ -157,25 +156,16 @@ class NetworkTab(tk.Frame):
 
     def _set_status(self, text: str) -> None:
         if self._status_label:
-            try:
-                self._status_label.config(text=text)
-            except Exception:
-                pass
+            self._status_label.config(text=text)
 
     # ------------------------------------------------------------ Text helpers
     def _net_text_enable(self) -> None:
         if self.net_text:
-            try:
-                self.net_text.config(state="normal")
-            except Exception:
-                pass
+            self.net_text.config(state="normal")
 
     def _net_text_disable(self) -> None:
         if self.net_text:
-            try:
-                self.net_text.config(state="disabled")
-            except Exception:
-                pass
+            self.net_text.config(state="disabled")
 
     def _net_text_write(self, text: str, tags: tuple[str, ...] = ()) -> None:
         if not self.net_text:
@@ -189,130 +179,93 @@ class NetworkTab(tk.Frame):
     # ------------------------------------------------------------- Formatters
     @staticmethod
     def _fmt_num(x: int | float | None) -> str:
-        try:
-            n = int(x or 0)
-            return f"{n:,}".replace(",", ".")
-        except Exception:
-            return str(x)
+        n = int(x or 0)
+        return f"{n:,}".replace(",", ".")
 
     def _fmt_tsar(self, sat: int | float | None) -> str:
-        try:
-            sat = int(sat or 0)
-            whole = sat // CFG.TSAR
-            frac = sat % CFG.TSAR
-            if frac == 0:
-                return f"{self._fmt_num(whole)} TSAR"
-            sfrac = str(frac).rjust(8, "0").rstrip("0")
-            return f"{self._fmt_num(whole)},{sfrac} TSAR"
-        except Exception:
-            return str(sat)
+        sat = int(sat or 0)
+        whole = sat // CFG.TSAR
+        frac = sat % CFG.TSAR
+        if frac == 0:
+            return f"{self._fmt_num(whole)} TSAR"
+        sfrac = str(frac).rjust(8, "0").rstrip("0")
+        return f"{self._fmt_num(whole)},{sfrac} TSAR"
 
     @staticmethod
     def _fmt_hashrate(hps: int | float | None) -> str:
-        try:
-            v = float(hps or 0)
-            if v >= 1e12:
-                return f"{v / 1e12:.3f} TH/s".replace(",", ".")
-            if v >= 1e9:
-                return f"{v / 1e9:.3f} GH/s".replace(",", ".")
-            if v >= 1e6:
-                return f"{v / 1e6:.3f} MH/s".replace(",", ".")
-            if v >= 1e3:
-                return f"{v / 1e3:.3f} kH/s".replace(",", ".")
-            return f"{v:.0f} H/s".replace(",", ".")
-        except Exception:
-            return str(hps)
+        v = float(hps or 0)
+        if v >= 1e12:
+            return f"{v / 1e12:.3f} TH/s".replace(",", ".")
+        if v >= 1e9:
+            return f"{v / 1e9:.3f} GH/s".replace(",", ".")
+        if v >= 1e6:
+            return f"{v / 1e6:.3f} MH/s".replace(",", ".")
+        if v >= 1e3:
+            return f"{v / 1e3:.3f} kH/s".replace(",", ".")
+        return f"{v:.0f} H/s".replace(",", ".")
 
     @staticmethod
     def _fmt_time(ts: int | float | None) -> str:
-        try:
-            import datetime as _dt
-
-            if ts is None:
-                return "-"
-            dt = _dt.datetime.fromtimestamp(int(ts))
-            return dt.strftime("%H:%M:%S")
-        except Exception:
-            return str(ts)
+        if ts is None:
+            return "-"
+        dt = _dt.datetime.fromtimestamp(int(ts))
+        return dt.strftime("%H:%M:%S")
 
     @staticmethod
     def _fmt_last_update(last_up: Any) -> str:
-        try:
-            import datetime as _dt
+        if last_up in (None, "", "-"):
+            return "-"
+        if isinstance(last_up, (int, float)):
+            dt = _dt.datetime.fromtimestamp(int(last_up), tz=_dt.timezone.utc)
+        else:
+            s = str(last_up)
+            dt = _dt.datetime.fromisoformat(s)
 
-            if last_up in (None, "", "-"):
-                return "-"
-            if isinstance(last_up, (int, float)):
-                dt = _dt.datetime.fromtimestamp(int(last_up), tz=_dt.timezone.utc)
-            else:
-                s = str(last_up)
-                try:
-                    dt = _dt.datetime.fromisoformat(s)
-                except Exception:
-                    if s.endswith("Z"):
-                        dt = _dt.datetime.fromisoformat(s[:-1]).replace(tzinfo=_dt.timezone.utc)
-                    else:
-                        return s
+        if dt.tzinfo is None:
+            dt = dt.astimezone()
 
-            if dt.tzinfo is None:
-                dt = dt.astimezone()
+        d = dt.day
+        if 11 <= (d % 100) <= 13:
+            suf = "th"
+        else:
+            suf = {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
 
-            d = dt.day
-            if 11 <= (d % 100) <= 13:
-                suf = "th"
-            else:
-                suf = {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
+        month_name = dt.strftime("%B")
+        date_part = f"{month_name} {d}{suf} {dt.year}"
+        time_part = dt.strftime("%H:%M:%S")
 
-            month_name = dt.strftime("%B")
-            date_part = f"{month_name} {d}{suf} {dt.year}"
-            time_part = dt.strftime("%H:%M:%S")
-
-            off = dt.utcoffset() or _dt.timedelta(0)
-            hours = int(round(off.total_seconds() / 3600))
-            sign = "+" if hours >= 0 else "-"
-            hours_abs = abs(hours)
-            return f"{date_part} . {time_part} GMT {sign} {hours_abs}"
-        except Exception:
-            try:
-                return str(last_up)
-            except Exception:
-                return "-"
+        off = dt.utcoffset() or _dt.timedelta(0)
+        hours = int(round(off.total_seconds() / 3600))
+        sign = "+" if hours >= 0 else "-"
+        hours_abs = abs(hours)
+        return f"{date_part} . {time_part} GMT {sign} {hours_abs}"
 
     @staticmethod
     def _fmt_bytes(num_bytes: int | float | None) -> str:
-        try:
-            n = float(num_bytes or 0)
-            units = ["B", "KB", "MB", "GB", "TB"]
-            i = 0
-            while n >= 1024 and i < len(units) - 1:
-                n /= 1024.0
-                i += 1
-            if i == 0:
-                return f"{int(n)} B"
-            return f"{n:.2f} {units[i]}"
-        except Exception:
-            return str(num_bytes)
+        n = float(num_bytes or 0)
+        units = ["B", "KB", "MB", "GB", "TB"]
+        i = 0
+        while n >= 1024 and i < len(units) - 1:
+            n /= 1024.0
+            i += 1
+        if i == 0:
+            return f"{int(n)} B"
+        return f"{n:.2f} {units[i]}"
 
     @staticmethod
     def _extract_peers_count(snap: Optional[Dict[str, Any]], fallback: int) -> int:
         if isinstance(snap, dict):
             peers_section = snap.get("peers")
             if isinstance(peers_section, dict):
-                try:
-                    val = peers_section.get("count")
-                    if val is None:
-                        val = peers_section.get("total")
-                    if val is None and len(peers_section) == 1:
-                        val = next(iter(peers_section.values()))
-                    if val is not None:
-                        return int(val)
-                except Exception:
-                    pass
+                val = peers_section.get("count")
+                if val is None:
+                    val = peers_section.get("total")
+                if val is None and len(peers_section) == 1:
+                    val = next(iter(peers_section.values()))
+                if val is not None:
+                    return int(val)
             else:
-                try:
-                    return int(peers_section)
-                except Exception:
-                    pass
+                return int(peers_section)
         return int(fallback)
 
     # ---------------- Rendering ----------------
@@ -423,10 +376,7 @@ class NetworkTab(tk.Frame):
         self.net_text.insert(tk.END, f"{self._fmt_num(total_txs)}\n\n", ("val","center"))
 
         # Show non-coinbase transactions under 'Transactions'
-        try:
-            noncb = int(txs.get('total_non_coinbase_txs')) if txs.get('total_non_coinbase_txs') is not None else total_txs
-        except Exception:
-            noncb = total_txs
+        noncb = int(txs.get('total_non_coinbase_txs')) if txs.get('total_non_coinbase_txs') is not None else total_txs
         self.net_text.insert(tk.END, f"Transactions\n", ("lab","center"))
         self.net_text.insert(tk.END, f"{self._fmt_num(noncb)}\n\n", ("val","center"))
 
@@ -483,19 +433,13 @@ class NetworkTab(tk.Frame):
                 )
                 if i < len(top):
                     self.net_text.insert(tk.END, ("-"*72) + "\n", ("sep2", "center"))
-        try:
-            self.net_text.insert(tk.END, "No Miners Data Found\n", ("mut","center"))
-        except Exception:
-            pass
+        self.net_text.insert(tk.END, "No Miners Data Found\n", ("mut","center"))
         self._net_text_disable()
 
     # ----------------------------- Auto refresh ----------------------------
     def _cancel_auto(self) -> None:
         if self._auto_job:
-            try:
-                self.after_cancel(self._auto_job)
-            except Exception:
-                pass
+            self.after_cancel(self._auto_job)
             self._auto_job = None
         self._cancel_countdown()
 
@@ -506,10 +450,7 @@ class NetworkTab(tk.Frame):
         delay = delay_ms if delay_ms is not None else self._auto_interval_ms
         self._next_refresh_sec = max(int(delay // 1000), 0)
         self._start_countdown()
-        try:
-            self._auto_job = self.after(delay, self._auto_tick)
-        except Exception:
-            self._auto_job = None
+        self._auto_job = self.after(delay, self._auto_tick)
 
     def _auto_tick(self) -> None:
         self._auto_job = None
@@ -517,11 +458,7 @@ class NetworkTab(tk.Frame):
             return
         self._next_refresh_sec = 0
         self._start_countdown()
-        try:
-            self.refresh_network_info()
-        except Exception:
-            # If refresh fails, still schedule next to avoid lockup
-            self._schedule_auto()
+        self.refresh_network_info()
 
     def on_show(self) -> None:
         self._active = True
@@ -547,17 +484,11 @@ class NetworkTab(tk.Frame):
                 return
             self._set_status(f"Auto Refresh in {self._next_refresh_sec}s")
             self._next_refresh_sec -= 1
-            try:
-                self._countdown_job = self.after(1000, _tick)
-            except Exception:
-                self._countdown_job = None
+            self._countdown_job = self.after(1000, _tick)
 
         _tick()
 
     def _cancel_countdown(self) -> None:
         if self._countdown_job:
-            try:
-                self.after_cancel(self._countdown_job)
-            except Exception:
-                pass
+            self.after_cancel(self._countdown_job)
             self._countdown_job = None

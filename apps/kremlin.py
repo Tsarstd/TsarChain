@@ -1,15 +1,18 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
-# Part of TsarChain — see LICENSE and TRADEMARKS.md
+# Part of TsarChain â€” see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173
 
 # ---------------- Imports (Module) ----------------
 import os
+import re
 import sys
 import time
 import json
 import random
+import traceback
 import tkinter as tk
+import multiprocessing
 import tkinter.font as tkfont
 from tkinter import messagebox, simpledialog, ttk
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -43,15 +46,13 @@ from tsarchain.storage.kv import kv_enabled, iter_prefix, batch
 from tsarchain.utils import config as CFG
 
 # ---------------- Logger ----------------
-from tsarchain.utils.tsar_logging import launch_gui_in_thread, setup_logging, open_log_toplevel, get_ctx_logger
+from tsarchain.utils.tsar_logging import setup_logging, open_log_toplevel, get_ctx_logger
+log = get_ctx_logger("tsarchain.wallet.gui")
 
 # ---------------- Constants & Paths ----------------
 
 manual_bootstrap: Optional[Tuple[str, int]] = None
-try:
-    os.makedirs(os.path.dirname(CFG.USER_KEY_PATH), exist_ok=True)
-except Exception:
-    pass
+os.makedirs(os.path.dirname(CFG.USER_KEY_PATH), exist_ok=True)
 
 USER_ID, USER_PUB, USER_PRIV = load_or_create_keypair_at(CFG.USER_KEY_PATH)
 USER_CTX = {"net_id": CFG.DEFAULT_NET_ID, "node_id": USER_ID, "pubkey": USER_PUB, "privkey": USER_PRIV}
@@ -59,44 +60,29 @@ USER_CTX = {"net_id": CFG.DEFAULT_NET_ID, "node_id": USER_ID, "pubkey": USER_PUB
 WALLET_PEER_KEYS_PATH = os.path.join(os.path.dirname(CFG.USER_KEY_PATH), "wallet_peer_keys.json")
 
 if not kv_enabled():
-    try:
-        os.makedirs(os.path.dirname(WALLET_PEER_KEYS_PATH), exist_ok=True)
-    except Exception:
-        pass
+    os.makedirs(os.path.dirname(WALLET_PEER_KEYS_PATH), exist_ok=True)
     
 def _load_peer_keys() -> dict:
     if kv_enabled():
         m = {}
-        try:
-            for k, v in iter_prefix('wallet_peer_keys', b'nid:'):
-                nid = k.decode('utf-8')[4:]
-                m[nid] = v.decode('utf-8')
-        except Exception:
-            pass
+        for k, v in iter_prefix('wallet_peer_keys', b'nid:'):
+            nid = k.decode('utf-8')[4:]
+            m[nid] = v.decode('utf-8')
         return m
-    try:
-        with open(WALLET_PEER_KEYS_PATH, 'r', encoding='utf-8') as f:
-            obj = json.load(f)
-            return obj if isinstance(obj, dict) else {}
-    except Exception:
-        return {}
+    with open(WALLET_PEER_KEYS_PATH, 'r', encoding='utf-8') as f:
+        obj = json.load(f)
+        return obj if isinstance(obj, dict) else {}
     
 def _save_peer_keys(d: dict) -> None:
     if kv_enabled():
-        try:
-            with batch('wallet_peer_keys') as b:
-                for nid, pk in d.items():
-                    b.put(f"nid:{nid}".encode('utf-8'), pk.encode('utf-8'))
-        except Exception:
-            pass
+        with batch('wallet_peer_keys') as b:
+            for nid, pk in d.items():
+                b.put(f"nid:{nid}".encode('utf-8'), pk.encode('utf-8'))
         return
-    try:
-        tmp = WALLET_PEER_KEYS_PATH + ".tmp"
-        with open(tmp, 'w', encoding='utf-8') as f:
-            json.dump(d, f, indent=2)
-        os.replace(tmp, WALLET_PEER_KEYS_PATH)
-    except Exception:
-        pass
+    tmp = WALLET_PEER_KEYS_PATH + ".tmp"
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(d, f, indent=2)
+    os.replace(tmp, WALLET_PEER_KEYS_PATH)
 
 WALLET_PEER_KEYS = _load_peer_keys()
 
@@ -164,26 +150,14 @@ class PasswordLockscreen(tk.Toplevel):
         ).pack(side=tk.LEFT, padx=10)
 
         center_window(self, root)
-        try:
-            self.entry.focus_set()
-        except Exception:
-            pass
+        self.entry.focus_set()
 
     def on_unlock(self, _event=None) -> None:
         pwd = self.entry.get().strip()
         if not pwd:
             self.error_var.set("Password is required.")
             return
-        try:
-            _ = list_addresses_in_keystore(pwd)
-        except Exception:
-            self.error_var.set("Wrong password or keystore cannot be opened.")
-            try:
-                self.entry.select_range(0, tk.END)
-                self.entry.focus_set()
-            except Exception:
-                pass
-            return
+        _ = list_addresses_in_keystore(pwd)
 
         self.result = pwd
         self.destroy()
@@ -191,19 +165,12 @@ class PasswordLockscreen(tk.Toplevel):
     def on_cancel(self) -> None:
         self.result = None
         self.destroy()
-
+        
 
 def should_show_password_lock() -> bool:
-    try:
-        if load_registry():
-            return True
-    except Exception:
-        pass
-    try:
-        return os.path.exists(WALLET_FILE) and os.path.getsize(WALLET_FILE) > 0
-    except Exception:
-        return False
-
+    if load_registry():
+        return True
+    return os.path.exists(WALLET_FILE) and os.path.getsize(WALLET_FILE) > 0
 
 def show_password_lockscreen(root: tk.Tk) -> Optional[str]:
     lock = PasswordLockscreen(root)
@@ -215,7 +182,6 @@ def show_password_lockscreen(root: tk.Tk) -> Optional[str]:
 class KremlinWalletGUI(WalletsMixin):
     def __init__(self, root: tk.Tk, initial_keystore_password: Optional[str] = None):
         self.root = root
-        self.log = get_ctx_logger("tsarchain.wallet.gui")
 
         # 0) Theme & styles
         self.current_theme = getattr(self, "current_theme", "dark")
@@ -228,7 +194,7 @@ class KremlinWalletGUI(WalletsMixin):
         root.title("Kremlin")
         root.geometry("1070x700")
 
-        # 1) RPC client — MUST be initialized before services/tabs that use RPC
+        # 1) RPC client - MUST be initialized before services/tabs that use RPC
         self.rpc = NodeClient(
             cfg_module=None,
             user_ctx=USER_CTX,
@@ -355,10 +321,7 @@ class KremlinWalletGUI(WalletsMixin):
         muted = getattr(self, "muted", "#a9b1ba")
         border = getattr(self, "border_color", "#2a2f36")
         style = ttk.Style(self.root)
-        try:
-            style.theme_use("clam")
-        except Exception:
-            pass
+        style.theme_use("clam")
         
         style.configure("Tsar.TFrame", background=bg)
         style.configure("Tsar.TLabelframe", background=bg, foreground=fg)
@@ -368,10 +331,7 @@ class KremlinWalletGUI(WalletsMixin):
         style.configure("Accent.TLabel", background=bg, foreground=accent)
         style.configure("Tsar.TButton", background=panel, foreground=fg, padding=6, bordercolor=border)
         style.map("Tsar.TButton", background=[("active", lighten(panel, 0.08)), ("pressed", lighten(panel, 0.12))])
-        try:
-            style.configure("Tsar.Vertical.TScrollbar", background=panel, troughcolor=bg)
-        except Exception:
-            pass
+        style.configure("Tsar.Vertical.TScrollbar", background=panel, troughcolor=bg)
         
         self._style = style
 
@@ -450,13 +410,9 @@ class KremlinWalletGUI(WalletsMixin):
         self._hide_all_frames()
         if "locked" not in self.frames:
             self._build_locked_frame()
-        title = f"🔒 {source} is Locked" if source else "🔒 Locked"
-        try:
-            self._lock_title.config(text=title)
-            self._lock_sub.config(text="Create or Load Your Wallet First")
-        except Exception:
-            pass
-        
+        title = f"🔒’ {source} is Locked" if source else "🔒 Locked"
+        self._lock_title.config(text=title)
+        self._lock_sub.config(text="Create or Load Your Wallet First")
         self.frames["locked"].pack(fill=tk.BOTH, expand=True)
 
     def _maybe_lock_redirect(self) -> None:
@@ -471,27 +427,24 @@ class KremlinWalletGUI(WalletsMixin):
         self._refresh_sidebar_styles()
 
     def _refresh_sidebar_styles(self) -> None:
-        try:
-            active_fg = self.bg if self.current_theme == "dark" else self.fg
-            for tab, btn in getattr(self, "_sidebar_buttons", {}).items():
-                if not btn or not btn.winfo_exists():
-                    continue
-                if tab == getattr(self, "_active_tab", ""):
-                    btn.configure(
-                        bg=self.sidebar_active,
-                        fg=active_fg,
-                        activebackground=self.sidebar_active,
-                        activeforeground=active_fg,
-                    )
-                else:
-                    btn.configure(
-                        bg=self.sidebar_bg,
-                        fg=self.fg,
-                        activebackground=self.sidebar_active,
-                        activeforeground=active_fg,
-                    )
-        except Exception:
-            pass
+        active_fg = self.bg if self.current_theme == "dark" else self.fg
+        for tab, btn in getattr(self, "_sidebar_buttons", {}).items():
+            if not btn or not btn.winfo_exists():
+                continue
+            if tab == getattr(self, "_active_tab", ""):
+                btn.configure(
+                    bg=self.sidebar_active,
+                    fg=active_fg,
+                    activebackground=self.sidebar_active,
+                    activeforeground=active_fg,
+                )
+            else:
+                btn.configure(
+                    bg=self.sidebar_bg,
+                    fg=self.fg,
+                    activebackground=self.sidebar_active,
+                    activeforeground=active_fg,
+                )
 
     def _create_sidebar_button(self, text: str, tab: str, on_click) -> tk.Button:
         active_fg = self.bg if self.current_theme == "dark" else self.fg
@@ -531,10 +484,7 @@ class KremlinWalletGUI(WalletsMixin):
 
     @staticmethod
     def _widget_exists(widget) -> bool:
-        try:
-            return bool(widget) and widget.winfo_exists()
-        except Exception:
-            return False
+        return bool(widget) and widget.winfo_exists()
 
     def _build_layout(self) -> None:
         self.sidebar = tk.Frame(self.root, bg=self.sidebar_bg, width=100)
@@ -583,64 +533,49 @@ class KremlinWalletGUI(WalletsMixin):
         
         # ---------------- UX: Toast (non-blocking) ----------------
     def _toast(self, text: str, ms: int = 1800, kind: str = "info") -> None:
-        try:
-            if isinstance(ms, str):
-                kind = ms
-                ms = 1800
-            try:
-                ms = int(ms)
-            except Exception:
-                ms = 1800
-            if not hasattr(self, "_toasts"):
-                self._toasts = []
-            self.root.update_idletasks()
-            tw = tk.Toplevel(self.root)
-            tw.withdraw()
-            tw.overrideredirect(True)
-            try:
-                tw.attributes("-topmost", True)
-                tw.attributes("-alpha", 0.96)
-            except Exception:
-                pass
+        if isinstance(ms, str):
+            kind = ms
+            ms = 1800
+        ms = int(ms)
+        if not hasattr(self, "_toasts"):
+            self._toasts = []
+        self.root.update_idletasks()
+        tw = tk.Toplevel(self.root)
+        tw.withdraw()
+        tw.overrideredirect(True)
+        tw.attributes("-topmost", True)
+        tw.attributes("-alpha", 0.96)
 
-            palette = getattr(self, "theme_set", None).palette if hasattr(self, "theme_set") else None
-            warn_color = palette.warning if palette else "#f5a524"
-            error_color = palette.danger if palette else "#f1633f"
-            info_color = self.accent
-            border = {"info": info_color, "warn": warn_color, "error": error_color}.get(kind, info_color)
-            bg = self.panel_bg
-            w, h = 320, 52
-            rx = self.root.winfo_rootx(); ry = self.root.winfo_rooty()
-            rw = self.root.winfo_width();  rh = self.root.winfo_height()
-            y_offset = len(self._toasts) * (h + 6)
-            x = rx + rw - (w + 18)
-            y = ry + rh - (h + 18) - y_offset
-            tw.geometry(f"{w}x{h}+{x}+{y}")
+        palette = getattr(self, "theme_set", None).palette if hasattr(self, "theme_set") else None
+        warn_color = palette.warning if palette else "#f5a524"
+        error_color = palette.danger if palette else "#f1633f"
+        info_color = self.accent
+        border = {"info": info_color, "warn": warn_color, "error": error_color}.get(kind, info_color)
+        bg = self.panel_bg
+        w, h = 320, 52
+        rx = self.root.winfo_rootx(); ry = self.root.winfo_rooty()
+        rw = self.root.winfo_width();  rh = self.root.winfo_height()
+        y_offset = len(self._toasts) * (h + 6)
+        x = rx + rw - (w + 18)
+        y = ry + rh - (h + 18) - y_offset
+        tw.geometry(f"{w}x{h}+{x}+{y}")
 
-            wrapper = tk.Frame(tw, bg=border, bd=0, highlightthickness=0)
-            wrapper.pack(fill="both", expand=True)
-            inner = tk.Frame(wrapper, bg=bg, bd=0, highlightthickness=0)
-            inner.pack(fill="both", expand=True, padx=1, pady=1)
+        wrapper = tk.Frame(tw, bg=border, bd=0, highlightthickness=0)
+        wrapper.pack(fill="both", expand=True)
+        inner = tk.Frame(wrapper, bg=bg, bd=0, highlightthickness=0)
+        inner.pack(fill="both", expand=True, padx=1, pady=1)
 
-            lbl = tk.Label(inner, text=text, bg=bg, fg=self.fg, font=("Consolas", 10), anchor="w", justify="left")
-            lbl.pack(fill="both", expand=True, padx=12, pady=10)
+        lbl = tk.Label(inner, text=text, bg=bg, fg=self.fg, font=("Consolas", 10), anchor="w", justify="left")
+        lbl.pack(fill="both", expand=True, padx=12, pady=10)
 
-            self._toasts.append(tw)
-            tw.deiconify()
+        self._toasts.append(tw)
+        tw.deiconify()
 
-            def _close():
-                try:
-                    tw.destroy()
-                except Exception:
-                    pass
-                try:
-                    self._toasts.remove(tw)
-                except Exception:
-                    pass
+        def _close():
+            tw.destroy()
+            self._toasts.remove(tw)
 
-            tw.after(ms, _close)
-        except Exception:
-            pass
+        tw.after(ms, _close)
 
     def _busy_msg_for_key(self, key: str) -> str:
         if key.startswith("bal:") or key == "wallet_balances":
@@ -666,23 +601,17 @@ class KremlinWalletGUI(WalletsMixin):
     def _set_conn_status(self, ok: bool) -> None:
         prev = getattr(self, "_conn_online", False)
         self._conn_online = bool(ok)
-        try:
-            palette = getattr(self.theme_set, "palette", None)
-            ok_color = palette.success if palette else "#17c964"
-            fail_color = palette.danger if palette else "#d41c1c"
-            if self._conn_online:
-                self.conn_status.config(text="Connected", fg=ok_color)
-            else:
-                self.conn_status.config(text="Offline", fg=fail_color)
-        except Exception:
-            pass
+        palette = getattr(self.theme_set, "palette", None)
+        ok_color = palette.success if palette else "#17c964"
+        fail_color = palette.danger if palette else "#d41c1c"
+        if self._conn_online:
+            self.conn_status.config(text="Connected", fg=ok_color)
+        else:
+            self.conn_status.config(text="Offline", fg=fail_color)
 
         if self._conn_online and not prev:
             if self._balance_poll_job:
-                try:
-                    self.root.after_cancel(self._balance_poll_job)
-                except Exception:
-                    pass
+                self.root.after_cancel(self._balance_poll_job)
                 self._balance_poll_job = None
             if getattr(self, "wallets", []):
                 def _reschedule() -> None:
@@ -694,10 +623,7 @@ class KremlinWalletGUI(WalletsMixin):
     def _start_conn_heartbeat(self, interval_ms: int = 10000) -> None:
         self._conn_hb_interval = int(max(1000, interval_ms))
         if hasattr(self, "_conn_hb_job") and self._conn_hb_job:
-            try:
-                self.root.after_cancel(self._conn_hb_job)
-            except Exception:
-                pass
+            self.root.after_cancel(self._conn_hb_job)
             self._conn_hb_job = None
 
         def _next_delay() -> int:
@@ -710,33 +636,18 @@ class KremlinWalletGUI(WalletsMixin):
                 ok = bool(resp and not resp.get("error"))
                 self._set_conn_status(ok)
 
-            try:
-                self.rpc.send_async({"type": "PING"}, _on)
-            except Exception:
-                self._set_conn_status(False)
-            try:
-                self._conn_hb_job = self.root.after(_next_delay(), _tick)
-            except Exception:
-                pass
-        try:
-            self._conn_hb_job = self.root.after(600, _tick)
-        except Exception:
-            pass
+            self.rpc.send_async({"type": "PING"}, _on)
+            self._conn_hb_job = self.root.after(_next_delay(), _tick)
+        self._conn_hb_job = self.root.after(600, _tick)
 
     # ---------------- Balance refresh helpers ----------------
     def _set_balance_refresh_label(self, text: str) -> None:
-        try:
-            if getattr(self, "wallet_refresh_label", None):
-                self.wallet_refresh_label.config(text=text)
-        except Exception:
-            pass
+        if getattr(self, "wallet_refresh_label", None):
+            self.wallet_refresh_label.config(text=text)
 
     def _cancel_balance_countdown(self) -> None:
         if self._balance_countdown_job:
-            try:
-                self.root.after_cancel(self._balance_countdown_job)
-            except Exception:
-                pass
+            self.root.after_cancel(self._balance_countdown_job)
             self._balance_countdown_job = None
 
     def _start_balance_countdown(self, seconds: int) -> None:
@@ -750,19 +661,13 @@ class KremlinWalletGUI(WalletsMixin):
                 return
             self._set_balance_refresh_label(f"Refresh: {self._balance_next_sec}s")
             self._balance_next_sec -= 1
-            try:
-                self._balance_countdown_job = self.root.after(1000, _tick)
-            except Exception:
-                self._balance_countdown_job = None
+            self._balance_countdown_job = self.root.after(1000, _tick)
 
         _tick()
 
     def _cancel_balance_poll(self) -> None:
         if self._balance_poll_job:
-            try:
-                self.root.after_cancel(self._balance_poll_job)
-            except Exception:
-                pass
+            self.root.after_cancel(self._balance_poll_job)
             self._balance_poll_job = None
         self._cancel_balance_countdown()
         self._set_balance_refresh_label("Refresh: paused")
@@ -772,16 +677,9 @@ class KremlinWalletGUI(WalletsMixin):
             delay_ms = self._balance_poll_interval_ms
         delay = int(max(0, delay_ms))
         if self._balance_poll_job:
-            try:
-                self.root.after_cancel(self._balance_poll_job)
-            except Exception:
-                pass
-        try:
-            self._balance_poll_job = self.root.after(delay, self._run_balance_poll)
-            self._start_balance_countdown(delay // 1000)
-        except Exception:
-            self._balance_poll_job = None
-            self._set_balance_refresh_label("Refresh: paused (error)")
+            self.root.after_cancel(self._balance_poll_job)
+        self._balance_poll_job = self.root.after(delay, self._run_balance_poll)
+        self._start_balance_countdown(delay // 1000)
 
     def _run_balance_poll(self) -> None:
         self._balance_poll_job = None
@@ -823,40 +721,21 @@ class KremlinWalletGUI(WalletsMixin):
     def _build_send_frame(self) -> None:
         fr = ttk.Frame(self.main, style="Tsar.TFrame")
         self.frames["send"] = fr
-        try:
-            self.send_tab.update_theme(self.theme_set.send)
-            self.send_tab.build(fr)
-        except Exception as e:
-            tk.Label(
-                fr, text=f"Send tab failed to render: {e}",
-                bg=self.bg, fg=self.accent, font=("Consolas", 11, "bold")
-            ).pack(anchor="w", padx=12, pady=12)
-
+        self.send_tab.update_theme(self.theme_set.send)
+        self.send_tab.build(fr)
 
     def reload_addresses(self) -> None:
         values = list(self.wallets or [])
 
         if self._widget_exists(getattr(self, "wallet_count_label", None)):
-            try:
-                self.wallet_count_label.config(text=f"Wallets: {len(values)}")
-            except Exception:
-                if self.log:
-                    self.log.debug("[reload_addresses] wallet_count_label update skipped", exc_info=True)
+            self.wallet_count_label.config(text=f"Wallets: {len(values)}")
 
         history_tab = getattr(self, "history_tab", None)
         if self._widget_exists(history_tab):
-            try:
-                history_tab.reload_addresses(values)
-            except Exception:
-                if self.log:
-                    self.log.debug("[reload_addresses] history tab update skipped", exc_info=True)
+            history_tab.reload_addresses(values)
 
-        try:
-            if hasattr(self, "chat_tab"):
-                self.chat_tab.reload_addresses()
-        except Exception:
-            if self.log:
-                self.log.debug("[reload_addresses] chat tab reload skipped", exc_info=True)
+        if hasattr(self, "chat_tab"):
+            self.chat_tab.reload_addresses()
 
     def _chat_toggle_online(self) -> None:
         addr = (self.chat_from_var.get() or "").strip().lower()
@@ -894,16 +773,10 @@ class KremlinWalletGUI(WalletsMixin):
 
         if not messagebox.askyesno("Go Offline", "Are you sure you want to go offline?"):
             return
-        try:
-            a = addr.strip().lower()
-            self.chat_mgr.priv_cache.pop(a, None)
-        except Exception:
-            pass
-        try:
-            if getattr(self, "_chat_poll_job", None):
-                self.root.after_cancel(self._chat_poll_job)
-        except Exception:
-            pass
+        a = addr.strip().lower()
+        self.chat_mgr.priv_cache.pop(a, None)
+        if getattr(self, "_chat_poll_job", None):
+            self.root.after_cancel(self._chat_poll_job)
         self._chat_poll_job = None
         self._chat_set_online_ui(False)
         self._toast("Offline.", kind="info")
@@ -915,13 +788,9 @@ class KremlinWalletGUI(WalletsMixin):
         pwd = simpledialog.askstring("Keystore Password", "Enter keystore password:", show="*")
         if not pwd:
             return None
-        try:
-            _ = list_addresses_in_keystore(pwd)
-            self._ks_pwd_cache = (pwd, time.time() + self._ks_pwd_ttl_sec)
-            return pwd
-        except Exception as e:
-            messagebox.showerror("Error", f"Wrong password: {e}")
-            return None
+        _ = list_addresses_in_keystore(pwd)
+        self._ks_pwd_cache = (pwd, time.time() + self._ks_pwd_ttl_sec)
+        return pwd
 
     def _contacts_reload(self, show_toast: bool = False) -> None:
         self.contacts = self.contact_mgr.load()  # dict addr->alias
@@ -940,11 +809,7 @@ class KremlinWalletGUI(WalletsMixin):
 
         # ---------------- Contacts for SEND tab ----------------
     def _sync_send_recipient_from_combo(self) -> None:
-        raw = ""
-        try:
-            raw = (self.send_to_combo.get() or "").strip()
-        except Exception:
-            pass
+        raw = (self.send_to_combo.get() or "").strip()
         if not raw:
             return
         rlc = raw.lower()
@@ -987,10 +852,7 @@ class KremlinWalletGUI(WalletsMixin):
 
         # ---------- helper RPC ----------
         def _rpc(payload: dict):
-            try:
-                return self.rpc.send(payload)
-            except Exception as e:
-                return {"error": str(e)}
+            return self.rpc.send(payload)
 
         # ---------- Providers utk panel ----------
         def _prov_get_info():
@@ -1009,7 +871,6 @@ class KremlinWalletGUI(WalletsMixin):
             }
 
         def _prov_get_block(x):
-            import re
             s = str(x).strip()
 
             if re.fullmatch(r"\d+", s):
@@ -1107,11 +968,7 @@ class KremlinWalletGUI(WalletsMixin):
                 raw = utx.get("utxos") or utx.get("items") or []
                 if isinstance(raw, dict):
                     for k, v in raw.items():
-                        try:
-                            txid, idx = k.rsplit(":", 1); idx = int(idx)
-                        except Exception:
-                            txid = v.get("txid") or v.get("id") or k
-                            idx  = int(v.get("index") or v.get("vout") or 0)
+                        txid, idx = k.rsplit(":", 1); idx = int(idx)
                         utxo_list.append({
                             "txid": txid,
                             "index": idx,
@@ -1131,11 +988,7 @@ class KremlinWalletGUI(WalletsMixin):
                 res["history"] = his.get("history") or his.get("items") or []
 
             if (res["spendable"] == 0 and res["pending"] == 0 and res["immature"] == 0) and res["utxos"]:
-                try:
-                    res["spendable"] = int(sum(int(u.get("amount") or 0) for u in res["utxos"]))
-                except Exception:
-                    pass
-
+                res["spendable"] = int(sum(int(u.get("amount") or 0) for u in res["utxos"]))
             return res
 
         def _prov_get_mempool():
@@ -1168,13 +1021,8 @@ class KremlinWalletGUI(WalletsMixin):
     def _build_graffiti_frame(self) -> None:
         f = tk.Frame(self.main, bg=self.bg)
         self.frames["graffiti"] = f
-        try:
-            if GraffitiTab is None:
-                raise RuntimeError("GraffitiTab missing")
-            self.graffiti_tab = GraffitiTab(self, self.theme_set.graffiti, master=f)
-            self.graffiti_tab.pack(fill="both", expand=True)
-        except Exception as e:
-            tk.Label(f, text=f"Graffiti UI failed: {e}", bg=self.bg, fg="red").pack(fill="both", expand=True, padx=20, pady=20)
+        self.graffiti_tab = GraffitiTab(self, self.theme_set.graffiti, master=f)
+        self.graffiti_tab.pack(fill="both", expand=True)
             
     # ---------------- Network Frame ----------------
     def _build_network_frame(self) -> None:
@@ -1203,58 +1051,39 @@ class KremlinWalletGUI(WalletsMixin):
         fn = m.get((name or '').lower())
         if fn:
             fn()
-            try: self._activate_tab(name.lower())
-            except Exception: pass
+            self._activate_tab(name.lower())
 
 # ---------------- Helpers: UI control ----------------
     def _hide_all_frames(self) -> None:
-        try:
-            if hasattr(self, "_chat_poll_job") and self._chat_poll_job:
-                self.root.after_cancel(self._chat_poll_job)
-                self._chat_poll_job = None
-            if hasattr(self, "chat_tab") and getattr(self.chat_tab, "_chat_poll_job", None):
-                self.root.after_cancel(self.chat_tab._chat_poll_job)
-                self.chat_tab._chat_poll_job = None
-        except Exception:
-            pass
+        if hasattr(self, "_chat_poll_job") and self._chat_poll_job:
+            self.root.after_cancel(self._chat_poll_job)
+            self._chat_poll_job = None
+        if hasattr(self, "chat_tab") and getattr(self.chat_tab, "_chat_poll_job", None):
+            self.root.after_cancel(self.chat_tab._chat_poll_job)
+            self.chat_tab._chat_poll_job = None
         for fr in self.frames.values():
-            try:
-                fr.pack_forget()
-            except Exception:
-                pass
-        try:
-            if hasattr(self, "explore_panel"):
-                self.explore_panel.on_deactivated()
-        except Exception:
-            pass
-        try:
-            if hasattr(self, "network_tab"):
-                self.network_tab.on_hide()
-        except Exception:
-            pass
+            fr.pack_forget()
+        if hasattr(self, "explore_panel"):
+            self.explore_panel.on_deactivated()
+        if hasattr(self, "network_tab"):
+            self.network_tab.on_hide()
 
     def show_wallets_frame(self) -> None:
         self._hide_all_frames()
         # mark active tab early so schedulers see the right state
-        try:
-            self._active_tab = "wallets"
-            self._refresh_sidebar_styles()
-        except Exception:
-            pass
+        self._active_tab = "wallets"
+        self._refresh_sidebar_styles()
         self.frames["wallets"].pack(fill=tk.BOTH, expand=True)
-        try:
-            if self._conn_online:
-                if self._balance_poll_job or self._balance_countdown_job:
-                    if self._balance_next_sec > 0:
-                        self._set_balance_refresh_label(f"Refresh: {self._balance_next_sec}s")
-                    else:
-                        self._set_balance_refresh_label("Refresh: now")
+        if self._conn_online:
+            if self._balance_poll_job or self._balance_countdown_job:
+                if self._balance_next_sec > 0:
+                    self._set_balance_refresh_label(f"Refresh: {self._balance_next_sec}s")
                 else:
-                    self._schedule_balance_refresh()
+                    self._set_balance_refresh_label("Refresh: now")
             else:
-                self._set_balance_refresh_label("Refresh: offline")
-        except Exception:
-            pass
+                self._schedule_balance_refresh()
+        else:
+            self._set_balance_refresh_label("Refresh: offline")
 
     def show_send_frame(self) -> None:
         if not self._is_wallet_ready():
@@ -1263,50 +1092,34 @@ class KremlinWalletGUI(WalletsMixin):
         if "send" not in self.frames:
             self._build_send_frame()
         fr = self.frames["send"]
-        try:
-            if (not getattr(fr, "winfo_children") or len(fr.winfo_children()) == 0):
-                for w in list(fr.winfo_children()):
-                    try: w.destroy()
-                    except Exception: pass
-                self.send_tab.build(fr)
-        except Exception as e:
-            try:
-                for w in list(fr.winfo_children()):
-                    w.destroy()
-            except Exception:
-                pass
+        if (not getattr(fr, "winfo_children") or len(fr.winfo_children()) == 0):
+            for w in list(fr.winfo_children()):
+                w.destroy()
+            self.send_tab.build(fr)
+            for w in list(fr.winfo_children()):
+                w.destroy()
             tk.Label(
                 fr, text=f"Send tab failed to render: {e}",
                 bg=self.bg, fg=self.accent, font=("Consolas", 11, "bold")
            ).pack(anchor="w", padx=12, pady=12)
         fr.pack(fill=tk.BOTH, expand=True)
         self._activate_tab("send")
-        try:
-            self.reload_addresses()
-            self.send_tab.on_wallets_changed(self.wallets)
-            self.send_tab.on_activated()
-        except Exception:
-            pass
+        self.reload_addresses()
+        self.send_tab.on_wallets_changed(self.wallets)
+        self.send_tab.on_activated()
     
     def show_graffiti_frame(self) -> None:
         self._hide_all_frames()
         if "graffiti" not in self.frames:
             self._build_graffiti_frame()
-        try:
-            self.frames["graffiti"].pack(fill=tk.BOTH, expand=True)
-        except Exception:
-            pass
-        try:
-            self._activate_tab("graffiti")
-        except Exception:
-            pass
+        self.frames["graffiti"].pack(fill=tk.BOTH, expand=True)
+        self._activate_tab("graffiti")
 
     def show_chat_frame(self) -> None:
             if not self._is_wallet_ready():
                 return self._show_locked_screen("Chat")
 
             self._hide_all_frames()
-
             chat_frame = self.frames.get("chat")
             need_build = (
                 chat_frame is None
@@ -1315,30 +1128,14 @@ class KremlinWalletGUI(WalletsMixin):
             if need_build:
                 parent = tk.Frame(self.main, bg=self.bg)
                 self.frames["chat"] = parent
-                try:
-                    self.chat_tab.set_palette(self.theme_set.chat)
-                    self.chat_tab.build(parent)
-                except Exception as e:
-                    err = tk.Label(parent, text=f"Chat UI failed: {e}", bg=self.bg, fg="red")
-                    err.pack(fill="both", expand=True, padx=20, pady=20)
+                self.chat_tab.set_palette(self.theme_set.chat)
+                self.chat_tab.build(parent)
                 chat_frame = parent
-            try:
-                chat_frame.pack(fill=tk.BOTH, expand=True)
-            except Exception:
-                pass
-            try:
-                self._activate_tab("chat")
-            except Exception:
-                pass
-            try:
-                self.chat_tab.reload_addresses()
-            except Exception:
-                pass
-            try:
-                if getattr(self.chat_tab, "_chat_online", False):
-                    self.chat_tab._chat_schedule_next()
-            except Exception:
-                pass
+            chat_frame.pack(fill=tk.BOTH, expand=True)
+            self._activate_tab("chat")
+            self.chat_tab.reload_addresses()
+            if getattr(self.chat_tab, "_chat_online", False):
+                self.chat_tab._chat_schedule_next()
     
     def show_history_frame(self) -> None:
         if not self._is_wallet_ready():
@@ -1350,27 +1147,16 @@ class KremlinWalletGUI(WalletsMixin):
             self._build_history_frame()
             history_frame = self.frames["history"]
 
-        try:
-            history_frame.reload_addresses(self.wallets)
-            history_frame.on_show()
-        except Exception:
-            if self.log:
-                self.log.debug("[history] on_show failed", exc_info=True)
-
+        history_frame.reload_addresses(self.wallets)
+        history_frame.on_show()
         history_frame.pack(fill=tk.BOTH, expand=True)
-        try:
-            self._activate_tab("history")
-        except Exception:
-            pass
+        self._activate_tab("history")
 
     def show_network_frame(self) -> None:
         self._hide_all_frames()
         self.frames["network"].pack(fill=tk.BOTH, expand=True)
-        try:
-            if hasattr(self, "network_tab"):
-                self.network_tab.on_show()
-        except Exception:
-            pass
+        if hasattr(self, "network_tab"):
+            self.network_tab.on_show()
 
     def show_dev_frame(self) -> None:
         self._hide_all_frames()
@@ -1386,40 +1172,21 @@ class KremlinWalletGUI(WalletsMixin):
         self._balance_next_sec = 0
 
     def _set_enabled(self, w: tk.Widget, enabled: bool) -> None:
-        try:
-            if not hasattr(w, "_prev_state"):
-                try:
-                    setattr(w, "_prev_state", w.cget("state"))
-                except Exception:
-                    setattr(w, "_prev_state", None)
+        if not hasattr(w, "_prev_state"):
+            setattr(w, "_prev_state", w.cget("state"))
 
-            if enabled:
-                prev = getattr(w, "_prev_state", None)
-                if prev is None:
-                    try:
-                        w.configure(state="normal")
-                    except Exception:
-                        pass
-                else:
-                    try:
-                        w.configure(state=prev)
-                    except Exception:
-                        try:
-                            w.configure(state="normal")
-                        except Exception:
-                            pass
+        if enabled:
+            prev = getattr(w, "_prev_state", None)
+            if prev is None:
+                w.configure(state="normal")
             else:
-                try:
-                    w.configure(state="disabled")
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                w.configure(state=prev)
+        else:
+            w.configure(state="disabled")
 
     def _busy_start(self, key: str, widgets: Sequence[tk.Widget] = ()) -> bool:
         if key in self._busy_keys:
-            try: self._toast(self._busy_wait_msg(key), ms=1500, kind="info")
-            except Exception: pass
+            self._toast(self._busy_wait_msg(key), ms=1500, kind="info")
             return False
 
         self._busy_keys.add(key)
@@ -1427,31 +1194,21 @@ class KremlinWalletGUI(WalletsMixin):
         self._busy_widgets[key] = wl
         for w in wl:
             self._set_enabled(w, False)
-        try: self.root.config(cursor="watch")
-        except Exception: pass
-        try: self._toast(self._busy_msg_for_key(key), ms=1200, kind="info")
-        except Exception: pass
+        self.root.config(cursor="watch")
+        self._toast(self._busy_msg_for_key(key), ms=1200, kind="info")
         self.root.update_idletasks()
 
         # safety timer: auto-unlock after 15s
-        try:
-            if key in self._busy_timers:
-                try: self.root.after_cancel(self._busy_timers[key])
-                except Exception: pass
-            self._busy_timers[key] = self.root.after(15000, lambda k=key: self._busy_end(k))
-        except Exception:
-            pass
+        if key in self._busy_timers:
+            self.root.after_cancel(self._busy_timers[key])
+        self._busy_timers[key] = self.root.after(15000, lambda k=key: self._busy_end(k))
 
         return True
 
     def _busy_end(self, key: str) -> None:
-        try:
-            tid = self._busy_timers.pop(key, None)
-            if tid:
-                try: self.root.after_cancel(tid)
-                except Exception: pass
-        except Exception:
-            pass
+        tid = self._busy_timers.pop(key, None)
+        if tid:
+            self.root.after_cancel(tid)
 
         if key not in self._busy_keys:
             return
@@ -1460,8 +1217,7 @@ class KremlinWalletGUI(WalletsMixin):
         self._busy_widgets.pop(key, None)
         self._busy_keys.remove(key)
         if not self._busy_keys:
-            try: self.root.config(cursor="")
-            except Exception: pass
+            self.root.config(cursor="")
         self.root.update_idletasks()
 
     # ---------------- Helper UX ----------------
@@ -1476,46 +1232,39 @@ class KremlinWalletGUI(WalletsMixin):
         
     def _open_log_viewer(self):
         log_file = str(CFG.LOG_PATH)
-        try:
-            open_log_toplevel(self.root, log_file=log_file, attach_to_root=False)
-        except Exception:
-            launch_gui_in_thread(log_file=log_file, attach_to_root=False)
+        open_log_toplevel(self.root, log_file=log_file, attach_to_root=False)
 
     # --- Treeview hover helper ---
     def _tv_enable_hover(self, tree: "ttk.Treeview", hover_bg: str | None = None) -> None:
-        try:
-            if hover_bg is None:
-                bg = (getattr(self, "bg", "#0f1115") or "").lower()
-                hover_bg = "#1e2630" if int(bg.replace("#", "")[:2], 16) < 0x88 else "#e9eef7"
+        if hover_bg is None:
+            bg = (getattr(self, "bg", "#0f1115") or "").lower()
+            hover_bg = "#1e2630" if int(bg.replace("#", "")[:2], 16) < 0x88 else "#e9eef7"
 
-            tree.tag_configure("HOVER", background=hover_bg)
+        tree.tag_configure("HOVER", background=hover_bg)
+        state = {"last": None}
 
-            state = {"last": None}
+        def _apply_hover(iid: str | None):
+            if state["last"]:
+                old_tags = set(tree.item(state["last"], "tags") or ())
+                if "HOVER" in old_tags:
+                    old_tags.remove("HOVER")
+                    tree.item(state["last"], tags=tuple(old_tags))
+            state["last"] = iid
+            if iid:
+                tags = set(tree.item(iid, "tags") or ())
+                tags.add("HOVER")
+                tree.item(iid, tags=tuple(tags))
 
-            def _apply_hover(iid: str | None):
-                if state["last"]:
-                    old_tags = set(tree.item(state["last"], "tags") or ())
-                    if "HOVER" in old_tags:
-                        old_tags.remove("HOVER")
-                        tree.item(state["last"], tags=tuple(old_tags))
-                state["last"] = iid
-                if iid:
-                    tags = set(tree.item(iid, "tags") or ())
-                    tags.add("HOVER")
-                    tree.item(iid, tags=tuple(tags))
+        def on_motion(e):
+            iid = tree.identify_row(e.y)
+            if iid != state["last"]:
+                _apply_hover(iid)
 
-            def on_motion(e):
-                iid = tree.identify_row(e.y)
-                if iid != state["last"]:
-                    _apply_hover(iid)
+        def on_leave(_e):
+            _apply_hover(None)
 
-            def on_leave(_e):
-                _apply_hover(None)
-
-            tree.bind("<Motion>", on_motion, add="+")
-            tree.bind("<Leave>", on_leave, add="+")
-        except Exception:
-            self.log.exception("[hover] enable failed:")
+        tree.bind("<Motion>", on_motion, add="+")
+        tree.bind("<Leave>", on_leave, add="+")
 
     def _tv_insert_chunked(self, tv: ttk.Treeview, rows: list[tuple[tuple, tuple]], start: int = 0, chunk: int = int(os.getenv("TSAR_TV_CHUNK", "200")),) -> None:
         end = min(start + chunk, len(rows))
@@ -1526,17 +1275,13 @@ class KremlinWalletGUI(WalletsMixin):
             self.root.after(0, self._tv_insert_chunked, tv, rows, end, chunk)
 
     def copy_to_clipboard(self, text: str, label: str = "Copied to clipboard!") -> None:
-        try:
-            self.root.clipboard_clear()
-            self.root.clipboard_append(text)
-            self.root.update()
-            messagebox.showinfo("Copied", label)
-        except Exception:
-            messagebox.showerror("Error", "Failed to copy to clipboard")
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.root.update()
+        messagebox.showinfo("Copied", label)
 
 # ---------------- Entry point ----------------
 if __name__ == "__main__":
-    import multiprocessing
     multiprocessing.freeze_support()
     os.umask(0o077)
 
@@ -1557,13 +1302,10 @@ if __name__ == "__main__":
         root.mainloop()
 
     except Exception as e:
-        import traceback
+        log.exception("Unhandled exception")
         traceback.print_exc()
         try:
             messagebox.showerror("Fatal error", str(e))
         finally:
-            try:
-                root.destroy()
-            except Exception:
-                pass
+            root.destroy()
 

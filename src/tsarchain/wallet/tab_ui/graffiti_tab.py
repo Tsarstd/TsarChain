@@ -24,6 +24,8 @@ from ..services.graffiti_service import upload_graffiti
 from ..theme import GraffitiTheme, lighten
 from ...utils import config as CFG
 
+from ...utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.wallet.tab_ui.graffiti_tab")
 
 # ========= Util kecil =========
 def sha256_file(path: str, chunk=1024 * 1024) -> str:
@@ -119,11 +121,8 @@ class GraffitiTab(ttk.Frame):
         style.configure("Tsar.TEntry", fieldbackground=t.card_bg, foreground=t.fg, background=t.card_bg)
         style.configure("Tsar.TCombobox", fieldbackground=t.card_bg, foreground=t.fg, background=t.card_bg)
         # Progressbar styles require explicit horizontal/vertical layouts.
-        try:
-            h_layout = style.layout("Horizontal.TProgressbar")
-            v_layout = style.layout("Vertical.TProgressbar")
-        except Exception:
-            h_layout = v_layout = ()
+        h_layout = style.layout("Horizontal.TProgressbar")
+        v_layout = style.layout("Vertical.TProgressbar")
         style.layout("Horizontal.Tsar.TProgressbar", h_layout)
         style.layout("Vertical.Tsar.TProgressbar", v_layout)
         style.configure("Horizontal.Tsar.TProgressbar", troughcolor=t.card_bg, background=t.accent)
@@ -310,10 +309,7 @@ class GraffitiTab(ttk.Frame):
         self._build_style()
         self.configure(style="Tsar.TFrame")
         for child in list(self.winfo_children()):
-            try:
-                child.destroy()
-            except Exception:
-                pass
+            child.destroy()
         self._build_ui()
         self._refresh_creator_wallets()
 
@@ -325,30 +321,20 @@ class GraffitiTab(ttk.Frame):
 
         def handle(resp: Optional[Dict[str, Any]]):
             self.assigned_storers = self._filter_storers(resp)
-
-        try:
-            rpc.send_async({"type": "STOR_LIST"}, handle)
-        except Exception:
-            pass
+        rpc.send_async({"type": "STOR_LIST"}, handle)
 
     def _fetch_storers_sync(self) -> list[Dict[str, Any]]:
         rpc = getattr(self.app, "rpc", None)
         if not rpc or not hasattr(rpc, "send"):
             return []
-        try:
-            resp = rpc.send({"type": "STOR_LIST"}) or {}
-        except Exception:
-            return []
+        resp = rpc.send({"type": "STOR_LIST"}) or {}
         return self._filter_storers(resp)
 
     def _filter_storers(self, resp: Optional[Dict[str, Any]]) -> list[Dict[str, Any]]:
         storers = (resp or {}).get("storers") or (resp or {}).get("items") or []
         usable = []
         for meta in storers:
-            try:
-                port = int(meta.get("port") or 0)
-            except Exception:
-                port = 0
+            port = int(meta.get("port") or 0)
             if port <= 0:
                 continue
             usable.append(meta)
@@ -359,15 +345,12 @@ class GraffitiTab(ttk.Frame):
     def _filter_online_storers(self, storers: list[Dict[str, Any]], timeout: float = 2.0) -> list[Dict[str, Any]]:
         online: list[Dict[str, Any]] = []
         for meta in storers:
-            try:
-                host = str(meta.get("ip") or meta.get("host") or "").strip() or "127.0.0.1"
-                port = int(meta.get("port") or 0)
-                if port <= 0:
-                    continue
-                with socket.create_connection((host, port), timeout=timeout):
-                    online.append(meta)
-            except Exception:
+            host = str(meta.get("ip") or meta.get("host") or "").strip() or "127.0.0.1"
+            port = int(meta.get("port") or 0)
+            if port <= 0:
                 continue
+            with socket.create_connection((host, port), timeout=timeout):
+                online.append(meta)
         return online
 
     def _refresh_creator_wallets(self):
@@ -412,6 +395,7 @@ class GraffitiTab(ttk.Frame):
             mime = validate_graffiti_file(size, mime_raw, os.path.basename(path))
             sha = sha256_file(path)
         except Exception as e:
+            log.exception("Unhandled exception")
             messagebox.showerror("Graffiti", f"Failed to read file: {e}")
             return
 
@@ -436,6 +420,7 @@ class GraffitiTab(ttk.Frame):
         try:
             validate_graffiti_file(self.selected_size, self.selected_mime, os.path.basename(self.selected_path))
         except Exception as exc:
+            log.exception("Unhandled exception")
             messagebox.showerror("Graffiti", f"File tidak memenuhi syarat: {exc}")
             return
         storers = self._fetch_storers_sync()
@@ -452,6 +437,7 @@ class GraffitiTab(ttk.Frame):
         try:
             art_id = compute_art_id(self.selected_sha, creator_addr)
         except Exception as exc:
+            log.exception("Unhandled exception")
             messagebox.showerror("Graffiti", f"Failed to compute art_id: {exc}")
             return
 
@@ -473,6 +459,7 @@ class GraffitiTab(ttk.Frame):
         try:
             self._prepare_post_plan_preupload(storer, receipt_id, art_id)
         except Exception as exc:
+            log.exception("Unhandled exception")
             self.uploading = False
             if self.post_send_btn:
                 self.post_send_btn.config(state="normal")
@@ -489,6 +476,7 @@ class GraffitiTab(ttk.Frame):
         if not self._upload_candidates:
             self._reset_upload_state(f"Upload failed: no storage node available (txid: {txid})")
             return
+        
         storer = self._upload_candidates.pop(0)
         gid = self._upload_ctx.get("gid")
         receipt_id = self._upload_ctx.get("receipt_id")
@@ -501,18 +489,15 @@ class GraffitiTab(ttk.Frame):
             self.after(0, lambda: self._update_progress(sent, total))
 
         def work():
-            try:
-                res = upload_graffiti(
-                    storer_meta=storer,
-                    file_path=path,
-                    graffiti_id=gid,
-                    sha256_hex=sha,
-                    art_id=art_id,
-                    receipt_id=receipt_id,
-                    progress_cb=progress,
-                )
-            except Exception as exc:
-                res = {"status": "error", "reason": str(exc)}
+            res = upload_graffiti(
+                storer_meta=storer,
+                file_path=path,
+                graffiti_id=gid,
+                sha256_hex=sha,
+                art_id=art_id,
+                receipt_id=receipt_id,
+                progress_cb=progress,
+            )
             self.after(0, lambda: self._handle_upload_result(res, trigger_broadcast=False, txid=txid))
 
         threading.Thread(target=work, daemon=True).start()
@@ -560,6 +545,7 @@ class GraffitiTab(ttk.Frame):
                 else:
                     self.post_info_var.set("Upload complete.")
         except Exception as exc:
+            log.exception("Unhandled exception")
             messagebox.showerror("Graffiti", f"Prepare POST failed: {exc}")
 
     def _prepare_post_plan_preupload(self, storer_meta: Dict[str, Any], receipt_id: str, art_id: str) -> None:
@@ -632,6 +618,7 @@ class GraffitiTab(ttk.Frame):
             self.app.send_tab.set_amount(str(fee_sats))
             self.app.send_tab.set_opret_hex(opret_hex)
         except Exception as exc:
+            log.exception("Unhandled exception")
             raise RuntimeError(f"prefill send tab failed: {exc}") from exc
 
     def _broadcast_post_tx(self, auto: bool = False, after_success=None) -> None:
@@ -657,10 +644,7 @@ class GraffitiTab(ttk.Frame):
             self.post_send_btn.config(state="disabled")
 
         def on_progress(msg: str) -> None:
-            try:
-                self.post_info_var.set(msg)
-            except Exception:
-                pass
+            self.post_info_var.set(msg)
 
         def on_done(resp: Optional[Dict[str, Any]]) -> None:
             def _update():
@@ -679,11 +663,7 @@ class GraffitiTab(ttk.Frame):
             self.after(0, _update)
 
         try:
-            fee_rate = None
-            try:
-                fee_rate = int(getattr(self.app.send_tab, "fee_rate_var", None).get())
-            except Exception:
-                fee_rate = None
+            fee_rate = int(getattr(self.app.send_tab, "fee_rate_var", None).get())
             ask_pwd = getattr(self.app, "_ask_password", None)
             if ask_pwd:
                 pw_provider = lambda addr: ask_pwd("Unlock Address", f"Enter password for {addr}:")
@@ -701,6 +681,7 @@ class GraffitiTab(ttk.Frame):
                 opret_hex=plan["opret_hex"],
             )
         except Exception as exc:
+            log.exception("Unhandled exception")
             messagebox.showerror("Graffiti", f"Broadcast gagal: {exc}")
             if self.post_send_btn:
                 self.post_send_btn.config(state="normal")
@@ -713,16 +694,10 @@ class GraffitiTab(ttk.Frame):
         self.catalog_status_var.set("Memuat catalog...")
         def handle(resp: Optional[Dict[str, Any]]):
             self.after(0, lambda: self._apply_catalog(resp))
-        try:
-            rpc.send_async({"type": "GRAFFITI_GET_POSTS", "limit": 200}, handle)
-        except Exception:
-            self.catalog_status_var.set("RPC error")
+        rpc.send_async({"type": "GRAFFITI_GET_POSTS", "limit": 200}, handle)
 
     def _apply_catalog(self, resp: Optional[Dict[str, Any]]) -> None:
-        try:
-            posts = (resp or {}).get("posts") or []
-        except Exception:
-            posts = []
+        posts = (resp or {}).get("posts") or []
         self.catalog_posts = list(posts)
         self._catalog_map = {}
         if self.catalog_tree:
@@ -754,10 +729,7 @@ class GraffitiTab(ttk.Frame):
         sel = self.catalog_tree.selection()
         if not sel:
             return
-        try:
-            iid = sel[0]
-        except IndexError:
-            return
+        iid = sel[0]
         art_obj = self._catalog_map.get(iid)
         if art_obj:
             self._set_selected_art(art_obj)
@@ -805,19 +777,12 @@ class GraffitiTab(ttk.Frame):
             return
         def handle(resp: Optional[Dict[str, Any]]):
             self.after(0, lambda: self._apply_comments(resp))
-        try:
-            rpc.send_async({"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id, "limit": 100}, handle)
-        except Exception:
-            pass
+        rpc.send_async({"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id, "limit": 100}, handle)
 
     def _apply_comments(self, resp: Optional[Dict[str, Any]]) -> None:
         if not self.comment_tree:
             return
-        comments = []
-        try:
-            comments = (resp or {}).get("comments") or []
-        except Exception:
-            comments = []
+        comments = (resp or {}).get("comments") or []
         self.comment_tree.delete(*self.comment_tree.get_children())
         for entry in comments:
             ts = self._format_ts(entry.get("ts"))
@@ -829,28 +794,18 @@ class GraffitiTab(ttk.Frame):
             self.comment_status_var.set("Belum ada komentar untuk karya ini.")
 
     def _decode_comment_hex(self, comment_hex: Optional[str]) -> str:
-        try:
-            raw = bytes.fromhex(comment_hex or "")
-            text = raw.decode("utf-8", errors="replace")
-            return text[:80] + ("..." if len(text) > 80 else "")
-        except Exception:
-            return "(invalid comment)"
+        raw = bytes.fromhex(comment_hex or "")
+        text = raw.decode("utf-8", errors="replace")
+        return text[:80] + ("..." if len(text) > 80 else "")
 
     def _format_ts(self, ts_value: Any) -> str:
-        try:
-            ts = int(ts_value)
-        except Exception:
-            return "-"
+        ts = int(ts_value)
         if ts <= 0:
             return "-"
         return time.strftime("%Y-%m-%d %H:%M", time.localtime(ts))
 
     def _format_tsar(self, sats: Any) -> str:
-        try:
-            dec = Decimal(int(sats)) / Decimal(CFG.TSAR)
-        except Exception:
-            return "0"
-        
+        dec = Decimal(int(sats)) / Decimal(CFG.TSAR)
         quant = Decimal("1").scaleb(-CFG.MAX_DECIMALS)
         val = dec.quantize(quant, rounding=ROUND_DOWN)
         txt = format(val, "f").rstrip("0").rstrip(".")
@@ -866,20 +821,13 @@ class GraffitiTab(ttk.Frame):
         
         def handle(resp: Optional[Dict[str, Any]]):
             self.after(0, lambda: self._apply_payouts(resp))
-        try:
-            rpc.send_async({"type":"GRAFFITI_GET_PAYOUTS","art_id": art_id}, handle)
-        except Exception:
-            self.payout_status_var.set("RPC payout error")
+        rpc.send_async({"type":"GRAFFITI_GET_PAYOUTS","art_id": art_id}, handle)
 
     def _apply_payouts(self, resp: Optional[Dict[str, Any]]) -> None:
         if not self.payout_tree:
             return
         
-        rows = []
-        try:
-            rows = (resp or {}).get("payouts") or []
-        except Exception:
-            rows = []
+        rows = (resp or {}).get("payouts") or []
         self.payout_tree.delete(*self.payout_tree.get_children())
         for entry in rows:
             amt = self._format_tsar(entry.get("amount", 0))
@@ -909,6 +857,8 @@ class GraffitiTab(ttk.Frame):
         except InvalidOperation:
             raise ValueError("Format jumlah tidak valid")
         if dec <= 0:
+            if dec == 0 and int(default) == 0:
+                return 0
             raise ValueError("Jumlah harus > 0")
         
         quant = Decimal("1").scaleb(-CFG.MAX_DECIMALS)
@@ -920,18 +870,8 @@ class GraffitiTab(ttk.Frame):
         return sats
 
     def _update_comment_split_preview(self) -> None:
-        try:
-            base = self._parse_amount_str(self.comment_amount_var.get(), int(CFG.GRAFFITI_COMMENT_MIN_FEE))
-        except Exception as exc:
-            self.comment_split_var.set(f"Amount error: {exc}")
-            return
-        
-        try:
-            tip = self._parse_amount_str(self.comment_tip_var.get(), 0) if self.comment_tip_var.get().strip() else 0
-        except Exception as exc:
-            self.comment_split_var.set(f"Tip error: {exc}")
-            return
-        
+        base = self._parse_amount_str(self.comment_amount_var.get(), int(CFG.GRAFFITI_COMMENT_MIN_FEE))
+        tip = self._parse_amount_str(self.comment_tip_var.get(), 0) if self.comment_tip_var.get().strip() else 0
         split = calc_comment_split(base, tip)
         creator = self._format_tsar(split["creator_total"])
         storage = self._format_tsar(split["storage"])
@@ -956,6 +896,7 @@ class GraffitiTab(ttk.Frame):
         try:
             base_sats = self._parse_amount_str(self.comment_amount_var.get(), int(CFG.GRAFFITI_COMMENT_MIN_FEE))
         except Exception as exc:
+            log.exception("Unhandled exception")
             messagebox.showerror("Graffiti", f"Jumlah komentar tidak valid: {exc}")
             return
         
@@ -964,6 +905,7 @@ class GraffitiTab(ttk.Frame):
         try:
             tip_sats = self._parse_amount_str(self.comment_tip_var.get(), 0) if self.comment_tip_var.get().strip() else 0
         except Exception as exc:
+            log.exception("Unhandled exception")
             messagebox.showerror("Graffiti", f"Tip tidak valid: {exc}")
             return
         
@@ -1005,11 +947,7 @@ class GraffitiTab(ttk.Frame):
             messagebox.showerror("Graffiti", "Send service tidak tersedia.")
             return
         
-        fee_rate = None
-        try:
-            fee_rate = int(getattr(self.app.send_tab, "fee_rate_var", None).get())
-        except Exception:
-            fee_rate = None
+        fee_rate = int(getattr(self.app.send_tab, "fee_rate_var", None).get())
         ask_pwd = getattr(self.app, "_ask_password", None)
         if ask_pwd:
             pw_provider = lambda addr: ask_pwd("Unlock Address", f"Masukkan password untuk {addr}:")
@@ -1051,6 +989,7 @@ class GraffitiTab(ttk.Frame):
                 extra_outputs=outputs,
             )
         except Exception as exc:
+            log.exception("Unhandled exception")
             messagebox.showerror("Graffiti", f"Broadcast COMMENT gagal: {exc}")
             if self.comment_send_btn:
                 self.comment_send_btn.config(state="normal")
@@ -1060,9 +999,6 @@ class GraffitiTab(ttk.Frame):
         self.theme = theme
         self._build_style()
         for child in list(self.winfo_children()):
-            try:
-                child.destroy()
-            except Exception:
-                pass
+            child.destroy()
         self._build_ui()
         self.refresh_storers()

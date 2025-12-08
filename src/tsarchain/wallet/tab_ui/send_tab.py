@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+import inspect
 import tkinter as tk
 from typing import Callable, Dict, Any, Optional, Sequence, List
 from tkinter import ttk, messagebox as mb
@@ -17,42 +18,33 @@ from ..theme import SendTheme
 # ---------------- Local Project (With Node) ----------------
 from ...utils import config as CFG
 
+from ...utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.wallet.tab_ui.send_tab")
+
 
 class SendTab:
     # ----- Prefill helpers (used by GraffitiTab) -----
     def set_recipient(self, addr: str) -> None:
-        try:
-            self.to_var.set((addr or '').strip().lower())
-            if getattr(self, 'to_entry', None):
-                self.to_entry.icursor('end')
-            self._refresh_state()
-        except Exception:
-            pass
+        self.to_var.set((addr or '').strip().lower())
+        if getattr(self, 'to_entry', None):
+            self.to_entry.icursor('end')
+        self._refresh_state()
 
     def set_amount(self, amount_text: str) -> None:
-        try:
-            txt = (str(amount_text or '').strip())
-            if re.fullmatch(r"\d+", txt):
-                tsar = int(txt) / float(CFG.TSAR)
-                txt = ("{:.8f}".format(tsar)).rstrip('0').rstrip('.')
-            self.amount_var.set(txt)
-            self._amt_placeholder_active = False
-            if getattr(self, 'amount_entry', None):
-                self.amount_entry.config(fg=self.palette["accent"])
-            self._refresh_state()
-        except Exception:
-            pass
+        txt = (str(amount_text or '').strip())
+        if re.fullmatch(r"\d+", txt):
+            tsar = int(txt) / float(CFG.TSAR)
+            txt = ("{:.8f}".format(tsar)).rstrip('0').rstrip('.')
+        self.amount_var.set(txt)
+        self._amt_placeholder_active = False
+        if getattr(self, 'amount_entry', None):
+            self.amount_entry.config(fg=self.palette["accent"])
+        self._refresh_state()
 
     def set_opret_hex(self, opret_hex: str) -> None:
-        try:
-            self._opret_hex = (opret_hex or '').strip().lower()
-            try:
-                b = bytes.fromhex(self._opret_hex) if self._opret_hex else b''
-                self._append_log(f"[graffiti] OP_RETURN prepared ({len(b)} bytes)")
-            except Exception:
-                pass
-        except Exception:
-            self._opret_hex = None
+        self._opret_hex = (opret_hex or '').strip().lower()
+        b = bytes.fromhex(self._opret_hex) if self._opret_hex else b''
+        self._append_log(f"[graffiti] OP_RETURN prepared ({len(b)} bytes)")
 
 
     def __init__(
@@ -78,15 +70,7 @@ class SendTab:
         self.on_sent = on_sent or (lambda _addr: None)
 
         def _toaster(msg: str, kind: str = "info") -> None:
-            try:
-                return toast(msg, kind)
-            except TypeError:
-                try:
-                    return toast(msg)
-                except Exception:
-                    pass
-            except Exception:
-                pass
+            return toast(msg, kind)
         self._toast = _toaster
 
         self.theme = theme
@@ -183,32 +167,20 @@ class SendTab:
             var.trace_add("write", lambda *_: self._refresh_state())
 
         self._frame = fr
-        try:
-            self.on_wallets_changed(self.addresses_provider())
-        except Exception as e:
-            self._append_log(f"[init] wallets error: {e}")
-        try:
-            self._refresh_spendable()
-        except Exception as e:
-            self._append_log(f"[init] spendable error: {e}")
-        try:
-            self._refresh_state()
-        except Exception as e:
-            self._append_log(f"[init] state error: {e}")
+        self.on_wallets_changed(self.addresses_provider())
+        self._refresh_spendable()
+        self._refresh_state()
         return fr
 
     def on_wallets_changed(self, wallets: Sequence[str]) -> None:
-        try:
-            values = list(wallets or [])
-            self.from_combo["values"] = values
-            cur = (self.from_var.get() or "")
-            if not values:
-                self.from_var.set("")
-            elif cur not in values:
-                self.from_var.set(values[0])
-            self._refresh_spendable()
-        except Exception:
-            pass
+        values = list(wallets or [])
+        self.from_combo["values"] = values
+        cur = (self.from_var.get() or "")
+        if not values:
+            self.from_var.set("")
+        elif cur not in values:
+            self.from_var.set(values[0])
+        self._refresh_spendable()
 
     def on_activated(self) -> None:
         self.on_wallets_changed(self.addresses_provider())
@@ -373,10 +345,7 @@ class SendTab:
             length=260,
             command=lambda _val: self._on_fee_scale(),
         )
-        try:
-            self.fee_scale.set(float(self.fee_rate_var.get()))
-        except Exception:
-            self.fee_scale.set(CFG.MIN_FEE_RATE_SATVB)
+        self.fee_scale.set(float(self.fee_rate_var.get()))
         self.fee_scale.grid(row=0, column=1, sticky="w", padx=(10, 8))
 
         self.fee_entry = tk.Entry(
@@ -453,41 +422,32 @@ class SendTab:
         return log_card
     
     def _set_amount_placeholder(self) -> None:
-        try:
-            self._amt_placeholder_active = True
-            self.amount_var.set(self._amt_hint)
-            if self.amount_entry:
-                self.amount_entry.config(fg=self.palette["muted"])
-        except Exception:
-            pass
+        self._amt_placeholder_active = True
+        self.amount_var.set(self._amt_hint)
+        if self.amount_entry:
+            self.amount_entry.config(fg=self.palette["muted"])
 
     def _on_amount_focus_in(self, _e=None) -> None:
-        try:
-            # focus ring
-            if self._amt_shell:
-                self._amt_shell.config(highlightbackground=self.palette["accent"])
-            # bersihkan placeholder saat klik
-            if self._amt_placeholder_active:
-                self.amount_var.set("")
-                if self.amount_entry:
-                    self.amount_entry.config(fg=self.palette["accent"])
-                self._amt_placeholder_active = False
-        except Exception:
-            pass
+        # focus ring
+        if self._amt_shell:
+            self._amt_shell.config(highlightbackground=self.palette["accent"])
+        # bersihkan placeholder saat klik
+        if self._amt_placeholder_active:
+            self.amount_var.set("")
+            if self.amount_entry:
+                self.amount_entry.config(fg=self.palette["accent"])
+            self._amt_placeholder_active = False
 
     def _on_amount_focus_out(self, _e=None) -> None:
-        try:
-            if self._amt_shell:
-                self._amt_shell.config(highlightbackground=self.palette["border"])
-            txt = (self.amount_var.get() or "").strip()
-            if txt == "":
-                self._set_amount_placeholder()
-            else:
-                if self.amount_entry:
-                    self.amount_entry.config(fg=self.palette["accent"])
-            self._refresh_state()
-        except Exception:
-            pass
+        if self._amt_shell:
+            self._amt_shell.config(highlightbackground=self.palette["border"])
+        txt = (self.amount_var.get() or "").strip()
+        if txt == "":
+            self._set_amount_placeholder()
+        else:
+            if self.amount_entry:
+                self.amount_entry.config(fg=self.palette["accent"])
+        self._refresh_state()
 
 
     # ===== Internals =====
@@ -495,6 +455,7 @@ class SendTab:
         try:
             text = self.root.clipboard_get()
         except Exception:
+            log.exception("Unhandled exception")
             text = ""
         if text:
             self.to_var.set((text or "").strip())
@@ -504,28 +465,18 @@ class SendTab:
         if not self.contact_mgr:
             self._toast("Contacts module not available", "warn")
             return
-
+        
         def _on_pick(addr: str, alias: str) -> None:
-            try:
-                self.to_var.set(addr.strip().lower())
-                self._toast(f"To: {alias}", "info")
-                self._refresh_state()
-            except Exception:
-                pass
-
-        try:
-            self.contact_mgr.pick_contact(title="Contacts (Send)", on_pick=_on_pick)
-        except TypeError:
-            self.contact_mgr.pick_contact(title="Contacts (Send)", on_pick=_on_pick, presence_provider=None)
+            self.to_var.set(addr.strip().lower())
+            self._toast(f"To: {alias}", "info")
+            self._refresh_state()
+        self.contact_mgr.pick_contact(title="Contacts (Send)", on_pick=_on_pick)
 
     def _append_log(self, text: str) -> None:
-        try:
-            if not self.log_text:
-                return
-            self.log_text.insert(tk.END, text.rstrip() + "\n")
-            self.log_text.see(tk.END)
-        except Exception:
-            pass
+        if not self.log_text:
+            return
+        self.log_text.insert(tk.END, text.rstrip() + "\n")
+        self.log_text.see(tk.END)
 
     # Balance lookup (Spendable)
     def _refresh_spendable(self) -> None:
@@ -538,26 +489,23 @@ class SendTab:
         self.from_err.set("")
 
         def _on_resp(resp: Optional[Dict[str, Any]]) -> None:
-            try:
-                data = None
-                if resp and isinstance(resp, dict):
-                    if "items" in resp and isinstance(resp["items"], dict):
-                        data = resp["items"].get(addr)
-                    elif "spendable" in resp:
-                        data = resp
-                if not data:
-                    if self.from_spend_lbl:
-                        self.from_spend_lbl.config(text="")
-                    return
-
-                spendable = int(data.get("spendable", 0))
-                self._bal_cache[addr] = data
-                ts = spendable / CFG.TSAR
-                label = f"Spendable: {ts:.8f}".rstrip("0").rstrip(".") + " TSAR"
+            data = None
+            if resp and isinstance(resp, dict):
+                if "items" in resp and isinstance(resp["items"], dict):
+                    data = resp["items"].get(addr)
+                elif "spendable" in resp:
+                    data = resp
+            if not data:
                 if self.from_spend_lbl:
-                    self.from_spend_lbl.config(text=label)
-            except Exception:
-                pass
+                    self.from_spend_lbl.config(text="")
+                return
+
+            spendable = int(data.get("spendable", 0))
+            self._bal_cache[addr] = data
+            ts = spendable / CFG.TSAR
+            label = f"Spendable: {ts:.8f}".rstrip("0").rstrip(".") + " TSAR"
+            if self.from_spend_lbl:
+                self.from_spend_lbl.config(text=label)
 
         msg = {"type": "GET_BALANCES", "addresses": [addr]}
         widgets = self._send_widgets or []
@@ -568,46 +516,32 @@ class SendTab:
 
     # Quick amount helpers
     def _fill_percent(self, frac: float) -> None:
-        try:
-            addr = (self.from_var.get() or "").strip().lower()
-            sp = int(self._bal_cache.get(addr, {}).get("spendable", 0))
-            fee_rate = self.svc.clamp_fee_rate(float(self.fee_rate_var.get() or 0))
-            vbytes = self._estimate_vbytes_safe()
-            est_fee = int(round(vbytes * fee_rate))
-            usable = max(sp - est_fee, 0)
-            atoms = int(round(usable * frac))
-            ts = atoms / CFG.TSAR
-            self.amount_var.set(("{:.8f}".format(ts)).rstrip("0").rstrip("."))
-        except Exception:
-            pass
+        addr = (self.from_var.get() or "").strip().lower()
+        sp = int(self._bal_cache.get(addr, {}).get("spendable", 0))
+        fee_rate = self.svc.clamp_fee_rate(float(self.fee_rate_var.get() or 0))
+        vbytes = self._estimate_vbytes_safe()
+        est_fee = int(round(vbytes * fee_rate))
+        usable = max(sp - est_fee, 0)
+        atoms = int(round(usable * frac))
+        ts = atoms / CFG.TSAR
+        self.amount_var.set(("{:.8f}".format(ts)).rstrip("0").rstrip("."))
         self._amt_placeholder_active = False
         if self.amount_entry:
             self.amount_entry.config(fg=self.palette["accent"])
         self._refresh_state()
 
     def _estimate_vbytes_safe(self) -> int:
-        try:
-            return int(self.svc.estimate_vbytes(n_inputs=2))
-        except TypeError:
-            return int(self.svc.estimate_vbytes(2, 2))
-        except Exception:
-            return 200
+        return int(self.svc.estimate_vbytes(n_inputs=2))
 
     def _estimate_fee_now(self) -> tuple[int, int]:
-        try:
-            fee_rate = self.svc.clamp_fee_rate(float(self.fee_rate_var.get() or 0))
-        except Exception:
-            fee_rate = float(CFG.MIN_FEE_RATE_SATVB)
+        fee_rate = self.svc.clamp_fee_rate(float(self.fee_rate_var.get() or 0))
         vbytes = self._estimate_vbytes_safe()
         fee_sat = int(round(vbytes * fee_rate))
         return vbytes, fee_sat
 
     def _on_fee_scale(self) -> None:
         # Keep entry in sync when user drags the slider
-        try:
-            val = float(self.fee_scale.get())
-        except Exception:
-            val = float(CFG.MIN_FEE_RATE_SATVB)
+        val = float(self.fee_scale.get())
         self.fee_rate_var.set(str(int(val)))
         self._refresh_state()
 
@@ -620,7 +554,12 @@ class SendTab:
 
         try:
             atoms_for_total, _ = self.svc.parse_amount_str((self.amount_var.get() or "").strip())
+            self.amount_err.set("")
+        except ValueError as exc:
+            self.amount_err.set(str(exc))
+            atoms_for_total = 0
         except Exception:
+            log.exception("Unhandled exception")
             atoms_for_total = 0
         total_tsar = (atoms_for_total + fee_sat) / CFG.TSAR
         self.total_tsar_var.set("{:.8f}".format(total_tsar).rstrip("0").rstrip("."))
@@ -645,27 +584,19 @@ class SendTab:
         else:
             self.to_err.set("")
 
-        try:
-            text = (self.amount_var.get() or "").strip()
-            if self._amt_placeholder_active or text == "":
-                atoms = 0
-                self.amount_err.set("")
-                ok = False
-            else:
-                atoms, _ = self.svc.parse_amount_str(text)
-                if atoms <= 0:
-                    raise ValueError
-                self.amount_err.set("")
-        except Exception:
+        text = (self.amount_var.get() or "").strip()
+        if self._amt_placeholder_active or text == "":
             atoms = 0
-            self.amount_err.set("Enter a valid amount greater than 0.")
+            self.amount_err.set("")
             ok = False
+        else:
+            atoms, _ = self.svc.parse_amount_str(text)
+            if atoms <= 0:
+                raise ValueError
+            self.amount_err.set("")
 
-        try:
-            fr = self.svc.clamp_fee_rate(float(self.fee_rate_var.get() or 0))
-            if fr < CFG.MIN_FEE_RATE_SATVB or fr > CFG.MAX_FEE_RATE_SATVB:
-                ok = False
-        except Exception:
+        fr = self.svc.clamp_fee_rate(float(self.fee_rate_var.get() or 0))
+        if fr < CFG.MIN_FEE_RATE_SATVB or fr > CFG.MAX_FEE_RATE_SATVB:
             ok = False
 
         spendable = int(self._bal_cache.get(src, {}).get("spendable", 0))
@@ -674,18 +605,12 @@ class SendTab:
             ok = False
 
         # Enable/disable send
-        try:
-            self.btn_review.configure(state=("normal" if ok else "disabled"))
-        except Exception:
-            pass
+        self.btn_review.configure(state=("normal" if ok else "disabled"))
 
         # Keep slider in sync if user typed fee manually
-        try:
-            if self.fee_scale and self.fee_entry and self.fee_entry.focus_get() is self.fee_entry:
-                val = float(self.fee_rate_var.get() or CFG.MIN_FEE_RATE_SATVB)
-                self.fee_scale.set(val)
-        except Exception:
-            pass
+        if self.fee_scale and self.fee_entry and self.fee_entry.focus_get() is self.fee_entry:
+            val = float(self.fee_rate_var.get() or CFG.MIN_FEE_RATE_SATVB)
+            self.fee_scale.set(val)
 
         # Track for busy‑lock management
         self._send_widgets = [
@@ -699,10 +624,7 @@ class SendTab:
     def _on_review_clicked(self) -> None:
         src = (self.from_var.get() or "").strip().lower()
         dst = (self.to_var.get() or "").strip().lower()
-        try:
-            atoms, _ = self.svc.parse_amount_str((self.amount_var.get() or "").strip())
-        except Exception:
-            atoms = -1
+        atoms, _ = self.svc.parse_amount_str((self.amount_var.get() or "").strip())
 
         if (not src) or (not dst) or atoms <= 0:
             self._toast("Invalid input", "warn")
@@ -732,18 +654,11 @@ class SendTab:
 
         # Lock UI
         for w in self._send_widgets:
-            try: w.configure(state="disabled")
-            except Exception: pass
-        try: self.root.config(cursor="watch")
-        except Exception: pass
+            w.configure(state="disabled")
+        self.root.config(cursor="watch")
 
-        try:
-            self._send_safety = self.root.after(12000, lambda: on_done())
-        except Exception:
-            self._send_safety = None
-
+        self._send_safety = self.root.after(12000, lambda: on_done())
         on_done = self._make_unlocker(lambda: self._after_send_done(src))
-
         def on_error(emsg: str) -> None:
             try:
                 self._append_log(f"[ERROR] {emsg}")
@@ -760,70 +675,45 @@ class SendTab:
                 else:
                     txid = str(res)
                 self._append_log(f"[OK] Broadcasted TXID: {txid}")
-
-                try:
-                    mb.showinfo("Broadcast Success", f"Transaction broadcasted.\n\nTXID:\n{txid}")
-                except Exception:
-                    pass
-                
+                mb.showinfo("Broadcast Success", f"Transaction broadcasted.\n\nTXID:\n{txid}")
                 self._toast(f"Broadcasted: {txid[:12]}…", "info")
             finally:
                 on_done()
 
         # Fire
-        try:
-            import inspect
-            _extra = {}
-            try:
-                if 'opret_hex' in inspect.signature(self.svc.create_sign_broadcast).parameters and getattr(self, '_opret_hex', None):
-                    _extra['opret_hex'] = self._opret_hex
-            except Exception:
-                pass
-            self.svc.create_sign_broadcast(
-                from_addr=src,
-                to_addr=dst,
-                amount_sats=atoms,
-                password_provider=lambda _addr: pwd,
-                rpc_send=self.rpc_send,
-                fee_rate=float(self.fee_rate_var.get() or CFG.MIN_FEE_RATE_SATVB),
-                on_progress=lambda m: self._append_log(m),
-                on_done=on_broadcasted, **_extra)
-        except Exception as e:
-            on_error(f"Send failed: {e!r}")
+        _extra = {}
+        if 'opret_hex' in inspect.signature(self.svc.create_sign_broadcast).parameters and getattr(self, '_opret_hex', None):
+            _extra['opret_hex'] = self._opret_hex
+        self.svc.create_sign_broadcast(
+            from_addr=src,
+            to_addr=dst,
+            amount_sats=atoms,
+            password_provider=lambda _addr: pwd,
+            rpc_send=self.rpc_send,
+            fee_rate=float(self.fee_rate_var.get() or CFG.MIN_FEE_RATE_SATVB),
+            on_progress=lambda m: self._append_log(m),
+            on_done=on_broadcasted, **_extra)
 
     def _make_unlocker(self, after: Callable[[], None]) -> Callable[[], None]:
         def _u():
             try:
-                try:
-                    if getattr(self, "_send_safety", None):
-                        self.root.after_cancel(self._send_safety)
-                        self._send_safety = None
-                except Exception:
-                    pass
+                if getattr(self, "_send_safety", None):
+                    self.root.after_cancel(self._send_safety)
+                    self._send_safety = None
 
                 for w in self._send_widgets:
-                    try: w.configure(state="normal")
-                    except Exception: pass
+                    w.configure(state="normal")
                 self.root.config(cursor="")
             finally:
                 after()
         return _u
 
     def _after_send_done(self, src_addr: str) -> None:
-        try:
-            self._refresh_spendable()
-            self.amount_var.set("")
-            self._set_amount_placeholder()
-            self._refresh_state()
-            self._append_log("[*] Done.")
-            try:
-                if self.to_entry:
-                    self.to_entry.focus_set()
-            except Exception:
-                pass
-        except Exception:
-            pass
-        try:
-            self.on_sent(src_addr)
-        except Exception:
-            pass
+        self._refresh_spendable()
+        self.amount_var.set("")
+        self._set_amount_placeholder()
+        self._refresh_state()
+        self._append_log("[*] Done.")
+        if self.to_entry:
+            self.to_entry.focus_set()
+        self.on_sent(src_addr)

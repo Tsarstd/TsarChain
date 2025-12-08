@@ -10,15 +10,16 @@ import json
 import os
 import subprocess
 import sys
-from typing import Any, Dict, List, Optional, Sequence, TYPE_CHECKING
-
 import tkinter as tk
+from typing import Any, Dict, List, Optional, Sequence, TYPE_CHECKING
 from tkinter import filedialog, messagebox, ttk
-
-from tsarchain.utils import config as CFG
 
 from ..services.tx_history import HistoryService
 from .wallet_tab import sat_to_tsar
+from tsarchain.utils import config as CFG
+
+from ...utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.wallet.tab_ui.history_tab")
 
 if TYPE_CHECKING:
     from apps.kremlin import KremlinWalletGUI
@@ -189,11 +190,7 @@ class HistoryTab(tk.Frame):
         self.address_values = list(addresses or [])
         if not self._widget_exists(self.history_addr_combo):
             return
-        try:
-            self.history_addr_combo["values"] = self.address_values
-        except Exception:
-            if self.log:
-                self.log.debug("[history] combo update failed", exc_info=True)
+        self.history_addr_combo["values"] = self.address_values
         if self.address_values and self.history_addr_var.get() not in self.address_values:
             self.history_addr_var.set(self.address_values[0])
         elif not self.address_values:
@@ -205,11 +202,7 @@ class HistoryTab(tk.Frame):
 
     def on_show(self) -> None:
         self.ensure_address_selected()
-        try:
-            self._render_from_cache()
-        except Exception:
-            if self.log:
-                self.log.debug("[history] render cache failed", exc_info=True)
+        self._render_from_cache()
 
     # ----------------------------------------------------- Context menu ops
     def _hist_ctx_open(self) -> None:
@@ -219,10 +212,7 @@ class HistoryTab(tk.Frame):
         if not sel:
             return
         item = sel[0]
-        try:
-            txid = self.history_tree.set(item, "txid")
-        except Exception:
-            txid = self.history_tree.item(item, "values")[0]
+        txid = self.history_tree.set(item, "txid")
         if not txid:
             return
         self.app.show_explorer_frame()
@@ -242,10 +232,7 @@ class HistoryTab(tk.Frame):
 
     # ----------------------------------------------------------- Pagination
     def _hist_change_limit(self) -> None:
-        try:
-            self.hist_limit = int(self.hist_limit_var.get())
-        except Exception:
-            self.hist_limit = 50
+        self.hist_limit = int(self.hist_limit_var.get())
 
     def _hist_reset_and_refresh(self) -> None:
         self._hist_change_limit()
@@ -330,15 +317,9 @@ class HistoryTab(tk.Frame):
             return
         removed = 0
         for addr in addrs:
-            try:
-                if self.service.cache_clear(addr):
-                    removed += 1
-            except Exception:
-                pass
-        try:
-            self._render_from_cache()
-        except Exception:
-            pass
+            if self.service.cache_clear(addr):
+                removed += 1
+        self._render_from_cache()
         messagebox.showinfo("Done", f"Cleared {removed} cache file(s).")
 
     def _hist_clear_cache(self) -> None:
@@ -378,6 +359,7 @@ class HistoryTab(tk.Frame):
 
                     webbrowser.open(f"file://{path}")
         except Exception as exc:
+            log.exception("Unhandled exception")
             messagebox.showerror("Open failed", str(exc))
 
     # -------------------------------------------------------------- Loading
@@ -391,14 +373,7 @@ class HistoryTab(tk.Frame):
         status = self.hist_status_var.get()
         direction = None if direction == "all" else direction
         status = None if status == "all" else status
-
-        try:
-            res = self.service.cache_list(addr, direction=direction, status=status, limit=self.hist_limit, offset=self.hist_offset)
-        except Exception:
-            if self.log:
-                self.log.exception("[history] cache read error")
-            return
-
+        res = self.service.cache_list(addr, direction=direction, status=status, limit=self.hist_limit, offset=self.hist_offset)
         items = res.get("items", [])
         self.hist_total = int(res.get("total", len(items)))
 
@@ -435,10 +410,7 @@ class HistoryTab(tk.Frame):
         if self.history_tree:
             for iid in self.history_tree.get_children():
                 self.history_tree.delete(iid)
-            try:
-                self.history_tree.insert("", "end", values=("Loading...", "", "", "", "", "", "", ""))
-            except Exception:
-                pass
+            self.history_tree.insert("", "end", values=("Loading...", "", "", "", "", "", "", ""))
         if self.hist_info:
             self.hist_info.configure(text="Loading latest history... (showing cache if any)")
 
@@ -446,12 +418,8 @@ class HistoryTab(tk.Frame):
         status = self.hist_status_var.get()
         direction = None if direction == "all" else direction
         status = None if status == "all" else status
-
-        try:
-            self._render_from_cache()
-        except Exception:
-            pass
-
+        
+        self._render_from_cache()
         widgets = [w for w in (self.hist_refresh_btn, self.hist_prev_btn, self.hist_next_btn) if w]
         if not self.app._busy_start("history_list", widgets):
             return
@@ -460,20 +428,14 @@ class HistoryTab(tk.Frame):
             try:
                 if not resp or resp.get("type") != "TX_HISTORY":
                     messagebox.showerror("Error", f"Failed to load history: {resp}")
-                    try:
-                        self.app._toast("Failed to Load History", ms=1800, kind="error")
-                    except Exception:
-                        pass
+                    self.app._toast("Failed to Load History", ms=1800, kind="error")
                     return
                 items = resp.get("items", [])
                 self._history_rows_cache = items
-                try:
-                    self.service.cache_merge(addr, items)
-                except Exception:
-                    if self.log:
-                        self.log.exception("[history] cache merge")
+                self.service.cache_merge(addr, items)
                 self._render_from_cache()
             except Exception as exc:
+                log.exception("Unhandled exception")
                 messagebox.showerror("Error", f"Render error: {exc}")
 
         def _wrapped(resp: Optional[Dict[str, Any]]) -> None:
@@ -493,6 +455,7 @@ class HistoryTab(tk.Frame):
                 on_done=_wrapped,
             )
         except Exception as exc:
+            log.exception("Unhandled exception")
             self.app._busy_end("history_list")
             messagebox.showerror("Error", str(exc))
 
@@ -513,7 +476,4 @@ class HistoryTab(tk.Frame):
 
     @staticmethod
     def _widget_exists(widget) -> bool:
-        try:
-            return bool(widget) and widget.winfo_exists()
-        except Exception:
-            return False
+        return bool(widget) and widget.winfo_exists()

@@ -3,7 +3,7 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: Merkle
 
-import os, re
+import os, re, time
 import threading
 import tkinter as tk
 from glob import glob
@@ -18,6 +18,8 @@ from tsarchain.utils import config as CFG
 from ..theme import ExplorerTheme, get_theme
 from ..services.media import TkVLCPlayer
 
+from ...utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.wallet.tab_ui.explorer_tab")
 
 MONO     = ("Consolas", 10)
 HINT_TEXT = "search with : (block height/txid/hash/address)"
@@ -26,10 +28,7 @@ HINT_TEXT = "search with : (block height/txid/hash/address)"
 def _fmt_ts(ts: Optional[Union[int, float]]) -> str:
     if ts is None:
         return "-"
-    try:
-        return datetime.fromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M:%S")
-    except Exception:
-        return str(ts)
+    return datetime.fromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M:%S")
 
 def _short(h: str, n: int = 10) -> str:
     if not h:
@@ -57,10 +56,10 @@ def _guess_kind(q: str) -> str:
 def _fmt_tsar_amount(v: Union[int, str, float, None]) -> str:
     if v is None:
         return "0.00000000 TSAR"
-    try:
-        sat = int(str(v).replace("_", "").strip())
-    except Exception:
+    cleaned = str(v).replace("_", "").strip()
+    if not re.fullmatch(r"-?\d+", cleaned):
         return str(v)
+    sat = int(cleaned)
     neg = sat < 0
     sat = abs(sat)
     whole, frac = divmod(sat, CFG.TSAR)
@@ -138,10 +137,7 @@ class ExplorePanel(tk.Frame):
         )
 
         def _do_paste():
-            try:
-                clip = self.clipboard_get()
-            except Exception:
-                clip = ""
+            clip = self.clipboard_get()
             if not clip:
                 return
             e = self.search_entry
@@ -348,10 +344,7 @@ class ExplorePanel(tk.Frame):
     # ---------- rendering helpers ----------
     def _cleanup_media_players(self):
         for player in list(self._media_players):
-            try:
-                player.dispose()
-            except Exception:
-                pass
+            player.dispose()
         self._media_players.clear()
 
     def _clear_text(self):
@@ -371,15 +364,9 @@ class ExplorePanel(tk.Frame):
             return "break"
 
         for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
-            try:
-                widget.bind(seq, _forward, add="+")
-            except Exception:
-                pass
-        try:
-            for child in widget.winfo_children():
-                self._bind_mousewheel_forward(child)
-        except Exception:
-            pass
+            widget.bind(seq, _forward, add="+")
+        for child in widget.winfo_children():
+            self._bind_mousewheel_forward(child)
     
     def _ui(self, fn, *args, **kwargs):
         self.after(0, lambda: fn(*args, **kwargs))
@@ -400,11 +387,10 @@ class ExplorePanel(tk.Frame):
             return "val_addr"
         if re.fullmatch(r"[0-9a-fA-F]{64}", s):
             return "val_hex"
-        try:
-            float(s.replace("_",""))
+        s_num = s.replace("_", "").strip()
+        if re.fullmatch(r"-?\d+(?:\.\d+)?", s_num):
             return "val_num"
-        except Exception:
-            return None
+        return None
 
     def _kv(self, k: str, v: str, mono=False, vtag: Optional[str]=None):
         self._writeln(f"{k}: ", "key")
@@ -427,10 +413,7 @@ class ExplorePanel(tk.Frame):
     def _finish_search(self, ok: bool):
         # Reset inflight flag and update status
         self._search_inflight = False
-        try:
-            self.search_btn.config(state="normal")
-        except Exception:
-            pass
+        self.search_btn.config(state="normal")
         if ok:
             self.status_var.set("Search done.")
         else:
@@ -445,10 +428,7 @@ class ExplorePanel(tk.Frame):
         if not callable(get_info):
             return
         def worker():
-            try:
-                info = get_info() or {}
-            except Exception as e:
-                return self._ui(self._render_error, f"get_info error: {e}")
+            info = get_info() or {}
             self._ui(self._render_overview, info)
         threading.Thread(target=worker, daemon=True).start()
 
@@ -473,7 +453,6 @@ class ExplorePanel(tk.Frame):
         if not q or q == HINT_TEXT:
             return
         # simple debounce per query (2s)
-        import time
         now = time.time()
         if self._search_inflight:
             self.status_var.set("Search in progress, please wait...")
@@ -481,15 +460,14 @@ class ExplorePanel(tk.Frame):
         if q == self._last_search[0] and now - self._last_search[1] < 2.0:
             self.status_var.set("Please wait a moment before searching the same item.")
             return
+        
         self._last_search = (q, now)
         self._search_inflight = True
-        try:
-            self.search_btn.config(state="disabled")
-        except Exception:
-            pass
+        self.search_btn.config(state="disabled")
         self.status_var.set("Searching...")
         self._enter_compact()
         kind = _guess_kind(q)
+        
         if kind == "block_height":
             return self._open_block(q)
         if kind == "block_hash":
@@ -511,15 +489,11 @@ class ExplorePanel(tk.Frame):
     # ---------- layout mode switchers ----------
     def _layout_search(self, hero: bool):
         for w in (self.search_entry, self.search_btn, self.exit_btn):
-            try: w.grid_forget()
-            except Exception:
-                pass
+            w.grid_forget()
         if hero:
             self.search_entry.grid(row=0, column=0, sticky="ew", pady=(0, 6))
             self.search_btn.grid(row=1, column=0, sticky="ew")
-            try: self.exit_btn.grid_remove()
-            except Exception:
-                pass
+            self.exit_btn.grid_remove()
         else:
             self.search_entry.grid(row=0, column=0, sticky="ew")
             self.search_btn.grid(row=0, column=1, padx=(6, 0))
@@ -527,23 +501,15 @@ class ExplorePanel(tk.Frame):
         self.search_wrap.columnconfigure(0, weight=1)
 
     def _footer_toggle(self, show: bool):
-        try:
-            self.infoscreen.pack_forget()
-        except Exception:
-            pass
+        self.infoscreen.pack_forget()
         if show:
             self.infoscreen.pack(side="top", pady=(10, 0))
 
     def _enter_hero(self):
         self.hero_mode = True
-        try:
-            self.body.pack_forget()
-        except Exception:
-            pass
-        try:
-            self.header.pack_forget()
-        except Exception:
-            pass
+        self.body.pack_forget()
+        self.header.pack_forget()
+        
         self._hero_top_spacer.pack(fill="both", expand=True)
         self.header.pack(padx=16, pady=(0, 0))
         self._hero_bottom_spacer.pack(fill="both", expand=True)
@@ -560,21 +526,15 @@ class ExplorePanel(tk.Frame):
             return
         self.hero_mode = False
         for w in (self._hero_top_spacer, self._hero_bottom_spacer):
-            try: w.pack_forget()
-            except Exception: pass
-        try:
-            self.header.pack_forget()
-        except Exception:
-            pass
+            w.pack_forget()
+            
+        self.header.pack_forget()
         self.header.pack(fill="x", padx=16, pady=(8, 0))
         self.brand.config(font=("Segoe UI", 39, "bold"))
         self.tagline.config(font=("Consolas", 8, "italic"))
         self._layout_search(hero=False)
         self._footer_toggle(False)
-        try:
-            self.body.pack(fill="both", expand=True, padx=0, pady=12)
-        except Exception:
-            pass
+        self.body.pack(fill="both", expand=True, padx=0, pady=12)
 
 
     # ---------- open helpers ----------
@@ -593,8 +553,6 @@ class ExplorePanel(tk.Frame):
                 else:
                     done = True
                     self._ui(self._render_block, b)
-            except Exception as e:
-                self._ui(self._render_error, f"get_block error: {e}")
             finally:
                 self._ui(self._finish_search, done)
         threading.Thread(target=worker, daemon=True).start()
@@ -619,8 +577,6 @@ class ExplorePanel(tk.Frame):
                     if "txid" not in t: t["txid"] = t.get("id") or t.get("hash") or txid
                     done = True
                     self._ui(self._render_tx, t["txid"], t)
-            except Exception as e:
-                self._ui(self._render_error, f"get_tx error: {e}")
             finally:
                 self._ui(self._finish_search, done)
         threading.Thread(target=worker, daemon=True).start()
@@ -637,10 +593,7 @@ class ExplorePanel(tk.Frame):
             done = False
             b = None
             if callable(get_block):
-                try:
-                    b = get_block(hx)
-                except Exception as e:
-                    self._ui(self._render_error, f"get_block error: {e}")
+                b = get_block(hx)
             if isinstance(b, dict) and b and not b.get("error") and (b.get("hash") or b.get("transactions") or b.get("tx")):
                 done = True
                 self._ui(self._render_block, b)
@@ -648,13 +601,7 @@ class ExplorePanel(tk.Frame):
                 return
 
             if callable(get_tx):
-                try:
-                    t = get_tx(hx)
-                except Exception as e:
-                    self._ui(self._render_error, f"get_tx error: {e}")
-                    self._ui(self._finish_search, False)
-                    return
-
+                t = get_tx(hx)
                 if isinstance(t, dict) and not t.get("error"):
                     if "tx" in t and isinstance(t["tx"], dict):
                         t = t["tx"]
@@ -678,15 +625,18 @@ class ExplorePanel(tk.Frame):
     def _open_address(self, addr: str):
         get_address = self.providers.get("get_address")
         if not callable(get_address):
-            return self._render_error("Provider get_address not available")
+            self._render_error("Provider get_address not available")
+            self._finish_search(False)
+            return
         def worker():
-            try:
-                a = get_address(addr)
-            except Exception as e:
-                return self._ui(self._render_error, f"get_address error: {e}")
+            done = False
+            a = get_address(addr)
             if not a:
-                return self._ui(self._render_error, "Address not found")
+                self._ui(self._render_error, "Address not found")
+                return self._ui(self._finish_search, False)
+            done = True
             self._ui(self._render_address, addr, a)
+            self._ui(self._finish_search, done)
         threading.Thread(target=worker, daemon=True).start()
 
     def _open_graffiti(self, art_id: str):
@@ -713,36 +663,28 @@ class ExplorePanel(tk.Frame):
                     return
                 comments = []
                 if callable(get_comments):
-                    try:
-                        c = get_comments(post.get("art_id") or art_id)
-                        if isinstance(c, dict):
-                            comments = c.get("comments") or []
-                        elif isinstance(c, list):
-                            comments = c
-                    except Exception:
-                        comments = []
+                    c = get_comments(post.get("art_id") or art_id)
+                    if isinstance(c, dict):
+                        comments = c.get("comments") or []
+                    elif isinstance(c, list):
+                        comments = c
 
                 img_bytes = None
                 img_meta = None
                 cache_path = None
                 if callable(fetch_file):
-                    try:
-                        f = fetch_file(post, art_id)
-                        if isinstance(f, dict):
-                            if f.get("status") == "ok":
-                                img_bytes = f.get("bytes")
-                                img_meta = f.get("meta")
-                                cache_path = f.get("cache_path")
-                            else:
-                                err = f.get("reason") or f.get("error")
-                                self._ui(self._render_error, f"fetch_graffiti_file error: {err}")
-                    except Exception:
-                        pass
+                    f = fetch_file(post, art_id)
+                    if isinstance(f, dict):
+                        if f.get("status") == "ok":
+                            img_bytes = f.get("bytes")
+                            img_meta = f.get("meta")
+                            cache_path = f.get("cache_path")
+                        else:
+                            err = f.get("reason") or f.get("error")
+                            self._ui(self._render_error, f"fetch_graffiti_file error: {err}")
 
                 done = True
                 self._ui(self._render_graffiti, post, comments, img_bytes, img_meta or {}, cache_path)
-            except Exception as e:
-                self._ui(self._render_error, f"get_graffiti error: {e}")
             finally:
                 self._ui(self._finish_search, done)
 
@@ -777,11 +719,8 @@ class ExplorePanel(tk.Frame):
 
         self._section(f"Block #{h}")
         if not blkid:
-            try:
-                cb = (txs[0] if txs else {}) or {}
-                blkid = cb.get("block_id")
-            except Exception:
-                blkid = None
+            cb = (txs[0] if txs else {}) or {}
+            blkid = cb.get("block_id")
         self._kv("Block ID", (blkid if blkid else "-"), mono=True, vtag="val_id")
         self._kv("Hash", str(hh), mono=True, vtag="val_hex")
         self._kv("Previous", str(prev), mono=True, vtag="val_hex")
@@ -811,11 +750,8 @@ class ExplorePanel(tk.Frame):
                     art = c.get("art_id") or "-"
                     comment_text = c.get("comment_text")
                     if not comment_text:
-                        try:
-                            ch = c.get("comment_hex") or ""
-                            comment_text = bytes.fromhex(ch).decode("utf-8", errors="ignore")
-                        except Exception:
-                            comment_text = ""
+                        ch = c.get("comment_hex") or ""
+                        comment_text = bytes.fromhex(ch).decode("utf-8", errors="ignore")
                     self._kv("Art ID", str(art), mono=True, vtag="val_hex")
                     if comment_text:
                         self._kv("Comment", comment_text, mono=False)
@@ -856,10 +792,7 @@ class ExplorePanel(tk.Frame):
         stats = (post or {}).get("stats") or {}
 
         def _fmt_size_h(bytes_val: int) -> str:
-            try:
-                b = int(bytes_val)
-            except Exception:
-                return "-"
+            b = int(bytes_val)
             units = ["bytes", "KB", "MB", "GB"]
             val = float(b)
             u = 0
@@ -891,14 +824,12 @@ class ExplorePanel(tk.Frame):
         # preview: image or video
         cache_guess = cache_path
         if not cache_guess:
-            try:
-                matches = glob(os.path.join("data_user", "graffiti_cache", f"{art_id}.*"))
-                for m in matches:
-                    if os.path.isfile(m):
-                        cache_guess = m
-                        break
-            except Exception:
-                cache_guess = cache_path
+            matches = glob(os.path.join("data_user", "graffiti_cache", f"{art_id}.*"))
+            for m in matches:
+                if os.path.isfile(m):
+                    cache_guess = m
+                    break
+                
         ext = os.path.splitext(cache_guess or "")[1].lower()
         is_video = ("video" in mime) or ext == ".mp4" or mime.endswith("mp4")
         if is_video:
@@ -911,27 +842,17 @@ class ExplorePanel(tk.Frame):
                 status_row.pack(side="top", anchor="center", pady=(2, 2))
                 status_var = tk.StringVar(value="")
                 err_msg = ""
-                player_obj = None
-                try:
-                    player_obj = TkVLCPlayer(
-                        video_inner_frame,
-                        bg=self.card_bg,
-                        fg=self.fg,
-                        accent=self.accent,
-                        on_error=lambda m: status_var.set(m),
-                    )
-                    # panel video di dalam video_wrap
-                    player_obj.frame.pack(fill="both", expand=True, pady=(6, 4))
-                    player_obj.load(cache_guess, autoplay=True)
-                    self._media_players.append(player_obj)
-                except Exception as exc:
-                    err_msg = f"Player error: {exc}"
-                    if player_obj:
-                        try:
-                            player_obj.dispose()
-                        except Exception:
-                            pass
-                        player_obj = None
+                player_obj = TkVLCPlayer(
+                    video_inner_frame,
+                    bg=self.card_bg,
+                    fg=self.fg,
+                    accent=self.accent,
+                    on_error=lambda m: status_var.set(m),
+                )
+                # panel video di dalam video_wrap
+                player_obj.frame.pack(fill="both", expand=True, pady=(6, 4))
+                player_obj.load(cache_guess, autoplay=True)
+                self._media_players.append(player_obj)
 
                 status_row.pack(side="top", anchor="w", pady=(2, 2))
                 tk.Label(
@@ -965,10 +886,7 @@ class ExplorePanel(tk.Frame):
                             video_w = 720  # fallback default width
                         padx_left = max((text_w - video_w) // 2, 0)
                         video_inner_frame.config(padx=padx_left)
-                        try:
-                            player_obj.video_panel.config(width=video_w)
-                        except:
-                            pass
+                        player_obj.video_panel.config(width=video_w)
                         
                 self.text.after(100, center_video)
                 self.text.bind("<Configure>", center_video)
@@ -981,34 +899,25 @@ class ExplorePanel(tk.Frame):
 
         else:
             if img_bytes:
-                try:
-                    buf = BytesIO(img_bytes)
-                    img = Image.open(buf)
-                    img.thumbnail((780, 520))
-                    photo = ImageTk.PhotoImage(img)
-                    self._img_refs.append(photo)
-                    try:
-                        self.text.update_idletasks()
-                        text_w = int(self.text.winfo_width() or 0)
-                    except Exception:
-                        text_w = 0
-                    if text_w <= 0:
-                        try:
-                            self.card.update_idletasks()
-                            text_w = int(self.card.winfo_width() or 0)
-                        except Exception:
-                            text_w = 0
+                buf = BytesIO(img_bytes)
+                img = Image.open(buf)
+                img.thumbnail((780, 520))
+                photo = ImageTk.PhotoImage(img)
+                self._img_refs.append(photo)
+                self.text.update_idletasks()
+                text_w = int(self.text.winfo_width() or 0)
+                if text_w <= 0:
+                    self.card.update_idletasks()
+                    text_w = int(self.card.winfo_width() or 0)
 
-                    img_w = photo.width()
-                    padx = max((text_w - img_w) // 2, 0)
+                img_w = photo.width()
+                padx = max((text_w - img_w) // 2, 0)
 
-                    frame = tk.Frame(self.text, bg=self.card_bg)
-                    lbl = tk.Label(frame, image=photo, bg=self.card_bg)
-                    lbl.pack()
-                    self.text.window_create("end", window=frame, padx=padx)
-                    self._writeln()
-                except Exception as e:
-                    _w_center(f"[preview failed] {e}", "muted")
+                frame = tk.Frame(self.text, bg=self.card_bg)
+                lbl = tk.Label(frame, image=photo, bg=self.card_bg)
+                lbl.pack()
+                self.text.window_create("end", window=frame, padx=padx)
+                self._writeln()
             else:
                 _w_center("(graffiti not found)", "muted")
 
@@ -1018,10 +927,7 @@ class ExplorePanel(tk.Frame):
         self._writeln("=" * 16, "sep", "center")
 
         def _decode_comment(hx: str) -> str:
-            try:
-                return bytes.fromhex(hx or "").decode("utf-8", errors="replace")
-            except Exception:
-                return ""
+            return bytes.fromhex(hx or "").decode("utf-8", errors="replace")
 
         if not comments:
             _w_center("No Comments yet.", "muted")

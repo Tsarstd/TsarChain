@@ -15,16 +15,12 @@ from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.services.media")
 
 def _fmt_ms(ms: int | float | None) -> str:
-    try:
-        total = max(0, int(ms) // 1000)
-    except Exception:
-        total = 0
+    total = max(0, int(ms) // 1000)
     m, s = divmod(total, 60)
     h, m = divmod(m, 60)
     if h:
         return f"{h:02d}:{m:02d}:{s:02d}"
     return f"{m:02d}:{s:02d}"
-
 
 class TkVLCPlayer:
     """
@@ -120,11 +116,8 @@ class TkVLCPlayer:
 
         self._instance = vlc.Instance("--quiet")
         self._player = self._instance.media_player_new()
-        try:
-            em = self._player.event_manager()
-            em.event_attach(vlc.EventType.MediaPlayerEndReached, self._handle_end)
-        except Exception:
-            pass
+        em = self._player.event_manager()
+        em.event_attach(vlc.EventType.MediaPlayerEndReached, self._handle_end)
 
         self._attach_handle()
 
@@ -143,10 +136,7 @@ class TkVLCPlayer:
             self._start_poll()
 
     def toggle_play(self):
-        try:
-            playing = self._player.is_playing()
-        except Exception:
-            playing = False
+        playing = self._player.is_playing()
         if playing:
             self.pause()
         else:
@@ -155,61 +145,33 @@ class TkVLCPlayer:
     def play(self):
         # Jika sudah end, reset ke awal agar bisa replay.
         if self._ended:
-            try:
-                self._player.stop()
-                self._player.set_time(0)
-                self._ended = False
-            except Exception:
-                pass
-        try:
-            self._player.play()
-            self._player.audio_set_volume(int(self.volume_var.get()))
-        except Exception as exc:
-            self._emit_error(f"play_failed:{exc}")
-            return
+            self._player.stop()
+            self._player.set_time(0)
+            self._ended = False
+        self._player.play()
+        self._player.audio_set_volume(int(self.volume_var.get()))
         self._update_play_label()
         self._start_poll()
 
     def pause(self):
-        try:
-            self._player.pause()
-        except Exception:
-            pass
+        self._player.pause()
         self._update_play_label()
 
     def dispose(self):
         self._disposed = True
-        try:
-            if self._timer is not None:
-                self.frame.after_cancel(self._timer)
-        except Exception:
-            pass
+        if self._timer is not None:
+            self.frame.after_cancel(self._timer)
         self._timer = None
-        try:
-            self._player.stop()
-        except Exception:
-            pass
-        try:
-            self._player.release()
-        except Exception:
-            pass
-        try:
-            self._instance.release()
-        except Exception:
-            pass
-        try:
-            if self.frame.winfo_exists():
-                self.frame.destroy()
-        except Exception:
-            pass
+        self._player.stop()
+        self._player.release()
+        self._instance.release()
+        if self.frame.winfo_exists():
+            self.frame.destroy()
 
     # ---------- internal helpers ----------
     def _emit_error(self, msg: str):
         if callable(self._on_error):
-            try:
-                self._on_error(msg)
-            except Exception:
-                pass
+            self._on_error(msg)
 
     def _attach_handle(self):
         try:
@@ -222,6 +184,7 @@ class TkVLCPlayer:
             else:
                 self._player.set_xwindow(win_id)
         except Exception as exc:
+            log.exception("Unhandled exception")
             self._emit_error(f"attach_failed:{exc}")
 
     def _start_poll(self):
@@ -245,15 +208,10 @@ class TkVLCPlayer:
                 self._set_slider(pos)
             self._update_play_label()
             self._maybe_update_video_size()
-        except Exception:
-            pass
         finally:
             if self._disposed:
                 return
-            try:
-                self._timer = self.frame.after(self._poll_ms, self._poll)
-            except Exception:
-                self._timer = None
+            self._timer = self.frame.after(self._poll_ms, self._poll)
 
     def _set_slider(self, ms_val: int | float):
         if self._duration_ms <= 0:
@@ -266,18 +224,12 @@ class TkVLCPlayer:
     def _seek_to_slider(self):
         if self._duration_ms <= 0:
             return
-        try:
-            ratio = max(0.0, min(1.0, float(self.pos_var.get()) / 1000.0))
-            target_ms = int(ratio * self._duration_ms)
-            self._player.set_time(target_ms)
-        except Exception:
-            pass
+        ratio = max(0.0, min(1.0, float(self.pos_var.get()) / 1000.0))
+        target_ms = int(ratio * self._duration_ms)
+        self._player.set_time(target_ms)
 
     def _on_volume(self, _value: str | float | None = None):
-        try:
-            self._player.audio_set_volume(int(float(self.volume_var.get())))
-        except Exception:
-            pass
+        self._player.audio_set_volume(int(float(self.volume_var.get())))
 
     def _on_seek_press(self, _event=None):
         self._user_dragging = True
@@ -294,42 +246,27 @@ class TkVLCPlayer:
         self.time_var.set(f"{_fmt_ms(pos_ms)} / {_fmt_ms(total_ms)}")
 
     def _update_play_label(self, paused: bool | None = None):
-        try:
-            playing = self._player.is_playing()
-        except Exception:
-            playing = False
+        playing = self._player.is_playing()
         if paused is True:
             playing = False
         self.play_label.set("Pause" if playing else "Play")
 
     def _handle_end(self, _event=None):
-        try:
-            self.frame.after(0, self._on_end_main)
-        except Exception:
-            pass
+        self.frame.after(0, self._on_end_main)
 
     def _on_end_main(self):
         self._ended = True
         if self._duration_ms > 0:
             self._set_slider(self._duration_ms)
-        try:
-            self._player.set_time(0)
-            self._set_slider(0)
-        except Exception:
-            pass
+        self._player.set_time(0)
+        self._set_slider(0)
         self._update_play_label(paused=True)
 
     def _maybe_update_video_size(self):
-        try:
-            w, h = self._player.video_get_size(0)
-        except Exception:
-            return
+        w, h = self._player.video_get_size(0)
         if not w or not h:
             return
         if (w, h) == self._last_video_size:
             return
         self._last_video_size = (w, h)
-        try:
-            self.video_panel.config(width=w, height=h)
-        except Exception:
-            pass
+        self.video_panel.config(width=w, height=h)

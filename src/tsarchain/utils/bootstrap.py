@@ -6,11 +6,10 @@
 from __future__ import annotations
 
 import os, json, shutil, hashlib, tempfile, time
-import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Callable, Optional
-from ecdsa import BadSignatureError, SECP256k1, VerifyingKey
+from ecdsa import SECP256k1, VerifyingKey
 
 # ---------------- Local Project ----------------
 from . import config as CFG
@@ -35,9 +34,17 @@ class SnapshotBootstrapResult:
 def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCallback = None) -> SnapshotBootstrapResult:
     ctx = (context or "default").lower()
     start_time = time.time()
-    target_file = CFG.LMDB_DATA_FILE
-    meta_path = CFG.SNAPSHOT_META_PATH
-    os.makedirs(os.path.dirname(target_file), exist_ok=True)
+    target_dir = CFG.LMDB_DATA_FILE
+    if target_dir.lower().endswith(".mdb"):
+        target_file = target_dir
+        target_dir = os.path.dirname(target_file) or "."
+    else:
+        target_file = os.path.join(target_dir, "data.mdb")
+    meta_dir = target_dir
+    meta_path = os.path.join(meta_dir, "snapshot.meta.json")
+    if os.path.isfile(target_dir):
+        os.remove(target_dir)
+    os.makedirs(target_dir, exist_ok=True)
 
     if CFG.BACKUP_SNAPSHOT and CFG.SNAPSHOT_BACKUP_DIR:
         try:
@@ -54,11 +61,13 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
         return SnapshotBootstrapResult(status="skipped", reason="cli_disabled")
 
     manifest = _fetch_manifest()
+    log.info("manifest: %s", manifest)
     expected_sha = _safe_lower(manifest, "sha256")
     snapshot_url = (
         (manifest or {}).get("snapshot_url")
         or (manifest or {}).get("url")
     )
+    log.info("snapshot_url: %s", snapshot_url)
     height = _safe_int(manifest, "height")
     generated_at = _safe_int(manifest, "generated_at")
 
@@ -108,6 +117,13 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
     try:
         tmp_fd, tmp_path = tempfile.mkstemp(prefix="tsar_snapshot_", suffix=".mdb")
         os.close(tmp_fd)
+
+        try:
+            with urllib.request.urlopen(snapshot_url, timeout=CFG.SNAPSHOT_HTTP_TIMEOUT) as resp, open(tmp_path, "wb") as out:
+                shutil.copyfileobj(resp, out)
+        except Exception:
+            log.exception("Unhandled exception")
+            raise
 
         actual_sha = _hash_file(tmp_path)
         if expected_sha and actual_sha != expected_sha:
@@ -163,7 +179,9 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
 
 def _fetch_manifest() -> Optional[dict]:
     url = CFG.SNAPSHOT_MANIFEST_URL.strip() if CFG.SNAPSHOT_MANIFEST_URL else ""
+    log.info("url: %s", url)
     if not url:
+        log.info("url: %s", url)
         return None
     req = urllib.request.Request(
         url,
@@ -172,11 +190,16 @@ def _fetch_manifest() -> Optional[dict]:
             "Accept": "application/json",
         },
     )
-    with urllib.request.urlopen(req, timeout=CFG.SNAPSHOT_HTTP_TIMEOUT) as resp:
-        raw = resp.read()
+    log.info("req: %s", req)
+    try:
+        with urllib.request.urlopen(req, timeout=CFG.SNAPSHOT_HTTP_TIMEOUT) as resp:
+            raw = resp.read()
+        manifest = json.loads(raw.decode("utf-8"))
+        log.info("manifest: %s", manifest)
+        return manifest
+    except Exception:
+        log.exception("Unhandled exception")
         return None
-    manifest = json.loads(raw.decode("utf-8"))
-    return manifest
 
 def _verify_manifest_signature(manifest: dict | None) -> bool:
     if not manifest:
@@ -215,7 +238,9 @@ def _load_meta(path: str) -> dict:
         return json.load(handle)
 
 def _write_meta(path: str, data: dict) -> None:
-    tmp_path = f"{path}.tmp"
+    parent = os.path.dirname(path) or "."
+    os.makedirs(parent, exist_ok=True)
+    tmp_path = os.path.join(parent, f"{os.path.basename(path)}.tmp")
     with open(tmp_path, "w", encoding="utf-8") as handle:
         json.dump(data, handle, indent=2, sort_keys=True)
     os.replace(tmp_path, path)

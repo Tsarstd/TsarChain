@@ -35,7 +35,7 @@ from .data_security import (Wallet,
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.wallet.chat_security.")
+log = get_ctx_logger("tsarchain.wallet.chat_security")
 
 
 class ChatManager:
@@ -74,10 +74,7 @@ class ChatManager:
             return ""
         L = int.from_bytes(pt[:2], "big")
         raw = pt[2:2+L]
-        try:
-            return raw.decode("utf-8", "ignore")
-        except Exception:
-            return ""
+        return raw.decode("utf-8", "ignore")
 
     @staticmethod
     def _aad_bytes(frm: str, to: str, mid: int, ts: int,
@@ -179,10 +176,7 @@ class ChatManager:
             self.publish_prekeys(addr, on_done=lambda _resp: None)
 
     def _can_publish_prekeys(self, addr: str) -> bool:
-        try:
-            interval = float(CFG.CHAT_PUBLISH_MIN_INTERVAL_S or 0)
-        except Exception:
-            interval = 0.0
+        interval = float(CFG.CHAT_PUBLISH_MIN_INTERVAL_S or 0)
         if interval <= 0:
             return True
         last = self._last_prekey_publish.get(addr)
@@ -227,19 +221,14 @@ class ChatManager:
         addr = self._canon(address)
         pwd = self.password_prompt_cb(addr)
         if pwd:
-            try: self._pwd_cache_put(addr, pwd)
-            except Exception:
-                pass
+            self._pwd_cache_put(addr, pwd)
         if not pwd:
             return None, "cancelled"
-        try:
-            w = Wallet.unlock(pwd, addr)
-            priv_hex = w["private_key"]
-            self.priv_cache[addr] = (priv_hex, self._now() + self.key_ttl_sec)
-            self._pwd_cache_put(addr, pwd)
-            return priv_hex, None
-        except Exception as e:
-            return None, str(e)
+        w = Wallet.unlock(pwd, addr)
+        priv_hex = w["private_key"]
+        self.priv_cache[addr] = (priv_hex, self._now() + self.key_ttl_sec)
+        self._pwd_cache_put(addr, pwd)
+        return priv_hex, None
 
     def get_priv_for_chat(self, address: str) -> Optional[str]:
         addr = self._canon(address)
@@ -254,18 +243,12 @@ class ChatManager:
             
         if not pwd:
             return None
-        try:
-            w = Wallet.unlock(pwd, addr)
-            priv_hex = w["private_key"]
-            self.priv_cache[addr] = (priv_hex, self._now() + self.key_ttl_sec)
-            self._pwd_cache_put(addr, pwd)
-            try:
-                self._pwd_cache_put(addr, pwd)
-            except Exception:
-                pass
-            return priv_hex
-        except Exception:
-            return None
+        w = Wallet.unlock(pwd, addr)
+        priv_hex = w["private_key"]
+        self.priv_cache[addr] = (priv_hex, self._now() + self.key_ttl_sec)
+        self._pwd_cache_put(addr, pwd)
+        self._pwd_cache_put(addr, pwd)
+        return priv_hex
 
     # ---------- pubkey directory ----------
     def lookup_pub(self, addr: str, cb: Callable[[Optional[str]], None]) -> None:
@@ -281,9 +264,7 @@ class ChatManager:
                 old = self.pub_cache.get(a)
                 self.pub_cache[a] = pub
                 if old and old != pub and callable(self.on_partner_key_changed):
-                    try: self.on_partner_key_changed(a, old, pub)
-                    except Exception:
-                        pass
+                    self.on_partner_key_changed(a, old, pub)
             cb(pub)
         self.rpc_send({"type": "CHAT_LOOKUP_PUB", "address": a}, _on)
 
@@ -356,45 +337,42 @@ class ChatManager:
                 vk.verify(bytes.fromhex(sig_hex), payload, ec.ECDSA(hashes.SHA256()))
                 
             except Exception as e:
+                log.exception("Unhandled exception")
                 log.warning("[ensure_session] SPK signature verify failed for %s: %s", peer, e)
                 cb("bundle_spk_verify_failed"); return
                 
             # 2) X3DH derive
-            try:
-                eph = x25519.X25519PrivateKey.generate()
-                eph_pub = eph.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
-                IKs = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_sk_hex))
-                IKr = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(rik))
-                SPKr= x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(spk))
-                dh1 = IKs.exchange(SPKr)              # IKs × SPKr
-                dh2 = eph.exchange(IKr)               # EPh × IKr
-                dh3 = eph.exchange(SPKr)              # EPh × SPKr
-                secret = dh1 + dh2 + dh3
+            eph = x25519.X25519PrivateKey.generate()
+            eph_pub = eph.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+            IKs = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_sk_hex))
+            IKr = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(rik))
+            SPKr= x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(spk))
+            dh1 = IKs.exchange(SPKr)              # IKs × SPKr
+            dh2 = eph.exchange(IKr)               # EPh × IKr
+            dh3 = eph.exchange(SPKr)              # EPh × SPKr
+            secret = dh1 + dh2 + dh3
+            
+            if opk:
+                OPKr = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(opk))
+                secret += IKs.exchange(OPKr)      # optional IKs x OPKr
                 
-                if opk:
-                    OPKr = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(opk))
-                    secret += IKs.exchange(OPKr)      # optional IKs x OPKr
-                    
-                rk = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:x3dh:v1").derive(secret)
-                sess = RatchetSession.init_as_initiator(
-                    root_key=rk,
-                    my_identity=my_pk_hex,
-                    their_identity=rik,
-                    my_ratchet_priv=eph,
-                    their_ratchet_pub_hex=spk,
-                    my_static_hex=my_pk_hex,
-                )
-                
-                key = self._session_key(me, peer)
-                self._sessions[key] = sess
-                self._persist_session(me, peer, sess)
+            rk = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:x3dh:v1").derive(secret)
+            sess = RatchetSession.init_as_initiator(
+                root_key=rk,
+                my_identity=my_pk_hex,
+                their_identity=rik,
+                my_ratchet_priv=eph,
+                their_ratchet_pub_hex=spk,
+                my_static_hex=my_pk_hex,
+            )
+            
+            key = self._session_key(me, peer)
+            self._sessions[key] = sess
+            self._persist_session(me, peer, sess)
 
-                if opk:
-                    self._pending_used_opk[key] = opk
-                cb(None)
-                
-            except Exception as e:
-                cb(f"x3dh_error:{e}")
+            if opk:
+                self._pending_used_opk[key] = opk
+            cb(None)
                 
         self.rpc_send({"type":"CHAT_GET_PREKEY","address": peer}, _on_bundle)
 
@@ -410,10 +388,7 @@ class ChatManager:
 
     # ---------- high-level ops: register / send / poll ----------
     def _canon(self, address: str) -> str:
-        try:
-            return (address or "").strip().lower()
-        except Exception:
-            return ""
+        return (address or "").strip().lower()
 
     @staticmethod
     def _ec_priv_from_hex(h: str) -> ec.EllipticCurvePrivateKey:
@@ -459,16 +434,10 @@ class ChatManager:
         def _on(resp: Optional[Dict[str, Any]]):
             if resp and resp.get("type") == "CHAT_REGISTERED":
                 self.pub_cache[addr] = chat_pk_hex
-                try:
-                    setattr(self, "_registered_addrs", getattr(self, "_registered_addrs", set()))
-                    self._registered_addrs.add(addr)
-                    log.debug("[register] registered ok for %s (pub=%s…)", addr, chat_pk_hex[:12])
-                except Exception:
-                    pass
-                try:
-                    self.publish_prekeys(addr, on_done=lambda _r: None)
-                except Exception as e:
-                    log.warning("[register] auto publish_prekeys failed: %s", e)
+                setattr(self, "_registered_addrs", getattr(self, "_registered_addrs", set()))
+                self._registered_addrs.add(addr)
+                log.debug("[register] registered ok for %s (pub=%s…)", addr, chat_pk_hex[:12])
+                self.publish_prekeys(addr, on_done=lambda _r: None)
                     
             on_done(resp)
 
@@ -484,22 +453,16 @@ class ChatManager:
         self.rpc_send(payload, _on)
 
     def _ensure_registered(self, addr: str, cb: Callable[[Optional[str]], None]) -> None:
-        try:
-            regset = getattr(self, "_registered_addrs", set())
-            if addr in regset:
-                cb(None); return
-        except Exception:
-            pass
+        regset = getattr(self, "_registered_addrs", set())
+        if addr in regset:
+            cb(None); return
         
         def _on(resp):
             if resp and resp.get("type") == "CHAT_REGISTERED":
-                try:
-                    rs = getattr(self, "_registered_addrs", set())
-                    rs.add(addr)
-                    self._registered_addrs = rs
-                    log.debug("[register] registered ok for %s", addr)
-                except Exception:
-                    pass
+                rs = getattr(self, "_registered_addrs", set())
+                rs.add(addr)
+                self._registered_addrs = rs
+                log.debug("[register] registered ok for %s", addr)
                 cb(None)
             else:
                 cb("register_failed")
@@ -553,6 +516,7 @@ class ChatManager:
                     bytes.fromhex(msg["enc"]["ct"]),
                 ]
             except Exception:
+                log.exception("Unhandled exception")
                 on_result({"status": "ratchet_header_invalid"})
                 return
 
@@ -577,11 +541,7 @@ class ChatManager:
                 payload["used_opk"] = used
 
             self._persist_session(frm, to, sess)
-
-            try:
-                on_queued(mid, ts)
-            except Exception:
-                pass
+            on_queued(mid, ts)
 
             def _wrapped(resp):
                 r = dict(resp or {})
@@ -609,27 +569,20 @@ class ChatManager:
         addr = self._canon(address)
         if not self._can_publish_prekeys(addr):
             log.debug("[publish_prekeys] skip publish for %s (cooldown)", addr)
-            try:
-                (on_done or (lambda _r: None))({"skipped": "cooldown"})
-            except Exception:
-                pass
+            (on_done or (lambda _r: None))({"skipped": "cooldown"})
             return
-        try:
-            ensure_signed_prekey(addr, self._pwd_provider_for(addr))
-            bundle = get_prekey_bundle_local(addr, self._pwd_provider_for(addr))  # {"ik","spk","sig","opk"}
-            payload = {
-                "type": "CHAT_PUBLISH_PREKEYS",
-                "address": addr,
-                "ik":  (bundle.get("ik")  or "").lower(),
-                "spk": (bundle.get("spk") or "").lower(),
-                "sig": (bundle.get("sig") or "").lower(),
-            }
-            if bundle.get("opk"):
-                payload["opk"] = (bundle["opk"] or "").lower()
-            self._last_prekey_publish[addr] = self._now()
-        except Exception as e:
-            (on_done or (lambda _r: None))({"error": f"bundle_error:{e}"})
-            return
+        ensure_signed_prekey(addr, self._pwd_provider_for(addr))
+        bundle = get_prekey_bundle_local(addr, self._pwd_provider_for(addr))  # {"ik","spk","sig","opk"}
+        payload = {
+            "type": "CHAT_PUBLISH_PREKEYS",
+            "address": addr,
+            "ik":  (bundle.get("ik")  or "").lower(),
+            "spk": (bundle.get("spk") or "").lower(),
+            "sig": (bundle.get("sig") or "").lower(),
+        }
+        if bundle.get("opk"):
+            payload["opk"] = (bundle["opk"] or "").lower()
+        self._last_prekey_publish[addr] = self._now()
 
         def _after(resp):
             try:
@@ -637,19 +590,16 @@ class ChatManager:
                 log.debug("[publish_prekeys] resp_type=%s", status)
                 if not resp or resp.get("error"):
                     self._last_prekey_publish.pop(addr, None)
-                try:
-                    if CFG.CHAT_PUBLISH_SELF_CHECK:
-                        def _selfcheck(r):
-                            r_type = (r or {}).get("type")
-                            if r_type == "CHAT_PREKEY_BUNDLE":
-                                bundle = r.get("bundle") or {}
-                                has_opk = bool(bundle.get("opk"))
-                                log.debug("[publish_prekeys.selfcheck] bundle_ok=True has_opk=%s", has_opk)
-                            else:
-                                log.debug("[publish_prekeys.selfcheck] resp_type=%s", r_type)
-                        self.rpc_send({"type": "CHAT_GET_PREKEY", "address": addr}, _selfcheck)
-                except Exception:
-                    log.debug("[publish_prekeys] self-check skipped due to error", exc_info=True)
+                if CFG.CHAT_PUBLISH_SELF_CHECK:
+                    def _selfcheck(r):
+                        r_type = (r or {}).get("type")
+                        if r_type == "CHAT_PREKEY_BUNDLE":
+                            bundle = r.get("bundle") or {}
+                            has_opk = bool(bundle.get("opk"))
+                            log.debug("[publish_prekeys.selfcheck] bundle_ok=True has_opk=%s", has_opk)
+                        else:
+                            log.debug("[publish_prekeys.selfcheck] resp_type=%s", r_type)
+                    self.rpc_send({"type": "CHAT_GET_PREKEY", "address": addr}, _selfcheck)
             finally:
                 (on_done or (lambda _r: None))(resp)
         self.rpc_send(payload, _after)
@@ -719,41 +669,37 @@ class ChatManager:
 
                     sess = self._get_session(me, frm)
                     if not sess:
-                        try:
-                            provider_me = self._pwd_provider_for(me)
-                            pkinfo = get_local_prekeys_for_recv(me, provider_me)
-                            spk_sk = (pkinfo.get("spk_sk") or "")
-                            if not spk_sk:
-                                raise ValueError("missing_spk_sk")
-                            IKr = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_sk_hex))
-                            SPKs = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(spk_sk))
-                            IKs_pub = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(from_static))
-                            EPh_pub = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(from_pub))
-                            dh1 = SPKs.exchange(IKs_pub)
-                            dh2 = IKr.exchange(EPh_pub)
-                            dh3 = SPKs.exchange(EPh_pub)
-                            secret = dh1 + dh2 + dh3
-                            if used_opk:
-                                opk_sk = consume_opk_priv(me, used_opk, provider_me)
-                                if opk_sk:
-                                    OPKs = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(opk_sk))
-                                    secret += OPKs.exchange(IKs_pub)
-                            rk = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:x3dh:v1").derive(secret)
-                            _, my_pk_hex = self._get_chat_dh(me)
-                            sess = RatchetSession.init_as_responder(
-                                root_key=rk,
-                                my_identity=my_pk_hex,
-                                their_identity=from_static,
-                                their_first_eph=from_pub,
-                                my_ratchet_priv=SPKs,
-                                my_static_hex=my_pk_hex,
-                            )
-                            key = self._session_key(me, frm)
-                            self._sessions[key] = sess
-                            self._persist_session(me, frm, sess)
-                        except Exception:
-                            log.exception("[poll] failed bootstrap for %s", frm)
-                            sess = None
+                        provider_me = self._pwd_provider_for(me)
+                        pkinfo = get_local_prekeys_for_recv(me, provider_me)
+                        spk_sk = (pkinfo.get("spk_sk") or "")
+                        if not spk_sk:
+                            raise ValueError("missing_spk_sk")
+                        IKr = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_sk_hex))
+                        SPKs = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(spk_sk))
+                        IKs_pub = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(from_static))
+                        EPh_pub = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(from_pub))
+                        dh1 = SPKs.exchange(IKs_pub)
+                        dh2 = IKr.exchange(EPh_pub)
+                        dh3 = SPKs.exchange(EPh_pub)
+                        secret = dh1 + dh2 + dh3
+                        if used_opk:
+                            opk_sk = consume_opk_priv(me, used_opk, provider_me)
+                            if opk_sk:
+                                OPKs = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(opk_sk))
+                                secret += OPKs.exchange(IKs_pub)
+                        rk = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:x3dh:v1").derive(secret)
+                        _, my_pk_hex = self._get_chat_dh(me)
+                        sess = RatchetSession.init_as_responder(
+                            root_key=rk,
+                            my_identity=my_pk_hex,
+                            their_identity=from_static,
+                            their_first_eph=from_pub,
+                            my_ratchet_priv=SPKs,
+                            my_static_hex=my_pk_hex,
+                        )
+                        key = self._session_key(me, frm)
+                        self._sessions[key] = sess
+                        self._persist_session(me, frm, sess)
 
                     msg_text = None
                     if sess:
@@ -807,10 +753,7 @@ class RatchetSession:
         
         if skipped:
             for k, v in skipped.items():
-                try:
-                    self.skipped[k] = bytes.fromhex(v)
-                except Exception:
-                    continue
+                self.skipped[k] = bytes.fromhex(v)
                 
         self.my_identity = my_identity
         self.their_identity = their_identity
@@ -927,6 +870,7 @@ class RatchetSession:
                 oldest = next(iter(self.skipped))
                 self.skipped.pop(oldest, None)
             except StopIteration:
+                log.exception("error__store_skipped")
                 pass
         self.skipped[key] = mk
 
@@ -995,10 +939,7 @@ class RatchetSession:
         nonce = os.urandom(12)
         aad = ChatManager._aad_bytes(frm, to, mid, ts, header["static_pub"], header["eph_pub"], header["pn"], header["n"])
         ct = AESGCM(mk).encrypt(nonce, pt, aad)
-        try:
-            mkh = hashlib.sha256(mk).hexdigest()[:8]
-        except Exception:
-            mkh = "?"
+        mkh = hashlib.sha256(mk).hexdigest()[:8]
         log.debug("[ratchet.encrypt] frm=%s to=%s mid=%s eph=%s pn=%s n=%s mk#=%s", frm, to, mid, header["eph_pub"][:12], header["pn"], header["n"], mkh)
         return {
             "ratchet": header,
@@ -1009,17 +950,10 @@ class RatchetSession:
         nonce = bytes.fromhex(enc.get("nonce") or "")
         ct = bytes.fromhex(enc.get("ct") or "")
         aad = ChatManager._aad_bytes(frm, to, mid, ts, static_hex, eph_hex, pn, n)
-        try:
-            pt = AESGCM(mk).decrypt(nonce, ct, aad)
-            try:
-                mkh = hashlib.sha256(mk).hexdigest()[:8]
-            except Exception:
-                mkh = "?"
-            log.debug("[ratchet._decrypt_with_mk] ok mk#=%s", mkh)
-            return pt
-        except Exception as e:
-            log.debug("[ratchet._decrypt_with_mk] fail =%s", e)
-            return None
+        pt = AESGCM(mk).decrypt(nonce, ct, aad)
+        mkh = hashlib.sha256(mk).hexdigest()[:8]
+        log.debug("[ratchet._decrypt_with_mk] ok mk#=%s", mkh)
+        return pt
 
     def decrypt(self, enc: dict, frm: str, to: str, mid: int, ts: int, header: dict) -> Optional[bytes]:
         eph_hex = (header.get("eph_pub") or "").lower()

@@ -27,6 +27,10 @@ from ...utils.helpers import hash160
 from ...core.tx import Tx
 from ...utils import config as CFG
 
+# ---------------- Logger ----------------
+from ...utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.wallet.data_security")
+
 
 _CHAT_KEYS_DIR = os.path.join("data_user", "chat_keys")
 os.makedirs(_CHAT_KEYS_DIR, exist_ok=True)
@@ -35,7 +39,6 @@ _PREKEY_DIR = os.path.join("data_user", "chat_prekeys")
 os.makedirs(_PREKEY_DIR, exist_ok=True)
 
 _SECURE_KV_DB = "secure_wallet"
-
 _APP_SECRET_PATH = Path(os.path.join("data_user", ".app_secret.json"))
 _APP_SECRET_LOCK = threading.Lock()
 _APP_SECRET_CACHE: Optional[str] = None
@@ -43,7 +46,6 @@ _APP_SECRET_CACHE: Optional[str] = None
 
 def _secure_kv_key(namespace: str, key: str) -> bytes:
     return f"{namespace}:{key}".encode("utf-8")
-
 
 def encrypt_blob(blob: bytes, password: str) -> Dict:
     salt = os.urandom(16)
@@ -62,7 +64,6 @@ def encrypt_blob(blob: bytes, password: str) -> Dict:
         "p": 1,
     }
 
-
 def decrypt_blob(enc: Dict, password: str) -> bytes:
     if str(enc.get("alg")).upper() != "AESGCM":
         raise ValueError("Unsupported cipher")
@@ -77,15 +78,11 @@ def decrypt_blob(enc: Dict, password: str) -> bytes:
     ct = bytes.fromhex(enc["ct"])
     return aes.decrypt(nonce, ct, None)
 
-
 def _secure_backend_read(namespace: str, key: str, path: Optional[Path]) -> Tuple[Optional[Dict], bool]:
     raw = None
     from_file = False
     if kv_enabled():
-        try:
-            val = kv_get(_SECURE_KV_DB, _secure_kv_key(namespace, key))
-        except Exception:
-            val = None
+        val = kv_get(_SECURE_KV_DB, _secure_kv_key(namespace, key))
         if val:
             raw = val.decode("utf-8")
     if raw is None and path is not None and path.exists():
@@ -93,41 +90,26 @@ def _secure_backend_read(namespace: str, key: str, path: Optional[Path]) -> Tupl
         from_file = True
     if raw is None:
         return None, from_file
-    try:
-        obj = json.loads(raw)
-    except Exception as exc:
-        raise ValueError(f"secure storage corrupted for {namespace}:{key}") from exc
+    obj = json.loads(raw)
     return obj, from_file and kv_enabled()
-
 
 def _secure_backend_write(namespace: str, key: str, path: Optional[Path], payload: Dict) -> None:
     data = json.dumps(payload, separators=CFG.CANONICAL_SEP)
     if kv_enabled():
         kv_put(_SECURE_KV_DB, _secure_kv_key(namespace, key), data.encode("utf-8"))
         if path is not None and path.exists():
-            try:
-                path.unlink()
-            except Exception:
-                pass
+            path.unlink()
     else:
         if path is None:
             raise ValueError("file path required for secure storage")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(data, encoding="utf-8")
 
-
 def _secure_backend_delete(namespace: str, key: str, path: Optional[Path]) -> None:
     if kv_enabled():
-        try:
-            kv_delete(_SECURE_KV_DB, _secure_kv_key(namespace, key))
-        except Exception:
-            pass
+        kv_delete(_SECURE_KV_DB, _secure_kv_key(namespace, key))
     if path is not None and path.exists():
-        try:
-            path.unlink()
-        except Exception:
-            pass
-
+        path.unlink()
 
 def _get_app_secret_password() -> str:
     global _APP_SECRET_CACHE
@@ -150,10 +132,8 @@ def _get_app_secret_password() -> str:
         _APP_SECRET_CACHE = password
         return password
 
-
 def _app_secret_provider(_prompt: str = "") -> str:
     return _get_app_secret_password()
-
 
 def _secure_load(namespace: str, key: str, path: Optional[Path], password_provider, prompt: str) -> Tuple[Optional[Dict], bool]:
     obj, migrated = _secure_backend_read(namespace, key, path)
@@ -168,7 +148,6 @@ def _secure_load(namespace: str, key: str, path: Optional[Path], password_provid
         plain = decrypt_blob(obj["enc"], pwd)
         return json.loads(plain.decode("utf-8")), False
     return obj, True
-
 
 def _secure_store(namespace: str, key: str, path: Optional[Path], data: Dict, password_provider, prompt: str) -> None:
     if not callable(password_provider):
@@ -186,6 +165,7 @@ def load_chat_state(default: Optional[Dict] = None) -> Dict:
     try:
         data, legacy = _secure_load("chat_state", "default", path_obj, _app_secret_provider, "Load chat state")
     except Exception:
+        log.exception("Unhandled exception")
         return fallback.copy()
     if data is None:
         return fallback.copy()
@@ -193,13 +173,13 @@ def load_chat_state(default: Optional[Dict] = None) -> Dict:
         try:
             _secure_store("chat_state", "default", path_obj, data, _app_secret_provider, "Migrate chat state")
         except Exception:
+            log.exception("Unhandled exception")
             pass
     return {
         "blocked": list(dict.fromkeys(data.get("blocked", []) or [])),
         "pubcache": data.get("pubcache") or {},
         "textsize": data.get("textsize") or fallback["textsize"],
     }
-
 
 def save_chat_state(data: Dict) -> None:
     path_obj = Path(CFG.CHAT_STATE)
@@ -210,21 +190,14 @@ def save_chat_state(data: Dict) -> None:
     }
     _secure_store("chat_state", "default", path_obj, payload, _app_secret_provider, "Store chat state")
 
-
 def load_wallet_registry(default: Optional[Sequence[str]] = None) -> List[str]:
     fallback = list(default or [])
     path_obj = Path(CFG.REGISTRY_PATH)
-    try:
-        data, legacy = _secure_load("wallet_registry", "default", path_obj, _app_secret_provider, "Load wallet registry")
-    except Exception:
-        return fallback
+    data, legacy = _secure_load("wallet_registry", "default", path_obj, _app_secret_provider, "Load wallet registry")
     if data is None:
         return fallback
     if legacy:
-        try:
-            _secure_store("wallet_registry", "default", path_obj, data, _app_secret_provider, "Migrate wallet registry")
-        except Exception:
-            pass
+         _secure_store("wallet_registry", "default", path_obj, data, _app_secret_provider, "Migrate wallet registry")
     wallets = data.get("wallets") if isinstance(data, dict) else None
     if not isinstance(wallets, list):
         return fallback
@@ -234,7 +207,6 @@ def load_wallet_registry(default: Optional[Sequence[str]] = None) -> List[str]:
         if a and a not in seen:
             seen.append(a)
     return seen
-
 
 def save_wallet_registry(addrs: Sequence[str]) -> None:
     path_obj = Path(CFG.REGISTRY_PATH)
@@ -246,7 +218,6 @@ def save_wallet_registry(addrs: Sequence[str]) -> None:
     payload = {"wallets": uniq, "updated": int(time.time())}
     _secure_store("wallet_registry", "default", path_obj, payload, _app_secret_provider, "Store wallet registry")
 
-
 def ensure_wallet_registry(default: Optional[Sequence[str]] = None) -> List[str]:
     wallets = load_wallet_registry(default)
     if not wallets and default:
@@ -256,23 +227,14 @@ def ensure_wallet_registry(default: Optional[Sequence[str]] = None) -> List[str]
         save_wallet_registry([])
     return wallets
 
-
 def load_user_key_record() -> Optional[Dict]:
     path_obj = Path(CFG.USER_KEY_PATH)
-    try:
-        data, legacy = _secure_load("user_key", "default", path_obj, _app_secret_provider, "Load user key")
-    except Exception:
-        data = None
-        legacy = False
+    data, legacy = _secure_load("user_key", "default", path_obj, _app_secret_provider, "Load user key")
     if data is None:
         return None
     if legacy:
-        try:
-            _secure_store("user_key", "default", path_obj, data, _app_secret_provider, "Migrate user key")
-        except Exception:
-            pass
+        _secure_store("user_key", "default", path_obj, data, _app_secret_provider, "Migrate user key")
     return data
-
 
 def save_user_key_record(record: Dict) -> None:
     path_obj = Path(CFG.USER_KEY_PATH)
@@ -290,8 +252,6 @@ def _prekey_path(addr: str) -> str:
     safe = re.sub(r"[^0-9a-z]", "_", addr.lower())
     return os.path.join(_PREKEY_DIR, f"{safe}.json")
 
-def _prekey_storage_key(addr: str) -> str:
-    return addr.lower()
 
 def _load_prekey_record(addr: str, password_provider=None) -> Optional[Dict]:
     addr_c = addr.lower()
@@ -438,17 +398,14 @@ def get_prekey_bundle_local(addr: str, password_provider=None) -> dict:
         _store_prekey_record(addr, b, password_provider)
     return {"ik": ik, "spk": b["spk"], "sig": b["sig"], "opk": opk}
 
-
 def _session_storage_key(me: str, peer: str) -> str:
     return f"{(me or '').lower()}|{(peer or '').lower()}"
-
 
 def _session_path(me: str, peer: str) -> Path:
     base = Path(CFG.CHAT_SESSION_DIR)
     me_c = (me or "").lower() or "_"
     peer_c = (peer or "").lower() or "_"
     return base / me_c / peer_c
-
 
 def load_chat_session(me: str, peer: str, password_provider) -> Optional[Dict]:
     key = _session_storage_key(me, peer)
@@ -465,13 +422,11 @@ def load_chat_session(me: str, peer: str, password_provider) -> Optional[Dict]:
                       f"Migrate chat session for {me.lower() if me else ''}")
     return record
 
-
 def store_chat_session(me: str, peer: str, record: Dict, password_provider) -> None:
     key = _session_storage_key(me, peer)
     path = _session_path(me, peer)
     _secure_store("chat_session", key, path, record, password_provider,
                   f"Store chat session for {me.lower() if me else ''}")
-
 
 def delete_chat_session(me: str, peer: str) -> None:
     key = _session_storage_key(me, peer)
@@ -489,10 +444,8 @@ def encrypt_wallet_file(data: dict, master_password: str) -> bytes:
         backend=default_backend()
     )
     key = base64.urlsafe_b64encode(kdf.derive(master_password.encode()))
-    
     f = Fernet(key)
     encrypted_data = f.encrypt(json.dumps(data).encode())
-
     return salt + encrypted_data
 
 def decrypt_wallet_file(encrypted_data: bytes, master_password: str) -> dict:
@@ -615,12 +568,9 @@ def pubkey_to_tsar_address(pubkey_bytes: bytes) -> str:
     return bech32_encode(CFG.ADDRESS_PREFIX, data)
 
 
-
 # ========= Keystore v2: multi-wallet ========= #
 
-
 KEYSTORE_VERSION = 2
-
 
 def _empty_keystore():
     return {"version": KEYSTORE_VERSION, "encrypted": True,
@@ -643,14 +593,7 @@ def load_keystore(password: str) -> dict:
         return _empty_keystore()
 
     raw = _read_file_bytes(WALLET_FILE)
-    try:
-        root = decrypt_wallet_file(raw, password)
-    except Exception:
-        try:
-            root = json.loads(raw.decode("utf-8"))
-        except Exception:
-            raise ValueError("Invalid password or corrupted keystore")
-
+    root = decrypt_wallet_file(raw, password)
     if root.get("version") == KEYSTORE_VERSION and "wallets" in root:
         if "contacts" not in root or not isinstance(root["contacts"], dict):
             root["contacts"] = {}
@@ -748,25 +691,17 @@ def delete_address_from_keystore(address: str, password: str) -> bool:
     save_keystore(ks, password)
     return True
 
-
 def get_encrypted_keystore_bytes() -> bytes:
     if not os.path.exists(WALLET_FILE):
         raise FileNotFoundError("Keystore file not found")
     return _read_file_bytes(WALLET_FILE)
 
-
 def restore_keystore_bytes(data: bytes, password: str):
-    try:
-        root = decrypt_wallet_file(data, password)
-        if root.get("version") == KEYSTORE_VERSION and "wallets" in root:
-            _write_atomic(WALLET_FILE, data)
-            return
-    except Exception:
-        pass
-    try:
-        root = json.loads(data.decode("utf-8"))
-    except Exception:
-        raise ValueError("Invalid backup or wrong password")
+    root = decrypt_wallet_file(data, password)
+    if root.get("version") == KEYSTORE_VERSION and "wallets" in root:
+        _write_atomic(WALLET_FILE, data)
+        return
+    root = json.loads(data.decode("utf-8"))
 
     if root.get("version") == 1 and "payload" in root:
         addr = (root.get("meta") or {}).get("address")
@@ -797,14 +732,11 @@ def _load_cache_raw(address: str) -> dict:
     path = _hist_path(address)
     if not os.path.exists(path):
         return {"version": 1, "address": address, "last_updated": 0, "items": {}}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            root = json.load(f)
-        if not isinstance(root.get("items"), dict):
-            root["items"] = {}
-        return root
-    except Exception:
-        return {"version": 1, "address": address, "last_updated": 0, "items": {}}
+    with open(path, "r", encoding="utf-8") as f:
+        root = json.load(f)
+    if not isinstance(root.get("items"), dict):
+        root["items"] = {}
+    return root
 
 def _normalize_item(raw: dict) -> dict:
     txid = str(raw.get("txid","")).lower()
@@ -878,24 +810,19 @@ class Security:
     
     @staticmethod
     def secure_erase(data):
-        try:
-            if isinstance(data, str):
-                data_bytes = bytearray(data.encode('utf-8'))
-                for i in range(len(data_bytes)):
-                    data_bytes[i] = 0
-                return bytes(data_bytes)
-            
-            elif isinstance(data, (bytes, bytearray)):
-                mutable_data = bytearray(data)
-                for i in range(len(mutable_data)):
-                    mutable_data[i] = 0
-                return bytes(mutable_data)
-            
-            return data
-            
-        except Exception as e:
-            print(f"Secure erase warning: {e}")
-            return data
+        if isinstance(data, str):
+            data_bytes = bytearray(data.encode('utf-8'))
+            for i in range(len(data_bytes)):
+                data_bytes[i] = 0
+            return bytes(data_bytes)
+        
+        elif isinstance(data, (bytes, bytearray)):
+            mutable_data = bytearray(data)
+            for i in range(len(mutable_data)):
+                mutable_data[i] = 0
+            return bytes(mutable_data)
+        
+        return data
             
     @staticmethod
     def log_security_event(event_type: str, address: str = "", details: str = ""):
@@ -969,68 +896,39 @@ class Wallet:
     def unlock(password: str, address: str | None = None) -> Dict:
         if not os.path.exists(WALLET_FILE):
             raise FileNotFoundError("Wallet file not found")
+        ks = load_keystore(password)
+        wallets: dict = ks.get("wallets", {})
+        if not wallets:
+            raise ValueError("Keystore empty")
+
+        target_addr = address
+        if not target_addr:
+            target_addr = ks.get("default") or (next(iter(wallets)) if wallets else None)
+        if not target_addr or target_addr not in wallets:
+            if len(wallets) == 1:
+                target_addr = next(iter(wallets))
+            else:
+                raise ValueError("Multiple wallets present – specify address")
+
+        Security.check_attempt(target_addr)
         try:
-            ks = load_keystore(password)
-            wallets: dict = ks.get("wallets", {})
-            if not wallets:
-                raise ValueError("Keystore empty")
-
-            target_addr = address
-            if not target_addr:
-                target_addr = ks.get("default") or (next(iter(wallets)) if wallets else None)
-            if not target_addr or target_addr not in wallets:
-                if len(wallets) == 1:
-                    target_addr = next(iter(wallets))
-                else:
-                    raise ValueError("Multiple wallets present – specify address")
-
-            Security.check_attempt(target_addr)
-            try:
-                enc_blob = wallets[target_addr]["payload"]
-                priv_hex = decrypt_privkey(enc_blob, password)
-                Security.record_success(target_addr)
-                Security.log_security_event("WALLET_UNLOCKED", target_addr, "Successful unlock (v2)")
-                return {"private_key": priv_hex, "address": target_addr}
-            except Exception as e:
-                Security.record_failure(target_addr)
-                Security.log_security_event("UNLOCK_FAILED", target_addr, f"Failed attempt (v2): {e}")
-                raise
-
-        except Exception:
-            with open(WALLET_FILE, "rb") as f:
-                encrypted_data = f.read()
-            try:
-                data = decrypt_wallet_file(encrypted_data, password)
-            except Exception:
-                try:
-                    data = json.loads(encrypted_data.decode("utf-8"))
-                    data = data[0] if isinstance(data, list) else data
-                except Exception as e:
-                    Security.log_security_event("DECRYPT_FAILED", "", f"File decryption failed: {e}")
-                    raise ValueError("Invalid password or corrupted wallet file")
-
-            addr = (data.get("meta") or {}).get("address")
-            Security.check_attempt(addr)
-            try:
-                priv_hex = decrypt_privkey(data["payload"], password)
-                Security.record_success(addr)
-                Security.log_security_event("WALLET_UNLOCKED", addr, "Successful unlock (v1)")
-                return {"private_key": priv_hex, "address": addr}
-            except Exception as e:
-                Security.record_failure(addr)
-                Security.log_security_event("UNLOCK_FAILED", addr, f"Failed attempt (v1): {e}")
-                raise
+            enc_blob = wallets[target_addr]["payload"]
+            priv_hex = decrypt_privkey(enc_blob, password)
+            Security.record_success(target_addr)
+            Security.log_security_event("WALLET_UNLOCKED", target_addr, "Successful unlock (v2)")
+            return {"private_key": priv_hex, "address": target_addr}
+        except Exception as e:
+            log.exception("Unhandled exception")
+            Security.record_failure(target_addr)
+            Security.log_security_event("UNLOCK_FAILED", target_addr, f"Failed attempt (v2): {e}")
+            raise
 
 
     @staticmethod
     def from_private_key_hex(priv_hex: str):
-        try:
-            pubkey_bytes = pubkey_from_privhex(priv_hex)
-            address = pubkey_to_tsar_address(pubkey_bytes)
-            return {"private_key": priv_hex, "address": address}
-        except Exception as e:
-            print("[!] from_private_key_hex error:", e)
-            return None
+        pubkey_bytes = pubkey_from_privhex(priv_hex)
+        address = pubkey_to_tsar_address(pubkey_bytes)
+        return {"private_key": priv_hex, "address": address}
         
         # ---- Local history cache helpers ----
 
@@ -1092,13 +990,10 @@ class Wallet:
 
     @staticmethod
     def history_cache_clear(address: str) -> bool:
-        try:
-            p = _hist_path(address)
-            if os.path.exists(p):
-                os.remove(p)
-            return True
-        except Exception:
-            return False
+        p = _hist_path(address)
+        if os.path.exists(p):
+            os.remove(p)
+        return True
 
     @staticmethod
     def history_cache_path(address: str) -> str:

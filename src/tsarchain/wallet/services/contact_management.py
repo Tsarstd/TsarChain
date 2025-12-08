@@ -13,14 +13,15 @@ from ..security.data_security import list_contacts_in_keystore, upsert_contact_i
 from ..ui_utils import center_window
 from ..theme import ContactsTheme, get_theme
 
-Mask = Tuple[str, str]
+# ---------------- Logger ----------------
+from ...utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.wallet.services.contact_management")
 
+Mask = Tuple[str, str]
 
 def _mask_addr(addr: str) -> str:
     a = (addr or "").strip()
     return f"{a[:10]}-{a[-6:]}" if len(a) >= 20 else a
-
-
 
 class _ContactForm(tk.Toplevel):
     def __init__(self, parent, colors, title="Contact", alias="", address=""):
@@ -28,11 +29,7 @@ class _ContactForm(tk.Toplevel):
         self.configure(bg=colors["bg"])
         self.title(title)
         self.resizable(False, False)
-        try:
-            self.transient(parent); self.grab_set()
-        except Exception:
-            pass
-
+        self.transient(parent); self.grab_set()
         body = tk.Frame(self, bg=colors["bg"]); body.pack(fill=tk.BOTH, expand=True, padx=16, pady=14)
 
         tk.Label(body, text="Alias", bg=colors["bg"], fg=colors["fg"]).pack(anchor="w")
@@ -60,11 +57,8 @@ class _ContactForm(tk.Toplevel):
         self.result = None
         self.bind("<Return>", lambda _e: self._ok())
         self.bind("<Escape>", lambda _e: self._cancel())
-        try:
-            center_window(self, parent)
-            self.ent_alias.focus_set()
-        except Exception:
-            pass
+        center_window(self, parent)
+        self.ent_alias.focus_set()
 
     def _ok(self):
         self.result = ((self.ent_addr.get() or "").strip(), (self.ent_alias.get() or "").strip())
@@ -122,10 +116,7 @@ class ContactManager:
         pwd = self.get_pwd()
         if not pwd:
             return self._contacts
-        try:
-            self._contacts = list_contacts_in_keystore(pwd) or {}
-        except Exception as e:
-            self.toast(f"Load contacts failed: {e}")
+        self._contacts = list_contacts_in_keystore(pwd) or {}
         return self._contacts
 
     def pairs(self) -> List[Mask]:
@@ -146,26 +137,18 @@ class ContactManager:
         pwd = self.get_pwd()
         if not pwd:
             return False
-        try:
-            upsert_contact_in_keystore(address, alias, pwd)
-            self._contacts[address] = alias
-            return True
-        except Exception as e:
-            messagebox.showerror("Failed", f"Save contact failed: {e}")
-            return False
+        upsert_contact_in_keystore(address, alias, pwd)
+        self._contacts[address] = alias
+        return True
 
     def delete(self, address: str) -> bool:
         address = (address or "").strip().lower()
         pwd = self.get_pwd()
         if not pwd:
             return False
-        try:
-            delete_contact_from_keystore(address, pwd)
-            self._contacts.pop(address, None)
-            return True
-        except Exception as e:
-            messagebox.showerror("Failed", f"Delete contact failed: {e}")
-            return False
+        delete_contact_from_keystore(address, pwd)
+        self._contacts.pop(address, None)
+        return True
 
     # ---------- UI helpers ----------
     def _styled_entry(self, parent) -> tk.Entry:
@@ -201,16 +184,9 @@ class ContactManager:
         dlg.configure(bg=c["bg"])
         dlg.geometry("740x560")
         dlg.resizable(True, True)
-        try:
-            dlg.transient(self.root)
-            dlg.grab_set()
-        except Exception:
-            pass
-        # ⬇️ center window
-        try:
-            center_window(dlg, self.root)
-        except Exception:
-            pass
+        dlg.transient(self.root)
+        dlg.grab_set()
+        center_window(dlg, self.root)
 
         # ---- search (tema gelap) ----
         hdr = tk.Frame(dlg, bg=c["bg"]); hdr.pack(fill=tk.X, padx=18, pady=(14, 8))
@@ -220,10 +196,7 @@ class ContactManager:
         qentry.configure(textvariable=qvar)
         qentry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         qentry.bind("<KeyRelease>", lambda _e: _rebuild())
-        try:
-            qvar.trace_add("write", lambda *_: _rebuild())
-        except Exception:
-            pass
+        qvar.trace_add("write", lambda *_: _rebuild())
 
         # ---- area scrollable (grid 2 kolom) ----
         outer = tk.Frame(dlg, bg=c["bg"]); outer.pack(fill=tk.BOTH, expand=True, padx=18, pady=(2, 8))
@@ -246,12 +219,15 @@ class ContactManager:
         def _set_sel(addr: Optional[str]):
             nonlocal use_btn
             state["sel_addr"] = addr
+            stale = []
             for a, box in state["cards"].items():
-                try:
-                    box.config(highlightthickness=2 if a == addr else 0,
-                            highlightbackground=c["accent"], highlightcolor=c["accent"])
-                except Exception:
-                    pass
+                if not box.winfo_exists():
+                    stale.append(a)
+                    continue
+                box.config(highlightthickness=2 if a == addr else 0,
+                        highlightbackground=c["accent"], highlightcolor=c["accent"])
+            for a in stale:
+                state["cards"].pop(a, None)
             # toggle Use Contact
             if use_btn is not None:
                 if addr:
@@ -281,20 +257,14 @@ class ContactManager:
 
             # presence lookup (optional)
             def _apply_presence(ok: Optional[bool]):
-                try:
-                    if ok is True:
-                        pres.config(text="•  Online", fg=c["on"])
-                    elif ok is False:
-                        pres.config(text="•  Offline", fg=c["off"])
-                    else:
-                        pres.config(text="•  Unknown", fg=c["muted"])
-                except Exception:
-                    pass
+                if ok is True:
+                    pres.config(text="•  Online", fg=c["on"])
+                elif ok is False:
+                    pres.config(text="•  Offline", fg=c["off"])
+                else:
+                    pres.config(text="•  Unknown", fg=c["muted"])
             if presence_provider:
-                try:
-                    presence_provider(addr, lambda pub: self.root.after(0, lambda: _apply_presence(bool(pub))))
-                except Exception:
-                    _apply_presence(None)
+                presence_provider(addr, lambda pub: self.root.after(0, lambda: _apply_presence(bool(pub))))
             else:
                 _apply_presence(None)
 
@@ -312,6 +282,7 @@ class ContactManager:
         def _rebuild():
             for w in grid.winfo_children():
                 w.destroy()
+            state["cards"].clear()
             _set_sel(None)
             key = (qvar.get() or "").strip().lower()
 
@@ -402,7 +373,6 @@ class ContactManager:
 
         # keep a ref for _set_sel
         use_btn = use_local
-
         add_btn.pack(side=tk.LEFT, padx=(0, 6))
         edit_btn.pack(side=tk.LEFT, padx=6)
         del_btn.pack(side=tk.LEFT, padx=6)
@@ -413,16 +383,8 @@ class ContactManager:
 
         # live filter
         qentry.bind("<KeyRelease>", lambda _e: _rebuild())
-
-
-        try:
-            qentry.focus_set()
-        except Exception:
-            pass
-        try:
-            center_window(dlg, self.root)
-        except Exception:
-            pass
+        qentry.focus_set()
+        center_window(dlg, self.root)
 
     # ---------- UX helper: context menu for Entry/Combobox ----------
     def attach_to_entry(self, widget: tk.Widget, on_pick: Callable[[str, str], None]) -> None:

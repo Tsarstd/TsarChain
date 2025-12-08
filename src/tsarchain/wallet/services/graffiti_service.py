@@ -30,10 +30,7 @@ def _pick_endpoint(meta: Dict[str, Any]) -> Optional[Tuple[str, int]]:
         if netloc:
             if ":" in netloc:
                 host_part, port_part = netloc.split(":", 1)
-                try:
-                    port = int(port_part)
-                except Exception:
-                    port = 0
+                port = int(port_part)
             else:
                 host_part = netloc
             host_part = host_part.strip()
@@ -45,40 +42,32 @@ def _pick_endpoint(meta: Dict[str, Any]) -> Optional[Tuple[str, int]]:
                 return host_part, port
     return None
 
-
 def _send_storage_request(host: str, port: int, payload: Dict[str, Any], timeout: float | None = None, max_len: int | None = None) -> Dict[str, Any]:
     timeout = timeout or CFG.RPC_TIMEOUT
     if max_len is None:
         max_len = int(CFG.GRAFFITI_MAX_MSG_BYTES)
     resp: Dict[str, Any] = {}
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(timeout)
-            s.connect((host, int(port)))
-            raw = json.dumps(payload).encode("utf-8")
-            send_message(s, raw, max_len=max_len)
-            data = recv_message(s, timeout, max_len=max_len)
-            if not data:
-                return {"status": "error", "reason": "no_response"}
-            obj = json.loads(data.decode("utf-8"))
-            if isinstance(obj, dict):
-                resp = obj
-            else:
-                resp = {"status": "error", "reason": "bad_response"}
-    except Exception as e:
-        resp = {"status": "error", "reason": str(e)}
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(timeout)
+        s.connect((host, int(port)))
+        raw = json.dumps(payload).encode("utf-8")
+        send_message(s, raw, max_len=max_len)
+        data = recv_message(s, timeout, max_len=max_len)
+        if not data:
+            return {"status": "error", "reason": "no_response"}
+        obj = json.loads(data.decode("utf-8"))
+        if isinstance(obj, dict):
+            resp = obj
+        else:
+            resp = {"status": "error", "reason": "bad_response"}
     return resp
-
 
 def fetch_storers(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]], limit: Optional[int] = None) -> list[Dict[str, Any]]:
     resp = rpc_call({"type": "STOR_LIST"}) or {}
     storers = resp.get("storers") or resp.get("items") or []
     valid: list[Dict[str, Any]] = []
     for meta in storers:
-        try:
-            port = int(meta.get("port") or 0)
-        except Exception:
-            port = 0
+        port = int(meta.get("port") or 0)
         addr = str(meta.get("addr") or meta.get("address") or "").strip().lower()
         if not addr or port <= 0:
             continue
@@ -88,7 +77,6 @@ def fetch_storers(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]
         return valid[:limit]
     return valid
 
-
 def _sha256_file(path: str, chunk: int = 1024 * 1024) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -97,7 +85,6 @@ def _sha256_file(path: str, chunk: int = 1024 * 1024) -> str:
                 break
             h.update(part)
     return h.hexdigest()
-
 
 def upload_graffiti(
     storer_meta: Dict[str, Any],
@@ -124,10 +111,7 @@ def upload_graffiti(
 
     total_size = os.path.getsize(file_path)
     mime_guess, _ = mimetypes.guess_type(file_path)
-    try:
-        mime_norm = validate_graffiti_file(total_size, mime_guess, os.path.basename(file_path))
-    except Exception as exc:
-        return {"status": "error", "reason": str(exc)}
+    mime_norm = validate_graffiti_file(total_size, mime_guess, os.path.basename(file_path))
     sha_hex = (sha256_hex or _sha256_file(file_path)).lower()
     gid = graffiti_id or sha_hex
     meta = dict(storer_meta or {})
@@ -167,10 +151,7 @@ def upload_graffiti(
                 return {"status": "error", "stage": "put", "resp": put_resp}
             sent += len(buf)
             if progress_cb:
-                try:
-                    progress_cb(sent, total_size)
-                except Exception:
-                    pass
+                progress_cb(sent, total_size)
 
     commit_payload = {"type": "STOR_COMMIT", "graffiti_id": gid}
     if receipt_id:
@@ -189,7 +170,6 @@ def upload_graffiti(
         "size_bytes": total_size,
         "sha256": sha_hex,
     }
-
 
 def fetch_graffiti_file(
     rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
@@ -211,20 +191,12 @@ def fetch_graffiti_file(
     if not art_norm:
         return {"status": "error", "reason": "missing_art_id"}
 
-    try:
-        max_bytes = int(max_bytes)
-    except Exception:
-        max_bytes = int(CFG.GRAFFITI_MAX_SIZE_BYTES)
+    max_bytes = int(max_bytes)
     # Clamp by graffiti msg limit to avoid hitting generic MAX_MSG
     msg_cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
     data_cap = int(msg_cap * 3 // 4)  # guard for base64/json overhead
     max_bytes = max(32 * 1024, min(max_bytes, int(CFG.GRAFFITI_MAX_SIZE_BYTES), data_cap))
-
-    try:
-        storers = fetch_storers(rpc_call)  # type: ignore[arg-type]
-    except Exception as e:
-        log.warning("[fetch] storers_unavailable art=%s err=%s", art_norm[:16], e)
-        return {"status": "error", "reason": f"storers_unavailable:{e}"}
+    storers = fetch_storers(rpc_call)  # type: ignore[arg-type]
 
     if not storers:
         log.warning("[fetch] no_storers art=%s", art_norm[:16])
@@ -269,29 +241,13 @@ def fetch_graffiti_file(
             last_error = "no_data"
             log.warning("[fetch] no_data art=%s host=%s port=%s", art_norm[:16], host, port)
             continue
-        try:
-            raw = base64.b64decode(data_b64)
-        except Exception:
-            last_error = "decode_failed"
-            log.warning("[fetch] decode_failed art=%s host=%s port=%s", art_norm[:16], host, port)
-            continue
+        
+        raw = base64.b64decode(data_b64)
         fname = meta_resp.get("filename") or f"{art_norm}.bin"
         ext = ".jpg" if str(meta_resp.get("mime") or "").startswith("image/") else os.path.splitext(fname)[1] or ".bin"
         cache_path = os.path.join(cache_root, f"{art_norm}{ext}")
-        try:
-            with open(cache_path, "wb") as fh:
-                fh.write(raw)
-        except Exception:
-            log.warning("[fetch] cache_write_failed art=%s path=%s", art_norm[:16], cache_path)
-            cache_path = ""
-            try:
-                fd, tmp_path = tempfile.mkstemp(prefix=f"{art_norm}_", suffix=ext, dir=cache_root)
-                with os.fdopen(fd, "wb") as fh:
-                    fh.write(raw)
-                cache_path = tmp_path
-            except Exception as exc:
-                log.error("[fetch] cache_write_retry_failed art=%s err=%s", art_norm[:16], exc)
-                cache_path = ""
+        with open(cache_path, "wb") as fh:
+            fh.write(raw)
         log.info("[fetch] ok art=%s host=%s size=%s cache=%s", art_norm[:16], host, len(raw), bool(cache_path))
         return {"status": "ok", "bytes": raw, "meta": meta_resp, "cache_path": cache_path}
 

@@ -12,6 +12,9 @@ from ..security.data_security import Wallet
 # ---------------- Local Project (With Node) ----------------
 from ...utils import config as CFG
 
+# ---------------- Logger ----------------
+from ...utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.wallet.services.send_services")
 
 class SendService:
     @staticmethod
@@ -24,7 +27,8 @@ class SendService:
         try:
             dec = Decimal(txt)
         except InvalidOperation:
-            raise ValueError("Invalid amount format.")
+            log.error("Invalid amount format")
+            raise ValueError("Invalid amount format")
         if dec <= 0:
             raise ValueError("Amount must be > 0.")
         quant = Decimal("1").scaleb(-CFG.MAX_DECIMALS)
