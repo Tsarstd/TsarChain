@@ -31,41 +31,25 @@ if not kv_enabled():
 def _load_stor_peer_keys() -> dict:
     if kv_enabled():
         m = {}
-        try:
-            for k, v in iter_prefix('stor_peer_keys', b'nid:'):
-                nid = k.decode('utf-8')[4:]
-                m[nid] = v.decode('utf-8')
-        except Exception:
-            log.exception("Failed to load stor_peer_keys from kv store")
-            pass
+        for k, v in iter_prefix('stor_peer_keys', b'nid:'):
+            nid = k.decode('utf-8')[4:]
+            m[nid] = v.decode('utf-8')
         return m
-    try:
-        with open(CFG.ARCHIV_PEER_KEYS, 'r', encoding='utf-8') as f:
-            obj = json.load(f)
-            return obj if isinstance(obj, dict) else {}
-    except Exception:
-        log.exception("Failed to load stor_peer_keys from file")
-        return {}
+    with open(CFG.ARCHIV_PEER_KEYS, 'r', encoding='utf-8') as f:
+        obj = json.load(f)
+        return obj if isinstance(obj, dict) else {}
 
 
 def _save_stor_peer_keys() -> None:
     if kv_enabled():
-        try:
-            with batch('stor_peer_keys') as b:
-                for nid, pk in _STOR_PEER_KEYS.items():
-                    b.put(f"nid:{nid}".encode('utf-8'), pk.encode('utf-8'))
-        except Exception:
-            log.exception("Failed to save stor_peer_keys to kv store")
-            pass
+        with batch('stor_peer_keys') as b:
+            for nid, pk in _STOR_PEER_KEYS.items():
+                b.put(f"nid:{nid}".encode('utf-8'), pk.encode('utf-8'))
         return
-    try:
-        tmp = CFG.ARCHIV_PEER_KEYS + ".tmp"
-        with open(tmp, 'w', encoding='utf-8') as f:
-            json.dump(_STOR_PEER_KEYS, f, indent=2)
-        os.replace(tmp, CFG.ARCHIV_PEER_KEYS)
-    except Exception:
-        log.exception("Failed to save stor_peer_keys to file")
-        pass
+    tmp = CFG.ARCHIV_PEER_KEYS + ".tmp"
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(_STOR_PEER_KEYS, f, indent=2)
+    os.replace(tmp, CFG.ARCHIV_PEER_KEYS)
 
 
 def _scan_nodes(start: int = CFG.PORT_START, end: int = CFG.PORT_END, manual_nodes: Optional[Sequence[Tuple[str,int]]] = None) -> List[Tuple[str,int]]:
@@ -81,7 +65,6 @@ def _scan_nodes(start: int = CFG.PORT_START, end: int = CFG.PORT_END, manual_nod
 
     seen: set[Tuple[str,int]] = set()
     uniq: List[Tuple[str,int]] = []
-    log.debug("_scan_nodes: scanning %d candidates", len(candidates))
     for item in candidates:
         if item not in seen:
             seen.add(item)
@@ -89,55 +72,35 @@ def _scan_nodes(start: int = CFG.PORT_START, end: int = CFG.PORT_END, manual_nod
 
     found: List[Tuple[str,int]] = []
     for ip, port in uniq:
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(CFG.CONNECT_TIMEOUT_SCAN)
-                s.connect((ip, port))
-                try:
-                    kp = None
-                    if kp:
-                        ping_env = build_envelope({"type": "PING"}, kp, extra={"pubkey": kp["pubkey"]})
-                        resp = None
-                        try:
-                            chan = SecureChannel(
-                                s, role="client",
-                                node_id=kp.get("node_id"), node_pub=kp.get("pubkey"), node_priv=kp.get("privkey"),
-                                get_pinned=lambda nid: _STOR_PEER_KEYS.get(nid),
-                                set_pinned=lambda nid, pk: (_STOR_PEER_KEYS.__setitem__(nid, pk), _save_stor_peer_keys())[-1]
-                            )
-                            chan.handshake()
-                            chan.send(json.dumps(ping_env).encode("utf-8"))
-                            resp = chan.recv(CFG.CONNECT_TIMEOUT_SCAN)
-                        except Exception:
-                            if CFG.P2P_ENC_REQUIRED:
-                                raise
-                            send_message(s, json.dumps(ping_env).encode("utf-8"))
-                            resp = recv_message(s, timeout=CFG.CONNECT_TIMEOUT_SCAN)
-                        if not resp:
-                            raise RuntimeError("no framed response")
-                        outer = json.loads(resp.decode("utf-8"))
-                        if is_envelope(outer):
-                            inner = verify_and_unwrap(outer, lambda nid: None)
-                            if isinstance(inner, dict) and inner.get("type") == "PONG":
-                                found.append((ip, port)); continue
-                    else:
-                        raise RuntimeError("no keypair for scan")
-                    if (not CFG.ENVELOPE_REQUIRED) and isinstance(outer, dict) and outer.get("type") == "PONG":
-                        found.append((ip, port)); continue
-                except Exception:
-                    if not CFG.ENVELOPE_REQUIRED:
-                        try:
-                            s.sendall(json.dumps({"type":"PING"}).encode("utf-8"))
-                            s.shutdown(socket.SHUT_WR)
-                            raw = s.recv(65536)
-                            if not raw: continue
-                            obj = json.loads(raw.decode("utf-8"))
-                            if isinstance(obj, dict) and obj.get("type") == "PONG":
-                                found.append((ip, port)); continue
-                        except Exception:
-                            continue
-        except Exception:
-            continue
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(CFG.CONNECT_TIMEOUT_SCAN)
+            s.connect((ip, port))
+            kp = None
+            if kp:
+                ping_env = build_envelope({"type": "PING"}, kp, extra={"pubkey": kp["pubkey"]})
+                resp = None
+                chan = SecureChannel(
+                    s, role="client",
+                    node_id=kp.get("node_id"), node_pub=kp.get("pubkey"), node_priv=kp.get("privkey"),
+                    get_pinned=lambda nid: _STOR_PEER_KEYS.get(nid),
+                    set_pinned=lambda nid, pk: (_STOR_PEER_KEYS.__setitem__(nid, pk), _save_stor_peer_keys())[-1]
+                )
+                chan.handshake()
+                chan.send(json.dumps(ping_env).encode("utf-8"))
+                resp = chan.recv(CFG.CONNECT_TIMEOUT_SCAN)
+                if not resp:
+                    raise RuntimeError("no framed response")
+                outer = json.loads(resp.decode("utf-8"))
+                if is_envelope(outer):
+                    inner = verify_and_unwrap(outer, lambda nid: None)
+                    if isinstance(inner, dict) and inner.get("type") == "PONG":
+                        found.append((ip, port))
+                        continue
+            else:
+                raise RuntimeError("no keypair for scan")
+            if (not CFG.ENVELOPE_REQUIRED) and isinstance(outer, dict) and outer.get("type") == "PONG":
+                found.append((ip, port))
+                continue
     log.info("_scan_nodes: found %d storage nodes", len(found))
     return found
 
@@ -185,15 +148,9 @@ class RPC:
         self.sock = None
         self.lock = threading.RLock()
 
-        try:
-            pkh = hash160(bytes.fromhex(self.pub))
-            data = [0] + list(convertbits(pkh, 8, 5, True))
-            self._default_address = bech32_encode(CFG.ADDRESS_PREFIX, data)
-            self.address = self._default_address
-        except Exception:
-            log.exception("[RPC.__init__] failed to compute default storage address")
-            self._default_address = ""
-            self.address = ""
+        pkh = hash160(bytes.fromhex(self.pub))
+        data = [0] + list(convertbits(pkh, 8, 5, True))
+        self._default_address = bech32_encode(CFG.ADDRESS_PREFIX, data)
         self.trusted = False
 
     def set_address_override(self, addr: Optional[str]) -> None:
@@ -228,26 +185,23 @@ class RPC:
     def connect(self, ip: str, port: int, my_listen_port: int = 0) -> bool:
         with self.lock:
             self.node = (ip, port)
-        try:
-            hello = {
-                "type": "HELLO",
-                "role": "NODE_STORAGE",
-                "pubkey": self.pub,
-                "address": self.address,
-                "url": "",
-                "port": int(my_listen_port) if my_listen_port else 0,
-                "trusted": bool(self.trusted),
-            }
-            _ = self.call(hello, timeout=3.0)
-            pong = self.call({"type":"PING"}, timeout=3.0)
-            ok = isinstance(pong, dict) and (pong.get("type") == "PONG")
-            log.debug("[RPC.connect] handshake result %s to %s:%s", ok, ip, port)
-            if ok:
-                log.info("[RPC.connect] storage handshake ok to %s:%s listen_port=%s", ip, port, my_listen_port)
-            return ok
-        except Exception:
-            log.exception("[RPC.connect] handshake failed to %s:%s", ip, port)
-            return False
+            
+        hello = {
+            "type": "HELLO",
+            "role": "NODE_STORAGE",
+            "pubkey": self.pub,
+            "address": self.address,
+            "url": "",
+            "port": int(my_listen_port) if my_listen_port else 0,
+            "trusted": bool(self.trusted),
+        }
+        _ = self.call(hello, timeout=3.0)
+        pong = self.call({"type":"PING"}, timeout=3.0)
+        ok = isinstance(pong, dict) and (pong.get("type") == "PONG")
+        log.debug("[RPC.connect] handshake result %s to %s:%s", ok, ip, port)
+        if ok:
+            log.info("[RPC.connect] storage handshake ok to %s:%s listen_port=%s", ip, port, my_listen_port)
+        return ok
 
     def call(self, inner: Dict[str, Any], timeout: float = 5.0) -> Dict[str, Any] | None:
         with self.lock:
@@ -259,23 +213,15 @@ class RPC:
             s.settimeout(timeout)
             s.connect((ip, port))
             raw = None
-            try:
-                chan = SecureChannel(
-                    s, role="client",
-                    node_id=self.ctx.get("node_id"), node_pub=self.pub, node_priv=self.priv,
-                    get_pinned=lambda nid: _STOR_PEER_KEYS.get(nid),
-                    set_pinned=lambda nid, pk: (_STOR_PEER_KEYS.__setitem__(nid, pk), _save_stor_peer_keys())[-1]
-                )
-                chan.handshake()
-                chan.send(json.dumps(payload).encode("utf-8"))
-                raw = chan.recv(timeout)
-                log.debug("[RPC.call] secure channel response %d bytes type=%s to %s:%s", len(raw) if raw else 0, inner.get("type"), ip, port)
-            except Exception:
-                log.exception("[RPC.call] secure channel failed type=%s to %s:%s", inner.get("type"), ip, port)
-                if CFG.P2P_ENC_REQUIRED:
-                    return None
-                send_message(s, json.dumps(payload).encode("utf-8"))
-                raw = recv_message(s, timeout)
+            chan = SecureChannel(
+                s, role="client",
+                node_id=self.ctx.get("node_id"), node_pub=self.pub, node_priv=self.priv,
+                get_pinned=lambda nid: _STOR_PEER_KEYS.get(nid),
+                set_pinned=lambda nid, pk: (_STOR_PEER_KEYS.__setitem__(nid, pk), _save_stor_peer_keys())[-1]
+            )
+            chan.handshake()
+            chan.send(json.dumps(payload).encode("utf-8"))
+            raw = chan.recv(timeout)
             if not raw:
                 log.debug("[RPC.call] no response type=%s to %s:%s", inner.get("type"), ip, port)
                 return None
@@ -283,11 +229,7 @@ class RPC:
             if not isinstance(outer, dict):
                 return None
             if is_envelope(outer):
-                try:
-                    return verify_and_unwrap(outer, lambda nid: None)
-                except Exception:
-                    log.exception("[RPC.call] failed to verify envelope type=%s from %s:%s", inner.get("type"), ip, port)
-                    return None
+                return verify_and_unwrap(outer, lambda nid: None)
             return outer
 
 

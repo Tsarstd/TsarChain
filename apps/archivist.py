@@ -17,7 +17,7 @@ from tsarchain.network.protocol import send_message, recv_message
 from tsarchain.utils import config as CFG
 from tsarchain.contracts import graffiti as GRAFFITI
 
-from tsarchain.utils.tsar_logging import setup_logging, get_ctx_logger
+from tsarchain.utils.tsar_logging import setup_logging, get_ctx_logger, open_log_toplevel
 log = get_ctx_logger("apps.archivist")
 
 APP_TITLE = "TsarChain • Archivist"
@@ -57,19 +57,15 @@ class TsarStorageGUI:
         port = self._storage_port
         if port is None:
             return None
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(timeout)
-                s.connect(("127.0.0.1", int(port)))
-                send_message(s, json.dumps(payload).encode("utf-8"))
-                raw = recv_message(s, timeout)
-                if not raw:
-                    return None
-                obj = json.loads(raw.decode("utf-8"))
-                return obj if isinstance(obj, dict) else None
-        except Exception:
-            log.exception("Local storage RPC failed")
-            return None
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            s.connect(("127.0.0.1", int(port)))
+            send_message(s, json.dumps(payload).encode("utf-8"))
+            raw = recv_message(s, timeout)
+            if not raw:
+                return None
+            obj = json.loads(raw.decode("utf-8"))
+            return obj if isinstance(obj, dict) else None
 
     def _build_ui(self):
         self.style = ttk.Style()
@@ -137,7 +133,10 @@ class TsarStorageGUI:
         self.pool_tree.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0,4))
         pool_btn = ttk.Frame(pool_fr)
         pool_btn.pack(fill=tk.X, pady=(0,4))
+        
         ttk.Button(pool_btn, text="Claim Pool Payout", command=self._claim_pool_payout).pack(side=tk.LEFT, padx=4)
+        tk.Button(pool_btn, text="Open Log Viewer", command=self._open_log_viewer).pack(side=tk.RIGHT, padx=4)
+        
         self.pool_status_var = tk.StringVar(value="Pool status pending.")
         ttk.Label(pool_fr, textvariable=self.pool_status_var).pack(anchor="w", padx=4)
 
@@ -149,17 +148,11 @@ class TsarStorageGUI:
         self.log.pack(fill=tk.BOTH, expand=True)
 
     def logln(self, text: str):
-        try:
-            self.log.insert(tk.END, text + "\n")
-            self.log.see(tk.END)
-            try:
-                lines = int(self.log.index("end-1c").split(".")[0])
-                if lines > self._log_max_lines:
-                    self.log.delete("1.0", f"{lines - self._log_max_lines}.0")
-            except Exception:
-                pass
-        except Exception:
-            pass
+        self.log.insert(tk.END, text + "\n")
+        self.log.see(tk.END)
+        lines = int(self.log.index("end-1c").split(".")[0])
+        if lines > self._log_max_lines:
+            self.log.delete("1.0", f"{lines - self._log_max_lines}.0")
 
     def _launch_storage_server(self, fallback_start: Optional[int] = None) -> int:
         cand_ports: list[int] = []
@@ -177,44 +170,29 @@ class TsarStorageGUI:
             if port <= 0 or port in tried:
                 continue
             tried.add(port)
-            try:
-                self._server = StorageServer("0.0.0.0", port, CFG.STORAGE_DIR)
-                self.logln(f"[Storage] server listening on 0.0.0.0:{port}")
-                return port
-            except OSError:
-                continue
+            self._server = StorageServer("0.0.0.0", port, CFG.STORAGE_DIR)
+            self.logln(f"[Storage] server listening on 0.0.0.0:{port}")
+            return port
         raise RuntimeError("No free port for storage server")
     
 
     # ------------- Events --------------
     def on_connect(self):
-        try:
-            host, miner_port = CFG.BOOTSTRAP_NODE
-        except Exception:
-            host, miner_port = ("127.0.0.1", CFG.PORT_START)
+        host, miner_port = CFG.BOOTSTRAP_NODE
         self._target_node = (host, miner_port)
 
-        try:
-            override = (self.addr_var.get() or "").strip()
-            if not override:
-                messagebox.showerror("Storage address", "Isi payout address terlebih dahulu.")
-                return
-            self.rpc.set_address_override(override)
-        except ValueError as e:
-            messagebox.showerror("Storage address", str(e))
+        override = (self.addr_var.get() or "").strip()
+        if not override:
+            messagebox.showerror("Storage address", "Isi payout address terlebih dahulu.")
             return
+        self.rpc.set_address_override(override)
         self.rpc.set_trusted(True)
 
         storage_port = self._storage_port
         if self._server is None or storage_port is None:
-            try:
-                fallback = miner_port + STORAGE_PORT_OFFSET
-                storage_port = self._launch_storage_server(fallback)
-                self._storage_port = storage_port
-            except Exception as e:
-                log.exception("[connect] failed to start storage server near %s", miner_port)
-                messagebox.showerror("Connect", f"Gagal start storage server: {e}")
-                return
+            fallback = miner_port + STORAGE_PORT_OFFSET
+            storage_port = self._launch_storage_server(fallback)
+            self._storage_port = storage_port
 
         ok = self.rpc.connect(host, miner_port, my_listen_port=storage_port)
         if not ok:
@@ -256,16 +234,17 @@ class TsarStorageGUI:
 
     def on_open_dir(self):
         path = os.path.abspath(CFG.STORAGE_DIR)
-        try:
-            os.makedirs(path, exist_ok=True)
-            if os.name == "nt":
-                os.startfile(path)  # type: ignore
-            elif sys.platform == "darwin":  # noqa: F821
-                os.system(f"open '{path}'")
-            else:
-                os.system(f"xdg-open '{path}'")
-        except Exception as e:
-            messagebox.showerror("Open folder", str(e))
+        os.makedirs(path, exist_ok=True)
+        if os.name == "nt":
+            os.startfile(path)  # type: ignore
+        elif sys.platform == "darwin":  # noqa: F821
+            os.system(f"open '{path}'")
+        else:
+            os.system(f"xdg-open '{path}'")
+    
+    def _open_log_viewer(self):
+        log_file = str(CFG.LOG_PATH)
+        open_log_toplevel(self.root, log_file=log_file, attach_to_root=False)
 
     # ------------- Refresh -------------
     def refresh_all(self):
@@ -277,16 +256,10 @@ class TsarStorageGUI:
             info = None
             idx = None
             info_ok = idx_ok = False
-            try:
-                info = self.rpc.call({"type":"GET_INFO"}, timeout=4.0) or {}
-                info_ok = isinstance(info, dict)
-            except Exception:
-                info_ok = False
-            try:
-                idx = self._call_storage_local({"type":"STOR_INDEX"}, timeout=6.0)
-                idx_ok = isinstance(idx, dict)
-            except Exception:
-                idx_ok = False
+            info = self.rpc.call({"type":"GET_INFO"}, timeout=4.0) or {}
+            info_ok = isinstance(info, dict)
+            idx = self._call_storage_local({"type":"STOR_INDEX"}, timeout=6.0)
+            idx_ok = isinstance(idx, dict)
 
             def apply():
                 if info_ok:
@@ -301,10 +274,7 @@ class TsarStorageGUI:
                     self._handle_rpc_drop("refresh_index")
                 self._refresh_inflight = False
 
-            try:
-                self.root.after(0, apply)
-            except Exception:
-                self._refresh_inflight = False
+            self.root.after(0, apply)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -337,11 +307,7 @@ class TsarStorageGUI:
         if not rpc:
             self.pool_status_var.set("RPC unavailable.")
             return
-        try:
-            resp = rpc.call({"type":"GRAFFITI_GET_POSTS","limit":500}, timeout=6.0) or {}
-        except Exception:
-            self.pool_status_var.set("Pool fetch failed.")
-            return
+        resp = rpc.call({"type":"GRAFFITI_GET_POSTS","limit":500}, timeout=6.0) or {}
         posts = resp.get("posts") or []
         self.pool_tree.delete(*self.pool_tree.get_children())
         self._pool_data = {}
@@ -390,10 +356,7 @@ class TsarStorageGUI:
         self._auto_mark_paid(posts, files_by_art)
 
     def _fmt_bytes(self, n: Any) -> str:
-        try:
-            size = float(n)
-        except Exception:
-            return "0 B"
+        size = float(n)
         units = ["B", "KB", "MB", "GB", "TB"]
         for u in units:
             if size < 1024.0 or u == units[-1]:
@@ -412,11 +375,7 @@ class TsarStorageGUI:
         txid = simpledialog.askstring("Payout TXID", "Masukkan TXID payout (opsional):", parent=self.root)
         if txid is None:
             return
-        try:
-            resp = self._call_storage_local({"type":"STOR_PAID", "graffiti_id": gid, "txid": (txid or "").strip()}, timeout=6.0)
-        except Exception as exc:
-            messagebox.showerror("Payout", f"RPC error: {exc}")
-            return
+        resp = self._call_storage_local({"type":"STOR_PAID", "graffiti_id": gid, "txid": (txid or "").strip()}, timeout=6.0)
         if isinstance(resp, dict) and resp.get("status") in ("ok", None):
             self.logln(f"[Payout] {gid} ditandai paid.")
             self.refresh_all()
@@ -439,27 +398,24 @@ class TsarStorageGUI:
             return
         marked = False
         for art in posts:
-            try:
-                aid = str(art.get("art_id") or "").lower()
-                if not aid:
-                    continue
-                file_entry = files_by_art.get(aid)
-                if not file_entry:
-                    continue
-                meta = file_entry.get("meta") or {}
-                if meta.get("paid"):
-                    continue
-                bh = int(art.get("block_height", 0) or 0)
-                if bh <= 0:
-                    continue
-                gid = file_entry.get("id") or aid
-                txid = (art.get("txid") or "").strip()
-                resp = self._call_storage_local({"type":"STOR_PAID", "graffiti_id": gid, "txid": txid, "block_height": bh}, timeout=4.0)
-                if isinstance(resp, dict) and resp.get("status") in ("ok", None):
-                    marked = True
-                    self.logln(f"[Auto-Paid] {gid} (h={bh})")
-            except Exception:
+            aid = str(art.get("art_id") or "").lower()
+            if not aid:
                 continue
+            file_entry = files_by_art.get(aid)
+            if not file_entry:
+                continue
+            meta = file_entry.get("meta") or {}
+            if meta.get("paid"):
+                continue
+            bh = int(art.get("block_height", 0) or 0)
+            if bh <= 0:
+                continue
+            gid = file_entry.get("id") or aid
+            txid = (art.get("txid") or "").strip()
+            resp = self._call_storage_local({"type":"STOR_PAID", "graffiti_id": gid, "txid": txid, "block_height": bh}, timeout=4.0)
+            if isinstance(resp, dict) and resp.get("status") in ("ok", None):
+                marked = True
+                self.logln(f"[Auto-Paid] {gid} (h={bh})")
         if marked:
             self.refresh_all()
         
@@ -469,11 +425,8 @@ class TsarStorageGUI:
         if not target or storage_port is None:
             return False
         host, miner_port = target
-        try:
-            override = (self.addr_var.get() or "").strip()
-            self.rpc.set_address_override(override)
-        except ValueError:
-            pass
+        override = (self.addr_var.get() or "").strip()
+        self.rpc.set_address_override(override)
         self.rpc.set_trusted(True)
         ok = self.rpc.connect(host, miner_port, my_listen_port=storage_port)
         if ok:
@@ -507,16 +460,12 @@ class TsarStorageGUI:
                 self._retention_stop.wait(CFG.RETENTION_GC_SEC)
                 continue
             tip = int((self.last_info or {}).get("height") or 0)
-            try:
-                gc_resp = self._call_storage_local({"type":"STOR_GC","tip_height": tip}, timeout=6.0)
-                idx = self._call_storage_local({"type":"STOR_INDEX"}, timeout=6.0)
-                if not isinstance(gc_resp, dict) or not isinstance(idx, dict):
-                    raise RuntimeError("rpc_failure")
-                self._run_retention_proofs(idx, tip)
-                self.root.after(0, lambda r=gc_resp, i=idx: self._on_retention_cycle(r, i))
-            except Exception as exc:
-                log.warning("[Retention] rpc error at height %s: %s", tip, exc)
-                self.root.after(0, self._handle_rpc_drop, "retention")
+            gc_resp = self._call_storage_local({"type":"STOR_GC","tip_height": tip}, timeout=6.0)
+            idx = self._call_storage_local({"type":"STOR_INDEX"}, timeout=6.0)
+            if not isinstance(gc_resp, dict) or not isinstance(idx, dict):
+                raise RuntimeError("rpc_failure")
+            self._run_retention_proofs(idx, tip)
+            self.root.after(0, lambda r=gc_resp, i=idx: self._on_retention_cycle(r, i))
             self._retention_stop.wait(max(30, CFG.RETENTION_GC_SEC))
 
     def _on_retention_cycle(self, gc_resp: Optional[Dict[str, Any]], idx: Optional[Dict[str, Any]]) -> None:
@@ -538,10 +487,7 @@ class TsarStorageGUI:
                 continue
             if not meta.get("paid") or meta.get("state") != "stored":
                 continue
-            try:
-                last_epoch = int(meta.get("last_proof_epoch", -1))
-            except Exception:
-                last_epoch = -1
+            last_epoch = int(meta.get("last_proof_epoch", -1))
             if last_epoch >= epoch_target:
                 continue
             art_id = str(meta.get("art_id") or "").strip().lower()
@@ -554,48 +500,38 @@ class TsarStorageGUI:
                 "art_id": art_id,
                 "tip_height": tip_height,
             }
-            resp = None
-            try:
-                resp = self._call_storage_local(payload, timeout=10.0)
-                if resp is None:
-                    resp = self.rpc.call(payload, timeout=10.0)
-            except Exception as exc:
-                self.logln(f"[Proof] {gid[:10]} error: {exc}")
-                continue
+            resp = self._call_storage_local(payload, timeout=10.0)
+            if resp is None:
+                resp = self.rpc.call(payload, timeout=10.0)
             if not isinstance(resp, dict) or resp.get("status") != "ok":
                 reason = (resp or {}).get("reason") if isinstance(resp, dict) else "rpc_error"
                 self.logln(f"[Proof] {gid[:10]} failed ({reason})")
                 continue
-            try:
-                proof_epoch = int(resp.get("epoch", epoch_target))
-                offset = int(resp.get("offset", 0))
-                length = int(resp.get("length", 0))
-                phash = str(resp.get("hash") or "")
-                seed = str(resp.get("seed") or "")
-            except Exception:
-                continue
+            proof_epoch = int(resp.get("epoch", epoch_target))
+            offset = int(resp.get("offset", 0))
+            length = int(resp.get("length", 0))
+            phash = str(resp.get("hash") or "")
+            seed = str(resp.get("seed") or "")
             self.logln(f"[Proof] {gid[:10]} epoch {proof_epoch} offset {offset} len {length}")
             if not self.connected:
                 continue
-            try:
-                submit = {
-                    "type": "GRAFFITI_PROOF_SUBMIT",
-                    "art_id": art_id,
-                    "epoch": proof_epoch,
-                    "offset": offset,
-                    "length": length,
-                    "hash": phash,
-                    "height": tip_height,
-                    "seed": seed,
-                    "storer": (self.addr_var.get() or self.rpc.address or "").strip().lower(),
-                }
-                ack = self.rpc.call(submit, timeout=8.0)
-                if isinstance(ack, dict) and ack.get("status") == "ok":
-                    self.logln(f"[Proof] submitted epoch {proof_epoch} for {art_id[:12]}...")
-                else:
-                    self.logln(f"[Proof] submit failed: {ack}")
-            except Exception as exc:
-                self.logln(f"[Proof] submit error: {exc}")
+            
+            submit = {
+                "type": "GRAFFITI_PROOF_SUBMIT",
+                "art_id": art_id,
+                "epoch": proof_epoch,
+                "offset": offset,
+                "length": length,
+                "hash": phash,
+                "height": tip_height,
+                "seed": seed,
+                "storer": (self.addr_var.get() or self.rpc.address or "").strip().lower(),
+            }
+            ack = self.rpc.call(submit, timeout=8.0)
+            if isinstance(ack, dict) and ack.get("status") == "ok":
+                self.logln(f"[Proof] submitted epoch {proof_epoch} for {art_id[:12]}...")
+            else:
+                self.logln(f"[Proof] submit failed: {ack}")
 
     def _mark_pending_payouts(self, idx: Dict[str, Any]) -> None:
         files = idx.get("files", {}) if isinstance(idx, dict) else {}
@@ -641,12 +577,8 @@ class TsarStorageGUI:
         )
         if amount_str is None:
             return
-        try:
-            amount = float(amount_str.replace(",", "."))
-            amount_sats = int(amount * CFG.TSAR)
-        except Exception:
-            messagebox.showerror("Pool", "Jumlah tidak valid.")
-            return
+        amount = float(amount_str.replace(",", "."))
+        amount_sats = int(amount * CFG.TSAR)
         if amount_sats <= 0 or amount_sats > pool_balance:
             messagebox.showerror("Pool", "Jumlah melebihi saldo.")
             return
@@ -659,11 +591,7 @@ class TsarStorageGUI:
             "broadcast": True,
         }
         self.logln(f"[Pool] build payout art={art_id[:16]} amt={amount_sats} sats -> {recipient}")
-        try:
-            resp = self.rpc.call(payload, timeout=8.0)
-        except Exception as exc:
-            messagebox.showerror("Pool", f"RPC error: {exc}")
-            return
+        resp = self.rpc.call(payload, timeout=8.0)
         if isinstance(resp, dict) and resp.get("status") == "ok":
             tx = resp.get("tx") or {}
             txid = tx.get("txid") or "?"
@@ -683,22 +611,13 @@ class TsarStorageGUI:
 
     def _heartbeat_worker(self):
         ok = False
-        try:
-            pong = self.rpc.call({"type":"PING"}, timeout=2.0)
-            ok = isinstance(pong, dict) and pong.get("type") == "PONG"
-        except Exception:
-            ok = False
+        pong = self.rpc.call({"type":"PING"}, timeout=2.0)
+        ok = isinstance(pong, dict) and pong.get("type") == "PONG"
         if ok:
-            try:
-                self.root.after(0, lambda: self.status_lbl.configure(text="? Connected", foreground="#1a8"))
-            except Exception:
-                pass
+            self.root.after(0, lambda: self.status_lbl.configure(text="? Connected", foreground="#1a8"))
             self.refresh_all()
         else:
-            try:
-                self.root.after(0, self._handle_rpc_drop, "heartbeat")
-            except Exception:
-                pass
+            self.root.after(0, self._handle_rpc_drop, "heartbeat")
 
 if __name__ == "__main__":
     mp.freeze_support()

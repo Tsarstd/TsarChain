@@ -19,51 +19,37 @@ def handle_node_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     t = str(msg.get("type", "")).upper()
 
     if t == "PING":
-        log.debug("Received PING")
         return {"type": "PONG"}
 
     if t == "STOR_INDEX":
-        log.debug("Received STOR_INDEX")
-        try:
-            server.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (server.index.get("files") or {}).values())
-        except Exception:
-            log.exception("Failed to compute bytes_used in STOR_INDEX")
-            pass
+        server.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (server.index.get("files") or {}).values())
         return {"type": "STOR_INDEX", "status": "ok", **server.index}
 
     if t == "STOR_PAID":
-        log.debug("Received STOR_PAID")
         aid = str(msg.get("graffiti_id", "")).strip()
         txid = str(msg.get("txid", "")).strip()
-        try:
-            block_h = int(msg.get("block_height", 0) or 0)
-        except Exception:
-            log.exception("Failed to parse block_height in STOR_PAID")
-            block_h = 0
+        block_h = int(msg.get("block_height", 0) or 0)
         meta = server.index.get("files", {}).get(aid)
         if not aid or not meta:
             return {"type": "STOR_PAID", "status": "error", "reason": "no_such"}
-        try:
-            if server.use_kv:
-                already_final = server.db.get_final_bytes(aid) is not None
-                if not already_final:
-                    data = server.db.pop_incoming(aid)
-                    if data is None:
-                        return {"type": "STOR_PAID", "status": "error", "reason": "missing_file"}
-                    server.db.put_final(aid, data)
-                meta["path"] = f"lmdb://final/{aid}"
+        if server.use_kv:
+            already_final = server.db.get_final_bytes(aid) is not None
+            if not already_final:
+                data = server.db.pop_incoming(aid)
+                if data is None:
+                    return {"type": "STOR_PAID", "status": "error", "reason": "missing_file"}
+                server.db.put_final(aid, data)
+            meta["path"] = f"lmdb://final/{aid}"
+            meta["state"] = "stored"
+        else:
+            path = meta.get("path")
+            if path and os.path.isfile(path) and ("incoming" in path):
+                fin_dir = os.path.join(server.storage_dir, "final")
+                os.makedirs(fin_dir, exist_ok=True)
+                fin = os.path.join(fin_dir, os.path.basename(path).replace(".part", ".bin"))
+                os.replace(path, fin)
+                meta["path"] = fin
                 meta["state"] = "stored"
-            else:
-                path = meta.get("path")
-                if path and os.path.isfile(path) and ("incoming" in path):
-                    fin_dir = os.path.join(server.storage_dir, "final")
-                    os.makedirs(fin_dir, exist_ok=True)
-                    fin = os.path.join(fin_dir, os.path.basename(path).replace(".part", ".bin"))
-                    os.replace(path, fin)
-                    meta["path"] = fin
-                    meta["state"] = "stored"
-        except Exception as e:
-            return {"type": "STOR_PAID", "status": "error", "reason": str(e)}
 
         meta["paid"] = True
         if txid:
@@ -72,11 +58,7 @@ def handle_node_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             meta["confirmed_at_height"] = block_h
             meta["expire_at_height"] = 0
         server.index["files"][aid] = server._normalize_file_meta(aid, meta)
-        try:
-            server.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in server.index["files"].values())
-        except Exception:
-            log.exception("Failed to compute bytes_used in STOR_PAID")
-            pass
+        server.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in server.index["files"].values())
         server._save_index()
         log.info("[STOR_PAID] aid=%s h=%s expire=%s", aid[:16], meta.get("confirmed_at_height"), meta.get("expire_at_height"))
         return {
@@ -88,18 +70,8 @@ def handle_node_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         }
 
     if t == "STOR_GC":
-        log.debug("Received STOR_GC")
-        try:
-            tip_h = int(msg.get("tip_height", 0) or 0)
-        except Exception:
-            log.exception("Failed to parse tip_height in STOR_GC")
-            tip_h = 0
-        expire_after = 0
-        try:
-            expire_after = max(0, int(CFG.GRAFFITI_EXPIRE_AFTER_BLOCKS))
-        except Exception:
-            log.exception("Failed to parse GRAFFITI_EXPIRE_AFTER_BLOCKS config")
-            expire_after = 0
+        tip_h = int(msg.get("tip_height", 0) or 0)
+        expire_after = max(0, int(CFG.GRAFFITI_EXPIRE_AFTER_BLOCKS))
         files = server.index.get("files", {}) or {}
         expired = 0
         remove_keys: list[str] = []
@@ -107,66 +79,38 @@ def handle_node_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             if not isinstance(meta, dict):
                 continue
             if (not meta.get("paid")) and expire_after > 0 and tip_h > 0:
-                try:
-                    expire_h = int(meta.get("expire_at_height", 0) or 0)
-                except Exception:
-                    log.exception("Failed to parse expire_at_height for gid=%s in STOR_GC", gid)
-                    expire_h = 0
+                expire_h = int(meta.get("expire_at_height", 0) or 0)
                 if expire_h <= 0:
                     expire_h = tip_h + expire_after
                     meta["expire_at_height"] = expire_h
                     files[gid] = meta
-            try:
-                expire_h = int(meta.get("expire_at_height", 0) or 0)
-            except Exception:
-                log.exception("Failed to parse expire_at_height for gid=%s in STOR_GC", gid)
-                expire_h = 0
+            expire_h = int(meta.get("expire_at_height", 0) or 0)
             if expire_h and tip_h and expire_h <= tip_h and not meta.get("paid"):
                 remove_keys.append(gid)
         for gid in remove_keys:
             meta = files.pop(gid, None) or {}
             expired += 1
             if server.use_kv:
-                try:
-                    server.db.delete_blob(gid, incoming=True, final=True)
-                except Exception:
-                    log.exception("Failed to delete_blob for gid=%s in STOR_GC", gid)
-                    pass
+                server.db.delete_blob(gid, incoming=True, final=True)
             else:
-                try:
-                    path = meta.get("path")
-                    if path and os.path.isfile(path):
-                        os.remove(path)
-                except Exception:
-                    log.exception("Failed to remove file for gid=%s in STOR_GC", gid)
-                    pass
+                path = meta.get("path")
+                if path and os.path.isfile(path):
+                    os.remove(path)
             art_id = str(meta.get("art_id", "")).strip().lower()
             if art_id and server.index.get("art_map", {}).get(art_id) == gid:
-                try:
-                    server.index["art_map"].pop(art_id, None)
-                except Exception:
-                    log.exception("Failed to remove art_map entry for art_id=%s in STOR_GC", art_id)
-                    pass
+                server.index["art_map"].pop(art_id, None)
+                
         server.index["files"] = files
-        try:
-            server.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in files.values())
-        except Exception:
-            log.exception("Failed to compute bytes_used in STOR_GC")
-            server.index["bytes_used"] = 0
+        server.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in files.values())
         server._save_index()
         if expired:
             log.info("[STOR_GC] expired=%s tip=%s", expired, tip_h)
         return {"type": "STOR_GC", "status": "ok", "expired": expired}
 
     if t == "STOR_PROOF_RUN":
-        log.debug("Received STOR_PROOF_RUN")
         aid = str(msg.get("graffiti_id", "")).strip()
         art_id = str(msg.get("art_id", "")).strip().lower()
-        try:
-            tip_h = int(msg.get("tip_height", 0) or 0)
-        except Exception:
-            log.exception("Failed to parse tip_height in STOR_PROOF_RUN")
-            tip_h = 0
+        tip_h = int(msg.get("tip_height", 0) or 0)
         files = server.index.get("files", {}) or {}
         if art_id and not aid:
             aid = (server.index.get("art_map") or {}).get(art_id, "")
@@ -181,37 +125,24 @@ def handle_node_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             server.index["files"][aid] = server._normalize_file_meta(aid, meta)
             server._save_index()
             return {"type": "STOR_PROOF_RUN", "status": "error", "reason": "missing_art_id"}
-        try:
-            challenge = GRAFFITI.calc_proof_challenge(art_norm, size, tip_h)
-        except Exception as exc:
-            meta["missed_proofs"] = int(meta.get("missed_proofs", 0)) + 1
-            meta["proof_fail_reason"] = str(exc)
-            server.index["files"][aid] = server._normalize_file_meta(aid, meta)
-            server._save_index()
-            return {"type": "STOR_PROOF_RUN", "status": "error", "reason": "bad_challenge"}
+        challenge = GRAFFITI.calc_proof_challenge(art_norm, size, tip_h)
         offset = int(challenge.get("offset", 0))
         length = int(challenge.get("length", 0))
-        try:
-            if server.use_kv:
-                data_bytes = server.db.get_final_bytes(aid)
-                if data_bytes is None:
-                    raise FileNotFoundError("file_missing")
-                chunk = data_bytes[offset : offset + length]
-            else:
-                path = meta.get("path")
-                if not path or not os.path.isfile(path):
-                    raise FileNotFoundError("file_missing")
-                with open(path, "rb") as fh:
-                    fh.seek(offset)
-                    chunk = fh.read(length)
-            proof_hash = GRAFFITI.hash_proof_chunk(chunk)
-        except Exception as exc:
-            meta["missed_proofs"] = int(meta.get("missed_proofs", 0)) + 1
-            meta["proof_fail_reason"] = str(exc)
-            server.index["files"][aid] = server._normalize_file_meta(aid, meta)
-            server._save_index()
-            return {"type": "STOR_PROOF_RUN", "status": "error", "reason": "read_fail"}
-
+        
+        if server.use_kv:
+            data_bytes = server.db.get_final_bytes(aid)
+            if data_bytes is None:
+                raise FileNotFoundError("file_missing")
+            chunk = data_bytes[offset : offset + length]
+        else:
+            path = meta.get("path")
+            if not path or not os.path.isfile(path):
+                raise FileNotFoundError("file_missing")
+            with open(path, "rb") as fh:
+                fh.seek(offset)
+                chunk = fh.read(length)
+                
+        proof_hash = GRAFFITI.hash_proof_chunk(chunk)
         now_ts = int(time.time())
         meta.update(
             {

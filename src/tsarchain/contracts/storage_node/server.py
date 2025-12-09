@@ -56,12 +56,7 @@ class StorageServer:
 
     def _load_index(self):
         os.makedirs(self.storage_dir, exist_ok=True)
-        try:
-            self.index = self.db.load_index()
-        except Exception:
-            log.exception("Failed to load index from database, falling back to JSON file")
-            self.index = {"files": {}, "bytes_used": 0, "art_map": {}}
-
+        self.index = self.db.load_index()
         self.index.setdefault("files", {})
         self.index.setdefault("bytes_used", 0)
         self.index.setdefault("art_map", {})
@@ -69,46 +64,18 @@ class StorageServer:
         for aid, meta in list(files.items()):
             files[aid] = self._normalize_file_meta(aid, meta)
         self.index["files"] = files
-        try:
-            self.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in files.values())
-        except Exception:
-            log.exception("Failed to compute bytes_used in index")
-            self.index["bytes_used"] = 0
-        try:
-            self._save_index()
-        except Exception:
-            log.exception("Failed to save index after loading")
-            pass
+        self.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in files.values())
+        self._save_index()
 
     def _save_index(self):
-        try:
-            self.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (self.index.get("files") or {}).values())
-        except Exception:
-            log.exception("Failed to compute bytes_used in _save_index")
-            self.index["bytes_used"] = 0
-        try:
-            self.db.save_index(self.index)
-        except Exception:
-            log.exception("Failed to save index to database, falling back to JSON file")
-            # Fallback hard-save JSON if LMDB gagal
-            tmp = self.idx_path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(self.index, f, indent=2)
-            os.replace(tmp, self.idx_path)
+        self.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (self.index.get("files") or {}).values())
+        self.db.save_index(self.index)
 
     def _respond(self, conn, obj):
         cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
-        try:
-            raw = json.dumps(obj).encode("utf-8")
-        except Exception:
-            log.exception("Failed to serialize response object to JSON")
-            raw = b"{}"
+        raw = json.dumps(obj).encode("utf-8")
         if len(raw) + len(CFG.NETWORK_MAGIC) > cap:
-            try:
-                t = obj.get("type") if isinstance(obj, dict) else "unknown"
-            except Exception:
-                log.exception("Failed to get type from response object")
-                t = "unknown"
+            t = obj.get("type") if isinstance(obj, dict) else "unknown"
             obj = {"type": t, "status": "error", "reason": "msg_too_large"}
             raw = json.dumps(obj).encode("utf-8")
         send_message(conn, raw, max_len=cap)
@@ -128,12 +95,8 @@ class StorageServer:
             s.bind((self.host, self.port))
             s.listen(8)
             while not self._stop:
-                try:
-                    conn, addr = s.accept()
-                    threading.Thread(target=self._handle_conn, args=(conn,), daemon=True).start()
-                except Exception:
-                    log.exception("Error accepting connection")
-                    time.sleep(0.1)
+                conn, addr = s.accept()
+                threading.Thread(target=self._handle_conn, args=(conn,), daemon=True).start()
 
     def _handle_conn(self, conn):
         try:
@@ -147,7 +110,5 @@ class StorageServer:
                 msg = outer if isinstance(outer, dict) else {}
             resp = self._handle(msg)
             self._respond(conn, resp)
-        except Exception as exc:
-            log.exception("[conn] error handling request: %s", exc)
         finally:
             conn.close()

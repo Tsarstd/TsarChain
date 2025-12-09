@@ -30,33 +30,25 @@ def handle_wallet_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         chunk = int(CFG.STORAGE_UPLOAD_CHUNK)
         if not aid or size <= 0 or len(sha) != 64:
             return {"type": "STOR_ACK", "status": "rejected", "reason": "bad_fields"}
-        try:
-            mime = GRAFFITI.validate_graffiti_file(size, mime, fname)
-        except Exception as exc:
-            return {"type": "STOR_ACK", "status": "rejected", "reason": str(exc)}
-        try:
-            projected = int(server.index.get("bytes_used", 0)) + size
-            if projected > int(CFG.STORAGE_MAX_BYTES):
-                return {"type": "STOR_ACK", "status": "rejected", "reason": "storage_full"}
-        except Exception:
-            log.exception("Failed to check storage capacity")
-            pass
+        
+        mime = GRAFFITI.validate_graffiti_file(size, mime, fname)
+        projected = int(server.index.get("bytes_used", 0)) + size
+        if projected > int(CFG.STORAGE_MAX_BYTES):
+            return {"type": "STOR_ACK", "status": "rejected", "reason": "storage_full"}
+        
         if int(CFG.MAX_GRAFFITI_ON_MEMPOOL) > 0:
-            try:
-                active = 0
-                for meta in (server.index.get("files") or {}).values():
-                    if not isinstance(meta, dict):
-                        continue
-                    if meta.get("paid"):
-                        continue
-                    state = str(meta.get("state") or "").lower()
-                    if state in ("receiving", "appending", "pending_confirm") or not meta.get("paid"):
-                        active += 1
-                if active >= int(CFG.MAX_GRAFFITI_ON_MEMPOOL):
-                    return {"type": "STOR_ACK", "status": "rejected", "reason": "mempool_graffiti_full"}
-            except Exception:
-                log.exception("Failed to check mempool graffiti count")
-                pass
+            active = 0
+            for meta in (server.index.get("files") or {}).values():
+                if not isinstance(meta, dict):
+                    continue
+                if meta.get("paid"):
+                    continue
+                state = str(meta.get("state") or "").lower()
+                if state in ("receiving", "appending", "pending_confirm") or not meta.get("paid"):
+                    active += 1
+            if active >= int(CFG.MAX_GRAFFITI_ON_MEMPOOL):
+                return {"type": "STOR_ACK", "status": "rejected", "reason": "mempool_graffiti_full"}
+            
         if server.use_kv:
             path = f"lmdb://incoming/{aid}"
         else:
@@ -95,7 +87,6 @@ def handle_wallet_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         }
 
     if t == "STOR_PUT":
-        log.debug("Received STOR_PUT")
         aid = str(msg.get("graffiti_id", "")).strip()
         b64 = str(msg.get("data", ""))
         if not aid or not b64:
@@ -103,31 +94,30 @@ def handle_wallet_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         meta = server.index.get("files", {}).get(aid)
         if not meta or meta.get("state") not in ("receiving", "appending"):
             return {"type": "STOR_ACK", "status": "rejected", "reason": "no_init"}
-        try:
-            chunk_bytes = base64.b64decode(b64)
-            max_chunk = int(meta.get("chunk_size") or CFG.STORAGE_UPLOAD_CHUNK)
-            received_total = int(meta.get("received_bytes", 0))
-            if server.use_kv:
-                received_total = server.db.append_incoming(aid, chunk_bytes, max_chunk)
-            else:
-                if len(chunk_bytes) > max_chunk:
-                    return {"type": "STOR_ACK", "status": "rejected", "reason": "chunk_too_big"}
-                with open(meta["path"], "ab") as f:
-                    f.write(chunk_bytes)
-                received_total += len(chunk_bytes)
-            meta["state"] = "appending"
-            meta["received_bytes"] = int(received_total)
-            meta["updated_ts"] = int(time.time())
-            server.index["files"][aid] = meta
-            server._save_index()
-            return {
-                "type": "STOR_ACK",
-                "status": "ok",
-                "received": int(meta["received_bytes"]),
-                "of": int(meta.get("size_bytes", 0)),
-            }
-        except Exception as e:
-            return {"type": "STOR_ACK", "status": "rejected", "reason": str(e)}
+        
+        chunk_bytes = base64.b64decode(b64)
+        max_chunk = int(meta.get("chunk_size") or CFG.STORAGE_UPLOAD_CHUNK)
+        received_total = int(meta.get("received_bytes", 0))
+        if server.use_kv:
+            received_total = server.db.append_incoming(aid, chunk_bytes, max_chunk)
+        else:
+            if len(chunk_bytes) > max_chunk:
+                return {"type": "STOR_ACK", "status": "rejected", "reason": "chunk_too_big"}
+            with open(meta["path"], "ab") as f:
+                f.write(chunk_bytes)
+            received_total += len(chunk_bytes)
+            log.debug("received: %s", received_total)
+        meta["state"] = "appending"
+        meta["received_bytes"] = int(received_total)
+        meta["updated_ts"] = int(time.time())
+        server.index["files"][aid] = meta
+        server._save_index()
+        return {
+            "type": "STOR_ACK",
+            "status": "ok",
+            "received": int(meta["received_bytes"]),
+            "of": int(meta.get("size_bytes", 0)),
+        }
 
     if t == "STOR_COMMIT":
         log.debug("Received STOR_COMMIT")
@@ -159,10 +149,8 @@ def handle_wallet_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                         digest.update(chunk)
                         actual_size += len(chunk)
                 digest_hex = digest.hexdigest().lower()
-            try:
-                GRAFFITI.validate_graffiti_file(actual_size, meta.get("mime"), meta.get("filename"))
-            except Exception as exc:
-                return {"type": "STOR_ACK", "status": "rejected", "reason": str(exc)}
+            
+            GRAFFITI.validate_graffiti_file(actual_size, meta.get("mime"), meta.get("filename"))
             if actual_size != expected_size:
                 return {"type": "STOR_ACK", "status": "rejected", "reason": "size_mismatch"}
             if digest_hex != meta.get("sha256"):
@@ -203,16 +191,8 @@ def handle_wallet_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                     }
                 )
             # set payment deadline height for unpaid blobs when caller supplies current tip height
-            try:
-                tip_h = int(msg.get("tip_height", 0) or msg.get("block_height", 0) or 0)
-            except Exception:
-                log.exception("Failed to parse tip height from STOR_COMMIT")
-                tip_h = 0
-            try:
-                expire_after = max(0, int(CFG.GRAFFITI_EXPIRE_AFTER_BLOCKS))
-            except Exception:
-                log.exception("Failed to parse GRAFFITI_EXPIRE_AFTER_BLOCKS config")
-                expire_after = 0
+            tip_h = int(msg.get("tip_height", 0) or msg.get("block_height", 0) or 0)
+            expire_after = max(0, int(CFG.GRAFFITI_EXPIRE_AFTER_BLOCKS))
             if (not meta.get("paid")) and expire_after > 0 and tip_h > 0:
                 try:
                     expire_h = int(meta.get("expire_at_height", 0) or 0)
@@ -233,7 +213,6 @@ def handle_wallet_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             return {"type": "STOR_ACK", "status": "rejected", "reason": str(e)}
 
     if t == "STOR_GET_BY_ART":
-        log.debug("Received %s", t)
         art_id = str(msg.get("art_id", "")).strip().lower()
         if not art_id:
             return {"type": t, "found": False}
@@ -242,20 +221,16 @@ def handle_wallet_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if gid:
             meta = (server.index.get("files") or {}).get(gid)
         found = bool(meta)
-        log.debug("[STOR_GET_BY_ART] art=%s gid=%s include_data=%s", art_id[:16], (gid or "")[:12], bool(msg.get("include_data")))
         msg_cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
         data_cap = int(msg_cap * 3 // 4)
         resp = {"type": t, "found": found, "graffiti_id": gid, "meta": meta}
         include_data = bool(msg.get("include_data"))
         if include_data and meta:
-            try:
-                max_bytes = int(msg.get("max_bytes", 0) or 0)
-            except Exception:
-                log.exception("Failed to parse max_bytes from STOR_GET_BY_ART")
-                max_bytes = 0
+            max_bytes = int(msg.get("max_bytes", 0) or 0)
             if max_bytes <= 0:
                 max_bytes = int(CFG.GRAFFITI_MAX_SIZE_BYTES)
             max_bytes = max(32 * 1024, min(max_bytes, int(CFG.GRAFFITI_MAX_SIZE_BYTES), data_cap))
+            log.debug("size_art: %s", max_bytes)
             if server.use_kv:
                 data_bytes = server.db.get_final_bytes(gid) if gid else None
                 size = len(data_bytes) if data_bytes is not None else 0
@@ -273,11 +248,7 @@ def handle_wallet_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             else:
                 path = meta.get("path")
                 if path and os.path.isfile(path):
-                    try:
-                        size = os.path.getsize(path)
-                    except Exception:
-                        log.exception("Failed to get file size for STOR_GET_BY_ART")
-                        size = 0
+                    size = os.path.getsize(path)
                     if size > max_bytes:
                         resp["status"] = "error"
                         resp["reason"] = "file_too_large"
