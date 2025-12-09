@@ -32,15 +32,10 @@ def _sha256_file(path: Path) -> str:
 def _load_meta(path: Path | None) -> Dict[str, Any]:
     if not path or not path.exists():
         return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _load_signing_key(raw: str) -> SigningKey:
-    if SigningKey is None:
-        raise RuntimeError("ecdsa library belum terpasang. pip install ecdsa untuk fitur penandatanganan.")
     candidate = Path(raw)
     if candidate.exists():
         key_hex = candidate.read_text(encoding="utf-8").strip()
@@ -59,19 +54,11 @@ def _detect_height_from_lmdb(path: Path) -> Optional[int]:
         with env.begin(db=chain_db, write=False) as txn:
             cur = txn.cursor()
             if cur.last():
-                try:
-                    entry = json.loads(cur.value().decode("utf-8"))
-                    return int(entry.get("height"))
-                except Exception:
-                    return None
-    except Exception:
-        return None
+                entry = json.loads(cur.value().decode("utf-8"))
+                return int(entry.get("height"))
     finally:
         if env:
-            try:
-                env.close()
-            except Exception:
-                pass
+            env.close()
     return None
 
 

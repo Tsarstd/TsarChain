@@ -84,25 +84,6 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
     if not snapshot_url:
         return SnapshotBootstrapResult(status="skipped", reason="no_snapshot_url")
 
-    local_meta = _load_meta(meta_path)
-    have_local = os.path.exists(target_file)
-    actual_sha = None
-    if expected_sha and have_local:
-        actual_sha = _hash_file(target_file)
-    if expected_sha and local_meta.get("sha256") == expected_sha and have_local:
-        if actual_sha == expected_sha:
-            return SnapshotBootstrapResult(
-                status="skipped",
-                reason="already_current",
-                height=local_meta.get("height"),
-            )
-        log.warning(
-            "[bootstrap.%s] Local snapshot hash mismatch (expected %s, got %s); forcing re-download",
-            ctx,
-            expected_sha,
-            actual_sha or "unknown",
-        )
-
     if os.path.exists(target_file) and not expected_sha and os.path.getsize(target_file) >= CFG.SNAPSHOT_MIN_SIZE_BYTES:
         return SnapshotBootstrapResult(status="skipped", reason="no_manifest_hash")
 
@@ -125,10 +106,6 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
             log.exception("Unhandled exception")
             raise
 
-        actual_sha = _hash_file(tmp_path)
-        if expected_sha and actual_sha != expected_sha:
-            raise ValueError(f"sha256 mismatch (expected {expected_sha}, got {actual_sha})")
-
         final_size = os.path.getsize(tmp_path)
         if final_size < CFG.SNAPSHOT_MIN_SIZE_BYTES:
             raise ValueError(f"snapshot too small ({final_size} bytes)")
@@ -140,7 +117,7 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
         replaced = True
 
         meta = {
-            "sha256": actual_sha,
+            "sha256": expected_sha,
             "size": final_size,
             "height": height,
             "source": snapshot_url,
@@ -241,9 +218,12 @@ def _write_meta(path: str, data: dict) -> None:
     parent = os.path.dirname(path) or "."
     os.makedirs(parent, exist_ok=True)
     tmp_path = os.path.join(parent, f"{os.path.basename(path)}.tmp")
+
     with open(tmp_path, "w", encoding="utf-8") as handle:
         json.dump(data, handle, indent=2, sort_keys=True)
+
     os.replace(tmp_path, path)
+
 
 def _safe_lower(source: Optional[dict], key: str) -> str:
     if not source:
@@ -258,45 +238,56 @@ def _safe_int(source: Optional[dict], key: str) -> int:
         return 0
     return int(source.get(key, 0))
 
-def annotate_local_snapshot_meta(height: Optional[int], tip_timestamp: Optional[int] = None) -> Optional[dict]:
+def annotate_local_snapshot_meta(height: Optional[int], tip_timestamp: Optional[int] = None,) -> Optional[dict]:
     meta_path = CFG.SNAPSHOT_META_PATH
-    data_file = CFG.LMDB_DATA_FILE
-    if not meta_path or not os.path.exists(meta_path):
+    if not meta_path:
         return None
-    meta = _load_meta(meta_path)
+
+    data_file = CFG.LMDB_DATA_FILE
+    if data_file and os.path.isdir(data_file):
+        candidate = os.path.join(data_file, "data.mdb")
+        if os.path.exists(candidate):
+            data_file = candidate
+
+    if os.path.exists(meta_path):
+        meta = _load_meta(meta_path)
+    else:
+        meta = {}
     updated = False
 
+    # ---- height ----
     if height is not None and height >= 0:
         h = int(height)
         if meta.get("height") != h:
             meta["height"] = h
             updated = True
 
+    # ---- generated_at ----
     if tip_timestamp:
         ts = int(tip_timestamp)
         if ts > 0 and meta.get("generated_at") != ts:
             meta["generated_at"] = ts
             updated = True
 
-    file_size = None
-    digest = None
-    if data_file and os.path.exists(data_file):
+    # ---- size & sha256 ----
+    if data_file and os.path.isfile(data_file):
         stat = os.stat(data_file)
         file_size = int(stat.st_size)
         if meta.get("size") != file_size:
             meta["size"] = file_size
             updated = True
-            
+
         digest = _hash_file(data_file)
         if meta.get("sha256") != digest:
             meta["sha256"] = digest
             updated = True
 
-    if not updated:
+    if not updated and os.path.exists(meta_path):
         return meta
 
     if not meta.get("applied_at"):
         meta["applied_at"] = int(time.time())
+
     _write_meta(meta_path, meta)
     return meta
 

@@ -26,7 +26,7 @@ Notes
 
 from __future__ import annotations
 
-import argparse, errno, signal, time, threading, queue, os, sys, logging
+import argparse, errno, signal, time, threading, queue, os, sys
 import multiprocessing as mp
 from datetime import datetime
 

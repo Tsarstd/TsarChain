@@ -27,7 +27,7 @@ Notes
 """
 from __future__ import annotations
 
-import argparse, time, signal, threading, errno, queue, os, sys, re, logging
+import argparse, time, signal, threading, errno, queue, os, sys, re
 import multiprocessing as mp
 from datetime import datetime
 
@@ -359,6 +359,7 @@ class SimpleMiner:
             clog(f"Node started with {peer_count} bootstrap peers")
             return True
         except Exception as exc:
+            log.exception("error")
             clog(f"Failed to start node: {exc}")
             return False
 

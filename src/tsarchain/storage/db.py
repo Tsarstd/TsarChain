@@ -71,15 +71,9 @@ class _FileLock:
                 fcntl.flock(self._fh.fileno(), fcntl.LOCK_UN)
             elif _HAS_MSVCRT:
                 import msvcrt
-                try:
-                    msvcrt.locking(self._fh.fileno(), msvcrt.LK_UNLCK, 1)
-                except OSError:
-                    pass
+                msvcrt.locking(self._fh.fileno(), msvcrt.LK_UNLCK, 1)
         finally:
-            try:
-                self._fh.close()
-            except Exception:
-                pass
+            self._fh.close()
             self._fh = None
 
     def __enter__(self):
@@ -133,28 +127,19 @@ class AtomicJSONFile:
         if not baks:
             return None, None, None, None
         p = os.path.join(self.dir, baks[0])
-        try:
-            with open(p, "rb") as fh:
-                raw = fh.read()
-            chk = hashlib.sha256(raw).hexdigest()
-        except Exception:
-            chk = None
+        with open(p, "rb") as fh:
+            raw = fh.read()
+        chk = hashlib.sha256(raw).hexdigest()
         return baks[0], p, os.path.getmtime(p), chk
 
     def _prune_old_backups(self):
         if self.keep_backups <= 0:
             for f in self._list_backups():
-                try:
-                    os.remove(os.path.join(self.dir, f))
-                except Exception:
-                    pass
+                os.remove(os.path.join(self.dir, f))
             return
         baks = self._list_backups()
         for f in baks[self.keep_backups:]:
-            try:
-                os.remove(os.path.join(self.dir, f))
-            except Exception:
-                pass
+            os.remove(os.path.join(self.dir, f))
 
     def _write_bytes_atomic(self, data: bytes) -> None:
         # Require native JSON writer; no Python I/O fallback.
@@ -176,79 +161,42 @@ class AtomicJSONFile:
             if make_backup:
                 ts = time.strftime("%Y%m%d-%H%M%S")
                 bak_path = f"{self.path}.bak-{ts}"
-                try:
-                    os.replace(self.path, bak_path)
-                except Exception:
-                    try:
-                        with open(self.path, "rb") as rf, open(bak_path, "wb") as wf:
-                            wf.write(rf.read()); wf.flush(); os.fsync(wf.fileno())
-                    except Exception:
-                        pass
+                os.replace(self.path, bak_path)
 
         _native_json_write_file(self.path, data_text, pretty=self.pretty)
 
         if self.checksum:
-            try:
-                written_txt = _native_json_read_file(self.path)
-                if written_txt is not None:
-                    chk = hashlib.sha256(written_txt.encode("utf-8")).hexdigest()
-                    os.makedirs(os.path.dirname(self.sha_path) or ".", exist_ok=True)
-                    with open(self.sha_path, "w", encoding="utf-8") as cf:
-                        cf.write(chk + "\n"); cf.flush(); os.fsync(cf.fileno())
-            except Exception:
-                log.debug("[DB] checksum write failed", exc_info=True)
+            written_txt = _native_json_read_file(self.path)
+            if written_txt is not None:
+                chk = hashlib.sha256(written_txt.encode("utf-8")).hexdigest()
+                os.makedirs(os.path.dirname(self.sha_path) or ".", exist_ok=True)
+                with open(self.sha_path, "w", encoding="utf-8") as cf:
+                    cf.write(chk + "\n"); cf.flush(); os.fsync(cf.fileno())
 
         self._prune_old_backups()
 
     def _cleanup_journal(self) -> None:
-        try:
-            if os.path.exists(self.journal_path):
-                with open(self.journal_path, "r", encoding="utf-8") as jf:
-                    j = json.load(jf)
-                tmp = j.get("tmp")
-                if tmp and os.path.exists(tmp):
-                    try:
-                        os.remove(tmp)
-                    except Exception:
-                        pass
-                try:
-                    os.remove(self.journal_path)
-                except Exception:
-                    pass
-        except Exception:
-            try:
-                os.remove(self.journal_path)
-            except Exception:
-                pass
+        if os.path.exists(self.journal_path):
+            with open(self.journal_path, "r", encoding="utf-8") as jf:
+                j = json.load(jf)
+            tmp = j.get("tmp")
+            if tmp and os.path.exists(tmp):
+                os.remove(tmp)
+            os.remove(self.journal_path)
 
     def load(self, default: Any = None, *, validate: Optional[Callable[[Any], bool]] = None) -> Any:
         self._cleanup_journal()
         with _FileLock(self.lock_path, shared=True):
-            try:
-                raw_txt = _native_json_read_file(self.path)
-                if raw_txt is None:
-                    return default
-
-                data = json.loads(raw_txt)
-                if validate is not None:
-                    ok = False
-                    try: ok = bool(validate(data))
-                    except Exception: ok = False
-                    if not ok:
-                        raise ValueError("Validation failed")
-                return data
-            except Exception:
-                # Fallback only to existing backups, still via native reader.
-                for b in self._list_backups():
-                    try:
-                        backup_path = os.path.join(self.dir, b)
-                        raw_txt = _native_json_read_file(backup_path)
-                        if raw_txt is None:
-                            continue
-                        return json.loads(raw_txt)
-                    except Exception:
-                        continue
+            raw_txt = _native_json_read_file(self.path)
+            if raw_txt is None:
                 return default
+
+            data = json.loads(raw_txt)
+            if validate is not None:
+                ok = bool(validate(data))
+                if not ok:
+                    raise ValueError("Validation failed")
+            return data
 
     def save(self, obj: Any) -> None:
         data = self._serialize(obj)

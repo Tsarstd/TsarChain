@@ -228,13 +228,13 @@ class StorageMixin:
         return bool(CFG.BACKUP_SNAPSHOT)
 
     def _write_snapshot_manifest(self, target_dir: str, meta: dict, height: int) -> None:
-        data_basename = os.path.basename(CFG.LMDB_DATA_FILE)
-        data_path = os.path.join(target_dir, data_basename)
+        data_path = os.path.join(target_dir)
         sha = meta.get("sha256")
         size = meta.get("size")
         if (not sha or not size) and os.path.exists(data_path):
             size = size or os.path.getsize(data_path)
             sha = sha or self._hash_file(data_path)
+
         manifest = {
             "version": 1,
             "snapshot_url": meta.get("source") or CFG.SNAPSHOT_FILE_URL,
@@ -243,21 +243,26 @@ class StorageMixin:
             "height": int(meta.get("height", height)),
             "generated_at": int(meta.get("generated_at") or int(time.time())),
         }
+
         manifest_path = os.path.join(target_dir, "snapshot.manifest.json")
         with open(manifest_path, "w", encoding="utf-8") as fh:
             json.dump(manifest, fh, indent=2, sort_keys=True)
+
 
     def _maybe_backup_snapshot(self, tip_height: int, *, tip_timestamp: int | None = None) -> None:
         if tip_height < 0 or not kv_enabled():
             return
         if not self._backup_snapshot_enabled():
             return
+
         interval = int(CFG.BLOCK_BACKUP_SNAPSHOT or 0)
         if interval <= 0:
             return
+
         last = getattr(self, "_snapshot_last_backup_height", -1)
         if last >= 0 and (tip_height - last) < interval:
             return
+
         target_dir = CFG.SNAPSHOT_BACKUP_DIR
         if not target_dir:
             return
@@ -266,6 +271,7 @@ class StorageMixin:
         if lock is None:
             lock = threading.Lock()
             self._snapshot_backup_lock = lock
+
         with lock:
             if getattr(self, "_snapshot_backup_active", False):
                 return
@@ -273,20 +279,41 @@ class StorageMixin:
 
         def _run_backup(height: int, ts_hint: int | None):
             try:
+                # 1) copy LMDB env -> data/snapshot/
                 self._copy_snapshot_env(target_dir)
-                tip_ts = ts_hint
-                if tip_ts is None:
-                    if self.chain:
-                        tip_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
-                meta = None
-                meta = annotate_local_snapshot_meta(height=height, tip_timestamp=tip_ts)
+
                 backup_dir = os.path.abspath(target_dir)
+                snapshot_data_path = os.path.join(backup_dir, "data.mdb")
+
+                # 2) tip timestamp
+                tip_ts = ts_hint
+                if tip_ts is None and self.chain:
+                    tip_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
+
+                # 3) meta baseline from DB live
+                meta = annotate_local_snapshot_meta(height=height, tip_timestamp=tip_ts)
+
+                # 3b) override size & sha256 with snapshot file
+                if meta and os.path.exists(snapshot_data_path):
+                    try:
+                        stat = os.stat(snapshot_data_path)
+                        meta["size"] = int(stat.st_size)
+                        snap_sha = self._hash_file(snapshot_data_path)
+                        if snap_sha:
+                            meta["sha256"] = snap_sha
+                    except Exception:
+                        log.exception("[backup_snapshot] Failed to recompute hash/size for snapshot env")
+
                 if meta:
+                    # 4) write snapshot.meta.json to snapshot folder
                     meta_name = os.path.basename(CFG.SNAPSHOT_META_PATH or "snapshot.meta.json")
                     backup_meta_path = os.path.join(backup_dir, meta_name)
                     with open(backup_meta_path, "w", encoding="utf-8") as fh:
                         json.dump(meta, fh, indent=2, sort_keys=True)
+
+                    # 5) generate snapshot.manifest.json from overridden meta
                     self._write_snapshot_manifest(backup_dir, meta, height)
+
                 self._snapshot_last_backup_height = height
                 log.info("[backup_snapshot] Snapshot updated at height %s to %s", height, target_dir)
             finally:
@@ -300,16 +327,17 @@ class StorageMixin:
             daemon=True,
         ).start()
 
+
     def _copy_snapshot_env(self, target_dir: str) -> None:
         target_dir = os.path.abspath(target_dir)
         parent = os.path.dirname(target_dir)
         if parent:
             os.makedirs(parent, exist_ok=True)
-            
+
         tmp_dir = f"{target_dir}.tmp"
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir, ignore_errors=True)
-            
+
         env = _ensure_env() if kv_enabled() else None
         if env is not None:
             os.makedirs(tmp_dir, exist_ok=True)
@@ -318,11 +346,15 @@ class StorageMixin:
             os.makedirs(tmp_dir, exist_ok=True)
             data_file = CFG.LMDB_DATA_FILE
             if data_file and os.path.exists(data_file):
-                shutil.copy2(data_file, os.path.join(tmp_dir, os.path.basename(data_file)))
-                
+                shutil.copy2(
+                    data_file,
+                    os.path.join(tmp_dir, os.path.basename(data_file)),
+                )
+
         if os.path.exists(target_dir):
             shutil.rmtree(target_dir, ignore_errors=True)
         os.replace(tmp_dir, target_dir)
+
     
     @staticmethod
     def _hash_file(path: str) -> Optional[str]:

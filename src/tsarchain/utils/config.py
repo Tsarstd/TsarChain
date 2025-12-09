@@ -118,7 +118,7 @@ SNAPSHOT_BOOTSTRAP_FOR_CLI = False  # enable snapshot bootstrap path for cli_nod
 SNAPSHOT_HTTP_TIMEOUT    = 90  # HTTP timeout applied to snapshot downloads
 SNAPSHOT_CHUNK_BYTES     = 2 * 1024 * 1024  # chunk size when streaming snapshot data
 SNAPSHOT_MIN_SIZE_BYTES  = 15 * 1024  # ignore snapshot files smaller than this
-SNAPSHOT_META_PATH       = os.path.join(os.path.dirname(LMDB_DATA_FILE), "snapshot.meta.json")  # cached metadata file for snapshots
+SNAPSHOT_META_PATH       = "data/tsarchain_db/snapshot.meta.json"  # cached metadata file for snapshots
 SNAPSHOT_MAX_AGE_SECONDS = 12 * 3600  # maximum tolerated snapshot age (12h)
 SNAPSHOT_USER_AGENT      = "TsarChainSnapshot/1.0"  # UA string used when fetching snapshots
 
@@ -174,7 +174,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0  # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "00063d1679e0bfa9f8ca5fa44da01c55d7dfe54a7e72511acbcdfbc9e3c7c0ef"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "0010504770aa0e99bb8d1459d299f1430deb54890983f7c7922335ea666ff72b"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
