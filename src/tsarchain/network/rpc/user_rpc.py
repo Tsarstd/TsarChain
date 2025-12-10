@@ -16,7 +16,7 @@ from ...contracts import graffiti as GRAFFITI
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network.rpc(user_rpc)")
+log = get_ctx_logger("tsarchain.network.rpc.user_rpc")
 
 if TYPE_CHECKING:
     from ..node import Network
@@ -67,9 +67,15 @@ def handle_user_rpc(
     relay_chain: Callable[["Network", list[tuple], dict, Optional[tuple]], None],
     send_chat_relay: Callable[["Network", tuple, dict], dict],
 ) -> dict | None:
-    
+
+# =============================================================================
+# ---------------------------- User Activities RPC ----------------------------
+# =============================================================================
+
     if mtype == "PING":
         return {"type": "PONG"}
+
+#----------------------#-------------------
 
     elif mtype in ("GET_BALANCES"):
         ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
@@ -162,53 +168,54 @@ def handle_user_rpc(
         return {"type": "BALANCES", "height": tip_height, "items": items}
 
     elif mtype == "CREATE_TX":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         from_addr = (message.get("from") or "").strip().lower()
         to_addr   = (message.get("to")   or "").strip().lower()
         amount    = message.get("amount")
         fee_rate = int(message.get("fee_rate", CFG.DEFAULT_FEE_RATE_SATVB))
         fee_rate = max(CFG.MIN_FEE_RATE_SATVB, min(fee_rate, CFG.MAX_FEE_RATE_SATVB))
         tpl = self._handle_create_tx(from_addr, to_addr, amount, fee_rate)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[CREATE_TX] Benchmark : %.3f ms", result)
+        
         return {"type": "TX_TEMPLATE", "data": tpl}
 
-    elif mtype == "GET_INFO":
-        ip = client_ip()
-        rl_key = f"info:{ip}"
-        if not self._tb_allow(self.rl_ip, rl_key, CFG.INFO_RL_IP_BURST, CFG.INFO_RL_IP_WINDOW_S, CFG.INFO_RL_IP_BURST, backoff_key=rl_key):
-            self._backoff(rl_key, CFG.INFO_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
-
-        info = {
-            "type": "INFO",
-            "height": self.broadcast.blockchain.height,
-            "blocks": len(self.broadcast.blockchain.chain),
-            "mempool": len(self.broadcast.mempool.get_all_txs()),
-            "utxos": len(self.broadcast.utxodb.utxos),
-        }
-        with self.lock:
-            peers_sane = [(ip,p) for (ip,p) in self.peers if isinstance(p,int) and p>0]
-        info["peers"] = len(peers_sane)
-        return info
+#----------------------#-------------------
 
     elif mtype == "GET_NETWORK_INFO":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         ip = client_ip()
         rl_key = f"info:{ip}"
         if not self._tb_allow(self.rl_ip, rl_key, CFG.INFO_RL_IP_BURST, CFG.INFO_RL_IP_WINDOW_S, CFG.INFO_RL_IP_BURST, backoff_key=rl_key):
             self._backoff(rl_key, CFG.INFO_RL_BACKOFF_S)
             return {"error": "rate_limited"}
-        snap = self.broadcast.blockchain._compute_state_snapshot()
+        
+        snap = self.broadcast.blockchain._read_snapshot_state()
         overlay_realtime_mempool_stats(snap, self)
         with self.lock:
             peers_sane = [(ip,p) for (ip,p) in self.peers if isinstance(p,int) and p>0]
+            
         snap.setdefault("peers", {})
         if isinstance(snap["peers"], dict):
             snap["peers"]["count"] = len(peers_sane)
         else:
             snap["peers"] = {"count": len(peers_sane)}
+            
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[GET_NETWORK_INFO] Benchmark : %.3f ms", result)
+            
         return {"type": "NETWORK_INFO", "data": snap}
 
-    elif mtype == "GET_BLOCK_HASH":
-        h = int(message.get("height"))
-        return self._handle_get_block_hash(h)
+#----------------------#-------------------
 
     elif mtype == "GET_BLOCK":
         if "height" in message:
@@ -218,23 +225,38 @@ def handle_user_rpc(
             return {"type": "BLOCK", "error": "missing_height_or_hash"}
         return self._handle_get_block_by_hash(hx)
 
+#----------------------#-------------------
+
     elif mtype == "GET_PEERS":
         if not is_miner_sender():
             return {"type": "PEERS", "peers": []}
         return {"type": "PEERS", "peers": list(self.peers)}
 
+#----------------------#-------------------
+
     elif mtype == "NEW_TX":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         if CFG.ENABLE_DANDELION_PP and "phase" not in message:
             message = dict(message)
             message["phase"] = "stem"
+        
         success = self.broadcast.receive_tx(message, addr, self.peers)
         if success:
             txid = (message.get("data") or {}).get("txid")
+            
+            if CFG.DEBUG_BENCHMARKS:
+                end = time.perf_counter()
+                result = round((end - start) * 1000.0, 3)
+                log.debug("[NEW_TX] Benchmark : %.3f ms", result)
+                
             return {"status": "ok", "txid": txid}
         else:
-            # Surface mempool reason if available for better UX
             reason = getattr(self.broadcast.mempool, 'last_error_reason', None)
             return {"status": "error", "reason": (reason or "invalid tx")}
+
+#----------------------#-------------------
 
     elif mtype == "GET_MEMPOOL":
         mode = str(message.get("mode", "")).strip().lower()
@@ -258,6 +280,7 @@ def handle_user_rpc(
             min_iv = message.get("min_interval")
             force = bool(message.get("force"))
             pushed = self.broadcast.send_mempool_to_peer(target, min_interval_s=min_iv, force=force)
+            log.debug("[GET_MEMPOOL] snapshot mode: %s", target)
             return {"type": "MEMPOOL_SYNC", "count": int(pushed)}
 
         if mode in ("inline", "inline_full"):
@@ -314,7 +337,10 @@ def handle_user_rpc(
                 hexes.append(txid.hex())
             elif isinstance(txid, str):
                 hexes.append(txid)
+        log.debug("[GET_MEMPOOL] mode: %s", mode)
         return {"type": "MEMPOOL", "mode": "txids", "txs": hexes}
+
+#----------------------#-------------------
 
     elif mtype == "GET_TX_HISTORY":
         ip = client_ip()
@@ -337,6 +363,8 @@ def handle_user_rpc(
         history["height"] = tip_height
         return {"type": "TX_HISTORY", "address": addr_str, **history}
 
+#----------------------#-------------------
+
     elif mtype == "GET_TX_DETAIL":
         ip = client_ip()
         hist_key = f"hist:{ip}"
@@ -347,6 +375,8 @@ def handle_user_rpc(
         if not txid_hex:
             return {"error": "missing txid"}
         return self._get_tx_detail(txid_hex)
+
+#----------------------#-------------------
 
     elif mtype == "GET_UTXOS":
         ip = client_ip()
@@ -364,7 +394,9 @@ def handle_user_rpc(
         utxos = self.broadcast.utxodb.get(address)
         return {"type": "UTXOS", "address": address, "utxos": utxos}
 
-    # ========= P2P CHAT =========
+# =============================================================================
+# ---------------------------- P2P Chat RPC -----------------------------------
+# =============================================================================
 
     elif mtype == "CHAT_REGISTER":
         ip = client_ip()
@@ -447,15 +479,20 @@ def handle_user_rpc(
 
         pres = {"pid": pid, "address": addr_s, "pubkey": chat_pub, "spend_pub": spend_pk, "presence_sig": presence_sig, "ts": int(now), "hops": 0}
         self._relay_presence_async(pres, exclude=addr)
+        log.debug("[CHAT_REGISTER] pid: %s", pid)
         return {"type": "CHAT_REGISTERED", "address": addr_s, "pubkey": chat_pub}
+
+#----------------------#-------------------
 
     elif mtype == "CHAT_LOOKUP_PUB":
         addr_s = (message.get("address") or "").strip().lower()
         if not addr_s:
             return {"error": "missing address"}
         pubhex = self.chat_presence_pub.get(addr_s)
-        log.debug("[process_message] CHAT_LOOKUP_PUB for %s from %s", addr_s, addr)
+        log.debug("[CHAT_LOOKUP_PUB] for %s from %s", addr_s, addr)
         return {"type": "CHAT_PUBKEY", "address": addr_s, "pubkey": pubhex, "found": bool(pubhex)}
+
+#----------------------#-------------------
 
     elif mtype == "CHAT_PRESENCE":
         addr_s = (message.get("address") or "").strip().lower()
@@ -514,9 +551,11 @@ def handle_user_rpc(
 
         message["hops"] = hops + 1
         self._relay_presence_async(message, exclude=addr)
+        log.debug("[CHAT_PRESENCE] message: %s", message)
         return {"type": "CHAT_PRESENCE_OK"}
 
     # ====== PREKEY BUNDLE ======
+    
     elif mtype == "CHAT_PUBLISH_PREKEYS":
         ip = client_ip()
         reg_key = f"chatreg:{ip}"
@@ -544,7 +583,10 @@ def handle_user_rpc(
             if isinstance(opk, str) and len(opk)==64:
                 rec.setdefault("opk_list", []).append(opk)
             self.chat_prekeys[addr_s] = rec
+        log.debug("[CHAT_PUBLISH_PREKEYS] payload: %s", payload)
         return {"type":"CHAT_PUBLISHED"}
+
+#----------------------#-------------------
 
     elif mtype == "CHAT_GET_PREKEY":
         addr_s = (message.get("address") or "").strip().lower()
@@ -559,7 +601,10 @@ def handle_user_rpc(
                 opk = lst.pop(0)
             self.chat_prekeys[addr_s] = b
         sp = self.chat_spend_pub.get(addr_s)
+        log.debug("[CHAT_GET_PREKEY] sp: %s", sp)
         return {"type":"CHAT_PREKEY_BUNDLE","bundle":{"ik": b["ik"], "spk": b["spk"], "sig": b["sig"], "opk": opk, "spend_pub": sp}}
+
+#----------------------#-------------------
 
     elif mtype == "CHAT_SEND":
         ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
@@ -678,8 +723,10 @@ def handle_user_rpc(
         if not ok:
             return {"type": "CHAT_ACK", "status": "mailbox_full"}
         self._enqueue_rcpt(frm, "delivered", mid, frm, to, ts)
-
+        log.debug("[CHAT_SEND] mid: %s", mid)
         return {"type": "CHAT_ACK", "status": "queued"}
+
+#----------------------#-------------------
 
     elif mtype == "CHAT_PULL":
         me = (message.get("address") or "").strip().lower()
@@ -709,7 +756,10 @@ def handle_user_rpc(
 
         items = self._mailbox_pull(me, n)
         self._gc_mailboxes()
+        log.debug("[CHAT_SEND] spend_pk: %s", spend_pk)
         return {"type": "CHAT_ITEMS", "items": items}
+
+#----------------------#-------------------
 
     elif mtype == "CHAT_RELAY":
         # payload: {"route": [peer1, peer2, ...], "inner": {...}}
@@ -735,8 +785,11 @@ def handle_user_rpc(
                 "msg_id": msg.get("msg_id"),
                 "ts": msg.get("ts"),
             }, CFG.CHAT_TTL_S, CFG.CHAT_MAILBOX_MAX, CFG.CHAT_GLOBAL_QUEUE_MAX)
+            log.debug("[CHAT_RELAY] msg: %s", msg)
             return {"type": "CHAT_RELAY_ACK", "status": ("queued" if ok else "rejected")}
         return {"error": "bad_inner"}
+
+#----------------------#-------------------
 
     elif mtype == "CHAT_READ":
         sender = (message.get("sender") or "").strip().lower()
@@ -768,9 +821,12 @@ def handle_user_rpc(
             return {"error": "bad_sig"}
 
         self._enqueue_rcpt(sender, "read", mid, sender, reader, int(time.time()))
+        log.debug("[CHAT_READ] rr: %s", rr)
         return {"type": "CHAT_READ_OK"}
 
-    # -------------- [NEW] GRAFFITI ---------- #
+# =============================================================================
+# ---------------------------- GRAFFITI RPC -----------------------------------
+# =============================================================================
 
     elif mtype == "STOR_LIST":
         now = time.time()
@@ -800,7 +856,23 @@ def handle_user_rpc(
                     "last_seen": int(meta.get("last_seen",0)),
                     "alive": bool(meta.get("alive",False)),
                 })
+        log.debug("[STOR_LIST] items: %s", items)
         return {"type":"STOR_LIST","storers": items}
+
+#----------------------#-------------------
+
+    elif mtype == "GRAFFITI_GET_PAYOUTS":
+        art_id = str(message.get("art_id") or "").strip().lower()
+        if not art_id:
+            return {"type": "GRAFFITI_GET_PAYOUTS", "payouts": []}
+        limit = int(message.get("limit", 100) or 100)
+        limit = max(1, min(limit, 500))
+        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
+        payouts = reg.list_payouts(art_id, limit) if reg else []
+        log.debug("[GRAFFITI_GET_PAYOUTS] art_id: %s", art_id)
+        return {"type": "GRAFFITI_GET_PAYOUTS", "art_id": art_id, "payouts": payouts}
+
+#----------------------#-------------------
 
     elif mtype == "CREATE_TX_MULTI":
         from_addr = (message.get("from") or "").strip().lower()
@@ -811,18 +883,24 @@ def handle_user_rpc(
             return {"error": "missing from/outputs"}
         try:
             tpl = self._handle_create_tx_multi(from_addr, outputs, fee_rate, force_inputs)
+            log.debug("[CREATE_TX_MULTI] tpl: %s", tpl)
             return {"type": "TX_TEMPLATE", "data": tpl}
 
         except Exception:
             log.exception("[process_message] CREATE_TX_MULTI error from %s", addr)
             return {"error": "CREATE_TX_MULTI failed"}
-        
+
+#----------------------#-------------------
+
     elif mtype == "GRAFFITI_GET_POSTS":
         limit = int(message.get("limit", 50) or 50)
         limit = max(1, min(limit, 500))
         reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
         posts = reg.list_posts(limit) if reg else []
+        log.debug("[GRAFFITI_GET_POSTS] posts: %s", posts)
         return {"type": "GRAFFITI_GET_POSTS", "posts": posts}
+
+#----------------------#-------------------
 
     elif mtype == "GRAFFITI_GET_COMMENTS":
         art_id = str(message.get("art_id") or "").strip().lower()
@@ -832,7 +910,10 @@ def handle_user_rpc(
         limit = max(1, min(limit, 500))
         reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
         comments = reg.list_comments(art_id, limit) if reg else []
+        log.debug("[GRAFFITI_GET_COMMENTS] comments: %s", comments)
         return {"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id, "comments": comments}
+
+#----------------------#-------------------
 
     elif mtype == "GRAFFITI_GET_ART":
         art_id_raw = str(message.get("art_id") or "").strip()
@@ -843,6 +924,7 @@ def handle_user_rpc(
         post = reg.get_post(art_id) if reg else None
         if not post:
             return {"type": "GRAFFITI_GET_ART", "art_id": art_id, "error": "not_found"}
+        log.debug("[GRAFFITI_GET_COMMENTS] post: %s", post)
         return {"type": "GRAFFITI_GET_ART", "art_id": art_id, "post": post}
 
     return None

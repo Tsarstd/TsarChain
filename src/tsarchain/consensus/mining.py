@@ -57,7 +57,7 @@ class MiningMixin:
         if not self.chain:
             reloaded = getattr(self, "_reload_chain_from_kv", lambda: False)()
             if reloaded:
-                log.info("[mine_block] chain reloaded from LMDB; continuing mining")
+                log.debug("[mine_block] chain reloaded from LMDB; continuing mining")
                 
         if not self.chain and not CFG.ALLOW_AUTO_GENESIS:
             log.warning("[mine_block] refusing to mine genesis; sync from peers first.")
@@ -127,7 +127,7 @@ class MiningMixin:
                 invalid_txids.append(tx.txid.hex())
                 reason = getattr(pool, "last_error_reason", None)
                 if reason:
-                    log.debug("[mine_block] tx %s rejected: %s", tx.txid.hex()[:12], reason)
+                    log.warning("[mine_block] tx %s rejected: %s", tx.txid.hex()[:12], reason)
                 continue
 
             # Allow a maximum of one Graffiti POST per block: skip other Graffiti POST's to queue them in the next block.
@@ -139,7 +139,7 @@ class MiningMixin:
                     is_graff_post = True
                     break
             if is_graff_post and graffiti_post_seen:
-                log.debug("[mine_block] skip extra Graffiti POST tx=%s (quota per block = 1)", tx.txid.hex()[:12])
+                log.info("[mine_block] skip extra Graffiti POST tx=%s (quota per block = 1)", tx.txid.hex()[:12])
                 continue
 
             # Passed all checks - include and update temp UTXO snapshot
@@ -170,7 +170,6 @@ class MiningMixin:
         if height > 0:
             expected_bits = self.calculate_expected_bits(height)
             new_block.bits = expected_bits
-            log.debug("[mine_block] Using bits (LWMA): %s", hex(expected_bits))
 
         # --- PoW ---
         found = new_block.mine(use_cores=use_cores, stop_event=cancel_event, pow_backend=pow_backend, progress_queue=progress_queue,)

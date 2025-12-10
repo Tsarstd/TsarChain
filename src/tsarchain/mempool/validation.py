@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from ..core.tx import Tx
@@ -142,6 +143,9 @@ class TxMempoolValidator:
         return items
 
     def validate_transaction(self, tx: Tx, utxo_set: dict[str, Any], spend_at_height: int | None = None,) -> bool:
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+
         if getattr(tx, "is_coinbase", False):
             return False
 
@@ -163,7 +167,7 @@ class TxMempoolValidator:
                 post = reg.get_post(art_id)
                 if not post:
                     self.last_error_reason = "payout_unknown_art"
-                    log.debug("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
+                    log.warning("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
                     return False
                 
                 stats = post.get("stats") or {}
@@ -172,7 +176,7 @@ class TxMempoolValidator:
                 epoch = int(payout_meta.get("epoch", -1))
                 if epoch >= 0 and epoch <= last_epoch:
                     self.last_error_reason = "payout_epoch_rewind"
-                    log.debug("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
+                    log.warning("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
                     return False
                 
                 if epoch >= 0:
@@ -188,14 +192,14 @@ class TxMempoolValidator:
                                 
                         if proof_epoch is None or proof_epoch < epoch:
                             self.last_error_reason = "payout_missing_proof"
-                            log.debug("[mempool] payout reject art=%s reason=%s last_proof=%s epoch=%s", art_id[:16], self.last_error_reason, latest_proof, epoch)
+                            log.warning("[mempool] payout reject art=%s reason=%s last_proof=%s epoch=%s", art_id[:16], self.last_error_reason, latest_proof, epoch)
                             return False
 
                 # Collect payout recipients
                 recs = payout_meta.get("recipients") or []
                 if not isinstance(recs, list) or not recs:
                     self.last_error_reason = "payout_no_recipients"
-                    log.debug("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
+                    log.warning("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
                     return False
 
                 # Build paymap from outputs
@@ -220,18 +224,18 @@ class TxMempoolValidator:
                     amt_req = int(rec.get("amount", 0))
                     if not addr or amt_req <= 0:
                         self.last_error_reason = "payout_bad_recipient"
-                        log.debug("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
+                        log.warning("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
                         return False
                     
                     total_req += amt_req
                     if paymap.get(addr, 0) < amt_req:
                         self.last_error_reason = "payout_shortfall"
-                        log.debug("[mempool] payout reject art=%s reason=%s paid=%s req=%s", art_id[:16], self.last_error_reason, paymap.get(addr, 0), amt_req)
+                        log.warning("[mempool] payout reject art=%s reason=%s paid=%s req=%s", art_id[:16], self.last_error_reason, paymap.get(addr, 0), amt_req)
                         return False
                     
                 if total_req > pool_balance:
                     self.last_error_reason = "payout_exceeds_pool"
-                    log.debug("[mempool] payout reject art=%s reason=%s total=%s pool=%s", art_id[:16], self.last_error_reason, total_req, pool_balance)
+                    log.warning("[mempool] payout reject art=%s reason=%s total=%s pool=%s", art_id[:16], self.last_error_reason, total_req, pool_balance)
                     return False
 
                 # Validate inputs: must spend pool P2WSH for this art_id
@@ -243,7 +247,7 @@ class TxMempoolValidator:
                     utxo_entry = self._lookup_utxo_entry(utxo_set, prev_txid_hex, vout)
                     if not utxo_entry:
                         self.last_error_reason = "missing_prevout"
-                        log.debug("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
+                        log.warning("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
                         return False
                     
                     spk_bytes = get_utxo_script_bytes(utxo_entry)
@@ -251,19 +255,19 @@ class TxMempoolValidator:
                     total_in += int(amt_prev)
                     if not (is_p2wsh(spk_bytes) and len(spk_bytes) == 34):
                         self.last_error_reason = "payout_prev_not_pool"
-                        log.debug("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
+                        log.warning("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
                         return False
                     
                     prog = spk_bytes[2:]
                     if prog.hex() != pool_script_hash:
                         self.last_error_reason = "payout_wrong_pool"
-                        log.debug("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
+                        log.warning("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
                         return False
 
                 total_out = sum(int(getattr(o, "amount", 0) or 0) for o in getattr(tx, "outputs", []) or [])
                 if total_out > total_in:
                     self.last_error_reason = "payout_fee_negative"
-                    log.debug("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
+                    log.warning("[mempool] payout reject art=%s reason=%s", art_id[:16], self.last_error_reason)
                     return False
                 
                 tx.fee = int(total_in - total_out)
@@ -370,7 +374,12 @@ class TxMempoolValidator:
                             self.last_error_reason = "payout_exceeds_pool"
                             return False
                         
+                if CFG.DEBUG_BENCHMARKS:
+                    end = time.perf_counter()
+                    result = round((end - start) * 1000.0, 3)
+                    log.debug("[validate_transaction] Benchmark : %.3f ms", result)
                 return True
+            
             else:
                 self.last_error_reason = reason or "native_mempool_reject"
                 log.warning(

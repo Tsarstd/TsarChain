@@ -14,7 +14,7 @@ from ...contracts import graffiti as GRAFFITI
 from ...utils import config as CFG
 
 from ...utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network.rpc(storage_rpc)")
+log = get_ctx_logger("tsarchain.network.rpc.storage_rpc")
 
 if TYPE_CHECKING:
     from ..node import Network
@@ -39,17 +39,7 @@ def _spkhex_to_address(spk_hex: str) -> str | None:
 
 
 def handle_storage_rpc(self: "Network", message: dict[str, Any], addr, mtype: str) -> dict | None:
-    if mtype == "GRAFFITI_GET_PAYOUTS":
-        art_id = str(message.get("art_id") or "").strip().lower()
-        if not art_id:
-            return {"type": "GRAFFITI_GET_PAYOUTS", "payouts": []}
-        limit = int(message.get("limit", 100) or 100)
-        limit = max(1, min(limit, 500))
-        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
-        payouts = reg.list_payouts(art_id, limit) if reg else []
-        return {"type": "GRAFFITI_GET_PAYOUTS", "art_id": art_id, "payouts": payouts}
-
-    elif mtype == "GRAFFITI_PROOF_SUBMIT":
+    if mtype == "GRAFFITI_PROOF_SUBMIT":
         art_id_raw = str(message.get("art_id") or "").strip()
         art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
         epoch = int(message.get("epoch", -1))

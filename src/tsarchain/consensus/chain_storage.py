@@ -639,21 +639,32 @@ class StorageMixin:
 # =============================================================================
 # 5. STATE I/O & COMPUTE
 # =============================================================================
+    def _read_snapshot_state(self) -> dict:
+        if self.in_memory:
+            return {}
+        data: dict = {}
+        if kv_enabled():
+            items = dict((k.decode("utf-8"), v.decode("utf-8"))
+                for k, v in iter_prefix("state", b"k:"))
+
+            snap_raw = items.get("k:snapshot")
+            if snap_raw:
+                data = json.loads(snap_raw)
+
+            if (not data) and items:
+                data["total_supply"] = int(items.get("k:total_supply", "0"))
+                data["total_blocks"] = int(items.get("k:total_blocks", "0"))
+
+        if not data:
+            data = self._state_store.load(default={})
+        if not isinstance(data, dict):
+            data = {}
+        return data
+
     def load_state(self):
         if self.in_memory:
             return
-        data = {}
-        if kv_enabled():
-            # State stored as individual keys
-            items = dict((k.decode('utf-8'), v.decode('utf-8')) for k, v in iter_prefix('state', b'k:'))
-            snap_raw = items.get('k:snapshot')
-            if snap_raw:
-                data = json.loads(snap_raw)
-            if not data and items:
-                data["total_supply"] = int(items.get('k:total_supply', '0'))
-                data["total_blocks"] = int(items.get('k:total_blocks', '0'))
-        if not data:
-            data = self._state_store.load(default={})
+        data = self._read_snapshot_state()
         self.total_supply = int(data.get("total_supply", 0) or 0)
         self.total_blocks = int(data.get("total_blocks", 0) or 0)
         self.supply_in_tsar = self.total_supply / CFG.TSAR if self.total_supply else 0

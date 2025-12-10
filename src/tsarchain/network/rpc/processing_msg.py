@@ -14,7 +14,7 @@ from ...contracts import graffiti as GRAFFITI
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network.rpc(processing_msg)")
+log = get_ctx_logger("tsarchain.network.rpc.processing_msg")
 
 
 if TYPE_CHECKING:
@@ -35,21 +35,25 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
     # ----------------------------------------------------------------------------------
     # GUARDIANS: role-based gate + limits
     # ----------------------------------------------------------------------------------
-    MINERS = {"HELLO", "NEW_BLOCK", "GET_FULL_SYNC", "FULL_SYNC", "CHAIN", "MEMPOOL",
-              "GET_HEADERS", "HEADERS", "GET_BLOCKS", "BLOCKS"}
+    MINERS = {"HELLO", "GET_INFO", "NEW_BLOCK", "GET_FULL_SYNC", "FULL_SYNC", "CHAIN", "MEMPOOL",
+              "GET_HEADERS", "HEADERS", "GET_BLOCKS", "GET_BLOCK_HASH", "BLOCKS"}
 
     NODE_STORAGE = {
-        "GRAFFITI_GET_PAYOUTS", "GRAFFITI_PROOF_SUBMIT", "GRAFFITI_BUILD_PAYOUT",
+        "GRAFFITI_PROOF_SUBMIT", "GRAFFITI_BUILD_PAYOUT",
     }
 
     USER = {
-        "PING", "GET_BALANCES", "CREATE_TX", "CREATE_TX_MULTI", "GET_INFO",
+        "PING", "GET_BALANCES", "CREATE_TX",
         "GET_TX_HISTORY", "GET_TX_DETAIL", "NEW_TX", "GET_UTXOS", "GET_PEERS",
-        "GET_NETWORK_INFO", "GET_BLOCK", "GET_BLOCK_HASH", "STOR_LIST",
-        "GRAFFITI_GET_POSTS", "GRAFFITI_GET_COMMENTS", "GRAFFITI_GET_ART",
+        "GET_NETWORK_INFO", "GET_BLOCK", "STOR_LIST",
+        
+        # Graffiti
+        "CREATE_TX_MULTI", "GRAFFITI_GET_POSTS", "GRAFFITI_GET_COMMENTS",
+        "GRAFFITI_GET_ART", "GRAFFITI_GET_PAYOUTS",
 
         # Chat & storage listing
-        "CHAT_REGISTER", "CHAT_LOOKUP_PUB", "CHAT_PRESENCE", "CHAT_SEND", "CHAT_PULL", "CHAT_RELAY", "CHAT_READ",
+        "CHAT_REGISTER", "CHAT_LOOKUP_PUB", "CHAT_PRESENCE", "CHAT_SEND",
+        "CHAT_PULL", "CHAT_RELAY", "CHAT_READ",
         "CHAT_GET_PREKEY", "CHAT_PUBLISH_PREKEYS",
 
         # Mempool utilities
@@ -68,19 +72,43 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         if isinstance(addr, tuple) and addr:
             return addr[0]
         return "0.0.0.0"
+    
+    def _identify_rpc_role(mtype: str, is_miner_sender: bool) -> tuple[str, str]:
+        if mtype in MINERS:
+            role = "MINER"
+            if is_miner_sender:
+                category = "MINER-AUTHORIZED"
+            else:
+                category = "MINER-UNAUTHORIZED"
+        elif mtype in NODE_STORAGE:
+            role = "STORAGE"
+            category = "STORAGE-NODE"
+        elif mtype in USER:
+            role = "USER"
+            category = "CLIENT"
+        else:
+            role = "UNKNOWN"
+            category = "UNKNOWN"
+
+        return role, category
 
     BOOTSTRAP_ALLOW = {"HELLO", "GET_FULL_SYNC", "FULL_SYNC", "GET_HEADERS", "HEADERS"}
     if (mtype in MINERS) and (mtype not in BOOTSTRAP_ALLOW) and (not _is_miner_sender()):
-        log.debug("[process_message] rejecting unauthorized miner RPC %s from %s", mtype, addr)
+        log.warning("[process_message] rejecting unauthorized miner RPC %s from %s", mtype, addr)
         return {"error": "forbidden: miners-only endpoint"}
 
     if (mtype not in MINERS) and (mtype not in USER) and (mtype not in NODE_STORAGE):
+        log.warning("[process_message] Unfamiliar response: %s", mtype)
         return {"error": "unknown type"}
 
+    is_miner = _is_miner_sender()
+    role, category = _identify_rpc_role(mtype, is_miner)
     if mtype in MINERS:
+        log.debug("[process_message] MINERS response: msg: %s role: %s category: %s", mtype, role, category)
         return handle_miner_rpc(self, message, addr, mtype)
-
+    
     if mtype in NODE_STORAGE:
+        log.debug("[process_message] STORAGE response: msg: %s role: %s category: %s", mtype, role)
         return handle_storage_rpc(self, message, addr, mtype)
 
     dispatch_result = handle_user_rpc(
@@ -95,9 +123,10 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         relay_chain=_relay_chain,
         send_chat_relay=_send_chat_relay,
     )
+
     if dispatch_result is not None:
         return dispatch_result
-
+    
     return {"error": "Unknown message type"}
 
 

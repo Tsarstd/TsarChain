@@ -19,6 +19,7 @@ log = get_ctx_logger("tsarchain.network.node_logic.rpc_client")
 
 
 def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[float] = None) -> Optional[dict]:
+    log.critical("Chekpoint 4")
     norm = self._normalize_peer(peer)
     if not norm:
         return None
@@ -28,8 +29,6 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
     if now < retry_at:
         log.debug("[_rpc_request] backoff active for %s (%.1fs remaining)", norm, retry_at - now)
         return None
-
-    env = build_envelope(payload, self.node_ctx, extra={"pubkey": self.pubkey})
     timeout = float(timeout or CFG.SYNC_TIMEOUT)
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -47,12 +46,22 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
                     get_pinned=self._get_pinned,
                     set_pinned=self._set_pinned,
                 )
+                log.critical("Chekpoint 6")
                 chan.handshake()
                 s.settimeout(timeout)
+                env = build_envelope(payload, self.node_ctx, extra={"pubkey": self.pubkey})
+                if CFG.ENFORCE_HELLO_PUBKEY or CFG.ENVELOPE_REQUIRED:
+                    env["pubkey"] = self.pubkey
+                    
                 chan.send(json.dumps(env).encode("utf-8"))
                 resp = chan.recv(timeout)
+                log.critical("Chekpoint 5")
             else:
                 s.settimeout(timeout)
+                env = build_envelope(payload, self.node_ctx, extra={"pubkey": self.pubkey})
+                if CFG.ENFORCE_HELLO_PUBKEY or CFG.ENVELOPE_REQUIRED:
+                    env["pubkey"] = self.pubkey
+                    
                 send_message(s, json.dumps(env).encode("utf-8"))
                 resp = recv_message(s, timeout=timeout)
     except (socket.timeout, ConnectionRefusedError, OSError):
@@ -87,6 +96,7 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
             self.peer_pubkeys[nid] = pko
     else:
         inner = outer
+    log.critical("Chekpoint 7")
     return inner
 
 

@@ -187,11 +187,6 @@ class NodeClient:
         if found:
             self.dir.set(found)
 
-
-        log.debug(
-            "[scan] done: %d node(s) found, %d timeout, %d refused, %d other over %d candidates",
-            len(found), n_timeout, n_refused, n_other, len(uniq)
-        )
         return found
 
     def _pace(self) -> None:
@@ -255,6 +250,9 @@ class NodeClient:
                 return outer
 
     def send(self, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         req = secrets.token_hex(6)
         peers = self.dir.get() or self.scan()
         if not peers:
@@ -272,6 +270,12 @@ class NodeClient:
 
         if _throttle("no_response", 10.0):
             log.error("[send] no response from any node", extra=_mk_extra(req=req, rpc=message.get("type")))
+            
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[send] Benchmark : %.3f ms", result)
+        
         return {"error": "No response from any node"}
 
     def send_async(self, message: Dict[str, Any], callback: Callable[[Optional[Dict[str, Any]]], None]) -> None:

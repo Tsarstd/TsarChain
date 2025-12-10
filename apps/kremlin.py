@@ -872,33 +872,15 @@ class KremlinWalletGUI(WalletsMixin):
 
         def _prov_get_block(x):
             s = str(x).strip()
-
             if re.fullmatch(r"\d+", s):
                 h = int(s)
-                blk = _rpc({"type": "GET_BLOCK_BY_HEIGHT", "height": h})
-                if isinstance(blk, dict) and blk and not blk.get("error"):
-                    blk.setdefault("height", h)
-                    if not blk.get("hash"):
-                        hh = _rpc({"type": "GET_BLOCK_HASH", "height": h})
-                        if isinstance(hh, dict) and hh.get("hash"):
-                            blk["hash"] = hh["hash"]
-                        elif isinstance(hh, str) and hh:
-                            blk["hash"] = hh
-                    return blk
-
                 blk = _rpc({"type": "GET_BLOCK", "height": h})
                 if isinstance(blk, dict) and blk and not blk.get("error"):
                     blk.setdefault("height", h)
                 return blk
 
             if re.fullmatch(r"[0-9a-fA-F]{64}", s):
-                for t in ("GET_BLOCK", "GET_BLOCK_BY_HASH", "GET_BLOCK_DETAIL"):
-                    r = _rpc({"type": t, "hash": s})
-                    if isinstance(r, dict) and r and not r.get("error"):
-                        r.setdefault("hash", s)
-                        return r
-
-                r = _rpc({"type": "GET_BLOCK", "block_hash": s})
+                r = _rpc({"type": "GET_BLOCK", "hash": s})
                 if isinstance(r, dict) and r and not r.get("error"):
                     r.setdefault("hash", s)
                     return r
@@ -936,7 +918,6 @@ class KremlinWalletGUI(WalletsMixin):
             return t
 
         def _prov_get_address(addr: str):
-            bal  = _rpc({"type": "GET_BALANCE",  "address": addr})
             bals = _rpc({"type": "GET_BALANCES", "addresses": [addr]})
             utx  = _rpc({"type": "GET_UTXOS",    "address": addr})
             his  = _rpc({"type": "GET_TX_HISTORY","address": addr})
@@ -957,7 +938,7 @@ class KremlinWalletGUI(WalletsMixin):
                     return d["balance"]
                 return None
 
-            be = _pick_entry(bal) or _pick_entry(bals) or {}
+            be = _pick_entry(bals) or {}
             if isinstance(be, dict):
                 res["spendable"] = int(be.get("spendable") or be.get("confirmed") or be.get("balance_spendable") or 0)
                 res["immature"]  = int(be.get("immature")  or be.get("balance_immature")  or 0)

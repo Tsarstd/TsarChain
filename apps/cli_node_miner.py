@@ -109,12 +109,21 @@ class HashrateReporter(threading.Thread):
 def _register_bootstrap_peers(network: Network) -> int:
     fallback_nodes = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
     count = 0
+    is_self = getattr(network, "_is_self_bootstrap", None)
+
     for peer in fallback_nodes:
-        if not peer:
+        if not peer or len(peer) != 2:
             continue
-        network.persistent_peers.add(peer)
-        network.peers.add(peer)
+        host, port = peer
+        host_s, port_i = str(host), int(port)
+        if callable(is_self) and is_self(host_s, port_i):
+            continue
+        
+        peer_tuple = (host_s, port_i)
+        network.persistent_peers.add(peer_tuple)
+        network.peers.add(peer_tuple)
         count += 1
+
     return count
 
 

@@ -68,12 +68,9 @@ class ChainOpsMixin:
 
 
     def add_block(self, block: Block):
-        log_threshold = float(CFG.ADD_BLOCK_LOG_THRESHOLD)
-        metrics_enabled = log_threshold > 0
-        t_total_start = time.perf_counter() if metrics_enabled else 0.0
-        utxo_sec = mempool_sec = persist_sec = 0.0
-        tx_count = len(getattr(block, "transactions", []) or [])
-
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         if not self.chain:
             if getattr(block, "height", 0) != 0:
                 raise ValueError("[Blockchain] First block must be the genesis block (height=0)")
@@ -86,28 +83,18 @@ class ChainOpsMixin:
             if not self.in_memory:
                 store = self._ensure_utxodb()
                 if store is not None:
-                    utxo_start = time.perf_counter() if metrics_enabled else None
                     blk_hash = block.hash().hex()
                     store.update(block.transactions, block_height=0, block_hash=blk_hash, autosave=False)
-                    if metrics_enabled and utxo_start is not None:
-                        utxo_sec = time.perf_counter() - utxo_start
                     self._mark_utxo_dirty()
                     self._utxo_synced = True
                     self._schedule_persist(force_full=True, flush_force=True, save_state=True)
                     
-            mempool_start = time.perf_counter() if metrics_enabled else None
             self._prune_mempool_confirmed(block)
-            if metrics_enabled and mempool_start is not None:
-                mempool_sec = time.perf_counter() - mempool_start
             if not self.in_memory:
                 self._mark_chain_dirty(block.height)
             if self.in_memory:
                 self.total_supply = self.calculate_total_supply()
-            if metrics_enabled:
-                total = time.perf_counter() - t_total_start
-                if total >= log_threshold:
-                    log.info("[add_block.metrics] height=%s txs=%s total=%.4fs utxo=%.4fs mempool=%.4fs persist=%.4fs (genesis)",
-                             getattr(block, "height", 0), tx_count, total, utxo_sec, mempool_sec, persist_sec)
+                
             return True
 
         last_block = self.get_last_block()
@@ -117,44 +104,36 @@ class ChainOpsMixin:
             raise ValueError("[Blockchain] prev_block_hash does not match the last block")
 
         self.chain.append(block)
+        
         # annotate cumulative chainwork for tip
         prev_cw = getattr(self.chain[-2], 'chainwork', None)
         if prev_cw is None:
             prev_cw = self._compute_chainwork_for_chain(self.chain[:-1])
         self.chain[-1].chainwork = int(prev_cw) + self._work_from_bits(block.bits)
         self._mark_chain_dirty(block.height)
+        
         # UTXO
         if not self.in_memory:
             store = self._ensure_utxodb()
             if store is not None:
-                utxo_start = time.perf_counter() if metrics_enabled else None
-                try:
-                    blk_hash = block.hash().hex()
-                except Exception:
-                    blk_hash = None
+                blk_hash = block.hash().hex()
                 store.update(block.transactions, block_height=block.height, block_hash=blk_hash, autosave=False)
-                if metrics_enabled and utxo_start is not None:
-                    utxo_sec = time.perf_counter() - utxo_start
                 self._mark_utxo_dirty()
                 
-        mempool_start = time.perf_counter() if metrics_enabled else None
         self._prune_mempool_confirmed(block)
-        if metrics_enabled and mempool_start is not None:
-            mempool_sec = time.perf_counter() - mempool_start
         if not self.in_memory:
             self._schedule_persist()
         else:
             self.total_supply = self.calculate_total_supply()    
-            
-        if metrics_enabled:
-            total = time.perf_counter() - t_total_start
-            if total >= log_threshold:
-                log.info("[add_block.metrics] height=%s txs=%s total=%.4fs utxo=%.4fs mempool=%.4fs persist=%.4fs",
-                         block.height, tx_count, total, utxo_sec, mempool_sec, persist_sec)
 
         if self.in_memory:
             self._ensure_utxodb()
 
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[add_block] Benchmark : %.3f ms", result)
+        
         return True
 
     def swap_tip_if_better(self, block: Block):

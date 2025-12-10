@@ -54,6 +54,9 @@ class ValidationMixin:
         return True
 
     def validate_block(self, block: Block) -> bool:
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         try:
             if not all([block.height is not None, block.prev_block_hash, block.transactions]):
                 return False
@@ -97,7 +100,12 @@ class ValidationMixin:
                     self._last_block_validation_error = "chain_state_changed_during_validation"
                     return False
                 self._last_block_validation_error = None
-
+                
+            if CFG.DEBUG_BENCHMARKS:
+                end = time.perf_counter()
+                result = round((end - start) * 1000.0, 3)
+                log.debug("[validate_block] Benchmark : %.3f ms", result)
+                
             return True
 
         except Exception:
@@ -480,7 +488,6 @@ class ValidationMixin:
             self._last_block_validation_error = f"coinbase_amount_mismatch expected={expected_cb} actual={actual_cb}"
             return False
 
-        self._last_block_validation_error = None
         return True
 
 

@@ -59,15 +59,11 @@ class Tx:
         total_in = sum(int(a) for a in input_amounts)
         total_out = sum(int(getattr(out, "amount", 0) or 0) for out in self.outputs)
         fee = total_in - total_out
-        log.debug("Computed fee: %s (in=%s out=%s)", fee, total_in, total_out)
         if fee < 0:
             raise ValueError("Output is greater than input, negative costs")
 
         self.fee = fee
         return fee
-
-    def total_output(self) -> int:
-        return sum(o.amount for o in self.outputs)
 
     # -------- Signing ----------
 

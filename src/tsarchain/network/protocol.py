@@ -134,9 +134,6 @@ def send_message(sock: socket.socket, payload: bytes, *, max_len: int | None = N
             log.debug("[send_message] peer closed during send (%s)", getattr(e, "winerror", getattr(e, "errno", e)))
             return
         raise
-    
-    if log.isEnabledFor(5):  # TRACE
-        log.trace("sent %s bytes", n)
 
 def recv_message(sock, timeout: float | None = None, max_len: int | None = None):
     cap = int(max_len) if max_len is not None else int(CFG.MAX_MSG)
@@ -258,6 +255,9 @@ def is_envelope(obj: dict) -> bool:
            "sig" in obj and "ts" in obj and "nonce" in obj
 
 def build_envelope(inner_msg: dict, node_ctx: dict, extra: dict | None = None) -> dict:
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+            
     ts_now = int(time.time())
     nonce = gen_nonce(16)
     outer = {
@@ -272,10 +272,18 @@ def build_envelope(inner_msg: dict, node_ctx: dict, extra: dict | None = None) -
 
     to_sign = canonical_dumps({"msg": inner_msg, "ts": ts_now, "nonce": nonce, "from": node_ctx["node_id"]})
     outer["sig"] = sign_message_hex(node_ctx["privkey"], to_sign)
-
+    
+    if CFG.DEBUG_BENCHMARKS:
+        end = time.perf_counter()
+        result = round((end - start) * 1000.0, 3)
+        log.debug("[build_envelope] Benchmark : %.3f ms", result)
+        
     return outer
 
 def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+        
     net_id = envelope.get("net_id")
     if net_id != CFG.DEFAULT_NET_ID:
         raise ValueError("wrong network id")
@@ -308,7 +316,12 @@ def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
         raise ValueError("bad signature")
     # Anti-replay within REPLAY_WINDOW_SEC using per-sender nonce cache
     _nonce_register(node_id, str(envelope.get("nonce")), int(ts_val))
-
+    
+    if CFG.DEBUG_BENCHMARKS:
+        end = time.perf_counter()
+        result = round((end - start) * 1000.0, 3)
+        log.debug("[verify_and_unwrap] Benchmark : %.3f ms", result)
+        
     return inner
 
 # =========================================================
@@ -342,10 +355,18 @@ class SecureChannel:
         )
 
     def handshake(self):
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         if self.role == "client":
             self._hs_client_auth()
         else:
             self._hs_server_auth()
+            
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[handshake] Benchmark : %.3f ms", result)
 
     def _hs_client_auth(self):
         hs1 = self.native.client_build_hs1()

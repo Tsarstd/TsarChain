@@ -11,7 +11,7 @@ from bech32 import convertbits, bech32_decode, bech32_encode
 from ..core.tx import Tx, TxIn, TxOut
 from ..utils.helpers import Script, OP_RETURN, last_pushdata
 from ..contracts import graffiti as GRAFFITI
-from .protocol import (send_message, recv_message,build_envelope, SecureChannel)
+from .protocol import send_message, recv_message,build_envelope, SecureChannel
 from ..utils import config as CFG
 
 # ---------------- Logger ----------------

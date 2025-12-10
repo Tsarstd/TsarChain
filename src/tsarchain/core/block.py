@@ -182,14 +182,7 @@ class Block:
             if pow_hash_verify_light(self.header(), key_hint=pow_key) != h:
                 self.log.error("[mine] native hash verification failed (nonce=%s)", self.nonce)
                 return None
-            self.log.info("[mine] Found: nonce=%s, hash=%s", self.nonce, h.hex())
             return h
-
-        self.log.warning(
-            "[mine] Native miner returned no valid nonce (threads=%s, target=%s)",
-            threads,
-            hex(target),
-        )
         return None
 
 

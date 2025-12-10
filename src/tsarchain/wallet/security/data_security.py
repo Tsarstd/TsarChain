@@ -841,6 +841,9 @@ class Security:
 class Wallet:
     @staticmethod
     def sign_prepared_tx(unsigned_tx_dict, inputs_meta, privkey_hex):
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+
         tx = Tx.from_dict(unsigned_tx_dict)
         if len(tx.inputs) != len(inputs_meta):
             raise ValueError("inputs mismatch")
@@ -854,6 +857,12 @@ class Wallet:
         input_amounts = [int(m["amount"]) for m in inputs_meta]
         tx.set_fee_from_input_amounts(input_amounts)
         tx.compute_txid()
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[sign_prepared_tx] Benchmark : %.3f ms", result)
+            
         return tx
 
     @staticmethod

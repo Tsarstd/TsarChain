@@ -47,10 +47,7 @@ def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
         "height": self.broadcast.blockchain.height,
         "peers": [{"ip": h, "port": p} for h, p in list(self.peers)[: CFG.HEADERS_FANOUT]],
     }
-    env = build_envelope(hello_msg, self.node_ctx, extra={"pubkey": self.pubkey})
-    if CFG.ENFORCE_HELLO_PUBKEY or CFG.ENVELOPE_REQUIRED:
-        env["pubkey"] = self.pubkey
-
+    
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
@@ -68,12 +65,21 @@ def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
                     get_pinned=self._get_pinned,
                     set_pinned=self._set_pinned,
                 )
+                log.critical("Chekpoint 1")
                 chan.handshake()
                 s.settimeout(1.0)
+                env = build_envelope(hello_msg, self.node_ctx, extra={"pubkey": self.pubkey})
+                if CFG.ENFORCE_HELLO_PUBKEY or CFG.ENVELOPE_REQUIRED:
+                    env["pubkey"] = self.pubkey
+                
                 chan.send(json.dumps(env).encode("utf-8"))
                 chan.recv(1)
+                log.critical("Chekpoint 2")
             else:
                 s.settimeout(1.0)
+                env = build_envelope(hello_msg, self.node_ctx, extra={"pubkey": self.pubkey})
+                if CFG.ENFORCE_HELLO_PUBKEY or CFG.ENVELOPE_REQUIRED:
+                    env["pubkey"] = self.pubkey
                 send_message(s, json.dumps(env).encode("utf-8"))
                 recv_message(s, timeout=1)
                 
@@ -88,7 +94,7 @@ def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
     self.broadcast.send_mempool_to_peer(norm)
     if not CFG.ENABLE_FULL_SYNC:
         self._request_mempool_snapshot(norm, force=True)
-
+    log.critical("Chekpoint 3")
     return True
 
 

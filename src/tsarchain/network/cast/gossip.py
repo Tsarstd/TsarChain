@@ -40,7 +40,6 @@ class GossipMixin:
                         get_pinned=lambda nid: self.peer_pubkeys.get(nid),
                         set_pinned=lambda nid, pk: self.peer_pubkeys.__setitem__(nid, pk),
                     )
-
                     chan.handshake()
                     chan.send(payload)
                 else:

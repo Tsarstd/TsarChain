@@ -174,7 +174,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "000ebadcf63e56bc558b00b37cbd8bd1850edda5afa8e77f7c6bce2bd34d799f"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "001f917c529fa935f02c130ea4f8c266c7523f0d512359d9a04f6e0262d80c38"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -350,7 +350,7 @@ BROADCAST_FAIL_BACKOFF_S = 120  # seconds to wait when broadcast keeps failing
 # ---- ANTI-DOS LIMITS ----
 MAX_ADDRS_PER_REQ            = 15  # max addresses accepted per addr message
 MAX_HISTORY_LIMIT            = 200  # cap on stored addr history per peer
-MAX_UTXO_ADDR_LEN            = 128  # sanity limit for UTXO address strings
+MAX_UTXO_ADDR_LEN            = 64  # sanity limit for UTXO address strings
 NONCE_PER_SENDER_MAX         = 4096  # per-sender nonce cache bound
 NONCE_GLOBAL_MAX             = 100_000  # global nonce cache bound across senders
 HANDSHAKE_RL_PER_IP_BURST    = 50  # burst limit when rate-limiting handshakes
@@ -376,7 +376,6 @@ HEADERS_SYNC_MIN_INTERVAL = 1  # seconds between header sync loops
 BLOCK_DOWNLOAD_BATCH_MAX  = 2048  # concurrent block download cap
 CHAIN_FLUSH_INTERVAL      = 1  # blocks between lightweight chain persistence
 CHAIN_FORCE_FULL_FLUSH    = False  # force full persistence on every save when True
-ADD_BLOCK_LOG_THRESHOLD   = 0.1  # log add_block timings slower than this (seconds)
 UTXO_FLUSH_INTERVAL       = 2  # block interval between UTXO set flushes
 
 # ---- PEER QUOTAS ----
@@ -563,6 +562,7 @@ RETENTION_GC_SEC               = 60  # interval between retention garbage collec
 LOG_PATH             = "data/logging/tsarchain.log"  # canonical log file path before format-specific override
 LOG_SHOW_PROCESS     = False  # include process metadata in log context when True
 LOG_PROC_PLACEHOLDER = "-"  # value used when process info is hidden
+DEBUG_BENCHMARKS     = True  # for benchmarking needs for each computing logic/process
 
 # ---- MODE PROFILES ----
 if IS_DEV:
