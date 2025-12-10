@@ -76,6 +76,9 @@ class Network:
         self._last_headers_locator: Dict[Tuple[str, int], List[str]] = {}
         self._snapshot_unreachable: Set[Tuple[str, int]] = set()
         self._rpc_backoff: Dict[Tuple[str, int], float] = {}
+        self._rpc_conn_cache: Dict[Tuple[str, int], dict] = {}
+        self._rpc_conn_cache_lock = threading.RLock()
+        self._rpc_prefetched: Set[Tuple[str, int]] = set()
         self._recent_gap_requests: Dict[Tuple[str, int], float] = {}
         
         self._sync_event = threading.Event()
@@ -113,6 +116,10 @@ class Network:
         self.discovery_thread = threading.Thread(target=self.discover_peers_loop, daemon=True)
         self.sync_thread = threading.Thread(target=self.sync_loop, daemon=True)
         self._threads = [self.server_thread, self.discovery_thread, self.sync_thread]
+        try:
+            rpc_client_logic._prefetch_rpc_connections(self)
+        except Exception:
+            log.debug("[__init__] rpc prefetch skipped", exc_info=True)
 
         # --- Log throttles to reduce console spam
         self._last_p2p_log = 0.0

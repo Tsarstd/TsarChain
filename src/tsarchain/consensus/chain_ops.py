@@ -68,9 +68,6 @@ class ChainOpsMixin:
 
 
     def add_block(self, block: Block):
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-            
         if not self.chain:
             if getattr(block, "height", 0) != 0:
                 raise ValueError("[Blockchain] First block must be the genesis block (height=0)")
@@ -128,11 +125,6 @@ class ChainOpsMixin:
 
         if self.in_memory:
             self._ensure_utxodb()
-
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            log.debug("[add_block] Benchmark : %.3f ms", result)
         
         return True
 

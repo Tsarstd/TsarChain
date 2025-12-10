@@ -12,6 +12,7 @@ import time
 from typing import List, Set, Tuple
 
 from ...utils import config as CFG
+from . import rpc_client
 from ..protocol import SecureChannel, build_envelope, recv_message, send_message
 
 from ...utils.tsar_logging import get_ctx_logger
@@ -65,7 +66,6 @@ def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
                     get_pinned=self._get_pinned,
                     set_pinned=self._set_pinned,
                 )
-                log.critical("Chekpoint 1")
                 chan.handshake()
                 s.settimeout(1.0)
                 env = build_envelope(hello_msg, self.node_ctx, extra={"pubkey": self.pubkey})
@@ -74,7 +74,6 @@ def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
                 
                 chan.send(json.dumps(env).encode("utf-8"))
                 chan.recv(1)
-                log.critical("Chekpoint 2")
             else:
                 s.settimeout(1.0)
                 env = build_envelope(hello_msg, self.node_ctx, extra={"pubkey": self.pubkey})
@@ -94,7 +93,6 @@ def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
     self.broadcast.send_mempool_to_peer(norm)
     if not CFG.ENABLE_FULL_SYNC:
         self._request_mempool_snapshot(norm, force=True)
-    log.critical("Chekpoint 3")
     return True
 
 
@@ -123,6 +121,7 @@ def _discover_peers(self):
         if self._attempt_hello(norm):
             found_peers.add(norm)
             self._reward_peer(norm)
+            rpc_client._prefetch_peer_channel(self, norm)
         else:
             self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
 

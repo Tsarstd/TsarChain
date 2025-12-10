@@ -94,7 +94,7 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
 
     BOOTSTRAP_ALLOW = {"HELLO", "GET_FULL_SYNC", "FULL_SYNC", "GET_HEADERS", "HEADERS"}
     if (mtype in MINERS) and (mtype not in BOOTSTRAP_ALLOW) and (not _is_miner_sender()):
-        log.warning("[process_message] rejecting unauthorized miner RPC %s from %s", mtype, addr)
+        #log.warning("[process_message] rejecting unauthorized miner RPC %s from %s", mtype, addr)
         return {"error": "forbidden: miners-only endpoint"}
 
     if (mtype not in MINERS) and (mtype not in USER) and (mtype not in NODE_STORAGE):
@@ -104,11 +104,11 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
     is_miner = _is_miner_sender()
     role, category = _identify_rpc_role(mtype, is_miner)
     if mtype in MINERS:
-        log.debug("[process_message] MINERS response: msg: %s role: %s category: %s", mtype, role, category)
+        #log.debug("[process_message] MINERS response: msg: %s role: %s category: %s", mtype, role, category)
         return handle_miner_rpc(self, message, addr, mtype)
     
     if mtype in NODE_STORAGE:
-        log.debug("[process_message] STORAGE response: msg: %s role: %s category: %s", mtype, role)
+        #log.debug("[process_message] STORAGE response: msg: %s role: %s category: %s", mtype, role)
         return handle_storage_rpc(self, message, addr, mtype)
 
     dispatch_result = handle_user_rpc(

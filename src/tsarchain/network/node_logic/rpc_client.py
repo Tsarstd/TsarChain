@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import socket
 import time
+import threading
 from typing import Optional, Tuple
 
 from ...core.tx import Tx
@@ -17,9 +18,11 @@ from ..protocol import SecureChannel, build_envelope, is_envelope, recv_message,
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.node_logic.rpc_client")
 
+_RPC_CONN_TTL = 30.0  # seconds a cached channel/socket stays warm before re-handshake
+_RPC_PREFETCH_TIMEOUT = 1.5  # quick dial timeout for pre-connect
+
 
 def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[float] = None) -> Optional[dict]:
-    log.critical("Chekpoint 4")
     norm = self._normalize_peer(peer)
     if not norm:
         return None
@@ -30,15 +33,63 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
         log.debug("[_rpc_request] backoff active for %s (%.1fs remaining)", norm, retry_at - now)
         return None
     timeout = float(timeout or CFG.SYNC_TIMEOUT)
+    cache = getattr(self, "_rpc_conn_cache", None)
+    cache_lock = getattr(self, "_rpc_conn_cache_lock", None)
+    if cache is None or cache_lock is None:
+        cache = self._rpc_conn_cache = {}
+        cache_lock = self._rpc_conn_cache_lock = threading.RLock()
+
+    def _cleanup(entry):
+        sock = entry.get("sock")
+        if sock:
+            sock.close()
+
+    def _send_with_channel(chan, sock):
+        env = build_envelope(payload, self.node_ctx, extra={"pubkey": self.pubkey})
+        if CFG.ENFORCE_HELLO_PUBKEY or CFG.ENVELOPE_REQUIRED:
+            env["pubkey"] = self.pubkey
+        if CFG.P2P_ENC_REQUIRED and chan:
+            chan.send(json.dumps(env).encode("utf-8"))
+            return chan.recv(timeout)
+        send_message(sock, json.dumps(env).encode("utf-8"))
+        return recv_message(sock, timeout=timeout)
+
+    entry = None
+    with cache_lock:
+        e = cache.get(norm)
+        if e and (now - e.get("ts", 0.0)) < _RPC_CONN_TTL:
+            entry = cache.pop(norm, None)
+        elif e:
+            cache.pop(norm, None)
+            _cleanup(e)
+
+    resp = None
+    sock_new = None
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
-            s.settimeout(float(CFG.HANDSHAKE_TIMEOUT))
-            s.connect(norm)
+        if entry:
+            sock = entry.get("sock")
+            chan = entry.get("chan")
+            try:
+                sock.settimeout(timeout)
+                resp = _send_with_channel(chan, sock)
+                entry["ts"] = time.time()
+                with cache_lock:
+                    cache[norm] = entry
+            except Exception:
+                _cleanup(entry)
+                entry = None
+
+        if resp is None:
+            sock_new = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock_new.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
+            sock_new.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
+            sock_new.settimeout(float(CFG.HANDSHAKE_TIMEOUT))
+            sock_new.connect(norm)
+
+            chan = None
             if CFG.P2P_ENC_REQUIRED:
                 chan = SecureChannel(
-                    s,
+                    sock_new,
                     role="client",
                     node_id=self.node_id,
                     node_pub=self.pubkey,
@@ -46,28 +97,22 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
                     get_pinned=self._get_pinned,
                     set_pinned=self._set_pinned,
                 )
-                log.critical("Chekpoint 6")
                 chan.handshake()
-                s.settimeout(timeout)
-                env = build_envelope(payload, self.node_ctx, extra={"pubkey": self.pubkey})
-                if CFG.ENFORCE_HELLO_PUBKEY or CFG.ENVELOPE_REQUIRED:
-                    env["pubkey"] = self.pubkey
-                    
-                chan.send(json.dumps(env).encode("utf-8"))
-                resp = chan.recv(timeout)
-                log.critical("Chekpoint 5")
-            else:
-                s.settimeout(timeout)
-                env = build_envelope(payload, self.node_ctx, extra={"pubkey": self.pubkey})
-                if CFG.ENFORCE_HELLO_PUBKEY or CFG.ENVELOPE_REQUIRED:
-                    env["pubkey"] = self.pubkey
-                    
-                send_message(s, json.dumps(env).encode("utf-8"))
-                resp = recv_message(s, timeout=timeout)
+
+            sock_new.settimeout(timeout)
+            resp = _send_with_channel(chan, sock_new)
+            # cache warm channel for reuse
+            with cache_lock:
+                cache[norm] = {"chan": chan, "sock": sock_new, "ts": time.time()}
+            sock_new = None  # cached, do not auto-close
     except (socket.timeout, ConnectionRefusedError, OSError):
+        if sock_new is not None:
+            sock_new.close()
         return None
 
     except Exception as exc:
+        if sock_new is not None:
+            sock_new.close()
         self._rpc_backoff[norm] = time.time() + max(5.0, float(CFG.TEMP_BAN_SECONDS))
         if isinstance(exc, AttributeError):
             log.warning("[_rpc_request] Handshake aborted by %s; backing off", norm)
@@ -96,7 +141,6 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
             self.peer_pubkeys[nid] = pko
     else:
         inner = outer
-    log.critical("Chekpoint 7")
     return inner
 
 
@@ -257,9 +301,91 @@ def _request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> b
     return False
 
 
+def _prefetch_rpc_connections(self):
+    """
+    Dial bootstrap/persistent peers once at startup to warm up handshake+channel.
+    """
+    peers = list(getattr(self, "persistent_peers", []))
+    cache = getattr(self, "_rpc_conn_cache", None)
+    cache_lock = getattr(self, "_rpc_conn_cache_lock", None)
+    prefetched = getattr(self, "_rpc_prefetched", None)
+    if cache is None or cache_lock is None or prefetched is None:
+        return
+    for peer in peers:
+        norm = self._normalize_peer(peer)
+        if not norm or norm in prefetched:
+            continue
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(_RPC_PREFETCH_TIMEOUT)
+            sock.connect(norm)
+            chan = None
+            if CFG.P2P_ENC_REQUIRED:
+                chan = SecureChannel(
+                    sock,
+                    role="client",
+                    node_id=self.node_id,
+                    node_pub=self.pubkey,
+                    node_priv=self.privkey,
+                    get_pinned=self._get_pinned,
+                    set_pinned=self._set_pinned,
+                )
+                chan.handshake()
+            sock.settimeout(float(CFG.SYNC_TIMEOUT))
+            with cache_lock:
+                cache[norm] = {"chan": chan, "sock": sock, "ts": time.time()}
+            prefetched.add(norm)
+            log.debug("[_prefetch_rpc_connections] warmed channel to %s", norm)
+        except Exception:
+            log.exception("error__prefetch_rpc_connections")
+            sock.close()
+            continue
+
+
+def _prefetch_peer_channel(self, peer: Tuple[str, int]):
+    """
+    Warm a single peer channel (handshake + cache) with short timeout.
+    """
+    cache = getattr(self, "_rpc_conn_cache", None)
+    cache_lock = getattr(self, "_rpc_conn_cache_lock", None)
+    prefetched = getattr(self, "_rpc_prefetched", None)
+    if cache is None or cache_lock is None or prefetched is None:
+        return
+    norm = self._normalize_peer(peer)
+    if not norm or norm in prefetched:
+        return
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(_RPC_PREFETCH_TIMEOUT)
+        sock.connect(norm)
+        chan = None
+        if CFG.P2P_ENC_REQUIRED:
+            chan = SecureChannel(
+                sock,
+                role="client",
+                node_id=self.node_id,
+                node_pub=self.pubkey,
+                node_priv=self.privkey,
+                get_pinned=self._get_pinned,
+                set_pinned=self._set_pinned,
+            )
+            chan.handshake()
+        sock.settimeout(float(CFG.SYNC_TIMEOUT))
+        with cache_lock:
+            cache[norm] = {"chan": chan, "sock": sock, "ts": time.time()}
+        prefetched.add(norm)
+        log.debug("[_prefetch_peer_channel] warmed channel to %s", norm)
+    except Exception:
+        log.exception("error_prefetch_peer_channel")
+        sock.close()
+        return
+
+
 __all__ = (
     "_rpc_request",
     "_request_mempool_inline",
     "_request_mempool_snapshot",
     "_request_full_sync",
+    "_prefetch_rpc_connections",
+    "_prefetch_peer_channel",
 )

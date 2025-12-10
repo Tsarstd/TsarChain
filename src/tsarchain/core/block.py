@@ -49,6 +49,12 @@ class Block:
         self.timestamp = int(time.time()) if timestamp is None else timestamp
         self.bits = bits
         self.nonce = nonce
+        # Cache hash to avoid repeated RandomX verification during validation
+        self._cached_hash = None
+        self._cached_hash_nonce = None
+        self._cached_hash_bits = None
+        self._cached_hash_mr = None
+        self._cached_hash_prev = None
         short_prev = (self.prev_block_hash.hex()[:8]
               if isinstance(self.prev_block_hash, (bytes, bytearray))
               else str(self.prev_block_hash)[:8])
@@ -125,7 +131,23 @@ class Block:
     # -----------------------------
 
     def hash(self) -> bytes:
-        return pow_hash_verify_light(self.header(), height=self.height)
+        # Recompute only if inputs changed (nonce/bits/merkle_root/prev_hash)
+        if (
+            isinstance(self._cached_hash, (bytes, bytearray))
+            and self._cached_hash_nonce == self.nonce
+            and self._cached_hash_bits == self.bits
+            and self._cached_hash_mr == self.merkle_root
+            and self._cached_hash_prev == self.prev_block_hash
+        ):
+            return self._cached_hash
+
+        h = pow_hash_verify_light(self.header(), height=self.height)
+        self._cached_hash = h
+        self._cached_hash_nonce = self.nonce
+        self._cached_hash_bits = self.bits
+        self._cached_hash_mr = self.merkle_root
+        self._cached_hash_prev = self.prev_block_hash
+        return h
 
     def is_valid(self, target: int):
         hnum = int.from_bytes(self.hash(), 'big')

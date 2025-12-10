@@ -18,6 +18,10 @@ from .peers_storage import load_node_key, save_node_key
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.protocol")
 
+_SEND_DISCONNECT_LAST = 0.0
+_SEND_DISCONNECT_COUNT = 0
+_SEND_DISCONNECT_WINDOW = 5.0  # seconds to throttle repeated disconnect logs
+
 
 def _ensure_dir(path = str) -> None:
     d = os.path.dirname(path)
@@ -131,7 +135,13 @@ def send_message(sock: socket.socket, payload: bytes, *, max_len: int | None = N
         sock.sendall(hdr + body)
     except Exception as e:
         if _is_disconnect_exc(e):
-            log.debug("[send_message] peer closed during send (%s)", getattr(e, "winerror", getattr(e, "errno", e)))
+            global _SEND_DISCONNECT_LAST, _SEND_DISCONNECT_COUNT
+            _SEND_DISCONNECT_COUNT += 1
+            now = time.time()
+            if now - _SEND_DISCONNECT_LAST >= _SEND_DISCONNECT_WINDOW:
+                log.debug("[send_message] peer closed during send (%s) count=%d", getattr(e, "winerror", getattr(e, "errno", e)), _SEND_DISCONNECT_COUNT)
+                _SEND_DISCONNECT_LAST = now
+                _SEND_DISCONNECT_COUNT = 0
             return
         raise
 
@@ -254,10 +264,7 @@ def is_envelope(obj: dict) -> bool:
            "net_id" in obj and "from" in obj and "msg" in obj and \
            "sig" in obj and "ts" in obj and "nonce" in obj
 
-def build_envelope(inner_msg: dict, node_ctx: dict, extra: dict | None = None) -> dict:
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-            
+def build_envelope(inner_msg: dict, node_ctx: dict, extra: dict | None = None) -> dict:        
     ts_now = int(time.time())
     nonce = gen_nonce(16)
     outer = {
@@ -271,19 +278,10 @@ def build_envelope(inner_msg: dict, node_ctx: dict, extra: dict | None = None) -
         outer.update(extra)
 
     to_sign = canonical_dumps({"msg": inner_msg, "ts": ts_now, "nonce": nonce, "from": node_ctx["node_id"]})
-    outer["sig"] = sign_message_hex(node_ctx["privkey"], to_sign)
-    
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        log.debug("[build_envelope] Benchmark : %.3f ms", result)
-        
+    outer["sig"] = sign_message_hex(node_ctx["privkey"], to_sign)    
     return outer
 
-def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-        
+def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict: 
     net_id = envelope.get("net_id")
     if net_id != CFG.DEFAULT_NET_ID:
         raise ValueError("wrong network id")
@@ -316,12 +314,6 @@ def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
         raise ValueError("bad signature")
     # Anti-replay within REPLAY_WINDOW_SEC using per-sender nonce cache
     _nonce_register(node_id, str(envelope.get("nonce")), int(ts_val))
-    
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        log.debug("[verify_and_unwrap] Benchmark : %.3f ms", result)
-        
     return inner
 
 # =========================================================

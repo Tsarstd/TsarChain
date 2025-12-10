@@ -24,6 +24,7 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.consensus.validation')
 
 class ValidationMixin:
+    _pow_light_warmed = False
 # =============================================================================
 # 1. VALIDATION PROCESSING
 # =============================================================================
@@ -53,13 +54,16 @@ class ValidationMixin:
             setattr(tx, "txid_hex", txid_bytes.hex())
         return True
 
-    def validate_block(self, block: Block) -> bool:
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-            
+    def validate_block(self, block: Block) -> bool:  
         try:
             if not all([block.height is not None, block.prev_block_hash, block.transactions]):
                 return False
+            
+            # Warm-up RandomX light verifier once to avoid first-block spike
+            if (not self.__class__._pow_light_warmed) and CFG.POW_ALGO == "randomx":
+                H.pow_hash_verify_light(block.header(), height=block.height)
+            else:
+                self.__class__._pow_light_warmed = True
 
             if not self._validate_pow(block):
                 return False
@@ -100,11 +104,6 @@ class ValidationMixin:
                     self._last_block_validation_error = "chain_state_changed_during_validation"
                     return False
                 self._last_block_validation_error = None
-                
-            if CFG.DEBUG_BENCHMARKS:
-                end = time.perf_counter()
-                result = round((end - start) * 1000.0, 3)
-                log.debug("[validate_block] Benchmark : %.3f ms", result)
                 
             return True
 
