@@ -109,6 +109,12 @@ class Broadcast(
             return False
 
     def shutdown(self):
+        if hasattr(self, "_gossip_conn_cache"):
+            for entry in list(getattr(self, "_gossip_conn_cache", {}).values()):
+                sock = entry.get("sock")
+                if sock:
+                    sock.close()
+                    
         with self.lock:
             self.seen_blocks.clear()
             self.seen_txs.clear()

@@ -37,7 +37,7 @@ def handle_miner_rpc(self: "Network", message: dict[str, Any], addr: Optional[tu
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[GET_BLOCK_HASH] Benchmark : %.3f ms", result)
+            log.debug("[NEW_BLOCK] Benchmark : %.3f ms", result)
         
         return {"status": "ok"}
     
@@ -46,15 +46,16 @@ def handle_miner_rpc(self: "Network", message: dict[str, Any], addr: Optional[tu
     if mtype == "GET_BLOCK_HASH":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
-        
+            
         h = int(message.get("height"))
+        resp = self._handle_get_block_hash(h)
         
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[GET_BLOCK_HASH] Benchmark : %.3f ms", result)
+            log.debug("[NEW_BLOCK] Benchmark : %.3f ms", result)
             
-        return self._handle_get_block_hash(h)
+        return resp
     
 #----------------------#-------------------
     

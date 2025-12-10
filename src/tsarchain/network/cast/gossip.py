@@ -3,9 +3,11 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
 
+import time
 import json
 import socket
-import time
+import threading
+from collections import OrderedDict
 from typing import Any, Dict, Optional, Set, Tuple
 
 from ...core.block import Block
@@ -20,19 +22,63 @@ log = get_ctx_logger("tsarchain.network.cast.gossip")
 
 class GossipMixin:
     def _send(self, peer: Tuple[str, int], message: Dict[str, Any]) -> bool:
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                connect_timeout = float(CFG.CONNECT_TIMEOUT)
-                if connect_timeout <= 0:
-                    connect_timeout = float(CFG.SYNC_TIMEOUT)
+        cache = getattr(self, "_gossip_conn_cache", None)
+        cache_lock = getattr(self, "_gossip_conn_lock", None)
+        if cache is None or cache_lock is None:
+            cache = self._gossip_conn_cache = OrderedDict()
+            cache_lock = self._gossip_conn_lock = threading.RLock()
 
-                s.settimeout(connect_timeout)
-                s.connect(peer)
-                s.settimeout(CFG.SYNC_TIMEOUT)
-                payload = json.dumps(self._encode(message)).encode("utf-8")
+        def _cleanup(entry: Dict[str, Any]):
+            sock = entry.get("sock")
+            if sock:
+                try:
+                    sock.close()
+                except Exception:
+                    log.exception("_cleanup")
+                    pass
+
+        now = time.time()
+        connect_timeout = float(CFG.CONNECT_TIMEOUT)
+        if connect_timeout <= 0:
+            connect_timeout = float(CFG.SYNC_TIMEOUT)
+        cache_ttl = max(1.0, float(getattr(CFG, "GOSSIP_CONN_TTL", 10.0)))
+        max_cache = max(1, min(int(getattr(CFG, "MAX_OUTBOUND_PEERS", 16) * 2), 64))
+
+        payload = json.dumps(self._encode(message)).encode("utf-8")
+        entry = None
+        with cache_lock:
+            e = cache.get(peer)
+            if e and (now - e.get("ts", 0.0)) < cache_ttl:
+                entry = cache.pop(peer, None)
+            elif e:
+                cache.pop(peer, None)
+                _cleanup(e)
+
+        sock = None
+        chan = None
+        try:
+            if entry:
+                sock = entry.get("sock")
+                chan = entry.get("chan")
+                try:
+                    sock.settimeout(0.2)
+                    sock.send(b"")
+                    sock.settimeout(CFG.SYNC_TIMEOUT)
+                except Exception:
+                    _cleanup(entry)
+                    sock = None
+                    chan = None
+
+            if sock is None:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
+                sock.settimeout(connect_timeout)
+                sock.connect(peer)
+                sock.settimeout(CFG.SYNC_TIMEOUT)
                 if CFG.P2P_ENC_REQUIRED:
                     chan = SecureChannel(
-                        s,
+                        sock,
                         role="client",
                         node_id=self.node_id,
                         node_pub=self.pubkey,
@@ -41,13 +87,24 @@ class GossipMixin:
                         set_pinned=lambda nid, pk: self.peer_pubkeys.__setitem__(nid, pk),
                     )
                     chan.handshake()
-                    chan.send(payload)
-                else:
-                    send_message(s, payload)
-                fm = self._failmap.get(peer)
-                if fm:
-                    self._failmap.pop(peer, None)
-                return True
+
+            if CFG.P2P_ENC_REQUIRED and chan:
+                chan.send(payload)
+            else:
+                send_message(sock, payload)
+
+            fm = self._failmap.get(peer)
+            if fm:
+                self._failmap.pop(peer, None)
+
+            with cache_lock:
+                cache[peer] = {"sock": sock, "chan": chan, "ts": time.time()}
+                while len(cache) > max_cache:
+                    _, victim = cache.popitem(last=False)
+                    _cleanup(victim)
+            # socket kept in cache; prevent closing below
+            sock = None
+            return True
 
         except TimeoutError:
             log.info("[_send] Connect to %s timed out", peer)
@@ -62,6 +119,10 @@ class GossipMixin:
         fm["fails"] = int(fm["fails"]) + 1
         fm["last"] = time.time()
         self._failmap[peer] = fm
+        if entry:
+            _cleanup(entry)
+        if sock is not None:
+            _cleanup({"sock": sock})
         return False
 
     def _broadcast(

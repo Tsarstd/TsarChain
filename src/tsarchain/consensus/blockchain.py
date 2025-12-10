@@ -10,6 +10,7 @@ import json
 import threading
 import queue
 from typing import List, Optional
+from collections import OrderedDict
 
 # ---------------- Local Project ----------------
 from ..core.block import Block
@@ -43,6 +44,7 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
         self.chain: List[Block] = []
         self.total_supply = 0
         self.total_blocks = 0
+        self._hash_cache: OrderedDict[int, str] = OrderedDict()
         self.supply_in_tsar = 0
         self._chain_meta: dict | None = None
         
@@ -94,6 +96,7 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
                 self._reload_chain_from_kv()
             if self.chain:
                 self._enforce_genesis_lock()
+                self._rebuild_hash_cache()
                 return
             if GENESIS_HASH is not None and not CFG.ALLOW_AUTO_GENESIS:
                 log.info("[__init__] Genesis lock set; auto-genesis disabled. Waiting for peer sync.")
@@ -111,6 +114,67 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
             self.chain = []
             self.total_blocks = 0
             self.total_supply = 0
+            self._rebuild_hash_cache()
+
+    def _rebuild_hash_cache(self):
+        try:
+            cache: OrderedDict[int, str] = OrderedDict()
+            for b in self.chain:
+                h = None
+                try:
+                    h = b.hash()
+                except Exception:
+                    h = getattr(b, "hash", None)
+                    h = h() if callable(h) else h
+                if isinstance(h, (bytes, bytearray)):
+                    h = h.hex()
+                elif not isinstance(h, str):
+                    h = None
+                if h:
+                    cache[int(getattr(b, "height", 0) or 0)] = h
+            # trim to config bound
+            try:
+                max_entries = max(1, int(CFG.HASH_CACHE_MAX))
+            except Exception:
+                max_entries = 5000
+            while len(cache) > max_entries:
+                cache.popitem(last=False)
+            self._hash_cache = cache
+        except Exception:
+            log.debug("[_rebuild_hash_cache] failed", exc_info=True)
+
+    def get_block_hash(self, height: int):
+        if height < 0:
+            return None
+        try:
+            if height in self._hash_cache:
+                h = self._hash_cache.pop(height)
+                self._hash_cache[height] = h  # move to end (MRU)
+                return h
+        except Exception:
+            log.exception("get_block_hash")
+            pass
+        with self.lock:
+            if height < 0 or height >= len(self.chain):
+                return None
+            try:
+                h = self.chain[height].hash()
+                h_hex = h.hex() if isinstance(h, (bytes, bytearray)) else str(h)
+                max_entries = max(1, int(CFG.HASH_CACHE_MAX))
+                try:
+                    # ensure LRU order and bound
+                    if height in self._hash_cache:
+                        self._hash_cache.pop(height, None)
+                    self._hash_cache[height] = h_hex
+                    while len(self._hash_cache) > max_entries:
+                        self._hash_cache.popitem(last=False)
+                except Exception:
+                    log.exception("get_block_hash.self.lock")
+                    pass
+                return h_hex
+            except Exception:
+                log.exception("get_block_hash.self.lock2")
+                return None
 
     def _start_persist_worker(self) -> None:
         if self.in_memory or self._persist_thread is not None:

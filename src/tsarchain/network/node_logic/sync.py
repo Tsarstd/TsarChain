@@ -256,6 +256,14 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
             )
             applied_in_chunk = 0
             for block_obj in blocks:
+                h = int(block_obj.get("height", -1))
+                bh = str(block_obj.get("hash") or "")
+                local_chain = self.broadcast.blockchain.chain
+                if 0 <= h < len(local_chain):
+                    local_hash = local_chain[h].hash().hex()
+                    if local_hash == bh:
+                        continue
+                    
                 applied = self._apply_block_from_sync(block_obj, peer)
                 if applied:
                     total_applied += 1
@@ -265,6 +273,7 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
                     label = str(blk_hash or "unknown")
                     log.warning("[_download_blocks] Block %s rejected during sync from %s", label[:12], peer)
                     return total_applied, time.time() - start_time
+                
             log.info(
                 "[_download_blocks] %s chunk %d/%d applied %d/%d blocks in %.2fs (heights %s-%s)",
                 peer,

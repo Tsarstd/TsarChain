@@ -174,7 +174,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "001f917c529fa935f02c130ea4f8c266c7523f0d512359d9a04f6e0262d80c38"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "000a7f8e8d5818c285690f89919392b3e25ed214a7ccfc2933526f1997ec3233"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -263,6 +263,10 @@ RANDOMX_JIT              = True
 RANDOMX_SECURE_JIT       = True
 RANDOMX_HARD_AES         = True
 RANDOMX_CACHE_MAX        = 2      # max RandomX VM entries cached in rust binding
+
+# ---- CACHE LIMITS (LRU) ----
+HASH_CACHE_MAX          = 5000   # max entries hash cache (LRU)
+RPC_CONN_CACHE_MAX      = 32     # max cached RPC channels/sockets (LRU)
 
 # ---- BLOCK & TX LIMITS ----
 MAX_BLOCK_BYTES      = 1_200_000  # block size limit (approx 1.2 MB)

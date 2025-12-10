@@ -17,6 +17,28 @@ log = get_ctx_logger("tsarchain.network.cast.receive")
 
 
 class ReceiveMixin:
+    def _log_block_reject(self, *, stage: str, block_id: str | None, height: int | None, peer: str | None = None, reason: str | None = None, extra: dict | None = None) -> None:
+        rid = (block_id or "unknown")[:16]
+        src = peer or "-"
+        msg = {
+            "stage": stage,
+            "height": int(height or -1),
+            "hash": rid,
+            "peer": src,
+            "reason": reason or "unknown",
+        }
+        if extra:
+            msg.update(extra)
+        log.warning(
+            "[block_reject] stage=%s height=%s hash=%s peer=%s reason=%s extra=%s",
+            msg["stage"],
+            msg["height"],
+            msg["hash"],
+            msg["peer"],
+            msg["reason"],
+            {k: v for k, v in msg.items() if k not in ("stage", "height", "hash", "peer", "reason")},
+        )
+
     @staticmethod
     def _native_script_hex(candidate) -> str | None:
         if candidate is None:
@@ -309,22 +331,23 @@ class ReceiveMixin:
 
             if not potential_fork:
                 if not self._native_precheck_block(block):
+                    self._log_block_reject(
+                        stage="precheck",
+                        block_id=block_id,
+                        height=getattr(block, "height", None),
+                        peer=f"{addr[0]}:{origin_port or 0}" if addr else None,
+                        reason="native_precheck_failed",
+                    )
                     return False
                 if not self.blockchain.validate_block(block):
                     reason = getattr(self.blockchain, "_last_block_validation_error", None)
-                    if reason:
-                        log.warning(
-                            "[receive_block] Invalid block received ... block=%s peer=%s reason=%s",
-                            block_id[:12],
-                            f"{addr[0]}:{origin_port or 0}",
-                            reason,
-                        )
-                    else:
-                        log.warning(
-                            "[receive_block] Invalid block received ... block=%s peer=%s",
-                            block_id[:12],
-                            f"{addr[0]}:{origin_port or 0}",
-                        )
+                    self._log_block_reject(
+                        stage="validate",
+                        block_id=block_id,
+                        height=getattr(block, "height", None),
+                        peer=f"{addr[0]}:{origin_port or 0}" if addr else None,
+                        reason=reason,
+                    )
                     if reason and isinstance(reason, str) and reason.startswith("prevout_missing"):
                         if self.network:
                             target = origin if origin else (next(iter(peers)) if peers else None)
@@ -335,9 +358,26 @@ class ReceiveMixin:
                     return False
 
             old_tip = None
-            ok = self.blockchain.add_block(block)
+            try:
+                ok = self.blockchain.add_block(block)
+            except Exception as exc:
+                ok = False
+                self._log_block_reject(
+                    stage="add_block",
+                    block_id=block_id,
+                    height=getattr(block, "height", None),
+                    peer=f"{addr[0]}:{origin_port or 0}" if addr else None,
+                    reason=str(exc),
+                )
             if not ok:
-                log.warning("[receive_block] Block at height %s rejected by add_block", block.height)
+                self._log_block_reject(
+                    stage="add_block",
+                    block_id=block_id,
+                    height=getattr(block, "height", None),
+                    peer=f"{addr[0]}:{origin_port or 0}" if addr else None,
+                    reason=getattr(self.blockchain, "_last_block_validation_error", None),
+                    extra={"potential_fork": potential_fork},
+                )
                 if potential_fork:
                     targets = [origin] if origin else list(peers)
                     for p in targets:

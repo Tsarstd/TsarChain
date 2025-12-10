@@ -9,6 +9,7 @@ import json
 import socket
 import time
 import threading
+from collections import OrderedDict
 from typing import Optional, Tuple
 
 from ...core.tx import Tx
@@ -35,8 +36,13 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
     timeout = float(timeout or CFG.SYNC_TIMEOUT)
     cache = getattr(self, "_rpc_conn_cache", None)
     cache_lock = getattr(self, "_rpc_conn_cache_lock", None)
+    max_cache = None
+    try:
+        max_cache = max(1, int(CFG.RPC_CONN_CACHE_MAX))
+    except Exception:
+        max_cache = 32
     if cache is None or cache_lock is None:
-        cache = self._rpc_conn_cache = {}
+        cache = self._rpc_conn_cache = OrderedDict()
         cache_lock = self._rpc_conn_cache_lock = threading.RLock()
 
     def _cleanup(entry):
@@ -70,6 +76,14 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
             sock = entry.get("sock")
             chan = entry.get("chan")
             try:
+                # lightweight keepalive: if idle too long, probe socket to detect closure
+                idle = now - entry.get("ts", 0.0)
+                if idle > (_RPC_CONN_TTL / 2):
+                    try:
+                        sock.settimeout(0.1)
+                        sock.send(b"")
+                    except Exception:
+                        raise
                 sock.settimeout(timeout)
                 resp = _send_with_channel(chan, sock)
                 entry["ts"] = time.time()
@@ -103,7 +117,12 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
             resp = _send_with_channel(chan, sock_new)
             # cache warm channel for reuse
             with cache_lock:
+                if norm in cache:
+                    cache.pop(norm, None)
                 cache[norm] = {"chan": chan, "sock": sock_new, "ts": time.time()}
+                while len(cache) > max_cache:
+                    _, victim = cache.popitem(last=False)
+                    _cleanup(victim)
             sock_new = None  # cached, do not auto-close
     except (socket.timeout, ConnectionRefusedError, OSError):
         if sock_new is not None:

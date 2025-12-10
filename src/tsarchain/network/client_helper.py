@@ -534,13 +534,58 @@ def _extract_block_id_from_block(self, b) -> str | None:
 
 
 def _handle_get_block_hash(self, height: int) -> dict:
-    with self.broadcast.lock:
-        chain = list(self.broadcast.blockchain.chain)
-    if height < 0 or height >= len(chain):
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+
+    cache = getattr(self, "_block_hash_cache", None)
+    cache_lock = getattr(self, "_block_hash_cache_lock", None)
+    if cache is None or cache_lock is None:
+        cache = self._block_hash_cache = collections.OrderedDict()
+        cache_lock = self._block_hash_cache_lock = threading.RLock()
+
+    now = time.time()
+    h_hex = None
+    cache_hit = False
+    cache_ttl = 5.0
+    max_cache = min(max(1, int(getattr(CFG, "HASH_CACHE_MAX", 512))), 512)
+
+    with cache_lock:
+        entry = cache.get(height)
+        if entry:
+            cached_hash, ts = entry
+            if now - ts <= cache_ttl:
+                h_hex = cached_hash
+                cache_hit = True
+                cache.move_to_end(height)
+            else:
+                cache.pop(height, None)
+
+    if not cache_hit:
+        try:
+            h_hex = self.broadcast.blockchain.get_block_hash(int(height))
+        except Exception:
+            log.exception("_handle_get_block_hash")
+            h_hex = None
+        if h_hex:
+            with cache_lock:
+                cache[height] = (h_hex, now)
+                while len(cache) > max_cache:
+                    cache.popitem(last=False)
+
+    if h_hex is None:
         return {"type": "BLOCK_HASH", "error": "height_out_of_range"}
-    b = chain[height]
-    hx = self._bhash_hex(b)
-    return {"type": "BLOCK_HASH", "height": height, "hash": hx or ""}
+    
+    if CFG.DEBUG_BENCHMARKS:
+        end = time.perf_counter()
+        result = round((end - start) * 1000.0, 3)
+        log.debug(
+            "[_handle_get_block_hash] Benchmark : %.3f ms cache_hit=%s height=%s",
+            result,
+            cache_hit,
+            height,
+        )
+        
+    return {"type": "BLOCK_HASH", "height": height, "hash": h_hex or ""}
 
 def _prevhash_hex(self, b) -> str:
     for name in ("prev_hash", "previous_hash", "prev_block_hash"):
@@ -991,7 +1036,7 @@ def _handle_create_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, 
         ]
     }
 
-_WALLET_METHODS = {
+_CLIENT_HELPER = {
     "_send_to_peer": _send_to_peer,
     "_chat_enqueue_locked": _chat_enqueue_locked,
     "_chat_seen_add_locked": _chat_seen_add_locked,
@@ -1031,8 +1076,8 @@ _WALLET_METHODS = {
     "_handle_create_tx_multi": _handle_create_tx_multi,
 }
 
-def install_wallet_routes(target_cls) -> None:
-    for name, func in _WALLET_METHODS.items():
+def install_client_helper(target_cls) -> None:
+    for name, func in _CLIENT_HELPER.items():
         setattr(target_cls, name, func)
 
-__all__ = ("install_wallet_routes",)
+__all__ = ("install_client_helper",)

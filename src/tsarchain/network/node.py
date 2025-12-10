@@ -8,13 +8,14 @@ from __future__ import annotations
 import socket
 import threading
 from typing import Any, Dict, List, Optional, Tuple, Set
+from collections import OrderedDict
 
 # ---------------- Local Project ----------------
 from ..utils import config as CFG
 from ..core.block import Block
 from .broadcast import Broadcast
 from .protocol import build_envelope, load_or_create_node_keys
-from .wallet_route import install_wallet_routes
+from .client_helper import install_client_helper
 from .peers_storage import load_peer_keys, save_peer_keys
 
 from .node_logic import chat_state
@@ -76,7 +77,7 @@ class Network:
         self._last_headers_locator: Dict[Tuple[str, int], List[str]] = {}
         self._snapshot_unreachable: Set[Tuple[str, int]] = set()
         self._rpc_backoff: Dict[Tuple[str, int], float] = {}
-        self._rpc_conn_cache: Dict[Tuple[str, int], dict] = {}
+        self._rpc_conn_cache: "OrderedDict[Tuple[str, int], dict]" = OrderedDict()
         self._rpc_conn_cache_lock = threading.RLock()
         self._rpc_prefetched: Set[Tuple[str, int]] = set()
         self._recent_gap_requests: Dict[Tuple[str, int], float] = {}
@@ -328,4 +329,4 @@ class Network:
         
         log.info("[shutdown] Node at port %s stopped", self.port)
         
-install_wallet_routes(Network)
+install_client_helper(Network)

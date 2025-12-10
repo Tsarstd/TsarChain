@@ -176,13 +176,36 @@ class MiningMixin:
         if not found:
             return None
         if not self.validate_block(new_block):
-            reason = getattr(self, "_last_block_validation_error", None)
-            log.warning("[mine_block] Candidate block rejected at height=%s reason=%s", height, reason)
+            reason = getattr(self, "_last_block_validation_error", None) or "unknown"
+            try:
+                blk_hex = new_block.hash().hex()
+            except Exception:
+                blk_hex = "unknown"
+            prev_hex = getattr(new_block, "prev_block_hash", None)
+            if hasattr(prev_hex, "hex"):
+                prev_hex = prev_hex.hex()
+            log.warning(
+                "[block_reject] stage=validate source=local_miner height=%s hash=%s prev=%s reason=%s",
+                height,
+                blk_hex[:16],
+                prev_hex,
+                reason,
+            )
             return None
         ok = self.add_block(new_block)
         if not ok:
-            reason = getattr(self, "_last_block_validation_error", None)
-            log.warning("[mine_block] add_block failed at height=%s reason=%s", height, reason)
+            reason = getattr(self, "_last_block_validation_error", None) or "unknown"
+            try:
+                blk_hex = new_block.hash().hex()
+            except Exception:
+                log.exception("blk_hex")
+                blk_hex = "unknown"
+            log.warning(
+                "[block_reject] stage=add_block source=local_miner height=%s hash=%s reason=%s",
+                height,
+                blk_hex[:16],
+                reason,
+            )
             return None
         log.info("[mine_block] Block mined: height=%d reward=%d fee=%d", new_block.height, reward, total_fee)
         return new_block

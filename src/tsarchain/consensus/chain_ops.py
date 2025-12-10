@@ -52,6 +52,11 @@ class ChainOpsMixin:
             self.chain = list(other_chain.chain)
             self.total_supply = other_chain.total_supply
             self.total_blocks = len(self.chain)
+            try:
+                if hasattr(self, "_rebuild_hash_cache"):
+                    self._rebuild_hash_cache()
+            except Exception:
+                log.debug("[replace_with] hash cache rebuild failed", exc_info=True)
 
             if not self.in_memory:
                 self._mark_chain_dirty(0)
@@ -75,7 +80,13 @@ class ChainOpsMixin:
                 raise ValueError("[Blockchain] Incoming genesis does not match TSAR_GENESIS_HASH")
 
             self.chain.append(block)
-            setattr(block, 'chainwork', self._work_from_bits(block.bits))
+            self.total_blocks = len(self.chain)
+            setattr(block, "chainwork", self._work_from_bits(block.bits))
+            try:
+                if hasattr(self, "_hash_cache"):
+                    self._hash_cache[int(block.height)] = block.hash().hex()
+            except Exception:
+                log.debug("[add_block] cache genesis hash failed", exc_info=True)
 
             if not self.in_memory:
                 store = self._ensure_utxodb()
@@ -85,13 +96,15 @@ class ChainOpsMixin:
                     self._mark_utxo_dirty()
                     self._utxo_synced = True
                     self._schedule_persist(force_full=True, flush_force=True, save_state=True)
-                    
+
             self._prune_mempool_confirmed(block)
             if not self.in_memory:
                 self._mark_chain_dirty(block.height)
-            if self.in_memory:
+            else:
                 self.total_supply = self.calculate_total_supply()
-                
+
+            if self.in_memory:
+                self._ensure_utxodb()
             return True
 
         last_block = self.get_last_block()
@@ -101,31 +114,39 @@ class ChainOpsMixin:
             raise ValueError("[Blockchain] prev_block_hash does not match the last block")
 
         self.chain.append(block)
-        
-        # annotate cumulative chainwork for tip
-        prev_cw = getattr(self.chain[-2], 'chainwork', None)
+        self.total_blocks = len(self.chain)
+
+        prev_cw = getattr(last_block, "chainwork", None)
         if prev_cw is None:
             prev_cw = self._compute_chainwork_for_chain(self.chain[:-1])
         self.chain[-1].chainwork = int(prev_cw) + self._work_from_bits(block.bits)
         self._mark_chain_dirty(block.height)
-        
-        # UTXO
+        try:
+            if hasattr(self, "_hash_cache"):
+                self._hash_cache[int(block.height)] = block.hash().hex()
+        except Exception:
+            log.debug("[add_block] cache tip hash failed", exc_info=True)
+
         if not self.in_memory:
             store = self._ensure_utxodb()
             if store is not None:
                 blk_hash = block.hash().hex()
-                store.update(block.transactions, block_height=block.height, block_hash=blk_hash, autosave=False)
+                store.update(
+                    block.transactions,
+                    block_height=block.height,
+                    block_hash=blk_hash,
+                    autosave=False,
+                )
                 self._mark_utxo_dirty()
-                
+
         self._prune_mempool_confirmed(block)
         if not self.in_memory:
             self._schedule_persist()
         else:
-            self.total_supply = self.calculate_total_supply()    
+            self.total_supply = self.calculate_total_supply()
 
         if self.in_memory:
             self._ensure_utxodb()
-        
         return True
 
     def swap_tip_if_better(self, block: Block):
@@ -170,6 +191,11 @@ class ChainOpsMixin:
             self.chain[-1].chainwork = int(prev_cw) + self._work_from_bits(block.bits)
 
             self.total_blocks = len(self.chain)
+            try:
+                if hasattr(self, "_hash_cache"):
+                    self._hash_cache[int(block.height)] = block.hash().hex()
+            except Exception:
+                log.debug("[swap_tip_if_better] cache hash failed", exc_info=True)
 
             if not self.in_memory:
                 self._mark_chain_dirty(block.height)
