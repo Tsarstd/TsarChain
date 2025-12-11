@@ -293,7 +293,6 @@ def _request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> b
     if resp.get("type") == "SYNC_REJECT":
         retry = float(resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
         self._full_sync_backoff[norm] = now + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
-        log.info("[_request_full_sync] %s rejected request (retry %.1fs)", norm, min(retry, CFG.FULL_SYNC_BACKOFF_MAX))
         return False
 
     if resp.get("type") != "FULL_SYNC":

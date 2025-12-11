@@ -28,8 +28,13 @@ class ValidationMixin:
     _pow_light_warmed = False
     _pow_warm_next_epoch: int | None = None
     _pow_warm_lock = threading.Lock()
+    _pow_epoch_warmed: set[int] = set()
 
-    def _warm_pow_context(self, height: int):
+# =============================================================================
+# 0. WARMING UP
+# =============================================================================
+
+    def _warm_pow_context(self, height: int): # pre-warm for next epoch
         epoch_blocks = max(1, int(CFG.RANDOMX_KEY_EPOCH_BLOCKS))
         if epoch_blocks <= 0:
             return
@@ -41,17 +46,33 @@ class ValidationMixin:
             self._pow_warm_next_epoch = next_epoch
 
         def _worker():
-            try:
-                key = H.pow_key_for_height(next_epoch * epoch_blocks)
-                # dummy header to prime dataset
-                dummy_hdr = b"\x00" * 80
-                H.pow_hash_verify_light(dummy_hdr, key_hint=key)
-                log.debug("[pow_warm] warmed epoch=%s", next_epoch)
-            except Exception:
-                log.debug("[pow_warm] warm failed", exc_info=True)
+            key = H.pow_key_for_height(next_epoch * epoch_blocks)
+            # dummy header to prime dataset
+            dummy_hdr = b"\x00" * 80
+            H.pow_hash_verify_light(dummy_hdr, key_hint=key)
+            log.debug("[pow_warm] warmed epoch=%s", next_epoch)
 
         t = threading.Thread(target=_worker, name="pow-warm", daemon=True)
         t.start()
+
+    def _ensure_warm(self, height: int): # ensure epoch
+        if CFG.POW_ALGO != "randomx":
+            return
+        epoch_blocks = max(1, int(CFG.RANDOMX_KEY_EPOCH_BLOCKS))
+        if epoch_blocks <= 0:
+            return
+        epoch = max(0, int(height) // epoch_blocks)
+        with self._pow_warm_lock:
+            if epoch in self.__class__._pow_epoch_warmed:
+                return
+            self.__class__._pow_epoch_warmed.add(epoch)
+            
+        key = H.pow_key_for_height(epoch * epoch_blocks)
+        dummy_hdr = b"\x00" * 80
+        H.pow_hash_verify_light(dummy_hdr, key_hint=key)
+        log.debug("[pow_warm] ensured epoch=%s ready", epoch)
+
+
 # =============================================================================
 # 1. VALIDATION PROCESSING
 # =============================================================================
@@ -86,12 +107,10 @@ class ValidationMixin:
             if not all([block.height is not None, block.prev_block_hash, block.transactions]):
                 self._last_block_validation_error = "block_missing_fields"
                 return False
+            
             pow_start = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
-            try:
-                self._warm_pow_context(int(getattr(block, "height", 0) or 0))
-            except Exception:
-                log.exception("error _warm_pow_context")
-                pass
+            self._warm_pow_context(int(getattr(block, "height", 0) or 0))
+            self._ensure_warm(int(getattr(block, "height", 0) or 0))
             
             # Warm-up RandomX light verifier once to avoid first-block spike
             if (not self.__class__._pow_light_warmed) and CFG.POW_ALGO == "randomx":
@@ -102,6 +121,7 @@ class ValidationMixin:
             if not self._validate_pow(block):
                 self._last_block_validation_error = "pow_invalid"
                 return False
+            
             if pow_start is not None:
                 pow_ms = round((time.perf_counter() - pow_start) * 1000.0, 3)
                 log.debug("[validate_block] pow_ms=%s height=%s hash_cached=%s", pow_ms, getattr(block, "height", None), isinstance(getattr(block, "_cached_hash", None), (bytes, bytearray)))

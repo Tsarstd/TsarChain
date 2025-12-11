@@ -35,8 +35,21 @@ class ChainOpsMixin:
             if CFG.ENABLE_CHAINWORK_RULE:
                 their_cw = self._compute_chainwork_for_chain(other_chain.chain)
                 our_cw   = self._compute_chainwork_for_chain(self.chain)
-                if their_cw <= our_cw:
-                    raise ValueError("Reject: candidate chainwork <= local")
+                if their_cw < our_cw:
+                    raise ValueError("Reject: candidate chainwork < local")
+                if their_cw == our_cw:
+                    their_h = len(other_chain.chain) - 1
+                    our_h = len(self.chain) - 1
+                    if their_h < our_h:
+                        raise ValueError("Reject: candidate height < local at equal work")
+                    if their_h == our_h:
+                        try:
+                            their_hash = other_chain.chain[-1].hash()
+                            our_hash = self.chain[-1].hash()
+                            if their_hash >= our_hash:
+                                raise ValueError("Reject: candidate tie-break loses (hash)")
+                        except Exception:
+                            raise ValueError("Reject: candidate chainwork tie without deterministic tie-break")
 
             # 3) limit reorg depth (anti long-range)
             if CFG.ENABLE_REORG_LIMIT and self.chain and other_chain.chain:

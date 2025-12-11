@@ -390,6 +390,21 @@ class ReceiveMixin:
                     reason=str(exc),
                 )
             if not ok:
+                try:
+                    # Fast-path fork resolution: if this block attaches to tip-1, try swap_tip_if_better
+                    if len(self.blockchain.chain) >= 2:
+                        parent = self.blockchain.chain[-2]
+                        expected_h = getattr(parent, "height", 0) + 1
+                        parent_hash = parent.hash() if hasattr(parent, "hash") else getattr(parent, "hash", lambda: None)()
+                        if getattr(block, "height", None) == expected_h and getattr(block, "prev_block_hash", None) == parent_hash:
+                            alt = self.blockchain.swap_tip_if_better(block)
+                            if alt is not None:
+                                old_tip = alt
+                                ok = True
+                except Exception:
+                    log.debug("[receive_block] swap_tip_if_better failed", exc_info=True)
+
+            if not ok:
                 reason_str = getattr(self.blockchain, "_last_block_validation_error", None)
                 if self.network and isinstance(reason_str, str) and (
                     "Height mismatch" in reason_str or "prev_block_hash" in reason_str

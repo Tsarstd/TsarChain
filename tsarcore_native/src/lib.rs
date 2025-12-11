@@ -25,9 +25,8 @@ use ripemd::Ripemd160;
 use secp256k1::ecdsa::Signature;
 use secp256k1::{Message, PublicKey, Secp256k1};
 use sha2::{Digest, Sha256};
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::thread_local;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 use validation::{validate_block_txs_native, validate_block_txs_compact};
 use hex;
@@ -43,14 +42,21 @@ mod mining;
 // ---------------------
 // RandomX VM cache
 // ---------------------
+struct SafeRandomXVM(RandomXVM);
+// SAFETY: RandomXVM internally uses raw pointers; we guard with external mutex and never share mutable access without lock.
+unsafe impl Send for SafeRandomXVM {}
+unsafe impl Sync for SafeRandomXVM {}
+
 struct RandomxVmEntry {
-    vm: RandomXVM,
+    vm: Arc<SafeRandomXVM>,
     flags: RandomXFlag,
     last_used: Instant,
 }
 
-thread_local! {
-    static RANDOMX_VM_CACHE: RefCell<HashMap<Vec<u8>, RandomxVmEntry>> = RefCell::new(HashMap::new());
+static RANDOMX_VM_CACHE: OnceLock<Mutex<HashMap<Vec<u8>, RandomxVmEntry>>> = OnceLock::new();
+
+fn vm_cache() -> &'static Mutex<HashMap<Vec<u8>, RandomxVmEntry>> {
+    RANDOMX_VM_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn cache_flags_from(flags: RandomXFlag) -> RandomXFlag {
@@ -86,9 +92,14 @@ fn with_cached_vm<R>(
     max_entries: usize,
     f: impl FnOnce(&RandomXVM) -> Result<R, RandomXError>,
 ) -> Result<R, RandomXError> {
-    RANDOMX_VM_CACHE.with(|cell| -> Result<R, RandomXError> {
-        let mut cache = cell.borrow_mut();
-        let now = Instant::now();
+    let now = Instant::now();
+    let vm_arc: Arc<SafeRandomXVM>;
+
+    {
+        let mut cache = match vm_cache().lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         let cap = if flags.contains(RandomXFlag::FLAG_FULL_MEM) {
             1
         } else {
@@ -98,7 +109,10 @@ fn with_cached_vm<R>(
         if let Some(entry) = cache.get_mut(key) {
             if entry.flags == flags {
                 entry.last_used = now;
-                return f(&entry.vm);
+                vm_arc = entry.vm.clone();
+                // release lock before running caller
+                drop(cache);
+                return f(&vm_arc.0);
             } else {
                 needs_purge = true;
             }
@@ -107,29 +121,24 @@ fn with_cached_vm<R>(
             cache.remove(key);
         }
 
-        let vm = instantiate_vm(key, flags)?;
         if cap > 0 && cache.len() >= cap {
-            let mut victim_key: Option<Vec<u8>> = None;
-            let mut oldest = Instant::now();
-            for (k, v) in cache.iter() {
-                if victim_key.is_none() || v.last_used < oldest {
-                    oldest = v.last_used;
-                    victim_key = Some(k.clone());
-                }
-            }
-            if let Some(k) = victim_key {
-                cache.remove(&k);
-            }
+            purge_stale(&mut cache, cap.saturating_sub(1));
         }
 
-        let entry = cache.entry(key.to_vec()).or_insert(RandomxVmEntry {
-            vm,
-            flags,
-            last_used: now,
-        });
-        entry.last_used = now;
-        f(&entry.vm)
-    })
+        let vm = instantiate_vm(key, flags)?;
+        let arc_vm = Arc::new(SafeRandomXVM(vm));
+        cache.insert(
+            key.to_vec(),
+            RandomxVmEntry {
+                vm: arc_vm.clone(),
+                flags,
+                last_used: now,
+            },
+        );
+        vm_arc = arc_vm;
+    }
+
+    f(&vm_arc.0)
 }
 
 fn configure_randomx_flags(
@@ -170,6 +179,28 @@ fn configure_randomx_flags(
 
 fn map_randomx_err(err: RandomXError) -> PyErr {
     PyErr::new::<exceptions::PyRuntimeError, _>(format!("RandomX error: {err}"))
+}
+
+fn purge_stale(vm_cache: &mut HashMap<Vec<u8>, RandomxVmEntry>, cap: usize) {
+    if cap == 0 {
+        vm_cache.clear();
+        return;
+    }
+    while vm_cache.len() > cap {
+        let mut victim_key: Option<Vec<u8>> = None;
+        let mut oldest = Instant::now();
+        for (k, v) in vm_cache.iter() {
+            if victim_key.is_none() || v.last_used < oldest {
+                oldest = v.last_used;
+                victim_key = Some(k.clone());
+            }
+        }
+        if let Some(k) = victim_key {
+            vm_cache.remove(&k);
+        } else {
+            break;
+        }
+    }
 }
 
 // ---------------------

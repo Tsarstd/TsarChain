@@ -143,7 +143,6 @@ def _sync_peer(self, peer: Tuple[str, int]) -> bool:
         if headers_resp.get("more"):
             self.request_sync(fast=True)
         return True
-    log.info("[_sync_peer] Failed to apply blocks from %s (elapsed=%.2fs)", peer, download_elapsed)
     return False
 
 
@@ -226,7 +225,6 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
     triggered_fullsync = False
     for idx in range(0, len(unique_heights), batch_size):
         chunk = unique_heights[idx : idx + batch_size]
-        chunk_start = time.time()
         log.info(
             "[_download_blocks.chunk] requesting %d blocks (%s-%s) from %s",
             len(chunk),
@@ -249,12 +247,6 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
 
         if resp.get("type") == "BLOCKS":
             blocks = resp.get("blocks") or []
-            log.info(
-                "[_download_blocks.chunk] received %d blocks from %s in %.2fs",
-                len(blocks),
-                peer,
-                time.time() - chunk_start,
-            )
             applied_in_chunk = 0
             for block_obj in blocks:
                 h = int(block_obj.get("height", -1))
@@ -268,12 +260,13 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
                     if not triggered_fullsync:
                         self._request_full_sync(peer, force=True)
                         triggered_fullsync = True
-                    continue
+                    return total_applied, time.time() - start_time
                     
                 applied = self._apply_block_from_sync(block_obj, peer)
                 if applied:
                     total_applied += 1
                     applied_in_chunk += 1
+                    log.info("total_applied : %s in : %s s", total_applied, time.time() - start_time)
                 else:
                     blk_hash = block_obj.get("hash")
                     label = str(blk_hash or "unknown")
@@ -282,18 +275,6 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
                         self._request_full_sync(peer, force=True)
                         triggered_fullsync = True
                     return total_applied, time.time() - start_time
-                
-            log.info(
-                "[_download_blocks] %s chunk %d/%d applied %d/%d blocks in %.2fs (heights %s-%s)",
-                peer,
-                (idx // batch_size) + 1,
-                total_chunks,
-                applied_in_chunk,
-                len(blocks),
-                time.time() - chunk_start,
-                chunk[0],
-                chunk[-1],
-            )
 
         elif resp.get("type") == "SYNC_REJECT":
             retry = float(resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
@@ -309,7 +290,6 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
             break
 
     elapsed = time.time() - start_time
-    log.info("[_download_blocks] %s total applied %d/%d blocks in %.2fs", peer, total_applied, total_attempted, elapsed)
     return total_applied, elapsed
 
 
