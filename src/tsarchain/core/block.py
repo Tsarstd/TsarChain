@@ -17,6 +17,7 @@ from ..utils import config as CFG
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.core.block")
 
 class BlockHeader:
     def __init__(self, version: int, prev_block_hash: bytes, merkle_root: bytes, timestamp: int, bits: int, nonce: int):
@@ -40,12 +41,16 @@ class BlockHeader:
 
 
 class Block:
-    def __init__(self, height: int, prev_block_hash: bytes, transactions: List[Tx], version: int = 1, bits: int = CFG.INITIAL_BITS, timestamp: Optional[int] = None, nonce: int = 0):
+    def __init__(self, height: int, prev_block_hash: bytes, transactions: List[Tx], version: int = 1, bits: int = CFG.INITIAL_BITS, timestamp: Optional[int] = None, nonce: int = 0, merkle_root_precomputed: bytes | None = None):
         self.height = height
         self.version = version
         self.prev_block_hash = prev_block_hash
         self.transactions = transactions
-        self.merkle_root = merkle_root(transactions)
+        if merkle_root_precomputed is not None:
+            self.merkle_root = bytes(merkle_root_precomputed)
+        else:
+            self.merkle_root = merkle_root(transactions)
+        
         self.timestamp = int(time.time()) if timestamp is None else timestamp
         self.bits = bits
         self.nonce = nonce
@@ -55,10 +60,6 @@ class Block:
         self._cached_hash_bits = None
         self._cached_hash_mr = None
         self._cached_hash_prev = None
-        short_prev = (self.prev_block_hash.hex()[:8]
-              if isinstance(self.prev_block_hash, (bytes, bytearray))
-              else str(self.prev_block_hash)[:8])
-        self.log = get_ctx_logger("tsarchain.core.block", height=self.height, block=short_prev)
         
 
     def to_dict(self):
@@ -98,9 +99,9 @@ class Block:
             if tx_type == "Coinbase" or tx_data.get("is_coinbase"):
                 try:
                     tx_obj = CoinbaseTx.from_dict(tx_data)
-                except Exception as e:
+                except Exception:
                     tx_obj = Tx.from_dict(tx_data)
-                    get_ctx_logger("tsarchain.core.block").exception("[Block.from_dict] Failed to parse CoinbaseTx, fallback to Tx")
+                    log.exception("[Block.from_dict] Failed to parse CoinbaseTx, fallback to Tx")
             else:
                 tx_obj = Tx.from_dict(tx_data)
             tx_list.append(tx_obj)
@@ -108,15 +109,34 @@ class Block:
             bytes.fromhex(data["prev_block_hash"])
             if not isinstance(data["prev_block_hash"], bytes)
             else data["prev_block_hash"])
+        mr_bytes = data.get("merkle_root")
+        if isinstance(mr_bytes, str):
+            mr_bytes = bytes.fromhex(mr_bytes)
         
-        return cls(
+        obj = cls(
             height=data["height"],
             prev_block_hash=prev_hash_bytes,
             transactions=tx_list,
             timestamp=data.get("timestamp"),
             nonce=data.get("nonce"),
             bits=cls._parse_bits(data.get("bits")),
-            version=data.get("version", 1),)
+            version=data.get("version", 1),
+            merkle_root_precomputed=mr_bytes,)
+        
+        # cache hash if provided to avoid double PoW verify; validation will still verify
+        try:
+            h_str = data.get("hash")
+            if isinstance(h_str, str) and len(h_str) >= 64:
+                h_b = bytes.fromhex(h_str)
+                obj._cached_hash = h_b
+                obj._cached_hash_nonce = obj.nonce
+                obj._cached_hash_bits = obj.bits
+                obj._cached_hash_mr = obj.merkle_root
+                obj._cached_hash_prev = obj.prev_block_hash
+        except Exception:
+            log.exception("cache_hash_skiped")
+            pass
+        return obj
 
     def header(self) -> bytes:
         h = BlockHeader(self.version, self.prev_block_hash, self.merkle_root, self.timestamp, self.bits, self.nonce)
@@ -141,7 +161,12 @@ class Block:
         ):
             return self._cached_hash
 
-        h = pow_hash_verify_light(self.header(), height=self.height)
+        try:
+            key_hint = pow_key_for_height(self.height)
+            h = pow_hash_verify_light(self.header(), key_hint=key_hint)
+        except Exception:
+            log.exception("key_hint_err")
+            h = pow_hash_verify_light(self.header(), height=self.height)
         self._cached_hash = h
         self._cached_hash_nonce = self.nonce
         self._cached_hash_bits = self.bits
@@ -202,7 +227,7 @@ class Block:
             nonce, h = found
             self.nonce = int(nonce)
             if pow_hash_verify_light(self.header(), key_hint=pow_key) != h:
-                self.log.error("[mine] native hash verification failed (nonce=%s)", self.nonce)
+                log.error("[mine] native hash verification failed (nonce=%s)", self.nonce)
                 return None
             return h
         return None

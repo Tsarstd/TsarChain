@@ -10,7 +10,7 @@ from ...utils import config as CFG
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network.rpc(miner_rpc)")
+log = get_ctx_logger("tsarchain.network.rpc.miner_rpc")
 
 if TYPE_CHECKING:
     from ..node import Network
@@ -29,31 +29,33 @@ def handle_miner_rpc(self: "Network", message: dict[str, Any], addr: Optional[tu
 #----------------------#-------------------
 
     if mtype == "NEW_BLOCK":
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-            
+        start = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
+        
         self.broadcast.receive_block(message, addr, self.peers)
         
-        if CFG.DEBUG_BENCHMARKS:
+        if start is not None:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[NEW_BLOCK] Benchmark : %.3f ms", result)
+            log.debug("[NEW_BLOCK] Benchmark_total : %.3f ms", result)
         
         return {"status": "ok"}
     
 #----------------------#-------------------
     
     if mtype == "GET_BLOCK_HASH":
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-            
+        start = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
+        
         h = int(message.get("height"))
         resp = self._handle_get_block_hash(h)
         
-        if CFG.DEBUG_BENCHMARKS:
+        if start is not None:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[NEW_BLOCK] Benchmark : %.3f ms", result)
+            log.debug(
+                "[GET_BLOCK_HASH] Benchmark : %.3f ms cache_hit=%s",
+                result,
+                resp.get("cache_hit") if isinstance(resp, dict) else None,
+            )
             
         return resp
     

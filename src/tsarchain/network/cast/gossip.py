@@ -22,6 +22,11 @@ log = get_ctx_logger("tsarchain.network.cast.gossip")
 
 class GossipMixin:
     def _send(self, peer: Tuple[str, int], message: Dict[str, Any]) -> bool:
+        port_start, port_end = int(CFG.PORT_START), int(CFG.PORT_END)
+        if not (port_start <= int(peer[1]) <= port_end):
+            log.debug("[_send] Skip peer %s out of port range %s-%s", peer, port_start, port_end)
+            return False
+        
         cache = getattr(self, "_gossip_conn_cache", None)
         cache_lock = getattr(self, "_gossip_conn_lock", None)
         if cache is None or cache_lock is None:
@@ -138,8 +143,12 @@ class GossipMixin:
         now = start_time
         backoff_s = CFG.BROADCAST_FAIL_BACKOFF_S
         thr = CFG.BROADCAST_FAIL_THRESHOLD
+        port_start, port_end = int(CFG.PORT_START), int(CFG.PORT_END)
         for peer in peers:
             if exclude and peer == exclude:
+                continue
+            if not (port_start <= int(peer[1]) <= port_end):
+                skipped += 1
                 continue
 
             fm = self._failmap.get(peer)

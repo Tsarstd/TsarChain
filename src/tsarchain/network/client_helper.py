@@ -573,7 +573,7 @@ def _handle_get_block_hash(self, height: int) -> dict:
                     cache.popitem(last=False)
 
     if h_hex is None:
-        return {"type": "BLOCK_HASH", "error": "height_out_of_range"}
+        return {"type": "BLOCK_HASH", "error": "height_out_of_range", "cache_hit": cache_hit}
     
     if CFG.DEBUG_BENCHMARKS:
         end = time.perf_counter()
@@ -585,7 +585,7 @@ def _handle_get_block_hash(self, height: int) -> dict:
             height,
         )
         
-    return {"type": "BLOCK_HASH", "height": height, "hash": h_hex or ""}
+    return {"type": "BLOCK_HASH", "height": height, "hash": h_hex or "", "cache_hit": cache_hit}
 
 def _prevhash_hex(self, b) -> str:
     for name in ("prev_hash", "previous_hash", "prev_block_hash"):

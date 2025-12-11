@@ -3,6 +3,7 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
 
+import time
 from typing import Any, Dict, Set, Tuple
 
 from ...consensus.blockchain import Blockchain
@@ -292,25 +293,36 @@ class ReceiveMixin:
             return False
 
     def receive_block(self, message: Dict[str, Any], addr, peers: Set[Tuple[str, int]]) -> bool:
+        t_all_start = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
         block_id = None
         inflight = False
         accepted = False
         try:
+            deser_start = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
             block_data = message.get("data")
             if not block_data:
                 return False
 
             block = Block.deserialize_block(block_data)
-            block_id = block.hash().hex()
+            block_id = None
+            blk_hash_field = block_data.get("hash")
+            if isinstance(blk_hash_field, str) and len(blk_hash_field) >= 64:
+                block_id = blk_hash_field
+            else:
+                log.exception("fallback_blck_hash")
+                block_id = block.hash().hex()
+            deser_end = time.perf_counter() if deser_start is not None else None
 
             origin_port = message.get("port")
             origin = (addr[0], origin_port) if origin_port else None
 
+            lock_wait_start = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
             with self.lock:
                 if block_id in self.seen_blocks or block_id in self._processing_blocks:
                     return True
                 self._processing_blocks.add(block_id)
                 inflight = True
+            lock_wait_end = time.perf_counter() if lock_wait_start is not None else None
 
             last = self.blockchain.get_last_block()
             potential_fork = False
@@ -330,6 +342,7 @@ class ReceiveMixin:
                     potential_fork = True
 
             if not potential_fork:
+                precheck_start = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
                 if not self._native_precheck_block(block):
                     self._log_block_reject(
                         stage="precheck",
@@ -339,6 +352,8 @@ class ReceiveMixin:
                         reason="native_precheck_failed",
                     )
                     return False
+                precheck_end = time.perf_counter() if precheck_start is not None else None
+                validate_start = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
                 if not self.blockchain.validate_block(block):
                     reason = getattr(self.blockchain, "_last_block_validation_error", None)
                     self._log_block_reject(
@@ -356,8 +371,13 @@ class ReceiveMixin:
                             else:
                                 self.network.request_sync(fast=True)
                     return False
+                if validate_start is not None:
+                    validate_ms = round((time.perf_counter() - validate_start) * 1000.0, 3)
+                    pre_ms = round((precheck_end - precheck_start) * 1000.0, 3) if (precheck_start is not None and precheck_end is not None) else None
+                    log.debug("[receive_block] Benchmark precheck=%s ms validate=%s ms height=%s", pre_ms, validate_ms, getattr(block, "height", None))
 
             old_tip = None
+            add_start = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
             try:
                 ok = self.blockchain.add_block(block)
             except Exception as exc:
@@ -370,12 +390,24 @@ class ReceiveMixin:
                     reason=str(exc),
                 )
             if not ok:
+                reason_str = getattr(self.blockchain, "_last_block_validation_error", None)
+                if self.network and isinstance(reason_str, str) and (
+                    "Height mismatch" in reason_str or "prev_block_hash" in reason_str
+                ):
+                    try:
+                        peer_key = origin if origin else (addr[0], origin_port or 0)
+                        last_req = self.network._full_sync_last_request.get(peer_key, 0.0)
+                        if time.time() - last_req > float(CFG.FULL_SYNC_BACKOFF_INITIAL):
+                            self.network._full_sync_last_request[peer_key] = time.time()
+                            self.network._request_full_sync(peer_key, force=True)
+                    except Exception:
+                        log.debug("[receive_block] full_sync_on_mismatch failed", exc_info=True)
                 self._log_block_reject(
                     stage="add_block",
                     block_id=block_id,
                     height=getattr(block, "height", None),
                     peer=f"{addr[0]}:{origin_port or 0}" if addr else None,
-                    reason=getattr(self.blockchain, "_last_block_validation_error", None),
+                    reason=reason_str,
                     extra={"potential_fork": potential_fork},
                 )
                 if potential_fork:
@@ -384,6 +416,10 @@ class ReceiveMixin:
                         CFG.ENABLE_FULL_SYNC = True
                         self._request_full_sync(p)
                 return False
+            if add_start is not None:
+                add_ms = round((time.perf_counter() - add_start) * 1000.0, 3)
+            else:
+                add_ms = None
             
             accepted = True
             removal_candidates: list[str] = []
@@ -393,6 +429,7 @@ class ReceiveMixin:
                     continue
                 removal_candidates.append(txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid))
                 
+            mempool_start = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
             if removal_candidates:
                 removed = self.mempool.remove_many(removal_candidates)
                 missing = len(removal_candidates) - removed
@@ -407,11 +444,15 @@ class ReceiveMixin:
                 for tx in (old_tip.transactions[1:] or []):
                     self.mempool.add_valid_tx(tx)
             self.mempool.flush()
+            mempool_end = time.perf_counter() if mempool_start is not None else None
 
+            utxo_start = utxo_end = None
             if not self._utxo_shared:
                 blk_hash = block.hash().hex()
+                utxo_start = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
                 self.utxodb.update(block.transactions, block.height, block_hash=blk_hash, autosave=False)
                 self._maybe_flush_local_utxo(block.height)
+                utxo_end = time.perf_counter() if utxo_start is not None else None
 
             recovered = self.mempool.recheck_orphans() if hasattr(self.mempool, "recheck_orphans") else 0
             if recovered:
@@ -420,7 +461,69 @@ class ReceiveMixin:
             with self.lock:
                 self.seen_blocks.add(block_id)
 
+            bcast_start = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
             self.broadcast_block(block, peers, exclude=origin, force=True)
+            bcast_end = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
+
+            # set mining cool-off to reduce stale mining after new tip
+            cooloff = float(CFG.MINING_COOLDOWN_AFTER_BLOCK)
+            if cooloff > 0 and hasattr(self.blockchain, "_mining_cooloff_until"):
+                self.blockchain._mining_cooloff_until = time.time() + cooloff
+
+            if t_all_start is not None:
+                total_ms = round((time.perf_counter() - t_all_start) * 1000.0, 3)
+                deser_ms = (
+                    round((deser_end - deser_start) * 1000.0, 3)
+                    if (deser_start is not None and deser_end is not None)
+                    else None
+                )
+                lock_ms = (
+                    round((lock_wait_end - lock_wait_start) * 1000.0, 3)
+                    if (lock_wait_start is not None and lock_wait_end is not None)
+                    else None
+                )
+                mempool_ms = (
+                    round((mempool_end - mempool_start) * 1000.0, 3)
+                    if (mempool_start is not None and mempool_end is not None)
+                    else None
+                )
+                utxo_ms = (
+                    round((utxo_end - utxo_start) * 1000.0, 3)
+                    if (utxo_start is not None and utxo_end is not None)
+                    else None
+                )
+                bcast_ms = (
+                    round((bcast_end - bcast_start) * 1000.0, 3)
+                    if (bcast_start is not None and bcast_end is not None)
+                    else None
+                )
+                log.debug(
+                    "[receive_block] Benchmark height=%s total=%s ms deser=%s ms lock=%s ms pre=%s ms val=%s ms add=%s ms mempool=%s ms utxo=%s ms broadcast=%s ms",
+                    getattr(block, "height", None),
+                    total_ms,
+                    deser_ms,
+                    lock_ms,
+                    pre_ms,
+                    validate_ms,
+                    add_ms,
+                    mempool_ms,
+                    utxo_ms,
+                    bcast_ms,
+                )
+                if total_ms and total_ms > 500.0:
+                    log.warning(
+                        "[receive_block] slow total=%s ms height=%s deser=%s lock=%s pre=%s val=%s add=%s mempool=%s utxo=%s bcast=%s",
+                        total_ms,
+                        getattr(block, "height", None),
+                        deser_ms,
+                        lock_ms,
+                        pre_ms,
+                        validate_ms,
+                        add_ms,
+                        mempool_ms,
+                        utxo_ms,
+                        bcast_ms,
+                    )
 
             return True
         except Exception:

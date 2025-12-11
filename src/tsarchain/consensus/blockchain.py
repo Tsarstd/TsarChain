@@ -71,6 +71,7 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
         self._state_snapshot_cache: dict | None = None
         self._last_block_validation_error: str | None = None
         self._mempool: TxPoolDB | None = None
+        self._mining_cooloff_until: float = 0.0
         
         self._persist_queue: queue.Queue[bool | None] | None = None
         self._persist_thread: threading.Thread | None = None

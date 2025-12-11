@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import multiprocessing as mp
+import time
 from multiprocessing.synchronize import Event as MpEvent
 
 # ---------------- Local Project ----------------
@@ -175,12 +176,29 @@ class MiningMixin:
         found = new_block.mine(use_cores=use_cores, stop_event=cancel_event, pow_backend=pow_backend, progress_queue=progress_queue,)
         if not found:
             return None
+        # Re-check tip to avoid stale submissions (chain may have advanced during mining)
+        try:
+            latest = self.get_last_block()
+            if latest is not None and (latest.hash() != getattr(new_block, "prev_block_hash", None) or getattr(new_block, "height", 0) != getattr(latest, "height", -1) + 1):
+                log.info(
+                    "[mine_block] discard stale candidate height=%s prev=%s latest=%s",
+                    getattr(new_block, "height", None),
+                    getattr(new_block, "prev_block_hash", None).hex() if hasattr(getattr(new_block, "prev_block_hash", None), "hex") else getattr(new_block, "prev_block_hash", None),
+                    latest.hash().hex() if latest and hasattr(latest.hash(), "hex") else (latest.hash() if latest else None),
+                )
+                return None
+        except Exception:
+            log.debug("[mine_block] stale-check failed", exc_info=True)
+            
+        # Cool-off after we know we're mining on the latest tip as of now
+        cooloff = float(CFG.MINING_COOLDOWN_AFTER_BLOCK)
+        if cooloff > 0:
+            remain = float(getattr(self, "_mining_cooloff_until", 0.0)) - time.time()
+            if remain > 0:
+                time.sleep(min(remain, cooloff))
         if not self.validate_block(new_block):
             reason = getattr(self, "_last_block_validation_error", None) or "unknown"
-            try:
-                blk_hex = new_block.hash().hex()
-            except Exception:
-                blk_hex = "unknown"
+            blk_hex = new_block.hash().hex()
             prev_hex = getattr(new_block, "prev_block_hash", None)
             if hasattr(prev_hex, "hex"):
                 prev_hex = prev_hex.hex()
@@ -195,11 +213,7 @@ class MiningMixin:
         ok = self.add_block(new_block)
         if not ok:
             reason = getattr(self, "_last_block_validation_error", None) or "unknown"
-            try:
-                blk_hex = new_block.hash().hex()
-            except Exception:
-                log.exception("blk_hex")
-                blk_hex = "unknown"
+            blk_hex = new_block.hash().hex()
             log.warning(
                 "[block_reject] stage=add_block source=local_miner height=%s hash=%s reason=%s",
                 height,

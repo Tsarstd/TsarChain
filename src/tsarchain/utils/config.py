@@ -124,7 +124,7 @@ SNAPSHOT_USER_AGENT      = "TsarChainSnapshot/1.0"  # UA string used when fetchi
 
 # ---- SNAPSHOT BACKUP ----
 SNAPSHOT_BACKUP_DIR   = "data/snapshot"  # folder storing backup snapshots
-BACKUP_SNAPSHOT       = True  # toggle to keep automatic backup copies
+BACKUP_SNAPSHOT       = False  # toggle to keep automatic backup copies
 BLOCK_BACKUP_SNAPSHOT = 15  # Align last backup marker to nearest interval to avoid drift across restarts
 
 
@@ -174,7 +174,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "000a7f8e8d5818c285690f89919392b3e25ed214a7ccfc2933526f1997ec3233"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "001fe6b46aa6696e93bf26c57174f8eb293a690d1a307329ec05dcad0ba579ff"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -290,6 +290,8 @@ EDA_WINDOW          = 48  # number of blocks observed by EDA
 EDA_TRIGGER_RATIO   = 3.0  # slowdown ratio that triggers EDA easing
 EDA_EASE_MULTIPLIER = 2.0  # difficulty divisor applied when EDA fires
 
+# ---- MINING UTILS ----
+MINING_COOLDOWN_AFTER_BLOCK = 0.5
 
 # =============================================================================
 # 7. TRANSACTION FEES & MEMPOOL
@@ -472,10 +474,12 @@ CHAT_SPK_ROTATE_INTERVAL_S = 7 * 24 * 3600  # seconds between signed pre-key rot
 # =============================================================================
 # ---- RPC TIMEOUTS ----
 CONNECT_TIMEOUT_SCAN = 1.25  # timeout for quick port scanning during discovery
-RPC_TIMEOUT          = 4.0  # wallet RPC request timeout in seconds
+RPC_TIMEOUT          = 4.0   # wallet RPC request timeout in seconds
+RPC_CONN_TTL_SEC     = 60.0  # seconds a cached channel/socket stays warm before re-handshake
+RPC_PREFETCH_TIMEOUT = 1.5   # quick dial timeout for pre-connect
 
 # ---- CLIENT THROTTLING ----
-NODE_CACHE_TTL          = 60  # seconds cached node metadata stays valid
+NODE_CACHE_TTL          = 60    # seconds cached node metadata stays valid
 WALLET_RPC_MIN_INTERVAL = 0.45  # minimum spacing between wallet RPC calls
 
 # ---- BALANCE LOOKUP THROTTLING ----

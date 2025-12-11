@@ -223,6 +223,7 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
     total_applied = 0
     total_attempted = len(unique_heights)
     total_chunks = (total_attempted + batch_size - 1) // batch_size
+    triggered_fullsync = False
     for idx in range(0, len(unique_heights), batch_size):
         chunk = unique_heights[idx : idx + batch_size]
         chunk_start = time.time()
@@ -263,6 +264,11 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
                     local_hash = local_chain[h].hash().hex()
                     if local_hash == bh:
                         continue
+                    # already have a different block at this height -> prefer full sync once
+                    if not triggered_fullsync:
+                        self._request_full_sync(peer, force=True)
+                        triggered_fullsync = True
+                    continue
                     
                 applied = self._apply_block_from_sync(block_obj, peer)
                 if applied:
@@ -272,6 +278,9 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
                     blk_hash = block_obj.get("hash")
                     label = str(blk_hash or "unknown")
                     log.warning("[_download_blocks] Block %s rejected during sync from %s", label[:12], peer)
+                    if not triggered_fullsync:
+                        self._request_full_sync(peer, force=True)
+                        triggered_fullsync = True
                     return total_applied, time.time() - start_time
                 
             log.info(

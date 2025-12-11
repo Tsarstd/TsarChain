@@ -359,6 +359,8 @@ class SecureChannel:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
             log.debug("[handshake] Benchmark : %.3f ms", result)
+            if result > 500.0:
+                log.warning("[handshake] slow role=%s took=%.3f ms", self.role, result)
 
     def _hs_client_auth(self):
         hs1 = self.native.client_build_hs1()

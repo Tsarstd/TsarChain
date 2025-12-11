@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import time
+import threading
 from typing import Optional
 from bech32 import bech32_encode, convertbits
 
@@ -25,6 +26,32 @@ log = get_ctx_logger('tsarchain.consensus.validation')
 
 class ValidationMixin:
     _pow_light_warmed = False
+    _pow_warm_next_epoch: int | None = None
+    _pow_warm_lock = threading.Lock()
+
+    def _warm_pow_context(self, height: int):
+        epoch_blocks = max(1, int(CFG.RANDOMX_KEY_EPOCH_BLOCKS))
+        if epoch_blocks <= 0:
+            return
+        # pre-warm next epoch key near boundary
+        next_epoch = (height // epoch_blocks) + 1
+        with self._pow_warm_lock:
+            if self._pow_warm_next_epoch == next_epoch:
+                return
+            self._pow_warm_next_epoch = next_epoch
+
+        def _worker():
+            try:
+                key = H.pow_key_for_height(next_epoch * epoch_blocks)
+                # dummy header to prime dataset
+                dummy_hdr = b"\x00" * 80
+                H.pow_hash_verify_light(dummy_hdr, key_hint=key)
+                log.debug("[pow_warm] warmed epoch=%s", next_epoch)
+            except Exception:
+                log.debug("[pow_warm] warm failed", exc_info=True)
+
+        t = threading.Thread(target=_worker, name="pow-warm", daemon=True)
+        t.start()
 # =============================================================================
 # 1. VALIDATION PROCESSING
 # =============================================================================
@@ -57,7 +84,14 @@ class ValidationMixin:
     def validate_block(self, block: Block) -> bool:  
         try:
             if not all([block.height is not None, block.prev_block_hash, block.transactions]):
+                self._last_block_validation_error = "block_missing_fields"
                 return False
+            pow_start = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
+            try:
+                self._warm_pow_context(int(getattr(block, "height", 0) or 0))
+            except Exception:
+                log.exception("error _warm_pow_context")
+                pass
             
             # Warm-up RandomX light verifier once to avoid first-block spike
             if (not self.__class__._pow_light_warmed) and CFG.POW_ALGO == "randomx":
@@ -66,18 +100,25 @@ class ValidationMixin:
                 self.__class__._pow_light_warmed = True
 
             if not self._validate_pow(block):
+                self._last_block_validation_error = "pow_invalid"
                 return False
+            if pow_start is not None:
+                pow_ms = round((time.perf_counter() - pow_start) * 1000.0, 3)
+                log.debug("[validate_block] pow_ms=%s height=%s hash_cached=%s", pow_ms, getattr(block, "height", None), isinstance(getattr(block, "_cached_hash", None), (bytes, bytearray)))
 
             if not self._compute_txids_for_block(block):
                 return False
 
             if not self._validate_merkle(block):
+                self._last_block_validation_error = "merkle_mismatch"
                 return False
 
             if not self._ensure_unique_txids(block):
+                self._last_block_validation_error = "duplicate_or_missing_txid"
                 return False
 
             if not self._check_block_limits(block):
+                self._last_block_validation_error = "block_limits_exceeded"
                 return False
 
             store = None
@@ -85,6 +126,7 @@ class ValidationMixin:
             state_token = None
             with self.lock:
                 if not self._validate_chain_context_locked(block):
+                    self._last_block_validation_error = "chain_context_invalid"
                     return False
                 store = self._ensure_utxodb() or UTXODB()
                 if not callable(getattr(store, "lookup_entry", None)):
@@ -94,6 +136,7 @@ class ValidationMixin:
                 state_token = self._chain_state_token_locked()
 
             if not self._check_sigops_budget(block, store, utxo_view):
+                self._last_block_validation_error = "sigops_limit_exceeded"
                 return False
 
             if block.height > 0 and not self._validate_transactions(block, store):
@@ -108,6 +151,7 @@ class ValidationMixin:
             return True
 
         except Exception:
+            self._last_block_validation_error = "unexpected_validation_error"
             log.exception("[validate_block] Unexpected error during block validation")
             return False
     
@@ -545,24 +589,32 @@ class ValidationMixin:
     def _validate_chain_context_locked(self, block: Block) -> bool:
         expected_height = self.height + 1 if self.chain else 0
         if block.height != expected_height:
+            self._last_block_validation_error = "height_mismatch"
             return False
         if self.chain and block.prev_block_hash != self.chain[-1].hash():
+            self._last_block_validation_error = "prev_hash_mismatch"
             return False
         if not self.chain and (block.height != 0 or block.prev_block_hash != CFG.ZERO_HASH):
+            self._last_block_validation_error = "bad_genesis_prevhash"
             return False
         if not self.chain and block.height == 0 and GENESIS_HASH is not None:
             if block.hash() != GENESIS_HASH:
+                self._last_block_validation_error = "genesis_hash_mismatch"
                 return False
         mtp = self.median_time_past(CFG.MTP_WINDOWS)
         if block.timestamp < mtp:
+            self._last_block_validation_error = "timestamp_too_old"
             return False
         if block.timestamp > int(time.time()) + CFG.FUTURE_DRIFT:
+            self._last_block_validation_error = "timestamp_in_future"
             return False
         if self.chain:
             parent_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
             if block.timestamp + int(CFG.TARGET_BLOCK_TIME) < parent_ts:
+                self._last_block_validation_error = "timestamp_backwards"
                 return False
         if not self._validate_difficulty(block):
+            self._last_block_validation_error = "difficulty_invalid"
             return False
         return True
 
@@ -575,8 +627,10 @@ class ValidationMixin:
             if not isinstance(txid_b, (bytes, bytearray)):
                 txid_b = bytes.fromhex(txid_b) if isinstance(txid_b, str) else None
             if txid_b is None:
+                self._last_block_validation_error = "txid_missing"
                 return False
             if txid_b in seen_txids:
+                self._last_block_validation_error = "txid_duplicate"
                 return False
             seen_txids.add(txid_b)
         return True
@@ -584,9 +638,11 @@ class ValidationMixin:
     def _check_block_limits(self, block: Block) -> bool:
         txs_ex_coinbase = max(0, (len(block.transactions) or 0) - 1)
         if txs_ex_coinbase > CFG.MAX_TXS_PER_BLOCK:
+            self._last_block_validation_error = "too_many_txs"
             return False
         est_size = self._estimate_block_size(block)
         if est_size is not None and est_size > CFG.MAX_BLOCK_BYTES:
+            self._last_block_validation_error = "block_size_exceeded"
             return False
         return True
 
@@ -636,9 +692,10 @@ class ValidationMixin:
             else:
                 so = len(getattr(tx, "inputs", []))
             if so > int(CFG.MAX_SIGOPS_PER_TX):
+                self._last_block_validation_error = "sigops_per_tx_exceeded"
                 return False
             total_sigops += so
         if total_sigops > int(CFG.MAX_SIGOPS_PER_BLOCK):
+            self._last_block_validation_error = "sigops_per_block_exceeded"
             return False
         return True
-

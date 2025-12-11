@@ -280,7 +280,6 @@ def handle_user_rpc(
             min_iv = message.get("min_interval")
             force = bool(message.get("force"))
             pushed = self.broadcast.send_mempool_to_peer(target, min_interval_s=min_iv, force=force)
-            log.debug("[GET_MEMPOOL] snapshot mode: %s", target)
             return {"type": "MEMPOOL_SYNC", "count": int(pushed)}
 
         if mode in ("inline", "inline_full"):

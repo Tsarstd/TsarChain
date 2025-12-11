@@ -19,8 +19,8 @@ from ..protocol import SecureChannel, build_envelope, is_envelope, recv_message,
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.node_logic.rpc_client")
 
-_RPC_CONN_TTL = 30.0  # seconds a cached channel/socket stays warm before re-handshake
-_RPC_PREFETCH_TIMEOUT = 1.5  # quick dial timeout for pre-connect
+_RPC_CONN_TTL = float(CFG.RPC_CONN_TTL_SEC)
+_RPC_PREFETCH_TIMEOUT = float(CFG.RPC_PREFETCH_TIMEOUT)
 
 
 def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[float] = None) -> Optional[dict]:
@@ -68,6 +68,7 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
         elif e:
             cache.pop(norm, None)
             _cleanup(e)
+    cache_hit = entry is not None
 
     resp = None
     sock_new = None
@@ -124,6 +125,8 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
                     _, victim = cache.popitem(last=False)
                     _cleanup(victim)
             sock_new = None  # cached, do not auto-close
+        if CFG.DEBUG_BENCHMARKS and not cache_hit:
+            log.debug("[rpc_conn] cache_hit=%s peer=%s new_conn=%s", cache_hit, norm, resp is not None)
     except (socket.timeout, ConnectionRefusedError, OSError):
         if sock_new is not None:
             sock_new.close()
