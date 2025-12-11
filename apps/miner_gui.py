@@ -3,6 +3,29 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173
 
+"""
+TsarChain — Full Node GUI Miner
+
+Role
+- Runs a full node with on-disk persistence.
+- Receives/maintains mempool and includes transactions in mined blocks.
+
+Intended environment
+- User Friendly GUI Interface
+
+Feature
+-Log debuging viewer (Tsar Logging)
+-Print chain (*see block database)
+
+Safety & behavior
+- Validates headers, difficulty, timestamps, and full block rules.
+- Keeps local DB, mempool policies apply (size/fees/sanity checks).
+- Reorg-safe: cancels current work and re-mines on new best tip.
+
+Notes
+- default RandomX memory = False. for GUI version, use CLI to use RandomX Memory feature
+"""
+
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
 import threading, time, re, psutil
@@ -10,7 +33,6 @@ import multiprocessing as mp
 from collections import deque, OrderedDict
 
 # ---------------- Local Project ----------------
-import tsarcore_native as native
 from tsarchain.consensus.blockchain import Blockchain
 from tsarchain.network.node import Network
 from tsarchain.utils import config as CFG
@@ -18,7 +40,7 @@ from tsarchain.utils.bootstrap import maybe_bootstrap_snapshot
 
 # ---------------- Logger ----------------
 from tsarchain.utils.tsar_logging import launch_gui_in_thread, setup_logging, open_log_toplevel, get_ctx_logger
-native.set_py_logger(get_ctx_logger("tsarchain.native"))
+log = get_ctx_logger("apps.miner_gui")
 
 
 ADDR_HINT = "tsar1..."
@@ -60,7 +82,6 @@ class BlockchainGUI:
         self.node_alive = threading.Event()
         self.mining_alive = threading.Event()
         self.cancel_mining = None
-        self.gui_log = get_ctx_logger("apps.[miner_gui]")
         self._last_chain_height = -1
         self._sync_ready = False
         self._sync_status = "idle"
@@ -289,18 +310,11 @@ class BlockchainGUI:
         meta_frame.pack(fill=tk.X, padx=12, pady=(0, 6))
         self.meta_label = tk.Label(meta_frame, text="Height: -   |   Supply: - TSAR", bg=self.bg, fg=self.accent)
         
-        try:
-            self.meta_label.configure(font=("Consolas", 12, "bold"))
-        except Exception:
-            self.meta_label.configure(font=("Courier New", 12, "bold"))
+        self.meta_label.configure(font=("Consolas", 12, "bold"))
             
         self.meta_label.pack(anchor="center")
         self.print_output = scrolledtext.ScrolledText(f, width=90, height=25, state="disabled", bg="#1e1e1e", fg=self.fg, wrap="none", undo=False, autoseparators=False)
-        
-        try:
-            self.print_output.configure(font=("Consolas", 10))
-        except Exception:
-            self.print_output.configure(font=("Courier New", 10))
+        self.print_output.configure(font=("Consolas", 10))
 
         self.print_output.tag_configure("hdr", foreground=self.accent)
         self.print_output.tag_configure("meta", foreground="#9aa0a6")
@@ -416,10 +430,7 @@ class BlockchainGUI:
             pass
 
     def log_print(self, msg: str):
-        try:
-            (getattr(self, "gui_log", None) or get_ctx_logger("apps.[miner_gui]")).info(msg)
-        except Exception:
-            pass
+        log.info("apps.[miner_gui]")
         self.root.after(0, self._log_print_main, msg)
 
     def _log_print_main(self, msg: str):
@@ -486,18 +497,12 @@ class BlockchainGUI:
         self.root.after(0, _apply)
 
     def _get_peer_best_height(self) -> int:
-        try:
-            peer_best = getattr(self.network, "_peer_best_height", {})
-            heights: list[int] = []
-            for value in peer_best.values():
-                try:
-                    heights.append(int(value))
-                except Exception:
-                    continue
-            if heights:
-                return max(heights)
-        except Exception:
-            pass
+        peer_best = getattr(self.network, "_peer_best_height", {})
+        heights: list[int] = []
+        for value in peer_best.values():
+            heights.append(int(value))
+        if heights:
+            return max(heights)
         return -1
 
     def _set_buttons_state(self):
@@ -535,13 +540,9 @@ class BlockchainGUI:
         return ok
 
     def _auto_cores(self):
-        try:
-            cores = psutil.cpu_count(logical=True)
-            self.cpu_entry.delete(0, tk.END)
-            self.cpu_entry.insert(0, str(max(1, int(cores) - 1)))
-        except Exception:
-            self.cpu_entry.delete(0, tk.END)
-            self.cpu_entry.insert(0, "1")
+        cores = psutil.cpu_count(logical=True)
+        self.cpu_entry.delete(0, tk.END)
+        self.cpu_entry.insert(0, str(max(1, int(cores) - 1)))
         self._enforce_core_bounds()
 
     def _enforce_core_bounds(self):
@@ -625,15 +626,12 @@ class BlockchainGUI:
                 self._last_chain_height = -1
 
             fallback_nodes = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
-            try:
-                for peer in fallback_nodes:
-                    network.persistent_peers.add(peer)
-                    network.peers.add(peer)
-                if fallback_nodes:
-                    host, port = fallback_nodes[0]
-                    self.log_print(f"[Network] Connecting to Tsarchain Network: '{CFG.DEFAULT_NET_ID}', peer {host}:{port}")
-            except Exception:
-                pass
+            for peer in fallback_nodes:
+                network.persistent_peers.add(peer)
+                network.peers.add(peer)
+            if fallback_nodes:
+                host, port = fallback_nodes[0]
+                self.log_print(f"[Network] Connecting to Tsarchain Network: '{CFG.DEFAULT_NET_ID}', peer {host}:{port}")
 
         except Exception as exc:
             err_msg = str(exc)
@@ -702,11 +700,8 @@ class BlockchainGUI:
                 self._sync_status = "syncing"
 
                 self._request_fast_sync()
-                try:
-                    height_raw = getattr(self.blockchain, "height", -1)
-                    height = int(height_raw)
-                except Exception:
-                    height = -1
+                height_raw = getattr(self.blockchain, "height", -1)
+                height = int(height_raw)
                 self._last_chain_height = height
 
                 peer_sync_map = getattr(self.network, "_peer_last_sync", {})
@@ -855,12 +850,9 @@ class BlockchainGUI:
                         break
                     if block:
                         self.log_print(f"[+] Block mined: {block.hash().hex()[:16]}…")
-                        try:
-                            sent = self.network.publish_block(block, exclude=None, force=True)
-                            if sent <= 0:
-                                self._request_fast_sync(min_interval=0.5)
-                        except Exception:
-                            pass
+                        sent = self.network.publish_block(block, exclude=None, force=True)
+                        if sent <= 0:
+                            self._request_fast_sync(min_interval=0.5)
                         try:
                             pool = getattr(self.network.broadcast, "mempool", None)
                             if pool:
@@ -871,23 +863,17 @@ class BlockchainGUI:
                                         continue
                                     txids_to_purge.append(txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid))
                                 if txids_to_purge:
-                                    try:
-                                        if hasattr(pool, "remove_many"):
-                                            pool.remove_many(txids_to_purge)
-                                        else:
-                                            for _txid in txids_to_purge:
-                                                pool.remove_tx(_txid)
-                                    except Exception:
-                                        pass
-                                try:
-                                    pool.flush()
-                                except Exception:
-                                    pass
+                                    if hasattr(pool, "remove_many"):
+                                        pool.remove_many(txids_to_purge)
+                                    else:
+                                        for _txid in txids_to_purge:
+                                            pool.remove_tx(_txid)
+                                            
+                                pool.flush()
+                                
                         except Exception as _e:
-                            try:
-                                self.log_print(f"[Mempool] prune error: {_e}")
-                            except Exception:
-                                pass
+                            self.log_print(f"[Mempool] prune error: {_e}")
+                            
                 except Exception as e:
                     self.log_print(f"[-] Mining : {e}")
                     time.sleep(1)
@@ -899,15 +885,11 @@ class BlockchainGUI:
     def _poll_progress(self):
         if not (self.progress_polling and self.progress_queue):
             return
-        updated = False
         try:
             while True:
                 tag, val = self.progress_queue.get_nowait()
                 if tag == "TOTAL_HPS":
                     self.hashrate_var.set(f"{float(val):,.0f} H/s")
-                    updated = True
-        except Exception:
-            pass
         finally:
             self.root.after(500, self._poll_progress)
 
@@ -927,10 +909,7 @@ class BlockchainGUI:
     def stop_all(self):
         self.stop_mining()
         if self.network:
-            try:
-                self.network.shutdown()
-            except:
-                pass
+            self.network.shutdown()
         self.blockchain = None
         self.network = None
         self._last_chain_height = -1
@@ -959,15 +938,9 @@ class BlockchainGUI:
             if isinstance(s_raw, (int, float)):
                 supply_num = float(s_raw)
             elif isinstance(s_raw, (list, tuple)):
-                try:
-                    supply_num = float(sum(x for x in s_raw if isinstance(x, (int, float))))
-                except Exception:
-                    supply_num = 0.0
+                supply_num = float(sum(x for x in s_raw if isinstance(x, (int, float))))
             elif isinstance(s_raw, str):
-                try:
-                    supply_num = float(s_raw)
-                except Exception:
-                    supply_num = 0.0
+                supply_num = float(s_raw)
 
             supply_str = f"{supply_num/1e8:.8f} TSAR"
             self.meta_label.config(text=f"Height: {height_str}   |   Supply: {supply_str}")
