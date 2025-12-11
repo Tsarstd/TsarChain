@@ -1,11 +1,4 @@
 '''
-    NOTE: aktivitas upload graffiti tervalidasi di block height 30, 33, dan seterusnya.
-    NOTE: untuk mendalami struktur data, bisa cek di :
-    - data/Block/blockchain.json - untuk melihat block yang sudah mengandung graffiti
-    - data/Contracts/graffiti.json - untuk metadata graffiti
-    - data/storage/index.json - untuk melihat index graffiti yang sudah tersimpan di storage node (archivist)
-
-
 ### --- Next Implementation Steps (Dev Notes) --- 
 
     1. (DONE) menambahkan prefix di art_id, misal art_id sekarang 'c602d69f2999eebca522cf4479d852e66ea166271d11e0f30dd9a1a20e78b39f' tambahkan 4 karakter prfix didepan, 'graf' sehingga menjadi
@@ -48,10 +41,15 @@
        - modul storage sudah tersedia (src/tsarchain/storage/kv) dan sudah terintegrasi dengan module native, tinggal terapkan saja
        - gunakan STORAGE_MAX_BYTES di config.py untuk membatasi ukuran maksimal lmdb archivist, dan STORAGE_SIZE_INIT untuk inisialisasi ukuran awal lmdb archivist
         
-	9. CLI Archivist Headless:
-       - Buatkan 2 varian CLI dari archivist.py (GUI): apps/archivist_node.py (storage publik/VPS) dan apps/archivist_client.py (cache-only CGNAT).
-       - Next: tambahkan fetch file & cache untuk client (STOR_GET_BY_ART), dan proof-of-retention worker + jalur payout bagi partisipan non-publik.
-       - Dokumentasi argumen CLI & contoh run di README/INSTALL.
-       - Opsional: monitoring/logging ringkas (metrics) dan opsi auto-discovery storer.
+	9. (DONE) CLI Archivist Headless:
+       - Buatkan varian CLI dari archivist_gui.py (GUI): apps/cli_archivist.py .
+       - interaksi awal mirip seperti apps/cli_node_miner.py ( start cli -> input address -> connect )
+       - setelah connect/start. langsung menunjukan tabel informasi storage di console, ketika ada data masuk, status paid, dll. termasuk informasi realtime (tip height, peers, dll) seperti di GUI
+       - dan buat interaksi khusus untuk 1 aktivitas, yaitu ( Claim Pool Payout ), buat interaksi khusus untuk ini. tanpa mengentikan proses apps.
+       - semua module project dan import sama seperti versi GUI, ini hanya membuat versi CLI saja. tanpa merubah sistem yang sudah bekerja
+    
+    10. Hapus fungsi 'Claim Pool Payout' dan buat fungsi ini khusus di jalur wallet saja kremlin.py.
+       - Bantu hapus semua fungsi 'Claim Pool Payout' di sisi Archivist (cli_archivist.py & archivist_gui.py)
+       - implementasikan saja fungsi ini di wallet,
  
 '''

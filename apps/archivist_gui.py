@@ -121,7 +121,6 @@ class TsarStorageGUI:
         self.tree.pack(fill=tk.BOTH, expand=True)
         action_row = ttk.Frame(table, padding=(0, 4))
         action_row.pack(fill=tk.X)
-        ttk.Button(action_row, text="Mark Selected Paid", command=self._mark_selected_paid).pack(side=tk.LEFT, padx=6)
 
         pool_fr = ttk.LabelFrame(self.root, text="Storage Pool Balances", padding=(10, 6))
         pool_fr.pack(fill=tk.BOTH, expand=False, padx=10, pady=(4, 4))
@@ -363,25 +362,6 @@ class TsarStorageGUI:
                 return f"{size:.2f} {u}" if u != "B" else f"{int(size)} {u}"
             size /= 1024.0
 
-    def _mark_selected_paid(self) -> None:
-        if not self.connected:
-            messagebox.showwarning("Payout", "Hubungkan ke node terlebih dahulu.")
-            return
-        sel = self.tree.selection()
-        if not sel:
-            messagebox.showwarning("Payout", "Pilih entri pada tabel.")
-            return
-        gid = self.tree.item(sel[0], "values")[0]
-        txid = simpledialog.askstring("Payout TXID", "Masukkan TXID payout (opsional):", parent=self.root)
-        if txid is None:
-            return
-        resp = self._call_storage_local({"type":"STOR_PAID", "graffiti_id": gid, "txid": (txid or "").strip()}, timeout=6.0)
-        if isinstance(resp, dict) and resp.get("status") in ("ok", None):
-            self.logln(f"[Payout] {gid} ditandai paid.")
-            self.refresh_all()
-        else:
-            messagebox.showerror("Payout", f"Gagal menandai paid: {resp}")
-
     def _start_retention_loop(self) -> None:
         if self._retention_thread and self._retention_thread.is_alive():
             return
@@ -614,7 +594,7 @@ class TsarStorageGUI:
         pong = self.rpc.call({"type":"PING"}, timeout=2.0)
         ok = isinstance(pong, dict) and pong.get("type") == "PONG"
         if ok:
-            self.root.after(0, lambda: self.status_lbl.configure(text="? Connected", foreground="#1a8"))
+            self.root.after(0, lambda: self.status_lbl.configure(text="• Connected", foreground="#1a8"))
             self.refresh_all()
         else:
             self.root.after(0, self._handle_rpc_drop, "heartbeat")
