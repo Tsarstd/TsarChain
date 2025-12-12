@@ -172,7 +172,7 @@ def handle_user_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[GET_INFO] Benchmark : %.3f ms", result)
+            log.debug("[GET_BALANCES] Benchmark : %.3f ms", result)
             
         return {"type": "BALANCES", "height": tip_height, "items": items}
 
@@ -390,7 +390,7 @@ def handle_user_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[GET_INFO] Benchmark : %.3f ms", result)
+            log.debug("[GET_TX_HISTORY] Benchmark : %.3f ms", result)
         
         return {"type": "TX_HISTORY", "address": addr_str, **history}
 
@@ -664,7 +664,7 @@ def handle_user_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[GET_INFO] Benchmark : %.3f ms", result)
+            log.debug("[CHAT_PUBLISH_PREKEYS] Benchmark : %.3f ms", result)
             
         return {"type":"CHAT_PUBLISH_PREKEYS"}
 
