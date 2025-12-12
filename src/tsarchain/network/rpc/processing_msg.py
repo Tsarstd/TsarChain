@@ -58,7 +58,14 @@ BOOTSTRAP_MINER_ALLOW = {
 }
 
 
-def process_message(self: "Network", message: dict[str, Any], addr: Optional[tuple]=None) -> dict | None:
+def process_message(
+    self: "Network",
+    message: dict[str, Any],
+    addr: Optional[tuple]=None,
+    *,
+    src_node_id: Optional[str] = None,
+    src_pubkey: Optional[str] = None,
+) -> dict | None:
     if not isinstance(message, dict):
         return {"error": "invalid message: expected JSON object"}
 
@@ -72,12 +79,15 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
     # ----------------------------------------------------------------------------------
 
     def _is_miner_sender() -> bool:
-        if not isinstance(addr, tuple):
+        if not src_node_id:
             return False
-        if addr in self.peers:
-            return True
-        peer_port = int(message.get("port", -1))
-        return (peer_port > 0) and ((addr[0], peer_port) in self.peers)
+        pinned = self.peer_pubkeys.get(src_node_id)
+        if not pinned:
+            return False
+        if src_pubkey and pinned != src_pubkey:
+            log.warning("[miner_auth] pinned mismatch for %s from %s", src_node_id[:12], addr)
+            return False
+        return True
 
     def _identify_rpc_role(mtype: str) -> tuple[str, str]:
         for role, allowed in ROLE_RPC_MAP.items():
@@ -98,16 +108,16 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         return {"error": "unknown type"}
 
     if (role == "MINER") and (mtype not in BOOTSTRAP_MINER_ALLOW) and (not _is_miner_sender()):
-        #log.warning("[process_message] rejecting unauthorized miner RPC %s from %s", mtype, addr)
+        log.warning("[process_message] rejecting unauthorized miner RPC %s from %s", mtype, addr)
         return {"error": "forbidden: miners-only endpoint"}
 
     if role == "MINER":
         #log.debug("[process_message] MINERS response: msg: %s role: %s category: %s", mtype, role, category)
-        return handle_miner_rpc(self, message, addr, mtype)
+        return handle_miner_rpc(self, message, addr, mtype, src_node_id=src_node_id, src_pubkey=src_pubkey)
     
     if role == "STORAGE":
         #log.debug("[process_message] STORAGE response: msg: %s role: %s category: %s", mtype, role)
-        return handle_storage_rpc(self, message, addr, mtype)
+        return handle_storage_rpc(self, message, addr, mtype, src_node_id=src_node_id, src_pubkey=src_pubkey)
 
     dispatch_result = handle_user_rpc(
         self,

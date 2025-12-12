@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import socket
 import time
+import secrets
 import threading
 from collections import OrderedDict
 from typing import Optional, Tuple
@@ -281,6 +282,8 @@ def _request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> b
         "type": "GET_FULL_SYNC",
         "port": self.port,
         "height": self.broadcast.blockchain.height,
+        "ts": int(time.time()),
+        "nonce": secrets.token_hex(16),
     }
     sync_start = time.time()
     resp = self._rpc_request(norm, payload, timeout=max(20.0, CFG.SYNC_TIMEOUT * 2))
@@ -300,6 +303,13 @@ def _request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> b
         return False
 
     data = resp.get("data", resp)
+    ts_val = int(resp.get("ts", 0))
+    nonce_val = str(resp.get("nonce") or "")
+    sender_key = f"{norm[0]}:{norm[1]}"
+    if not (ts_val and nonce_val and self._nonce_guard("full_sync_resp", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
+        log.warning("[_request_full_sync] replay guard reject from %s", norm)
+        return False
+    
     ok = self.broadcast.receive_full_sync(data)
     if ok:
         self._peer_last_sync[norm] = time.time()

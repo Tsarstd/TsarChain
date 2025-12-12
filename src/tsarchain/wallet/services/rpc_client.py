@@ -221,7 +221,7 @@ class NodeClient:
                 resp = chan.recv(CFG.RPC_TIMEOUT)
             except Exception:
                 log.exception("Unhandled exception")
-                if CFG.P2P_ENC_REQUIRED and not CFG.ALLOW_RPC_PLAINTEXT:
+                if CFG.P2P_ENC_REQUIRED:
                     raise
                 log.warning("[_try_send_one] secure handshake failed, fallback to plaintext", extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type")))
                 send_message(s, json.dumps(env).encode("utf-8"))

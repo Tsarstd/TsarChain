@@ -8,7 +8,7 @@ Focus: payout & proof (no storage/archivist flow).
 """
 
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 from bech32 import convertbits, bech32_encode
 
 from ...contracts import graffiti as GRAFFITI
@@ -39,7 +39,15 @@ def _spkhex_to_address(spk_hex: str) -> str | None:
     return None
 
 
-def handle_storage_rpc(self: "Network", message: dict[str, Any], addr, mtype: str) -> dict | None:
+def handle_storage_rpc(
+    self: "Network",
+    message: dict[str, Any],
+    addr,
+    mtype: str,
+    *,
+    src_node_id: Optional[str] = None,
+    src_pubkey: Optional[str] = None,
+) -> dict | None:
     ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
     rl_key = f"storage_rpc:{ip}"
     if not self._tb_allow(self.rl_ip, rl_key, CFG.STORAGE_RPC_RL_IP_BURST, CFG.STORAGE_RPC_RL_WINDOW_S, CFG.STORAGE_RPC_RL_IP_BURST, backoff_key=rl_key):
@@ -47,10 +55,21 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr, mtype: st
         return {"error": "rate_limited"}
 
     def _is_storage_sender() -> bool:
+        if not src_node_id:
+            return False
         peer_port = int(message.get("port", 0))
         with self.lock:
             peers = dict(getattr(self, "storage_peers", {}) or {})
-        for (peer_ip, peer_port_known), _meta in peers.items():
+        for (peer_ip, peer_port_known), meta in peers.items():
+            pinned_nid = (meta or {}).get("node_id")
+            pinned_pk = (meta or {}).get("pubkey")
+            if pinned_nid and pinned_nid != src_node_id:
+                continue
+            if pinned_pk and not src_pubkey:
+                continue
+            if pinned_pk and src_pubkey and pinned_pk != src_pubkey:
+                log.warning("[storage_auth] pubkey mismatch nid=%s ip=%s", pinned_nid or "-", ip)
+                continue
             if peer_ip != ip:
                 continue
             if peer_port_known > 0 and peer_port > 0 and peer_port_known == peer_port:
@@ -60,11 +79,17 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr, mtype: st
         return False
 
     if not _is_storage_sender():
+        log.warning("[storage_auth] forbidden storage RPC %s from %s", mtype, addr)
         return {"error": "forbidden: storage-only endpoint"}
 
     if mtype == "GRAFFITI_PROOF_SUBMIT":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
+        ts_val = int(message.get("ts", 0))
+        nonce_val = str(message.get("nonce") or "")
+        sender_key = src_node_id or ip
+        if not (ts_val and nonce_val and self._nonce_guard("storage_proof", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
+            return {"error": "replay_guard"}
              
         art_id_raw = str(message.get("art_id") or "").strip()
         art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
@@ -118,6 +143,11 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr, mtype: st
     elif mtype == "GRAFFITI_BUILD_PAYOUT":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
+        ts_val = int(message.get("ts", 0))
+        nonce_val = str(message.get("nonce") or "")
+        sender_key = src_node_id or ip
+        if not (ts_val and nonce_val and self._nonce_guard("storage_payout", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
+            return {"error": "replay_guard"}
             
         art_id_raw = str(message.get("art_id") or "").strip()
         art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)

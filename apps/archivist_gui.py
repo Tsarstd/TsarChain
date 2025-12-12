@@ -3,7 +3,7 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173
 
-import os, threading, sys, json, socket
+import os, threading, sys, json, socket, time, secrets
 import tkinter as tk
 import multiprocessing as mp
 from tkinter import ttk, messagebox, simpledialog
@@ -211,7 +211,11 @@ class TsarStorageGUI:
         if not override:
             messagebox.showerror("Storage address", "Isi payout address terlebih dahulu.")
             return
-        self.rpc.set_address_override(override)
+        try:
+            self.rpc.set_address_override(override)
+        except Exception as exc:
+            messagebox.showerror("Payout address", f"Alamat payout tidak valid: {exc}")
+            return
         self.rpc.set_trusted(True)
 
         storage_port = self._storage_port
@@ -544,6 +548,8 @@ class TsarStorageGUI:
                 "height": tip_height,
                 "seed": seed,
                 "storer": (self.addr_var.get() or self.rpc.address or "").strip().lower(),
+                "ts": int(time.time()),
+                "nonce": secrets.token_hex(16),
             }
             ack = self.rpc.call(submit, timeout=8.0)
             if isinstance(ack, dict) and ack.get("status") == "ok":
@@ -607,6 +613,8 @@ class TsarStorageGUI:
             "recipients": [{"addr": recipient, "amount": amount_sats}],
             "epoch": stats.get("last_paid_epoch", -1) + 1,
             "broadcast": True,
+            "ts": int(time.time()),
+            "nonce": secrets.token_hex(16),
         }
         self.logln(f"[Pool] build payout art={art_id[:16]} amt={amount_sats} sats -> {recipient}")
         resp = self.rpc.call(payload, timeout=8.0)

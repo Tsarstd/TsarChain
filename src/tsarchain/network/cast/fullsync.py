@@ -3,7 +3,7 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
 
-import time
+import time, secrets
 from typing import Any, Dict, Tuple
 
 from ...consensus.blockchain import Blockchain
@@ -65,6 +65,8 @@ class FullSyncMixin:
                 "state": state_view,
                 "mempool": mempool_data,
             },
+            "ts": int(time.time()),
+            "nonce": secrets.token_hex(16),
         }
         log.info(
             "[broadcast.build_full_sync_payload] totals blocks=%d utxos=%d mempool=%d assembled in %.2fs",

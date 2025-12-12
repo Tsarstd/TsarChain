@@ -18,6 +18,17 @@ def register_storage_peer(self, peer_ip: str, meta: Dict) -> None:
     with self.lock:
         if not hasattr(self, "storage_peers") or self.storage_peers is None:
             self.storage_peers = {}
+        node_id = meta.get("node_id")
+        # enforce pin consistency for the same node_id
+        if node_id:
+            for key, old_meta in list(self.storage_peers.items()):
+                if (old_meta or {}).get("node_id") != node_id:
+                    continue
+                if (old_meta or {}).get("pubkey") and meta.get("pubkey") and (old_meta or {}).get("pubkey") != meta.get("pubkey"):
+                    return
+                # prefer latest entry / explicit port
+                if key != (peer_ip, port):
+                    self.storage_peers.pop(key, None)
         self.storage_peers[(peer_ip, port)] = meta
 
 

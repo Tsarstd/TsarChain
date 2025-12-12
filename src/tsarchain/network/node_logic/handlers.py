@@ -9,14 +9,16 @@ import json
 import time
 from typing import List
 
+from bech32 import convertbits, bech32_encode
 from ...utils import config as CFG
+from ...utils.helpers import decode_address
 from ...utils.tsar_logging import get_ctx_logger
 from .storage_registry import register_storage_peer
 
 log = get_ctx_logger("tsarchain.network.node_logic.handlers")
 
 
-def _handle_hello(self, message, addr):
+def _handle_hello(self, message, addr, *, src_node_id: str | None = None, src_pubkey: str | None = None):
     peer_ip = addr[0] if isinstance(addr, tuple) and len(addr) > 0 else str(message.get("ip", "")).strip()
     peer_port = int(message.get("port", 0))
     peer_tuple = (peer_ip, peer_port) if peer_ip and isinstance(peer_port, int) and peer_port > 0 else None
@@ -27,6 +29,26 @@ def _handle_hello(self, message, addr):
 
     is_storage = role == "NODE_STORAGE"
     if is_storage:
+        if not (src_node_id and src_pubkey):
+            return {"error": "storage_auth_required"}
+        
+        payout_addr = (message.get("address") or "").strip().lower()
+        if not payout_addr:
+            return {"error": "storage_address_required"}
+        
+        try:
+            decode_address(payout_addr)
+        except Exception:
+            return {"error": "storage_address_invalid"}
+        
+        # enforce pin consistency
+        with self.lock:
+            for _peer, meta in (getattr(self, "storage_peers", {}) or {}).items():
+                if (meta or {}).get("node_id") == src_node_id:
+                    pinned_pk = (meta or {}).get("pubkey")
+                    if pinned_pk and pinned_pk != src_pubkey:
+                        log.warning("[hello] storage pubkey change rejected nid=%s", src_node_id[:12])
+                        return {"error": "storage_pubkey_pinned"}
         meta = {
             "addr": (message.get("address") or "").strip().lower(),
             "url": (message.get("url") or "").strip(),
@@ -35,6 +57,8 @@ def _handle_hello(self, message, addr):
             "last_seen": int(now),
             "alive": True,
             "trusted": bool(message.get("trusted", False)),
+            "node_id": src_node_id,
+            "pubkey": src_pubkey,
         }
         register_storage_peer(self, peer_ip, meta)
 

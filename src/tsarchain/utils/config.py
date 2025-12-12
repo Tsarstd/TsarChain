@@ -174,7 +174,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "00014fe61a9737463d2a14f4d5edfbabae42ad4ba829154f71cdf5173845565a"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "00161ee2b659265b70ee60395af3257a2a9a16a105138e97fcb320207a6727ad"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -357,7 +357,7 @@ BROADCAST_FAIL_BACKOFF_S = 120  # seconds to wait when broadcast keeps failing
 MAX_ADDRS_PER_REQ            = 15  # max addresses accepted per addr message
 MAX_HISTORY_LIMIT            = 200  # cap on stored addr history per peer
 MAX_UTXO_ADDR_LEN            = 64  # sanity limit for UTXO address strings
-NONCE_PER_SENDER_MAX         = 4096  # per-sender nonce cache bound
+NONCE_PER_SENDER_MAX         = 256  # per-sender nonce cache bound
 NONCE_GLOBAL_MAX             = 100_000  # global nonce cache bound across senders
 HANDSHAKE_RL_PER_IP_BURST    = 50  # burst limit when rate-limiting handshakes
 HANDSHAKE_RL_PER_IP_WINDOW_S = 10  # time window for handshake rate limit
@@ -414,9 +414,6 @@ MAX_FLUFF_DELAY_S         = 6.0
 # ---- SYNC INFO CADENCE ----
 SYNC_INFO_MIN_INTERVAL           = 60  # seconds between sync-info gossip messages
 SYNC_INFO_MIN_INTERVAL_BOOTSTRAP = 300.0  # slower sync-info rate for bootstrap node
-
-# ---- RPC ENVELOPE POLICY ----
-ALLOW_RPC_PLAINTEXT = False  # disable plaintext wallet RPC envelopes unless explicitly allowed
 
 # ---- REPLAY GUARDS ----
 ENVELOPE_REQUIRED    = True  # require message envelopes for replay protection
@@ -506,6 +503,9 @@ MEMPOOL_INLINE_RL_BACKOFF  = 15  # seconds to wait after hitting inline limiter
 CHAT_REG_RL_IP_BURST    = 3   # chat register/prekey submissions allowed per IP
 CHAT_REG_RL_WINDOW_S    = 30  # seconds window for chat register limiter
 CHAT_REG_RL_BACKOFF_S   = 20  # cooldown after chat register limiter trips
+CHAT_REG_RL_ADDR_BURST  = 2   # chat register limiter per address
+CHAT_REG_RL_ADDR_WINDOW_S = 30  # seconds window for chat register per-address limiter
+CHAT_REG_RL_ADDR_BACKOFF_S = 20  # cooldown after chat register per-address limiter trips
 
 # ---- USER RPC THROTTLING ----
 BLOCK_FETCH_RL_IP_BURST    = 6   # GET_BLOCK (hash/height) requests allowed per IP
@@ -514,6 +514,9 @@ BLOCK_FETCH_RL_BACKOFF_S   = 4   # backoff after block fetch limiter trips
 TX_SUBMIT_RL_IP_BURST      = 12  # NEW_TX submissions allowed per IP before throttling
 TX_SUBMIT_RL_WINDOW_S      = 6   # seconds window for tx submit limiter
 TX_SUBMIT_RL_BACKOFF_S     = 6   # backoff after tx submit limiter trips
+TX_SUBMIT_RL_ADDR_BURST    = 10  # per-address tx submit limiter
+TX_SUBMIT_RL_ADDR_WINDOW_S = 10  # seconds window for per-address limiter
+TX_SUBMIT_RL_ADDR_BACKOFF_S = 8  # backoff after per-address limiter trips
 GRAFFITI_RL_IP_BURST       = 10  # graffiti read RPC burst allowance (posts/comments/art/payouts)
 GRAFFITI_RL_WINDOW_S       = 8   # seconds window for graffiti read limiter
 GRAFFITI_RL_BACKOFF_S      = 6   # backoff applied on graffiti limiter hit
@@ -530,9 +533,18 @@ CHAT_RELAY_MAX_INNER_BYTES = 32 * 1024  # cap serialized inner payload to avoid 
 MINER_INFO_RL_IP_BURST     = 8   # GET_INFO / GET_BLOCK_HASH requests per IP
 MINER_INFO_RL_WINDOW_S     = 3   # seconds window for miner info limiter
 MINER_INFO_RL_BACKOFF_S    = 4   # backoff after miner info limiter trips
-MINER_SYNC_RL_IP_BURST     = 32  # GET_HEADERS / GET_BLOCKS bursts per IP
+MINER_HEADERS_RL_IP_BURST  = 32  # GET_HEADERS bursts per IP
+MINER_HEADERS_RL_WINDOW_S  = 5   # seconds window for header limiter
+MINER_HEADERS_RL_BACKOFF_S = 3   # backoff after header limiter trips
+MINER_BLOCKS_RL_IP_BURST   = 20  # GET_BLOCKS bursts per IP
+MINER_BLOCKS_RL_WINDOW_S   = 5   # seconds window for block fetch limiter
+MINER_BLOCKS_RL_BACKOFF_S  = 3   # backoff after block limiter trips
+MINER_SYNC_RL_IP_BURST     = 32  # full-sync / chain bursts per IP
 MINER_SYNC_RL_WINDOW_S     = 5   # seconds window for miner sync limiter
 MINER_SYNC_RL_BACKOFF_S    = 3   # backoff after miner sync limiter trips
+MINER_NEWBLOCK_RL_IP_BURST  = 16  # NEW_BLOCK announcements per IP
+MINER_NEWBLOCK_RL_WINDOW_S  = 5   # seconds window for new block limiter
+MINER_NEWBLOCK_RL_BACKOFF_S = 3   # backoff after new block limiter trips
 MINER_MEMPOOL_RL_IP_BURST  = 6   # MEMPOOL sync requests per IP
 MINER_MEMPOOL_RL_WINDOW_S  = 10  # seconds window for mempool limiter
 MINER_MEMPOOL_RL_BACKOFF_S = 6   # backoff after mempool limiter trips
@@ -639,4 +651,3 @@ try:
         LOG_PATH = _LOG_BASE + ".log"  # plain-text log extension fallback
 except Exception:
     pass  # swallow errors so logging still works with existing path
-

@@ -6,6 +6,7 @@
 import json
 import socket
 import threading
+import time, secrets
 from typing import Dict, Optional, Set, Tuple, TYPE_CHECKING
 
 from .cast.chain_utils import ChainUtilsMixin
@@ -93,7 +94,13 @@ class Broadcast(
                 send_fn = lambda b: send_message(s, b)
                 recv_fn = lambda t: recv_message(s, t)
 
-            msg = {"type": "GET_FULL_SYNC", "port": getattr(self, "port", 0), "height": self.blockchain.height}
+            msg = {
+                "type": "GET_FULL_SYNC",
+                "port": getattr(self, "port", 0),
+                "height": self.blockchain.height,
+                "ts": int(time.time()),
+                "nonce": secrets.token_hex(16),
+            }
             payload = json.dumps(self._encode(msg)).encode("utf-8")
             send_fn(payload)
             resp = recv_fn(CFG.SYNC_TIMEOUT)

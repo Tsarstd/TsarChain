@@ -81,6 +81,8 @@ class Network:
         self._rpc_conn_cache_lock = threading.RLock()
         self._rpc_prefetched: Set[Tuple[str, int]] = set()
         self._recent_gap_requests: Dict[Tuple[str, int], float] = {}
+        self._nonce_guard: Dict[str, Dict[str, float]] = {}
+        self._nonce_guard_lock = threading.RLock()
         
         self._sync_event = threading.Event()
         self._sync_fast_until = 0.0
@@ -291,8 +293,8 @@ class Network:
     def _request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> bool:
         return rpc_client_logic._request_full_sync(self, peer, force=force)
 
-    def _handle_hello(self, message, addr):
-        return handlers_logic._handle_hello(self, message, addr)
+    def _handle_hello(self, message, addr, *, src_node_id: Optional[str] = None, src_pubkey: Optional[str] = None):
+        return handlers_logic._handle_hello(self, message, addr, src_node_id=src_node_id, src_pubkey=src_pubkey)
 
     def _handle_get_headers(self, message, addr):
         return handlers_logic._handle_get_headers(self, message, addr)

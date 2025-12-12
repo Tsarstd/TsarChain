@@ -18,7 +18,15 @@ if TYPE_CHECKING:
 __all__ = ["handle_miner_rpc"]
 
 
-def handle_miner_rpc(self: "Network", message: dict[str, Any], addr: Optional[tuple], mtype: str) -> dict | None:
+def handle_miner_rpc(
+    self: "Network",
+    message: dict[str, Any],
+    addr: Optional[tuple],
+    mtype: str,
+    *,
+    src_node_id: Optional[str] = None,
+    src_pubkey: Optional[str] = None,
+) -> dict | None:
     """Handle miner-to-miner RPC messages."""
     
 #----------------------#-------------------
@@ -26,7 +34,7 @@ def handle_miner_rpc(self: "Network", message: dict[str, Any], addr: Optional[tu
     ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
 
     if mtype == "HELLO":
-        return self._handle_hello(message, addr)
+        return self._handle_hello(message, addr, src_node_id=src_node_id, src_pubkey=src_pubkey)
 
 #----------------------#-------------------
 
@@ -34,8 +42,8 @@ def handle_miner_rpc(self: "Network", message: dict[str, Any], addr: Optional[tu
         start = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
 
         rl_key = f"miner:new_block:{ip}"
-        if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_SYNC_RL_IP_BURST, CFG.MINER_SYNC_RL_WINDOW_S, CFG.MINER_SYNC_RL_IP_BURST, backoff_key=rl_key):
-            self._backoff(rl_key, CFG.MINER_SYNC_RL_BACKOFF_S)
+        if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_NEWBLOCK_RL_IP_BURST, CFG.MINER_NEWBLOCK_RL_WINDOW_S, CFG.MINER_NEWBLOCK_RL_IP_BURST, backoff_key=rl_key):
+            self._backoff(rl_key, CFG.MINER_NEWBLOCK_RL_BACKOFF_S)
             return {"error": "rate_limited"}
 
         self.broadcast.receive_block(message, addr, self.peers)
@@ -105,6 +113,11 @@ def handle_miner_rpc(self: "Network", message: dict[str, Any], addr: Optional[tu
     if mtype == "GET_FULL_SYNC":
         if not CFG.ENABLE_FULL_SYNC:
             return {"type": "SYNC_REDIRECT", "reason": "full_sync_disabled"}
+        ts_val = int(message.get("ts", 0))
+        nonce_val = str(message.get("nonce") or "")
+        sender_key = src_node_id or ip
+        if not (ts_val and nonce_val and self._nonce_guard("full_sync_req", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
+            return {"type": "SYNC_REDIRECT", "reason": "replay_guard"}
         rl_key = f"miner:get_full_sync:{ip}"
         if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_SYNC_RL_IP_BURST, CFG.MINER_SYNC_RL_WINDOW_S, CFG.MINER_SYNC_RL_IP_BURST, backoff_key=rl_key):
             self._backoff(rl_key, CFG.MINER_SYNC_RL_BACKOFF_S)
@@ -115,8 +128,8 @@ def handle_miner_rpc(self: "Network", message: dict[str, Any], addr: Optional[tu
 
     if mtype == "GET_HEADERS":
         rl_key = f"miner:get_headers:{ip}"
-        if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_SYNC_RL_IP_BURST, CFG.MINER_SYNC_RL_WINDOW_S, CFG.MINER_SYNC_RL_IP_BURST, backoff_key=rl_key):
-            self._backoff(rl_key, CFG.MINER_SYNC_RL_BACKOFF_S)
+        if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_HEADERS_RL_IP_BURST, CFG.MINER_HEADERS_RL_WINDOW_S, CFG.MINER_HEADERS_RL_IP_BURST, backoff_key=rl_key):
+            self._backoff(rl_key, CFG.MINER_HEADERS_RL_BACKOFF_S)
             return {"error": "rate_limited"}
         return self._handle_get_headers(message, addr)
 
@@ -124,8 +137,8 @@ def handle_miner_rpc(self: "Network", message: dict[str, Any], addr: Optional[tu
 
     if mtype == "GET_BLOCKS":
         rl_key = f"miner:get_blocks:{ip}"
-        if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_SYNC_RL_IP_BURST, CFG.MINER_SYNC_RL_WINDOW_S, CFG.MINER_SYNC_RL_IP_BURST, backoff_key=rl_key):
-            self._backoff(rl_key, CFG.MINER_SYNC_RL_BACKOFF_S)
+        if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_BLOCKS_RL_IP_BURST, CFG.MINER_BLOCKS_RL_WINDOW_S, CFG.MINER_BLOCKS_RL_IP_BURST, backoff_key=rl_key):
+            self._backoff(rl_key, CFG.MINER_BLOCKS_RL_BACKOFF_S)
             return {"error": "rate_limited"}
         return self._handle_get_blocks(message, addr)
 
@@ -134,6 +147,12 @@ def handle_miner_rpc(self: "Network", message: dict[str, Any], addr: Optional[tu
     if mtype == "FULL_SYNC":
         if not CFG.ENABLE_FULL_SYNC:
             return {"status": "ignored", "reason": "full_sync_disabled"}
+        ts_val = int(message.get("ts", 0))
+        nonce_val = str(message.get("nonce") or "")
+        sender_key = src_node_id or ip
+        if not (ts_val and nonce_val and self._nonce_guard("full_sync", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
+            log.warning("[FULL_SYNC] replay guard reject from %s", addr)
+            return {"error": "replay_guard"}
         rl_key = f"miner:full_sync:{ip}"
         if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_SYNC_RL_IP_BURST, CFG.MINER_SYNC_RL_WINDOW_S, CFG.MINER_SYNC_RL_IP_BURST, backoff_key=rl_key):
             self._backoff(rl_key, CFG.MINER_SYNC_RL_BACKOFF_S)

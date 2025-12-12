@@ -257,6 +257,14 @@ def handle_user_rpc(
         if not self._tb_allow(self.rl_ip, tx_key, CFG.TX_SUBMIT_RL_IP_BURST, CFG.TX_SUBMIT_RL_WINDOW_S, CFG.TX_SUBMIT_RL_IP_BURST, backoff_key=tx_key):
             self._backoff(tx_key, CFG.TX_SUBMIT_RL_BACKOFF_S)
             return {"status": "error", "reason": "rate_limited"}
+        sender_addr = str(message.get("from_addr") or message.get("from") or "").strip().lower()
+        if not sender_addr and isinstance(message.get("data"), dict):
+            sender_addr = str((message.get("data") or {}).get("from_addr") or "").strip().lower()
+        if sender_addr:
+            addr_key = f"txaddr:{sender_addr}"
+            if not self._tb_allow(self.rl_addr, addr_key, CFG.TX_SUBMIT_RL_ADDR_BURST, CFG.TX_SUBMIT_RL_ADDR_WINDOW_S, CFG.TX_SUBMIT_RL_ADDR_BURST, backoff_key=addr_key):
+                self._backoff(addr_key, CFG.TX_SUBMIT_RL_ADDR_BACKOFF_S)
+                return {"status": "error", "reason": "rate_limited_addr"}
 
         if CFG.ENABLE_DANDELION_PP and "phase" not in message:
             message = dict(message)
@@ -475,6 +483,11 @@ def handle_user_rpc(
             self._backoff(reg_key, CFG.CHAT_REG_RL_BACKOFF_S)
             return {"error": "rate_limited"}
         addr_s   = (message.get("address")  or "").strip().lower()
+        addr_key = f"chatreg_addr:{addr_s}" if addr_s else None
+        if addr_key:
+            if not self._tb_allow(self.rl_addr, addr_key, CFG.CHAT_REG_RL_ADDR_BURST, CFG.CHAT_REG_RL_ADDR_WINDOW_S, CFG.CHAT_REG_RL_ADDR_BURST, backoff_key=addr_key):
+                self._backoff(addr_key, CFG.CHAT_REG_RL_ADDR_BACKOFF_S)
+                return {"error": "rate_limited"}
         chat_pub = ((message.get("chat_pub") or message.get("pubkey") or "").strip().lower())
 
         presence_sig = (message.get("presence_sig") or "").strip().lower()
@@ -895,10 +908,34 @@ def handle_user_rpc(
             return {"error": "rate_limited"}
 
         # payload: {"route": [peer1, peer2, ...], "inner": {...}}
-        route = list(message.get("route") or [])
+        route_raw = list(message.get("route") or [])
+        route: list[tuple] = []
+        for hop in route_raw:
+            if isinstance(hop, (list, tuple)) and len(hop) >= 2:
+                try:
+                    hop_norm = (str(hop[0]), int(hop[1]))
+                except Exception:
+                    return {"error": "bad_route_entry"}
+                if hop_norm not in self.peers:
+                    log.warning("[CHAT_RELAY] unknown hop=%s from=%s", hop_norm, ip)
+                    return {"error": "unknown_hop"}
+                route.append(hop_norm)
+            else:
+                return {"error": "bad_route_entry"}
         if len(route) > CFG.CHAT_RELAY_MAX_HOPS:
             return {"error": "route_too_long"}
         inner = message.get("inner") or {}
+        allowed_inner_types = {"CHAT_SEND_INNER"}
+        if not isinstance(inner, dict) or inner.get("type") not in allowed_inner_types:
+            return {"error": "bad_inner_type"}
+        if inner.get("type") == "CHAT_SEND_INNER":
+            msg_obj = inner.get("msg")
+            if not isinstance(msg_obj, dict) or not inner.get("to"):
+                return {"error": "bad_inner"}
+            allowed_msg_keys = {"from", "msg_id", "ts", "from_static", "from_pub", "enc", "used_opk", "ratchet_pn", "ratchet_n"}
+            for k in msg_obj.keys():
+                if k not in allowed_msg_keys:
+                    return {"error": "bad_inner_field"}
         try:
             inner_size = len(json.dumps(inner, separators=CFG.CANONICAL_SEP).encode("utf-8"))
         except Exception:

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import secrets
 import socket
 import sys
 import threading
@@ -48,7 +49,10 @@ class ArchivistCLI:
     ):
         self.rpc = RPC()
         self.directory = NodeDirectory()
-        self.rpc.set_address_override(address)
+        try:
+            self.rpc.set_address_override(address)
+        except Exception as exc:
+            raise RuntimeError(f"Invalid payout address: {exc}") from exc
         self.rpc.set_trusted(True)
 
         self._target_node = target_node
@@ -417,6 +421,8 @@ class ArchivistCLI:
                 "height": tip_height,
                 "seed": seed,
                 "storer": (getattr(self.rpc, "address", "") or "").strip().lower(),
+                "ts": int(time.time()),
+                "nonce": secrets.token_hex(16),
             }
             ack = self.rpc.call(submit, timeout=8.0)
             if isinstance(ack, dict) and ack.get("status") == "ok":
@@ -527,6 +533,8 @@ class ArchivistCLI:
             "recipients": [{"addr": recipient, "amount": amount_sats}],
             "epoch": stats.get("last_paid_epoch", -1) + 1,
             "broadcast": True,
+            "ts": int(time.time()),
+            "nonce": secrets.token_hex(16),
         }
         self._log(f"[pool] build payout art={chosen_id[:64]} amt={amount_sats} sats -> {recipient}")
         resp = self.rpc.call(payload, timeout=8.0)

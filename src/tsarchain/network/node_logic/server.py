@@ -102,20 +102,23 @@ def handle_connection(self, conn, addr):
                     break
                 outer = json.loads(payload.decode("utf-8"))
                 msg = outer
+                src_nid = None
+                src_pub = None
                 if is_envelope(outer):
                     msg = verify_and_unwrap(outer, lambda nid: self.peer_pubkeys.get(nid))
-                    nid = outer.get("from")
-                    pko = outer.get("pubkey")
-                    if isinstance(nid, str) and isinstance(pko, str):
-                        self.peer_pubkeys[nid] = pko
-                        if getattr(chan, "peer_node_pub", None) and pko != chan.peer_node_pub:
+                    src_nid = outer.get("from")
+                    src_pub = outer.get("pubkey")
+                    if isinstance(src_nid, str) and isinstance(src_pub, str):
+                        self.peer_pubkeys[src_nid] = src_pub
+                        if getattr(chan, "peer_node_pub", None) and src_pub != chan.peer_node_pub:
                             log.warning("[handle_connection] Peer pubkey mismatch from %s", addr)
                             continue
+                        
                 elif CFG.ENVELOPE_REQUIRED:
                     log.warning("[handle_connection] rejecting legacy P2P from %s", addr)
                     continue
 
-                response = process_message(self, msg, addr)
+                response = process_message(self, msg, addr, src_node_id=src_nid, src_pubkey=src_pub)
                 if response is not None:
                     env = build_envelope(response, self.node_ctx, extra={"pubkey": self.pubkey})
                     send_fn(json.dumps(env).encode("utf-8"))
@@ -124,21 +127,24 @@ def handle_connection(self, conn, addr):
         if not isinstance(first, dict):
             return
 
-        if CFG.P2P_ENC_REQUIRED and not CFG.ALLOW_RPC_PLAINTEXT:
+        if CFG.P2P_ENC_REQUIRED:
             return
 
         msg = first
+        src_nid = None
+        src_pub = None
         if is_envelope(first):
             msg = verify_and_unwrap(first, lambda nid: self.peer_pubkeys.get(nid))
-            nid = first.get("from")
-            pko = first.get("pubkey")
-            if isinstance(nid, str) and isinstance(pko, str):
-                self.peer_pubkeys[nid] = pko
+            src_nid = first.get("from")
+            src_pub = first.get("pubkey")
+            if isinstance(src_nid, str) and isinstance(src_pub, str):
+                self.peer_pubkeys[src_nid] = src_pub
+                
         elif CFG.ENVELOPE_REQUIRED:
             log.warning(f"[handle_connection] rejecting legacy RPC from {addr}")
             return
 
-        response = process_message(self, msg, addr)
+        response = process_message(self, msg, addr, src_node_id=src_nid, src_pubkey=src_pub)
         if response is not None:
             env = build_envelope(response, self.node_ctx, extra={"pubkey": self.pubkey})
             send_message(conn, json.dumps(env).encode("utf-8"))
