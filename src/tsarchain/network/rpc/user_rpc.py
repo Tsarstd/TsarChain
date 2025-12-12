@@ -827,6 +827,9 @@ def handle_user_rpc(
 #----------------------#-------------------
 
     elif mtype == "CHAT_PULL":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         me = (message.get("address") or "").strip().lower()
         if not me:
             return {"type": "CHAT_NONE", "items": [], "error": "bad_address"}
@@ -854,12 +857,20 @@ def handle_user_rpc(
 
         items = self._mailbox_pull(me, n)
         self._gc_mailboxes()
-        log.debug("[CHAT_SEND] spend_pk: %s", spend_pk)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[CHAT_PULL] Benchmark : %.3f ms", result)
+            
         return {"type": "CHAT_ITEMS", "items": items}
 
 #----------------------#-------------------
 
     elif mtype == "CHAT_RELAY":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         # payload: {"route": [peer1, peer2, ...], "inner": {...}}
         route = list(message.get("route") or [])
         inner = message.get("inner") or {}
@@ -883,13 +894,21 @@ def handle_user_rpc(
                 "msg_id": msg.get("msg_id"),
                 "ts": msg.get("ts"),
             }, CFG.CHAT_TTL_S, CFG.CHAT_MAILBOX_MAX, CFG.CHAT_GLOBAL_QUEUE_MAX)
-            log.debug("[CHAT_RELAY] msg: %s", msg)
+            
+            if CFG.DEBUG_BENCHMARKS:
+                end = time.perf_counter()
+                result = round((end - start) * 1000.0, 3)
+                log.debug("[CHAT_RELAY] Benchmark : %.3f ms", result)
+                
             return {"type": "CHAT_RELAY_ACK", "status": ("queued" if ok else "rejected")}
         return {"error": "bad_inner"}
 
 #----------------------#-------------------
 
     elif mtype == "CHAT_READ":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         sender = (message.get("sender") or "").strip().lower()
         reader = (message.get("reader") or "").strip().lower()
         mid    = message.get("msg_id")
@@ -919,7 +938,12 @@ def handle_user_rpc(
             return {"error": "bad_sig"}
 
         self._enqueue_rcpt(sender, "read", mid, sender, reader, int(time.time()))
-        log.debug("[CHAT_READ] rr: %s", rr)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[CHAT_READ] Benchmark : %.3f ms", result)
+            
         return {"type": "CHAT_READ_OK"}
 
 # =============================================================================
@@ -927,6 +951,9 @@ def handle_user_rpc(
 # =============================================================================
 
     elif mtype == "STOR_LIST":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         by_addr = {}
         for v in self.storage_peers.values():
             k = (v.get("address") or "").lower()
@@ -953,11 +980,20 @@ def handle_user_rpc(
                     "last_seen": int(meta.get("last_seen",0)),
                     "alive": bool(meta.get("alive",False)),
                 })
+                
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[STOR_LIST] Benchmark : %.3f ms", result)
+            
         return {"type":"STOR_LIST","storers": items}
 
 #----------------------#-------------------
 
     elif mtype == "GRAFFITI_GET_PAYOUTS":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         art_id = str(message.get("art_id") or "").strip().lower()
         if not art_id:
             return {"type": "GRAFFITI_GET_PAYOUTS", "payouts": []}
@@ -965,38 +1001,60 @@ def handle_user_rpc(
         limit = max(1, min(limit, 500))
         reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
         payouts = reg.list_payouts(art_id, limit) if reg else []
-        log.debug("[GRAFFITI_GET_PAYOUTS] art_id: %s", art_id)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[GRAFFITI_GET_PAYOUTS] Benchmark : %.3f ms", result)
+            
         return {"type": "GRAFFITI_GET_PAYOUTS", "art_id": art_id, "payouts": payouts}
 
 #----------------------#-------------------
 
     elif mtype == "CREATE_TX_MULTI":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         from_addr = (message.get("from") or "").strip().lower()
         outputs   = message.get("outputs") or []
         fee_rate = int(message.get("fee_rate", CFG.DEFAULT_FEE_RATE_SATVB))
         force_inputs = message.get("force_inputs") or None
         if not from_addr or not outputs:
             return {"error": "missing from/outputs"}
-        try:
-            tpl = self._handle_create_tx_multi(from_addr, outputs, fee_rate, force_inputs)
-            return {"type": "TX_TEMPLATE", "data": tpl}
-
-        except Exception:
-            log.exception("[process_message] CREATE_TX_MULTI error from %s", addr)
-            return {"error": "CREATE_TX_MULTI failed"}
+        
+        tpl = self._handle_create_tx_multi(from_addr, outputs, fee_rate, force_inputs)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[CREATE_TX_MULTI] Benchmark : %.3f ms", result)
+            
+        return {"type": "TX_TEMPLATE", "data": tpl}
 
 #----------------------#-------------------
 
     elif mtype == "GRAFFITI_GET_POSTS":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         limit = int(message.get("limit", 50) or 50)
         limit = max(1, min(limit, 500))
         reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
         posts = reg.list_posts(limit) if reg else []
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[GRAFFITI_GET_POSTS] Benchmark : %.3f ms", result)
+            
         return {"type": "GRAFFITI_GET_POSTS", "posts": posts}
 
 #----------------------#-------------------
 
     elif mtype == "GRAFFITI_GET_COMMENTS":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         art_id = str(message.get("art_id") or "").strip().lower()
         if not art_id:
             return {"type": "GRAFFITI_GET_COMMENTS", "comments": []}
@@ -1004,12 +1062,20 @@ def handle_user_rpc(
         limit = max(1, min(limit, 500))
         reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
         comments = reg.list_comments(art_id, limit) if reg else []
-        log.debug("[GRAFFITI_GET_COMMENTS] comments: %s", comments)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[GRAFFITI_GET_COMMENTS] Benchmark : %.3f ms", result)
+            
         return {"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id, "comments": comments}
 
 #----------------------#-------------------
 
     elif mtype == "GRAFFITI_GET_ART":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         art_id_raw = str(message.get("art_id") or "").strip()
         if not art_id_raw:
             return {"type": "GRAFFITI_GET_ART", "error": "missing_art_id"}
@@ -1018,7 +1084,12 @@ def handle_user_rpc(
         post = reg.get_post(art_id) if reg else None
         if not post:
             return {"type": "GRAFFITI_GET_ART", "art_id": art_id, "error": "not_found"}
-        log.debug("[GRAFFITI_GET_COMMENTS] post: %s", post)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[GRAFFITI_GET_ART] Benchmark : %.3f ms", result)
+            
         return {"type": "GRAFFITI_GET_ART", "art_id": art_id, "post": post}
 
     return None

@@ -7,6 +7,7 @@ A limited RPC bridge between nodes and graffiti modules.
 Focus: payout & proof (no storage/archivist flow).
 """
 
+import time
 from typing import TYPE_CHECKING, Any
 from bech32 import convertbits, bech32_encode
 
@@ -40,6 +41,9 @@ def _spkhex_to_address(spk_hex: str) -> str | None:
 
 def handle_storage_rpc(self: "Network", message: dict[str, Any], addr, mtype: str) -> dict | None:
     if mtype == "GRAFFITI_PROOF_SUBMIT":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         art_id_raw = str(message.get("art_id") or "").strip()
         art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
         epoch = int(message.get("epoch", -1))
@@ -81,9 +85,18 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr, mtype: st
             height=height,
             seed=str(challenge.get("seed", "")),
         )
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[GRAFFITI_PROOF_SUBMIT] Benchmark : %.3f ms", result)
+            
         return {"status": "ok", "art_id": art_id, "epoch": epoch}
 
     elif mtype == "GRAFFITI_BUILD_PAYOUT":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         art_id_raw = str(message.get("art_id") or "").strip()
         art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
         recipients = message.get("recipients") or []
@@ -118,7 +131,6 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr, mtype: st
             if proof_entry:
                 epoch = int(proof_entry.get("epoch", -1))
 
-        log.info("[payout] build request art=%s recips=%s epoch=%s fee_rate=%s", art_id[:16], len(recipients), epoch, fee_rate)
         tx_obj = GRAFFITI.build_payout_tx(
             utxo_db=utxo,
             art_id=art_id,
@@ -133,7 +145,6 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr, mtype: st
             amt = int(getattr(o, "amount", 0) or 0)
             addr = _spkhex_to_address(o.script_pubkey.serialize().hex())
             outs.append((amt, addr))
-        log.info("[payout] tx outputs art=%s %s", art_id[:16], outs)
 
         broadcast_flag = bool(message.get("broadcast"))
         if broadcast_flag:
@@ -144,7 +155,12 @@ def handle_storage_rpc(self: "Network", message: dict[str, Any], addr, mtype: st
             if not ok:
                 log.warning("[payout] broadcast failed art=%s", art_id[:16])
                 return {"error": "broadcast_failed"}
-        log.info("[payout] build ok art=%s txid=%s", art_id[:16], tx_obj.txid.hex() if getattr(tx_obj, "txid", None) else "?")
+            
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[GRAFFITI_BUILD_PAYOUT] Benchmark : %.3f ms", result)
+            
         return {"status": "ok", "tx": tx_obj.to_dict(include_txid=True)}
 
     return None
