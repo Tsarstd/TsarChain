@@ -13,7 +13,7 @@ from ..utils import config as CFG
 from ..core.tx import Tx, TxIn, TxOut
 
 from ..utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.contracts(graffiti)")
+log = get_ctx_logger("tsarchain.contracts.graffiti")
 
 # -----------------------------
 # Internal helpers / validation

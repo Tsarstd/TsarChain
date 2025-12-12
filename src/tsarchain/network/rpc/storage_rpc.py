@@ -40,10 +40,32 @@ def _spkhex_to_address(spk_hex: str) -> str | None:
 
 
 def handle_storage_rpc(self: "Network", message: dict[str, Any], addr, mtype: str) -> dict | None:
+    ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
+    rl_key = f"storage_rpc:{ip}"
+    if not self._tb_allow(self.rl_ip, rl_key, CFG.STORAGE_RPC_RL_IP_BURST, CFG.STORAGE_RPC_RL_WINDOW_S, CFG.STORAGE_RPC_RL_IP_BURST, backoff_key=rl_key):
+        self._backoff(rl_key, CFG.STORAGE_RPC_RL_BACKOFF_S)
+        return {"error": "rate_limited"}
+
+    def _is_storage_sender() -> bool:
+        peer_port = int(message.get("port", 0))
+        with self.lock:
+            peers = dict(getattr(self, "storage_peers", {}) or {})
+        for (peer_ip, peer_port_known), _meta in peers.items():
+            if peer_ip != ip:
+                continue
+            if peer_port_known > 0 and peer_port > 0 and peer_port_known == peer_port:
+                return True
+            if peer_port_known == 0 or peer_port == 0:
+                return True
+        return False
+
+    if not _is_storage_sender():
+        return {"error": "forbidden: storage-only endpoint"}
+
     if mtype == "GRAFFITI_PROOF_SUBMIT":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
-            
+             
         art_id_raw = str(message.get("art_id") or "").strip()
         art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
         epoch = int(message.get("epoch", -1))

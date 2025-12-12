@@ -173,8 +173,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 1 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = "00014fe61a9737463d2a14f4d5edfbabae42ad4ba829154f71cdf5173845565a"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -507,6 +507,40 @@ CHAT_REG_RL_IP_BURST    = 3   # chat register/prekey submissions allowed per IP
 CHAT_REG_RL_WINDOW_S    = 30  # seconds window for chat register limiter
 CHAT_REG_RL_BACKOFF_S   = 20  # cooldown after chat register limiter trips
 
+# ---- USER RPC THROTTLING ----
+BLOCK_FETCH_RL_IP_BURST    = 6   # GET_BLOCK (hash/height) requests allowed per IP
+BLOCK_FETCH_RL_WINDOW_S    = 5   # seconds window for block fetch limiter
+BLOCK_FETCH_RL_BACKOFF_S   = 4   # backoff after block fetch limiter trips
+TX_SUBMIT_RL_IP_BURST      = 12  # NEW_TX submissions allowed per IP before throttling
+TX_SUBMIT_RL_WINDOW_S      = 6   # seconds window for tx submit limiter
+TX_SUBMIT_RL_BACKOFF_S     = 6   # backoff after tx submit limiter trips
+GRAFFITI_RL_IP_BURST       = 10  # graffiti read RPC burst allowance (posts/comments/art/payouts)
+GRAFFITI_RL_WINDOW_S       = 8   # seconds window for graffiti read limiter
+GRAFFITI_RL_BACKOFF_S      = 6   # backoff applied on graffiti limiter hit
+STOR_LIST_RL_IP_BURST      = 4   # storage listing requests allowed per IP
+STOR_LIST_RL_WINDOW_S      = 10  # seconds window for storage listing limiter
+STOR_LIST_RL_BACKOFF_S     = 8   # backoff after storage listing limiter trips
+CHAT_RELAY_RL_IP_BURST     = 16  # chat relay hops allowed per IP
+CHAT_RELAY_RL_WINDOW_S     = 6   # seconds window for chat relay limiter
+CHAT_RELAY_RL_BACKOFF_S    = 4   # backoff when chat relay limiter trips
+CHAT_RELAY_MAX_HOPS        = 4   # maximum hops accepted in CHAT_RELAY route
+CHAT_RELAY_MAX_INNER_BYTES = 32 * 1024  # cap serialized inner payload to avoid abuse
+
+# ---- MINER RPC THROTTLING ----
+MINER_INFO_RL_IP_BURST     = 8   # GET_INFO / GET_BLOCK_HASH requests per IP
+MINER_INFO_RL_WINDOW_S     = 3   # seconds window for miner info limiter
+MINER_INFO_RL_BACKOFF_S    = 4   # backoff after miner info limiter trips
+MINER_SYNC_RL_IP_BURST     = 32  # GET_HEADERS / GET_BLOCKS bursts per IP
+MINER_SYNC_RL_WINDOW_S     = 5   # seconds window for miner sync limiter
+MINER_SYNC_RL_BACKOFF_S    = 3   # backoff after miner sync limiter trips
+MINER_MEMPOOL_RL_IP_BURST  = 6   # MEMPOOL sync requests per IP
+MINER_MEMPOOL_RL_WINDOW_S  = 10  # seconds window for mempool limiter
+MINER_MEMPOOL_RL_BACKOFF_S = 6   # backoff after mempool limiter trips
+
+# ---- STORAGE RPC THROTTLING ----
+STORAGE_RPC_RL_IP_BURST    = 6   # storage proof/payout submissions per IP
+STORAGE_RPC_RL_WINDOW_S    = 12  # seconds window for storage RPC limiter
+STORAGE_RPC_RL_BACKOFF_S   = 10  # backoff after storage RPC limiter trips
 
 # =============================================================================
 # 12. SCRIPT, GRAFFITI & STORAGE POLICY

@@ -227,6 +227,11 @@ def handle_user_rpc(
 #----------------------#-------------------
 
     elif mtype == "GET_BLOCK":
+        ip = client_ip()
+        rl_key = f"blk:{ip}"
+        if not self._tb_allow(self.rl_ip, rl_key, CFG.BLOCK_FETCH_RL_IP_BURST, CFG.BLOCK_FETCH_RL_WINDOW_S, CFG.BLOCK_FETCH_RL_IP_BURST, backoff_key=rl_key):
+            self._backoff(rl_key, CFG.BLOCK_FETCH_RL_BACKOFF_S)
+            return {"error": "rate_limited"}
         if "height" in message:
             return self._handle_get_block_at(int(message["height"]))
         hx = str(message.get("hash") or "").strip()
@@ -246,11 +251,17 @@ def handle_user_rpc(
     elif mtype == "NEW_TX":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
-            
+
+        ip = client_ip()
+        tx_key = f"txsub:{ip}"
+        if not self._tb_allow(self.rl_ip, tx_key, CFG.TX_SUBMIT_RL_IP_BURST, CFG.TX_SUBMIT_RL_WINDOW_S, CFG.TX_SUBMIT_RL_IP_BURST, backoff_key=tx_key):
+            self._backoff(tx_key, CFG.TX_SUBMIT_RL_BACKOFF_S)
+            return {"status": "error", "reason": "rate_limited"}
+
         if CFG.ENABLE_DANDELION_PP and "phase" not in message:
             message = dict(message)
             message["phase"] = "stem"
-        
+
         success = self.broadcast.receive_tx(message, addr, self.peers)
         if success:
             txid = (message.get("data") or {}).get("txid")
@@ -268,11 +279,17 @@ def handle_user_rpc(
 #----------------------#-------------------
 
     elif mtype == "GET_MEMPOOL":
+        ip = client_ip()
         mode = str(message.get("mode", "")).strip().lower()
+        if mode not in ("inline", "inline_full"):
+            mp_key = f"mempool:{ip}"
+            if not self._tb_allow(self.rl_ip, mp_key, CFG.MEMPOOL_INLINE_RL_BURST, CFG.MEMPOOL_INLINE_RL_WINDOW_S, CFG.MEMPOOL_INLINE_RL_BURST, backoff_key=mp_key):
+                self._backoff(mp_key, CFG.MEMPOOL_INLINE_RL_BACKOFF)
+                return {"error": "rate_limited"}
         if mode == "snapshot":
             if CFG.DEBUG_BENCHMARKS:
                 start = time.perf_counter()
-                
+
             if not is_miner_sender():
                 return {"error": "forbidden: miners-only endpoint"}
             peer_port = int(message.get("port", 0))
@@ -870,10 +887,24 @@ def handle_user_rpc(
     elif mtype == "CHAT_RELAY":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
-            
+
+        ip = client_ip()
+        relay_key = f"chatrelay:{ip}"
+        if not self._tb_allow(self.rl_ip, relay_key, CFG.CHAT_RELAY_RL_IP_BURST, CFG.CHAT_RELAY_RL_WINDOW_S, CFG.CHAT_RELAY_RL_IP_BURST, backoff_key=relay_key):
+            self._backoff(relay_key, CFG.CHAT_RELAY_RL_BACKOFF_S)
+            return {"error": "rate_limited"}
+
         # payload: {"route": [peer1, peer2, ...], "inner": {...}}
         route = list(message.get("route") or [])
+        if len(route) > CFG.CHAT_RELAY_MAX_HOPS:
+            return {"error": "route_too_long"}
         inner = message.get("inner") or {}
+        try:
+            inner_size = len(json.dumps(inner, separators=CFG.CANONICAL_SEP).encode("utf-8"))
+        except Exception:
+            inner_size = CFG.CHAT_RELAY_MAX_INNER_BYTES + 1
+        if inner_size > CFG.CHAT_RELAY_MAX_INNER_BYTES:
+            return {"error": "payload_too_large"}
         if route:
             nxt = route.pop(0)
             return send_chat_relay(self, nxt, {"type": "CHAT_RELAY", "route": route, "inner": inner})
@@ -953,7 +984,13 @@ def handle_user_rpc(
     elif mtype == "STOR_LIST":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
-            
+
+        ip = client_ip()
+        stor_key = f"stor_list:{ip}"
+        if not self._tb_allow(self.rl_ip, stor_key, CFG.STOR_LIST_RL_IP_BURST, CFG.STOR_LIST_RL_WINDOW_S, CFG.STOR_LIST_RL_IP_BURST, backoff_key=stor_key):
+            self._backoff(stor_key, CFG.STOR_LIST_RL_BACKOFF_S)
+            return {"error": "rate_limited"}
+
         by_addr = {}
         for v in self.storage_peers.values():
             k = (v.get("address") or "").lower()
@@ -993,7 +1030,13 @@ def handle_user_rpc(
     elif mtype == "GRAFFITI_GET_PAYOUTS":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
-            
+
+        ip = client_ip()
+        graf_key = f"graf:{ip}"
+        if not self._tb_allow(self.rl_ip, graf_key, CFG.GRAFFITI_RL_IP_BURST, CFG.GRAFFITI_RL_WINDOW_S, CFG.GRAFFITI_RL_IP_BURST, backoff_key=graf_key):
+            self._backoff(graf_key, CFG.GRAFFITI_RL_BACKOFF_S)
+            return {"error": "rate_limited"}
+
         art_id = str(message.get("art_id") or "").strip().lower()
         if not art_id:
             return {"type": "GRAFFITI_GET_PAYOUTS", "payouts": []}
@@ -1014,7 +1057,13 @@ def handle_user_rpc(
     elif mtype == "CREATE_TX_MULTI":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
-            
+
+        ip = client_ip()
+        tx_key = f"txsub:{ip}"
+        if not self._tb_allow(self.rl_ip, tx_key, CFG.TX_SUBMIT_RL_IP_BURST, CFG.TX_SUBMIT_RL_WINDOW_S, CFG.TX_SUBMIT_RL_IP_BURST, backoff_key=tx_key):
+            self._backoff(tx_key, CFG.TX_SUBMIT_RL_BACKOFF_S)
+            return {"error": "rate_limited"}
+
         from_addr = (message.get("from") or "").strip().lower()
         outputs   = message.get("outputs") or []
         fee_rate = int(message.get("fee_rate", CFG.DEFAULT_FEE_RATE_SATVB))
@@ -1036,7 +1085,13 @@ def handle_user_rpc(
     elif mtype == "GRAFFITI_GET_POSTS":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
-            
+
+        ip = client_ip()
+        graf_key = f"graf:{ip}"
+        if not self._tb_allow(self.rl_ip, graf_key, CFG.GRAFFITI_RL_IP_BURST, CFG.GRAFFITI_RL_WINDOW_S, CFG.GRAFFITI_RL_IP_BURST, backoff_key=graf_key):
+            self._backoff(graf_key, CFG.GRAFFITI_RL_BACKOFF_S)
+            return {"error": "rate_limited"}
+
         limit = int(message.get("limit", 50) or 50)
         limit = max(1, min(limit, 500))
         reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
@@ -1054,7 +1109,13 @@ def handle_user_rpc(
     elif mtype == "GRAFFITI_GET_COMMENTS":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
-            
+
+        ip = client_ip()
+        graf_key = f"graf:{ip}"
+        if not self._tb_allow(self.rl_ip, graf_key, CFG.GRAFFITI_RL_IP_BURST, CFG.GRAFFITI_RL_WINDOW_S, CFG.GRAFFITI_RL_IP_BURST, backoff_key=graf_key):
+            self._backoff(graf_key, CFG.GRAFFITI_RL_BACKOFF_S)
+            return {"error": "rate_limited"}
+
         art_id = str(message.get("art_id") or "").strip().lower()
         if not art_id:
             return {"type": "GRAFFITI_GET_COMMENTS", "comments": []}
@@ -1075,7 +1136,13 @@ def handle_user_rpc(
     elif mtype == "GRAFFITI_GET_ART":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
-            
+
+        ip = client_ip()
+        graf_key = f"graf:{ip}"
+        if not self._tb_allow(self.rl_ip, graf_key, CFG.GRAFFITI_RL_IP_BURST, CFG.GRAFFITI_RL_WINDOW_S, CFG.GRAFFITI_RL_IP_BURST, backoff_key=graf_key):
+            self._backoff(graf_key, CFG.GRAFFITI_RL_BACKOFF_S)
+            return {"error": "rate_limited"}
+
         art_id_raw = str(message.get("art_id") or "").strip()
         if not art_id_raw:
             return {"type": "GRAFFITI_GET_ART", "error": "missing_art_id"}

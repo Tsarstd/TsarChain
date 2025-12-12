@@ -22,6 +22,41 @@ if TYPE_CHECKING:
 
 __all__ = ["process_message"]
 
+# --------------------------------------------------------------------------
+# RPC REGISTRY (role → allowed message types)
+# --------------------------------------------------------------------------
+MINER_RPC_TYPES = {
+        "HELLO", "GET_INFO", "NEW_BLOCK", "GET_FULL_SYNC", "FULL_SYNC",
+        "CHAIN", "MEMPOOL", "GET_HEADERS", "GET_BLOCKS", "GET_BLOCK_HASH"
+}
+
+STORAGE_RPC_TYPES = {
+    "GRAFFITI_PROOF_SUBMIT", "GRAFFITI_BUILD_PAYOUT"
+}
+
+USER_RPC_TYPES = {
+        "PING", "GET_BALANCES", "CREATE_TX", "GET_TX_HISTORY", "GET_TX_DETAIL", "NEW_TX", 
+        "GET_UTXOS", "GET_PEERS", "GET_NETWORK_INFO", "GET_BLOCK", "STOR_LIST",
+        # Graffiti
+        "CREATE_TX_MULTI", "GRAFFITI_GET_POSTS","GRAFFITI_GET_COMMENTS", "GRAFFITI_GET_ART",
+        "GRAFFITI_GET_PAYOUTS",
+        # Chat & storage listing
+        "CHAT_REGISTER", "CHAT_LOOKUP_PUB", "CHAT_PRESENCE", "CHAT_SEND", "CHAT_PULL", "CHAT_RELAY",
+        "CHAT_READ", "CHAT_GET_PREKEY", "CHAT_PUBLISH_PREKEYS",
+        # Mempool utilities
+        "GET_MEMPOOL"
+}
+
+ROLE_RPC_MAP = {
+    "MINER": MINER_RPC_TYPES,
+    "STORAGE": STORAGE_RPC_TYPES,
+    "USER": USER_RPC_TYPES
+}
+
+BOOTSTRAP_MINER_ALLOW = {
+    "HELLO", "GET_FULL_SYNC", "FULL_SYNC", "GET_HEADERS"
+}
+
 
 def process_message(self: "Network", message: dict[str, Any], addr: Optional[tuple]=None) -> dict | None:
     if not isinstance(message, dict):
@@ -35,30 +70,6 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
     # ----------------------------------------------------------------------------------
     # GUARDIANS: role-based gate + limits
     # ----------------------------------------------------------------------------------
-    MINERS = {"HELLO", "GET_INFO", "NEW_BLOCK", "GET_FULL_SYNC", "FULL_SYNC", "CHAIN", "MEMPOOL",
-              "GET_HEADERS", "HEADERS", "GET_BLOCKS", "GET_BLOCK_HASH", "BLOCKS"}
-
-    NODE_STORAGE = {
-        "GRAFFITI_PROOF_SUBMIT", "GRAFFITI_BUILD_PAYOUT",
-    }
-
-    USER = {
-        "PING", "GET_BALANCES", "CREATE_TX",
-        "GET_TX_HISTORY", "GET_TX_DETAIL", "NEW_TX", "GET_UTXOS", "GET_PEERS",
-        "GET_NETWORK_INFO", "GET_BLOCK", "STOR_LIST",
-        
-        # Graffiti
-        "CREATE_TX_MULTI", "GRAFFITI_GET_POSTS", "GRAFFITI_GET_COMMENTS",
-        "GRAFFITI_GET_ART", "GRAFFITI_GET_PAYOUTS",
-
-        # Chat & storage listing
-        "CHAT_REGISTER", "CHAT_LOOKUP_PUB", "CHAT_PRESENCE", "CHAT_SEND",
-        "CHAT_PULL", "CHAT_RELAY", "CHAT_READ",
-        "CHAT_GET_PREKEY", "CHAT_PUBLISH_PREKEYS",
-
-        # Mempool utilities
-        "GET_MEMPOOL",
-    }
 
     def _is_miner_sender() -> bool:
         if not isinstance(addr, tuple):
@@ -68,46 +79,33 @@ def process_message(self: "Network", message: dict[str, Any], addr: Optional[tup
         peer_port = int(message.get("port", -1))
         return (peer_port > 0) and ((addr[0], peer_port) in self.peers)
 
+    def _identify_rpc_role(mtype: str) -> tuple[str, str]:
+        for role, allowed in ROLE_RPC_MAP.items():
+            if mtype in allowed:
+                category = f"{role}-AUTHORIZED" if (role == "MINER" and _is_miner_sender()) else role
+                return role, category
+        return "UNKNOWN", "UNKNOWN"
+
     def _client_ip() -> str:
         if isinstance(addr, tuple) and addr:
             return addr[0]
         return "0.0.0.0"
-    
-    def _identify_rpc_role(mtype: str, is_miner_sender: bool) -> tuple[str, str]:
-        if mtype in MINERS:
-            role = "MINER"
-            if is_miner_sender:
-                category = "MINER-AUTHORIZED"
-            else:
-                category = "MINER-UNAUTHORIZED"
-        elif mtype in NODE_STORAGE:
-            role = "STORAGE"
-            category = "STORAGE-NODE"
-        elif mtype in USER:
-            role = "USER"
-            category = "CLIENT"
-        else:
-            role = "UNKNOWN"
-            category = "UNKNOWN"
 
-        return role, category
+    role, category = _identify_rpc_role(mtype)
 
-    BOOTSTRAP_ALLOW = {"HELLO", "GET_FULL_SYNC", "FULL_SYNC", "GET_HEADERS", "HEADERS"}
-    if (mtype in MINERS) and (mtype not in BOOTSTRAP_ALLOW) and (not _is_miner_sender()):
-        #log.warning("[process_message] rejecting unauthorized miner RPC %s from %s", mtype, addr)
-        return {"error": "forbidden: miners-only endpoint"}
-
-    if (mtype not in MINERS) and (mtype not in USER) and (mtype not in NODE_STORAGE):
+    if role == "UNKNOWN":
         log.warning("[process_message] Unfamiliar response: %s", mtype)
         return {"error": "unknown type"}
 
-    is_miner = _is_miner_sender()
-    role, category = _identify_rpc_role(mtype, is_miner)
-    if mtype in MINERS:
+    if (role == "MINER") and (mtype not in BOOTSTRAP_MINER_ALLOW) and (not _is_miner_sender()):
+        #log.warning("[process_message] rejecting unauthorized miner RPC %s from %s", mtype, addr)
+        return {"error": "forbidden: miners-only endpoint"}
+
+    if role == "MINER":
         #log.debug("[process_message] MINERS response: msg: %s role: %s category: %s", mtype, role, category)
         return handle_miner_rpc(self, message, addr, mtype)
     
-    if mtype in NODE_STORAGE:
+    if role == "STORAGE":
         #log.debug("[process_message] STORAGE response: msg: %s role: %s category: %s", mtype, role)
         return handle_storage_rpc(self, message, addr, mtype)
 
