@@ -83,6 +83,9 @@ def _handle_hello(self, message, addr):
 
 
 def _handle_get_headers(self, message, addr):
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+    
     locator = message.get("locator") or []
     limit = int(message.get("limit", CFG.HEADERS_BATCH_MAX))
     limit = max(1, min(limit, CFG.HEADERS_BATCH_MAX))
@@ -118,6 +121,12 @@ def _handle_get_headers(self, message, addr):
             }
         )
     more = (start_idx + limit) < len(chain)
+    
+    if CFG.DEBUG_BENCHMARKS:
+        end = time.perf_counter()
+        result = round((end - start) * 1000.0, 3)
+        log.debug("[GET_HEADERS] Benchmark : %.3f ms", result)
+        
     return {
         "type": "HEADERS",
         "headers": headers,
@@ -127,6 +136,9 @@ def _handle_get_headers(self, message, addr):
 
 
 def _handle_get_blocks(self, message, addr):
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+        
     heights = message.get("heights") or []
     if not isinstance(heights, list):
         return {"type": "BLOCKS", "blocks": []}
@@ -140,6 +152,12 @@ def _handle_get_blocks(self, message, addr):
         h = int(raw_h)
         if 0 <= h < len(chain):
             blocks.append(chain[h].to_dict())
+            
+    if CFG.DEBUG_BENCHMARKS:
+        end = time.perf_counter()
+        result = round((end - start) * 1000.0, 3)
+        log.debug("[GET_BLOCKS] Benchmark : %.3f ms", result)
+        
     return {"type": "BLOCKS", "blocks": blocks}
 
 
@@ -184,6 +202,9 @@ def _handle_full_sync(self, message, addr):
     return {"status": "ok"}
 
 def _handle_get_block_at(self, height: int) -> dict:
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+        
     with self.broadcast.lock:
         chain = list(self.broadcast.blockchain.chain)
     if height < 0 or height >= len(chain):
@@ -192,9 +213,18 @@ def _handle_get_block_at(self, height: int) -> dict:
     b = chain[height]
     d = self._serialize_block(b)
     d["type"] = "BLOCK"
+    
+    if CFG.DEBUG_BENCHMARKS:
+        end = time.perf_counter()
+        result = round((end - start) * 1000.0, 3)
+        log.debug("[GET_BLOCK] 'height' Benchmark : %.3f ms", result)
+        
     return d
 
 def _handle_get_block_by_hash(self, hx: str) -> dict:
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+        
     hx = (hx or "").strip().lower()
     with self.broadcast.lock:
         chain = list(self.broadcast.blockchain.chain)
@@ -202,6 +232,12 @@ def _handle_get_block_by_hash(self, hx: str) -> dict:
         if self._bhash_hex(b).lower() == hx:
             d = self._serialize_block(b)
             d["type"] = "BLOCK"
+            
+            if CFG.DEBUG_BENCHMARKS:
+                end = time.perf_counter()
+                result = round((end - start) * 1000.0, 3)
+                log.debug("[GET_BLOCK] 'hash' Benchmark : %.3f ms", result)
+                
             return d
     return {"type": "BLOCK", "error": "not_found"}
 

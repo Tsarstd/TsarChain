@@ -67,6 +67,33 @@ class TsarStorageGUI:
             obj = json.loads(raw.decode("utf-8"))
             return obj if isinstance(obj, dict) else None
 
+    def _normalize_network_info(self, info_obj: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(info_obj, dict) or info_obj.get("error"):
+            return None
+        data = info_obj.get("data") if info_obj.get("type") == "NETWORK_INFO" else info_obj
+        chain = data.get("chain") if isinstance(data, dict) else {}
+        peers = data.get("peers") if isinstance(data, dict) else {}
+
+        def _as_int(val: Any) -> Optional[int]:
+            try:
+                return int(val)
+            except (TypeError, ValueError):
+                return None
+
+        height = _as_int(chain.get("tip_height") if isinstance(chain, dict) else None)
+        if isinstance(data, dict) and height is None:
+            height = _as_int(data.get("height"))
+        peers_cnt = _as_int(peers.get("count") if isinstance(peers, dict) else None)
+        if isinstance(data, dict) and peers_cnt is None:
+            peers_cnt = _as_int(data.get("peers"))
+
+        if height is None and peers_cnt is None:
+            return None
+        normalized = dict(info_obj)
+        normalized["height"] = height
+        normalized["peers"] = peers_cnt
+        return normalized
+
     def _build_ui(self):
         self.style = ttk.Style()
         self.style.theme_use("default")
@@ -255,17 +282,28 @@ class TsarStorageGUI:
             info = None
             idx = None
             info_ok = idx_ok = False
-            info = self.rpc.call({"type":"GET_INFO"}, timeout=4.0) or {}
-            info_ok = isinstance(info, dict)
-            idx = self._call_storage_local({"type":"STOR_INDEX"}, timeout=6.0)
-            idx_ok = isinstance(idx, dict)
+            try:
+                raw_info = self.rpc.call({"type":"GET_NETWORK_INFO"}, timeout=4.0) or {}
+                info = self._normalize_network_info(raw_info)
+                info_ok = isinstance(info, dict)
+            except Exception as exc:
+                log.warning("[refresh_all] GET_NETWORK_INFO error: %s", exc)
+            try:
+                idx = self._call_storage_local({"type":"STOR_INDEX"}, timeout=6.0)
+                idx_ok = isinstance(idx, dict)
+            except Exception as exc:
+                log.warning("[refresh_all] STOR_INDEX error: %s", exc)
 
             def apply():
                 if info_ok:
                     self.last_info = info
-                    self.info_vars["tip"].set(str(info.get("height","-")))
-                    self.info_vars["peers"].set(str(info.get("peers","0")))
+                    height = info.get("height") if isinstance(info, dict) else None
+                    peers = info.get("peers") if isinstance(info, dict) else None
+                    self.info_vars["tip"].set("-" if height is None else str(height))
+                    self.info_vars["peers"].set("-" if peers is None else str(peers))
                 else:
+                    self.info_vars["tip"].set("-")
+                    self.info_vars["peers"].set("-")
                     self._handle_rpc_drop("refresh_info")
                 if idx_ok:
                     self._render_index(idx)

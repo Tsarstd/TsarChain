@@ -115,14 +115,30 @@ def handle_miner_rpc(self: "Network", message: dict[str, Any], addr: Optional[tu
 #----------------------#-------------------
 
     if mtype == "CHAIN":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         if self._validate_incoming_chain(message):
+            if CFG.DEBUG_BENCHMARKS:
+                end = time.perf_counter()
+                result = round((end - start) * 1000.0, 3)
+                log.debug("[CHAIN] Benchmark : %.3f ms", result)
+                
             return {"status": "ok"}
         return None
 
 #----------------------#-------------------
 
     if mtype == "MEMPOOL":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+        
         self.broadcast.receive_mempool(message)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[MEMPOOL] Benchmark : %.3f ms", result)
+        
         return {"status": "mempool received"}
-
     return None

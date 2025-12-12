@@ -11,6 +11,7 @@ import socket
 import sys
 import threading
 import time
+import multiprocessing as mp
 from typing import Any, Dict, Optional
 
 from tsarchain.contracts.storage_node.server import StorageServer
@@ -29,10 +30,7 @@ STORAGE_PORT_OFFSET = 100
 
 
 def _fmt_bytes(n: Any) -> str:
-    try:
-        size = float(n)
-    except Exception:
-        return "0 B"
+    size = float(n)
     units = ["B", "KB", "MB", "GB", "TB", "PB"]
     for u in units:
         if size < 1024.0 or u == units[-1]:
@@ -68,6 +66,30 @@ class ArchivistCLI:
         self._pending_paid: set[str] = set()
         self._pool_data: dict[str, Dict[str, Any]] = {}
         self._last_dashboard: str = ""
+
+    def _normalize_network_info(self, info_obj: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(info_obj, dict) or info_obj.get("error"):
+            return None
+        data = info_obj.get("data") if info_obj.get("type") == "NETWORK_INFO" else info_obj
+        chain = data.get("chain") if isinstance(data, dict) else {}
+        peers = data.get("peers") if isinstance(data, dict) else {}
+
+        def _as_int(val: Any) -> Optional[int]:
+            return int(val)
+
+        height = _as_int(chain.get("tip_height") if isinstance(chain, dict) else None)
+        if isinstance(data, dict) and height is None:
+            height = _as_int(data.get("height"))
+        peers_cnt = _as_int(peers.get("count") if isinstance(peers, dict) else None)
+        if isinstance(data, dict) and peers_cnt is None:
+            peers_cnt = _as_int(data.get("peers"))
+
+        if height is None and peers_cnt is None:
+            return None
+        normalized = dict(info_obj)
+        normalized["height"] = height
+        normalized["peers"] = peers_cnt
+        return normalized
 
     # ---------- bootstrap ----------
     def _launch_storage_server(self, fallback_start: Optional[int] = None) -> int:
@@ -148,7 +170,7 @@ class ArchivistCLI:
         used = _fmt_bytes(idx.get("bytes_used", 0))
         file_count = len(files) if isinstance(files, dict) else 0
         peers = info.get("peers", "-") if isinstance(info, dict) else "-"
-        tip = info.get("height", "-") if isinstance(info, dict) else "-"
+        tip = info.get("height") if isinstance(info, dict) else "-"
 
         header = f"Archivist CLI | tip={tip} peers={peers} files={file_count} used={used}"
 
@@ -181,7 +203,7 @@ class ArchivistCLI:
                 str(meta.get("state", "-")),
             ])
         if not rows:
-            return "(tidak ada file)"
+            return "(no file yet)"
         table = [" ".join(h.ljust(w) for h, w in zip(headers, widths))]
         for r in rows:
             table.append(" ".join(val.ljust(w) for val, w in zip(r, widths)))
@@ -224,10 +246,20 @@ class ArchivistCLI:
         if self._refresh_lock.locked():
             return
         with self._refresh_lock:
-            info = self.rpc.call({"type": "GET_INFO"}, timeout=4.0) or {}
-            info_ok = isinstance(info, dict)
-            idx = self._call_storage_local({"type": "STOR_INDEX"}, timeout=6.0)
-            idx_ok = isinstance(idx, dict)
+            info = None
+            idx = None
+            info_ok = idx_ok = False
+            try:
+                raw_info = self.rpc.call({"type": "GET_NETWORK_INFO"}, timeout=4.0) or {}
+                info = self._normalize_network_info(raw_info)
+                info_ok = isinstance(info, dict)
+            except Exception as exc:
+                self._log(f"[refresh] GET_NETWORK_INFO error: {exc}", error=True)
+            try:
+                idx = self._call_storage_local({"type": "STOR_INDEX"}, timeout=6.0)
+                idx_ok = isinstance(idx, dict)
+            except Exception as exc:
+                self._log(f"[refresh] STOR_INDEX error: {exc}", error=True)
 
             if info_ok:
                 self.last_info = info
@@ -320,6 +352,7 @@ class ArchivistCLI:
             if not self.connected:
                 self._stop.wait(CFG.RETENTION_GC_SEC)
                 continue
+            
             tip = int((self.last_info or {}).get("height") or 0)
             try:
                 gc_resp = self._call_storage_local({"type": "STOR_GC", "tip_height": tip}, timeout=6.0)
@@ -331,6 +364,7 @@ class ArchivistCLI:
                     self._run_retention_proofs(idx, tip)
                     self._mark_pending_payouts(idx)
                 self._print_dashboard()
+                
             except Exception as exc:
                 self._log(f"[retention] error: {exc}", error=True)
             self._stop.wait(CFG.RETENTION_GC_SEC)
@@ -422,14 +456,14 @@ class ArchivistCLI:
         storage_port = self._storage_port
         if not target or storage_port is None:
             return False
+        
         host, miner_port = target
-        try:
-            ok = self.rpc.connect(host, miner_port, my_listen_port=storage_port)
-        except Exception:
-            ok = False
+        ok = self.rpc.connect(host, miner_port, my_listen_port=storage_port)
+        
         if ok:
             self.connected = True
             return True
+        
         return False
 
     def _mark_pending_payouts(self, idx: Dict[str, Any]) -> None:
@@ -438,13 +472,16 @@ class ArchivistCLI:
         for aid, meta in (files.items() if isinstance(files, dict) else []):
             if not isinstance(meta, dict):
                 continue
+            
             if meta.get("state") == "stored" and not meta.get("paid"):
                 current.add(aid)
                 if aid not in self._pending_paid:
                     size = int(meta.get("size_bytes", 0))
                     self._log(f"[payout] Pending for {aid} ({size} bytes)")
+                    
             elif aid in self._pending_paid:
                 self._log(f"[payout] Cleared for {aid}")
+                
         self._pending_paid = current
 
     # ---------- commands ----------
@@ -452,21 +489,26 @@ class ArchivistCLI:
         if not self.connected:
             self._log("Not connected to node.", error=True)
             return
+        
         if not self._pool_data:
             self._log("Pool empty.")
             return
+        
         chosen_id = art_id
         if not chosen_id:
             self._print_pool_table()
-            chosen_id = input("INput art_id for claim: ").strip()
+            chosen_id = input("Input art_id for claim: ").strip()
+            
         entry = self._pool_data.get(chosen_id)
         if not entry:
             self._log("art_id not found in pool.", error=True)
             return
+        
         stats = entry.get("stats") or {}
         pool_balance = int(stats.get("pool_balance", 0))
         if pool_balance <= 0:
             return
+        
         default_amt = pool_balance / CFG.TSAR
         try:
             amt_str = input(f"The number of TSAR you wish to claim (default {default_amt:.8f}): ").strip()
@@ -477,6 +519,7 @@ class ArchivistCLI:
         if amount_sats <= 0 or amount_sats > pool_balance:
             self._log("Amount is invalid or exceeds balance.", error=True)
             return
+        
         recipient = (getattr(self.rpc, "address", "") or "").strip().lower()
         payload = {
             "type": "GRAFFITI_BUILD_PAYOUT",
@@ -485,12 +528,13 @@ class ArchivistCLI:
             "epoch": stats.get("last_paid_epoch", -1) + 1,
             "broadcast": True,
         }
-        self._log(f"[pool] build payout art={chosen_id[:16]} amt={amount_sats} sats -> {recipient}")
+        self._log(f"[pool] build payout art={chosen_id[:64]} amt={amount_sats} sats -> {recipient}")
         resp = self.rpc.call(payload, timeout=8.0)
+        
         if isinstance(resp, dict) and resp.get("status") == "ok":
             tx = resp.get("tx") or {}
             txid = tx.get("txid") or "?"
-            self._log(f"[pool] Broadcast payout tx {txid[:16]}... for {chosen_id[:12]}...")
+            self._log(f"[pool] Broadcast payout tx {txid[:64]}... for {chosen_id[:64]}...")
             self._print_dashboard(force=True)
         else:
             self._log(f"Failde to claim: {resp}", error=True)
@@ -502,30 +546,36 @@ class ArchivistCLI:
             sys.stdout.flush()
 
     def command_loop(self) -> None:
-        self._log("Perintah: status | claim [art_id] | pool | reconnect | quit")
+        self._log("Command: status | claim | pool | reconnect | quit")
         while not self._stop.is_set():
             try:
                 cmd = input("archivist> ").strip()
             except (KeyboardInterrupt, EOFError):
-                self._log("Keluar...")
+                self._log("Closing...")
                 self._stop.set()
                 break
+            
             if not cmd:
                 continue
+            
             if cmd in ("quit", "exit", "q"):
                 self._stop.set()
                 break
+            
             if cmd in ("status", "stats"):
                 self._print_dashboard(force=True)
                 continue
+            
             if cmd.startswith("claim"):
                 parts = cmd.split()
                 art = parts[1] if len(parts) > 1 else None
                 self._handle_claim(art)
                 continue
+            
             if cmd in ("pool", "list"):
                 self._print_pool_table()
                 continue
+            
             if cmd in ("reconnect", "retry"):
                 if self._attempt_reconnect():
                     self._log("Reconnected.")
@@ -534,6 +584,7 @@ class ArchivistCLI:
                 else:
                     self._log("Reconnection failed.", error=True)
                 continue
+            
             self._log("Unknown command. Use: status | claim | pool | reconnect | quit")
 
     # ---------- lifecycle ----------
@@ -588,5 +639,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    mp.freeze_support()
     setup_logging(force=True)
     main()

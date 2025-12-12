@@ -82,10 +82,7 @@ class MinerTUI:
         if self._render_thread is not None:
             return
 
-        try:
-            psutil.cpu_percent(interval=None)
-        except Exception:
-            pass
+        psutil.cpu_percent(interval=None)
 
         if self.hashrate_queue is not None:
             self._hashrate_thread = threading.Thread(
@@ -113,16 +110,10 @@ class MinerTUI:
         self._blocks_mined += 1
 
     def set_hashrate(self, hps: float) -> None:
-        try:
-            self._last_hashrate = float(hps)
-        except Exception:
-            pass
+        self._last_hashrate = float(hps)
 
     def force_refresh(self) -> None:
-        try:
-            self._render_once()
-        except Exception:
-            pass
+        self._render_once()
 
     # ---- internal loops ----
 
@@ -144,33 +135,21 @@ class MinerTUI:
         while not self._stop_event.is_set():
             self._render_once()
             time.sleep(1.0)
-        try:
-            sys.stdout.write("\r" + " " * self._last_len + "\r\n")
-            sys.stdout.flush()
-        except Exception:
-            pass
+        sys.stdout.write("\r" + " " * self._last_len + "\r\n")
+        sys.stdout.flush()
 
     def _render_once(self) -> None:
         with self._render_lock:
             cpu_pct = None
             mem_used = mem_total = mem_pct = None
-            try:
-                cpu_pct = psutil.cpu_percent(interval=None)
-            except Exception:
-                pass
-            try:
-                vm = psutil.virtual_memory()
-                mem_used = vm.used
-                mem_total = vm.total
-                mem_pct = vm.percent
-            except Exception:
-                pass
+            cpu_pct = psutil.cpu_percent(interval=None)
+            vm = psutil.virtual_memory()
+            mem_used = vm.used
+            mem_total = vm.total
+            mem_pct = vm.percent
 
             if callable(self.peer_counts_fn):
-                try:
-                    peers_in, peers_out = self.peer_counts_fn()
-                except Exception:
-                    peers_in = peers_out = None
+                peers_in, peers_out = self.peer_counts_fn()
 
             uptime = int(time.time() - self._start_ts)
             up_h = uptime // 3600
@@ -210,11 +189,8 @@ class MinerTUI:
                 buf += " " * padding
             self._last_len = len(line)
 
-            try:
-                sys.stdout.write(buf)
-                sys.stdout.flush()
-            except Exception:
-                pass
+            sys.stdout.write(buf)
+            sys.stdout.flush()
 
 
 def create_tui_logger(tui: MinerTUI | None):

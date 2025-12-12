@@ -78,6 +78,9 @@ def handle_user_rpc(
 #----------------------#-------------------
 
     elif mtype in ("GET_BALANCES"):
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+        
         ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
         rl_key = f"bal:{ip}"
         if not self._tb_allow(self.rl_ip, rl_key, CFG.BALANCE_RL_IP_BURST, CFG.BALANCE_RL_IP_WINDOW_S, CFG.BALANCE_RL_IP_BURST, backoff_key=rl_key):
@@ -165,6 +168,12 @@ def handle_user_rpc(
                 "pending_incoming": int(pending_in or 0),
                 "maturity": int(CFG.COINBASE_MATURITY),
             }
+            
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[GET_INFO] Benchmark : %.3f ms", result)
+            
         return {"type": "BALANCES", "height": tip_height, "items": items}
 
     elif mtype == "CREATE_TX":
@@ -181,7 +190,7 @@ def handle_user_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[CREATE_TX] Benchmark : %.3f ms", result)
+            log.debug("[GET_BALANCES] Benchmark : %.3f ms", result)
         
         return {"type": "TX_TEMPLATE", "data": tpl}
 
@@ -261,6 +270,9 @@ def handle_user_rpc(
     elif mtype == "GET_MEMPOOL":
         mode = str(message.get("mode", "")).strip().lower()
         if mode == "snapshot":
+            if CFG.DEBUG_BENCHMARKS:
+                start = time.perf_counter()
+                
             if not is_miner_sender():
                 return {"error": "forbidden: miners-only endpoint"}
             peer_port = int(message.get("port", 0))
@@ -280,6 +292,12 @@ def handle_user_rpc(
             min_iv = message.get("min_interval")
             force = bool(message.get("force"))
             pushed = self.broadcast.send_mempool_to_peer(target, min_interval_s=min_iv, force=force)
+            
+            if CFG.DEBUG_BENCHMARKS:
+                end = time.perf_counter()
+                result = round((end - start) * 1000.0, 3)
+                log.debug("[GET_MEMPOOL] snapshot mode Benchmark : %.3f ms", result)
+                
             return {"type": "MEMPOOL_SYNC", "count": int(pushed)}
 
         if mode in ("inline", "inline_full"):
@@ -336,12 +354,20 @@ def handle_user_rpc(
                 hexes.append(txid.hex())
             elif isinstance(txid, str):
                 hexes.append(txid)
-        log.debug("[GET_MEMPOOL] mode: %s", mode)
+                
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[GET_MEMPOOL] inline mode Benchmark : %.3f ms", result)
+            
         return {"type": "MEMPOOL", "mode": "txids", "txs": hexes}
 
 #----------------------#-------------------
 
     elif mtype == "GET_TX_HISTORY":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         ip = client_ip()
         hist_key = f"hist:{ip}"
         if not self._tb_allow(self.rl_ip, hist_key, CFG.HISTORY_RL_IP_BURST, CFG.HISTORY_RL_IP_WINDOW_S, CFG.HISTORY_RL_IP_BURST, backoff_key=hist_key):
@@ -360,11 +386,20 @@ def handle_user_rpc(
                                     direction=message.get("direction"),
                                     status=message.get("status"))
         history["height"] = tip_height
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[GET_INFO] Benchmark : %.3f ms", result)
+        
         return {"type": "TX_HISTORY", "address": addr_str, **history}
 
 #----------------------#-------------------
 
     elif mtype == "GET_TX_DETAIL":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         ip = client_ip()
         hist_key = f"hist:{ip}"
         if not self._tb_allow(self.rl_ip, hist_key, CFG.HISTORY_RL_IP_BURST, CFG.HISTORY_RL_IP_WINDOW_S, CFG.HISTORY_RL_IP_BURST, backoff_key=hist_key):
@@ -373,24 +408,40 @@ def handle_user_rpc(
         txid_hex = message.get("txid")
         if not txid_hex:
             return {"error": "missing txid"}
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[GET_TX_DETAIL] Benchmark : %.3f ms", result)
+            
         return self._get_tx_detail(txid_hex)
 
 #----------------------#-------------------
 
     elif mtype == "GET_UTXOS":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         ip = client_ip()
         hist_key = f"hist:{ip}"
         if not self._tb_allow(self.rl_ip, hist_key, CFG.HISTORY_RL_IP_BURST, CFG.HISTORY_RL_IP_WINDOW_S, CFG.HISTORY_RL_IP_BURST, backoff_key=hist_key):
             self._backoff(hist_key, CFG.HISTORY_RL_BACKOFF_S)
             return {"error": "rate_limited"}
+        
         address = (message.get("address") or "").strip().lower()
         if not address:
             return {"error": "missing address"}
 
         if len(address) > CFG.MAX_UTXO_ADDR_LEN:
             return {"error": "address too long"}
-
+        
         utxos = self.broadcast.utxodb.get(address)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[GET_UTXOS] Benchmark : %.3f ms", result)
+            
         return {"type": "UTXOS", "address": address, "utxos": utxos}
 
 # =============================================================================
@@ -398,6 +449,9 @@ def handle_user_rpc(
 # =============================================================================
 
     elif mtype == "CHAT_REGISTER":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+        
         ip = client_ip()
         reg_key = f"chatreg:{ip}"
         if not self._tb_allow(self.rl_ip, reg_key, CFG.CHAT_REG_RL_IP_BURST, CFG.CHAT_REG_RL_WINDOW_S, CFG.CHAT_REG_RL_IP_BURST, backoff_key=reg_key):
@@ -478,22 +532,38 @@ def handle_user_rpc(
 
         pres = {"pid": pid, "address": addr_s, "pubkey": chat_pub, "spend_pub": spend_pk, "presence_sig": presence_sig, "ts": int(now), "hops": 0}
         self._relay_presence_async(pres, exclude=addr)
-        log.debug("[CHAT_REGISTER] pid: %s", pid)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[CHAT_REGISTER] Benchmark : %.3f ms", result)
+            
         return {"type": "CHAT_REGISTERED", "address": addr_s, "pubkey": chat_pub}
 
 #----------------------#-------------------
 
     elif mtype == "CHAT_LOOKUP_PUB":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         addr_s = (message.get("address") or "").strip().lower()
         if not addr_s:
             return {"error": "missing address"}
         pubhex = self.chat_presence_pub.get(addr_s)
-        log.debug("[CHAT_LOOKUP_PUB] for %s from %s", addr_s, addr)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[CHAT_LOOKUP_PUB] Benchmark : %.3f ms", result)
+            
         return {"type": "CHAT_PUBKEY", "address": addr_s, "pubkey": pubhex, "found": bool(pubhex)}
 
 #----------------------#-------------------
 
     elif mtype == "CHAT_PRESENCE":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         addr_s = (message.get("address") or "").strip().lower()
         pubhex = (message.get("pubkey")  or "").strip().lower()
         spend_pk = (message.get("spend_pub") or "").strip().lower()
@@ -550,12 +620,20 @@ def handle_user_rpc(
 
         message["hops"] = hops + 1
         self._relay_presence_async(message, exclude=addr)
-        log.debug("[CHAT_PRESENCE] message: %s", message)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[CHAT_PRESENCE] Benchmark : %.3f ms", result)
+        
         return {"type": "CHAT_PRESENCE_OK"}
 
     # ====== PREKEY BUNDLE ======
     
     elif mtype == "CHAT_PUBLISH_PREKEYS":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         ip = client_ip()
         reg_key = f"chatreg:{ip}"
         if not self._tb_allow(self.rl_ip, reg_key, CFG.CHAT_REG_RL_IP_BURST, CFG.CHAT_REG_RL_WINDOW_S, CFG.CHAT_REG_RL_IP_BURST, backoff_key=reg_key):
@@ -582,12 +660,20 @@ def handle_user_rpc(
             if isinstance(opk, str) and len(opk)==64:
                 rec.setdefault("opk_list", []).append(opk)
             self.chat_prekeys[addr_s] = rec
-        log.debug("[CHAT_PUBLISH_PREKEYS] payload: %s", payload)
-        return {"type":"CHAT_PUBLISHED"}
+            
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[GET_INFO] Benchmark : %.3f ms", result)
+            
+        return {"type":"CHAT_PUBLISH_PREKEYS"}
 
 #----------------------#-------------------
 
     elif mtype == "CHAT_GET_PREKEY":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         addr_s = (message.get("address") or "").strip().lower()
         b = self.chat_prekeys.get(addr_s) or {}
         if not b or ("ik" not in b or "spk" not in b or "sig" not in b):
@@ -600,12 +686,20 @@ def handle_user_rpc(
                 opk = lst.pop(0)
             self.chat_prekeys[addr_s] = b
         sp = self.chat_spend_pub.get(addr_s)
-        log.debug("[CHAT_GET_PREKEY] sp: %s", sp)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[CHAT_GET_PREKEY] Benchmark : %.3f ms", result)
+        
         return {"type":"CHAT_PREKEY_BUNDLE","bundle":{"ik": b["ik"], "spk": b["spk"], "sig": b["sig"], "opk": opk, "spend_pub": sp}}
 
 #----------------------#-------------------
 
     elif mtype == "CHAT_SEND":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
         frm = (message.get("from") or "").strip().lower()
         to  = (message.get("to")   or "").strip().lower()
@@ -722,7 +816,12 @@ def handle_user_rpc(
         if not ok:
             return {"type": "CHAT_ACK", "status": "mailbox_full"}
         self._enqueue_rcpt(frm, "delivered", mid, frm, to, ts)
-        log.debug("[CHAT_SEND] mid: %s", mid)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[CHAT_SEND] Benchmark : %.3f ms", result)
+            
         return {"type": "CHAT_ACK", "status": "queued"}
 
 #----------------------#-------------------
@@ -828,7 +927,6 @@ def handle_user_rpc(
 # =============================================================================
 
     elif mtype == "STOR_LIST":
-        now = time.time()
         by_addr = {}
         for v in self.storage_peers.values():
             k = (v.get("address") or "").lower()
@@ -855,7 +953,6 @@ def handle_user_rpc(
                     "last_seen": int(meta.get("last_seen",0)),
                     "alive": bool(meta.get("alive",False)),
                 })
-        log.debug("[STOR_LIST] items: %s", items)
         return {"type":"STOR_LIST","storers": items}
 
 #----------------------#-------------------
@@ -882,7 +979,6 @@ def handle_user_rpc(
             return {"error": "missing from/outputs"}
         try:
             tpl = self._handle_create_tx_multi(from_addr, outputs, fee_rate, force_inputs)
-            log.debug("[CREATE_TX_MULTI] tpl: %s", tpl)
             return {"type": "TX_TEMPLATE", "data": tpl}
 
         except Exception:
@@ -896,7 +992,6 @@ def handle_user_rpc(
         limit = max(1, min(limit, 500))
         reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
         posts = reg.list_posts(limit) if reg else []
-        log.debug("[GRAFFITI_GET_POSTS] posts: %s", posts)
         return {"type": "GRAFFITI_GET_POSTS", "posts": posts}
 
 #----------------------#-------------------
