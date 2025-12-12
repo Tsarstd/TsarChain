@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat,
 
 # ---------------- Local Project (With Node) ----------------
 from ...utils import config as CFG
+from ...utils.helpers import sign_digest_der_low_s_native
 
 # ---------------- Local Project (Wallet Only) ----------------
 from .data_security import (Wallet,
@@ -55,6 +56,9 @@ class ChatManager:
         self._chat_dh_cache: Dict[str, tuple[str, str, float]] = {}
         self._pwd_cache: Dict[str, tuple[str, float]] = {}
         self._last_prekey_publish: Dict[str, float] = {}
+        self._last_inventory_check: Dict[str, float] = {}
+        self._prekey_bundle_cache: Dict[str, tuple[Dict[str, str], float]] = {}
+        self._prekey_check_interval = max(float(CFG.CHAT_PUBLISH_MIN_INTERVAL_S or 0), 5.0)
 
         self._sessions: Dict[tuple[str, str], "RatchetSession"] = {}
         self._pending_used_opk: Dict[tuple[str, str], str] = {}
@@ -157,10 +161,16 @@ class ChatManager:
             return pwd
         return _provider
 
-    def _ensure_prekey_inventory(self, addr: str) -> None:
+    def _ensure_prekey_inventory(self, addr: str, force: bool = False) -> None:
+        now = self._now()
+        if not force:
+            last = self._last_inventory_check.get(addr)
+            if last and now - last < self._prekey_check_interval:
+                return
+        self._last_inventory_check[addr] = now
+
         provider = self._pwd_provider_for(addr)
         inv = get_prekey_inventory(addr, provider)
-        now = self._now()
         rotated = False
         rotate_after = CFG.CHAT_SPK_ROTATE_INTERVAL_S
         created = int(inv.get("created") or 0)
@@ -168,12 +178,14 @@ class ChatManager:
             rotate_signed_prekey(addr, provider)
             add_one_time_prekeys(addr, CFG.CHAT_OPK_REFILL_COUNT, provider)
             rotated = True
+            self._prekey_bundle_cache.pop(addr, None)
             inv = get_prekey_inventory(addr, provider)
         if int(inv.get("opk_queue") or 0) < CFG.CHAT_OPK_MIN_THRESHOLD:
             add_one_time_prekeys(addr, CFG.CHAT_OPK_REFILL_COUNT, provider)
+            self._prekey_bundle_cache.pop(addr, None)
         needs_publish = rotated or int(inv.get("opk_queue") or 0) < CFG.CHAT_OPK_MIN_THRESHOLD
         if needs_publish and self._can_publish_prekeys(addr):
-            self.publish_prekeys(addr, on_done=lambda _resp: None)
+            self.publish_prekeys(addr, on_done=lambda _resp: None, force_refresh_bundle=True)
 
     def _can_publish_prekeys(self, addr: str) -> bool:
         interval = float(CFG.CHAT_PUBLISH_MIN_INTERVAL_S or 0)
@@ -184,7 +196,6 @@ class ChatManager:
             return True
         if self._now() - last >= interval:
             return True
-        log.debug("[_can_publish_prekeys] skip publish for %s (cooldown active)", addr)
         return False
 
     def _session_key(self, me: str, peer: str) -> Tuple[str, str]:
@@ -246,7 +257,6 @@ class ChatManager:
         w = Wallet.unlock(pwd, addr)
         priv_hex = w["private_key"]
         self.priv_cache[addr] = (priv_hex, self._now() + self.key_ttl_sec)
-        self._pwd_cache_put(addr, pwd)
         self._pwd_cache_put(addr, pwd)
         return priv_hex
 
@@ -311,8 +321,6 @@ class ChatManager:
                 cb("no_bundle"); return
                 
             b = resp.get("bundle") or {}
-            log.debug("[ensure_session] bundle keys=%s", list(b.keys()))
-            
             rik = (b.get("ik") or "").lower()          # receiver identity
             spk = (b.get("spk") or "").lower()         # signed prekey
             opk = (b.get("opk") or "").lower()         # optional one-time
@@ -400,11 +408,14 @@ class ChatManager:
         return f"{prefix:02x}{nums.x:064x}"
 
     def sign(self, priv_hex: str, data: bytes) -> str:
-        sk = self._ec_priv_from_hex(priv_hex)
-        sig = sk.sign(data, ec.ECDSA(hashes.SHA256()))
+        digest = hashlib.sha256(data).digest()
+        sig = sign_digest_der_low_s_native(priv_hex, digest)
         return sig.hex()
 
     def register(self, address: str, on_done: Callable[[Optional[Dict[str, Any]]], None]) -> None:
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+        
         addr = self._canon(address)
         priv_hex = self.get_priv_for_chat(addr)
         if not priv_hex:
@@ -430,15 +441,37 @@ class ChatManager:
             str(ts_now).encode()
         ])
         presence_sig = self.sign(priv_hex, pres_bytes).lower()
+        
+        bundle = {}
+        ensure_signed_prekey(addr, self._pwd_provider_for(addr))
+        bundle = get_prekey_bundle_local(addr, self._pwd_provider_for(addr)) or {}
+        spk_hex = (bundle.get("spk") or "").lower()
+        if spk_hex:
+            payload_spk = b"TSAR-SPK|" + bytes.fromhex(spk_hex) + b"|" + bytes.fromhex(spend_pub)
+            bundle["sig"] = self.sign(priv_hex, payload_spk)
 
         def _on(resp: Optional[Dict[str, Any]]):
-            if resp and resp.get("type") == "CHAT_REGISTERED":
+            if not resp:
+                on_done(resp)
+                return
+
+            if resp.get("error"):
+                err = str(resp.get("error"))
+                rtype = resp.get("type")
+                if err == "bad reg_sig":
+                    log.warning("[register] reg_sig refuse for %s ", addr)
+                elif err == "rate_limited":
+                    log.warning("[register] rate limited for %s (type=%s)", addr, rtype)
+                else:
+                    log.warning("[register] failed for %s error=%s type=%s", addr, err, rtype)
+                on_done(resp)
+                return
+
+            if resp.get("type") == "CHAT_REGISTERED":
                 self.pub_cache[addr] = chat_pk_hex
                 setattr(self, "_registered_addrs", getattr(self, "_registered_addrs", set()))
                 self._registered_addrs.add(addr)
-                log.debug("[register] registered ok for %s (pub=%s…)", addr, chat_pk_hex[:12])
                 self.publish_prekeys(addr, on_done=lambda _r: None)
-                    
             on_done(resp)
 
         payload = {
@@ -450,6 +483,18 @@ class ChatManager:
             "reg_sig": reg_sig,
             "presence_sig": presence_sig,
         }
+        if bundle:
+            if bundle.get("spk") and bundle.get("sig"):
+                payload["spk"] = (bundle.get("spk") or "").lower()
+                payload["sig"] = (bundle.get("sig") or "").lower()
+            if bundle.get("opk"):
+                payload["opk"] = (bundle.get("opk") or "").lower()
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[register] Benchmark : %.3f ms", result)
+            
         self.rpc_send(payload, _on)
 
     def _ensure_registered(self, addr: str, cb: Callable[[Optional[str]], None]) -> None:
@@ -462,10 +507,13 @@ class ChatManager:
                 rs = getattr(self, "_registered_addrs", set())
                 rs.add(addr)
                 self._registered_addrs = rs
-                log.debug("[register] registered ok for %s", addr)
+                log.info("[register] registered ok untuk %s", addr)
                 cb(None)
             else:
+                if resp and resp.get("error"):
+                    log.warning("[register] auto-register gagal untuk %s error=%s type=%s", addr, resp.get("error"), resp.get("type"))
                 cb("register_failed")
+                
         log.debug("[send_message] auto-register for %s", addr)
         self.register(addr, _on)
 
@@ -565,14 +613,33 @@ class ChatManager:
         self._ensure_registered(frm, _after_registered)
 
     # -- New: publish prekeys (IK, SPK+sig, OPK) ke node
-    def publish_prekeys(self, address: str, on_done=None) -> None:
+    def publish_prekeys(self, address: str, on_done=None, force_refresh_bundle: bool = False) -> None:
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+        
         addr = self._canon(address)
         if not self._can_publish_prekeys(addr):
-            log.debug("[publish_prekeys] skip publish for %s (cooldown)", addr)
             (on_done or (lambda _r: None))({"skipped": "cooldown"})
             return
-        ensure_signed_prekey(addr, self._pwd_provider_for(addr))
-        bundle = get_prekey_bundle_local(addr, self._pwd_provider_for(addr))  # {"ik","spk","sig","opk"}
+        now = self._now()
+        bundle: Optional[Dict[str, str]] = None
+
+        if not force_refresh_bundle:
+            cached = self._prekey_bundle_cache.get(addr)
+            if cached and now - cached[1] < self._prekey_check_interval:
+                bundle = cached[0]
+
+        if bundle is None:
+            ensure_signed_prekey(addr, self._pwd_provider_for(addr))
+            bundle = get_prekey_bundle_local(addr, self._pwd_provider_for(addr))  # {"ik","spk","sig","opk"}
+            self._prekey_bundle_cache[addr] = (bundle, now)
+
+        priv_hex_for_sign = self.get_priv_for_chat(addr)
+        if priv_hex_for_sign and bundle.get("spk"):
+            spend_pub = self.pub_hex_from_priv(self._ec_priv_from_hex(priv_hex_for_sign))
+            payload_spk = b"TSAR-SPK|" + bytes.fromhex(bundle["spk"]) + b"|" + bytes.fromhex(spend_pub)
+            bundle["sig"] = self.sign(priv_hex_for_sign, payload_spk)
+
         payload = {
             "type": "CHAT_PUBLISH_PREKEYS",
             "address": addr,
@@ -582,26 +649,21 @@ class ChatManager:
         }
         if bundle.get("opk"):
             payload["opk"] = (bundle["opk"] or "").lower()
-        self._last_prekey_publish[addr] = self._now()
+        self._last_prekey_publish[addr] = now
 
         def _after(resp):
             try:
-                status = (resp or {}).get("type")
-                log.debug("[publish_prekeys] resp_type=%s", status)
                 if not resp or resp.get("error"):
                     self._last_prekey_publish.pop(addr, None)
-                if CFG.CHAT_PUBLISH_SELF_CHECK:
-                    def _selfcheck(r):
-                        r_type = (r or {}).get("type")
-                        if r_type == "CHAT_PREKEY_BUNDLE":
-                            bundle = r.get("bundle") or {}
-                            has_opk = bool(bundle.get("opk"))
-                            log.debug("[publish_prekeys.selfcheck] bundle_ok=True has_opk=%s", has_opk)
-                        else:
-                            log.debug("[publish_prekeys.selfcheck] resp_type=%s", r_type)
-                    self.rpc_send({"type": "CHAT_GET_PREKEY", "address": addr}, _selfcheck)
+                    self._prekey_bundle_cache.pop(addr, None)
             finally:
                 (on_done or (lambda _r: None))(resp)
+                
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[publish_prekeys] Benchmark : %.3f ms", result)
+            
         self.rpc_send(payload, _after)
         
     # (Optional helper for UI) — signed read receipt
@@ -615,8 +677,10 @@ class ChatManager:
         read_sig = self.sign(priv_hex, rr).lower()
         self.rpc_send({"type": "CHAT_READ", "sender": sender, "reader": reader, "msg_id": int(msg_id), "ts": ts, "read_sig": read_sig}, on_result)
 
-    def poll(self, address: str, n: int,
-            on_items, on_done=None) -> None:
+    def poll(self, address: str, n: int, on_items, on_done=None) -> None:
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         me = self._canon(address)
         priv_hex = self.get_priv_for_chat(me)
         if not priv_hex:
@@ -624,19 +688,17 @@ class ChatManager:
             return
 
         self._ensure_prekey_inventory(me)
-
         ts_now = int(time.time())
         pull_sig = self.sign(priv_hex, b"|".join([b"CHAT_PULL", me.encode(), str(ts_now).encode()]))
 
         def _on(resp):
             if resp and resp.get("type") == "CHAT_NONE" and str(resp.get("error")) == "not_registered":
-                log.debug("[poll] got not_registered for %s → auto-register & retry", me)
-                
+                log.info("[poll] %s belum terdaftar, mencoba auto-register", me)
                 return self._ensure_registered(me, lambda err: (
                     self.rpc_send({"type": "CHAT_PULL","address": me,"n": int(n),
                                    "ts": ts_now, "pull_sig": pull_sig}, _on) if not err else (on_done and on_done({"error":"register_failed"}))
             ))
-                
+            
             try:
                 if not resp or resp.get("type") not in ("CHAT_ITEMS", "CHAT_NONE"):
                     on_items([])
@@ -717,7 +779,12 @@ class ChatManager:
                 
             finally:
                 if on_done: on_done(resp)
-
+                
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[pool] Benchmark : %.3f ms", result)
+            
         self.rpc_send({"type": "CHAT_PULL", "address": me, "n": int(n), "ts": ts_now, "pull_sig": pull_sig}, _on)
 
 
@@ -927,6 +994,9 @@ class RatchetSession:
         self._needs_send_rotation = False
 
     def encrypt(self, pt: bytes, frm: str, to: str, mid: int, ts: int) -> dict:
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+        
         if getattr(self, "_needs_send_rotation", False):
             self._rotate_send_chain()
         mk, idx = self._next_sending_message_key()
@@ -939,23 +1009,37 @@ class RatchetSession:
         nonce = os.urandom(12)
         aad = ChatManager._aad_bytes(frm, to, mid, ts, header["static_pub"], header["eph_pub"], header["pn"], header["n"])
         ct = AESGCM(mk).encrypt(nonce, pt, aad)
-        mkh = hashlib.sha256(mk).hexdigest()[:8]
-        log.debug("[ratchet.encrypt] frm=%s to=%s mid=%s eph=%s pn=%s n=%s mk#=%s", frm, to, mid, header["eph_pub"][:12], header["pn"], header["n"], mkh)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[encrypt] Benchmark : %.3f ms", result)
+            
         return {
             "ratchet": header,
             "enc": {"nonce": nonce.hex(), "ct": ct.hex()},
         }
 
     def _decrypt_with_mk(self, mk: bytes, enc: dict, frm: str, to: str, mid: int, ts: int, static_hex: str, eph_hex: str, pn: int, n: int) -> Optional[bytes]:
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+        
         nonce = bytes.fromhex(enc.get("nonce") or "")
         ct = bytes.fromhex(enc.get("ct") or "")
         aad = ChatManager._aad_bytes(frm, to, mid, ts, static_hex, eph_hex, pn, n)
         pt = AESGCM(mk).decrypt(nonce, ct, aad)
-        mkh = hashlib.sha256(mk).hexdigest()[:8]
-        log.debug("[ratchet._decrypt_with_mk] ok mk#=%s", mkh)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[_decrypt_with_mk] Benchmark : %.3f ms", result)
+        
         return pt
 
     def decrypt(self, enc: dict, frm: str, to: str, mid: int, ts: int, header: dict) -> Optional[bytes]:
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+        
         eph_hex = (header.get("eph_pub") or "").lower()
         static_hex = (header.get("static_pub") or "").lower()
         pn = int(header.get("pn", 0))
@@ -981,4 +1065,10 @@ class RatchetSession:
         if pt is None:
             # store for possible reprocessing if decrypt failed
             self._store_skipped(eph_hex, idx, mk)
+            
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[decrypt] Benchmark : %.3f ms", result)  
+              
         return pt

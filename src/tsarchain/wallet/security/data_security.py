@@ -23,7 +23,7 @@ from cryptography.fernet import Fernet
 
 # ---------------- Local Project (With Node) ----------------
 from tsarchain.storage.kv import kv_enabled, get as kv_get, put as kv_put, delete as kv_delete
-from ...utils.helpers import hash160
+from ...utils.helpers import hash160, sign_digest_der_low_s_native
 from ...core.tx import Tx
 from ...utils import config as CFG
 
@@ -275,8 +275,8 @@ def _store_prekey_record(addr: str, record: Dict, password_provider) -> None:
     _secure_store("chat_prekey", addr_c, path, record, password_provider, f"Store chat prekeys for {addr_c}")
 
 def _ecdsa_sign_spend(priv_hex: str, data: bytes) -> str:
-    sk = SigningKey.from_string(bytes.fromhex(priv_hex), curve=SECP256k1)
-    sig_der = sk.sign_deterministic(data, hashfunc=hashlib.sha256, sigencode=sigencode_der)
+    digest = hashlib.sha256(data).digest()
+    sig_der = sign_digest_der_low_s_native(priv_hex, digest)
     return sig_der.hex()
 
 def ensure_signed_prekey(addr: str, password_provider=None) -> dict:

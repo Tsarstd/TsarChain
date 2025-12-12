@@ -436,7 +436,6 @@ CHAT_PULL_MAX_ITEMS   = 50  # entries returned per chat pull request
 CHAT_POLL_INTERVAL_MS       = 3000  # default polling interval for chat client
 CHAT_POLL_INITIAL_MS        = 4000  # initial backoff before first poll
 CHAT_PUBLISH_MIN_INTERVAL_S = 10  # throttle between chat publish attempts
-CHAT_PUBLISH_SELF_CHECK     = False  # skip self-loopback validation by default
 
 # ---- CHAT RATE LIMITS ----
 CHAT_RL_ADDR_BURST   = 18  # per-address burst allowance for chat msgs
@@ -500,10 +499,10 @@ MEMPOOL_INLINE_RL_WINDOW_S = 20  # seconds window to evaluate inline dump rate
 MEMPOOL_INLINE_RL_BACKOFF  = 15  # seconds to wait after hitting inline limiter
 
 # ---- CHAT REGISTER/PREKEY THROTTLING ----
-CHAT_REG_RL_IP_BURST    = 3   # chat register/prekey submissions allowed per IP
+CHAT_REG_RL_IP_BURST    = 15   # chat register/prekey submissions allowed per IP
 CHAT_REG_RL_WINDOW_S    = 30  # seconds window for chat register limiter
-CHAT_REG_RL_BACKOFF_S   = 20  # cooldown after chat register limiter trips
-CHAT_REG_RL_ADDR_BURST  = 2   # chat register limiter per address
+CHAT_REG_RL_BACKOFF_S   = 5  # cooldown after chat register limiter trips
+CHAT_REG_RL_ADDR_BURST  = 10   # chat register limiter per address
 CHAT_REG_RL_ADDR_WINDOW_S = 30  # seconds window for chat register per-address limiter
 CHAT_REG_RL_ADDR_BACKOFF_S = 20  # cooldown after chat register per-address limiter trips
 

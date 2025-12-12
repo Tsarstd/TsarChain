@@ -497,6 +497,9 @@ def handle_user_rpc(
         spend_pk = (message.get("spend_pub") or "").strip().lower()
         reg_sig  = (message.get("reg_sig")  or "")
         ts_val   = int(message.get("ts", 0))
+        spk_reg  = (message.get("spk") or "").strip().lower()
+        sig_reg  = (message.get("sig") or "").strip().lower()
+        opk_reg  = (message.get("opk") or "").strip().lower()
 
         if not addr_s or not chat_pub or not spend_pk or not reg_sig or not ts_val:
             return {"error": "missing fields"}
@@ -548,6 +551,17 @@ def handle_user_rpc(
             log.debug("[process_message] CHAT_REGISTER bad reg_sig from %s", addr)
             return {"error": "bad reg_sig"}
 
+        spk_valid = False
+        if spk_reg and sig_reg:
+            if not (len(spk_reg) == 64 and all(c in "0123456789abcdef" for c in spk_reg)):
+                return {"error": "bad_spk"}
+            
+            payload = b"TSAR-SPK|" + bytes.fromhex(spk_reg) + b"|" + bytes.fromhex(spend_pk)
+            sig_ok = _verify_chat_signatures([("spk", spend_pk, payload, sig_reg)])
+            spk_valid = bool(sig_ok.get("spk"))
+            if not spk_valid:
+                return {"error": "bad_spk_sig"}
+
         now = time.time()
         pid = secrets.token_hex(16)
         with self.chat_lock:
@@ -558,7 +572,13 @@ def handle_user_rpc(
             if "ik" not in b: 
                 b["ik"] = chat_pub
                 b["ts"] = int(now)
-                self.chat_prekeys[addr_s] = b
+            b["ts"] = int(now)
+            if spk_valid:
+                b["spk"] = spk_reg
+                b["sig"] = sig_reg
+            if opk_reg and len(opk_reg) == 64:
+                b.setdefault("opk_list", []).append(opk_reg)
+            self.chat_prekeys[addr_s] = b
 
         pres = {"pid": pid, "address": addr_s, "pubkey": chat_pub, "spend_pub": spend_pk, "presence_sig": presence_sig, "ts": int(now), "hops": 0}
         self._relay_presence_async(pres, exclude=addr)

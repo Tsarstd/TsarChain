@@ -85,6 +85,7 @@ def handle_storage_rpc(
     if mtype == "GRAFFITI_PROOF_SUBMIT":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
+            
         ts_val = int(message.get("ts", 0))
         nonce_val = str(message.get("nonce") or "")
         sender_key = src_node_id or ip
