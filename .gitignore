@@ -8,6 +8,7 @@ venv/
 env/
 .env
 
+/briefs/
 /data/
 /data_node/
 /data_user/
