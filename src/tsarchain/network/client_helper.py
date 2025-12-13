@@ -123,10 +123,10 @@ def _nonce_guard(self, scope: str, sender_key: str, nonce: str, ts: int, window:
     
     max_entries = max(1, int(CFG.NONCE_PER_SENDER_MAX))
     bucket_key = f"{scope}:{sender_key}"
-    with getattr(self, "_nonce_guard_lock", threading.RLock()):
-        if not hasattr(self, "_nonce_guard"):
-            self._nonce_guard = {}
-        bucket = self._nonce_guard.setdefault(bucket_key, {})
+    guard_lock = getattr(self, "_nonce_guard_lock", threading.RLock())
+    with guard_lock:
+        table = getattr(self, "_nonce_guard_table", None)
+        bucket = table.setdefault(bucket_key, {})
         # prune expired
         for n, t in list(bucket.items()):
             if now - t > window:

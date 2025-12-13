@@ -4,42 +4,28 @@
 # Refs: see REFERENCES.md
 
 from __future__ import annotations
-import os, time, hashlib, mimetypes, threading, socket
-from decimal import Decimal, ROUND_DOWN, InvalidOperation
+import time, threading
+from decimal import Decimal, ROUND_DOWN
 from typing import Any, Dict, Optional
 from tkinter import ttk, filedialog, messagebox, StringVar
 import tkinter as tk
 
-from ...contracts.graffiti import (
-    build_metadata,
-    build_comment_metadata,
-    build_opret_hex,
-    calc_upload_fee_sats,
-    calc_comment_split,
-    compute_art_id,
-    derive_pool_address,
-    validate_graffiti_file,
+from ...contracts.graffiti import calc_comment_split, derive_pool_address
+from ..services.graffiti_service import (
+    build_comment_plan,
+    build_post_plan,
+    build_upload_context,
+    filter_online_storers,
+    parse_amount_str,
+    read_graffiti_file_info,
+    select_upload_storers,
+    upload_graffiti,
 )
-from ..services.graffiti_service import upload_graffiti
 from ..theme import GraffitiTheme, lighten
 from ...utils import config as CFG
 
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.graffiti_tab")
-
-# ========= Util kecil =========
-def sha256_file(path: str, chunk=1024 * 1024) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        while True:
-            b = f.read(chunk)
-            if not b: break
-            h.update(b)
-    return h.hexdigest()
-
-def detect_mime(path: str) -> str:
-    mt, _ = mimetypes.guess_type(path)
-    return mt or "application/octet-stream"
 
 
 # ========= Graffiti Tab (UI) =========
@@ -320,7 +306,7 @@ class GraffitiTab(ttk.Frame):
             return
 
         def handle(resp: Optional[Dict[str, Any]]):
-            self.assigned_storers = self._filter_storers(resp)
+            self.assigned_storers = select_upload_storers(resp, replication_r=CFG.GRAFFITI_REPLICATION_R)
         rpc.send_async({"type": "STOR_LIST"}, handle)
 
     def _fetch_storers_sync(self) -> list[Dict[str, Any]]:
@@ -328,30 +314,7 @@ class GraffitiTab(ttk.Frame):
         if not rpc or not hasattr(rpc, "send"):
             return []
         resp = rpc.send({"type": "STOR_LIST"}) or {}
-        return self._filter_storers(resp)
-
-    def _filter_storers(self, resp: Optional[Dict[str, Any]]) -> list[Dict[str, Any]]:
-        storers = (resp or {}).get("storers") or (resp or {}).get("items") or []
-        usable = []
-        for meta in storers:
-            port = int(meta.get("port") or 0)
-            if port <= 0:
-                continue
-            usable.append(meta)
-        usable.sort(key=lambda m: int(m.get("trusted") or 0) * 1_000_000 + int(m.get("last_seen", 0)), reverse=True)
-        limit = max(1, int(CFG.GRAFFITI_REPLICATION_R))
-        return usable[:limit]
-
-    def _filter_online_storers(self, storers: list[Dict[str, Any]], timeout: float = 2.0) -> list[Dict[str, Any]]:
-        online: list[Dict[str, Any]] = []
-        for meta in storers:
-            host = str(meta.get("ip") or meta.get("host") or "").strip() or "127.0.0.1"
-            port = int(meta.get("port") or 0)
-            if port <= 0:
-                continue
-            with socket.create_connection((host, port), timeout=timeout):
-                online.append(meta)
-        return online
+        return select_upload_storers(resp, replication_r=CFG.GRAFFITI_REPLICATION_R)
 
     def _refresh_creator_wallets(self):
         if not self.creator_cb:
@@ -390,19 +353,18 @@ class GraffitiTab(ttk.Frame):
 
         # compute
         try:
-            size = os.path.getsize(path)
-            mime_raw = detect_mime(path)
-            mime = validate_graffiti_file(size, mime_raw, os.path.basename(path))
-            sha = sha256_file(path)
+            info = read_graffiti_file_info(path)
         except Exception as e:
             log.exception("Unhandled exception")
             messagebox.showerror("Graffiti", f"Failed to read file: {e}")
             return
 
-        self.selected_size = size
-        self.selected_mime = mime
-        self.selected_sha = sha
-        self.meta_var.set(f"size: {size} bytes, mime: {mime}, sha256: {sha[:16]}...")
+        self.selected_size = info.get("size")
+        self.selected_mime = info.get("mime")
+        self.selected_sha = info.get("sha")
+        self.meta_var.set(
+            f"size: {self.selected_size} bytes, mime: {self.selected_mime}, sha256: {self.selected_sha[:16]}..."
+        )
         self.receipt_id = None
         self.receipt_var.set("receipt: -")
         self.opret_hex = None
@@ -417,14 +379,8 @@ class GraffitiTab(ttk.Frame):
         if not self.selected_path or not self.selected_sha or self.selected_size is None or not self.selected_mime:
             messagebox.showwarning("Graffiti", "Select a file first.")
             return
-        try:
-            validate_graffiti_file(self.selected_size, self.selected_mime, os.path.basename(self.selected_path))
-        except Exception as exc:
-            log.exception("Unhandled exception")
-            messagebox.showerror("Graffiti", f"File tidak memenuhi syarat: {exc}")
-            return
         storers = self._fetch_storers_sync()
-        online = self._filter_online_storers(storers)
+        online = filter_online_storers(storers)
         if not online:
             messagebox.showerror("Graffiti", "Storage node unavailable. Please try again when a storage node is online.")
             return
@@ -435,14 +391,15 @@ class GraffitiTab(ttk.Frame):
             messagebox.showwarning("Graffiti", "Select a creator wallet first.")
             return
         try:
-            art_id = compute_art_id(self.selected_sha, creator_addr)
+            upload_ctx = build_upload_context(self.selected_sha, creator_addr)
         except Exception as exc:
             log.exception("Unhandled exception")
             messagebox.showerror("Graffiti", f"Failed to compute art_id: {exc}")
             return
 
-        gid = f"{self.selected_sha}_{int(time.time())}"
-        receipt_id = f"rcpt_{gid}"
+        gid = upload_ctx.get("graffiti_id")
+        receipt_id = upload_ctx.get("receipt_id")
+        art_id = upload_ctx.get("art_id")
         self._upload_candidates = list(online)
         self._upload_ctx = {"gid": gid, "receipt_id": receipt_id, "art_id": art_id}
         self.uploading = True
@@ -551,72 +508,45 @@ class GraffitiTab(ttk.Frame):
     def _prepare_post_plan_preupload(self, storer_meta: Dict[str, Any], receipt_id: str, art_id: str) -> None:
         if not (self.selected_sha and self.selected_size is not None and self.selected_mime):
             raise RuntimeError("upload metadata incomplete")
-        storer_addr = str(storer_meta.get("addr") or storer_meta.get("address") or "").strip().lower()
         creator = (self.creator_var.get() or "").strip().lower()
-        if not creator:
-            raise RuntimeError("creator wallet belum dipilih")
-        meta = build_metadata(
+        plan = build_post_plan(
             sha256_hex=self.selected_sha,
             size_bytes=int(self.selected_size),
             mime=self.selected_mime,
-            storer_addr=storer_addr or "unknown",
-            receipt_id=receipt_id,
             creator_addr=creator,
+            storer_meta=storer_meta,
+            receipt_id=receipt_id,
+            art_id=art_id,
         )
-        opret_hex = build_opret_hex(meta)
-        self.opret_hex = opret_hex
-        pool_addr = derive_pool_address(art_id)
-        fee_sats = calc_upload_fee_sats(int(self.selected_size))
-        tsar_fee = fee_sats / CFG.TSAR
-        self._post_plan = {
-            "pool_addr": pool_addr,
-            "fee_sats": fee_sats,
-            "opret_hex": opret_hex,
-            "art_id": art_id,
-        }
-        info = f"Pool: {pool_addr} | Fee: {tsar_fee:.8f} TSAR ({fee_sats} sats)."
+        self.opret_hex = plan["opret_hex"]
+        self._post_plan = plan
+        info = f"Pool: {plan['pool_addr']} | Fee: {plan['tsar_fee']:.8f} TSAR ({plan['fee_sats']} sats)."
         if self.post_info_var:
             self.post_info_var.set(info + " Ready to sign.")
-        self._post_plan = self._post_plan or {}
-        self._post_plan.update({"pool_addr": pool_addr, "fee_sats": fee_sats, "opret_hex": opret_hex, "art_id": art_id})
 
     def _prepare_post_tx(self, upload_result: Dict[str, Any]) -> None:
         if not (self.selected_sha and self.selected_size is not None and self.selected_mime and self.receipt_id):
             raise RuntimeError("upload metadata incomplete")
         storer_meta = upload_result.get("storer") or {}
-        storer_addr = str(storer_meta.get("addr") or storer_meta.get("address") or "").strip().lower()
         creator = (self.creator_var.get() or "").strip().lower()
-        if not creator:
-            raise RuntimeError("creator wallet belum dipilih")
-        meta = build_metadata(
+        plan = build_post_plan(
             sha256_hex=self.selected_sha,
             size_bytes=int(self.selected_size),
             mime=self.selected_mime,
-            storer_addr=storer_addr or "unknown",
-            receipt_id=self.receipt_id,
             creator_addr=creator,
+            storer_meta=storer_meta,
+            receipt_id=self.receipt_id,
         )
-        opret_hex = build_opret_hex(meta)
-        self.opret_hex = opret_hex
-
-        art_id = compute_art_id(self.selected_sha, creator)
-        pool_addr = derive_pool_address(art_id)
-        fee_sats = calc_upload_fee_sats(int(self.selected_size))
-        tsar_fee = fee_sats / CFG.TSAR
-        self._post_plan = {
-            "pool_addr": pool_addr,
-            "fee_sats": fee_sats,
-            "opret_hex": opret_hex,
-            "art_id": art_id,
-        }
-        info = f"Pool: {pool_addr} | Fee: {tsar_fee:.8f} TSAR ({fee_sats} sats)."
+        self.opret_hex = plan["opret_hex"]
+        self._post_plan = plan
+        info = f"Pool: {plan['pool_addr']} | Fee: {plan['tsar_fee']:.8f} TSAR ({plan['fee_sats']} sats)."
         if self.post_info_var:
             self.post_info_var.set(info + " Ready to broadcast.")
 
         try:
-            self.app.send_tab.set_recipient(pool_addr)
-            self.app.send_tab.set_amount(str(fee_sats))
-            self.app.send_tab.set_opret_hex(opret_hex)
+            self.app.send_tab.set_recipient(plan["pool_addr"])
+            self.app.send_tab.set_amount(str(plan["fee_sats"]))
+            self.app.send_tab.set_opret_hex(plan["opret_hex"])
         except Exception as exc:
             log.exception("Unhandled exception")
             raise RuntimeError(f"prefill send tab failed: {exc}") from exc
@@ -845,33 +775,9 @@ class GraffitiTab(ttk.Frame):
         else:
             self.payout_status_var.set("Belum ada payout untuk karya ini.")
 
-    def _parse_amount_str(self, raw: str, default: int) -> int:
-        txt = (raw or "").strip()
-        if not txt:
-            return int(default)
-        txt = txt.replace(" ", "").replace(",", ".")
-        if txt.startswith("."):
-            txt = "0" + txt
-        try:
-            dec = Decimal(txt)
-        except InvalidOperation:
-            raise ValueError("Format jumlah tidak valid")
-        if dec <= 0:
-            if dec == 0 and int(default) == 0:
-                return 0
-            raise ValueError("Jumlah harus > 0")
-        
-        quant = Decimal("1").scaleb(-CFG.MAX_DECIMALS)
-        dec_q = dec.quantize(quant, rounding=ROUND_DOWN)
-        sats = int(dec_q * Decimal(CFG.TSAR))
-        if sats <= 0:
-            raise ValueError("Jumlah terlalu kecil")
-        
-        return sats
-
     def _update_comment_split_preview(self) -> None:
-        base = self._parse_amount_str(self.comment_amount_var.get(), int(CFG.GRAFFITI_COMMENT_MIN_FEE))
-        tip = self._parse_amount_str(self.comment_tip_var.get(), 0) if self.comment_tip_var.get().strip() else 0
+        base = parse_amount_str(self.comment_amount_var.get(), int(CFG.GRAFFITI_COMMENT_MIN_FEE))
+        tip = parse_amount_str(self.comment_tip_var.get(), 0) if self.comment_tip_var.get().strip() else 0
         split = calc_comment_split(base, tip)
         creator = self._format_tsar(split["creator_total"])
         storage = self._format_tsar(split["storage"])
@@ -879,66 +785,28 @@ class GraffitiTab(ttk.Frame):
         self.comment_split_var.set(f"Creator: {creator} TSAR | Storage pool: {storage} TSAR | Miner fee: {miner} TSAR")
 
     def _broadcast_comment_tx(self) -> None:
-        art = self._selected_art
-        if not art:
-            messagebox.showwarning("Graffiti", "Pilih karya terlebih dahulu.")
-            return
-        
         commenter = (self.comment_wallet_var.get() or "").strip().lower()
-        if not commenter:
-            messagebox.showwarning("Graffiti", "Pilih wallet untuk komentar.")
-            return
-        
         comment_txt = self.comment_text.get("1.0", tk.END).strip() if self.comment_text else ""
-        if not comment_txt:
-            messagebox.showwarning("Graffiti", "Teks komentar belum diisi.")
-            return
         try:
-            base_sats = self._parse_amount_str(self.comment_amount_var.get(), int(CFG.GRAFFITI_COMMENT_MIN_FEE))
-        except Exception as exc:
-            log.exception("Unhandled exception")
-            messagebox.showerror("Graffiti", f"Jumlah komentar tidak valid: {exc}")
-            return
-        
-        if base_sats < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
-            base_sats = int(CFG.GRAFFITI_COMMENT_MIN_FEE)
-        try:
-            tip_sats = self._parse_amount_str(self.comment_tip_var.get(), 0) if self.comment_tip_var.get().strip() else 0
-        except Exception as exc:
-            log.exception("Unhandled exception")
-            messagebox.showerror("Graffiti", f"Tip tidak valid: {exc}")
-            return
-        
-        creator_addr = str(art.get("creator") or "").strip().lower()
-        if not creator_addr:
-            messagebox.showwarning("Graffiti", "Creator address tidak tersedia untuk karya ini.")
-            return
-        
-        pool_addr = str(art.get("pool_address") or derive_pool_address(art.get("art_id"))).strip().lower()
-        try:
-            meta = build_comment_metadata(
-                art_id=str(art.get("art_id") or ""),
-                comment_text=comment_txt,
-                amount_sats=base_sats,
-                creator_addr=creator_addr,
+            plan = build_comment_plan(
+                art=self._selected_art,
                 commenter_addr=commenter,
-                tip_sats=tip_sats,
+                base_amount_raw=self.comment_amount_var.get(),
+                tip_amount_raw=self.comment_tip_var.get(),
+                comment_text=comment_txt,
             )
         except ValueError as exc:
+            msg = str(exc)
+            box = messagebox.showwarning if "Pilih" in msg or "belum" in msg else messagebox.showerror
+            box("Graffiti", msg)
+            return
+        except Exception as exc:
+            log.exception("Unhandled exception")
             messagebox.showerror("Graffiti", f"Metadata komentar invalid: {exc}")
             return
-        
-        opret_hex = build_opret_hex(meta)
-        split = calc_comment_split(base_sats, tip_sats)
-        outputs = []
-        if split["creator_total"] > 0:
-            outputs.append({"address": creator_addr, "amount": split["creator_total"]})
-        if split["storage"] > 0:
-            outputs.append({"address": pool_addr, "amount": split["storage"]})
-        if not outputs:
-            messagebox.showerror("Graffiti", "Tidak ada output pembayaran yang valid.")
-            return
-        
+
+        opret_hex = plan["opret_hex"]
+        outputs = plan["outputs"]
         svc = getattr(self.app, "send_svc", None)
         rpc_send = getattr(self.app, "rpc_send", None)
         if not rpc_send:

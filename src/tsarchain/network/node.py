@@ -49,12 +49,14 @@ class Network:
         self.broadcast.port = self.port
         self.broadcast.network = self
         self.node_id, self.pubkey, self.privkey = load_or_create_node_keys()
+        
         self.node_ctx = {
             "net_id": CFG.DEFAULT_NET_ID,
             "node_id": self.node_id,
             "pubkey": self.pubkey,
             "privkey": self.privkey,
         }
+        
         storage_registry.init_storage_registry(self)
         self.peer_pubkeys: dict[str, str] = {}
         self.broadcast._encode = lambda inner: build_envelope(inner, self.node_ctx, extra={"pubkey": self.pubkey})
@@ -67,21 +69,26 @@ class Network:
         self.outbound_peers: Set[Tuple[str, int]] = set()
         self.peer_scores: Dict[Tuple[str, int], int] = {}
         self._inbound_ips: Dict[str, int] = {}
+        
         self._peer_last_sync: Dict[Tuple[str, int], float] = {}
         self._peer_last_mempool_sync: Dict[Tuple[str, int], float] = {}
         self._peer_best_height: Dict[Tuple[str, int], int] = {}
         self._peer_last_dial: Dict[Tuple[str, int], float] = {}
+        
         self._full_sync_served_at: Dict[str, float] = {}
         self._full_sync_backoff: Dict[Tuple[str, int], float] = {}
         self._full_sync_last_request: Dict[Tuple[str, int], float] = {}
+        
         self._last_headers_locator: Dict[Tuple[str, int], List[str]] = {}
         self._snapshot_unreachable: Set[Tuple[str, int]] = set()
+        
         self._rpc_backoff: Dict[Tuple[str, int], float] = {}
         self._rpc_conn_cache: "OrderedDict[Tuple[str, int], dict]" = OrderedDict()
         self._rpc_conn_cache_lock = threading.RLock()
         self._rpc_prefetched: Set[Tuple[str, int]] = set()
+        
         self._recent_gap_requests: Dict[Tuple[str, int], float] = {}
-        self._nonce_guard: Dict[str, Dict[str, float]] = {}
+        self._nonce_guard_table: Dict[str, Dict[str, float]] = {}
         self._nonce_guard_lock = threading.RLock()
         
         self._sync_event = threading.Event()

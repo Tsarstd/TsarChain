@@ -46,9 +46,8 @@ Changing them may cause different block/tx validity (hard fork) unless otherwise
    - MAX_SIGOPS_PER_BLOCK, MAX_SIGOPS_PER_TX
 
   5) SCRIPT RULES / OP_RETURN / GRAFFITI
-   - OPRET_MAX_BYTES, OPRET_REQUIRE_LAST, OPRET_ONLY_ONE
-   - OPRET_ALLOW_PUSHDATA1, OPRET_ALLOW_PUSHDATA2
-   - MAX_STORAGE_OPRET, GRAFFITI_MAGIC
+   - MAX_GRAFFITI_OPRET
+   - GRAFFITI_MAGIC
 
   6) FORK-CHOICE & REORG
    - ENABLE_CHAINWORK_RULE, ENABLE_REORG_LIMIT, REORG_LIMIT
@@ -173,8 +172,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "00161ee2b659265b70ee60395af3257a2a9a16a105138e97fcb320207a6727ad"  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 1 # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -557,7 +556,6 @@ STORAGE_RPC_RL_BACKOFF_S   = 10  # backoff after storage RPC limiter trips
 # 12. SCRIPT, GRAFFITI & STORAGE POLICY
 # =============================================================================
 # ---- MAGIC CONSTANTS ----
-STORAGE_MAGIC      = b"TSAR_STOR1|"  # domain separator for storage commitments
 GRAFFITI_MAGIC     = b"TSAR_GRAF1|"  # domain separator for graffiti commitments
 GRAFFITI_POOL_SALT = b"TSAR_GRAFFITI_POOL|"  # seed when deriving deterministic pool addresses
 
@@ -568,10 +566,6 @@ ART_ID_BODY_LEN    = 60  # hex chars retained after adding prefix to keep 64 cha
 
 # ---- OP_RETURN POLICY ----
 MAX_GRAFFITI_OPRET    = 550  # graffiti payload limit capped under script limit
-OPRET_REQUIRE_LAST    = True  # enforce OP_RETURN as final output
-OPRET_ONLY_ONE        = True  # restrict transactions to a single OP_RETURN
-OPRET_ALLOW_PUSHDATA1 = True  # allow PUSHDATA1 opcodes inside OP_RETURN handler
-OPRET_ALLOW_PUSHDATA2 = True  # allow PUSHDATA2 opcodes for >255B payloads
 
 # ---- GRAFFITI ----
 GRAFFITI_MIN_BILLABLE_SIZE    = 100 * 1024
@@ -584,15 +578,13 @@ GRAFFITI_COMMENT_CREATOR_BP   = 8_000     # 80%
 GRAFFITI_COMMENT_STORAGE_BP   = 1_000     # 10% (remaining -> miners as fee tip)
 GRAFFITI_EXPIRE_AFTER_BLOCKS  = 25        # default retention window after graffiti confirmed on-chain
 GRAFFITI_PROOF_EPOCH_BLOCKS   = 15        # block interval between retention proofs
-GRAFFITI_PROOF_CHUNK_BYTES    = 4 * 1024  # bytes challenged per proof (deterministic)
+GRAFFITI_PROOF_CHUNK_BYTES    = 75 * 1024  # bytes challenged per proof (deterministic)
 GRAFFITI_MAX_SIZE_BYTES       = 10 * 1024 * 1024  # hard cap for upload/download payload
 GRAFFITI_ALLOWED_MIME         = ("image/jpeg", "video/mp4")  # whitelist MIME types
 GRAFFITI_ALLOWED_EXT          = ("jpg", "jpeg", "mp4")  # extension fallback when MIME unavailable
 GRAFFITI_MAX_MSG_BYTES        = 11 * 1024 * 1024  # per-message cap for graffiti transfer (storage RPC)
 
 # ---- STORAGE POLICY ----
-MAX_STORAGE_OPRET             = 180  # storage proof payload bound for OP_RETURN
-STORAGE_MIN_SIZE              = 100 * 1024  # minimum bytes required for storage contracts
 STORAGE_UPLOAD_CHUNK          = 100 * 1024  # chunk size used when slicing storage payloads
 
 # ---- CONTRACT METADATA ----
@@ -604,7 +596,6 @@ ARCHIV_PEER_KEYS               = "data_peer/storage_peer_keys.json"
 STORAGE_DIR                    = "data/storage"  # folder holding uploaded storage blobs
 STORAGE_SIZE_INIT              = 100 * 1024 * 1024  # initial storage size allocation (100MB)
 STORAGE_MAX_BYTES              = 64 * 1024 * 1024 * 1024  # cap on cumulative storage usage (64GB)
-STORAGE_MIN_CONFIRM            = 2  # confirmations required before serving stored data
 RETENTION_GC_SEC               = 60  # interval between retention garbage collection runs
 
 

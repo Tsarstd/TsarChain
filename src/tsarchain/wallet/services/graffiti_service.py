@@ -5,13 +5,23 @@
 
 from __future__ import annotations
 
-import base64, json, os, socket, time, hashlib, mimetypes, tempfile
+import base64, json, os, socket, time, hashlib, mimetypes
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from typing import Any, Callable, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 from tsarchain.network.protocol import send_message, recv_message
 from tsarchain.utils import config as CFG
-from tsarchain.contracts.graffiti import validate_graffiti_file
+from tsarchain.contracts.graffiti import (
+    build_comment_metadata,
+    build_metadata,
+    build_opret_hex,
+    calc_comment_split,
+    calc_upload_fee_sats,
+    compute_art_id,
+    derive_pool_address,
+    validate_graffiti_file,
+)
 
 from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.graffiti_service")
@@ -86,6 +96,192 @@ def _sha256_file(path: str, chunk: int = 1024 * 1024) -> str:
             h.update(part)
     return h.hexdigest()
 
+def read_graffiti_file_info(path: str) -> Dict[str, Any]:
+    """
+    Read local file and return basic info (size, mime, sha256) while validating graffiti boundaries.
+    """
+    if not path or not os.path.isfile(path):
+        raise FileNotFoundError(path)
+    size = os.path.getsize(path)
+    mime_raw, _ = mimetypes.guess_type(path)
+    mime = validate_graffiti_file(size, mime_raw, os.path.basename(path))
+    sha = _sha256_file(path)
+    return {"size": size, "mime": mime, "sha": sha}
+
+def select_upload_storers(resp: Optional[Dict[str, Any]], *, replication_r: Optional[int] = None) -> list[Dict[str, Any]]:
+    """
+    Select candidate storage nodes based on metadata and sort by most trusted/recently seen.
+    """
+    storers = (resp or {}).get("storers") or (resp or {}).get("items") or []
+    usable: list[Dict[str, Any]] = []
+    for meta in storers:
+        port = int(meta.get("port") or 0)
+        if port <= 0:
+            continue
+        usable.append(meta)
+    usable.sort(key=lambda m: int(m.get("trusted") or 0) * 1_000_000 + int(m.get("last_seen", 0)), reverse=True)
+    limit = max(1, int(replication_r if replication_r is not None else CFG.GRAFFITI_REPLICATION_R))
+    return usable[:limit]
+
+def filter_online_storers(storers: list[Dict[str, Any]], timeout: float = 2.0) -> list[Dict[str, Any]]:
+    """
+    Perform a quick TCP health check to ensure the storage node is reachable.
+    """
+    online: list[Dict[str, Any]] = []
+    for meta in storers:
+        host = str(meta.get("ip") or meta.get("host") or "").strip() or "127.0.0.1"
+        port = int(meta.get("port") or 0)
+        if port <= 0:
+            continue
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                online.append(meta)
+        except OSError:
+            continue
+    return online
+
+def build_upload_context(sha256_hex: str, creator_addr: str, *, now_ts: Optional[int] = None) -> Dict[str, str]:
+    """
+    Create art_id + upload identity (graffiti_id and receipt_id) for one file.
+    """
+    creator = (creator_addr or "").strip().lower()
+    if not creator:
+        raise ValueError("creator wallet belum dipilih")
+    art_id = compute_art_id(sha256_hex, creator)
+    ts = int(now_ts or time.time())
+    gid = f"{sha256_hex}_{ts}"
+    receipt_id = f"rcpt_{gid}"
+    return {"art_id": art_id, "graffiti_id": gid, "receipt_id": receipt_id}
+
+def build_post_plan(
+    *,
+    sha256_hex: str,
+    size_bytes: int,
+    mime: str,
+    creator_addr: str,
+    storer_meta: Dict[str, Any],
+    receipt_id: str,
+    art_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Arrange metadata and POST fees before and after upload.
+    """
+    if size_bytes is None:
+        raise ValueError("upload metadata incomplete")
+    creator = (creator_addr or "").strip().lower()
+    if not creator:
+        raise ValueError("creator wallet belum dipilih")
+    storer_addr = str(storer_meta.get("addr") or storer_meta.get("address") or "").strip().lower()
+    art = art_id or compute_art_id(sha256_hex, creator)
+    meta = build_metadata(
+        sha256_hex=sha256_hex,
+        size_bytes=int(size_bytes),
+        mime=mime,
+        storer_addr=storer_addr or "unknown",
+        receipt_id=receipt_id,
+        creator_addr=creator,
+    )
+    opret_hex = build_opret_hex(meta)
+    pool_addr = derive_pool_address(art)
+    fee_sats = calc_upload_fee_sats(int(size_bytes))
+    tsar_fee = fee_sats / CFG.TSAR
+    return {
+        "pool_addr": pool_addr,
+        "fee_sats": fee_sats,
+        "opret_hex": opret_hex,
+        "art_id": art,
+        "tsar_fee": tsar_fee,
+    }
+
+def parse_amount_str(raw: str, default: int) -> int:
+    txt = (raw or "").strip()
+    if not txt:
+        return int(default)
+    txt = txt.replace(" ", "").replace(",", ".")
+    if txt.startswith("."):
+        txt = "0" + txt
+    try:
+        dec = Decimal(txt)
+    except InvalidOperation:
+        raise ValueError("Format jumlah tidak valid")
+    if dec <= 0:
+        if dec == 0 and int(default) == 0:
+            return 0
+        raise ValueError("Jumlah harus > 0")
+
+    quant = Decimal("1").scaleb(-CFG.MAX_DECIMALS)
+    dec_q = dec.quantize(quant, rounding=ROUND_DOWN)
+    sats = int(dec_q * Decimal(CFG.TSAR))
+    if sats <= 0:
+        raise ValueError("Jumlah terlalu kecil")
+
+    return sats
+
+def build_comment_plan(
+    *,
+    art: Dict[str, Any],
+    commenter_addr: str,
+    base_amount_raw: str,
+    tip_amount_raw: str,
+    comment_text: str,
+) -> Dict[str, Any]:
+    """
+    Validate comment input and arrange opret + payment output.
+    """
+    if not art:
+        raise ValueError("Pilih karya terlebih dahulu.")
+    art_id = str(art.get("art_id") or "").strip()
+    if not art_id:
+        raise ValueError("Art ID tidak tersedia.")
+
+    commenter = (commenter_addr or "").strip().lower()
+    if not commenter:
+        raise ValueError("Pilih wallet untuk komentar.")
+
+    text = (comment_text or "").strip()
+    if not text:
+        raise ValueError("Teks komentar belum diisi.")
+
+    base_sats = parse_amount_str(base_amount_raw, int(CFG.GRAFFITI_COMMENT_MIN_FEE))
+    if base_sats < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
+        base_sats = int(CFG.GRAFFITI_COMMENT_MIN_FEE)
+    tip_sats = parse_amount_str(tip_amount_raw, 0) if (tip_amount_raw or "").strip() else 0
+
+    creator_addr = str(art.get("creator") or "").strip().lower()
+    if not creator_addr:
+        raise ValueError("Creator address is not available for this graffiti.")
+
+    pool_addr = str(art.get("pool_address") or derive_pool_address(art_id)).strip().lower()
+    try:
+        meta = build_comment_metadata(
+            art_id=art_id,
+            comment_text=text,
+            amount_sats=base_sats,
+            creator_addr=creator_addr,
+            commenter_addr=commenter,
+            tip_sats=tip_sats,
+        )
+    except ValueError as exc:
+        raise ValueError(f"Metadata komentar invalid: {exc}") from exc
+    opret_hex = build_opret_hex(meta)
+    split = calc_comment_split(base_sats, tip_sats)
+
+    outputs = []
+    if split["creator_total"] > 0:
+        outputs.append({"address": creator_addr, "amount": split["creator_total"]})
+    if split["storage"] > 0:
+        outputs.append({"address": pool_addr, "amount": split["storage"]})
+    if not outputs:
+        raise ValueError("Tidak ada output pembayaran yang valid.")
+
+    return {
+        "opret_hex": opret_hex,
+        "outputs": outputs,
+        "base_sats": base_sats,
+        "tip_sats": tip_sats,
+        "split": split,
+    }
+
 def upload_graffiti(
     storer_meta: Dict[str, Any],
     file_path: str,
@@ -99,12 +295,11 @@ def upload_graffiti(
     """
     Upload a file to a storage node discovered from the TsarChain node RPC.
 
-    rpc_call    : callable yang menerima dict dan mengembalikan response RPC node (sinkron).
+    rpc_call    : callable that accepts a dict and returns a node RPC response (synchronous).
     storer_addr : bech32 address storage target.
-    file_path   : path file yang akan diunggah.
-    graffiti_id : optional id unik (default = sha256_hex).
-    sha256_hex  : optional file hash (akan dihitung jika None).
-    progress_cb : optional callback(sent_bytes, total_bytes).
+    file_path   : path of the file to be uploaded.
+    graffiti_id : unique id (default = sha256_hex).
+    sha256_hex  : hash file (will be counted if None).
     """
     if not os.path.isfile(file_path):
         return {"status": "error", "reason": "file_not_found"}
@@ -181,10 +376,10 @@ def fetch_graffiti_file(
     timeout: float = 5.0,
 ) -> Dict[str, Any]:
     """
-    Ambil file graffiti dari storage node berdasarkan art_id.
-    - rpc_call: fungsi sinkron ke node (mis. NodeClient.send)
-    - storer_addr: preferensi alamat storage (bech32) bila tersedia
-    - cache_dir: lokasi cache lokal (default data_user/graffiti_cache)
+    Retrieve graffiti files from the storage node based on art_id.
+    - rpc_call: Synchronous function to the node (e.g., NodeClient.send)
+    - storer_addr: Preferred storage address (bech32) if available
+    - cache_dir: Local cache location (default: data_user/graffiti_cache)
     Return: {"status": "ok", "bytes": b"...", "meta": {...}, "cache_path": "..."} atau {"status": "error", "reason": "..."}
     """
     art_norm = (art_id or "").strip().lower()
@@ -254,4 +449,15 @@ def fetch_graffiti_file(
     return {"status": "error", "reason": last_error or "unavailable"}
 
 
-__all__ = ["fetch_storers", "upload_graffiti"]
+__all__ = [
+    "build_comment_plan",
+    "build_post_plan",
+    "build_upload_context",
+    "fetch_graffiti_file",
+    "fetch_storers",
+    "filter_online_storers",
+    "parse_amount_str",
+    "read_graffiti_file_info",
+    "select_upload_storers",
+    "upload_graffiti",
+]
