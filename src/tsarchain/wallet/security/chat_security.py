@@ -63,6 +63,8 @@ class ChatManager:
         self._sessions: Dict[tuple[str, str], "RatchetSession"] = {}
         self._pending_used_opk: Dict[tuple[str, str], str] = {}
         self.on_partner_key_changed: Optional[Callable[[str, str, str], None]] = None
+        self.on_partner_presence: Optional[Callable[[str, Optional[int]], None]] = None
+        self.presence_ts: Dict[str, int] = {}
         os.makedirs(CFG.CHAT_SESSION_DIR, exist_ok=True)
 
     # ---------- helpers: EC (secp for register), X25519 for chat ----------
@@ -268,8 +270,18 @@ class ChatManager:
 
         def _on(resp: Optional[Dict[str, Any]]):
             pub = None
+            last_seen = None
             if resp and resp.get("type") in ("CHAT_PUBKEY", "CHAT_PUB"):
                 pub = resp.get("pubkey") or resp.get("chat_pub")
+                ts_val = resp.get("last_seen")
+                if isinstance(ts_val, (int, float)):
+                    last_seen = int(ts_val)
+                    self.presence_ts[a] = last_seen
+                    if callable(self.on_partner_presence):
+                        try:
+                            self.on_partner_presence(a, last_seen)
+                        except Exception:
+                            log.exception("Unhandled exception")
             if pub:
                 old = self.pub_cache.get(a)
                 self.pub_cache[a] = pub
@@ -710,6 +722,16 @@ class ChatManager:
                 my_sk_hex, _ = self._get_chat_dh(me)
                 for it in items:
                     if (it.get("type") != "CHAT_ITEM"):
+                        
+                        if (it.get("type") == "CHAT_RCPT"):
+                            out.append({
+                                "type": "rcpt",
+                                "rcpt": it.get("rcpt"),
+                                "msg_id": it.get("msg_id"),
+                                "from": it.get("from"),
+                                "to": it.get("to"),
+                                "ts": it.get("ts"),
+                            })
                         continue
 
                     frm = (it.get("from") or "").lower()
@@ -736,6 +758,16 @@ class ChatManager:
                         spk_sk = (pkinfo.get("spk_sk") or "")
                         if not spk_sk:
                             raise ValueError("missing_spk_sk")
+                        exp_static = self.expected_pub_or_lookup(frm)
+                        if exp_static and exp_static != from_static:
+                            log.warning("[poll] static pub mismatch for %s expected=%s got=%s", frm, exp_static, from_static)
+                            if callable(self.on_partner_key_changed):
+                                try:
+                                    self.on_partner_key_changed(frm, exp_static, from_static)
+                                except Exception:
+                                    log.exception("Unhandled exception")
+                            continue
+                        
                         IKr = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_sk_hex))
                         SPKs = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(spk_sk))
                         IKs_pub = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(from_static))
@@ -771,7 +803,7 @@ class ChatManager:
                         self._persist_session(me, frm, sess)
 
                     if msg_text is not None:
-                        out.append({"from": frm, "text": msg_text, "msg_id": mid, "ts": ts})
+                        out.append({"type": "chat", "from": frm, "text": msg_text, "msg_id": mid, "ts": ts, "to": me})
                     else:
                         log.debug("[poll] decrypt failed for %s mid=%s", frm, mid)
 

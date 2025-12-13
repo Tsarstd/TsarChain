@@ -595,18 +595,32 @@ def handle_user_rpc(
     elif mtype == "CHAT_LOOKUP_PUB":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
-            
+
+        ip = client_ip()
+        rl_key_ip = f"chatlookup:{ip}"
+        if not self._tb_allow(self.rl_ip, rl_key_ip, CFG.CHAT_LOOKUP_RL_IP_BURST, CFG.CHAT_LOOKUP_RL_IP_WINDOW_S, CFG.CHAT_LOOKUP_RL_IP_BURST, backoff_key=rl_key_ip):
+            self._backoff(rl_key_ip, CFG.CHAT_LOOKUP_RL_BACKOFF_S)
+            return {"error": "rate_limited"}
         addr_s = (message.get("address") or "").strip().lower()
         if not addr_s:
             return {"error": "missing address"}
+        rl_key_addr = f"chatlookup_addr:{addr_s}"
+        if not self._tb_allow(self.rl_addr, rl_key_addr, CFG.CHAT_LOOKUP_RL_ADDR_BURST, CFG.CHAT_LOOKUP_RL_ADDR_WINDOW_S, CFG.CHAT_LOOKUP_RL_ADDR_BURST, backoff_key=rl_key_addr):
+            self._backoff(rl_key_addr, CFG.CHAT_LOOKUP_RL_ADDR_BACKOFF_S)
+            return {"error": "rate_limited"}
         pubhex = self.chat_presence_pub.get(addr_s)
-        
+        last_seen = None
+        b = self.chat_prekeys.get(addr_s) or {}
+        ts_field = b.get("ts")
+        if isinstance(ts_field, (int, float)):
+            last_seen = int(ts_field)
+
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
             log.debug("[CHAT_LOOKUP_PUB] Benchmark : %.3f ms", result)
-            
-        return {"type": "CHAT_PUBKEY", "address": addr_s, "pubkey": pubhex, "found": bool(pubhex)}
+
+        return {"type": "CHAT_PUBKEY", "address": addr_s, "pubkey": pubhex, "found": bool(pubhex), "last_seen": last_seen}
 
 #----------------------#-------------------
 
@@ -665,8 +679,8 @@ def handle_user_rpc(
             b = self.chat_prekeys.get(addr_s) or {}
             if "ik" not in b:
                 b["ik"] = pubhex
-                b["ts"] = int(time.time())
-                self.chat_prekeys[addr_s] = b
+            b["ts"] = int(time.time())
+            self.chat_prekeys[addr_s] = b
 
         message["hops"] = hops + 1
         self._relay_presence_async(message, exclude=addr)
@@ -697,7 +711,7 @@ def handle_user_rpc(
         opk = (message.get("opk") or None)
         if not addr_s or not ik or not spk or not sig:
             return {"error":"missing fields"}
-        # validasi: addr -> spend_pub ada? dan signature SPK ditandatangani oleh spend key
+        # validation: addr -> spend_pub exists? and SPK signature is signed by spend key
         sp = (self.chat_spend_pub.get(addr_s) or "").strip().lower()
         if not sp: return {"error":"unknown_address"}
         payload = b"TSAR-SPK|" + bytes.fromhex(spk) + b"|" + bytes.fromhex(sp)
@@ -708,9 +722,13 @@ def handle_user_rpc(
             rec = self.chat_prekeys.get(addr_s) or {}
             rec.update({"ik": ik, "spk": spk, "sig": sig, "ts": int(time.time())})
             if isinstance(opk, str) and len(opk)==64:
-                rec.setdefault("opk_list", []).append(opk)
+                lst = rec.setdefault("opk_list", [])
+                lst.append(opk)
+                if len(lst) > CFG.CHAT_OPK_MAX_STORED:
+                    # keep it from getting bloated, only keep the latest OPK
+                    rec["opk_list"] = lst[-CFG.CHAT_OPK_MAX_STORED:]
             self.chat_prekeys[addr_s] = rec
-            
+
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
@@ -996,7 +1014,7 @@ def handle_user_rpc(
     elif mtype == "CHAT_READ":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
-            
+
         sender = (message.get("sender") or "").strip().lower()
         reader = (message.get("reader") or "").strip().lower()
         mid    = message.get("msg_id")

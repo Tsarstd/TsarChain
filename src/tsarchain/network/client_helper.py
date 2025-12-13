@@ -580,7 +580,7 @@ def _handle_get_block_hash(self, height: int) -> dict:
     h_hex = None
     cache_hit = False
     cache_ttl = 5.0
-    max_cache = min(max(1, int(getattr(CFG, "HASH_CACHE_MAX", 512))), 512)
+    max_cache = max(1, int(CFG.HASH_CACHE_MAX))
 
     with cache_lock:
         entry = cache.get(height)
@@ -623,13 +623,17 @@ def _handle_get_block_hash(self, height: int) -> dict:
 def _prevhash_hex(self, b) -> str:
     for name in ("prev_hash", "previous_hash", "prev_block_hash"):
         v = getattr(b, name, None)
-        if isinstance(v, (bytes, bytearray)): return v.hex()
-        if isinstance(v, str): return v
+        if isinstance(v, (bytes, bytearray)):
+            return v.hex()
+        if isinstance(v, str):
+            return v
     hdr = getattr(b, "header", None)
     if hdr is not None:
         v = getattr(hdr, "prev_hash", None)
-        if isinstance(v, (bytes, bytearray)): return v.hex()
-        if isinstance(v, str): return v
+        if isinstance(v, (bytes, bytearray)):
+            return v.hex()
+        if isinstance(v, str):
+            return v
     return ""
 
 def _serialize_tx_basic(self, tx) -> dict:

@@ -160,7 +160,7 @@ def _secure_store(namespace: str, key: str, path: Optional[Path], data: Dict, pa
     _secure_backend_write(namespace, key, path, payload)
     
 def load_chat_state(default: Optional[Dict] = None) -> Dict:
-    fallback = default or {"blocked": [], "pubcache": {}, "textsize": "Medium"}
+    fallback = default or {"blocked": [], "pubcache": {}, "textsize": "Medium", "history": {}, "verified": {}}
     path_obj = Path(CFG.CHAT_STATE)
     try:
         data, legacy = _secure_load("chat_state", "default", path_obj, _app_secret_provider, "Load chat state")
@@ -179,6 +179,8 @@ def load_chat_state(default: Optional[Dict] = None) -> Dict:
         "blocked": list(dict.fromkeys(data.get("blocked", []) or [])),
         "pubcache": data.get("pubcache") or {},
         "textsize": data.get("textsize") or fallback["textsize"],
+        "history": data.get("history") or {},
+        "verified": data.get("verified") or {},
     }
 
 def save_chat_state(data: Dict) -> None:
@@ -187,6 +189,8 @@ def save_chat_state(data: Dict) -> None:
         "blocked": sorted(set(data.get("blocked", []) or [])),
         "pubcache": data.get("pubcache") or {},
         "textsize": data.get("textsize") or "Medium",
+        "history": data.get("history") or {},
+        "verified": data.get("verified") or {},
     }
     _secure_store("chat_state", "default", path_obj, payload, _app_secret_provider, "Store chat state")
 

@@ -79,7 +79,7 @@ MODE   = "dev"  # default runtime profile, switch to "prod" for live nodes
 IS_DEV = (MODE.lower() == "dev")  # cached boolean to simplify dev/prod toggles
 
 # ---- SYNC OVERRIDES ----
-FULL_SYNC_DEV  = True  # opt-in full sync flag for development builds
+FULL_SYNC_DEV  = False  # opt-in full sync flag for development builds
 FULL_SYNC_PROD = False  # opt-in full sync flag for production deployments
 
 # ---- APP METADATA ----
@@ -261,7 +261,7 @@ RANDOMX_LARGE_PAGES      = False  # set True only if huge pages configured OS-wi
 RANDOMX_JIT              = True
 RANDOMX_SECURE_JIT       = True
 RANDOMX_HARD_AES         = True
-RANDOMX_CACHE_MAX        = 2      # max RandomX VM entries cached in rust binding
+RANDOMX_CACHE_MAX        = 4      # max RandomX VM entries cached in rust binding
 
 # ---- CACHE LIMITS (LRU) ----
 HASH_CACHE_MAX          = 5000   # max entries hash cache (LRU)
@@ -461,7 +461,9 @@ CHAT_RATCHET_MAX_SKIP      = 200  # guardrail for skipped ratchet messages
 CHAT_RATCHET_INDEX_MAX     = 1_000_000  # maximum double-ratchet index allowed
 CHAT_OPK_MIN_THRESHOLD     = 5  # minimum one-time pre-keys kept ready
 CHAT_OPK_REFILL_COUNT      = 20  # number of pre-keys generated when refilling
-CHAT_SPK_ROTATE_INTERVAL_S = 7 * 24 * 3600  # seconds between signed pre-key rotations
+CHAT_SPK_ROTATE_INTERVAL_S = 24 * 3600  # seconds between signed pre-key rotations
+CHAT_OPK_MAX_STORED        = 200  # hard cap untuk jumlah OPK yang disimpan node per alamat
+CHAT_HISTORY_MAX_PER_PEER  = 200  # maksimum entri riwayat chat per pasangan alamat
 
 
 # =============================================================================
@@ -498,12 +500,20 @@ MEMPOOL_INLINE_RL_WINDOW_S = 20  # seconds window to evaluate inline dump rate
 MEMPOOL_INLINE_RL_BACKOFF  = 15  # seconds to wait after hitting inline limiter
 
 # ---- CHAT REGISTER/PREKEY THROTTLING ----
-CHAT_REG_RL_IP_BURST    = 15   # chat register/prekey submissions allowed per IP
-CHAT_REG_RL_WINDOW_S    = 30  # seconds window for chat register limiter
-CHAT_REG_RL_BACKOFF_S   = 5  # cooldown after chat register limiter trips
-CHAT_REG_RL_ADDR_BURST  = 10   # chat register limiter per address
-CHAT_REG_RL_ADDR_WINDOW_S = 30  # seconds window for chat register per-address limiter
+CHAT_REG_RL_IP_BURST       = 15   # chat register/prekey submissions allowed per IP
+CHAT_REG_RL_WINDOW_S       = 30  # seconds window for chat register limiter
+CHAT_REG_RL_BACKOFF_S      = 5  # cooldown after chat register limiter trips
+CHAT_REG_RL_ADDR_BURST     = 10   # chat register limiter per address
+CHAT_REG_RL_ADDR_WINDOW_S  = 30  # seconds window for chat register per-address limiter
 CHAT_REG_RL_ADDR_BACKOFF_S = 20  # cooldown after chat register per-address limiter trips
+
+# ---- CHAT LOOKUP THROTTLING ----
+CHAT_LOOKUP_RL_IP_BURST       = 20   # lookup pubkey chat per IP
+CHAT_LOOKUP_RL_IP_WINDOW_S    = 10   # jendela waktu limiter lookup pubkey
+CHAT_LOOKUP_RL_BACKOFF_S      = 5    # backoff setelah limiter lookup pubkey kena
+CHAT_LOOKUP_RL_ADDR_BURST     = 10   # limiter lookup pubkey per alamat
+CHAT_LOOKUP_RL_ADDR_WINDOW_S  = 10 # jendela waktu limiter per alamat
+CHAT_LOOKUP_RL_ADDR_BACKOFF_S = 8 # backoff setelah limiter per alamat kena
 
 # ---- USER RPC THROTTLING ----
 BLOCK_FETCH_RL_IP_BURST    = 6   # GET_BLOCK (hash/height) requests allowed per IP
