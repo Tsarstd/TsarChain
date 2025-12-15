@@ -201,10 +201,28 @@ class ArchivistDatabase:
 
     def _load_index_json(self) -> Dict:
         path = self._idx_path()
-        with open(path, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        if not isinstance(data, dict):
-            data = {}
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        default = {"files": {}, "bytes_used": 0, "art_map": {}}
+        if not os.path.exists(path):
+            self._save_index_json(default)
+            return dict(default)
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            if not isinstance(data, dict):
+                data = {}
+        except json.JSONDecodeError:
+            log.warning("index.json corrupted; resetting to empty index")
+            self._save_index_json(default)
+            return dict(default)
+        except FileNotFoundError:
+            self._save_index_json(default)
+            return dict(default)
+        except Exception as e:
+            log.warning("failed to load index.json (%s); resetting", e)
+            self._save_index_json(default)
+            return dict(default)
+        
         data.setdefault("files", {})
         data.setdefault("bytes_used", 0)
         data.setdefault("art_map", {})

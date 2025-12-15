@@ -69,9 +69,21 @@ def _load_peer_keys() -> dict:
             nid = k.decode('utf-8')[4:]
             m[nid] = v.decode('utf-8')
         return m
-    with open(WALLET_PEER_KEYS_PATH, 'r', encoding='utf-8') as f:
-        obj = json.load(f)
-        return obj if isinstance(obj, dict) else {}
+    if not os.path.exists(WALLET_PEER_KEYS_PATH):
+        _save_peer_keys({})
+    try:
+        with open(WALLET_PEER_KEYS_PATH, 'r', encoding='utf-8') as f:
+            obj = json.load(f)
+            return obj if isinstance(obj, dict) else {}
+    except json.JSONDecodeError:
+        log.warning("wallet_peer_keys.json corrupted; resetting to empty")
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        log.warning("failed to load wallet_peer_keys: %s", e)
+        
+    _save_peer_keys({})
+    return {}
     
 def _save_peer_keys(d: dict) -> None:
     if kv_enabled():
@@ -79,6 +91,7 @@ def _save_peer_keys(d: dict) -> None:
             for nid, pk in d.items():
                 b.put(f"nid:{nid}".encode('utf-8'), pk.encode('utf-8'))
         return
+    os.makedirs(os.path.dirname(WALLET_PEER_KEYS_PATH), exist_ok=True)
     tmp = WALLET_PEER_KEYS_PATH + ".tmp"
     with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(d, f, indent=2)
@@ -1289,4 +1302,3 @@ if __name__ == "__main__":
             messagebox.showerror("Fatal error", str(e))
         finally:
             root.destroy()
-

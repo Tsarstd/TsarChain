@@ -35,20 +35,36 @@ def _load_stor_peer_keys() -> dict:
             nid = k.decode('utf-8')[4:]
             m[nid] = v.decode('utf-8')
         return m
-    with open(CFG.ARCHIV_PEER_KEYS, 'r', encoding='utf-8') as f:
-        obj = json.load(f)
-        return obj if isinstance(obj, dict) else {}
+    if not os.path.exists(CFG.ARCHIV_PEER_KEYS):
+        _save_stor_peer_keys({})
+    try:
+        with open(CFG.ARCHIV_PEER_KEYS, 'r', encoding='utf-8') as f:
+            obj = json.load(f)
+            return obj if isinstance(obj, dict) else {}
+    except json.JSONDecodeError:
+        log.warning("storage_peer_keys.json corrupted; resetting to empty")
+    except FileNotFoundError:
+        pass
+    
+    except Exception as e:
+        log.warning("failed to load storage peer keys: %s", e)
+    _save_stor_peer_keys({})
+    return {}
 
 
-def _save_stor_peer_keys() -> None:
+def _save_stor_peer_keys(data: Optional[dict] = None) -> None:
+    payload = data if data is not None else _STOR_PEER_KEYS
+    if payload is None:
+        payload = {}
     if kv_enabled():
         with batch('stor_peer_keys') as b:
-            for nid, pk in _STOR_PEER_KEYS.items():
+            for nid, pk in payload.items():
                 b.put(f"nid:{nid}".encode('utf-8'), pk.encode('utf-8'))
         return
+    os.makedirs(os.path.dirname(CFG.ARCHIV_PEER_KEYS), exist_ok=True)
     tmp = CFG.ARCHIV_PEER_KEYS + ".tmp"
     with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump(_STOR_PEER_KEYS, f, indent=2)
+        json.dump(payload, f, indent=2)
     os.replace(tmp, CFG.ARCHIV_PEER_KEYS)
 
 
