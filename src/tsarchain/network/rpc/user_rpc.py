@@ -176,6 +176,8 @@ def handle_user_rpc(
             
         return {"type": "BALANCES", "height": tip_height, "items": items}
 
+#----------------------#-------------------
+
     elif mtype == "CREATE_TX":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()

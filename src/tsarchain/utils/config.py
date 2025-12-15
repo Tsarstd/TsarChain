@@ -308,8 +308,8 @@ DUST_THRESHOLD_SAT   = 294  # outputs smaller than this are treated as dust
 MAX_DECIMALS         = 8  # UI precision for wallet rendering
 
 # ---- MEMPOOL LIMITS ----
-MEMPOOL_MAX_SIZE = 1 * 1024 * 1024  # maximum in-memory mempool footprint (bytes)
-MAX_GRAFFITI_ON_MEMPOOL = 7        # NOTE: do not change the value above GRAFFITI_EXPIRE_AFTER_BLOCKS
+MEMPOOL_MAX_SIZE        = 2 * 1024 * 1024  # maximum in-memory mempool footprint (bytes)
+MAX_GRAFFITI_ON_MEMPOOL = 7                # NOTE: do not change the value above GRAFFITI_EXPIRE_AFTER_BLOCKS
 
 
 # =============================================================================
@@ -371,7 +371,7 @@ FULL_SYNC_BACKOFF_INITIAL = 120  # starting backoff between full sync retries
 FULL_SYNC_BACKOFF_MAX     = 600  # maximum backoff delay between full sync retries
 MAX_MSG                   = 3 * 1024 * 1024  # upper bound for inbound message payloads
 MEMPOOL_SYNC_MIN_INTERVAL = 20  # seconds between mempool sync batches
-MEMPOOL_INLINE_MAX_TX     = 600  # tx count allowed inline before streaming
+MEMPOOL_INLINE_MAX_TX     = 100  # tx count allowed inline before streaming
 MEMPOOL_FLUSH_INTERVAL    = 5.0  # seconds between mempool flush to disk
 
 # ---- SYNC WINDOWS ----
@@ -382,7 +382,7 @@ HEADERS_SYNC_MIN_INTERVAL = 1  # seconds between header sync loops
 BLOCK_DOWNLOAD_BATCH_MAX  = 2048  # concurrent block download cap
 CHAIN_FLUSH_INTERVAL      = 1  # blocks between lightweight chain persistence
 CHAIN_FORCE_FULL_FLUSH    = False  # force full persistence on every save when True
-UTXO_FLUSH_INTERVAL       = 2  # block interval between UTXO set flushes
+UTXO_FLUSH_INTERVAL       = 10  # block interval between UTXO set flushes
 
 # ---- PEER QUOTAS ----
 MAX_OUTBOUND_PEERS         = 14  # outbound connection ceiling
@@ -404,6 +404,7 @@ P2P_AEAD_NONCE_BYTES = 12  # nonce size for GCM packets
 P2P_AEAD_AAD_PREFIX  = b"TSAR|P2P|v1"  # additional data binding network id/version
 P2P_SESSION_TTL_S    = 3600  # seconds before rekeying P2P session
 P2P_SESSION_MAX_MSG  = 10000  # message count before forcing new keys
+P2P_REKEY_EVERY_MSG  = 2000  # rotate AEAD keys automatically every N messages per direction
 
 # ---- DANDELION++ ----
 ENABLE_DANDELION_PP       = True  # enable Dandelion++ stem/fluff relay for transactions
@@ -475,6 +476,7 @@ CONNECT_TIMEOUT_SCAN = 1.25  # timeout for quick port scanning during discovery
 RPC_TIMEOUT          = 4.0   # wallet RPC request timeout in seconds
 RPC_CONN_TTL_SEC     = 60.0  # seconds a cached channel/socket stays warm before re-handshake
 RPC_PREFETCH_TIMEOUT = 1.5   # quick dial timeout for pre-connect
+MAX_HANDSHAKE_BYTES  = 16 * 1024  # cap size for initial handshake frames (HS1/HS2/envelope sniff)
 
 # ---- CLIENT THROTTLING ----
 NODE_CACHE_TTL          = 60    # seconds cached node metadata stays valid
@@ -520,21 +522,26 @@ CHAT_LOOKUP_RL_ADDR_BACKOFF_S = 8 # backoff setelah limiter per alamat kena
 BLOCK_FETCH_RL_IP_BURST    = 6   # GET_BLOCK (hash/height) requests allowed per IP
 BLOCK_FETCH_RL_WINDOW_S    = 5   # seconds window for block fetch limiter
 BLOCK_FETCH_RL_BACKOFF_S   = 4   # backoff after block fetch limiter trips
-TX_SUBMIT_RL_IP_BURST      = 12  # NEW_TX submissions allowed per IP before throttling
-TX_SUBMIT_RL_WINDOW_S      = 6   # seconds window for tx submit limiter
-TX_SUBMIT_RL_BACKOFF_S     = 6   # backoff after tx submit limiter trips
-TX_SUBMIT_RL_ADDR_BURST    = 10  # per-address tx submit limiter
-TX_SUBMIT_RL_ADDR_WINDOW_S = 10  # seconds window for per-address limiter
+
+TX_SUBMIT_RL_IP_BURST       = 12  # NEW_TX submissions allowed per IP before throttling
+TX_SUBMIT_RL_WINDOW_S       = 6   # seconds window for tx submit limiter
+TX_SUBMIT_RL_BACKOFF_S      = 6   # backoff after tx submit limiter trips
+TX_SUBMIT_RL_ADDR_BURST     = 10  # per-address tx submit limiter
+TX_SUBMIT_RL_ADDR_WINDOW_S  = 10  # seconds window for per-address limiter
 TX_SUBMIT_RL_ADDR_BACKOFF_S = 8  # backoff after per-address limiter trips
+
 GRAFFITI_RL_IP_BURST       = 10  # graffiti read RPC burst allowance (posts/comments/art/payouts)
 GRAFFITI_RL_WINDOW_S       = 8   # seconds window for graffiti read limiter
 GRAFFITI_RL_BACKOFF_S      = 6   # backoff applied on graffiti limiter hit
+
 STOR_LIST_RL_IP_BURST      = 4   # storage listing requests allowed per IP
 STOR_LIST_RL_WINDOW_S      = 10  # seconds window for storage listing limiter
 STOR_LIST_RL_BACKOFF_S     = 8   # backoff after storage listing limiter trips
+
 CHAT_RELAY_RL_IP_BURST     = 16  # chat relay hops allowed per IP
 CHAT_RELAY_RL_WINDOW_S     = 6   # seconds window for chat relay limiter
 CHAT_RELAY_RL_BACKOFF_S    = 4   # backoff when chat relay limiter trips
+
 CHAT_RELAY_MAX_HOPS        = 4   # maximum hops accepted in CHAT_RELAY route
 CHAT_RELAY_MAX_INNER_BYTES = 32 * 1024  # cap serialized inner payload to avoid abuse
 
@@ -542,18 +549,23 @@ CHAT_RELAY_MAX_INNER_BYTES = 32 * 1024  # cap serialized inner payload to avoid 
 MINER_INFO_RL_IP_BURST     = 8   # GET_INFO / GET_BLOCK_HASH requests per IP
 MINER_INFO_RL_WINDOW_S     = 3   # seconds window for miner info limiter
 MINER_INFO_RL_BACKOFF_S    = 4   # backoff after miner info limiter trips
+
 MINER_HEADERS_RL_IP_BURST  = 32  # GET_HEADERS bursts per IP
 MINER_HEADERS_RL_WINDOW_S  = 5   # seconds window for header limiter
 MINER_HEADERS_RL_BACKOFF_S = 3   # backoff after header limiter trips
+
 MINER_BLOCKS_RL_IP_BURST   = 20  # GET_BLOCKS bursts per IP
 MINER_BLOCKS_RL_WINDOW_S   = 5   # seconds window for block fetch limiter
 MINER_BLOCKS_RL_BACKOFF_S  = 3   # backoff after block limiter trips
+
 MINER_SYNC_RL_IP_BURST     = 32  # full-sync / chain bursts per IP
 MINER_SYNC_RL_WINDOW_S     = 5   # seconds window for miner sync limiter
 MINER_SYNC_RL_BACKOFF_S    = 3   # backoff after miner sync limiter trips
+
 MINER_NEWBLOCK_RL_IP_BURST  = 16  # NEW_BLOCK announcements per IP
 MINER_NEWBLOCK_RL_WINDOW_S  = 5   # seconds window for new block limiter
 MINER_NEWBLOCK_RL_BACKOFF_S = 3   # backoff after new block limiter trips
+
 MINER_MEMPOOL_RL_IP_BURST  = 6   # MEMPOOL sync requests per IP
 MINER_MEMPOOL_RL_WINDOW_S  = 10  # seconds window for mempool limiter
 MINER_MEMPOOL_RL_BACKOFF_S = 6   # backoff after mempool limiter trips
@@ -576,7 +588,7 @@ ART_ID_PREFIX_LEN  = len(ART_ID_PREFIX)
 ART_ID_BODY_LEN    = 60  # hex chars retained after adding prefix to keep 64 chars total
 
 # ---- OP_RETURN POLICY ----
-MAX_GRAFFITI_OPRET    = 550  # graffiti payload limit capped under script limit
+MAX_GRAFFITI_OPRET    = 506  # graffiti payload limit capped under script limit
 
 # ---- GRAFFITI ----
 GRAFFITI_MIN_BILLABLE_SIZE    = 100 * 1024
@@ -591,9 +603,9 @@ GRAFFITI_EXPIRE_AFTER_BLOCKS  = 25        # default retention window after graff
 GRAFFITI_PROOF_EPOCH_BLOCKS   = 15        # block interval between retention proofs
 GRAFFITI_PROOF_CHUNK_BYTES    = 75 * 1024  # bytes challenged per proof (deterministic)
 GRAFFITI_MAX_SIZE_BYTES       = 10 * 1024 * 1024  # hard cap for upload/download payload
+GRAFFITI_MAX_MSG_BYTES        = 11 * 1024 * 1024  # per-message cap for graffiti transfer (storage RPC) STOR_INIT/STOR_PUT
 GRAFFITI_ALLOWED_MIME         = ("image/jpeg", "video/mp4")  # whitelist MIME types
 GRAFFITI_ALLOWED_EXT          = ("jpg", "jpeg", "mp4")  # extension fallback when MIME unavailable
-GRAFFITI_MAX_MSG_BYTES        = 11 * 1024 * 1024  # per-message cap for graffiti transfer (storage RPC)
 
 # ---- STORAGE POLICY ----
 STORAGE_UPLOAD_CHUNK          = 100 * 1024  # chunk size used when slicing storage payloads

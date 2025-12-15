@@ -912,6 +912,7 @@ def _handle_create_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, 
             confirmations = max(0, (int(tip_height) - born) + 1)
             if confirmations < CFG.COINBASE_MATURITY:
                 continue
+            
         utxos_list.append({
             "txid": txid_hex,
             "index": int(idx_str),

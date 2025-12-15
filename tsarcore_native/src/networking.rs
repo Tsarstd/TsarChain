@@ -113,6 +113,13 @@ fn hkdf_derive(shared: &[u8], salt: &[u8], info: &[u8], key_len: usize) -> PyRes
     Ok(okm)
 }
 
+fn derive_epoch_key(root: &[u8], epoch: u64, aad: &[u8]) -> PyResult<Aes256Gcm> {
+    let salt = Sha256::digest(format!("epoch:{epoch}").as_bytes());
+    let info = [b"P2P_REKEY", aad].concat();
+    let okm = hkdf_derive(root, &salt, &info, 32)?;
+    Aes256Gcm::new_from_slice(&okm).map_err(|_| PyValueError::new_err("invalid epoch key"))
+}
+
 #[pyclass]
 pub struct SecureChannelNative {
     role: Role,
@@ -131,10 +138,17 @@ pub struct SecureChannelNative {
     peer_node_pub: Option<Vec<u8>>,
     aes_send: Option<Aes256Gcm>,
     aes_recv: Option<Aes256Gcm>,
+    root_send: Option<Vec<u8>>,
+    root_recv: Option<Vec<u8>>,
+    send_epoch: u64,
+    recv_epoch: u64,
     send_ctr: u64,
     recv_ctr: i64,
     msg_count: u64,
     established_at: f64,
+    last_activity: f64,
+    last_rekey_at: f64,
+    rekey_every: u64,
     client_eph: Option<StaticSecret>,
     client_salt: Option<[u8; 16]>,
 }
@@ -142,7 +156,7 @@ pub struct SecureChannelNative {
 #[pymethods]
 impl SecureChannelNative {
     #[new]
-    #[pyo3(signature = (role, net_id, node_id, node_pub_hex, session_ttl, session_max_msg, key_bytes=32, nonce_bytes=12, node_priv_hex=None, aad_prefix=None))]
+    #[pyo3(signature = (role, net_id, node_id, node_pub_hex, session_ttl, session_max_msg, key_bytes=32, nonce_bytes=12, node_priv_hex=None, aad_prefix=None, rekey_every_msg=None))]
     pub fn new(
         role: &str,
         net_id: &str,
@@ -154,6 +168,7 @@ impl SecureChannelNative {
         nonce_bytes: usize,
         node_priv_hex: Option<&str>,
         aad_prefix: Option<&[u8]>,
+        rekey_every_msg: Option<u64>,
     ) -> PyResult<Self> {
         let role = match role.to_lowercase().as_str() {
             "client" => Role::Client,
@@ -167,6 +182,11 @@ impl SecureChannelNative {
         if nonce_bytes != 12 {
             return Err(PyValueError::new_err("nonce length must be 12 bytes"));
         }
+
+        let rekey_every = rekey_every_msg.unwrap_or_else(|| {
+            let quarter = session_max_msg / 4;
+            std::cmp::max(1, session_max_msg.saturating_sub(quarter))
+        });
 
         let node_pub_bytes = decode_pubkey(node_pub_hex)?;
         let node_pub_key = PublicKey::from_bytes(&node_pub_bytes)
@@ -212,10 +232,17 @@ impl SecureChannelNative {
             peer_node_pub: None,
             aes_send: None,
             aes_recv: None,
+            root_send: None,
+            root_recv: None,
+            send_epoch: 0,
+            recv_epoch: 0,
             send_ctr: 0,
             recv_ctr: -1,
             msg_count: 0,
             established_at: 0.0,
+            last_activity: 0.0,
+            last_rekey_at: 0.0,
+            rekey_every,
             client_eph: None,
             client_salt: None,
         };
@@ -367,19 +394,24 @@ impl SecureChannelNative {
         } else {
             (recv_key, send_key)
         };
-        let aes_send = Aes256Gcm::new_from_slice(&aes_send)
-            .map_err(|_| PyValueError::new_err("invalid AES key (send)"))?;
-        let aes_recv = Aes256Gcm::new_from_slice(&aes_recv)
-            .map_err(|_| PyValueError::new_err("invalid AES key (recv)"))?;
+        let aes_send = derive_epoch_key(&aes_send, 0, &self.aad)?;
+        let aes_recv = derive_epoch_key(&aes_recv, 0, &self.aad)?;
 
+        self.root_send = Some(k_send_raw.to_vec());
+        self.root_recv = Some(k_recv_raw.to_vec());
         self.aes_send = Some(aes_send);
         self.aes_recv = Some(aes_recv);
+        self.send_epoch = 0;
+        self.recv_epoch = 0;
         self.peer_node_id = Some(peer_node_id.clone());
         self.peer_node_pub = Some(peer_node_pub.to_vec());
         self.send_ctr = 0;
         self.recv_ctr = -1;
         self.msg_count = 0;
-        self.established_at = now_seconds();
+        let now = now_seconds();
+        self.established_at = now;
+        self.last_activity = now;
+        self.last_rekey_at = now;
 
         Ok((peer_node_id, peer_node_pub_hex))
     }
@@ -488,10 +520,8 @@ impl SecureChannelNative {
         } else {
             (recv_key, send_key)
         };
-        let aes_send = Aes256Gcm::new_from_slice(&aes_send)
-            .map_err(|_| PyValueError::new_err("invalid AES key (send)"))?;
-        let aes_recv = Aes256Gcm::new_from_slice(&aes_recv)
-            .map_err(|_| PyValueError::new_err("invalid AES key (recv)"))?;
+        let aes_send = derive_epoch_key(&aes_send, 0, &self.aad)?;
+        let aes_recv = derive_epoch_key(&aes_recv, 0, &self.aad)?;
 
         let to_sign = join_parts(&[
             b"HS2",
@@ -514,14 +544,21 @@ impl SecureChannelNative {
         dict.set_item("node_pub", &self.node_pub_hex)?;
         dict.set_item("sig", hex::encode(signature.to_bytes()))?;
 
+        self.root_send = Some(k_send_raw.to_vec());
+        self.root_recv = Some(k_recv_raw.to_vec());
         self.aes_send = Some(aes_send);
         self.aes_recv = Some(aes_recv);
+        self.send_epoch = 0;
+        self.recv_epoch = 0;
         self.peer_node_id = Some(peer_node_id.clone());
         self.peer_node_pub = Some(peer_node_pub.to_vec());
         self.send_ctr = 0;
         self.recv_ctr = -1;
         self.msg_count = 0;
-        self.established_at = now_seconds();
+        let now = now_seconds();
+        self.established_at = now;
+        self.last_activity = now;
+        self.last_rekey_at = now;
 
         Ok((dict.unbind(), peer_node_id, peer_node_pub_hex))
     }
@@ -532,14 +569,26 @@ impl SecureChannelNative {
         plaintext: &[u8],
     ) -> PyResult<(u64, Bound<'py, PyBytes>)> {
         self.ensure_ready()?;
-        let aes = self
-            .aes_send
-            .as_ref()
-            .ok_or_else(|| PyValueError::new_err("secure channel not established"))?;
         let seq = self
             .send_ctr
             .checked_add(1)
             .ok_or_else(|| PyValueError::new_err("sequence overflow"))?;
+        let epoch = seq / self.rekey_every;
+        if epoch != self.send_epoch {
+            let root = self
+                .root_send
+                .as_ref()
+                .ok_or_else(|| PyValueError::new_err("missing send root key"))?;
+            let aes_new = derive_epoch_key(root, epoch, &self.aad)?;
+            self.aes_send = Some(aes_new);
+            self.send_epoch = epoch;
+            self.last_rekey_at = now_seconds();
+            self.msg_count = 0;
+        }
+        let aes = self
+            .aes_send
+            .as_ref()
+            .ok_or_else(|| PyValueError::new_err("secure channel not established"))?;
         let nonce_bytes = seq_to_nonce(seq, self.nonce_len)?;
         let nonce = Nonce::from_slice(&nonce_bytes);
         let ciphertext = aes
@@ -553,6 +602,7 @@ impl SecureChannelNative {
             .map_err(|_| PyValueError::new_err("encryption failed"))?;
         self.send_ctr = seq;
         self.msg_count += 1;
+        self.last_activity = now_seconds();
 
         Ok((seq, PyBytes::new_bound(py, &ciphertext)))
     }
@@ -566,6 +616,18 @@ impl SecureChannelNative {
         self.ensure_ready()?;
         if seq as i64 <= self.recv_ctr {
             return Err(PyValueError::new_err("replayed/out-of-order seq"));
+        }
+        let epoch = seq / self.rekey_every;
+        if epoch != self.recv_epoch {
+            let root = self
+                .root_recv
+                .as_ref()
+                .ok_or_else(|| PyValueError::new_err("missing recv root key"))?;
+            let aes_new = derive_epoch_key(root, epoch, &self.aad)?;
+            self.aes_recv = Some(aes_new);
+            self.recv_epoch = epoch;
+            self.last_rekey_at = now_seconds();
+            self.msg_count = 0;
         }
         let aes = self
             .aes_recv
@@ -584,20 +646,24 @@ impl SecureChannelNative {
             .map_err(|_| PyValueError::new_err("decryption failed"))?;
         self.recv_ctr = seq as i64;
         self.msg_count += 1;
+        self.last_activity = now_seconds();
 
         Ok(PyBytes::new_bound(py, &plaintext))
     }
 
     fn ensure_ready(&mut self) -> PyResult<()> {
-        if self.aes_send.is_none() || self.aes_recv.is_none() {
+        if self.root_send.is_none() || self.root_recv.is_none() {
             return Err(PyValueError::new_err("secure channel not established"));
         }
         let now = now_seconds();
-        if now - self.established_at > self.session_ttl {
-            return Err(PyValueError::new_err("secure channel expired (TTL)"));
+        self.last_activity = now;
+        // Slide TTL; keep alive as long as there is activity
+        if now - self.last_rekey_at > self.session_ttl {
+            self.last_rekey_at = now;
         }
         if self.msg_count >= self.session_max_msg {
-            return Err(PyValueError::new_err("secure channel expired (MSG)"));
+            self.msg_count = 0;
+            self.last_rekey_at = now;
         }
         Ok(())
     }

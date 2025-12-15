@@ -145,7 +145,7 @@ def send_message(sock: socket.socket, payload: bytes, *, max_len: int | None = N
             return
         raise
 
-def recv_message(sock, timeout: float | None = None, max_len: int | None = None):
+def recv_message(sock, timeout: float | None = None, max_len: int | None = None, *, peer_ip: str | None = None, ban_on_bad: bool = False, on_misbehave=None):
     cap = int(max_len) if max_len is not None else int(CFG.MAX_MSG)
     if timeout is not None:
         sock.settimeout(timeout)
@@ -153,9 +153,15 @@ def recv_message(sock, timeout: float | None = None, max_len: int | None = None)
         hdr = recv_exact(sock, 4)
         n = struct.unpack(">I", hdr)[0]
         if n <= 0 or n > cap:
+            if ban_on_bad and peer_ip and callable(on_misbehave):
+                on_misbehave(peer_ip, CFG.BAN_MALICIOUS_RPC)
+                log.warning("[recv_message] oversize/invalid frame from %s (len=%s) temp-ban", peer_ip, n)
             return None
         body = recv_exact(sock, n)
         if not body.startswith(CFG.NETWORK_MAGIC):
+            if ban_on_bad and peer_ip and callable(on_misbehave):
+                on_misbehave(peer_ip, CFG.BAN_MALICIOUS_RPC)
+                log.warning("[recv_message] bad magic from %s (temp-ban)", peer_ip)
             return None
         return body[len(CFG.NETWORK_MAGIC):]
     except Exception as e:
@@ -175,8 +181,8 @@ def recv_exact(sock: socket.socket, n: int) -> bytes:
         log.trace("[recv_exact] got %s bytes", len(buf))
     return buf
 
-def sniff_first_json_frame(sock: socket.socket, timeout: float = 2.0) -> tuple[bytes | None, dict | None]:
-    raw = recv_message(sock, timeout=timeout)
+def sniff_first_json_frame(sock: socket.socket, timeout: float = 2.0, *, peer_ip: str | None = None, on_misbehave=None) -> tuple[bytes | None, dict | None]:
+    raw = recv_message(sock, timeout=timeout, max_len=CFG.MAX_HANDSHAKE_BYTES, peer_ip=peer_ip, ban_on_bad=True, on_misbehave=on_misbehave)
     if not raw:
         return None, None
     return raw, json.loads(raw.decode("utf-8"))
@@ -321,7 +327,7 @@ def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
 # =========================================================
 
 class SecureChannel:
-    def __init__(self, sock: socket.socket, role: str, node_id: str | None = None, node_pub: str | None = None, node_priv: str | None = None, get_pinned=None, set_pinned=None):
+    def __init__(self, sock: socket.socket, role: str, node_id: str | None = None, node_pub: str | None = None, node_priv: str | None = None, get_pinned=None, set_pinned=None, peer_ip: str | None = None, on_misbehave=None):
         assert role in ("client", "server")
         
         self.sock = sock
@@ -331,6 +337,8 @@ class SecureChannel:
         self.node_priv= node_priv
         self.get_pinned = get_pinned or (lambda nid: None)
         self.set_pinned = set_pinned or (lambda nid, pk: None)
+        self.peer_ip = peer_ip
+        self.on_misbehave = on_misbehave
         self.peer_node_id  = None
         self.peer_node_pub = None
         self.native = SecureChannelNative(
@@ -344,6 +352,7 @@ class SecureChannel:
             nonce_bytes=int(CFG.P2P_AEAD_NONCE_BYTES),
             node_priv_hex=node_priv,
             aad_prefix=CFG.P2P_AEAD_AAD_PREFIX,
+            rekey_every_msg=int(CFG.P2P_REKEY_EVERY_MSG),
         )
 
     def handshake(self):  
@@ -356,7 +365,7 @@ class SecureChannel:
         hs1 = self.native.client_build_hs1()
         send_message(self.sock, json.dumps(hs1).encode("utf-8"))
 
-        raw = recv_message(self.sock, timeout=float(CFG.HANDSHAKE_TIMEOUT))
+        raw = recv_message(self.sock, timeout=float(CFG.HANDSHAKE_TIMEOUT), max_len=CFG.MAX_HANDSHAKE_BYTES, peer_ip=self.peer_ip, ban_on_bad=True, on_misbehave=self.on_misbehave)
         if not raw:
             raise ConnectionError("no handshake response from peer")
         hs2 = json.loads(raw.decode("utf-8"))
@@ -372,7 +381,7 @@ class SecureChannel:
             self.set_pinned(peer_node_id, peer_node_pub)
 
     def _hs_server_auth(self):
-        raw = recv_message(self.sock, timeout=float(CFG.HANDSHAKE_TIMEOUT))
+        raw = recv_message(self.sock, timeout=float(CFG.HANDSHAKE_TIMEOUT), max_len=CFG.MAX_HANDSHAKE_BYTES, peer_ip=self.peer_ip, ban_on_bad=True, on_misbehave=self.on_misbehave)
         if not raw:
             raise ConnectionError("no handshake payload from peer")
         hs1 = json.loads(raw.decode("utf-8"))

@@ -21,7 +21,7 @@ been removed to avoid divergence, so keeping the native library installed is man
 - **Python** 3.8–3.12 (recommended to use a virtual environment)
 - **Rust toolchain (stable)** via [`rustup`](https://rustup.rs/)
 - **maturin** (`pip install maturin`)
-- **cmake** 3.20+ (RandomX vendored sources are compiled during the build)
+- **cmake** 4.2.0+ (RandomX vendored sources are compiled during the build)
 
 Platform notes:
 - **Windows**: install *Visual Studio Build Tools* (C++ workload). Rust target should be **MSVC** (default).

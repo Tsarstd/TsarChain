@@ -112,15 +112,17 @@ def process_message(
         return {"error": "unknown type", "drop": True}
 
     if (role == "MINER") and (mtype not in BOOTSTRAP_MINER_ALLOW) and (not _is_miner_sender()):
-        log.warning("[process_message] rejecting unauthorized miner RPC %s from %s", mtype, addr)
-        return {"error": "forbidden: miners-only endpoint"}
+        ip = _client_ip()
+        ban_ip(ip, (CFG.BAN_MALICIOUS_RPC))
+        log.warning("[process_message] rejecting unauthorized miner: RPC %s from %s category %s (temp-ban)", mtype, addr, category)
+        return {"error": "forbidden: miners-only endpoint", "drop": True}
 
     if role == "MINER":
-        log.debug("[process_message] %s response: msg: %s category: %s", role, mtype, category)
+        #log.debug("[process_message] %s response: msg: %s category: %s", role, mtype, category)
         return handle_miner_rpc(self, message, addr, mtype, src_node_id=src_node_id, src_pubkey=src_pubkey)
     
     if role == "STORAGE":
-        log.debug("[process_message] %s response: msg: %s", role, mtype)
+        #log.debug("[process_message] %s response: msg: %s", role, mtype)
         return handle_storage_rpc(self, message, addr, mtype, src_node_id=src_node_id, src_pubkey=src_pubkey)
 
     dispatch_result = handle_user_rpc(
@@ -137,7 +139,7 @@ def process_message(
     )
 
     if dispatch_result is not None:
-        log.debug("[process_message] %s response: msg: %s", role, mtype)
+        #log.debug("[process_message] %s response: msg: %s", role, mtype)
         return dispatch_result
     
     return {"error": "Unknown message type"}

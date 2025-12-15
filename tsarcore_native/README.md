@@ -125,6 +125,7 @@ store.copy("/tmp/tsar.db.backup", compact=True)  # LMDB only
 
 ## Changelog
 
+- **0.1.9** - SecureChannel gains automatic AEAD rekey per-message epoch (configurable via `P2P_REKEY_EVERY_MSG`); epoch keys are derived from the HKDF root with sliding TTL/msg windows so long-lived links rekey smoothly without dropping the connection.
 - **0.1.8** - Native RandomX miner now reports hashrate via `progress_queue` and respects `stop_event`/Ctrl+C using a stop watcher inside Rust threads; mining cancellation no longer waits for a full block and remains verified with light hash check in Python.
 - **0.1.7** - Added native mempool validator for P2WPKH (no Python fallback) and native UTXO snapshot streaming for full-sync (chunked LMDB read). full-sync uses native streaming when `KV_BACKEND=lmdb`.
 - **0.1.6** - Native UTXO apply (LMDB batch) now default (no Python fallback); compact tx codec exposed (serialize/txid/wtxid/sighash) and wired into txid/wtxid compute, mempool BIP143, and payload compact consensus; P2PKH legacy path deleted (only P2WPKH).
