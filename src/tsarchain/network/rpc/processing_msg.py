@@ -11,6 +11,8 @@ from .miner_rpc import handle_miner_rpc
 from .storage_rpc import handle_storage_rpc
 from .user_rpc import handle_user_rpc
 from ...contracts import graffiti as GRAFFITI
+from ...utils import config as CFG
+from ..node_logic.ratelimit import ban_ip
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
@@ -104,19 +106,21 @@ def process_message(
     role, category = _identify_rpc_role(mtype)
 
     if role == "UNKNOWN":
-        log.warning("[process_message] Unfamiliar response: %s", mtype)
-        return {"error": "unknown type"}
+        ip = _client_ip()
+        ban_ip(ip, (CFG.BAN_MALICIOUS_RPC))
+        log.warning("[process_message] unknown RPC %s from %s (temp-ban)", mtype, addr)
+        return {"error": "unknown type", "drop": True}
 
     if (role == "MINER") and (mtype not in BOOTSTRAP_MINER_ALLOW) and (not _is_miner_sender()):
         log.warning("[process_message] rejecting unauthorized miner RPC %s from %s", mtype, addr)
         return {"error": "forbidden: miners-only endpoint"}
 
     if role == "MINER":
-        #log.debug("[process_message] MINERS response: msg: %s role: %s category: %s", mtype, role, category)
+        log.debug("[process_message] %s response: msg: %s category: %s", role, mtype, category)
         return handle_miner_rpc(self, message, addr, mtype, src_node_id=src_node_id, src_pubkey=src_pubkey)
     
     if role == "STORAGE":
-        #log.debug("[process_message] STORAGE response: msg: %s role: %s category: %s", mtype, role)
+        log.debug("[process_message] %s response: msg: %s", role, mtype)
         return handle_storage_rpc(self, message, addr, mtype, src_node_id=src_node_id, src_pubkey=src_pubkey)
 
     dispatch_result = handle_user_rpc(
@@ -133,6 +137,7 @@ def process_message(
     )
 
     if dispatch_result is not None:
+        log.debug("[process_message] %s response: msg: %s", role, mtype)
         return dispatch_result
     
     return {"error": "Unknown message type"}

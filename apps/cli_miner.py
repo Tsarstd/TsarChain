@@ -105,7 +105,7 @@ class HashrateReporter(threading.Thread):
                 hps = human_hps(msg[1])
                 line = f"Hashrate ~ {hps} {COL.DIM}{COL.RESET}"
                 if line != last_line:
-                    clog(line, color=COL.CYAN)
+                    clog(line, color=COL.RESET)
                     last_line = line
 
 

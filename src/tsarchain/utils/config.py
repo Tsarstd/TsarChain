@@ -361,6 +361,7 @@ NONCE_GLOBAL_MAX             = 100_000  # global nonce cache bound across sender
 HANDSHAKE_RL_PER_IP_BURST    = 50  # burst limit when rate-limiting handshakes
 HANDSHAKE_RL_PER_IP_WINDOW_S = 10  # time window for handshake rate limit
 TEMP_BAN_SECONDS             = 30  # duration for temporary ban entries
+BAN_MALICIOUS_RPC            = 90  # temp ban duration when receiving unregistered RPC types
 
 # ---- FULL SYNC GUARD ----
 ENABLE_FULL_SYNC          = FULL_SYNC_DEV if IS_DEV else FULL_SYNC_PROD  # controls whether expensive full sync is allowed
@@ -495,7 +496,7 @@ HISTORY_RL_IP_WINDOW_S = 5   # seconds window for history limiter
 HISTORY_RL_BACKOFF_S   = 4   # seconds to back off when tripped
 
 # ---- MEMPOOL INLINE THROTTLING ----
-MEMPOOL_INLINE_RL_BURST    = 3   # inline mempool dumps allowed before throttling
+MEMPOOL_INLINE_RL_BURST    = 15   # inline mempool dumps allowed before throttling
 MEMPOOL_INLINE_RL_WINDOW_S = 20  # seconds window to evaluate inline dump rate
 MEMPOOL_INLINE_RL_BACKOFF  = 15  # seconds to wait after hitting inline limiter
 
@@ -616,7 +617,7 @@ RETENTION_GC_SEC               = 60  # interval between retention garbage collec
 LOG_PATH             = "data/logging/tsarchain.log"  # canonical log file path before format-specific override
 LOG_SHOW_PROCESS     = False  # include process metadata in log context when True
 LOG_PROC_PLACEHOLDER = "-"  # value used when process info is hidden
-DEBUG_BENCHMARKS     = True  # for benchmarking needs for each computing logic/process
+DEBUG_BENCHMARKS     = False  # for benchmarking needs for each computing logic/process
 
 # ---- MODE PROFILES ----
 if IS_DEV:

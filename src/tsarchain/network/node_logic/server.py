@@ -120,8 +120,11 @@ def handle_connection(self, conn, addr):
 
                 response = process_message(self, msg, addr, src_node_id=src_nid, src_pubkey=src_pub)
                 if response is not None:
+                    drop = bool(response.pop("drop", False)) if isinstance(response, dict) else False
                     env = build_envelope(response, self.node_ctx, extra={"pubkey": self.pubkey})
                     send_fn(json.dumps(env).encode("utf-8"))
+                    if drop:
+                        break
             return
 
         if not isinstance(first, dict):
@@ -146,8 +149,11 @@ def handle_connection(self, conn, addr):
 
         response = process_message(self, msg, addr, src_node_id=src_nid, src_pubkey=src_pub)
         if response is not None:
+            drop = bool(response.pop("drop", False)) if isinstance(response, dict) else False
             env = build_envelope(response, self.node_ctx, extra={"pubkey": self.pubkey})
             send_message(conn, json.dumps(env).encode("utf-8"))
+            if drop:
+                return
 
     except Exception:
         log.exception("[handle_connection] Connection handler error from %s", addr)

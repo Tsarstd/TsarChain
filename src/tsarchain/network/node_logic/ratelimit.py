@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from collections import deque
+import time
 
 from ...utils import config as CFG
 _handshake_hits: dict[str, deque] = {}
@@ -21,13 +22,35 @@ def _rl_prune(ip: str, now_ts: float) -> None:
     if not dq:
         _handshake_hits.pop(ip, None)
 
+def is_banned(ip: str, now_ts: float | None = None) -> bool:
+    if ip in ("127.0.0.1", "::1"):
+        return False
+    ts = _temp_ban_until.get(ip, 0.0)
+    if ts <= 0.0:
+        return False
+    if now_ts is None:
+        now_ts = time.time()
+    return now_ts < ts
+
+def ban_ip(ip: str, seconds: float) -> None:
+    if not ip:
+        return
+    if ip in ("127.0.0.1", "::1"):
+        return
+    now = time.time()
+    duration = max(0.0, float(seconds))
+    until = now + duration
+    existing = _temp_ban_until.get(ip, 0.0)
+    if until <= existing:
+        return
+    _temp_ban_until[ip] = until
+
 
 def allow_handshake(ip: str, now_ts: float) -> bool:
     if ip in ("127.0.0.1", "::1"):
         return True
 
-    banned_until = _temp_ban_until.get(ip, 0.0)
-    if now_ts < banned_until:
+    if is_banned(ip, now_ts):
         return False
 
     dq = _handshake_hits.setdefault(ip, deque())
@@ -41,4 +64,4 @@ def allow_handshake(ip: str, now_ts: float) -> bool:
     return True
 
 
-__all__ = ("allow_handshake",)
+__all__ = ("allow_handshake", "ban_ip", "is_banned")
