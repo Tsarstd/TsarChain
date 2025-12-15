@@ -242,6 +242,61 @@ class ValidationMixin:
             if vout > int(CFG.MAX_TX_OUTPUTS):
                 self._last_block_validation_error = "tx_outputs_exceed_limit"
                 return False
+            
+            # Graffiti OP_RETURN guard (size/comment/min fee)
+            def _validate_graffiti_output(spk_obj) -> bool:
+                raw = None
+                if hasattr(spk_obj, "serialize"):
+                    raw = spk_obj.serialize()
+                elif isinstance(spk_obj, (bytes, bytearray)):
+                    raw = bytes(spk_obj)
+                elif isinstance(spk_obj, str):
+                    try:
+                        raw = bytes.fromhex(spk_obj)
+                    except ValueError:
+                        return True
+                if not raw:
+                    return True
+                data = H.last_pushdata(raw)
+                if not data or not data.startswith(CFG.GRAFFITI_MAGIC):
+                    return True
+                if len(data) > int(CFG.MAX_GRAFFITI_OPRET):
+                    self._last_block_validation_error = "graffiti_opreturn_too_large"
+                    return False
+                meta = GRAFFITI.parse_payload(data)
+                if not meta:
+                    self._last_block_validation_error = "graffiti_payload_invalid"
+                    return False
+                event = str(meta.get("event", "")).upper()
+                if event == "POST":
+                    size_val = int(meta.get("size", 0))
+                    if size_val <= 0:
+                        self._last_block_validation_error = "graffiti_size_invalid"
+                        return False
+                    if size_val > int(CFG.GRAFFITI_MAX_SIZE_BYTES):
+                        self._last_block_validation_error = "graffiti_size_exceeds_limit"
+                        return False
+                elif event == "COMMENT":
+                    comment_len = int(meta.get("comment_len", 0))
+                    if comment_len <= 0:
+                        self._last_block_validation_error = "graffiti_comment_empty"
+                        return False
+                    if comment_len > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
+                        self._last_block_validation_error = "graffiti_comment_too_large"
+                        return False
+                    amount = int(meta.get("amount", 0))
+                    if amount < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
+                        self._last_block_validation_error = "graffiti_comment_fee_too_low"
+                        return False
+                    tip = int(meta.get("tip", 0))
+                    if tip < 0:
+                        self._last_block_validation_error = "graffiti_comment_tip_negative"
+                        return False
+                return True
+
+            for tx_out in getattr(tx, "outputs", []) or []:
+                if not _validate_graffiti_output(getattr(tx_out, "script_pubkey", None)):
+                    return False
 
         # Graffiti rule: maximum one POST per block; if there is a POST, the block_id must match its art_id.
         graffiti_posts = 0
