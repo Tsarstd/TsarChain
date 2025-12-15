@@ -916,6 +916,49 @@ def _deserialize_spk_hex(self, spk_hex: str) -> Script:
     b = bytes.fromhex((spk_hex or "").strip())
     return Script.deserialize(b)
 
+def _guard_graffiti_output(self, spk: Script) -> None:
+    """
+    Validate graffiti OP_RETURN payload against node-side limits.
+    Only triggers when payload starts with GRAFFITI_MAGIC.
+    """
+    try:
+        raw = spk.serialize()
+    except Exception:
+        return
+    data = last_pushdata(raw)
+    if not data:
+        return
+    if not data.startswith(CFG.GRAFFITI_MAGIC):
+        return
+    if len(data) > int(CFG.MAX_GRAFFITI_OPRET):
+        raise ValueError("graffiti_opreturn_too_large")
+
+    meta = GRAFFITI.parse_payload(data)
+    if not meta:
+        raise ValueError("graffiti_payload_invalid")
+
+    event = str(meta.get("event", "")).upper()
+    if event == "POST":
+        size_val = int(meta.get("size", 0))
+        if size_val <= 0:
+            raise ValueError("graffiti_size_invalid")
+        if size_val > int(CFG.GRAFFITI_MAX_SIZE_BYTES):
+            raise ValueError("graffiti_size_exceeds_limit")
+        log.debug("Graffiti Post Ok: size=%s limit=%s", size_val, CFG.GRAFFITI_MAX_SIZE_BYTES)
+    elif event == "COMMENT":
+        comment_len = int(meta.get("comment_len", 0))
+        if comment_len <= 0:
+            raise ValueError("graffiti_comment_empty")
+        if comment_len > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
+            raise ValueError("graffiti_comment_too_large")
+        amount = int(meta.get("amount", 0))
+        if amount < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
+            raise ValueError("graffiti_comment_fee_too_low")
+        tip = int(meta.get("tip", 0))
+        if tip < 0:
+            raise ValueError("graffiti_comment_tip_negative")
+        log.debug("Graffiti Comment Ok: len=%s amount=%s tip=%s", comment_len, amount, tip)
+
 def _handle_create_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, force_inputs: list[str] | None = None):
     if not isinstance(from_addr, str):
         raise ValueError("from must be string")
@@ -960,6 +1003,7 @@ def _handle_create_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, 
             spk = self._addr_to_spk(str(item["address"]))
         else:
             raise ValueError("output item must have spk_hex/opret_hex/address")
+        self._guard_graffiti_output(spk)
         fixed_outs.append((amt, spk))
         total_target += max(0, amt)
 
@@ -1136,6 +1180,7 @@ _CLIENT_HELPER = {
     "_select_utxos_for": _select_utxos_for,
     "_handle_create_tx": _handle_create_tx,
     "_deserialize_spk_hex": _deserialize_spk_hex,
+    "_guard_graffiti_output": _guard_graffiti_output,
     "_handle_create_tx_multi": _handle_create_tx_multi,
 }
 
