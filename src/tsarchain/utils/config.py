@@ -272,6 +272,12 @@ MAX_BLOCK_BYTES      = 1_200_000  # block size limit (approx 1.2 MB)
 MAX_TXS_PER_BLOCK    = 5_000  # guardrail on number of tx per block
 MAX_SIGOPS_PER_BLOCK = 40_000  # signature operation ceiling per block
 MAX_SIGOPS_PER_TX    = 6_000  # signature operation ceiling per transaction
+MAX_TX_VSIZE         = 10_000  # maximum virtual size (vbytes) per transaction
+MIN_TX_VSIZE         = 100     # minimum virtual size (vbytes) per transaction
+MAX_TX_WEIGHT        = 40_000  # maximum weight units per transaction
+MIN_TX_WEIGHT        = 400     # minimum weight units per transaction
+MAX_TX_INPUTS        = 1_000   # hard cap on number of inputs per transaction
+MAX_TX_OUTPUTS       = 1_000   # hard cap on number of outputs per transaction
 
 # ---- FORK CHOICE ----
 ENABLE_CHAINWORK_RULE = True  # enforce cumulative chainwork comparison for forks

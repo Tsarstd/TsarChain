@@ -266,7 +266,6 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
                 if applied:
                     total_applied += 1
                     applied_in_chunk += 1
-                    log.info("total_applied : %s in : %s s", total_applied, time.time() - start_time)
                 else:
                     blk_hash = block_obj.get("hash")
                     label = str(blk_hash or "unknown")

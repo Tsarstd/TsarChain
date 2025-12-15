@@ -240,6 +240,69 @@ pub fn wtxid_from_compact<'py>(
     Ok(PyBytes::new_bound(py, &h))
 }
 
+#[derive(Clone)]
+struct TxLimits {
+    coinbase_maturity: u64,
+    max_sigops_per_tx: u32,
+    max_tx_vsize: u64,
+    min_tx_vsize: u64,
+    max_tx_weight: u64,
+    min_tx_weight: u64,
+    max_tx_inputs: usize,
+    max_tx_outputs: usize,
+    enforce_low_s: bool,
+}
+
+fn parse_validation_opts(opts: &Bound<'_, PyAny>) -> PyResult<TxLimits> {
+    let dict = opts
+        .downcast::<pyo3::types::PyDict>()
+        .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("opts_not_dict"))?;
+
+    fn read_u64(dict: &Bound<'_, pyo3::types::PyDict>, key: &str, err: &str) -> PyResult<u64> {
+        let err_owned = err.to_string();
+        let item = dict
+            .get_item(key)
+            .map_err(|_| PyErr::new::<exceptions::PyValueError, _>(err_owned.clone()))?;
+        let val = item.ok_or_else(|| PyErr::new::<exceptions::PyValueError, _>(err_owned.clone()))?;
+        val.extract().map_err(|_| PyErr::new::<exceptions::PyValueError, _>(err_owned.clone()))
+    }
+    fn read_u32(dict: &Bound<'_, pyo3::types::PyDict>, key: &str, err: &str) -> PyResult<u32> {
+        let err_owned = err.to_string();
+        let item = dict
+            .get_item(key)
+            .map_err(|_| PyErr::new::<exceptions::PyValueError, _>(err_owned.clone()))?;
+        let val = item.ok_or_else(|| PyErr::new::<exceptions::PyValueError, _>(err_owned.clone()))?;
+        val.extract().map_err(|_| PyErr::new::<exceptions::PyValueError, _>(err_owned.clone()))
+    }
+    fn read_usize(dict: &Bound<'_, pyo3::types::PyDict>, key: &str, err: &str) -> PyResult<usize> {
+        let err_owned = err.to_string();
+        let item = dict
+            .get_item(key)
+            .map_err(|_| PyErr::new::<exceptions::PyValueError, _>(err_owned.clone()))?;
+        let val = item.ok_or_else(|| PyErr::new::<exceptions::PyValueError, _>(err_owned.clone()))?;
+        val.extract().map_err(|_| PyErr::new::<exceptions::PyValueError, _>(err_owned.clone()))
+    }
+
+    let enforce_low_s = match dict.get_item("enforce_low_s") {
+        Ok(Some(v)) => v
+            .extract()
+            .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("opts_invalid_enforce_low_s"))?,
+        _ => true,
+    };
+
+    Ok(TxLimits {
+        coinbase_maturity: read_u64(&dict, "coinbase_maturity", "opts_invalid_coinbase_maturity")?,
+        max_sigops_per_tx: read_u32(&dict, "max_sigops_per_tx", "opts_invalid_max_sigops_per_tx")?,
+        max_tx_vsize: read_u64(&dict, "max_tx_vsize", "opts_invalid_max_tx_vsize")?,
+        min_tx_vsize: read_u64(&dict, "min_tx_vsize", "opts_invalid_min_tx_vsize")?,
+        max_tx_weight: read_u64(&dict, "max_tx_weight", "opts_invalid_max_tx_weight")?,
+        min_tx_weight: read_u64(&dict, "min_tx_weight", "opts_invalid_min_tx_weight")?,
+        max_tx_inputs: read_usize(&dict, "max_tx_inputs", "opts_invalid_max_tx_inputs")?,
+        max_tx_outputs: read_usize(&dict, "max_tx_outputs", "opts_invalid_max_tx_outputs")?,
+        enforce_low_s,
+    })
+}
+
 #[pyfunction]
 #[pyo3(signature = (tx_tuple, input_index, script_code, value_sat, sighash_type))]
 pub fn sighash_bip143_compact<'py>(
@@ -306,16 +369,45 @@ pub fn sighash_bip143_compact<'py>(
 }
 
 #[pyfunction]
-#[pyo3(signature = (tx_tuple, utxo_items, spend_height, coinbase_maturity))]
+#[pyo3(signature = (tx_tuple, utxo_items, spend_height, opts))]
 pub fn validate_tx_p2wpkh_compact<'py>(
     _py: Python<'py>,
     tx_tuple: Bound<'py, PyTuple>,
     utxo_items: Bound<'py, PyList>,
     spend_height: u64,
-    coinbase_maturity: u64,
+    opts: Bound<'py, PyAny>,
 ) -> PyResult<(bool, Option<String>, Option<u64>)> {
-    // parse tx (compact)
+    // parse opts + tx (compact)
+    let limits = parse_validation_opts(&opts)?;
     let (ver, lock, inputs, outputs) = parse_compact_tx(&tx_tuple)?;
+    let base_raw = serialize_compact_inner(ver, lock, &inputs, &outputs, false);
+    let total_raw = serialize_compact_inner(ver, lock, &inputs, &outputs, true);
+    let base_size = base_raw.len() as u64;
+    let total_size = total_raw.len() as u64;
+    let weight = base_size.saturating_mul(3).saturating_add(total_size);
+    let vsize = (weight + 3) / 4;
+    let vin_count = inputs.len();
+    let vout_count = outputs.len();
+
+    if vsize > limits.max_tx_vsize {
+        return Ok((false, Some("tx_vsize_exceeds_limit".to_string()), None));
+    }
+    if vsize < limits.min_tx_vsize {
+        return Ok((false, Some("tx_vsize_below_min".to_string()), None));
+    }
+    if weight > limits.max_tx_weight {
+        return Ok((false, Some("tx_weight_exceeds_limit".to_string()), None));
+    }
+    if weight < limits.min_tx_weight {
+        return Ok((false, Some("tx_weight_below_min".to_string()), None));
+    }
+    if vin_count > limits.max_tx_inputs {
+        return Ok((false, Some("tx_inputs_exceed_limit".to_string()), None));
+    }
+    if vout_count > limits.max_tx_outputs {
+        return Ok((false, Some("tx_outputs_exceed_limit".to_string()), None));
+    }
+
     if inputs.is_empty() {
         return Ok((false, Some("missing_inputs".to_string()), None));
     }
@@ -439,7 +531,7 @@ pub fn validate_tx_p2wpkh_compact<'py>(
         };
         if entry.is_coinbase {
             let confs = spend_height as i64 - entry.height;
-            if confs < coinbase_maturity as i64 {
+            if confs < limits.coinbase_maturity as i64 {
                 return Ok((false, Some("coinbase_immature".to_string()), None));
             }
         }
@@ -502,15 +594,21 @@ pub fn validate_tx_p2wpkh_compact<'py>(
             Err(_) => return Ok((false, Some("bad_der".to_string()), None)),
         };
         let mut norm = sig;
-        norm.normalize_s();
-        if norm != sig {
-            return Ok((false, Some("high_s".to_string()), None));
+        if limits.enforce_low_s {
+            norm.normalize_s();
+            if norm != sig {
+                return Ok((false, Some("high_s".to_string()), None));
+            }
         }
         if secp.verify_ecdsa(&msg, &norm, &pk).is_err() {
             return Ok((false, Some("ecdsa_verify_failed".to_string()), None));
         }
 
         sigops = sigops.saturating_add(1);
+    }
+
+    if sigops > limits.max_sigops_per_tx {
+        return Ok((false, Some("tx_sigops_limit".to_string()), None));
     }
 
     let mut output_sum: u128 = 0;

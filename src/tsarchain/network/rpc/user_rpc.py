@@ -187,7 +187,10 @@ def handle_user_rpc(
         amount    = message.get("amount")
         fee_rate = int(message.get("fee_rate", CFG.DEFAULT_FEE_RATE_SATVB))
         fee_rate = max(CFG.MIN_FEE_RATE_SATVB, min(fee_rate, CFG.MAX_FEE_RATE_SATVB))
-        tpl = self._handle_create_tx(from_addr, to_addr, amount, fee_rate)
+        try:
+            tpl = self._handle_create_tx(from_addr, to_addr, amount, fee_rate)
+        except Exception as exc:
+            return {"error": str(exc) or "create_tx_failed"}
         
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
@@ -1148,7 +1151,10 @@ def handle_user_rpc(
         if not from_addr or not outputs:
             return {"error": "missing from/outputs"}
         
-        tpl = self._handle_create_tx_multi(from_addr, outputs, fee_rate, force_inputs)
+        try:
+            tpl = self._handle_create_tx_multi(from_addr, outputs, fee_rate, force_inputs)
+        except Exception as exc:
+            return {"error": str(exc) or "create_tx_multi_failed"}
         
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()

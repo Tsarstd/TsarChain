@@ -325,6 +325,20 @@ def serialize_tx(tx, include_witness: bool = True) -> bytes:
 def serialize_tx_for_txid(tx) -> bytes:
     return serialize_tx(tx, include_witness=False)
 
+
+def compute_tx_weight_vsize(tx) -> tuple[int, int, int, int]:
+    """
+    Returns (weight, vsize, base_size, total_size) using witness/non-witness serialization.
+    weight = base*3 + total (BIP141); vsize = ceil(weight/4).
+    """
+    raw_base = serialize_tx(tx, include_witness=False)
+    raw_full = serialize_tx(tx, include_witness=True)
+    base_size = len(raw_base)
+    total_size = len(raw_full)
+    weight = (base_size * 3) + total_size
+    vsize = (weight + 3) // 4
+    return weight, vsize, base_size, total_size
+
 # ========== Convenience: detect p2wpkh from scriptPubKey ==========
 
 def is_p2wpkh_script(script_bytes: bytes) -> bool:
@@ -719,6 +733,9 @@ def native_validate_block_txs(block_dict: dict, utxo_snapshot: dict, spend_heigh
 def native_validate_block_txs_compact(block_txs, utxo_items, spend_height: int, options: dict):
     return _native_validate_block_txs_compact(block_txs, utxo_items, int(spend_height), options)
 
+def native_validate_tx_p2wpkh_compact(tx_tuple, utxo_items, spend_height: int, options: dict):
+    return _native_validate_tx_p2wpkh_compact(tx_tuple, utxo_items, int(spend_height), options)
+
 def native_utxo_build_ops_compact(block_txs, spend_height: int):
     return _native_utxo_build_ops_compact(block_txs, int(spend_height))
 
@@ -786,9 +803,6 @@ def tx_to_compact_tuple(tx) -> tuple:
     tx_tuple = (version, locktime, inputs_c, outputs_c, b"\x00" * 32, bool(getattr(tx, "is_coinbase", False)))
     txid = txid_from_compact(tx_tuple)
     return (version, locktime, inputs_c, outputs_c, txid, bool(getattr(tx, "is_coinbase", False)))
-
-def native_validate_tx_p2wpkh_compact(tx_tuple, utxo_items, spend_height: int, coinbase_maturity: int):
-    return _native_validate_tx_p2wpkh_compact(tx_tuple, utxo_items, int(spend_height), int(coinbase_maturity))
 
 # =======================
 # Mining (RandomX)

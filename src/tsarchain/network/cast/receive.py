@@ -175,6 +175,12 @@ class ReceiveMixin:
             "coinbase_maturity": int(CFG.COINBASE_MATURITY),
             "max_sigops_per_tx": int(CFG.MAX_SIGOPS_PER_TX),
             "max_sigops_per_block": int(CFG.MAX_SIGOPS_PER_BLOCK),
+            "max_tx_vsize": int(CFG.MAX_TX_VSIZE),
+            "min_tx_vsize": int(CFG.MIN_TX_VSIZE),
+            "max_tx_weight": int(CFG.MAX_TX_WEIGHT),
+            "min_tx_weight": int(CFG.MIN_TX_WEIGHT),
+            "max_tx_inputs": int(CFG.MAX_TX_INPUTS),
+            "max_tx_outputs": int(CFG.MAX_TX_OUTPUTS),
             "enforce_low_s": True,
         }
         try:

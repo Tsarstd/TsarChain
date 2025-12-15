@@ -125,6 +125,7 @@ store.copy("/tmp/tsar.db.backup", compact=True)  # LMDB only
 
 ## Changelog
 
+- **0.2.0** - Added consensus TX guardrails: vsize/weight and max inputs/outputs enforced in native validators (block + mempool P2WPKH), options expanded to carry new limits from Python, and debug logs trimmed. Aligns with TsarChain config MIN/MAX TX limits.
 - **0.1.9** - SecureChannel gains automatic AEAD rekey per-message epoch (configurable via `P2P_REKEY_EVERY_MSG`); epoch keys are derived from the HKDF root with sliding TTL/msg windows so long-lived links rekey smoothly without dropping the connection.
 - **0.1.8** - Native RandomX miner now reports hashrate via `progress_queue` and respects `stop_event`/Ctrl+C using a stop watcher inside Rust threads; mining cancellation no longer waits for a full block and remains verified with light hash check in Python.
 - **0.1.7** - Added native mempool validator for P2WPKH (no Python fallback) and native UTXO snapshot streaming for full-sync (chunked LMDB read). full-sync uses native streaming when `KV_BACKEND=lmdb`.

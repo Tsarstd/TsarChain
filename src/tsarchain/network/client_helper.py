@@ -9,7 +9,7 @@ from bech32 import convertbits, bech32_decode, bech32_encode
 
 # ---------------- Local Project ----------------
 from ..core.tx import Tx, TxIn, TxOut
-from ..utils.helpers import Script, OP_RETURN, last_pushdata
+from ..utils.helpers import Script, OP_RETURN, last_pushdata, compute_tx_weight_vsize
 from ..contracts import graffiti as GRAFFITI
 from .protocol import send_message, recv_message,build_envelope, SecureChannel
 from ..utils import config as CFG
@@ -791,6 +791,28 @@ def _addr_to_spk(self, addr: str) -> Script:
 def _estimate_tx_size(self, n_inputs, n_outputs, segwit=True):
     return CFG.TX_BASE_VBYTES + n_inputs * CFG.SEGWIT_INPUT_VBYTES + n_outputs * CFG.SEGWIT_OUTPUT_VBYTES
 
+def _check_tx_limits(self, tx_obj: Tx, ctx: str = "rpc_create"):
+    weight, vsize, base_size, total_size = compute_tx_weight_vsize(tx_obj)
+    vin = len(getattr(tx_obj, "inputs", []) or [])
+    vout = len(getattr(tx_obj, "outputs", []) or [])
+    log.debug(
+        "[tx_limits] ctx=%s vsize=%s weight=%s base=%s total=%s vin=%s vout=%s",
+        ctx, vsize, weight, base_size, total_size, vin, vout,
+    )
+
+    if vsize > int(CFG.MAX_TX_VSIZE):
+        raise ValueError("tx_vsize_exceeds_limit")
+    if vsize < int(CFG.MIN_TX_VSIZE):
+        raise ValueError("tx_vsize_below_min")
+    if weight > int(CFG.MAX_TX_WEIGHT):
+        raise ValueError("tx_weight_exceeds_limit")
+    if weight < int(CFG.MIN_TX_WEIGHT):
+        raise ValueError("tx_weight_below_min")
+    if vin > int(CFG.MAX_TX_INPUTS):
+        raise ValueError("tx_inputs_exceed_limit")
+    if vout > int(CFG.MAX_TX_OUTPUTS):
+        raise ValueError("tx_outputs_exceed_limit")
+
 def _select_utxos_for(self, utxos: list[dict], target_amount_sat: int, fee_rate: int):
     utxos_dict = {}
     for u in utxos:
@@ -872,6 +894,7 @@ def _handle_create_tx(self, from_addr, to_addr, amount, fee_rate):
     if change >= CFG.DUST_THRESHOLD_SAT:
         outs.append(TxOut(change, from_spk))
     tx = Tx(version=1, inputs=ins, outputs=outs, locktime=0, is_coinbase=False)
+    _check_tx_limits(self, tx, ctx="create_single")
 
     input_meta = [{
         "txid": u["txid"],
@@ -1053,6 +1076,7 @@ def _handle_create_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, 
     outs.extend(opret_outs)
 
     tx = Tx(version=1, inputs=ins, outputs=outs, locktime=0, is_coinbase=False)
+    _check_tx_limits(self, tx, ctx="create_multi")
     input_meta = [{
         "txid": u["txid"],
         "index": u["index"],

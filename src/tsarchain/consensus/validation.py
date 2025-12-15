@@ -215,6 +215,33 @@ class ValidationMixin:
             if len(raw_full) > int(CFG.MAX_BLOCK_BYTES):
                 self._last_block_validation_error = "tx_too_large"
                 return False
+            try:
+                weight, vsize, _base_size, _total_size = H.compute_tx_weight_vsize(tx)
+            except Exception:
+                log.exception("[validate_block] weight_calc_failed txid=%s height=%s", getattr(tx, "txid", None), getattr(block, "height", None))
+                self._last_block_validation_error = "tx_weight_calc_failed"
+                return False
+            
+            vin = len(getattr(tx, "inputs", []) or [])
+            vout = len(getattr(tx, "outputs", []) or [])
+            if vsize > int(CFG.MAX_TX_VSIZE):
+                self._last_block_validation_error = "tx_vsize_exceeds_limit"
+                return False
+            if vsize < int(CFG.MIN_TX_VSIZE):
+                self._last_block_validation_error = "tx_vsize_below_min"
+                return False
+            if weight > int(CFG.MAX_TX_WEIGHT):
+                self._last_block_validation_error = "tx_weight_exceeds_limit"
+                return False
+            if weight < int(CFG.MIN_TX_WEIGHT):
+                self._last_block_validation_error = "tx_weight_below_min"
+                return False
+            if vin > int(CFG.MAX_TX_INPUTS):
+                self._last_block_validation_error = "tx_inputs_exceed_limit"
+                return False
+            if vout > int(CFG.MAX_TX_OUTPUTS):
+                self._last_block_validation_error = "tx_outputs_exceed_limit"
+                return False
 
         # Graffiti rule: maximum one POST per block; if there is a POST, the block_id must match its art_id.
         graffiti_posts = 0
@@ -506,6 +533,12 @@ class ValidationMixin:
             "coinbase_maturity": int(CFG.COINBASE_MATURITY),
             "max_sigops_per_tx": int(CFG.MAX_SIGOPS_PER_TX),
             "max_sigops_per_block": int(CFG.MAX_SIGOPS_PER_BLOCK),
+            "max_tx_vsize": int(CFG.MAX_TX_VSIZE),
+            "min_tx_vsize": int(CFG.MIN_TX_VSIZE),
+            "max_tx_weight": int(CFG.MAX_TX_WEIGHT),
+            "min_tx_weight": int(CFG.MIN_TX_WEIGHT),
+            "max_tx_inputs": int(CFG.MAX_TX_INPUTS),
+            "max_tx_outputs": int(CFG.MAX_TX_OUTPUTS),
             "enforce_low_s": True,
         }
         payload_txs, payload_utxo = _build_block_payload_compact(txs, snapshot) or (None, None)

@@ -41,6 +41,12 @@ struct ValidationOptions {
     coinbase_maturity: i64,
     max_sigops_per_tx: u32,
     max_sigops_per_block: u32,
+    max_tx_vsize: u64,
+    min_tx_vsize: u64,
+    max_tx_weight: u64,
+    min_tx_weight: u64,
+    max_tx_inputs: usize,
+    max_tx_outputs: usize,
     enforce_low_s: bool,
 }
 
@@ -281,6 +287,49 @@ fn bip143_sighash_from_parts(
     Ok(sha256d(&pre))
 }
 
+fn tx_parts_size(tx: &TxParts, include_witness: bool) -> usize {
+    let mut buf = Vec::with_capacity(4 + tx.inputs.len().saturating_mul(60) + tx.outputs.len().saturating_mul(40));
+    buf.extend_from_slice(&tx.version.to_le_bytes());
+    let has_wit = include_witness && tx.inputs.iter().any(|i| !i.witness.is_empty());
+    if has_wit {
+        buf.push(0x00);
+        buf.push(0x01);
+    }
+    encode_varint(tx.inputs.len() as u64, &mut buf);
+    for inp in &tx.inputs {
+        buf.extend_from_slice(&inp.txid_le);
+        buf.extend_from_slice(&inp.vout.to_le_bytes());
+        encode_varint(inp.script_sig.len() as u64, &mut buf);
+        buf.extend_from_slice(&inp.script_sig);
+        buf.extend_from_slice(&inp.sequence.to_le_bytes());
+    }
+    encode_varint(tx.outputs.len() as u64, &mut buf);
+    for outp in &tx.outputs {
+        buf.extend_from_slice(&outp.amount.to_le_bytes());
+        encode_varint(outp.script_pubkey.len() as u64, &mut buf);
+        buf.extend_from_slice(&outp.script_pubkey);
+    }
+    if has_wit {
+        for inp in &tx.inputs {
+            encode_varint(inp.witness.len() as u64, &mut buf);
+            for w in &inp.witness {
+                encode_varint(w.len() as u64, &mut buf);
+                buf.extend_from_slice(w);
+            }
+        }
+    }
+    buf.extend_from_slice(&tx.locktime.to_le_bytes());
+    buf.len()
+}
+
+fn tx_parts_weight_vsize(tx: &TxParts) -> (u64, u64, u64, u64) {
+    let base = tx_parts_size(tx, false) as u64;
+    let total = tx_parts_size(tx, true) as u64;
+    let weight = base.saturating_mul(3).saturating_add(total);
+    let vsize = (weight + 3) / 4;
+    (weight, vsize, base, total)
+}
+
 fn get_required<'py>(
     dict: &Bound<'py, PyDict>,
     key: &str,
@@ -394,6 +443,30 @@ fn parse_validation_options(opts: &Bound<'_, PyDict>) -> Result<ValidationOption
     )?
     .extract::<u32>()
     .map_err(|_| "opts_invalid_max_sigops_per_block".to_string())?;
+    let max_tx_vsize =
+        get_required(opts, "max_tx_vsize", "opts_missing_max_tx_vsize")?
+            .extract::<u64>()
+            .map_err(|_| "opts_invalid_max_tx_vsize".to_string())?;
+    let min_tx_vsize =
+        get_required(opts, "min_tx_vsize", "opts_missing_min_tx_vsize")?
+            .extract::<u64>()
+            .map_err(|_| "opts_invalid_min_tx_vsize".to_string())?;
+    let max_tx_weight =
+        get_required(opts, "max_tx_weight", "opts_missing_max_tx_weight")?
+            .extract::<u64>()
+            .map_err(|_| "opts_invalid_max_tx_weight".to_string())?;
+    let min_tx_weight =
+        get_required(opts, "min_tx_weight", "opts_missing_min_tx_weight")?
+            .extract::<u64>()
+            .map_err(|_| "opts_invalid_min_tx_weight".to_string())?;
+    let max_tx_inputs =
+        get_required(opts, "max_tx_inputs", "opts_missing_max_tx_inputs")?
+            .extract::<usize>()
+            .map_err(|_| "opts_invalid_max_tx_inputs".to_string())?;
+    let max_tx_outputs =
+        get_required(opts, "max_tx_outputs", "opts_missing_max_tx_outputs")?
+            .extract::<usize>()
+            .map_err(|_| "opts_invalid_max_tx_outputs".to_string())?;
     let enforce_low_s = match get_optional(opts, "enforce_low_s")? {
         Some(v) => v
             .extract()
@@ -404,6 +477,12 @@ fn parse_validation_options(opts: &Bound<'_, PyDict>) -> Result<ValidationOption
         coinbase_maturity,
         max_sigops_per_tx,
         max_sigops_per_block,
+        max_tx_vsize,
+        min_tx_vsize,
+        max_tx_weight,
+        min_tx_weight,
+        max_tx_inputs,
+        max_tx_outputs,
         enforce_low_s,
     })
 }
@@ -545,6 +624,29 @@ fn validate_transaction_parts(
     opts: &ValidationOptions,
     secp: &Secp256k1<secp256k1::VerifyOnly>,
 ) -> Result<(u64, u32), String> {
+    let (weight, vsize, _base_size, _total_size) = tx_parts_weight_vsize(tx);
+    let vin_count = tx.inputs.len();
+    let vout_count = tx.outputs.len();
+
+    if vsize > opts.max_tx_vsize {
+        return Err("tx_vsize_exceeds_limit".to_string());
+    }
+    if vsize < opts.min_tx_vsize {
+        return Err("tx_vsize_below_min".to_string());
+    }
+    if weight > opts.max_tx_weight {
+        return Err("tx_weight_exceeds_limit".to_string());
+    }
+    if weight < opts.min_tx_weight {
+        return Err("tx_weight_below_min".to_string());
+    }
+    if vin_count > opts.max_tx_inputs {
+        return Err("tx_inputs_exceed_limit".to_string());
+    }
+    if vout_count > opts.max_tx_outputs {
+        return Err("tx_outputs_exceed_limit".to_string());
+    }
+
     let mut seen_prevouts: AHashSet<PrevoutKey> = AHashSet::with_capacity(tx.inputs.len());
     let mut input_sum: u128 = 0;
     let mut sigops_tx: u32 = 0;

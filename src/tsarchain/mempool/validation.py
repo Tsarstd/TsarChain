@@ -13,7 +13,13 @@ from ..storage.utxo import UTXODB
 from .scripts import get_utxo_script_bytes
 from ..contracts import graffiti as GRAFFITI
 from ..contracts.graffiti_registry import GraffitiRegistry
-from ..utils.helpers import is_p2wpkh, is_p2wsh, tx_to_compact_tuple, native_validate_tx_p2wpkh_compact
+from ..utils.helpers import (
+    is_p2wpkh,
+    is_p2wsh,
+    tx_to_compact_tuple,
+    native_validate_tx_p2wpkh_compact,
+    compute_tx_weight_vsize,
+)
 from bech32 import bech32_encode, convertbits
 from ..utils import config as CFG
 
@@ -149,6 +155,35 @@ class TxMempoolValidator:
         if getattr(tx, "is_coinbase", False):
             return False
 
+        # ---- TX size / io guard ----
+        try:
+            weight, vsize, _base_size, _total_size = compute_tx_weight_vsize(tx)
+        except Exception:
+            log.exception("[validate_transaction] weight_calc_failed txid=%s", getattr(tx, "txid", None))
+            self.last_error_reason = "tx_weight_calc_failed"
+            return False
+
+        vin = len(getattr(tx, "inputs", []) or [])
+        vout = len(getattr(tx, "outputs", []) or [])
+        if vsize > int(CFG.MAX_TX_VSIZE):
+            self.last_error_reason = "tx_vsize_exceeds_limit"
+            return False
+        if vsize < int(CFG.MIN_TX_VSIZE):
+            self.last_error_reason = "tx_vsize_below_min"
+            return False
+        if weight > int(CFG.MAX_TX_WEIGHT):
+            self.last_error_reason = "tx_weight_exceeds_limit"
+            return False
+        if weight < int(CFG.MIN_TX_WEIGHT):
+            self.last_error_reason = "tx_weight_below_min"
+            return False
+        if vin > int(CFG.MAX_TX_INPUTS):
+            self.last_error_reason = "tx_inputs_exceed_limit"
+            return False
+        if vout > int(CFG.MAX_TX_OUTPUTS):
+            self.last_error_reason = "tx_outputs_exceed_limit"
+            return False
+
         current_height = (spend_at_height if spend_at_height is not None else self.utxo._get_tip_height_from_state())
         try:
             # ---- Special handling for Graffiti PAYOUT (P2WSH pool) ----
@@ -276,11 +311,23 @@ class TxMempoolValidator:
 
             compact_tx = tx_to_compact_tuple(tx)
             utxo_items = self._utxo_snapshot_to_items(utxo_set)
+            opts = {
+                "coinbase_maturity": int(CFG.COINBASE_MATURITY),
+                "max_sigops_per_tx": int(CFG.MAX_SIGOPS_PER_TX),
+                "max_sigops_per_block": int(CFG.MAX_SIGOPS_PER_BLOCK),
+                "max_tx_vsize": int(CFG.MAX_TX_VSIZE),
+                "min_tx_vsize": int(CFG.MIN_TX_VSIZE),
+                "max_tx_weight": int(CFG.MAX_TX_WEIGHT),
+                "min_tx_weight": int(CFG.MIN_TX_WEIGHT),
+                "max_tx_inputs": int(CFG.MAX_TX_INPUTS),
+                "max_tx_outputs": int(CFG.MAX_TX_OUTPUTS),
+                "enforce_low_s": True,
+            }
             ok, reason, fee = native_validate_tx_p2wpkh_compact(
                 compact_tx,
                 utxo_items,
                 int(current_height if spend_at_height is None else spend_at_height),
-                int(CFG.COINBASE_MATURITY),
+                opts,
             )
             if ok:
                 tx.fee = int(fee or 0)
