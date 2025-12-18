@@ -9,8 +9,9 @@ from decimal import Decimal, ROUND_DOWN
 from typing import Any, Dict, Optional
 from tkinter import ttk, filedialog, messagebox, StringVar
 import tkinter as tk
+from PIL import Image, ImageTk
 
-from ...contracts.graffiti import calc_comment_split, derive_pool_address
+from ...contracts.graffiti import calc_comment_split, calc_upload_fee_sats, derive_pool_address
 from ..services.graffiti_service import (
     build_comment_plan,
     build_post_plan,
@@ -21,6 +22,7 @@ from ..services.graffiti_service import (
     select_upload_storers,
     upload_graffiti,
 )
+from ..services.media import TkVLCPlayer
 from ..theme import GraffitiTheme, lighten
 from ...utils import config as CFG
 
@@ -52,7 +54,13 @@ class GraffitiTab(ttk.Frame):
         self._upload_ctx: dict[str, Any] = {}
         self.creator_var = StringVar()
         self.creator_cb: ttk.Combobox | None = None
-        
+        self.cost_info_var = StringVar(value="Pilih file untuk menampilkan biaya & detail.")
+        self.preview_status_var = StringVar(value="Belum ada preview.")
+        self.preview_frame: tk.Frame | None = None
+        self._preview_img_ref = None
+        self._video_player: TkVLCPlayer | None = None
+        self._catalog_map_local: dict[str, Dict[str, Any]] = {}
+
         self.post_send_btn: ttk.Button | None = None
         self._post_plan: Optional[Dict[str, Any]] = None
         self.catalog_posts: list[Dict[str, Any]] = []
@@ -120,13 +128,18 @@ class GraffitiTab(ttk.Frame):
         root = ttk.Frame(self, padding=12, style="Tsar.TFrame")
         root.pack(fill="both", expand=True)
 
-        # Header
-        ttk.Label(root, text="Graffiti Uploader (MVP)", style="Tsar.Header.TLabel").pack(anchor="w")
+        header_row = ttk.Frame(root, style="Tsar.TFrame")
+        header_row.pack(fill="x")
+        ttk.Label(header_row, text="Graffiti Uploader", style="Tsar.Header.TLabel").pack(side=tk.LEFT, anchor="w")
+        ttk.Button(header_row, text="View Catalog", style="Tsar.Secondary.TButton", command=self._open_creator_catalog)\
+            .pack(side=tk.RIGHT, padx=4)
+        ttk.Label(root, text="Alur: pilih wallet -> pilih & preview file -> upload & sign.", style="Tsar.Card.Mono.TLabel")\
+            .pack(anchor="w", pady=(2, 8))
 
-        # Creator wallet
-        creator_fr = ttk.LabelFrame(root, text="Creator Wallet", style="Tsar.TLabelframe")
-        creator_fr.pack(fill="x", pady=(6, 6))
-        ttk.Label(creator_fr, text="Use this address to pay the POST fee:", style="Tsar.Card.Mono.TLabel")\
+        # 1) Creator wallet
+        creator_fr = ttk.LabelFrame(root, text="1) Wallet Creator", style="Tsar.TLabelframe")
+        creator_fr.pack(fill="x", pady=(4, 6))
+        ttk.Label(creator_fr, text="Gunakan alamat ini untuk membayar POST fee:", style="Tsar.Card.Mono.TLabel")\
             .grid(row=0, column=0, padx=8, pady=(8, 2), sticky="w")
         self.creator_cb = ttk.Combobox(
             creator_fr,
@@ -139,21 +152,36 @@ class GraffitiTab(ttk.Frame):
         ttk.Button(creator_fr, text="Refresh wallets", style="Tsar.Secondary.TButton", command=self._refresh_creator_wallets)\
             .grid(row=0, column=2, padx=6, pady=(8, 2), sticky="e")
 
-        # File
-        file_fr = ttk.LabelFrame(root, text="File", style="Tsar.TLabelframe")
-        file_fr.pack(fill="x", pady=(6, 6))
-        self.file_var = StringVar(value="(no file)")
+        # 2) File + Preview
+        file_fr = ttk.LabelFrame(root, text="2) Media & Preview", style="Tsar.TLabelframe")
+        file_fr.pack(fill="both", expand=True, pady=(6, 6))
+        file_fr.columnconfigure(0, weight=1)
+        file_fr.columnconfigure(1, weight=0)
+
+        self.file_var = StringVar(value="(belum ada file)")
         ttk.Label(file_fr, textvariable=self.file_var, style="Tsar.Card.Mono.TLabel").grid(row=0, column=0, padx=8, pady=(8, 2), sticky="w")
-        ttk.Button(file_fr, text="Choose File...", style="Tsar.TButton", command=self.pick_file)\
+        ttk.Button(file_fr, text="Pilih File...", style="Tsar.TButton", command=self.pick_file)\
             .grid(row=0, column=1, padx=8, pady=(8, 2), sticky="e")
 
         self.meta_var = StringVar(value="size: -, mime: -, sha256: -")
         ttk.Label(file_fr, textvariable=self.meta_var, style="Tsar.Card.Mono.TLabel")\
-            .grid(row=1, column=0, columnspan=2, padx=8, pady=(0, 8), sticky="w")
-        # Upload + Broadcast (combined)
-        post_fr = ttk.LabelFrame(root, text="Upload + Broadcast POST", style="Tsar.TLabelframe")
-        post_fr.pack(fill="x", pady=(6, 6))
-        self.post_info_var = StringVar(value="Select file, then click to upload & broadcast.")
+            .grid(row=1, column=0, columnspan=2, padx=8, pady=(0, 4), sticky="w")
+        ttk.Label(file_fr, textvariable=self.cost_info_var, style="Tsar.Card.Mono.TLabel")\
+            .grid(row=2, column=0, columnspan=2, padx=8, pady=(0, 6), sticky="w")
+
+        preview_shell = ttk.Frame(file_fr, style="Tsar.Card.TFrame")
+        preview_shell.grid(row=3, column=0, columnspan=2, sticky="nsew", padx=8, pady=(2, 8))
+        preview_shell.rowconfigure(0, weight=1)
+        preview_shell.columnconfigure(0, weight=1)
+        self.preview_frame = tk.Frame(preview_shell, background=self.theme.card_bg, height=260)
+        self.preview_frame.grid(row=0, column=0, sticky="nsew")
+        ttk.Label(self.preview_frame, textvariable=self.preview_status_var, style="Tsar.Card.Mono.TLabel")\
+            .pack(anchor="center", pady=8)
+
+        # 3) Upload & Broadcast
+        post_fr = ttk.LabelFrame(root, text="3) Upload & Broadcast POST", style="Tsar.TLabelframe")
+        post_fr.pack(fill="x", pady=(2, 4))
+        self.post_info_var = StringVar(value="Pilih file, lalu upload. Password akan diminta saat sign.")
         ttk.Label(post_fr, textvariable=self.post_info_var, style="Tsar.Card.Mono.TLabel")\
             .grid(row=0, column=0, columnspan=3, padx=8, pady=(8, 4), sticky="w")
         self.post_send_btn = ttk.Button(
@@ -164,12 +192,12 @@ class GraffitiTab(ttk.Frame):
             command=self._start_upload_and_broadcast,
         )
         self.post_send_btn.grid(row=1, column=0, padx=8, pady=(4, 8), sticky="w")
-        ttk.Label(post_fr, text="Send tab is also prefilled if you prefer manual review.", style="Tsar.Card.Mono.TLabel")\
+        ttk.Label(post_fr, text="Send tab akan di-prefill untuk review manual bila perlu.", style="Tsar.Card.Mono.TLabel")\
             .grid(row=1, column=1, padx=8, pady=(4, 8), sticky="e")
         self.pbar = ttk.Progressbar(
             post_fr,
             mode="determinate",
-            length=240,
+            length=320,
             style="Horizontal.Tsar.TProgressbar",
             maximum=100,
             value=0,
@@ -178,126 +206,6 @@ class GraffitiTab(ttk.Frame):
         self.receipt_var = StringVar(value="receipt: -")
         ttk.Label(post_fr, textvariable=self.receipt_var, style="Tsar.Card.Mono.TLabel")\
             .grid(row=3, column=0, columnspan=3, padx=8, pady=(0, 8), sticky="w")
-
-        # Explore & Comment
-        explore_fr = ttk.LabelFrame(root, text="Explore & Comment", style="Tsar.TLabelframe")
-        explore_fr.pack(fill="both", expand=True, pady=(6, 0))
-
-        left = ttk.Frame(explore_fr, style="Tsar.Card.TFrame")
-        left.pack(side=tk.LEFT, fill="both", expand=True, padx=(0, 8))
-        left_top = ttk.Frame(left, style="Tsar.Card.TFrame")
-        left_top.pack(fill="x")
-        ttk.Button(left_top, text="Refresh Catalog", style="Tsar.TButton", command=self._refresh_catalog).pack(side=tk.LEFT, padx=4, pady=4)
-        ttk.Label(left_top, textvariable=self.catalog_status_var, style="Tsar.Card.Mono.TLabel").pack(side=tk.LEFT, padx=4)
-        tree_holder = ttk.Frame(left, style="Tsar.Card.TFrame")
-        tree_holder.pack(fill="both", expand=True, padx=4, pady=4)
-        cols = ("art_id", "creator", "height", "size")
-        self.catalog_tree = ttk.Treeview(tree_holder, columns=cols, show="headings", height=6)
-        for c, w in [("art_id", 160), ("creator", 120), ("height", 70), ("size", 80)]:
-            self.catalog_tree.heading(c, text=c)
-            self.catalog_tree.column(c, width=w, stretch=(c == "art_id"))
-        catalog_scroll = ttk.Scrollbar(tree_holder, orient=tk.VERTICAL, command=self.catalog_tree.yview)
-        self.catalog_tree.configure(yscrollcommand=catalog_scroll.set)
-        self.catalog_tree.pack(side=tk.LEFT, fill="both", expand=True)
-        catalog_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        self.catalog_tree.bind("<<TreeviewSelect>>", lambda _e: self._on_catalog_select())
-
-        right = ttk.Frame(explore_fr, style="Tsar.Card.TFrame")
-        right.pack(side=tk.LEFT, fill="both", expand=True)
-        
-        art_info_frame = ttk.Frame(right, style="Tsar.Card.TFrame")
-        art_info_frame.pack(fill="x", padx=4, pady=(4, 2))
-        art_info_box = tk.Text(art_info_frame, height=4, wrap="word", borderwidth=0, background=self.theme.card_bg,
-                               foreground=self.theme.fg, font=("Consolas", 10))
-        art_info_box.pack(fill="x")
-        art_info_box.configure(state="disabled")
-        self.art_info_box = art_info_box
-
-        pane = ttk.Panedwindow(right, orient=tk.VERTICAL)
-        pane.pack(fill="both", expand=True, padx=4, pady=(0, 4))
-
-        notebook_holder = ttk.Frame(pane, style="Tsar.Card.TFrame")
-        pane.add(notebook_holder, weight=3)
-        notebook = ttk.Notebook(notebook_holder)
-        notebook.pack(fill="both", expand=True)
-
-        comments_tab = ttk.Frame(notebook)
-        notebook.add(comments_tab, text="Comments")
-        cols_c = ("time", "from", "amt", "excerpt")
-        comment_wrap = ttk.Frame(comments_tab)
-        comment_wrap.pack(fill="both", expand=True, padx=4, pady=4)
-        self.comment_tree = ttk.Treeview(comment_wrap, columns=cols_c, show="headings", height=4)
-        for c, w in [("time", 110), ("from", 130), ("amt", 80), ("excerpt", 220)]:
-            self.comment_tree.heading(c, text=c)
-            self.comment_tree.column(c, width=w, stretch=(c == "excerpt"))
-        comment_scroll = ttk.Scrollbar(comment_wrap, orient=tk.VERTICAL, command=self.comment_tree.yview)
-        self.comment_tree.configure(yscrollcommand=comment_scroll.set)
-        self.comment_tree.pack(side=tk.LEFT, fill="both", expand=True)
-        comment_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        ttk.Button(comments_tab, text="Refresh", style="Tsar.Secondary.TButton",
-                   command=self._refresh_current_comments).pack(anchor="e", padx=6, pady=(0, 4))
-
-        payouts_tab = ttk.Frame(notebook)
-        notebook.add(payouts_tab, text="Payouts")
-        cols_p = ("height", "amount", "recipient", "txid")
-        payout_wrap = ttk.Frame(payouts_tab)
-        payout_wrap.pack(fill="both", expand=True, padx=4, pady=4)
-        self.payout_tree = ttk.Treeview(payout_wrap, columns=cols_p, show="headings", height=3)
-        for c, w in [("height", 70), ("amount", 110), ("recipient", 140), ("txid", 220)]:
-            self.payout_tree.heading(c, text=c)
-            self.payout_tree.column(c, width=w, stretch=(c == "txid"))
-        payout_scroll = ttk.Scrollbar(payout_wrap, orient=tk.VERTICAL, command=self.payout_tree.yview)
-        self.payout_tree.configure(yscrollcommand=payout_scroll.set)
-        self.payout_tree.pack(side=tk.LEFT, fill="both", expand=True)
-        payout_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        ttk.Button(payouts_tab, text="Refresh", style="Tsar.Secondary.TButton",
-                   command=lambda: self._refresh_payouts_for((self._selected_art or {}).get("art_id"))).pack(anchor="e", padx=6, pady=(0, 2))
-        ttk.Label(payouts_tab, textvariable=self.payout_status_var, style="Tsar.Card.Mono.TLabel").pack(anchor="w", padx=6, pady=(0, 4))
-
-        form_holder = ttk.Frame(pane, style="Tsar.Card.TFrame")
-        pane.add(form_holder, weight=1)
-        form = ttk.LabelFrame(form_holder, text="Write Comment", style="Tsar.TLabelframe")
-        form.pack(fill="both", expand=True, padx=4, pady=4)
-        row1 = ttk.Frame(form, style="Tsar.Card.TFrame"); row1.pack(fill="x", padx=6, pady=(4, 2))
-        ttk.Label(row1, text="Commenter Wallet:", style="Tsar.Card.TLabel").pack(side=tk.LEFT)
-        
-        self.comment_wallet_cb = ttk.Combobox(row1, textvariable=self.comment_wallet_var, state="readonly", width=36, style="Tsar.TCombobox")
-        self.comment_wallet_cb.pack(side=tk.LEFT, padx=6, fill="x", expand=True)
-        row2 = ttk.Frame(form, style="Tsar.Card.TFrame"); row2.pack(fill="x", padx=6, pady=(2, 2))
-        ttk.Label(row2, text="Base Amount (TSAR):", width=18, style="Tsar.Card.TLabel").pack(side=tk.LEFT)
-        
-        amt_entry = ttk.Entry(row2, textvariable=self.comment_amount_var, width=14, style="Tsar.TEntry")
-        amt_entry.pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Label(row2, text="Tip (TSAR):", style="Tsar.Card.TLabel").pack(side=tk.LEFT)
-        
-        tip_entry = ttk.Entry(row2, textvariable=self.comment_tip_var, width=10, style="Tsar.TEntry")
-        tip_entry.pack(side=tk.LEFT)
-        self.comment_split_var.set("")
-        ttk.Label(form, textvariable=self.comment_split_var, style="Tsar.Card.Mono.TLabel").pack(anchor="w", padx=6, pady=(0, 2))
-        self.comment_text = tk.Text(form, height=3, wrap="word")
-        self.comment_text.pack(fill="x", padx=6, pady=(2, 2))
-        btn_row = ttk.Frame(form, style="Tsar.Card.TFrame"); btn_row.pack(fill="x", padx=6, pady=(2, 4))
-        
-        self.comment_send_btn = ttk.Button(btn_row, text="Comment", style="Tsar.TButton",
-                                           state="disabled", command=self._broadcast_comment_tx)
-        self.comment_send_btn.pack(side=tk.LEFT)
-        
-        ttk.Label(form, textvariable=self.comment_status_var, style="Tsar.Card.Mono.TLabel").pack(anchor="w", padx=6, pady=(2, 0))
-
-        self.comment_amount_var.set(self._format_tsar(CFG.GRAFFITI_COMMENT_MIN_FEE))
-        self.comment_amount_var.trace_add("write", lambda *_: self._update_comment_split_preview())
-        self.comment_tip_var.trace_add("write", lambda *_: self._update_comment_split_preview())
-        self._update_comment_split_preview()
-        self._refresh_catalog()
-
-    def apply_theme(self, theme: GraffitiTheme) -> None:
-        self.theme = theme
-        self._build_style()
-        self.configure(style="Tsar.TFrame")
-        for child in list(self.winfo_children()):
-            child.destroy()
-        self._build_ui()
-        self._refresh_creator_wallets()
 
     # ---- actions ----
     def refresh_storers(self):
@@ -344,6 +252,158 @@ class GraffitiTab(ttk.Frame):
                 self.comment_wallet_cb.set("")
                 self.comment_wallet_var.set("")
 
+    def _clear_preview(self) -> None:
+        """Bersihkan preview media (image/video)."""
+        if self._video_player:
+            try:
+                self._video_player.dispose()
+                log.debug("graffiti_tab: video player disposed")
+            except Exception:
+                log.debug("graffiti_tab: dispose video player failed", exc_info=True)
+            self._video_player = None
+        self._preview_img_ref = None
+        if self.preview_frame and self.preview_frame.winfo_exists():
+            for child in list(self.preview_frame.winfo_children()):
+                child.destroy()
+        if self.preview_status_var:
+            self.preview_status_var.set("Belum ada preview.")
+
+    def _render_preview(self) -> None:
+        """Render preview for selected file (image/mp4)."""
+        if not self.preview_frame or not self.selected_path or not self.selected_mime:
+            return
+        self._clear_preview()
+        path = self.selected_path
+        mime = (self.selected_mime or "").lower()
+        log.debug("graffiti_tab: render preview path=%s mime=%s", path, mime)
+
+        # Video (mp4)
+        if "video" in mime or path.lower().endswith(".mp4"):
+            container = tk.Frame(self.preview_frame, bg=self.theme.card_bg)
+            container.pack(fill="both", expand=True)
+            player = TkVLCPlayer(
+                container,
+                bg=self.theme.card_bg,
+                fg=self.theme.fg,
+                accent=self.theme.accent,
+                on_error=lambda msg: self.preview_status_var.set(msg),
+            )
+            player.frame.pack(fill="both", expand=True, pady=6)
+            try:
+                player.load(path, autoplay=True)
+            except Exception:
+                tk.Label(
+                    container,
+                    text="Video preview failed to load.",
+                    bg=self.theme.card_bg,
+                    fg=self.theme.muted,
+                    font=("Consolas", 10),
+                ).pack(anchor="center", pady=8)
+            self._video_player = player
+            return
+
+        # Image
+        try:
+            img = Image.open(path)
+            img.thumbnail((720, 420))
+            photo = ImageTk.PhotoImage(img)
+            self._preview_img_ref = photo
+            tk.Label(self.preview_frame, image=photo, bg=self.theme.card_bg).pack(pady=6)
+            self.preview_status_var.set("Preview gambar.")
+        except Exception:
+            log.debug("graffiti_tab: load image preview failed", exc_info=True)
+            tk.Label(
+                self.preview_frame,
+                text="Preview gambar gagal dimuat.",
+                bg=self.theme.card_bg,
+                fg=self.theme.muted,
+                font=("Consolas", 10),
+            ).pack(anchor="center", pady=8)
+
+    def _update_cost_info(self) -> None:
+        """Calculate upload cost info based on size."""
+        if not self.cost_info_var:
+            return
+        if not self.selected_size or not self.selected_mime:
+            self.cost_info_var.set("Select a file to display costs.")
+            return
+        fee_sats = calc_upload_fee_sats(int(self.selected_size))
+        fee_tsar = fee_sats / CFG.TSAR
+        self.cost_info_var.set(f"Est. fee: {fee_tsar:.8f} TSAR")
+
+    def _open_creator_catalog(self) -> None:
+        """Open the catalog of works for the current wallet creator."""
+        creator = (self.creator_var.get() or "").strip().lower()
+        rpc = getattr(self.app, "rpc", None)
+        if not creator:
+            messagebox.showinfo("Graffiti", "Select the wallet creator first.")
+            return
+        if not rpc or not hasattr(rpc, "send_async"):
+            messagebox.showwarning("Graffiti", "Offline wallet or RPC is not available.")
+            return
+
+        log.debug("graffiti_tab: open catalog for creator=%s", creator)
+        top = tk.Toplevel(self)
+        top.title(f"Catalog - {creator[:64]}")
+        top.configure(bg=self.theme.bg)
+        cols = ("art_id", "height", "size", "comments")
+        tv = ttk.Treeview(top, columns=cols, show="headings", height=12)
+        for c, w in [("art_id", 420), ("height", 70), ("size", 120), ("comments", 90)]:
+            tv.heading(c, text=c)
+            tv.column(c, width=w, stretch=(c == "art_id"))
+        tv.pack(fill="both", expand=True, padx=8, pady=8)
+        status_var = StringVar(value="Load catalog...")
+        ttk.Label(top, textvariable=status_var, style="Tsar.Card.Mono.TLabel").pack(anchor="w", padx=8, pady=(0, 8))
+        self._catalog_map_local = {}
+
+        menu = tk.Menu(top, tearoff=0)
+        def _show_menu(event):
+            iid = tv.identify_row(event.y)
+            if not iid:
+                return
+            tv.selection_set(iid)
+            art_obj = self._catalog_map_local.get(iid, {})
+            art_id_full = art_obj.get("art_id") or iid
+            def _copy():
+                top.clipboard_clear()
+                top.clipboard_append(art_id_full)
+                status_var.set("Art ID copied.")
+                log.debug("graffiti_tab: copy art_id=%s", art_id_full)
+            def _open():
+                log.debug("graffiti_tab: open in explorer art_id=%s", art_id_full)
+                app = getattr(self, "app", None)
+                try:
+                    if app:
+                        app.switch_tab("explorer")
+                        panel = getattr(app, "explore_panel", None)
+                        if panel and hasattr(panel, "navigate_to_art"):
+                            panel.navigate_to_art(art_id_full)
+                except Exception:
+                    log.debug("graffiti_tab: open explorer failed", exc_info=True)
+            menu.delete(0, tk.END)
+            menu.add_command(label="Copy art id", command=_copy)
+            menu.add_command(label="Open in Explorer", command=_open)
+            menu.tk_popup(event.x_root, event.y_root)
+        tv.bind("<Button-3>", _show_menu)
+
+        def handle(resp: Optional[Dict[str, Any]]):
+            def apply():
+                posts = (resp or {}).get("posts") or []
+                filtered = [p for p in posts if (p.get("creator") or "").strip().lower() == creator]
+                tv.delete(*tv.get_children())
+                for post in filtered:
+                    aid_full = str(post.get("art_id") or "")[:64]
+                    height = int(post.get("block_height") or 0)
+                    size = int(post.get("size") or post.get("size_bytes") or 0)
+                    comments = int((post.get("stats") or {}).get("comments", 0))
+                    tv.insert("", tk.END, iid=aid_full, values=(aid_full, height, f"{size:,} B", comments))
+                    self._catalog_map_local[aid_full] = post
+                status_var.set(f"{len(filtered)} karya ditemukan untuk {creator}.")
+                log.debug("graffiti_tab: catalog loaded items=%s creator=%s", len(filtered), creator)
+            self.after(0, apply)
+
+        rpc.send_async({"type": "GRAFFITI_GET_POSTS", "limit": 200}, handle)
+
     def pick_file(self):
         path = filedialog.askopenfilename(title="Select file for Graffiti")
         if not path:
@@ -363,13 +423,22 @@ class GraffitiTab(ttk.Frame):
         self.selected_mime = info.get("mime")
         self.selected_sha = info.get("sha")
         self.meta_var.set(
-            f"size: {self.selected_size} bytes, mime: {self.selected_mime}, sha256: {self.selected_sha[:16]}..."
+            f"size: {self.selected_size} bytes, file: {self.selected_mime}, sha256: {self.selected_sha[:64]}"
         )
+        log.debug(
+            "graffiti_tab: file selected path=%s size=%s mime=%s sha=%s",
+            path,
+            self.selected_size,
+            self.selected_mime,
+            self.selected_sha,
+        )
+        self._render_preview()
+        self._update_cost_info()
         self.receipt_id = None
         self.receipt_var.set("receipt: -")
         self.opret_hex = None
         if self.post_info_var:
-            self.post_info_var.set("Select file, then click to upload & broadcast.")
+            self.post_info_var.set("The file is ready. Click Upload & Broadcast when ready.")
         if self.post_send_btn:
             self.post_send_btn.config(state="normal")
 
@@ -555,11 +624,11 @@ class GraffitiTab(ttk.Frame):
         plan = self._post_plan
         if not plan:
             if not auto:
-                messagebox.showwarning("Graffiti", "Upload terlebih dahulu sebelum broadcast.")
+                messagebox.showwarning("Graffiti", "Upload first before broadcast.")
             return
         creator = (self.creator_var.get() or "").strip().lower()
         if not creator:
-            messagebox.showwarning("Graffiti", "Pilih wallet creator terlebih dahulu.")
+            messagebox.showwarning("Graffiti", "Select the wallet creator first.")
             return
         svc = getattr(self.app, "send_svc", None)
         rpc_send = getattr(self.app, "rpc_send", None)
@@ -567,7 +636,7 @@ class GraffitiTab(ttk.Frame):
             rpc = getattr(self.app, "rpc", None)
             rpc_send = getattr(rpc, "send_async", None)
         if not svc or not rpc_send:
-            messagebox.showerror("Graffiti", "Send service tidak tersedia.")
+            messagebox.showerror("Graffiti", "Send service is not available.")
             return
         self.post_info_var.set("Broadcasting POST transaction...")
         if self.post_send_btn:
@@ -612,7 +681,7 @@ class GraffitiTab(ttk.Frame):
             )
         except Exception as exc:
             log.exception("Unhandled exception")
-            messagebox.showerror("Graffiti", f"Broadcast gagal: {exc}")
+            messagebox.showerror("Graffiti", f"Broadcast failed: {exc}")
             if self.post_send_btn:
                 self.post_send_btn.config(state="normal")
 
@@ -668,7 +737,7 @@ class GraffitiTab(ttk.Frame):
         self._selected_art = art
         art_id = str(art.get("art_id") or "")
         creator = str(art.get("creator") or "")
-        sha = str(art.get("sha256") or "")[:16]
+        sha = str(art.get("sha256") or "")[:64]
         pool = str(art.get("pool_address") or derive_pool_address(art_id))
         size = int(art.get("size") or art.get("size_bytes") or 0)
         block_h = int(art.get("block_height") or 0)
@@ -869,4 +938,7 @@ class GraffitiTab(ttk.Frame):
         for child in list(self.winfo_children()):
             child.destroy()
         self._build_ui()
+        self._refresh_creator_wallets()
         self.refresh_storers()
+        self._clear_preview()
+        log.debug("graffiti_tab: theme applied and UI rebuilt")

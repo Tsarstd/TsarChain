@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
-# Part of TsarChain â€” see LICENSE and TRADEMARKS.md
+# Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173
 
 # ---------------- Imports (Module) ----------------
@@ -22,7 +22,7 @@ from tsarchain.wallet.tab_ui.wallet_tab import WalletsMixin, load_registry
 from tsarchain.wallet.tab_ui.graffiti_tab import GraffitiTab
 from tsarchain.wallet.tab_ui.chat_tab import ChatTab
 from tsarchain.wallet.tab_ui.send_tab import SendTab
-from tsarchain.wallet.tab_ui.explorer_tab import ExplorePanel
+from tsarchain.wallet.tab_ui.explore.main_tab import ExplorePanel
 from tsarchain.wallet.tab_ui.network_tab import NetworkTab
 from tsarchain.wallet.tab_ui.history_tab import HistoryTab
 from tsarchain.wallet.tab_ui.dev_tab import DevTab

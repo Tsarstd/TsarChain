@@ -39,7 +39,7 @@ class TkVLCPlayer:
         fg: str = "#f5f5f5",
         accent: str = "#2ea3ff",
         poll_ms: int = 200,
-        init_volume: int = 80,
+        init_volume: int = 40,
         on_error: Optional[Callable[[str], None]] = None,
     ):
         if vlc is None:
