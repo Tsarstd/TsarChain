@@ -13,14 +13,13 @@ from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.contracts.storage_node.wallet_route")
 
 
-def handle_wallet_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def handle_wallet_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     RPC handle sent from wallet to storage node.
     """
     t = str(msg.get("type", "")).upper()
 
     if t == "STOR_INIT":
-        log.debug("Received STOR_INIT")
         aid = str(msg.get("graffiti_id", "")).strip()
         size = int(msg.get("size_bytes", 0))
         sha = str(msg.get("sha256", "")).lower()

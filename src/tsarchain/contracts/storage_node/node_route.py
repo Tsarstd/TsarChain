@@ -12,7 +12,7 @@ from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.contracts.storage_node.node_route")
 
 
-def handle_node_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def handle_node_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     RPC handle sent from node/archivist to storage node.
     """

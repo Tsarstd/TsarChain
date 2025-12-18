@@ -9,6 +9,7 @@ import os, json, socket, threading, time
 from tsarchain.network.protocol import send_message, recv_message, verify_and_unwrap, is_envelope
 from tsarchain.utils import config as CFG
 from .database import ArchivistDatabase
+from .storage_guard import StorageGuard
 from . import wallet_route, node_route
 
 # ---------------- Logger ----------------
@@ -24,6 +25,7 @@ class StorageServer:
         self.use_kv = bool(getattr(self.db, "use_kv", False))
         self.idx_path = os.path.join(storage_dir, "index.json")
         self._load_index()
+        self.guard = StorageGuard()
         self._stop = False
         self.thread = threading.Thread(target=self._serve, daemon=True)
         self.thread.start()
@@ -80,11 +82,16 @@ class StorageServer:
             raw = json.dumps(obj).encode("utf-8")
         send_message(conn, raw, max_len=cap)
 
-    def _handle(self, msg):
-        resp = wallet_route.handle_wallet_rpc(self, msg)
+    def _client_ip(self, addr) -> str:
+        if isinstance(addr, tuple) and addr:
+            return str(addr[0])
+        return "0.0.0.0"
+
+    def _handle(self, msg, *, client_ip: str):
+        resp = wallet_route.handle_wallet_rpc(self, msg, client_ip=client_ip)
         if resp is not None:
             return resp
-        resp = node_route.handle_node_rpc(self, msg)
+        resp = node_route.handle_node_rpc(self, msg, client_ip=client_ip)
         if resp is not None:
             return resp
         return {"error":"unknown type"}
@@ -96,10 +103,16 @@ class StorageServer:
             s.listen(8)
             while not self._stop:
                 conn, addr = s.accept()
-                threading.Thread(target=self._handle_conn, args=(conn,), daemon=True).start()
+                threading.Thread(target=self._handle_conn, args=(conn, addr), daemon=True).start()
 
-    def _handle_conn(self, conn):
+    def _handle_conn(self, conn, addr):
+        ip = self._client_ip(addr)
         try:
+            if self.guard.is_banned(ip):
+                log.warning("[stor_guard] blocked banned ip=%s", ip)
+                self._respond(conn, {"status": "error", "reason": "banned"})
+                return
+
             raw = recv_message(conn, timeout=float(CFG.HANDSHAKE_TIMEOUT), max_len=CFG.GRAFFITI_MAX_MSG_BYTES)
             if not raw:
                 return
@@ -108,7 +121,18 @@ class StorageServer:
                 msg = verify_and_unwrap(outer, lambda nid: None)
             else:
                 msg = outer if isinstance(outer, dict) else {}
-            resp = self._handle(msg)
+            mtype = str(msg.get("type", "")).strip().upper() if isinstance(msg, dict) else ""
+            decision = self.guard.allow(ip, mtype)
+            if not decision.get("ok"):
+                reason = str(decision.get("error", "forbidden"))
+                drop = bool(decision.get("drop"))
+                log.warning("[stor_guard] deny ip=%s type=%s reason=%s drop=%s", ip, mtype or "-", reason, drop)
+                if drop:
+                    return
+                self._respond(conn, {"type": mtype or "UNKNOWN", "status": "error", "reason": reason})
+                return
+
+            resp = self._handle(msg, client_ip=ip)
             self._respond(conn, resp)
         finally:
             conn.close()

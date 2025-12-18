@@ -581,6 +581,29 @@ STORAGE_RPC_RL_IP_BURST    = 6   # storage proof/payout submissions per IP
 STORAGE_RPC_RL_WINDOW_S    = 12  # seconds window for storage RPC limiter
 STORAGE_RPC_RL_BACKOFF_S   = 10  # backoff after storage RPC limiter trips
 
+# ---- STORAGE SERVER (ARCHIVIST) THROTTLING ----
+STOR_INIT_RL_IP_BURST      = 3   # STOR_INIT per IP burst
+STOR_INIT_RL_WINDOW_S      = 20  # seconds window for init limiter
+STOR_INIT_RL_BACKOFF_S     = 15  # backoff after init limiter trips
+
+STOR_PUT_RL_IP_BURST       = 25  # STOR_PUT chunks per IP burst
+STOR_PUT_RL_WINDOW_S       = 10  # seconds window for put limiter
+STOR_PUT_RL_BACKOFF_S      = 10  # backoff after put limiter trips
+
+STOR_COMMIT_RL_IP_BURST    = 6   # STOR_COMMIT per IP burst
+STOR_COMMIT_RL_WINDOW_S    = 20  # seconds window for commit limiter
+STOR_COMMIT_RL_BACKOFF_S   = 15  # backoff after commit limiter trips
+
+STOR_GET_RL_IP_BURST       = 10  # STOR_GET_BY_ART per IP burst
+STOR_GET_RL_WINDOW_S       = 10  # seconds window for get limiter
+STOR_GET_RL_BACKOFF_S      = 10  # backoff after get limiter trips
+
+STOR_ADMIN_RL_IP_BURST     = 8   # admin/node calls (INDEX/GC/PAID/PROOF) per IP burst
+STOR_ADMIN_RL_WINDOW_S     = 20  # seconds window for admin limiter
+STOR_ADMIN_RL_BACKOFF_S    = 20  # backoff after admin limiter trips
+
+BAN_UNKNOWN_STORAGE_RPC    = 90  # temp-ban when receiving unknown STOR_* message types
+
 # =============================================================================
 # 12. SCRIPT, GRAFFITI & STORAGE POLICY
 # =============================================================================
