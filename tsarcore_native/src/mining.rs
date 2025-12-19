@@ -76,9 +76,9 @@ pub fn randomx_mine<'py>(
     jit: bool,
     hard_aes: bool,
     secure_jit: bool,
-    progress_queue: Option<PyObject>,
+    progress_queue: Option<Py<PyAny>>,
     progress_interval_ms: Option<u64>,
-    stop_event: Option<PyObject>,
+    stop_event: Option<Py<PyAny>>,
 ) -> PyResult<Option<(u32, Bound<'py, PyBytes>)>> {
     let prefix = header_prefix.as_bytes().to_vec();
     if prefix.len() != 76 {
@@ -107,7 +107,7 @@ pub fn randomx_mine<'py>(
 
     let signal_err: Arc<Mutex<Option<PyErr>>> = Arc::new(Mutex::new(None));
 
-    let result = py.allow_threads({
+    let result = py.detach({
         let signal_err = Arc::clone(&signal_err);
         move || -> Option<(u32, [u8; 32])> {
         let found = Arc::new(AtomicBool::new(false));
@@ -138,8 +138,8 @@ pub fn randomx_mine<'py>(
                     if dt > 0.0 {
                         let delta = total.saturating_sub(last_total) as f64;
                         let hps = delta / dt;
-                        Python::with_gil(|py| {
-                            let _ = q_obj.call_method1(py, "put", (("TOTAL_HPS", hps),));
+                        Python::attach(|py| {
+                            let _ = q_obj.bind(py).call_method1("put", (("TOTAL_HPS", hps),));
                         });
                     }
                     last_total = total;
@@ -162,15 +162,15 @@ pub fn randomx_mine<'py>(
                     if stop_local.load(AtomicOrdering::Relaxed) || found_local.load(AtomicOrdering::Relaxed) {
                         break;
                     }
-                    let should_stop = Python::with_gil(|py| -> bool {
+                    let should_stop = Python::attach(|py| -> bool {
                         if let Err(err) = py.check_signals() {
                             let mut guard = signal_err_local.lock().unwrap();
                             *guard = Some(err);
                             return true;
                         }
                         if let Some(ev_obj) = stop_obj.as_ref() {
-                            match ev_obj.call_method0(py, "is_set") {
-                                Ok(val) => val.is_truthy(py).unwrap_or(false),
+                            match ev_obj.bind(py).call_method0("is_set") {
+                                Ok(val) => val.is_truthy().unwrap_or(false),
                                 Err(_) => false,
                             }
                         } else {
@@ -266,7 +266,7 @@ pub fn randomx_mine<'py>(
     }
 
     if let Some((nonce, hash)) = result {
-        return Ok(Some((nonce, PyBytes::new_bound(py, &hash))));
+        return Ok(Some((nonce, PyBytes::new(py, &hash))));
     }
     Ok(None)
 }

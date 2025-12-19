@@ -50,7 +50,7 @@ fn parse_input_tuple(t: &Bound<'_, PyTuple>) -> PyResult<(Vec<u8>, u32, u32, Vec
         .get_item(0)
         .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_input_tuple_txid"))?;
     let prev_txid = prev_txid_item
-        .downcast::<PyBytes>()
+        .cast::<PyBytes>()
         .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_input_txid_not_bytes"))?;
     let prev_raw = prev_txid.as_bytes();
     if prev_raw.len() != 32 {
@@ -70,9 +70,9 @@ fn parse_input_tuple(t: &Bound<'_, PyTuple>) -> PyResult<(Vec<u8>, u32, u32, Vec
         let ss_any = t
             .get_item(3)
             .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_input_tuple_scriptsig"))?;
-        let ss_bytes = if let Ok(b) = ss_any.downcast::<PyBytes>() {
+        let ss_bytes = if let Ok(b) = ss_any.cast::<PyBytes>() {
             b.as_bytes().to_vec()
-        } else if let Ok(b) = ss_any.downcast::<PyByteArray>() {
+        } else if let Ok(b) = ss_any.cast::<PyByteArray>() {
             b.to_vec()
         } else {
             return Err(PyErr::new::<exceptions::PyValueError, _>("tx_input_scriptsig_not_bytes"));
@@ -88,12 +88,12 @@ fn parse_input_tuple(t: &Bound<'_, PyTuple>) -> PyResult<(Vec<u8>, u32, u32, Vec
         (Vec::new(), wit)
     };
     let wit_list = wit_any
-        .downcast::<PyList>()
+        .cast::<PyList>()
         .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_input_witness_not_list"))?;
     let mut wit_vec = Vec::with_capacity(wit_list.len());
     for item in wit_list {
         let b = item
-            .downcast::<PyBytes>()
+            .cast::<PyBytes>()
             .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("witness_not_bytes"))?;
         wit_vec.push(b.as_bytes().to_vec());
     }
@@ -113,7 +113,7 @@ fn parse_output_tuple(t: &Bound<'_, PyTuple>) -> PyResult<(u64, Vec<u8>)> {
         .get_item(1)
         .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_output_tuple_script"))?;
     let spk = spk_item
-        .downcast::<PyBytes>()
+        .cast::<PyBytes>()
         .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_output_script_not_bytes"))?;
     Ok((amt, spk.as_bytes().to_vec()))
 }
@@ -138,12 +138,12 @@ fn parse_compact_tx<'py>(
         .get_item(2)
         .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_tuple_inputs"))?;
     let inputs_list = inputs_any
-        .downcast::<PyList>()
+        .cast::<PyList>()
         .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_inputs_not_list"))?;
     let mut inputs = Vec::with_capacity(inputs_list.len());
     for it in inputs_list {
         let t = it
-            .downcast::<PyTuple>()
+            .cast::<PyTuple>()
             .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_input_not_tuple"))?;
         inputs.push(parse_input_tuple(&t)?);
     }
@@ -151,12 +151,12 @@ fn parse_compact_tx<'py>(
         .get_item(3)
         .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_tuple_outputs"))?;
     let outputs_list = outputs_any
-        .downcast::<PyList>()
+        .cast::<PyList>()
         .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_outputs_not_list"))?;
     let mut outputs = Vec::with_capacity(outputs_list.len());
     for ot in outputs_list {
         let t = ot
-            .downcast::<PyTuple>()
+            .cast::<PyTuple>()
             .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_output_not_tuple"))?;
         outputs.push(parse_output_tuple(&t)?);
     }
@@ -215,7 +215,7 @@ pub fn serialize_tx_compact<'py>(
 ) -> PyResult<Bound<'py, PyBytes>> {
     let (ver, lock, inputs, outputs) = parse_compact_tx(&tx_tuple)?;
     let raw = serialize_compact_inner(ver, lock, &inputs, &outputs, include_witness);
-    Ok(PyBytes::new_bound(py, &raw))
+    Ok(PyBytes::new(py, &raw))
 }
 
 #[pyfunction]
@@ -226,7 +226,7 @@ pub fn txid_from_compact<'py>(
     let (ver, lock, inputs, outputs) = parse_compact_tx(&tx_tuple)?;
     let raw = serialize_compact_inner(ver, lock, &inputs, &outputs, false);
     let h = sha256d(&raw);
-    Ok(PyBytes::new_bound(py, &h))
+    Ok(PyBytes::new(py, &h))
 }
 
 #[pyfunction]
@@ -237,7 +237,7 @@ pub fn wtxid_from_compact<'py>(
     let (ver, lock, inputs, outputs) = parse_compact_tx(&tx_tuple)?;
     let raw = serialize_compact_inner(ver, lock, &inputs, &outputs, true);
     let h = sha256d(&raw);
-    Ok(PyBytes::new_bound(py, &h))
+    Ok(PyBytes::new(py, &h))
 }
 
 #[derive(Clone)]
@@ -255,7 +255,7 @@ struct TxLimits {
 
 fn parse_validation_opts(opts: &Bound<'_, PyAny>) -> PyResult<TxLimits> {
     let dict = opts
-        .downcast::<pyo3::types::PyDict>()
+        .cast::<pyo3::types::PyDict>()
         .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("opts_not_dict"))?;
 
     fn read_u64(dict: &Bound<'_, pyo3::types::PyDict>, key: &str, err: &str) -> PyResult<u64> {
@@ -365,7 +365,7 @@ pub fn sighash_bip143_compact<'py>(
     preimage.extend_from_slice(&sighash_type.to_le_bytes());
 
     let digest = sha256d(&preimage);
-    Ok(PyBytes::new_bound(py, &digest))
+    Ok(PyBytes::new(py, &digest))
 }
 
 #[pyfunction]
@@ -435,7 +435,7 @@ pub fn validate_tx_p2wpkh_compact<'py>(
     let mut utxo_map: HashMap<(Vec<u8>, u32), UtxoEntry> = HashMap::with_capacity(utxo_items.len());
     for item in utxo_items {
         let t = item
-            .downcast::<PyTuple>()
+            .cast::<PyTuple>()
             .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("utxo_not_tuple"))?;
         if t.len() < 6 {
             return Ok((false, Some("utxo_tuple_arity".to_string()), None));
@@ -444,7 +444,7 @@ pub fn validate_tx_p2wpkh_compact<'py>(
             .get_item(0)
             .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("utxo_txid_missing"))?;
         let txid_b: &Bound<'_, PyBytes> = txid_item
-            .downcast()
+            .cast()
             .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("utxo_txid_not_bytes"))?;
         let txid_raw = txid_b.as_bytes();
         if txid_raw.len() != 32 {
@@ -464,7 +464,7 @@ pub fn validate_tx_p2wpkh_compact<'py>(
             .get_item(3)
             .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("utxo_script_missing"))?;
         let spk_b: &Bound<'_, PyBytes> = spk_item
-            .downcast()
+            .cast()
             .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("utxo_script_not_bytes"))?;
         let spk = spk_b.as_bytes().to_vec();
         let is_cb: bool = t
@@ -581,10 +581,7 @@ pub fn validate_tx_p2wpkh_compact<'py>(
 
         let digest = sha256d(&preimage);
 
-        let msg = match Message::from_digest_slice(&digest) {
-            Ok(m) => m,
-            Err(_) => return Ok((false, Some("invalid_digest".to_string()), None)),
-        };
+        let msg = Message::from_digest(digest);
         let pk = match PublicKey::from_slice(pubkey) {
             Ok(p) => p,
             Err(_) => return Ok((false, Some("invalid_pubkey".to_string()), None)),
@@ -600,7 +597,7 @@ pub fn validate_tx_p2wpkh_compact<'py>(
                 return Ok((false, Some("high_s".to_string()), None));
             }
         }
-        if secp.verify_ecdsa(&msg, &norm, &pk).is_err() {
+        if secp.verify_ecdsa(msg, &norm, &pk).is_err() {
             return Ok((false, Some("ecdsa_verify_failed".to_string()), None));
         }
 

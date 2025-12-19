@@ -35,11 +35,11 @@ pub fn utxo_build_ops_compact<'py>(
     block_txs: &Bound<'py, PyList>,
     spend_height: u64,
 ) -> PyResult<Bound<'py, PyList>> {
-    let ops = PyList::empty_bound(py);
+    let ops = PyList::empty(py);
 
     for tx_any in block_txs {
         let tx = tx_any
-            .downcast::<PyTuple>()
+            .cast::<PyTuple>()
             .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_not_tuple"))?;
         if tx.len() < 6 {
             return Err(PyErr::new::<exceptions::PyValueError, _>(
@@ -51,21 +51,21 @@ pub fn utxo_build_ops_compact<'py>(
             .get_item(2)
             .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_tuple_inputs"))?;
         let inputs = inputs_any
-            .downcast::<PyList>()
+            .cast::<PyList>()
             .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_inputs_not_list"))?;
 
         let outputs_any = tx
             .get_item(3)
             .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_tuple_outputs"))?;
         let outputs = outputs_any
-            .downcast::<PyList>()
+            .cast::<PyList>()
             .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_outputs_not_list"))?;
 
         let txid_item = tx
             .get_item(4)
             .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_tuple_txid"))?;
         let txid_bytes = txid_item
-            .downcast::<PyBytes>()
+            .cast::<PyBytes>()
             .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("tx_txid_not_bytes"))?;
         let txid_raw = txid_bytes.as_bytes();
         if txid_raw.len() != 32 {
@@ -83,7 +83,7 @@ pub fn utxo_build_ops_compact<'py>(
         if !is_coinbase {
             for inp_any in inputs {
                 let inp = inp_any
-                    .downcast::<PyTuple>()
+                    .cast::<PyTuple>()
                     .map_err(|_| PyErr::new::<exceptions::PyValueError, _>(
                         "tx_input_not_tuple",
                     ))?;
@@ -98,7 +98,7 @@ pub fn utxo_build_ops_compact<'py>(
                         "tx_input_tuple_txid",
                     ))?;
                 let prev_txid = prev_txid_item
-                    .downcast::<PyBytes>()
+                    .cast::<PyBytes>()
                     .map_err(|_| PyErr::new::<exceptions::PyValueError, _>(
                         "tx_input_txid_not_bytes",
                     ))?;
@@ -119,20 +119,19 @@ pub fn utxo_build_ops_compact<'py>(
                     ))?;
 
                 let key = format!("{}:{}", hex::encode(prev_txid_raw), vout);
-                let tup = PyTuple::new_bound(py, &[
-                    key.into_py(py),
-                    py.None(),
-                    py.None(),
-                    py.None(),
-                    py.None(),
-                ]);
-                ops.append(tup)?;
+                ops.append((
+                    key,
+                    None::<u64>,
+                    None::<Vec<u8>>,
+                    None::<bool>,
+                    None::<i64>,
+                ))?;
             }
         }
 
         // New outputs -> insert
         for (idx, out_any) in outputs.iter().enumerate() {
-            let out_t = out_any.downcast::<PyTuple>().map_err(|_| {
+            let out_t = out_any.cast::<PyTuple>().map_err(|_| {
                 PyErr::new::<exceptions::PyValueError, _>("tx_output_not_tuple")
             })?;
             if out_t.len() < 2 {
@@ -155,7 +154,7 @@ pub fn utxo_build_ops_compact<'py>(
                     "tx_output_tuple_script",
                 ))?;
             let spk_bytes = spk_item
-                .downcast::<PyBytes>()
+                .cast::<PyBytes>()
                 .map_err(|_| PyErr::new::<exceptions::PyValueError, _>(
                     "tx_output_script_not_bytes",
                 ))?
@@ -167,15 +166,8 @@ pub fn utxo_build_ops_compact<'py>(
             }
 
             let key = format!("{}:{}", hex::encode(txid_raw), idx as u32);
-            let py_spk = PyBytes::new_bound(py, &spk_bytes);
-            let tup = PyTuple::new_bound(py, &[
-                key.into_py(py),
-                amount.into_py(py),
-                py_spk.to_object(py),
-                is_coinbase.into_py(py),
-                (spend_height as i64).into_py(py),
-            ]);
-            ops.append(tup)?;
+            let py_spk = PyBytes::new(py, &spk_bytes);
+            ops.append((key, amount, py_spk, is_coinbase, spend_height as i64))?;
         }
     }
 

@@ -16,7 +16,7 @@
 
 use pyo3::exceptions;
 use pyo3::prelude::*;
-use pyo3::sync::GILOnceCell;
+use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyAny, PyBytes, PyIterator, PyList, PyModule, PyTuple};
 use pyo3::Py;
 use pyo3::{Bound, PyErr};
@@ -256,24 +256,24 @@ fn randomx_pow_hash<'py>(
         }
         Err(e) => return Err(map_randomx_err(e)),
     };
-    Ok(PyBytes::new_bound(py, &hash))
+    Ok(PyBytes::new(py, &hash))
 }
 
 // ---------------------
 // Logger (from Python)
 // ---------------------
-static PY_LOGGER: GILOnceCell<Py<PyAny>> = GILOnceCell::new();
+static PY_LOGGER: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 #[pyfunction]
 fn set_py_logger(logger: Bound<'_, PyAny>) -> PyResult<()> {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let _ = PY_LOGGER.set(py, logger.unbind());
         Ok(())
     })
 }
 
 fn py_logger_call(level: &str, msg: &str) {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         if let Some(handle) = PY_LOGGER.get(py) {
             let logger = handle.bind(py);
             let _ = logger.call_method(level, (msg,), None);
@@ -440,14 +440,14 @@ fn count_sigops(script: &[u8]) -> PyResult<u32> {
 #[pyfunction]
 fn hash256<'py>(py: Python<'py>, data: &'py [u8]) -> PyResult<Bound<'py, PyBytes>> {
     let h = sha256d(data);
-    Ok(PyBytes::new_bound(py, &h))
+    Ok(PyBytes::new(py, &h))
 }
 
 #[pyfunction]
 fn hash160<'py>(py: Python<'py>, data: &'py [u8]) -> PyResult<Bound<'py, PyBytes>> {
     let sha = Sha256::digest(data);
     let ripe = Ripemd160::digest(&sha);
-    Ok(PyBytes::new_bound(py, &ripe))
+    Ok(PyBytes::new(py, &ripe))
 }
 
 // ---------------------
@@ -483,13 +483,12 @@ fn secp_verify_der_low_s(pubkey: &[u8], digest32: &[u8], der_sig: &[u8]) -> PyRe
         return Ok(false);
     }
 
-    let msg = match Message::from_digest_slice(digest32) {
-        Ok(m) => m,
-        Err(_) => return Ok(false),
-    };
+    let mut d32 = [0u8; 32];
+    d32.copy_from_slice(digest32);
+    let msg = Message::from_digest(d32);
 
     let secp = Secp256k1::verification_only();
-    Ok(secp.verify_ecdsa(&msg, &norm, &pk).is_ok())
+    Ok(secp.verify_ecdsa(msg, &norm, &pk).is_ok())
 }
 
 // ---------------------
@@ -508,17 +507,21 @@ fn secp_sign_der_low_s<'py>(
     }
     let sk_bytes = hex::decode(privkey_hex)
         .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("invalid privkey hex"))?;
-    let sk = SecretKey::from_slice(&sk_bytes).map_err(|_| {
+    let sk_arr: [u8; 32] = sk_bytes.try_into().map_err(|_| {
         PyErr::new::<exceptions::PyValueError, _>("privkey must be 32-byte secp256k1 key")
     })?;
-    let msg = Message::from_digest_slice(digest32)
-        .map_err(|_| PyErr::new::<exceptions::PyValueError, _>("invalid digest32"))?;
+    let sk = SecretKey::from_byte_array(sk_arr).map_err(|_| {
+        PyErr::new::<exceptions::PyValueError, _>("privkey must be 32-byte secp256k1 key")
+    })?;
+    let mut d32 = [0u8; 32];
+    d32.copy_from_slice(digest32);
+    let msg = Message::from_digest(d32);
     let secp = Secp256k1::signing_only();
-    let sig = secp.sign_ecdsa(&msg, &sk);
+    let sig = secp.sign_ecdsa(msg, &sk);
     let mut norm = sig;
     norm.normalize_s();
     let der = norm.serialize_der();
-    Ok(PyBytes::new_bound(py, &der))
+    Ok(PyBytes::new(py, &der))
 }
 
 // ------------------------
@@ -777,7 +780,7 @@ fn sighash_bip143<'py>(
         value_sat,
         sighash_type,
     )?;
-    Ok(PyBytes::new_bound(py, &digest))
+    Ok(PyBytes::new(py, &digest))
 }
 
 // -----------------------------------------------------
@@ -793,12 +796,12 @@ fn secp_verify_der_low_s_many<'py>(
 ) -> PyResult<Bound<'py, PyList>> {
     let t0 = Instant::now();
     let ctx = Secp256k1::verification_only();
-    let iter = PyIterator::from_bound_object(&triples)?;
+    let iter = PyIterator::from_object(&triples)?;
 
     let mut tasks: Vec<(Vec<u8>, [u8; 32], Vec<u8>)> = Vec::new();
     for item in iter {
         let obj: Bound<'py, PyAny> = item?;
-        let t: &Bound<'py, PyTuple> = obj.downcast()?;
+        let t: &Bound<'py, PyTuple> = obj.cast()?;
         if t.len() != 3 {
             return Err(PyErr::new::<exceptions::PyValueError, _>(
                 "each item must be (pubkey, digest32, der_sig)",
@@ -820,10 +823,7 @@ fn secp_verify_der_low_s_many<'py>(
     let use_parallel = cfg!(feature = "parallel") && parallel;
 
     let verify_one = |pk_bytes: &Vec<u8>, d32: &[u8; 32], sig_der: &Vec<u8>| -> bool {
-        let msg = match Message::from_digest_slice(d32) {
-            Ok(m) => m,
-            Err(_) => return false,
-        };
+        let msg = Message::from_digest(*d32);
         let pk = match parse_pubkey_any(pk_bytes) {
             Some(p) => p,
             None => return false,
@@ -839,9 +839,9 @@ fn secp_verify_der_low_s_many<'py>(
             if s2 != sig {
                 return false;
             }
-            ctx.verify_ecdsa(&msg, &s2, &pk).is_ok()
+            ctx.verify_ecdsa(msg, &s2, &pk).is_ok()
         } else {
-            ctx.verify_ecdsa(&msg, &sig, &pk).is_ok()
+            ctx.verify_ecdsa(msg, &sig, &pk).is_ok()
         }
     };
 
@@ -879,7 +879,7 @@ fn secp_verify_der_low_s_many<'py>(
         total, ok, fail, use_parallel, dur_ms
     ));
 
-    Ok(PyList::new_bound(py, results))
+    Ok(PyList::new(py, results)?)
 }
 
 // ---------------------
@@ -892,12 +892,12 @@ fn merkle_root<'py>(
     txids_any: Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyBytes>> {
     let t0 = Instant::now();
-    let iter = PyIterator::from_bound_object(&txids_any)?;
+    let iter = PyIterator::from_object(&txids_any)?;
     let mut layer: Vec<[u8; 32]> = Vec::new();
 
     for item in iter {
         let obj: Bound<'py, PyAny> = item?;
-        let b: &Bound<'py, PyBytes> = obj.downcast()?;
+        let b: &Bound<'py, PyBytes> = obj.cast()?;
         let raw = b.as_bytes();
         if raw.len() != 32 {
             return Err(PyErr::new::<exceptions::PyValueError, _>(
@@ -910,10 +910,10 @@ fn merkle_root<'py>(
     }
 
     if layer.is_empty() {
-        return Ok(PyBytes::new_bound(py, &[0u8; 32]));
+        return Ok(PyBytes::new(py, &[0u8; 32]));
     }
     if layer.len() == 1 {
-        return Ok(PyBytes::new_bound(py, &layer[0]));
+        return Ok(PyBytes::new(py, &layer[0]));
     }
 
     let leaves = layer.len();
@@ -950,7 +950,7 @@ fn merkle_root<'py>(
         leaves, rounds, dupes, dur_ms
     ));
 
-    Ok(PyBytes::new_bound(py, &layer[0]))
+    Ok(PyBytes::new(py, &layer[0]))
 }
 
 // ---------------

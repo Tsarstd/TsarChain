@@ -32,8 +32,8 @@ fn map_err(context: &str, err: impl std::fmt::Display) -> PyErr {
 }
 
 fn log_py(level: &str, msg: &str) {
-    Python::with_gil(|py| {
-        if let Ok(logging) = py.import_bound("logging") {
+    Python::attach(|py| {
+        if let Ok(logging) = py.import("logging") {
             if let Ok(logger) = logging.call_method1("getLogger", ("tsarchain.native",)) {
                 let _ = logger.call_method1(level, (msg,));
             }
@@ -759,10 +759,10 @@ impl NativeStorage {
             Backend::Lmdb(b) => b.get(db, key)?,
             Backend::Json(b) => b.get(db, key)?,
         };
-        Ok(res.map(|v| PyBytes::new_bound(py, &v)))
+        Ok(res.map(|v| PyBytes::new(py, &v)))
     }
 
-    fn get_json<'py>(&self, py: Python<'py>, db: &str, key: &[u8]) -> PyResult<Option<PyObject>> {
+    fn get_json<'py>(&self, py: Python<'py>, db: &str, key: &[u8]) -> PyResult<Option<Py<PyAny>>>{
         let json_text_opt = match &self.backend {
             Backend::Json(b) => b.get_json_string(db, key)?,
             Backend::Lmdb(b) => {
@@ -777,9 +777,9 @@ impl NativeStorage {
             }
         };
         if let Some(text) = json_text_opt {
-            let json_mod = py.import_bound("json")?;
+            let json_mod = py.import("json")?;
             let obj = json_mod.call_method1("loads", (text,))?;
-            Ok(Some(obj.into_py(py)))
+            Ok(Some(obj.unbind()))
         } else {
             Ok(None)
         }
@@ -812,9 +812,9 @@ impl NativeStorage {
             Backend::Lmdb(b) => b.iter_prefix_chunk(db, prefix, start_after, limit)?,
             Backend::Json(b) => b.iter_prefix(db, prefix)?,
         };
-        let out = PyList::empty_bound(py);
+        let out = PyList::empty(py);
         for (k, v) in items {
-            out.append((PyBytes::new_bound(py, &k), PyBytes::new_bound(py, &v)))?;
+            out.append((PyBytes::new(py, &k), PyBytes::new(py, &v)))?;
         }
         Ok(out)
     }
@@ -894,9 +894,9 @@ impl NativeStorage {
             Backend::Lmdb(b) => b.iter_prefix(db, prefix)?,
             Backend::Json(b) => b.iter_prefix(db, prefix)?,
         };
-        let out = PyList::empty_bound(py);
+        let out = PyList::empty(py);
         for (k, v) in items {
-            out.append((PyBytes::new_bound(py, &k), PyBytes::new_bound(py, &v)))?;
+            out.append((PyBytes::new(py, &k), PyBytes::new(py, &v)))?;
         }
         Ok(out)
     }

@@ -9,7 +9,7 @@ use aes_gcm::{
     aead::{Aead, Payload},
     Aes256Gcm, KeyInit, Nonce,
 };
-use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signature, Signer, Verifier};
+use ed25519_dalek::{Signature, SigningKey, VerifyingKey, Signer, Verifier};
 use hkdf::Hkdf;
 use pyo3::{
     exceptions::PyValueError,
@@ -17,8 +17,7 @@ use pyo3::{
     types::{PyBytes, PyDict, PyDictMethods},
     Bound,
 };
-use rand::rngs::OsRng;
-use rand::RngCore;
+use rand_core::{OsRng, RngCore};
 use sha2::{Digest, Sha256};
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
 
@@ -50,10 +49,14 @@ fn parse_hex(input: &str) -> PyResult<Vec<u8>> {
     hex::decode(input).map_err(|_| PyValueError::new_err("invalid hex input"))
 }
 
-fn get_required<'py, T: FromPyObject<'py>>(dict: &Bound<'py, PyDict>, key: &str) -> PyResult<T> {
-    dict.get_item(key)?
-        .ok_or_else(|| PyValueError::new_err(format!("missing {}", key)))?
-        .extract()
+fn get_required<'py, T: FromPyObjectOwned<'py, Error = PyErr>>(
+    dict: &Bound<'py, PyDict>,
+    key: &str,
+) -> PyResult<T> {
+    let item = dict
+        .get_item(key)?
+        .ok_or_else(|| PyValueError::new_err(format!("missing {}", key)))?;
+    item.extract()
 }
 
 fn parse_secret_key_bytes(hex_str: &str) -> PyResult<[u8; 32]> {
@@ -132,7 +135,8 @@ pub struct SecureChannelNative {
     node_id: String,
     node_pub_hex: String,
     node_pub_bytes: [u8; 32],
-    node_pub_key: PublicKey,
+    #[allow(dead_code)]
+    node_pub_key: VerifyingKey,
     node_priv: Option<[u8; 32]>,
     peer_node_id: Option<String>,
     peer_node_pub: Option<Vec<u8>>,
@@ -189,7 +193,7 @@ impl SecureChannelNative {
         });
 
         let node_pub_bytes = decode_pubkey(node_pub_hex)?;
-        let node_pub_key = PublicKey::from_bytes(&node_pub_bytes)
+        let node_pub_key = VerifyingKey::from_bytes(&node_pub_bytes)
             .map_err(|_| PyValueError::new_err("invalid node_pub material"))?;
         let node_priv_bytes = if let Some(sk_hex) = node_priv_hex {
             Some(parse_secret_key_bytes(sk_hex)?)
@@ -204,9 +208,8 @@ impl SecureChannelNative {
         }
 
         if let Some(bytes) = node_priv_bytes.as_ref() {
-            let secret = SecretKey::from_bytes(bytes)
-                .map_err(|_| PyValueError::new_err("invalid node_priv material"))?;
-            let derived = PublicKey::from(&secret);
+            let signing_key = SigningKey::from_bytes(bytes);
+            let derived = signing_key.verifying_key();
             if derived != node_pub_key {
                 return Err(PyValueError::new_err("node_priv/pub mismatch"));
             }
@@ -253,7 +256,7 @@ impl SecureChannelNative {
         if self.role != Role::Client {
             return Err(PyValueError::new_err("only client role can build HS1"));
         }
-        let keypair = self.signing_keypair()?;
+        let signing_key = self.signing_key()?;
 
         let mut rng = OsRng;
         let eph = StaticSecret::random_from_rng(&mut rng);
@@ -269,12 +272,12 @@ impl SecureChannelNative {
             self.node_id.as_bytes(),
             &self.node_pub_bytes,
         ]);
-        let signature = keypair.sign(&to_sign);
+        let signature = signing_key.sign(&to_sign);
 
         self.client_eph = Some(eph);
         self.client_salt = Some(salt);
 
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         dict.set_item("type", "P2P_HS1")?;
         dict.set_item("net", &self.net_id)?;
         dict.set_item("eph_pub", hex::encode(eph_pub.as_bytes()))?;
@@ -364,13 +367,12 @@ impl SecureChannelNative {
             peer_node_id.as_bytes(),
             &peer_node_pub,
         ]);
-        let verifying_key = PublicKey::from_bytes(&peer_node_pub)
+        let verifying_key = VerifyingKey::from_bytes(&peer_node_pub)
             .map_err(|_| PyValueError::new_err("invalid peer node_pub"))?;
         let sig_arr: [u8; 64] = sig_bytes
             .try_into()
             .map_err(|_| PyValueError::new_err("invalid signature length"))?;
-        let signature = Signature::from_bytes(&sig_arr)
-            .map_err(|_| PyValueError::new_err("invalid signature bytes"))?;
+        let signature = Signature::from_bytes(&sig_arr);
         verifying_key
             .verify(&to_verify, &signature)
             .map_err(|_| PyValueError::new_err("bad HS2 signature"))?;
@@ -426,7 +428,7 @@ impl SecureChannelNative {
         if self.role != Role::Server {
             return Err(PyValueError::new_err("only server role can accept HS1"));
         }
-        let keypair = self.signing_keypair()?;
+        let signing_key = self.signing_key()?;
 
         let msg_type: String = get_required(&hs1, "type")?;
         if msg_type != "P2P_HS1" {
@@ -476,13 +478,12 @@ impl SecureChannelNative {
         if sig_bytes.len() != 64 {
             return Err(PyValueError::new_err("invalid signature length"));
         }
-        let verifying_key = PublicKey::from_bytes(&peer_node_pub)
+        let verifying_key = VerifyingKey::from_bytes(&peer_node_pub)
             .map_err(|_| PyValueError::new_err("invalid peer node_pub"))?;
         let sig_arr: [u8; 64] = sig_bytes
             .try_into()
             .map_err(|_| PyValueError::new_err("invalid signature length"))?;
-        let signature = Signature::from_bytes(&sig_arr)
-            .map_err(|_| PyValueError::new_err("invalid signature bytes"))?;
+        let signature = Signature::from_bytes(&sig_arr);
         let to_verify = join_parts(&[
             b"HS1",
             self.net_id.as_bytes(),
@@ -533,9 +534,9 @@ impl SecureChannelNative {
             self.node_id.as_bytes(),
             &self.node_pub_bytes,
         ]);
-        let signature = keypair.sign(&to_sign);
+        let signature = signing_key.sign(&to_sign);
 
-        let dict = PyDict::new_bound(py);
+        let dict = PyDict::new(py);
         dict.set_item("type", "P2P_HS2")?;
         dict.set_item("net", &self.net_id)?;
         dict.set_item("eph_pub", hex::encode(eph_pub.as_bytes()))?;
@@ -604,7 +605,7 @@ impl SecureChannelNative {
         self.msg_count += 1;
         self.last_activity = now_seconds();
 
-        Ok((seq, PyBytes::new_bound(py, &ciphertext)))
+        Ok((seq, PyBytes::new(py, &ciphertext)))
     }
 
     pub fn decrypt<'py>(
@@ -648,7 +649,7 @@ impl SecureChannelNative {
         self.msg_count += 1;
         self.last_activity = now_seconds();
 
-        Ok(PyBytes::new_bound(py, &plaintext))
+        Ok(PyBytes::new(py, &plaintext))
     }
 
     fn ensure_ready(&mut self) -> PyResult<()> {
@@ -670,16 +671,11 @@ impl SecureChannelNative {
 }
 
 impl SecureChannelNative {
-    fn signing_keypair(&self) -> PyResult<Keypair> {
+    fn signing_key(&self) -> PyResult<SigningKey> {
         let secret = self
             .node_priv
             .as_ref()
             .ok_or_else(|| PyValueError::new_err("node_priv unavailable"))?;
-        let secret_key = SecretKey::from_bytes(secret)
-            .map_err(|_| PyValueError::new_err("invalid node_priv material"))?;
-        Ok(Keypair {
-            secret: secret_key,
-            public: self.node_pub_key,
-        })
+        Ok(SigningKey::from_bytes(secret))
     }
 }

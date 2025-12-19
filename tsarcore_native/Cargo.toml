@@ -11,8 +11,8 @@ name = "tsarcore_native"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.22", features = ["extension-module"] }
-secp256k1 = "0.28"
+pyo3 = { version = "0.27.2", features = ["extension-module"] }
+secp256k1 = "0.31.1"
 sha2 = "0.10"
 ripemd = "0.1"
 rayon = { version = "1.10", optional = true }
@@ -21,8 +21,8 @@ randomx-rs = { version = "1.4", default-features = false }
 aes-gcm = "0.10"
 hkdf = "0.12"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
-ed25519-dalek = { version = "1", features = ["std"] }
-rand = "0.8"
+ed25519-dalek = { version = "2.2.0", features = ["std"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
 lmdb = "0.8"
 lmdb-sys = "0.8"
 libc = "0.2"

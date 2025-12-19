@@ -11,8 +11,8 @@ use sha2::{Digest, Sha256};
 use ahash::{AHashMap, AHashSet};
 
 fn log_py(level: &str, msg: &str) {
-    Python::with_gil(|py| {
-        if let Ok(logging) = py.import_bound("logging") {
+    Python::attach(|py| {
+        if let Ok(logging) = py.import("logging") {
             if let Ok(logger) = logging.call_method1("getLogger", ("tsarchain.native",)) {
                 let _ = logger.call_method1(level, (msg,));
             }
@@ -138,7 +138,7 @@ fn encode_varint(v: u64, out: &mut Vec<u8>) {
 }
 
 fn parse_bytes_or_hex(value: &Bound<'_, PyAny>, field: &str) -> Result<Vec<u8>, String> {
-    if let Ok(b) = value.downcast::<PyBytes>() {
+    if let Ok(b) = value.cast::<PyBytes>() {
         return Ok(b.as_bytes().to_vec());
     }
     if let Ok(hex_str) = value.extract::<String>() {
@@ -154,12 +154,12 @@ fn parse_witness_field(value: Option<Bound<'_, PyAny>>) -> Result<Vec<Vec<u8>>, 
     let Some(obj) = value else {
         return Ok(Vec::new());
     };
-    let list = obj
-        .downcast::<PyList>()
+    let list: &Bound<'_, PyList> = obj
+        .cast::<PyList>()
         .map_err(|_| "witness must be list".to_string())?;
     let mut out = Vec::with_capacity(list.len());
     for item in list.iter() {
-        if let Ok(b) = item.downcast::<PyBytes>() {
+        if let Ok(b) = item.cast::<PyBytes>() {
             out.push(b.as_bytes().to_vec());
             continue;
         }
@@ -179,7 +179,7 @@ struct TxidParts {
 }
 
 fn parse_txid_field(value: &Bound<'_, PyAny>, field: &str) -> Result<TxidParts, String> {
-    let (be_bytes, hex_lower) = if let Ok(b) = value.downcast::<PyBytes>() {
+    let (be_bytes, hex_lower) = if let Ok(b) = value.cast::<PyBytes>() {
         let slice = b.as_bytes();
         if slice.len() != 32 {
             return Err(format!("{} must be 32-byte txid", field));
@@ -363,7 +363,7 @@ impl TxParts {
 
         let inputs_any = get_required(tx, "inputs", "tx_missing_inputs")?;
         let inputs_list = inputs_any
-            .downcast::<PyList>()
+            .cast::<PyList>()
             .map_err(|_| "tx_inputs_not_list".to_string())?;
         if inputs_list.is_empty() {
             return Err("tx_missing_inputs".to_string());
@@ -371,7 +371,7 @@ impl TxParts {
         let mut inputs = Vec::with_capacity(inputs_list.len());
         for item in inputs_list {
             let inp = item
-                .downcast::<PyDict>()
+                .cast::<PyDict>()
                 .map_err(|_| "tx_input_not_dict".to_string())?;
             let txid_field = get_required(&inp, "txid", "tx_input_missing_txid")?;
             let txid_parts_inp = parse_txid_field(&txid_field, "tx_input_txid")
@@ -399,12 +399,12 @@ impl TxParts {
 
         let outputs_any = get_required(tx, "outputs", "tx_missing_outputs")?;
         let outputs_list = outputs_any
-            .downcast::<PyList>()
+            .cast::<PyList>()
             .map_err(|_| "tx_outputs_not_list".to_string())?;
         let mut outputs = Vec::with_capacity(outputs_list.len());
         for item in outputs_list {
             let out = item
-                .downcast::<PyDict>()
+                .cast::<PyDict>()
                 .map_err(|_| "tx_output_not_dict".to_string())?;
             let amount: u64 = get_required(&out, "amount", "tx_output_missing_amount")?
                 .extract()
@@ -516,7 +516,7 @@ fn build_utxo_index(utxo: &Bound<'_, PyDict>) -> Result<AHashMap<PrevoutKey, Utx
             Some(k) => k,
             None => continue,
         };
-        let entry_dict = match value_obj.downcast::<PyDict>() {
+        let entry_dict = match value_obj.cast::<PyDict>() {
             Ok(d) => d,
             Err(_) => continue,
         };
@@ -526,7 +526,7 @@ fn build_utxo_index(utxo: &Bound<'_, PyDict>) -> Result<AHashMap<PrevoutKey, Utx
             .get_item("tx_out")
             .map_err(|_| "utxo_pyerr".to_string())?
         {
-            if let Ok(tx_out_dict) = tx_out.downcast::<PyDict>() {
+            if let Ok(tx_out_dict) = tx_out.cast::<PyDict>() {
                 if let Some(spk) = tx_out_dict
                     .get_item("script_pubkey")
                     .map_err(|_| "utxo_pyerr".to_string())?
@@ -610,11 +610,8 @@ fn verify_signature(
             return false;
         }
     }
-    let msg = match Message::from_digest_slice(digest) {
-        Ok(m) => m,
-        Err(_) => return false,
-    };
-    secp.verify_ecdsa(&msg, &norm, &pk).is_ok()
+    let msg = Message::from_digest(*digest);
+    secp.verify_ecdsa(msg, &norm, &pk).is_ok()
 }
 
 fn validate_transaction_parts(
@@ -801,7 +798,7 @@ fn validate_block_impl(
     let secp = Secp256k1::verification_only();
     let txs_any = get_required(block, "transactions", "empty_block_transactions")?;
     let txs = txs_any
-        .downcast::<PyList>()
+        .cast::<PyList>()
         .map_err(|_| "transactions_not_list".to_string())?;
     if txs.len() < 1 {
         return Err("empty_block_transactions".to_string());
@@ -811,7 +808,7 @@ fn validate_block_impl(
 
     for (idx, item) in txs.iter().enumerate() {
         let tx_dict = item
-            .downcast::<PyDict>()
+            .cast::<PyDict>()
             .map_err(|_| "tx_not_dict".to_string())?;
         let is_coinbase = match get_optional(&tx_dict, "is_coinbase")? {
             Some(v) => v.extract().unwrap_or(false),
@@ -849,7 +846,7 @@ pub fn validate_block_txs_native(
     opts: &Bound<PyDict>,
 ) -> PyResult<(bool, Option<String>, Option<Vec<u64>>)> {
     let tx_len = match block.get_item("transactions") {
-        Ok(Some(v)) => v.downcast::<PyList>().map(|l| l.len()).unwrap_or(0),
+        Ok(Some(v)) => v.cast::<PyList>().map(|l| l.len()).unwrap_or(0),
         _ => 0,
     };
     match validate_block_impl(block, utxo, spend_height, opts) {
@@ -873,7 +870,7 @@ pub fn validate_block_txs_native(
 
 fn parse_compact_input(obj: &Bound<'_, PyAny>) -> Result<InputParts, String> {
     let tuple = obj
-        .downcast::<PyTuple>()
+        .cast::<PyTuple>()
         .map_err(|_| "tx_input_not_tuple".to_string())?;
     if tuple.len() < 4 {
         return Err("tx_input_tuple_arity".to_string());
@@ -882,7 +879,7 @@ fn parse_compact_input(obj: &Bound<'_, PyAny>) -> Result<InputParts, String> {
         .get_item(0)
         .map_err(|_| "tx_input_tuple_txid".to_string())?;
     let txid_bytes = txid_item
-        .downcast::<PyBytes>()
+        .cast::<PyBytes>()
         .map_err(|_| "tx_input_txid_not_bytes".to_string())?;
     let txid_slice = txid_bytes.as_bytes();
     if txid_slice.len() != 32 {
@@ -908,9 +905,9 @@ fn parse_compact_input(obj: &Bound<'_, PyAny>) -> Result<InputParts, String> {
         let ss_any = tuple
             .get_item(3)
             .map_err(|_| "tx_input_tuple_scriptsig".to_string())?;
-        let ss_bytes = if let Ok(b) = ss_any.downcast::<PyBytes>() {
+        let ss_bytes = if let Ok(b) = ss_any.cast::<PyBytes>() {
             b.as_bytes().to_vec()
-        } else if let Ok(b) = ss_any.downcast::<PyByteArray>() {
+        } else if let Ok(b) = ss_any.cast::<PyByteArray>() {
             b.to_vec()
         } else {
             return Err("tx_input_scriptsig_not_bytes".to_string());
@@ -939,7 +936,7 @@ fn parse_compact_input(obj: &Bound<'_, PyAny>) -> Result<InputParts, String> {
 
 fn parse_compact_output(obj: &Bound<'_, PyAny>) -> Result<OutputParts, String> {
     let tuple = obj
-        .downcast::<PyTuple>()
+        .cast::<PyTuple>()
         .map_err(|_| "tx_output_not_tuple".to_string())?;
     if tuple.len() < 2 {
         return Err("tx_output_tuple_arity".to_string());
@@ -954,7 +951,7 @@ fn parse_compact_output(obj: &Bound<'_, PyAny>) -> Result<OutputParts, String> {
         .get_item(1)
         .map_err(|_| "tx_output_tuple_script".to_string())?;
     let spk_bytes = spk_item
-        .downcast::<PyBytes>()
+        .cast::<PyBytes>()
         .map_err(|_| "tx_output_script_not_bytes".to_string())?
         .as_bytes()
         .to_vec();
@@ -966,7 +963,7 @@ fn parse_compact_output(obj: &Bound<'_, PyAny>) -> Result<OutputParts, String> {
 
 fn parse_compact_tx(obj: &Bound<'_, PyAny>) -> Result<(TxParts, bool), String> {
     let tuple = obj
-        .downcast::<PyTuple>()
+        .cast::<PyTuple>()
         .map_err(|_| "tx_not_tuple".to_string())?;
     if tuple.len() < 6 {
         return Err("tx_tuple_arity".to_string());
@@ -987,7 +984,7 @@ fn parse_compact_tx(obj: &Bound<'_, PyAny>) -> Result<(TxParts, bool), String> {
         .get_item(2)
         .map_err(|_| "tx_tuple_inputs".to_string())?;
     let inputs_any = inputs_item
-        .downcast::<PyList>()
+        .cast::<PyList>()
         .map_err(|_| "tx_inputs_not_list".to_string())?;
     if inputs_any.is_empty() {
         return Err("tx_missing_inputs".to_string());
@@ -1000,7 +997,7 @@ fn parse_compact_tx(obj: &Bound<'_, PyAny>) -> Result<(TxParts, bool), String> {
         .get_item(3)
         .map_err(|_| "tx_tuple_outputs".to_string())?;
     let outputs_any = outputs_item
-        .downcast::<PyList>()
+        .cast::<PyList>()
         .map_err(|_| "tx_outputs_not_list".to_string())?;
     let mut outputs = Vec::with_capacity(outputs_any.len());
     for item in outputs_any {
@@ -1010,7 +1007,7 @@ fn parse_compact_tx(obj: &Bound<'_, PyAny>) -> Result<(TxParts, bool), String> {
         .get_item(4)
         .map_err(|_| "tx_tuple_txid".to_string())?;
     let txid_bytes = txid_item
-        .downcast::<PyBytes>()
+        .cast::<PyBytes>()
         .map_err(|_| "tx_txid_not_bytes".to_string())?;
     let txid_slice = txid_bytes.as_bytes();
     if txid_slice.len() != 32 {
@@ -1038,7 +1035,7 @@ fn parse_compact_tx(obj: &Bound<'_, PyAny>) -> Result<(TxParts, bool), String> {
 fn parse_compact_utxo_list(utxo: &Bound<'_, PyList>) -> Result<AHashMap<PrevoutKey, UtxoEntry>, String> {
     let mut out: AHashMap<PrevoutKey, UtxoEntry> = AHashMap::with_capacity(utxo.len());
     for item in utxo {
-        let tuple = item.downcast::<PyTuple>().map_err(|_| "utxo_not_tuple".to_string())?;
+        let tuple = item.cast::<PyTuple>().map_err(|_| "utxo_not_tuple".to_string())?;
         if tuple.len() < 6 {
             return Err("utxo_tuple_arity".to_string());
         }
@@ -1046,7 +1043,7 @@ fn parse_compact_utxo_list(utxo: &Bound<'_, PyList>) -> Result<AHashMap<PrevoutK
             .get_item(0)
             .map_err(|_| "utxo_tuple_txid".to_string())?;
         let txid_b = txid_item
-            .downcast::<PyBytes>()
+            .cast::<PyBytes>()
             .map_err(|_| "utxo_txid_not_bytes".to_string())?
             .as_bytes();
         if txid_b.len() != 32 {
@@ -1070,7 +1067,7 @@ fn parse_compact_utxo_list(utxo: &Bound<'_, PyList>) -> Result<AHashMap<PrevoutK
             .get_item(3)
             .map_err(|_| "utxo_tuple_script".to_string())?;
         let script = script_item
-            .downcast::<PyBytes>()
+            .cast::<PyBytes>()
             .map_err(|_| "utxo_script_not_bytes".to_string())?
             .as_bytes()
             .to_vec();
