@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TsarChain Explorer</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body data-theme="kremlin">
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <h1 class="brand-title">TsarChain <span>Explorer</span></h1>
+          <p class="tagline">
+            Explore The Full TsarChain Ecosystem
+          </p>
+        </div>
+      </header>
+
+      <section class="search-panel reveal" style="--delay: 0.1s">
+        <form id="searchForm" class="search-row">
+          <input
+            id="searchInput"
+            class="search-input"
+            type="text"
+            placeholder="block height / block hash / txid / address / graffiti id"
+            spellcheck="false"
+            autocomplete="off"
+          />
+          <button class="btn btn-primary" id="searchBtn" type="submit">
+            Search
+          </button>
+        </form>
+        <div class="quick-actions">
+          <button class="btn btn-ghost" id="refreshOverview" type="button">
+            Refresh Overview
+          </button>
+          <button class="btn btn-ghost" id="loadLatest" type="button">
+            Latest Block
+          </button>
+          <button class="btn btn-ghost" id="clearResults" type="button">
+            Clear
+          </button>
+        </div>
+        <div class="status" id="status">
+          <strong>Status:</strong> siap.
+        </div>
+      </section>
+
+      <section class="grid">
+        <aside class="panel reveal" style="--delay: 0.2s">
+          <h2>Network Overview</h2>
+          <div id="overview" class="kv-list">
+            <div class="kv-row">
+              <span class="kv-key">Network</span>
+              <span class="kv-val">-</span>
+            </div>
+          </div>
+          <div class="subpanel">
+            <div class="subpanel-header">
+              <h3>Snapshot Detail</h3>
+              <span id="snapshotStamp" class="stamp muted"></span>
+            </div>
+            <div id="snapshotPrimary" class="kv-list compact"></div>
+            <div id="snapshotSecondary" class="kv-list compact"></div>
+          </div>
+        </aside>
+        <section class="panel reveal" style="--delay: 0.25s">
+          <h2>Result</h2>
+          <div id="results" class="results">
+          </div>
+        </section>
+      </section>
+    </div>
+    <script src="script.js"></script>
+  </body>
+</html>

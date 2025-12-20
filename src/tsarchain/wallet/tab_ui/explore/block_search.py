@@ -69,6 +69,9 @@ class BlockSearch:
         prev = _pick("prev_block_hash", "prev_hash", "previous_hash", "previousblockhash")
         nn = _pick("nonce")
         dif = _pick("difficulty")
+        vbytes = _pick("vbytes")
+        weight = _pick("weight")
+        chainwork = _pick("chainwork")
         bits = _pick("bits")
         ver = _pick("version")
         mroot = _pick("merkle_root")
@@ -85,6 +88,12 @@ class BlockSearch:
         p._kv("Nonce", str(nn), mono=True, vtag="val_num")
         if dif is not None:
             p._kv("Difficulty", str(dif), mono=True)
+        if vbytes is not None:
+            p._kv("Size", str(vbytes), mono=True)
+        if weight is not None:
+            p._kv("Weight", str(weight), mono=True)
+        if chainwork is not None:
+            p._kv("Chainwork", str(chainwork), mono=True)
         if bits is not None:
             p._kv("Bits", str(bits), mono=True, vtag="val_num")
         if ver is not None:

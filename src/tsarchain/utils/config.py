@@ -172,8 +172,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 1 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = "0000735f0a82a6b28ab4ab580182d317397f57c5566f01971ae1d50fa46fb0a0"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -617,7 +617,7 @@ ART_ID_PREFIX_LEN  = len(ART_ID_PREFIX)
 ART_ID_BODY_LEN    = 60  # hex chars retained after adding prefix to keep 64 chars total
 
 # ---- OP_RETURN POLICY ----
-MAX_GRAFFITI_OPRET    = 506  # graffiti payload limit capped under script limit
+MAX_GRAFFITI_OPRET    = 570  # graffiti payload limit capped under script limit
 
 # ---- GRAFFITI ----
 GRAFFITI_MIN_BILLABLE_SIZE    = 100 * 1024
@@ -658,7 +658,7 @@ RETENTION_GC_SEC               = 60  # interval between retention garbage collec
 LOG_PATH             = "data/logging/tsarchain.log"  # canonical log file path before format-specific override
 LOG_SHOW_PROCESS     = False  # include process metadata in log context when True
 LOG_PROC_PLACEHOLDER = "-"  # value used when process info is hidden
-DEBUG_BENCHMARKS     = False  # for benchmarking needs for each computing logic/process
+DEBUG_BENCHMARKS     = True  # for benchmarking needs for each computing logic/process
 
 # ---- MODE PROFILES ----
 if IS_DEV:

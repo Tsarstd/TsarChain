@@ -693,6 +693,11 @@ def _serialize_block(self, b) -> dict:
         if hdr is not None and not callable(hdr):
             mroot = getattr(hdr, "merkle_root", None)
     mroot_hex = _to_hex(mroot)
+    
+    # vbytes / weight / chainwork
+    vbytes = getattr(b, "vbytes", None)
+    weight = getattr(b, "weight", None)
+    chainwork = getattr(b, "chainwork", None)
 
     # Transactions (light)
     txs = []
@@ -749,6 +754,9 @@ def _serialize_block(self, b) -> dict:
         "difficulty": diff,
         "version": version,
         "bits": bits,
+        "vbytes": vbytes,
+        "weight": weight,
+        "chainwork": chainwork,
         "merkle_root": mroot_hex,
         "tx": txs,
         "tx_count": len(txs),
