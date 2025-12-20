@@ -320,15 +320,19 @@ TsarChain/
 ├── docs/                    # Documentation, Whitepaper & Draft Protocol
 ├── scripts/                 # Development utility scripts
 ├── src/
-│   └── tsarchain/           # Python main packages
-│       ├── consensus/       # Blockchain Logic (PoW, Difficulty, Validation, etc.)
-│       ├── contracts/       # Smart Contracts (Graffiti) & Archivist Module
-│       ├── core/            # Core data structure (Block, Transaction, Coinbase)
-│       ├── mempool/         # MemPool Management & Policy
-│       ├── network/         # P2P Networking, RPC, & Gossip Protocol
-│       ├── storage/         # Database Layer (LMDB/JSON mode & UTXO)
-│       ├── utils/           # Global Configurations (config.py) & Helper
-│       └── wallet/          # Wallet Logic, Security, & UI Components
+│   ├── tsarchain/           # Python main packages
+│   │   ├── consensus/       # Blockchain Logic (PoW, Difficulty, Validation, etc.)
+│   │   ├── contracts/       # Smart Contracts (Graffiti) & Archivist Module
+│   │   ├── core/            # Core data structure (Block, Transaction, Coinbase)
+│   │   ├── mempool/         # MemPool Management & Policy
+│   │   ├── network/         # P2P Networking, RPC, & Gossip Protocol
+│   │   ├── storage/         # Database Layer (LMDB/JSON mode & UTXO)
+│   │   ├── utils/           # Global Configurations (config.py) & Helper
+│   │   └── wallet/          # Wallet Logic, Security, & UI Components
+│   │
+│   └── web/                 # TsarChain Explorer Website
+│       ├── Backend/         # Backend Website Module
+│       └── Fronted/         # Frontend Website Module
 │
 ├── tests/                   # Unit testing (native & double rachet)
 ├── tools/                   # LMDB database tools & Snapshot maintenance
