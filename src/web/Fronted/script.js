@@ -140,6 +140,20 @@ function shortHash(value, n = 10) {
   return `${s.slice(0, n)}...${s.slice(-n)}`;
 }
 
+function formatChainwork(val) {
+  if (val === null || val === undefined || val === "") return "-";
+  try {
+    const cw = BigInt(val);
+    const hex = cw.toString(16);
+    const short = hex.length <= 14 ? `0x${hex}` : `0x${hex.slice(0, 6)}...${hex.slice(-6)}`;
+    const human = cw.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return `${short} (${human})`;
+  } catch {
+    const s = String(val);
+    return s.length <= 14 ? s : `${s.slice(0, 6)}...${s.slice(-6)}`;
+  }
+}
+
 function decodeHex(hex) {
   const h = (hex || "").toString().replace(/^0x/, "");
   if (!h || h.length % 2 !== 0 || /[^0-9a-f]/i.test(h)) return "";
@@ -286,8 +300,12 @@ function renderBlock(block) {
   const ts = pick(block.timestamp, block.time, pickNested(block, ["_meta", "timestamp"]));
   const nonce = pick(block.nonce, pickNested(block, ["_meta", "nonce"]));
   const bits = pick(block.bits, pickNested(block, ["_meta", "bits"]));
+  const difficulty = pick(block.difficulty, pickNested(block, ["_meta", "difficulty"]));
   const mroot = pick(block.merkle_root, pickNested(block, ["_meta", "merkle_root"]));
+  const sizeBytes = pick(block.size_bytes, pickNested(block, ["_meta", "size_bytes"]));
   const vbytes = pick(block.vbytes, pickNested(block, ["_meta", "vbytes"]));
+  const weight = pick(block.weight, pickNested(block, ["_meta", "weight"]));
+  const chainwork = pick(block.chainwork, pickNested(block, ["_meta", "chainwork"]));
   const txs = block.transactions || block.tx || block.txs || [];
   const graffiti = block.graffiti || [];
   const comments = block.comments || [];
@@ -301,9 +319,13 @@ function renderBlock(block) {
       ${kvRow("Block ID", blockId || "-", true)}
       ${kvRow("Hash", hash || "-", true)}
       ${kvRow("Previous", prev || "-", true)}
+      ${kvRow("Difficulty", difficulty ?? "-", true)}
+      ${kvRow("Chainwork", formatChainwork(chainwork), true)}
       ${kvRow("Nonce", nonce ?? "-", true)}
       ${kvRow("Bits", bits ?? "-", true)}
+      ${kvRow("Size", formatBytes(sizeBytes), true)}
       ${kvRow("Vbytes", vbytes || "-", true)}
+      ${kvRow("Weight", formatNum(weight), true)}
       ${kvRow("Merkle Root", mroot || "-", true)}
       ${kvRow("Tx Count", txs.length, true)}
       ${kvRow("Graffiti", graffitiCount, true)}

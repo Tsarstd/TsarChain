@@ -9,7 +9,7 @@ from bech32 import convertbits, bech32_decode, bech32_encode
 
 # ---------------- Local Project ----------------
 from ..core.tx import Tx, TxIn, TxOut
-from ..utils.helpers import Script, OP_RETURN, last_pushdata, compute_tx_weight_vsize
+from ..utils.helpers import Script, OP_RETURN, last_pushdata, compute_tx_weight_vsize, bits_to_target, target_to_difficulty
 from ..contracts import graffiti as GRAFFITI
 from .protocol import send_message, recv_message,build_envelope, SecureChannel
 from ..utils import config as CFG
@@ -693,16 +693,38 @@ def _serialize_block(self, b) -> dict:
         if hdr is not None and not callable(hdr):
             mroot = getattr(hdr, "merkle_root", None)
     mroot_hex = _to_hex(mroot)
-    
-    # vbytes / weight / chainwork
+
+    # meta fallback (if block carries _meta from storage)
+    meta = getattr(b, "_meta", None)
+    meta_dict = meta if isinstance(meta, dict) else {}
+
+    # vbytes / weight / chainwork / size_bytes
     vbytes = getattr(b, "vbytes", None)
     weight = getattr(b, "weight", None)
     chainwork = getattr(b, "chainwork", None)
+    size_bytes = getattr(b, "size_bytes", None)
+    if meta_dict:
+        vbytes = vbytes if vbytes is not None else meta_dict.get("vbytes")
+        weight = weight if weight is not None else meta_dict.get("weight")
+        chainwork = chainwork if chainwork is not None else meta_dict.get("chainwork")
+        if size_bytes is None and meta_dict.get("size_bytes") is not None:
+            size_bytes = meta_dict.get("size_bytes")
+        if diff is None:
+            diff = meta_dict.get("difficulty")
 
-    # Transactions (light)
+    # difficulty fallback from bits
+    if diff is None and bits is not None:
+        diff = int(target_to_difficulty(bits_to_target(int(bits))))
+
+    # Transactions (light) + compute size/weight fallback
     txs = []
     graffiti_posts = []
     graffiti_comments = []
+    base_size_sum = 80  # block header bytes (no witness)
+    total_size_sum = 80
+    weight_sum = 0
+    vbytes_sum = 0
+    need_size_fallback = size_bytes is None or vbytes is None or weight is None
     for tx in getattr(b, "transactions", []) or []:
         txs.append(self._serialize_tx_basic(tx))
         txid_hex = ""
@@ -711,6 +733,17 @@ def _serialize_block(self, b) -> dict:
             txid_hex = tid.hex()
         elif isinstance(tid, str):
             txid_hex = tid
+
+        # aggregate sizes if fallback needed
+        if need_size_fallback:
+            w, v, base_sz, total_sz = compute_tx_weight_vsize(tx)
+            base_size_sum += int(base_sz)
+            total_size_sum += int(total_sz)
+            if weight is None:
+                weight_sum += int(w)
+            if vbytes is None:
+                vbytes_sum += int(v)
+
         for tx_out in getattr(tx, "outputs", []) or []:
             spk = getattr(tx_out, "script_pubkey", None)
             meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
@@ -742,6 +775,40 @@ def _serialize_block(self, b) -> dict:
                     "comment_len": meta.get("comment_len"),
                 })
 
+    # finalize size/weight/vbytes fallback if still missing
+    if size_bytes is None:
+        size_bytes = total_size_sum if total_size_sum > 0 else None
+        
+    if weight is None and base_size_sum is not None and total_size_sum is not None:
+        weight = int(weight_sum) if weight_sum > 0 else int(base_size_sum * 3 + total_size_sum)
+    if vbytes is None:
+        if vbytes_sum > 0:
+            vbytes = int(vbytes_sum)
+        elif weight is not None:
+            vbytes = (int(weight) + 3) // 4
+
+    # chainwork fallback (use prev chainwork + work_from_bits if available)
+    if chainwork is None and bits is not None:
+        try:
+            bc = getattr(getattr(self, "broadcast", None), "blockchain", None)
+            work_val = bc._work_from_bits(int(bits)) if bc and hasattr(bc, "_work_from_bits") else None
+            if work_val is None:
+                raise AttributeError
+            prev_cw = None
+            chain = getattr(bc, "chain", []) if bc else []
+            if isinstance(chain, list) and isinstance(height, int) and height > 0 and height - 1 < len(chain):
+                prev_blk = chain[height - 1]
+                prev_cw = getattr(prev_blk, "chainwork", None)
+                if prev_cw is None and hasattr(bc, "_compute_chainwork_for_chain"):
+                    try:
+                        prev_cw = bc._compute_chainwork_for_chain(chain[:height])  # exclude current
+                    except Exception:
+                        prev_cw = None
+                        
+            chainwork = (int(prev_cw) if prev_cw is not None else 0) + int(work_val)
+        except Exception:
+            log.exception("[_serialize_block] chainwork fallback failed")
+
     blk_id = self._extract_block_id_from_block(b)
     block_dict = {
         "type": "BLOCK",
@@ -757,6 +824,7 @@ def _serialize_block(self, b) -> dict:
         "vbytes": vbytes,
         "weight": weight,
         "chainwork": chainwork,
+        "size_bytes": size_bytes,
         "merkle_root": mroot_hex,
         "tx": txs,
         "tx_count": len(txs),

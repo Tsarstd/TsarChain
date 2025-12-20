@@ -62,6 +62,34 @@ class BlockSearch:
                     return v
             return None
 
+        def _fmt_bytes(num):
+            try:
+                val = float(num)
+            except Exception:
+                return str(num)
+            units = ["bytes", "KB", "MB", "GB", "TB"]
+            size = val
+            idx = 0
+            while size >= 1024 and idx < len(units) - 1:
+                size /= 1024
+                idx += 1
+            if idx == 0:
+                return f"{int(size)} bytes"
+            return f"{size:.2f} {units[idx]}"
+
+        def _fmt_chainwork(val):
+            if val in (None, ""):
+                return "-"
+            try:
+                n = int(val)
+                hexstr = hex(n)[2:]
+                short = f"0x{hexstr}" if len(hexstr) <= 14 else f"0x{hexstr[:6]}...{hexstr[-6:]}"
+                human = f"{n:,}"
+                return f"{short} ({human})"
+            except Exception:
+                s = str(val)
+                return s if len(s) <= 14 else f"{s[:6]}...{s[-6:]}"
+
         h = _pick("height", "index") or "Genesis"
         hh = _pick("hash")
         blkid = _pick("block_id")
@@ -69,6 +97,7 @@ class BlockSearch:
         prev = _pick("prev_block_hash", "prev_hash", "previous_hash", "previousblockhash")
         nn = _pick("nonce")
         dif = _pick("difficulty")
+        size_b = _pick("size_bytes", "size")
         vbytes = _pick("vbytes")
         weight = _pick("weight")
         chainwork = _pick("chainwork")
@@ -88,12 +117,14 @@ class BlockSearch:
         p._kv("Nonce", str(nn), mono=True, vtag="val_num")
         if dif is not None:
             p._kv("Difficulty", str(dif), mono=True)
+        if size_b is not None:
+            p._kv("Size", _fmt_bytes(size_b), mono=True)
         if vbytes is not None:
-            p._kv("Size", str(vbytes), mono=True)
+            p._kv("VBytes", str(vbytes), mono=True)
         if weight is not None:
             p._kv("Weight", str(weight), mono=True)
         if chainwork is not None:
-            p._kv("Chainwork", str(chainwork), mono=True)
+            p._kv("Chainwork", _fmt_chainwork(chainwork), mono=True)
         if bits is not None:
             p._kv("Bits", str(bits), mono=True, vtag="val_num")
         if ver is not None:
