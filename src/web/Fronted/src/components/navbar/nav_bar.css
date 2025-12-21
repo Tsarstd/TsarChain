@@ -1,0 +1,76 @@
+.navbar {
+  padding: 18px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  background: linear-gradient(90deg, rgba(18, 18, 22, 0.9), rgba(26, 26, 32, 0.8));
+  border-bottom: 1px solid rgba(249, 115, 22, 0.18);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.navbar .logo {
+  width: 42px;
+  height: 42px;
+}
+
+.navbar-menu {
+  list-style: none;
+  display: flex;
+  gap: 18px;
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.navbar-menu li {
+  padding: 6px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.navbar-menu li:hover {
+  color: var(--text);
+  background: rgba(249, 115, 22, 0.1);
+}
+
+.navbar-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.navbar-search input {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  padding: 10px 12px;
+  border-radius: 12px;
+  min-width: 280px;
+  outline: none;
+}
+
+.navbar-search button {
+  background: var(--accent);
+  color: #0e0e11;
+  border: none;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.navbar-search button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(249, 115, 22, 0.2);
+}
