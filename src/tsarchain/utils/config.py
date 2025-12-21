@@ -173,7 +173,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "0000735f0a82a6b28ab4ab580182d317397f57c5566f01971ae1d50fa46fb0a0"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "000b7e7bde86ccd46c509378bec481c28444a031cfa888e913907fb7d2b0c31a"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -359,15 +359,24 @@ BROADCAST_FAIL_THRESHOLD = 2  # consecutive failures before backing off broadcas
 BROADCAST_FAIL_BACKOFF_S = 120  # seconds to wait when broadcast keeps failing
 
 # ---- ANTI-DOS LIMITS ----
-MAX_ADDRS_PER_REQ            = 15  # max addresses accepted per addr message
-MAX_HISTORY_LIMIT            = 200  # cap on stored addr history per peer
-MAX_UTXO_ADDR_LEN            = 64  # sanity limit for UTXO address strings
-NONCE_PER_SENDER_MAX         = 256  # per-sender nonce cache bound
-NONCE_GLOBAL_MAX             = 100_000  # global nonce cache bound across senders
-HANDSHAKE_RL_PER_IP_BURST    = 50  # burst limit when rate-limiting handshakes
-HANDSHAKE_RL_PER_IP_WINDOW_S = 10  # time window for handshake rate limit
-TEMP_BAN_SECONDS             = 30  # duration for temporary ban entries
-BAN_MALICIOUS_RPC            = 90  # temp ban duration when receiving unregistered RPC types
+MAX_ADDRS_PER_REQ              = 15  # max addresses accepted per addr message
+MAX_HISTORY_LIMIT              = 200  # cap on stored addr history per peer
+MAX_UTXO_ADDR_LEN              = 64  # sanity limit for UTXO address strings
+NONCE_PER_SENDER_MAX           = 256  # per-sender nonce cache bound
+NONCE_GLOBAL_MAX               = 100_000  # global nonce cache bound across senders
+HANDSHAKE_RL_PER_IP_BURST      = 50  # burst limit when rate-limiting handshakes
+HANDSHAKE_RL_PER_IP_WINDOW_S   = 10  # time window for handshake rate limit
+HANDSHAKE_RL_PER_NODE_BURST    = 80  # burst limit per node_id to avoid CGNAT false positives
+HANDSHAKE_RL_PER_NODE_WINDOW_S = 10  # time window for per-node limiter
+HANDSHAKE_RL_SUBNET_BURST      = 160  # burst cap per /24 subnet (IPv4) or /64 (IPv6) for floods
+HANDSHAKE_RL_SUBNET_WINDOW_S   = 20  # subnet limiter window (seconds)
+CGNAT_IP_BURST_MULT            = 3  # multiplier to loosen per-IP limits when identity is present
+TEMP_BAN_SECONDS               = 30  # duration for temporary ban entries
+BAN_MALICIOUS_RPC              = 90  # temp ban duration when receiving unregistered RPC types
+POW_TOKEN_TTL_S                = 120  # default TTL for PoW challenge/cookie
+RPC_POW_DIFFICULTY_TX          = 14  # difficulty bits for TX submit / wallet-heavy RPC
+RPC_POW_DIFFICULTY_READ        = 10  # difficulty bits for read-only RPC (info/history/graffiti)
+RPC_POW_DIFFICULTY_CHAT        = 12  # difficulty bits for chat presence/send/lookup
 
 # ---- FULL SYNC GUARD ----
 ENABLE_FULL_SYNC          = FULL_SYNC_DEV if IS_DEV else FULL_SYNC_PROD  # controls whether expensive full sync is allowed
@@ -603,6 +612,7 @@ STOR_ADMIN_RL_WINDOW_S     = 20  # seconds window for admin limiter
 STOR_ADMIN_RL_BACKOFF_S    = 20  # backoff after admin limiter trips
 
 BAN_UNKNOWN_STORAGE_RPC    = 90  # temp-ban when receiving unknown STOR_* message types
+STOR_POW_DIFFICULTY        = 18  # difficulty bits for PoW challenge on storage RPC
 
 # =============================================================================
 # 12. SCRIPT, GRAFFITI & STORAGE POLICY

@@ -139,7 +139,7 @@ def process_message(
     )
 
     if dispatch_result is not None:
-        log.debug("[process_message] %s response: msg: %s", role, mtype)
+        #log.debug("[process_message] %s response: msg: %s", role, mtype)
         return dispatch_result
     
     return {"error": "Unknown message type"}

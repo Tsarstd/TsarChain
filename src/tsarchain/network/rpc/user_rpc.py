@@ -4,7 +4,7 @@
 # Refs: BIP141; BIP173; libsecp256k1; Signal-X3DH; RFC7748-X25519
 
 import hashlib
-import time, secrets, json
+import time, secrets, json, ipaddress
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from bech32 import convertbits, bech32_decode
@@ -13,6 +13,7 @@ from ...utils.helpers import hash160
 from ...utils.helpers import batch_verify_der_low_s
 from ...utils import config as CFG
 from ...contracts import graffiti as GRAFFITI
+from ..pow_token import issue_pow, verify_pow
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
@@ -50,6 +51,102 @@ def _verify_chat_signatures(tasks: list[tuple[str, str, bytes, str]]) -> dict[st
         verdict[label] = bool(ok)
     return verdict
 
+def _norm_identity(val: Any) -> str | None:
+    if val is None:
+        return None
+    if isinstance(val, list) and val:
+        val = val[0]
+    s = str(val or "").strip().lower()
+    return s or None
+
+def _subnet_key(ip: str) -> str | None:
+    try:
+        obj = ipaddress.ip_address(ip)
+    except ValueError:
+        return None
+    if obj.version == 4:
+        parts = ip.split(".")
+        return ".".join(parts[:3]) if len(parts) >= 3 else None
+    parts = ip.split(":")
+    return ":".join(parts[:4]) if len(parts) >= 4 else None
+
+def _identity_from_msg(message: dict[str, Any] | None) -> str | None:
+    if not isinstance(message, dict):
+        return None
+    candidates = [
+        message.get("wallet_addr"),
+        message.get("creator_addr"),
+        message.get("from_addr"),
+        message.get("from"),
+        message.get("address"),
+        message.get("addr"),
+        message.get("sender"),
+        message.get("node_id"),
+    ]
+    if isinstance(message.get("addresses"), list) and message.get("addresses"):
+        candidates.append(message.get("addresses")[0])
+    data = message.get("data") if isinstance(message.get("data"), dict) else None
+    if isinstance(data, dict):
+        candidates.append(data.get("from_addr"))
+        candidates.append(data.get("addr"))
+    for cand in candidates:
+        ident = _norm_identity(cand)
+        if ident:
+            return ident
+    return None
+
+def _allow_rpc_with_pow(
+    self,
+    *,
+    scope: str,
+    table: dict,
+    ip: str,
+    identity: str | None,
+    key_label: str,
+    burst: int,
+    window_s: int,
+    backoff_s: int,
+    pow_obj: dict | None,
+    difficulty: int,
+) -> tuple[bool, dict | None]:
+    ident = _norm_identity(identity) or f"ip:{ip}"
+    subnet = _subnet_key(ip)
+    keys: list[str] = []
+    if ip:
+        keys.append(f"{key_label}:ip:{ip}")
+    if subnet:
+        keys.append(f"{key_label}:sub:{subnet}")
+    if ident:
+        keys.append(f"{key_label}:id:{ident}")
+
+    if pow_obj:
+        nonce = pow_obj.get("nonce") if isinstance(pow_obj, dict) else None
+        try:
+            if verify_pow(pow_obj, nonce, expected_scope=scope, identity=ident):
+                return True, None
+        except Exception:
+            pass
+
+    allowed = True
+    for k in keys:
+        if not self._tb_allow(table, k, burst, window_s, burst, backoff_key=k):
+            allowed = False
+    if allowed:
+        return True, None
+
+    if backoff_s:
+        for k in keys:
+            try:
+                self._backoff(k, backoff_s)
+            except Exception:
+                pass
+    challenge = issue_pow(scope, ident, difficulty, CFG.POW_TOKEN_TTL_S)
+    return False, {
+        "error": "pow_required",
+        "retry_after": max(1, backoff_s or 1),
+        "pow_challenge": challenge,
+    }
+
 
 __all__ = ["handle_user_rpc"]
 
@@ -67,6 +164,8 @@ def handle_user_rpc(
     relay_chain: Callable[["Network", list[tuple], dict, Optional[tuple]], None],
     send_chat_relay: Callable[["Network", tuple, dict], dict],
 ) -> dict | None:
+    pow_obj = message.get("pow") if isinstance(message, dict) else None
+    base_identity = _identity_from_msg(message)
 
 # =============================================================================
 # ---------------------------- User Activities RPC ----------------------------
@@ -82,11 +181,6 @@ def handle_user_rpc(
             start = time.perf_counter()
         
         ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
-        rl_key = f"bal:{ip}"
-        if not self._tb_allow(self.rl_ip, rl_key, CFG.BALANCE_RL_IP_BURST, CFG.BALANCE_RL_IP_WINDOW_S, CFG.BALANCE_RL_IP_BURST, backoff_key=rl_key):
-            self._backoff(rl_key, CFG.BALANCE_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
-
         addrs_raw = message.get("addresses") or []
         if not addrs_raw and message.get("address"):
             addrs_raw = [message["address"]]
@@ -94,6 +188,22 @@ def handle_user_rpc(
             return {"error": "missing addresses"}
         if len(addrs_raw) > CFG.MAX_ADDRS_PER_REQ:
             return {"error": "too many addresses (max %d)" % CFG.MAX_ADDRS_PER_REQ}
+        ident_hint = _norm_identity(addrs_raw[0] if addrs_raw else None) or base_identity
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:balance",
+            table=self.rl_ip,
+            ip=ip,
+            identity=ident_hint,
+            key_label="bal",
+            burst=CFG.BALANCE_RL_IP_BURST,
+            window_s=CFG.BALANCE_RL_IP_WINDOW_S,
+            backoff_s=CFG.BALANCE_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_READ),
+        )
+        if not ok:
+            return pow_resp
 
         norm = []
         for a in addrs_raw:
@@ -207,9 +317,21 @@ def handle_user_rpc(
             
         ip = client_ip()
         rl_key = f"info:{ip}"
-        if not self._tb_allow(self.rl_ip, rl_key, CFG.INFO_RL_IP_BURST, CFG.INFO_RL_IP_WINDOW_S, CFG.INFO_RL_IP_BURST, backoff_key=rl_key):
-            self._backoff(rl_key, CFG.INFO_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:info",
+            table=self.rl_ip,
+            ip=ip,
+            identity=base_identity,
+            key_label="info",
+            burst=CFG.INFO_RL_IP_BURST,
+            window_s=CFG.INFO_RL_IP_WINDOW_S,
+            backoff_s=CFG.INFO_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_READ),
+        )
+        if not ok:
+            return pow_resp
         
         snap = self.broadcast.blockchain._read_snapshot_state()
         overlay_realtime_mempool_stats(snap, self)
@@ -234,9 +356,21 @@ def handle_user_rpc(
     elif mtype == "GET_BLOCK":
         ip = client_ip()
         rl_key = f"blk:{ip}"
-        if not self._tb_allow(self.rl_ip, rl_key, CFG.BLOCK_FETCH_RL_IP_BURST, CFG.BLOCK_FETCH_RL_WINDOW_S, CFG.BLOCK_FETCH_RL_IP_BURST, backoff_key=rl_key):
-            self._backoff(rl_key, CFG.BLOCK_FETCH_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:block_fetch",
+            table=self.rl_ip,
+            ip=ip,
+            identity=base_identity,
+            key_label="blk",
+            burst=CFG.BLOCK_FETCH_RL_IP_BURST,
+            window_s=CFG.BLOCK_FETCH_RL_WINDOW_S,
+            backoff_s=CFG.BLOCK_FETCH_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_READ),
+        )
+        if not ok:
+            return pow_resp
         if "height" in message:
             return self._handle_get_block_at(int(message["height"]))
         hx = str(message.get("hash") or "").strip()
@@ -259,17 +393,45 @@ def handle_user_rpc(
 
         ip = client_ip()
         tx_key = f"txsub:{ip}"
-        if not self._tb_allow(self.rl_ip, tx_key, CFG.TX_SUBMIT_RL_IP_BURST, CFG.TX_SUBMIT_RL_WINDOW_S, CFG.TX_SUBMIT_RL_IP_BURST, backoff_key=tx_key):
-            self._backoff(tx_key, CFG.TX_SUBMIT_RL_BACKOFF_S)
-            return {"status": "error", "reason": "rate_limited"}
+        sender_addr = str(message.get("from_addr") or message.get("from") or "").strip().lower()
+        if not sender_addr and isinstance(message.get("data"), dict):
+            sender_addr = str((message.get("data") or {}).get("from_addr") or "").strip().lower()
+        ident_tx = sender_addr or base_identity
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:tx",
+            table=self.rl_ip,
+            ip=ip,
+            identity=ident_tx,
+            key_label="txsub",
+            burst=CFG.TX_SUBMIT_RL_IP_BURST,
+            window_s=CFG.TX_SUBMIT_RL_WINDOW_S,
+            backoff_s=CFG.TX_SUBMIT_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_TX),
+        )
+        if not ok:
+            return {"status": "error", **(pow_resp or {})}
         sender_addr = str(message.get("from_addr") or message.get("from") or "").strip().lower()
         if not sender_addr and isinstance(message.get("data"), dict):
             sender_addr = str((message.get("data") or {}).get("from_addr") or "").strip().lower()
         if sender_addr:
             addr_key = f"txaddr:{sender_addr}"
-            if not self._tb_allow(self.rl_addr, addr_key, CFG.TX_SUBMIT_RL_ADDR_BURST, CFG.TX_SUBMIT_RL_ADDR_WINDOW_S, CFG.TX_SUBMIT_RL_ADDR_BURST, backoff_key=addr_key):
-                self._backoff(addr_key, CFG.TX_SUBMIT_RL_ADDR_BACKOFF_S)
-                return {"status": "error", "reason": "rate_limited_addr"}
+            ok, pow_resp = _allow_rpc_with_pow(
+                self,
+                scope="rpc:tx_addr",
+                table=self.rl_addr,
+                ip=ip,
+                identity=sender_addr,
+                key_label=addr_key,
+                burst=CFG.TX_SUBMIT_RL_ADDR_BURST,
+                window_s=CFG.TX_SUBMIT_RL_ADDR_WINDOW_S,
+                backoff_s=CFG.TX_SUBMIT_RL_ADDR_BACKOFF_S,
+                pow_obj=pow_obj,
+                difficulty=int(CFG.RPC_POW_DIFFICULTY_TX),
+            )
+            if not ok:
+                return {"status": "error", **(pow_resp or {})}
 
         if CFG.ENABLE_DANDELION_PP and "phase" not in message:
             message = dict(message)
@@ -296,9 +458,21 @@ def handle_user_rpc(
         mode = str(message.get("mode", "")).strip().lower()
         if mode not in ("inline", "inline_full"):
             mp_key = f"mempool:{ip}"
-            if not self._tb_allow(self.rl_ip, mp_key, CFG.MEMPOOL_INLINE_RL_BURST, CFG.MEMPOOL_INLINE_RL_WINDOW_S, CFG.MEMPOOL_INLINE_RL_BURST, backoff_key=mp_key):
-                self._backoff(mp_key, CFG.MEMPOOL_INLINE_RL_BACKOFF)
-                return {"error": "rate_limited"}
+            ok, pow_resp = _allow_rpc_with_pow(
+                self,
+                scope="rpc:mempool",
+                table=self.rl_ip,
+                ip=ip,
+                identity=base_identity,
+                key_label="mempool",
+                burst=CFG.MEMPOOL_INLINE_RL_BURST,
+                window_s=CFG.MEMPOOL_INLINE_RL_WINDOW_S,
+                backoff_s=CFG.MEMPOOL_INLINE_RL_BACKOFF,
+                pow_obj=pow_obj,
+                difficulty=int(CFG.RPC_POW_DIFFICULTY_READ),
+            )
+            if not ok:
+                return pow_resp
         if mode == "snapshot":
             if CFG.DEBUG_BENCHMARKS:
                 start = time.perf_counter()
@@ -333,9 +507,21 @@ def handle_user_rpc(
         if mode in ("inline", "inline_full"):
             ip = client_ip()
             mp_key = f"mempool:{ip}"
-            if not self._tb_allow(self.rl_ip, mp_key, CFG.MEMPOOL_INLINE_RL_BURST, CFG.MEMPOOL_INLINE_RL_WINDOW_S, CFG.MEMPOOL_INLINE_RL_BURST, backoff_key=mp_key):
-                self._backoff(mp_key, CFG.MEMPOOL_INLINE_RL_BACKOFF)
-                return {"error": "rate_limited"}
+            ok, pow_resp = _allow_rpc_with_pow(
+                self,
+                scope="rpc:mempool",
+                table=self.rl_ip,
+                ip=ip,
+                identity=base_identity,
+                key_label="mempool",
+                burst=CFG.MEMPOOL_INLINE_RL_BURST,
+                window_s=CFG.MEMPOOL_INLINE_RL_WINDOW_S,
+                backoff_s=CFG.MEMPOOL_INLINE_RL_BACKOFF,
+                pow_obj=pow_obj,
+                difficulty=int(CFG.RPC_POW_DIFFICULTY_READ),
+            )
+            if not ok:
+                return pow_resp
             all_txs = self.broadcast.mempool.get_all_txs() or []
             inline: list[dict] = []
             total = len(all_txs)
@@ -400,12 +586,24 @@ def handle_user_rpc(
             
         ip = client_ip()
         hist_key = f"hist:{ip}"
-        if not self._tb_allow(self.rl_ip, hist_key, CFG.HISTORY_RL_IP_BURST, CFG.HISTORY_RL_IP_WINDOW_S, CFG.HISTORY_RL_IP_BURST, backoff_key=hist_key):
-            self._backoff(hist_key, CFG.HISTORY_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
         addr_str = (message.get("address") or "").strip().lower()
         if not addr_str:
             return {"error": "missing address"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:history",
+            table=self.rl_ip,
+            ip=ip,
+            identity=addr_str or base_identity,
+            key_label="hist",
+            burst=CFG.HISTORY_RL_IP_BURST,
+            window_s=CFG.HISTORY_RL_IP_WINDOW_S,
+            backoff_s=CFG.HISTORY_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_READ),
+        )
+        if not ok:
+            return pow_resp
         limit = int(message.get("limit", 50))
         offset = int(message.get("offset", 0))
         if limit > CFG.MAX_HISTORY_LIMIT:
@@ -432,12 +630,24 @@ def handle_user_rpc(
             
         ip = client_ip()
         hist_key = f"hist:{ip}"
-        if not self._tb_allow(self.rl_ip, hist_key, CFG.HISTORY_RL_IP_BURST, CFG.HISTORY_RL_IP_WINDOW_S, CFG.HISTORY_RL_IP_BURST, backoff_key=hist_key):
-            self._backoff(hist_key, CFG.HISTORY_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
         txid_hex = message.get("txid")
         if not txid_hex:
             return {"error": "missing txid"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:history",
+            table=self.rl_ip,
+            ip=ip,
+            identity=base_identity,
+            key_label="hist",
+            burst=CFG.HISTORY_RL_IP_BURST,
+            window_s=CFG.HISTORY_RL_IP_WINDOW_S,
+            backoff_s=CFG.HISTORY_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_READ),
+        )
+        if not ok:
+            return pow_resp
         
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
@@ -454,13 +664,24 @@ def handle_user_rpc(
             
         ip = client_ip()
         hist_key = f"hist:{ip}"
-        if not self._tb_allow(self.rl_ip, hist_key, CFG.HISTORY_RL_IP_BURST, CFG.HISTORY_RL_IP_WINDOW_S, CFG.HISTORY_RL_IP_BURST, backoff_key=hist_key):
-            self._backoff(hist_key, CFG.HISTORY_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
-        
         address = (message.get("address") or "").strip().lower()
         if not address:
             return {"error": "missing address"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:history",
+            table=self.rl_ip,
+            ip=ip,
+            identity=address or base_identity,
+            key_label="hist",
+            burst=CFG.HISTORY_RL_IP_BURST,
+            window_s=CFG.HISTORY_RL_IP_WINDOW_S,
+            backoff_s=CFG.HISTORY_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_READ),
+        )
+        if not ok:
+            return pow_resp
 
         if len(address) > CFG.MAX_UTXO_ADDR_LEN:
             return {"error": "address too long"}
@@ -484,15 +705,39 @@ def handle_user_rpc(
         
         ip = client_ip()
         reg_key = f"chatreg:{ip}"
-        if not self._tb_allow(self.rl_ip, reg_key, CFG.CHAT_REG_RL_IP_BURST, CFG.CHAT_REG_RL_WINDOW_S, CFG.CHAT_REG_RL_IP_BURST, backoff_key=reg_key):
-            self._backoff(reg_key, CFG.CHAT_REG_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
         addr_s   = (message.get("address")  or "").strip().lower()
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:chat_reg",
+            table=self.rl_ip,
+            ip=ip,
+            identity=addr_s or base_identity,
+            key_label="chatreg",
+            burst=CFG.CHAT_REG_RL_IP_BURST,
+            window_s=CFG.CHAT_REG_RL_WINDOW_S,
+            backoff_s=CFG.CHAT_REG_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+        )
+        if not ok:
+            return pow_resp
         addr_key = f"chatreg_addr:{addr_s}" if addr_s else None
         if addr_key:
-            if not self._tb_allow(self.rl_addr, addr_key, CFG.CHAT_REG_RL_ADDR_BURST, CFG.CHAT_REG_RL_ADDR_WINDOW_S, CFG.CHAT_REG_RL_ADDR_BURST, backoff_key=addr_key):
-                self._backoff(addr_key, CFG.CHAT_REG_RL_ADDR_BACKOFF_S)
-                return {"error": "rate_limited"}
+            ok, pow_resp = _allow_rpc_with_pow(
+                self,
+                scope="rpc:chat_reg_addr",
+                table=self.rl_addr,
+                ip=ip,
+                identity=addr_s or base_identity,
+                key_label=addr_key,
+                burst=CFG.CHAT_REG_RL_ADDR_BURST,
+                window_s=CFG.CHAT_REG_RL_ADDR_WINDOW_S,
+                backoff_s=CFG.CHAT_REG_RL_ADDR_BACKOFF_S,
+                pow_obj=pow_obj,
+                difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+            )
+            if not ok:
+                return pow_resp
         chat_pub = ((message.get("chat_pub") or message.get("pubkey") or "").strip().lower())
 
         presence_sig = (message.get("presence_sig") or "").strip().lower()
@@ -603,16 +848,40 @@ def handle_user_rpc(
 
         ip = client_ip()
         rl_key_ip = f"chatlookup:{ip}"
-        if not self._tb_allow(self.rl_ip, rl_key_ip, CFG.CHAT_LOOKUP_RL_IP_BURST, CFG.CHAT_LOOKUP_RL_IP_WINDOW_S, CFG.CHAT_LOOKUP_RL_IP_BURST, backoff_key=rl_key_ip):
-            self._backoff(rl_key_ip, CFG.CHAT_LOOKUP_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
         addr_s = (message.get("address") or "").strip().lower()
         if not addr_s:
             return {"error": "missing address"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:chat_lookup",
+            table=self.rl_ip,
+            ip=ip,
+            identity=addr_s or base_identity,
+            key_label="chatlookup",
+            burst=CFG.CHAT_LOOKUP_RL_IP_BURST,
+            window_s=CFG.CHAT_LOOKUP_RL_IP_WINDOW_S,
+            backoff_s=CFG.CHAT_LOOKUP_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+        )
+        if not ok:
+            return pow_resp
         rl_key_addr = f"chatlookup_addr:{addr_s}"
-        if not self._tb_allow(self.rl_addr, rl_key_addr, CFG.CHAT_LOOKUP_RL_ADDR_BURST, CFG.CHAT_LOOKUP_RL_ADDR_WINDOW_S, CFG.CHAT_LOOKUP_RL_ADDR_BURST, backoff_key=rl_key_addr):
-            self._backoff(rl_key_addr, CFG.CHAT_LOOKUP_RL_ADDR_BACKOFF_S)
-            return {"error": "rate_limited"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:chat_lookup_addr",
+            table=self.rl_addr,
+            ip=ip,
+            identity=addr_s or base_identity,
+            key_label=rl_key_addr,
+            burst=CFG.CHAT_LOOKUP_RL_ADDR_BURST,
+            window_s=CFG.CHAT_LOOKUP_RL_ADDR_WINDOW_S,
+            backoff_s=CFG.CHAT_LOOKUP_RL_ADDR_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+        )
+        if not ok:
+            return pow_resp
         pubhex = self.chat_presence_pub.get(addr_s)
         last_seen = None
         b = self.chat_prekeys.get(addr_s) or {}
@@ -670,11 +939,37 @@ def handle_user_rpc(
             log.debug("[process_message] CHAT_PRESENCE max hops from %s", addr)
             return {"error": "presence_hops"}
 
-        if not self._tb_allow(self.rl_ip, ip, CFG.CHAT_RL_IP_BURST, CFG.CHAT_RL_IP_WINDOWS, CFG.CHAT_RL_IP_BURST, backoff_key=ip):
-            self._backoff(ip, CFG.CHAT_BACKOFF_S); return {"error": "presence_rate_ip"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:chat_presence",
+            table=self.rl_ip,
+            ip=ip,
+            identity=addr_s or base_identity,
+            key_label="chat_presence",
+            burst=CFG.CHAT_RL_IP_BURST,
+            window_s=CFG.CHAT_RL_IP_WINDOWS,
+            backoff_s=CFG.CHAT_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+        )
+        if not ok:
+            return pow_resp
 
-        if not self._tb_allow(self.rl_addr, addr_s, CFG.PRESENCE_RL_ADDR_BURST, CFG.PRESENCE_RL_ADDR_WINDOWS, CFG.PRESENCE_RL_ADDR_BURST, backoff_key=addr_s):
-            self._backoff(addr_s, CFG.CHAT_BACKOFF_S); return {"error": "presence_rate_addr"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:chat_presence_addr",
+            table=self.rl_addr,
+            ip=ip,
+            identity=addr_s or base_identity,
+            key_label=f"presence:{addr_s}",
+            burst=CFG.PRESENCE_RL_ADDR_BURST,
+            window_s=CFG.PRESENCE_RL_ADDR_WINDOWS,
+            backoff_s=CFG.CHAT_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+        )
+        if not ok:
+            return pow_resp
 
         pid = message.get("pid") or secrets.token_hex(16)
         with self.chat_lock:
@@ -705,11 +1000,22 @@ def handle_user_rpc(
             
         ip = client_ip()
         reg_key = f"chatreg:{ip}"
-        if not self._tb_allow(self.rl_ip, reg_key, CFG.CHAT_REG_RL_IP_BURST, CFG.CHAT_REG_RL_WINDOW_S, CFG.CHAT_REG_RL_IP_BURST, backoff_key=reg_key):
-            self._backoff(reg_key, CFG.CHAT_REG_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
-
         addr_s = (message.get("address") or "").strip().lower()
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:chat_reg",
+            table=self.rl_ip,
+            ip=ip,
+            identity=addr_s or base_identity,
+            key_label="chatreg",
+            burst=CFG.CHAT_REG_RL_IP_BURST,
+            window_s=CFG.CHAT_REG_RL_WINDOW_S,
+            backoff_s=CFG.CHAT_REG_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+        )
+        if not ok:
+            return pow_resp
         ik  = (message.get("ik")  or "").strip().lower()
         spk = (message.get("spk") or "").strip().lower()
         sig = (message.get("sig") or "").strip().lower()
@@ -786,13 +1092,37 @@ def handle_user_rpc(
         if not (0 <= ratchet_pn <= max_idx and 0 <= ratchet_n <= max_idx):
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "ratchet_index_out_of_range"}
 
-        if not self._tb_allow(self.rl_ip, ip, CFG.CHAT_RL_IP_BURST, CFG.CHAT_RL_IP_WINDOWS, CFG.CHAT_RL_IP_BURST, backoff_key=ip):
-            self._backoff(ip, CFG.CHAT_BACKOFF_S)
-            return {"type": "CHAT_ACK", "status": "rate_limited", "scope": "ip"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:chat_send",
+            table=self.rl_ip,
+            ip=ip,
+            identity=frm or base_identity,
+            key_label="chat_send",
+            burst=CFG.CHAT_RL_IP_BURST,
+            window_s=CFG.CHAT_RL_IP_WINDOWS,
+            backoff_s=CFG.CHAT_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+        )
+        if not ok:
+            return {"type": "CHAT_ACK", **(pow_resp or {})}
 
-        if not self._tb_allow(self.rl_addr, frm, CFG.CHAT_RL_ADDR_BURST, CFG.CHAT_RL_ADDR_WINDOWS, CFG.CHAT_RL_ADDR_BURST, backoff_key=frm):
-            self._backoff(frm, CFG.CHAT_BACKOFF_S)
-            return {"type": "CHAT_ACK", "status": "rate_limited", "scope": "address"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:chat_send_addr",
+            table=self.rl_addr,
+            ip=ip,
+            identity=frm or base_identity,
+            key_label=f"chat_send:{frm}",
+            burst=CFG.CHAT_RL_ADDR_BURST,
+            window_s=CFG.CHAT_RL_ADDR_WINDOWS,
+            backoff_s=CFG.CHAT_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+        )
+        if not ok:
+            return {"type": "CHAT_ACK", **(pow_resp or {})}
 
         if not (frm and to and enc and (mid is not None) and ts):
             return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_fields"}
@@ -946,9 +1276,21 @@ def handle_user_rpc(
 
         ip = client_ip()
         relay_key = f"chatrelay:{ip}"
-        if not self._tb_allow(self.rl_ip, relay_key, CFG.CHAT_RELAY_RL_IP_BURST, CFG.CHAT_RELAY_RL_WINDOW_S, CFG.CHAT_RELAY_RL_IP_BURST, backoff_key=relay_key):
-            self._backoff(relay_key, CFG.CHAT_RELAY_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:chat_relay",
+            table=self.rl_ip,
+            ip=ip,
+            identity=base_identity,
+            key_label="chatrelay",
+            burst=CFG.CHAT_RELAY_RL_IP_BURST,
+            window_s=CFG.CHAT_RELAY_RL_WINDOW_S,
+            backoff_s=CFG.CHAT_RELAY_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+        )
+        if not ok:
+            return pow_resp
 
         # payload: {"route": [peer1, peer2, ...], "inner": {...}}
         route_raw = list(message.get("route") or [])
@@ -1032,8 +1374,21 @@ def handle_user_rpc(
             return {"error": "sig_required"}
         ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
 
-        if not self._tb_allow(self.rl_ip, ip, 8, 10, 8, backoff_key=ip):
-            return {"error": "rate_limited"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:chat_read",
+            table=self.rl_ip,
+            ip=ip,
+            identity=reader or base_identity,
+            key_label="chat_read",
+            burst=8,
+            window_s=10,
+            backoff_s=CFG.CHAT_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+        )
+        if not ok:
+            return pow_resp
 
         # read receipt verification
         sp = (self.chat_spend_pub.get(reader) or "").strip().lower()
@@ -1067,9 +1422,21 @@ def handle_user_rpc(
 
         ip = client_ip()
         stor_key = f"stor_list:{ip}"
-        if not self._tb_allow(self.rl_ip, stor_key, CFG.STOR_LIST_RL_IP_BURST, CFG.STOR_LIST_RL_WINDOW_S, CFG.STOR_LIST_RL_IP_BURST, backoff_key=stor_key):
-            self._backoff(stor_key, CFG.STOR_LIST_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:stor_list",
+            table=self.rl_ip,
+            ip=ip,
+            identity=base_identity,
+            key_label="stor_list",
+            burst=CFG.STOR_LIST_RL_IP_BURST,
+            window_s=CFG.STOR_LIST_RL_WINDOW_S,
+            backoff_s=CFG.STOR_LIST_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_READ),
+        )
+        if not ok:
+            return pow_resp
 
         by_addr = {}
         for v in self.storage_peers.values():
@@ -1113,9 +1480,21 @@ def handle_user_rpc(
 
         ip = client_ip()
         graf_key = f"graf:{ip}"
-        if not self._tb_allow(self.rl_ip, graf_key, CFG.GRAFFITI_RL_IP_BURST, CFG.GRAFFITI_RL_WINDOW_S, CFG.GRAFFITI_RL_IP_BURST, backoff_key=graf_key):
-            self._backoff(graf_key, CFG.GRAFFITI_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:graffiti",
+            table=self.rl_ip,
+            ip=ip,
+            identity=base_identity,
+            key_label="graf",
+            burst=CFG.GRAFFITI_RL_IP_BURST,
+            window_s=CFG.GRAFFITI_RL_WINDOW_S,
+            backoff_s=CFG.GRAFFITI_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_READ),
+        )
+        if not ok:
+            return pow_resp
 
         art_id = str(message.get("art_id") or "").strip().lower()
         if not art_id:
@@ -1140,9 +1519,21 @@ def handle_user_rpc(
 
         ip = client_ip()
         tx_key = f"txsub:{ip}"
-        if not self._tb_allow(self.rl_ip, tx_key, CFG.TX_SUBMIT_RL_IP_BURST, CFG.TX_SUBMIT_RL_WINDOW_S, CFG.TX_SUBMIT_RL_IP_BURST, backoff_key=tx_key):
-            self._backoff(tx_key, CFG.TX_SUBMIT_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:tx",
+            table=self.rl_ip,
+            ip=ip,
+            identity=base_identity,
+            key_label="txsub",
+            burst=CFG.TX_SUBMIT_RL_IP_BURST,
+            window_s=CFG.TX_SUBMIT_RL_WINDOW_S,
+            backoff_s=CFG.TX_SUBMIT_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_TX),
+        )
+        if not ok:
+            return pow_resp
 
         from_addr = (message.get("from") or "").strip().lower()
         outputs   = message.get("outputs") or []
@@ -1171,9 +1562,21 @@ def handle_user_rpc(
 
         ip = client_ip()
         graf_key = f"graf:{ip}"
-        if not self._tb_allow(self.rl_ip, graf_key, CFG.GRAFFITI_RL_IP_BURST, CFG.GRAFFITI_RL_WINDOW_S, CFG.GRAFFITI_RL_IP_BURST, backoff_key=graf_key):
-            self._backoff(graf_key, CFG.GRAFFITI_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:graffiti",
+            table=self.rl_ip,
+            ip=ip,
+            identity=base_identity,
+            key_label="graf",
+            burst=CFG.GRAFFITI_RL_IP_BURST,
+            window_s=CFG.GRAFFITI_RL_WINDOW_S,
+            backoff_s=CFG.GRAFFITI_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_READ),
+        )
+        if not ok:
+            return pow_resp
 
         limit = int(message.get("limit", 50) or 50)
         limit = max(1, min(limit, 500))
@@ -1195,9 +1598,21 @@ def handle_user_rpc(
 
         ip = client_ip()
         graf_key = f"graf:{ip}"
-        if not self._tb_allow(self.rl_ip, graf_key, CFG.GRAFFITI_RL_IP_BURST, CFG.GRAFFITI_RL_WINDOW_S, CFG.GRAFFITI_RL_IP_BURST, backoff_key=graf_key):
-            self._backoff(graf_key, CFG.GRAFFITI_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:graffiti",
+            table=self.rl_ip,
+            ip=ip,
+            identity=base_identity,
+            key_label="graf",
+            burst=CFG.GRAFFITI_RL_IP_BURST,
+            window_s=CFG.GRAFFITI_RL_WINDOW_S,
+            backoff_s=CFG.GRAFFITI_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_READ),
+        )
+        if not ok:
+            return pow_resp
 
         art_id = str(message.get("art_id") or "").strip().lower()
         if not art_id:
@@ -1222,9 +1637,21 @@ def handle_user_rpc(
 
         ip = client_ip()
         graf_key = f"graf:{ip}"
-        if not self._tb_allow(self.rl_ip, graf_key, CFG.GRAFFITI_RL_IP_BURST, CFG.GRAFFITI_RL_WINDOW_S, CFG.GRAFFITI_RL_IP_BURST, backoff_key=graf_key):
-            self._backoff(graf_key, CFG.GRAFFITI_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:graffiti",
+            table=self.rl_ip,
+            ip=ip,
+            identity=base_identity,
+            key_label="graf",
+            burst=CFG.GRAFFITI_RL_IP_BURST,
+            window_s=CFG.GRAFFITI_RL_WINDOW_S,
+            backoff_s=CFG.GRAFFITI_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_READ),
+        )
+        if not ok:
+            return pow_resp
 
         art_id_raw = str(message.get("art_id") or "").strip()
         if not art_id_raw:

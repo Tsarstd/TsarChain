@@ -470,7 +470,7 @@ class GraffitiTab(ttk.Frame):
         receipt_id = upload_ctx.get("receipt_id")
         art_id = upload_ctx.get("art_id")
         self._upload_candidates = list(online)
-        self._upload_ctx = {"gid": gid, "receipt_id": receipt_id, "art_id": art_id}
+        self._upload_ctx = {"gid": gid, "receipt_id": receipt_id, "art_id": art_id, "creator": creator_addr}
         self.uploading = True
         self._post_plan = None
         if self.post_send_btn:
@@ -507,9 +507,13 @@ class GraffitiTab(ttk.Frame):
         gid = self._upload_ctx.get("gid")
         receipt_id = self._upload_ctx.get("receipt_id")
         art_id = self._upload_ctx.get("art_id")
+        creator_addr = self._upload_ctx.get("creator")
         path = self.selected_path
         sha = self.selected_sha
         self._active_storer = storer
+        if not creator_addr:
+            self._reset_upload_state("Upload failed: missing creator wallet identity.")
+            return
 
         def progress(sent: int, total: int):
             self.after(0, lambda: self._update_progress(sent, total))
@@ -518,6 +522,7 @@ class GraffitiTab(ttk.Frame):
             res = upload_graffiti(
                 storer_meta=storer,
                 file_path=path,
+                creator_addr=creator_addr,
                 graffiti_id=gid,
                 sha256_hex=sha,
                 art_id=art_id,

@@ -41,9 +41,9 @@ def start_server(self):
                 conn, addr = s.accept()
                 ip = addr[0]
                 now = time.time()
-                if not allow_handshake(ip, now):
+                if not allow_handshake(ip, now, precheck=True):
                     conn.close()
-                    log.warning("[start_server] temp-ban handshake %s", ip)
+                    log.debug("[start_server] handshake precheck deny %s", ip)
                     continue
                 with self.lock:
                     inbound_total = len(self.inbound_peers)
@@ -76,6 +76,15 @@ def handle_connection(self, conn, addr):
             self._inbound_ips[ip] = self._inbound_ips.get(ip, 0) + 1
             self.peer_scores.setdefault(peer, CFG.PEER_SCORE_START // 2)
             raw_first, first = sniff_first_json_frame(conn, timeout=float(CFG.HANDSHAKE_TIMEOUT), peer_ip=ip, on_misbehave=ban_ip)
+
+        node_hint = None
+        pow_proof = None
+        if isinstance(first, dict):
+            node_hint = str(first.get("from") or first.get("node_id") or "").strip().lower() or None
+            pow_proof = first.get("pow")
+        if not allow_handshake(ip, time.time(), node_id=node_hint, pow_proof=pow_proof):
+            log.warning("[handle_connection] handshake denied ip=%s node=%s", ip, (node_hint or "-"))
+            return
 
         if isinstance(first, dict) and first.get("type") == "P2P_HS1":
             chan = SecureChannel(

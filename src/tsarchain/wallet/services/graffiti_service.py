@@ -22,6 +22,7 @@ from tsarchain.contracts.graffiti import (
     derive_pool_address,
     validate_graffiti_file,
 )
+from tsarchain.network.pow_token import solve_pow
 
 from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.graffiti_service")
@@ -52,15 +53,27 @@ def _pick_endpoint(meta: Dict[str, Any]) -> Optional[Tuple[str, int]]:
                 return host_part, port
     return None
 
-def _send_storage_request(host: str, port: int, payload: Dict[str, Any], timeout: float | None = None, max_len: int | None = None) -> Dict[str, Any]:
+def _send_storage_request(
+    host: str,
+    port: int,
+    payload: Dict[str, Any],
+    timeout: float | None = None,
+    max_len: int | None = None,
+    identity_hint: str | None = None,
+    max_pow_retry: int = 1,
+) -> Dict[str, Any]:
     timeout = timeout or CFG.RPC_TIMEOUT
     if max_len is None:
         max_len = int(CFG.GRAFFITI_MAX_MSG_BYTES)
+    base_payload = dict(payload)
+    identity_norm = (identity_hint or base_payload.get("wallet_addr") or base_payload.get("creator_addr") or "").strip().lower()
+    if identity_norm and "wallet_addr" not in base_payload:
+        base_payload["wallet_addr"] = identity_norm
     resp: Dict[str, Any] = {}
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(timeout)
         s.connect((host, int(port)))
-        raw = json.dumps(payload).encode("utf-8")
+        raw = json.dumps(base_payload).encode("utf-8")
         send_message(s, raw, max_len=max_len)
         data = recv_message(s, timeout, max_len=max_len)
         if not data:
@@ -70,6 +83,25 @@ def _send_storage_request(host: str, port: int, payload: Dict[str, Any], timeout
             resp = obj
         else:
             resp = {"status": "error", "reason": "bad_response"}
+    pow_challenge = resp.get("pow_challenge") if isinstance(resp, dict) else None
+    need_pow = resp.get("reason") in ("pow_required", "rate_limited") if isinstance(resp, dict) else False
+    if max_pow_retry > 0 and pow_challenge:
+        identity_for_pow = identity_norm or str(pow_challenge.get("identity") or "")
+        solution = solve_pow(pow_challenge, identity=identity_for_pow or "anon")
+        if solution:
+            retry_payload = dict(base_payload)
+            retry_payload["pow"] = solution
+            return _send_storage_request(
+                host,
+                port,
+                retry_payload,
+                timeout=timeout,
+                max_len=max_len,
+                identity_hint=identity_for_pow,
+                max_pow_retry=max_pow_retry - 1,
+            )
+        if need_pow and "reason" not in resp:
+            resp["reason"] = "pow_required"
     return resp
 
 def fetch_storers(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]], limit: Optional[int] = None) -> list[Dict[str, Any]]:
@@ -285,6 +317,7 @@ def build_comment_plan(
 def upload_graffiti(
     storer_meta: Dict[str, Any],
     file_path: str,
+    creator_addr: str,
     *,
     graffiti_id: Optional[str] = None,
     sha256_hex: Optional[str] = None,
@@ -303,6 +336,9 @@ def upload_graffiti(
     """
     if not os.path.isfile(file_path):
         return {"status": "error", "reason": "file_not_found"}
+    creator_norm = (creator_addr or "").strip().lower()
+    if not creator_norm:
+        return {"status": "error", "reason": "missing_creator_addr"}
 
     total_size = os.path.getsize(file_path)
     mime_guess, _ = mimetypes.guess_type(file_path)
@@ -322,10 +358,11 @@ def upload_graffiti(
         "sha256": sha_hex,
         "filename": os.path.basename(file_path) or "blob.bin",
         "mime": mime_norm,
+        "wallet_addr": creator_norm,
     }
     if art_id:
         init_payload["art_id"] = str(art_id).strip().lower()
-    init_resp = _send_storage_request(host, port, init_payload)
+    init_resp = _send_storage_request(host, port, init_payload, identity_hint=creator_norm)
     if init_resp.get("status") not in ("ok", "accepted"):
         return {"status": "error", "stage": "init", "resp": init_resp}
 
@@ -341,7 +378,7 @@ def upload_graffiti(
                 "graffiti_id": gid,
                 "data": base64.b64encode(buf).decode("ascii"),
             }
-            put_resp = _send_storage_request(host, port, put_payload)
+            put_resp = _send_storage_request(host, port, put_payload, identity_hint=creator_norm)
             if put_resp.get("status") not in ("ok", "accepted"):
                 return {"status": "error", "stage": "put", "resp": put_resp}
             sent += len(buf)
@@ -351,7 +388,7 @@ def upload_graffiti(
     commit_payload = {"type": "STOR_COMMIT", "graffiti_id": gid}
     if receipt_id:
         commit_payload["receipt_id"] = receipt_id
-    commit_resp = _send_storage_request(host, port, commit_payload)
+    commit_resp = _send_storage_request(host, port, commit_payload, identity_hint=creator_norm)
     if commit_resp.get("status") not in ("ok", "accepted"):
         return {"status": "error", "stage": "commit", "resp": commit_resp}
 
