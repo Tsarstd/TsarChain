@@ -29,3 +29,19 @@ export const fetchByKind = async (kind, id) => {
   const resp = await fetch(url);
   return handleJson(resp);
 };
+
+export const fetchGraffitiList = async ({ limit = 24, offset = 0 } = {}) => {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const resp = await fetch(`/api/graffiti?${params.toString()}`);
+  return handleJson(resp);
+};
+
+export const fetchGraffitiDetail = async (artId) => {
+  const resp = await fetch(`/api/graffiti/${encodeURIComponent(artId)}`);
+  return handleJson(resp);
+};
+
+export const graffitiMediaUrl = (artId) => `/api/graffiti/${encodeURIComponent(artId)}/media`;

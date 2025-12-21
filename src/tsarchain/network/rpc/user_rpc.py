@@ -1579,9 +1579,11 @@ def handle_user_rpc(
             return pow_resp
 
         limit = int(message.get("limit", 50) or 50)
+        offset = int(message.get("offset", 0) or 0)
         limit = max(1, min(limit, 500))
+        offset = max(0, offset)
         reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
-        posts = reg.list_posts(limit) if reg else []
+        posts = reg.list_posts(limit, offset) if reg else []
         
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()

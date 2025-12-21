@@ -195,7 +195,7 @@ class GraffitiRegistry:
             return items[:limit]
         return items
 
-    def list_posts(self, limit: int = 50) -> list[Dict[str, Any]]:
+    def list_posts(self, limit: int = 50, offset: int = 0) -> list[Dict[str, Any]]:
         posts = self.data.get("posts") or {}
         items: list[Dict[str, Any]] = []
         for art_id, entry in posts.items():
@@ -205,9 +205,10 @@ class GraffitiRegistry:
             rec["stats"] = stats
             items.append(rec)
         items.sort(key=lambda r: (int(r.get("block_height") or 0), int(r.get("ts") or 0)), reverse=True)
+        off = max(0, int(offset or 0))
         if isinstance(limit, int) and limit > 0:
-            return items[:limit]
-        return items
+            return items[off:off + limit]
+        return items[off:]
 
     def list_comments(self, art_id: str, limit: int = 50) -> list[Dict[str, Any]]:
         art_id = (art_id or "").strip().lower()
