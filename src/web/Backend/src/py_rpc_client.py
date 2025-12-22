@@ -12,17 +12,24 @@ from tsarchain.wallet.services.graffiti_service import fetch_graffiti_file  # ty
 from tsarchain.network.protocol import load_or_create_keypair_at  # type: ignore
 from tsarchain.utils import config as CFG  # type: ignore
 
+from tsarchain.utils.tsar_logging import get_ctx_logger, setup_logging
+log = get_ctx_logger('tsarchain.web.Backend.py_rpc_client')
+
+def _emit(out: object) -> None:
+    try:
+        sys.stdout.write(json.dumps(out, ensure_ascii=True, default=str))
+    except Exception:
+        sys.stdout.write('{"error":"json_encode_failed"}')
+    sys.stdout.flush()
 
 def _mk_client(host: str, port: int):
     user_id, user_pub, user_priv = load_or_create_keypair_at(CFG.USER_KEY_PATH)
     user_ctx = {"net_id": CFG.DEFAULT_NET_ID, "node_id": user_id, "pubkey": user_pub, "privkey": user_priv}
     return NodeClient(CFG, user_ctx=user_ctx, manual_bootstrap=(host, port))
 
-
 def _rpc_send(client, payload: dict):
     resp = client.send(payload)
     return resp
-
 
 def rpc_network(client):
     info = _rpc_send(client, {"type": "GET_NETWORK_INFO"}) or {}
@@ -33,7 +40,6 @@ def rpc_network(client):
         return info.get("data") or info
     return info
 
-
 def rpc_block(client, val: str):
     if str(val).isdigit():
         payload = {"type": "GET_BLOCK", "height": int(val)}
@@ -41,7 +47,6 @@ def rpc_block(client, val: str):
         payload = {"type": "GET_BLOCK", "hash": str(val)}
     resp = _rpc_send(client, payload)
     return resp
-
 
 def rpc_tx(client, txid: str):
     resp = _rpc_send(client, {"type": "GET_TX_DETAIL", "txid": str(txid).lower()})
@@ -57,7 +62,6 @@ def rpc_tx(client, txid: str):
         if isinstance(rr, dict) and not rr.get("error"):
             return rr
     return resp
-
 
 def rpc_address(client, addr: str):
     balances = _rpc_send(client, {"type": "GET_BALANCES", "addresses": [addr]}) or {}
@@ -208,8 +212,11 @@ def rpc_graffiti_file(client, opts: dict, fallback_art_id: str | None):
 
 
 def main():
+    out = None
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "missing_op"}))
+        log.error("[main] argv: %s", len(sys.argv))
+        out = {"error": "missing_op"}
+        _emit(out)
         return
 
     op = sys.argv[1]
@@ -220,9 +227,11 @@ def main():
         port = int(os.environ.get("TSAR_NODE_PORT") or (sys.argv[4] if len(sys.argv) >= 5 else 19000))
     except Exception:
         port = 19000
+        log.exception("[main_exception] port: %s", port)
 
     try:
         client = _mk_client(host, port)
+        log.debug("[main] client: %s", client)
         if op == "network":
             out = rpc_network(client)
         elif op == "block":
@@ -241,10 +250,15 @@ def main():
             out = rpc_graffiti_file(client, opts, param)
         else:
             out = {"error": "unknown_op"}
-        print(json.dumps(out))
     except Exception as exc:
-        print(json.dumps({"error": str(exc)}))
+        log.exception("[main_gateway_exception]")
+        detail = str(exc) or exc.__class__.__name__
+        out = {"error": "rpc_exception", "detail": detail}
+    if out is None:
+        out = {"error": "empty_response"}
+    _emit(out)
 
 
 if __name__ == "__main__":
+    setup_logging(force=True)
     main()

@@ -37,7 +37,6 @@ def _init_native_store():
             map_size_max=int(CFG.LMDB_MAP_SIZE_MAX),
             pretty_json=False,
         )
-        log.debug("[kv] using native storage backend (lmdb)")
     return _native_store
 
 def _ensure_env():

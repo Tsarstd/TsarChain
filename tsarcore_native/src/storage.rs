@@ -46,10 +46,11 @@ fn log_py(level: &str, msg: &str) {
 //    log_py("debug", msg);
 //} Note: Database creation log removed for performance/cleanliness
 
-#[inline]
-fn log_info(msg: &str) {
-    log_py("info", msg);
-}
+// #[inline]
+// fn log_info(msg: &str) {
+//     log_py("info", msg);
+// }
+
 #[inline]
 fn log_warning(msg: &str) {
     log_py("warning", msg);
@@ -697,10 +698,6 @@ impl NativeStorage {
                 let default_max = usize::try_from(DEFAULT_LMDB_MAP_MAX).unwrap_or(usize::MAX);
                 let max = map_size_max.unwrap_or(default_max);
                 let lmdb = LmdbBackend::new(&path_buf, init, max)?;
-                log_info(&format!(
-                    "[open_storage] backend=lmdb path={} map_size_init={} map_size_max={}",
-                    base_path, init, max
-                ));
                 Ok(Self {
                     backend: Backend::Lmdb(lmdb),
                     backend_name: "lmdb".to_string(),
@@ -709,10 +706,6 @@ impl NativeStorage {
             }
             "json" => {
                 let json = JsonBackend::new(path_buf, pretty_json);
-                log_info(&format!(
-                    "[open_storage] backend=json path={} pretty={}",
-                    base_path, pretty_json
-                ));
                 Ok(Self {
                     backend: Backend::Json(json),
                     backend_name: "json".to_string(),
