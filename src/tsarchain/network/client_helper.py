@@ -450,6 +450,9 @@ def _get_tx_history(self, address: str, limit: int = 50, offset: int = 0, direct
 
 
 def _get_tx_detail(self, txid_hex: str) -> dict:
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+    
     where, tx, height, conf, chain, mem, tip_height = self._find_tx_and_meta(txid_hex)
     if tx is None:
         return {"error": "tx not found", "txid": txid_hex}
@@ -488,7 +491,12 @@ def _get_tx_detail(self, txid_hex: str) -> dict:
     fee = None
     if not is_coinbase and vin and total_in >= total_out:
         fee = total_in - total_out
-
+        
+    if CFG.DEBUG_BENCHMARKS:
+        end = time.perf_counter()
+        result = round((end - start) * 1000.0, 3)
+        log.debug("[GET_TX_DETAIL] Benchmark : %.3f ms", result)
+        
     return {
         "type": "TX_DETAIL",
         "txid": txid_hex,

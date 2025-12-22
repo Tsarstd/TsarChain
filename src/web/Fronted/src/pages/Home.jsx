@@ -10,12 +10,12 @@ const ResultBlock = ({ data }) => (
       <span className="label">Block Height</span>
       <span className="value">#{data?.height ?? "-"}</span>
     </div>
+    <div className="stat">
+      <span className="label">Block ID</span>
+      <span className="value mono wrap">{data?.block_id || "-"}</span>
+    </div>
     <div className="divider" />
     <div className="grid">
-      <div className="stat">
-        <span className="label">Block ID</span>
-        <span className="value mono wrap">{data?.block_id || "-"}</span>
-      </div>
       <div className="stat">
         <span className="label">Hash</span>
         <span className="value mono wrap">{data?.hash || "-"}</span>
@@ -102,19 +102,26 @@ const ResultBlock = ({ data }) => (
         <div className="list">
           {(data?.graffiti || []).map((g, idx) => (
             <div className="tx-item" key={`graf-${idx}`}>
-              <div className="label">Graffiti</div>
+              <div className="muted">SHA256</div>
               <div className="value mono wrap">{g.sha256 || g.hash || "-"}</div>
-              <div className="muted">{g.mime || "-"} · {fmtBytes(g.size)}</div>
-              <div className="muted">{g.txid || "-"}</div>
+              <div className="muted">{"-------------------"}</div>
+              <div className="muted">File</div>
+              <div className="value mono wrap">{g.mime || "-"} · {fmtBytes(g.size)}</div>
+              <div className="muted">{"-------------------"}</div>
+              <div className="muted">TXID</div>
+              <div className="value mono wrap">{g.txid || "-"}</div>
             </div>
           ))}
           {(data?.comments || []).map((c, idx) => (
             <div className="comment-item" key={`cmt-${idx}`}>
-              <div className="label">Comment</div>
+              <div className="muted">Commenter:</div>
+              <div className="value">{c.commenter || "-"}</div>
+              <div className="muted">{"-------------------"}</div>
+              <div className="muted">Comment:</div>
               <div className="value">{c.comment_text || c.comment || "-"}</div>
-              <div className="muted">
-                {c.commenter || "-"} - {fmtTsar(c.amount)} {c.tip ? `- Tip ${fmtTsar(c.tip)}` : ""}
-              </div>
+              <div className="muted">{"-------------------"}</div>
+              <div className="muted">Base & Tip:</div>
+              <div className="value">{fmtTsar(c.amount)} {c.tip ? `- Tip ${fmtTsar(c.tip)}` : ""}</div>
             </div>
           ))}
         </div>
@@ -147,22 +154,6 @@ const ResultTx = ({ data }) => (
         <span className="value">{fmtTsar(data?.fee || 0)}</span>
       </div>
       <div className="stat">
-        <span className="label">Size</span>
-        <span className="value">{data?.size ?? "-"}</span>
-      </div>
-      <div className="stat">
-        <span className="label">VSize</span>
-        <span className="value">{data?.vsize ?? "-"}</span>
-      </div>
-      <div className="stat">
-        <span className="label">Weight</span>
-        <span className="value">{data?.weight ?? "-"}</span>
-      </div>
-      <div className="stat">
-        <span className="label">Timestamp</span>
-        <span className="value">{fmtTimestamp(data?.timestamp)}</span>
-      </div>
-      <div className="stat">
         <span className="label">Coinbase</span>
         <span className="value">{data?.is_coinbase ? "Yes" : "No"}</span>
       </div>
@@ -175,7 +166,6 @@ const ResultTx = ({ data }) => (
     <div className="list">
       {(data?.inputs || []).map((inp, idx) => (
         <div className="tx-item" key={idx}>
-          <div className="label">From</div>
           <div className="value mono wrap">{inp.txid ? `${inp.txid}:${inp.vout}` : "-"}</div>
           <div className="muted">{inp.address || "-"}</div>
           <div className="muted">{fmtTsar(inp.amount)}</div>
@@ -190,8 +180,7 @@ const ResultTx = ({ data }) => (
     <div className="list">
       {(data?.outputs || []).map((out, idx) => (
         <div className="tx-item" key={idx}>
-          <div className="label">To</div>
-          <div className="value mono wrap">{out.address || "-"}</div>
+          <div className="value mono wrap">{out.address || "OP_RETURN"}</div>
           <div className="muted">{fmtTsar(out.amount)}</div>
         </div>
       ))}
@@ -300,17 +289,15 @@ const ResultGraffiti = ({ data }) => {
         <div className="muted">Preview tidak tersedia.</div>
       )}
       <div className="divider" />
-      <div className="stat">
-        <span className="label">Comments</span>
-        <span className="value">{data?.comments?.length || 0}</span>
-      </div>
       <div className="list">
         {(data?.comments || []).slice(0, 6).map((c, idx) => (
           <div className="comment-item" key={idx}>
+            <div className="muted">{fmtTimestamp(c.ts)}</div>
+            <div className="value">{c.commenter || "-"}</div>
+            <div className="value">{"-----------"}</div>
             <div className="value">{c.comment_text || c.comment || "-"}</div>
-            <div className="muted">
-              {c.commenter || "-"} - {fmtTsar(c.amount)} {c.tip ? `- Tip ${fmtTsar(c.tip)}` : ""}
-            </div>
+            <div className="value">{"-----------"}</div>
+            <div className="muted">{fmtTsar(c.amount)} {c.tip ? ` - Tip ${fmtTsar(c.tip)}` : ""}</div>
           </div>
         ))}
       </div>

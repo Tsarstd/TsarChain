@@ -624,10 +624,7 @@ def handle_user_rpc(
 
 #----------------------#-------------------
 
-    elif mtype == "GET_TX_DETAIL":
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-            
+    elif mtype == "GET_TX_DETAIL":     
         ip = client_ip()
         hist_key = f"hist:{ip}"
         txid_hex = message.get("txid")
@@ -648,11 +645,6 @@ def handle_user_rpc(
         )
         if not ok:
             return pow_resp
-        
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            log.debug("[GET_TX_DETAIL] Benchmark : %.3f ms", result)
             
         return self._get_tx_detail(txid_hex)
 

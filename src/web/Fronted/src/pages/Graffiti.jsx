@@ -25,11 +25,12 @@ const GraffitiCard = ({ item, onSelect }) => {
         )}
       </div>
       <div className="media-meta">
-        <div className="media-title">{shortHash(item?.art_id, 10)}</div>
+        <div className="media-title"> Graffiti Block {item?.block_height ?? "-"}</div>
+        <div className="media-title">{shortHash(item?.art_id, 16)}</div>
         <div className="media-sub">
-          {shortHash(item?.creator, 8)} - #{item?.block_height ?? "-"}
+          {shortHash(item?.creator, 64)}
         </div>
-        <div className="media-sub">{fmtBytes(item?.size || item?.size_bytes)}</div>
+        <div className="media-sub">{fmtBytes(item?.size || item?.size_bytes)} - {item?.mime ?? "-"}</div>
       </div>
     </button>
   );
@@ -91,14 +92,12 @@ const GraffitiDetail = ({ detail, status, onClose }) => {
             <div className="list">
               {(detail?.comments || []).slice(0, 12).map((c, idx) => (
                 <div className="comment-item" key={idx}>
-                  <div className="muted">
-                    {c.commenter || "-"} - {fmtTimestamp(c.ts)}
-                  </div>
-                  <div className="muted">
-                    {fmtTsar(c.amount)} {c.tip ? `| Tip ${fmtTsar(c.tip)}` : ""}
-                  </div>
+                  <div className="muted">{fmtTimestamp(c.ts)}</div>
+                  <div className="value">{c.commenter || "-"}</div>
                   <div className="value">{"-----------"}</div>
                   <div className="value">{c.comment_text || c.comment || "-"}</div>
+                  <div className="value">{"-----------"}</div>
+                  <div className="muted">{fmtTsar(c.amount)} {c.tip ? ` - Tip ${fmtTsar(c.tip)}` : ""}</div>
                 </div>
               ))}
             </div>

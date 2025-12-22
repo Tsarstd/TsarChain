@@ -116,12 +116,12 @@
 
 .stat .label {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 11px;
 }
 
 .stat .value {
   font-weight: 700;
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .mono {
@@ -149,7 +149,7 @@
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 10px;
-  background: #0f1117;
+  background: #373839;
 }
 
 .muted {
@@ -324,6 +324,10 @@
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.network-page .sub-header {
+  color: var(--accent);
 }
 
 @media (max-width: 900px) {

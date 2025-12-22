@@ -100,116 +100,158 @@ const Network = () => {
   return (
     <main className="page network-page">
       <section className="section">
-        <h2>Network Info</h2>
-        <p className="muted">Ringkasan status jaringan TsarChain, setara Network tab di wallet.</p>
+        <h1 className="sub-header">./network_identity</h1>
       </section>
-
-      <section className="section card network-summary">
-        <div className="stat">
-          <span className="label">Last Update</span>
-          <span className="value">{fmtLastUpdate(view.last_updated)}</span>
-        </div>
-        <div className="stat">
-          <span className="label">Schema Version</span>
-          <span className="value">{view.schema_version ?? "-"}</span>
-        </div>
-        <div className="stat">
-          <span className="label">Peers</span>
-          <span className="value">{fmtNumber(peersCount)}</span>
-        </div>
-      </section>
-
-      <section className="section">
-        <h3>Network Identity</h3>
+      <section className="card">
         <InfoGrid
           items={[
-            { label: "Network ID", value: view.identity?.network_id || "-" },
-            { label: "Network Magic", value: view.identity?.network_magic_hex || "-" },
-            { label: "Address Prefix", value: view.identity?.address_prefix || "-" },
+            { label: "Last Update", value: fmtLastUpdate(view.last_updated)},
+            { label: "Schema Version", value: (view.schema_version ?? "-")},
+            { label: "Peers", value: fmtNumber(peersCount)},
+            { label: "Network ID", value: view.identity?.network_id || "-"},
+            { label: "Network Magic", value: view.identity?.network_magic_hex || "-"},
           ]}
         />
       </section>
-
-      <section className="section">
-        <h3>Blockchain</h3>
+      <section className="section card network-summary">
+        <InfoGrid
+          items={[
+            { label: "Genesis Hash", value: <span className="mono">{chain.genesis_hash || "-"}</span> },
+          ]}
+        />
+      </section>
+      <section className="section card network-summary">
         <InfoGrid
           items={[
             { label: "Genesis Message", value: chain.genesis_message || "-" },
-            { label: "Genesis Hash", value: <span className="mono wrap">{chain.genesis_hash || "-"}</span> },
-            { label: "Network Hashrate", value: fmtHashrate(chain.est_network_hashrate_hps_window) },
-            { label: "Avg Block Time", value: `${chain.avg_block_time_sec_window ?? "-"} s` },
-            { label: "Total Blocks", value: fmtNumber(chain.total_blocks) },
-            { label: "Tip Height", value: fmtNumber(chain.tip_height) },
-            { label: "Tip Hash", value: <span className="mono wrap">{chain.tip_hash || "-"}</span> },
-            { label: "Tip Target", value: <span className="mono wrap">{chain.tip_target_hex || "-"}</span> },
-            { label: "Tip Timestamp", value: fmtTimestamp(chain.tip_timestamp) },
-            { label: "Tip Bits", value: chain.tip_bits ?? "-" },
-            { label: "Tip Difficulty", value: fmtNumber(chain.tip_difficulty) },
-            { label: "Total Block Size", value: fmtBytes(chain.total_block_size_bytes) },
+          ]}
+        />
+      </section>
+      <section className="section card network-summary">
+        <InfoGrid
+          items={[
+            { label: "Address Prefix", value: view.identity?.address_prefix || "-" },
+            { label: "Coinbase Maturity Rule", value: `${supply.coinbase_maturity ?? "-"} Block` },
+            { label: "Coinbase Reward", value: fmtTsar(chain.current_block_subsidy || supply.current_block_subsidy) },
           ]}
         />
       </section>
 
       <section className="section">
-        <h3>Blockchain Economy</h3>
+        <h1 className="sub-header">./network_activity</h1>
+      </section>
+      <section className="card">
+        <InfoGrid
+          items={[
+            { label: "Tip Timestamp", value: fmtTimestamp(chain.tip_timestamp) },
+            { label: "Tip Height", value: fmtNumber(chain.tip_height) },
+            { label: "Tip Bits", value: chain.tip_bits ?? "-" },
+            { label: "Tip Difficulty", value: fmtNumber(chain.tip_difficulty) },
+            { label: "Network Hashrate", value: fmtHashrate(chain.est_network_hashrate_hps_window) },
+            { label: "Average Block Time", value: `${chain.avg_block_time_sec_window ?? "-"} s` },
+          ]}
+        />
+      </section>
+      <section className="section card network-summary">
+        <InfoGrid
+          items={[
+            { label: "Tip Hash", value: <span className="mono wrap">{chain.tip_hash || "-"}</span> },
+          ]}
+        />
+      </section>
+      <section className="section card network-summary">
+        <InfoGrid
+          items={[
+            { label: "Tip Target", value: <span className="mono wrap">{chain.tip_target_hex || "-"}</span> },
+          ]}
+        />
+      </section>
+      <section className="section">
+        <h1 className="sub-header">./tokenomics</h1>
+      </section>
+      <section className="card">
         <InfoGrid
           items={[
             { label: "Max Supply", value: fmtTsar(supply.max_supply) },
             { label: "Circulating Supply", value: fmtTsar(supply.circulating_estimate) },
-            { label: "Coinbase Reward", value: fmtTsar(chain.current_block_subsidy || supply.current_block_subsidy) },
-            { label: "Maturity Rule", value: `${supply.coinbase_maturity ?? "-"} Block` },
             { label: "Immature Coinbase", value: fmtTsar(supply.immature_coinbase) },
             { label: "Emitted Subsidy", value: fmtTsar(supply.emitted_subsidy) },
-            { label: "Current Epoch", value: fmtNumber(supply.current_epoch) },
+            { label: "Pool Balances", value: fmtTsar(graffiti.pool_balances) },
+            { label: "Total Fees Paid", value: fmtTsar(txs.total_fees_paid) },
+          ]}
+        />
+      </section>
+
+      <section className="section">
+        <h1 className="sub-header">./mempool</h1>
+      </section>
+      <section className="card">
+        <InfoGrid
+          items={[
+            { label: "Transactions on Mempool", value: fmtNumber(txs.mempool_txs) },
+            { label: "Graffiti on Mempool", value: fmtNumber(graffiti.graffiti_on_mempool) },
+            { label: "Mempool VBytes", value: fmtNumber(txs.mempool_vbytes_estimate) },
+          ]}
+        />
+      </section>
+
+      <section className="section">
+        <h1 className="sub-header">./halving</h1>
+      </section>
+      <section className="card">
+        <InfoGrid
+          items={[
             { label: "Halving Height", value: fmtNumber(supply.next_halving_height) },
             { label: "Blocks To Halving", value: fmtNumber(supply.blocks_to_halving) },
+            { label: "Current Epoch", value: fmtNumber(supply.current_epoch) },
           ]}
         />
       </section>
 
       <section className="section">
-        <h3>Transactions</h3>
+        <h1 className="sub-header">./transactions</h1>
+      </section>
+      <section className="card">
         <InfoGrid
           items={[
-            { label: "Mempool Txs", value: fmtNumber(txs.mempool_txs) },
-            { label: "Mempool VBytes", value: fmtNumber(txs.mempool_vbytes_estimate) },
-            { label: "Total Fees Paid", value: fmtTsar(txs.total_fees_paid) },
             { label: "Total Transactions", value: fmtNumber(txs.total_txs) },
             { label: "Non-Coinbase Txs", value: fmtNumber(txs.total_non_coinbase_txs ?? txs.total_txs) },
-            { label: "UTXO Set Size", value: fmtNumber(utxo.utxo_set_size) },
-          ]}
-        />
-      </section>
-
-      <section className="section">
-        <h3>Graffiti</h3>
-        <InfoGrid
-          items={[
             { label: "Total Graffiti", value: fmtNumber(graffiti.posts) },
             { label: "Total Comments", value: fmtNumber(graffiti.comments) },
-            { label: "Pool Balances", value: fmtTsar(graffiti.pool_balances) },
-            { label: "Total Payouts", value: fmtNumber(graffiti.payouts) },
-            { label: "Total Storage", value: fmtBytes(graffiti.total_graffiti_storage) },
-            { label: "Graffiti on Mempool", value: fmtNumber(graffiti.graffiti_on_mempool) },
+            { label: "Total Archivist Payouts", value: fmtNumber(graffiti.payouts) },
           ]}
         />
       </section>
 
       <section className="section">
-        <h3>Top Miners</h3>
-        <div className="card">
-          <div className="list">
-            {(miners.top_miners || []).slice(0, 10).map(([addr, found], idx) => (
-              <div className="tx-item" key={`${addr}-${idx}`}>
-                <div className="label">Rank {idx + 1}</div>
-                <div className="value mono wrap">{addr}</div>
-                <div className="muted">{fmtNumber(found)} blocks</div>
-              </div>
-            ))}
-            {(!miners.top_miners || miners.top_miners.length === 0) && (
-              <div className="muted">Tidak ada data miners.</div>
-            )}
-          </div>
+        <h1 className="sub-header">./database</h1>
+      </section>
+      <section className="card">
+        <InfoGrid
+          items={[
+            { label: "Total Blocks", value: fmtNumber(chain.total_blocks) },
+            { label: "UTXO Set", value: fmtNumber(utxo.utxo_set_size) },
+            { label: "Total Block Size", value: fmtBytes(chain.total_block_size_bytes) },
+            { label: "Total Graffiti Storage", value: fmtBytes(graffiti.total_graffiti_storage) },
+          ]}
+        />
+      </section>
+
+      <section className="section">
+        <h1 className="sub-header">./top_miners</h1>
+      </section>
+      <section className="card">
+        <div className="list">
+          {(miners.top_miners || []).slice(0, 10).map(([addr, found], idx) => (
+            <div className="tx-item" key={`${addr}-${idx}`}>
+              <div className="label">Rank #{idx + 1}</div>
+              <div className="value mono wrap">{addr}</div>
+              <div className="muted">{fmtNumber(found)} blocks</div>
+            </div>
+          ))}
+          {(!miners.top_miners || miners.top_miners.length === 0) && (
+            <div className="muted">Tidak ada data miners.</div>
+          )}
         </div>
       </section>
     </main>
