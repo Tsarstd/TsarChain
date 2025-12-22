@@ -1,5 +1,14 @@
 const { spawnSync } = require("child_process");
+const fs = require("fs");
 const path = require("path");
+
+const projectRoot = path.join(__dirname, "..", "..", "..", "..");
+const venvRoot = process.env.VIRTUAL_ENV || path.join(projectRoot, ".venv");
+const venvPython =
+  process.platform === "win32"
+    ? path.join(venvRoot, "Scripts", "python.exe")
+    : path.join(venvRoot, "bin", "python");
+const pythonBin = process.env.TSAR_PYTHON || (fs.existsSync(venvPython) ? venvPython : "python");
 
 function rpcCall(op, param, host, port) {
   const script = path.join(__dirname, "py_rpc_client.py");
@@ -8,9 +17,9 @@ function rpcCall(op, param, host, port) {
   if (host) args.push(String(host));
   if (port) args.push(String(port));
 
-  const res = spawnSync("python", args, {
+  const res = spawnSync(pythonBin, args, {
     encoding: "utf8",
-    cwd: path.join(__dirname, "..", "..", "..", ".."),
+    cwd: projectRoot,
   });
 
   if (res.error) {

@@ -231,12 +231,6 @@ def setup_logging(
             pass
 
     logging.basicConfig(level=lvl, handlers=handlers, force=force)
-    _name = logging.getLevelName(lvl) if isinstance(lvl, int) else str(level)
-    logging.getLogger("tsarchain").trace(
-        "Logging configured: level=%s file=%s format=%s console=%s rotate=%s backup=%s",
-        _name, str(log_path), ("json" if as_json else "plain"),
-        to_console, rotate_max_bytes, backup_count
-    )
     return logging.getLogger("tsarchain")
 
 

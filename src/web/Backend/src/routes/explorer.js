@@ -9,6 +9,46 @@ const cfg = getConfig();
 const svc = new ExplorerService({ nodeHost: cfg.nodeHost, nodePort: cfg.nodePort });
 const projectRoot = path.resolve(__dirname, "..", "..", "..", "..", "..");
 const cacheDir = path.resolve(projectRoot, "data_user", "graffiti_cache");
+const GRAFFITI_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // hapus file cache jika tidak diakses selama 6 jam
+const GRAFFITI_CACHE_SWEEP_MS = 15 * 60 * 1000; // interval pembersihan cache file graffiti
+let lastGraffitiCacheSweep = 0;
+
+const touchFile = (filePath) => {
+  try {
+    const now = new Date();
+    fs.utimesSync(filePath, now, now);
+  } catch (_err) {
+  }
+};
+
+const cleanupGraffitiCache = () => {
+  const now = Date.now();
+  if (now - lastGraffitiCacheSweep < GRAFFITI_CACHE_SWEEP_MS) return;
+  lastGraffitiCacheSweep = now;
+  if (!fs.existsSync(cacheDir)) return;
+  let entries;
+  try {
+    entries = fs.readdirSync(cacheDir);
+  } catch (_err) {
+    return;
+  }
+  for (const entry of entries) {
+    const fullPath = path.join(cacheDir, entry);
+    let stat;
+    try {
+      stat = fs.statSync(fullPath);
+    } catch (_err) {
+      continue;
+    }
+    if (!stat.isFile()) continue;
+    if (now - stat.mtimeMs > GRAFFITI_CACHE_TTL_MS) {
+      try {
+        fs.unlinkSync(fullPath);
+      } catch (_err) {
+      }
+    }
+  }
+};
 
 const resolveCachePath = (cachePath) => {
   if (!cachePath) return null;
@@ -78,6 +118,7 @@ router.get("/graffiti/:artId", async (req, res, next) => {
 
 router.get("/graffiti/:artId/media", async (req, res, next) => {
   try {
+    cleanupGraffitiCache();
     const artId = req.params.artId;
     let filePath = null;
     if (fs.existsSync(cacheDir)) {
@@ -100,6 +141,7 @@ router.get("/graffiti/:artId/media", async (req, res, next) => {
     if (!filePath || !fs.existsSync(filePath)) {
       return res.status(404).json({ error: "media_not_found" });
     }
+    touchFile(filePath);
     const stat = fs.statSync(filePath);
     const size = stat.size;
     const type = inferMediaType(info?.meta, filePath);

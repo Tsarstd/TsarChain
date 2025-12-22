@@ -25,8 +25,8 @@ from tsarchain.utils.tsar_logging import setup_logging, get_ctx_logger
 
 log = get_ctx_logger("apps.cli_archivist")
 
-HEARTBEAT_SEC = 10
-REFRESH_SEC = 6
+HEARTBEAT_SEC = 30
+REFRESH_SEC = 30
 STORAGE_PORT_OFFSET = 100
 
 

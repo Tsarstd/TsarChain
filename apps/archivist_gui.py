@@ -21,7 +21,7 @@ from tsarchain.utils.tsar_logging import setup_logging, get_ctx_logger, open_log
 log = get_ctx_logger("apps.archivist")
 
 APP_TITLE = "TsarChain • Archivist"
-HEARTBEAT_SEC = 10
+HEARTBEAT_SEC = 30
 STORAGE_PORT_OFFSET = 100
 
 class TsarStorageGUI:

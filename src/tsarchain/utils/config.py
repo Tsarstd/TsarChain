@@ -102,6 +102,11 @@ LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
 KV_ITER_CHUNK      = 512 # number of entries per chunk when iterating prefix scans (LMDB)
 
+# ---- WEB CACHE (LMDB) ----
+WEB_DATABASE_PATH  = "data/web_storage/"  # dedicated LMDB path for web cache
+LMDB_WEB_SIZE_INIT = 100 * 1024 * 1024  # initial web LMDB size (100 MB)
+LMDB_WEB_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
+
 # ---- SNAPSHOT SIGNING ----
 SNAPSHOT_REQUIRE_SIGNATURE = False  # demand signed snapshot manifests when True
 SNAPSHOT_MANIFEST_URL      = ""  # optional URL supplying snapshot manifest

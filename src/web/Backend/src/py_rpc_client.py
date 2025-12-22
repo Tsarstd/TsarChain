@@ -1,16 +1,24 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Tsar Studio
+# Part of TsarChain — see LICENSE and TRADEMARKS.md
+
 import json
 import os
 import sys
 from pathlib import Path
 
-# Ensure project src on path
-ROOT_SRC = Path(__file__).resolve().parents[3]  # .../ProjectV0.2/src
+# Ensure project root + src + local backend src on path
+SCRIPT_DIR = Path(__file__).resolve().parent
+ROOT_SRC = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(ROOT_SRC))
+sys.path.insert(0, str(PROJECT_ROOT))
 
-from tsarchain.wallet.services.rpc_client import NodeClient  # type: ignore
-from tsarchain.wallet.services.graffiti_service import fetch_graffiti_file  # type: ignore
-from tsarchain.network.protocol import load_or_create_keypair_at  # type: ignore
-from tsarchain.utils import config as CFG  # type: ignore
+from tsarchain.wallet.services.rpc_client import NodeClient
+from tsarchain.network.protocol import load_or_create_keypair_at
+from tsarchain.utils import config as CFG
+from src.web.Backend.src import database_web as webdb
 
 from tsarchain.utils.tsar_logging import get_ctx_logger, setup_logging
 log = get_ctx_logger('tsarchain.web.Backend.py_rpc_client')
@@ -31,42 +39,90 @@ def _rpc_send(client, payload: dict):
     resp = client.send(payload)
     return resp
 
+_CACHE_SCOPE = "default"
+
+def _set_cache_scope(host: str, port: int) -> None:
+    global _CACHE_SCOPE
+    _CACHE_SCOPE = f"{host}:{port}"
+
+def _cache_key(kind: str, *parts: object) -> str:
+    return webdb.make_cache_key("web", _CACHE_SCOPE, kind, *parts)
+
+def _payload_has_error(payload: object) -> bool:
+    return isinstance(payload, dict) and bool(payload.get("error"))
+
+def _should_cache_payload(payload: object) -> bool:
+    if payload is None:
+        return False
+    if isinstance(payload, dict) and payload.get("error"):
+        return webdb.should_cache_error(payload.get("error"))
+    return True
+
+def _cache_get(key: str):
+    return webdb.cache_get_json(key)
+
+def _cache_set(key: str, payload: object) -> None:
+    webdb.cache_set_json(key, payload)
+
+def _cache_fetch(key: str, fetch_fn):
+    cached = _cache_get(key)
+    if cached is not None:
+        log.debug("[webcache] hit key=%s", key[:96])
+        return cached
+    log.debug("[webcache] miss_rpc key=%s", key[:96])
+    payload = fetch_fn()
+    if _should_cache_payload(payload):
+        _cache_set(key, payload)
+    return payload
+
 def rpc_network(client):
-    info = _rpc_send(client, {"type": "GET_NETWORK_INFO"}) or {}
-    peers = _rpc_send(client, {"type": "GET_PEERS"}) or {}
-    if isinstance(peers, dict) and "peers" in peers:
-        info["peers"] = peers.get("peers")
-    if isinstance(info, dict) and info.get("type") == "NETWORK_INFO":
-        return info.get("data") or info
-    return info
+    key = _cache_key("network")
+    def _fetch():
+        info = _rpc_send(client, {"type": "GET_NETWORK_INFO"}) or {}
+        peers = _rpc_send(client, {"type": "GET_PEERS"}) or {}
+        if isinstance(peers, dict) and "peers" in peers:
+            info["peers"] = peers.get("peers")
+        if isinstance(info, dict) and info.get("type") == "NETWORK_INFO":
+            return info.get("data") or info
+        return info
+    return _cache_fetch(key, _fetch)
 
 def rpc_block(client, val: str):
     if str(val).isdigit():
+        key = _cache_key("block", "h", str(val))
         payload = {"type": "GET_BLOCK", "height": int(val)}
     else:
+        key = _cache_key("block", "hash", str(val).lower())
         payload = {"type": "GET_BLOCK", "hash": str(val)}
+    cached = _cache_get(key)
+    if cached is not None:
+        log.debug("[webcache] hit key=%s", key[:96])
+        return cached
+    log.debug("[webcache] miss_rpc key=%s", key[:96])
     resp = _rpc_send(client, payload)
+    if _payload_has_error(resp):
+        if webdb.should_cache_error(resp.get("error") if isinstance(resp, dict) else None):
+            _cache_set(key, resp)
+        return resp
+    webdb.cache_set_json(key, resp, ttl_sec=0)
     return resp
 
 def rpc_tx(client, txid: str):
-    resp = _rpc_send(client, {"type": "GET_TX_DETAIL", "txid": str(txid).lower()})
-    if isinstance(resp, dict) and not resp.get("error"):
-        return resp
-    # fallback
-    for pay in (
-        {"type": "GET_TX", "txid": str(txid).lower()},
-        {"type": "GET_TRANSACTION", "txid": str(txid).lower()},
-        {"type": "TX_GET", "txid": str(txid).lower()},
-    ):
-        rr = _rpc_send(client, pay)
-        if isinstance(rr, dict) and not rr.get("error"):
-            return rr
-    return resp
+    txid_norm = str(txid).lower()
+    key = _cache_key("tx", txid_norm)
+    return _cache_fetch(key, lambda: _rpc_send(client, {"type": "GET_TX_DETAIL", "txid": txid_norm}))
 
 def rpc_address(client, addr: str):
-    balances = _rpc_send(client, {"type": "GET_BALANCES", "addresses": [addr]}) or {}
-    utxos = _rpc_send(client, {"type": "GET_UTXOS", "address": addr}) or {}
-    history = _rpc_send(client, {"type": "GET_TX_HISTORY", "address": addr, "limit": 50}) or {}
+    addr_norm = str(addr or "").strip()
+    key = _cache_key("address", addr_norm.lower())
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+
+    balances = _rpc_send(client, {"type": "GET_BALANCES", "addresses": [addr_norm]}) or {}
+    utxos = _rpc_send(client, {"type": "GET_UTXOS", "address": addr_norm}) or {}
+    history = _rpc_send(client, {"type": "GET_TX_HISTORY", "address": addr_norm, "limit": 50}) or {}
+    had_error = _payload_has_error(balances) or _payload_has_error(utxos) or _payload_has_error(history)
 
     if not isinstance(balances, dict):
         balances = {}
@@ -79,7 +135,7 @@ def rpc_address(client, addr: str):
     items = balances.get("items") or balances.get("balances") or balances.get("map") or {}
     entry = {}
     if isinstance(items, dict):
-        entry = items.get(addr) or next(iter(items.values()), {}) or {}
+        entry = items.get(addr_norm) or next(iter(items.values()), {}) or {}
     elif isinstance(items, list):
         entry = items[0] if items else {}
     if isinstance(entry, dict):
@@ -142,8 +198,8 @@ def rpc_address(client, addr: str):
 
     balance = sum(int(u.get("amount", 0) or 0) for u in utxo_list if isinstance(u, dict))
 
-    return {
-        "address": addr,
+    out = {
+        "address": addr_norm,
         "spendable": spendable,
         "immature": immature,
         "pending": pending,
@@ -152,16 +208,35 @@ def rpc_address(client, addr: str):
         "history": history.get("txs") if isinstance(history, dict) else history,
         "height": history.get("height") if isinstance(history, dict) else None,
     }
+    if not had_error:
+        _cache_set(key, out)
+    return out
 
 
 def rpc_graffiti(client, art_id: str):
-    post_resp = _rpc_send(client, {"type": "GRAFFITI_GET_ART", "art_id": art_id}) or {}
-    comments_resp = _rpc_send(client, {"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id}) or {}
+    art_norm = str(art_id or "").strip()
+    key = _cache_key("graffiti", art_norm.lower()) if art_norm else None
+    if key:
+        cached = _cache_get(key)
+        if cached is not None:
+            return cached
+
+    post_resp = _rpc_send(client, {"type": "GRAFFITI_GET_ART", "art_id": art_norm}) or {}
+    comments_resp = _rpc_send(client, {"type": "GRAFFITI_GET_COMMENTS", "art_id": art_norm}) or {}
+    cache_ok = True
+    if _payload_has_error(post_resp) and not webdb.should_cache_error(post_resp.get("error")):
+        cache_ok = False
+    if _payload_has_error(comments_resp) and not webdb.should_cache_error(comments_resp.get("error")):
+        cache_ok = False
+
     post = None
     if isinstance(post_resp, dict):
         post = post_resp.get("post") or post_resp
     comments = comments_resp.get("comments") if isinstance(comments_resp, dict) else None
-    return {"post": post, "comments": comments}
+    out = {"post": post, "comments": comments}
+    if key and cache_ok and _should_cache_payload(out):
+        _cache_set(key, out)
+    return out
 
 def _parse_opts(param: str | None) -> dict:
     if not param:
@@ -188,18 +263,27 @@ def _parse_opts(param: str | None) -> dict:
 def rpc_graffiti_posts(client, opts: dict):
     limit = int(opts.get("limit", 50) or 50)
     offset = int(opts.get("offset", 0) or 0)
+    key = _cache_key("graffiti_posts", limit, offset)
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
     payload = {"type": "GRAFFITI_GET_POSTS", "limit": limit, "offset": offset}
     resp = _rpc_send(client, payload)
+    cache_ok = not _payload_has_error(resp)
     if isinstance(resp, dict) and resp.get("type") == "GRAFFITI_GET_POSTS":
-        return {"posts": resp.get("posts") or [], "limit": limit, "offset": offset}
-    return {"posts": [], "limit": limit, "offset": offset}
+        out = {"posts": resp.get("posts") or [], "limit": limit, "offset": offset}
+    else:
+        out = {"posts": [], "limit": limit, "offset": offset}
+    if cache_ok and _should_cache_payload(out):
+        _cache_set(key, out)
+    return out
 
 def rpc_graffiti_file(client, opts: dict, fallback_art_id: str | None):
     art_id = (opts.get("art_id") or fallback_art_id or "").strip()
     storer = (opts.get("storer_addr") or opts.get("storer") or "").strip()
     if not art_id:
         return {"status": "error", "reason": "missing_art_id"}
-    resp = fetch_graffiti_file(lambda payload: _rpc_send(client, payload), art_id, storer_addr=storer)
+    resp = webdb.fetch_graffiti_file(lambda payload: _rpc_send(client, payload), art_id, storer_addr=storer)
     if not isinstance(resp, dict):
         return {"status": "error", "reason": "bad_response"}
     out = {
@@ -230,8 +314,8 @@ def main():
         log.exception("[main_exception] port: %s", port)
 
     try:
+        _set_cache_scope(host, port)
         client = _mk_client(host, port)
-        log.debug("[main] client: %s", client)
         if op == "network":
             out = rpc_network(client)
         elif op == "block":
