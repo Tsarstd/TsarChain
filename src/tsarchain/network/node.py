@@ -315,11 +315,11 @@ class Network:
     def _handle_full_sync(self, message, addr):
         return handlers_logic._handle_full_sync(self, message, addr)
 
-    def _handle_get_block_at(self, height: int) -> dict:
-        return handlers_logic._handle_get_block_at(self, height)
+    def _handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict:
+        return handlers_logic._handle_get_block_at(self, height, src_tag=src_tag)
 
-    def _handle_get_block_by_hash(self, hx: str) -> dict:
-        return handlers_logic._handle_get_block_by_hash(self, hx)
+    def _handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict:
+        return handlers_logic._handle_get_block_by_hash(self, hx, src_tag=src_tag)
 
     # ------------------------------ Shutdown ------------------------------
 

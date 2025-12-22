@@ -80,6 +80,32 @@ def process_message(
     # GUARDIANS: role-based gate + limits
     # ----------------------------------------------------------------------------------
 
+    def _sanitize_rpc_source(val: Any) -> str | None:
+        if val is None:
+            return None
+        txt = str(val).strip().lower()
+        if not txt:
+            return None
+        allowed = "abcdefghijklmnopqrstuvwxyz0123456789._-"
+        cleaned = "".join([c for c in txt if c in allowed])
+        if not cleaned:
+            return None
+        if len(cleaned) > 32:
+            cleaned = cleaned[:32]
+        return cleaned
+
+    def _is_storage_node_id(node_id: str | None) -> bool:
+        if not node_id:
+            return False
+        try:
+            peers = getattr(self, "storage_peers", None) or {}
+        except Exception:
+            return False
+        for meta in peers.values():
+            if isinstance(meta, dict) and meta.get("node_id") == node_id:
+                return True
+        return False
+
     def _is_miner_sender() -> bool:
         if not src_node_id:
             return False
@@ -104,6 +130,18 @@ def process_message(
         return "0.0.0.0"
 
     role, category = _identify_rpc_role(mtype)
+    raw_source = message.get("rpc_source") or message.get("source") or message.get("client")
+    rpc_source = _sanitize_rpc_source(raw_source)
+    if not rpc_source and _is_storage_node_id(src_node_id):
+        rpc_source = "storage_node"
+    if not rpc_source:
+        if role == "MINER":
+            rpc_source = "miner"
+        elif role == "STORAGE":
+            rpc_source = "storage"
+        else:
+            rpc_source = "user"
+    message["rpc_source"] = rpc_source
 
     if role == "UNKNOWN":
         ip = _client_ip()

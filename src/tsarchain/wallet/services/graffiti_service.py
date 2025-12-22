@@ -128,6 +128,54 @@ def _sha256_file(path: str, chunk: int = 1024 * 1024) -> str:
             h.update(part)
     return h.hexdigest()
 
+def _infer_cache_mime(path: str) -> str:
+    mime_raw, _ = mimetypes.guess_type(path)
+    if mime_raw:
+        return mime_raw
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".jpg", ".jpeg"):
+        return "image/jpeg"
+    if ext == ".mp4":
+        return "video/mp4"
+    return "application/octet-stream"
+
+def _find_cached_graffiti_path(art_id: str, cache_root: str) -> Optional[str]:
+    if not cache_root or not os.path.isdir(cache_root):
+        return None
+    for ext in (".jpg", ".jpeg", ".mp4", ".bin"):
+        candidate = os.path.join(cache_root, f"{art_id}{ext}")
+        if os.path.isfile(candidate):
+            return candidate
+    try:
+        for name in os.listdir(cache_root):
+            if not name.startswith(f"{art_id}."):
+                continue
+            full_path = os.path.join(cache_root, name)
+            if os.path.isfile(full_path):
+                return full_path
+    except FileNotFoundError:
+        return None
+    return None
+
+def _read_cached_graffiti_file(art_id: str, cache_root: str) -> Optional[Dict[str, Any]]:
+    cache_path = _find_cached_graffiti_path(art_id, cache_root)
+    if not cache_path:
+        return None
+    try:
+        size = os.path.getsize(cache_path)
+    except OSError:
+        return None
+    if size <= 0:
+        return None
+    mime = _infer_cache_mime(cache_path)
+    meta = {"size_bytes": int(size), "mime": mime, "filename": os.path.basename(cache_path)}
+    try:
+        with open(cache_path, "rb") as fh:
+            data_bytes = fh.read()
+    except OSError:
+        return None
+    return {"status": "ok", "bytes": data_bytes, "meta": meta, "cache_path": cache_path}
+
 def read_graffiti_file_info(path: str) -> Dict[str, Any]:
     """
     Read local file and return basic info (size, mime, sha256) while validating graffiti boundaries.
@@ -416,12 +464,18 @@ def fetch_graffiti_file(
     Retrieve graffiti files from the storage node based on art_id.
     - rpc_call: Synchronous function to the node (e.g., NodeClient.send)
     - storer_addr: Preferred storage address (bech32) if available
-    - cache_dir: Local cache location (default: data_user/graffiti_cache)
+    - cache_dir: Local cache location (default: CFG.WALLET_DATA_DIR/graffiti_cache)
     Return: {"status": "ok", "bytes": b"...", "meta": {...}, "cache_path": "..."} atau {"status": "error", "reason": "..."}
     """
     art_norm = (art_id or "").strip().lower()
     if not art_norm:
         return {"status": "error", "reason": "missing_art_id"}
+
+    cache_root = cache_dir or os.path.join(CFG.WALLET_DATA_DIR, "graffiti_cache")
+    cached = _read_cached_graffiti_file(art_norm, cache_root)
+    if cached is not None:
+        log.debug("[fetch] cache_hit art=%s path=%s", art_norm[:16], cached.get("cache_path"))
+        return cached
 
     max_bytes = int(max_bytes)
     # Clamp by graffiti msg limit to avoid hitting generic MAX_MSG
@@ -441,7 +495,6 @@ def fetch_graffiti_file(
         (preferred if storer_target and addr == storer_target else others).append(meta)
     candidates = preferred + others
 
-    cache_root = cache_dir or os.path.join("data_user", "graffiti_cache")
     os.makedirs(cache_root, exist_ok=True)
 
     msg_cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)

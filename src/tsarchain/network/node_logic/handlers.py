@@ -225,7 +225,7 @@ def _handle_full_sync(self, message, addr):
     self.broadcast.receive_full_sync(payload)
     return {"status": "ok"}
 
-def _handle_get_block_at(self, height: int) -> dict:
+def _handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict:
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
         
@@ -241,11 +241,12 @@ def _handle_get_block_at(self, height: int) -> dict:
     if CFG.DEBUG_BENCHMARKS:
         end = time.perf_counter()
         result = round((end - start) * 1000.0, 3)
-        log.debug("[GET_BLOCK] 'height' Benchmark : %.3f ms", result)
+        tag = src_tag or "-"
+        log.debug("[GET_BLOCK] 'height' Benchmark : %.3f ms src=%s", result, tag)
         
     return d
 
-def _handle_get_block_by_hash(self, hx: str) -> dict:
+def _handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict:
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
         
@@ -260,7 +261,8 @@ def _handle_get_block_by_hash(self, hx: str) -> dict:
             if CFG.DEBUG_BENCHMARKS:
                 end = time.perf_counter()
                 result = round((end - start) * 1000.0, 3)
-                log.debug("[GET_BLOCK] 'hash' Benchmark : %.3f ms", result)
+                tag = src_tag or "-"
+                log.debug("[GET_BLOCK] 'hash' Benchmark : %.3f ms src=%s", result, tag)
                 
             return d
     return {"type": "BLOCK", "error": "not_found"}

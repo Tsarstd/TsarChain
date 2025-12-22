@@ -449,7 +449,7 @@ def _get_tx_history(self, address: str, limit: int = 50, offset: int = 0, direct
     return {"items": items, "total": total, "limit": int(limit), "offset": int(offset)}
 
 
-def _get_tx_detail(self, txid_hex: str) -> dict:
+def _get_tx_detail(self, txid_hex: str, src_tag: str | None = None) -> dict:
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
     
@@ -495,7 +495,8 @@ def _get_tx_detail(self, txid_hex: str) -> dict:
     if CFG.DEBUG_BENCHMARKS:
         end = time.perf_counter()
         result = round((end - start) * 1000.0, 3)
-        log.debug("[GET_TX_DETAIL] Benchmark : %.3f ms", result)
+        tag = src_tag or "-"
+        log.debug("[GET_TX_DETAIL] Benchmark : %.3f ms src=%s", result, tag)
         
     return {
         "type": "TX_DETAIL",

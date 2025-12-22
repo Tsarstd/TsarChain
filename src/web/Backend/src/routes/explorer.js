@@ -3,6 +3,7 @@ const path = require("path");
 const router = require("express").Router();
 const { ExplorerService } = require("../services/explorerService");
 const { getConfig } = require("../config/env");
+const { createRateLimiter } = require("../utils/rateLimit");
 const { guessKind } = require("../utils/searchKind");
 
 const cfg = getConfig();
@@ -12,6 +13,9 @@ const cacheDir = path.resolve(projectRoot, "data_user", "graffiti_cache");
 const GRAFFITI_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // hapus file cache jika tidak diakses selama 6 jam
 const GRAFFITI_CACHE_SWEEP_MS = 15 * 60 * 1000; // interval pembersihan cache file graffiti
 let lastGraffitiCacheSweep = 0;
+
+const searchLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 20 });
+const graffitiMediaLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 40 });
 
 const touchFile = (filePath) => {
   try {
@@ -116,7 +120,7 @@ router.get("/graffiti/:artId", async (req, res, next) => {
   }
 });
 
-router.get("/graffiti/:artId/media", async (req, res, next) => {
+router.get("/graffiti/:artId/media", graffitiMediaLimiter, async (req, res, next) => {
   try {
     cleanupGraffitiCache();
     const artId = req.params.artId;
@@ -193,7 +197,7 @@ router.get("/graffiti", async (req, res, next) => {
   }
 });
 
-router.get("/search", async (req, res, next) => {
+router.get("/search", searchLimiter, async (req, res, next) => {
   try {
     const query = (req.query.q || "").trim();
     if (!query) return res.status(400).json({ error: "missing_query" });

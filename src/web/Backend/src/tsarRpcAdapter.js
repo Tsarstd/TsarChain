@@ -1,6 +1,7 @@
-const { spawnSync } = require("child_process");
+const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const readline = require("readline");
 
 const projectRoot = path.join(__dirname, "..", "..", "..", "..");
 const venvRoot = process.env.VIRTUAL_ENV || path.join(projectRoot, ".venv");
@@ -9,36 +10,113 @@ const venvPython =
     ? path.join(venvRoot, "Scripts", "python.exe")
     : path.join(venvRoot, "bin", "python");
 const pythonBin = process.env.TSAR_PYTHON || (fs.existsSync(venvPython) ? venvPython : "python");
+const scriptPath = path.join(__dirname, "py_rpc_client.py");
+const WORKER_REQUEST_TIMEOUT_MS = 12 * 1000;
 
-function rpcCall(op, param, host, port) {
-  const script = path.join(__dirname, "py_rpc_client.py");
-  const args = [script, op];
-  if (param !== null && param !== undefined) args.push(String(param));
-  if (host) args.push(String(host));
-  if (port) args.push(String(port));
+let worker = null;
+let workerSeq = 0;
+const pending = new Map();
 
-  const res = spawnSync(pythonBin, args, {
-    encoding: "utf8",
+const rejectAllPending = (err) => {
+  for (const entry of pending.values()) {
+    clearTimeout(entry.timeout);
+    entry.reject(err);
+  }
+  pending.clear();
+};
+
+const handleWorkerLine = (line) => {
+  const raw = String(line || "").trim();
+  if (!raw) return;
+  let msg;
+  try {
+    msg = JSON.parse(raw);
+  } catch (_err) {
+    return;
+  }
+  if (!msg || typeof msg !== "object" || msg.id === undefined) return;
+  const entry = pending.get(msg.id);
+  if (!entry) return;
+  pending.delete(msg.id);
+  clearTimeout(entry.timeout);
+  const payload = Object.prototype.hasOwnProperty.call(msg, "payload") ? msg.payload : msg;
+  entry.resolve(payload);
+};
+
+const startWorker = () => {
+  const child = spawn(pythonBin, [scriptPath, "worker"], {
     cwd: projectRoot,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stdin.setDefaultEncoding("utf8");
+
+  const rl = readline.createInterface({ input: child.stdout });
+  rl.on("line", handleWorkerLine);
+
+  child.stderr.on("data", (chunk) => {
+    const text = String(chunk || "").trim();
+    if (text) {
+      console.error("[py_rpc_worker]", text);
+    }
   });
 
-  if (res.error) {
-    throw res.error;
-  }
-  const stdout = res.stdout?.trim() || "";
-  if (!stdout) {
+  child.on("error", (err) => {
+    rejectAllPending(err);
+    worker = null;
+  });
+
+  child.on("exit", (code, signal) => {
+    rejectAllPending(new Error(`python_worker_exit:${code ?? "null"}:${signal ?? ""}`));
+    worker = null;
+  });
+
+  worker = child;
+  return child;
+};
+
+const ensureWorker = () => {
+  if (worker && !worker.killed) return worker;
+  return startWorker();
+};
+
+async function rpcCall(op, param, host, port) {
+  const child = ensureWorker();
+  const id = (workerSeq += 1);
+  const request = {
+    id,
+    op,
+    param: param ?? null,
+    host: host ?? null,
+    port: port ?? null,
+  };
+
+  const payload = await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pending.delete(id);
+      reject(new Error("rpc_timeout"));
+      try {
+        child.kill();
+      } catch (_err) {
+      }
+    }, WORKER_REQUEST_TIMEOUT_MS);
+
+    pending.set(id, { resolve, reject, timeout });
+    try {
+      child.stdin.write(`${JSON.stringify(request)}\n`);
+    } catch (err) {
+      clearTimeout(timeout);
+      pending.delete(id);
+      reject(err);
+    }
+  });
+
+  if (!payload) {
     throw new Error("empty_response");
   }
-  let json;
-  try {
-    json = JSON.parse(stdout);
-  } catch (err) {
-    throw new Error(`invalid_json: ${stdout}`);
+  if (payload.error) {
+    throw new Error(payload.error);
   }
-  if (json.error) {
-    throw new Error(json.error);
-  }
-  return json;
+  return payload;
 }
 
 module.exports = { rpcCall };

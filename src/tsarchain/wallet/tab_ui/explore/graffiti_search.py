@@ -155,7 +155,7 @@ class GraffitiSearch:
         # preview: image or video
         cache_guess = cache_path
         if not cache_guess:
-            matches = glob(os.path.join("data_user", "graffiti_cache", f"{art_id}.*"))
+            matches = glob(os.path.join(CFG.WALLET_DATA_DIR, "graffiti_cache", f"{art_id}.*"))
             for m in matches:
                 if os.path.isfile(m):
                     cache_guess = m

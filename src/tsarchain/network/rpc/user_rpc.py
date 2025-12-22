@@ -282,7 +282,8 @@ def handle_user_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[GET_BALANCES] Benchmark : %.3f ms", result)
+            src_tag = (message.get("rpc_source") or "-")
+            log.debug("[GET_BALANCES] Benchmark : %.3f ms src=%s", result, src_tag)
             
         return {"type": "BALANCES", "height": tip_height, "items": items}
 
@@ -347,7 +348,8 @@ def handle_user_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[GET_NETWORK_INFO] Benchmark : %.3f ms", result)
+            src_tag = (message.get("rpc_source") or "-")
+            log.debug("[GET_NETWORK_INFO] Benchmark : %.3f ms src=%s", result, src_tag)
             
         return {"type": "NETWORK_INFO", "data": snap}
 
@@ -371,12 +373,13 @@ def handle_user_rpc(
         )
         if not ok:
             return pow_resp
+        src_tag = message.get("rpc_source")
         if "height" in message:
-            return self._handle_get_block_at(int(message["height"]))
+            return self._handle_get_block_at(int(message["height"]), src_tag=src_tag)
         hx = str(message.get("hash") or "").strip()
         if not hx:
             return {"type": "BLOCK", "error": "missing_height_or_hash"}
-        return self._handle_get_block_by_hash(hx)
+        return self._handle_get_block_by_hash(hx, src_tag=src_tag)
 
 #----------------------#-------------------
 
@@ -618,7 +621,8 @@ def handle_user_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[GET_TX_HISTORY] Benchmark : %.3f ms", result)
+            src_tag = (message.get("rpc_source") or "-")
+            log.debug("[GET_TX_HISTORY] Benchmark : %.3f ms src=%s", result, src_tag)
         
         return {"type": "TX_HISTORY", "address": addr_str, **history}
 
@@ -646,7 +650,7 @@ def handle_user_rpc(
         if not ok:
             return pow_resp
             
-        return self._get_tx_detail(txid_hex)
+        return self._get_tx_detail(txid_hex, message.get("rpc_source"))
 
 #----------------------#-------------------
 
@@ -683,7 +687,8 @@ def handle_user_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[GET_UTXOS] Benchmark : %.3f ms", result)
+            src_tag = (message.get("rpc_source") or "-")
+            log.debug("[GET_UTXOS] Benchmark : %.3f ms src=%s", result, src_tag)
             
         return {"type": "UTXOS", "address": address, "utxos": utxos}
 
@@ -1460,7 +1465,8 @@ def handle_user_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[STOR_LIST] Benchmark : %.3f ms", result)
+            src_tag = (message.get("rpc_source") or "-")
+            log.debug("[STOR_LIST] Benchmark : %.3f ms src=%s", result, src_tag)
             
         return {"type":"STOR_LIST","storers": items}
 
@@ -1580,7 +1586,8 @@ def handle_user_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[GRAFFITI_GET_POSTS] Benchmark : %.3f ms", result)
+            src_tag = (message.get("rpc_source") or "-")
+            log.debug("[GRAFFITI_GET_POSTS] Benchmark : %.3f ms src=%s", result, src_tag)
             
         return {"type": "GRAFFITI_GET_POSTS", "posts": posts}
 
@@ -1619,7 +1626,8 @@ def handle_user_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[GRAFFITI_GET_COMMENTS] Benchmark : %.3f ms", result)
+            src_tag = (message.get("rpc_source") or "-")
+            log.debug("[GRAFFITI_GET_COMMENTS] Benchmark : %.3f ms src=%s", result, src_tag)
             
         return {"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id, "comments": comments}
 
@@ -1659,7 +1667,8 @@ def handle_user_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[GRAFFITI_GET_ART] Benchmark : %.3f ms", result)
+            src_tag = (message.get("rpc_source") or "-")
+            log.debug("[GRAFFITI_GET_ART] Benchmark : %.3f ms src=%s", result, src_tag)
             
         return {"type": "GRAFFITI_GET_ART", "art_id": art_id, "post": post}
 

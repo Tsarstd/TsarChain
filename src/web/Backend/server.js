@@ -8,6 +8,7 @@ const bodyParser = require("body-parser");
 require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const { getConfig } = require("./src/config/env");
+const { createRateLimiter } = require("./src/utils/rateLimit");
 const explorerRouter = require("./src/routes/explorer");
 const healthRouter = require("./src/routes/health");
 
@@ -16,6 +17,9 @@ const cfg = getConfig();
 
 app.use(cors());
 app.use(bodyParser.json());
+
+const apiLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 120 });
+app.use("/api", apiLimiter);
 
 app.use("/api", healthRouter);
 app.use("/api", explorerRouter);

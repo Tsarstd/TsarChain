@@ -26,6 +26,8 @@ log = get_ctx_logger("tsarchain.web.database_web")
 WEB_CACHE_DB = "web_cache"
 WEB_MEDIA_DB = "web_media"
 WEB_CACHE_TTL_SEC = 60  # TTL default cache web untuk data realtime (detik)
+WEB_CACHE_ERROR_TTL_SHORT = 8  # TTL singkat untuk error sementara (detik)
+WEB_STOR_LIST_TTL_SEC = 120  # TTL cache STOR_LIST (detik)
 
 _store = None
 _store_lock = threading.RLock()
@@ -109,6 +111,19 @@ def should_cache_error(reason: object) -> bool:
     if txt == "not_found" or txt == "height_out_of_range":
         return True
     return "not found" in txt
+
+
+def cache_ttl_for_error(reason: object) -> Optional[int]:
+    txt = str(reason or "").strip().lower()
+    if not txt:
+        return None
+    if txt in ("pow_required", "rate_limited", "timeout", "rpc_timeout", "rpc_exception", "no_response"):
+        return WEB_CACHE_ERROR_TTL_SHORT
+    if "timeout" in txt or "rate limit" in txt or "pow_required" in txt:
+        return WEB_CACHE_ERROR_TTL_SHORT
+    if should_cache_error(txt):
+        return WEB_CACHE_TTL_SEC
+    return None
 
 
 def cache_get_json(key: str) -> Optional[object]:
@@ -341,8 +356,26 @@ def _send_storage_request(
     return resp
 
 
-def fetch_storers(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]], limit: Optional[int] = None) -> list[Dict[str, Any]]:
+def fetch_storers(
+    rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
+    limit: Optional[int] = None,
+    *,
+    cache_scope: Optional[str] = None,
+    ttl_sec: Optional[int] = None,
+) -> list[Dict[str, Any]]:
+    ttl_sec = int(ttl_sec or WEB_STOR_LIST_TTL_SEC)
+    cache_key = make_cache_key("web", cache_scope, "stor_list")
+    cached = cache_get_json(cache_key)
+    if isinstance(cached, list):
+        return cached[:limit] if limit is not None and limit > 0 else cached
+
     resp = rpc_call({"type": "STOR_LIST"}) or {}
+    if isinstance(resp, dict) and resp.get("error"):
+        ttl_err = cache_ttl_for_error(resp.get("error"))
+        if ttl_err is not None:
+            cache_set_json(cache_key, [], ttl_sec=ttl_err)
+        return []
+
     storers = resp.get("storers") or resp.get("items") or []
     valid: list[Dict[str, Any]] = []
     for meta in storers:
@@ -352,6 +385,8 @@ def fetch_storers(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]
             continue
         valid.append(meta)
     valid.sort(key=lambda m: int(m.get("last_seen", 0)), reverse=True)
+    if ttl_sec > 0:
+        cache_set_json(cache_key, valid, ttl_sec=ttl_sec)
     if limit is not None and limit > 0:
         return valid[:limit]
     return valid
@@ -363,6 +398,8 @@ def fetch_graffiti_file(
     *,
     storer_addr: Optional[str] = None,
     cache_dir: Optional[str] = None,
+    cache_scope: Optional[str] = None,
+    stor_list_ttl_sec: Optional[int] = None,
     max_bytes: int = CFG.GRAFFITI_MAX_SIZE_BYTES,
     timeout: float = 5.0,
 ) -> Dict[str, Any]:
@@ -381,7 +418,7 @@ def fetch_graffiti_file(
     data_cap = int(msg_cap * 3 // 4)
     max_bytes = max(32 * 1024, min(max_bytes, int(CFG.GRAFFITI_MAX_SIZE_BYTES), data_cap))
 
-    storers = fetch_storers(rpc_call)
+    storers = fetch_storers(rpc_call, cache_scope=cache_scope, ttl_sec=stor_list_ttl_sec)
     if not storers:
         log.debug("[webdb] rpc_needed_no_storers art=%s", art_norm[:16])
         return {"status": "error", "reason": "no_storers"}
@@ -434,15 +471,19 @@ def fetch_graffiti_file(
 
     reason = last_error or "unavailable"
     log.debug("[webdb] rpc_not_found art=%s reason=%s", art_norm[:16], reason)
-    if should_cache_error(reason):
-        _cache_media_error(art_norm, reason)
+    ttl_err = cache_ttl_for_error(reason)
+    if ttl_err is not None:
+        _cache_media_error(art_norm, reason, ttl_sec=ttl_err)
     return {"status": "error", "reason": reason}
 
 
 __all__ = [
     "WEB_CACHE_TTL_SEC",
+    "WEB_CACHE_ERROR_TTL_SHORT",
+    "WEB_STOR_LIST_TTL_SEC",
     "cache_get_json",
     "cache_set_json",
+    "cache_ttl_for_error",
     "fetch_graffiti_file",
     "fetch_storers",
     "make_cache_key",
