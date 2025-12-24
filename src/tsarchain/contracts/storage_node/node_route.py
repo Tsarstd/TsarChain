@@ -135,7 +135,6 @@ def handle_node_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = None
             if data_bytes is None:
                 raise FileNotFoundError("file_missing")
             chunk = data_bytes[offset : offset + length]
-            leaves = GRAFFITI.merkle_leaves_from_bytes(data_bytes, merkle_chunk)
         else:
             path = meta.get("path")
             if not path or not os.path.isfile(path):
@@ -143,11 +142,13 @@ def handle_node_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = None
             with open(path, "rb") as fh:
                 fh.seek(offset)
                 chunk = fh.read(length)
-            leaves = GRAFFITI.merkle_leaves_for_file(path, merkle_chunk)
                 
         proof_hash = GRAFFITI.hash_proof_chunk(chunk)
         chunk_index = offset // merkle_chunk if merkle_chunk > 0 else 0
-        merkle_path = GRAFFITI.merkle_path_from_leaves(leaves, chunk_index)
+        if server.use_kv:
+            merkle_path = GRAFFITI.merkle_path_for_bytes(data_bytes, merkle_chunk, chunk_index)
+        else:
+            merkle_path = GRAFFITI.merkle_path_for_file(path, merkle_chunk, chunk_index)
         path_len = len(merkle_path)
         chunk_b64 = base64.b64encode(chunk).decode("ascii")
         now_ts = int(time.time())

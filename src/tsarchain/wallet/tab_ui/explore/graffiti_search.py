@@ -116,6 +116,7 @@ class GraffitiSearch:
         block_h = int((post or {}).get("block_height") or 0)
         txid = str((post or {}).get("txid") or "-")
         stats = (post or {}).get("stats") or {}
+        preview_max_w, preview_max_h = 854, 480
         log.debug("explorer: render graffiti art_id=%s creator=%s comments=%s", art_id, creator, len(comments))
 
         def _fmt_size_h(bytes_val: int) -> str:
@@ -172,6 +173,10 @@ class GraffitiSearch:
                 video_inner_frame.pack()
                 player_obj = TkVLCPlayer(
                     video_inner_frame,
+                    width=preview_max_w,
+                    height=preview_max_h,
+                    max_width=preview_max_w,
+                    max_height=preview_max_h,
                     bg=p.card_bg,
                     fg=p.fg,
                     accent=p.accent,
@@ -191,7 +196,7 @@ class GraffitiSearch:
             if img_bytes:
                 buf = BytesIO(img_bytes)
                 img = Image.open(buf)
-                img.thumbnail((720, 520))
+                img.thumbnail((preview_max_w, preview_max_h))
                 photo = ImageTk.PhotoImage(img)
                 p._img_refs.append(photo)
                 tk.Label(media_holder, image=photo, bg=p.card_bg).pack()

@@ -202,112 +202,51 @@ def hash_proof_chunk(chunk: bytes) -> str:
     return hashlib.sha256(bytes(chunk)).hexdigest()
 
 # -----------------------------
-# MERKLE
+# MERKLE (native)
 # -----------------------------
-def _merkle_parent(left: bytes, right: bytes) -> bytes:
-    return hashlib.sha256(left + right).digest()
-
-def _merkle_leaves_from_bytes(data: bytes, chunk_size: int) -> list[bytes]:
-    if chunk_size <= 0:
-        raise ValueError("bad_merkle_chunk")
-    if not isinstance(data, (bytes, bytearray)):
-        raise ValueError("bad_merkle_data")
-    leaves: list[bytes] = []
-    buf = bytes(data)
-    for i in range(0, len(buf), chunk_size):
-        part = buf[i : i + chunk_size]
-        if not part:
-            break
-        leaves.append(hashlib.sha256(part).digest())
-    if not leaves:
-        raise ValueError("empty_merkle_leaves")
-    return leaves
+try:
+    from tsarcore_native import (
+        graff_merkle_leaves_from_bytes as _native_graff_merkle_leaves_from_bytes,
+        graff_merkle_leaves_for_file as _native_graff_merkle_leaves_for_file,
+        graff_merkle_root_from_leaves as _native_graff_merkle_root_from_leaves,
+        graff_merkle_root_for_bytes as _native_graff_merkle_root_for_bytes,
+        graff_merkle_root_for_file as _native_graff_merkle_root_for_file,
+        graff_merkle_path_from_leaves as _native_graff_merkle_path_from_leaves,
+        graff_merkle_path_for_bytes as _native_graff_merkle_path_for_bytes,
+        graff_merkle_path_for_file as _native_graff_merkle_path_for_file,
+        graff_merkle_verify as _native_graff_merkle_verify,
+    )
+except ImportError as exc:
+    raise ImportError("tsarcore_native is required for graffiti merkle") from exc
 
 def merkle_leaves_for_file(path: str, chunk_size: int) -> list[bytes]:
-    if not path or not os.path.isfile(path):
-        raise FileNotFoundError(path)
-    if chunk_size <= 0:
-        raise ValueError("bad_merkle_chunk")
-    leaves: list[bytes] = []
-    with open(path, "rb") as f:
-        while True:
-            part = f.read(chunk_size)
-            if not part:
-                break
-            leaves.append(hashlib.sha256(part).digest())
-    if not leaves:
-        raise ValueError("empty_merkle_leaves")
-    return leaves
+    return list(_native_graff_merkle_leaves_for_file(path, int(chunk_size)))
 
 def merkle_leaves_from_bytes(data: bytes, chunk_size: int) -> list[bytes]:
-    return _merkle_leaves_from_bytes(data, chunk_size)
+    return list(_native_graff_merkle_leaves_from_bytes(data, int(chunk_size)))
 
 def merkle_root_from_leaves(leaves: list[bytes]) -> bytes:
-    if not leaves:
-        raise ValueError("empty_merkle_leaves")
-    level = list(leaves)
-    while len(level) > 1:
-        if len(level) % 2 == 1:
-            level.append(level[-1])
-        nxt: list[bytes] = []
-        for i in range(0, len(level), 2):
-            nxt.append(_merkle_parent(level[i], level[i + 1]))
-        level = nxt
-    return level[0]
+    return bytes(_native_graff_merkle_root_from_leaves(leaves))
 
 def merkle_root_for_bytes(data: bytes, chunk_size: int) -> tuple[str, int]:
-    leaves = _merkle_leaves_from_bytes(data, chunk_size)
-    root = merkle_root_from_leaves(leaves)
-    return root.hex(), len(leaves)
+    root, count = _native_graff_merkle_root_for_bytes(data, int(chunk_size))
+    return bytes(root).hex(), int(count)
 
 def merkle_root_for_file(path: str, chunk_size: int) -> tuple[str, int]:
-    leaves = merkle_leaves_for_file(path, chunk_size)
-    root = merkle_root_from_leaves(leaves)
-    return root.hex(), len(leaves)
+    root, count = _native_graff_merkle_root_for_file(path, int(chunk_size))
+    return bytes(root).hex(), int(count)
 
 def merkle_path_from_leaves(leaves: list[bytes], index: int) -> list[dict[str, str]]:
-    if not leaves:
-        raise ValueError("empty_merkle_leaves")
-    if index < 0 or index >= len(leaves):
-        raise ValueError("merkle_index_out_of_range")
-    path: list[dict[str, str]] = []
-    level = list(leaves)
-    idx = int(index)
-    while len(level) > 1:
-        if len(level) % 2 == 1:
-            level.append(level[-1])
-        sibling_idx = idx ^ 1
-        side = "L" if idx % 2 == 1 else "R"
-        path.append({"side": side, "hash": level[sibling_idx].hex()})
-        nxt: list[bytes] = []
-        for i in range(0, len(level), 2):
-            nxt.append(_merkle_parent(level[i], level[i + 1]))
-        idx = idx // 2
-        level = nxt
-    return path
+    return list(_native_graff_merkle_path_from_leaves(leaves, int(index)))
+
+def merkle_path_for_bytes(data: bytes, chunk_size: int, index: int) -> list[dict[str, str]]:
+    return list(_native_graff_merkle_path_for_bytes(data, int(chunk_size), int(index)))
+
+def merkle_path_for_file(path: str, chunk_size: int, index: int) -> list[dict[str, str]]:
+    return list(_native_graff_merkle_path_for_file(path, int(chunk_size), int(index)))
 
 def verify_merkle_path(root_hex: str, leaf_hash_hex: str, path: list[dict[str, str]]) -> bool:
-    if not (_is_valid_sha256_hex(root_hex) and _is_valid_sha256_hex(leaf_hash_hex)):
-        return False
-    try:
-        cur = bytes.fromhex(leaf_hash_hex)
-    except ValueError:
-        return False
-    for step in path or []:
-        if not isinstance(step, dict):
-            return False
-        side = str(step.get("side") or "").strip().upper()
-        h = step.get("hash")
-        if not isinstance(h, str) or not _is_valid_sha256_hex(h):
-            return False
-        sib = bytes.fromhex(h)
-        if side == "L":
-            cur = _merkle_parent(sib, cur)
-        elif side == "R":
-            cur = _merkle_parent(cur, sib)
-        else:
-            return False
-    return cur.hex() == root_hex.strip().lower()
+    return bool(_native_graff_merkle_verify(root_hex, leaf_hash_hex, path or []))
 # ---- END OF MERKLE ----
 
 def derive_pool_address_p2wpkh(art_id_hex: str) -> str:
@@ -955,6 +894,8 @@ __all__ = [
     "merkle_root_for_bytes",
     "merkle_root_for_file",
     "merkle_path_from_leaves",
+    "merkle_path_for_bytes",
+    "merkle_path_for_file",
     "verify_merkle_path",
     "validate_graffiti_file",
 ]

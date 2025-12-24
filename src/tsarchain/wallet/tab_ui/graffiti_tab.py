@@ -32,6 +32,9 @@ log = get_ctx_logger("tsarchain.wallet.tab_ui.graffiti_tab")
 
 # ========= Graffiti Tab (UI) =========
 class GraffitiTab(ttk.Frame):
+    PREVIEW_MAX_W = 854
+    PREVIEW_MAX_H = 480
+
     def __init__(self, app, theme: GraffitiTheme, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.app = app
@@ -128,8 +131,26 @@ class GraffitiTab(ttk.Frame):
 
     # ---- layout utama ----
     def _build_ui(self):
-        root = ttk.Frame(self, padding=12, style="Tsar.TFrame")
-        root.pack(fill="both", expand=True)
+        outer = ttk.Frame(self, style="Tsar.TFrame")
+        outer.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(outer, bg=self.theme.bg, highlightthickness=0, bd=0)
+        vscroll = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vscroll.set)
+        vscroll.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill="both", expand=True)
+
+        root = ttk.Frame(canvas, padding=12, style="Tsar.TFrame")
+        root_id = canvas.create_window((0, 0), window=root, anchor="nw")
+
+        def _sync_scrollregion(_event=None):
+            if not canvas.winfo_exists():
+                return
+            canvas.configure(scrollregion=canvas.bbox("all") or (0, 0, 0, 0))
+            canvas.itemconfigure(root_id, width=canvas.winfo_width())
+
+        root.bind("<Configure>", _sync_scrollregion)
+        canvas.bind("<Configure>", _sync_scrollregion)
 
         header_row = ttk.Frame(root, style="Tsar.TFrame")
         header_row.pack(fill="x")
@@ -283,15 +304,19 @@ class GraffitiTab(ttk.Frame):
         # Video (mp4)
         if "video" in mime or path.lower().endswith(".mp4"):
             container = tk.Frame(self.preview_frame, bg=self.theme.card_bg)
-            container.pack(fill="both", expand=True)
+            container.pack(pady=6)
             player = TkVLCPlayer(
                 container,
+                width=self.PREVIEW_MAX_W,
+                height=self.PREVIEW_MAX_H,
+                max_width=self.PREVIEW_MAX_W,
+                max_height=self.PREVIEW_MAX_H,
                 bg=self.theme.card_bg,
                 fg=self.theme.fg,
                 accent=self.theme.accent,
                 on_error=lambda msg: self.preview_status_var.set(msg),
             )
-            player.frame.pack(fill="both", expand=True, pady=6)
+            player.frame.pack()
             try:
                 player.load(path, autoplay=True)
             except Exception:
@@ -308,7 +333,7 @@ class GraffitiTab(ttk.Frame):
         # Image
         try:
             img = Image.open(path)
-            img.thumbnail((720, 420))
+            img.thumbnail((self.PREVIEW_MAX_W, self.PREVIEW_MAX_H))
             photo = ImageTk.PhotoImage(img)
             self._preview_img_ref = photo
             tk.Label(self.preview_frame, image=photo, bg=self.theme.card_bg).pack(pady=6)

@@ -23,6 +23,17 @@ Native acceleration module for **TsarChain** with crypto, PoW, validation, and f
 - `merkle_root(txids: Iterable[bytes32]) -> bytes32`  
   Double-SHA256 Merkle root over 32-byte leaves. For odd nodes, the last hash is duplicated (Bitcoin-style).
 
+- Graffiti Merkle (single SHA-256):  
+  - `graff_merkle_root_for_file(path: str, chunk_size: int) -> (bytes32, count)`  
+  - `graff_merkle_root_for_bytes(data: bytes, chunk_size: int) -> (bytes32, count)`  
+  - `graff_merkle_path_for_file(path: str, chunk_size: int, index: int) -> list[{"side","hash"}]`  
+  - `graff_merkle_path_for_bytes(data: bytes, chunk_size: int, index: int) -> list[{"side","hash"}]`  
+  - `graff_merkle_root_from_leaves(leaves: Iterable[bytes32]) -> bytes32`  
+  - `graff_merkle_path_from_leaves(leaves: Iterable[bytes32], index: int) -> list[{"side","hash"}]`  
+  - `graff_merkle_leaves_for_file(path: str, chunk_size: int) -> list[bytes32]`  
+  - `graff_merkle_leaves_from_bytes(data: bytes, chunk_size: int) -> list[bytes32]`  
+  - `graff_merkle_verify(root_hex: str, leaf_hex: str, path: list[{"side","hash"}]) -> bool`
+
 - `sighash_bip143(tx_bytes: bytes, input_index: int, script_code: bytes, value_sat: int, sighash_type: int) -> bytes32`  
   Native **BIP143** preimage + SHA256d for **`SIGHASH_ALL`**. Other sighash types return `ValueError` so the caller can handle fallbacks if ever needed.
 
@@ -125,6 +136,7 @@ store.copy("/tmp/tsar.db.backup", compact=True)  # LMDB only
 
 ## Changelog
 
+- **0.2.1** - Native graffiti Merkle (single SHA-256) bindings added for root/path/verify/leaves; Python Merkle path removed in favor of native; per-call debug/warning logs added to help trace Merkle operations.
 - **0.2.0** - Added consensus TX guardrails: vsize/weight and max inputs/outputs enforced in native validators (block + mempool P2WPKH), options expanded to carry new limits from Python, and debug logs trimmed. Aligns with TsarChain config MIN/MAX TX limits.
 - **0.1.9** - SecureChannel gains automatic AEAD rekey per-message epoch (configurable via `P2P_REKEY_EVERY_MSG`); epoch keys are derived from the HKDF root with sliding TTL/msg windows so long-lived links rekey smoothly without dropping the connection.
 - **0.1.8** - Native RandomX miner now reports hashrate via `progress_queue` and respects `stop_event`/Ctrl+C using a stop watcher inside Rust threads; mining cancellation no longer waits for a full block and remains verified with light hash check in Python.

@@ -1,6 +1,6 @@
 [package]
 name = "tsarcore_native"
-version = "0.2.0"
+version = "0.2.1"
 rust-version = "1.91.1"
 edition = "2021"
 description = "Native accel for TsarChain: secp256k1 verify (low-S), sigops counter, merkle_root, BIP143 SIGHASH (ALL), hash256/hash160, RandomX PoW, SecureChannel (X25519/HKDF/AES-GCM), plus fused LMDB/JSON storage bindings"

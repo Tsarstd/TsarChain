@@ -35,6 +35,8 @@ class TkVLCPlayer:
         *,
         width: Optional[int] = 50,
         height: Optional[int] = 50,
+        max_width: Optional[int] = None,
+        max_height: Optional[int] = None,
         bg: str = "#0f0f0f",
         fg: str = "#f5f5f5",
         accent: str = "#2ea3ff",
@@ -113,6 +115,8 @@ class TkVLCPlayer:
         self._disposed = False
         self._ended = False
         self._last_video_size: tuple[int, int] = (w_default, h_default)
+        self._max_width = int(max_width) if max_width else None
+        self._max_height = int(max_height) if max_height else None
 
         self._instance = vlc.Instance("--quiet")
         self._player = self._instance.media_player_new()
@@ -266,7 +270,14 @@ class TkVLCPlayer:
         w, h = self._player.video_get_size(0)
         if not w or not h:
             return
-        if (w, h) == self._last_video_size:
+        target_w, target_h = w, h
+        if self._max_width or self._max_height:
+            max_w = self._max_width or w
+            max_h = self._max_height or h
+            scale = min(max_w / w, max_h / h, 1.0)
+            target_w = max(1, int(w * scale))
+            target_h = max(1, int(h * scale))
+        if (target_w, target_h) == self._last_video_size:
             return
-        self._last_video_size = (w, h)
-        self.video_panel.config(width=w, height=h)
+        self._last_video_size = (target_w, target_h)
+        self.video_panel.config(width=target_w, height=target_h)
