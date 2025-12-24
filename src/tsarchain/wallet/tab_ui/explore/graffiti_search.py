@@ -386,7 +386,6 @@ class GraffitiSearch:
                     p._comment_status_var.set(f"COMMENT broadcasted (txid: {txid})")
                     if p._comment_text_widget:
                         p._comment_text_widget.delete("1.0", "end")
-                    self.open_graffiti(art_id)
                 else:
                     p._comment_status_var.set(f"COMMENT failed: {resp}")
                 if p._comment_btn:

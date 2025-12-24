@@ -54,12 +54,14 @@ def handle_storage_rpc(
         self._backoff(rl_key, CFG.STORAGE_RPC_RL_BACKOFF_S)
         return {"error": "rate_limited"}
 
-    def _is_storage_sender() -> bool:
+    def _resolve_storage_sender() -> dict | None:
         if not src_node_id:
-            return False
+            return None
         peer_port = int(message.get("port", 0))
         with self.lock:
             peers = dict(getattr(self, "storage_peers", {}) or {})
+        best_meta = None
+        best_score = -1
         for (peer_ip, peer_port_known), meta in peers.items():
             pinned_nid = (meta or {}).get("node_id")
             pinned_pk = (meta or {}).get("pubkey")
@@ -72,15 +74,33 @@ def handle_storage_rpc(
                 continue
             if peer_ip != ip:
                 continue
-            if peer_port_known > 0 and peer_port > 0 and peer_port_known == peer_port:
-                return True
-            if peer_port_known == 0 or peer_port == 0:
-                return True
-        return False
+            score = -1
+            if peer_port_known > 0 and peer_port > 0:
+                if peer_port_known != peer_port:
+                    continue
+                score = 2
+            elif peer_port_known == 0 or peer_port == 0:
+                score = 1
+            if score > best_score:
+                best_meta = meta
+                best_score = score
+        return best_meta
 
-    if not _is_storage_sender():
+    def _proof_epoch_window() -> tuple[int, int, int]:
+        tip_height = int(getattr(getattr(self.broadcast, "blockchain", None), "height", 0) or 0)
+        tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
+        drift = int(CFG.GRAFFITI_PROOF_EPOCH_DRIFT)
+        return tip_epoch, max(0, tip_epoch - drift), tip_epoch + drift
+
+    peer_meta = _resolve_storage_sender()
+    if not peer_meta:
         log.warning("[storage_auth] forbidden storage RPC %s from %s", mtype, addr)
         return {"error": "forbidden: storage-only endpoint"}
+
+    storer_addr = str(peer_meta.get("addr") or peer_meta.get("address") or "").strip().lower()
+    if not storer_addr or not GRAFFITI._is_valid_tsar_address(storer_addr):
+        log.warning("[storage_auth] invalid storer addr nid=%s ip=%s", src_node_id or "-", ip)
+        return {"error": "storer_unregistered"}
 
     if mtype == "GRAFFITI_PROOF_SUBMIT":
         if CFG.DEBUG_BENCHMARKS:
@@ -101,10 +121,13 @@ def handle_storage_rpc(
         storer = str(message.get("storer") or "").strip().lower()
         height = int(message.get("height", 0) or 0)
         seed = str(message.get("seed") or "").strip().lower()
-        if epoch < 0 or offset < 0 or length <= 0 or len(proof_hash) != 64:
+        if epoch < 0 or offset < 0 or length <= 0 or not GRAFFITI._is_valid_sha256_hex(proof_hash):
             return {"error": "bad_fields"}
         if not storer:
             return {"error": "missing_storer"}
+        if storer != storer_addr:
+            log.error("[GRAFFITI_PROOF_SUBMIT] missmatch storer: storer=%s storer_addr=%s", storer, storer_addr)
+            return {"error": "storer_mismatch"}
         reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
         if not reg:
             return {"error": "registry_unavailable"}
@@ -118,11 +141,21 @@ def handle_storage_rpc(
             height = 0
         if GRAFFITI.compute_proof_epoch(height) != epoch:
             return {"error": "epoch_mismatch"}
+        tip_epoch, min_epoch, max_epoch = _proof_epoch_window()
+        if epoch < min_epoch or epoch > max_epoch:
+            log.error("[GRAFFITI_PROOF_SUBMIT] epoch out of range: epoch=%s tip_epoch=%s min_epoch=%s max_epoch=%s", epoch, tip_epoch, min_epoch, max_epoch)
+            return {"error": "epoch_out_of_range", "tip_epoch": tip_epoch}
         challenge = GRAFFITI.calc_proof_challenge(art_id, size, height)
         if int(challenge.get("offset", -1)) != offset or int(challenge.get("length", -1)) != length:
             return {"error": "challenge_mismatch"}
         if seed and seed != challenge.get("seed"):
             return {"error": "seed_mismatch"}
+        existing = reg.get_proof(art_id, storer, epoch) if hasattr(reg, "get_proof") else None
+        if existing:
+            existing_hash = str(existing.get("hash") or "").strip().lower()
+            if existing_hash and existing_hash != proof_hash:
+                log.error("[GRAFFITI_PROOF_SUBMIT] proof conflict: proof_hash=%s existing_hash=%s", proof_hash, existing_hash)
+                return {"error": "proof_conflict"}
         reg.record_proof(
             art_id=art_id,
             storer=storer,
@@ -153,9 +186,23 @@ def handle_storage_rpc(
         art_id_raw = str(message.get("art_id") or "").strip()
         art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
         recipients = message.get("recipients") or []
+        if isinstance(recipients, dict):
+            recipients = [{"addr": a, "amount": v} for a, v in recipients.items()]
         if not recipients and message.get("recipient") and message.get("amount"):
             amt = int(message.get("amount", 0))
             recipients = [{"addr": str(message.get("recipient")).strip(), "amount": amt}]
+        if not isinstance(recipients, list) or not recipients:
+            return {"error": "bad_recipients"}
+        if len(recipients) != 1:
+            return {"error": "payout_requires_single_recipient"}
+        rec = recipients[0] if isinstance(recipients[0], dict) else {}
+        rec_addr = str(rec.get("addr") or rec.get("address") or "").strip().lower()
+        rec_amt = int(rec.get("amount", 0) or 0)
+        if not rec_addr or not GRAFFITI._is_valid_tsar_address(rec_addr) or rec_amt <= 0:
+            return {"error": "bad_recipients"}
+        if rec_addr != storer_addr:
+            return {"error": "payout_recipient_mismatch"}
+        recipients = [{"addr": rec_addr, "amount": rec_amt}]
         fee_rate = int(message.get("fee_rate", CFG.DEFAULT_FEE_RATE_SATVB))
         epoch = int(message.get("epoch", -1))
         utxo = getattr(self.broadcast, "utxodb", None)
@@ -164,7 +211,7 @@ def handle_storage_rpc(
         utxo._load()
 
         reg = getattr(utxo, "_graffiti_registry", None)
-        proof_entry = reg.get_latest_proof(art_id) if reg else None
+        proof_entry = reg.get_latest_proof(art_id, storer_addr) if reg else None
         proof_meta = None
         if proof_entry:
             proof_meta = {
@@ -177,12 +224,23 @@ def handle_storage_rpc(
                 "storer": proof_entry.get("storer"),
             }
 
+        tip_epoch, min_epoch, max_epoch = _proof_epoch_window()
         if epoch >= 0:
-            if not proof_entry or int(proof_entry.get("epoch", -1)) < epoch:
-                return {"error": "missing_proof", "requested_epoch": epoch, "have": proof_entry.get("epoch", -1) if proof_entry else None}
+            if epoch < min_epoch or epoch > max_epoch:
+                return {"error": "epoch_out_of_range", "tip_epoch": tip_epoch}
+            if not proof_entry:
+                return {"error": "missing_proof", "requested_epoch": epoch}
+            proof_epoch = int(proof_entry.get("epoch", -1))
+            if proof_epoch != epoch:
+                return {"error": "proof_epoch_mismatch", "requested_epoch": epoch, "have": proof_epoch}
         else:
             if proof_entry:
                 epoch = int(proof_entry.get("epoch", -1))
+            if epoch < min_epoch or epoch > max_epoch:
+                log.error("[GRAFFITI_BUILD_PAYOUT] epoch out of range: epoch=%s tip_epoch=%s min_epoch=%s max_epoch=%s", epoch, tip_epoch, min_epoch, max_epoch)
+                return {"error": "epoch_out_of_range", "tip_epoch": tip_epoch}
+            if not proof_entry:
+                return {"error": "missing_proof"}
 
         tx_obj = GRAFFITI.build_payout_tx(
             utxo_db=utxo,

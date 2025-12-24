@@ -8,7 +8,7 @@ import json, re, time, hashlib, math, mimetypes, os
 from typing import Any, Dict, Optional
 from bech32 import bech32_decode, bech32_encode, convertbits
 
-from ..utils.helpers import Script, OP_RETURN, hash160
+from ..utils.helpers import Script, OP_RETURN, hash160, compute_tx_weight_vsize
 from ..utils import config as CFG
 from ..core.tx import Tx, TxIn, TxOut
 
@@ -310,61 +310,109 @@ def build_payout_tx(
             raise ValueError("bad_recipient")
         rec_list.append({"addr": addr, "amount": amt})
 
+    total_needed = sum(r["amount"] for r in rec_list)
     utxos = find_pool_utxos(utxo_db, art_norm)
     if not utxos:
         raise ValueError("no_pool_utxo")
+
+    total_available = sum(int(u.get("amount", 0) or 0) for u in utxos)
+    if total_needed > total_available:
+        raise ValueError("insufficient_pool")
 
     redeem_script = _pool_redeem_script(art_norm)
     art_digest = bytes.fromhex(_strip_art_prefix(art_norm))
     if len(art_digest) > 75:
         art_digest = hashlib.sha256(art_digest).digest()
 
-    total_needed = sum(r["amount"] for r in rec_list)
-    selected = None
-    fee_final = None
-    change_amt = 0
-    outputs: list[TxOut] = []
+    pool_spk = Script.deserialize(_pool_spk_bytes(art_norm))
 
-    # Greedy: coba kombinasi satu UTXO besar dulu, jika kurang coba tambahkan utxo kecil sebagai input kedua.
-    # Untuk kesederhanaan, saat ini pilih satu utxo terbesar yang cukup; jika tidak cukup, raise.
-    utxos_sorted = sorted(utxos, key=lambda u: u.get("amount", 0), reverse=True)
-    for utxo in utxos_sorted:
-        amount_in = int(utxo.get("amount", 0))
-        # Build outputs (recipients)
-        outs = []
-        for rec in rec_list:
-            spk = Script.p2wpkh_script(rec["addr"])
-            outs.append(TxOut(int(rec["amount"]), spk))
-        # OP_RETURN payout metadata
+    def _build_inputs(selected_utxos: list[dict[str, Any]]) -> list[TxIn]:
+        inputs: list[TxIn] = []
+        for u in selected_utxos:
+            inputs.append(
+                TxIn(
+                    bytes.fromhex(u["txid"]),
+                    int(u["vout"]),
+                    amount=int(u.get("amount", 0)),
+                    script_sig=Script([]),
+                    witness=[art_digest, redeem_script],
+                )
+            )
+        return inputs
+
+    def _build_opret(recipients_list: list[dict[str, Any]]) -> TxOut:
         meta = build_payout_metadata(
             art_norm,
             epoch if epoch is not None else 0,
-            rec_list,
+            recipients_list,
             proof=proof,
         )
-        opret_spk = build_script(meta)
-        outs.append(TxOut(0, opret_spk))
+        return TxOut(0, build_script(meta))
 
-        # temp tx for fee estimate
-        txin = TxIn(bytes.fromhex(utxo["txid"]), int(utxo["vout"]), amount=amount_in, script_sig=Script([]), witness=[art_digest, redeem_script])
-        fee_est = rate * max(1, CFG.DEFAULT_FEE_RATE_SATVB)
-        change = amount_in - total_needed - fee_est
+    def _estimate_fee(selected_utxos: list[dict[str, Any]], include_change: bool, recipients_list: list[dict[str, Any]]) -> int:
+        outs: list[TxOut] = []
+        if include_change:
+            outs.append(TxOut(max(1, dust), pool_spk))
+        for rec in recipients_list:
+            outs.append(TxOut(1, Script.p2wpkh_script(rec["addr"])))
+        outs.append(_build_opret(recipients_list))
+        tx_tmp = Tx(version=1, inputs=_build_inputs(selected_utxos), outputs=outs, locktime=0, auto_compute_txid=False)
+        _weight, vsize, _base, _total = compute_tx_weight_vsize(tx_tmp)
+        return int(rate * max(1, int(vsize)))
+
+    is_max_claim = (len(rec_list) == 1 and total_needed == total_available)
+    utxos_sorted = sorted(utxos, key=lambda u: u.get("amount", 0), reverse=True)
+
+    if is_max_claim:
+        selected_utxos = list(utxos_sorted)
+        total_in = total_available
+        for _ in range(2):
+            fee_est = _estimate_fee(selected_utxos, False, rec_list)
+            payout_amt = total_in - fee_est
+            if payout_amt <= 0:
+                raise ValueError("insufficient_pool")
+            if payout_amt == rec_list[0]["amount"]:
+                break
+            rec_list[0]["amount"] = payout_amt
+        outs: list[TxOut] = [TxOut(int(rec_list[0]["amount"]), Script.p2wpkh_script(rec_list[0]["addr"]))]
+        outs.append(_build_opret(rec_list))
+        tx_final = Tx(version=1, inputs=_build_inputs(selected_utxos), outputs=outs, locktime=0, auto_compute_txid=True)
+        tx_final.fee = total_in - sum(int(getattr(o, "amount", 0) or 0) for o in outs)
+        return tx_final
+
+    selected_utxos: list[dict[str, Any]] = []
+    acc = 0
+    fee_final = None
+    change_amt = 0
+    for utxo in utxos_sorted:
+        selected_utxos.append(utxo)
+        acc += int(utxo.get("amount", 0))
+        fee_with_change = _estimate_fee(selected_utxos, True, rec_list)
+        change = acc - total_needed - fee_with_change
         if change >= dust:
-            outs.insert(0, TxOut(change, Script.deserialize(_pool_spk_bytes(art_norm))))
-        elif change < 0:
-            continue  # utxo kecil, coba berikutnya
+            fee_final = fee_with_change
+            change_amt = change
+            break
+        fee_no_change = _estimate_fee(selected_utxos, False, rec_list)
+        change = acc - total_needed - fee_no_change
+        if change >= 0:
+            fee_final = fee_no_change
+            change_amt = 0
+            break
 
-        tx_final = Tx(version=1, inputs=[txin], outputs=outs, locktime=0, auto_compute_txid=True)
-        selected = tx_final
-        fee_final = fee_est
-        change_amt = max(0, change)
-        break
-
-    if selected is None:
+    if fee_final is None:
         raise ValueError("insufficient_pool")
 
-    selected.fee = fee_final
-    return selected
+    outs: list[TxOut] = []
+    if change_amt >= dust:
+        outs.append(TxOut(int(change_amt), pool_spk))
+    for rec in rec_list:
+        outs.append(TxOut(int(rec["amount"]), Script.p2wpkh_script(rec["addr"])))
+    outs.append(_build_opret(rec_list))
+
+    tx_final = Tx(version=1, inputs=_build_inputs(selected_utxos), outputs=outs, locktime=0, auto_compute_txid=True)
+    tx_final.fee = acc - sum(int(getattr(o, "amount", 0) or 0) for o in outs)
+    return tx_final
 
 
 # -----------------------------

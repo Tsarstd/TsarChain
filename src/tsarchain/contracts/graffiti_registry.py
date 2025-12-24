@@ -168,6 +168,18 @@ class GraffitiRegistry:
         self.data["proofs"][art_id] = art_proofs
         self._flush()
 
+    def get_proof(self, art_id: str, storer: str, epoch: int) -> Dict[str, Any] | None:
+        art_id = (art_id or "").strip().lower()
+        storer = (storer or "").strip().lower()
+        if not art_id or not storer:
+            return None
+        proofs = (self.data.get("proofs") or {}).get(art_id, [])
+        log.debug("[get_proof] info: %s", proofs)
+        for item in proofs:
+            if item.get("storer") == storer and int(item.get("epoch", -1)) == int(epoch):
+                return dict(item)
+        return None
+
     def get_latest_proof(self, art_id: str, storer: str | None = None) -> Dict[str, Any] | None:
         art_id = (art_id or "").strip().lower()
         storer = (storer or "").strip().lower() if storer else None
