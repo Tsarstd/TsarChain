@@ -2,7 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 
-import os, base64, hashlib, time
+import os, base64, hashlib, time, math
 from typing import Any, Dict, Optional
 
 from tsarchain.utils import config as CFG
@@ -26,6 +26,9 @@ def handle_wallet_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = No
         fname = str(msg.get("filename", "")).strip() or "blob.bin"
         mime = str(msg.get("mime", "")).strip().lower()
         art_id = str(msg.get("art_id", "")).strip().lower()
+        mroot = msg.get("mroot") or msg.get("merkle_root")
+        mchunk = msg.get("mchunk") or msg.get("merkle_chunk")
+        mcount = msg.get("mcount") or msg.get("merkle_count")
         chunk = int(CFG.STORAGE_UPLOAD_CHUNK)
         if not aid or size <= 0 or len(sha) != 64:
             return {"type": "STOR_ACK", "status": "rejected", "reason": "bad_fields"}
@@ -68,6 +71,25 @@ def handle_wallet_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = No
             "chunk_size": chunk,
             "created_ts": int(time.time()),
         }
+        if mroot or mchunk or mcount:
+            if not (mroot and mchunk and mcount):
+                return {"type": "STOR_ACK", "status": "rejected", "reason": "bad_merkle_meta"}
+            mroot = str(mroot).strip().lower()
+            if not GRAFFITI._is_valid_sha256_hex(mroot):
+                return {"type": "STOR_ACK", "status": "rejected", "reason": "bad_merkle_root"}
+            try:
+                mchunk = int(mchunk)
+                mcount = int(mcount)
+            except Exception:
+                return {"type": "STOR_ACK", "status": "rejected", "reason": "bad_merkle_meta"}
+            if mchunk <= 0 or mcount <= 0:
+                return {"type": "STOR_ACK", "status": "rejected", "reason": "bad_merkle_meta"}
+            expected = int(math.ceil(int(size) / float(mchunk)))
+            if expected != mcount:
+                return {"type": "STOR_ACK", "status": "rejected", "reason": "bad_merkle_meta"}
+            meta["mroot"] = mroot
+            meta["mchunk"] = mchunk
+            meta["mcount"] = mcount
         if art_id:
             meta["art_id"] = art_id
             server.index.setdefault("art_map", {})[art_id] = aid

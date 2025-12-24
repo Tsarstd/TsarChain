@@ -813,6 +813,7 @@ def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
             if commenter and not _is_valid_tsar_address(commenter):
                 return None
             obj["comment_len"] = len(comment_bytes)
+            obj["comment_hex"] = comment_hex
             
         elif event == "PAYOUT":
             art_id = obj.get("art_id", "")

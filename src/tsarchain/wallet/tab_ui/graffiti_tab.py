@@ -540,6 +540,9 @@ class GraffitiTab(ttk.Frame):
                 sha256_hex=sha,
                 art_id=art_id,
                 receipt_id=receipt_id,
+                merkle_root=self.selected_merkle_root,
+                merkle_chunk=self.selected_merkle_chunk,
+                merkle_count=self.selected_merkle_count,
                 progress_cb=progress,
             )
             self.after(0, lambda: self._handle_upload_result(res, trigger_broadcast=False, txid=txid))

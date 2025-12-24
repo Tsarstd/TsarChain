@@ -406,6 +406,9 @@ def upload_graffiti(
     sha256_hex: Optional[str] = None,
     art_id: Optional[str] = None,
     receipt_id: Optional[str] = None,
+    merkle_root: Optional[str] = None,
+    merkle_chunk: Optional[int] = None,
+    merkle_count: Optional[int] = None,
     progress_cb: Optional[Callable[[int, int], None]] = None,
 ) -> Dict[str, Any]:
     """
@@ -445,6 +448,10 @@ def upload_graffiti(
     }
     if art_id:
         init_payload["art_id"] = str(art_id).strip().lower()
+    if merkle_root and merkle_chunk and merkle_count:
+        init_payload["mroot"] = str(merkle_root).strip().lower()
+        init_payload["mchunk"] = int(merkle_chunk)
+        init_payload["mcount"] = int(merkle_count)
     init_resp = _send_storage_request(host, port, init_payload, identity_hint=creator_norm)
     if init_resp.get("status") not in ("ok", "accepted"):
         return {"status": "error", "stage": "init", "resp": init_resp}

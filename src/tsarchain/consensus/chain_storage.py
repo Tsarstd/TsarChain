@@ -144,6 +144,9 @@ class StorageMixin:
                         "storer": meta.get("storer"),
                         "receipt": meta.get("receipt"),
                         "creator": creator,
+                        "mroot": meta.get("mroot"),
+                        "mchunk": meta.get("mchunk"),
+                        "mcount": meta.get("mcount"),
                         "block_hash": blk_hash,
                     })
                 elif event == "COMMENT":
@@ -151,6 +154,7 @@ class StorageMixin:
                         "txid": txid_hex,
                         "art_id": meta.get("art_id"),
                         "comment_len": meta.get("comment_len"),
+                        "comment_hex": meta.get("comment_hex"),
                         "amount": meta.get("amount"),
                         "tip": meta.get("tip"),
                         "creator": meta.get("creator"),
