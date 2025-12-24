@@ -161,7 +161,7 @@ def compute_proof_epoch(height: int) -> int:
     return max(0, h // int(CFG.GRAFFITI_PROOF_EPOCH_BLOCKS))
 
 
-def calc_proof_challenge(art_id: str, size_bytes: int, height: int) -> Dict[str, int | str]:
+def calc_proof_challenge(art_id: str, size_bytes: int, height: int, *, chunk_bytes: int | None = None) -> Dict[str, int | str]:
     """
     Deterministic byte-range challenge for retention proof.
     Returns mapping with epoch, offset, length, and seed hash.
@@ -177,8 +177,12 @@ def calc_proof_challenge(art_id: str, size_bytes: int, height: int) -> Dict[str,
         _strip_art_prefix(art_norm).encode("ascii"),
         str(epoch).encode("ascii"),
     ])).digest()
-    offset = int.from_bytes(seed[:8], "big") % max(1, size)
-    max_len = max(1, int(CFG.GRAFFITI_PROOF_CHUNK_BYTES))
+    if chunk_bytes is None:
+        chunk_bytes = int(CFG.GRAFFITI_PROOF_CHUNK_BYTES)
+    max_len = max(1, int(chunk_bytes))
+    total_chunks = max(1, int(math.ceil(size / float(max_len))))
+    idx = int.from_bytes(seed[:8], "big") % total_chunks
+    offset = int(idx * max_len)
     length = min(max_len, size - offset)
     if length <= 0:
         length = min(max_len, size)
@@ -197,6 +201,114 @@ def hash_proof_chunk(chunk: bytes) -> str:
         raise ValueError("empty_chunk")
     return hashlib.sha256(bytes(chunk)).hexdigest()
 
+# -----------------------------
+# MERKLE
+# -----------------------------
+def _merkle_parent(left: bytes, right: bytes) -> bytes:
+    return hashlib.sha256(left + right).digest()
+
+def _merkle_leaves_from_bytes(data: bytes, chunk_size: int) -> list[bytes]:
+    if chunk_size <= 0:
+        raise ValueError("bad_merkle_chunk")
+    if not isinstance(data, (bytes, bytearray)):
+        raise ValueError("bad_merkle_data")
+    leaves: list[bytes] = []
+    buf = bytes(data)
+    for i in range(0, len(buf), chunk_size):
+        part = buf[i : i + chunk_size]
+        if not part:
+            break
+        leaves.append(hashlib.sha256(part).digest())
+    if not leaves:
+        raise ValueError("empty_merkle_leaves")
+    return leaves
+
+def merkle_leaves_for_file(path: str, chunk_size: int) -> list[bytes]:
+    if not path or not os.path.isfile(path):
+        raise FileNotFoundError(path)
+    if chunk_size <= 0:
+        raise ValueError("bad_merkle_chunk")
+    leaves: list[bytes] = []
+    with open(path, "rb") as f:
+        while True:
+            part = f.read(chunk_size)
+            if not part:
+                break
+            leaves.append(hashlib.sha256(part).digest())
+    if not leaves:
+        raise ValueError("empty_merkle_leaves")
+    return leaves
+
+def merkle_leaves_from_bytes(data: bytes, chunk_size: int) -> list[bytes]:
+    return _merkle_leaves_from_bytes(data, chunk_size)
+
+def merkle_root_from_leaves(leaves: list[bytes]) -> bytes:
+    if not leaves:
+        raise ValueError("empty_merkle_leaves")
+    level = list(leaves)
+    while len(level) > 1:
+        if len(level) % 2 == 1:
+            level.append(level[-1])
+        nxt: list[bytes] = []
+        for i in range(0, len(level), 2):
+            nxt.append(_merkle_parent(level[i], level[i + 1]))
+        level = nxt
+    return level[0]
+
+def merkle_root_for_bytes(data: bytes, chunk_size: int) -> tuple[str, int]:
+    leaves = _merkle_leaves_from_bytes(data, chunk_size)
+    root = merkle_root_from_leaves(leaves)
+    return root.hex(), len(leaves)
+
+def merkle_root_for_file(path: str, chunk_size: int) -> tuple[str, int]:
+    leaves = merkle_leaves_for_file(path, chunk_size)
+    root = merkle_root_from_leaves(leaves)
+    return root.hex(), len(leaves)
+
+def merkle_path_from_leaves(leaves: list[bytes], index: int) -> list[dict[str, str]]:
+    if not leaves:
+        raise ValueError("empty_merkle_leaves")
+    if index < 0 or index >= len(leaves):
+        raise ValueError("merkle_index_out_of_range")
+    path: list[dict[str, str]] = []
+    level = list(leaves)
+    idx = int(index)
+    while len(level) > 1:
+        if len(level) % 2 == 1:
+            level.append(level[-1])
+        sibling_idx = idx ^ 1
+        side = "L" if idx % 2 == 1 else "R"
+        path.append({"side": side, "hash": level[sibling_idx].hex()})
+        nxt: list[bytes] = []
+        for i in range(0, len(level), 2):
+            nxt.append(_merkle_parent(level[i], level[i + 1]))
+        idx = idx // 2
+        level = nxt
+    return path
+
+def verify_merkle_path(root_hex: str, leaf_hash_hex: str, path: list[dict[str, str]]) -> bool:
+    if not (_is_valid_sha256_hex(root_hex) and _is_valid_sha256_hex(leaf_hash_hex)):
+        return False
+    try:
+        cur = bytes.fromhex(leaf_hash_hex)
+    except ValueError:
+        return False
+    for step in path or []:
+        if not isinstance(step, dict):
+            return False
+        side = str(step.get("side") or "").strip().upper()
+        h = step.get("hash")
+        if not isinstance(h, str) or not _is_valid_sha256_hex(h):
+            return False
+        sib = bytes.fromhex(h)
+        if side == "L":
+            cur = _merkle_parent(sib, cur)
+        elif side == "R":
+            cur = _merkle_parent(cur, sib)
+        else:
+            return False
+    return cur.hex() == root_hex.strip().lower()
+# ---- END OF MERKLE ----
 
 def derive_pool_address_p2wpkh(art_id_hex: str) -> str:
     """
@@ -423,6 +535,9 @@ def build_metadata(sha256_hex: str, size_bytes: int, mime: str,
                    storer_addr: str, receipt_id: str,
                    creator_addr: str,
                    ts: Optional[int] = None, height: Optional[int] = None,
+                   merkle_root: Optional[str] = None,
+                   merkle_chunk_bytes: Optional[int] = None,
+                   merkle_chunks: Optional[int] = None,
                    extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     
     if not _is_valid_sha256_hex(sha256_hex):
@@ -448,6 +563,20 @@ def build_metadata(sha256_hex: str, size_bytes: int, mime: str,
         "event": "POST",
     }
     meta["creator"] = creator_addr.strip().lower()
+    if merkle_root or merkle_chunk_bytes or merkle_chunks:
+        mroot = str(merkle_root or "").strip().lower()
+        if not _is_valid_sha256_hex(mroot):
+            raise ValueError("bad_merkle_root")
+        mchunk = int(merkle_chunk_bytes or 0)
+        mcount = int(merkle_chunks or 0)
+        if mchunk <= 0 or mcount <= 0:
+            raise ValueError("bad_merkle_meta")
+        expect = int(math.ceil(int(size_bytes) / float(mchunk)))
+        if expect != mcount:
+            raise ValueError("merkle_count_mismatch")
+        meta["mroot"] = mroot
+        meta["mchunk"] = mchunk
+        meta["mcount"] = mcount
     # Anchor opsional
     if ts is None:
         ts = int(time.time())
@@ -640,6 +769,27 @@ def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
                     if aid_norm not in (decorated, base_hash):
                         return None
                     obj["art_id"] = decorated if aid_norm == decorated else aid_norm
+            mroot = obj.get("mroot") or obj.get("merkle_root")
+            mchunk = obj.get("mchunk") or obj.get("merkle_chunk")
+            mcount = obj.get("mcount") or obj.get("merkle_count")
+            if mroot or mchunk or mcount:
+                if not (mroot and mchunk and mcount):
+                    return None
+                if not _is_valid_sha256_hex(str(mroot)):
+                    return None
+                try:
+                    mchunk_i = int(mchunk)
+                    mcount_i = int(mcount)
+                except Exception:
+                    return None
+                if mchunk_i <= 0 or mcount_i <= 0:
+                    return None
+                expect = int(math.ceil(int(obj.get("size", 0)) / float(mchunk_i)))
+                if expect != mcount_i:
+                    return None
+                obj["mroot"] = str(mroot).strip().lower()
+                obj["mchunk"] = mchunk_i
+                obj["mcount"] = mcount_i
                     
         elif event == "COMMENT":
             art_id = obj.get("art_id", "")
@@ -798,5 +948,12 @@ __all__ = [
     "compute_proof_epoch",
     "calc_proof_challenge",
     "hash_proof_chunk",
+    "merkle_leaves_for_file",
+    "merkle_leaves_from_bytes",
+    "merkle_root_from_leaves",
+    "merkle_root_for_bytes",
+    "merkle_root_for_file",
+    "merkle_path_from_leaves",
+    "verify_merkle_path",
     "validate_graffiti_file",
 ]

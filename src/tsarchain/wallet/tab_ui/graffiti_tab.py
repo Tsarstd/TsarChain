@@ -41,6 +41,9 @@ class GraffitiTab(ttk.Frame):
         self.selected_sha: str | None = None
         self.selected_size: int | None = None
         self.selected_mime: str | None = None
+        self.selected_merkle_root: str | None = None
+        self.selected_merkle_chunk: int | None = None
+        self.selected_merkle_count: int | None = None
         
         self.receipt_id: str | None = None
         self.opret_hex: str | None = None
@@ -422,9 +425,19 @@ class GraffitiTab(ttk.Frame):
         self.selected_size = info.get("size")
         self.selected_mime = info.get("mime")
         self.selected_sha = info.get("sha")
+        self.selected_merkle_root = info.get("merkle_root")
+        self.selected_merkle_chunk = info.get("merkle_chunk")
+        self.selected_merkle_count = info.get("merkle_count")
         self.meta_var.set(
             f"size: {self.selected_size} bytes, file: {self.selected_mime}, sha256: {self.selected_sha[:64]}"
         )
+        if self.selected_merkle_root:
+            log.info(
+                "graffiti_tab: merkle root=%s mchunk=%s mcount=%s",
+                self.selected_merkle_root[:16],
+                self.selected_merkle_chunk,
+                self.selected_merkle_count,
+            )
         log.debug(
             "graffiti_tab: file selected path=%s size=%s mime=%s sha=%s",
             path,
@@ -591,6 +604,9 @@ class GraffitiTab(ttk.Frame):
             storer_meta=storer_meta,
             receipt_id=receipt_id,
             art_id=art_id,
+            merkle_root=self.selected_merkle_root,
+            merkle_chunk=self.selected_merkle_chunk,
+            merkle_count=self.selected_merkle_count,
         )
         self.opret_hex = plan["opret_hex"]
         self._post_plan = plan
@@ -610,6 +626,9 @@ class GraffitiTab(ttk.Frame):
             creator_addr=creator,
             storer_meta=storer_meta,
             receipt_id=self.receipt_id,
+            merkle_root=self.selected_merkle_root,
+            merkle_chunk=self.selected_merkle_chunk,
+            merkle_count=self.selected_merkle_count,
         )
         self.opret_hex = plan["opret_hex"]
         self._post_plan = plan

@@ -8,6 +8,7 @@ Focus: payout & proof (no storage/archivist flow).
 """
 
 import time
+import base64
 from typing import TYPE_CHECKING, Any, Optional
 from bech32 import convertbits, bech32_encode
 
@@ -137,6 +138,29 @@ def handle_storage_rpc(
         size = int(post.get("size") or 0)
         if size <= 0 or (offset + length) > size:
             return {"error": "out_of_range", "size": size}
+        mroot = post.get("mroot") or post.get("merkle_root")
+        mchunk = post.get("mchunk") or post.get("merkle_chunk")
+        mcount = post.get("mcount") or post.get("merkle_count")
+        proof_mode = "plain"
+        idx = None
+        path_len = None
+        mchunk_val = None
+        mcount_val = None
+        if mroot or mchunk or mcount:
+            if not (mroot and mchunk and mcount):
+                return {"error": "merkle_meta_incomplete"}
+            try:
+                mchunk = int(mchunk)
+                mcount = int(mcount)
+            except Exception:
+                return {"error": "merkle_meta_invalid"}
+            if mchunk <= 0 or mcount <= 0:
+                return {"error": "merkle_meta_invalid"}
+            if not GRAFFITI._is_valid_sha256_hex(str(mroot)):
+                return {"error": "merkle_root_invalid"}
+            proof_mode = "merkle"
+            mchunk_val = mchunk
+            mcount_val = mcount
         if height < 0:
             height = 0
         if GRAFFITI.compute_proof_epoch(height) != epoch:
@@ -145,11 +169,41 @@ def handle_storage_rpc(
         if epoch < min_epoch or epoch > max_epoch:
             log.error("[GRAFFITI_PROOF_SUBMIT] epoch out of range: epoch=%s tip_epoch=%s min_epoch=%s max_epoch=%s", epoch, tip_epoch, min_epoch, max_epoch)
             return {"error": "epoch_out_of_range", "tip_epoch": tip_epoch}
-        challenge = GRAFFITI.calc_proof_challenge(art_id, size, height)
+        challenge = GRAFFITI.calc_proof_challenge(
+            art_id,
+            size,
+            height,
+            chunk_bytes=int(mchunk) if mroot else None,
+        )
         if int(challenge.get("offset", -1)) != offset or int(challenge.get("length", -1)) != length:
             return {"error": "challenge_mismatch"}
         if seed and seed != challenge.get("seed"):
             return {"error": "seed_mismatch"}
+        if mroot:
+            chunk_b64 = message.get("chunk")
+            path = message.get("path")
+            if not isinstance(chunk_b64, str) or not chunk_b64:
+                return {"error": "merkle_chunk_required"}
+            if not isinstance(path, list):
+                return {"error": "merkle_path_required"}
+            try:
+                chunk_bytes = base64.b64decode(chunk_b64.encode("ascii"), validate=True)
+            except Exception:
+                return {"error": "merkle_chunk_invalid"}
+            if len(chunk_bytes) != int(length):
+                return {"error": "merkle_chunk_length"}
+            computed_hash = GRAFFITI.hash_proof_chunk(chunk_bytes)
+            if computed_hash != proof_hash:
+                return {"error": "merkle_chunk_hash_mismatch"}
+            if mchunk and offset % int(mchunk) != 0:
+                return {"error": "merkle_offset_mismatch"}
+            if mchunk:
+                idx = offset // int(mchunk)
+                if idx < 0 or (mcount is not None and idx >= int(mcount)):
+                    return {"error": "merkle_index_out_of_range"}
+            if not GRAFFITI.verify_merkle_path(str(mroot), proof_hash, path):
+                return {"error": "merkle_path_invalid"}
+            path_len = len(path)
         existing = reg.get_proof(art_id, storer, epoch) if hasattr(reg, "get_proof") else None
         if existing:
             existing_hash = str(existing.get("hash") or "").strip().lower()
@@ -165,6 +219,19 @@ def handle_storage_rpc(
             proof_hash=proof_hash,
             height=height,
             seed=str(challenge.get("seed", "")),
+        )
+        log.info(
+            "[GRAFFITI_PROOF_SUBMIT] accepted art=%s storer=%s epoch=%s offset=%s len=%s mode=%s idx=%s path_len=%s mchunk=%s mcount=%s",
+            art_id[:16],
+            storer[:16],
+            epoch,
+            offset,
+            length,
+            proof_mode,
+            idx,
+            path_len,
+            mchunk_val,
+            mcount_val,
         )
         
         if CFG.DEBUG_BENCHMARKS:
@@ -256,6 +323,15 @@ def handle_storage_rpc(
             amt = int(getattr(o, "amount", 0) or 0)
             addr = _spkhex_to_address(o.script_pubkey.serialize().hex())
             outs.append((amt, addr))
+        log.info(
+            "[GRAFFITI_BUILD_PAYOUT] built art=%s storer=%s epoch=%s amount=%s fee_rate=%s outputs=%s",
+            art_id[:16],
+            storer_addr[:16],
+            epoch,
+            rec_amt,
+            fee_rate,
+            len(outs),
+        )
 
         broadcast_flag = bool(message.get("broadcast"))
         if broadcast_flag:

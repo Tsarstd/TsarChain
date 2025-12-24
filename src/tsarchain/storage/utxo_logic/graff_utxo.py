@@ -96,6 +96,9 @@ class UTXOGraffitiMixin:
             "receipt": meta.get("receipt"),
             "creator": creator,
             "block_hash": block_hash,
+            "mroot": meta.get("mroot"),
+            "mchunk": meta.get("mchunk"),
+            "mcount": meta.get("mcount"),
         }
         self._graffiti_registry.record_post(art_id, entry, txid_hex, block_height, pool_addr, paid, block_hash=block_hash)
         current_pool_balance = self.get_balance(pool_addr, mode="total")

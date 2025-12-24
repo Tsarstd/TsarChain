@@ -2,7 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 
-import os, time
+import os, time, base64
 from typing import Any, Dict, Optional
 
 from tsarchain.contracts import graffiti as GRAFFITI
@@ -125,7 +125,8 @@ def handle_node_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = None
             server.index["files"][aid] = server._normalize_file_meta(aid, meta)
             server._save_index()
             return {"type": "STOR_PROOF_RUN", "status": "error", "reason": "missing_art_id"}
-        challenge = GRAFFITI.calc_proof_challenge(art_norm, size, tip_h)
+        merkle_chunk = int(CFG.GRAFFITI_PROOF_CHUNK_BYTES)
+        challenge = GRAFFITI.calc_proof_challenge(art_norm, size, tip_h, chunk_bytes=merkle_chunk)
         offset = int(challenge.get("offset", 0))
         length = int(challenge.get("length", 0))
         
@@ -134,6 +135,7 @@ def handle_node_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = None
             if data_bytes is None:
                 raise FileNotFoundError("file_missing")
             chunk = data_bytes[offset : offset + length]
+            leaves = GRAFFITI.merkle_leaves_from_bytes(data_bytes, merkle_chunk)
         else:
             path = meta.get("path")
             if not path or not os.path.isfile(path):
@@ -141,8 +143,13 @@ def handle_node_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = None
             with open(path, "rb") as fh:
                 fh.seek(offset)
                 chunk = fh.read(length)
+            leaves = GRAFFITI.merkle_leaves_for_file(path, merkle_chunk)
                 
         proof_hash = GRAFFITI.hash_proof_chunk(chunk)
+        chunk_index = offset // merkle_chunk if merkle_chunk > 0 else 0
+        merkle_path = GRAFFITI.merkle_path_from_leaves(leaves, chunk_index)
+        path_len = len(merkle_path)
+        chunk_b64 = base64.b64encode(chunk).decode("ascii")
         now_ts = int(time.time())
         meta.update(
             {
@@ -162,7 +169,16 @@ def handle_node_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = None
             meta["art_id"] = art_norm
         server.index["files"][aid] = server._normalize_file_meta(aid, meta)
         server._save_index()
-        log.info("[STOR_PROOF_RUN] aid=%s epoch=%s offset=%s len=%s", aid[:16], meta.get("last_proof_epoch"), offset, length)
+        log.info(
+            "[STOR_PROOF_RUN] aid=%s epoch=%s offset=%s len=%s idx=%s mchunk=%s path_len=%s",
+            aid[:16],
+            meta.get("last_proof_epoch"),
+            offset,
+            length,
+            chunk_index,
+            merkle_chunk,
+            path_len,
+        )
         return {
             "type": "STOR_PROOF_RUN",
             "status": "ok",
@@ -174,6 +190,8 @@ def handle_node_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = None
             "hash": proof_hash,
             "seed": challenge.get("seed"),
             "height": tip_h,
+            "chunk": chunk_b64,
+            "path": merkle_path,
         }
 
     return None

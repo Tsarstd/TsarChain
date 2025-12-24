@@ -6,13 +6,14 @@
 import os, threading, sys, json, socket, time, secrets
 import tkinter as tk
 import multiprocessing as mp
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox
 from typing import Optional, Dict, Any
 
 # ---------------- Local Project ----------------
 from tsarchain.contracts.storage_node.server import StorageServer
 from tsarchain.contracts.storage_node.connect import RPC, NodeDirectory
 from tsarchain.network.protocol import send_message, recv_message
+from tsarchain.storage.db import AtomicJSONFile
 
 from tsarchain.utils import config as CFG
 from tsarchain.contracts import graffiti as GRAFFITI
@@ -42,12 +43,16 @@ class TsarStorageGUI:
         self._retention_thread: Optional[threading.Thread] = None
         self._pending_paid: set[str] = set()
         self._pool_data: dict[str, Dict[str, Any]] = {}
+        self._auto_payout_guard: dict[str, Dict[str, Any]] = {}
+        self._auto_payout_store: Optional[AtomicJSONFile] = None
+        self._auto_payout_guard_path: str = ""
         self._storage_port: Optional[int] = None
         self._server: Optional[StorageServer] = None
         self.addr_var = tk.StringVar(value="")
         self._target_node: Optional[tuple[str,int]] = None
         self._refresh_inflight = False
         self._log_max_lines = 500
+        self._load_auto_payout_guard()
         self._build_ui()
         self._heartbeat()
 
@@ -160,7 +165,6 @@ class TsarStorageGUI:
         pool_btn = ttk.Frame(pool_fr)
         pool_btn.pack(fill=tk.X, pady=(0,4))
         
-        ttk.Button(pool_btn, text="Claim Pool Payout", command=self._claim_pool_payout).pack(side=tk.LEFT, padx=4)
         tk.Button(pool_btn, text="Open Log Viewer", command=self._open_log_viewer).pack(side=tk.RIGHT, padx=4)
         
         self.pool_status_var = tk.StringVar(value="Pool status pending.")
@@ -395,6 +399,7 @@ class TsarStorageGUI:
         else:
             self.pool_status_var.set("Belum ada saldo pool untuk karya tersimpan.")
         self._auto_mark_paid(posts, files_by_art)
+        self._auto_payout()
 
     def _fmt_bytes(self, n: Any) -> str:
         size = float(n)
@@ -440,6 +445,109 @@ class TsarStorageGUI:
                 self.logln(f"[Auto-Paid] {gid} (h={bh})")
         if marked:
             self.refresh_all()
+
+    def _load_auto_payout_guard(self) -> None:
+        path = str(CFG.ARCHIVIST_AUTO_PAYOUT_GUARD_FILE)
+        self._auto_payout_guard_path = path
+        self._auto_payout_store = AtomicJSONFile(path, keep_backups=2, checksum=True)
+        try:
+            raw = self._auto_payout_store.load(default={}) or {}
+        except Exception as exc:
+            log.warning("[auto-payout] guard load failed: %s", exc)
+            raw = {}
+        if not isinstance(raw, dict):
+            raw = {}
+        cleaned: dict[str, Dict[str, Any]] = {}
+        for art_id, entry in raw.items():
+            if not isinstance(entry, dict):
+                continue
+            try:
+                epoch = int(entry.get("epoch", -1))
+                ts = int(entry.get("ts", 0))
+            except Exception:
+                continue
+            status = str(entry.get("status") or "error").lower()
+            cleaned[str(art_id)] = {"epoch": epoch, "ts": ts, "status": status}
+        self._auto_payout_guard = cleaned
+
+    def _save_auto_payout_guard(self) -> None:
+        if not self._auto_payout_store:
+            return
+        try:
+            self._auto_payout_store.save(self._auto_payout_guard)
+        except Exception as exc:
+            log.warning("[auto-payout] guard save failed: %s", exc)
+
+    def _auto_payout(self) -> None:
+        if not self.connected or not self._pool_data:
+            return
+        tip_height = int((self.last_info or {}).get("height") or 0)
+        tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
+        drift = int(CFG.GRAFFITI_PROOF_EPOCH_DRIFT)
+        if drift <= 0:
+            return
+        threshold = max(0, drift - 1)
+        cooldown = int(CFG.ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC)
+        recipient = (self.addr_var.get() or self.rpc.address or "").strip().lower()
+        if not recipient:
+            return
+        for art_id, entry in self._pool_data.items():
+            stats = entry.get("stats") or {}
+            last_paid_epoch = int(stats.get("last_paid_epoch", -1))
+            pool_balance = int(stats.get("pool_balance", 0))
+            if pool_balance <= 0:
+                continue
+            file_meta = entry.get("file") or {}
+            if not file_meta.get("paid") or str(file_meta.get("state") or "") != "stored":
+                continue
+            last_proof_epoch = int(file_meta.get("last_proof_epoch", -1))
+            if last_proof_epoch < 0:
+                continue
+            if last_paid_epoch >= last_proof_epoch:
+                continue
+            gap = tip_epoch - last_proof_epoch
+            if gap < threshold or gap > drift:
+                continue
+            guard_entry = self._auto_payout_guard.get(art_id, {})
+            guard_epoch = int(guard_entry.get("epoch", -1)) if isinstance(guard_entry, dict) else -1
+            guard_ts = int(guard_entry.get("ts", 0)) if isinstance(guard_entry, dict) else 0
+            guard_status = str(guard_entry.get("status") or "").lower() if isinstance(guard_entry, dict) else ""
+            if guard_epoch > last_proof_epoch:
+                continue
+            if guard_epoch == last_proof_epoch:
+                if guard_status == "ok":
+                    continue
+                if cooldown > 0 and int(time.time()) - guard_ts < cooldown:
+                    continue
+            attempt_ts = int(time.time())
+            self._auto_payout_guard[art_id] = {"epoch": last_proof_epoch, "ts": attempt_ts, "status": "attempt"}
+            self._save_auto_payout_guard()
+            self.logln(
+                f"[Auto-Payout] art={art_id[:16]} epoch={last_proof_epoch} gap={gap} pool={pool_balance}"
+            )
+            payload = {
+                "type": "GRAFFITI_BUILD_PAYOUT",
+                "art_id": art_id,
+                "recipients": [{"addr": recipient, "amount": pool_balance}],
+                "epoch": last_proof_epoch,
+                "broadcast": True,
+                "ts": int(time.time()),
+                "nonce": secrets.token_hex(16),
+            }
+            resp = self.rpc.call(payload, timeout=8.0)
+            ok = isinstance(resp, dict) and resp.get("status") == "ok"
+            self._auto_payout_guard[art_id] = {
+                "epoch": last_proof_epoch,
+                "ts": int(time.time()),
+                "status": "ok" if ok else "error",
+            }
+            self._save_auto_payout_guard()
+            if ok:
+                txid = (resp.get("tx") or {}).get("txid") or "?"
+                self.logln(f"[Auto-Payout] broadcast tx {txid[:16]}... art={art_id[:12]}...")
+                self.refresh_all()
+            else:
+                self.logln(f"[Auto-Payout] failed art={art_id[:12]} resp={resp}")
         
     def _attempt_reconnect(self) -> bool:
         target = getattr(self, "_target_node", None)
@@ -534,6 +642,8 @@ class TsarStorageGUI:
             length = int(resp.get("length", 0))
             phash = str(resp.get("hash") or "")
             seed = str(resp.get("seed") or "")
+            chunk = resp.get("chunk")
+            mpath = resp.get("path")
             self.logln(f"[Proof] {gid[:10]} epoch {proof_epoch} offset {offset} len {length}")
             if not self.connected:
                 continue
@@ -551,6 +661,10 @@ class TsarStorageGUI:
                 "ts": int(time.time()),
                 "nonce": secrets.token_hex(16),
             }
+            if chunk:
+                submit["chunk"] = chunk
+            if mpath:
+                submit["path"] = mpath
             ack = self.rpc.call(submit, timeout=8.0)
             if isinstance(ack, dict) and ack.get("status") == "ok":
                 self.logln(f"[Proof] submitted epoch {proof_epoch} for {art_id[:12]}...")
@@ -571,61 +685,6 @@ class TsarStorageGUI:
             elif aid in self._pending_paid:
                 self.logln(f"[Payout] Cleared for {aid}")
         self._pending_paid = current
-
-    def _claim_pool_payout(self) -> None:
-        if not self.connected or not getattr(self, "pool_tree", None):
-            messagebox.showwarning("Pool", "Hubungkan node terlebih dahulu.")
-            return
-        sel = self.pool_tree.selection()
-        if not sel:
-            messagebox.showinfo("Pool", "Pilih karya dari daftar pool.")
-            return
-        # gunakan iid (full art_id) supaya tidak terpotong
-        art_id = sel[0] if sel else None
-        if not art_id:
-            art_id = self.pool_tree.item(sel[0], "values")[0]
-        entry = self._pool_data.get(art_id)
-        if not entry:
-            messagebox.showerror("Pool", "Data pool tidak ditemukan.")
-            return
-        stats = entry.get("stats") or {}
-        pool_balance = int(stats.get("pool_balance", 0))
-        if pool_balance <= 0:
-            messagebox.showinfo("Pool", "Saldo pool nol.")
-            return
-        amount_str = simpledialog.askstring(
-            "Claim Pool",
-            f"Saldo tersedia {pool_balance / CFG.TSAR:.8f} TSAR.\nMasukkan jumlah TSAR yang ingin diklaim:",
-            parent=self.root,
-            initialvalue=f"{pool_balance / CFG.TSAR:.8f}",
-        )
-        if amount_str is None:
-            return
-        amount = float(amount_str.replace(",", "."))
-        amount_sats = int(amount * CFG.TSAR)
-        if amount_sats <= 0 or amount_sats > pool_balance:
-            messagebox.showerror("Pool", "Jumlah melebihi saldo.")
-            return
-        recipient = (self.addr_var.get() or self.rpc.address or "").strip().lower()
-        payload = {
-            "type": "GRAFFITI_BUILD_PAYOUT",
-            "art_id": art_id,
-            "recipients": [{"addr": recipient, "amount": amount_sats}],
-            "epoch": stats.get("last_paid_epoch", -1) + 1,
-            "broadcast": True,
-            "ts": int(time.time()),
-            "nonce": secrets.token_hex(16),
-        }
-        self.logln(f"[Pool] build payout art={art_id[:16]} amt={amount_sats} sats -> {recipient}")
-        resp = self.rpc.call(payload, timeout=8.0)
-        if isinstance(resp, dict) and resp.get("status") == "ok":
-            tx = resp.get("tx") or {}
-            txid = tx.get("txid") or "?"
-            self.logln(f"[Pool] Broadcast payout tx {txid[:16]}... for {art_id[:12]}...")
-            self.pool_status_var.set("Payout tx broadcasted.")
-            self.refresh_all()
-        else:
-            messagebox.showerror("Pool", f"Gagal klaim: {resp}")
 
     # ---------- Heartbeat ------------
     def _heartbeat(self):

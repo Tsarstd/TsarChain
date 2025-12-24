@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import secrets
 import socket
 import sys
@@ -18,6 +19,7 @@ from typing import Any, Dict, Optional
 from tsarchain.contracts.storage_node.server import StorageServer
 from tsarchain.contracts.storage_node.connect import RPC, NodeDirectory
 from tsarchain.network.protocol import send_message, recv_message
+from tsarchain.storage.db import AtomicJSONFile
 from tsarchain.utils import config as CFG
 from tsarchain.contracts import graffiti as GRAFFITI
 
@@ -70,6 +72,11 @@ class ArchivistCLI:
         self._pending_paid: set[str] = set()
         self._pool_data: dict[str, Dict[str, Any]] = {}
         self._last_dashboard: str = ""
+        self._auto_payout_guard: dict[str, Dict[str, Any]] = {}
+        self._auto_payout_store: Optional[AtomicJSONFile] = None
+        self._auto_payout_guard_path: str = ""
+        self._auto_payout_lock = threading.Lock()
+        self._load_auto_payout_guard()
 
     def _normalize_network_info(self, info_obj: Any) -> Optional[Dict[str, Any]]:
         if not isinstance(info_obj, dict) or info_obj.get("error"):
@@ -320,6 +327,7 @@ class ArchivistCLI:
             stats = art.get("stats") or {}
             self._pool_data[aid] = {"post": art, "stats": stats, "file": file_meta["meta"]}
         self._auto_mark_paid(posts, files_by_art)
+        self._auto_payout()
 
     def _auto_mark_paid(self, posts: list[dict], files_by_art: dict[str, dict]) -> None:
         if not posts or not files_by_art:
@@ -349,6 +357,110 @@ class ArchivistCLI:
                 self._log(f"[auto-paid] {gid} (h={bh})")
         if marked:
             threading.Thread(target=self._refresh_once, name="ArchivistRefreshAuto", daemon=True).start()
+
+    def _load_auto_payout_guard(self) -> None:
+        path = str(CFG.ARCHIVIST_AUTO_PAYOUT_GUARD_FILE)
+        self._auto_payout_guard_path = path
+        self._auto_payout_store = AtomicJSONFile(path, keep_backups=2, checksum=True)
+        try:
+            raw = self._auto_payout_store.load(default={}) or {}
+        except Exception as exc:
+            self._log(f"[auto-payout] guard load failed: {exc}", error=True)
+            raw = {}
+        if not isinstance(raw, dict):
+            raw = {}
+        cleaned: dict[str, Dict[str, Any]] = {}
+        for art_id, entry in raw.items():
+            if not isinstance(entry, dict):
+                continue
+            try:
+                epoch = int(entry.get("epoch", -1))
+                ts = int(entry.get("ts", 0))
+            except Exception:
+                continue
+            status = str(entry.get("status") or "error").lower()
+            cleaned[str(art_id)] = {"epoch": epoch, "ts": ts, "status": status}
+        self._auto_payout_guard = cleaned
+
+    def _save_auto_payout_guard(self) -> None:
+        if not self._auto_payout_store:
+            return
+        try:
+            self._auto_payout_store.save(self._auto_payout_guard)
+        except Exception as exc:
+            self._log(f"[auto-payout] guard save failed: {exc}", error=True)
+
+    def _auto_payout(self) -> None:
+        if not self.connected or not self._pool_data:
+            return
+        tip_height = int((self.last_info or {}).get("height") or 0)
+        tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
+        drift = int(CFG.GRAFFITI_PROOF_EPOCH_DRIFT)
+        if drift <= 0:
+            return
+        threshold = max(0, drift - 1)
+        cooldown = int(CFG.ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC)
+        recipient = (getattr(self.rpc, "address", "") or "").strip().lower()
+        if not recipient:
+            return
+        with self._auto_payout_lock:
+            for art_id, entry in self._pool_data.items():
+                stats = entry.get("stats") or {}
+                last_paid_epoch = int(stats.get("last_paid_epoch", -1))
+                pool_balance = int(stats.get("pool_balance", 0))
+                if pool_balance <= 0:
+                    continue
+                file_meta = entry.get("file") or {}
+                if not file_meta.get("paid") or str(file_meta.get("state") or "") != "stored":
+                    continue
+                last_proof_epoch = int(file_meta.get("last_proof_epoch", -1))
+                if last_proof_epoch < 0:
+                    continue
+                if last_paid_epoch >= last_proof_epoch:
+                    continue
+                gap = tip_epoch - last_proof_epoch
+                if gap < threshold or gap > drift:
+                    continue
+                guard_entry = self._auto_payout_guard.get(art_id, {})
+                guard_epoch = int(guard_entry.get("epoch", -1)) if isinstance(guard_entry, dict) else -1
+                guard_ts = int(guard_entry.get("ts", 0)) if isinstance(guard_entry, dict) else 0
+                guard_status = str(guard_entry.get("status") or "").lower() if isinstance(guard_entry, dict) else ""
+                if guard_epoch > last_proof_epoch:
+                    continue
+                if guard_epoch == last_proof_epoch:
+                    if guard_status == "ok":
+                        continue
+                    if cooldown > 0 and int(time.time()) - guard_ts < cooldown:
+                        continue
+                attempt_ts = int(time.time())
+                self._auto_payout_guard[art_id] = {"epoch": last_proof_epoch, "ts": attempt_ts, "status": "attempt"}
+                self._save_auto_payout_guard()
+                self._log(
+                    f"[auto-payout] art={art_id[:64]} epoch={last_proof_epoch} gap={gap} pool={pool_balance}"
+                )
+                payload = {
+                    "type": "GRAFFITI_BUILD_PAYOUT",
+                    "art_id": art_id,
+                    "recipients": [{"addr": recipient, "amount": pool_balance}],
+                    "epoch": last_proof_epoch,
+                    "broadcast": True,
+                    "ts": int(time.time()),
+                    "nonce": secrets.token_hex(16),
+                }
+                resp = self.rpc.call(payload, timeout=8.0)
+                ok = isinstance(resp, dict) and resp.get("status") == "ok"
+                self._auto_payout_guard[art_id] = {
+                    "epoch": last_proof_epoch,
+                    "ts": int(time.time()),
+                    "status": "ok" if ok else "error",
+                }
+                self._save_auto_payout_guard()
+                if ok:
+                    txid = (resp.get("tx") or {}).get("txid") or "?"
+                    self._log(f"[auto-payout] broadcast tx {txid[:64]}... for {art_id[:64]}...")
+                    threading.Thread(target=self._refresh_once, name="ArchivistRefreshAutoPayout", daemon=True).start()
+                else:
+                    self._log(f"[auto-payout] failed art={art_id[:64]} resp={resp}", error=True)
 
     # ---------- retention / heartbeat ----------
     def _retention_loop(self) -> None:
@@ -408,6 +520,8 @@ class ArchivistCLI:
             length = int(resp.get("length", 0))
             phash = str(resp.get("hash") or "")
             seed = str(resp.get("seed") or "")
+            chunk = resp.get("chunk")
+            mpath = resp.get("path")
             self._log(f"[proof] {gid[:10]} epoch {proof_epoch} offset {offset} len {length}")
             if not self.connected:
                 continue
@@ -424,6 +538,10 @@ class ArchivistCLI:
                 "ts": int(time.time()),
                 "nonce": secrets.token_hex(16),
             }
+            if chunk:
+                submit["chunk"] = chunk
+            if mpath:
+                submit["path"] = mpath
             ack = self.rpc.call(submit, timeout=8.0)
             if isinstance(ack, dict) and ack.get("status") == "ok":
                 self._log(f"[proof] submitted epoch {proof_epoch} for {art_id[:12]}...")
@@ -491,62 +609,6 @@ class ArchivistCLI:
         self._pending_paid = current
 
     # ---------- commands ----------
-    def _handle_claim(self, art_id: Optional[str] = None) -> None:
-        if not self.connected:
-            self._log("Not connected to node.", error=True)
-            return
-        
-        if not self._pool_data:
-            self._log("Pool empty.")
-            return
-        
-        chosen_id = art_id
-        if not chosen_id:
-            self._print_pool_table()
-            chosen_id = input("Input art_id for claim: ").strip()
-            
-        entry = self._pool_data.get(chosen_id)
-        if not entry:
-            self._log("art_id not found in pool.", error=True)
-            return
-        
-        stats = entry.get("stats") or {}
-        pool_balance = int(stats.get("pool_balance", 0))
-        if pool_balance <= 0:
-            return
-        
-        default_amt = pool_balance / CFG.TSAR
-        try:
-            amt_str = input(f"The number of TSAR you wish to claim (default {default_amt:.8f}): ").strip()
-        except EOFError:
-            amt_str = ""
-        amount = default_amt if not amt_str else float(amt_str.replace(",", "."))
-        amount_sats = int(amount * CFG.TSAR)
-        if amount_sats <= 0 or amount_sats > pool_balance:
-            self._log("Amount is invalid or exceeds balance.", error=True)
-            return
-        
-        recipient = (getattr(self.rpc, "address", "") or "").strip().lower()
-        payload = {
-            "type": "GRAFFITI_BUILD_PAYOUT",
-            "art_id": chosen_id,
-            "recipients": [{"addr": recipient, "amount": amount_sats}],
-            "epoch": stats.get("last_paid_epoch", -1) + 1,
-            "broadcast": True,
-            "ts": int(time.time()),
-            "nonce": secrets.token_hex(16),
-        }
-        self._log(f"[pool] build payout art={chosen_id[:64]} amt={amount_sats} sats -> {recipient}")
-        resp = self.rpc.call(payload, timeout=8.0)
-        
-        if isinstance(resp, dict) and resp.get("status") == "ok":
-            tx = resp.get("tx") or {}
-            txid = tx.get("txid") or "?"
-            self._log(f"[pool] Broadcast payout tx {txid[:64]}... for {chosen_id[:64]}...")
-            self._print_dashboard(force=True)
-        else:
-            self._log(f"Failde to claim: {resp}", error=True)
-
     def _print_pool_table(self) -> None:
         lines = self._format_pool_table(self._pool_data)
         with self._print_lock:
@@ -554,7 +616,7 @@ class ArchivistCLI:
             sys.stdout.flush()
 
     def command_loop(self) -> None:
-        self._log("Command: status | claim | pool | reconnect | quit")
+        self._log("Command: status | pool | reconnect | quit")
         while not self._stop.is_set():
             try:
                 cmd = input("archivist> ").strip()
@@ -574,12 +636,6 @@ class ArchivistCLI:
                 self._print_dashboard(force=True)
                 continue
             
-            if cmd.startswith("claim"):
-                parts = cmd.split()
-                art = parts[1] if len(parts) > 1 else None
-                self._handle_claim(art)
-                continue
-            
             if cmd in ("pool", "list"):
                 self._print_pool_table()
                 continue
@@ -593,7 +649,7 @@ class ArchivistCLI:
                     self._log("Reconnection failed.", error=True)
                 continue
             
-            self._log("Unknown command. Use: status | claim | pool | reconnect | quit")
+            self._log("Unknown command. Use: status | pool | reconnect | quit")
 
     # ---------- lifecycle ----------
     def start(self) -> None:

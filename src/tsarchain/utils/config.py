@@ -96,7 +96,7 @@ WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wal
 DATA_SCHEMA_VERSION = 1
 
 # ---- KV BACKEND ----
-KV_BACKEND         = "lmdb"  # active key-value backend implementation (lmdb & json)
+KV_BACKEND         = "json"  # active key-value backend implementation (lmdb & json)
 LMDB_DATA_FILE     = "data/tsarchain_db"  # main LMDB data file path
 LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
@@ -178,7 +178,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "000d6a802c383213844bfaf01c8123b535717bc7c563bf43949cca7e7a990876"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "0003909cc4539d033fd79bcee76b11868f3ffed68aeba2c2862173c886fa2edf"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -632,7 +632,7 @@ ART_ID_PREFIX_LEN  = len(ART_ID_PREFIX)
 ART_ID_BODY_LEN    = 60  # hex chars retained after adding prefix to keep 64 chars total
 
 # ---- OP_RETURN POLICY ----
-MAX_GRAFFITI_OPRET    = 570  # graffiti payload limit capped under script limit
+MAX_GRAFFITI_OPRET    = 800  # graffiti payload limit capped under script limit
 
 # ---- GRAFFITI ----
 GRAFFITI_MIN_BILLABLE_SIZE    = 100 * 1024
@@ -665,6 +665,8 @@ STORAGE_DIR                    = "data/storage"  # folder holding uploaded stora
 STORAGE_SIZE_INIT              = 100 * 1024 * 1024  # initial storage size allocation (100MB)
 STORAGE_MAX_BYTES              = 64 * 1024 * 1024 * 1024  # cap on cumulative storage usage (64GB)
 RETENTION_GC_SEC               = 60  # interval between retention garbage collection runs
+ARCHIVIST_AUTO_PAYOUT_GUARD_FILE   = os.path.join(STORAGE_DIR, "auto_payout_guard.json")
+ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC = 60
 
 
 # =============================================================================

@@ -20,6 +20,7 @@ from tsarchain.contracts.graffiti import (
     calc_upload_fee_sats,
     compute_art_id,
     derive_pool_address,
+    merkle_root_for_file,
     validate_graffiti_file,
 )
 from tsarchain.network.pow_token import solve_pow
@@ -186,7 +187,26 @@ def read_graffiti_file_info(path: str) -> Dict[str, Any]:
     mime_raw, _ = mimetypes.guess_type(path)
     mime = validate_graffiti_file(size, mime_raw, os.path.basename(path))
     sha = _sha256_file(path)
-    return {"size": size, "mime": mime, "sha": sha}
+    mchunk = int(CFG.GRAFFITI_PROOF_CHUNK_BYTES)
+    mroot, mcount = merkle_root_for_file(path, mchunk)
+    log.info(
+        "[graffiti_file] name=%s size=%s mime=%s sha=%s mroot=%s mchunk=%s mcount=%s",
+        os.path.basename(path),
+        size,
+        mime,
+        sha[:16],
+        str(mroot or "")[:16],
+        mchunk,
+        mcount,
+    )
+    return {
+        "size": size,
+        "mime": mime,
+        "sha": sha,
+        "merkle_root": mroot,
+        "merkle_chunk": mchunk,
+        "merkle_count": mcount,
+    }
 
 def select_upload_storers(resp: Optional[Dict[str, Any]], *, replication_r: Optional[int] = None) -> list[Dict[str, Any]]:
     """
@@ -242,6 +262,9 @@ def build_post_plan(
     storer_meta: Dict[str, Any],
     receipt_id: str,
     art_id: Optional[str] = None,
+    merkle_root: Optional[str] = None,
+    merkle_chunk: Optional[int] = None,
+    merkle_count: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Arrange metadata and POST fees before and after upload.
@@ -260,7 +283,19 @@ def build_post_plan(
         storer_addr=storer_addr or "unknown",
         receipt_id=receipt_id,
         creator_addr=creator,
+        merkle_root=merkle_root,
+        merkle_chunk_bytes=merkle_chunk,
+        merkle_chunks=merkle_count,
     )
+    if merkle_root and merkle_chunk and merkle_count:
+        log.info(
+            "[post_plan] art=%s storer=%s mroot=%s mchunk=%s mcount=%s",
+            str(art)[:16],
+            str(storer_addr)[:16],
+            str(merkle_root)[:16],
+            int(merkle_chunk),
+            int(merkle_count),
+        )
     opret_hex = build_opret_hex(meta)
     pool_addr = derive_pool_address(art)
     fee_sats = calc_upload_fee_sats(int(size_bytes))
