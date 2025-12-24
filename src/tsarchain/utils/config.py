@@ -178,7 +178,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "001d3dc7c6940ab9c45ec9f795987a58ba21f249ecde2029bc029cf8a60bad9c"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "0015030502faac065ea30f5344c65a1dfcc95a1ebfb61e3dcb1bf8120b280af6"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -647,13 +647,13 @@ GRAFFITI_EXPIRE_AFTER_BLOCKS  = 25        # default retention window after graff
 GRAFFITI_PROOF_EPOCH_BLOCKS   = 15        # block interval between retention proofs
 GRAFFITI_PROOF_EPOCH_DRIFT    = 1         # allowed epoch drift for proof/payout (future/past)
 GRAFFITI_PROOF_CHUNK_BYTES    = 999 * 1024  # bytes challenged per proof (deterministic)
-GRAFFITI_MAX_SIZE_BYTES       = 1024 * 1024 * 1024  # hard cap for upload/download payload
-GRAFFITI_MAX_MSG_BYTES        = 1027 * 1024 * 1024  # per-message cap for graffiti transfer (storage RPC) STOR_INIT/STOR_PUT
-GRAFFITI_ALLOWED_MIME         = ("image/jpeg", "video/mp4")  # whitelist MIME types
-GRAFFITI_ALLOWED_EXT          = ("jpg", "jpeg", "mp4")  # extension fallback when MIME unavailable
+GRAFFITI_MAX_SIZE_BYTES       = 400 * 1024 * 1024  # hard cap for upload/download payload
+GRAFFITI_MAX_MSG_BYTES        = 401 * 1024 * 1024  # per-message cap for graffiti transfer (storage RPC) STOR_INIT/STOR_PUT
+GRAFFITI_ALLOWED_MIME         = ("image/jpeg", "video/mp4", "video/x-matroska")  # whitelist MIME types
+GRAFFITI_ALLOWED_EXT          = ("jpg", "jpeg", "mp4", "mkv")  # extension fallback when MIME unavailable
 
 # ---- STORAGE POLICY ----
-STORAGE_UPLOAD_CHUNK          = 8 * 1024 * 1024  # chunk size used when slicing storage payloads
+STORAGE_UPLOAD_CHUNK          = 10 * 1024 * 1024  # chunk size used when slicing storage payloads
 
 # ---- CONTRACT METADATA ----
 CONTRACTS_DIR      = "data/Contracts"  # storage root for contract-like payloads

@@ -234,55 +234,160 @@ def handle_wallet_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = No
             return {"type": "STOR_ACK", "status": "rejected", "reason": str(e)}
 
     if t == "STOR_GET_BY_ART":
+        # Public fetch by art_id (or direct graffiti_id). Supports optional chunked reads via offset/length.
         art_id = str(msg.get("art_id", "")).strip().lower()
-        if not art_id:
+        gid = str(msg.get("graffiti_id", "")).strip()
+
+        if not art_id and not gid:
             return {"type": t, "found": False}
-        gid = (server.index.get("art_map") or {}).get(art_id)
+
+        if not gid and art_id:
+            gid = (server.index.get("art_map") or {}).get(art_id) or ""
+
         meta = None
         if gid:
             meta = (server.index.get("files") or {}).get(gid)
+
         found = bool(meta)
         msg_cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
         data_cap = int(msg_cap * 3 // 4)
         resp = {"type": t, "found": found, "graffiti_id": gid, "meta": meta}
+
         include_data = bool(msg.get("include_data"))
         if include_data and meta:
+            # max_bytes here is a *per-response* cap (raw bytes), not total file size.
             max_bytes = int(msg.get("max_bytes", 0) or 0)
             if max_bytes <= 0:
                 max_bytes = int(CFG.GRAFFITI_MAX_SIZE_BYTES)
             max_bytes = max(32 * 1024, min(max_bytes, int(CFG.GRAFFITI_MAX_SIZE_BYTES), data_cap))
-            log.debug("size_art: %s", max_bytes)
+
+            # Optional chunk controls. If not provided, we keep the old behavior (full blob or error if too large).
+            chunk_mode = ("offset" in msg) or ("length" in msg)
+            try:
+                offset = int(msg.get("offset", 0) or 0)
+            except Exception:
+                offset = 0
+            try:
+                req_len = int(msg.get("length", 0) or 0)
+            except Exception:
+                req_len = 0
+
+            if offset < 0:
+                offset = 0
+
+            total_size = int(meta.get("size_bytes", 0) or 0)
+
+            # When not in chunk_mode, enforce that the whole file fits in one response (legacy behavior).
+            if (not chunk_mode) and total_size > 0 and total_size > max_bytes:
+                resp["status"] = "error"
+                resp["reason"] = "file_too_large"
+                log.warning(
+                    "[STOR_GET_BY_ART] file_too_large art=%s size=%s limit=%s",
+                    (art_id[:16] if art_id else "-"),
+                    total_size,
+                    max_bytes,
+                )
+                return resp
+
+            if total_size > 0 and offset >= total_size:
+                resp.update(
+                    {
+                        "status": "ok",
+                        "offset": int(offset),
+                        "length": 0,
+                        "total_size": int(total_size),
+                        "eof": True,
+                        "data_b64": "",
+                    }
+                )
+                return resp
+
+            # Decide how many bytes to read this response.
+            # - In chunk_mode, prefer explicit length; fallback to max_bytes.
+            # - Always clamp by max_bytes & remaining bytes.
+            if req_len <= 0:
+                req_len = int(max_bytes)
+            read_len = int(max(0, min(int(req_len), int(max_bytes))))
+            if total_size > 0:
+                read_len = int(min(read_len, int(total_size) - int(offset)))
+
+            data_bytes = None
             if server.use_kv:
-                data_bytes = server.db.get_final_bytes(gid) if gid else None
-                size = len(data_bytes) if data_bytes is not None else 0
+                # Prefer a true range read if the DB supports it, otherwise fallback to full read + slice.
+                get_range = getattr(server.db, "get_final_range", None) or getattr(server.db, "get_final_bytes_range", None)
+                try:
+                    if callable(get_range):
+                        data_bytes = get_range(gid, int(offset), int(read_len))
+                    else:
+                        blob = server.db.get_final_bytes(gid) if gid else None
+                        if blob is not None:
+                            data_bytes = blob[int(offset) : int(offset) + int(read_len)]
+                except Exception:
+                    data_bytes = None
+
                 if data_bytes is None:
                     resp["status"] = "error"
                     resp["reason"] = "file_missing"
-                    log.warning("[STOR_GET_BY_ART] file_missing aid=%s gid=%s", art_id[:16], gid)
-                elif size > max_bytes:
-                    resp["status"] = "error"
-                    resp["reason"] = "file_too_large"
-                    log.warning("[STOR_GET_BY_ART] file_too_large aid=%s size=%s limit=%s", art_id[:16], size, max_bytes)
-                else:
-                    resp["data_b64"] = base64.b64encode(data_bytes).decode("ascii")
-                    resp["status"] = "ok"
-            else:
-                path = meta.get("path")
-                if path and os.path.isfile(path):
-                    size = os.path.getsize(path)
-                    if size > max_bytes:
-                        resp["status"] = "error"
-                        resp["reason"] = "file_too_large"
-                        log.warning("[STOR_GET_BY_ART] file_too_large aid=%s size=%s limit=%s", art_id[:16], size, max_bytes)
-                    else:
-                        with open(path, "rb") as fh:
-                            data_b64 = base64.b64encode(fh.read()).decode("ascii")
-                        resp["data_b64"] = data_b64
-                        resp["status"] = "ok"
-                else:
+                    log.warning("[STOR_GET_BY_ART] file_missing art=%s gid=%s", (art_id[:16] if art_id else "-"), gid)
+                    return resp
+
+                out_len = len(data_bytes)
+                eof = bool(total_size > 0 and (int(offset) + out_len) >= int(total_size))
+                resp.update(
+                    {
+                        "data_b64": base64.b64encode(data_bytes).decode("ascii"),
+                        "status": "ok",
+                        "offset": int(offset),
+                        "length": int(out_len),
+                        "total_size": int(total_size),
+                        "eof": eof,
+                    }
+                )
+                return resp
+
+            # filesystem mode
+            path = meta.get("path")
+            if path and os.path.isfile(path):
+                try:
+                    if total_size <= 0:
+                        total_size = os.path.getsize(path)
+                    with open(path, "rb") as fh:
+                        fh.seek(int(offset))
+                        chunk = fh.read(int(read_len))
+                    out_len = len(chunk)
+                    eof = bool(total_size > 0 and (int(offset) + out_len) >= int(total_size))
+                    resp.update(
+                        {
+                            "data_b64": base64.b64encode(chunk).decode("ascii"),
+                            "status": "ok",
+                            "offset": int(offset),
+                            "length": int(out_len),
+                            "total_size": int(total_size),
+                            "eof": eof,
+                        }
+                    )
+                    return resp
+                except Exception:
                     resp["status"] = "error"
                     resp["reason"] = "file_missing"
-                    log.warning("[STOR_GET_BY_ART] file_missing aid=%s gid=%s path=%s", art_id[:16], gid, path if "path" in locals() else None)
+                    log.warning(
+                        "[STOR_GET_BY_ART] file_missing art=%s gid=%s path=%s",
+                        (art_id[:16] if art_id else "-"),
+                        gid,
+                        path,
+                    )
+                    return resp
+
+            resp["status"] = "error"
+            resp["reason"] = "file_missing"
+            log.warning(
+                "[STOR_GET_BY_ART] file_missing art=%s gid=%s path=%s",
+                (art_id[:16] if art_id else "-"),
+                gid,
+                path if "path" in locals() else None,
+            )
+            return resp
+
         return resp
 
     return None

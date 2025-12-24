@@ -504,10 +504,12 @@ def fetch_graffiti_file(
 ) -> Dict[str, Any]:
     """
     Retrieve graffiti files from the storage node based on art_id.
-    - rpc_call: Synchronous function to the node (e.g., NodeClient.send)
-    - storer_addr: Preferred storage address (bech32) if available
-    - cache_dir: Local cache location (default: CFG.WALLET_DATA_DIR/graffiti_cache)
-    Return: {"status": "ok", "bytes": b"...", "meta": {...}, "cache_path": "..."} atau {"status": "error", "reason": "..."}
+    - Upload (STOR_PUT) is already chunked (default 8MB) => Small, fast, and cheap RPC for JSON/base64.
+    
+    This patch also makes downloads "chunked" (without wallet_addr, still public) by:
+    - Fetch metadata first (include_data=False)
+    - Then fetch data per chunk using STOR_GET_BY_ART + offset/length (backward-compatible:
+    Older nodes will ignore offset/length and still send the full data).
     """
     art_norm = (art_id or "").strip().lower()
     if not art_norm:
@@ -519,13 +521,14 @@ def fetch_graffiti_file(
         log.debug("[fetch] cache_hit art=%s path=%s", art_norm[:16], cached.get("cache_path"))
         return cached
 
-    max_bytes = int(max_bytes)
-    # Clamp by graffiti msg limit to avoid hitting generic MAX_MSG
+    # max_bytes = file size ceiling (NOT per-message ceiling)
+    max_bytes = max(32 * 1024, min(int(max_bytes), int(CFG.GRAFFITI_MAX_SIZE_BYTES)))
+
+    # Per-message cap for RPC framing; used to clamp each chunk.
     msg_cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
     data_cap = int(msg_cap * 3 // 4)  # guard for base64/json overhead
-    max_bytes = max(32 * 1024, min(max_bytes, int(CFG.GRAFFITI_MAX_SIZE_BYTES), data_cap))
-    storers = fetch_storers(rpc_call)  # type: ignore[arg-type]
 
+    storers = fetch_storers(rpc_call)  # type: ignore[arg-type]
     if not storers:
         log.warning("[fetch] no_storers art=%s", art_norm[:16])
         return {"status": "error", "reason": "no_storers"}
@@ -539,44 +542,159 @@ def fetch_graffiti_file(
 
     os.makedirs(cache_root, exist_ok=True)
 
-    msg_cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
-    data_cap = int(msg_cap * 3 // 4)  # approximate base64 overhead guard
-
     last_error = None
     for meta in candidates:
         endpoint = _pick_endpoint(meta)
         if not endpoint:
             continue
         host, port = endpoint
-        payload = {"type": "STOR_GET_BY_ART", "art_id": art_norm, "include_data": True, "max_bytes": min(max_bytes, data_cap)}
-        resp = _send_storage_request(host, port, payload, timeout=timeout, max_len=msg_cap)
-        if not isinstance(resp, dict):
+
+        # 1) Fetch metadata only (fast, small payload)
+        meta_payload = {"type": "STOR_GET_BY_ART", "art_id": art_norm, "include_data": False}
+        meta_resp = _send_storage_request(host, port, meta_payload, timeout=max(timeout, 8.0), max_len=msg_cap)
+
+        if not isinstance(meta_resp, dict):
             last_error = "bad_response"
-            log.warning("[fetch] bad_response art=%s host=%s port=%s meta=%s", art_norm[:16], host, port, meta)
+            log.warning("[fetch] bad_meta_response art=%s host=%s port=%s meta=%s", art_norm[:16], host, port, meta)
             continue
-        if not resp.get("found"):
-            last_error = resp.get("reason") or "not_found"
+        if not meta_resp.get("found"):
+            last_error = meta_resp.get("reason") or "not_found"
             log.info("[fetch] not_found art=%s host=%s port=%s reason=%s meta=%s", art_norm[:16], host, port, last_error, meta)
             continue
-        if resp.get("status") == "error":
-            last_error = resp.get("reason") or "error"
-            log.warning("[fetch] storage_error art=%s host=%s port=%s reason=%s meta=%s", art_norm[:16], host, port, last_error, meta)
+
+        gid = str(meta_resp.get("graffiti_id") or "").strip()
+        meta_info = meta_resp.get("meta") or {}
+        try:
+            total_size = int(meta_info.get("size_bytes") or 0)
+        except Exception:
+            total_size = 0
+        if total_size <= 0:
+            last_error = "bad_meta"
+            log.warning("[fetch] bad_meta art=%s host=%s gid=%s size=%s", art_norm[:16], host, gid[:16], total_size)
             continue
-        data_b64 = resp.get("data_b64")
-        meta_resp = resp.get("meta") or {}
-        if not data_b64:
-            last_error = "no_data"
-            log.warning("[fetch] no_data art=%s host=%s port=%s", art_norm[:16], host, port)
+
+        if total_size > max_bytes:
+            last_error = "file_too_large"
+            log.warning("[fetch] file_too_large art=%s size=%s limit=%s host=%s", art_norm[:16], total_size, max_bytes, host)
             continue
-        
-        raw = base64.b64decode(data_b64)
-        fname = meta_resp.get("filename") or f"{art_norm}.bin"
-        ext = ".jpg" if str(meta_resp.get("mime") or "").startswith("image/") else os.path.splitext(fname)[1] or ".bin"
+
+        fname = meta_info.get("filename") or f"{art_norm}.bin"
+        mime = str(meta_info.get("mime") or "")
+        ext = ".jpg" if mime.startswith("image/") else os.path.splitext(fname)[1] or ".bin"
         cache_path = os.path.join(cache_root, f"{art_norm}{ext}")
-        with open(cache_path, "wb") as fh:
-            fh.write(raw)
-        log.info("[fetch] ok art=%s host=%s size=%s cache=%s", art_norm[:16], host, len(raw), bool(cache_path))
-        return {"status": "ok", "bytes": raw, "meta": meta_resp, "cache_path": cache_path}
+        tmp_path = cache_path + ".part"
+
+        # 2) Small files: one-shot is fine
+        one_shot_limit = min(data_cap, 8 * 1024 * 1024)
+        if total_size <= one_shot_limit:
+            payload = {"type": "STOR_GET_BY_ART", "art_id": art_norm, "include_data": True, "max_bytes": min(total_size, data_cap)}
+            resp = _send_storage_request(host, port, payload, timeout=max(timeout, 8.0), max_len=msg_cap)
+            if not isinstance(resp, dict):
+                last_error = "bad_response"
+                log.warning("[fetch] bad_response art=%s host=%s port=%s meta=%s", art_norm[:16], host, port, meta)
+                continue
+            if resp.get("status") == "error":
+                last_error = resp.get("reason") or "error"
+                log.warning("[fetch] storage_error art=%s host=%s port=%s reason=%s meta=%s", art_norm[:16], host, port, last_error, meta)
+                continue
+            data_b64 = resp.get("data_b64")
+            if not data_b64:
+                last_error = "no_data"
+                log.warning("[fetch] no_data art=%s host=%s port=%s", art_norm[:16], host, port)
+                continue
+
+            raw = base64.b64decode(data_b64)
+            with open(cache_path, "wb") as fh:
+                fh.write(raw)
+            log.info("[fetch] ok(one_shot) art=%s host=%s size=%s cache=%s", art_norm[:16], host, len(raw), bool(cache_path))
+            return {"status": "ok", "bytes": raw, "meta": (resp.get("meta") or meta_info), "cache_path": cache_path}
+
+        # 3) Large files: chunked download using STOR_GET_BY_ART + offset/length
+        burst = int(CFG.STOR_GET_RL_IP_BURST)
+        target_calls = max(1, min(max(1, burst - 1), 8))  # keep under typical RL burst
+        chunk_raw = (int(total_size) + int(target_calls) - 1) // int(target_calls)  # ceil div
+        chunk_raw = max(1024 * 1024, chunk_raw)  # >= 1MB
+        chunk_raw = min(int(chunk_raw), int(min(data_cap, 64 * 1024 * 1024)))  # <= 64MB and per-message safe
+
+        dl_timeout = max(timeout, 60.0)
+        offset = 0
+        start_ts = time.time()
+        try:
+            with open(tmp_path, "wb") as out:
+                while offset < total_size:
+                    want = min(chunk_raw, total_size - offset)
+                    chunk_payload = {
+                        "type": "STOR_GET_BY_ART",
+                        "art_id": art_norm,
+                        "graffiti_id": gid,
+                        "include_data": True,
+                        "offset": int(offset),
+                        "length": int(want),
+                        "max_bytes": int(want),  # enforce per-response cap
+                    }
+                    resp = _send_storage_request(host, port, chunk_payload, timeout=dl_timeout, max_len=msg_cap)
+                    if not isinstance(resp, dict):
+                        last_error = "bad_response"
+                        log.warning("[fetch] bad_chunk_response art=%s host=%s offset=%s", art_norm[:16], host, offset)
+                        break
+                    if resp.get("status") == "error":
+                        last_error = resp.get("reason") or "error"
+                        log.warning("[fetch] chunk_error art=%s host=%s offset=%s reason=%s", art_norm[:16], host, offset, last_error)
+                        break
+                    data_b64 = resp.get("data_b64")
+                    if not data_b64:
+                        last_error = "no_data"
+                        log.warning("[fetch] no_data(chunk) art=%s host=%s offset=%s", art_norm[:16], host, offset)
+                        break
+
+                    chunk = base64.b64decode(data_b64)
+                    if not chunk:
+                        last_error = "empty_chunk"
+                        log.warning("[fetch] empty_chunk art=%s host=%s offset=%s", art_norm[:16], host, offset)
+                        break
+                    out.write(chunk)
+                    offset += len(chunk)
+
+                    if resp.get("eof") and offset < total_size:
+                        last_error = "short_read"
+                        log.warning("[fetch] short_read art=%s host=%s got=%s of=%s", art_norm[:16], host, offset, total_size)
+                        break
+
+            if offset != total_size:
+                try:
+                    if os.path.isfile(tmp_path):
+                        os.remove(tmp_path)
+                except OSError:
+                    pass
+                continue
+
+            os.replace(tmp_path, cache_path)
+            with open(cache_path, "rb") as fh:
+                raw = fh.read()
+
+            dt = max(0.001, time.time() - start_ts)
+            mbps = (float(total_size) / (1024 * 1024)) / dt
+            log.info(
+                "[fetch] ok(chunked) art=%s host=%s size=%s chunk=%s calls~%s speed=%.2fMB/s cache=%s",
+                art_norm[:16],
+                host,
+                total_size,
+                chunk_raw,
+                int((total_size + chunk_raw - 1) // chunk_raw),
+                mbps,
+                bool(cache_path),
+            )
+            return {"status": "ok", "bytes": raw, "meta": meta_info, "cache_path": cache_path}
+
+        except OSError:
+            last_error = "io_error"
+            log.exception("[fetch] io_error art=%s host=%s path=%s", art_norm[:16], host, tmp_path)
+            try:
+                if os.path.isfile(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+            continue
 
     return {"status": "error", "reason": last_error or "unavailable"}
 

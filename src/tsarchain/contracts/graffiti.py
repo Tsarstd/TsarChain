@@ -105,6 +105,7 @@ def validate_graffiti_file(size_bytes: int, mime: str | None = None, filename: s
         ext = os.path.splitext(filename)[1].lstrip(".").lower()
 
     if mime_norm and _is_valid_mime(mime_norm):
+        log.info("file: %s", mime_norm)
         if _MIME_ALLOWED and mime_norm not in _MIME_ALLOWED:
             raise ValueError("mime_not_allowed")
     elif ext:
@@ -113,7 +114,7 @@ def validate_graffiti_file(size_bytes: int, mime: str | None = None, filename: s
         if not mime_norm:
             if ext in ("jpg", "jpeg"):
                 mime_norm = "image"
-            elif ext == "mp4":
+            elif ext == ("mp4", "mkv"):
                 mime_norm = "video"
     else:
         raise ValueError("mime_not_allowed")

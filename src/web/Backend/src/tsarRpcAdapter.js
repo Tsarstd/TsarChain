@@ -11,7 +11,7 @@ const venvPython =
     : path.join(venvRoot, "bin", "python");
 const pythonBin = process.env.TSAR_PYTHON || (fs.existsSync(venvPython) ? venvPython : "python");
 const scriptPath = path.join(__dirname, "py_rpc_client.py");
-const WORKER_REQUEST_TIMEOUT_MS = 12 * 1000;
+const WORKER_REQUEST_TIMEOUT_MS = 60 * 1000;
 
 let worker = null;
 let workerSeq = 0;

@@ -336,13 +336,27 @@ def rpc_graffiti_posts(client, opts: dict):
 def rpc_graffiti_file(client, opts: dict, fallback_art_id: str | None):
     art_id = (opts.get("art_id") or fallback_art_id or "").strip()
     storer = (opts.get("storer_addr") or opts.get("storer") or "").strip()
+    cache_dir = (opts.get("cache_dir") or opts.get("cache") or "").strip() or None
+    try:
+        max_bytes = int(opts.get("max_bytes") or 0) or int(CFG.GRAFFITI_MAX_SIZE_BYTES)
+    except Exception:
+        max_bytes = int(CFG.GRAFFITI_MAX_SIZE_BYTES)
+    try:
+        timeout = float(opts.get("timeout") or 0) or 5.0
+    except Exception:
+        timeout = 5.0
+
     if not art_id:
         return {"status": "error", "reason": "missing_art_id"}
+
     resp = webdb.fetch_graffiti_file(
         lambda payload: _rpc_send(client, payload),
         art_id,
         storer_addr=storer,
+        cache_dir=cache_dir,
         cache_scope=_CACHE_SCOPE,
+        max_bytes=max_bytes,
+        timeout=timeout,
     )
     if not isinstance(resp, dict):
         return {"status": "error", "reason": "bad_response"}

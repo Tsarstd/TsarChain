@@ -192,8 +192,8 @@ def _cache_media_error(art_id: str, reason: str, ttl_sec: int = WEB_CACHE_TTL_SE
     except Exception:
         log.warning("[webdb] media_error cache failed art=%s", art_id[:16])
 
-def _cache_media_ok_path(art_id: str, meta: dict, cache_path: str, size: int, ttl_sec: int = 0) -> None:
-    """Cache media metadata + disk path (preferred for large blobs)."""
+
+def _cache_media_ok(art_id: str, meta: dict, data: bytes, ttl_sec: int = 0) -> None:
     store = _open_store()
     if store is None:
         return
@@ -202,14 +202,13 @@ def _cache_media_ok_path(art_id: str, meta: dict, cache_path: str, size: int, tt
         "ttl": int(ttl_sec),
         "status": "ok",
         "meta": meta or {},
-        "size": int(size or 0),
-        "cache_path": str(cache_path or ""),
+        "size": int(len(data or b"")),
     }
     try:
         store.put_bytes(WEB_MEDIA_DB, _media_meta_key(art_id), _json_dumps(entry))
-        store.delete(WEB_MEDIA_DB, _media_data_key(art_id))
+        store.put_bytes(WEB_MEDIA_DB, _media_data_key(art_id), bytes(data))
     except Exception:
-        log.warning("[webdb] media_ok_path cache failed art=%s", art_id[:16])
+        log.warning("[webdb] media_ok cache failed art=%s", art_id[:16])
 
 
 def _load_media_entry(art_id: str) -> Optional[dict]:
@@ -319,6 +318,8 @@ def _send_storage_request(
         max_len = int(CFG.GRAFFITI_MAX_MSG_BYTES)
     base_payload = dict(payload)
     identity_norm = (identity_hint or base_payload.get("wallet_addr") or base_payload.get("creator_addr") or "").strip().lower()
+    if identity_norm and "wallet_addr" not in base_payload:
+        base_payload["wallet_addr"] = identity_norm
     resp: Dict[str, Any] = {}
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(timeout)
@@ -402,24 +403,27 @@ def fetch_graffiti_file(
     max_bytes: int = CFG.GRAFFITI_MAX_SIZE_BYTES,
     timeout: float = 5.0,
 ) -> Dict[str, Any]:
+    
     art_norm = (art_id or "").strip().lower()
     if not art_norm:
         return {"status": "error", "reason": "missing_art_id"}
 
-    # Cache first
     cached = _get_cached_graffiti_file(art_norm, cache_dir)
     if cached is not None:
         log.debug("[webdb] rpc_skip_cache art=%s status=%s", art_norm[:16], cached.get("status"))
         return cached
 
-    max_bytes = max(32 * 1024, min(int(max_bytes), int(CFG.GRAFFITI_MAX_SIZE_BYTES)))
+    max_bytes = int(max_bytes)
     msg_cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
     data_cap = int(msg_cap * 3 // 4)
+    max_bytes = max(32 * 1024, min(max_bytes, int(CFG.GRAFFITI_MAX_SIZE_BYTES), data_cap))
 
     storers = fetch_storers(rpc_call, cache_scope=cache_scope, ttl_sec=stor_list_ttl_sec)
     if not storers:
         log.debug("[webdb] rpc_needed_no_storers art=%s", art_norm[:16])
         return {"status": "error", "reason": "no_storers"}
+
+    log.debug("[webdb] rpc_fetch art=%s storers=%d", art_norm[:16], len(storers))
 
     preferred, others = [], []
     storer_target = (storer_addr or "").strip().lower()
@@ -437,204 +441,33 @@ def fetch_graffiti_file(
         if not endpoint:
             continue
         host, port = endpoint
-
-        # 1) Fetch metadata only (fast/small)
-        meta_payload = {"type": "STOR_GET_BY_ART", "art_id": art_norm, "include_data": False}
-        meta_resp = _send_storage_request(host, port, meta_payload, timeout=max(float(timeout), 8.0), max_len=msg_cap)
-
-        if not isinstance(meta_resp, dict):
+        payload = {
+            "type": "STOR_GET_BY_ART",
+            "art_id": art_norm,
+            "include_data": True,
+            "max_bytes": min(max_bytes, data_cap),
+        }
+        resp = _send_storage_request(host, port, payload, timeout=timeout, max_len=msg_cap)
+        if not isinstance(resp, dict):
             last_error = "bad_response"
             continue
-        if not meta_resp.get("found"):
-            last_error = meta_resp.get("reason") or "not_found"
+        if not resp.get("found"):
+            last_error = resp.get("reason") or "not_found"
             continue
-        if meta_resp.get("status") == "error":
-            last_error = meta_resp.get("reason") or "error"
+        if resp.get("status") == "error":
+            last_error = resp.get("reason") or "error"
             continue
-
-        gid = str(meta_resp.get("graffiti_id") or "").strip()
-        meta_info = meta_resp.get("meta") or {}
-
-        # Determine total file size from meta (preferred). Fallback to 0 (unknown).
-        try:
-            total_size = int(meta_info.get("size_bytes") or meta_info.get("size") or meta_info.get("bytes") or 0)
-        except Exception:
-            total_size = 0
-
-        # If size is unknown, attempt a one-shot bounded fetch (may still fail with file_too_large).
-        if total_size <= 0:
-            payload = {
-                "type": "STOR_GET_BY_ART",
-                "art_id": art_norm,
-                "include_data": True,
-                "max_bytes": int(min(max_bytes, data_cap)),
-            }
-            resp = _send_storage_request(host, port, payload, timeout=max(float(timeout), 12.0), max_len=msg_cap)
-            if not isinstance(resp, dict):
-                last_error = "bad_response"
-                continue
-            if not resp.get("found"):
-                last_error = resp.get("reason") or "not_found"
-                continue
-            if resp.get("status") == "error":
-                last_error = resp.get("reason") or "error"
-                continue
-            data_b64 = resp.get("data_b64")
-            if not data_b64:
-                last_error = "no_data"
-                continue
-            raw = base64.b64decode(data_b64)
-            meta_out = resp.get("meta") or meta_info
-            cache_path = _write_cache_file(cache_root, art_norm, meta_out, raw)
-            _cache_media_ok_path(art_norm, meta_out, cache_path, len(raw), ttl_sec=0)
-            log.info("[webdb] ok(oneshot_unknown) art=%s host=%s bytes=%s cache=%s", art_norm[:16], host, len(raw), True)
-            return {"status": "ok", "meta": meta_out, "cache_path": cache_path}
-
-        if total_size > max_bytes:
-            last_error = "file_too_large"
+        data_b64 = resp.get("data_b64")
+        meta_resp = resp.get("meta") or {}
+        if not data_b64:
+            last_error = "no_data"
             continue
 
-        ext = _guess_media_ext(meta_info, art_norm)
-        cache_path = os.path.join(cache_root, f"{art_norm}{ext}")
-        tmp_path = cache_path + ".part"
-
-        # If the file already exists on disk and matches size, use it.
-        try:
-            if os.path.isfile(cache_path) and os.path.getsize(cache_path) == int(total_size):
-                _cache_media_ok_path(art_norm, meta_info, cache_path, int(total_size), ttl_sec=0)
-                log.info("[webdb] ok(disk_hit) art=%s host=%s size=%s cache=%s", art_norm[:16], host, total_size, True)
-                return {"status": "ok", "meta": meta_info, "cache_path": cache_path}
-        except Exception:
-            pass
-
-        # 2) Small file: one-shot is fine
-        one_shot_limit = int(min(int(data_cap), 8 * 1024 * 1024))
-        if int(total_size) <= one_shot_limit:
-            payload = {
-                "type": "STOR_GET_BY_ART",
-                "art_id": art_norm,
-                "include_data": True,
-                "max_bytes": int(min(int(total_size), int(data_cap))),
-            }
-            resp = _send_storage_request(host, port, payload, timeout=max(float(timeout), 12.0), max_len=msg_cap)
-            if not isinstance(resp, dict):
-                last_error = "bad_response"
-                continue
-            if not resp.get("found"):
-                last_error = resp.get("reason") or "not_found"
-                continue
-            if resp.get("status") == "error":
-                last_error = resp.get("reason") or "error"
-                continue
-            data_b64 = resp.get("data_b64")
-            if not data_b64:
-                last_error = "no_data"
-                continue
-            raw = base64.b64decode(data_b64)
-            meta_out = resp.get("meta") or meta_info
-            cache_path = _write_cache_file(cache_root, art_norm, meta_out, raw)
-            _cache_media_ok_path(art_norm, meta_out, cache_path, len(raw), ttl_sec=0)
-            log.info("[webdb] ok(oneshot) art=%s host=%s bytes=%s cache=%s", art_norm[:16], host, len(raw), True)
-            return {"status": "ok", "meta": meta_out, "cache_path": cache_path}
-
-        # 3) Large file: chunked download (like wallet upload)
-        burst = int(CFG.STOR_GET_RL_IP_BURST)
-        # keep calls modest to reduce overhead and avoid rate limiting
-        target_calls = max(2, min(8, max(2, burst - 2)))
-        chunk_raw = (int(total_size) + int(target_calls) - 1) // int(target_calls)
-        chunk_raw = max(1024 * 1024, int(chunk_raw))
-        chunk_raw = min(int(chunk_raw), int(min(int(data_cap), 64 * 1024 * 1024)))
-
-        dl_timeout = max(float(timeout), 20.0)
-
-        offset = 0
-        calls = 0
-        start_ts = time.time()
-        ok = True
-
-        try:
-            with open(tmp_path, "wb") as out:
-                while offset < int(total_size):
-                    want = min(int(chunk_raw), int(total_size) - int(offset))
-                    chunk_payload = {
-                        "type": "STOR_GET_BY_ART",
-                        "art_id": art_norm,
-                        "include_data": True,
-                        "offset": int(offset),
-                        "length": int(want),
-                        "max_bytes": int(want),
-                    }
-                    if gid:
-                        chunk_payload["graffiti_id"] = gid
-
-                    resp = _send_storage_request(host, port, chunk_payload, timeout=dl_timeout, max_len=msg_cap)
-                    calls += 1
-
-                    if not isinstance(resp, dict):
-                        last_error = "bad_response"
-                        ok = False
-                        break
-                    if not resp.get("found"):
-                        last_error = resp.get("reason") or "not_found"
-                        ok = False
-                        break
-                    if resp.get("status") == "error":
-                        last_error = resp.get("reason") or "error"
-                        ok = False
-                        break
-
-                    data_b64 = resp.get("data_b64") or ""
-                    if not data_b64:
-                        last_error = "no_data"
-                        ok = False
-                        break
-                    chunk = base64.b64decode(data_b64)
-                    if not chunk:
-                        last_error = "no_data"
-                        ok = False
-                        break
-                    out.write(chunk)
-                    offset += len(chunk)
-
-                    # Safety: if server returns less than requested and no progress -> bail
-                    if len(chunk) == 0:
-                        last_error = "no_progress"
-                        ok = False
-                        break
-
-            if not ok:
-                try:
-                    if os.path.exists(tmp_path):
-                        os.remove(tmp_path)
-                except Exception:
-                    pass
-                continue
-
-            os.replace(tmp_path, cache_path)
-
-        except Exception:
-            last_error = "io_error"
-            try:
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
-            except Exception:
-                pass
-            continue
-
-        elapsed = max(0.001, time.time() - start_ts)
-        mbps = (float(total_size) / (1024 * 1024)) / elapsed
-        _cache_media_ok_path(art_norm, meta_info, cache_path, int(total_size), ttl_sec=0)
-        log.info(
-            "[webdb] ok(chunked) art=%s host=%s size=%s chunk=%s calls~%s speed=%.2fMB/s cache=%s",
-            art_norm[:16],
-            host,
-            int(total_size),
-            int(chunk_raw),
-            int(calls),
-            float(mbps),
-            True,
-        )
-        return {"status": "ok", "meta": meta_info, "cache_path": cache_path}
+        raw = base64.b64decode(data_b64)
+        cache_path = _write_cache_file(cache_root, art_norm, meta_resp, raw)
+        _cache_media_ok(art_norm, meta_resp, raw, ttl_sec=0)
+        log.debug("[webdb] rpc_ok art=%s bytes=%s cache=%s", art_norm[:16], len(raw), cache_path)
+        return {"status": "ok", "meta": meta_resp, "cache_path": cache_path}
 
     reason = last_error or "unavailable"
     log.debug("[webdb] rpc_not_found art=%s reason=%s", art_norm[:16], reason)
@@ -642,7 +475,6 @@ def fetch_graffiti_file(
     if ttl_err is not None:
         _cache_media_error(art_norm, reason, ttl_sec=ttl_err)
     return {"status": "error", "reason": reason}
-
 
 
 __all__ = [

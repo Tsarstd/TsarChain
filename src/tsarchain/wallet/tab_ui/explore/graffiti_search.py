@@ -115,6 +115,10 @@ class GraffitiSearch:
         size = int((post or {}).get("size") or (post or {}).get("size_bytes") or img_meta.get("size_bytes") or 0)
         block_h = int((post or {}).get("block_height") or 0)
         txid = str((post or {}).get("txid") or "-")
+        sha256 = str((post or {}).get("sha256") or "-")
+        mroot = str((post or {}).get("mroot") or "-")
+        mcount = str((post or {}).get("mcount") or "-")
+        mchunk = str((post or {}).get("mchunk") or "-")
         stats = (post or {}).get("stats") or {}
         preview_max_w, preview_max_h = 854, 480
         log.debug("explorer: render graffiti art_id=%s creator=%s comments=%s", art_id, creator, len(comments))
@@ -150,6 +154,12 @@ class GraffitiSearch:
         _lbl(f"--------------", fg=p.fg)
         _lbl(f"Art ID | {art_id}", fg=p.fg, font=("Consolas", 10))
         _lbl(f"TxID | {txid}", fg=p.value_id, font=("Consolas", 10))
+        _lbl(f"--------------", fg=p.fg)
+        _lbl(f"SHA256 | {sha256}", fg=p.value_id, font=("Consolas", 10))
+        _lbl(f"Graffiti Merkle | {mroot}", fg=p.value_id, font=("Consolas", 10))
+        _lbl(f"Merkle Count | {mcount}", fg=p.value_id, font=("Consolas", 10))
+        _lbl(f"Merkle Chunk | {_fmt_size_h(mchunk)}", fg=p.value_id, font=("Consolas", 10))
+        _lbl(f"--------------", fg=p.fg)
         _lbl(f"Creator | {creator}", fg=p.accent, font=("Consolas", 10))
         _lbl(f"Total Comments | {stats.get('comments', 0)}", fg=p.value_num, font=("Consolas", 10))
 
