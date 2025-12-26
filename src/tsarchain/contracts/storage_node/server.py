@@ -3,7 +3,7 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
 
-import os, json, socket, threading, time
+import os, json, socket, threading
 
 # ---------------- Local Project ----------------
 from tsarchain.network.protocol import send_message, recv_message, verify_and_unwrap, is_envelope

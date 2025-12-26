@@ -26,10 +26,6 @@ const GraffitiCard = ({ item, onSelect }) => {
       </div>
       <div className="media-meta">
         <div className="media-title"> Graffiti Block {item?.block_height ?? "-"}</div>
-        <div className="media-title">{shortHash(item?.art_id, 16)}</div>
-        <div className="media-sub">
-          {shortHash(item?.creator, 64)}
-        </div>
         <div className="media-sub">{fmtBytes(item?.size || item?.size_bytes)} - {item?.mime ?? "-"}</div>
       </div>
     </button>
@@ -47,7 +43,7 @@ const GraffitiDetail = ({ detail, status, onClose }) => {
           <p className="mono wrap">{detail?.art_id || "-"}</p>
         </div>
         <button className="btn-ghost" type="button" onClick={onClose}>
-          Tutup
+          Close
         </button>
       </div>
       {status === "loading" ? (
@@ -85,6 +81,22 @@ const GraffitiDetail = ({ detail, status, onClose }) => {
             <div className="stat">
               <span className="label">TxID</span>
               <span className="value mono wrap">{detail?.txid || "-"}</span>
+            </div>
+            <div className="stat">
+              <span className="label">Merkle</span>
+              <span className="value mono wrap">{detail?.mroot || "-"}</span>
+            </div>
+            <div className="stat">
+              <span className="label">Merkle Chunk</span>
+              <span className="value mono wrap">{detail?.mchunk || "-"}</span>
+            </div>
+            <div className="stat">
+              <span className="label">Merkle Count</span>
+              <span className="value mono wrap">{detail?.mcount || "-"}</span>
+            </div>
+            <div className="stat">
+              <span className="label">Pool Address</span>
+              <span className="value mono wrap">{detail?.pool_address || "-"}</span>
             </div>
           </div>
           <div className="detail-comments">

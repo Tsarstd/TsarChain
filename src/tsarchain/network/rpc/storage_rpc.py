@@ -291,10 +291,11 @@ def handle_storage_rpc(
                 "storer": proof_entry.get("storer"),
             }
 
-        tip_epoch, min_epoch, max_epoch = _proof_epoch_window()
+        tip_height = int(getattr(getattr(self.broadcast, "blockchain", None), "height", 0) or 0)
+        tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
         if epoch >= 0:
-            if epoch < min_epoch or epoch > max_epoch:
-                return {"error": "epoch_out_of_range", "tip_epoch": tip_epoch}
+            if epoch > tip_epoch:
+                return {"error": "epoch_in_future", "tip_epoch": tip_epoch}
             if not proof_entry:
                 return {"error": "missing_proof", "requested_epoch": epoch}
             proof_epoch = int(proof_entry.get("epoch", -1))
@@ -303,11 +304,27 @@ def handle_storage_rpc(
         else:
             if proof_entry:
                 epoch = int(proof_entry.get("epoch", -1))
-            if epoch < min_epoch or epoch > max_epoch:
-                log.error("[GRAFFITI_BUILD_PAYOUT] epoch out of range: epoch=%s tip_epoch=%s min_epoch=%s max_epoch=%s", epoch, tip_epoch, min_epoch, max_epoch)
-                return {"error": "epoch_out_of_range", "tip_epoch": tip_epoch}
+            if epoch > tip_epoch:
+                return {"error": "epoch_in_future", "tip_epoch": tip_epoch}
             if not proof_entry:
                 return {"error": "missing_proof"}
+
+        cooldown = int(CFG.ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC)
+        if cooldown > 0:
+            now = int(time.time())
+            guard_key = f"{art_id}:{storer_addr}"
+            with self.lock:
+                guard = getattr(self, "_payout_guard", None)
+                if guard is None:
+                    guard = {}
+                    setattr(self, "_payout_guard", guard)
+                last_ts = int(guard.get(guard_key, 0) or 0)
+                if last_ts and (now - last_ts) < cooldown:
+                    return {
+                        "error": "payout_cooldown",
+                        "retry_after": int(cooldown - (now - last_ts)),
+                    }
+                guard[guard_key] = now
 
         tx_obj = GRAFFITI.build_payout_tx(
             utxo_db=utxo,

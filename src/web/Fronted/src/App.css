@@ -1,3 +1,13 @@
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-main {
+  flex: 1;
+}
+
 .page {
   max-width: 1200px;
   margin: 0 auto;

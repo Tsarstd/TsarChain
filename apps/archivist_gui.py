@@ -64,7 +64,7 @@ class TsarStorageGUI:
             return None
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(timeout)
-            s.connect(("127.0.0.1", int(port)))
+            s.connect(("127.0.0.1", int(port))) # local
             send_message(s, json.dumps(payload).encode("utf-8"))
             raw = recv_message(s, timeout)
             if not raw:
@@ -483,10 +483,6 @@ class TsarStorageGUI:
             return
         tip_height = int((self.last_info or {}).get("height") or 0)
         tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
-        drift = int(CFG.GRAFFITI_PROOF_EPOCH_DRIFT)
-        if drift <= 0:
-            return
-        threshold = max(0, drift - 1)
         cooldown = int(CFG.ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC)
         recipient = (self.addr_var.get() or self.rpc.address or "").strip().lower()
         if not recipient:
@@ -503,11 +499,11 @@ class TsarStorageGUI:
             last_proof_epoch = int(file_meta.get("last_proof_epoch", -1))
             if last_proof_epoch < 0:
                 continue
+            if last_proof_epoch > tip_epoch:
+                continue
             if last_paid_epoch >= last_proof_epoch:
                 continue
             gap = tip_epoch - last_proof_epoch
-            if gap < threshold or gap > drift:
-                continue
             guard_entry = self._auto_payout_guard.get(art_id, {})
             guard_epoch = int(guard_entry.get("epoch", -1)) if isinstance(guard_entry, dict) else -1
             guard_ts = int(guard_entry.get("ts", 0)) if isinstance(guard_entry, dict) else 0
@@ -596,7 +592,7 @@ class TsarStorageGUI:
                 raise RuntimeError("rpc_failure")
             self._run_retention_proofs(idx, tip)
             self.root.after(0, lambda r=gc_resp, i=idx: self._on_retention_cycle(r, i))
-            self._retention_stop.wait(max(30, CFG.RETENTION_GC_SEC))
+            self._retention_stop.wait(CFG.RETENTION_GC_SEC)
 
     def _on_retention_cycle(self, gc_resp: Optional[Dict[str, Any]], idx: Optional[Dict[str, Any]]) -> None:
         if isinstance(gc_resp, dict) and gc_resp.get("status") == "ok":

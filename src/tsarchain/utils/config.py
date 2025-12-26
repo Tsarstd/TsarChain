@@ -48,6 +48,17 @@ Changing them may cause different block/tx validity (hard fork) unless otherwise
   5) SCRIPT RULES / OP_RETURN / GRAFFITI
    - MAX_GRAFFITI_OPRET
    - GRAFFITI_MAGIC
+   - GRAFFITI_EXPIRE_AFTER_BLOCKS
+   - GRAFFITI_PROOF_EPOCH_BLOCKS
+   - GRAFFITI_PROOF_EPOCH_DRIFT
+   - MAX_GRAFFITI_ON_MEMPOOL
+   - GRAFFITI_MIN_BILLABLE_SIZE
+   - GRAFFITI_UPLOAD_FEE_PER_CHUNK
+   - GRAFFITI_COMMENT_MAX_BYTES
+   - GRAFFITI_COMMENT_MIN_FEE
+   - GRAFFITI_COMMENT_BP_DENOM
+   - GRAFFITI_COMMENT_CREATOR_BP
+   - GRAFFITI_COMMENT_STORAGE_BP
 
   6) FORK-CHOICE & REORG
    - ENABLE_CHAINWORK_RULE, ENABLE_REORG_LIMIT, REORG_LIMIT
@@ -105,7 +116,7 @@ KV_ITER_CHUNK      = 512 # number of entries per chunk when iterating prefix sca
 # ---- WEB CACHE (LMDB) ----
 WEB_DATABASE_PATH  = "data/web_storage/"  # dedicated LMDB path for web cache
 LMDB_WEB_SIZE_INIT = 100 * 1024 * 1024  # initial web LMDB size (100 MB)
-LMDB_WEB_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
+LMDB_WEB_SIZE_MAX  = 128 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
 
 # ---- SNAPSHOT SIGNING ----
 SNAPSHOT_REQUIRE_SIGNATURE = False  # demand signed snapshot manifests when True
@@ -146,9 +157,8 @@ CHAIN_JOURNAL_MAX_BYTES = 8 * 1024 * 1024
 STATE_HEIGHT_CACHE_TTL  = 2.0  # height for utxo validation & cache
 
 # ---- ARCHIVIST LMDB PATH ----
-ARCHIVIST_INDEX_DB_PATH    = "data/storage/index_db"
-ARCHIVIST_INCOMING_DB_PATH = "data/storage/incoming_db"
-ARCHIVIST_FINAL_DB_PATH    = "data/storage/final_db"
+ARCHIVIST_INDEX_DB_PATH = "data/storage/index_db"
+ARCHIVIST_FINAL_DB_PATH = "data/storage/final_db"
 
 
 # ---- WALLET FILES ----
@@ -177,8 +187,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "0015030502faac065ea30f5344c65a1dfcc95a1ebfb61e3dcb1bf8120b280af6"  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 1 # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -632,7 +642,7 @@ ART_ID_PREFIX_LEN  = len(ART_ID_PREFIX)
 ART_ID_BODY_LEN    = 60  # hex chars retained after adding prefix to keep 64 chars total
 
 # ---- OP_RETURN POLICY ----
-MAX_GRAFFITI_OPRET    = 800  # graffiti payload limit capped under script limit
+MAX_GRAFFITI_OPRET    = 580  # graffiti payload limit capped under script limit
 
 # ---- GRAFFITI ----
 GRAFFITI_MIN_BILLABLE_SIZE    = 1 * 1024 * 1024
@@ -643,12 +653,12 @@ GRAFFITI_COMMENT_MIN_FEE      = 1 * TSAR
 GRAFFITI_COMMENT_BP_DENOM     = 10_000    # denominator (basis points) for split percentages
 GRAFFITI_COMMENT_CREATOR_BP   = 8_000     # 80%
 GRAFFITI_COMMENT_STORAGE_BP   = 1_000     # 10% (remaining -> miners as fee tip)
-GRAFFITI_EXPIRE_AFTER_BLOCKS  = 25        # default retention window after graffiti confirmed on-chain
+GRAFFITI_EXPIRE_AFTER_BLOCKS  = 8        # default retention window after graffiti confirmed on-chain
 GRAFFITI_PROOF_EPOCH_BLOCKS   = 15        # block interval between retention proofs
 GRAFFITI_PROOF_EPOCH_DRIFT    = 1         # allowed epoch drift for proof/payout (future/past)
-GRAFFITI_PROOF_CHUNK_BYTES    = 999 * 1024  # bytes challenged per proof (deterministic)
-GRAFFITI_MAX_SIZE_BYTES       = 400 * 1024 * 1024  # hard cap for upload/download payload
-GRAFFITI_MAX_MSG_BYTES        = 401 * 1024 * 1024  # per-message cap for graffiti transfer (storage RPC) STOR_INIT/STOR_PUT
+GRAFFITI_PROOF_CHUNK_BYTES    = 100 * 1024  # bytes challenged per proof (deterministic)
+GRAFFITI_MAX_SIZE_BYTES       = 300 * 1024 * 1024  # hard cap for upload/download payload
+GRAFFITI_MAX_MSG_BYTES        = 301 * 1024 * 1024  # per-message cap for graffiti transfer (storage RPC) STOR_INIT/STOR_PUT
 GRAFFITI_ALLOWED_MIME         = ("image/jpeg", "video/mp4", "video/x-matroska")  # whitelist MIME types
 GRAFFITI_ALLOWED_EXT          = ("jpg", "jpeg", "mp4", "mkv")  # extension fallback when MIME unavailable
 
@@ -663,9 +673,9 @@ GRAFFITI_FILE      = os.path.join(CONTRACTS_DIR, "graffiti.json")  # graffiti me
 ARCHIV_PEER_KEYS               = "data_peer/storage_peer_keys.json"
 STORAGE_DIR                    = "data/storage"  # folder holding uploaded storage blobs
 STORAGE_SIZE_INIT              = 100 * 1024 * 1024  # initial storage size allocation (100MB)
-STORAGE_MAX_BYTES              = 64 * 1024 * 1024 * 1024  # cap on cumulative storage usage (64GB)
-RETENTION_GC_SEC               = 60  # interval between retention garbage collection runs
-ARCHIVIST_AUTO_PAYOUT_GUARD_FILE   = os.path.join(STORAGE_DIR, "auto_payout_guard.json")
+STORAGE_MAX_BYTES              = 128 * 1024 * 1024 * 1024  # cap on cumulative storage usage (64GB)
+RETENTION_GC_SEC               = 3  # interval between retention garbage collection runs
+ARCHIVIST_AUTO_PAYOUT_GUARD_FILE   = os.path.join(STORAGE_DIR, "payout_guard/auto_payout_guard.json")
 ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC = 60
 
 

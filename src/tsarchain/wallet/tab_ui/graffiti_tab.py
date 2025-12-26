@@ -492,7 +492,6 @@ class GraffitiTab(ttk.Frame):
             messagebox.showerror("Graffiti", "Storage node unavailable. Please try again when a storage node is online.")
             return
         self.assigned_storers = online
-        storer = online[0]
         creator_addr = (self.creator_var.get() or "").strip()
         if not creator_addr:
             messagebox.showwarning("Graffiti", "Select a creator wallet first.")
@@ -518,27 +517,13 @@ class GraffitiTab(ttk.Frame):
         self.pbar["value"] = 0
         self.receipt_var.set("receipt: -")
         if self.post_info_var:
-            self.post_info_var.set("Signing POST transaction...")
+            self.post_info_var.set("Uploading blob to storage node...")
 
-        try:
-            self._prepare_post_plan_preupload(storer, receipt_id, art_id)
-        except Exception as exc:
-            log.exception("Unhandled exception")
-            self.uploading = False
-            if self.post_send_btn:
-                self.post_send_btn.config(state="normal")
-            messagebox.showerror("Graffiti", f"Prepare POST failed: {exc}")
-            return
+        self._begin_upload()
 
-        def after_broadcast(txid: str):
-            self.post_info_var.set(f"POST broadcasted (txid: {txid}), uploading blob...")
-            self._begin_upload_after_sign(txid)
-
-        self._broadcast_post_tx(auto=True, after_success=after_broadcast)
-
-    def _begin_upload_after_sign(self, txid: str) -> None:
+    def _begin_upload(self) -> None:
         if not self._upload_candidates:
-            self._reset_upload_state(f"Upload failed: no storage node available (txid: {txid})")
+            self._reset_upload_state("Upload failed: no storage node available.")
             return
         
         storer = self._upload_candidates.pop(0)
@@ -570,7 +555,7 @@ class GraffitiTab(ttk.Frame):
                 merkle_count=self.selected_merkle_count,
                 progress_cb=progress,
             )
-            self.after(0, lambda: self._handle_upload_result(res, trigger_broadcast=False, txid=txid))
+            self.after(0, lambda: self._handle_upload_result(res, trigger_broadcast=True))
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -596,7 +581,7 @@ class GraffitiTab(ttk.Frame):
                 if self.post_info_var:
                     self.post_info_var.set("Retrying upload on another storage node...")
                 self.uploading = True
-                self._begin_upload_after_sign(txid or "")
+                self._begin_upload()
                 return
             self._reset_upload_state("Upload failed. No storage node reachable.")
             return

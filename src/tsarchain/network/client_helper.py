@@ -731,6 +731,7 @@ def _serialize_block(self, b) -> dict:
     txs = []
     graffiti_posts = []
     graffiti_comments = []
+    graffiti_payouts = []
     base_size_sum = 80  # block header bytes (no witness)
     total_size_sum = 80
     weight_sum = 0
@@ -767,23 +768,24 @@ def _serialize_block(self, b) -> dict:
                     "sha256": meta.get("sha256"),
                     "size": meta.get("size"),
                     "mime": meta.get("mime"),
-                    "storer": meta.get("storer"),
-                    "receipt": meta.get("receipt"),
+                    "creator": meta.get("creator"),
                 })
             elif ev == "COMMENT":
-                comment_hex = meta.get("comment") or ""
-                comment_text = ""
-                comment_text = bytes.fromhex(comment_hex).decode("utf-8", errors="ignore")
                 graffiti_comments.append({
                     "txid": txid_hex,
                     "art_id": meta.get("art_id"),
-                    "comment_hex": comment_hex,
-                    "comment_text": comment_text,
-                    "amount": meta.get("amount"),
-                    "tip": meta.get("tip"),
-                    "creator": meta.get("creator"),
-                    "commenter": meta.get("commenter"),
                     "comment_len": meta.get("comment_len"),
+                    "commenter": meta.get("commenter"),
+                })
+            elif ev == "PAYOUT":
+                recipients = meta.get("recipients")
+                if not isinstance(recipients, list):
+                    recipients = []
+                graffiti_payouts.append({
+                    "txid": txid_hex,
+                    "art_id": meta.get("art_id"),
+                    "epoch": meta.get("epoch"),
+                    "recipients": recipients,
                 })
 
     # finalize size/weight/vbytes fallback if still missing
@@ -841,6 +843,8 @@ def _serialize_block(self, b) -> dict:
         "tx_count": len(txs),
         "graffiti": graffiti_posts,
         "comments": graffiti_comments,
+        "payouts": graffiti_payouts,
+        "payout_count": len(graffiti_payouts),
     }
     mem = getattr(self, "mempool", None)
     if mem:

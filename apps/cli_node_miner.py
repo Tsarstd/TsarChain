@@ -658,13 +658,8 @@ class NodeRunner:
 
                 # Have peers — request fast sync
                 self.network.request_sync(fast=True)
-
                 # Heights
                 height = int(getattr(self.blockchain, "height", -1))
-                best_height = -1
-                if hasattr(self.network, "get_best_peer_height"):
-                    best_height = int(self.network.get_best_peer_height())
-
                 # Progress print (only when changed)
                 if height != self._last_chain_height:
                     if height >= 0:
@@ -677,15 +672,6 @@ class NodeRunner:
                 if not self._sync_ready and height >= 0 and synced_recently:
                     self._sync_ready = True
                     clog("Chain has been confirmed. Node is live (no mining).")
-
-                inb = len(getattr(self.network, "inbound_peers", ()))
-                outb = len(getattr(self.network, "outbound_peers", ()))
-                known = len(getattr(self.network, "peers", ()))
-                    
-                status = f"[peers in={inb} out={outb} known={known}] local={height} best={best_height if best_height>=0 else 'syncing...'}"
-                if status != last_status:
-                    clog(status)
-                    last_status = status
 
             except Exception as e:
                 clog(f"[node-only] sync error: {e}")

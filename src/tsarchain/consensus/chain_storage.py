@@ -113,8 +113,6 @@ class StorageMixin:
         comments: list[dict] = []
         payouts: list[dict] = []
 
-        blk_hash = block.hash().hex()
-
         def _txid_hex(tx_obj):
             txid = getattr(tx_obj, "txid", None)
             if isinstance(txid, (bytes, bytearray)):
@@ -137,27 +135,16 @@ class StorageMixin:
                         art_id = GRAFFITI.compute_art_id(sha_hex, creator)
                     posts.append({
                         "txid": txid_hex,
-                        "art_id": art_id,
                         "sha256": meta.get("sha256"),
                         "size": meta.get("size"),
                         "mime": meta.get("mime"),
-                        "storer": meta.get("storer"),
-                        "receipt": meta.get("receipt"),
                         "creator": creator,
-                        "mroot": meta.get("mroot"),
-                        "mchunk": meta.get("mchunk"),
-                        "mcount": meta.get("mcount"),
-                        "block_hash": blk_hash,
                     })
                 elif event == "COMMENT":
                     comments.append({
                         "txid": txid_hex,
                         "art_id": meta.get("art_id"),
                         "comment_len": meta.get("comment_len"),
-                        "comment_hex": meta.get("comment_hex"),
-                        "amount": meta.get("amount"),
-                        "tip": meta.get("tip"),
-                        "creator": meta.get("creator"),
                         "commenter": meta.get("commenter"),
                     })
                 elif event == "PAYOUT":

@@ -7,7 +7,6 @@ import os, json, hashlib, base64, appdirs, time, re, threading
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Sequence, List
 from ecdsa import SECP256k1, SigningKey
-from ecdsa.util import sigencode_der
 from bech32 import bech32_encode, convertbits
 from mnemonic import Mnemonic
 

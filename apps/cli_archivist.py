@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import secrets
 import socket
 import sys
@@ -130,7 +129,7 @@ class ArchivistCLI:
             return None
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(timeout)
-            s.connect(("127.0.0.1", int(port)))
+            s.connect(("127.0.0.1", int(port))) #local
             send_message(s, json.dumps(payload).encode("utf-8"))
             raw = recv_message(s, timeout)
             if not raw:
@@ -395,10 +394,6 @@ class ArchivistCLI:
             return
         tip_height = int((self.last_info or {}).get("height") or 0)
         tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
-        drift = int(CFG.GRAFFITI_PROOF_EPOCH_DRIFT)
-        if drift <= 0:
-            return
-        threshold = max(0, drift - 1)
         cooldown = int(CFG.ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC)
         recipient = (getattr(self.rpc, "address", "") or "").strip().lower()
         if not recipient:
@@ -416,11 +411,11 @@ class ArchivistCLI:
                 last_proof_epoch = int(file_meta.get("last_proof_epoch", -1))
                 if last_proof_epoch < 0:
                     continue
+                if last_proof_epoch > tip_epoch:
+                    continue
                 if last_paid_epoch >= last_proof_epoch:
                     continue
                 gap = tip_epoch - last_proof_epoch
-                if gap < threshold or gap > drift:
-                    continue
                 guard_entry = self._auto_payout_guard.get(art_id, {})
                 guard_epoch = int(guard_entry.get("epoch", -1)) if isinstance(guard_entry, dict) else -1
                 guard_ts = int(guard_entry.get("ts", 0)) if isinstance(guard_entry, dict) else 0

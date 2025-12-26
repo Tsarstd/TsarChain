@@ -98,7 +98,6 @@ class BlockSearch:
         nn = _pick("nonce")
         dif = _pick("difficulty")
         size_b = _pick("size_bytes", "size")
-        vbytes = _pick("vbytes")
         weight = _pick("weight")
         chainwork = _pick("chainwork")
         bits = _pick("bits")
@@ -119,8 +118,6 @@ class BlockSearch:
             p._kv("Difficulty", str(dif), mono=True)
         if size_b is not None:
             p._kv("Size", _fmt_bytes(size_b), mono=True)
-        if vbytes is not None:
-            p._kv("VBytes", str(vbytes), mono=True)
         if weight is not None:
             p._kv("Weight", str(weight), mono=True)
         if chainwork is not None:
@@ -133,9 +130,10 @@ class BlockSearch:
             p._kv("Merkle Root", str(mroot), mono=True, vtag="val_hex")
 
         # Graffiti / comments
-        graff = b.get("graffiti") or []
-        comments = b.get("comments") or []
-        if graff or comments:
+        graff = b.get("graffiti")
+        comments = b.get("comments")
+        payouts = b.get("payouts") or (meta.get("payouts") if isinstance(meta, dict) else []) or []
+        if graff or comments or payouts:
             p._section("Graffiti Activity")
             if graff:
                 for g in graff:
@@ -144,8 +142,7 @@ class BlockSearch:
                     p._kv("TxID", str(g.get("txid") or "-"), mono=True, vtag="val_hex")
                     mime = g.get("mime") or "-"
                     sz = g.get("size")
-                    size_s = f"{int(sz)} bytes" if isinstance(sz, (int, float)) else "-"
-                    p._kv("Meta", f"{mime} | {size_s}", mono=True)
+                    p._kv("Meta", f"{mime} | {_fmt_bytes(sz)}", mono=True)
             if comments:
                 for c in comments:
                     art = c.get("art_id") or "-"
@@ -162,6 +159,36 @@ class BlockSearch:
                     amt = c.get("amount")
                     if amt is not None:
                         p._kv("Amount", self._fmt_tsar_amount(amt), mono=True, vtag="val_num")
+            if payouts:
+                for pay in payouts:
+                    art_id = pay.get("art_id") or "-"
+                    epoch = pay.get("epoch")    
+                    recipients = pay.get("recipients") or pay.get("addre") or []
+                    if isinstance(recipients, dict):
+                        recipients = [{"addr": a, "amount": v} for a, v in recipients.items()]
+                    elif not isinstance(recipients, list):
+                        recipients = [recipients] if recipients else []
+                    p._kv("TxID", str(pay.get("txid") or "-"), mono=True, vtag="val_hex")
+                    p._kv("Art ID", str(art_id or "-"), mono=True, vtag="val_hex")
+                    p._kv("Epoch", str(epoch or "-"), mono=True, vtag="val_num")
+                    p._writeln("Recipients: ", "key")
+                    if not recipients:
+                        p._writeln("  -", "mono", "muted")
+                    else:
+                        for rec in recipients:
+                            if isinstance(rec, dict):
+                                addr = (rec.get("addr") or rec.get("address") or "").strip()
+                                amt = rec.get("amount")
+                            else:
+                                addr = str(rec or "").strip()
+                                amt = None
+                            addr_tags = ("mono", "val_addr") if addr else ("mono", "muted")
+                            p.text.insert("end", "  - ", ("mono",))
+                            p.text.insert("end", addr or "-", addr_tags)
+                            if amt is not None:
+                                p.text.insert("end", "  ", ("mono",))
+                                p.text.insert("end", self._fmt_tsar_amount(amt), ("mono", "val_num"))
+                            p.text.insert("end", "\n", ("mono",))
 
         p._section(f"Transactions ({len(txs)})")
         if not txs:

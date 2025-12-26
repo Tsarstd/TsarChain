@@ -5,7 +5,7 @@
 """
 Backend penyimpanan untuk Archivist (storage node).
 - JSON filesystem: mempertahankan perilaku lama (index.json + folder incoming/final).
-- LMDB: memakai tiga environment terpisah (index_db, incoming_db, final_db) dengan batas ukuran dari config.
+- LMDB: index_db + final_db, incoming selalu filesystem (temporary).
 """
 
 from __future__ import annotations
@@ -54,7 +54,6 @@ class ArchivistDatabase:
         self.enable_index = enable_index
         self.enable_blobs = enable_blobs
         self._kv_index = None
-        self._kv_incoming = None
         self._kv_final = None
         # in-memory fallback when index disabled (node-only)
         self._mem_index = {"files": {}, "bytes_used": 0, "art_map": {}}
@@ -62,19 +61,41 @@ class ArchivistDatabase:
         if self.use_kv and self.enable_index:
             self._kv_index = self._open_store(CFG.ARCHIVIST_INDEX_DB_PATH)
             if self.enable_blobs:
-                self._kv_incoming = self._open_store(CFG.ARCHIVIST_INCOMING_DB_PATH)
                 self._kv_final = self._open_store(CFG.ARCHIVIST_FINAL_DB_PATH)
 
     # ---------------- KV helpers ----------------
-    def _open_store(self, path: str):
+    def _open_store(self, path: str, *, map_size_init: Optional[int] = None, map_size_max: Optional[int] = None):
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        init_size = int(map_size_init if map_size_init is not None else CFG.STORAGE_SIZE_INIT)
+        max_size = int(map_size_max if map_size_max is not None else CFG.STORAGE_MAX_BYTES)
+        data_path = os.path.join(path, "data.mdb")
+        if os.path.isfile(data_path):
+            try:
+                existing = os.path.getsize(data_path)
+                if existing > init_size:
+                    init_size = existing
+            except OSError:
+                pass
+        if max_size > 0 and max_size < init_size:
+            max_size = init_size
         return _native_open_storage(
             "lmdb",
             path,
-            map_size_init=int(CFG.STORAGE_SIZE_INIT),
-            map_size_max=int(CFG.STORAGE_MAX_BYTES),
+            map_size_init=int(init_size),
+            map_size_max=int(max_size),
             pretty_json=False,
         )
+
+    def _incoming_dir(self) -> str:
+        path = os.path.join(self.storage_dir, "incoming")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def _incoming_part_path(self, gid: str) -> str:
+        return os.path.join(self._incoming_dir(), f"{gid}.part")
+
+    def _incoming_bin_path(self, gid: str) -> str:
+        return os.path.join(self._incoming_dir(), f"{gid}.bin")
 
     # ---------------- Index ----------------
     def load_index(self) -> Dict:
@@ -116,42 +137,54 @@ class ArchivistDatabase:
         if ops:
             self._kv_index.put_batch("idx", ops)
 
-    # ---------------- Blob operations (LMDB only) ----------------
+    # ---------------- Blob operations (incoming filesystem, final LMDB) ----------------
     def append_incoming(self, gid: str, chunk: bytes, max_chunk: int) -> int:
-        if not self.use_kv:
-            raise RuntimeError("kv_disabled")
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
         if len(chunk) > int(max_chunk):
             raise ValueError("chunk_too_big")
-        key = f"blob:{gid}".encode("utf-8")
-        existing = self._kv_incoming.get_bytes("incoming", key)
-        data = bytes(existing) + bytes(chunk) if existing is not None else bytes(chunk)
-        if len(data) > int(CFG.GRAFFITI_MAX_SIZE_BYTES):
+        path = self._incoming_part_path(gid)
+        try:
+            current = os.path.getsize(path) if os.path.exists(path) else 0
+        except OSError:
+            current = 0
+        new_size = int(current) + int(len(chunk))
+        if new_size > int(CFG.GRAFFITI_MAX_SIZE_BYTES):
             raise ValueError("file_too_large")
-        self._kv_incoming.put_bytes("incoming", key, data)
-        return len(data)
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "ab") as f:
+            f.write(chunk)
+        return new_size
 
     def get_incoming_bytes(self, gid: str) -> Optional[bytes]:
-        if not self.use_kv:
-            raise RuntimeError("kv_disabled")
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
-        key = f"blob:{gid}".encode("utf-8")
-        data = self._kv_incoming.get_bytes("incoming", key)
-        return bytes(data) if data is not None else None
+        bin_path = self._incoming_bin_path(gid)
+        part_path = self._incoming_part_path(gid)
+        path = bin_path if os.path.isfile(bin_path) else part_path
+        if not os.path.isfile(path):
+            return None
+        with open(path, "rb") as f:
+            return f.read()
 
     def pop_incoming(self, gid: str) -> Optional[bytes]:
-        if not self.use_kv:
-            raise RuntimeError("kv_disabled")
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
-        key = f"blob:{gid}".encode("utf-8")
-        data = self._kv_incoming.get_bytes("incoming", key)
-        if data is None:
+        bin_path = self._incoming_bin_path(gid)
+        part_path = self._incoming_part_path(gid)
+        path = bin_path if os.path.isfile(bin_path) else part_path
+        if not os.path.isfile(path):
             return None
-        self._kv_incoming.delete("incoming", key)
-        return bytes(data)
+        with open(path, "rb") as f:
+            data = f.read()
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+            if path != part_path and os.path.isfile(part_path):
+                os.remove(part_path)
+        except OSError:
+            pass
+        return data
 
     def put_final(self, gid: str, data: bytes) -> None:
         if not self.use_kv:
@@ -163,7 +196,7 @@ class ArchivistDatabase:
 
     def promote_incoming(self, gid: str) -> bool:
         """
-        Pindahkan blob dari incoming_db ke final_db. Mengembalikan True jika ada data yang dipindah.
+        Pindahkan blob dari incoming filesystem ke final_db. Mengembalikan True jika ada data yang dipindah.
         """
         if not self.use_kv:
             raise RuntimeError("kv_disabled")
@@ -185,14 +218,19 @@ class ArchivistDatabase:
         return bytes(data) if data is not None else None
 
     def delete_blob(self, gid: str, *, incoming: bool = False, final: bool = False) -> None:
-        if not self.use_kv:
-            raise RuntimeError("kv_disabled")
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
-        key = f"blob:{gid}".encode("utf-8")
         if incoming:
-            self._kv_incoming.delete("incoming", key)
+            for path in (self._incoming_part_path(gid), self._incoming_bin_path(gid)):
+                if os.path.isfile(path):
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
         if final:
+            if not self.use_kv:
+                raise RuntimeError("kv_disabled")
+            key = f"blob:{gid}".encode("utf-8")
             self._kv_final.delete("final", key)
 
     # ---------------- JSON fallback ----------------
