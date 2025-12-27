@@ -86,6 +86,15 @@
   margin-top: 22px;
 }
 
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
 .section h2 {
   margin-bottom: 12px;
   font-size: 18px;
@@ -121,7 +130,6 @@
 .stat {
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
 .stat .label {
@@ -131,7 +139,7 @@
 
 .stat .value {
   font-weight: 700;
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .mono {
@@ -169,6 +177,149 @@
 .result-empty {
   color: var(--muted);
   padding: 12px 0;
+}
+
+.lane {
+  position: relative;
+  width: 100%;
+}
+
+.lane-scroll {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(200px, 1fr);
+  gap: 14px;
+  overflow-x: auto;
+  padding: 2px 2px 11px;
+  scroll-behavior: smooth;
+  align-items: stretch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  cursor: grab;
+  width: 132%;
+}
+
+.lane-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.lane-scroll--dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.lane-card {
+  border: 2px solid var(--border);
+  border-radius: 1px;
+  background: var(--card);
+  padding: 14px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  min-height: 190px;
+  height: 100%;
+  display: grid;
+  gap: 10px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.2s ease;
+}
+
+.lane-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+.lane-card__title {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.lane-card__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.lane-card__tag {
+  align-self: start;
+  justify-self: start;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(249, 115, 22, 0.2);
+  color: #f97316;
+}
+
+.lane-card__id {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lane-card--active {
+  border-color: rgba(45, 141, 206, 0.65);
+  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.2);
+}
+
+.lane-card--graffiti {
+  border-color: rgba(249, 115, 22, 0.7);
+  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.25);
+  animation: orange-blink 1.6s ease-in-out infinite;
+}
+
+.lane-card--genesis {
+  border-color: rgba(212, 175, 55, 0.9);
+  background: linear-gradient(135deg, rgba(218, 136, 14, 0.95), rgba(80, 55, 12, 0.65));
+  box-shadow: 0 0 18px rgba(212, 175, 55, 0.4);
+  position: relative;
+  overflow: hidden;
+  animation: gold-glow 1.8s ease-in-out infinite;
+}
+
+.lane-card--genesis::after {
+  content: "";
+  position: absolute;
+  inset: -40% -20%;
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0), rgba(218, 153, 13, 0), rgba(0, 0, 0, 0));
+  transform: translateX(-10%);
+  animation: gold-shimmer 2.4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes orange-blink {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.2);
+    transform: translateY(0);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(249, 115, 22, 0.35);
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes gold-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 12px rgba(212, 175, 55, 0.35);
+    transform: translateY(0);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(212, 175, 55, 0.6);
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes gold-shimmer {
+  0% {
+    transform: translateX(-60%);
+  }
+  50% {
+    transform: translateX(10%);
+  }
+  100% {
+    transform: translateX(60%);
+  }
 }
 
 .network-grid {
@@ -330,6 +481,37 @@
   cursor: pointer;
 }
 
+.search-overlay {
+  position: fixed;
+  top: 72px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(10, 10, 12, 0.65);
+  backdrop-filter: blur(6px);
+  z-index: 9;
+  overflow: auto;
+  padding: 24px 20px 40px;
+}
+
+.search-overlay__panel {
+  max-width: 1100px;
+  margin: 0 auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 20px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.3);
+}
+
+.search-overlay__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
 .network-page .network-summary {
   display: grid;
   gap: 12px;
@@ -343,5 +525,9 @@
 @media (max-width: 900px) {
   .detail-body {
     grid-template-columns: 1fr;
+  }
+
+  .lane-scroll {
+    grid-auto-columns: minmax(180px, 1fr);
   }
 }

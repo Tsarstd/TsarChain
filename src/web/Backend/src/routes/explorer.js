@@ -81,6 +81,21 @@ router.get("/network", async (_req, res, next) => {
   }
 });
 
+router.get("/blocks", async (req, res, next) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 100);
+    const startRaw = req.query.start ?? req.query.start_height ?? req.query.height;
+    const startHeight =
+      startRaw === undefined || startRaw === null || startRaw === ""
+        ? null
+        : Number(startRaw);
+    const data = await svc.getBlockRange({ startHeight, limit });
+    res.json({ status: "ok", data });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/block/:id", async (req, res, next) => {
   try {
     const data = await svc.getBlock(req.params.id);

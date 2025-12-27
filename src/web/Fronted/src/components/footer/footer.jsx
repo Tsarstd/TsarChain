@@ -1,4 +1,3 @@
-import React from "react";
 import "./footer.css";
 import { assets } from "../../assets/assets.js";
 
@@ -49,17 +48,22 @@ const Footer = () => {
           ))}
         </div>
         <div className="site-footer__bottom">
-          <div className="site-footer__socials">
-            {socialLinks.map((social) => (
-              <a
-                className="site-footer__social"
-                href="#"
-                aria-label={social.label}
-                key={social.label}
-              >
-                {social.short}
-              </a>
-            ))}
+          <div className="site-footer__socials-wrapper">
+            <div className="site-footer__socials">
+              {socialLinks.map((social) => (
+                <a
+                  className="site-footer__social"
+                  href="#"
+                  aria-label={social.label}
+                  key={social.label}
+                >
+                  {social.short}
+                </a>
+              ))}
+            </div>
+          </div>
+          <div className="site-footer__copyright">
+            an Experimental Project by - Tsar Studio 2026
           </div>
         </div>
       </div>

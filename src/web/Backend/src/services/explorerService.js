@@ -85,6 +85,37 @@ const normalizeBlock = (blk) => {
   };
 };
 
+const normalizeBlockSummary = (blk) => {
+  if (!blk || typeof blk !== "object") return blk;
+  const height = pick(blk, "height", "index");
+  const hash = pick(blk, "hash");
+  const timestamp = pick(blk, "timestamp", "time");
+  const sizeBytes = pick(blk, "size_bytes", "size");
+  const txCountRaw =
+    blk.tx_count ??
+    (Array.isArray(blk.transactions)
+      ? blk.transactions.length
+      : Array.isArray(blk.tx)
+        ? blk.tx.length
+        : 0);
+  const graffitiPosts = Number(blk.graffiti_posts ?? 0);
+  const graffitiComments = Number(blk.graffiti_comments ?? 0);
+  const graffitiCount = Number(
+    blk.graffiti_count ?? graffitiPosts + graffitiComments
+  );
+  return {
+    ...blk,
+    height,
+    hash,
+    timestamp,
+    size_bytes: sizeBytes,
+    tx_count: Number(txCountRaw || 0),
+    graffiti_posts: graffitiPosts,
+    graffiti_comments: graffitiComments,
+    graffiti_count: graffitiCount,
+  };
+};
+
 const normalizeTx = (tx, fallbackTxid) => {
   if (!tx || typeof tx !== "object") return tx;
   let obj = tx;
@@ -229,6 +260,27 @@ class ExplorerService {
   async getGraffitiMediaInfo(artId) {
     const payload = JSON.stringify({ art_id: artId });
     return rpcCall("graffiti_file", payload, this.nodeHost, this.nodePort);
+  }
+
+  async getBlockRange({ startHeight = null, limit = 10 } = {}) {
+    const payload = {
+      limit: Number(limit || 10),
+    };
+    if (startHeight !== null && startHeight !== undefined) {
+      payload.start_height = Number(startHeight);
+    }
+    const resp = await rpcCall("block_range", payload, this.nodeHost, this.nodePort);
+    const items = Array.isArray(resp?.items)
+      ? resp.items.map(normalizeBlockSummary)
+      : [];
+    return {
+      items,
+      limit: resp?.limit ?? payload.limit,
+      startHeight: resp?.start_height ?? payload.start_height ?? null,
+      tipHeight: resp?.tip_height ?? null,
+      nextHeight: resp?.next_height ?? resp?.nextHeight ?? null,
+      hasMore: Boolean(resp?.has_more ?? resp?.hasMore),
+    };
   }
 
   async search(query) {

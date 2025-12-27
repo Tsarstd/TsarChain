@@ -9,6 +9,7 @@
   position: sticky;
   top: 0;
   z-index: 10;
+  flex-wrap: wrap;
 }
 
 .nav-left {
@@ -47,4 +48,60 @@
 .navbar-menu a.active {
   color: var(--text);
   background: rgba(249, 116, 22, 0.87);
+}
+
+.nav-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.nav-search {
+  display: flex;
+  align-items: center;
+  gap: 30px;
+  padding: 5px 5px;
+  border-radius: 1px;
+  background: rgba(15, 17, 23, 0.65);
+  border: 1px solid var(--border);
+}
+
+.nav-search input {
+  background: transparent;
+  color: var(--text);
+  border: none;
+  outline: none;
+  min-width: 455px;
+  font-size: 13px;
+}
+
+.nav-search .btn-primary {
+  padding: 8px 14px;
+  border-radius: 1px;
+  font-size: 12px;
+  letter-spacing: 0.2px;
+}
+
+@media (max-width: 900px) {
+  .navbar {
+    gap: 12px;
+  }
+
+  .nav-left {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .nav-right {
+    width: 100%;
+  }
+
+  .nav-search {
+    width: 100%;
+  }
+
+  .nav-search input {
+    min-width: 0;
+    flex: 1;
+  }
 }

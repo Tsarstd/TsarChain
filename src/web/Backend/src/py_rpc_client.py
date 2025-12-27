@@ -101,6 +101,7 @@ def _cache_fetch(key: str, fetch_fn):
         return cached
     log.debug("[webcache] miss_rpc key=%s", key[:96])
     payload = fetch_fn()
+    log.info("[webcache] payload key=%s payload=%s", key[:96], str(payload)[:128])
     cache_ok, ttl_sec = _cache_policy(payload)
     if cache_ok:
         _cache_set(key, payload, ttl_sec)
@@ -138,6 +139,26 @@ def rpc_block(client, val: str):
         return resp
     webdb.cache_set_json(key, resp, ttl_sec=0)
     return resp
+
+def rpc_block_range(client, opts: dict):
+    start_height = None
+    if isinstance(opts, dict):
+        start_height = opts.get("start_height")
+        if start_height is None:
+            start_height = opts.get("start")
+        if start_height is None:
+            start_height = opts.get("height")
+    limit = int(opts.get("limit", 10) or 10) if isinstance(opts, dict) else 10
+    key = _cache_key("block_range", start_height if start_height is not None else "latest", limit)
+    def _fetch():
+        payload = {"type": "GET_BLOCK_RANGE", "limit": limit}
+        if start_height is not None:
+            try:
+                payload["start_height"] = int(start_height)
+            except Exception:
+                payload["start_height"] = start_height
+        return _rpc_send(client, payload)
+    return _cache_fetch(key, _fetch)
 
 def rpc_tx(client, txid: str):
     txid_norm = str(txid).lower()
@@ -313,6 +334,26 @@ def _parse_opts(param: str | None) -> dict:
         opts["offset"] = int(parts[1])
     return opts
 
+def _parse_block_range_opts(param: str | None) -> dict:
+    if not param:
+        return {}
+    raw = str(param).strip()
+    if not raw:
+        return {}
+    if raw.startswith("{") and raw.endswith("}"):
+        try:
+            obj = json.loads(raw)
+            return obj if isinstance(obj, dict) else {}
+        except Exception:
+            return {}
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    opts = {}
+    if parts and parts[0].lstrip("-").isdigit():
+        opts["start_height"] = int(parts[0])
+    if len(parts) > 1 and parts[1].isdigit():
+        opts["limit"] = int(parts[1])
+    return opts
+
 def rpc_graffiti_posts(client, opts: dict):
     limit = int(opts.get("limit", 50) or 50)
     offset = int(opts.get("offset", 0) or 0)
@@ -398,6 +439,9 @@ def _dispatch_rpc(op: str, param: object | None, host: str, port: int):
         return rpc_network(client)
     if op == "block":
         return rpc_block(client, param_norm)
+    if op == "block_range":
+        opts = param_norm if isinstance(param_norm, dict) else _parse_block_range_opts(param_norm)
+        return rpc_block_range(client, opts)
     if op == "tx":
         return rpc_tx(client, param_norm)
     if op == "address":

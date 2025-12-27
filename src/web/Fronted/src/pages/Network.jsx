@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { fetchNetwork } from "../api/explorer";
 import { fmtBytes, fmtHashrate, fmtNumber, fmtTimestamp, fmtTsar } from "../utils/format";
 

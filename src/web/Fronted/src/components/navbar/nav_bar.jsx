@@ -1,9 +1,13 @@
-import React from "react";
 import { NavLink } from "react-router-dom";
 import "./nav_bar.css";
 import { assets } from "../../assets/assets";
 
-const Navbar = () => {
+const Navbar = ({ query, onQueryChange, onSearch }) => {
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    if (onSearch) onSearch();
+  };
+
   return (
     <header className="navbar">
       <div className="nav-left">
@@ -25,6 +29,19 @@ const Navbar = () => {
             </NavLink>
           </li>
         </ul>
+      </div>
+      <div className="nav-right">
+        <form className="nav-search" onSubmit={handleSubmit}>
+          <input
+            type="text"
+            placeholder="Height/BlockHash/TxId/Address/Graffiti_Id"
+            value={query}
+            onChange={(e) => onQueryChange?.(e.target.value)}
+          />
+          <button className="btn-primary" type="submit">
+            Search
+          </button>
+        </form>
       </div>
     </header>
   );

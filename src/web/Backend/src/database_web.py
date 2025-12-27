@@ -72,13 +72,6 @@ def _json_loads(raw: bytes) -> Optional[dict]:
         return None
 
 
-def _short_key(key: str) -> str:
-    txt = str(key or "")
-    if len(txt) > 96:
-        return txt[:96] + "..."
-    return txt
-
-
 def _is_expired(entry: dict, now_ts: Optional[int] = None) -> bool:
     now_ts = int(now_ts or time.time())
     ts = int(entry.get("ts") or 0)
@@ -129,7 +122,6 @@ def cache_ttl_for_error(reason: object) -> Optional[int]:
 def cache_get_json(key: str) -> Optional[object]:
     store = _open_store()
     if store is None:
-        log.debug("[webdb] cache_disabled key=%s", _short_key(key))
         return None
     k = key.encode("utf-8")
     try:
@@ -138,17 +130,14 @@ def cache_get_json(key: str) -> Optional[object]:
         log.warning("[webdb] cache_get failed key=%s", key)
         return None
     if raw is None:
-        log.debug("[webdb] cache_miss key=%s", _short_key(key))
         return None
     entry = _json_loads(bytes(raw))
     if not entry or _is_expired(entry):
-        log.debug("[webdb] cache_expired key=%s", _short_key(key))
         try:
             store.delete(WEB_CACHE_DB, k)
         except Exception:
             pass
         return None
-    log.debug("[webdb] cache_hit key=%s", _short_key(key))
     return entry.get("payload")
 
 
@@ -163,7 +152,6 @@ def cache_set_json(key: str, payload: object, ttl_sec: int = WEB_CACHE_TTL_SEC) 
     }
     try:
         store.put_bytes(WEB_CACHE_DB, key.encode("utf-8"), _json_dumps(entry))
-        log.debug("[webdb] cache_set key=%s ttl=%s", _short_key(key), int(ttl_sec))
     except Exception:
         log.warning("[webdb] cache_set failed key=%s", key)
 
@@ -259,22 +247,17 @@ def _write_cache_file(cache_root: str, art_id: str, meta: dict, data: bytes) -> 
 def _get_cached_graffiti_file(art_id: str, cache_dir: Optional[str]) -> Optional[dict]:
     store = _open_store()
     if store is None:
-        log.debug("[webdb] cache_disabled art=%s", art_id[:16])
         return None
     entry = _load_media_entry(art_id)
     if not entry:
-        log.debug("[webdb] cache_miss art=%s", art_id[:16])
         return None
     if entry.get("status") != "ok":
-        log.debug("[webdb] cache_hit_error art=%s reason=%s", art_id[:16], entry.get("reason"))
         return {"status": "error", "reason": entry.get("reason") or "not_found"}
     data_raw = store.get_bytes(WEB_MEDIA_DB, _media_data_key(art_id))
     if data_raw is None:
-        log.debug("[webdb] cache_incomplete art=%s", art_id[:16])
         return None
     cache_root = cache_dir or os.path.join("data_user", "graffiti_cache")
     cache_path = _write_cache_file(cache_root, art_id, entry.get("meta") or {}, bytes(data_raw))
-    log.debug("[webdb] cache_hit art=%s path=%s", art_id[:16], cache_path)
     return {"status": "ok", "meta": entry.get("meta") or {}, "cache_path": cache_path}
 
 
@@ -409,7 +392,6 @@ def fetch_graffiti_file(
     # Cache first
     cached = _get_cached_graffiti_file(art_norm, cache_dir)
     if cached is not None:
-        log.debug("[webdb] rpc_skip_cache art=%s status=%s", art_norm[:16], cached.get("status"))
         return cached
 
     max_bytes = max(32 * 1024, min(int(max_bytes), int(CFG.GRAFFITI_MAX_SIZE_BYTES)))
@@ -418,7 +400,6 @@ def fetch_graffiti_file(
 
     storers = fetch_storers(rpc_call, cache_scope=cache_scope, ttl_sec=stor_list_ttl_sec)
     if not storers:
-        log.debug("[webdb] rpc_needed_no_storers art=%s", art_norm[:16])
         return {"status": "error", "reason": "no_storers"}
 
     preferred, others = [], []
@@ -637,7 +618,6 @@ def fetch_graffiti_file(
         return {"status": "ok", "meta": meta_info, "cache_path": cache_path}
 
     reason = last_error or "unavailable"
-    log.debug("[webdb] rpc_not_found art=%s reason=%s", art_norm[:16], reason)
     ttl_err = cache_ttl_for_error(reason)
     if ttl_err is not None:
         _cache_media_error(art_norm, reason, ttl_sec=ttl_err)

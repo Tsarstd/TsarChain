@@ -1,0 +1,75 @@
+.tx-items {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid #8b8b8b;
+  background: #2f2f2f;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.tx-info {
+  flex: 1;
+  min-width: 0; /* Untuk text wrapping */
+}
+
+.tx-id {
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  color: #723636;
+  word-break: break-all;
+  margin-bottom: 4px;
+}
+
+.tx-amount {
+  font-size: 16px;
+  font-weight: 600;
+  color: #38b36b; /* Hijau untuk jumlah */
+}
+
+.tx-vout {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 120px;
+}
+
+.addr-badge {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  margin-bottom: 6px;
+  white-space: nowrap;
+}
+
+.addr-p2wpkh { background: #4f772d; color: #fefae0; }
+.addr-p2wsh { background: #2a6f97; color: #f8f9fa; }
+.addr-opreturn { background: #8d2d2d; color: #f8f9fa; }
+
+.vout-label {
+  font-size: 11px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.vout-badge {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.vout-0 { background: #ce8456; color: rgb(30, 30, 30); }
+.vout-1 { background: #659B5E; color: white; }
+.vout-2 { background: #556F44; color: white; }
+.vout-3 { background: #40625c; color: white; }
+
+.vout-hint {
+  font-size: 10px;
+  opacity: 0.8;
+  margin-left: 4px;
+}

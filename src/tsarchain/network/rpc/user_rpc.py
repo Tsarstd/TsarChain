@@ -9,8 +9,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from bech32 import convertbits, bech32_decode
 
-from ...utils.helpers import hash160
-from ...utils.helpers import batch_verify_der_low_s
+from ...utils.helpers import hash160, batch_verify_der_low_s, compute_tx_weight_vsize
 from ...utils import config as CFG
 from ...contracts import graffiti as GRAFFITI
 from ..pow_token import issue_pow, verify_pow
@@ -22,7 +21,9 @@ log = get_ctx_logger("tsarchain.network.rpc.user_rpc")
 if TYPE_CHECKING:
     from ..node import Network
 
-
+# =============================================================================
+#       ---------------------------- HELPER ----------------------------
+# =============================================================================
 def _verify_chat_signatures(tasks: list[tuple[str, str, bytes, str]]) -> dict[str, bool]:
     """
     tasks: [(label, pub_hex, payload_bytes, sig_hex), ...]
@@ -95,6 +96,61 @@ def _identity_from_msg(message: dict[str, Any] | None) -> str | None:
             return ident
     return None
 
+def _summarize_block(self: "Network", b: Any) -> dict:
+    height = int(getattr(b, "height", getattr(b, "index", 0)))
+    ts = None
+    for name in ("time", "timestamp"):
+        v = getattr(b, name, None)
+        if v is not None:
+            ts = int(v)
+            break
+    size_bytes = getattr(b, "size_bytes", None)
+    meta_block = getattr(b, "_meta", None)
+    if size_bytes is None and isinstance(meta_block, dict) and meta_block.get("size_bytes") is not None:
+        size_bytes = meta_block.get("size_bytes")
+
+    txs = getattr(b, "transactions", []) or []
+    tx_count = len(txs)
+    graffiti_posts = 0
+    graffiti_comments = 0
+    total_size_sum = 80
+    need_size_fallback = size_bytes is None
+
+    for tx in txs:
+        if need_size_fallback:
+            _w, _v, _base_sz, total_sz = compute_tx_weight_vsize(tx)
+            total_size_sum += int(total_sz)
+        for tx_out in getattr(tx, "outputs", []) or []:
+            spk = getattr(tx_out, "script_pubkey", None)
+            if spk is None:
+                continue
+            out_meta = None
+            try:
+                out_meta = GRAFFITI.parse_from_script(spk)
+            except Exception:
+                out_meta = None
+            if not out_meta:
+                continue
+            ev = str(out_meta.get("event", "")).upper()
+            if ev == "POST":
+                graffiti_posts += 1
+            elif ev == "COMMENT":
+                graffiti_comments += 1
+
+    if size_bytes is None:
+        size_bytes = total_size_sum if total_size_sum > 0 else None
+
+    return {
+        "height": height,
+        "hash": self._bhash_hex(b),
+        "timestamp": ts,
+        "size_bytes": size_bytes,
+        "tx_count": tx_count,
+        "graffiti_posts": graffiti_posts,
+        "graffiti_comments": graffiti_comments,
+        "graffiti_count": graffiti_posts + graffiti_comments,
+    }
+
 def _allow_rpc_with_pow(
     self,
     *,
@@ -147,8 +203,9 @@ def _allow_rpc_with_pow(
         "pow_challenge": challenge,
     }
 
-
 __all__ = ["handle_user_rpc"]
+
+
 
 
 def handle_user_rpc(
@@ -381,6 +438,101 @@ def handle_user_rpc(
         if not hx:
             return {"type": "BLOCK", "error": "missing_height_or_hash"}
         return self._handle_get_block_by_hash(hx, src_tag=src_tag)
+
+#----------------------#-------------------
+
+    elif mtype == "GET_BLOCK_RANGE":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+
+        ip = client_ip()
+        ok, pow_resp = _allow_rpc_with_pow(
+            self,
+            scope="rpc:block_range",
+            table=self.rl_ip,
+            ip=ip,
+            identity=base_identity,
+            key_label="blk_range",
+            burst=CFG.BLOCK_FETCH_RL_IP_BURST,
+            window_s=CFG.BLOCK_FETCH_RL_WINDOW_S,
+            backoff_s=CFG.BLOCK_FETCH_RL_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_READ),
+        )
+        if not ok:
+            return pow_resp
+
+        raw_start = message.get("start_height", message.get("start"))
+        raw_limit = message.get("limit", 10)
+        try:
+            limit = int(raw_limit)
+        except Exception:
+            limit = 10
+        limit = max(1, min(limit, 50))
+
+        with self.broadcast.lock:
+            chain = list(self.broadcast.blockchain.chain)
+            tip_height = int(self.broadcast.blockchain.height)
+
+        if not chain:
+            return {
+                "type": "BLOCK_RANGE",
+                "items": [],
+                "limit": limit,
+                "start_height": -1,
+                "tip_height": tip_height,
+                "has_more": False,
+                "next_height": -1,
+            }
+
+        if raw_start is None or raw_start == "":
+            start_height = tip_height
+        else:
+            try:
+                start_height = int(raw_start)
+            except Exception:
+                start_height = tip_height
+
+        if start_height > tip_height:
+            start_height = tip_height
+        if start_height < 0:
+            return {
+                "type": "BLOCK_RANGE",
+                "items": [],
+                "limit": limit,
+                "start_height": start_height,
+                "tip_height": tip_height,
+                "has_more": False,
+                "next_height": -1,
+            }
+
+        items = []
+        h = start_height
+        while h >= 0 and len(items) < limit:
+            try:
+                b = chain[h]
+            except Exception:
+                break
+            items.append(_summarize_block(self, b))
+            h -= 1
+
+        has_more = h >= 0
+
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            src_tag = (message.get("rpc_source") or "-")
+            log.debug("[GET_BLOCK_RANGE] Benchmark : %.3f ms src=%s", result, src_tag)
+
+        return {
+            "type": "BLOCK_RANGE",
+            "start_height": start_height,
+            "limit": limit,
+            "items": items,
+            "tip_height": tip_height,
+            "next_height": h,
+            "has_more": has_more,
+        }
 
 #----------------------#-------------------
 
