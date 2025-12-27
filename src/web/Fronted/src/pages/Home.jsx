@@ -132,13 +132,14 @@ const ResultBlock = ({ data }) => {
                 <div className="muted">Commenter:</div>
                 <div className="value">{c.commenter || "-"}</div>
                 <div className="muted">{"-------------------"}</div>
-                <div className="muted">Comment:</div>
-                <div className="value">{c.comment_text || c.comment || "-"}</div>
+                <div className="muted">Comment length:</div>
+                <div className="value">{c.comment_len || c.comment || "-"}</div>
                 <div className="muted">{"-------------------"}</div>
-                <div className="muted">Base & Tip:</div>
-                <div className="value">
-                  {fmtTsar(c.amount)} {c.tip ? `- Tip ${fmtTsar(c.tip)}` : ""}
-                </div>
+                <div className="muted">Art ID:</div>
+                <div className="value">{c.art_id || "-"}</div>
+                <div className="muted">{"-------------------"}</div>
+                <div className="muted">TXID:</div>
+                <div className="value">{c.txid || "-"}</div>
               </div>
             ))}
           </div>
@@ -272,10 +273,15 @@ const ResultAddress = ({ data }) => (
         <span className="label">Immature</span>
         <span className="value">{fmtTsar(data?.immature)}</span>
       </div>
-      <div className="stat">
-        <span className="label">Pending</span>
-        <span className="value">{fmtTsar(data?.pending)}</span>
-      </div>
+    </div>
+    <div className="divider" />
+    <div className="stat">
+      <span className="label">⬆️ Outgoing</span>
+      <span className="value">{fmtTsar(data?.outgoing)}</span>
+    </div>
+    <div className="stat">
+      <span className="label">⬇️ Incoming</span>
+      <span className="value">{fmtTsar(data?.incoming)}</span>
     </div>
     <div className="divider" />
     <div className="stat">
@@ -283,7 +289,7 @@ const ResultAddress = ({ data }) => (
       <span className="value">{data?.utxos?.length || 0}</span>
     </div>
     <div className="list">
-      {(data?.utxos || []).slice(0, 6).map((u) => (
+      {(data?.utxos || []).slice(0, 30).map((u) => (
         <div className="tx-item" key={`${u.txid}-${u.vout ?? u.index}`}>
           <div className="label mono wrap">{u.txid || "-"}</div>
           <div className="muted">vout {u.vout ?? u.index ?? "-"}</div>
@@ -294,10 +300,10 @@ const ResultAddress = ({ data }) => (
     <div className="divider" />
     <div className="stat">
       <span className="label">Recent Activity</span>
-      <span className="value">{data?.history?.length || 0}</span>
+      <span className="value">{data?.utxos?.length || 0}</span>
     </div>
     <div className="list">
-      {(data?.history || []).slice(0, 6).map((h, idx) => (
+      {(data?.utxos || []).slice(0, 6).map((h, idx) => (
         <div className="tx-item" key={h.txid || h.id || idx}>
           <div className="label mono wrap">{h.txid || h.id || "-"}</div>
           <div className="muted">{fmtTsar(h.amount || h.value || 0)}</div>
@@ -317,14 +323,30 @@ const ResultGraffiti = ({ data }) => {
         <span className="label">Graffiti ID</span>
         <span className="value mono wrap">{data?.art_id || "-"}</span>
       </div>
+      <div className="stat">
+        <span className="label">SHA256 File</span>
+        <span className="value">{data?.sha256 || "-"}</span>
+      </div>
+      <div className="stat">
+        <span className="label">Graffiti Merkle</span>
+        <span className="value">{data?.mroot || "-"}</span>
+      </div>
+      <div className="stat">
+        <span className="label">Merkle Count</span>
+        <span className="value">{data?.mcount || "-"}</span>
+      </div>
+      <div className="stat">
+        <span className="label">Merkle Chunk</span>
+        <span className="value">{fmtBytes(data?.mchunk)}</span>
+      </div>
       <div className="grid">
         <div className="stat">
           <span className="label">Creator</span>
           <span className="value mono wrap">{data?.creator || "-"}</span>
         </div>
         <div className="stat">
-          <span className="label">Block</span>
-          <span className="value">#{data?.block_height ?? "-"}</span>
+          <span className="label">Confirmed at</span>
+          <span className="value">Block #{data?.block_height ?? "-"}</span>
         </div>
         <div className="stat">
           <span className="label">Size</span>
@@ -339,12 +361,6 @@ const ResultGraffiti = ({ data }) => {
         <div className="stat">
           <span className="label">Pool Balance</span>
           <span className="value">{fmtTsar(data?.stats?.pool_balance)}</span>
-        </div>
-        <div className="stat">
-          <span className="label">Comments</span>
-          <span className="value">
-            {data?.stats?.comments ?? data?.comments?.length ?? 0}
-          </span>
         </div>
       </div>
       <div className="divider" />
@@ -367,6 +383,12 @@ const ResultGraffiti = ({ data }) => {
       ) : (
         <div className="muted">Preview tidak tersedia.</div>
       )}
+      <div className="stat">
+        <span className="label">Total Comments</span>
+        <span className="value">
+          {data?.stats?.comments ?? data?.comments?.length ?? 0}
+        </span>
+      </div>
       <div className="divider" />
       <div className="list">
         {(data?.comments || []).slice(0, 6).map((c, idx) => (
@@ -500,7 +522,7 @@ const Home = () => {
       </section>
 
       <section className="section">
-        <h2>Hasil Pencarian</h2>
+        <h2>Search Result</h2>
         {renderResult}
       </section>
     </main>

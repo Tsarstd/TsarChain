@@ -182,9 +182,10 @@ def rpc_address(client, addr: str):
     elif isinstance(items, list):
         entry = items[0] if items else {}
     if isinstance(entry, dict):
-        spendable = int(entry.get("spendable") or entry.get("confirmed") or entry.get("balance_spendable") or 0)
-        immature = int(entry.get("immature") or entry.get("balance_immature") or 0)
-        pending = int(entry.get("pending") or entry.get("unconfirmed") or entry.get("balance_pending") or 0)
+        spendable = int(entry.get("spendable") or 0)
+        immature = int(entry.get("immature") or 0)
+        outgoing = int(entry.get("pending_outgoing") or 0)
+        incoming = int(entry.get("pending_incoming") or 0)
 
     utxo_list = []
     if isinstance(utxos, dict):
@@ -245,7 +246,8 @@ def rpc_address(client, addr: str):
         "address": addr_norm,
         "spendable": spendable,
         "immature": immature,
-        "pending": pending,
+        "outgoing": outgoing,
+        "incoming": incoming,
         "balance": balance,
         "utxos": utxo_list or [],
         "history": history.get("txs") if isinstance(history, dict) else history,

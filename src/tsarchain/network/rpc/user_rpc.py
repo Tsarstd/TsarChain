@@ -223,7 +223,7 @@ def handle_user_rpc(
             mem = self.broadcast.mempool.get_all_txs()
         self.broadcast.utxodb._load()
 
-        opmap = self._build_outpoint_map(chain, mem)
+        opmap_chain, opmap_mem = self._build_outpoint_map(chain, mem)
         pending_out_map: dict[str, int] = {}
         incoming_map: dict[str, int] = {}
         for tx in mem or []:
@@ -232,10 +232,11 @@ def handle_user_rpc(
 
             for tin in getattr(tx, "inputs", []) or []:
                 key = self._txin_prevkey(tin)
-                amt_owner = opmap.get(key)
-                if not amt_owner:
+                amt_spk = opmap_mem.get(key) or opmap_chain.get(key)
+                if not amt_spk:
                     continue
-                amt, owner = amt_owner
+                amt, spk_hex = amt_spk
+                owner = self._spkhex_to_address(spk_hex) if spk_hex else None
                 if owner and amt:
                     spent_local[owner] = spent_local.get(owner, 0) + int(amt)
 

@@ -146,15 +146,9 @@ class BlockSearch:
             if comments:
                 for c in comments:
                     art = c.get("art_id") or "-"
-                    comment_text = c.get("comment_text")
-                    if not comment_text:
-                        ch = c.get("comment_hex") or ""
-                        comment_text = bytes.fromhex(ch).decode("utf-8", errors="ignore")
+                    comment_len = c.get("comment_len")
                     p._kv("Art ID", str(art), mono=True, vtag="val_hex")
-                    if comment_text:
-                        p._kv("Comment", comment_text, mono=False)
-                    else:
-                        p._kv("Comment", "(unavailable)", mono=False)
+                    p._kv("Comment Length", comment_len, mono=False)
                     p._kv("Commenter", str(c.get("commenter") or "-"), mono=True, vtag="val_addr")
                     amt = c.get("amount")
                     if amt is not None:

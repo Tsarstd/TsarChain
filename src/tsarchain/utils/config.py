@@ -187,8 +187,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 1 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = "00075af1600222e7e1689e769e46fa3dbb8c8557592fe050e6aad7a1d0a2d4a8"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -376,7 +376,7 @@ BROADCAST_FAIL_BACKOFF_S = 120  # seconds to wait when broadcast keeps failing
 # ---- ANTI-DOS LIMITS ----
 MAX_ADDRS_PER_REQ              = 15  # max addresses accepted per addr message
 MAX_HISTORY_LIMIT              = 200  # cap on stored addr history per peer
-MAX_UTXO_ADDR_LEN              = 64  # sanity limit for UTXO address strings
+MAX_UTXO_ADDR_LEN              = 68  # sanity limit for UTXO address strings
 NONCE_PER_SENDER_MAX           = 256  # per-sender nonce cache bound
 NONCE_GLOBAL_MAX               = 100_000  # global nonce cache bound across senders
 HANDSHAKE_RL_PER_IP_BURST      = 50  # burst limit when rate-limiting handshakes
@@ -524,13 +524,13 @@ INFO_RL_BACKOFF_S   = 5   # backoff applied when limit exceeded
 
 # ---- HISTORY / UTXO LOOKUP THROTTLING ----
 HISTORY_RL_IP_BURST    = 6   # GET_TX_HISTORY/DETAIL/GET_UTXOS burst allowance
-HISTORY_RL_IP_WINDOW_S = 5   # seconds window for history limiter
-HISTORY_RL_BACKOFF_S   = 4   # seconds to back off when tripped
+HISTORY_RL_IP_WINDOW_S = 15   # seconds window for history limiter
+HISTORY_RL_BACKOFF_S   = 5   # seconds to back off when tripped
 
 # ---- MEMPOOL INLINE THROTTLING ----
 MEMPOOL_INLINE_RL_BURST    = 15   # inline mempool dumps allowed before throttling
 MEMPOOL_INLINE_RL_WINDOW_S = 20  # seconds window to evaluate inline dump rate
-MEMPOOL_INLINE_RL_BACKOFF  = 15  # seconds to wait after hitting inline limiter
+MEMPOOL_INLINE_RL_BACKOFF  = 10  # seconds to wait after hitting inline limiter
 
 # ---- CHAT REGISTER/PREKEY THROTTLING ----
 CHAT_REG_RL_IP_BURST       = 15   # chat register/prekey submissions allowed per IP
