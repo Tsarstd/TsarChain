@@ -722,85 +722,6 @@ class GraffitiTab(ttk.Frame):
             if self.post_send_btn:
                 self.post_send_btn.config(state="normal")
 
-    def _refresh_catalog(self) -> None:
-        rpc = getattr(self.app, "rpc", None)
-        if not rpc:
-            self.catalog_status_var.set("Wallet offline.")
-            return
-        self.catalog_status_var.set("Memuat catalog...")
-        def handle(resp: Optional[Dict[str, Any]]):
-            self.after(0, lambda: self._apply_catalog(resp))
-        rpc.send_async({"type": "GRAFFITI_GET_POSTS", "limit": 200}, handle)
-
-    def _apply_catalog(self, resp: Optional[Dict[str, Any]]) -> None:
-        posts = (resp or {}).get("posts") or []
-        self.catalog_posts = list(posts)
-        self._catalog_map = {}
-        if self.catalog_tree:
-            self.catalog_tree.delete(*self.catalog_tree.get_children())
-            for post in posts:
-                art_id = str(post.get("art_id") or "")
-                if not art_id:
-                    continue
-                self._catalog_map[art_id] = post
-                creator = (post.get("creator") or "")[:18]
-                size = int(post.get("size", post.get("size_bytes", 0)) or 0)
-                sz_str = f"{size:,} B"
-                self.catalog_tree.insert("", tk.END, iid=art_id, values=(
-                    art_id[:16] + "..." if len(art_id) > 19 else art_id,
-                    creator or "-",
-                    int(post.get("block_height") or 0),
-                    sz_str,
-                ))
-            children = self.catalog_tree.get_children()
-            if children:
-                self.catalog_tree.selection_set(children[0])
-                self.catalog_tree.focus(children[0])
-                self._on_catalog_select()
-        self.catalog_status_var.set(f"{len(self.catalog_posts)} karya")
-
-    def _on_catalog_select(self) -> None:
-        if not self.catalog_tree:
-            return
-        sel = self.catalog_tree.selection()
-        if not sel:
-            return
-        iid = sel[0]
-        art_obj = self._catalog_map.get(iid)
-        if art_obj:
-            self._set_selected_art(art_obj)
-
-    def _set_selected_art(self, art: Dict[str, Any]) -> None:
-        self._selected_art = art
-        art_id = str(art.get("art_id") or "")
-        creator = str(art.get("creator") or "")
-        sha = str(art.get("sha256") or "")[:64]
-        pool = str(art.get("pool_address") or derive_pool_address(art_id))
-        size = int(art.get("size") or art.get("size_bytes") or 0)
-        block_h = int(art.get("block_height") or 0)
-        stats = art.get("stats") or {}
-        pool_balance = stats.get("pool_balance", 0)
-        info = "\n".join([
-            f"Art ID: {art_id}",
-            f"Creator: {creator or '-'}",
-            f"Block Height: {block_h}",
-            f"Size: {size:,} bytes | sha256: {sha}...",
-            f"Pool Address: {pool}",
-            f"Pool Balance: {self._format_tsar(pool_balance)} TSAR | Comments: {stats.get('comments',0)}",
-            f"Creator paid: {self._format_tsar(stats.get('creator_paid',0))} TSAR | Storage paid: {self._format_tsar(stats.get('storage_paid',0))} TSAR",
-        ])
-        if getattr(self, "art_info_box", None):
-            self.art_info_box.configure(state="normal")
-            self.art_info_box.delete("1.0", tk.END)
-            self.art_info_box.insert("1.0", info)
-            self.art_info_box.configure(state="disabled")
-        if self.comment_send_btn:
-            self.comment_send_btn.config(state="normal")
-        self.comment_status_var.set("Ready to comment.")
-        self._update_comment_split_preview()
-        self._refresh_comments_for(art_id)
-        self._refresh_payouts_for(art_id)
-
     def _refresh_current_comments(self) -> None:
         if self._selected_art:
             self._refresh_comments_for(self._selected_art.get("art_id"))
@@ -846,40 +767,6 @@ class GraffitiTab(ttk.Frame):
         val = dec.quantize(quant, rounding=ROUND_DOWN)
         txt = format(val, "f").rstrip("0").rstrip(".")
         return txt or "0"
-
-    def _refresh_payouts_for(self, art_id: Optional[str]) -> None:
-        if not art_id:
-            return
-        
-        rpc = getattr(self.app, "rpc", None)
-        if not rpc:
-            return
-        
-        def handle(resp: Optional[Dict[str, Any]]):
-            self.after(0, lambda: self._apply_payouts(resp))
-        rpc.send_async({"type":"GRAFFITI_GET_PAYOUTS","art_id": art_id}, handle)
-
-    def _apply_payouts(self, resp: Optional[Dict[str, Any]]) -> None:
-        if not self.payout_tree:
-            return
-        
-        rows = (resp or {}).get("payouts") or []
-        self.payout_tree.delete(*self.payout_tree.get_children())
-        for entry in rows:
-            amt = self._format_tsar(entry.get("amount", 0))
-            rec = entry.get("recipients") or {}
-            recipient = ",".join(rec.keys()) or "-"
-            txid = entry.get("txid") or "-"
-            self.payout_tree.insert("", tk.END, values=(
-                entry.get("block_height") or "-",
-                f"{amt} TSAR",
-                recipient[:24],
-                txid[:32] + ("..." if txid and len(txid) > 32 else "")
-            ))
-        if rows:
-            self.payout_status_var.set(f"{len(rows)} payout record(s) ditemukan.")
-        else:
-            self.payout_status_var.set("Belum ada payout untuk karya ini.")
 
     def _update_comment_split_preview(self) -> None:
         base = parse_amount_str(self.comment_amount_var.get(), int(CFG.GRAFFITI_COMMENT_MIN_FEE))

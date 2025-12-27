@@ -493,12 +493,11 @@ const Home = () => {
       <section className="hero">
         <div>
           <h1>TsarChain Explorer</h1>
-          <p>Cari block height/hash, TXID, address, atau Graffiti ID.</p>
         </div>
         <div className="hero-actions">
           <input
             type="text"
-            placeholder="contoh: 128 atau 00abc... atau tsar1..."
+            placeholder="Block height/hash, TXID, Address, or Graffiti ID"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
@@ -506,18 +505,6 @@ const Home = () => {
           <button className="btn-primary" onClick={handleSearch}>
             Search
           </button>
-        </div>
-        <div className="chips">
-          <span className="chip">Block Height</span>
-          <span className="chip">Block Hash</span>
-          <span className="chip">Txid</span>
-          <span className="chip">Address</span>
-          <span className="chip">Graffiti Id</span>
-        </div>
-        <div className="status-bar">
-          {status === "loading"
-            ? "Loading..."
-            : message || `Deteksi jenis: ${kind}`}
         </div>
       </section>
 

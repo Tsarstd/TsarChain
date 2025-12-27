@@ -1473,7 +1473,7 @@ def handle_user_rpc(
 
 #----------------------#-------------------
 
-    elif mtype == "GRAFFITI_GET_PAYOUTS":
+    elif mtype == "GRAFFITI_GET_PAYOUTS": #NOTE : not used yet
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
 

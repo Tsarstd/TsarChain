@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { fetchGraffitiDetail, fetchGraffitiList } from "../api/explorer";
-import { fmtBytes, fmtTimestamp, fmtTsar, shortHash } from "../utils/format";
+import { fmtBytes, fmtTimestamp, fmtTsar } from "../utils/format";
 
 const PAGE_SIZE = 24;
 
