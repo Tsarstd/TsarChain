@@ -221,9 +221,6 @@ const Home = () => {
       </section>
 
       <section className="section">
-        <div className="section-header">
-          <h2>Block Detail</h2>
-        </div>
         {detailStatus === "loading" && (
           <div className="result-empty">Memuat detail block...</div>
         )}

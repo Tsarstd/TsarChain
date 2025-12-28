@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchNetwork } from "../api/explorer";
 import { fmtBytes, fmtHashrate, fmtNumber, fmtTimestamp, fmtTsar } from "../utils/format";
+import "./pages.css";
 
 const getPeersCount = (snap, fallback = 0) => {
   const peers = snap?.peers;
@@ -98,7 +99,7 @@ const Network = () => {
   const miners = view.miners_snapshot || {};
 
   return (
-    <main className="page network-page">
+    <main className="page-network network-page">
       <section className="section">
         <h1 className="sub-header">./network_identity</h1>
       </section>

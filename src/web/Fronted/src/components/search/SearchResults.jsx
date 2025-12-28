@@ -15,6 +15,8 @@ const ResultBlock = ({ data }) => {
 
   return (
     <div className="card">
+      <span className="block-details">Block Detail</span>
+      <div className="divider" />
       <div className="stat">
         <span className="label">Block Height</span>
         <span className="value">{data?.height ?? "-"}</span>
@@ -338,19 +340,19 @@ const ResultAddress = ({ data }) => (
         {(data?.history || []).slice(0, 50).map((h, idx) => {
           const statusBadge = getStatusBadge(h.status);
           const directionBadge = getDirectionBadge(h.direction);
-          const timestamp = h.timestamp || h.time || h.ts;
-          const confirmations = h.confirmations || 0;
+          const height = h.height;
+          const confirmations = h.confirmations;
           
           return (
             <div className="tx-items" key={h.txid || h.id || idx}>
               <div className="tx-info">
                 <div className="tx-info">{h.txid || h.id || "-"}</div>
                 <div className="tx-meta">
-                  {timestamp ? (
-                    <span className="tx-time">{fmtTimestamp(timestamp)}</span>
+                  {height ? (
+                    <span className="tx-height">Block {height}</span>
                   ) : null}
                   {confirmations > 0 ? (
-                    <span className="tx-confirms">({confirmations} confirms)</span>
+                    <span className="tx-confirms">{confirmations} Confirms</span>
                   ) : null}
                 </div>
               </div>

@@ -13,12 +13,12 @@
   grid-auto-columns: minmax(240px, 1fr);
   gap: 18px;
   overflow-x: auto;
-  padding: 12px 8px 20px;
+  padding: 12px 70px 20px 90px;
   scroll-behavior: smooth;
   align-items: stretch;
   scrollbar-width: none;
   cursor: grab;
-  width: 132%;
+  width: 100%;
   mask-image: linear-gradient(
     to right,
     transparent 0%,
@@ -219,3 +219,29 @@
   }
 }
 /*---------------END OF LANE STYLE-------------------*/
+
+
+/*-------------------------------------------------*/
+/*--------------------- PAGES ---------------------*/
+/*-------------------------------------------------*/
+.page {
+  max-width:1900px;
+  margin: 0 auto;
+  padding: 2px 20px 15px;
+}
+
+.page-network {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+}
+
+.network-page .network-summary {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.network-page .sub-header {
+  color: var(--accent);
+}
