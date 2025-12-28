@@ -245,7 +245,7 @@ const Network = () => {
           {(miners.top_miners || []).slice(0, 10).map(([addr, found], idx) => (
             <div className="tx-item" key={`${addr}-${idx}`}>
               <div className="label">Rank #{idx + 1}</div>
-              <div className="value mono wrap">{addr}</div>
+              <div className="value">{addr}</div>
               <div className="muted">{fmtNumber(found)} blocks</div>
             </div>
           ))}

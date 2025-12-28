@@ -1,18 +1,50 @@
 import "./footer.css";
 import { assets } from "../../assets/assets.js";
+import { Link } from "react-router-dom";
 
 const footerSections = [
-  { title: "Explore", count: 4 },
-  { title: "Learn", count: 4 },
-  { title: "Networks", count: 4 },
-  { title: "Legal", count: 4 },
+  {
+    title: "Explore",
+    links: [
+      { text: "Home", url: "/Graffiti", isInternal: true },
+      { text: "About", url: "#" },
+      { text: "Services", url: "#" },
+      { text: "Contact", url: "#" }
+    ]
+  },
+  {
+    title: "Learn",
+    links: [
+      { text: "Documentation", url: "#" },
+      { text: "Tutorials", url: "#" },
+      { text: "Blog", url: "#" },
+      { text: "FAQs", url: "#" }
+    ]
+  },
+  {
+    title: "Networks",
+    links: [
+      { text: "Devnet", url: "/Network", isInternal: true  },
+      { text: "Testnet", url: "#" },
+      { text: "Info", url: "#"},
+    ]
+  },
+  {
+    title: "Legal",
+    links: [
+      { text: "Privacy Policy", url: "#" },
+      { text: "Terms of Service", url: "#" },
+      { text: "Cookie Policy", url: "#" },
+      { text: "Disclaimer", url: "#" }
+    ]
+  }
 ];
 
 const socialLinks = [
-  { label: "GitHub", short: "GH" },
-  { label: "X", short: "X" },
-  { label: "YouTube", short: "YT" },
-  { label: "Medium", short: "MD" },
+  { label: "GitHub", short: "GH", url: "https://github.com/Tsarstd/TsarChain" },
+  { label: "X", short: "X", url: "https://twitter.com" },
+  { label: "YouTube", short: "YT", url: "https://youtube.com" },
+  { label: "Medium", short: "MD", url: "https://medium.com" }
 ];
 
 const Footer = () => {
@@ -30,38 +62,58 @@ const Footer = () => {
               Explore the full TsarChain ecosystem.
             </p>
           </div>
+          
           {footerSections.map((section) => (
             <div className="site-footer__col" key={section.title}>
               <h4 className="site-footer__title">{section.title}</h4>
               <div className="site-footer__links">
-                {Array.from({ length: section.count }).map((_, idx) => (
-                  <a
-                    className="site-footer__link"
-                    href="#"
-                    key={`${section.title}-${idx}`}
-                  >
-                    Links
-                  </a>
-                ))}
+                {section.links.map((link, idx) => {
+                  // Gunakan Link untuk rute internal, <a> untuk eksternal
+                  if (link.isInternal) {
+                    return (
+                      <Link
+                        className="site-footer__link"
+                        to={link.url}
+                        key={`${section.title}-${idx}`}
+                      >
+                        {link.text}
+                      </Link>
+                    );
+                  }
+
+                  return (
+                    <a
+                      className="site-footer__link"
+                      href={link.url}
+                      key={`${section.title}-${idx}`}
+                    >
+                      {link.text}
+                    </a>
+                  );
+                })}
               </div>
             </div>
           ))}
         </div>
+        
         <div className="site-footer__bottom">
           <div className="site-footer__socials-wrapper">
             <div className="site-footer__socials">
               {socialLinks.map((social) => (
                 <a
                   className="site-footer__social"
-                  href="#"
+                  href={social.url}
                   aria-label={social.label}
                   key={social.label}
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
                   {social.short}
                 </a>
               ))}
             </div>
           </div>
+          
           <div className="site-footer__copyright">
             an Experimental Project by - Tsar Studio 2026
           </div>

@@ -97,11 +97,8 @@ def _cache_set(key: str, payload: object, ttl_sec: int | None = None) -> None:
 def _cache_fetch(key: str, fetch_fn):
     cached = _cache_get(key)
     if cached is not None:
-        log.debug("[webcache] hit key=%s", key[:96])
         return cached
-    log.debug("[webcache] miss_rpc key=%s", key[:96])
     payload = fetch_fn()
-    log.info("[webcache] payload key=%s payload=%s", key[:96], str(payload)[:128])
     cache_ok, ttl_sec = _cache_policy(payload)
     if cache_ok:
         _cache_set(key, payload, ttl_sec)
@@ -128,9 +125,7 @@ def rpc_block(client, val: str):
         payload = {"type": "GET_BLOCK", "hash": str(val)}
     cached = _cache_get(key)
     if cached is not None:
-        log.debug("[webcache] hit key=%s", key[:96])
         return cached
-    log.debug("[webcache] miss_rpc key=%s", key[:96])
     resp = _rpc_send(client, payload)
     if _payload_has_error(resp):
         ttl_err = webdb.cache_ttl_for_error(resp.get("error") if isinstance(resp, dict) else None)
@@ -175,6 +170,24 @@ def rpc_address(client, addr: str):
     balances = _rpc_send(client, {"type": "GET_BALANCES", "addresses": [addr_norm]}) or {}
     utxos = _rpc_send(client, {"type": "GET_UTXOS", "address": addr_norm}) or {}
     history = _rpc_send(client, {"type": "GET_TX_HISTORY", "address": addr_norm, "limit": 50}) or {}
+    
+    # log.debug(f"[rpc_address] History response type: {type(history)}")
+    # log.debug(f"[rpc_address] History keys: {list(history.keys()) if isinstance(history, dict) else 'Not a dict'}")
+    # if isinstance(history, dict) and 'history' not in history:
+    #     log.debug(f"[rpc_address] History response: {json.dumps(history, default=str)[:500]}")
+        
+    history_list = []
+    if isinstance(history, dict):
+        history_list = history.get("items") or []
+        if not history_list:
+            for key in ["history", "transactions", "txs", "data"]:
+                if key in history and isinstance(history[key], list):
+                    history_list = history[key]
+                    break
+                
+    if not isinstance(history_list, list):
+        history_list = []
+        
     had_error = _payload_has_error(balances) or _payload_has_error(utxos) or _payload_has_error(history)
     error_ttl = None
     if had_error:
@@ -195,7 +208,7 @@ def rpc_address(client, addr: str):
     if not isinstance(history, (dict, list)):
         history = {}
 
-    spendable = immature = pending = 0
+    spendable = immature = 0
     items = balances.get("items") or balances.get("balances") or balances.get("map") or {}
     entry = {}
     if isinstance(items, dict):
@@ -271,7 +284,7 @@ def rpc_address(client, addr: str):
         "incoming": incoming,
         "balance": balance,
         "utxos": utxo_list or [],
-        "history": history.get("txs") if isinstance(history, dict) else history,
+        "history": history_list,
         "height": history.get("height") if isinstance(history, dict) else None,
     }
     if not had_error:

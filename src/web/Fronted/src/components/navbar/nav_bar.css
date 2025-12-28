@@ -4,7 +4,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 18px;
-  background: linear-gradient(90deg, rgba(61, 50, 40, 0.9), rgba(22, 22, 22, 0.9));
+  background: linear-gradient(90deg, rgb(61, 50, 40), rgb(22, 22, 22));
   border-bottom: 1px solid rgba(40, 40, 40, 0.18);
   position: sticky;
   top: 0;

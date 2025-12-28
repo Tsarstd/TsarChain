@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchBlockRange, fetchByKind } from "../api/explorer";
 import { fmtBytes } from "../utils/format";
 import { ResultBlock } from "../components/search/SearchResults";
+import "./pages.css";
 
 const PAGE_SIZE = 10;
 const SCROLL_THRESHOLD = 40;
@@ -22,7 +23,7 @@ const BlockCard = ({ item, onSelect, active, isGenesis }) => {
 
   return (
     <button className={classes} type="button" onClick={() => onSelect(item)}>
-      <div className="lane-card__title">Block {item?.height ?? "-"}</div>
+      <div className="lane-card__header">Block {item?.height ?? "-"}</div>
       {graffitiPosts > 0 ? (
         <div className="lane-card__tag">Graffiti Post</div>
       ) : null}

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import Navbar from "./components/navbar/nav_bar";
 import Footer from "./components/footer/footer";

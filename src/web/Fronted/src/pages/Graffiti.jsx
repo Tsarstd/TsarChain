@@ -1,14 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchGraffitiDetail, fetchGraffitiList } from "../api/explorer";
 import { fmtBytes, fmtTimestamp, fmtTsar } from "../utils/format";
+import "./pages.css";
 
 const PAGE_SIZE = 10;
 const SCROLL_THRESHOLD = 40;
-
-const isVideoMime = (mime) => {
-  const m = String(mime || "").toLowerCase();
-  return m.includes("video") || m.includes("mp4");
-};
 
 const GraffitiCard = ({ item, onSelect, active, isGenesis }) => {
   const comments = item?.stats?.comments ?? item?.comments?.length ?? 0;
@@ -17,7 +13,7 @@ const GraffitiCard = ({ item, onSelect, active, isGenesis }) => {
     .join(" ");
   return (
     <button className={classes} type="button" onClick={() => onSelect(item)}>
-      <div className="lane-card__title">Graffiti Block {item?.block_height ?? "-"}</div>
+      <div className="lane-card__header">Graffiti Block {item?.block_height ?? "-"}</div>
       <div className="lane-card__grid">
         <div className="stat">
           <span className="label">Size</span>
@@ -32,98 +28,156 @@ const GraffitiCard = ({ item, onSelect, active, isGenesis }) => {
           <span className="value">{comments}</span>
         </div>
       </div>
-      <div className="lane-card__id mono wrap">{item?.art_id || "-"}</div>
+      <div className="lane-card__id wrap">{item?.art_id || "-"}</div>
     </button>
   );
 };
 
-const GraffitiDetail = ({ detail, status, onClose }) => {
+const GraffitiDetailCard = ({ detail, status }) => {
   if (!detail && status !== "loading") return null;
-  const video = isVideoMime(detail?.mime);
-  return (
-    <section className="detail-panel">
-      <div className="detail-header">
-        <div>
-          <h3>Graffiti Detail</h3>
-          <p className="mono wrap">{detail?.art_id || "-"}</p>
-        </div>
-        <button className="btn-ghost" type="button" onClick={onClose}>
-          Close
-        </button>
+  
+  const mime = String(detail?.mime || "").toLowerCase();
+  const isVideo = mime.includes("video") || mime.includes("mp4");
+  
+  if (status === "loading") {
+    return (
+      <div className="card">
+        <div className="result-empty">Load Graffiti File...</div>
       </div>
-      {status === "loading" ? (
-        <div className="muted">Memuat detail...</div>
-      ) : (
-        <div className="detail-body">
-          <div className="detail-media">
-            {detail?.preview_url ? (
-              video ? (
-                <video controls preload="metadata" src={detail.preview_url} />
-              ) : (
-                <img src={detail.preview_url} alt={detail.art_id} />
-              )
-            ) : (
-              <div className="media-fallback">Preview tidak tersedia</div>
-            )}
+    );
+  }
+  
+  return (
+    <div className="card">
+      <div className="stat">
+          <span className="label">Graffiti ID</span>
+          <span className="value">{detail?.art_id || "-"}</span>
+          <span className="label">Creator</span>
+          <span className="value">{detail?.creator || "-"}</span>
+          <span className="label">Total Creator Income</span>
+          <span className="value">{fmtTsar(detail?.stats?.creator_paid)}</span>
+
+        <div className="divider" />
+
+        <div className="grid">
+          <div className="stat">
+            <span className="label">Upload Fee</span>
+            <span className="value">{fmtTsar(detail?.amount_paid)}</span>
           </div>
-          <div className="detail-meta">
-            <div className="stat">
-              <span className="label">Creator</span>
-              <span className="value mono wrap">{detail?.creator || "-"}</span>
-            </div>
-            <div className="stat">
-              <span className="label">Block</span>
-              <span className="value">#{detail?.block_height ?? "-"}</span>
-            </div>
-            <div className="stat">
-              <span className="label">Size</span>
-              <span className="value">{fmtBytes(detail?.size || detail?.size_bytes)}</span>
-            </div>
-            <div className="stat">
-              <span className="label">MIME</span>
-              <span className="value">{detail?.mime || "-"}</span>
-            </div>
-            <div className="stat">
-              <span className="label">TxID</span>
-              <span className="value mono wrap">{detail?.txid || "-"}</span>
-            </div>
-            <div className="stat">
-              <span className="label">Merkle</span>
-              <span className="value mono wrap">{detail?.mroot || "-"}</span>
-            </div>
-            <div className="stat">
-              <span className="label">Merkle Chunk</span>
-              <span className="value mono wrap">{detail?.mchunk || "-"}</span>
-            </div>
-            <div className="stat">
-              <span className="label">Merkle Count</span>
-              <span className="value mono wrap">{detail?.mcount || "-"}</span>
-            </div>
-            <div className="stat">
-              <span className="label">Pool Address</span>
-              <span className="value mono wrap">{detail?.pool_address || "-"}</span>
-            </div>
-          </div>
-          <div className="detail-comments">
-            <h4>Comments ({detail?.comments?.length || 0})</h4>
-            <div className="list">
-              {(detail?.comments || []).slice(0, 12).map((c, idx) => (
-                <div className="comment-item" key={idx}>
-                  <div className="muted">{fmtTimestamp(c.ts)}</div>
-                  <div className="value">{c.commenter || "-"}</div>
-                  <div className="value">{"-----------"}</div>
-                  <div className="value">{c.comment_text || c.comment || "-"}</div>
-                  <div className="value">{"-----------"}</div>
-                  <div className="muted">
-                    {fmtTsar(c.amount)} {c.tip ? ` - Tip ${fmtTsar(c.tip)}` : ""}
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div className="stat">
+            <span className="label">Anchoring at</span>
+            <span className="value">Block {detail?.block_height ?? "-"}</span>
           </div>
         </div>
-      )}
-    </section>
+          <span className="label">TxID</span>
+          <span className="value">{detail?.txid || "-"}</span>
+      </div>
+
+
+      <div className="divider" />
+
+      <div className="stat">
+        <div className="grid">
+          <div className="stat">
+            <span className="label">SHA256 File</span>
+            <span className="value">{detail?.sha256 || "-"}</span>
+          </div>
+          <div className="stat">
+            <span className="label">File Size</span>
+            <span className="value">{fmtBytes(detail?.size || detail?.size_bytes)}</span>
+          </div>
+        </div>
+          <span className="label">Graffiti Merkle</span>
+          <span className="value">{detail?.mroot || "-"}</span>
+        <div className="grid">
+          <div className="stat">
+            <span className="label">Merkle Chunk</span>
+            <span className="value">{fmtBytes(detail?.mchunk)}</span>
+          </div>
+          <div className="stat">
+            <span className="label">Merkle Count</span>
+            <span className="value">{detail?.mcount || "-"}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="divider" />
+
+      <div className="grid">
+        <div className="stat">
+          <span className="label">Pool Address</span>
+          <span className="value">{detail?.pool_address}</span>
+        </div>
+        <div className="stat">
+          <span className="label">Pool Balance</span>
+          <span className="value">{fmtTsar(detail?.stats?.pool_balance)}</span>
+        </div>
+      </div>
+      <div className="grid">
+        <div className="stat">
+          <span className="label">Storage Address</span>
+          <span className="value">{detail?.storer}</span>
+        </div>
+        <div className="stat">
+          <span className="label">Storage Income From Comment</span>
+          <span className="value">{fmtTsar(detail?.stats?.storage_paid)}</span>
+        </div>
+      </div>
+      <div className="grid">
+        <div className="stat">
+          <span className="label">Last Paid Epoch</span>
+          <span className="value">Epoch {detail?.stats?.last_paid_epoch}</span>
+        </div>
+        <div className="stat">
+          <span className="label">Total Comments</span>
+          <span className="value">{detail?.stats?.comments ?? detail?.comments?.length ?? 0}</span>
+        </div>
+      </div>
+      
+      <div className="divider" />
+      
+      <div className="media-preview-container">
+        {detail?.preview_url ? (
+          isVideo ? (
+            <video
+              className="media-preview"
+              controls
+              preload="metadata"
+              src={detail.preview_url}
+            />
+          ) : (
+            <img
+              className="media-preview"
+              src={detail.preview_url}
+              alt={detail.art_id}
+              loading="lazy"
+            />
+          )
+        ) : (
+          <div className="muted">Preview tidak tersedia</div>
+        )}
+      </div>
+      
+      <div className="divider" />
+      
+      <div className="detail-comments">
+        <div className="stat">
+          <span className="label">Comments ({detail?.comments?.length || 0})</span>
+        </div>
+        <div className="list">
+          {(detail?.comments || []).slice(0, 6).map((c, idx) => (
+            <div className="comment-item" key={idx}>
+              <div className="muted">{fmtTimestamp(c.ts)}</div>
+              <div className="value">{c.commenter || "-"}</div>
+              <div className="divider" />
+              <div className="value">{c.comment_text || c.comment || "-"}</div>
+              <div className="divider" />
+              <div className="muted">{fmtTsar(c.amount)} {c.tip ? ` - Tip ${fmtTsar(c.tip)}` : ""}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -290,12 +344,26 @@ const Graffiti = () => {
             ))}
           </div>
         </div>
-        {loading && <div className="result-empty">Memuat lebih banyak...</div>}
-        {!hasMore && items.length > 0 && <div className="result-empty">Tidak ada data lagi.</div>}
+        {loading && <div className="result-empty">Load More...</div>}
+        {!hasMore && items.length > 0 && <div className="result-empty">*All Graffiti was Achieved</div>}
         {message && <div className="result-empty">{message}</div>}
       </section>
 
-      <GraffitiDetail detail={detail} status={detailStatus} onClose={closeDetail} />
+      {/* Detail section - sekarang menggunakan card layout */}
+      <section className="section">
+        <div className="section-header">
+          <h3>Graffiti Detail</h3>
+        </div>
+        <GraffitiDetailCard 
+          detail={detail} 
+          status={detailStatus} 
+          onClose={() => {
+            setDetail(null);
+            setDetailStatus("idle");
+            setSelectedId(null);
+          }} 
+        />
+      </section>
     </main>
   );
 };

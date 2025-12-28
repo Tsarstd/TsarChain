@@ -1,29 +1,8 @@
 import { useMemo } from "react";
 import { fmtBytes, fmtTimestamp, fmtTsar, fmtChainwork } from "../../utils/format";
+import { getAddressType, getStatusBadge, getDirectionBadge, getVoutLabel } from "./SearchUX";
 import "./search.css";
 
-const getVoutLabel = (vout) => {
-  switch (vout) {
-    case 0:
-      return "VOUT 0";
-    case 1:
-      return "VOUT 1";
-    case 2:
-      return "VOUT 2";
-    case 3:
-      return "VOUT 3";
-    default:
-      return `Output ${vout}`; // For vout > 3
-  }
-}
-
-const getAddressType = (address) => {
-  const clean = String(address || "").trim();
-  if (!clean) return null;
-  if (clean.length === 44) return { type: "p2wpkh", label: "P2WPKH" };
-  if (clean.length === 64) return { type: "p2wsh", label: "P2WSH" };
-  return null;
-}
 
 const ResultBlock = ({ data }) => {
   const payouts = Array.isArray(data?.payouts)
@@ -38,21 +17,21 @@ const ResultBlock = ({ data }) => {
     <div className="card">
       <div className="stat">
         <span className="label">Block Height</span>
-        <span className="value">#{data?.height ?? "-"}</span>
+        <span className="value">{data?.height ?? "-"}</span>
       </div>
       <div className="stat">
         <span className="label">Block ID</span>
-        <span className="value mono wrap">{data?.block_id}</span>
+        <span className="value">{data?.block_id}</span>
       </div>
       <div className="divider" />
       <div className="grid">
         <div className="stat">
           <span className="label">Hash</span>
-          <span className="value mono wrap">{data?.hash || "-"}</span>
+          <span className="value">{data?.hash || "-"}</span>
         </div>
         <div className="stat">
           <span className="label">Prev Hash</span>
-          <span className="value mono wrap muted">{data?.prev_block_hash || "-"}</span>
+          <span className="value muted">{data?.prev_block_hash || "-"}</span>
         </div>
       </div>
       <div className="grid">
@@ -82,7 +61,7 @@ const ResultBlock = ({ data }) => {
         </div>
         <div className="stat">
           <span className="label">Chainwork</span>
-          <span className="value mono wrap">
+          <span className="value">
             {fmtChainwork(data?.chainwork ?? "-")}
           </span>
         </div>
@@ -96,7 +75,7 @@ const ResultBlock = ({ data }) => {
         </div>
         <div className="stat">
           <span className="label">Merkle Root</span>
-          <span className="value mono wrap">{data?.merkle_root ?? "-"}</span>
+          <span className="value">{data?.merkle_root ?? "-"}</span>
         </div>
       </div>
       <div className="divider" />
@@ -109,7 +88,7 @@ const ResultBlock = ({ data }) => {
           <div className="tx-item" key={tx.txid}>
             <div className="stat">
               <span className="label">TxID</span>
-              <span className="value mono wrap">{tx.txid}</span>
+              <span className="value">{tx.txid}</span>
             </div>
             <div className="stat">
               <span className="label">Inputs</span>
@@ -135,15 +114,15 @@ const ResultBlock = ({ data }) => {
             {(data?.graffiti || []).map((g, idx) => (
               <div className="tx-item" key={`graf-${idx}`}>
                 <div className="muted">SHA256</div>
-                <div className="value mono wrap">{g.sha256 || g.hash || "-"}</div>
+                <div className="value">{g.sha256 || g.hash || "-"}</div>
                 <div className="divider" />
                 <div className="muted">File</div>
-                <div className="value mono wrap">
+                <div className="value">
                   {g.mime || "-"} x {fmtBytes(g.size)}
                 </div>
                 <div className="divider" />
                 <div className="muted">TXID</div>
-                <div className="value mono wrap">{g.txid || "-"}</div>
+                <div className="value">{g.txid || "-"}</div>
               </div>
             ))}
             {(data?.comments || []).map((c, idx) => (
@@ -176,11 +155,11 @@ const ResultBlock = ({ data }) => {
               <div className="tx-item" key={payout?.txid || `payout-${idx}`}>
                 <div className="stat">
                   <span className="label">Payout TxID</span>
-                  <span className="value mono wrap">{payout?.txid || "-"}</span>
+                  <span className="value">{payout?.txid || "-"}</span>
                 </div>
                 <div className="stat">
                   <span className="label">Art ID</span>
-                  <span className="value mono wrap">{payout?.art_id || "-"}</span>
+                  <span className="value">{payout?.art_id || "-"}</span>
                 </div>
                 <div className="stat">
                   <span className="label">Epoch</span>
@@ -199,7 +178,7 @@ const ResultBlock = ({ data }) => {
                       className="tx-item"
                       key={`${payout?.txid || idx}-${rcpt?.addr || ridx}`}
                     >
-                      <div className="value mono wrap">{rcpt?.addr || "-"}</div>
+                      <div className="value">{rcpt?.addr || "-"}</div>
                       <div className="muted">{fmtTsar(rcpt?.amount || 0)}</div>
                     </div>
                   ))}
@@ -217,8 +196,9 @@ const ResultTx = ({ data }) => (
   <div className="card">
     <div className="stat">
       <span className="label">TxID</span>
-      <span className="value mono wrap">{data?.txid || "-"}</span>
+      <span className="value">{data?.txid || "-"}</span>
     </div>
+    
     <div className="grid">
       <div className="stat">
         <span className="label">Status</span>
@@ -226,7 +206,7 @@ const ResultTx = ({ data }) => (
       </div>
       <div className="stat">
         <span className="label">Block</span>
-        <span className="value">#{data?.block_height ?? "-"}</span>
+        <span className="value">{data?.block_height ?? "-"}</span>
       </div>
       <div className="stat">
         <span className="label">Confirmations</span>
@@ -321,7 +301,7 @@ const ResultAddress = ({ data }) => (
   <div className="card">
     <div className="stat">
       <span className="label">Address</span>
-      <span className="value mono wrap">{data?.address || "-"}</span>
+      <span className="value">{data?.address || "-"}</span>
     </div>
     <div className="grid">
       <div className="stat">
@@ -351,32 +331,58 @@ const ResultAddress = ({ data }) => (
       <span className="value">{data?.utxos?.length || 0}</span>
     </div>
     <div className="divider" />
-    <div className="stat">
-      <span className="label">Recent Activity {data?.utxos?.length || 0}</span>
-    </div>
-    <div className="card-list">
-      {(data?.utxos || []).slice(0, 15).map((h, idx) => {
-        const vout = h.vout || 0;
-        const voutLabel = getVoutLabel(vout);
-        
-        return (
-          <div className="tx-items" key={h.txid || h.id || idx}>
-            <div className="label mono wrap">
-              <div className="tx-info">{h.txid || h.id || "-"}</div>
-              <div className="tx-amount">{fmtTsar(h.amount || h.value || 0)}</div>
+      <div className="stat">
+        <span className="value">Recent Activity : {data?.history?.length || 0}</span>
+      </div>
+      <div className="card-list">
+        {(data?.history || []).slice(0, 50).map((h, idx) => {
+          const statusBadge = getStatusBadge(h.status);
+          const directionBadge = getDirectionBadge(h.direction);
+          const timestamp = h.timestamp || h.time || h.ts;
+          const confirmations = h.confirmations || 0;
+          
+          return (
+            <div className="tx-items" key={h.txid || h.id || idx}>
+              <div className="tx-info">
+                <div className="tx-info">{h.txid || h.id || "-"}</div>
+                <div className="tx-meta">
+                  {timestamp ? (
+                    <span className="tx-time">{fmtTimestamp(timestamp)}</span>
+                  ) : null}
+                  {confirmations > 0 ? (
+                    <span className="tx-confirms">({confirmations} confirms)</span>
+                  ) : null}
+                </div>
+              </div>
+              
+              <div className="tx-amount" style={{ 
+                color: directionBadge.type === "incoming" ? "#38b36b" : 
+                        directionBadge.type === "outgoing" ? "#d1495b" : "#8b8b8b"
+              }}>
+                {directionBadge.type === "outgoing" ? "-" : "+"}
+                {fmtTsar(h.amount || h.value || 0)}
+              </div>
+              
+              <div className="tx-badges">
+                <span 
+                  className="status-badge" 
+                  style={{ backgroundColor: statusBadge.color }}
+                >
+                  {statusBadge.label}
+                </span>
+                <span 
+                  className="direction-badge" 
+                  style={{ backgroundColor: directionBadge.color }}
+                >
+                  {directionBadge.label}
+                </span>
+              </div>
             </div>
-            
-            <div className="tx-vout">
-              <span className={`vout-badge vout-${vout}`}>
-                {voutLabel}
-              </span>
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
-  </div>
-);
+  );
 
 const ResultGraffiti = ({ data }) => {
   const mime = String(data?.mime || "").toLowerCase();
@@ -384,50 +390,92 @@ const ResultGraffiti = ({ data }) => {
   return (
     <div className="card">
       <div className="stat">
-        <span className="label">Graffiti ID</span>
-        <span className="value mono wrap">{data?.art_id || "-"}</span>
+          <span className="label">Graffiti ID</span>
+          <span className="value">{data?.art_id || "-"}</span>
+          <span className="label">Creator</span>
+          <span className="value">{data?.creator || "-"}</span>
+          <span className="label">Total Creator Income</span>
+          <span className="value">{fmtTsar(data?.stats?.creator_paid)}</span>
+
+        <div className="divider" />
+
+        <div className="grid">
+          <div className="stat">
+            <span className="label">Upload Fee</span>
+            <span className="value">{fmtTsar(data?.amount_paid)}</span>
+          </div>
+          <div className="stat">
+            <span className="label">Anchoring at</span>
+            <span className="value">Block {data?.block_height ?? "-"}</span>
+          </div>
+        </div>
+          <span className="label">TxID</span>
+          <span className="value">{data?.txid || "-"}</span>
       </div>
+
+
+      <div className="divider" />
+
       <div className="stat">
-        <span className="label">SHA256 File</span>
-        <span className="value">{data?.sha256 || "-"}</span>
+        <div className="grid">
+          <div className="stat">
+            <span className="label">SHA256 File</span>
+            <span className="value">{data?.sha256 || "-"}</span>
+          </div>
+          <div className="stat">
+            <span className="label">File Size</span>
+            <span className="value">{fmtBytes(data?.size || data?.size_bytes)}</span>
+          </div>
+        </div>
+          <span className="label">Graffiti Merkle</span>
+          <span className="value">{data?.mroot || "-"}</span>
+        <div className="grid">
+          <div className="stat">
+            <span className="label">Merkle Chunk</span>
+            <span className="value">{fmtBytes(data?.mchunk)}</span>
+          </div>
+          <div className="stat">
+            <span className="label">Merkle Count</span>
+            <span className="value">{data?.mcount || "-"}</span>
+          </div>
+        </div>
       </div>
-      <div className="stat">
-        <span className="label">Graffiti Merkle</span>
-        <span className="value">{data?.mroot || "-"}</span>
-      </div>
-      <div className="stat">
-        <span className="label">Merkle Count</span>
-        <span className="value">{data?.mcount || "-"}</span>
-      </div>
-      <div className="stat">
-        <span className="label">Merkle Chunk</span>
-        <span className="value">{fmtBytes(data?.mchunk)}</span>
-      </div>
+
+      <div className="divider" />
+
       <div className="grid">
         <div className="stat">
-          <span className="label">Creator</span>
-          <span className="value mono wrap">{data?.creator || "-"}</span>
-        </div>
-        <div className="stat">
-          <span className="label">Confirmed at</span>
-          <span className="value">Block #{data?.block_height ?? "-"}</span>
-        </div>
-        <div className="stat">
-          <span className="label">Size</span>
-          <span className="value">
-            {fmtBytes(data?.size || data?.size_bytes)}
-          </span>
-        </div>
-        <div className="stat">
-          <span className="label">TxID</span>
-          <span className="value mono wrap">{data?.txid || "-"}</span>
+          <span className="label">Pool Address</span>
+          <span className="value">{data?.pool_address}</span>
         </div>
         <div className="stat">
           <span className="label">Pool Balance</span>
           <span className="value">{fmtTsar(data?.stats?.pool_balance)}</span>
         </div>
       </div>
+      <div className="grid">
+        <div className="stat">
+          <span className="label">Storage Address</span>
+          <span className="value">{data?.storer}</span>
+        </div>
+        <div className="stat">
+          <span className="label">Storage Income From Comment</span>
+          <span className="value">{fmtTsar(data?.stats?.storage_paid)}</span>
+        </div>
+      </div>
+      <div className="grid">
+        <div className="stat">
+          <span className="label">Last Paid Epoch</span>
+          <span className="value">Epoch {data?.stats?.last_paid_epoch}</span>
+        </div>
+        <div className="stat">
+          <span className="label">Total Comments</span>
+          <span className="value">{data?.stats?.comments ?? data?.comments?.length ?? 0}</span>
+        </div>
+      </div>
+
       <div className="divider" />
+
       {data?.preview_url ? (
         isVideo ? (
           <video
@@ -445,15 +493,11 @@ const ResultGraffiti = ({ data }) => {
           />
         )
       ) : (
-        <div className="muted">Preview tidak tersedia.</div>
+        <div className="muted">Preview is not available</div>
       )}
-      <div className="stat">
-        <span className="label">Total Comments</span>
-        <span className="value">
-          {data?.stats?.comments ?? data?.comments?.length ?? 0}
-        </span>
-      </div>
+
       <div className="divider" />
+
       <div className="list">
         {(data?.comments || []).slice(0, 6).map((c, idx) => (
           <div className="comment-item" key={idx}>
@@ -462,9 +506,7 @@ const ResultGraffiti = ({ data }) => {
             <div className="divider" />
             <div className="value">{c.comment_text || c.comment || "-"}</div>
             <div className="divider" />
-            <div className="muted">
-              {fmtTsar(c.amount)} {c.tip ? ` - Tip ${fmtTsar(c.tip)}` : ""}
-            </div>
+            <div className="muted">{fmtTsar(c.amount)} {c.tip ? ` - Tip ${fmtTsar(c.tip)}` : ""}</div>
           </div>
         ))}
       </div>
