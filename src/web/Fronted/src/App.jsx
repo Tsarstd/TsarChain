@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import Navbar from "./components/navbar/nav_bar";
 import Footer from "./components/footer/footer";
-import Home from "./pages/Home";
+import Block from "./pages/Block";
 import Graffiti from "./pages/Graffiti";
 import Network from "./pages/Network";
 import SearchOverlay from "./components/search/SearchOverlay";
@@ -62,7 +62,7 @@ const App = () => {
       />
       <div className="app-main">
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<Block />} />
           <Route path="/graffiti" element={<Graffiti />} />
           <Route path="/network" element={<Network />} />
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -18,6 +18,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from tsarchain.wallet.services.rpc_client import NodeClient
 from tsarchain.network.protocol import load_or_create_keypair_at
+from tsarchain.network.pow_token import solve_pow
 from tsarchain.utils import config as CFG
 from src.web.Backend.src import database_web as webdb
 
@@ -43,6 +44,24 @@ def _rpc_send(client, payload: dict):
         payload["rpc_source"] = RPC_SOURCE
     resp = client.send(payload)
     return resp
+
+def _rpc_send_with_pow(client, payload: dict, max_retries: int = 2):
+    for attempt in range(max_retries):
+        resp = client.send(payload)
+        
+        if (isinstance(resp, dict) and 
+            resp.get("reason") == "pow_required" and 
+            resp.get("pow_challenge")):
+            
+            identity = payload.get("wallet_addr") or "anon"
+            solution = solve_pow(resp["pow_challenge"], identity=identity)
+            
+            if solution:
+                payload["pow"] = solution
+                continue  # Retry dengan PoW
+        
+        return resp
+    return {"error": "pow_failed"}
 
 _CLIENT_CACHE = {}
 _CLIENT_LOCK = threading.RLock()
@@ -85,8 +104,8 @@ def _cache_policy(payload: object) -> tuple[bool, int | None]:
             return ttl is not None, ttl
     return True, None
 
-def _cache_get(key: str):
-    return webdb.cache_get_json(key)
+def _cache_get(key: str, refresh_ttl: bool = False):
+    return webdb.cache_get_json(key, refresh_ttl=refresh_ttl)
 
 def _cache_set(key: str, payload: object, ttl_sec: int | None = None) -> None:
     if ttl_sec is None:
@@ -143,17 +162,45 @@ def rpc_block_range(client, opts: dict):
             start_height = opts.get("start")
         if start_height is None:
             start_height = opts.get("height")
-    limit = int(opts.get("limit", 10) or 10) if isinstance(opts, dict) else 10
+    limit = int(opts.get("limit", 200) or 200) if isinstance(opts, dict) else 200
     key = _cache_key("block_range", start_height if start_height is not None else "latest", limit)
-    def _fetch():
-        payload = {"type": "GET_BLOCK_RANGE", "limit": limit}
-        if start_height is not None:
-            try:
-                payload["start_height"] = int(start_height)
-            except Exception:
-                payload["start_height"] = start_height
-        return _rpc_send(client, payload)
-    return _cache_fetch(key, _fetch)
+    
+    # Tentukan apakah ini data yang sering berubah
+    is_volatile = (start_height is None or 
+                   start_height == "latest" or 
+                   int(start_height or 0) <= 0)
+    
+    key = _cache_key("block_range", start_height if not is_volatile else "latest", limit)
+    
+    # PERUBAHAN: Untuk data stabil, refresh TTL saat diakses
+    # Untuk data volatile, tetap pakai TTL pendek
+    if not is_volatile:
+        cached = _cache_get(key, refresh_ttl=True)  # Refresh TTL!
+    else:
+        cached = _cache_get(key)
+    
+    if cached is not None:
+        return cached
+    
+    resp = _rpc_send(client, {"type": "GET_BLOCK_RANGE", "limit": limit, 
+                              "start_height": start_height})
+    
+    if _payload_has_error(resp):
+        ttl_err = webdb.cache_ttl_for_error(resp.get("error") if isinstance(resp, dict) else None)
+        if ttl_err is not None:
+            _cache_set(key, resp, ttl_err)
+    else:
+        # Tentukan TTL berdasarkan tipe data
+        if is_volatile:
+            log.info("folatile")
+            ttl = 15  # 1 menit untuk block terbaru
+        else:
+            log.info("no folatile")
+            ttl = 3600  # 1 jam untuk block lama (akan di-refresh saat diakses)
+        
+        webdb.cache_set_json(key, resp, ttl_sec=ttl)
+    
+    return resp
 
 def rpc_tx(client, txid: str):
     txid_norm = str(txid).lower()

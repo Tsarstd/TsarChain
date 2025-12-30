@@ -64,8 +64,7 @@ class StorageMixin:
         tx_count = len(txs)
         size_b = self._estimate_block_size_bytes(block)
         cw = getattr(block, "chainwork", None)
-        if cw is None:
-            cw = int(chainwork_so_far) + int(self._work_from_bits(getattr(block, "bits", CFG.MAX_BITS)))
+        cw = int(chainwork_so_far) + int(self._work_from_bits(getattr(block, "bits", CFG.MAX_BITS)))
         target_val = None
         difficulty_val = None
         tgt = bits_to_target(int(getattr(block, "bits", CFG.MAX_BITS)))
@@ -75,24 +74,10 @@ class StorageMixin:
             "schema_version": int(CFG.DATA_SCHEMA_VERSION),
             "tx_count": tx_count,
             "size_bytes": int(size_b),
-            "vbytes": int(size_b),
-            "weight": int(size_b * 4),
             "chainwork": None if cw is None else int(cw),
             "target": target_val,
             "difficulty": difficulty_val,
         }
-        meta["hash"] = block.hash().hex()
-        if isinstance(block.prev_block_hash, (bytes, bytearray)):
-            meta["prev_block_hash"] = block.prev_block_hash.hex()
-        else:
-            meta["prev_block_hash"] = str(block.prev_block_hash)
-            
-        meta["merkle_root"] = block.merkle_root.hex() if isinstance(block.merkle_root, (bytes, bytearray)) else str(block.merkle_root)
-        meta["height"] = int(getattr(block, "height", 0) or 0)
-        meta["timestamp"] = int(getattr(block, "timestamp", 0) or 0)
-        meta["bits"] = int(getattr(block, "bits", CFG.MAX_BITS))
-        meta["nonce"] = int(getattr(block, "nonce", 0) or 0)
-        meta["version"] = int(getattr(block, "version", 1) or 1)
         return meta
 
     def _build_chain_meta(self, tip_height: int, tip_hash: str | None = None) -> dict:
@@ -160,9 +145,6 @@ class StorageMixin:
         blk_dict = block.to_dict()
         meta = self._build_block_meta(block, chainwork_so_far=prev_chainwork)
         graff_posts, graff_comments, graff_payouts = self._extract_graffiti_events(block)
-        meta["graffiti"] = graff_posts
-        meta["comments"] = graff_comments
-        meta["payouts"] = graff_payouts
         meta["graffiti_post_count"] = len(graff_posts)
         meta["comment_count"] = len(graff_comments)
         meta["payout_count"] = len(graff_payouts)

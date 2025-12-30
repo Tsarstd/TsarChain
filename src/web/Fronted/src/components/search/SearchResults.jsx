@@ -15,12 +15,8 @@ const ResultBlock = ({ data }) => {
 
   return (
     <div className="card">
-      <span className="block-details">Block Detail</span>
+      <span className="block-details">Block Details #{data?.height ?? "-"}</span>
       <div className="divider" />
-      <div className="stat">
-        <span className="label">Block Height</span>
-        <span className="value">{data?.height ?? "-"}</span>
-      </div>
       <div className="stat">
         <span className="label">Block ID</span>
         <span className="value">{data?.block_id}</span>
@@ -86,22 +82,42 @@ const ResultBlock = ({ data }) => {
         <span className="value">{data?.transactions?.length || 0}</span>
       </div>
       <div className="list">
-        {(data?.transactions || []).map((tx) => (
+      {(data?.transactions || []).map((tx, index) => {
+        const isCoinbase = index === 0;
+        
+        return (
           <div className="tx-item" key={tx.txid}>
-            <div className="stat">
-              <span className="label">TxID</span>
-              <span className="value">{tx.txid}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="stat">
+                <span className="label">TxID</span>
+                <span className="value">{tx.txid}</span>
+              </div>
+              {isCoinbase && (
+                <span style={{
+                  backgroundColor: '#848056ff',
+                  color: '#16171a',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                  fontWeight: 'bold'
+                }}>
+                  COINBASE
+                </span>
+              )}
             </div>
-            <div className="stat">
-              <span className="label">Inputs</span>
-              <span className="value">{tx.inputs?.length || 0}</span>
-            </div>
-            <div className="stat">
-              <span className="label">Outputs</span>
-              <span className="value">{tx.outputs?.length || 0}</span>
+            <div className="grid">
+              <div className="stat">
+                <span className="value">
+                  Inputs {isCoinbase ? 0 : (tx.inputs?.length || 0)}
+                </span>
+              </div>
+              <div className="stat">
+                <span className="value">Outputs {tx.outputs?.length || 0}</span>
+              </div>
             </div>
           </div>
-        ))}
+        );
+      })}
       </div>
       {data?.graffiti?.length || data?.comments?.length ? (
         <>
@@ -196,10 +212,8 @@ const ResultBlock = ({ data }) => {
 
 const ResultTx = ({ data }) => (
   <div className="card">
-    <div className="stat">
-      <span className="label">TxID</span>
-      <span className="value">{data?.txid || "-"}</span>
-    </div>
+    <span className="txid-details">{data?.txid || "-"}</span>
+    <div className="divider" />
     
     <div className="grid">
       <div className="stat">
@@ -274,7 +288,7 @@ const ResultTx = ({ data }) => (
         const addressValue = out?.address || "";
         const addressType = addressValue
           ? getAddressType(addressValue)
-          : { type: "opreturn", label: "OP_RETURN" };
+          : { type: "opreturn", label: "Graffiti Script" };
 
         return (
           <div className="tx-items" key={idx}>
@@ -301,10 +315,8 @@ const ResultTx = ({ data }) => (
 
 const ResultAddress = ({ data }) => (
   <div className="card">
-    <div className="stat">
-      <span className="label">Address</span>
-      <span className="value">{data?.address || "-"}</span>
-    </div>
+    <span className="address-details">{data?.address ?? "-"}</span>
+    <div className="divider" />
     <div className="grid">
       <div className="stat">
         <span className="label">Balance</span>
@@ -391,6 +403,8 @@ const ResultGraffiti = ({ data }) => {
   const isVideo = mime.includes("video") || mime.includes("mp4");
   return (
     <div className="card">
+      <span className="graffiti-details">Graffiti Details #{data?.block_height ?? "-"}</span>
+      <div className="divider" />
       <div className="stat">
           <span className="label">Graffiti ID</span>
           <span className="value">{data?.art_id || "-"}</span>
@@ -409,6 +423,10 @@ const ResultGraffiti = ({ data }) => {
           <div className="stat">
             <span className="label">Anchoring at</span>
             <span className="value">Block {data?.block_height ?? "-"}</span>
+          </div>
+          <div className="stat">
+            <span className="label">Block Hash</span>
+            <span className="value">{data?.block_hash ?? "-"}</span>
           </div>
         </div>
           <span className="label">TxID</span>
@@ -518,21 +536,15 @@ const ResultGraffiti = ({ data }) => {
 
 const SearchResultPanel = ({ status, result, kind, message }) => {
   const body = useMemo(() => {
-    if (status === "idle")
-      return (
-        <div className="result-empty">
-          Mulai dengan mencari block / tx / address / graffiti.
-        </div>
-      );
     if (status === "loading")
-      return <div className="result-empty">Mencari...</div>;
+      return <div className="result-empty">Searching...</div>;
     if (status === "error")
       return (
-        <div className="result-empty">{message || "Terjadi kesalahan."}</div>
+        <div className="result-empty">{message || "An error occurred, please try again.."}</div>
       );
     if (!result)
       return (
-        <div className="result-empty">Tidak ada data untuk pencarian ini.</div>
+        <div className="result-empty">There is no result for this query.</div>
       );
     if (kind === "block" || kind === "block_height" || kind === "block_hash")
       return <ResultBlock data={result} />;
@@ -541,11 +553,12 @@ const SearchResultPanel = ({ status, result, kind, message }) => {
     if (kind === "address") return <ResultAddress data={result} />;
     if (kind === "graffiti" || kind === "art_id")
       return <ResultGraffiti data={result} />;
-    return <div className="result-empty">Jenis pencarian tidak dikenali.</div>;
+    return <div className="result-empty">Search type not recognized.</div>;
   }, [status, result, kind, message]);
 
   return body;
 };
 
 export { ResultBlock };
+export { ResultGraffiti };
 export default SearchResultPanel;

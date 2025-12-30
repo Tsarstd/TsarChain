@@ -1,11 +1,93 @@
+.txid-details {
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 17px;
+  color: var(--card);
+  font-weight: 760;
+  letter-spacing: 0.4px;
+  background: linear-gradient(
+    45deg,
+    #20656f,
+    #48b4c5,
+    #85cdd8,
+    #addde5,
+    #85cdd8,
+    #20656f
+  );
+  background-size: 200% 200%;
+  animation: gradient-wave 6s ease-in-out infinite;
+  box-shadow: 
+    0 2px 3px rgba(0, 0, 0, 0.281),
+    inset 0 1px 1px rgba(255, 255, 255, 0.2),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.3);
+}
+
+.address-details {
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 17px;
+  color: var(--card);
+  font-weight: 760;
+  letter-spacing: 0.4px;
+  background: linear-gradient(
+    45deg,
+    #3b6419,
+    #538d24,
+    #6faa3e,
+    #afd094,
+    #6faa3e,
+    #3b6419
+  );
+  background-size: 200% 200%;
+  animation: gradient-wave 6s ease-in-out infinite;
+  box-shadow: 
+    0 2px 3px rgba(0, 0, 0, 0.281),
+    inset 0 1px 1px rgba(255, 255, 255, 0.2),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.3);
+}
+
+.graffiti-details {
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 23px;
+  color: var(--card);
+  font-weight: 760;
+  letter-spacing: 0.4px;
+  background: linear-gradient(
+    45deg,
+    #9a5710,
+    #cd7213,
+    #eb8c27,
+    #f7b46c,
+    #eb8c27,
+    #9a5710
+  );
+  background-size: 200% 200%;
+  animation: gradient-wave 6s ease-in-out infinite;
+  box-shadow: 
+    0 2px 3px rgba(0, 0, 0, 0.281),
+    inset 0 1px 1px rgba(255, 255, 255, 0.2),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.3);
+}
+
 .block-details {
   padding: 5px 10px;
   border-radius: 4px;
   font-size: 23px;
-  color: #d3d3d3;
+  color: var(--card);
   font-weight: 760;
   letter-spacing: 0.4px;
-  background: #3a5563;
+  background: linear-gradient(
+    45deg,
+    #555555,
+    #7e7e7e,
+    #acacac,
+    #d2d2d2,
+    #acacac,
+    #555555
+  );
+  background-size: 200% 200%;
+  animation: gradient-wave 6s ease-in-out infinite;
   box-shadow: 
     0 2px 3px rgba(0, 0, 0, 0.281),
     inset 0 1px 1px rgba(255, 255, 255, 0.2),
@@ -265,5 +347,17 @@
   }
   100% {
     transform: translateX(100%) translateY(100%) rotate(30deg);
+  }
+}
+
+@keyframes gradient-wave {
+  0% {
+    background-position: 0% 60%;
+  }
+  50% {
+    background-position: 100% 10%;
+  }
+  100% {
+    background-position: 0% 60%;
   }
 }

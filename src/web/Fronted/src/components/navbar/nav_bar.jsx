@@ -15,7 +15,7 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
         <ul className="navbar-menu">
           <li>
             <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : "")}>
-              Home
+              Block
             </NavLink>
           </li>
           <li>

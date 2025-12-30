@@ -339,6 +339,32 @@ def compute_tx_weight_vsize(tx) -> tuple[int, int, int, int]:
     vsize = (weight + 3) // 4
     return weight, vsize, base_size, total_size
 
+def _estimate_tx_size_bytes(tx) -> int:
+    size = 0
+    for txin in getattr(tx, "inputs", []) or []:
+        size += 40
+        if getattr(txin, "script_sig", None):
+            size += len(txin.script_sig.serialize())
+        if getattr(txin, "witness", None):
+            size += sum(len(w) for w in txin.witness)
+    for txout in getattr(tx, "outputs", []) or []:
+        size += 8
+        if getattr(txout, "script_pubkey", None):
+            size += len(txout.script_pubkey.serialize())
+    size = max(size, len(tx.to_dict(include_txid=True)))
+    return int(size)
+
+def _estimate_block_size_bytes(block) -> int:
+    txs = getattr(block, "transactions", []) or []
+    total = 80  # header bytes
+    for tx in txs:
+        if hasattr(tx, 'inputs') and hasattr(tx, 'outputs'):
+            total += _estimate_tx_size_bytes(tx)
+        else:
+            total += len(json.dumps(tx))
+    total = max(total, len(json.dumps(block.to_dict())))
+    return int(total)
+
 # ========== Convenience: detect p2wpkh from scriptPubKey ==========
 
 def is_p2wpkh_script(script_bytes: bytes) -> bool:

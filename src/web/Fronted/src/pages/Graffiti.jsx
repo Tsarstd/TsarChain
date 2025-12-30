@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchGraffitiDetail, fetchGraffitiList } from "../api/explorer";
-import { fmtBytes, fmtTimestamp, fmtTsar } from "../utils/format";
-import "./pages.css";
+import { fmtBytes } from "../utils/format";
+import { ResultGraffiti } from "../components/search/SearchResults";
+import "./card.css";
 
-const PAGE_SIZE = 10;
-const SCROLL_THRESHOLD = 40;
+const PAGE_SIZE = 20;
+const SCROLL_THRESHOLD = 80;
 
 const GraffitiCard = ({ item, onSelect, active, isGenesis }) => {
   const comments = item?.stats?.comments ?? item?.comments?.length ?? 0;
@@ -13,7 +14,12 @@ const GraffitiCard = ({ item, onSelect, active, isGenesis }) => {
     .join(" ");
   return (
     <button className={classes} type="button" onClick={() => onSelect(item)}>
-      <div className="lane-card__header">Graffiti Block {item?.block_height ?? "-"}</div>
+      <div className="lane-card__graffheader">Graffiti #{item?.block_height ?? "-"}</div>
+
+      {isGenesis && (
+        <div className="lane-card__genesis-label">GENESIS</div>
+      )}
+
       <div className="lane-card__grid">
         <div className="stat">
           <span className="label">Size</span>
@@ -33,154 +39,6 @@ const GraffitiCard = ({ item, onSelect, active, isGenesis }) => {
   );
 };
 
-const GraffitiDetailCard = ({ detail, status }) => {
-  if (!detail && status !== "loading") return null;
-  
-  const mime = String(detail?.mime || "").toLowerCase();
-  const isVideo = mime.includes("video") || mime.includes("mp4");
-  
-  if (status === "loading") {
-    return (
-      <div className="card">
-        <div className="result-empty">Load Graffiti File...</div>
-      </div>
-    );
-  }
-  
-  return (
-    <div className="card">
-      <div className="stat">
-          <span className="label">Graffiti ID</span>
-          <span className="value">{detail?.art_id || "-"}</span>
-          <span className="label">Creator</span>
-          <span className="value">{detail?.creator || "-"}</span>
-          <span className="label">Total Creator Income</span>
-          <span className="value">{fmtTsar(detail?.stats?.creator_paid)}</span>
-
-        <div className="divider" />
-
-        <div className="grid">
-          <div className="stat">
-            <span className="label">Upload Fee</span>
-            <span className="value">{fmtTsar(detail?.amount_paid)}</span>
-          </div>
-          <div className="stat">
-            <span className="label">Anchoring at</span>
-            <span className="value">Block {detail?.block_height ?? "-"}</span>
-          </div>
-        </div>
-          <span className="label">TxID</span>
-          <span className="value">{detail?.txid || "-"}</span>
-      </div>
-
-
-      <div className="divider" />
-
-      <div className="stat">
-        <div className="grid">
-          <div className="stat">
-            <span className="label">SHA256 File</span>
-            <span className="value">{detail?.sha256 || "-"}</span>
-          </div>
-          <div className="stat">
-            <span className="label">File Size</span>
-            <span className="value">{fmtBytes(detail?.size || detail?.size_bytes)}</span>
-          </div>
-        </div>
-          <span className="label">Graffiti Merkle</span>
-          <span className="value">{detail?.mroot || "-"}</span>
-        <div className="grid">
-          <div className="stat">
-            <span className="label">Merkle Chunk</span>
-            <span className="value">{fmtBytes(detail?.mchunk)}</span>
-          </div>
-          <div className="stat">
-            <span className="label">Merkle Count</span>
-            <span className="value">{detail?.mcount || "-"}</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="divider" />
-
-      <div className="grid">
-        <div className="stat">
-          <span className="label">Pool Address</span>
-          <span className="value">{detail?.pool_address}</span>
-        </div>
-        <div className="stat">
-          <span className="label">Pool Balance</span>
-          <span className="value">{fmtTsar(detail?.stats?.pool_balance)}</span>
-        </div>
-      </div>
-      <div className="grid">
-        <div className="stat">
-          <span className="label">Storage Address</span>
-          <span className="value">{detail?.storer}</span>
-        </div>
-        <div className="stat">
-          <span className="label">Storage Income From Comment</span>
-          <span className="value">{fmtTsar(detail?.stats?.storage_paid)}</span>
-        </div>
-      </div>
-      <div className="grid">
-        <div className="stat">
-          <span className="label">Last Paid Epoch</span>
-          <span className="value">Epoch {detail?.stats?.last_paid_epoch}</span>
-        </div>
-        <div className="stat">
-          <span className="label">Total Comments</span>
-          <span className="value">{detail?.stats?.comments ?? detail?.comments?.length ?? 0}</span>
-        </div>
-      </div>
-      
-      <div className="divider" />
-      
-      <div className="media-preview-container">
-        {detail?.preview_url ? (
-          isVideo ? (
-            <video
-              className="media-preview"
-              controls
-              preload="metadata"
-              src={detail.preview_url}
-            />
-          ) : (
-            <img
-              className="media-preview"
-              src={detail.preview_url}
-              alt={detail.art_id}
-              loading="lazy"
-            />
-          )
-        ) : (
-          <div className="muted">Preview tidak tersedia</div>
-        )}
-      </div>
-      
-      <div className="divider" />
-      
-      <div className="detail-comments">
-        <div className="stat">
-          <span className="label">Comments ({detail?.comments?.length || 0})</span>
-        </div>
-        <div className="list">
-          {(detail?.comments || []).slice(0, 6).map((c, idx) => (
-            <div className="comment-item" key={idx}>
-              <div className="muted">{fmtTimestamp(c.ts)}</div>
-              <div className="value">{c.commenter || "-"}</div>
-              <div className="divider" />
-              <div className="value">{c.comment_text || c.comment || "-"}</div>
-              <div className="divider" />
-              <div className="muted">{fmtTsar(c.amount)} {c.tip ? ` - Tip ${fmtTsar(c.tip)}` : ""}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const Graffiti = () => {
   const [items, setItems] = useState([]);
   const [offset, setOffset] = useState(0);
@@ -191,6 +49,8 @@ const Graffiti = () => {
   const [detailStatus, setDetailStatus] = useState("idle");
   const [selectedId, setSelectedId] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [navInput, setNavInput] = useState(""); // State untuk input navigasi
+  const [isNavigating, setIsNavigating] = useState(false); // State untuk proses navigasi
 
   const scrollerRef = useRef(null);
   const dragRef = useRef({
@@ -223,7 +83,7 @@ const Graffiti = () => {
       setOffset(data.nextOffset ?? offset + nextItems.length);
       setHasMore(Boolean(data.hasMore));
     } catch (err) {
-      setMessage(err.message || "Gagal memuat graffiti.");
+      setMessage(err.message || "Failed to load graffiti.");
     } finally {
       setLoading(false);
     }
@@ -299,14 +159,99 @@ const Graffiti = () => {
     } catch (err) {
       setDetail(null);
       setDetailStatus("error");
-      setMessage(err.message || "Gagal memuat detail graffiti.");
+      setMessage(err.message || "Failed to load graffiti details.");
     }
   };
 
-  const closeDetail = () => {
-    setDetail(null);
-    setDetailStatus("idle");
-    setSelectedId(null);
+    // Fungsi untuk navigasi ke graffiti tertentu
+  const handleNavigateToGraffiti = async () => {
+    const targetId = navInput.trim();
+    if (!targetId) {
+      setMessage("Masukkan ID graffiti");
+      return;
+    }
+
+    setIsNavigating(true);
+    setMessage(`Navigating to graffiti...`);
+
+    try {
+      // Cari apakah graffiti sudah dimuat
+      const existingGraffiti = items.find(item => 
+        item.art_id === targetId || 
+        item.block_height?.toString() === targetId
+      );
+      
+      if (existingGraffiti) {
+        // Jika sudah dimuat, langsung pilih dan scroll
+        await handleSelect(existingGraffiti);
+        scrollToGraffiti(existingGraffiti.art_id);
+      } else {
+        // Jika belum dimuat, coba fetch detail
+        const resp = await fetchGraffitiDetail(targetId);
+        const graffitiData = resp.data || null;
+        
+        if (graffitiData) {
+          // Tambahkan ke state jika belum ada
+          setItems(prev => {
+            const exists = prev.find(item => item.art_id === targetId);
+            if (exists) return prev;
+            return [...prev, graffitiData];
+          });
+          
+          // Pilih graffiti
+          setDetail(graffitiData);
+          setDetailStatus("done");
+          setSelectedId(targetId);
+          
+          // Scroll ke graffiti setelah di-render
+          setTimeout(() => scrollToGraffiti(targetId), 100);
+        } else {
+          setMessage(`Graffiti dengan ID ${targetId} tidak ditemukan`);
+        }
+      }
+    } catch (err) {
+      setMessage(err.message || "Gagal navigasi ke graffiti");
+    } finally {
+      setIsNavigating(false);
+    }
+  };
+
+  // Fungsi untuk scroll ke graffiti tertentu
+  const scrollToGraffiti = (artId) => {
+    const graffitiIndex = items.findIndex(item => item.art_id === artId);
+    if (graffitiIndex !== -1 && scrollerRef.current) {
+      const cardWidth = 240 + 18; // width card + gap
+      const scrollPosition = graffitiIndex * cardWidth;
+      scrollerRef.current.scrollTo({
+        left: scrollPosition,
+        behavior: 'smooth'
+      });
+    }
+  };
+
+  // Fungsi untuk kembali ke graffiti terkini
+  const handleGoToLatest = () => {
+    if (items.length > 0) {
+      const latestGraffiti = items[0]; // Graffiti pertama adalah yang terbaru
+      setSelectedId(latestGraffiti.art_id);
+      setDetail(null);
+      setDetailStatus("idle");
+      
+      // Scroll ke awal
+      if (scrollerRef.current) {
+        scrollerRef.current.scrollTo({
+          left: 0,
+          behavior: 'smooth'
+        });
+      }
+    }
+  };
+
+  // Handle Enter key untuk input navigasi
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      handleNavigateToGraffiti();
+    }
   };
 
   const genesisId = !hasMore && items.length
@@ -318,8 +263,35 @@ const Graffiti = () => {
       <section className="section">
         <div className="section-header">
           <div>
-            <h2>Graffiti Gallery</h2>
             <p className="muted">Swipe right to load older graffiti.</p>
+          </div>
+          <div className="navigation-controls">
+            <button 
+              className="nav-button nav-button--back"
+              onClick={handleGoToLatest}
+              title="Kembali ke graffiti terkini"
+              disabled={items.length === 0 || selectedId === items[0]?.art_id}
+            >
+              ←
+            </button>
+            
+            <div className="nav-input-group">
+              <input
+                type="text"
+                className="nav-input"
+                placeholder="Graffiti ID or Block Height"
+                value={navInput}
+                onChange={(e) => setNavInput(e.target.value)}
+                onKeyPress={handleKeyPress}
+              />
+              <button 
+                className="nav-button nav-button--go"
+                onClick={handleNavigateToGraffiti}
+                disabled={isNavigating || !navInput.trim()}
+              >
+                {isNavigating ? "..." : "Go"}
+              </button>
+            </div>
           </div>
         </div>
         <div className="lane">
@@ -349,20 +321,13 @@ const Graffiti = () => {
         {message && <div className="result-empty">{message}</div>}
       </section>
 
-      {/* Detail section - sekarang menggunakan card layout */}
       <section className="section">
-        <div className="section-header">
-          <h3>Graffiti Detail</h3>
-        </div>
-        <GraffitiDetailCard 
-          detail={detail} 
-          status={detailStatus} 
-          onClose={() => {
-            setDetail(null);
-            setDetailStatus("idle");
-            setSelectedId(null);
-          }} 
-        />
+        {detailStatus === "error" && (
+          <div className="result-empty">
+            {setMessage || "Failed to load graffiti details."}
+          </div>
+        )}
+        {detailStatus === "done" && detail ? <ResultGraffiti data={detail} /> : null}
       </section>
     </main>
   );

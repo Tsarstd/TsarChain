@@ -9,7 +9,7 @@ from bech32 import convertbits, bech32_decode, bech32_encode
 
 # ---------------- Local Project ----------------
 from ..core.tx import Tx, TxIn, TxOut
-from ..utils.helpers import Script, OP_RETURN, last_pushdata, compute_tx_weight_vsize, bits_to_target, target_to_difficulty
+from ..utils.helpers import Script, OP_RETURN, last_pushdata, compute_tx_weight_vsize, bits_to_target, target_to_difficulty, _estimate_block_size_bytes
 from ..contracts import graffiti as GRAFFITI
 from .protocol import send_message, recv_message,build_envelope, SecureChannel
 from ..utils import config as CFG
@@ -751,7 +751,7 @@ def _serialize_tx_basic(self, tx) -> dict:
     
     return {"txid": txid, "vin": [{} for _ in range(n_in)], "vout": vout_list}
 
-def _serialize_block(self, b) -> dict:
+def _serialize_block(self, b) -> dict: #NOTE: need to minimalize
     def _to_hex(x):
         if isinstance(x, (bytes, bytearray)):
             return x.hex()
@@ -798,17 +798,12 @@ def _serialize_block(self, b) -> dict:
     meta = getattr(b, "_meta", None)
     meta_dict = meta if isinstance(meta, dict) else {}
 
-    # vbytes / weight / chainwork / size_bytes
-    vbytes = getattr(b, "vbytes", None)
-    weight = getattr(b, "weight", None)
+    # chainwork / size_bytes
     chainwork = getattr(b, "chainwork", None)
-    size_bytes = getattr(b, "size_bytes", None)
+    size_bytes = _estimate_block_size_bytes(b)
+    log.info("_serialize_block. #1 size_bytes=%s", size_bytes)
     if meta_dict:
-        vbytes = vbytes if vbytes is not None else meta_dict.get("vbytes")
-        weight = weight if weight is not None else meta_dict.get("weight")
         chainwork = chainwork if chainwork is not None else meta_dict.get("chainwork")
-        if size_bytes is None and meta_dict.get("size_bytes") is not None:
-            size_bytes = meta_dict.get("size_bytes")
         if diff is None:
             diff = meta_dict.get("difficulty")
 
@@ -821,11 +816,7 @@ def _serialize_block(self, b) -> dict:
     graffiti_posts = []
     graffiti_comments = []
     graffiti_payouts = []
-    base_size_sum = 80  # block header bytes (no witness)
     total_size_sum = 80
-    weight_sum = 0
-    vbytes_sum = 0
-    need_size_fallback = size_bytes is None or vbytes is None or weight is None
     for tx in getattr(b, "transactions", []) or []:
         txs.append(self._serialize_tx_basic(tx))
         txid_hex = ""
@@ -834,16 +825,6 @@ def _serialize_block(self, b) -> dict:
             txid_hex = tid.hex()
         elif isinstance(tid, str):
             txid_hex = tid
-
-        # aggregate sizes if fallback needed
-        if need_size_fallback:
-            w, v, base_sz, total_sz = compute_tx_weight_vsize(tx)
-            base_size_sum += int(base_sz)
-            total_size_sum += int(total_sz)
-            if weight is None:
-                weight_sum += int(w)
-            if vbytes is None:
-                vbytes_sum += int(v)
 
         for tx_out in getattr(tx, "outputs", []) or []:
             spk = getattr(tx_out, "script_pubkey", None)
@@ -876,18 +857,6 @@ def _serialize_block(self, b) -> dict:
                     "epoch": meta.get("epoch"),
                     "recipients": recipients,
                 })
-
-    # finalize size/weight/vbytes fallback if still missing
-    if size_bytes is None:
-        size_bytes = total_size_sum if total_size_sum > 0 else None
-        
-    if weight is None and base_size_sum is not None and total_size_sum is not None:
-        weight = int(weight_sum) if weight_sum > 0 else int(base_size_sum * 3 + total_size_sum)
-    if vbytes is None:
-        if vbytes_sum > 0:
-            vbytes = int(vbytes_sum)
-        elif weight is not None:
-            vbytes = (int(weight) + 3) // 4
 
     # chainwork fallback (use prev chainwork + work_from_bits if available)
     if chainwork is None and bits is not None:
@@ -923,8 +892,6 @@ def _serialize_block(self, b) -> dict:
         "difficulty": diff,
         "version": version,
         "bits": bits,
-        "vbytes": vbytes,
-        "weight": weight,
         "chainwork": chainwork,
         "size_bytes": size_bytes,
         "merkle_root": mroot_hex,

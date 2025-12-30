@@ -1,20 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchBlockRange, fetchByKind } from "../api/explorer";
-import { fmtBytes } from "../utils/format";
+import { fmtBytes, fmtDateLong, timeAgo } from "../utils/format";
 import { ResultBlock } from "../components/search/SearchResults";
-import "./pages.css";
+import "./card.css";
 
-const PAGE_SIZE = 10;
-const SCROLL_THRESHOLD = 40;
+const PAGE_SIZE = 200;
+const SCROLL_THRESHOLD = 800;
 
 const BlockCard = ({ item, onSelect, active, isGenesis }) => {
   const graffitiPosts = Number(item?.graffiti_posts || 0);
   const graffitiComments = Number(item?.graffiti_comments || 0);
-  const graffitiCount =
-    item?.graffiti_count ?? graffitiPosts + graffitiComments;
+  const blockId = item?.block_id;
+  const graffitiCount = item?.graffiti_count ?? graffitiPosts + graffitiComments;
+
+  const isGraffiti =
+    typeof blockId === "string" &&
+    blockId.toLowerCase().startsWith("graf");
+
   const classes = [
     "lane-card",
-    graffitiPosts > 0 ? "lane-card--graffiti" : "",
+    isGraffiti ? "lane-card--graffiti" : "",
     active ? "lane-card--active" : "",
     isGenesis ? "lane-card--genesis" : "",
   ]
@@ -23,15 +28,28 @@ const BlockCard = ({ item, onSelect, active, isGenesis }) => {
 
   return (
     <button className={classes} type="button" onClick={() => onSelect(item)}>
-      <div className="lane-card__header">Block {item?.height ?? "-"}</div>
-      {graffitiPosts > 0 ? (
-        <div className="lane-card__tag">Graffiti Post</div>
-      ) : null}
       <div className="lane-card__grid">
         <div className="stat">
-          <span className="label">Size</span>
-          <span className="value">{fmtBytes(item?.size_bytes)}</span>
+          <div className="lane-card__date">{fmtDateLong(item?.timestamp)}</div>
+          <div className="lane-card__blockheight">#{item?.height ?? "-"}</div>
         </div>
+        <div className="lane-card__time-ago">{timeAgo(item?.timestamp)}</div>
+
+      {isGraffiti ? (
+        <div className="lane-card__graf">Graffiti Post</div>
+      ) : null}
+
+      {!isGenesis && !isGraffiti && blockId ? (
+        <div className="lane-card__bid">{blockId}</div>
+      ) : null}
+      
+      {isGenesis ? (
+        <div className="lane-card__genesis-label">GENESIS</div>
+      ) : null}
+      </div>
+
+
+      <div className="lane-card__grid">
         <div className="stat">
           <span className="label">Transactions</span>
           <span className="value">{item?.tx_count ?? 0}</span>
@@ -41,9 +59,13 @@ const BlockCard = ({ item, onSelect, active, isGenesis }) => {
           <span className="value">{graffitiCount ?? 0}</span>
         </div>
       </div>
+      <div className="lane-card__id wrap">{item?.hash || "-"}</div>
     </button>
   );
 };
+
+
+const CACHE_KEY = 'block_range_cache';
 
 const Home = () => {
   const [blocks, setBlocks] = useState([]);
@@ -56,6 +78,8 @@ const Home = () => {
   const [detailMessage, setDetailMessage] = useState("");
   const [selectedHeight, setSelectedHeight] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [navInput, setNavInput] = useState(""); // State untuk input navigasi
+  const [isNavigating, setIsNavigating] = useState(false); // State untuk proses navigasi
 
   const scrollerRef = useRef(null);
   const dragRef = useRef({
@@ -65,6 +89,34 @@ const Home = () => {
     moved: false,
     wasDrag: false,
   });
+
+  // Fungsi helper untuk cache
+  const getCachedBlocks = () => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { blocks, timestamp } = JSON.parse(cached);
+        // Validitas cache 30 detik
+        if (Date.now() - timestamp < 30000) {
+          return blocks;
+        }
+      }
+    } catch (e) {
+      console.warn('Cache read error:', e);
+    }
+    return null;
+  };
+
+  const setCachedBlocks = (blocks) => {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({
+        blocks,
+        timestamp: Date.now()
+      }));
+    } catch (e) {
+      console.warn('Cache write error:', e);
+    }
+  };
 
   const loadBlocks = useCallback(
     async (startHeight) => {
@@ -86,6 +138,8 @@ const Home = () => {
             seen.add(item.height);
             merged.push(item);
           }
+          // Simpan ke cache
+          setTimeout(() => setCachedBlocks(merged), 0);
           return merged;
         });
         const next =
@@ -110,7 +164,14 @@ const Home = () => {
   );
 
   useEffect(() => {
-    if (blocks.length === 0 && !loading) {
+    const cached = getCachedBlocks();
+    if (cached && cached.length > 0) {
+      setBlocks(cached);
+      // Load lebih banyak jika perlu
+      if (cached.length < PAGE_SIZE) {
+        loadBlocks(null);
+      }
+    } else if (blocks.length === 0 && !loading) {
       loadBlocks(null);
     }
   }, [blocks.length, loadBlocks, loading]);
@@ -159,6 +220,92 @@ const Home = () => {
     }, 0);
   };
 
+  const handleNavigateToBlock = async () => {
+    const targetHeight = parseInt(navInput);
+    if (isNaN(targetHeight) || targetHeight < 0) {
+      setMessage("Masukkan angka block height yang valid");
+      return;
+    }
+
+    setIsNavigating(true);
+
+    try {
+      // Cari apakah block sudah dimuat
+      const existingBlock = blocks.find(block => block.height === targetHeight);
+      
+      if (existingBlock) {
+        // Jika sudah dimuat, langsung pilih dan scroll
+        await handleSelect(existingBlock);
+        scrollToBlock(targetHeight);
+      } else {
+        // Jika belum dimuat, fetch block tersebut
+        const resp = await fetchByKind("block", targetHeight);
+        const blockData = resp.data || null;
+        
+        if (blockData) {
+          // Tambahkan ke state jika belum ada
+          setBlocks(prev => {
+            const exists = prev.find(b => b.height === targetHeight);
+            if (exists) return prev;
+            return [...prev, blockData].sort((a, b) => b.height - a.height);
+          });
+          
+          // Pilih block
+          setDetail(blockData);
+          setDetailStatus("done");
+          setSelectedHeight(targetHeight);
+          
+          // Scroll ke block setelah di-render
+          setTimeout(() => scrollToBlock(targetHeight), 100);
+        } else {
+          setMessage(`Block #${targetHeight} tidak ditemukan`);
+        }
+      }
+    } catch (err) {
+      setMessage(err.message || "Gagal navigasi ke block");
+    } finally {
+      setIsNavigating(false);
+    }
+  };
+
+  // Fungsi untuk scroll ke block tertentu
+  const scrollToBlock = (height) => {
+    const blockIndex = blocks.findIndex(block => block.height === height);
+    if (blockIndex !== -1 && scrollerRef.current) {
+      const cardWidth = 240 + 18; // width card + gap
+      const scrollPosition = blockIndex * cardWidth;
+      scrollerRef.current.scrollTo({
+        left: scrollPosition,
+        behavior: 'smooth'
+      });
+    }
+  };
+
+  // Fungsi untuk kembali ke block terkini (tertinggi)
+  const handleGoToLatest = () => {
+    if (blocks.length > 0) {
+      const latestBlock = blocks[0]; // Block pertama adalah yang tertinggi
+      setSelectedHeight(latestBlock.height);
+      setDetail(null);
+      setDetailStatus("idle");
+      
+      // Scroll ke awal
+      if (scrollerRef.current) {
+        scrollerRef.current.scrollTo({
+          left: 0,
+          behavior: 'smooth'
+        });
+      }
+    }
+  };
+
+  // Handle Enter key untuk input navigasi
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      handleNavigateToBlock();
+    }
+  };
+
   const handleClickCapture = (event) => {
     if (dragRef.current.wasDrag) {
       event.preventDefault();
@@ -188,10 +335,38 @@ const Home = () => {
       <section className="section">
         <div className="section-header">
           <div>
-            <h2>Latest Blocks</h2>
             <p className="muted">
               Swipe right to load older blocks.
             </p>
+          </div>
+          <div className="navigation-controls">
+            <button 
+              className="nav-button nav-button--back"
+              onClick={handleGoToLatest}
+              title="Kembali ke block terkini"
+              disabled={blocks.length === 0 || selectedHeight === blocks[0]?.height}
+            >
+              ←
+            </button>
+            
+            <div className="nav-input-group">
+              <input
+                type="number"
+                className="nav-input"
+                placeholder="Block height"
+                value={navInput}
+                onChange={(e) => setNavInput(e.target.value)}
+                onKeyPress={handleKeyPress}
+                min="0"
+              />
+              <button 
+                className="nav-button nav-button--go"
+                onClick={handleNavigateToBlock}
+                disabled={isNavigating || !navInput.trim()}
+              >
+                {isNavigating ? "..." : "Go"}
+              </button>
+            </div>
           </div>
         </div>
         <div className="lane">

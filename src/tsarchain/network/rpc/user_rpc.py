@@ -97,58 +97,45 @@ def _identity_from_msg(message: dict[str, Any] | None) -> str | None:
     return None
 
 def _summarize_block(self: "Network", b: Any) -> dict:
-    height = int(getattr(b, "height", getattr(b, "index", 0)))
-    ts = None
-    for name in ("time", "timestamp"):
-        v = getattr(b, name, None)
-        if v is not None:
-            ts = int(v)
-            break
-    size_bytes = getattr(b, "size_bytes", None)
-    meta_block = getattr(b, "_meta", None)
-    if size_bytes is None and isinstance(meta_block, dict) and meta_block.get("size_bytes") is not None:
-        size_bytes = meta_block.get("size_bytes")
-
-    txs = getattr(b, "transactions", []) or []
-    tx_count = len(txs)
+    height     = int(getattr(b, "height", getattr(b, "index", 0)))
+    ts         = int(getattr(b, "timestamp")) 
+    txs        = getattr(b, "transactions", []) or []
+    first_tx   = txs[0]
+    block_id   = str(getattr(first_tx, "block_id", None))
+    tx_count   = len(txs)
+    
     graffiti_posts = 0
     graffiti_comments = 0
-    total_size_sum = 80
-    need_size_fallback = size_bytes is None
+    graffiti_payouts = 0
 
     for tx in txs:
-        if need_size_fallback:
-            _w, _v, _base_sz, total_sz = compute_tx_weight_vsize(tx)
-            total_size_sum += int(total_sz)
         for tx_out in getattr(tx, "outputs", []) or []:
             spk = getattr(tx_out, "script_pubkey", None)
-            if spk is None:
+            if not spk:
                 continue
-            out_meta = None
-            try:
-                out_meta = GRAFFITI.parse_from_script(spk)
-            except Exception:
-                out_meta = None
-            if not out_meta:
+                
+            out_meta = GRAFFITI.parse_from_script(spk)
+            if out_meta is None:
                 continue
+            
             ev = str(out_meta.get("event", "")).upper()
             if ev == "POST":
                 graffiti_posts += 1
             elif ev == "COMMENT":
                 graffiti_comments += 1
-
-    if size_bytes is None:
-        size_bytes = total_size_sum if total_size_sum > 0 else None
+            elif ev == "PAYOUT":
+                graffiti_payouts += 1
 
     return {
         "height": height,
         "hash": self._bhash_hex(b),
+        "block_id": block_id,
         "timestamp": ts,
-        "size_bytes": size_bytes,
         "tx_count": tx_count,
         "graffiti_posts": graffiti_posts,
         "graffiti_comments": graffiti_comments,
-        "graffiti_count": graffiti_posts + graffiti_comments,
+        "graffiti_payouts": graffiti_payouts,
+        "graffiti_count": graffiti_posts + graffiti_comments + graffiti_payouts,
     }
 
 def _allow_rpc_with_pow(
@@ -460,19 +447,21 @@ def handle_user_rpc(
             difficulty=int(CFG.RPC_POW_DIFFICULTY_READ),
         )
         if not ok:
+            log.info("GET_BLOCK_RANGE pow required")
             return pow_resp
 
         raw_start = message.get("start_height", message.get("start"))
-        raw_limit = message.get("limit", 10)
+        raw_limit = message.get("limit", 200)
         try:
             limit = int(raw_limit)
         except Exception:
-            limit = 10
-        limit = max(1, min(limit, 50))
+            limit = 200
+        limit = max(1, min(limit, 500))
 
         with self.broadcast.lock:
             chain = list(self.broadcast.blockchain.chain)
             tip_height = int(self.broadcast.blockchain.height)
+            log.info("GET_BLOCK_RANGE tip_height: %s", tip_height)
 
         if not chain:
             return {
@@ -486,16 +475,20 @@ def handle_user_rpc(
             }
 
         if raw_start is None or raw_start == "":
+            log.info("GET_BLOCK_RANGE raw_start: %s", raw_start)
             start_height = tip_height
+            log.info("GET_BLOCK_RANGE start_height: %s", start_height)
         else:
             try:
                 start_height = int(raw_start)
             except Exception:
                 start_height = tip_height
+                log.info("GET_BLOCK_RANGE start_height exception: %s", start_height)
 
         if start_height > tip_height:
             start_height = tip_height
         if start_height < 0:
+            log.info("GET_BLOCK_RANGE has_more false")
             return {
                 "type": "BLOCK_RANGE",
                 "items": [],
@@ -517,6 +510,7 @@ def handle_user_rpc(
             h -= 1
 
         has_more = h >= 0
+        log.info("'GET_BLOCK_RANGE' has_more: %s", has_more)
 
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
@@ -1708,9 +1702,6 @@ def handle_user_rpc(
 #----------------------#-------------------
 
     elif mtype == "GRAFFITI_GET_POSTS":
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-
         ip = client_ip()
         graf_key = f"graf:{ip}"
         ok, pow_resp = _allow_rpc_with_pow(
@@ -1735,12 +1726,6 @@ def handle_user_rpc(
         offset = max(0, offset)
         reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
         posts = reg.list_posts(limit, offset) if reg else []
-        
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            src_tag = (message.get("rpc_source") or "-")
-            log.debug("[GRAFFITI_GET_POSTS] Benchmark : %.3f ms src=%s", result, src_tag)
             
         return {"type": "GRAFFITI_GET_POSTS", "posts": posts}
 

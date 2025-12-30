@@ -119,7 +119,7 @@ def cache_ttl_for_error(reason: object) -> Optional[int]:
     return None
 
 
-def cache_get_json(key: str) -> Optional[object]:
+def cache_get_json(key: str, refresh_ttl: bool = False) -> Optional[object]:
     store = _open_store()
     if store is None:
         return None
@@ -131,17 +131,32 @@ def cache_get_json(key: str) -> Optional[object]:
         return None
     if raw is None:
         return None
+    
     entry = _json_loads(bytes(raw))
-    if not entry or _is_expired(entry):
+    if not entry:
+        return None
+    
+    # PERUBAHAN: Refresh TTL jika diminta
+    if refresh_ttl and not _is_expired(entry):
+        # Perbarui timestamp, perpanjang usia cache
+        entry["ts"] = int(time.time())
+        try:
+            store.put_bytes(WEB_CACHE_DB, k, _json_dumps(entry))
+        except Exception:
+            pass  # Jangan gagal hanya karena refresh gagal
+    
+    if _is_expired(entry):
         try:
             store.delete(WEB_CACHE_DB, k)
         except Exception:
             pass
         return None
+    
     return entry.get("payload")
 
 
 def cache_set_json(key: str, payload: object, ttl_sec: int = WEB_CACHE_TTL_SEC) -> None:
+    log.debug("cache_set_json. key=%s ttl=%s", key, ttl_sec)
     store = _open_store()
     if store is None:
         return

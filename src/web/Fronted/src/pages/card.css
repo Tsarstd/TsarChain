@@ -1,0 +1,440 @@
+/* Navigation Controls */
+.navigation-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 0 90px;
+}
+
+.nav-input-group {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  max-width: 300px;
+}
+
+.nav-input {
+  flex: 1;
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 14px;
+  font-family: 'Monaco', 'Consolas', monospace;
+  transition: all 0.2s ease;
+  min-width: 120px;
+}
+
+.nav-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.nav-button {
+  padding: 10px 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 60px;
+}
+
+.nav-button:hover:not(:disabled) {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+  transform: translateY(-1px);
+}
+
+.nav-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.nav-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.nav-button--back {
+  padding: 10px 16px;
+  font-size: 18px;
+  background: linear-gradient(135deg, rgba(36, 35, 34, 0.67), rgba(12, 11, 10, 0.768));
+  border-color: rgba(99, 76, 58, 0.618);
+}
+
+.nav-button--go {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(59, 130, 246, 0.05));
+  border-color: rgba(59, 130, 246, 0.3);
+  color: var(--primary);
+}
+
+.nav-button--go:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--primary), rgba(59, 130, 246, 0.8));
+}
+
+/* Lane Card */
+.lane-scroll {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(240px, 1fr);
+  gap: 18px;
+  overflow-x: auto;
+  padding: 12px 70px 12px 90px;
+  scroll-behavior: smooth;
+  align-items: stretch;
+  scrollbar-width: none;
+  cursor: grab;
+  width: 100%;
+  mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    black 2%,
+    black 98%,
+    transparent 100%
+  );
+}
+
+.lane-card__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  padding: 1px 2px 1px 2px;
+}
+
+.lane-scroll--dragging {
+  cursor: grabbing;
+  user-select: none;
+  scroll-behavior: auto;
+}
+
+/*height label*/
+.lane-card__graffheader {
+  align-self: start;
+  font-size: 26px;
+  font-weight: 650;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px
+}
+
+.lane-card__blockheight {
+  font-size: 33px;
+  font-weight: 650;
+  color: #f6f4f3;
+}
+
+/*timestamp label*/
+.lane-card__date {
+  font-size: 11px;
+  text-align: left;
+  font-weight: 600;
+  color: #ece7e4;
+}
+
+.lane-card__time-ago {
+  font-size: 12px;
+  text-align: right;
+  font-weight: 500;
+  color: #78716c;
+}
+
+/*for hash & graffiti id*/
+.lane-card__id {
+  color: var(--muted);
+  font-size: 13px;
+  font-family: 'Monaco', 'Consolas', monospace;
+  letter-spacing: -0.02em;
+}
+
+.lane-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  padding: 18px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 4px 10px rgba(32, 59, 80, 0.107);
+}
+
+.lane-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(64, 46, 36, 0.8) 0%, rgba(0, 0, 0, 0.47) 100%);
+  opacity: 0.6;
+}
+
+.lane-card:hover {
+  transform: translateY(-6px) scale(1.02);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(59, 130, 246, 0.1);
+  border-color: var(--primary, #3b82f6);
+}
+
+.lane-card:active {
+  transform: translateY(-3px) scale(1.01);
+  transition-duration: 0.1s;
+}
+
+.lane-card--active {
+  border-color: rgba(37, 99, 235, 0.8);
+  background: linear-gradient(135deg, #08121d 0%, #000000 100%);
+  box-shadow: 0 0 0 1px rgba(59, 131, 246, 0.782), 0 8px 24px rgba(25, 94, 205, 0.716);
+}
+
+/*block_id label*/
+.lane-card__bid {
+  align-self: start;
+  justify-self: start;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 730;
+  background: linear-gradient(135deg, rgba(36, 35, 34, 0.67), rgba(12, 11, 10, 0.768));
+  color: #8d8681;
+  border: 1px solid rgba(99, 76, 58, 0.618);
+  backdrop-filter: blur(10px);
+  transition: all 0.2s ease;
+}
+
+/*Graffiti Post label*/
+.lane-card__graf {
+  align-self: start;
+  justify-self: start;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.15), rgba(249, 115, 22, 0.05));
+  color: #f97316;
+  border: 1px solid rgba(175, 86, 23, 0.965);
+  backdrop-filter: blur(10px);
+  transition: all 0.2s ease;
+}
+
+/*Graffiti Card*/
+.lane-card--graffiti {
+  border-color: rgba(249, 116, 22, 0.424);
+  background: linear-gradient(135deg, #784b14 0%, #211408cf 100%);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 18px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  min-height: 220px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  animation: orange-pulse 1.8s ease-in-out infinite;
+}
+
+.lane-card--graffiti::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(64, 46, 36, 0.8) 0%, rgba(0, 0, 0, 0.47) 100%);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.lane-card--graffiti:hover {
+  transform: translateY(-6px) scale(1.02);
+  border-color: var(--primary, #e37b05);
+  animation: none;
+}
+
+.lane-card--graffiti:not(:hover) {
+  animation: orange-pulse 1.8s ease-in-out infinite;
+}
+
+.lane-card--graffiti:active {
+  transform: translateY(-3px) scale(1.01);
+  transition-duration: 0.1s;
+}
+
+.lane-card--graffiti.lane-card--active {
+  border-color: #e37b05;
+  background: linear-gradient(135deg, #6c3919a9 0%, #000000 70%);
+  box-shadow: 0 0 0 1px rgba(246, 165, 59, 0.856), 0 8px 24px rgba(209, 109, 21, 0.8);
+  animation: none;
+}
+
+/*Genesis Card*/
+.lane-card--genesis {
+  border-color: rgba(212, 175, 55, 0.9);
+  background: linear-gradient(135deg, 
+    rgba(255, 217, 0, 0.208) 0%,
+    rgba(218, 165, 32, 0.231) 30%,
+    rgba(184, 135, 11, 0.246) 100%);
+  box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.4),
+              0 12px 32px rgba(212, 175, 55, 0.3);
+  position: relative;
+  overflow: hidden;
+  animation: gold-glow 1.8s ease-in-out infinite;
+}
+
+.lane-card--genesis::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 20% 80%, 
+    rgba(255, 215, 0, 0.2) 0%,
+    transparent 70%);
+  pointer-events: none;
+}
+
+.lane-card--genesis:hover {
+  transform: translateY(-6px) scale(1.02);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 
+              0 0 0 1px rgba(59, 130, 246, 0.1),
+              0 0 30px rgba(241, 199, 12, 0.524);
+  border-color: var(--primary, #e3ba05);
+  animation: none;
+}
+
+.lane-card--genesis:not(:hover) {
+  animation: orange-pulse 1.8s ease-in-out infinite;
+}
+
+.lane-card--genesis:active {
+  transform: translateY(-3px) scale(1.01);
+  transition-duration: 0.1s;
+}
+
+.lane-card--genesis.lane-card--active {
+  border-color: rgba(235, 207, 21, 0.8);
+  background: linear-gradient(135deg, #bc8a0bc5 0%, #17161268 100%);
+  box-shadow: 0 0 0 1px rgba(246, 243, 59, 0.531), 0 8px 24px rgba(228, 193, 16, 0.753);
+  animation: none;
+}
+
+.lane-card__genesis-label {
+  align-self: start;
+  justify-self: start;
+  font-size: 14px;
+  font-weight: 800;
+  color: #FFD700;
+  text-shadow: 
+    0 0 10px rgba(255, 215, 0, 0.8),
+    0 0 20px rgba(255, 215, 0, 0.6),
+    0 0 30px rgba(255, 215, 0, 0.4);
+  letter-spacing: 1px;
+  animation: genesis-glow 2s ease-in-out infinite alternate;
+  margin-top: 4px;
+  padding: 2px 0;
+  background: linear-gradient(135deg, 
+    rgba(255, 215, 0, 0.1) 0%, 
+    rgba(218, 165, 32, 0.05) 100%);
+  border-radius: 100px;
+  padding: 2px 8px;
+}
+
+/* Animations */
+@keyframes orange-pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes gold-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 3px rgba(212, 175, 55, 0.35);
+    transform: translateY(0);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(212, 175, 55, 0.455);
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes genesis-glow {
+  0% {
+    text-shadow: 
+      0 0 5px rgba(255, 215, 0, 0.8),
+      0 0 10px rgba(255, 215, 0, 0.6),
+      0 0 15px rgba(255, 215, 0, 0.4);
+    color: #FFD700;
+  }
+  100% {
+    text-shadow: 
+      0 0 10px rgba(255, 215, 0, 1),
+      0 0 20px rgba(255, 215, 0, 0.8),
+      0 0 30px rgba(255, 215, 0, 0.6);
+    color: #FFF8DC;
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .navigation-controls {
+    padding: 0 20px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .nav-input-group {
+    max-width: 100%;
+  }
+  
+  .nav-button--back {
+    align-self: flex-start;
+  }
+
+  .lane-scroll {
+    grid-auto-columns: minmax(200px, 1fr);
+    gap: 14px;
+    width: 100%;
+    mask-image: none;
+  }
+  
+  .lane-card {
+    min-height: 200px;
+    padding: 16px;
+  }
+
+  .lane-card__date {
+    font-size: 10px;
+  }
+  
+  .lane-card__time-ago {
+    font-size: 8px;
+  }
+  
+  .lane-card__genesis-label {
+    font-size: 12px;
+    font-weight: 700;
+    padding: 1px 6px;
+  }
+}

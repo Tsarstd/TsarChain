@@ -8,8 +8,7 @@ const getConfig = () => {
   const port = Number(process.env.PORT) || 4000;
   const nodeHost = process.env.TSAR_NODE_HOST || "127.0.0.1";
   const nodePort = Number(process.env.TSAR_NODE_PORT) || 19000;
-  const useMock = (process.env.TSAR_EXPLORER_MOCK || "false").toLowerCase() === "true";
-  return { port, nodeHost, nodePort, useMock };
+  return { port, nodeHost, nodePort };
 };
 
 module.exports = { getConfig };

@@ -137,7 +137,6 @@ class Block:
             log.exception("cache_hash_skiped")
             pass
 
-        # preserve meta (if present) so downstream serializers can reuse it
         meta = data.get("_meta")
         if isinstance(meta, dict):
             try:

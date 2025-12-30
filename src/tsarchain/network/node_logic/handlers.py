@@ -9,7 +9,6 @@ import json
 import time
 from typing import List
 
-from bech32 import convertbits, bech32_encode
 from ...utils import config as CFG
 from ...utils.helpers import decode_address
 from ...utils.tsar_logging import get_ctx_logger

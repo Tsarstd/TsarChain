@@ -77,7 +77,7 @@ const Network = () => {
   if (status === "loading") {
     return (
       <main className="page">
-        <div className="result-empty">Memuat network info...</div>
+        <div className="result-empty">Load network info...</div>
       </main>
     );
   }

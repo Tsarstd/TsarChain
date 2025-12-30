@@ -163,6 +163,7 @@
 .result-empty {
   color: var(--muted);
   padding: 3px 0;
+  font-size: small;
   font-style: italic;
 }
 
@@ -375,9 +376,5 @@
 @media (max-width: 900px) {
   .detail-body {
     grid-template-columns: 1fr;
-  }
-
-  .lane-scroll {
-    grid-auto-columns: minmax(180px, 1fr);
   }
 }

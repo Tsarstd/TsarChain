@@ -36,6 +36,41 @@ export const fmtTimestamp = (sec) => {
   return new Date(Number(sec) * 1000).toLocaleString("id-ID");
 };
 
+export const fmtDateLong = (sec) => {
+  if (!sec) return "-";
+  const date = new Date(Number(sec) * 1000);
+  const options = { year: 'numeric', month: 'long', day: 'numeric' };
+  return date.toLocaleDateString('en-US', options);
+};
+
+export const timeAgo = (sec) => {
+  if (!sec) return "-";
+  
+  const now = Math.floor(Date.now() / 1000);
+  const diff = now - Number(sec);
+  
+  if (diff < 0) return "just now";
+  
+  const intervals = [
+    { label: 'year', seconds: 31536000 },
+    { label: 'month', seconds: 2592000 },
+    { label: 'week', seconds: 604800 },
+    { label: 'day', seconds: 86400 },
+    { label: 'hour', seconds: 3600 },
+    { label: 'minute', seconds: 60 },
+    { label: 'second', seconds: 1 }
+  ];
+  
+  for (const interval of intervals) {
+    const count = Math.floor(diff / interval.seconds);
+    if (count >= 1) {
+      return `${count} ${interval.label}${count !== 1 ? 's' : ''} ago`;
+    }
+  }
+  
+  return 'just now';
+};
+
 export const fmtHashrate = (hps) => {
   const v = Number(hps || 0);
   if (v >= 1e12) return `${(v / 1e12).toFixed(3)} TH/s`;

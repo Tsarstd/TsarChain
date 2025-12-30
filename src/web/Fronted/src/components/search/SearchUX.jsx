@@ -68,7 +68,7 @@ export const getDirectionBadge = (direction) => {
 export const getAddressType = (address) => {
   const clean = String(address || "").trim();
   if (!clean) return null;
-  if (clean.length === 44) return { type: "p2wpkh", label: "P2WPKH" };
-  if (clean.length === 64) return { type: "p2wsh", label: "P2WSH" };
+  if (clean.length === 44) return { type: "p2wpkh", label: "Citizen Address" };
+  if (clean.length === 64) return { type: "p2wsh", label: "Pool Address" };
   return null;
 }
