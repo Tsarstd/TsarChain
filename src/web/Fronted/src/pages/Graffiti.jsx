@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { fetchGraffitiDetail, fetchGraffitiList } from "../api/explorer";
 import { fmtBytes } from "../utils/format";
 import { ResultGraffiti } from "../components/search/SearchResults";
@@ -39,7 +40,8 @@ const GraffitiCard = ({ item, onSelect, active, isGenesis }) => {
   );
 };
 
-const Graffiti = () => {
+const Graffiti = ({onSearchClick}) => {
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -229,6 +231,15 @@ const Graffiti = () => {
     }
   };
 
+  const handleSearchClickLocal = useCallback((value) => {
+    if (onSearchClick) {
+      onSearchClick(value);
+    } else {
+      // Fallback ke navigate
+      navigate(`/?search=${encodeURIComponent(value)}`);
+    }
+  }, [onSearchClick, navigate]);
+
   // Fungsi untuk kembali ke graffiti terkini
   const handleGoToLatest = () => {
     if (items.length > 0) {
@@ -312,6 +323,7 @@ const Graffiti = () => {
                 active={item.art_id === selectedId}
                 isGenesis={Boolean(genesisId && item.art_id === genesisId)}
                 onSelect={handleSelect}
+                onSearchClick={handleSearchClickLocal}
               />
             ))}
           </div>
@@ -327,7 +339,7 @@ const Graffiti = () => {
             {setMessage || "Failed to load graffiti details."}
           </div>
         )}
-        {detailStatus === "done" && detail ? <ResultGraffiti data={detail} /> : null}
+        {detailStatus === "done" && detail ? <ResultGraffiti data={detail} onSearchClick={handleSearchClickLocal} /> : null}
       </section>
     </main>
   );

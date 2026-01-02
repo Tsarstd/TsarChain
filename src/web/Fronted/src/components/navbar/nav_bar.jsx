@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import { IoSearch } from "react-icons/io5";
 import "./nav_bar.css";
 import { assets } from "../../assets/assets";
 
@@ -34,12 +35,12 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
         <form className="nav-search" onSubmit={handleSubmit}>
           <input
             type="text"
-            placeholder="Height/BlockHash/TxId/Address/Graffiti_Id"
+            placeholder="Search by Height / BlockHash / TxId / Address / Graffiti_Id"
             value={query}
             onChange={(e) => onQueryChange?.(e.target.value)}
           />
           <button className="btn-primary" type="submit">
-            Search
+            <IoSearch />
           </button>
         </form>
       </div>

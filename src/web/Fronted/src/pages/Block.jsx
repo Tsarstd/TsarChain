@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { fetchBlockRange, fetchByKind } from "../api/explorer";
-import { fmtBytes, fmtDateLong, timeAgo } from "../utils/format";
+import { fmtDateLong, timeAgo } from "../utils/format";
 import { ResultBlock } from "../components/search/SearchResults";
 import "./card.css";
 
 const PAGE_SIZE = 200;
 const SCROLL_THRESHOLD = 800;
+const CACHE_KEY = 'block_range_cache';
+const CACHE_EXPIRE_MS = 15 * 60 * 1000;
 
 const BlockCard = ({ item, onSelect, active, isGenesis }) => {
   const graffitiPosts = Number(item?.graffiti_posts || 0);
@@ -65,9 +68,8 @@ const BlockCard = ({ item, onSelect, active, isGenesis }) => {
 };
 
 
-const CACHE_KEY = 'block_range_cache';
-
-const Home = () => {
+const Home = ({ onSearchClick }) => {
+  const navigate = useNavigate();
   const [blocks, setBlocks] = useState([]);
   const [nextHeight, setNextHeight] = useState(null);
   const [hasMore, setHasMore] = useState(true);
@@ -78,8 +80,9 @@ const Home = () => {
   const [detailMessage, setDetailMessage] = useState("");
   const [selectedHeight, setSelectedHeight] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [navInput, setNavInput] = useState(""); // State untuk input navigasi
-  const [isNavigating, setIsNavigating] = useState(false); // State untuk proses navigasi
+  const [navInput, setNavInput] = useState("");
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
 
   const scrollerRef = useRef(null);
   const dragRef = useRef({
@@ -90,7 +93,15 @@ const Home = () => {
     wasDrag: false,
   });
 
-  // Fungsi helper untuk cache
+  const handleSearchClickLocal = useCallback((value) => {
+    if (onSearchClick) {
+      onSearchClick(value);
+    } else {
+      // Fallback ke navigate
+      navigate(`/?search=${encodeURIComponent(value)}`);
+    }
+  }, [onSearchClick, navigate]);
+
   const getCachedBlocks = () => {
     try {
       const cached = localStorage.getItem(CACHE_KEY);
@@ -107,10 +118,26 @@ const Home = () => {
     return null;
   };
 
-  const setCachedBlocks = (blocks) => {
+  const getCachedState = () => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { state, timestamp } = JSON.parse(cached);
+        // Cache valid selama 5 menit
+        if (Date.now() - timestamp < CACHE_EXPIRE_MS) {
+          return state;
+        }
+      }
+    } catch (e) {
+      console.warn('Cache read error:', e);
+    }
+    return null;
+  };
+
+  const setCachedState = (state) => {
     try {
       localStorage.setItem(CACHE_KEY, JSON.stringify({
-        blocks,
+        state,
         timestamp: Date.now()
       }));
     } catch (e) {
@@ -118,42 +145,62 @@ const Home = () => {
     }
   };
 
+  useEffect(() => {
+    if (blocks.length > 0 || nextHeight !== null || hasMore !== true) {
+      setCachedState({ blocks, nextHeight, hasMore, initialLoadDone });
+    }
+  }, [blocks, nextHeight, hasMore, initialLoadDone]);
+
   const loadBlocks = useCallback(
-    async (startHeight) => {
-      if (loading || !hasMore) return;
+    async (startHeight, forceRefresh = false) => {
+      if ((loading && !forceRefresh) || (!forceRefresh && !hasMore)) return;
+      
       setLoading(true);
       setMessage("");
+      
       try {
         const resp = await fetchBlockRange({
           limit: PAGE_SIZE,
           startHeight,
+          source: 'database'
         });
+        
         const data = resp.data || {};
         const incoming = Array.isArray(data.items) ? data.items : [];
+        
         setBlocks((prev) => {
-          const seen = new Set(prev.map((blk) => blk?.height));
-          const merged = [...prev];
-          for (const item of incoming) {
-            if (item?.height === undefined || seen.has(item.height)) continue;
-            seen.add(item.height);
-            merged.push(item);
-          }
-          // Simpan ke cache
-          setTimeout(() => setCachedBlocks(merged), 0);
+          const blockMap = new Map();
+          
+          incoming.forEach(item => {
+            if (item?.height !== undefined) {
+              blockMap.set(item.height, item);
+            }
+          });
+          
+          prev.forEach(item => {
+            if (item?.height !== undefined) {
+              blockMap.set(item.height, item);
+            }
+          });
+          
+          const merged = Array.from(blockMap.values())
+            .sort((a, b) => b.height - a.height);
+          
           return merged;
         });
-        const next =
-          data.nextHeight ??
-          data.next_height ??
-          (incoming.length
-            ? Number(incoming[incoming.length - 1]?.height ?? 0) - 1
-            : -1);
+        
+        const next = data.nextHeight ?? 
+          data.next_height ?? 
+          (incoming.length ? Number(incoming[incoming.length - 1]?.height ?? 0) - 1 : -1);
+        
         setNextHeight(next);
-        const more =
-          data.hasMore ??
-          data.has_more ??
+        const more = data.hasMore ?? 
+          data.has_more ?? 
           (incoming.length > 0 && Number(next) >= 0);
+        
         setHasMore(Boolean(more));
+        setInitialLoadDone(true);
+        
       } catch (err) {
         setMessage(err.message || "Gagal memuat block.");
       } finally {
@@ -162,6 +209,50 @@ const Home = () => {
     },
     [hasMore, loading]
   );
+
+
+  useEffect(() => {
+    const cached = getCachedState();
+    
+    if (cached && cached.blocks && cached.blocks.length > 0) {
+      setBlocks(cached.blocks);
+      setNextHeight(cached.nextHeight);
+      setHasMore(cached.hasMore);
+      setInitialLoadDone(cached.initialLoadDone || false);
+      
+      if (cached.blocks.length > 0) {
+        const latestCachedHeight = cached.blocks[0].height;
+        
+        fetchBlockRange({ limit: 1, source: 'database' })
+          .then(resp => {
+            const currentTip = resp.data?.items?.[0]?.height;
+            if (currentTip > latestCachedHeight) {
+              // Ada block baru, load tambahan
+              loadBlocks(null, true);
+            }
+          })
+          .catch(console.error);
+      }
+    } else {
+      loadBlocks(null);
+    }
+    
+    const refreshInterval = setInterval(() => {
+      if (blocks.length > 0 && !loading) {
+        const latestHeight = blocks[0]?.height;
+        fetchBlockRange({ limit: 1, source: 'database' })
+          .then(resp => {
+            const currentTip = resp.data?.items?.[0]?.height;
+            if (currentTip > latestHeight) {
+              loadBlocks(null, true);
+            }
+          })
+          .catch(console.error);
+      }
+    }, 30000);
+    
+    return () => clearInterval(refreshInterval);
+  }, []);
 
   useEffect(() => {
     const cached = getCachedBlocks();
@@ -228,38 +319,59 @@ const Home = () => {
     }
 
     setIsNavigating(true);
+    setMessage("");
 
     try {
-      // Cari apakah block sudah dimuat
       const existingBlock = blocks.find(block => block.height === targetHeight);
       
       if (existingBlock) {
-        // Jika sudah dimuat, langsung pilih dan scroll
         await handleSelect(existingBlock);
         scrollToBlock(targetHeight);
-      } else {
-        // Jika belum dimuat, fetch block tersebut
-        const resp = await fetchByKind("block", targetHeight);
-        const blockData = resp.data || null;
+        setIsNavigating(false);
+        return;
+      }
+
+      const resp = await fetchByKind("block", targetHeight);
+      const blockData = resp.data || null;
+      
+      if (blockData) {
+        setBlocks(prev => {
+          const exists = prev.find(b => b.height === targetHeight);
+          if (exists) return prev;
+          
+          const newBlocks = [...prev, blockData]
+            .sort((a, b) => b.height - a.height);
+          return newBlocks;
+        });
         
-        if (blockData) {
-          // Tambahkan ke state jika belum ada
+        setDetail(blockData);
+        setDetailStatus("done");
+        setSelectedHeight(targetHeight);
+        
+        const surroundingResp = await fetchBlockRange({
+          startHeight: targetHeight + 1,
+          limit: 5,
+          source: 'database'
+        });
+        
+        if (surroundingResp.data?.items) {
           setBlocks(prev => {
-            const exists = prev.find(b => b.height === targetHeight);
-            if (exists) return prev;
-            return [...prev, blockData].sort((a, b) => b.height - a.height);
+            const blockMap = new Map();
+            prev.forEach(item => blockMap.set(item.height, item));
+            surroundingResp.data.items.forEach(item => {
+              if (item?.height !== undefined) {
+                blockMap.set(item.height, item);
+              }
+            });
+            
+            return Array.from(blockMap.values())
+              .sort((a, b) => b.height - a.height);
           });
-          
-          // Pilih block
-          setDetail(blockData);
-          setDetailStatus("done");
-          setSelectedHeight(targetHeight);
-          
-          // Scroll ke block setelah di-render
-          setTimeout(() => scrollToBlock(targetHeight), 100);
-        } else {
-          setMessage(`Block #${targetHeight} tidak ditemukan`);
         }
+
+        setTimeout(() => scrollToBlock(targetHeight), 100);
+      } else {
+        setMessage(`Block #${targetHeight} not found`);
       }
     } catch (err) {
       setMessage(err.message || "Gagal navigasi ke block");
@@ -268,12 +380,11 @@ const Home = () => {
     }
   };
 
-  // Fungsi untuk scroll ke block tertentu
   const scrollToBlock = (height) => {
     const blockIndex = blocks.findIndex(block => block.height === height);
     if (blockIndex !== -1 && scrollerRef.current) {
-      const cardWidth = 240 + 18; // width card + gap
-      const scrollPosition = blockIndex * cardWidth;
+      const cardWidth = 240 + 18;
+      const scrollPosition = Math.max(0, blockIndex * cardWidth - 200);
       scrollerRef.current.scrollTo({
         left: scrollPosition,
         behavior: 'smooth'
@@ -281,15 +392,14 @@ const Home = () => {
     }
   };
 
-  // Fungsi untuk kembali ke block terkini (tertinggi)
   const handleGoToLatest = () => {
     if (blocks.length > 0) {
-      const latestBlock = blocks[0]; // Block pertama adalah yang tertinggi
+      const latestBlock = blocks[0];
       setSelectedHeight(latestBlock.height);
       setDetail(null);
       setDetailStatus("idle");
+      setNavInput("");
       
-      // Scroll ke awal
       if (scrollerRef.current) {
         scrollerRef.current.scrollTo({
           left: 0,
@@ -299,7 +409,6 @@ const Home = () => {
     }
   };
 
-  // Handle Enter key untuk input navigasi
   const handleKeyPress = (e) => {
     if (e.key === 'Enter') {
       handleNavigateToBlock();
@@ -316,13 +425,36 @@ const Home = () => {
 
   const handleSelect = async (item) => {
     if (!item || item.height === undefined) return;
+    
+    const cacheKey = `block_detail_${item.height}`;
+    const cachedDetail = localStorage.getItem(cacheKey);
+    
+    if (cachedDetail) {
+      const { detail: cached, timestamp } = JSON.parse(cachedDetail);
+      if (Date.now() - timestamp < 60000) { // Cache 1 menit
+        setDetail(cached);
+        setDetailStatus("done");
+        setSelectedHeight(item.height);
+        return;
+      }
+    }
+    
     setDetailStatus("loading");
     setDetailMessage("");
     setSelectedHeight(item.height);
+    
     try {
       const resp = await fetchByKind("block", item.height);
-      setDetail(resp.data || null);
+      const detailData = resp.data || null;
+      setDetail(detailData);
       setDetailStatus("done");
+      
+      if (detailData) {
+        localStorage.setItem(cacheKey, JSON.stringify({
+          detail: detailData,
+          timestamp: Date.now()
+        }));
+      }
     } catch (err) {
       setDetail(null);
       setDetailStatus("error");
@@ -387,11 +519,11 @@ const Home = () => {
                 active={item.height === selectedHeight}
                 isGenesis={Number(item?.height ?? -1) === 0}
                 onSelect={handleSelect}
+                onSearchClick={handleSearchClickLocal}
               />
             ))}
           </div>
         </div>
-        {loading && <div className="result-empty">Memuat block...</div>}
         {message && <div className="result-empty">{message}</div>}
       </section>
 
@@ -404,7 +536,7 @@ const Home = () => {
             {detailMessage || "Gagal memuat detail."}
           </div>
         )}
-        {detailStatus === "done" && detail ? <ResultBlock data={detail} /> : null}
+        {detailStatus === "done" && detail ? <ResultBlock data={detail} onSearchClick={handleSearchClickLocal} /> : null}
       </section>
     </main>
   );

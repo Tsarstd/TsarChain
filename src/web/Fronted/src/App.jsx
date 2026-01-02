@@ -1,5 +1,6 @@
-import { useCallback, useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { useCallback, useState, useEffect } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+
 import Navbar from "./components/navbar/nav_bar";
 import Footer from "./components/footer/footer";
 import Block from "./pages/Block";
@@ -11,12 +12,24 @@ import { guessKind } from "./utils/searchKind";
 import "./App.css";
 
 const App = () => {
+  const location = useLocation();
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState("unknown");
   const [result, setResult] = useState(null);
   const [status, setStatus] = useState("idle");
   const [message, setMessage] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const searchQuery = searchParams.get('search');
+    
+    if (searchQuery && searchQuery.trim()) {
+      setQuery(searchQuery);
+      setSearchOpen(true);
+      runSearch(searchQuery);
+    }
+  }, [location]);
 
   const runSearch = useCallback(async (q) => {
     if (!q.trim()) return;
@@ -36,11 +49,19 @@ const App = () => {
     }
   }, []);
 
+  const handleSearchClick = useCallback((value) => {
+    setQuery(value);
+    setSearchOpen(true);
+    runSearch(value);
+    const newUrl = `${window.location.pathname}?search=${encodeURIComponent(value)}`;
+    window.history.pushState({}, '', newUrl);
+  }, [runSearch]);
+
   const handleSearch = useCallback(() => {
     const q = query.trim();
     if (!q) {
       setStatus("error");
-      setMessage("Isi kata kunci pencarian.");
+      setMessage("Input some keywords");
       setSearchOpen(true);
       return;
     }
@@ -51,20 +72,22 @@ const App = () => {
   return (
     <div className="app">
       <Navbar query={query} onQueryChange={setQuery} onSearch={handleSearch} />
+      
       <SearchOverlay
         open={searchOpen}
-        query={query}
         status={status}
         kind={kind}
         result={result}
         message={message}
+        onSearchClick={handleSearchClick}
         onClose={() => setSearchOpen(false)}
       />
+      
       <div className="app-main">
         <Routes>
-          <Route path="/" element={<Block />} />
-          <Route path="/graffiti" element={<Graffiti />} />
-          <Route path="/network" element={<Network />} />
+          <Route path="/" element={<Block onSearchClick={handleSearchClick} />} />
+          <Route path="/graffiti" element={<Graffiti onSearchClick={handleSearchClick} />} />
+          <Route path="/network" element={<Network onSearchClick={handleSearchClick} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

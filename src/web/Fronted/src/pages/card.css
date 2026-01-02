@@ -203,10 +203,10 @@
 
 /*block_id label*/
 .lane-card__bid {
-  align-self: start;
-  justify-self: start;
-  padding: 6px 12px;
-  border-radius: 8px;
+  align-self: stretch;
+  justify-self: flex-start;
+  padding: 5px 5px;
+  border-radius: 4px;
   font-size: 9px;
   font-weight: 730;
   background: linear-gradient(135deg, rgba(36, 35, 34, 0.67), rgba(12, 11, 10, 0.768));

@@ -440,14 +440,14 @@ def handle_user_rpc(
             ip=ip,
             identity=base_identity,
             key_label="blk_range",
-            burst=CFG.BLOCK_FETCH_RL_IP_BURST,
-            window_s=CFG.BLOCK_FETCH_RL_WINDOW_S,
-            backoff_s=CFG.BLOCK_FETCH_RL_BACKOFF_S,
+            burst=CFG.BLOCK_RANGE_RL_IP_BURST,
+            window_s=CFG.BLOCK_RANGE_RL_WINDOW_S,
+            backoff_s=CFG.BLOCK_RANGE_RL_BACKOFF_S,
             pow_obj=pow_obj,
             difficulty=int(CFG.RPC_POW_DIFFICULTY_READ),
         )
         if not ok:
-            log.info("GET_BLOCK_RANGE pow required")
+            log.warning("GET_BLOCK_RANGE pow required")
             return pow_resp
 
         raw_start = message.get("start_height", message.get("start"))
@@ -461,7 +461,6 @@ def handle_user_rpc(
         with self.broadcast.lock:
             chain = list(self.broadcast.blockchain.chain)
             tip_height = int(self.broadcast.blockchain.height)
-            log.info("GET_BLOCK_RANGE tip_height: %s", tip_height)
 
         if not chain:
             return {
@@ -475,15 +474,12 @@ def handle_user_rpc(
             }
 
         if raw_start is None or raw_start == "":
-            log.info("GET_BLOCK_RANGE raw_start: %s", raw_start)
             start_height = tip_height
-            log.info("GET_BLOCK_RANGE start_height: %s", start_height)
         else:
             try:
                 start_height = int(raw_start)
             except Exception:
                 start_height = tip_height
-                log.info("GET_BLOCK_RANGE start_height exception: %s", start_height)
 
         if start_height > tip_height:
             start_height = tip_height
@@ -510,7 +506,6 @@ def handle_user_rpc(
             h -= 1
 
         has_more = h >= 0
-        log.info("'GET_BLOCK_RANGE' has_more: %s", has_more)
 
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()

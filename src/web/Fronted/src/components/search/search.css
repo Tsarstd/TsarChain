@@ -1,3 +1,63 @@
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 500;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-ghost:hover {
+  background: rgb(186, 80, 15);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgb(24, 24, 24);
+}
+
+.search-overlay {
+  position: fixed;
+  top: 72px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(10, 10, 12, 0.482);
+  backdrop-filter: blur(6px);
+  z-index: 9;
+  overflow: auto;
+  padding: 24px 20px 40px;
+}
+
+.search-overlay__panel {
+  max-width: 1200px;
+  margin: 0 auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 20px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.3);
+}
+
+.search-overlay__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.graffiti-details-border {
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  align-items: center;
+  padding: 3vh;
+}
+
 .txid-details {
   padding: 5px 10px;
   border-radius: 4px;
@@ -44,6 +104,51 @@
     0 2px 3px rgba(0, 0, 0, 0.281),
     inset 0 1px 1px rgba(255, 255, 255, 0.2),
     inset 0 -1px 1px rgba(0, 0, 0, 0.3);
+}
+
+.pagination-container {
+  margin-top: 1rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pagination-btn {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background-color: var(--card-bg);
+  color: var(--text);
+  cursor: pointer;
+  min-width: 2rem;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background-color: rgba(200, 255, 0, 0.1);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.pagination-btn.active {
+  background-color: var(--accent);
+  color: #d7d7d7;
+  border-color: var(--accent)0;
+  font-weight: 600;
+}
+
+.pagination-btn:disabled {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #666;
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.pagination-ellipsis {
+  padding: 0 0.5rem;
+  color: #aaa;
 }
 
 .graffiti-details {
@@ -112,6 +217,20 @@
   background: #2f2f2f;
   border-radius: 8px;
   margin-bottom: 8px;
+}
+
+.tx-item {
+  padding: 0.75rem;
+  background: #2b2b2b;
+  border-radius: 6px;
+  border-left: 3px solid var(--primary);
+}
+
+.comment-item {
+  padding: 0.75rem;
+  background: #2b2b2b;
+  border-radius: 6px;
+  border-left: 3px solid var(--primary);
 }
 
 .tx-info {

@@ -9,7 +9,7 @@ require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const { getConfig } = require("./src/config/env");
 const { createRateLimiter } = require("./src/utils/rateLimit");
-const explorerRouter = require("./src/routes/explorer");
+const explorerRouter = require("./src/routes/explorer_routes");
 const healthRouter = require("./src/routes/health");
 
 const app = express();

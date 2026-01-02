@@ -46,27 +46,26 @@ export const fetchGraffitiDetail = async (artId) => {
 
 export const graffitiMediaUrl = (artId) => `/api/graffiti/${encodeURIComponent(artId)}/media`;
 
-export const fetchBlockRange = async ({ startHeight, limit = 200 } = {}) => {
-  const params = new URLSearchParams({
-    limit: String(limit),
+export const fetchBlockRange = async (params) => {
+  const { startHeight, limit = 200, source = 'database' } = params;
+  
+  const queryParams = new URLSearchParams({
+    limit: limit.toString(),
   });
+  
   if (startHeight !== null && startHeight !== undefined) {
-    params.set("start", String(startHeight));
+    queryParams.append('start_height', startHeight.toString());
   }
   
-  const url = `/api/blocks?${params.toString()}`;
-  console.log("Fetching blocks from:", url);
-  
-  const resp = await fetch(url);
-  const data = await handleJson(resp);
-  
-  console.log("API Response:", data);
-  console.log("Items count:", data?.items?.length);
-  if (data?.items?.[0]) {
-    console.log("First block structure:", data.items[0]);
-    console.log("First block transactions:", data.items[0]?.transactions);
-    console.log("First block coinbase block_id:", data.items[0]?.transactions?.[0]?.block_id);
+  if (source === 'database') {
+    queryParams.append('prefer_database', 'true');
   }
   
-  return data;
+  const response = await fetch(`/api/blocks?${queryParams.toString()}`);
+  
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+  
+  return response.json();
 };

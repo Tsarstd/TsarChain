@@ -10,8 +10,8 @@ const cfg = getConfig();
 const svc = new ExplorerService({ nodeHost: cfg.nodeHost, nodePort: cfg.nodePort });
 const projectRoot = path.resolve(__dirname, "..", "..", "..", "..", "..");
 const cacheDir = path.resolve(projectRoot, "data_user", "graffiti_cache");
-const GRAFFITI_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // hapus file cache jika tidak diakses selama 6 jam
-const GRAFFITI_CACHE_SWEEP_MS = 15 * 60 * 1000; // interval pembersihan cache file graffiti
+const GRAFFITI_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const GRAFFITI_CACHE_SWEEP_MS = 15 * 60 * 1000;
 let lastGraffitiCacheSweep = 0;
 
 const searchLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 20 });
@@ -83,13 +83,22 @@ router.get("/network", async (_req, res, next) => {
 
 router.get("/blocks", async (req, res, next) => {
   try {
-    const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 100);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 500);
     const startRaw = req.query.start ?? req.query.start_height ?? req.query.height;
-    const startHeight =
+    const startHeight = 
       startRaw === undefined || startRaw === null || startRaw === ""
         ? null
         : Number(startRaw);
-    const data = await svc.getBlockRange({ startHeight, limit });
+    
+    // Parameter untuk prefer database
+    const preferDatabase = req.query.prefer_database === 'true';
+    
+    const data = await svc.getBlockRange({ 
+      startHeight, 
+      limit,
+      source: preferDatabase ? 'database' : 'auto'
+    });
+    
     res.json({ status: "ok", data });
   } catch (err) {
     next(err);
@@ -222,6 +231,16 @@ router.get("/search", searchLimiter, async (req, res, next) => {
       return res.status(404).json({ status: "not_found", kind: inferred });
     }
     res.json({ status: "ok", kind: result.kind, data: result.data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/prefetch-blocks", async (_req, res, next) => {
+  try {
+    // Trigger prefetch di Python RPC client
+    await rpcCall("prefetch_blocks", null, cfg.nodeHost, cfg.nodePort);
+    res.json({ status: "ok", message: "Prefetch started" });
   } catch (err) {
     next(err);
   }

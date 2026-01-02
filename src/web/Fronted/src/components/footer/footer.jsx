@@ -2,6 +2,10 @@ import "./footer.css";
 import { assets } from "../../assets/assets.js";
 import { Link } from "react-router-dom";
 
+import { IoLogoGithub } from "react-icons/io";
+import { FaInstagram } from "react-icons/fa";
+import { SiGumroad } from "react-icons/si";
+
 const footerSections = [
   {
     title: "Explore",
@@ -41,10 +45,9 @@ const footerSections = [
 ];
 
 const socialLinks = [
-  { label: "GitHub", short: "GH", url: "https://github.com/Tsarstd/TsarChain" },
-  { label: "X", short: "X", url: "https://twitter.com" },
-  { label: "YouTube", short: "YT", url: "https://youtube.com" },
-  { label: "Medium", short: "MD", url: "https://medium.com" }
+  { label: "GitHub", short: <IoLogoGithub />, url: "https://github.com/Tsarstd/TsarChain" },
+  { label: "Instagram", short: <FaInstagram />, url: "https://www.instagram.com/tsar.std" },
+  { label: "Gumroad", short: <SiGumroad />, url: "https://tsarstudio.gumroad.com/" },
 ];
 
 const Footer = () => {

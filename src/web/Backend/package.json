@@ -7,7 +7,7 @@
   "type": "commonjs",
   "main": "server.js",
   "scripts": {
-    "server":"nodemon server.js"
+    "tsarchain":"nodemon server.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

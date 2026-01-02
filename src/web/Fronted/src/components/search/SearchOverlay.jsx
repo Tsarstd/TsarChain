@@ -1,6 +1,6 @@
 import SearchResultPanel from "./SearchResults";
 
-const SearchOverlay = ({ open, status, kind, result, message, onClose }) => {
+const SearchOverlay = ({ open, status, kind, result, message, onSearchClick, onClose }) => {
   if (!open) return null;
   return (
     <div className="search-overlay" role="dialog" aria-modal="true">
@@ -18,6 +18,7 @@ const SearchOverlay = ({ open, status, kind, result, message, onClose }) => {
           result={result}
           kind={kind}
           message={message}
+          onSearchClick={onSearchClick}
         />
       </div>
     </div>

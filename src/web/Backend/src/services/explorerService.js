@@ -29,8 +29,6 @@ const normalizeBlock = (blk) => {
   const timestamp = pick(blk, "timestamp", "time");
   const difficulty = pick(blk, "difficulty");
   const sizeBytes = pick(blk, "size_bytes", "size");
-  const vbytes = pick(blk, "vbytes", "vsize");
-  const weight = pick(blk, "weight");
   const chainwork = pick(blk, "chainwork");
   const bits = pick(blk, "bits");
   const version = pick(blk, "version");
@@ -72,8 +70,6 @@ const normalizeBlock = (blk) => {
     timestamp,
     difficulty,
     size_bytes: sizeBytes,
-    vbytes,
-    weight,
     chainwork,
     bits,
     version,
@@ -262,17 +258,26 @@ class ExplorerService {
     return rpcCall("graffiti_file", payload, this.nodeHost, this.nodePort);
   }
 
-  async getBlockRange({ startHeight = null, limit = 10 } = {}) {
+  async getBlockRange({ startHeight = null, limit = 10, source = 'auto' } = {}) {
     const payload = {
       limit: Number(limit || 10),
     };
+    
     if (startHeight !== null && startHeight !== undefined) {
       payload.start_height = Number(startHeight);
     }
+    
+    // Tambahkan parameter source untuk backend
+    if (source === 'database') {
+      payload.use_database = true;
+      payload.prefer_cache = true;
+    }
+    
     const resp = await rpcCall("block_range", payload, this.nodeHost, this.nodePort);
     const items = Array.isArray(resp?.items)
       ? resp.items.map(normalizeBlockSummary)
       : [];
+      
     return {
       items,
       limit: resp?.limit ?? payload.limit,

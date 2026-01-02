@@ -118,19 +118,19 @@
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
-  justify-content: center; /* Tambahkan ini */
+  justify-content: center;
 }
 
 .site-footer__social {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: none;
   color: var(--footer-text);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 27px;
   font-weight: 600;
   letter-spacing: 0.08em;
   transition: border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;

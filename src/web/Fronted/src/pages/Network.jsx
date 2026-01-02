@@ -1,7 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
+
+import { ClickableValue } from "../components/search/SearchResults";
 import { fetchNetwork } from "../api/explorer";
 import { fmtBytes, fmtHashrate, fmtNumber, fmtTimestamp, fmtTsar } from "../utils/format";
-import "./pages.css";
+import "./networkpages.css";
+
+import { 
+  RiGlobalLine, 
+  RiDashboardLine, 
+  RiMoneyDollarCircleLine,
+  RiDatabaseLine,
+  RiMegaphoneFill ,
+  RiHistoryLine,
+  RiDatabase2Fill,
+  RiBarChartBoxLine,
+  RiUserStarLine,
+  RiTimerLine
+} from "react-icons/ri";
+
+
 
 const getPeersCount = (snap, fallback = 0) => {
   const peers = snap?.peers;
@@ -37,39 +54,77 @@ const normalizeSnapshot = (raw) => {
   return { ...snap, identity, chain, supply, transactions, utxo, graffiti, miners_snapshot: miners };
 };
 
-const fmtLastUpdate = (val) => {
-  if (!val) return "-";
-  if (typeof val === "number") return fmtTimestamp(val);
-  const date = new Date(String(val));
-  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString("id-ID");
-};
-
-const InfoGrid = ({ items }) => (
-  <div className="network-grid">
-    {items.map((item) => (
-      <div className="stat" key={item.label}>
-        <span className="label">{item.label}</span>
-        <span className="value">{item.value}</span>
-      </div>
-    ))}
+const StatCard = ({ icon: Icon, label, value, subtext, type = "normal" }) => (
+  <div className={`stat-card ${type}`}>
+    <div className="stat-card-header">
+      {Icon && <Icon className="stat-icon" />}
+      <span className="stat-label">{label}</span>
+    </div>
+    <div className="stat-value">
+      {typeof value === 'string' || typeof value === 'number' ? value : value}
+    </div>
+    {subtext && <div className="stat-subtext">{subtext}</div>}
   </div>
 );
 
-const Network = () => {
+const SectionHeader = ({ icon: Icon, title, subtitle }) => (
+  <div className="section-header">
+    <div className="section-title">
+      {Icon && <Icon className="section-icon" />}
+      <h2>{title}</h2>
+    </div>
+    {subtitle && <p className="section-subtitle">{subtitle}</p>}
+  </div>
+);
+
+const InfoSection = ({ children, title, icon, cols = 2 }) => (
+  <div className="info-section">
+    <SectionHeader icon={icon} title={title} />
+    <div className={`info-grid cols-${cols}`}>
+      {children}
+    </div>
+  </div>
+);
+
+const HashDisplay = ({ hash, label, onSearchClick, clickable = true }) => (
+  <div className="hash-display">
+    <span className="hash-label">{label}</span>
+    <div className="hash-value mono wrap">
+      {clickable && hash ? (
+        <ClickableValue value={hash} onSearchClick={onSearchClick}>
+          {hash}
+        </ClickableValue>
+      ) : (
+        hash || "-"
+      )}
+    </div>
+  </div>
+);
+
+const Network = ({onSearchClick}) => {
   const [snap, setSnap] = useState(null);
   const [status, setStatus] = useState("loading");
   const [message, setMessage] = useState("");
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   useEffect(() => {
-    fetchNetwork()
-      .then((resp) => {
-        setSnap(resp.data || null);
-        setStatus("done");
-      })
-      .catch((err) => {
-        setMessage(err.message || "Gagal memuat data network.");
-        setStatus("error");
-      });
+    const loadData = () => {
+      fetchNetwork()
+        .then((resp) => {
+          setSnap(resp.data || null);
+          setStatus("done");
+          setLastUpdated(new Date());
+        })
+        .catch((err) => {
+          setMessage(err.message || "Gagal memuat data network.");
+          setStatus("error");
+        });
+    };
+
+    loadData();
+    // Refresh otomatis setiap 60 detik
+    const interval = setInterval(loadData, 60000);
+    return () => clearInterval(interval);
   }, []);
 
   const view = useMemo(() => normalizeSnapshot(snap), [snap]);
@@ -77,7 +132,10 @@ const Network = () => {
   if (status === "loading") {
     return (
       <main className="page">
-        <div className="result-empty">Load network info...</div>
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <div className="loading-text">Loading network information...</div>
+        </div>
       </main>
     );
   }
@@ -85,7 +143,16 @@ const Network = () => {
   if (status === "error" || !view) {
     return (
       <main className="page">
-        <div className="result-empty">{message || "Network info tidak tersedia."}</div>
+        <div className="error-container">
+          <div className="error-icon">⚠️</div>
+          <div className="error-message">{message || "Network info tidak tersedia."}</div>
+          <button 
+            className="retry-button"
+            onClick={() => window.location.reload()}
+          >
+            Retry
+          </button>
+        </div>
       </main>
     );
   }
@@ -98,163 +165,302 @@ const Network = () => {
   const graffiti = view.graffiti || {};
   const miners = view.miners_snapshot || {};
 
+  // Status indikator untuk network health
+  const networkHealth = peersCount > 10 ? "healthy" : peersCount > 5 ? "warning" : "critical ";
+
   return (
-    <main className="page-network network-page">
-      <section className="section">
-        <h1 className="sub-header">./network_identity</h1>
-      </section>
-      <section className="card">
-        <InfoGrid
-          items={[
-            { label: "Last Update", value: fmtLastUpdate(view.last_updated)},
-            { label: "Schema Version", value: (view.schema_version ?? "-")},
-            { label: "Peers", value: fmtNumber(peersCount)},
-            { label: "Network ID", value: view.identity?.network_id || "-"},
-            { label: "Network Magic", value: view.identity?.network_magic_hex || "-"},
-          ]}
-        />
-      </section>
-      <section className="section card network-summary">
-        <InfoGrid
-          items={[
-            { label: "Genesis Hash", value: <span className="mono">{chain.genesis_hash || "-"}</span> },
-          ]}
-        />
-      </section>
-      <section className="section card network-summary">
-        <InfoGrid
-          items={[
-            { label: "Genesis Message", value: chain.genesis_message || "-" },
-          ]}
-        />
-      </section>
-      <section className="section card network-summary">
-        <InfoGrid
-          items={[
-            { label: "Address Prefix", value: view.identity?.address_prefix || "-" },
-            { label: "Coinbase Maturity Rule", value: `${supply.coinbase_maturity ?? "-"} Block` },
-            { label: "Coinbase Reward", value: fmtTsar(chain.current_block_subsidy || supply.current_block_subsidy) },
-          ]}
-        />
-      </section>
-
-      <section className="section">
-        <h1 className="sub-header">./network_activity</h1>
-      </section>
-      <section className="card">
-        <InfoGrid
-          items={[
-            { label: "Tip Timestamp", value: fmtTimestamp(chain.tip_timestamp) },
-            { label: "Tip Height", value: fmtNumber(chain.tip_height) },
-            { label: "Tip Bits", value: chain.tip_bits ?? "-" },
-            { label: "Tip Difficulty", value: fmtNumber(chain.tip_difficulty) },
-            { label: "Network Hashrate", value: fmtHashrate(chain.est_network_hashrate_hps_window) },
-            { label: "Average Block Time", value: `${chain.avg_block_time_sec_window ?? "-"} s` },
-          ]}
-        />
-      </section>
-      <section className="section card network-summary">
-        <InfoGrid
-          items={[
-            { label: "Tip Hash", value: <span className="mono wrap">{chain.tip_hash || "-"}</span> },
-          ]}
-        />
-      </section>
-      <section className="section card network-summary">
-        <InfoGrid
-          items={[
-            { label: "Tip Target", value: <span className="mono wrap">{chain.tip_target_hex || "-"}</span> },
-          ]}
-        />
-      </section>
-      <section className="section">
-        <h1 className="sub-header">./tokenomics</h1>
-      </section>
-      <section className="card">
-        <InfoGrid
-          items={[
-            { label: "Max Supply", value: fmtTsar(supply.max_supply) },
-            { label: "Circulating Supply", value: fmtTsar(supply.circulating_estimate) },
-            { label: "Immature Coinbase", value: fmtTsar(supply.immature_coinbase) },
-            { label: "Emitted Subsidy", value: fmtTsar(supply.emitted_subsidy) },
-            { label: "Pool Balances", value: fmtTsar(graffiti.pool_balances) },
-            { label: "Total Fees Paid", value: fmtTsar(txs.total_fees_paid) },
-          ]}
-        />
-      </section>
-
-      <section className="section">
-        <h1 className="sub-header">./mempool</h1>
-      </section>
-      <section className="card">
-        <InfoGrid
-          items={[
-            { label: "Transactions on Mempool", value: fmtNumber(txs.mempool_txs) },
-            { label: "Graffiti on Mempool", value: fmtNumber(graffiti.graffiti_on_mempool) },
-            { label: "Mempool VBytes", value: fmtNumber(txs.mempool_vbytes_estimate) },
-          ]}
-        />
-      </section>
-
-      <section className="section">
-        <h1 className="sub-header">./halving</h1>
-      </section>
-      <section className="card">
-        <InfoGrid
-          items={[
-            { label: "Halving Height", value: fmtNumber(supply.next_halving_height) },
-            { label: "Blocks To Halving", value: fmtNumber(supply.blocks_to_halving) },
-            { label: "Current Epoch", value: fmtNumber(supply.current_epoch) },
-          ]}
-        />
-      </section>
-
-      <section className="section">
-        <h1 className="sub-header">./transactions</h1>
-      </section>
-      <section className="card">
-        <InfoGrid
-          items={[
-            { label: "Total Transactions", value: fmtNumber(txs.total_txs) },
-            { label: "Non-Coinbase Txs", value: fmtNumber(txs.total_non_coinbase_txs ?? txs.total_txs) },
-            { label: "Total Graffiti", value: fmtNumber(graffiti.posts) },
-            { label: "Total Comments", value: fmtNumber(graffiti.comments) },
-            { label: "Total Archivist Payouts", value: fmtNumber(graffiti.payouts) },
-          ]}
-        />
-      </section>
-
-      <section className="section">
-        <h1 className="sub-header">./database</h1>
-      </section>
-      <section className="card">
-        <InfoGrid
-          items={[
-            { label: "Total Blocks", value: fmtNumber(chain.total_blocks) },
-            { label: "UTXO Set", value: fmtNumber(utxo.utxo_set_size) },
-            { label: "Total Block Size", value: fmtBytes(chain.total_block_size_bytes) },
-            { label: "Total Graffiti Storage", value: fmtBytes(graffiti.total_graffiti_storage) },
-          ]}
-        />
-      </section>
-
-      <section className="section">
-        <h1 className="sub-header">./top_miners</h1>
-      </section>
-      <section className="card">
-        <div className="list">
-          {(miners.top_miners || []).slice(0, 10).map(([addr, found], idx) => (
-            <div className="tx-item" key={`${addr}-${idx}`}>
-              <div className="label">Rank #{idx + 1}</div>
-              <div className="value">{addr}</div>
-              <div className="muted">{fmtNumber(found)} blocks</div>
+    <main className="page-network">
+      {/* Header dengan status network */}
+      <header className="network-header">
+        <div className="header-content">
+          <div className="header-title">
+            <h1>Network Overview</h1>
+          </div>
+          <div className="header-status">
+            <div className={`status-indicator ${networkHealth}`}>
+              <div className="status-dot"></div>
+              <span className="status-text">
+                {networkHealth === "healthy" ? "Operational" : 
+                 networkHealth === "warning" ? "Degraded" : "No Miners"}
+              </span>
             </div>
-          ))}
-          {(!miners.top_miners || miners.top_miners.length === 0) && (
-            <div className="muted">Tidak ada data miners.</div>
-          )}
+            <div className="last-update">
+              Last updated: {lastUpdated ? lastUpdated.toLocaleTimeString() : "Just now"}
+            </div>
+          </div>
         </div>
-      </section>
+
+        
+        {/* Summary stats bar */}
+        <div className="summary-bar">
+          <div className="summary-stat">
+            <span className="summary-label">Height</span>
+            <span className="summary-value highlight">{fmtNumber(chain.tip_height)}</span>
+          </div>
+          <div className="summary-divider"></div>
+          <div className="summary-stat">
+            <span className="summary-label">Peers</span>
+            <span className="summary-value">{fmtNumber(peersCount)}</span>
+          </div>
+          <div className="summary-divider"></div>
+          <div className="summary-stat">
+            <span className="summary-label">Hashrate</span>
+            <span className="summary-value">{fmtHashrate(chain.est_network_hashrate_hps_window)}</span>
+          </div>
+          <div className="summary-divider"></div>
+          <div className="summary-stat">
+            <span className="summary-label">Supply</span>
+            <span className="summary-value">{fmtTsar(supply.circulating_estimate)}</span>
+          </div>
+        </div>
+      </header>
+
+      {/* Blockchain Data */}
+      <div className="hash-section">
+        <HashDisplay 
+          hash={chain.tip_hash} 
+          label="Current Tip Hash"
+          onSearchClick={onSearchClick}
+        />
+        <HashDisplay 
+          hash={chain.tip_target_hex} 
+          label="Current Target"
+        />
+      </div>
+
+      <div className="divider" />
+
+      <div className="network-content">
+        {/* Network Identity */}
+        <InfoSection title="Network Identity" icon={RiGlobalLine} cols={2}>
+          <StatCard
+            label="Network ID"
+            value={view.identity?.network_id || "-"}
+            subtext="Unique network identifier"
+          />
+          <StatCard
+            label="Network Magic"
+            value={view.identity?.network_magic_hex || "-"}
+            subtext="Hex representation"
+          />
+          <StatCard
+            label="Address Prefix"
+            value={view.identity?.address_prefix || "-"}
+            subtext="Address format prefix"
+          />
+          <StatCard
+            label="Schema Version"
+            value={view.schema_version ?? "-"}
+            subtext="Data schema version"
+          />
+        </InfoSection>
+
+        {/* Genesis Information */}
+        <InfoSection title="Genesis Information" icon={RiHistoryLine}>
+          <div className="full-width">
+            <HashDisplay 
+              hash={chain.genesis_hash}
+              label="Genesis Hash"
+              onSearchClick={onSearchClick}
+            />
+          </div>
+          <div className="full-width">
+            <div className="genesis-message">
+              <span className="genesis-label">Genesis Message</span>
+              <div className="genesis-text">{chain.genesis_message || "-"}</div>
+            </div>
+          </div>
+        </InfoSection>
+
+        {/* Network Activity */}
+        <InfoSection title="Network Activity" icon={RiDashboardLine} cols={3}>
+          <StatCard
+            icon={RiTimerLine}
+            label="Current Height"
+            value={fmtNumber(chain.tip_height)}
+            subtext={`Timestamp: ${fmtTimestamp(chain.tip_timestamp)}`}
+            type="primary"
+          />
+          <StatCard
+            label="Difficulty"
+            value={fmtNumber(chain.tip_difficulty)}
+            subtext="Current mining difficulty"
+          />
+          <StatCard
+            label="Hashrate"
+            value={fmtHashrate(chain.est_network_hashrate_hps_window)}
+            subtext="Estimated network hashrate"
+          />
+          <StatCard
+            label="Block Time"
+            value={`${chain.avg_block_time_sec_window ?? "-"}s`}
+            subtext="Average block time"
+          />
+          <StatCard
+            label="Tip Bits"
+            value={chain.tip_bits ?? "-"}
+            subtext="Current block bits"
+          />
+        </InfoSection>
+
+        {/* Tokenomics */}
+        <InfoSection title="Tokenomics" icon={RiMoneyDollarCircleLine} cols={3}>
+          <StatCard
+            label="Max Supply"
+            value={fmtTsar(supply.max_supply)}
+            subtext="Total possible supply"
+            type="primary"
+          />
+          <StatCard
+            label="Circulating"
+            value={fmtTsar(supply.circulating_estimate)}
+            subtext="Currently in circulation"
+          />
+          <StatCard
+            label="Emitted Subsidy"
+            value={fmtTsar(supply.emitted_subsidy)}
+            subtext="Total emitted subsidy"
+          />
+          <StatCard
+            label="Immature Coinbase"
+            value={fmtTsar(supply.immature_coinbase)}
+            subtext="Awaiting maturity"
+          />
+          <StatCard
+            label="Pool Balances"
+            value={fmtTsar(graffiti.pool_balances)}
+            subtext="Total pool balances"
+          />
+          <StatCard
+            label="Total Fees"
+            value={fmtTsar(txs.total_fees_paid)}
+            subtext="All-time fees paid"
+          />
+        </InfoSection>
+
+        {/* Halving Information */}
+        <InfoSection title="Halving Schedule" icon={RiBarChartBoxLine} cols={3}>
+          <StatCard
+            label="Current Epoch"
+            value={fmtNumber(supply.current_epoch)}
+            subtext="Current halving epoch"
+            type="accent"
+          />
+          <StatCard
+            label="Halving Height"
+            value={fmtNumber(supply.next_halving_height)}
+            subtext="Block height for next halving"
+          />
+          <StatCard
+            label="Blocks Remaining"
+            value={fmtNumber(supply.blocks_to_halving)}
+            subtext="Blocks until next halving"
+          />
+        </InfoSection>
+
+        {/* Mempool & Transactions */}
+        <div className="two-column">
+          <InfoSection title="Transactions & Mempool" icon={RiDatabaseLine}>
+            <StatCard
+              label="Total Transactions"
+              value={fmtNumber(txs.total_txs)}
+              subtext="All-time transactions"
+            />
+            <StatCard
+              label="Non-Coinbase Txs"
+              value={fmtNumber(txs.total_non_coinbase_txs ?? txs.total_txs)}
+              subtext="Regular transactions"
+            />
+            <StatCard
+              label="Mempool Size"
+              value={fmtNumber(txs.mempool_vbytes_estimate)}
+              subtext="Virtual bytes estimate"
+            />
+            <StatCard
+              label="Pending Transactions"
+              value={fmtNumber(txs.mempool_txs)}
+              subtext="Trsansactions in mempool"
+            />
+          </InfoSection>
+
+          <InfoSection title="Graffiti Activity" icon={RiMegaphoneFill}>
+            <StatCard
+              label="Graffiti Post"
+              value={`${fmtNumber(graffiti.posts)}`}
+              subtext="All-time graffiti post"
+            />
+            <StatCard
+              label="Graffiti Comment"
+              value={`${fmtNumber(graffiti.comments)}`}
+              subtext="All-time comments activity"
+            />
+            <StatCard
+              label="Graffiti Payouts"
+              value={`${fmtNumber(graffiti.payouts)}`}
+              subtext="All-time payouts activity"
+            />
+            <StatCard
+              label="Pending Graffiti"
+              value={fmtNumber(graffiti.graffiti_on_mempool)}
+              subtext="Graffiti in mempool"
+            />
+          </InfoSection>
+        </div>
+
+        {/* Database Stats */}
+        <InfoSection title="Database Statistics" icon={RiDatabase2Fill} cols={4}>
+          <StatCard
+            label="Total Blocks"
+            value={fmtNumber(chain.total_blocks)}
+            subtext="All blocks in chain"
+          />
+          <StatCard
+            label="UTXO Set"
+            value={fmtNumber(utxo.utxo_set_size)}
+            subtext="Unspent transaction outputs"
+          />
+          <StatCard
+            label="Total Block Size"
+            value={fmtBytes(chain.total_block_size_bytes)}
+            subtext="Cumulative block storage"
+          />
+          <StatCard
+            label="Graffiti Storage"
+            value={fmtBytes(graffiti.total_graffiti_storage)}
+            subtext="Total graffiti data stored"
+          />
+        </InfoSection>
+
+        {/* Top Miners */}
+        <InfoSection title="Top #10 Miners" icon={RiUserStarLine}>
+          <div className="miners-table full-width">
+            <div className="table-header">
+              <div className="table-col rank">Rank</div>
+              <div className="table-col address">Address</div>
+              <div className="table-col blocks">Blocks Found</div>
+            </div>
+            {(miners.top_miners || []).slice(0, 10).map(([addr, found], idx) => (
+              <div className="table-row" key={`${addr}-${idx}`}>
+                <div className="table-col rank">
+                  <div className="rank-badge">{idx + 1}</div>
+                </div>
+                <div className="table-col address mono">
+                  <ClickableValue value={addr} onSearchClick={onSearchClick}>
+                    {addr}
+                  </ClickableValue>
+                </div>
+                <div className="table-col blocks">
+                  <span className="block-count">{fmtNumber(found)}</span>
+                  <span className="block-label">blocks</span>
+                </div>
+              </div>
+            ))}
+            {(!miners.top_miners || miners.top_miners.length === 0) && (
+              <div className="table-empty">No miner data available</div>
+            )}
+          </div>
+        </InfoSection>
+      </div>
     </main>
   );
 };

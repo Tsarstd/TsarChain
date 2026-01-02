@@ -553,6 +553,11 @@ BLOCK_FETCH_RL_IP_BURST    = 6   # GET_BLOCK (hash/height) requests allowed per 
 BLOCK_FETCH_RL_WINDOW_S    = 5   # seconds window for block fetch limiter
 BLOCK_FETCH_RL_BACKOFF_S   = 4   # backoff after block fetch limiter trips
 
+# ---- BLOCK RANGE (WEB) ----
+BLOCK_RANGE_RL_IP_BURST    = 5   # GET_BLOCK_RANGE (height) requests allowed per IP
+BLOCK_RANGE_RL_WINDOW_S    = 3   # seconds window for block fetch limiter
+BLOCK_RANGE_RL_BACKOFF_S   = 4   # backoff after block fetch limiter trips
+
 TX_SUBMIT_RL_IP_BURST       = 12  # NEW_TX submissions allowed per IP before throttling
 TX_SUBMIT_RL_WINDOW_S       = 6   # seconds window for tx submit limiter
 TX_SUBMIT_RL_BACKOFF_S      = 6   # backoff after tx submit limiter trips

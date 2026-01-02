@@ -18,12 +18,17 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from tsarchain.wallet.services.rpc_client import NodeClient
 from tsarchain.network.protocol import load_or_create_keypair_at
-from tsarchain.network.pow_token import solve_pow
 from tsarchain.utils import config as CFG
 from src.web.Backend.src import database_web as webdb
 
 from tsarchain.utils.tsar_logging import get_ctx_logger, setup_logging
 log = get_ctx_logger('tsarchain.web.Backend.py_rpc_client')
+
+_CLIENT_CACHE = {}
+_CLIENT_LOCK = threading.RLock()
+_CACHE_SCOPE = "default"
+_prefetch_started = False
+_prefetch_host_port = None
 RPC_SOURCE = os.environ.get("TSAR_RPC_SOURCE") or "web_backend"
 
 def _emit(out: object) -> None:
@@ -45,42 +50,21 @@ def _rpc_send(client, payload: dict):
     resp = client.send(payload)
     return resp
 
-def _rpc_send_with_pow(client, payload: dict, max_retries: int = 2):
-    for attempt in range(max_retries):
-        resp = client.send(payload)
-        
-        if (isinstance(resp, dict) and 
-            resp.get("reason") == "pow_required" and 
-            resp.get("pow_challenge")):
-            
-            identity = payload.get("wallet_addr") or "anon"
-            solution = solve_pow(resp["pow_challenge"], identity=identity)
-            
-            if solution:
-                payload["pow"] = solution
-                continue  # Retry dengan PoW
-        
-        return resp
-    return {"error": "pow_failed"}
-
-_CLIENT_CACHE = {}
-_CLIENT_LOCK = threading.RLock()
-
 def _get_client(host: str, port: int):
+    global _prefetch_started
     key = f"{host}:{port}"
     with _CLIENT_LOCK:
         client = _CLIENT_CACHE.get(key)
         if client is None:
             client = _mk_client(host, port)
             _CLIENT_CACHE[key] = client
+        
         return client
 
 def _drop_client(host: str, port: int) -> None:
     key = f"{host}:{port}"
     with _CLIENT_LOCK:
         _CLIENT_CACHE.pop(key, None)
-
-_CACHE_SCOPE = "default"
 
 def _set_cache_scope(host: str, port: int) -> None:
     global _CACHE_SCOPE
@@ -155,50 +139,63 @@ def rpc_block(client, val: str):
     return resp
 
 def rpc_block_range(client, opts: dict):
+    global _prefetch_started
+    
     start_height = None
     if isinstance(opts, dict):
-        start_height = opts.get("start_height")
-        if start_height is None:
-            start_height = opts.get("start")
-        if start_height is None:
-            start_height = opts.get("height")
+        start_height = opts.get("start_height") or opts.get("start") or opts.get("height")
+    
     limit = int(opts.get("limit", 200) or 200) if isinstance(opts, dict) else 200
-    key = _cache_key("block_range", start_height if start_height is not None else "latest", limit)
-    
-    # Tentukan apakah ini data yang sering berubah
-    is_volatile = (start_height is None or 
-                   start_height == "latest" or 
-                   int(start_height or 0) <= 0)
-    
-    key = _cache_key("block_range", start_height if not is_volatile else "latest", limit)
-    
-    # PERUBAHAN: Untuk data stabil, refresh TTL saat diakses
-    # Untuk data volatile, tetap pakai TTL pendek
-    if not is_volatile:
-        cached = _cache_get(key, refresh_ttl=True)  # Refresh TTL!
-    else:
+    if start_height is None or start_height == "latest":
+        key = _cache_key("block_range", "latest", limit)
         cached = _cache_get(key)
+        if cached is not None:
+            log.debug("[rpc_block_range] Using latest blocks from volatile cache")
+            return cached
     
-    if cached is not None:
-        return cached
+    if start_height is not None and start_height != "latest":
+        try:
+            start_height_int = int(start_height)
+            storage_result = webdb.get_block_range_from_storage(start_height_int, limit)
+            
+            if len(storage_result["items"]) >= limit:
+                log.debug("[rpc_block_range] Using %d blocks from permanent storage", 
+                         len(storage_result["items"]))
+                return storage_result
+            
+            missing_count = limit - len(storage_result["items"])
+            if missing_count > 0:
+                next_start = start_height_int + len(storage_result["items"])
+                rpc_resp = _rpc_send(client, {
+                    "type": "GET_BLOCK_RANGE", 
+                    "start_height": next_start, 
+                    "limit": missing_count
+                })
+                
+                if isinstance(rpc_resp, dict) and "items" in rpc_resp:
+                    new_items = rpc_resp.get("items", [])
+                    webdb.save_blocks_permanent(new_items)
+                    storage_result["items"].extend(new_items)
+                    storage_result["has_more"] = rpc_resp.get("has_more", False)
+                    storage_result["next_height"] = rpc_resp.get("next_height")
+                return storage_result   
+            
+        except ValueError:
+            pass
     
-    resp = _rpc_send(client, {"type": "GET_BLOCK_RANGE", "limit": limit, 
-                              "start_height": start_height})
+    log.debug("[rpc_block_range] Fetching from RPC (height=%s, limit=%d)", start_height, limit)
+    resp = _rpc_send(client, {
+        "type": "GET_BLOCK_RANGE", 
+        "limit": limit, 
+        "start_height": start_height
+    })
     
-    if _payload_has_error(resp):
-        ttl_err = webdb.cache_ttl_for_error(resp.get("error") if isinstance(resp, dict) else None)
-        if ttl_err is not None:
-            _cache_set(key, resp, ttl_err)
-    else:
-        # Tentukan TTL berdasarkan tipe data
-        if is_volatile:
-            log.info("folatile")
-            ttl = 15  # 1 menit untuk block terbaru
-        else:
-            log.info("no folatile")
-            ttl = 3600  # 1 jam untuk block lama (akan di-refresh saat diakses)
+    if not _payload_has_error(resp) and isinstance(resp, dict) and "items" in resp:
+        webdb.save_blocks_permanent(resp["items"])
         
-        webdb.cache_set_json(key, resp, ttl_sec=ttl)
+        if start_height is None or start_height == "latest":
+            cache_key = _cache_key("block_range", "latest", limit)
+            _cache_set(cache_key, resp, ttl_sec=30)
     
     return resp
 
@@ -216,13 +213,7 @@ def rpc_address(client, addr: str):
 
     balances = _rpc_send(client, {"type": "GET_BALANCES", "addresses": [addr_norm]}) or {}
     utxos = _rpc_send(client, {"type": "GET_UTXOS", "address": addr_norm}) or {}
-    history = _rpc_send(client, {"type": "GET_TX_HISTORY", "address": addr_norm, "limit": 50}) or {}
-    
-    # log.debug(f"[rpc_address] History response type: {type(history)}")
-    # log.debug(f"[rpc_address] History keys: {list(history.keys()) if isinstance(history, dict) else 'Not a dict'}")
-    # if isinstance(history, dict) and 'history' not in history:
-    #     log.debug(f"[rpc_address] History response: {json.dumps(history, default=str)[:500]}")
-        
+    history = _rpc_send(client, {"type": "GET_TX_HISTORY", "address": addr_norm, "limit": 200}) or {}
     history_list = []
     if isinstance(history, dict):
         history_list = history.get("items") or []
@@ -492,9 +483,23 @@ def _normalize_param(param: object | None):
 
 
 def _dispatch_rpc(op: str, param: object | None, host: str, port: int):
+    global _prefetch_started, _prefetch_host_port
     _set_cache_scope(host, port)
     client = _get_client(host, port)
     param_norm = _normalize_param(param)
+    
+    if not _prefetch_started or _prefetch_host_port != f"{host}:{port}":
+        try:
+            def prefetch_rpc_call(payload):
+                return _rpc_send(client, payload)
+            
+            webdb.start_prefetch_thread(prefetch_rpc_call)
+            _prefetch_started = True
+            _prefetch_host_port = f"{host}:{port}"
+            log.info("[dispatch_rpc] Started auto-prefetch thread for %s:%s", host, port)
+        except Exception as exc:
+            log.warning("[dispatch_rpc] Failed to start prefetch: %s", exc)
+    
     if op == "network":
         return rpc_network(client)
     if op == "block":
@@ -515,6 +520,13 @@ def _dispatch_rpc(op: str, param: object | None, host: str, port: int):
         opts = param_norm if isinstance(param_norm, dict) else _parse_opts(param_norm)
         fallback = param_norm if isinstance(param_norm, str) else None
         return rpc_graffiti_file(client, opts, fallback)
+    if op == "prefetch_blocks":
+        try:
+            webdb.prefetch_blocks(lambda payload: _rpc_send(client, payload))
+            return {"status": "ok", "message": "Prefetch started"}
+        except Exception as exc:
+            return {"status": "error", "message": str(exc)}
+    
     return {"error": "unknown_op"}
 
 
