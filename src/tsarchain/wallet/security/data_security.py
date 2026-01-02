@@ -6,8 +6,10 @@
 import os, json, hashlib, base64, appdirs, time, re, threading
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Sequence, List
-from ecdsa import SECP256k1, SigningKey
+from ecdsa import SECP256k1, SigningKey as sign_ecdsa
 from bech32 import bech32_encode, convertbits
+from nacl.signing import SigningKey
+from nacl.encoding import HexEncoder
 from mnemonic import Mnemonic
 
 from cryptography.hazmat.primitives.asymmetric import x25519
@@ -62,6 +64,20 @@ def encrypt_blob(blob: bytes, password: str) -> Dict:
         "r": 8,
         "p": 1,
     }
+    
+def create_keypair(path: str) -> tuple[str, str, str]:
+    load_user_key_record()
+    sk = SigningKey.generate()
+    vk = sk.verify_key
+    priv_hex = sk.encode(encoder=HexEncoder).decode()
+    pub_hex  = vk.encode(encoder=HexEncoder).decode()
+    node_id  = hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()
+    payload = {"id": node_id, "pubkey": pub_hex, "privkey": priv_hex, "created": int(time.time())}
+    save_user_key_record(payload)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    os.chmod(path, 0o600)
+    return node_id, pub_hex, priv_hex
 
 def decrypt_blob(enc: Dict, password: str) -> bytes:
     if str(enc.get("alg")).upper() != "AESGCM":
@@ -556,7 +572,7 @@ WALLET_FILE = get_secure_wallet_path()
 
 
 def pubkey_from_privhex(priv_hex: str) -> bytes:
-    sk = SigningKey.from_string(bytes.fromhex(priv_hex), curve=SECP256k1)
+    sk = sign_ecdsa.from_string(bytes.fromhex(priv_hex), curve=SECP256k1)
     vk = sk.get_verifying_key()
     px = vk.pubkey.point.x()
     py = vk.pubkey.point.y()

@@ -11,7 +11,6 @@ from tsarcore_native import SecureChannelNative
 
 # ---------------- Local Project ----------------
 from ..utils import config as CFG
-from ..wallet.security.data_security import load_user_key_record, save_user_key_record
 from .peers_storage import load_node_key, save_node_key
 
 # ---------------- Logger ----------------
@@ -21,12 +20,6 @@ log = get_ctx_logger("tsarchain.network.protocol")
 _SEND_DISCONNECT_LAST = 0.0
 _SEND_DISCONNECT_COUNT = 0
 _SEND_DISCONNECT_WINDOW = 5.0  # seconds to throttle repeated disconnect logs
-
-
-def _ensure_dir(path = str) -> None:
-    d = os.path.dirname(path)
-    if d:
-        os.makedirs(d, exist_ok=True)
 
 
 # -----------------------------
@@ -193,38 +186,18 @@ def sniff_first_json_frame(sock: socket.socket, timeout: float = 2.0, *, peer_ip
 # KEYPAIR HELPER
 # -----------------------------
 def load_or_create_keypair_at(path: str) -> tuple[str, str, str]:
-    _ensure_dir(path)
-    norm_path = os.path.normpath(path)
-    user_key_norm = os.path.normpath(CFG.USER_KEY_PATH)
     node_key_norm = os.path.normpath(CFG.NODE_KEY_PATH)
-    legacy_node_key_norm = os.path.normpath(CFG.LEGACY_NODE_KEY_PATH)
-    use_secure_user = norm_path == user_key_norm
-    use_node_store = norm_path in (node_key_norm, legacy_node_key_norm)
-
-    if use_secure_user:
-        record = load_user_key_record()
-        if record and record.get("id") and record.get("pubkey") and record.get("privkey"):
-            return record["id"], record["pubkey"], record["privkey"]
         
-    if use_node_store:
-        record = load_node_key()
+    if node_key_norm:
+        record = load_node_key(path)
         if record and record.get("id") and record.get("pubkey") and record.get("privkey"):
             return record["id"], record["pubkey"], record["privkey"]
 
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
             obj = json.load(f)
-        if use_secure_user:
-            save_user_key_record(
-                {
-                    "id": obj["id"],
-                    "pubkey": obj["pubkey"],
-                    "privkey": obj["privkey"],
-                    "migrated": int(time.time()),
-                }
-            )
-        elif use_node_store:
-            save_node_key(obj)
+        if node_key_norm:
+            save_node_key(path, obj)
         return obj["id"], obj["pubkey"], obj["privkey"]
 
     sk = SigningKey.generate()
@@ -233,18 +206,13 @@ def load_or_create_keypair_at(path: str) -> tuple[str, str, str]:
     pub_hex  = vk.encode(encoder=HexEncoder).decode()
     node_id  = hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()
     payload = {"id": node_id, "pubkey": pub_hex, "privkey": priv_hex, "created": int(time.time())}
-    if use_secure_user:
-        save_user_key_record(payload)
-    elif use_node_store:
-        save_node_key(payload)
+    if node_key_norm:
+        save_node_key(path, payload)
     else:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
         os.chmod(path, 0o600)
     return node_id, pub_hex, priv_hex
-
-def load_or_create_node_keys() -> tuple[str, str, str]:
-    return load_or_create_keypair_at(CFG.NODE_KEY_PATH)
 
 
 # -----------------------------

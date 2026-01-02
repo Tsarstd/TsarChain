@@ -358,7 +358,6 @@ class SimpleMiner:
         try:
             _run_snapshot_bootstrap("cli", self.bootstrap_snapshot)
             self.blockchain = Blockchain(
-                db_path=CFG.BLOCK_FILE,
                 in_memory=False,
                 use_cores=self.cores,
                 miner_address=self.address,
@@ -602,7 +601,6 @@ class NodeRunner:
         try:
             _run_snapshot_bootstrap("cli", self.bootstrap_snapshot)
             self.blockchain = Blockchain(
-                db_path=CFG.BLOCK_FILE,
                 in_memory=False,
                 use_cores=None,
                 miner_address=None,
@@ -818,5 +816,5 @@ def main():
 
 if __name__ == "__main__":
     mp.freeze_support()
-    setup_logging(force=True)
+    setup_logging("logging/node.log", force=True)
     main()

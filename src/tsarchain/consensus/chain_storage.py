@@ -180,7 +180,8 @@ class StorageMixin:
             return
         if kv_enabled():
             clear_db('chain')
-        self._chain_store.save([])
+        else:
+            self._chain_store.save(CFG.BLOCK_FILE, [])
         meta_path = CFG.SNAPSHOT_META_PATH
         if meta_path and os.path.exists(meta_path):
             os.remove(meta_path)
@@ -502,7 +503,7 @@ class StorageMixin:
                             "meta": chain_meta,
                             "blocks": ordered_blocks,
                         }
-                        self._chain_store.save(payload)
+                        self._chain_store.save(CFG.BLOCK_FILE, payload)
                         self._persisted_height = tip_height
                         self._clear_chain_journal()
                 else:
@@ -521,7 +522,7 @@ class StorageMixin:
                                 "meta": chain_meta,
                                 "blocks": ordered_blocks,
                             }
-                            self._chain_store.save(payload)
+                            self._chain_store.save(CFG.BLOCK_FILE, payload)
                             self._persisted_height = tip_height
                             self._clear_chain_journal()
 
@@ -549,17 +550,18 @@ class StorageMixin:
                     blocks.append((k, v))
             blocks.sort(key=lambda kv: kv[0])
             data_list = [json.loads(v.decode('utf-8')) for _, v in blocks]
-        if not data_list:
-            raw = self._chain_store.load(default=[])
-            if isinstance(raw, dict):
-                meta = raw.get("meta") or {}
-                blk_list = raw.get("blocks")
-                if isinstance(blk_list, list):
-                    data_list = blk_list
-                elif isinstance(raw.get("chain"), list):
-                    data_list = raw.get("chain")  # legacy name safeguard
-            else:
-                data_list = raw
+            log.info("load chain kv, data_list=%s", data_list)
+        # if not data_list:
+        #     raw = self._chain_store.load(default=[])
+        #     if isinstance(raw, dict):
+        #         meta = raw.get("meta") or {}
+        #         blk_list = raw.get("blocks")
+        #         if isinstance(blk_list, list):
+        #             data_list = blk_list
+        #         elif isinstance(raw.get("chain"), list):
+        #             data_list = raw.get("chain")  # legacy name safeguard
+        #     else:
+        #         data_list = raw
         if not isinstance(data_list, list):
             data_list = []
         data_list = self._apply_chain_journal(data_list)
@@ -627,9 +629,8 @@ class StorageMixin:
             if (not data) and items:
                 data["total_supply"] = int(items.get("k:total_supply", "0"))
                 data["total_blocks"] = int(items.get("k:total_blocks", "0"))
-
-        if not data:
-            data = self._state_store.load(default={})
+        else:
+            data = self._state_store.load(CFG.STATE_FILE, default={})
         if not isinstance(data, dict):
             data = {}
         return data
@@ -667,7 +668,6 @@ class StorageMixin:
             "supply": data.get("supply", {}),
             "transactions": data.get("transactions", {}),
             "utxo": data.get("utxo", {}),
-            "files": data.get("files", {}),
             "graffiti": data.get("graffiti", {}),
             "miners_snapshot": data.get("miners_snapshot", {}),
         }
@@ -679,7 +679,7 @@ class StorageMixin:
                 b.put(b'k:total_blocks', str(int(self.total_blocks)).encode('utf-8'))
                 b.put(b'k:snapshot', json.dumps(ordered, separators=CFG.CANONICAL_SEP).encode('utf-8'))
         else:
-            self._state_store.save(ordered)
+            self._state_store.save(CFG.STATE_FILE, ordered)
 
     def _compute_state_snapshot(self) -> dict:
         tip_height = self.height
@@ -825,11 +825,6 @@ class StorageMixin:
                         graffiti_on_mempool += 1
 
         emitted_subsidy = self.calculate_total_supply()
-        chain_sha256 = None
-        if hasattr(self._chain_store, "sha_path") and os.path.exists(self._chain_store.sha_path):
-            with open(self._chain_store.sha_path, "r", encoding="utf-8") as fh:
-                chain_sha256 = fh.read().strip() or None
-
         cur_epoch = 0 if tip_height < 0 else int(tip_height // int(CFG.BLOCKS_PER_HALVING))
         next_halving_height = int((cur_epoch + 1) * int(CFG.BLOCKS_PER_HALVING))
         blocks_to_halving = None if tip_height < 0 else max(0, next_halving_height - (tip_height + 1))
@@ -909,9 +904,6 @@ class StorageMixin:
             "miners_snapshot": {
                 "top_miners": [(miner, count) for miner, count in miner_counter.most_common() if miner]
             },
-            "files": {
-                "blockchain_json_sha256": chain_sha256
-            }
         }
 
         self._state_snapshot_cache = {"token": token, "data": dict(snapshot)}

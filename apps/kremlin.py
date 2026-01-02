@@ -28,7 +28,7 @@ from tsarchain.wallet.tab_ui.history_tab import HistoryTab
 from tsarchain.wallet.tab_ui.dev_tab import DevTab
 
 from tsarchain.wallet.security.chat_security import ChatManager
-from tsarchain.wallet.security.data_security import list_addresses_in_keystore, WALLET_FILE
+from tsarchain.wallet.security.data_security import list_addresses_in_keystore, create_keypair, WALLET_FILE
 
 from tsarchain.wallet.services.rpc_client import NodeClient
 from tsarchain.wallet.services.contact_management import ContactManager
@@ -41,7 +41,6 @@ from tsarchain.wallet.ui_utils import center_window
 
 # ---------------- Local Project (With Node) ----------------
 import tsarcore_native as native
-from tsarchain.network.protocol import load_or_create_keypair_at
 from tsarchain.storage.kv import kv_enabled, iter_prefix, batch
 from tsarchain.utils import config as CFG
 
@@ -54,7 +53,7 @@ log = get_ctx_logger("tsarchain.wallet.gui")
 manual_bootstrap: Optional[Tuple[str, int]] = None
 os.makedirs(os.path.dirname(CFG.USER_KEY_PATH), exist_ok=True)
 
-USER_ID, USER_PUB, USER_PRIV = load_or_create_keypair_at(CFG.USER_KEY_PATH)
+USER_ID, USER_PUB, USER_PRIV = create_keypair(CFG.USER_KEY_PATH)
 USER_CTX = {"net_id": CFG.DEFAULT_NET_ID, "node_id": USER_ID, "pubkey": USER_PUB, "privkey": USER_PRIV}
 
 WALLET_PEER_KEYS_PATH = os.path.join(os.path.dirname(CFG.USER_KEY_PATH), "wallet_peer_keys.json")
@@ -1225,7 +1224,7 @@ class KremlinWalletGUI(WalletsMixin):
         self._toast(msg, kind="error")
         
     def _open_log_viewer(self):
-        log_file = str(CFG.LOG_PATH)
+        log_file = "logging/wallet.log"
         open_log_toplevel(self.root, log_file=log_file, attach_to_root=False)
 
     # --- Treeview hover helper ---
@@ -1279,7 +1278,7 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()
     os.umask(0o077)
 
-    setup_logging(force=True)
+    setup_logging("logging/wallet.log", force=True)
     native.set_py_logger(get_ctx_logger("tsarchain.native"))
 
     root = tk.Tk()

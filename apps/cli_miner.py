@@ -530,5 +530,5 @@ def main():
 
 if __name__ == "__main__":
     mp.freeze_support()
-    setup_logging(force=True)
+    setup_logging("logging/miner.log", force=True)
     main()

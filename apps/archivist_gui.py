@@ -277,7 +277,7 @@ class TsarStorageGUI:
             os.system(f"xdg-open '{path}'")
     
     def _open_log_viewer(self):
-        log_file = str(CFG.LOG_PATH)
+        log_file = "logging/archivist_gui.log"
         open_log_toplevel(self.root, log_file=log_file, attach_to_root=False)
 
     # ------------- Refresh -------------
@@ -702,7 +702,7 @@ class TsarStorageGUI:
 
 if __name__ == "__main__":
     mp.freeze_support()
-    setup_logging(force=True)
+    setup_logging("logging/archivist_gui.log", force=True)
     log.info("Launching Tsar Storage GUI")
     root = tk.Tk()
     app  = TsarStorageGUI(root)

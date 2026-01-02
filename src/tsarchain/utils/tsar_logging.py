@@ -177,8 +177,6 @@ def setup_logging(
 
     if level is None:
         level = CFG.LOG_LEVEL
-    if log_file is None:
-        log_file = CFG.LOG_PATH
 
     # Get preference from CFG when argument is None
     if to_console is None:
@@ -365,8 +363,6 @@ class TsarLogViewer:
         self.status.pack(fill=tk.X, pady=(6, 0))
 
         self.tk_handler: Optional[TkLogHandler] = None
-        if not log_file:
-            log_file = CFG.LOG_PATH
         self.start_tail(log_file, load_history=True)
         if attach_to_root:
             self.attach_gui_handler()
@@ -547,7 +543,7 @@ class TsarLogViewer:
         text.bind("<Key>", _block_printable, add="+")
 
     def _truncate_log_files(self, delete_backups: bool = True) -> None:
-        p = Path(self.tail_path) if self.tail_path else Path(CFG.LOG_PATH).resolve()
+        p = Path(self.tail_path)
         root = logging.getLogger()
         target_handlers = []
         for h in list(root.handlers):
@@ -599,7 +595,7 @@ class TsarLogViewer:
 
     def open_log_folder(self):
         try:
-            base = self.tail_path.parent if self.tail_path else Path(CFG.LOG_PATH).resolve().parent
+            base = self.tail_path.parent
             if sys.platform.startswith("win"):
                 os.startfile(str(base))
             elif sys.platform == "darwin":
@@ -822,7 +818,7 @@ def start_log_gui(
     root = tk.Tk()
     if title:
         root.title(title)
-    log_path = log_file or CFG.LOG_PATH
+    log_path = log_file
     viewer = TsarLogViewer(root, queue_=queue.Queue(), log_file=log_path, attach_to_root=attach_to_root)
     root.mainloop()
 
@@ -843,7 +839,7 @@ def launch_gui_in_thread(log_file: Optional[str] = None, attach_to_root: bool = 
 def open_log_toplevel(master, log_file: Optional[str] = None, attach_to_root: bool = False):
     win = tk.Toplevel(master)
     win.title("Tsar Logging — Minimal GUI")
-    log_path = log_file or CFG.LOG_PATH
+    log_path = log_file
     TsarLogViewer(win, queue_=queue.Queue(), log_file=log_path, attach_to_root=attach_to_root)
     return win
 
@@ -876,19 +872,6 @@ def export_log_bundle(path: str = "tsar_logs_bundle.zip") -> Path:
         except Exception:
             pass
 
-    try:
-        base = Path(CFG.LOG_PATH)
-    except Exception:
-        base = Path(str(CFG.LOG_PATH))
-    try:
-        base.parent.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        pass
-    _add(base)
-    for bp in base.parent.glob(base.name + ".*"):
-        if bp.is_file():
-            _add(bp)
-
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("log_info.txt", "\n".join([
             f"Python Version : {platform.python_version()}",
@@ -913,7 +896,7 @@ def export_log_bundle(path: str = "tsar_logs_bundle.zip") -> Path:
 def _parse_argv(argv: list[str]) -> dict:
     import argparse
     p = argparse.ArgumentParser(description="Tsar Logging GUI")
-    p.add_argument("--file", "-f", default=CFG.LOG_PATH,
+    p.add_argument("--file", "-f",
                    help="Path file log untuk ditail (default: data/logging/tsarchain.log).")
     p.add_argument("--no-attach", action="store_true", help="Jangan attach handler GUI ke root logger (tail only).")
     p.add_argument("--level", "-l", default=CFG.LOG_LEVEL,
@@ -936,7 +919,7 @@ if __name__ == "__main__":
     try:
         if args["attach"]:
             setup_logging(
-                log_file=args["file"] or CFG.LOG_PATH,
+                log_file=args["file"],
                 level=args["level"],
                 to_console=bool(args["console"]),
                 force=False,
@@ -944,4 +927,4 @@ if __name__ == "__main__":
     except Exception:
         pass
 
-    start_log_gui(log_file=args["file"] or CFG.LOG_PATH, attach_to_root=bool(args["attach"]))
+    start_log_gui(log_file=args["file"], attach_to_root=bool(args["attach"]))

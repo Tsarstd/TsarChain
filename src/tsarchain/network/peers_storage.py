@@ -20,11 +20,8 @@ _LOCK = threading.RLock()
 
 _RECORD_PATHS = {
     "node_key": Path(CFG.NODE_KEY_PATH),
+    "archivist_key": Path(CFG.ARCHIVIST_KEY_PATH),
     "peer_keys": Path(CFG.PEER_KEYS_PATH),
-}
-_LEGACY_PATHS = {
-    "node_key": Path(CFG.LEGACY_NODE_KEY_PATH),
-    "peer_keys": Path(CFG.LEGACY_PEER_KEYS_PATH),
 }
 
 
@@ -33,17 +30,13 @@ def _lmdb_enabled() -> bool:
     return backend == "lmdb" and lmdb is not None
 
 
-def _env_path() -> str:
-    return os.path.join(CFG.NODE_DATA_DIR, "kv")
-
-
 def _ensure_env():
     global _ENV, _DB
     if not _lmdb_enabled():
         return None, None
     with _LOCK:
         if _ENV is None:
-            path = _env_path()
+            path = CFG.KEYS_DATA_DIR
             os.makedirs(path, exist_ok=True)
             size = int(CFG.LMDB_MAP_SIZE_INIT)
             _ENV = lmdb.open(
@@ -69,7 +62,6 @@ def _load_record(name: str) -> Optional[Dict]:
     # JSON fallback / legacy migration
     paths = [
         _RECORD_PATHS.get(name),
-        _LEGACY_PATHS.get(name),
     ]
     for path in paths:
         if not path:
@@ -77,9 +69,6 @@ def _load_record(name: str) -> Optional[Dict]:
         if path.exists():
             data = json.loads(path.read_text(encoding="utf-8"))
             if env and db:
-                _store_record(name, data)
-            elif path == _LEGACY_PATHS.get(name) and path != _RECORD_PATHS.get(name):
-                # migrate legacy file into new location when operating in JSON mode
                 _store_record(name, data)
             return data
     return None
@@ -93,10 +82,6 @@ def _store_record(name: str, data: Dict) -> None:
         with _LOCK:
             with env.begin(write=True, db=db) as txn:
                 txn.put(name.encode("utf-8"), payload)
-        # remove residual files once persisted to LMDB
-        for path in (_RECORD_PATHS.get(name), _LEGACY_PATHS.get(name)):
-            if path and path.exists():
-                path.unlink()
         return
 
     # JSON fallback
@@ -105,19 +90,16 @@ def _store_record(name: str, data: Dict) -> None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    legacy = _LEGACY_PATHS.get(name)
-    if legacy and legacy != path and legacy.exists():
-        legacy.unlink()
 
 # ======== SAVE & LOAD KEYS ==============
 
-def load_node_key() -> Optional[Dict]:
-    return _load_record("node_key")
+def load_node_key(path: str) -> Optional[Dict]:
+    return _load_record(path)
 
-def save_node_key(record: Dict) -> None:
+def save_node_key(path: str, record: Dict) -> None:
     data = dict(record)
     data.setdefault("updated", int(time.time()))
-    _store_record("node_key", data)
+    _store_record(path, data)
 
 def load_peer_keys() -> Dict[str, str]:
     rec = _load_record("peer_keys")

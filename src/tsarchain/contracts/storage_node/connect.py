@@ -6,15 +6,19 @@ RPC client for archivist <-> node (storage role) communication.
 This channel is used by archivists for handshakes, info, and STOR_* RPCs to nodes/miners.
 """
 
-import os, json, socket, threading, time
+import os, json, socket, threading, time, hashlib
 from typing import Optional, Dict, Any, List, Tuple, Sequence
 from bech32 import bech32_encode, convertbits
+from nacl.signing import SigningKey
+from nacl.encoding import HexEncoder
+
 from tsarchain.utils.helpers import hash160
 
 from tsarchain.network.protocol import (
     send_message, recv_message, build_envelope, verify_and_unwrap,
-    is_envelope, load_or_create_keypair_at, SecureChannel,
+    is_envelope, SecureChannel,
 )
+from tsarchain.network.peers_storage import load_node_key, save_node_key
 from tsarchain.storage.kv import kv_enabled, iter_prefix, batch
 from tsarchain.utils import config as CFG
 
@@ -27,6 +31,21 @@ manual_bootstrap: Optional[Tuple[str, int]] = None
 if not kv_enabled():
     os.makedirs(os.path.dirname(CFG.ARCHIV_PEER_KEYS), exist_ok=True)
 
+def create_keypair(path: str) -> tuple[str, str, str]:
+    load_node_key(path)
+    sk = SigningKey.generate()
+    vk = sk.verify_key
+    priv_hex = sk.encode(encoder=HexEncoder).decode()
+    pub_hex  = vk.encode(encoder=HexEncoder).decode()
+    node_id  = hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()
+    payload = {"id": node_id, "pubkey": pub_hex, "privkey": priv_hex, "created": int(time.time())}
+    if path:
+        save_node_key(path, payload)
+    else:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        os.chmod(path, 0o600)
+    return node_id, pub_hex, priv_hex
 
 def _load_stor_peer_keys() -> dict:
     if kv_enabled():
@@ -155,8 +174,8 @@ class NodeDirectory:
 
 
 class RPC:
-    def __init__(self, key_dir: str | None = None):
-        node_id, pub, priv = load_or_create_keypair_at(key_dir or os.path.join(os.getcwd(), "data", ".keys_storage"))
+    def __init__(self):
+        node_id, pub, priv = create_keypair(CFG.ARCHIVIST_KEY_PATH)
         self.ctx = {"net_id": CFG.DEFAULT_NET_ID, "node_id": node_id, "privkey": priv}
         self.pub = pub
         self.priv = priv

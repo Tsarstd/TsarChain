@@ -14,7 +14,7 @@ from collections import OrderedDict
 from ..utils import config as CFG
 from ..core.block import Block
 from .broadcast import Broadcast
-from .protocol import build_envelope, load_or_create_node_keys
+from .protocol import build_envelope, load_or_create_keypair_at
 from .client_helper import install_client_helper
 from .peers_storage import load_peer_keys, save_peer_keys
 
@@ -48,7 +48,7 @@ class Network:
         self.broadcast = Broadcast(blockchain=blockchain)
         self.broadcast.port = self.port
         self.broadcast.network = self
-        self.node_id, self.pubkey, self.privkey = load_or_create_node_keys()
+        self.node_id, self.pubkey, self.privkey = load_or_create_keypair_at(CFG.NODE_KEY_PATH)
         
         self.node_ctx = {
             "net_id": CFG.DEFAULT_NET_ID,

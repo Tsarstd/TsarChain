@@ -598,5 +598,5 @@ def main():
 
 
 if __name__ == "__main__":
-    setup_logging(force=True)
+    setup_logging("logging/web.log", force=True)
     main()

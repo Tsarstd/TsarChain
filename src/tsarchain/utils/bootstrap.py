@@ -32,6 +32,8 @@ class SnapshotBootstrapResult:
 
 
 def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCallback = None) -> SnapshotBootstrapResult:
+    if kv_enabled:
+        return SnapshotBootstrapResult(status="not support", reason="LMDB not active")
     ctx = (context or "default").lower()
     start_time = time.time()
     target_dir = CFG.LMDB_DATA_FILE

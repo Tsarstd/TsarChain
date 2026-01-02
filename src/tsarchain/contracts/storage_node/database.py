@@ -53,9 +53,6 @@ class ArchivistDatabase:
         self.use_kv = kv_enabled()
         self.enable_index = enable_index
         self.enable_blobs = enable_blobs
-        self._kv_index = None
-        self._kv_final = None
-        # in-memory fallback when index disabled (node-only)
         self._mem_index = {"files": {}, "bytes_used": 0, "art_map": {}}
 
         if self.use_kv and self.enable_index:
@@ -64,14 +61,14 @@ class ArchivistDatabase:
                 self._kv_final = self._open_store(CFG.ARCHIVIST_FINAL_DB_PATH)
 
     # ---------------- KV helpers ----------------
-    def _open_store(self, path: str, *, map_size_init: Optional[int] = None, map_size_max: Optional[int] = None):
+    def _open_store(self, path: str):
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        init_size = int(map_size_init if map_size_init is not None else CFG.STORAGE_SIZE_INIT)
-        max_size = int(map_size_max if map_size_max is not None else CFG.STORAGE_MAX_BYTES)
-        data_path = os.path.join(path, "data.mdb")
-        if os.path.isfile(data_path):
+        init_size = int(CFG.STORAGE_SIZE_INIT)
+        max_size = int(CFG.STORAGE_MAX_BYTES)
+
+        if os.path.isfile(path):
             try:
-                existing = os.path.getsize(data_path)
+                existing = os.path.getsize(path)
                 if existing > init_size:
                     init_size = existing
             except OSError:

@@ -108,13 +108,13 @@ DATA_SCHEMA_VERSION = 1
 
 # ---- KV BACKEND ----
 KV_BACKEND         = "lmdb"  # active key-value backend implementation (lmdb & json)
-LMDB_DATA_FILE     = "data/tsarchain_db"  # main LMDB data file path
+LMDB_DATA_FILE     = "data/node"  # main LMDB data file path
 LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
 KV_ITER_CHUNK      = 512 # number of entries per chunk when iterating prefix scans (LMDB)
 
 # ---- WEB CACHE (LMDB) ----
-WEB_DATABASE_PATH  = "data/web_storage/"  # dedicated LMDB path for web cache
+WEB_DATABASE_PATH  = "data/web"  # dedicated LMDB path for web cache
 LMDB_WEB_SIZE_INIT = 100 * 1024 * 1024  # initial web LMDB size (100 MB)
 LMDB_WEB_SIZE_MAX  = 128 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
 
@@ -133,7 +133,7 @@ SNAPSHOT_BOOTSTRAP_FOR_CLI = False  # enable snapshot bootstrap path for cli_nod
 SNAPSHOT_HTTP_TIMEOUT    = 90  # HTTP timeout applied to snapshot downloads
 SNAPSHOT_CHUNK_BYTES     = 2 * 1024 * 1024  # chunk size when streaming snapshot data
 SNAPSHOT_MIN_SIZE_BYTES  = 15 * 1024  # ignore snapshot files smaller than this
-SNAPSHOT_META_PATH       = "data/tsarchain_db/snapshot.meta.json"  # cached metadata file for snapshots
+SNAPSHOT_META_PATH       = "data/node/snapshot.meta.json"  # cached metadata file for snapshots
 SNAPSHOT_MAX_AGE_SECONDS = 12 * 3600  # maximum tolerated snapshot age (12h)
 SNAPSHOT_USER_AGENT      = "TsarChainSnapshot/1.0"  # UA string used when fetching snapshots
 
@@ -147,31 +147,29 @@ BLOCK_BACKUP_SNAPSHOT = 15  # Align last backup marker to nearest interval to av
 # 3. FILESYSTEM LAYOUT
 # =============================================================================
 # ---- CORE STATE FILES ----
-STATE_FILE              = "data/State/state.json"  # serialized node state snapshot
-BLOCK_FILE              = "data/Block/blockchain.json"  # block archive used before DB bootstrap
-UTXOS_FILE              = "data/UTXOS/utxos.json"  # fallback UTXO dump for light tooling
-MEMPOOL_FILE            = "data/Mempools/txpools.json"  # persistent mempool cache file
+STATE_FILE              = "data_json/node/State/state.json"  # serialized node state snapshot
+BLOCK_FILE              = "data_json/node/Block/blockchain.json"  # block archive used before DB bootstrap
+UTXOS_FILE              = "data_json/node/UTXOS/utxos.json"  # fallback UTXO dump for light tooling
+MEMPOOL_FILE            = "data_json/node/Mempools/txpools.json"  # persistent mempool cache file
 
 CHAIN_JOURNAL_FILE      = os.path.join(os.path.dirname(BLOCK_FILE), "blockchain.journal")  # append-only delta log for JSON mode
 CHAIN_JOURNAL_MAX_BYTES = 8 * 1024 * 1024
 STATE_HEIGHT_CACHE_TTL  = 2.0  # height for utxo validation & cache
 
 # ---- ARCHIVIST LMDB PATH ----
-ARCHIVIST_INDEX_DB_PATH = "data/storage/index_db"
-ARCHIVIST_FINAL_DB_PATH = "data/storage/final_db"
+ARCHIVIST_INDEX_DB_PATH = os.path.join("data/archivist/storage/index_db")
+ARCHIVIST_FINAL_DB_PATH = os.path.join("data/archivist/storage/final_db")
+ARCHIVIST_KEY_PATH      = os.path.join("data/archivist/archivist_key.json")  # primary node identity key storage path
 
-
-# ---- WALLET FILES ----
+# ---- WALLET KEY FILES ----
 USER_KEY_PATH = "data_user/user_key.json"  # default user keypair location
 REGISTRY_PATH = "data_user/wallet_registry.json"  # registry of created wallets
 CHAT_STATE    = "data_user/chat_config.json"  # cached chat preferences and pointers
 
-# ---- NODE KEYS ----
-NODE_DATA_DIR         = "data_node"  # root folder for node-specific secrets
-NODE_KEY_PATH         = os.path.join(NODE_DATA_DIR, "node_key.json")  # primary node identity key storage path
-PEER_KEYS_PATH        = os.path.join(NODE_DATA_DIR, "peer_keys.json")  # known peer key cache linked to node_data
-LEGACY_NODE_KEY_PATH  = "data_user/node_key.json"  # backward-compatible node key path for migration
-LEGACY_PEER_KEYS_PATH = "data_user/peer_keys.json"  # legacy peer key cache kept for upgrade smoothness
+# ---- NODE KEYS FILES ----
+KEYS_DATA_DIR         = os.path.join("data/keys")  # root folder for node-specific secrets
+NODE_KEY_PATH         = os.path.join(KEYS_DATA_DIR, "node")  # primary node identity key storage path
+PEER_KEYS_PATH        = os.path.join(KEYS_DATA_DIR, "node/peer_keys")  # known peer key cache linked to node_data
 
 
 # =============================================================================
@@ -671,15 +669,15 @@ GRAFFITI_ALLOWED_EXT          = ("jpg", "jpeg", "mp4", "mkv")  # extension fallb
 STORAGE_UPLOAD_CHUNK          = 10 * 1024 * 1024  # chunk size used when slicing storage payloads
 
 # ---- CONTRACT METADATA ----
-CONTRACTS_DIR      = "data/Contracts"  # storage root for contract-like payloads
+CONTRACTS_DIR      = "data/node/Contracts"  # storage root for contract-like payloads
 GRAFFITI_FILE      = os.path.join(CONTRACTS_DIR, "graffiti.json")  # graffiti metadata archive path
 
 # ---- ARCHIVIST ----
-ARCHIV_PEER_KEYS               = "data_peer/storage_peer_keys.json"
-STORAGE_DIR                    = "data/storage"  # folder holding uploaded storage blobs
-STORAGE_SIZE_INIT              = 100 * 1024 * 1024  # initial storage size allocation (100MB)
-STORAGE_MAX_BYTES              = 128 * 1024 * 1024 * 1024  # cap on cumulative storage usage (64GB)
-RETENTION_GC_SEC               = 3  # interval between retention garbage collection runs
+ARCHIV_PEER_KEYS                   = "data/archivist/data_peer/storage_peer_keys.json"
+STORAGE_DIR                        = "data/archivist/storage"  # folder holding uploaded storage blobs
+STORAGE_SIZE_INIT                  = 100 * 1024 * 1024  # initial storage size allocation (100MB)
+STORAGE_MAX_BYTES                  = 128 * 1024 * 1024 * 1024  # cap on cumulative storage usage (64GB)
+RETENTION_GC_SEC                   = 3  # interval between retention garbage collection runs
 ARCHIVIST_AUTO_PAYOUT_GUARD_FILE   = os.path.join(STORAGE_DIR, "payout_guard/auto_payout_guard.json")
 ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC = 60
 
@@ -688,7 +686,6 @@ ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC = 60
 # 13. LOGGING
 # =============================================================================
 # ---- BASE OUTPUT ----
-LOG_PATH             = "data/logging/tsarchain.log"  # canonical log file path before format-specific override
 LOG_SHOW_PROCESS     = False  # include process metadata in log context when True
 LOG_PROC_PLACEHOLDER = "-"  # value used when process info is hidden
 DEBUG_BENCHMARKS     = True  # for benchmarking needs for each computing logic/process
@@ -714,15 +711,4 @@ else:
     LOG_ROTATE_MAX_BYTES        = 10_000_000  # rollover log files after ~10MB in prod
     LOG_BACKUP_COUNT            = 7  # keep more history on production nodes
     FILTER_REDAX                = True # true for prod
-    
-# ---- LOG PATH NORMALIZATION ----
-try:
-    _LOG_BASE = "data/logging/tsarchain"  # base path used to pick extension
-    _fmt      = str(LOG_FORMAT).lower().strip()  # normalized log format string
-    
-    if _fmt == "json":
-        LOG_PATH = _LOG_BASE + ".jsonl"  # JSON lines extension to aid parsing
-    else:
-        LOG_PATH = _LOG_BASE + ".log"  # plain-text log extension fallback
-except Exception:
-    pass  # swallow errors so logging still works with existing path
+

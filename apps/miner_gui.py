@@ -570,7 +570,7 @@ class BlockchainGUI:
         self._refresh_log_widget_locked()
         
     def _open_log_viewer(self):
-        log_file = str(CFG.LOG_PATH)
+        log_file = "logging/miner_gui.log"
         try:
             open_log_toplevel(self.root, log_file=log_file, attach_to_root=False)
         except Exception:
@@ -1015,7 +1015,7 @@ class BlockchainGUI:
 if __name__ == "__main__":
     mp.freeze_support()
     
-    setup_logging(force=True)
+    setup_logging("logging/miner_gui.log", force=True)
     
     root = tk.Tk()
     app = BlockchainGUI(root)

@@ -37,10 +37,8 @@ __all__ = ["Blockchain"]
 
 class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageMixin, ValidationMixin, ChainOpsMixin, MiningMixin,):
     
-    def __init__(self, db_path: str = CFG.BLOCK_FILE, miner_address: str | None = None, in_memory: bool = False, use_cores: int | None = None,):
+    def __init__(self, miner_address: str | None = None, in_memory: bool = False, use_cores: int | None = None,):
         self.in_memory = in_memory
-        self.db_path = db_path
-        
         self.chain: List[Block] = []
         self.total_supply = 0
         self.total_blocks = 0
@@ -53,11 +51,6 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
         self.lock = threading.RLock()
         
         self.pending_blocks: List[Block] = []
-        self._chain_store = AtomicJSONFile(CFG.BLOCK_FILE, keep_backups=3)
-        self._state_store = AtomicJSONFile(CFG.STATE_FILE, keep_backups=3)
-        self._chain_journal_path = CFG.CHAIN_JOURNAL_FILE
-        if self._chain_journal_path:
-            os.makedirs(os.path.dirname(self._chain_journal_path), exist_ok=True)
             
         self._persisted_height: int = -1
         self._chain_dirty_from: Optional[int] = None
@@ -86,9 +79,7 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
         self._cold_reload_attempted: bool = False
 
         if not self.in_memory:
-            if self.db_path:
-                os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-            os.makedirs(os.path.dirname(CFG.STATE_FILE), exist_ok=True)
+            # os.makedirs(os.path.dirname(CFG.STATE_FILE), exist_ok=True)
             self._start_persist_worker()
             self.load_chain()
             self.load_state()
@@ -116,6 +107,16 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
             self.total_blocks = 0
             self.total_supply = 0
             self._rebuild_hash_cache()
+            
+        if kv_enabled:
+            return
+        else:
+            self.db_path = CFG.BLOCK_FILE
+            self._chain_store = AtomicJSONFile(CFG.BLOCK_FILE, keep_backups=3)
+            self._state_store = AtomicJSONFile(CFG.STATE_FILE, keep_backups=3)
+            self._chain_journal_path = CFG.CHAIN_JOURNAL_FILE
+            if self._chain_journal_path:
+                os.makedirs(os.path.dirname(self._chain_journal_path), exist_ok=True)
 
     def _rebuild_hash_cache(self):
         try:

@@ -10,9 +10,11 @@ env/
 
 /briefs/
 /data/
+/data_json/
 /data_node/
 /data_peer/
 /data_user/
+/logging/
 
 /target/
 /rust-analyzer/
