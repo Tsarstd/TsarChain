@@ -380,7 +380,6 @@ class ReceiveMixin:
                 if validate_start is not None:
                     validate_ms = round((time.perf_counter() - validate_start) * 1000.0, 3)
                     pre_ms = round((precheck_end - precheck_start) * 1000.0, 3) if (precheck_start is not None and precheck_end is not None) else None
-                    log.debug("[receive_block] Benchmark precheck=%s ms validate=%s ms height=%s", pre_ms, validate_ms, getattr(block, "height", None))
 
             old_tip = None
             add_start = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
@@ -408,7 +407,7 @@ class ReceiveMixin:
                                 old_tip = alt
                                 ok = True
                 except Exception:
-                    log.debug("[receive_block] swap_tip_if_better failed", exc_info=True)
+                    log.warning("[receive_block] swap_tip_if_better failed", exc_info=True)
 
             if not ok:
                 reason_str = getattr(self.blockchain, "_last_block_validation_error", None)
@@ -422,7 +421,7 @@ class ReceiveMixin:
                             self.network._full_sync_last_request[peer_key] = time.time()
                             self.network._request_full_sync(peer_key, force=True)
                     except Exception:
-                        log.debug("[receive_block] full_sync_on_mismatch failed", exc_info=True)
+                        log.warning("[receive_block] full_sync_on_mismatch failed", exc_info=True)
                 self._log_block_reject(
                     stage="add_block",
                     block_id=block_id,
@@ -451,14 +450,6 @@ class ReceiveMixin:
                 removal_candidates.append(txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid))
                 
             mempool_start = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
-            if removal_candidates:
-                removed = self.mempool.remove_many(removal_candidates)
-                missing = len(removal_candidates) - removed
-                if missing > 0:
-                    log.debug(
-                        "[receive_block] %s mempool tx already absent when pruning confirmed set",
-                        missing,
-                    )
             self.mempool.flush()
 
             if old_tip:
@@ -517,19 +508,6 @@ class ReceiveMixin:
                     round((bcast_end - bcast_start) * 1000.0, 3)
                     if (bcast_start is not None and bcast_end is not None)
                     else None
-                )
-                log.debug(
-                    "[receive_block] Benchmark height=%s total=%s ms deser=%s ms lock=%s ms pre=%s ms val=%s ms add=%s ms mempool=%s ms utxo=%s ms broadcast=%s ms",
-                    getattr(block, "height", None),
-                    total_ms,
-                    deser_ms,
-                    lock_ms,
-                    pre_ms,
-                    validate_ms,
-                    add_ms,
-                    mempool_ms,
-                    utxo_ms,
-                    bcast_ms,
                 )
                 if total_ms and total_ms > 500.0:
                     log.warning(

@@ -19,10 +19,10 @@ fn log_py(level: &str, msg: &str) {
         }
     });
 }
-#[inline]
-fn log_debug(msg: &str) {
-    log_py("info", msg);
-}
+// #[inline]
+// fn log_debug(msg: &str) {
+//     log_py("info", msg);
+// }
 #[inline]
 fn log_warning(msg: &str) {
     log_py("warning", msg);
@@ -203,11 +203,6 @@ pub fn graff_merkle_leaves_from_bytes<'py>(
     data: &[u8],
     chunk_size: usize,
 ) -> PyResult<Bound<'py, PyList>> {
-    log_debug(&format!(
-        "graff_merkle_leaves_from_bytes size={} chunk={}",
-        data.len(),
-        chunk_size
-    ));
     let leaves = match leaves_from_bytes(data, chunk_size) {
         Ok(v) => v,
         Err(e) => {
@@ -215,12 +210,7 @@ pub fn graff_merkle_leaves_from_bytes<'py>(
             return Err(e);
         }
     };
-    let count = leaves.len();
     let out = leaves_to_pylist(py, leaves)?;
-    log_debug(&format!(
-        "graff_merkle_leaves_from_bytes leaves={}",
-        count
-    ));
     Ok(out)
 }
 
@@ -230,10 +220,6 @@ pub fn graff_merkle_leaves_for_file<'py>(
     path: &str,
     chunk_size: usize,
 ) -> PyResult<Bound<'py, PyList>> {
-    log_debug(&format!(
-        "graff_merkle_leaves_for_file path={} chunk={}",
-        path, chunk_size
-    ));
     let file = File::open(path)
         .map_err(|e| {
             log_warning(&format!("graff_merkle_leaves_for_file open error={}", e));
@@ -247,9 +233,7 @@ pub fn graff_merkle_leaves_for_file<'py>(
             return Err(e);
         }
     };
-    let count = leaves.len();
     let out = leaves_to_pylist(py, leaves)?;
-    log_debug(&format!("graff_merkle_leaves_for_file leaves={}", count));
     Ok(out)
 }
 
@@ -258,7 +242,6 @@ pub fn graff_merkle_root_from_leaves<'py>(
     py: Python<'py>,
     leaves_any: Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyBytes>> {
-    log_debug("graff_merkle_root_from_leaves start");
     let leaves = match parse_leaves_any(&leaves_any) {
         Ok(v) => v,
         Err(e) => {
@@ -266,12 +249,7 @@ pub fn graff_merkle_root_from_leaves<'py>(
             return Err(e);
         }
     };
-    let count = leaves.len();
     let root = build_root(leaves);
-    log_debug(&format!(
-        "graff_merkle_root_from_leaves leaves={}",
-        count
-    ));
     Ok(PyBytes::new(py, &root))
 }
 
@@ -281,11 +259,6 @@ pub fn graff_merkle_root_for_bytes<'py>(
     data: &[u8],
     chunk_size: usize,
 ) -> PyResult<(Bound<'py, PyBytes>, usize)> {
-    log_debug(&format!(
-        "graff_merkle_root_for_bytes size={} chunk={}",
-        data.len(),
-        chunk_size
-    ));
     let leaves = match leaves_from_bytes(data, chunk_size) {
         Ok(v) => v,
         Err(e) => {
@@ -295,10 +268,6 @@ pub fn graff_merkle_root_for_bytes<'py>(
     };
     let count = leaves.len();
     let root = build_root(leaves);
-    log_debug(&format!(
-        "graff_merkle_root_for_bytes leaves={}",
-        count
-    ));
     Ok((PyBytes::new(py, &root), count))
 }
 
@@ -308,10 +277,6 @@ pub fn graff_merkle_root_for_file<'py>(
     path: &str,
     chunk_size: usize,
 ) -> PyResult<(Bound<'py, PyBytes>, usize)> {
-    log_debug(&format!(
-        "graff_merkle_root_for_file path={} chunk={}",
-        path, chunk_size
-    ));
     let file = File::open(path)
         .map_err(|e| {
             log_warning(&format!("graff_merkle_root_for_file open error={}", e));
@@ -327,10 +292,6 @@ pub fn graff_merkle_root_for_file<'py>(
     };
     let count = leaves.len();
     let root = build_root(leaves);
-    log_debug(&format!(
-        "graff_merkle_root_for_file leaves={}",
-        count
-    ));
     Ok((PyBytes::new(py, &root), count))
 }
 
@@ -340,10 +301,6 @@ pub fn graff_merkle_path_from_leaves<'py>(
     leaves_any: Bound<'py, PyAny>,
     index: usize,
 ) -> PyResult<Bound<'py, PyList>> {
-    log_debug(&format!(
-        "graff_merkle_path_from_leaves index={}",
-        index
-    ));
     let leaves = match parse_leaves_any(&leaves_any) {
         Ok(v) => v,
         Err(e) => {
@@ -351,7 +308,6 @@ pub fn graff_merkle_path_from_leaves<'py>(
             return Err(e);
         }
     };
-    let count = leaves.len();
     let path = match build_path(leaves, index) {
         Ok(v) => v,
         Err(e) => {
@@ -359,12 +315,7 @@ pub fn graff_merkle_path_from_leaves<'py>(
             return Err(e);
         }
     };
-    let path_len = path.len();
     let out = path_to_pylist(py, path)?;
-    log_debug(&format!(
-        "graff_merkle_path_from_leaves leaves={} path_len={}",
-        count, path_len
-    ));
     Ok(out)
 }
 
@@ -375,12 +326,6 @@ pub fn graff_merkle_path_for_bytes<'py>(
     chunk_size: usize,
     index: usize,
 ) -> PyResult<Bound<'py, PyList>> {
-    log_debug(&format!(
-        "graff_merkle_path_for_bytes size={} chunk={} index={}",
-        data.len(),
-        chunk_size,
-        index
-    ));
     let leaves = match leaves_from_bytes(data, chunk_size) {
         Ok(v) => v,
         Err(e) => {
@@ -388,7 +333,6 @@ pub fn graff_merkle_path_for_bytes<'py>(
             return Err(e);
         }
     };
-    let count = leaves.len();
     let path = match build_path(leaves, index) {
         Ok(v) => v,
         Err(e) => {
@@ -396,12 +340,7 @@ pub fn graff_merkle_path_for_bytes<'py>(
             return Err(e);
         }
     };
-    let path_len = path.len();
     let out = path_to_pylist(py, path)?;
-    log_debug(&format!(
-        "graff_merkle_path_for_bytes leaves={} path_len={}",
-        count, path_len
-    ));
     Ok(out)
 }
 
@@ -412,10 +351,6 @@ pub fn graff_merkle_path_for_file<'py>(
     chunk_size: usize,
     index: usize,
 ) -> PyResult<Bound<'py, PyList>> {
-    log_debug(&format!(
-        "graff_merkle_path_for_file path={} chunk={} index={}",
-        path, chunk_size, index
-    ));
     let file = File::open(path)
         .map_err(|e| {
             log_warning(&format!("graff_merkle_path_for_file open error={}", e));
@@ -429,7 +364,6 @@ pub fn graff_merkle_path_for_file<'py>(
             return Err(e);
         }
     };
-    let count = leaves.len();
     let path = match build_path(leaves, index) {
         Ok(v) => v,
         Err(e) => {
@@ -437,18 +371,12 @@ pub fn graff_merkle_path_for_file<'py>(
             return Err(e);
         }
     };
-    let path_len = path.len();
     let out = path_to_pylist(py, path)?;
-    log_debug(&format!(
-        "graff_merkle_path_for_file leaves={} path_len={}",
-        count, path_len
-    ));
     Ok(out)
 }
 
 #[pyfunction]
 pub fn graff_merkle_verify(root_hex: &str, leaf_hex: &str, path_any: Bound<'_, PyAny>) -> PyResult<bool> {
-    log_debug("graff_merkle_verify start");
     let root = match parse_hex32(root_hex) {
         Some(v) => v,
         None => {
@@ -542,6 +470,5 @@ pub fn graff_merkle_verify(root_hex: &str, leaf_hex: &str, path_any: Bound<'_, P
         }
     }
     let ok = cur == root;
-    log_debug(&format!("graff_merkle_verify ok={}", ok));
     Ok(ok)
 }

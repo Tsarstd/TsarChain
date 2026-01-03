@@ -22,10 +22,22 @@ def handle_node_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = None
         return {"type": "PONG"}
 
     if t == "STOR_INDEX":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
         server.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (server.index.get("files") or {}).values())
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            if result > 15.0:
+                log.debug("[STOR_INDEX] Benchmark : %.3f ms", result)
+        
         return {"type": "STOR_INDEX", "status": "ok", **server.index}
 
     if t == "STOR_PAID":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         aid = str(msg.get("graffiti_id", "")).strip()
         txid = str(msg.get("txid", "")).strip()
         block_h = int(msg.get("block_height", 0) or 0)
@@ -60,7 +72,13 @@ def handle_node_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = None
         server.index["files"][aid] = server._normalize_file_meta(aid, meta)
         server.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in server.index["files"].values())
         server._save_index()
-        log.info("[STOR_PAID] aid=%s h=%s expire=%s", aid[:16], meta.get("confirmed_at_height"), meta.get("expire_at_height"))
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            if result > 2000.0:
+                log.warning("[STOR_PAID] Benchmark : %.3f ms", result)
+            
         return {
             "type": "STOR_PAID",
             "status": "ok",
@@ -70,6 +88,9 @@ def handle_node_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = None
         }
 
     if t == "STOR_GC":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         tip_h = int(msg.get("tip_height", 0) or 0)
         expire_after = max(0, int(CFG.GRAFFITI_EXPIRE_AFTER_BLOCKS))
         files = server.index.get("files", {}) or {}
@@ -105,9 +126,19 @@ def handle_node_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = None
         server._save_index()
         if expired:
             log.info("[STOR_GC] expired=%s tip=%s", expired, tip_h)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            if result > 35.0:
+                log.warning("[STOR_GC] Benchmark : %.3f ms", result)
+            
         return {"type": "STOR_GC", "status": "ok", "expired": expired}
 
     if t == "STOR_PROOF_RUN":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         aid = str(msg.get("graffiti_id", "")).strip()
         art_id = str(msg.get("art_id", "")).strip().lower()
         tip_h = int(msg.get("tip_height", 0) or 0)
@@ -170,16 +201,13 @@ def handle_node_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = None
             meta["art_id"] = art_norm
         server.index["files"][aid] = server._normalize_file_meta(aid, meta)
         server._save_index()
-        log.info(
-            "[STOR_PROOF_RUN] aid=%s epoch=%s offset=%s len=%s idx=%s mchunk=%s path_len=%s",
-            aid[:16],
-            meta.get("last_proof_epoch"),
-            offset,
-            length,
-            chunk_index,
-            merkle_chunk,
-            path_len,
-        )
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            if result > 500.0:
+                log.warning("[STOR_PROOF_RUN] Benchmark : %.3f ms", result)
+            
         return {
             "type": "STOR_PROOF_RUN",
             "status": "ok",

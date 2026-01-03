@@ -141,11 +141,7 @@ def handle_storage_rpc(
         mroot = post.get("mroot") or post.get("merkle_root")
         mchunk = post.get("mchunk") or post.get("merkle_chunk")
         mcount = post.get("mcount") or post.get("merkle_count")
-        proof_mode = "plain"
         idx = None
-        path_len = None
-        mchunk_val = None
-        mcount_val = None
         if mroot or mchunk or mcount:
             if not (mroot and mchunk and mcount):
                 return {"error": "merkle_meta_incomplete"}
@@ -158,9 +154,6 @@ def handle_storage_rpc(
                 return {"error": "merkle_meta_invalid"}
             if not GRAFFITI._is_valid_sha256_hex(str(mroot)):
                 return {"error": "merkle_root_invalid"}
-            proof_mode = "merkle"
-            mchunk_val = mchunk
-            mcount_val = mcount
         if height < 0:
             height = 0
         if GRAFFITI.compute_proof_epoch(height) != epoch:
@@ -203,7 +196,6 @@ def handle_storage_rpc(
                     return {"error": "merkle_index_out_of_range"}
             if not GRAFFITI.verify_merkle_path(str(mroot), proof_hash, path):
                 return {"error": "merkle_path_invalid"}
-            path_len = len(path)
         existing = reg.get_proof(art_id, storer, epoch) if hasattr(reg, "get_proof") else None
         if existing:
             existing_hash = str(existing.get("hash") or "").strip().lower()
@@ -220,24 +212,12 @@ def handle_storage_rpc(
             height=height,
             seed=str(challenge.get("seed", "")),
         )
-        log.info(
-            "[GRAFFITI_PROOF_SUBMIT] accepted art=%s storer=%s epoch=%s offset=%s len=%s mode=%s idx=%s path_len=%s mchunk=%s mcount=%s",
-            art_id[:16],
-            storer[:16],
-            epoch,
-            offset,
-            length,
-            proof_mode,
-            idx,
-            path_len,
-            mchunk_val,
-            mcount_val,
-        )
         
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[GRAFFITI_PROOF_SUBMIT] Benchmark : %.3f ms", result)
+            if result > 15.0:
+                log.debug("[GRAFFITI_PROOF_SUBMIT] Benchmark : %.3f ms", result)
             
         return {"status": "ok", "art_id": art_id, "epoch": epoch}
 
@@ -340,15 +320,6 @@ def handle_storage_rpc(
             amt = int(getattr(o, "amount", 0) or 0)
             addr = _spkhex_to_address(o.script_pubkey.serialize().hex())
             outs.append((amt, addr))
-        log.info(
-            "[GRAFFITI_BUILD_PAYOUT] built art=%s storer=%s epoch=%s amount=%s fee_rate=%s outputs=%s",
-            art_id[:16],
-            storer_addr[:16],
-            epoch,
-            rec_amt,
-            fee_rate,
-            len(outs),
-        )
 
         broadcast_flag = bool(message.get("broadcast"))
         if broadcast_flag:
@@ -363,7 +334,8 @@ def handle_storage_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[GRAFFITI_BUILD_PAYOUT] Benchmark : %.3f ms", result)
+            if result > 15:
+                log.warning("[GRAFFITI_BUILD_PAYOUT] Benchmark : %.3f ms", result)
             
         return {"status": "ok", "tx": tx_obj.to_dict(include_txid=True)}
 

@@ -51,7 +51,8 @@ def handle_miner_rpc(
         if start is not None:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[NEW_BLOCK] Benchmark_total : %.3f ms", result)
+            if result > 500.0:
+                log.warning("[NEW_BLOCK] Benchmark_total : %.3f ms", result)
         
         return {"status": "ok"}
     
@@ -71,11 +72,12 @@ def handle_miner_rpc(
         if start is not None:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug(
-                "[GET_BLOCK_HASH] Benchmark : %.3f ms cache_hit=%s",
-                result,
-                resp.get("cache_hit") if isinstance(resp, dict) else None,
-            )
+            if result > 15.0:
+                log.warning(
+                    "[GET_BLOCK_HASH] Benchmark : %.3f ms cache_hit=%s",
+                    result,
+                    resp.get("cache_hit") if isinstance(resp, dict) else None,
+                )
             
         return resp
     
@@ -104,7 +106,8 @@ def handle_miner_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[GET_INFO] Benchmark : %.3f ms", result)
+            if result > 15.0:
+                log.warning("[GET_INFO] Benchmark : %.3f ms", result)
             
         return info
 
@@ -195,7 +198,8 @@ def handle_miner_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[MEMPOOL] Benchmark : %.3f ms", result)
+            if result > 15.0:
+                log.warning("[MEMPOOL] Benchmark : %.3f ms", result)
         
         return {"status": "mempool received"}
     return None

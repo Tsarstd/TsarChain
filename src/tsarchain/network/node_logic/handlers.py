@@ -148,7 +148,8 @@ def _handle_get_headers(self, message, addr):
     if CFG.DEBUG_BENCHMARKS:
         end = time.perf_counter()
         result = round((end - start) * 1000.0, 3)
-        log.debug("[GET_HEADERS] Benchmark : %.3f ms", result)
+        if result > 15.0:
+            log.warning("[GET_HEADERS] Benchmark : %.3f ms", result)
         
     return {
         "type": "HEADERS",
@@ -179,12 +180,16 @@ def _handle_get_blocks(self, message, addr):
     if CFG.DEBUG_BENCHMARKS:
         end = time.perf_counter()
         result = round((end - start) * 1000.0, 3)
-        log.debug("[GET_BLOCKS] Benchmark : %.3f ms", result)
+        if result > 15.0:
+            log.warning("[GET_BLOCKS] Benchmark : %.3f ms", result)
         
     return {"type": "BLOCKS", "blocks": blocks}
 
 
 def _handle_get_full_sync(self, message, addr):
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+    
     ip = addr[0] if isinstance(addr, tuple) and len(addr) > 0 else "unknown"
     now = time.time()
     min_iv = CFG.FULL_SYNC_MIN_INTERVAL
@@ -211,6 +216,12 @@ def _handle_get_full_sync(self, message, addr):
             "reason": "payload_would_exceed_limit",
             "limit_bytes": hard_cap,
         }
+        
+    if CFG.DEBUG_BENCHMARKS:
+        end = time.perf_counter()
+        result = round((end - start) * 1000.0, 3)
+        log.debug("[GET_FULL_SYNC] Benchmark : %.3f ms", result)
+            
     return full_obj
 
 
@@ -241,7 +252,8 @@ def _handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict:
         end = time.perf_counter()
         result = round((end - start) * 1000.0, 3)
         tag = src_tag or "-"
-        log.debug("[GET_BLOCK] 'height' Benchmark : %.3f ms src=%s", result, tag)
+        if result > 15.0:
+            log.debug("[GET_BLOCK] 'height' Benchmark : %.3f ms src=%s", result, tag)
         
     return d
 
@@ -261,7 +273,8 @@ def _handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict
                 end = time.perf_counter()
                 result = round((end - start) * 1000.0, 3)
                 tag = src_tag or "-"
-                log.debug("[GET_BLOCK] 'hash' Benchmark : %.3f ms src=%s", result, tag)
+                if result > 15.0:
+                    log.debug("[GET_BLOCK] 'hash' Benchmark : %.3f ms src=%s", result, tag)
                 
             return d
     return {"type": "BLOCK", "error": "not_found"}

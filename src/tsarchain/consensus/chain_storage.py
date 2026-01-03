@@ -550,18 +550,7 @@ class StorageMixin:
                     blocks.append((k, v))
             blocks.sort(key=lambda kv: kv[0])
             data_list = [json.loads(v.decode('utf-8')) for _, v in blocks]
-            log.info("load chain kv, data_list=%s", data_list)
-        # if not data_list:
-        #     raw = self._chain_store.load(default=[])
-        #     if isinstance(raw, dict):
-        #         meta = raw.get("meta") or {}
-        #         blk_list = raw.get("blocks")
-        #         if isinstance(blk_list, list):
-        #             data_list = blk_list
-        #         elif isinstance(raw.get("chain"), list):
-        #             data_list = raw.get("chain")  # legacy name safeguard
-        #     else:
-        #         data_list = raw
+            
         if not isinstance(data_list, list):
             data_list = []
         data_list = self._apply_chain_journal(data_list)
@@ -631,6 +620,7 @@ class StorageMixin:
                 data["total_blocks"] = int(items.get("k:total_blocks", "0"))
         else:
             data = self._state_store.load(CFG.STATE_FILE, default={})
+            
         if not isinstance(data, dict):
             data = {}
         return data

@@ -180,7 +180,7 @@ class MiningMixin:
         try:
             latest = self.get_last_block()
             if latest is not None and (latest.hash() != getattr(new_block, "prev_block_hash", None) or getattr(new_block, "height", 0) != getattr(latest, "height", -1) + 1):
-                log.info(
+                log.warning(
                     "[mine_block] discard stale candidate height=%s prev=%s latest=%s",
                     getattr(new_block, "height", None),
                     getattr(new_block, "prev_block_hash", None).hex() if hasattr(getattr(new_block, "prev_block_hash", None), "hex") else getattr(new_block, "prev_block_hash", None),
@@ -221,5 +221,4 @@ class MiningMixin:
                 reason,
             )
             return None
-        log.info("[mine_block] Block mined: height=%d reward=%d fee=%d", new_block.height, reward, total_fee)
         return new_block

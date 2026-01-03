@@ -362,7 +362,6 @@ class TxMempoolValidator:
                     return False
                 
                 tx.fee = int(total_in - total_out)
-                log.info("[mempool] payout accepted art=%s fee=%s", art_id[:16], tx.fee)
                 return True
 
             compact_tx = tx_to_compact_tuple(tx)
@@ -480,7 +479,8 @@ class TxMempoolValidator:
                 if CFG.DEBUG_BENCHMARKS:
                     end = time.perf_counter()
                     result = round((end - start) * 1000.0, 3)
-                    log.debug("[validate_transaction] Benchmark : %.3f ms", result)
+                    if result > 15.0:
+                        log.warning("[validate_transaction] Benchmark : %.3f ms", result)
                 return True
             
             else:

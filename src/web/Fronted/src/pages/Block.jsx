@@ -314,7 +314,7 @@ const Home = ({ onSearchClick }) => {
   const handleNavigateToBlock = async () => {
     const targetHeight = parseInt(navInput);
     if (isNaN(targetHeight) || targetHeight < 0) {
-      setMessage("Masukkan angka block height yang valid");
+      setMessage("Input a valid Block Height");
       return;
     }
 
@@ -331,50 +331,75 @@ const Home = ({ onSearchClick }) => {
         return;
       }
 
+      // Fetch block target
       const resp = await fetchByKind("block", targetHeight);
       const blockData = resp.data || null;
       
       if (blockData) {
-        setBlocks(prev => {
-          const exists = prev.find(b => b.height === targetHeight);
-          if (exists) return prev;
-          
-          const newBlocks = [...prev, blockData]
-            .sort((a, b) => b.height - a.height);
-          return newBlocks;
+        // Fetch 5 blocks sebelumnya (lebih rendah height-nya)
+        const beforeResp = await fetchBlockRange({
+          startHeight: Math.max(0, targetHeight - 150), // Ambil 5 block sebelumnya
+          limit: 180, // Ambil lebih banyak untuk jaga-jaga
+          source: 'database'
         });
         
+        // Fetch 5 blocks sesudahnya (lebih tinggi height-nya)
+        const afterResp = await fetchBlockRange({
+          startHeight: targetHeight + 1,
+          limit: 180,
+          source: 'database'
+        });
+        
+        // Gabungkan semua block yang didapat
+        const allNewBlocks = [];
+        
+        if (beforeResp.data?.items) {
+          allNewBlocks.push(...beforeResp.data.items);
+        }
+        
+        allNewBlocks.push(blockData);
+        
+        if (afterResp.data?.items) {
+          allNewBlocks.push(...afterResp.data.items);
+        }
+        
+        // Update state blocks dengan block baru
+        setBlocks(prev => {
+          const blockMap = new Map();
+          
+          // Tambahkan existing blocks
+          prev.forEach(item => {
+            if (item?.height !== undefined) {
+              blockMap.set(item.height, item);
+            }
+          });
+          
+          // Tambahkan new blocks
+          allNewBlocks.forEach(item => {
+            if (item?.height !== undefined) {
+              blockMap.set(item.height, item);
+            }
+          });
+          
+          const merged = Array.from(blockMap.values())
+            .sort((a, b) => b.height - a.height);
+          
+          return merged;
+        });
+        
+        // Set detail block target
         setDetail(blockData);
         setDetailStatus("done");
         setSelectedHeight(targetHeight);
         
-        const surroundingResp = await fetchBlockRange({
-          startHeight: targetHeight + 1,
-          limit: 5,
-          source: 'database'
-        });
-        
-        if (surroundingResp.data?.items) {
-          setBlocks(prev => {
-            const blockMap = new Map();
-            prev.forEach(item => blockMap.set(item.height, item));
-            surroundingResp.data.items.forEach(item => {
-              if (item?.height !== undefined) {
-                blockMap.set(item.height, item);
-              }
-            });
-            
-            return Array.from(blockMap.values())
-              .sort((a, b) => b.height - a.height);
-          });
-        }
-
+        // Scroll ke block target setelah render
         setTimeout(() => scrollToBlock(targetHeight), 100);
       } else {
         setMessage(`Block #${targetHeight} not found`);
       }
     } catch (err) {
-      setMessage(err.message || "Gagal navigasi ke block");
+      console.error('Navigation error:', err);
+      setMessage(err.message || "Failed to navigate to block target");
     } finally {
       setIsNavigating(false);
     }

@@ -20,6 +20,9 @@ def handle_wallet_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = No
     t = str(msg.get("type", "")).upper()
 
     if t == "STOR_INIT":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+    
         aid = str(msg.get("graffiti_id", "")).strip()
         size = int(msg.get("size_bytes", 0))
         sha = str(msg.get("sha256", "")).lower()
@@ -94,7 +97,13 @@ def handle_wallet_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = No
         server._save_index()
         with open(path, "wb"):
             pass
-        log.info("[STOR_INIT] aid=%s size=%s art_id=%s state=receiving", aid[:16], size, (art_id[:16] if art_id else "-"))
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            if result > 15.0:
+                log.warning("[STOR_INIT] Benchmark : %.3f ms", result)
+        
         return {
             "type": "STOR_ACK",
             "status": "ok",
@@ -104,6 +113,9 @@ def handle_wallet_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = No
         }
 
     if t == "STOR_PUT":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+        
         aid = str(msg.get("graffiti_id", "")).strip()
         b64 = str(msg.get("data", ""))
         if not aid or not b64:
@@ -120,12 +132,18 @@ def handle_wallet_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = No
             received_total = server.db.append_incoming(aid, chunk_bytes, max_chunk)
         except ValueError as exc:
             return {"type": "STOR_ACK", "status": "rejected", "reason": str(exc)}
-        log.debug("received: %s", received_total)
         meta["state"] = "appending"
         meta["received_bytes"] = int(received_total)
         meta["updated_ts"] = int(time.time())
         server.index["files"][aid] = meta
         server._save_index()
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            if result > 100.0:
+                log.warning("[STOR_PUT] Benchmark : %.3f ms", result)
+        
         return {
             "type": "STOR_ACK",
             "status": "ok",
@@ -134,6 +152,9 @@ def handle_wallet_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = No
         }
 
     if t == "STOR_COMMIT":
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+        
         aid = str(msg.get("graffiti_id", "")).strip()
         req_receipt = str(msg.get("receipt_id", "")).strip()
         meta = server.index.get("files", {}).get(aid)
@@ -210,12 +231,21 @@ def handle_wallet_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = No
             server.index["files"][aid] = meta
             server.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in server.index["files"].values())
             server._save_index()
-            log.info("[STOR_COMMIT] aid=%s size=%s -> pending_confirm", aid[:16], expected_size)
+
+            if CFG.DEBUG_BENCHMARKS:
+                end = time.perf_counter()
+                result = round((end - start) * 1000.0, 3)
+                if result > 250.0:
+                    log.warning("[STOR_COMMIT] Benchmark : %.3f ms", result)
+            
             return {"type": "STOR_ACK", "status": "ok", "receipt": receipt}
         except Exception as e:
             return {"type": "STOR_ACK", "status": "rejected", "reason": str(e)}
 
-    if t == "STOR_GET_BY_ART":        
+    if t == "STOR_GET_BY_ART":    
+        if CFG.DEBUG_BENCHMARKS:
+            start = time.perf_counter()
+            
         # Public fetch by art_id (or direct graffiti_id). Supports optional chunked reads via offset/length.
         art_id = str(msg.get("art_id", "")).strip().lower()
         gid = str(msg.get("graffiti_id", "")).strip()
@@ -369,6 +399,12 @@ def handle_wallet_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = No
                 path if "path" in locals() else None,
             )
             return resp
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            if result > 15.0:
+                log.warning("[STOR_GET_BY_ART] Benchmark : %.3f ms", result)
             
         return resp
 

@@ -328,7 +328,8 @@ def handle_user_rpc(
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
             src_tag = (message.get("rpc_source") or "-")
-            log.debug("[GET_BALANCES] Benchmark : %.3f ms src=%s", result, src_tag)
+            if result > 15.0:
+                log.debug("[GET_BALANCES] Benchmark : %.3f ms src=%s", result, src_tag)
             
         return {"type": "BALANCES", "height": tip_height, "items": items}
 
@@ -351,7 +352,8 @@ def handle_user_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[GET_BALANCES] Benchmark : %.3f ms", result)
+            if result > 15.0:
+                log.warning("[CREATE_TX] Benchmark : %.3f ms", result)
         
         return {"type": "TX_TEMPLATE", "data": tpl}
 
@@ -394,7 +396,8 @@ def handle_user_rpc(
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
             src_tag = (message.get("rpc_source") or "-")
-            log.debug("[GET_NETWORK_INFO] Benchmark : %.3f ms src=%s", result, src_tag)
+            if result > 15.0:
+                log.warning("[GET_NETWORK_INFO] Benchmark : %.3f ms src=%s", result, src_tag)
             
         return {"type": "NETWORK_INFO", "data": snap}
 
@@ -484,7 +487,6 @@ def handle_user_rpc(
         if start_height > tip_height:
             start_height = tip_height
         if start_height < 0:
-            log.info("GET_BLOCK_RANGE has_more false")
             return {
                 "type": "BLOCK_RANGE",
                 "items": [],
@@ -511,7 +513,8 @@ def handle_user_rpc(
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
             src_tag = (message.get("rpc_source") or "-")
-            log.debug("[GET_BLOCK_RANGE] Benchmark : %.3f ms src=%s", result, src_tag)
+            if result > 15.0:
+                log.debug("[GET_BLOCK_RANGE] Benchmark : %.3f ms src=%s", result, src_tag)
 
         return {
             "type": "BLOCK_RANGE",
@@ -589,7 +592,8 @@ def handle_user_rpc(
             if CFG.DEBUG_BENCHMARKS:
                 end = time.perf_counter()
                 result = round((end - start) * 1000.0, 3)
-                log.debug("[NEW_TX] Benchmark : %.3f ms", result)
+                if result > 15.0:
+                    log.warning("[NEW_TX] Benchmark : %.3f ms", result)
                 
             return {"status": "ok", "txid": txid}
         else:
@@ -645,7 +649,8 @@ def handle_user_rpc(
             if CFG.DEBUG_BENCHMARKS:
                 end = time.perf_counter()
                 result = round((end - start) * 1000.0, 3)
-                log.debug("[GET_MEMPOOL] snapshot mode Benchmark : %.3f ms", result)
+                if result > 35.0:
+                    log.warning("[GET_MEMPOOL] snapshot mode Benchmark : %.3f ms", result)
                 
             return {"type": "MEMPOOL_SYNC", "count": int(pushed)}
 
@@ -719,7 +724,8 @@ def handle_user_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[GET_MEMPOOL] inline mode Benchmark : %.3f ms", result)
+            if result > 35.0:
+                log.warning("[GET_MEMPOOL] inline mode Benchmark : %.3f ms", result)
             
         return {"type": "MEMPOOL", "mode": "txids", "txs": hexes}
 
@@ -764,7 +770,8 @@ def handle_user_rpc(
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
             src_tag = (message.get("rpc_source") or "-")
-            log.debug("[GET_TX_HISTORY] Benchmark : %.3f ms src=%s", result, src_tag)
+            if result > 15.0:
+                log.debug("[GET_TX_HISTORY] Benchmark : %.3f ms src=%s", result, src_tag)
         
         return {"type": "TX_HISTORY", "address": addr_str, **history}
 
@@ -830,7 +837,8 @@ def handle_user_rpc(
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
             src_tag = (message.get("rpc_source") or "-")
-            log.debug("[GET_UTXOS] Benchmark : %.3f ms src=%s", result, src_tag)
+            if result > 15.0:
+                log.debug("[GET_UTXOS] Benchmark : %.3f ms src=%s", result, src_tag)
             
         return {"type": "UTXOS", "address": address, "utxos": utxos}
 
@@ -1608,7 +1616,8 @@ def handle_user_rpc(
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
             src_tag = (message.get("rpc_source") or "-")
-            log.debug("[STOR_LIST] Benchmark : %.3f ms src=%s", result, src_tag)
+            if result > 15.0:
+                log.debug("[STOR_LIST] Benchmark : %.3f ms src=%s", result, src_tag)
             
         return {"type":"STOR_LIST","storers": items}
 
@@ -1690,7 +1699,8 @@ def handle_user_rpc(
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
-            log.debug("[CREATE_TX_MULTI] Benchmark : %.3f ms", result)
+            if result > 15.0:
+                log.warning("[CREATE_TX_MULTI] Benchmark : %.3f ms", result)
             
         return {"type": "TX_TEMPLATE", "data": tpl}
 
@@ -1760,7 +1770,8 @@ def handle_user_rpc(
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
             src_tag = (message.get("rpc_source") or "-")
-            log.debug("[GRAFFITI_GET_COMMENTS] Benchmark : %.3f ms src=%s", result, src_tag)
+            if result > 15.0:
+                log.debug("[GRAFFITI_GET_COMMENTS] Benchmark : %.3f ms src=%s", result, src_tag)
             
         return {"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id, "comments": comments}
 
@@ -1801,7 +1812,8 @@ def handle_user_rpc(
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
             src_tag = (message.get("rpc_source") or "-")
-            log.debug("[GRAFFITI_GET_ART] Benchmark : %.3f ms src=%s", result, src_tag)
+            if result > 15.0:
+                log.debug("[GRAFFITI_GET_ART] Benchmark : %.3f ms src=%s", result, src_tag)
             
         return {"type": "GRAFFITI_GET_ART", "art_id": art_id, "post": post}
 

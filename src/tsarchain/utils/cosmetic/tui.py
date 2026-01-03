@@ -14,6 +14,7 @@ import queue
 from typing import Callable, Optional
 
 from ..cosmetic import interface as COL
+from ..cosmetic.thread_check import get_thread_monitor
 
 
 def _human_bytes(n: float) -> str:
@@ -56,7 +57,9 @@ class MinerTUI:
         hashrate_queue: "queue.Queue | None" = None,
         chain_height_fn: Optional[Callable[[], int]] = None,
         peer_counts_fn: Optional[Callable[[], tuple[int, int]]] = None,
+        show_threads: bool = True,
     ) -> None:
+        
         self.address = address
         self.cores = cores
         self.mode = mode
@@ -75,6 +78,9 @@ class MinerTUI:
         self._blocks_mined = 0
         self._start_ts = time.time()
         self._first_render = True
+        
+        self.show_threads = show_threads
+        self.thread_monitor = get_thread_monitor() if show_threads else None
 
     # ---- public helpers ----
 
@@ -163,6 +169,12 @@ class MinerTUI:
             if peers_in is not None and peers_out is not None:
                 parts.append(f"peers: {peers_in}/{peers_out}")
             parts.append(f"{_human_hps(self._last_hashrate)}")
+            
+            if self.show_threads and self.thread_monitor:
+                thread_counts = self.thread_monitor.get_thread_counts()
+                thread_summary = f"Thread:{thread_counts['alive']}/{thread_counts['total']}"
+                parts.append(thread_summary)
+                
             if cpu_pct is not None:
                 parts.append(f"CPU: {cpu_pct:.0f}%")
             if mem_used is not None and mem_total is not None and mem_pct is not None:

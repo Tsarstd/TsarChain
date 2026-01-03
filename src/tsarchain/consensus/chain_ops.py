@@ -303,15 +303,12 @@ class ChainOpsMixin:
                 if pool.remove_tx(txid):
                     pruned += 1
 
-        if pruned:
-            log.debug("[_prune_mempool_confirmed] Removed %d confirmed txs from mempool", pruned)
-
         conflicts = pool.drop_conflicts(spent_prevouts)
         stale_removed = 0
         stale_removed = pool.prune_stale_entries()
 
         if conflicts or stale_removed:
-            log.debug("[_prune_mempool_confirmed] pruned conflicts=%d stale=%d", conflicts, stale_removed)
+            log.warning("[_prune_mempool_confirmed] pruned conflicts=%d stale=%d", conflicts, stale_removed)
             
         pool.flush()
 

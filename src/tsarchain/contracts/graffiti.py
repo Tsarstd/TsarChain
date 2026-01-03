@@ -105,7 +105,6 @@ def validate_graffiti_file(size_bytes: int, mime: str | None = None, filename: s
         ext = os.path.splitext(filename)[1].lstrip(".").lower()
 
     if mime_norm and _is_valid_mime(mime_norm):
-        log.info("file: %s", mime_norm)
         if _MIME_ALLOWED and mime_norm not in _MIME_ALLOWED:
             raise ValueError("mime_not_allowed")
     elif ext:
@@ -140,7 +139,6 @@ def _guard_payload_size(data: bytes) -> None:
     limit = CFG.MAX_GRAFFITI_OPRET
     if len(data) > limit:
         raise ValueError(f"graffiti_opreturn_too_large: {len(data)} > {limit}")
-    log.info("OP_RETURN data: %s bytes, with limit %s bytes", len(data), limit)
 
 
 def _pool_redeem_script(art_id: str) -> bytes:

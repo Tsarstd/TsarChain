@@ -39,6 +39,7 @@ from tsarchain.utils.bootstrap import maybe_bootstrap_snapshot
 
 from tsarchain.utils.cosmetic import interface as COL
 from tsarchain.utils.cosmetic.tui import MinerTUI, create_tui_logger
+from tsarchain.utils.cosmetic.thread_check import get_thread_monitor, register_thread_monitoring_signal
 
 from tsarchain.utils.tsar_logging import setup_logging, get_ctx_logger
 log = get_ctx_logger("apps.cli_node_miner")
@@ -71,6 +72,10 @@ def clog(message: str, color: str = COL.GREY):
         tui_logger(f"{_stamp()}{color}{message}{COL.RESET}")
     else:
         print(f"{_stamp()} : {color}{message}{COL.RESET}")
+
+def show_thread_report():
+    monitor = get_thread_monitor()
+    monitor.print_thread_report(detailed=True)
 
 def human_hps(hps: float) -> str:
     hps = float(hps)
@@ -170,9 +175,20 @@ class SimpleMiner:
         self._last_trusted_probe: float = 0.0
         self._bootstrap_self_only: bool | None = None
         self._last_trusted_hash: str | None = None
+        
+        self.thread_monitor = get_thread_monitor()
+        register_thread_monitoring_signal()
 
-        signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
+        
+        def _sigint_with_report(signum, frame):
+            try:
+                self.signal_handler(signum, frame)
+            finally:
+                self.thread_monitor.print_thread_report(detailed=True)
+
+        signal.signal(signal.SIGINT, _sigint_with_report)
+        
         _enable_siginterrupt()
 
     def signal_handler(self, signum, _frame):
@@ -431,6 +447,10 @@ class SimpleMiner:
     def start_mining(self, timeout=560):
         if not self.validate_address():
             return False
+        
+        self.thread_monitor.start_monitoring()
+        clog(f"Thread monitoring started")
+        
         if not self.start_node():
             return False
         if not self.wait_for_sync(timeout=timeout):
@@ -533,7 +553,7 @@ class SimpleMiner:
                     txs = getattr(block, "transactions", None) or []
                     confirmed = max(len(txs) - 1, 0)
                     clog(
-                        f"Block mined at height {h}: {block.hash().hex()[:18]}... ( conf {confirmed} tx{'' if confirmed == 1 else 's'} from mempool)"
+                        f"Block mined at height {h}: {block.hash().hex()[:64]} ({confirmed} tx{'' if confirmed == 1 else 's'})"
                     )
                     try:
                         sent = self.network.publish_block(block, exclude=None, force=True)
@@ -564,10 +584,12 @@ class SimpleMiner:
         self.mining_alive = False
         if self.cancel_mining:
             self.cancel_mining.set()
+            
         
         if self.network:
             self.network.shutdown()
         clog("Miner stopped")
+        self.thread_monitor.stop_monitoring()
 
 
 class NodeRunner:
@@ -718,6 +740,7 @@ def parse_args():
     parser.add_argument("--no-bootstrap", action="store_true", help="Skip snapshot bootstrap download")
     parser.add_argument("--rx-full", action="store_true", help="Enable RandomX FULL MEMORY mode (+2.5GB dataset)")
     parser.add_argument("--rx-light", action="store_true", help="Force RandomX LIGHT mode (~<2.5GB, lower RAM)")
+    parser.add_argument("--thread-report", action="store_true", help="Show thread report and exit")
     return parser.parse_args()
 
 
@@ -735,6 +758,11 @@ def _normalize_cores(cores: int | None) -> int | None:
 
 def main():
     args = parse_args()
+    
+    if args.thread_report:
+        show_thread_report()
+        return
+    
     mode_selected = None
     if not args.node_only:
         # Interactive mode selection

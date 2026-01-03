@@ -186,7 +186,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "00075af1600222e7e1689e769e46fa3dbb8c8557592fe050e6aad7a1d0a2d4a8"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "001cfb87af928661285802affcd39f224f0bdc3f3269be291b5826b1b8ae1949"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -366,8 +366,8 @@ HANDSHAKE_TIMEOUT        = 10  # seconds allowed to finish handshake
 DISCOVERY_INTERVAL       = 5  # seconds between peer discovery scans
 SYNC_INTERVAL            = 20  # seconds between standard sync pulls
 FAST_SYNC_INTERVAL       = 5  # seconds between fast-sync loops
-SYNC_TIMEOUT             = 10  # seconds before abandoning slow sync requests
-CONNECT_TIMEOUT          = 1.5  # TCP dial timeout per peer attempt
+SYNC_TIMEOUT             = 15  # seconds before abandoning slow sync requests
+CONNECT_TIMEOUT          = 2  # TCP dial timeout per peer attempt
 BROADCAST_FAIL_THRESHOLD = 2  # consecutive failures before backing off broadcasting
 BROADCAST_FAIL_BACKOFF_S = 120  # seconds to wait when broadcast keeps failing
 
@@ -377,19 +377,23 @@ MAX_HISTORY_LIMIT              = 200  # cap on stored addr history per peer
 MAX_UTXO_ADDR_LEN              = 68  # sanity limit for UTXO address strings
 NONCE_PER_SENDER_MAX           = 256  # per-sender nonce cache bound
 NONCE_GLOBAL_MAX               = 100_000  # global nonce cache bound across senders
-HANDSHAKE_RL_PER_IP_BURST      = 50  # burst limit when rate-limiting handshakes
-HANDSHAKE_RL_PER_IP_WINDOW_S   = 10  # time window for handshake rate limit
+
+HANDSHAKE_RL_PER_IP_BURST      = 20  # burst limit when rate-limiting handshakes
+HANDSHAKE_RL_PER_IP_WINDOW_S   = 30  # time window for handshake rate limit
 HANDSHAKE_RL_PER_NODE_BURST    = 80  # burst limit per node_id to avoid CGNAT false positives
+
 HANDSHAKE_RL_PER_NODE_WINDOW_S = 10  # time window for per-node limiter
-HANDSHAKE_RL_SUBNET_BURST      = 160  # burst cap per /24 subnet (IPv4) or /64 (IPv6) for floods
+HANDSHAKE_RL_SUBNET_BURST      = 100  # burst cap per /24 subnet (IPv4) or /64 (IPv6) for floods
 HANDSHAKE_RL_SUBNET_WINDOW_S   = 20  # subnet limiter window (seconds)
+
 CGNAT_IP_BURST_MULT            = 3  # multiplier to loosen per-IP limits when identity is present
-TEMP_BAN_SECONDS               = 30  # duration for temporary ban entries
-BAN_MALICIOUS_RPC              = 90  # temp ban duration when receiving unregistered RPC types
+TEMP_BAN_SECONDS               = 300  # duration for temporary ban entries
+BAN_MALICIOUS_RPC              = 600  # temp ban duration when receiving unregistered RPC types
+
 POW_TOKEN_TTL_S                = 120  # default TTL for PoW challenge/cookie
-RPC_POW_DIFFICULTY_TX          = 14  # difficulty bits for TX submit / wallet-heavy RPC
-RPC_POW_DIFFICULTY_READ        = 10  # difficulty bits for read-only RPC (info/history/graffiti)
-RPC_POW_DIFFICULTY_CHAT        = 12  # difficulty bits for chat presence/send/lookup
+RPC_POW_DIFFICULTY_TX          = 16  # difficulty bits for TX submit / wallet-heavy RPC
+RPC_POW_DIFFICULTY_READ        = 12  # difficulty bits for read-only RPC (info/history/graffiti)
+RPC_POW_DIFFICULTY_CHAT        = 14  # difficulty bits for chat presence/send/lookup
 
 # ---- FULL SYNC GUARD ----
 ENABLE_FULL_SYNC          = FULL_SYNC_DEV if IS_DEV else FULL_SYNC_PROD  # controls whether expensive full sync is allowed
@@ -413,8 +417,8 @@ CHAIN_FORCE_FULL_FLUSH    = False  # force full persistence on every save when T
 UTXO_FLUSH_INTERVAL       = 10  # block interval between UTXO set flushes
 
 # ---- PEER QUOTAS ----
-MAX_OUTBOUND_PEERS         = 14  # outbound connection ceiling
-MAX_INBOUND_PEERS          = 16  # inbound connection ceiling
+MAX_OUTBOUND_PEERS         = 20  # outbound connection ceiling
+MAX_INBOUND_PEERS          = 25  # inbound connection ceiling
 MAX_INBOUND_PER_IP         = 8  # inbound peers allowed per IP
 PEER_SCORE_START           = 10  # initial trust score assigned to new peers
 PEER_SCORE_FAILURE_PENALTY = 5  # decrements applied on failure events
@@ -467,9 +471,9 @@ CHAT_POLL_INITIAL_MS        = 4000  # initial backoff before first poll
 CHAT_PUBLISH_MIN_INTERVAL_S = 10  # throttle between chat publish attempts
 
 # ---- CHAT RATE LIMITS ----
-CHAT_RL_ADDR_BURST   = 18  # per-address burst allowance for chat msgs
+CHAT_RL_ADDR_BURST   = 25  # per-address burst allowance for chat msgs
 CHAT_RL_ADDR_WINDOWS = 10  # seconds over which per-address burst is evaluated
-CHAT_RL_IP_BURST     = 37  # per-IP burst allowance for chat msgs
+CHAT_RL_IP_BURST     = 50  # per-IP burst allowance for chat msgs
 CHAT_RL_IP_WINDOWS   = 10  # seconds over which per-IP burst is evaluated
 CHAT_BACKOFF_S       = 13  # seconds to wait after rate limiter trips
 
@@ -511,9 +515,9 @@ NODE_CACHE_TTL          = 60    # seconds cached node metadata stays valid
 WALLET_RPC_MIN_INTERVAL = 0.45  # minimum spacing between wallet RPC calls
 
 # ---- BALANCE LOOKUP THROTTLING ----
-BALANCE_RL_IP_BURST    = 8   # balance queries allowed per IP before throttling
+BALANCE_RL_IP_BURST    = 15   # balance queries allowed per IP before throttling
 BALANCE_RL_IP_WINDOW_S = 4   # time window (seconds) evaluated by the limiter
-BALANCE_RL_BACKOFF_S   = 5   # seconds to backoff when the limiter trips
+BALANCE_RL_BACKOFF_S   = 3   # seconds to backoff when the limiter trips
 
 # ---- INFO SNAPSHOT THROTTLING ----
 INFO_RL_IP_BURST    = 4   # GET_INFO / GET_NETWORK_INFO allowed per IP within window
@@ -521,9 +525,9 @@ INFO_RL_IP_WINDOW_S = 8   # seconds evaluated by limiter
 INFO_RL_BACKOFF_S   = 5   # backoff applied when limit exceeded
 
 # ---- HISTORY / UTXO LOOKUP THROTTLING ----
-HISTORY_RL_IP_BURST    = 6   # GET_TX_HISTORY/DETAIL/GET_UTXOS burst allowance
-HISTORY_RL_IP_WINDOW_S = 15   # seconds window for history limiter
-HISTORY_RL_BACKOFF_S   = 5   # seconds to back off when tripped
+HISTORY_RL_IP_BURST    = 30   # GET_TX_HISTORY/DETAIL/GET_UTXOS burst allowance
+HISTORY_RL_IP_WINDOW_S = 60   # seconds window for history limiter
+HISTORY_RL_BACKOFF_S   = 3   # seconds to back off when tripped
 
 # ---- MEMPOOL INLINE THROTTLING ----
 MEMPOOL_INLINE_RL_BURST    = 15   # inline mempool dumps allowed before throttling
@@ -547,14 +551,14 @@ CHAT_LOOKUP_RL_ADDR_WINDOW_S  = 10 # jendela waktu limiter per alamat
 CHAT_LOOKUP_RL_ADDR_BACKOFF_S = 8 # backoff setelah limiter per alamat kena
 
 # ---- USER RPC THROTTLING ----
-BLOCK_FETCH_RL_IP_BURST    = 6   # GET_BLOCK (hash/height) requests allowed per IP
+BLOCK_FETCH_RL_IP_BURST    = 20   # GET_BLOCK (hash/height) requests allowed per IP
 BLOCK_FETCH_RL_WINDOW_S    = 5   # seconds window for block fetch limiter
-BLOCK_FETCH_RL_BACKOFF_S   = 4   # backoff after block fetch limiter trips
+BLOCK_FETCH_RL_BACKOFF_S   = 2   # backoff after block fetch limiter trips
 
 # ---- BLOCK RANGE (WEB) ----
-BLOCK_RANGE_RL_IP_BURST    = 5   # GET_BLOCK_RANGE (height) requests allowed per IP
-BLOCK_RANGE_RL_WINDOW_S    = 3   # seconds window for block fetch limiter
-BLOCK_RANGE_RL_BACKOFF_S   = 4   # backoff after block fetch limiter trips
+BLOCK_RANGE_RL_IP_BURST    = 50   # GET_BLOCK_RANGE (height) requests allowed per IP
+BLOCK_RANGE_RL_WINDOW_S    = 15   # seconds window for block fetch limiter
+BLOCK_RANGE_RL_BACKOFF_S   = 3   # backoff after block fetch limiter trips
 
 TX_SUBMIT_RL_IP_BURST       = 12  # NEW_TX submissions allowed per IP before throttling
 TX_SUBMIT_RL_WINDOW_S       = 6   # seconds window for tx submit limiter
@@ -563,9 +567,9 @@ TX_SUBMIT_RL_ADDR_BURST     = 10  # per-address tx submit limiter
 TX_SUBMIT_RL_ADDR_WINDOW_S  = 10  # seconds window for per-address limiter
 TX_SUBMIT_RL_ADDR_BACKOFF_S = 8  # backoff after per-address limiter trips
 
-GRAFFITI_RL_IP_BURST       = 10  # graffiti read RPC burst allowance (posts/comments/art/payouts)
-GRAFFITI_RL_WINDOW_S       = 8   # seconds window for graffiti read limiter
-GRAFFITI_RL_BACKOFF_S      = 6   # backoff applied on graffiti limiter hit
+GRAFFITI_RL_IP_BURST       = 100  # graffiti read RPC burst allowance (posts/comments/art/payouts)
+GRAFFITI_RL_WINDOW_S       = 30   # seconds window for graffiti read limiter
+GRAFFITI_RL_BACKOFF_S      = 3   # backoff applied on graffiti limiter hit
 
 STOR_LIST_RL_IP_BURST      = 4   # storage listing requests allowed per IP
 STOR_LIST_RL_WINDOW_S      = 10  # seconds window for storage listing limiter
@@ -583,13 +587,13 @@ MINER_INFO_RL_IP_BURST     = 8   # GET_INFO / GET_BLOCK_HASH requests per IP
 MINER_INFO_RL_WINDOW_S     = 3   # seconds window for miner info limiter
 MINER_INFO_RL_BACKOFF_S    = 4   # backoff after miner info limiter trips
 
-MINER_HEADERS_RL_IP_BURST  = 32  # GET_HEADERS bursts per IP
-MINER_HEADERS_RL_WINDOW_S  = 5   # seconds window for header limiter
-MINER_HEADERS_RL_BACKOFF_S = 3   # backoff after header limiter trips
+MINER_HEADERS_RL_IP_BURST  = 100  # GET_HEADERS bursts per IP
+MINER_HEADERS_RL_WINDOW_S  = 10   # seconds window for header limiter
+MINER_HEADERS_RL_BACKOFF_S = 2   # backoff after header limiter trips
 
-MINER_BLOCKS_RL_IP_BURST   = 20  # GET_BLOCKS bursts per IP
+MINER_BLOCKS_RL_IP_BURST   = 50  # GET_BLOCKS bursts per IP
 MINER_BLOCKS_RL_WINDOW_S   = 5   # seconds window for block fetch limiter
-MINER_BLOCKS_RL_BACKOFF_S  = 3   # backoff after block limiter trips
+MINER_BLOCKS_RL_BACKOFF_S  = 2   # backoff after block limiter trips
 
 MINER_SYNC_RL_IP_BURST     = 32  # full-sync / chain bursts per IP
 MINER_SYNC_RL_WINDOW_S     = 5   # seconds window for miner sync limiter
@@ -604,9 +608,9 @@ MINER_MEMPOOL_RL_WINDOW_S  = 10  # seconds window for mempool limiter
 MINER_MEMPOOL_RL_BACKOFF_S = 6   # backoff after mempool limiter trips
 
 # ---- STORAGE RPC THROTTLING ----
-STORAGE_RPC_RL_IP_BURST    = 6   # storage proof/payout submissions per IP
-STORAGE_RPC_RL_WINDOW_S    = 12  # seconds window for storage RPC limiter
-STORAGE_RPC_RL_BACKOFF_S   = 10  # backoff after storage RPC limiter trips
+STORAGE_RPC_RL_IP_BURST    = 30   # storage proof/payout submissions per IP
+STORAGE_RPC_RL_WINDOW_S    = 60  # seconds window for storage RPC limiter
+STORAGE_RPC_RL_BACKOFF_S   = 3  # backoff after storage RPC limiter trips
 
 # ---- STORAGE SERVER (ARCHIVIST) THROTTLING ----
 STOR_INIT_RL_IP_BURST      = 3   # STOR_INIT per IP burst
@@ -630,7 +634,7 @@ STOR_ADMIN_RL_WINDOW_S     = 20  # seconds window for admin limiter
 STOR_ADMIN_RL_BACKOFF_S    = 20  # backoff after admin limiter trips
 
 BAN_UNKNOWN_STORAGE_RPC    = 90  # temp-ban when receiving unknown STOR_* message types
-STOR_POW_DIFFICULTY        = 18  # difficulty bits for PoW challenge on storage RPC
+STOR_POW_DIFFICULTY        = 20  # difficulty bits for PoW challenge on storage RPC
 
 # =============================================================================
 # 12. SCRIPT, GRAFFITI & STORAGE POLICY

@@ -197,7 +197,6 @@ def _request_mempool_inline(self, peer: Tuple[str, int], *, force: bool = False)
 
     resp_mode = str(resp.get("mode", "")).strip().lower()
     if resp_mode and resp_mode not in ("inline", "inline_full"):
-        log.debug("[_request_mempool_inline] unsupported mode=%s from %s", resp_mode, norm)
         return False
 
     txs = resp.get("txs") or resp.get("data")
@@ -205,7 +204,6 @@ def _request_mempool_inline(self, peer: Tuple[str, int], *, force: bool = False)
         return False
 
     if txs and all(isinstance(x, (str, bytes)) for x in txs):
-        log.debug("[_request_mempool_inline] txids-only response from %s", norm)
         return False
 
     added = 0
@@ -216,7 +214,6 @@ def _request_mempool_inline(self, peer: Tuple[str, int], *, force: bool = False)
 
     self._peer_last_mempool_sync[norm] = now
     self._snapshot_unreachable.discard(norm)
-    log.debug("[_request_mempool_inline] added=%s total=%s from %s", added, len(txs), norm)
     if added:
         self._reward_peer(norm, CFG.PEER_SCORE_REWARD)
     return True

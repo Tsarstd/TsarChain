@@ -135,11 +135,10 @@ def _sync_peer(self, peer: Tuple[str, int]) -> bool:
         self._reward_peer(peer)
         return True
 
-    downloaded_count, download_elapsed = self._download_blocks(peer, missing)
+    downloaded_count = self._download_blocks(peer, missing)
     if downloaded_count > 0:
         self._peer_last_sync[peer] = time.time()
         self._reward_peer(peer, CFG.PEER_SCORE_REWARD * 2)
-        log.info("[_sync_peer] Applied %d blocks from %s in %.2fs", downloaded_count, peer, download_elapsed)
         if headers_resp.get("more"):
             self.request_sync(fast=True)
         return True
@@ -225,13 +224,6 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
     triggered_fullsync = False
     for idx in range(0, len(unique_heights), batch_size):
         chunk = unique_heights[idx : idx + batch_size]
-        log.info(
-            "[_download_blocks.chunk] requesting %d blocks (%s-%s) from %s",
-            len(chunk),
-            chunk[0],
-            chunk[-1],
-            peer,
-        )
         payload = {"type": "GET_BLOCKS", "heights": chunk, "port": self.port}
         resp = self._rpc_request(peer, payload, timeout=max(15.0, CFG.SYNC_TIMEOUT))
         if not resp:

@@ -19,7 +19,6 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.client_helper")
 
 
-
 # ------------------------------ Guard ------------------------------
 def _tb_now(self):
     return time.time()
@@ -585,7 +584,8 @@ def _get_tx_detail(self, txid_hex: str, src_tag: str | None = None) -> dict:
         end = time.perf_counter()
         result = round((end - start) * 1000.0, 3)
         tag = src_tag or "-"
-        log.debug("[GET_TX_DETAIL] Benchmark : %.3f ms src=%s", result, tag)
+        if result > 15.0:
+            log.debug("[GET_TX_DETAIL] Benchmark : %.3f ms src=%s", result, tag)
         
     return {
         "type": "TX_DETAIL",
@@ -711,12 +711,13 @@ def _handle_get_block_hash(self, height: int) -> dict:
     if CFG.DEBUG_BENCHMARKS:
         end = time.perf_counter()
         result = round((end - start) * 1000.0, 3)
-        log.debug(
-            "[_handle_get_block_hash] Benchmark : %.3f ms cache_hit=%s height=%s",
-            result,
-            cache_hit,
-            height,
-        )
+        if result > 15.0:
+            log.warning(
+                "[_handle_get_block_hash] Benchmark : %.3f ms cache_hit=%s height=%s",
+                result,
+                cache_hit,
+                height,
+            )
         
     return {"type": "BLOCK_HASH", "height": height, "hash": h_hex or "", "cache_hit": cache_hit}
 
@@ -801,7 +802,6 @@ def _serialize_block(self, b) -> dict: #NOTE: need to minimalize
     # chainwork / size_bytes
     chainwork = getattr(b, "chainwork", None)
     size_bytes = _estimate_block_size_bytes(b)
-    log.info("_serialize_block. #1 size_bytes=%s", size_bytes)
     if meta_dict:
         chainwork = chainwork if chainwork is not None else meta_dict.get("chainwork")
         if diff is None:
@@ -816,7 +816,6 @@ def _serialize_block(self, b) -> dict: #NOTE: need to minimalize
     graffiti_posts = []
     graffiti_comments = []
     graffiti_payouts = []
-    total_size_sum = 80
     for tx in getattr(b, "transactions", []) or []:
         txs.append(self._serialize_tx_basic(tx))
         txid_hex = ""
@@ -942,10 +941,6 @@ def _check_tx_limits(self, tx_obj: Tx, ctx: str = "rpc_create"):
     weight, vsize, base_size, total_size = compute_tx_weight_vsize(tx_obj)
     vin = len(getattr(tx_obj, "inputs", []) or [])
     vout = len(getattr(tx_obj, "outputs", []) or [])
-    log.debug(
-        "[tx_limits] ctx=%s vsize=%s weight=%s base=%s total=%s vin=%s vout=%s",
-        ctx, vsize, weight, base_size, total_size, vin, vout,
-    )
 
     if vsize > int(CFG.MAX_TX_VSIZE):
         raise ValueError("tx_vsize_exceeds_limit")
@@ -1093,7 +1088,7 @@ def _guard_graffiti_output(self, spk: Script) -> None:
             raise ValueError("graffiti_size_invalid")
         if size_val > int(CFG.GRAFFITI_MAX_SIZE_BYTES):
             raise ValueError("graffiti_size_exceeds_limit")
-        log.debug("Graffiti Post Ok: size=%s limit=%s", size_val, CFG.GRAFFITI_MAX_SIZE_BYTES)
+        
     elif event == "COMMENT":
         comment_len = int(meta.get("comment_len", 0))
         if comment_len <= 0:
@@ -1106,7 +1101,6 @@ def _guard_graffiti_output(self, spk: Script) -> None:
         tip = int(meta.get("tip", 0))
         if tip < 0:
             raise ValueError("graffiti_comment_tip_negative")
-        log.debug("Graffiti Comment Ok: len=%s amount=%s tip=%s", comment_len, amount, tip)
 
 def _handle_create_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, force_inputs: list[str] | None = None):
     if not isinstance(from_addr, str):

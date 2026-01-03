@@ -174,7 +174,6 @@ class GraffitiRegistry:
         if not art_id or not storer:
             return None
         proofs = (self.data.get("proofs") or {}).get(art_id, [])
-        log.debug("[get_proof] info: %s", proofs)
         for item in proofs:
             if item.get("storer") == storer and int(item.get("epoch", -1)) == int(epoch):
                 return dict(item)
