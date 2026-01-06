@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Optional
 
-from ...utils.tsar_logging import get_ctx_logger
+from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.services.media")
 
 def _fmt_ms(ms: int | float | None) -> str:

@@ -16,8 +16,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, PrivateFormat, NoEncryption
 
 # ---------------- Local Project (With Node) ----------------
-from ...utils import config as CFG
-from ...utils.helpers import sign_digest_der_low_s_native
+from tsarchain.utils import config as CFG
+from tsarchain.utils.helpers import sign_digest_der_low_s_native
 
 # ---------------- Local Project (Wallet Only) ----------------
 from .data_security import (Wallet,
@@ -35,7 +35,7 @@ from .data_security import (Wallet,
 )
 
 # ---------------- Logger ----------------
-from ...utils.tsar_logging import get_ctx_logger
+from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.chat_security")
 
 

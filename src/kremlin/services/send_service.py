@@ -10,10 +10,10 @@ from typing import Optional, Dict, Any
 from ..security.data_security import Wallet
 
 # ---------------- Local Project (With Node) ----------------
-from ...utils import config as CFG
+from tsarchain.utils import config as CFG
 
 # ---------------- Logger ----------------
-from ...utils.tsar_logging import get_ctx_logger
+from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.services.send_services")
 
 class SendService:

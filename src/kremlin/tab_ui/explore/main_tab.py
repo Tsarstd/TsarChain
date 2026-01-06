@@ -19,7 +19,7 @@ from .graffiti_search import GraffitiSearch
 from tsarchain.utils import config as CFG
 from ...theme import ExplorerTheme, get_theme
 
-from ....utils.tsar_logging import get_ctx_logger
+from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.explorer_tab")
 
 MONO     = ("Consolas", 10)

@@ -16,11 +16,10 @@ from typing import Dict, Iterator, Tuple, Optional
 
 from tsarcore_native import open_storage as _native_open_storage
 
-from ...storage.kv import kv_enabled
-from ...utils import config as CFG
+from tsarchain.storage.kv import kv_enabled
+from tsarchain.utils import config as CFG
 
-
-from ...utils.tsar_logging import get_ctx_logger
+from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.contracts.storage_node.database")
 
 

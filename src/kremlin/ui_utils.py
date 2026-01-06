@@ -5,7 +5,7 @@
 
 import tkinter as tk
 
-from ..utils.tsar_logging import get_ctx_logger
+from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.ui_utils")
 
 def center_window(win: tk.Toplevel, parent: tk.Misc | None = None) -> None:

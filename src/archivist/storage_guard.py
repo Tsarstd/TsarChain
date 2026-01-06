@@ -14,9 +14,9 @@ import threading
 import time
 from typing import Dict
 
-from ...utils import config as CFG
-from ...utils.tsar_logging import get_ctx_logger
-from ...network.pow_token import issue_pow, verify_pow
+from tsarchain.utils import config as CFG
+from tsarchain.utils.tsar_logging import get_ctx_logger
+from tsarchain.network.pow_token import issue_pow, verify_pow
 
 log = get_ctx_logger("tsarchain.contracts.storage_node.storage_guard")
 

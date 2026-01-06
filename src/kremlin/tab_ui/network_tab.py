@@ -14,7 +14,7 @@ from tkinter import scrolledtext
 from tsarchain.utils import config as CFG
 
 if TYPE_CHECKING:
-    from apps.kremlin import KremlinWalletGUI
+    from apps.wallet import KremlinWalletGUI
 
 
 class NetworkTab(tk.Frame):

@@ -30,7 +30,7 @@ from ..services.tx_history import HistoryService
 # ---------------- Local Project (With Node) ----------------
 from tsarchain.utils import config as CFG
 
-from ...utils.tsar_logging import get_ctx_logger
+from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.wallet_tab")
 
 

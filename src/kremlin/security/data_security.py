@@ -24,12 +24,12 @@ from cryptography.fernet import Fernet
 
 # ---------------- Local Project (With Node) ----------------
 from tsarchain.storage.kv import kv_enabled, get as kv_get, put as kv_put, delete as kv_delete
-from ...utils.helpers import hash160, sign_digest_der_low_s_native
-from ...core.tx import Tx
-from ...utils import config as CFG
+from tsarchain.utils.helpers import hash160, sign_digest_der_low_s_native
+from tsarchain.core.tx import Tx
+from tsarchain.utils import config as CFG
 
 # ---------------- Logger ----------------
-from ...utils.tsar_logging import get_ctx_logger
+from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.data_security")
 
 

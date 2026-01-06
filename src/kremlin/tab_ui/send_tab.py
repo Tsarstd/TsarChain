@@ -16,9 +16,9 @@ from ..services.send_service import SendService
 from ..theme import SendTheme
 
 # ---------------- Local Project (With Node) ----------------
-from ...utils import config as CFG
+from tsarchain.utils import config as CFG
 
-from ...utils.tsar_logging import get_ctx_logger
+from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.send_tab")
 
 

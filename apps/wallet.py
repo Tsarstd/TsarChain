@@ -4,6 +4,8 @@
 # Refs: BIP141; BIP173
 
 # ---------------- Imports (Module) ----------------
+from __future__ import annotations
+
 import os
 import re
 import sys
@@ -18,26 +20,26 @@ from tkinter import messagebox, simpledialog, ttk
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # ---------------- Local Project (Wallet Only) ----------------
-from tsarchain.wallet.tab_ui.wallet_tab import WalletsMixin, load_registry
-from tsarchain.wallet.tab_ui.graffiti_tab import GraffitiTab
-from tsarchain.wallet.tab_ui.chat_tab import ChatTab
-from tsarchain.wallet.tab_ui.send_tab import SendTab
-from tsarchain.wallet.tab_ui.explore.main_tab import ExplorePanel
-from tsarchain.wallet.tab_ui.network_tab import NetworkTab
-from tsarchain.wallet.tab_ui.history_tab import HistoryTab
-from tsarchain.wallet.tab_ui.dev_tab import DevTab
+from kremlin.tab_ui.wallet_tab import WalletsMixin, load_registry
+from kremlin.tab_ui.graffiti_tab import GraffitiTab
+from kremlin.tab_ui.chat_tab import ChatTab
+from kremlin.tab_ui.send_tab import SendTab
+from kremlin.tab_ui.explore.main_tab import ExplorePanel
+from kremlin.tab_ui.network_tab import NetworkTab
+from kremlin.tab_ui.history_tab import HistoryTab
+from kremlin.tab_ui.dev_tab import DevTab
 
-from tsarchain.wallet.security.chat_security import ChatManager
-from tsarchain.wallet.security.data_security import list_addresses_in_keystore, create_keypair, WALLET_FILE
+from kremlin.security.chat_security import ChatManager
+from kremlin.security.data_security import list_addresses_in_keystore, create_keypair, WALLET_FILE
 
-from tsarchain.wallet.services.rpc_client import NodeClient
-from tsarchain.wallet.services.contact_management import ContactManager
-from tsarchain.wallet.services.send_service import SendService
-from tsarchain.wallet.services.tx_history import HistoryService
-from tsarchain.wallet.services.graffiti_service import fetch_graffiti_file
+from kremlin.services.rpc_client import NodeClient
+from kremlin.services.contact_management import ContactManager
+from kremlin.services.send_service import SendService
+from kremlin.services.tx_history import HistoryService
+from kremlin.services.graffiti_service import fetch_graffiti_file
 
-from tsarchain.wallet.theme import get_theme, lighten
-from tsarchain.wallet.ui_utils import center_window
+from kremlin.theme import get_theme, lighten
+from kremlin.ui_utils import center_window
 
 # ---------------- Local Project (With Node) ----------------
 import tsarcore_native as native

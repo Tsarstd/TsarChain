@@ -18,11 +18,11 @@ from ..services.tx_history import HistoryService
 from .wallet_tab import sat_to_tsar
 from tsarchain.utils import config as CFG
 
-from ...utils.tsar_logging import get_ctx_logger
+from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.history_tab")
 
 if TYPE_CHECKING:
-    from apps.kremlin import KremlinWalletGUI
+    from apps.wallet import KremlinWalletGUI
 
 
 class HistoryTab(tk.Frame):

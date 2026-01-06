@@ -14,7 +14,7 @@ from ..ui_utils import center_window
 from ..theme import ContactsTheme, get_theme
 
 # ---------------- Logger ----------------
-from ...utils.tsar_logging import get_ctx_logger
+from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.services.contact_management")
 
 Mask = Tuple[str, str]

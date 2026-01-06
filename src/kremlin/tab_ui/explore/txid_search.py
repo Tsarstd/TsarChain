@@ -8,7 +8,7 @@ from __future__ import annotations
 import threading
 from typing import Any, Callable, Dict, TYPE_CHECKING
 
-from ....utils.tsar_logging import get_ctx_logger
+from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.explore.txid_search")
 
 if TYPE_CHECKING:  # pragma: no cover

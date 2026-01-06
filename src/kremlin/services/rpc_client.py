@@ -11,10 +11,10 @@ import tkinter as tk
 
 # ---------------- Local Project (With Node) ----------------
 from tsarchain.network.protocol import send_message, recv_message, build_envelope, verify_and_unwrap, is_envelope, SecureChannel
-from ...utils import config as CFG
+from tsarchain.utils import config as CFG
 
 # ---------------- Logger ----------------
-from ...utils.tsar_logging import get_ctx_logger
+from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.services.rpc_client")
 
 _last_log_gate = {}

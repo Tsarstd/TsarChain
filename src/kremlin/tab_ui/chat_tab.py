@@ -15,7 +15,7 @@ from ..security.chat_security import ChatManager
 from ..security.data_security import load_chat_state, save_chat_state
 from ..theme import ChatTheme
 
-from ...utils.tsar_logging import get_ctx_logger
+from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.chat_tab")
 
 

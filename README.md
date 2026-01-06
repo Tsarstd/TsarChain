@@ -307,38 +307,166 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
 
 ## 🏗️ Project & Data Structure's
 
-```
-TsarChain/
-├── apps/                    # Entry points (Executable)
-│   ├── archivist.py         # Storage Node (Archivist)
-│   ├── cli_miner.py         # Miner CLI (Stateless)
-│   ├── cli_node_miner.py    # Miner CLI (Full Node)
-│   ├── kremlin.py           # Wallet GUI (Kremlin Wallet)
-│   └── miner_gui.py         # Miner GUI (Tkinter)
-│
-├── assets/                  # Logo, img, etc.
-├── docs/                    # Documentation, Whitepaper & Draft Protocol
-├── scripts/                 # Development utility scripts
-├── src/
-│   ├── tsarchain/           # Python main packages
-│   │   ├── consensus/       # Blockchain Logic (PoW, Difficulty, Validation, etc.)
-│   │   ├── contracts/       # Smart Contracts (Graffiti) & Archivist Module
-│   │   ├── core/            # Core data structure (Block, Transaction, Coinbase)
-│   │   ├── mempool/         # MemPool Management & Policy
-│   │   ├── network/         # P2P Networking, RPC, & Gossip Protocol
-│   │   ├── storage/         # Database Layer (LMDB/JSON mode & UTXO)
-│   │   ├── utils/           # Global Configurations (config.py) & Helper
-│   │   └── wallet/          # Wallet Logic, Security, & UI Components
-│   │
-│   └── web/                 # TsarChain Explorer Website
-│       ├── Backend/         # Backend Website Module
-│       └── Fronted/         # Frontend Website Module
-│
-├── tests/                   # Unit testing (native & double rachet)
-├── tools/                   # LMDB database tools & Snapshot maintenance
-└── tsarcore_native/         # Native Module (Rust + PyO3)
-    └── src/                 # Source code Rust (lib.rs, networking.rs, validation.rs, storage.rs, etc)
-```
+- ***Project Folder Map:***
+  <details>
+    <summary>See Preview</summary>
+
+  ```markdown
+
+    TsarChain/
+    ├── apps/
+    │   │
+    │   ├── archivist_gui.py                     # Storage Node (Archivist GUI)
+    │   ├── cli_archivist.py                     # Storage Node (Archivist CLI)
+    │   ├── cli_miner.py                         # Miner CLI (Stateless)
+    │   ├── cli_node_miner.py                    # Miner CLI (Full Node)
+    │   ├── miner_gui.py                         # Miner GUI (Tkinter - Full Node)
+    │   └── wallet.py                            # Wallet GUI (Kremlin Wallet) 
+    │
+    ├── assets/                                  # Logo, img, etc.
+    ├── docs/                                    # Documentation, Whitepaper & Draft Protocol
+    ├── scripts/                                 # Development utility scripts
+    ├── src/
+    │   │
+    │   ├── archivist/
+    │   │   ├── connect.py                       # P2P network logic ( send & receive )
+    │   │   ├── database.py                      # database logic
+    │   │   ├── node_route.py                    # node RPC route
+    │   │   ├── server.py                        # server start module
+    │   │   ├── storage.guard.py                 # ratelimit guard archivist
+    │   │   └── wallet_route.py                  # user RPC route
+    │   │
+    │   ├── kremlin/                            
+    │   │   ├── security/
+    │   │   │   ├── chat_security.py             # Chat 3XDH + Double Rachet Logic
+    │   │   │   └── data_security.py             # Wallet security management
+    │   │   │
+    │   │   ├── services/
+    │   │   │   ├── contact_management.py        # Contacts Management
+    │   │   │   ├── graffiti_service.py          # Post, Upload & Comment graffiti service logic
+    │   │   │   ├── media.py                     # VLC media player
+    │   │   │   ├── rpc_client.py                # RPC API logic
+    │   │   │   ├── send_services.py             # send TX logic
+    │   │   │   └── tx_history.py                # History Transactions cached Management
+    │   │   │
+    │   │   ├── tab_ui/
+    │   │   │   ├── explore/
+    │   │   │   │   ├── address_search.py        # Address result UI explore
+    │   │   │   │   ├── block_search.py          # Block result UI explore
+    │   │   │   │   ├── graffiti_search.py       # Graffiti result UI explore
+    │   │   │   │   ├── main_tab.py              # Main Tab UI Explore
+    │   │   │   │   └── txid_search.py           # Txid result UI explore
+    │   │   │   │
+    │   │   │   ├── chat_tab.py                  # Chat Tab UI Module
+    │   │   │   ├── dev_tab.py                   # Dev Tab UI Module
+    │   │   │   ├── graffiti_tab.py              # Graffiti Tab UI Module
+    │   │   │   ├── history_tab.py               # History Tab UI Module
+    │   │   │   ├── network_tab.py               # Network Info Tab UI Module
+    │   │   │   ├── send_tab.py                  # Send Tx Tab UI Module
+    │   │   │   └── wallet_tab.py                # Wallet Management Tab UI Module
+    │   │   │
+    │   │   ├── theme.py                         # Light & Dark Theme Module
+    │   │   └── ui_utils.py                      # UI helpers
+    │   │ 
+    │   ├── tsarchain/
+    │   │   ├── consensus/
+    │   │   │   ├── blockchain.py                # Blockhain initialize module
+    │   │   │   ├── chain_ops.py                 # swap tip, pruning mempool, and add block logic
+    │   │   │   ├── chain_storage.py             # Backup & database chain management
+    │   │   │   ├── difficulty.py                # Difficulty Consensus Logic
+    │   │   │   ├── genesis.py                   # Create genesis & validate genesis logic
+    │   │   │   ├── mining.py                    # Mining flow looping logic
+    │   │   │   ├── rewards.py                   # Coinbase reward logic
+    │   │   │   ├── utxo_validate.py             # UTXO sync and validate
+    │   │   │   └── validation.py                # Consensus core validation block & Transactions
+    │   │   │
+    │   │   ├── contracts/          
+    │   │   │   ├── graffiti_registry.py         # Graffiti metadata database
+    │   │   │   └── graffiti.py                  # Graffiti core logic
+    │   │   │
+    │   │   ├── core/               
+    │   │   │   ├── block.py                     # Block data structure init
+    │   │   │   ├── coinbase.py                  # coinbase logic
+    │   │   │   └── tx.py                        # Transaction Logic
+    │   │   │
+    │   │   ├── mempool/
+    │   │   │   ├── orphan.py                    # Orphan check
+    │   │   │   ├── policy.py                    # Mempool policy logic
+    │   │   │   ├── pool.py                      # Mempool initialize
+    │   │   │   ├── scripts.py                   # Script & serialize
+    │   │   │   ├── storage.py                   # Mempool Storage Logic
+    │   │   │   ├── types.py                     # Normalize prevout set
+    │   │   │   └── validation.py                # Mempool core valodation logic
+    │   │   │
+    │   │   ├── network/
+    │   │   │   ├── cast/
+    │   │   │   │   ├── chain_utils.py           # validate incoming chain logic
+    │   │   │   │   ├── fullsync.py              # full sync logic
+    │   │   │   │   ├── gossip.py                # gossip block
+    │   │   │   │   ├── mempool_sync.py          # mempool sync p2p
+    │   │   │   │   ├── receive.py               # receive p2p data logic
+    │   │   │   │   └── utxo_local.py            # rebuild local UTXO
+    │   │   │   │
+    │   │   │   ├── node_logic/
+    │   │   │   │   ├── chat_state.py            # chat initialize
+    │   │   │   │   ├── discovery.py             # discovery peers logic
+    │   │   │   │   ├── handlers.py              # handle p2p data logic
+    │   │   │   │   ├── peers.py                 # reward and penalty peers
+    │   │   │   │   ├── ratelimit.py             # rate limiting logic
+    │   │   │   │   ├── rpc_client.py            # peer caching & request management
+    │   │   │   │   ├── server.py                # starting server logic
+    │   │   │   │   ├── storage_registry.py      # registry storage node
+    │   │   │   │   └── sync.py                  # sync logic
+    │   │   │   │
+    │   │   │   ├── rpc/
+    │   │   │   │   ├── miner_rpc.py             # miner RPC api gateway
+    │   │   │   │   ├── processing_msg.py        # role base & security RPC api
+    │   │   │   │   ├── storage_rpc.py           # storage RPC api gateway
+    │   │   │   │   └── user_rpc.py              # user RPC api gateway
+    │   │   │   │
+    │   │   │   ├── broadcast.py                 # Broadcast initialize
+    │   │   │   ├── client_helper.py             # helper for RPC api
+    │   │   │   ├── dandelion_pp.py              # minimal dandelion ++ modul
+    │   │   │   ├── node.py                      # Node initialize
+    │   │   │   ├── peers_storage.py             # keys management storage
+    │   │   │   ├── pow_token.py                 # POW toke module
+    │   │   │   └── protocol.py                  # handshake & p2p transport protocol
+    │   │   │
+    │   │   ├── storage/
+    │   │   │   ├── utxo_logic/
+    │   │   │   │   ├── balances.py              # Balance lookup logic
+    │   │   │   │   ├── database.py              # UTXO database logic
+    │   │   │   │   ├── graff_utxo.py            # graffiti UTXO logic
+    │   │   │   │   └── validate.py              # core validation UTXO logic
+    │   │   │   │
+    │   │   │   ├── db.py                        # JSON database logic
+    │   │   │   ├── kv.py                        # LMDB database logic
+    │   │   │   └── utxo.py                      # UTXO initialize
+    │   │   │
+    │   │   └── utils/
+    │   │       ├── cosmetic
+    │   │       │   ├── interface.py             # colorama CLI module
+    │   │       │   ├── thread_check.py          # thread monitoring
+    │   │       │   └── tui.py                   # TUI for CLI
+    │   │       │
+    │   │       ├── bootstrap.py                 # auto backup / snapshot logic
+    │   │       ├── config.py                    # ALL project Configuration
+    │   │       ├── helpers.py                   # script helpers
+    │   │       └── tsar_logging.py              # logging module
+    │   │
+    │   └── web/                    # TsarChain Explorer Website
+    │       ├── Backend/            # ALL Backend Website Module
+    │       └── Fronted/            # ALL Frontend Website Module
+    │
+    ├── tests/                      # Unit testing (native & double rachet)
+    ├── tools/                      # LMDB database tools & Snapshot maintenance
+    │
+    └── tsarcore_native/
+        └── src/                    # ALL Native Module (Rust + PyO3)
+
+  ```
+  </details>
+
 #### 1. 💸 Example of a Transaction Data Structure
 The example data of `block, utxo's & mempool` below, shows a transaction :
 > address `tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr` sent 2300 coins + 0,00004900 fee to address`tsar1qn76f5d32xe9405hsteujjyyuahrcynh5cxjw23`,

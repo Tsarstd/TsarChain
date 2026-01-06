@@ -20,7 +20,7 @@ from ...services.media import TkVLCPlayer
 from ...services.graffiti_service import build_comment_plan
 from tsarchain.utils import config as CFG
 
-from ....utils.tsar_logging import get_ctx_logger
+from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.explore.graffiti_search")
 
 if TYPE_CHECKING:  # pragma: no cover

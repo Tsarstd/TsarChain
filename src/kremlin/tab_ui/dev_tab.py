@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import scrolledtext
 
 if TYPE_CHECKING:
-    from apps.kremlin import KremlinWalletGUI
+    from apps.wallet import KremlinWalletGUI
 
 
 class DevTab(tk.Frame):
