@@ -176,19 +176,17 @@ class MiningMixin:
         found = new_block.mine(use_cores=use_cores, stop_event=cancel_event, pow_backend=pow_backend, progress_queue=progress_queue,)
         if not found:
             return None
+        
         # Re-check tip to avoid stale submissions (chain may have advanced during mining)
-        try:
-            latest = self.get_last_block()
-            if latest is not None and (latest.hash() != getattr(new_block, "prev_block_hash", None) or getattr(new_block, "height", 0) != getattr(latest, "height", -1) + 1):
-                log.warning(
-                    "[mine_block] discard stale candidate height=%s prev=%s latest=%s",
-                    getattr(new_block, "height", None),
-                    getattr(new_block, "prev_block_hash", None).hex() if hasattr(getattr(new_block, "prev_block_hash", None), "hex") else getattr(new_block, "prev_block_hash", None),
-                    latest.hash().hex() if latest and hasattr(latest.hash(), "hex") else (latest.hash() if latest else None),
-                )
-                return None
-        except Exception:
-            log.debug("[mine_block] stale-check failed", exc_info=True)
+        latest = self.get_last_block()
+        if latest is not None and (latest.hash() != getattr(new_block, "prev_block_hash", None) or getattr(new_block, "height", 0) != getattr(latest, "height", -1) + 1):
+            log.warning(
+                "[mine_block] discard stale candidate height=%s prev=%s latest=%s",
+                getattr(new_block, "height", None),
+                getattr(new_block, "prev_block_hash", None).hex() if hasattr(getattr(new_block, "prev_block_hash", None), "hex") else getattr(new_block, "prev_block_hash", None),
+                latest.hash().hex() if latest and hasattr(latest.hash(), "hex") else (latest.hash() if latest else None),
+            )
+            return None
             
         # Cool-off after we know we're mining on the latest tip as of now
         cooloff = float(CFG.MINING_COOLDOWN_AFTER_BLOCK)
@@ -196,6 +194,7 @@ class MiningMixin:
             remain = float(getattr(self, "_mining_cooloff_until", 0.0)) - time.time()
             if remain > 0:
                 time.sleep(min(remain, cooloff))
+                
         if not self.validate_block(new_block):
             reason = getattr(self, "_last_block_validation_error", None) or "unknown"
             blk_hex = new_block.hash().hex()
@@ -210,6 +209,7 @@ class MiningMixin:
                 reason,
             )
             return None
+        
         ok = self.add_block(new_block)
         if not ok:
             reason = getattr(self, "_last_block_validation_error", None) or "unknown"
@@ -221,4 +221,5 @@ class MiningMixin:
                 reason,
             )
             return None
+        
         return new_block

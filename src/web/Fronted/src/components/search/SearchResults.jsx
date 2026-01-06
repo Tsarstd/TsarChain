@@ -3,7 +3,6 @@ import { ResultBlock } from "./category/SearchBlock";
 import { ResultTx } from "./category/SearchTxid";
 import { ResultAddress } from "./category/SeacrhAddress";
 import { ResultGraffiti } from "./category/SearchGraffiti";
-import "./search.css";
 
 
 export const ClickableValue = ({ value, onSearchClick, className = "", children }) => {
@@ -19,7 +18,8 @@ export const ClickableValue = ({ value, onSearchClick, className = "", children 
       style={{
         cursor: "pointer",
         color: "#5e9de6ff",
-        transition: "color 0.2s"
+        transition: "color 0.2s",
+        alignSelf: "baseline",
       }}
       onClick={() => {
         onSearchClick(value);

@@ -19,6 +19,7 @@ from ..core.block import Block
 from ..core.tx import Tx
 from ..storage.utxo import UTXODB
 from ..storage.kv import kv_enabled, batch, iter_prefix, clear_db, delete, _ensure_env
+from ..storage.db import AtomicJSONFile
 from ..utils import config as CFG
 from ..utils.bootstrap import annotate_local_snapshot_meta
 from ..utils.helpers import bits_to_target, target_to_difficulty
@@ -181,11 +182,11 @@ class StorageMixin:
         if kv_enabled():
             clear_db('chain')
         else:
-            self._chain_store.save(CFG.BLOCK_FILE, [])
+            AtomicJSONFile.save(CFG.BLOCK_FILE)
         meta_path = CFG.SNAPSHOT_META_PATH
         if meta_path and os.path.exists(meta_path):
             os.remove(meta_path)
-        journal_path = getattr(self, "_chain_journal_path", None)
+        journal_path = CFG.CHAIN_JOURNAL_FILE
         if journal_path and os.path.exists(journal_path):
             os.remove(journal_path)
         self._persisted_height = -1
@@ -349,10 +350,10 @@ class StorageMixin:
 # 3. JOURNAL (.json)        NOTE: journal is Python-only fallback for non-LMDB mode; not performance-critical, no plan to port to Rust for now.
 # =============================================================================
     def _chain_journal_enabled(self) -> bool:
-        return (not self.in_memory) and (not kv_enabled()) and bool(getattr(self, "_chain_journal_path", None))
+        return (not self.in_memory) and (not kv_enabled())
 
     def _chain_journal_size(self) -> int:
-        path = getattr(self, "_chain_journal_path", None)
+        path = CFG.CHAIN_JOURNAL_FILE
         if path and os.path.exists(path):
             try:
                 return os.path.getsize(path)
@@ -362,7 +363,7 @@ class StorageMixin:
         return 0
 
     def _clear_chain_journal(self) -> None:
-        path = getattr(self, "_chain_journal_path", None)
+        path = CFG.CHAIN_JOURNAL_FILE
         if not path or not os.path.exists(path):
             return
         os.remove(path)
@@ -370,7 +371,7 @@ class StorageMixin:
     def _append_chain_journal(self, start_height: int, blocks: list[Block]) -> None:
         if not self._chain_journal_enabled() or not blocks:
             return
-        path = getattr(self, "_chain_journal_path", None)
+        path = CFG.CHAIN_JOURNAL_FILE
         if not path:
             return
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -383,7 +384,7 @@ class StorageMixin:
                 fh.write(json.dumps(entry, separators=CFG.CANONICAL_SEP) + "\n")
 
     def _apply_chain_journal(self, chain_data: list[dict]) -> list[dict]:
-        path = getattr(self, "_chain_journal_path", None)
+        path = CFG.CHAIN_JOURNAL_FILE
         if not path or not os.path.exists(path):
             return chain_data or []
         result = list(chain_data or [])
@@ -503,7 +504,7 @@ class StorageMixin:
                             "meta": chain_meta,
                             "blocks": ordered_blocks,
                         }
-                        self._chain_store.save(CFG.BLOCK_FILE, payload)
+                        AtomicJSONFile(CFG.BLOCK_FILE).save(payload)
                         self._persisted_height = tip_height
                         self._clear_chain_journal()
                 else:
@@ -522,7 +523,7 @@ class StorageMixin:
                                 "meta": chain_meta,
                                 "blocks": ordered_blocks,
                             }
-                            self._chain_store.save(CFG.BLOCK_FILE, payload)
+                            AtomicJSONFile(CFG.BLOCK_FILE).save(payload)
                             self._persisted_height = tip_height
                             self._clear_chain_journal()
 
@@ -619,7 +620,7 @@ class StorageMixin:
                 data["total_supply"] = int(items.get("k:total_supply", "0"))
                 data["total_blocks"] = int(items.get("k:total_blocks", "0"))
         else:
-            data = self._state_store.load(CFG.STATE_FILE, default={})
+            data = AtomicJSONFile(CFG.STATE_FILE, keep_backups=3).load()
             
         if not isinstance(data, dict):
             data = {}
@@ -669,7 +670,7 @@ class StorageMixin:
                 b.put(b'k:total_blocks', str(int(self.total_blocks)).encode('utf-8'))
                 b.put(b'k:snapshot', json.dumps(ordered, separators=CFG.CANONICAL_SEP).encode('utf-8'))
         else:
-            self._state_store.save(CFG.STATE_FILE, ordered)
+            AtomicJSONFile(CFG.STATE_FILE, keep_backups=3).save(ordered)
 
     def _compute_state_snapshot(self) -> dict:
         tip_height = self.height

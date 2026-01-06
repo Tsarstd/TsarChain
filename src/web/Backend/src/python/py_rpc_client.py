@@ -6,20 +6,11 @@ import json
 import os
 import sys
 import threading
-from pathlib import Path
-
-# Ensure project root + src + local backend src on path
-SCRIPT_DIR = Path(__file__).resolve().parent
-ROOT_SRC = Path(__file__).resolve().parents[3]
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
-sys.path.insert(0, str(SCRIPT_DIR))
-sys.path.insert(0, str(ROOT_SRC))
-sys.path.insert(0, str(PROJECT_ROOT))
 
 from tsarchain.wallet.services.rpc_client import NodeClient
 from tsarchain.network.protocol import load_or_create_keypair_at
 from tsarchain.utils import config as CFG
-from src.web.Backend.src import database_web as webdb
+from web.Backend.src.python import database_web as webdb
 
 from tsarchain.utils.tsar_logging import get_ctx_logger, setup_logging
 log = get_ctx_logger('tsarchain.web.Backend.py_rpc_client')
@@ -107,6 +98,10 @@ def _cache_fetch(key: str, fetch_fn):
         _cache_set(key, payload, ttl_sec)
     return payload
 
+# ======================================
+# ============= RPC START ==============
+# ======================================
+
 def rpc_network(client):
     key = _cache_key("network")
     def _fetch():
@@ -150,7 +145,6 @@ def rpc_block_range(client, opts: dict):
         key = _cache_key("block_range", "latest", limit)
         cached = _cache_get(key)
         if cached is not None:
-            log.debug("[rpc_block_range] Using latest blocks from volatile cache")
             return cached
     
     if start_height is not None and start_height != "latest":
@@ -183,7 +177,6 @@ def rpc_block_range(client, opts: dict):
         except ValueError:
             pass
     
-    log.debug("[rpc_block_range] Fetching from RPC (height=%s, limit=%d)", start_height, limit)
     resp = _rpc_send(client, {
         "type": "GET_BLOCK_RANGE", 
         "limit": limit, 
@@ -363,48 +356,6 @@ def rpc_graffiti(client, art_id: str):
         _cache_set(key, out, error_ttl)
     return out
 
-def _parse_opts(param: str | None) -> dict:
-    if not param:
-        return {}
-    raw = str(param).strip()
-    if not raw:
-        return {}
-    if raw.startswith("{") and raw.endswith("}"):
-        try:
-            obj = json.loads(raw)
-            return obj if isinstance(obj, dict) else {}
-        except Exception:
-            return {}
-    parts = [p.strip() for p in raw.split(",") if p.strip()]
-    if not parts:
-        return {}
-    opts = {}
-    if parts and parts[0].isdigit():
-        opts["limit"] = int(parts[0])
-    if len(parts) > 1 and parts[1].isdigit():
-        opts["offset"] = int(parts[1])
-    return opts
-
-def _parse_block_range_opts(param: str | None) -> dict:
-    if not param:
-        return {}
-    raw = str(param).strip()
-    if not raw:
-        return {}
-    if raw.startswith("{") and raw.endswith("}"):
-        try:
-            obj = json.loads(raw)
-            return obj if isinstance(obj, dict) else {}
-        except Exception:
-            return {}
-    parts = [p.strip() for p in raw.split(",") if p.strip()]
-    opts = {}
-    if parts and parts[0].lstrip("-").isdigit():
-        opts["start_height"] = int(parts[0])
-    if len(parts) > 1 and parts[1].isdigit():
-        opts["limit"] = int(parts[1])
-    return opts
-
 def rpc_graffiti_posts(client, opts: dict):
     limit = int(opts.get("limit", 50) or 50)
     offset = int(opts.get("offset", 0) or 0)
@@ -461,6 +412,52 @@ def rpc_graffiti_file(client, opts: dict, fallback_art_id: str | None):
         "cache_path": resp.get("cache_path"),
     }
     return out
+
+# ======================================
+# ============= RPC END ==============
+# ======================================
+
+def _parse_opts(param: str | None) -> dict:
+    if not param:
+        return {}
+    raw = str(param).strip()
+    if not raw:
+        return {}
+    if raw.startswith("{") and raw.endswith("}"):
+        try:
+            obj = json.loads(raw)
+            return obj if isinstance(obj, dict) else {}
+        except Exception:
+            return {}
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    if not parts:
+        return {}
+    opts = {}
+    if parts and parts[0].isdigit():
+        opts["limit"] = int(parts[0])
+    if len(parts) > 1 and parts[1].isdigit():
+        opts["offset"] = int(parts[1])
+    return opts
+
+def _parse_block_range_opts(param: str | None) -> dict:
+    if not param:
+        return {}
+    raw = str(param).strip()
+    if not raw:
+        return {}
+    if raw.startswith("{") and raw.endswith("}"):
+        try:
+            obj = json.loads(raw)
+            return obj if isinstance(obj, dict) else {}
+        except Exception:
+            return {}
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    opts = {}
+    if parts and parts[0].lstrip("-").isdigit():
+        opts["start_height"] = int(parts[0])
+    if len(parts) > 1 and parts[1].isdigit():
+        opts["limit"] = int(parts[1])
+    return opts
 
 
 def _parse_host_port(host_in: object | None, port_in: object | None) -> tuple[str, int]:

@@ -8,6 +8,9 @@ from __future__ import annotations
 import threading
 from typing import Any, Callable, Dict, TYPE_CHECKING
 
+from ....utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.wallet.tab_ui.explore.txid_search")
+
 if TYPE_CHECKING:  # pragma: no cover
     from .main_tab import ExplorePanel
 
@@ -20,36 +23,6 @@ class TxSearch:
         self._fmt_tsar_amount = fmt_tsar_amount
 
     # ---------- entrypoints ----------
-    def open_tx(self, txid: str) -> None:
-        get_tx = self.panel.providers.get("get_tx")
-        if not callable(get_tx):
-            self.panel._render_error("Provider get_tx not available")
-            self.panel._finish_search(False)
-            return
-
-        def worker():
-            done = False
-            try:
-                t = get_tx(txid)
-                if not isinstance(t, dict) or t.get("error"):
-                    self.panel._ui(self.panel._render_error, "Tx not found")
-                else:
-                    if "tx" in t and isinstance(t["tx"], dict):
-                        t = t["tx"]
-                    if "transaction" in t and isinstance(t["transaction"], dict):
-                        t = t["transaction"]
-                    if "inputs" not in t and "vin" in t:
-                        t["inputs"] = t["vin"]
-                    if "outputs" not in t and "vout" in t:
-                        t["outputs"] = t["vout"]
-                    if "txid" not in t:
-                        t["txid"] = t.get("id") or t.get("hash") or txid
-                    done = True
-                    self.panel._ui(self.render_tx, t["txid"], t)
-            finally:
-                self.panel._ui(self.panel._finish_search, done)
-
-        threading.Thread(target=worker, daemon=True).start()
 
     def open_tx_or_block(self, hx: str) -> None:
         get_tx = self.panel.providers.get("get_tx")
@@ -97,7 +70,6 @@ class TxSearch:
     def render_tx(self, txid: str, t: Dict) -> None:
         p = self.panel
         p._clear_text()
-        size = t.get("vsize") or t.get("size") or "-"
         fee = t.get("fee") or t.get("fees") or "-"
         conf = t.get("confirmations") or t.get("conf") or 0
         height = t.get("height") or t.get("block_height") or "-"
@@ -110,8 +82,6 @@ class TxSearch:
         p._kv("Status", str(status), mono=True, vtag=tag)
         p._kv("Conf", str(conf), mono=True, vtag="val_num")
         p._kv("Block", str(height), mono=True, vtag="val_num")
-        if size != "-":
-            p._kv("Size", str(size), mono=True, vtag="val_num")
         if fee != "-":
             p._kv("Fee", self._fmt_tsar_amount(fee), mono=True, vtag="val_num")
         p._kv("Coinbase", str(coinbase))
@@ -125,13 +95,12 @@ class TxSearch:
         else:
             for vi in vin:
                 src = vi.get("txid") or vi.get("prev_txid") or vi.get("tx") or "-"
-                idx = vi.get("vout") if "vout" in vi else (vi.get("index") or vi.get("n") or 0)
                 addr = vi.get("address") or vi.get("addr") or ""
                 amt = vi.get("amount") or vi.get("value")
 
                 p.text.insert("end", "- ", ("mono",))
-                p.text.insert("end", f"{src}:{idx}", ("mono", "val_hex"))
-
+                p.text.insert("end", src, ("mono", "val_hex"))
+                    
                 if addr:
                     p.text.insert("end", "  ", ("mono",))
                     p.text.insert("end", addr, ("mono", "val_addr"))

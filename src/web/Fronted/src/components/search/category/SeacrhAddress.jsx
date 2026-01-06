@@ -3,6 +3,7 @@ import { ClickableValue } from ".././SearchResults";
 import { fmtTsar } from "../../../utils/format";
 import { getStatusBadge, getDirectionBadge } from "../SearchUX";
 import "../search.css";
+import "../label.css";
 
 const ResultAddress = ({ data, onSearchClick }) => {
   const [currentPage, setCurrentPage] = useState(1);
@@ -66,33 +67,33 @@ const ResultAddress = ({ data, onSearchClick }) => {
       <div className="divider" />
       <div className="grid">
         <div className="stat">
-          <span className="label">Balance</span>
+          <span className="info-label">Balance</span>
           <span className="value">{fmtTsar(data?.balance)}</span>
         </div>
         <div className="stat">
-          <span className="label">Spendable</span>
+          <span className="info-label">Spendable</span>
           <span className="value">{fmtTsar(data?.spendable)}</span>
         </div>
         <div className="stat">
-          <span className="label">Immature</span>
+          <span className="info-label">Immature</span>
           <span className="value">{fmtTsar(data?.immature)}</span>
         </div>
       </div>
       <div className="grid">
         <div className="stat">
-          <span className="label">Outgoing</span>
+          <span className="info-label">Outgoing</span>
           <span className="value">{fmtTsar(data?.outgoing)}</span>
         </div>
         <div className="stat">
-          <span className="label">Incoming</span>
+          <span className="info-label">Incoming</span>
           <span className="value">{fmtTsar(data?.incoming)}</span>
         </div>
         <div className="stat">
-          <span className="label">UTXO Set</span>
+          <span className="info-label">UTXO Set</span>
           <span className="value">{data?.utxos?.length || 0}</span>
         </div>
       </div>
-      <div className="divider" />
+      <div className="divider2" />
       <div className="stat">
         <span className="value">
           Recent Activity: {totalItems} transactions 

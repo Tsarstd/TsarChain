@@ -185,7 +185,6 @@ class AtomicJSONFile:
             os.remove(self.journal_path)
 
     def load(self, default: Any = None, *, validate: Optional[Callable[[Any], bool]] = None) -> Any:
-        self._cleanup_journal()
         with _FileLock(self.lock_path, shared=True):
             raw_txt = _native_json_read_file(self.path)
             if raw_txt is None:

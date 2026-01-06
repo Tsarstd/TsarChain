@@ -49,8 +49,7 @@
 
 .grid {
   display: grid;
-  gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
 }
 
 .pill {
@@ -62,7 +61,7 @@
 }
 
 .stat {
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.65rem;
   display: flex;
   flex-direction: column;
 }
@@ -77,10 +76,6 @@
   font-size: 14px;
 }
 
-.mono {
-  font-family: "Consolas", "Space Grotesk", monospace;
-}
-
 .wrap {
   word-break: break-all;
   white-space: normal;
@@ -89,6 +84,17 @@
 .divider {
   height: 1px;
   margin: 16px 0;
+}
+
+.divider2 {
+  background: var(--border);
+  height: 1px;
+  margin: 16px 0;
+}
+
+.divider-card {
+  background: var(--border);
+  height: 2px;
 }
 
 .list {

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from bech32 import convertbits, bech32_decode
 
-from ...utils.helpers import hash160, batch_verify_der_low_s, compute_tx_weight_vsize
+from ...utils.helpers import hash160, batch_verify_der_low_s
 from ...utils import config as CFG
 from ...contracts import graffiti as GRAFFITI
 from ..pow_token import issue_pow, verify_pow
@@ -329,7 +329,7 @@ def handle_user_rpc(
             result = round((end - start) * 1000.0, 3)
             src_tag = (message.get("rpc_source") or "-")
             if result > 15.0:
-                log.debug("[GET_BALANCES] Benchmark : %.3f ms src=%s", result, src_tag)
+                log.warning("[GET_BALANCES] Benchmark : %.3f ms src=%s", result, src_tag)
             
         return {"type": "BALANCES", "height": tip_height, "items": items}
 

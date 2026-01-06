@@ -50,8 +50,7 @@ def _guess_kind(q: str) -> str:
     if q.isdigit() and 1 <= len(q) <= 7:
         return "block_height"
     if re.fullmatch(r"[0-9a-fA-F]{64}", q):
-        # 64 hex starting with "00" treated as block hash (e.g., genesis), otherwise assume TXID
-        return "block_hash" if q.startswith("00") else "txid_hash"
+        return "hash64"
     return "unknown"
 
 def _fmt_tsar_amount(v: Union[int, str, float, None]) -> str:
@@ -303,7 +302,7 @@ class ExplorePanel(tk.Frame):
         self._enter_compact()
         self.search_var.set(txid)
         if re.fullmatch(r"[0-9a-fA-F]{64}", txid):
-            self._open_tx(txid)
+            self._open_tx_or_block(txid)
         else:
             self._on_search()
 
@@ -457,13 +456,6 @@ class ExplorePanel(tk.Frame):
     
     def _ui(self, fn, *args, **kwargs):
         self.after(0, lambda: fn(*args, **kwargs))
-        
-    def _ensure_txid_64(self, s: str) -> bool:
-        ok = bool(re.fullmatch(r"[0-9a-fA-F]{64}", s or ""))
-        if not ok:
-            # render via main thread
-            self._ui(self._render_error, f"TxID must be 64 hex. Input length: {len(s or '')} characters")
-        return ok
 
     def _writeln(self, s: str = "", *tags):
         self.text.insert("end", s + "\n", tags)
@@ -557,21 +549,18 @@ class ExplorePanel(tk.Frame):
         
         if kind == "block_height":
             return self._open_block(q)
-        if kind == "block_hash":
-            return self._open_block(q)
-        if kind == "txid_hash":
-            q = (self.search_var.get() or "").strip()
-            if not self._ensure_txid_64(q):
-                self._search_inflight = False
-                return
-            return self._open_tx(q)
+        
+        if kind == "hash64":
+            self._open_tx_or_block(q)
+            return
+        
         if kind == "address":
             return self._open_address(q)
         if kind == "art_id":
             return self._open_graffiti(q)
-        self.status_var.set("Input tidak dikenali, isi block height/hash/txid/alamat.")
-        self._search_inflight = False
-        messagebox.showinfo("Search", "Enter: block height, block hash (64 hex starting with 0000...), TXID (64 hex), or tsar1 address...")
+        
+        self.status_var.set("Input not valid")
+        messagebox.showinfo("Search", "Enter: block height, block hash (64 hex), TXID (64 hex), or tsar1 address...")
         
     # ---------- layout mode switchers ----------
     def _layout_search(self, hero: bool):
@@ -628,9 +617,6 @@ class ExplorePanel(tk.Frame):
     def _open_block(self, idx: str):
         self.block_search.open_block(idx)
 
-    def _open_tx(self, txid: str):
-        self.tx_search.open_tx(txid)
-
     def _open_tx_or_block(self, hx: str):
         self.tx_search.open_tx_or_block(hx)
 
@@ -639,35 +625,6 @@ class ExplorePanel(tk.Frame):
 
     def _open_graffiti(self, art_id: str):
         self.graffiti_search.open_graffiti(art_id)
-
-
-    # ---------- renderers ----------
-    def _render_block(self, b: Dict):
-        self.block_search.render_block(b)
-
-    def _render_graffiti(self, post: Dict, comments: list[Dict], img_bytes: bytes | None, img_meta: Dict, cache_path: str | None = None):
-        self.graffiti_search.render_graffiti(post, comments, img_bytes, img_meta, cache_path)
-
-    def _comment_base_tsar_str(self) -> str:
-        return self.graffiti_search.comment_base_tsar_str()
-
-    def _build_comment_composer(self, post: Dict, art_id: str, parent: tk.Widget) -> None:
-        self.graffiti_search.build_comment_composer(post, art_id, parent)
-
-    def _on_comment_submit(self, post: Dict, art_id: str) -> None:
-        self.graffiti_search.on_comment_submit(post, art_id)
-
-    def _open_comment_dialog(self, post: Dict, art_id: str, comment_txt: str, wallets: list[str]) -> None:
-        self.graffiti_search.open_comment_dialog(post, art_id, comment_txt, wallets)
-
-    def _broadcast_comment(self, post: Dict, art_id: str, commenter: str, tip_raw: str, comment_txt: str) -> None:
-        self.graffiti_search.broadcast_comment(post, art_id, commenter, tip_raw, comment_txt)
-
-    def _render_tx(self, txid: str, t: Dict):
-        self.tx_search.render_tx(txid, t)
-
-    def _render_address(self, addr: str, a: Dict):
-        self.address_search.render_address(addr, a)
 
     # ---------- errors ----------
     def _render_error(self, msg: str):

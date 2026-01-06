@@ -10,6 +10,10 @@ export function guessKind(raw) {
   if (q.startsWith(ART_ID_PREFIX) && q.length === ART_ID_TOTAL_LEN) return "art_id";
   if (q.startsWith("tsar") && q.length >= 20) return "address";
   if (/^\d{1,7}$/.test(q)) return "block_height";
-  if (isHex64(q)) return q.startsWith("00") ? "block_hash" : "txid_hash";
+  
+  if (isHex64(q)) {
+    return "txid_hash";
+  }
+  
   return "unknown";
 }

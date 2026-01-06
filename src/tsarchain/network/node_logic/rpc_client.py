@@ -37,11 +37,7 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
     timeout = float(timeout or CFG.SYNC_TIMEOUT)
     cache = getattr(self, "_rpc_conn_cache", None)
     cache_lock = getattr(self, "_rpc_conn_cache_lock", None)
-    max_cache = None
-    try:
-        max_cache = max(1, int(CFG.RPC_CONN_CACHE_MAX))
-    except Exception:
-        max_cache = 32
+    max_cache = max(1, int(CFG.RPC_CONN_CACHE_MAX))
     if cache is None or cache_lock is None:
         cache = self._rpc_conn_cache = OrderedDict()
         cache_lock = self._rpc_conn_cache_lock = threading.RLock()
@@ -296,7 +292,6 @@ def _request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> b
         return False
 
     if resp.get("type") != "FULL_SYNC":
-        log.info("[_request_full_sync] %s returned unexpected type=%s", norm, resp.get("type"))
         return False
 
     data = resp.get("data", resp)

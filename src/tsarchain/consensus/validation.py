@@ -125,7 +125,7 @@ class ValidationMixin:
             if pow_start is not None:
                 pow_ms = round((time.perf_counter() - pow_start) * 1000.0, 3)
                 if pow_ms > 150.0:
-                    log.debug("[validate_block] pow_ms=%s height=%s hash_cached=%s", pow_ms, getattr(block, "height", None), isinstance(getattr(block, "_cached_hash", None), (bytes, bytearray)))
+                    log.warning("[validate_block] pow_ms=%s height=%s hash_cached=%s", pow_ms, getattr(block, "height", None), isinstance(getattr(block, "_cached_hash", None), (bytes, bytearray)))
 
             if not self._compute_txids_for_block(block):
                 return False

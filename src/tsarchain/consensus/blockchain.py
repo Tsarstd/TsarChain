@@ -77,12 +77,14 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
         }
         self._persist_pending = False
         self._cold_reload_attempted: bool = False
+        
 
         if not self.in_memory:
             # os.makedirs(os.path.dirname(CFG.STATE_FILE), exist_ok=True)
             self._start_persist_worker()
             self.load_chain()
             self.load_state()
+            log.info("checkpoint2")
             if not self.chain:
                 self._cold_reload_attempted = True
                 self._reload_chain_from_kv()
@@ -111,12 +113,8 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
         if kv_enabled:
             return
         else:
-            self.db_path = CFG.BLOCK_FILE
-            self._chain_store = AtomicJSONFile(CFG.BLOCK_FILE, keep_backups=3)
-            self._state_store = AtomicJSONFile(CFG.STATE_FILE, keep_backups=3)
-            self._chain_journal_path = CFG.CHAIN_JOURNAL_FILE
-            if self._chain_journal_path:
-                os.makedirs(os.path.dirname(self._chain_journal_path), exist_ok=True)
+            os.makedirs(os.path.dirname(CFG.CHAIN_JOURNAL_FILE), exist_ok=True)
+            
 
     def _rebuild_hash_cache(self):
         try:

@@ -2,6 +2,7 @@ import { ClickableValue } from ".././SearchResults";
 import { fmtTsar } from "../../../utils/format"
 import { getVoutLabel, getAddressType } from "../SearchUX";
 import "../search.css";
+import "../label.css";
 
 const ResultTx = ({ data, onSearchClick }) => (
   <div className="card">
@@ -10,11 +11,11 @@ const ResultTx = ({ data, onSearchClick }) => (
     
     <div className="grid">
       <div className="stat">
-        <span className="label">Status</span>
+        <span className="info-label">Status</span>
         <span className="value">{data?.status || "-"}</span>
       </div>
       <div className="stat">
-        <span className="label">Block</span>
+        <span className="info-label">Block</span>
         <span className="value">
           {!data?.block_height && data?.block_height !== 0 ? "0" : 
           data?.block_height === "-" ? "Genesis (0)" :
@@ -22,19 +23,19 @@ const ResultTx = ({ data, onSearchClick }) => (
         </span>
       </div>
       <div className="stat">
-        <span className="label">Confirmations</span>
+        <span className="info-label">Confirmations</span>
         <span className="value">{data?.confirmations ?? 0}</span>
       </div>
       <div className="stat">
-        <span className="label">Fee</span>
+        <span className="info-label">Fee</span>
         <span className="value">{fmtTsar(data?.fee || 0)}</span>
       </div>
       <div className="stat">
-        <span className="label">Coinbase</span>
+        <span className="info-label">Coinbase</span>
         <span className="value">{data?.is_coinbase ? "Yes" : "No"}</span>
       </div>
     </div>
-    <div className="divider" />
+    <div className="divider2" />
     <div className="stat">
       <span className="value">Inputs {data?.inputs?.length || 0}</span>
     </div>
@@ -83,7 +84,7 @@ const ResultTx = ({ data, onSearchClick }) => (
         );
       })}
     </div>
-    <div className="divider" />
+    <div className="divider2" />
     <div className="stat">
       <span className="value">Outputs {data?.outputs?.length || 0}</span>
     </div>

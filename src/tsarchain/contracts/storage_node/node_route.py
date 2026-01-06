@@ -178,8 +178,10 @@ def handle_node_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = None
         chunk_index = offset // merkle_chunk if merkle_chunk > 0 else 0
         if server.use_kv:
             merkle_path = GRAFFITI.merkle_path_for_bytes(data_bytes, merkle_chunk, chunk_index)
+            log.debug("use merkle_path_for_bytes")
         else:
-            merkle_path = GRAFFITI.merkle_path_for_file(path, merkle_chunk, chunk_index)
+            log.debug("use merkle_path_for_file")
+            merkle_path = GRAFFITI.merkle_path_for_file(path, merkle_chunk, chunk_index) #Hmmmmm
         path_len = len(merkle_path)
         chunk_b64 = base64.b64encode(chunk).decode("ascii")
         now_ts = int(time.time())

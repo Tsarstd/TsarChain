@@ -34,10 +34,16 @@ const BlockCard = ({ item, onSelect, active, isGenesis }) => {
       <div className="lane-card__grid">
         <div className="stat">
           <div className="lane-card__date">{fmtDateLong(item?.timestamp)}</div>
-          <div className="lane-card__blockheight">#{item?.height ?? "-"}</div>
+          <div className="lane-card__blockheight">{item?.height ?? "-"}</div>
+          {/* <div className="lane-card__blockheight">1569298541</div> */}
         </div>
         <div className="lane-card__time-ago">{timeAgo(item?.timestamp)}</div>
 
+      {isGenesis ? (
+        <div className="lane-card__genesis-label">GENESIS</div>
+      ) : null}
+      </div>
+      
       {isGraffiti ? (
         <div className="lane-card__graf">Graffiti Post</div>
       ) : null}
@@ -45,12 +51,6 @@ const BlockCard = ({ item, onSelect, active, isGenesis }) => {
       {!isGenesis && !isGraffiti && blockId ? (
         <div className="lane-card__bid">{blockId}</div>
       ) : null}
-      
-      {isGenesis ? (
-        <div className="lane-card__genesis-label">GENESIS</div>
-      ) : null}
-      </div>
-
 
       <div className="lane-card__grid">
         <div className="stat">
@@ -62,6 +62,7 @@ const BlockCard = ({ item, onSelect, active, isGenesis }) => {
           <span className="value">{graffitiCount ?? 0}</span>
         </div>
       </div>
+      <div className="divider-card" />
       <div className="lane-card__id wrap">{item?.hash || "-"}</div>
     </button>
   );
@@ -338,15 +339,15 @@ const Home = ({ onSearchClick }) => {
       if (blockData) {
         // Fetch 5 blocks sebelumnya (lebih rendah height-nya)
         const beforeResp = await fetchBlockRange({
-          startHeight: Math.max(0, targetHeight - 150), // Ambil 5 block sebelumnya
-          limit: 180, // Ambil lebih banyak untuk jaga-jaga
+          startHeight: Math.max(0, targetHeight - 50), // Ambil 50 block sebelumnya
+          limit: 80, // Ambil lebih banyak untuk jaga-jaga
           source: 'database'
         });
         
-        // Fetch 5 blocks sesudahnya (lebih tinggi height-nya)
+        // Fetch 50 blocks sesudahnya (lebih tinggi height-nya)
         const afterResp = await fetchBlockRange({
           startHeight: targetHeight + 1,
-          limit: 180,
+          limit: 80,
           source: 'database'
         });
         

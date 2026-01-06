@@ -135,13 +135,11 @@ def _sync_peer(self, peer: Tuple[str, int]) -> bool:
         self._reward_peer(peer)
         return True
 
-    downloaded_count = self._download_blocks(peer, missing)
-    if downloaded_count > 0:
-        self._peer_last_sync[peer] = time.time()
-        self._reward_peer(peer, CFG.PEER_SCORE_REWARD * 2)
-        if headers_resp.get("more"):
-            self.request_sync(fast=True)
+    self._download_blocks(peer, missing)
+    if headers_resp.get("more"):
+        self.request_sync(fast=True)
         return True
+    
     return False
 
 

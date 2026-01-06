@@ -205,46 +205,46 @@ def hash_proof_chunk(chunk: bytes) -> str:
 # -----------------------------
 try:
     from tsarcore_native import (
-        graff_merkle_leaves_from_bytes as _native_graff_merkle_leaves_from_bytes,
-        graff_merkle_leaves_for_file as _native_graff_merkle_leaves_for_file,
-        graff_merkle_root_from_leaves as _native_graff_merkle_root_from_leaves,
-        graff_merkle_root_for_bytes as _native_graff_merkle_root_for_bytes,
-        graff_merkle_root_for_file as _native_graff_merkle_root_for_file,
-        graff_merkle_path_from_leaves as _native_graff_merkle_path_from_leaves,
-        graff_merkle_path_for_bytes as _native_graff_merkle_path_for_bytes,
-        graff_merkle_path_for_file as _native_graff_merkle_path_for_file,
-        graff_merkle_verify as _native_graff_merkle_verify,
+        graff_merkle_leaves_from_bytes as _native_graff_merkle_leaves_from_bytes, #not used
+        graff_merkle_leaves_for_file as _native_graff_merkle_leaves_for_file, #not used
+        graff_merkle_root_from_leaves as _native_graff_merkle_root_from_leaves, #not used
+        graff_merkle_root_for_bytes as _native_graff_merkle_root_for_bytes, #not used
+        graff_merkle_root_for_file as _native_graff_merkle_root_for_file, #wallet
+        graff_merkle_path_from_leaves as _native_graff_merkle_path_from_leaves, #not used
+        graff_merkle_path_for_bytes as _native_graff_merkle_path_for_bytes, #storage node
+        graff_merkle_path_for_file as _native_graff_merkle_path_for_file, #storage node
+        graff_merkle_verify as _native_graff_merkle_verify, #node
     )
 except ImportError as exc:
     raise ImportError("tsarcore_native is required for graffiti merkle") from exc
 
-def merkle_leaves_for_file(path: str, chunk_size: int) -> list[bytes]:
+def merkle_leaves_for_file(path: str, chunk_size: int) -> list[bytes]: #not used
     return list(_native_graff_merkle_leaves_for_file(path, int(chunk_size)))
 
-def merkle_leaves_from_bytes(data: bytes, chunk_size: int) -> list[bytes]:
+def merkle_leaves_from_bytes(data: bytes, chunk_size: int) -> list[bytes]: #not used
     return list(_native_graff_merkle_leaves_from_bytes(data, int(chunk_size)))
 
-def merkle_root_from_leaves(leaves: list[bytes]) -> bytes:
+def merkle_root_from_leaves(leaves: list[bytes]) -> bytes: #not used
     return bytes(_native_graff_merkle_root_from_leaves(leaves))
 
-def merkle_root_for_bytes(data: bytes, chunk_size: int) -> tuple[str, int]:
+def merkle_root_for_bytes(data: bytes, chunk_size: int) -> tuple[str, int]: #not used
     root, count = _native_graff_merkle_root_for_bytes(data, int(chunk_size))
     return bytes(root).hex(), int(count)
 
-def merkle_root_for_file(path: str, chunk_size: int) -> tuple[str, int]:
+def merkle_root_for_file(path: str, chunk_size: int) -> tuple[str, int]: #wallet
     root, count = _native_graff_merkle_root_for_file(path, int(chunk_size))
     return bytes(root).hex(), int(count)
 
-def merkle_path_from_leaves(leaves: list[bytes], index: int) -> list[dict[str, str]]:
+def merkle_path_from_leaves(leaves: list[bytes], index: int) -> list[dict[str, str]]: #not used
     return list(_native_graff_merkle_path_from_leaves(leaves, int(index)))
 
-def merkle_path_for_bytes(data: bytes, chunk_size: int, index: int) -> list[dict[str, str]]:
+def merkle_path_for_bytes(data: bytes, chunk_size: int, index: int) -> list[dict[str, str]]: #storage node
     return list(_native_graff_merkle_path_for_bytes(data, int(chunk_size), int(index)))
 
-def merkle_path_for_file(path: str, chunk_size: int, index: int) -> list[dict[str, str]]:
+def merkle_path_for_file(path: str, chunk_size: int, index: int) -> list[dict[str, str]]: #storage node
     return list(_native_graff_merkle_path_for_file(path, int(chunk_size), int(index)))
 
-def verify_merkle_path(root_hex: str, leaf_hash_hex: str, path: list[dict[str, str]]) -> bool:
+def verify_merkle_path(root_hex: str, leaf_hash_hex: str, path: list[dict[str, str]]) -> bool: #node
     return bool(_native_graff_merkle_verify(root_hex, leaf_hash_hex, path or []))
 # ---- END OF MERKLE ----
 

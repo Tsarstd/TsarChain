@@ -162,7 +162,6 @@ def cache_get_json(key: str, refresh_ttl: bool = False) -> Optional[object]:
 
 
 def cache_set_json(key: str, payload: object, ttl_sec: int = WEB_CACHE_TTL_SEC) -> None:
-    log.debug("cache_set_json. key=%s ttl=%s", key, ttl_sec)
     store = _open_store()
     if store is None:
         return
@@ -257,7 +256,6 @@ def get_block_range_from_storage(start: int, limit: int) -> dict:
 def get_last_stored_height() -> int:
     store = _open_store()
     if store is None:
-        log.debug("[webdb] No store available for get_last_stored_height")
         return -1
     
     max_height = -1
@@ -279,7 +277,6 @@ def get_last_stored_height() -> int:
                 log.debug("[webdb] Error parsing key %s: %s", key_bytes, e)
                 continue
         
-        log.debug("[webdb] get_last_stored_height returning: %d", max_height)
         
     except Exception as e:
         log.warning("[webdb] Error in get_last_stored_height: %s", e)
@@ -331,8 +328,6 @@ def prefetch_blocks(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]
         return
     
     if tip_height is None or tip_height <= last_stored:
-        log.debug("[webdb] No new blocks to prefetch (tip=%s, stored=%s)", 
-                 tip_height, last_stored)
         return
     
     blocks_to_fetch = min(tip_height - last_stored, BLOCK_RANGE_LIMIT)
@@ -385,6 +380,8 @@ def prefetch_blocks(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]
             
     except Exception as exc:
         log.warning("[webdb] Prefetch exception: %s", exc)
+
+# ==================== BLOCK RANGE PREFETCH SEND ====================
 
 
 def start_prefetch_thread(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]) -> None:
@@ -599,6 +596,7 @@ def fetch_storers(
     cache_scope: Optional[str] = None,
     ttl_sec: Optional[int] = None,
 ) -> list[Dict[str, Any]]:
+    
     ttl_sec = int(ttl_sec or WEB_STOR_LIST_TTL_SEC)
     cache_key = make_cache_key("web", cache_scope, "stor_list")
     cached = cache_get_json(cache_key)
@@ -639,6 +637,7 @@ def fetch_graffiti_file(
     max_bytes: int = CFG.GRAFFITI_MAX_SIZE_BYTES,
     timeout: float = 5.0,
 ) -> Dict[str, Any]:
+    
     art_norm = (art_id or "").strip().lower()
     if not art_norm:
         return {"status": "error", "reason": "missing_art_id"}

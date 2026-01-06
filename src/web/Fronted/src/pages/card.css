@@ -119,34 +119,177 @@
 
 /*height label*/
 .lane-card__graffheader {
-  align-self: start;
-  font-size: 26px;
+  font-size: 35px;
   font-weight: 650;
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  gap: 2px
+  color: rgb(191, 191, 191);
+  position: relative;
+  top: 10.5%;
 }
 
+
 .lane-card__blockheight {
-  font-size: 33px;
+  font-size: 35px;
   font-weight: 650;
-  color: #f6f4f3;
+  color: rgb(191, 191, 191);
+  position: relative;
+  top: 10.5%;
+}
+
+/*mime type label*/
+.lane-card__mp4 {
+  font-size: 10.5px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--text);
+  align-self: baseline;
+  justify-self: right;
+  padding: 1px 5px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(237, 44, 44, 0.809), rgba(108, 8, 8, 0.768));
+  border: 1px solid rgba(237, 115, 115, 0.618);
+  backdrop-filter: blur(10px);
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.655);
+
+  white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(0);
+}
+
+.lane-card__mp4::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    45deg,
+    transparent 30%,
+    rgba(247, 247, 247, 0.55) 50%,
+    transparent 70%
+  );
+  animation: shine 2.7s ease-in-out infinite;
+}
+
+.lane-card__jpeg {
+  font-size: 10.5px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--text);
+  align-self: baseline;
+  justify-self: right;
+  padding: 1px 5px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(44, 173, 237, 0.809), rgba(8, 80, 108, 0.768));
+  border: 1px solid rgba(44, 115, 115, 0.618);
+  backdrop-filter: blur(10px);
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.655);
+
+  white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(0);
+}
+
+.lane-card__jpeg::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    45deg,
+    transparent 30%,
+    rgba(247, 247, 247, 0.55) 50%,
+    transparent 70%
+  );
+  animation: shine 2.7s ease-in-out infinite;
+}
+
+.lane-card__mkv {
+  font-size: 10.5px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--text);
+  align-self: baseline;
+  justify-self: right;
+  padding: 1px 5px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(237, 44, 150, 0.809), rgba(108, 8, 58, 0.768));
+  border: 1px solid rgba(237, 115, 115, 0.809);
+  backdrop-filter: blur(10px);
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.655);
+
+  white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(0);
+}
+
+.lane-card__mkv::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    45deg,
+    transparent 30%,
+    rgba(247, 247, 247, 0.55) 50%,
+    transparent 70%
+  );
+  animation: shine 2.7s ease-in-out infinite;
 }
 
 /*timestamp label*/
 .lane-card__date {
-  font-size: 11px;
+  font-size: 12px;
   text-align: left;
   font-weight: 600;
   color: #ece7e4;
 }
 
 .lane-card__time-ago {
-  font-size: 12px;
-  text-align: right;
-  font-weight: 500;
-  color: #78716c;
+  font-size: 9px;
+  text-align: center;
+  font-weight: 700;
+  color: var(--bg);
+  align-self: baseline;
+  justify-self: right;
+  padding: 1px 5px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(241, 241, 241, 0.809), rgba(150, 150, 150, 0.768));
+  border: 1px solid rgba(128, 121, 115, 0.618);
+  backdrop-filter: blur(5px);
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.655);
+
+  white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(0);
+}
+
+.lane-card__time-ago::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    45deg,
+    transparent 30%,
+    rgba(247, 247, 247, 0.55) 50%,
+    transparent 70%
+  );
+  animation: shine 2.7s ease-in-out infinite;
 }
 
 /*for hash & graffiti id*/
@@ -201,40 +344,99 @@
   box-shadow: 0 0 0 1px rgba(59, 131, 246, 0.782), 0 8px 24px rgba(25, 94, 205, 0.716);
 }
 
+/*creator label*/
+.lane-card__creator {
+  align-self: center;
+  padding: 6px 100px;
+  border-radius: 4px;
+  position: relative;
+  top: -3.5%;
+  font-size: 9.5px;
+  font-weight: 550;
+  background: linear-gradient(145deg, rgba(92, 48, 16, 0.794), rgba(35, 21, 11, 0.682));
+  color: #ffdab9;
+  border: 1px solid rgba(153, 87, 39, 0.965);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.655);
+
+  white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(0);
+}
+
+.lane-card__creator::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    15deg,
+    transparent 30%,
+    rgba(224, 184, 133, 0.422) 50%,
+    transparent 70%
+  );
+  animation: shine 2.8s ease-in-out infinite;
+}
+
 /*block_id label*/
 .lane-card__bid {
-  align-self: stretch;
-  justify-self: flex-start;
-  padding: 5px 5px;
+  align-self: center;
+  padding: 6px 100px;
   border-radius: 4px;
+  position: relative;
+  top: -3.5%;
   font-size: 9px;
   font-weight: 730;
   background: linear-gradient(135deg, rgba(36, 35, 34, 0.67), rgba(12, 11, 10, 0.768));
   color: #8d8681;
   border: 1px solid rgba(99, 76, 58, 0.618);
   backdrop-filter: blur(10px);
-  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.655);
 }
 
 /*Graffiti Post label*/
 .lane-card__graf {
-  align-self: start;
-  justify-self: start;
-  padding: 6px 12px;
-  border-radius: 20px;
+  align-self: center;
+  padding: 6px 100px;
+  border-radius: 4px;
+  position: relative;
+  top: -3.5%;
   font-size: 12px;
   font-weight: 700;
-  background: linear-gradient(135deg, rgba(249, 115, 22, 0.15), rgba(249, 115, 22, 0.05));
-  color: #f97316;
-  border: 1px solid rgba(175, 86, 23, 0.965);
+  background: linear-gradient(145deg, rgba(249, 116, 22, 0.955), rgba(120, 53, 5, 0.86));
+  color: #ffbd83;
+  border: 1px solid rgba(198, 103, 34, 0.965);
   backdrop-filter: blur(10px);
-  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.655);
+
+  white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(0);
+}
+
+.lane-card__graf::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    15deg,
+    transparent 30%,
+    rgba(255, 210, 152, 0.585) 50%,
+    transparent 70%
+  );
+  animation: shine 2.8s ease-in-out infinite;
 }
 
 /*Graffiti Card*/
 .lane-card--graffiti {
-  border-color: rgba(249, 116, 22, 0.424);
-  background: linear-gradient(135deg, #784b14 0%, #211408cf 100%);
+  background: linear-gradient(135deg, #dd6a05 0%, #211408cf 100%);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 18px;
@@ -364,6 +566,15 @@
   }
   100% {
     transform: scale(1);
+  }
+}
+
+@keyframes shine {
+  0% {
+    transform: translateX(-100%) translateY(-100%) rotate(10deg);
+  }
+  100% {
+    transform: translateX(100%) translateY(100%) rotate(30deg);
   }
 }
 

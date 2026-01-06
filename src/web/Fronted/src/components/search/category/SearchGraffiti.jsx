@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ClickableValue } from ".././SearchResults";
 import { fmtBytes, fmtTimestamp, fmtTsar } from "../../../utils/format"
 import "../search.css";
+import "../label.css";
 
 const ResultGraffiti = ({ data, onSearchClick }) => {
   const mime = String(data?.mime || "").toLowerCase();
@@ -64,11 +65,11 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
           <div className="stat">
             <div className="grid">
               <div className="stat">
-                <span className="label">Graffiti ID</span>
+                <span className="info-label">Graffiti ID</span>
                 <span className="value">{data?.art_id || "-"}</span>
               </div>
               <div className="stat">
-                <span className="label">Creator</span>
+                <span className="info-label">Creator</span>
                 <ClickableValue value={data?.creator || "-"} onSearchClick={onSearchClick} className="value muted">
                   {data?.creator || "-"}
                 </ClickableValue>
@@ -76,63 +77,63 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
             </div>
             <div className="grid">
               <div className="stat">
-                <span className="label">Upload Fee</span>
+                <span className="info-label">Upload Fee</span>
                 <span className="value">{fmtTsar(data?.amount_paid)}</span>
               </div>
               <div className="stat">
-                <span className="label">Total Creator Income</span>
+                <span className="info-label">Total Creator Income</span>
                 <span className="value">{fmtTsar(data?.stats?.creator_paid)}</span>
               </div>
             </div>
 
-            <div className="divider" />
+            <div className="divider2" />
 
             <div className="grid">
               <div className="stat">
-                <span className="label">Anchoring at</span>
+                <span className="info-label">Anchoring at</span>
                 <span className="value">Block {data?.block_height ?? "-"}</span>
               </div>
               <div className="stat">
-                <span className="label">Block Hash</span>
+                <span className="info-label">Block Hash</span>
                 <ClickableValue value={data?.block_hash ?? "-"} onSearchClick={onSearchClick} className="value muted">
                   {data?.block_hash ?? "-"}
                 </ClickableValue>
               </div>
             </div>
             <div className="stat">
-              <span className="label">TxID</span>
+              <span className="info-label">Transaction ID</span>
               <ClickableValue value={data?.txid || "-"} onSearchClick={onSearchClick} className="value muted">
                 {data?.txid || "-"}
               </ClickableValue>
             </div>
           </div>
 
-          <div className="divider" />
+          <div className="divider2" />
 
           <div className="stat">
             <div className="grid">
               <div className="stat">
-                <span className="label">SHA256 File</span>
+                <span className="info-label">SHA256 File</span>
                 <span className="value">{data?.sha256 || "-"}</span>
               </div>
               <div className="stat">
-                <span className="label">Graffiti Merkle</span>
+                <span className="info-label">Graffiti Merkle</span>
                 <span className="value">{data?.mroot || "-"}</span>
               </div>
             </div>
             <div className="grid">
               <div className="stat">
-                <span className="label">Merkle Chunk</span>
+                <span className="info-label">Merkle Chunk</span>
                 <span className="value">{fmtBytes(data?.mchunk)}</span>
               </div>
               <div className="stat">
-                <span className="label">Merkle Count</span>
+                <span className="info-label">Merkle Count</span>
                 <span className="value">{data?.mcount || "-"}</span>
               </div>
             </div>
             <div className="grid">
               <div className="stat">
-                <span className="label">File Size</span>
+                <span className="info-label">File Size</span>
                 <span className="value">{fmtBytes(data?.size || data?.size_bytes)}</span>
               </div>
               <div className="stat">
@@ -140,37 +141,35 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
             </div>
           </div>
 
-          <div className="divider" />
+          <div className="divider2" />
 
           <div className="grid">
             <div className="stat">
-              <span className="label">Pool Address</span>
+              <span className="info-label">Pool Address</span>
               <ClickableValue value={data?.pool_address} onSearchClick={onSearchClick} className="value muted">
                 {data?.pool_address}
               </ClickableValue>
             </div>
             <div className="stat">
-              <span className="label">Pool Balance</span>
+              <span className="info-label">Pool Balance</span>
               <span className="value">{fmtTsar(data?.stats?.pool_balance)}</span>
             </div>
           </div>
           <div className="grid">
             <div className="stat">
-              <span className="label">Storage Address</span>
+              <span className="info-label">Storage Address</span>
               <ClickableValue value={data?.storer} onSearchClick={onSearchClick} className="value muted">
                 {data?.storer}
               </ClickableValue>
             </div>
             <div className="stat">
-              <span className="label">Storage Income From Comment</span>
+              <span className="info-label">Storage Income From Comment</span>
               <span className="value">{fmtTsar(data?.stats?.storage_paid)}</span>
             </div>
           </div>
-          <div className="grid">
-            <div className="stat">
-              <span className="label">Last Paid Epoch</span>
-              <span className="value">Epoch {data?.stats?.last_paid_epoch}</span>
-            </div>
+          <div className="stat">
+            <span className="info-label">Last Paid Epoch</span>
+            <span className="value">Epoch {data?.stats?.last_paid_epoch}</span>
           </div>
         </div>
       )}

@@ -119,7 +119,6 @@ class ArchivistCLI:
                 continue
             tried.add(port)
             self._server = StorageServer("0.0.0.0", port, CFG.STORAGE_DIR)
-            self._log(f"[storage] server listening on 0.0.0.0:{port}")
             return port
         raise RuntimeError("No free port for storage server")
 
@@ -185,10 +184,6 @@ class ArchivistCLI:
         header = f"Archivist CLI | tip={tip} peers={peers} files={file_count} used={used}"
 
         lines = [header, "-" * len(header)]
-        lines.append("Files (latest 10):")
-        lines.append(self._format_files_table(files))
-        lines.append("Pool entries:")
-        lines.append(self._format_pool_table(self._pool_data))
 
         buf = "\n".join(lines)
         if not force and buf == self._last_dashboard:

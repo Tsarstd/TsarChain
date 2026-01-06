@@ -10,16 +10,53 @@ const SCROLL_THRESHOLD = 80;
 
 const GraffitiCard = ({ item, onSelect, active, isGenesis }) => {
   const comments = item?.stats?.comments ?? item?.comments?.length ?? 0;
-  const classes = ["lane-card", active ? "lane-card--active" : "", isGenesis ? "lane-card--genesis" : ""]
+  const mime = item?.mime;
+  const creator = item?.creator;
+
+  const isMp4 =
+  typeof mime === "string" &&
+  mime.toLowerCase().startsWith("video/mp4");
+
+  const isMatroska =
+  typeof mime === "string" &&
+  mime.toLowerCase().startsWith("video/x-matroska");
+
+  const isJpeg =
+  typeof mime === "string" &&
+  mime.toLowerCase().startsWith("image/jpeg");
+
+  const classes = ["lane-card--graffiti", active ? "lane-card--active" : "", isGenesis ? "lane-card--genesis" : ""]
     .filter(Boolean)
     .join(" ");
+
   return (
     <button className={classes} type="button" onClick={() => onSelect(item)}>
-      <div className="lane-card__graffheader">Graffiti #{item?.block_height ?? "-"}</div>
+      <div className="lane-card__grid">
+        <div className="stat">
+          <div className="value">Graffiti</div>
+          <div className="lane-card__graffheader">{item?.block_height ?? "-"}</div>
+        </div>
 
-      {isGenesis && (
-        <div className="lane-card__genesis-label">GENESIS</div>
-      )}
+        {isMp4 ? (
+          <div className="lane-card__mp4">{item?.mime || "-"}</div>
+        ) : null}
+
+        {!isMp4 && !isJpeg && isMatroska ? (
+          <div className="lane-card__mkv">{item?.mime || "-"}</div>
+        ) : null}
+        
+        {isJpeg ? (
+          <div className="lane-card__jpeg">{item?.mime || "-"}</div>
+        ) : null}
+
+        {isGenesis && (
+          <div className="lane-card__genesis-label">GENESIS</div>
+        )}
+      </div>
+
+      {!isGenesis ? (
+        <div className="lane-card__creator">{creator}</div>
+      ) : null}
 
       <div className="lane-card__grid">
         <div className="stat">
@@ -27,14 +64,11 @@ const GraffitiCard = ({ item, onSelect, active, isGenesis }) => {
           <span className="value">{fmtBytes(item?.size || item?.size_bytes)}</span>
         </div>
         <div className="stat">
-          <span className="label">Type</span>
-          <span className="value">{item?.mime || "-"}</span>
-        </div>
-        <div className="stat">
           <span className="label">Total Comments</span>
           <span className="value">{comments}</span>
         </div>
       </div>
+      <div className="divider-card" />
       <div className="lane-card__id wrap">{item?.art_id || "-"}</div>
     </button>
   );

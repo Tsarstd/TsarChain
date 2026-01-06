@@ -181,7 +181,7 @@ const Network = ({onSearchClick}) => {
               <div className="status-dot"></div>
               <span className="status-text">
                 {networkHealth === "healthy" ? "Operational" : 
-                 networkHealth === "warning" ? "Degraded" : "No Miners"}
+                 networkHealth === "warning" ? "Degraded" : "< 5 Miners"}
               </span>
             </div>
             <div className="last-update">

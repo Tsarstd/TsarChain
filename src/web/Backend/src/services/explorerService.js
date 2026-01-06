@@ -293,12 +293,33 @@ class ExplorerService {
     if (kind === "unknown") {
       return { kind, data: null };
     }
+    
+    if (kind === "txid_hash" || kind === "block_hash") {
+      // Seacrh TxID First
+      try {
+        const txData = await this.getTx(query);
+        if (txData && txData.txid) {
+          return { kind: "tx", data: txData };
+        }
+      } catch (err) {
+      }
+      
+      // If TxID not found, find blockhash
+      try {
+        const blockData = await this.getBlock(query);
+        if (blockData && blockData.hash) {
+          return { kind: "block", data: blockData };
+        }
+      } catch (err) {
+      }
+      
+      // Txid & blockhash not found
+      return { kind: "unknown", data: null };
+    }
+
     switch (kind) {
       case "block_height":
-      case "block_hash":
         return { kind: "block", data: await this.getBlock(query) };
-      case "txid_hash":
-        return { kind: "tx", data: await this.getTx(query) };
       case "address":
         return { kind: "address", data: await this.getAddress(query) };
       case "art_id":
