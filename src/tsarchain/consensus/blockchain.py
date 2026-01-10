@@ -14,7 +14,6 @@ from collections import OrderedDict
 
 # ---------------- Local Project ----------------
 from ..core.block import Block
-from ..storage.db import AtomicJSONFile
 from ..storage.utxo import UTXODB
 from ..mempool.pool import TxPoolDB
 from ..storage.kv import kv_enabled, iter_prefix
@@ -80,11 +79,9 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
         
 
         if not self.in_memory:
-            # os.makedirs(os.path.dirname(CFG.STATE_FILE), exist_ok=True)
             self._start_persist_worker()
             self.load_chain()
             self.load_state()
-            log.info("checkpoint2")
             if not self.chain:
                 self._cold_reload_attempted = True
                 self._reload_chain_from_kv()
@@ -133,10 +130,7 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
                 if h:
                     cache[int(getattr(b, "height", 0) or 0)] = h
             # trim to config bound
-            try:
-                max_entries = max(1, int(CFG.HASH_CACHE_MAX))
-            except Exception:
-                max_entries = 5000
+            max_entries = max(1, int(CFG.HASH_CACHE_MAX))
             while len(cache) > max_entries:
                 cache.popitem(last=False)
             self._hash_cache = cache
@@ -146,35 +140,30 @@ class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageM
     def get_block_hash(self, height: int):
         if height < 0:
             return None
-        try:
-            if height in self._hash_cache:
-                h = self._hash_cache.pop(height)
-                self._hash_cache[height] = h  # move to end (MRU)
-                return h
-        except Exception:
-            log.exception("get_block_hash")
-            pass
+
+        if height in self._hash_cache:
+            h = self._hash_cache.pop(height)
+            self._hash_cache[height] = h  # move to end (MRU)
+            return h
+        
         with self.lock:
             if height < 0 or height >= len(self.chain):
                 return None
+            
+            h = self.chain[height].hash()
+            h_hex = h.hex() if isinstance(h, (bytes, bytearray)) else str(h)
+            max_entries = max(1, int(CFG.HASH_CACHE_MAX))
             try:
-                h = self.chain[height].hash()
-                h_hex = h.hex() if isinstance(h, (bytes, bytearray)) else str(h)
-                max_entries = max(1, int(CFG.HASH_CACHE_MAX))
-                try:
-                    # ensure LRU order and bound
-                    if height in self._hash_cache:
-                        self._hash_cache.pop(height, None)
-                    self._hash_cache[height] = h_hex
-                    while len(self._hash_cache) > max_entries:
-                        self._hash_cache.popitem(last=False)
-                except Exception:
-                    log.exception("get_block_hash.self.lock")
-                    pass
-                return h_hex
+                # ensure LRU order and bound
+                if height in self._hash_cache:
+                    self._hash_cache.pop(height, None)
+                self._hash_cache[height] = h_hex
+                while len(self._hash_cache) > max_entries:
+                    self._hash_cache.popitem(last=False)
             except Exception:
-                log.exception("get_block_hash.self.lock2")
-                return None
+                log.exception("get_block_hash.self.lock")
+                pass
+            return h_hex
 
     def _start_persist_worker(self) -> None:
         if self.in_memory or self._persist_thread is not None:

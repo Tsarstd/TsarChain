@@ -139,20 +139,17 @@ class Block:
 
         meta = data.get("_meta")
         if isinstance(meta, dict):
-            try:
-                obj._meta = dict(meta)
-                if getattr(obj, "chainwork", None) is None and "chainwork" in meta:
-                    obj.chainwork = meta.get("chainwork")
-                if getattr(obj, "difficulty", None) is None and "difficulty" in meta:
-                    obj.difficulty = meta.get("difficulty")
-                if getattr(obj, "size_bytes", None) is None and "size_bytes" in meta:
-                    obj.size_bytes = meta.get("size_bytes")
-                if getattr(obj, "vbytes", None) is None and "vbytes" in meta:
-                    obj.vbytes = meta.get("vbytes")
-                if getattr(obj, "weight", None) is None and "weight" in meta:
-                    obj.weight = meta.get("weight")
-            except Exception:
-                log.exception("cache_meta_skipped")
+            obj._meta = dict(meta)
+            if getattr(obj, "chainwork", None) is None and "chainwork" in meta:
+                obj.chainwork = meta.get("chainwork")
+            if getattr(obj, "difficulty", None) is None and "difficulty" in meta:
+                obj.difficulty = meta.get("difficulty")
+            if getattr(obj, "size_bytes", None) is None and "size_bytes" in meta:
+                obj.size_bytes = meta.get("size_bytes")
+            if getattr(obj, "vbytes", None) is None and "vbytes" in meta:
+                obj.vbytes = meta.get("vbytes")
+            if getattr(obj, "weight", None) is None and "weight" in meta:
+                obj.weight = meta.get("weight")
         return obj
 
     def header(self) -> bytes:

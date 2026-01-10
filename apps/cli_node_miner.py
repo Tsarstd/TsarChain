@@ -209,11 +209,7 @@ class SimpleMiner:
         return True
 
     def _queue_block_for_broadcast(self, block) -> None:
-        try:
-            hx = block.hash().hex()
-        except Exception:
-            log.exception("error_5")
-            hx = None
+        hx = block.hash().hex()
         if hx and hx in self._pending_block_hashes:
             return
         self._pending_blocks.append(block)
@@ -288,17 +284,14 @@ class SimpleMiner:
         Run a single mine_block call in a worker thread so the main loop
         stays responsive to Ctrl+C and can flip cancel_mining immediately.
         """
-        try:
-            blk = self.blockchain.mine_block(
-                miner_address=self.address,
-                use_cores=self.cores,
-                cancel_event=self.cancel_mining,
-                pow_backend="randomx",
-                progress_queue=self._progress_q,
-            )
-            result["block"] = blk
-        except Exception as exc:
-            result["exc"] = exc
+        blk = self.blockchain.mine_block(
+            miner_address=self.address,
+            use_cores=self.cores,
+            cancel_event=self.cancel_mining,
+            pow_backend="randomx",
+            progress_queue=self._progress_q,
+        )
+        result["block"] = blk
 
     def _trusted_best_height(self, force_refresh: bool = False) -> int:
         """

@@ -244,11 +244,7 @@ class ChainOpsMixin:
                 else:
                     continue
 
-                try:
-                    vout_index = int(getattr(txin, "vout", 0))
-                except Exception:
-                    log.exception("vout_err")
-                    vout_index = 0
+                vout_index = int(getattr(txin, "vout", 0))
                 spent_prevouts.add((prev_hex.lower(), vout_index))
 
         txids: list[str] = []
@@ -260,19 +256,11 @@ class ChainOpsMixin:
             elif isinstance(candidate, str) and len(candidate) == 64:
                 txid_hex = candidate.lower()
             else:
-                try:
-                    txid_hex = getattr(tx, "txid_hex", lambda: None)()
-                except Exception:
-                    log.exception("txid_hex_err")
-                    txid_hex = None
+                txid_hex = getattr(tx, "txid_hex", lambda: None)()
 
             if not txid_hex and hasattr(tx, "to_dict"):
-                try:
-                    d = tx.to_dict(include_txid=True)
-                    txid_hex = d.get("txid")
-                except Exception:
-                    log.exception("txid_hex_err2")
-                    txid_hex = None
+                d = tx.to_dict(include_txid=True)
+                txid_hex = d.get("txid")
 
             if txid_hex:
                 txids.append(txid_hex)

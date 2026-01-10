@@ -181,8 +181,8 @@ def handle_node_rpc(server, msg: Dict[str, Any], client_ip: Optional[str] = None
             log.debug("use merkle_path_for_bytes")
         else:
             log.debug("use merkle_path_for_file")
-            merkle_path = GRAFFITI.merkle_path_for_file(path, merkle_chunk, chunk_index) #Hmmmmm
-        path_len = len(merkle_path)
+            merkle_path = GRAFFITI.merkle_path_for_file(path, merkle_chunk, chunk_index)
+            
         chunk_b64 = base64.b64encode(chunk).decode("ascii")
         now_ts = int(time.time())
         meta.update(

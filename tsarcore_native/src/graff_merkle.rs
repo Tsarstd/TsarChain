@@ -155,37 +155,6 @@ fn leaves_from_reader(reader: &mut dyn Read, chunk_size: usize) -> Result<Vec<[u
     Ok(leaves)
 }
 
-fn parse_leaves_any(leaves_any: &Bound<'_, PyAny>) -> Result<Vec<[u8; 32]>, PyErr> {
-    let iter = PyIterator::from_object(leaves_any)?;
-    let mut leaves = Vec::new();
-    for item in iter {
-        let obj = item?;
-        let bytes: Vec<u8> = obj.extract()?;
-        if bytes.len() != 32 {
-            return Err(PyErr::new::<exceptions::PyValueError, _>(
-                "bad_merkle_leaf",
-            ));
-        }
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(&bytes);
-        leaves.push(arr);
-    }
-    if leaves.is_empty() {
-        return Err(PyErr::new::<exceptions::PyValueError, _>(
-            "empty_merkle_leaves",
-        ));
-    }
-    Ok(leaves)
-}
-
-fn leaves_to_pylist<'py>(py: Python<'py>, leaves: Vec<[u8; 32]>) -> PyResult<Bound<'py, PyList>> {
-    let out = PyList::empty(py);
-    for leaf in leaves {
-        out.append(PyBytes::new(py, &leaf))?;
-    }
-    Ok(out)
-}
-
 fn path_to_pylist<'py>(py: Python<'py>, path: Vec<(char, [u8; 32])>) -> PyResult<Bound<'py, PyList>> {
     let out = PyList::empty(py);
     for (side, hash) in path {
@@ -195,80 +164,6 @@ fn path_to_pylist<'py>(py: Python<'py>, path: Vec<(char, [u8; 32])>) -> PyResult
         out.append(dict)?;
     }
     Ok(out)
-}
-
-#[pyfunction]
-pub fn graff_merkle_leaves_from_bytes<'py>(
-    py: Python<'py>,
-    data: &[u8],
-    chunk_size: usize,
-) -> PyResult<Bound<'py, PyList>> {
-    let leaves = match leaves_from_bytes(data, chunk_size) {
-        Ok(v) => v,
-        Err(e) => {
-            log_warning(&format!("graff_merkle_leaves_from_bytes error={}", e));
-            return Err(e);
-        }
-    };
-    let out = leaves_to_pylist(py, leaves)?;
-    Ok(out)
-}
-
-#[pyfunction]
-pub fn graff_merkle_leaves_for_file<'py>(
-    py: Python<'py>,
-    path: &str,
-    chunk_size: usize,
-) -> PyResult<Bound<'py, PyList>> {
-    let file = File::open(path)
-        .map_err(|e| {
-            log_warning(&format!("graff_merkle_leaves_for_file open error={}", e));
-            PyErr::new::<exceptions::PyFileNotFoundError, _>(e.to_string())
-        })?;
-    let mut reader = BufReader::new(file);
-    let leaves = match leaves_from_reader(&mut reader, chunk_size) {
-        Ok(v) => v,
-        Err(e) => {
-            log_warning(&format!("graff_merkle_leaves_for_file error={}", e));
-            return Err(e);
-        }
-    };
-    let out = leaves_to_pylist(py, leaves)?;
-    Ok(out)
-}
-
-#[pyfunction]
-pub fn graff_merkle_root_from_leaves<'py>(
-    py: Python<'py>,
-    leaves_any: Bound<'py, PyAny>,
-) -> PyResult<Bound<'py, PyBytes>> {
-    let leaves = match parse_leaves_any(&leaves_any) {
-        Ok(v) => v,
-        Err(e) => {
-            log_warning(&format!("graff_merkle_root_from_leaves error={}", e));
-            return Err(e);
-        }
-    };
-    let root = build_root(leaves);
-    Ok(PyBytes::new(py, &root))
-}
-
-#[pyfunction]
-pub fn graff_merkle_root_for_bytes<'py>(
-    py: Python<'py>,
-    data: &[u8],
-    chunk_size: usize,
-) -> PyResult<(Bound<'py, PyBytes>, usize)> {
-    let leaves = match leaves_from_bytes(data, chunk_size) {
-        Ok(v) => v,
-        Err(e) => {
-            log_warning(&format!("graff_merkle_root_for_bytes error={}", e));
-            return Err(e);
-        }
-    };
-    let count = leaves.len();
-    let root = build_root(leaves);
-    Ok((PyBytes::new(py, &root), count))
 }
 
 #[pyfunction]
@@ -293,30 +188,6 @@ pub fn graff_merkle_root_for_file<'py>(
     let count = leaves.len();
     let root = build_root(leaves);
     Ok((PyBytes::new(py, &root), count))
-}
-
-#[pyfunction]
-pub fn graff_merkle_path_from_leaves<'py>(
-    py: Python<'py>,
-    leaves_any: Bound<'py, PyAny>,
-    index: usize,
-) -> PyResult<Bound<'py, PyList>> {
-    let leaves = match parse_leaves_any(&leaves_any) {
-        Ok(v) => v,
-        Err(e) => {
-            log_warning(&format!("graff_merkle_path_from_leaves error={}", e));
-            return Err(e);
-        }
-    };
-    let path = match build_path(leaves, index) {
-        Ok(v) => v,
-        Err(e) => {
-            log_warning(&format!("graff_merkle_path_from_leaves error={}", e));
-            return Err(e);
-        }
-    };
-    let out = path_to_pylist(py, path)?;
-    Ok(out)
 }
 
 #[pyfunction]
