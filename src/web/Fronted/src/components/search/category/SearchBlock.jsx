@@ -1,7 +1,13 @@
 import { ClickableValue } from ".././SearchResults";
-import { fmtBytes, fmtTimestamp, fmtTsar, fmtChainwork } from "../../../utils/format"
-import "../search.css";
-import "../label.css";
+import { 
+  fmtBytes, 
+  fmtTimestamp, 
+  fmtTsar, 
+  fmtChainwork,
+  fmtHash,
+  fmtTxid,
+  fmtAddress 
+} from "../../../utils/format"
 
 
 const ResultBlock = ({ data, onSearchClick }) => {
@@ -38,9 +44,14 @@ const ResultBlock = ({ data, onSearchClick }) => {
           </div>
           <div className="stat">
             <span className="info-label">Prev Hash</span>
-            <ClickableValue value={data?.prev_block_hash} onSearchClick={onSearchClick} className="value muted">
-              {data?.prev_block_hash || "-"}
-            </ClickableValue>
+              <ClickableValue 
+                value={data?.prev_block_hash} 
+                onSearchClick={onSearchClick} 
+                className="value muted"
+                info={data?.prev_block_hash}
+              >
+                {fmtHash(data?.prev_block_hash) || "-"}
+              </ClickableValue>
           </div>
         </div>
         <div className="grid">
@@ -100,16 +111,26 @@ const ResultBlock = ({ data, onSearchClick }) => {
                   <div className="stat">
                     <div className="info-label">Creator</div>
                     <div className="value">
-                      <ClickableValue value={g.creator} onSearchClick={onSearchClick} className="value muted">
-                        {g.creator|| "-"}
+                      <ClickableValue 
+                        value={g.creator} 
+                        onSearchClick={onSearchClick} 
+                        className="value muted"
+                        info={g.creator}
+                      >
+                        {fmtAddress(g.creator) || "-"}
                       </ClickableValue>
                     </div>
                   </div>
                   <div className="stat">
                     <div className="info-label">Transaction ID</div>
-                    <ClickableValue value={g.txid} onSearchClick={onSearchClick} className="value muted">
-                      {g.txid|| "-"}
-                    </ClickableValue>
+                      <ClickableValue 
+                        value={g.txid} 
+                        onSearchClick={onSearchClick} 
+                        className="value muted"
+                        info="Click For More Details"
+                      >
+                        {fmtTxid(g.txid) || "-"}
+                      </ClickableValue>
                   </div>
                 </div>
                   <div className="info-label">Graffiti SHA256</div>
@@ -136,9 +157,14 @@ const ResultBlock = ({ data, onSearchClick }) => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div className="stat">
                   <span className="info-label">Transaction ID</span>
-                  <ClickableValue value={tx.txid} onSearchClick={onSearchClick} className="value muted">
-                    {tx.txid || "-"}
-                  </ClickableValue>
+                    <ClickableValue 
+                      value={tx.txid} 
+                      onSearchClick={onSearchClick} 
+                      className="value muted"
+                      info="Click For More Details"
+                    >
+                      {fmtTxid(tx.txid) || "-"}
+                    </ClickableValue>
                 </div>
                 {isCoinbase && (
                   <span className="coinbase-label">
@@ -178,27 +204,39 @@ const ResultBlock = ({ data, onSearchClick }) => {
                 <div className="stat">
                   <div className="grid">
                       <div className="stat">
-                        <div className="info-label">Commenter:</div>
-                          <ClickableValue value={c.commenter} onSearchClick={onSearchClick} className="value muted">
-                            {c.commenter|| "-"}
+                        <div className="info-label">Commenter</div>
+                          <ClickableValue 
+                            value={c.commenter} 
+                            onSearchClick={onSearchClick} 
+                            className="value muted"
+                          >
+                            {fmtAddress(c.commenter) || "-"}
                           </ClickableValue>
                       </div>
                       <div className="stat">
-                        <div className="info-label">Put Comment in:</div>
-                        <ClickableValue value={c.art_id} onSearchClick={onSearchClick} className="value muted">
-                          {c.art_id|| "-"}
-                        </ClickableValue>
+                        <div className="info-label">Put Comment in</div>
+                          <ClickableValue 
+                            value={c.art_id} 
+                            onSearchClick={onSearchClick} 
+                            className="value muted"
+                          >
+                            {fmtHash(c.art_id) || "-"}
+                          </ClickableValue>
                       </div>
                   </div>
                   <div className="grid">
                     <div className="stat">
-                      <div className="info-label">TxID:</div>
-                      <ClickableValue value={c.txid} onSearchClick={onSearchClick} className="value muted">
-                        {c.txid|| "-"}
-                      </ClickableValue>
+                      <div className="info-label">Transaction ID</div>
+                          <ClickableValue 
+                            value={c.txid} 
+                            onSearchClick={onSearchClick} 
+                            className="value muted"
+                          >
+                            {fmtTxid(c.txid) || "-"}
+                          </ClickableValue>
                     </div>
                     <div className="stat">
-                      <div className="value">Comment length {c.comment_len || c.comment || "-"}</div>
+                      <div className="value">Comment length {c.comment_len || "-"}</div>
                     </div>
                   </div>
                 </div>
@@ -221,15 +259,23 @@ const ResultBlock = ({ data, onSearchClick }) => {
                   <div className="grid">
                     <div className="stat">
                       <span className="info-label">Payout Transaction ID</span>
-                      <ClickableValue value={payout?.txid} onSearchClick={onSearchClick} className="value muted">
-                        {payout?.txid|| "-"}
-                      </ClickableValue>
+                        <ClickableValue 
+                          value={payout?.txid} 
+                          onSearchClick={onSearchClick} 
+                          className="value muted"
+                        >
+                          {fmtTxid(payout?.txid) || "-"}
+                        </ClickableValue>
                     </div>
                     <div className="stat">
                       <span className="info-label">Graffiti ID</span>
-                      <ClickableValue value={payout?.art_id} onSearchClick={onSearchClick} className="value muted">
-                        {payout?.art_id|| "-"}
-                      </ClickableValue>
+                        <ClickableValue 
+                          value={payout?.art_id} 
+                          onSearchClick={onSearchClick} 
+                          className="value muted"
+                        >
+                          {fmtHash(payout?.art_id) || "-"}
+                        </ClickableValue>
                     </div>
                   </div>
                   <div className="stat">
@@ -247,8 +293,12 @@ const ResultBlock = ({ data, onSearchClick }) => {
                         className="tx-items"
                         key={`${payout?.txid || idx}-${rcpt?.addr || ridx}`}
                       >
-                        <ClickableValue value={rcpt?.addr} onSearchClick={onSearchClick} className="value muted">
-                          {rcpt?.addr|| "-"}
+                        <ClickableValue 
+                          value={rcpt?.addr} 
+                          onSearchClick={onSearchClick} 
+                          className="value muted"
+                        >
+                          {fmtAddress(rcpt?.addr) || "-"}
                         </ClickableValue>
                         <div className="muted">{fmtTsar(rcpt?.amount || 0)}</div>
                       </div>

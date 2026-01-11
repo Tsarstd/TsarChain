@@ -224,6 +224,7 @@ def handle_storage_rpc(
     elif mtype == "GRAFFITI_BUILD_PAYOUT":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
+            
         ts_val = int(message.get("ts", 0))
         nonce_val = str(message.get("nonce") or "")
         sender_key = src_node_id or ip
@@ -233,6 +234,7 @@ def handle_storage_rpc(
         art_id_raw = str(message.get("art_id") or "").strip()
         art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
         recipients = message.get("recipients") or []
+        
         if isinstance(recipients, dict):
             recipients = [{"addr": a, "amount": v} for a, v in recipients.items()]
         if not recipients and message.get("recipient") and message.get("amount"):
@@ -242,21 +244,25 @@ def handle_storage_rpc(
             return {"error": "bad_recipients"}
         if len(recipients) != 1:
             return {"error": "payout_requires_single_recipient"}
+        
         rec = recipients[0] if isinstance(recipients[0], dict) else {}
         rec_addr = str(rec.get("addr") or rec.get("address") or "").strip().lower()
         rec_amt = int(rec.get("amount", 0) or 0)
+        
         if not rec_addr or not GRAFFITI._is_valid_tsar_address(rec_addr) or rec_amt <= 0:
             return {"error": "bad_recipients"}
         if rec_addr != storer_addr:
             return {"error": "payout_recipient_mismatch"}
+        
         recipients = [{"addr": rec_addr, "amount": rec_amt}]
         fee_rate = int(message.get("fee_rate", CFG.DEFAULT_FEE_RATE_SATVB))
         epoch = int(message.get("epoch", -1))
         utxo = getattr(self.broadcast, "utxodb", None)
+        
         if utxo is None:
             return {"error": "utxo_unavailable"}
+        
         utxo._load()
-
         reg = getattr(utxo, "_graffiti_registry", None)
         proof_entry = reg.get_latest_proof(art_id, storer_addr) if reg else None
         proof_meta = None

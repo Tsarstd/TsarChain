@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { fetchGraffitiDetail, fetchGraffitiList } from "../api/explorer";
 import { fmtBytes } from "../utils/format";
 import { ResultGraffiti } from "../components/search/SearchResults";
-import "./card.css";
 
 const PAGE_SIZE = 20;
 const SCROLL_THRESHOLD = 80;
@@ -25,6 +24,10 @@ const GraffitiCard = ({ item, onSelect, active, isGenesis }) => {
   typeof mime === "string" &&
   mime.toLowerCase().startsWith("image/jpeg");
 
+  const isPdf =
+  typeof mime === "string" &&
+  mime.toLowerCase().startsWith("application/pdf");
+
   const classes = ["lane-card--graffiti", active ? "lane-card--active" : "", isGenesis ? "lane-card--genesis" : ""]
     .filter(Boolean)
     .join(" ");
@@ -38,16 +41,21 @@ const GraffitiCard = ({ item, onSelect, active, isGenesis }) => {
         </div>
 
         {isMp4 ? (
-          <div className="lane-card__mp4">{item?.mime || "-"}</div>
+          <div className="lane-card__mp4">{"Video MP4"}</div>
         ) : null}
 
-        {!isMp4 && !isJpeg && isMatroska ? (
-          <div className="lane-card__mkv">{item?.mime || "-"}</div>
+        {isPdf ? (
+          <div className="lane-card__pdf">{"Document PDF"}</div>
         ) : null}
         
         {isJpeg ? (
-          <div className="lane-card__jpeg">{item?.mime || "-"}</div>
+          <div className="lane-card__jpeg">{"Image JPEG"}</div>
         ) : null}
+
+        {isMatroska ? (
+          <div className="lane-card__mkv">{"Video MKV"}</div>
+        ) : null}
+        
 
         {isGenesis && (
           <div className="lane-card__genesis-label">GENESIS</div>
@@ -64,7 +72,7 @@ const GraffitiCard = ({ item, onSelect, active, isGenesis }) => {
           <span className="value">{fmtBytes(item?.size || item?.size_bytes)}</span>
         </div>
         <div className="stat">
-          <span className="label">Total Comments</span>
+          <span className="label">Comments</span>
           <span className="value">{comments}</span>
         </div>
       </div>

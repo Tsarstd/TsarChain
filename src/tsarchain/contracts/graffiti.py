@@ -103,7 +103,7 @@ def validate_graffiti_file(size_bytes: int, mime: str | None = None, filename: s
     ext = ""
     if filename:
         ext = os.path.splitext(filename)[1].lstrip(".").lower()
-
+    log.info("mime=%s", mime_norm)
     if mime_norm and _is_valid_mime(mime_norm):
         if _MIME_ALLOWED and mime_norm not in _MIME_ALLOWED:
             raise ValueError("mime_not_allowed")

@@ -2,8 +2,6 @@ import { useState, useEffect } from "react";
 import { ClickableValue } from ".././SearchResults";
 import { fmtTsar } from "../../../utils/format";
 import { getStatusBadge, getDirectionBadge } from "../SearchUX";
-import "../search.css";
-import "../label.css";
 
 const ResultAddress = ({ data, onSearchClick }) => {
   const [currentPage, setCurrentPage] = useState(1);

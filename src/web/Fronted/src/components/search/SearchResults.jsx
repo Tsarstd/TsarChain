@@ -5,16 +5,18 @@ import { ResultAddress } from "./category/SeacrhAddress";
 import { ResultGraffiti } from "./category/SearchGraffiti";
 
 
-export const ClickableValue = ({ value, onSearchClick, className = "", children }) => {
+export const ClickableValue = ({ value, onSearchClick, className = "", info, children }) => {
   const displayValue = children || value;
   
   if (!value || value === "-" || !onSearchClick) {
     return <span className={className}>{displayValue}</span>;
   }
   
+  const finalClassName = `value muted ${className}`.trim();
+  
   return (
     <span
-      className={`clickable-value ${className}`}
+      className={finalClassName}
       style={{
         cursor: "pointer",
         color: "#5e9de6ff",
@@ -24,6 +26,7 @@ export const ClickableValue = ({ value, onSearchClick, className = "", children 
       onClick={() => {
         onSearchClick(value);
       }}
+      data-tooltip={info}
       onMouseEnter={(e) => e.target.style.color = "#4d7fb7ff"}
       onMouseLeave={(e) => e.target.style.color = "#5e9de6ff"}
     >

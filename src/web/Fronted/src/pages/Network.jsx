@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 import { ClickableValue } from "../components/search/SearchResults";
 import { fetchNetwork } from "../api/explorer";
 import { fmtBytes, fmtHashrate, fmtNumber, fmtTimestamp, fmtTsar } from "../utils/format";
-import "./networkpages.css";
 
 import { 
   RiGlobalLine, 
@@ -17,7 +16,6 @@ import {
   RiUserStarLine,
   RiTimerLine
 } from "react-icons/ri";
-
 
 
 const getPeersCount = (snap, fallback = 0) => {

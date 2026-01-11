@@ -8,17 +8,25 @@
   --muted: #9ca3af;
 }
 
+@font-face {
+  font-family: 'Archivo';
+  src: url('./assets/fonts/Archivo-Regular.woff2') format('woff2');
+  font-display: swap;
+}
+
 * {
   padding: 0;
   margin: 0;
   box-sizing: border-box;
+  font-family: inherit;
+  font-weight: inherit;
 }
 
 body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
-  font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  font-family: 'Archivo', sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 

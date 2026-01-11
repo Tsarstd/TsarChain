@@ -1,8 +1,6 @@
 import { ClickableValue } from ".././SearchResults";
 import { fmtTsar } from "../../../utils/format"
 import { getVoutLabel, getAddressType } from "../SearchUX";
-import "../search.css";
-import "../label.css";
 
 const ResultTx = ({ data, onSearchClick }) => (
   <div className="card">
@@ -48,7 +46,7 @@ const ResultTx = ({ data, onSearchClick }) => (
 
         return (
           <div className="tx-items" key={idx}>
-            <div className="label mono wrap">
+            <div className="label wrap">
             <div className="grid">
               <div className="tx-info">
                 <div className="stat">
@@ -99,7 +97,7 @@ const ResultTx = ({ data, onSearchClick }) => (
 
         return (
           <div className="tx-items" key={idx}>
-            <div className="label mono wrap">
+            <div className="label wrap">
               <ClickableValue value={addressValue} onSearchClick={onSearchClick} className="value muted">
                 {addressValue || "OP_RETURN"}
               </ClickableValue>

@@ -1,13 +1,29 @@
 import { useState } from "react";
 import { ClickableValue } from ".././SearchResults";
+import { Document, Page, pdfjs } from 'react-pdf';
 import { fmtBytes, fmtTimestamp, fmtTsar } from "../../../utils/format"
-import "../search.css";
-import "../label.css";
+import { GrNext, GrPrevious } from "react-icons/gr";
+
+// Konfigurasi worker PDF
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 const ResultGraffiti = ({ data, onSearchClick }) => {
   const mime = String(data?.mime || "").toLowerCase();
   const isVideo = mime.includes("video") || mime.includes("mp4");
+  const isPdf = mime.includes("pdf") || (data?.preview_url && data.preview_url.toLowerCase().endsWith('.pdf'));
   const [showDetails, setShowDetails] = useState(false);
+  const [numPages, setNumPages] = useState(null);
+  const [pageNumber, setPageNumber] = useState(1);
+
+  // Fungsi untuk PDF loading success
+  const onDocumentLoadSuccess = ({ numPages }) => {
+    setNumPages(numPages);
+    setPageNumber(1);
+  };
+
+  // Navigasi halaman PDF
+  const goToPrevPage = () => setPageNumber(pageNumber - 1);
+  const goToNextPage = () => setPageNumber(pageNumber + 1);
 
   return (
     <div className="card">
@@ -23,6 +39,59 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
             preload="metadata"
             src={data.preview_url}
           />
+        ) : isPdf ? (
+          <div className="pdf-preview-container">
+            
+            <div className="pdf-document-wrapper">
+              <Document
+                file={data.preview_url}
+                onLoadSuccess={onDocumentLoadSuccess}
+                loading={
+                  <div className="pdf-loading">
+                    Loading PDF preview...
+                  </div>
+                }
+                error={
+                  <div className="pdf-error muted">
+                    PDF preview could not be loaded. 
+                    <a href={data.preview_url} target="_blank" rel="noopener noreferrer">
+                      Open PDF directly
+                    </a>
+                  </div>
+                }
+                className="pdf-document"
+              >
+                <Page 
+                  pageNumber={pageNumber} 
+                  className="pdf-page"
+                  width={700}
+                  renderTextLayer={false}
+                  renderAnnotationLayer={false}
+                />
+              </Document>
+            </div>
+
+            <div className="pdf-controls">
+              <button 
+                onClick={goToPrevPage}
+                disabled={pageNumber <= 1}
+                className="pdf-nav-button"
+              >
+              <GrPrevious />
+              </button>
+              <span className="pdf-page-info">
+              {pageNumber} of {numPages || '--'}
+              </span>
+              <button 
+                onClick={goToNextPage}
+                disabled={pageNumber >= (numPages || 1)}
+                className="pdf-nav-button"
+              >
+              <GrNext />
+              </button>
+            </div>
+
+          </div>
         ) : (
           <img
             className="media-preview"
@@ -46,7 +115,6 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
             border: 'none',
             borderRadius: '4px',
             cursor: 'pointer',
-            fontWeight: '600',
             fontSize: '14px',
             transition: 'background-color 0.3s ease',
             boxShadow: '0 2px 4px rgba(0,0,0,0.2)'

@@ -9,7 +9,14 @@ import Network from "./pages/Network";
 import SearchOverlay from "./components/search/SearchOverlay";
 import { searchExplorer } from "./api/explorer";
 import { guessKind } from "./utils/searchKind";
+
 import "./App.css";
+import "./styles/networkpages.css";
+import "./styles/card.css";
+import "./styles/search.css";
+import "./styles/footer.css";
+import "./styles/nav_bar.css";
+import "./styles/label.css";
 
 const App = () => {
   const location = useLocation();

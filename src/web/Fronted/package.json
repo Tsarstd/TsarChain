@@ -10,11 +10,23 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "motion": "^12.23.26",
+    "@gsap/react": "^2.1.2",
+    "@react-three/drei": "^10.7.6",
+    "@react-three/fiber": "^9.3.0",
+    "@tailwindcss/vite": "^4.1.13",
+    "clsx": "^2.1.1",
+    "gsap": "^3.13.0",
+    "motion": "^12.25.0",
+    "pdfjs-dist": "^5.4.530",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-icons": "^5.5.0",
-    "react-router-dom": "^7.9.3"
+    "react-pdf": "^10.3.0",
+    "react-responsive": "^10.0.1",
+    "react-router-dom": "^7.12.0",
+    "tailwindcss": "^4.1.13",
+    "three": "^0.182.0",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

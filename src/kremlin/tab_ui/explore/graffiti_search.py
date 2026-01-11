@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import fitz
 import threading
 from glob import glob
 from io import BytesIO
@@ -36,9 +37,14 @@ class GraffitiSearch:
         fmt_ts: Callable[[Optional[int | float]], str],
         fmt_tsar_amount: Callable[[Any], str],
     ) -> None:
+        
         self.panel = panel
         self._fmt_ts = fmt_ts
         self._fmt_tsar_amount = fmt_tsar_amount
+        
+        self._pdf_doc = None
+        self._pdf_current_page = 0
+        self._pdf_total_pages = 0
 
     # ---------- entrypoints ----------
     def open_graffiti(self, art_id: str) -> None:
@@ -108,6 +114,13 @@ class GraffitiSearch:
         p._comment_status_var.set("")
         p._comment_text_widget = None
         p._comment_btn = None
+        
+        if self._pdf_doc:
+            try:
+                self._pdf_doc.close()
+            except Exception:
+                pass
+            self._pdf_doc = None
 
         art_id = str((post or {}).get("art_id") or "-")
         creator = str((post or {}).get("creator") or "-")
@@ -174,8 +187,11 @@ class GraffitiSearch:
 
         ext = os.path.splitext(cache_guess or "")[1].lower()
         is_video = ("video" in mime) or ext == ".mp4" or mime.endswith("mp4")
+        is_pdf = mime == "application/pdf" or ext == ".pdf"
+        
         media_holder = tk.Frame(container, bg=p.card_bg)
         media_holder.pack(pady=8)
+        # Video (mp4 & mkv)
         if is_video:
             if cache_guess and os.path.isfile(cache_guess):
                 status_var = tk.StringVar(value="")
@@ -202,6 +218,95 @@ class GraffitiSearch:
                 missing = tk.Label(media_holder, text="(video cache not found)", bg=p.card_bg, fg=p.muted, font=("Consolas", 10))
                 missing.pack(anchor="center")
                 p._bind_copyable(missing, lambda: missing.cget("text"))
+        # PDF Document
+        elif is_pdf:
+            if cache_guess and os.path.isfile(cache_guess):
+                try:
+                    self._pdf_doc = fitz.open(cache_guess)
+                    self._pdf_total_pages = len(self._pdf_doc)
+                    self._pdf_current_page = 0
+                    
+                    # Buat frame untuk PDF preview
+                    pdf_container = tk.Frame(media_holder, bg=p.card_bg)
+                    pdf_container.pack()
+                    
+                    # Frame untuk navigasi
+                    nav_frame = tk.Frame(pdf_container, bg=p.card_bg)
+                    nav_frame.pack(fill="x", pady=(0, 5))
+                    
+                    # Info halaman
+                    page_var = tk.StringVar()
+                    page_label = tk.Label(
+                        nav_frame,
+                        textvariable=page_var,
+                        bg=p.card_bg,
+                        fg=p.fg,
+                        font=("Consolas", 9)
+                    )
+                    page_label.pack(side=tk.LEFT, padx=(10, 5))
+                    
+                    # Tombol navigasi
+                    btn_style = {"bg": p.accent, "fg": p.bg, "bd": 0, "relief": tk.FLAT, "cursor": "hand2"}
+                    
+                    btn_first = tk.Button(
+                        nav_frame,
+                        text="⏮",
+                        command=lambda: self._show_explorer_pdf_page(0, pdf_container, page_var),
+                        **btn_style
+                    )
+                    btn_first.pack(side=tk.LEFT, padx=2)
+                    
+                    btn_prev = tk.Button(
+                        nav_frame,
+                        text="◀",
+                        command=lambda: self._show_explorer_pdf_page(
+                            max(0, self._pdf_current_page - 1), pdf_container, page_var
+                        ),
+                        **btn_style
+                    )
+                    btn_prev.pack(side=tk.LEFT, padx=2)
+                    
+                    btn_next = tk.Button(
+                        nav_frame,
+                        text="▶",
+                        command=lambda: self._show_explorer_pdf_page(
+                            min(self._pdf_total_pages - 1, self._pdf_current_page + 1), pdf_container, page_var
+                        ),
+                        **btn_style
+                    )
+                    btn_next.pack(side=tk.LEFT, padx=2)
+                    
+                    btn_last = tk.Button(
+                        nav_frame,
+                        text="⏭",
+                        command=lambda: self._show_explorer_pdf_page(self._pdf_total_pages - 1, pdf_container, page_var),
+                        **btn_style
+                    )
+                    btn_last.pack(side=tk.LEFT, padx=2)
+                    
+                    # Frame untuk menampilkan halaman
+                    self._pdf_display_frame = tk.Frame(pdf_container, bg=p.card_bg)
+                    self._pdf_display_frame.pack()
+                    
+                    # Tampilkan halaman pertama
+                    self._show_explorer_pdf_page(0, pdf_container, page_var)
+                    
+                except Exception as e:
+                    error_msg = tk.Label(
+                        media_holder,
+                        text=f"PDF preview failed: {str(e)}",
+                        bg=p.card_bg,
+                        fg=p.muted,
+                        font=("Consolas", 10)
+                    )
+                    error_msg.pack(anchor="center")
+                    p._bind_copyable(error_msg, lambda: error_msg.cget("text"))
+            else:
+                missing = tk.Label(media_holder, text="(PDF cache not found)", bg=p.card_bg, fg=p.muted, font=("Consolas", 10))
+                missing.pack(anchor="center")
+                p._bind_copyable(missing, lambda: missing.cget("text"))
+        
+        # Image (jpeg atau jpg)
         else:
             if img_bytes:
                 buf = BytesIO(img_bytes)
@@ -425,3 +530,57 @@ class GraffitiSearch:
             messagebox.showerror("Explorer", f"COMMENT Broadcast failed: {exc}")
             if p._comment_btn:
                 p._comment_btn.config(state="normal")
+                
+    def _show_explorer_pdf_page(self, page_num: int, container: tk.Frame, page_var: tk.StringVar) -> None:
+        if not self._pdf_doc:
+            return
+        
+        try:
+            self._pdf_current_page = page_num
+            
+            # Hapus display frame sebelumnya
+            for child in list(container.winfo_children()):
+                if child.winfo_class() != "Frame" or child == self._pdf_display_frame:
+                    continue
+                child.destroy()
+            
+            # Dapatkan halaman
+            page = self._pdf_doc[page_num]
+            
+            # Render halaman ke gambar
+            mat = fitz.Matrix(1.5, 1.5)  # Scale factor untuk kualitas yang lebih baik
+            pix = page.get_pixmap(matrix=mat)
+            
+            # Konversi ke PIL Image
+            img_data = pix.tobytes("ppm")
+            from io import BytesIO
+            img = Image.open(BytesIO(img_data))
+            
+            # Resize untuk preview
+            img.thumbnail((854, 480))
+            
+            # Tampilkan gambar
+            photo = ImageTk.PhotoImage(img)
+            self.panel._img_refs.append(photo)  # Simpan reference
+            
+            # Hapus konten sebelumnya di display frame
+            for child in self._pdf_display_frame.winfo_children():
+                child.destroy()
+            
+            # Tambahkan gambar ke display frame
+            label = tk.Label(self._pdf_display_frame, image=photo, bg=self.panel.card_bg)
+            label.pack()
+            
+            # Update info halaman
+            page_var.set(f"Pages {page_num + 1}/{self._pdf_total_pages}")
+            
+        except Exception as e:
+            log.exception("Unhandled exception")
+            error_label = tk.Label(
+                container,
+                text=f"Failed to display PDF page: {str(e)}",
+                bg=self.panel.card_bg,
+                fg=self.panel.muted,
+                font=("Consolas", 10)
+            )
+            error_label.pack()

@@ -63,6 +63,7 @@
 .stat {
   margin-bottom: 0.65rem;
   display: flex;
+  gap: 2px;
   flex-direction: column;
 }
 
@@ -100,10 +101,6 @@
 .list {
   display: grid;
   gap: 10px;
-}
-
-.muted {
-  color: var(--muted);
 }
 
 .result-empty {

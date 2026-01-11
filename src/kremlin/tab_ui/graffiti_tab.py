@@ -4,7 +4,7 @@
 # Refs: see REFERENCES.md
 
 from __future__ import annotations
-import time, threading
+import time, threading, fitz
 from decimal import Decimal, ROUND_DOWN
 from typing import Any, Dict, Optional
 from tkinter import ttk, filedialog, messagebox, StringVar
@@ -66,6 +66,12 @@ class GraffitiTab(ttk.Frame):
         self._preview_img_ref = None
         self._video_player: TkVLCPlayer | None = None
         self._catalog_map_local: dict[str, Dict[str, Any]] = {}
+        
+        self._current_pdf_doc = None
+        self._pdf_current_page = 0
+        self._pdf_total_pages = 0
+        self._pdf_page_var: StringVar | None = None
+        self._pdf_nav_frame: tk.Frame | None = None
 
         self.post_send_btn: ttk.Button | None = None
         self._post_plan: Optional[Dict[str, Any]] = None
@@ -277,23 +283,40 @@ class GraffitiTab(ttk.Frame):
                 self.comment_wallet_var.set("")
 
     def _clear_preview(self) -> None:
-        """Bersihkan preview media (image/video)."""
+        """Bersihkan preview media (image/video/PDF)."""
         if self._video_player:
             try:
                 self._video_player.dispose()
-                log.debug("graffiti_tab: video player disposed")
             except Exception:
                 log.debug("graffiti_tab: dispose video player failed", exc_info=True)
             self._video_player = None
+        
+        # Tutup PDF dokumen jika ada
+        if self._current_pdf_doc:
+            try:
+                self._current_pdf_doc.close()
+            except Exception:
+                pass
+            self._current_pdf_doc = None
+            self._pdf_current_page = 0
+            self._pdf_total_pages = 0
+        
         self._preview_img_ref = None
+        
+        # Hapus PDF navigation frame jika ada
+        if self._pdf_nav_frame and self._pdf_nav_frame.winfo_exists():
+            self._pdf_nav_frame.destroy()
+            self._pdf_nav_frame = None
+        
         if self.preview_frame and self.preview_frame.winfo_exists():
             for child in list(self.preview_frame.winfo_children()):
                 child.destroy()
+        
         if self.preview_status_var:
             self.preview_status_var.set("Belum ada preview.")
 
     def _render_preview(self) -> None:
-        """Render preview for selected file (image/mp4)."""
+        """Render preview for selected file (image/mp4/pdf)."""
         if not self.preview_frame or not self.selected_path or not self.selected_mime:
             return
         self._clear_preview()
@@ -301,7 +324,7 @@ class GraffitiTab(ttk.Frame):
         mime = (self.selected_mime or "").lower()
         log.debug("graffiti_tab: render preview path=%s mime=%s", path, mime)
 
-        # Video (mp4)
+        # Video (mp4 & mkv)
         if "video" in mime or path.lower().endswith(".mp4"):
             container = tk.Frame(self.preview_frame, bg=self.theme.card_bg)
             container.pack(pady=6)
@@ -330,7 +353,78 @@ class GraffitiTab(ttk.Frame):
             self._video_player = player
             return
 
-        # Image
+        # PDF document
+        elif mime == "application/pdf" or path.lower().endswith(".pdf"):
+            try:
+                self._current_pdf_doc = fitz.open(path)
+                self._pdf_total_pages = len(self._current_pdf_doc)
+                self._pdf_current_page = 0
+                
+                # Buat frame untuk navigasi halaman
+                self._pdf_nav_frame = tk.Frame(self.preview_frame, bg=self.theme.card_bg)
+                self._pdf_nav_frame.pack(fill="x", pady=(5, 0))
+                
+                # Label untuk info halaman
+                self._pdf_page_var = StringVar()
+                page_label = tk.Label(
+                    self._pdf_nav_frame,
+                    textvariable=self._pdf_page_var,
+                    bg=self.theme.card_bg,
+                    fg=self.theme.fg,
+                    font=("Consolas", 9)
+                )
+                page_label.pack(side=tk.LEFT, padx=(10, 5))
+                
+                # Tombol navigasi
+                btn_style = {"bg": self.theme.accent, "fg": "#ffffff", "bd": 0, "relief": tk.FLAT}
+                
+                btn_first = tk.Button(
+                    self._pdf_nav_frame,
+                    text="⏮",
+                    command=lambda: self._show_pdf_page(0),
+                    **btn_style
+                )
+                btn_first.pack(side=tk.LEFT, padx=2)
+                
+                btn_prev = tk.Button(
+                    self._pdf_nav_frame,
+                    text="◀",
+                    command=lambda: self._show_pdf_page(max(0, self._pdf_current_page - 1)),
+                    **btn_style
+                )
+                btn_prev.pack(side=tk.LEFT, padx=2)
+                
+                btn_next = tk.Button(
+                    self._pdf_nav_frame,
+                    text="▶",
+                    command=lambda: self._show_pdf_page(min(self._pdf_total_pages - 1, self._pdf_current_page + 1)),
+                    **btn_style
+                )
+                btn_next.pack(side=tk.LEFT, padx=2)
+                
+                btn_last = tk.Button(
+                    self._pdf_nav_frame,
+                    text="⏭",
+                    command=lambda: self._show_pdf_page(self._pdf_total_pages - 1),
+                    **btn_style
+                )
+                btn_last.pack(side=tk.LEFT, padx=2)
+                
+                # Tampilkan halaman pertama
+                self._show_pdf_page(0)
+                
+            except Exception as e:
+                log.exception("Unhandled exception")
+                tk.Label(
+                    self.preview_frame,
+                    text=f"PDF preview gagal: {str(e)}",
+                    bg=self.theme.card_bg,
+                    fg=self.theme.muted,
+                    font=("Consolas", 10),
+                ).pack(anchor="center", pady=8)
+            return
+
+        # Image (jpeg atau jpg)
         try:
             img = Image.open(path)
             img.thumbnail((self.PREVIEW_MAX_W, self.PREVIEW_MAX_H))
@@ -343,6 +437,56 @@ class GraffitiTab(ttk.Frame):
             tk.Label(
                 self.preview_frame,
                 text="Preview gambar gagal dimuat.",
+                bg=self.theme.card_bg,
+                fg=self.theme.muted,
+                font=("Consolas", 10),
+            ).pack(anchor="center", pady=8)
+            
+    def _show_pdf_page(self, page_num: int) -> None:
+        """Tampilkan halaman spesifik dari PDF."""
+        if not self._current_pdf_doc or not self.preview_frame:
+            return
+        
+        try:
+            # Hapus konten sebelumnya
+            for child in list(self.preview_frame.winfo_children()):
+                if child != self._pdf_nav_frame:
+                    child.destroy()
+            
+            self._pdf_current_page = page_num
+            
+            # Dapatkan halaman
+            page = self._current_pdf_doc[page_num]
+            
+            # Render halaman ke gambar
+            mat = fitz.Matrix(1.5, 1.5)  # Scale factor untuk kualitas yang lebih baik
+            pix = page.get_pixmap(matrix=mat)
+            
+            # Konversi ke PIL Image
+            img_data = pix.tobytes("ppm")
+            from io import BytesIO
+            img = Image.open(BytesIO(img_data))
+            
+            # Resize untuk preview
+            img.thumbnail((self.PREVIEW_MAX_W, self.PREVIEW_MAX_H))
+            
+            # Tampilkan gambar
+            photo = ImageTk.PhotoImage(img)
+            self._preview_img_ref = photo
+            label = tk.Label(self.preview_frame, image=photo, bg=self.theme.card_bg)
+            label.pack(pady=6)
+            
+            # Update info halaman
+            if self._pdf_page_var:
+                self._pdf_page_var.set(f"Pages {page_num + 1}/{self._pdf_total_pages}")
+            
+            self.preview_status_var.set(f"PDF preview (Pages {page_num + 1}/{self._pdf_total_pages})")
+            
+        except Exception as e:
+            log.exception("Unhandled exception")
+            tk.Label(
+                self.preview_frame,
+                text=f"Failed to Preview PDF Pages: {str(e)}",
                 bg=self.theme.card_bg,
                 fg=self.theme.muted,
                 font=("Consolas", 10),
@@ -859,6 +1003,15 @@ class GraffitiTab(ttk.Frame):
         """Rebuild the tab using a new theme palette."""
         self.theme = theme
         self._build_style()
+        
+        # Tutup PDF doc sebelum rebuild
+        if self._current_pdf_doc:
+            try:
+                self._current_pdf_doc.close()
+            except Exception:
+                pass
+            self._current_pdf_doc = None
+        
         for child in list(self.winfo_children()):
             child.destroy()
         self._build_ui()

@@ -1,3 +1,13 @@
+export const fmtShort = (str, startLen = 6, endLen = 4) => {
+  if (!str || typeof str !== 'string') return str || '-';
+  if (str.length <= startLen + endLen) return str;
+  return `${str.slice(0, startLen)}...${str.slice(-endLen)}`;
+};
+
+export const fmtHash = (hash) => fmtShort(hash, 8, 8);
+export const fmtTxid = (txid) => fmtShort(txid, 8, 8);
+export const fmtAddress = (addr) => fmtShort(addr, 8, 8);
+
 export const fmtNumber = (n) => {
   if (n === null || n === undefined || n === "") return "-";
   const val = Number(n);
@@ -33,7 +43,19 @@ export const fmtBytes = (b) => {
 
 export const fmtTimestamp = (sec) => {
   if (!sec) return "-";
-  return new Date(Number(sec) * 1000).toLocaleString("id-ID");
+  const date = new Date(Number(sec) * 1000);
+  
+  const day = date.getUTCDate();
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const month = monthNames[date.getUTCMonth()];
+  const year = date.getUTCFullYear();
+  
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+  
+  return `${day} ${month} ${year}, ${hours}:${minutes}:${seconds} UTC`;
 };
 
 export const fmtDateLong = (sec) => {
@@ -118,10 +140,4 @@ export const fmtChainwork = (val) => {
     const s = String(val);
     return s.length <= 14 ? s : `${s.slice(0, 6)}...${s.slice(-6)}`;
   }
-};
-
-export const shortHash = (s, n = 8) => {
-  if (!s) return "-";
-  const str = String(s);
-  return str.length <= n * 2 ? str : `${str.slice(0, n)}...${str.slice(-n)}`;
 };

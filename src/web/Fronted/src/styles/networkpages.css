@@ -281,7 +281,6 @@
 
 .hash-value {
   font-size: 14px;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   word-break: break-all;
   line-height: 1.4;
 }
@@ -379,7 +378,6 @@
 }
 
 .address {
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 14px;
   color: #ffffff;
 }

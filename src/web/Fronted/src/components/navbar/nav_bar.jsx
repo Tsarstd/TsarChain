@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { IoSearch } from "react-icons/io5";
-import "./nav_bar.css";
+
 import { assets } from "../../assets/assets";
 
 const Navbar = ({ query, onQueryChange, onSearch }) => {
@@ -12,10 +12,12 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
   return (
     <header className="navbar">
       <div className="nav-left">
-        <img src={assets.logo_header} alt="" className="logo" />
+        <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : "")}>
+          <img src={assets.logo_header} alt="" className="logo" />
+        </NavLink>
         <ul className="navbar-menu">
           <li>
-            <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : "")}>
+            <NavLink to="/block" end className={({ isActive }) => (isActive ? "active" : "")}>
               Block
             </NavLink>
           </li>

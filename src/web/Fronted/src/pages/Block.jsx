@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { fetchBlockRange, fetchByKind } from "../api/explorer";
 import { fmtDateLong, timeAgo } from "../utils/format";
 import { ResultBlock } from "../components/search/SearchResults";
-import "./card.css";
 
 const PAGE_SIZE = 200;
 const SCROLL_THRESHOLD = 800;

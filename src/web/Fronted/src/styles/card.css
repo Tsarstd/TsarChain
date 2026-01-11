@@ -22,7 +22,6 @@
   background: var(--card);
   color: var(--text);
   font-size: 14px;
-  font-family: 'Monaco', 'Consolas', monospace;
   transition: all 0.2s ease;
   min-width: 120px;
 }
@@ -158,6 +157,43 @@
 }
 
 .lane-card__mp4::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    45deg,
+    transparent 30%,
+    rgba(247, 247, 247, 0.55) 50%,
+    transparent 70%
+  );
+  animation: shine 2.7s ease-in-out infinite;
+}
+
+.lane-card__pdf {
+  font-size: 10.5px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--text);
+  align-self: baseline;
+  justify-self: right;
+  padding: 1px 5px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(228, 192, 13, 0.809), rgba(128, 102, 9, 0.768));
+  border: 1px solid rgba(237, 206, 115, 0.618);
+  backdrop-filter: blur(10px);
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.655);
+
+  white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(0);
+}
+
+.lane-card__pdf::after {
   content: '';
   position: absolute;
   top: -50%;

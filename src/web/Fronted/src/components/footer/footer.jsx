@@ -1,10 +1,9 @@
-import "./footer.css";
-import { assets } from "../../assets/assets.js";
 import { Link } from "react-router-dom";
-
 import { IoLogoGithub } from "react-icons/io";
 import { FaInstagram } from "react-icons/fa";
 import { SiGumroad } from "react-icons/si";
+
+import { assets } from "../../assets/assets";
 
 const footerSections = [
   {
@@ -56,11 +55,11 @@ const Footer = () => {
       <div className="site-footer__inner">
         <div className="site-footer__top">
           <div className="site-footer__brand">
-            <img
-              src={assets.logo_header}
-              alt="TsarChain logo"
-              className="site-footer__logo"
-            />
+              <img
+                src={assets.logo_footer}
+                alt="TsarChain logo"
+                className="site-footer__logo"
+              />
             <p className="site-footer__tagline">
               Explore the full TsarChain ecosystem.
             </p>
