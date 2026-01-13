@@ -6,6 +6,7 @@ import Footer from "./components/footer/footer";
 import Block from "./pages/Block";
 import Graffiti from "./pages/Graffiti";
 import Network from "./pages/Network";
+
 import SearchOverlay from "./components/search/SearchOverlay";
 import { searchExplorer } from "./api/explorer";
 import { guessKind } from "./utils/searchKind";

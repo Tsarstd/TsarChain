@@ -4,9 +4,30 @@ export const fmtShort = (str, startLen = 6, endLen = 4) => {
   return `${str.slice(0, startLen)}...${str.slice(-endLen)}`;
 };
 
-export const fmtHash = (hash) => fmtShort(hash, 8, 8);
-export const fmtTxid = (txid) => fmtShort(txid, 8, 8);
-export const fmtAddress = (addr) => fmtShort(addr, 8, 8);
+export const fmtHash = (hash) => fmtShort(hash, 8, 10);
+export const fmtTxid = (txid) => fmtShort(txid, 8, 10);
+export const fmtAddress = (addr) => fmtShort(addr, 8, 10);
+
+export const formatHashForDisplay = (hash, maxCharsPerLine = 32) => {
+  if (!hash || hash.length <= maxCharsPerLine) return hash;
+  
+  const parts = [];
+  for (let i = 0; i < hash.length; i += maxCharsPerLine) {
+    parts.push(hash.substring(i, i + maxCharsPerLine));
+  }
+  return parts.join('\n');
+};
+
+export const getMaxCharsPerLine = () => {
+  if (typeof window === 'undefined') return 32;
+  
+  const width = window.innerWidth;
+  if (width <= 320) return 24;
+  if (width <= 360) return 28;
+  if (width <= 480) return 32;
+  if (width <= 768) return 40;
+  return 64; // Desktop
+};
 
 export const fmtNumber = (n) => {
   if (n === null || n === undefined || n === "") return "-";
@@ -31,7 +52,7 @@ export const fmtBytes = (b) => {
   if (b === null || b === undefined || b === "") return "-";
   const parsed = Number(b);
   if (Number.isNaN(parsed)) return String(b);
-  const units = ["B", "KB", "MB", "GB"];
+  const units = ["Bytes", "KB", "MB", "GB"];
   let val = parsed;
   let i = 0;
   while (val >= 1024 && i < units.length - 1) {

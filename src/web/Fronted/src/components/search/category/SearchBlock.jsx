@@ -1,4 +1,5 @@
 import { ClickableValue } from ".././SearchResults";
+import { useState, useEffect } from 'react';
 import { 
   fmtBytes, 
   fmtTimestamp, 
@@ -6,11 +7,28 @@ import {
   fmtChainwork,
   fmtHash,
   fmtTxid,
-  fmtAddress 
+  fmtAddress,
+  formatHashForDisplay,
+  getMaxCharsPerLine
 } from "../../../utils/format"
 
 
 const ResultBlock = ({ data, onSearchClick }) => {
+  const [isMobile, setIsMobile] = useState(false);
+  const [maxCharsPerLine, setMaxCharsPerLine] = useState(getMaxCharsPerLine());
+
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth <= 768;
+      setIsMobile(mobile);
+      setMaxCharsPerLine(getMaxCharsPerLine());
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const payouts = Array.isArray(data?.payouts)
     ? data.payouts
     : Array.isArray(data?._meta?.payouts)
@@ -18,6 +36,53 @@ const ResultBlock = ({ data, onSearchClick }) => {
       : [];
   const payoutCount =
     data?.payout_count ?? data?._meta?.payout_count ?? payouts.length ?? 0;
+
+  const renderHash = (hash, className = "") => {
+    if (!hash) return "-";
+    
+    if (isMobile) {
+      const formattedHash = formatHashForDisplay(hash, maxCharsPerLine);
+      return (
+        <span className={`value hash-multiline ${className}`} style={{whiteSpace: 'pre-wrap'}}>
+          {formattedHash}
+        </span>
+      );
+    }
+    
+    return <span className={`value ${className}`}>{hash}</span>;
+  };
+
+  const renderClickableHash = (value, onSearchClick, info, displayValue = null) => {
+    if (!value) return "-";
+    
+    const display = displayValue || value;
+    
+    if (isMobile) {
+      const formattedHash = formatHashForDisplay(display, maxCharsPerLine);
+      return (
+        <ClickableValue 
+          value={value} 
+          onSearchClick={onSearchClick} 
+          className="value muted hash-multiline"
+          info={info}
+          style={{whiteSpace: 'pre-wrap'}}
+        >
+          {formattedHash}
+        </ClickableValue>
+      );
+    }
+    
+    return (
+      <ClickableValue 
+        value={value} 
+        onSearchClick={onSearchClick} 
+        className="value muted"
+        info={info}
+      >
+        {display}
+      </ClickableValue>
+    );
+  };
 
   return (
     <div className="card">
@@ -28,32 +93,39 @@ const ResultBlock = ({ data, onSearchClick }) => {
 
         <div className="stat">
           <span className="info-label">Block ID</span>
-            {data?.block_id?.startsWith('graf') ? (
-              <ClickableValue value={data.block_id} onSearchClick={onSearchClick} className="value muted">
-                {data.block_id}
-              </ClickableValue>
-            ) : (
-              <span className="value">{data?.block_id || "-"}</span>
-            )}
+          {data?.block_id?.startsWith('graf') ? (
+            <ClickableValue
+              value={data.block_id}
+              onSearchClick={onSearchClick}
+              className="value muted"
+              info="Click To See Graffiti Post"
+              style={isMobile ? {whiteSpace: 'pre-wrap'} : {}}
+            >
+              {isMobile ? formatHashForDisplay((data.block_id) || "-", maxCharsPerLine) : (data.block_id) || "-"}
+            </ClickableValue>
+          ) : (
+            renderHash(data?.block_id || "-")
+          )}
         </div>
+
         <div className="divider2" />
+
         <div className="grid">
           <div className="stat">
             <span className="info-label">Hash</span>
-            <span className="value">{data?.hash}</span>
+            {renderHash(data?.hash, "wrap")}
           </div>
           <div className="stat">
             <span className="info-label">Prev Hash</span>
-              <ClickableValue 
-                value={data?.prev_block_hash} 
-                onSearchClick={onSearchClick} 
-                className="value muted"
-                info={data?.prev_block_hash}
-              >
-                {fmtHash(data?.prev_block_hash) || "-"}
-              </ClickableValue>
+            {renderClickableHash(
+              data?.prev_block_hash,
+              onSearchClick,
+              data?.prev_block_hash,
+              fmtHash(data?.prev_block_hash) || "-"
+            )}
           </div>
         </div>
+
         <div className="grid">
           <div className="stat">
             <span className="info-label">Timestamp</span>
@@ -89,9 +161,10 @@ const ResultBlock = ({ data, onSearchClick }) => {
         <div className="grid">
           <div className="stat">
             <span className="info-label">Merkle Root</span>
-            <span className="value">{data?.merkle_root ?? "-"}</span>
+            {renderHash(data?.merkle_root ?? "-", "wrap")}
           </div>
-        </div>  
+        </div> 
+
         <div className="divider2" />
 
       {/* END OF BLOCK HEADER INFO */}
@@ -111,30 +184,28 @@ const ResultBlock = ({ data, onSearchClick }) => {
                   <div className="stat">
                     <div className="info-label">Creator</div>
                     <div className="value">
-                      <ClickableValue 
-                        value={g.creator} 
-                        onSearchClick={onSearchClick} 
-                        className="value muted"
-                        info={g.creator}
-                      >
-                        {fmtAddress(g.creator) || "-"}
-                      </ClickableValue>
+                      {renderClickableHash(
+                        g.creator,
+                        onSearchClick,
+                        g.creator,
+                        fmtAddress(g.creator) || "-"
+                      )}
                     </div>
                   </div>
                   <div className="stat">
                     <div className="info-label">Transaction ID</div>
-                      <ClickableValue 
-                        value={g.txid} 
-                        onSearchClick={onSearchClick} 
-                        className="value muted"
-                        info="Click For More Details"
-                      >
-                        {fmtTxid(g.txid) || "-"}
-                      </ClickableValue>
+                    {renderClickableHash(
+                      g.txid,
+                      onSearchClick,
+                      g.txid,
+                      fmtTxid(g.txid) || "-"
+                    )}
                   </div>
                 </div>
-                  <div className="info-label">Graffiti SHA256</div>
-                  <div className="value">{g.sha256 || g.hash || "-"}</div>
+                <div className="info-label">Graffiti SHA256</div>
+                <div className="value hash-multiline wrap">
+                  {isMobile ? formatHashForDisplay(g.sha256 || g.hash || "-", maxCharsPerLine) : g.sha256 || g.hash || "-"}
+                </div>
               </div>
             ))}
           </div>
@@ -146,7 +217,7 @@ const ResultBlock = ({ data, onSearchClick }) => {
       {/* START OF TRANSACTION LIST */}
 
       <div className="stat">
-        <span className="value">Transactions {data?.transactions?.length || 0}</span>
+        <span className="value">{data?.transactions?.length || 0} Transactions</span>
       </div>
       <div className="list">
         {(data?.transactions || []).map((tx, index) => {
@@ -154,32 +225,30 @@ const ResultBlock = ({ data, onSearchClick }) => {
           
           return (
             <div className="tx-item" key={tx.txid}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div className="stat">
                   <span className="info-label">Transaction ID</span>
-                    <ClickableValue 
-                      value={tx.txid} 
-                      onSearchClick={onSearchClick} 
-                      className="value muted"
-                      info="Click For More Details"
-                    >
-                      {fmtTxid(tx.txid) || "-"}
-                    </ClickableValue>
+                    {renderClickableHash(
+                      tx.txid,
+                      onSearchClick,
+                      tx.txid,
+                      fmtTxid(tx.txid) || "-"
+                    )}
                 </div>
-                {isCoinbase && (
-                  <span className="coinbase-label">
-                    Mining Reward
-                  </span>
-                )}
-              </div>
               <div style={{ display: 'flex', alignItems: 'center' }}>
                 <div className="stat">
                   <span className="inputs-label">
-                    Inputs {isCoinbase ? 0 : (tx.inputs?.length || 0)}
+                    {isCoinbase ? 0 : (tx.inputs?.length || 0)} Inputs 
                   </span>
                 </div>
                 <div className="stat">
-                  <span className="outputs-label">Outputs {tx.outputs?.length || 0}</span>
+                  <span className="outputs-label">{tx.outputs?.length || 0} Outputs</span>
+                </div>
+                <div className="stat">
+                  {isCoinbase && (
+                    <span className="coinbase-label">
+                      Mining Reward
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -196,7 +265,7 @@ const ResultBlock = ({ data, onSearchClick }) => {
           <div className="divider" />
           <div className="stat">
             <span className="value">
-              Comments {(data?.comments?.length || 0)}
+              {(data?.comments?.length || 0)} Comments
             </span>
           </div>
           <div className="tx-item">
@@ -204,39 +273,31 @@ const ResultBlock = ({ data, onSearchClick }) => {
                 <div className="stat">
                   <div className="grid">
                       <div className="stat">
-                        <div className="info-label">Commenter</div>
-                          <ClickableValue 
-                            value={c.commenter} 
-                            onSearchClick={onSearchClick} 
-                            className="value muted"
-                          >
-                            {fmtAddress(c.commenter) || "-"}
-                          </ClickableValue>
+                        <div className="info-label">Citizen</div>
+                          {renderClickableHash(
+                            c.commenter,
+                            onSearchClick,
+                            c.commenter,
+                            fmtAddress(c.commenter) || "-"
+                          )}
                       </div>
                       <div className="stat">
-                        <div className="info-label">Put Comment in</div>
-                          <ClickableValue 
-                            value={c.art_id} 
-                            onSearchClick={onSearchClick} 
-                            className="value muted"
-                          >
-                            {fmtHash(c.art_id) || "-"}
-                          </ClickableValue>
+                        <div className="info-label">Comment length {c.comment_len || "-"}</div>
+                          {renderClickableHash(
+                            c.art_id,
+                            onSearchClick,
+                            c.art_id,
+                            fmtHash(c.art_id) || "-"
+                          )}
                       </div>
-                  </div>
-                  <div className="grid">
                     <div className="stat">
                       <div className="info-label">Transaction ID</div>
-                          <ClickableValue 
-                            value={c.txid} 
-                            onSearchClick={onSearchClick} 
-                            className="value muted"
-                          >
-                            {fmtTxid(c.txid) || "-"}
-                          </ClickableValue>
-                    </div>
-                    <div className="stat">
-                      <div className="value">Comment length {c.comment_len || "-"}</div>
+                        {renderClickableHash(
+                          c.txid,
+                          onSearchClick,
+                          c.txid,
+                          fmtTxid(c.txid) || "-"
+                        )}
                     </div>
                   </div>
                 </div>
@@ -251,55 +312,49 @@ const ResultBlock = ({ data, onSearchClick }) => {
         {payouts.length ? <>
             <div className="divider" />
             <div className="stat">
-              <span className="value">Payouts {payoutCount}</span>
+              <span className="value">{payoutCount} Payouts</span>
             </div>
             <div className="list">
               {payouts.map((payout, idx) => (
                 <div className="tx-item" key={payout?.txid || `payout-${idx}`}>
-                  <div className="grid">
-                    <div className="stat">
-                      <span className="info-label">Payout Transaction ID</span>
-                        <ClickableValue 
-                          value={payout?.txid} 
-                          onSearchClick={onSearchClick} 
-                          className="value muted"
-                        >
-                          {fmtTxid(payout?.txid) || "-"}
-                        </ClickableValue>
-                    </div>
-                    <div className="stat">
-                      <span className="info-label">Graffiti ID</span>
-                        <ClickableValue 
-                          value={payout?.art_id} 
-                          onSearchClick={onSearchClick} 
-                          className="value muted"
-                        >
-                          {fmtHash(payout?.art_id) || "-"}
-                        </ClickableValue>
-                    </div>
-                  </div>
                   <div className="stat">
                     <span className="value">Epoch {payout?.epoch ?? "-"}</span>
                   </div>
-                  <div className="divider" />
+                  <div className="grid">
+                    <div className="stat">
+                      <span className="info-label">Payout Transaction ID</span>
+                        {renderClickableHash(
+                          payout?.txid,
+                          onSearchClick,
+                          payout?.txid,
+                          fmtTxid(payout?.txid) || "-"
+                        )}
+                    </div>
+                    <div className="stat">
+                      <span className="info-label">Graffiti ID</span>
+                        {renderClickableHash(
+                          payout?.art_id,
+                          onSearchClick,
+                          payout?.art_id,
+                          fmtHash(payout?.art_id) || "-"
+                        )}
+                    </div>
+                  </div>
+                  <div className="divider2" />
                   <div className="stat">
                     <span className="value">
-                      Recipients {payout?.recipients?.length || 0}
+                      {payout?.recipients?.length || 0} Recipients 
                     </span>
                   </div>
                   <div className="list">
-                    {(payout?.recipients || []).map((rcpt, ridx) => (
-                      <div
-                        className="tx-items"
-                        key={`${payout?.txid || idx}-${rcpt?.addr || ridx}`}
-                      >
-                        <ClickableValue 
-                          value={rcpt?.addr} 
-                          onSearchClick={onSearchClick} 
-                          className="value muted"
-                        >
-                          {fmtAddress(rcpt?.addr) || "-"}
-                        </ClickableValue>
+                    {(payout?.recipients || []).map((rcpt) => (
+                      <div className="stat">
+                        {renderClickableHash(
+                          rcpt?.addr,
+                          onSearchClick,
+                          rcpt?.addr,
+                          fmtAddress(rcpt?.addr) || "-"
+                        )}
                         <div className="muted">{fmtTsar(rcpt?.amount || 0)}</div>
                       </div>
                     ))}

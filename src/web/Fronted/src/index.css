@@ -28,6 +28,8 @@ body {
   color: var(--text);
   font-family: 'Archivo', sans-serif;
   -webkit-font-smoothing: antialiased;
+  font-size: auto;
+  font-weight: auto;
 }
 
 a {
@@ -37,4 +39,29 @@ a {
 
 .app {
   min-height: 100vh;
+}
+
+@media (max-width: 768px) {
+  body {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 480px) {
+  body {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 360px) {
+  body {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 320px) {
+  body {
+    font-size: 10px;
+    line-height: 1.3;
+  }
 }

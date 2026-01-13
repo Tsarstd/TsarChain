@@ -8,14 +8,14 @@
 .value.muted:hover::after {
   content: attr(data-tooltip);
   position: absolute;
-  bottom: 120%;
+  bottom: 180%;
   left: 50%;
   transform: translateX(-50%);
-  background: rgb(92, 92, 92);
-  color: white;
+  background: rgb(212, 212, 212);
+  color: rgb(34, 34, 34);
   padding: 4px 8px;
   border-radius: 8px;
-  font-size: 10px;
+  font-size: 12px;
   white-space: nowrap;
   z-index: 1000;
   pointer-events: none;
@@ -24,31 +24,36 @@
 .value.muted:hover::before {
   content: '';
   position: absolute;
-  bottom: 76%;
+  bottom: 85%;
   left: 50%;
   transform: translateX(-50%);
-  border: 5px solid transparent;
-  border-top-color: rgb(92, 92, 92);
+  border: 7px solid transparent;
+  border-top-color: rgb(212, 212, 212);
   z-index: 1001;
 }
 
+.value.muted.hash-multiline:hover::after {
+  white-space: pre-wrap;
+  text-align: left;
+  max-width: 90vw;
+  word-break: break-word;
+}
+
 .btn-ghost {
-  background: transparent;
+  background: #dd2b2b;
   border: 1px solid var(--border);
   color: var(--text);
   padding: 8px 12px;
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.3s ease;
-  font-weight: 500;
   position: relative;
   overflow: hidden;
 }
 
 .btn-ghost:hover {
-  background: rgb(186, 80, 15);
+  background: #dd2b2b;
   border-color: var(--primary-color);
-  color: var(--primary-color);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgb(24, 24, 24);
 }
@@ -69,17 +74,16 @@
 .search-overlay__panel {
   max-width: 1200px;
   margin: 0 auto;
-  background: var(--panel);
+  background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: 12px;
   padding: 20px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.3);
 }
 
 .search-overlay__header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  justify-content: right;
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -139,28 +143,29 @@
 
 .card {
   max-width: 1200px;
-  background: var(--card-bg);
   border-radius: 3px;
   padding: 1.5rem;
   margin: 0 auto 1rem auto;
-  background: var(--card);
+  background: #191919;
 }
 
 .tx-items {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem;
-  background: #2b2b2b;
-  border-radius: 8px;
-  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 0.3rem;
+  background: #1d1d1d;
+  border-radius: 5px;
+  margin-bottom: 3px;
 }
 
 .tx-item {
   padding: 0.75rem;
-  background: #2b2b2b;
-  border-radius: 6px;
-  border-left: 3px solid var(--primary);
+  background: #242424;
+  font-weight: 200;
+  font-size: 12px;
 }
 
 .comment-item {
@@ -184,8 +189,8 @@
 .tx-vout {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  min-width: 120px;
+  align-items: left;
+  min-width: 10px;
 }
 
 /* PDF Preview Container */
@@ -273,18 +278,173 @@
   text-decoration: underline;
 }
 
-/* Responsive PDF */
 @media (max-width: 768px) {
+  .hash-multiline {
+    font-size: 0.8em;
+    line-height: 1.3;
+    letter-spacing: 0.2px;
+  }
+  
+  .value.muted.hash-multiline {
+    padding: 2px 0;
+    display: block;
+  }
+}
+
+@media (max-width: 480px) {
+  .hash-multiline {
+    font-size: 0.75em;
+    line-height: 1.25;
+  }
+  
+  .stat .info-label {
+    font-size: 0.65rem;
+  }
+  
+  .value.muted.hash-multiline:hover::after {
+    font-size: 11px;
+    padding: 3px 6px;
+    bottom: 160%;
+  }
+
+  .search-overlay {
+    top: 56px;
+    padding: 8px;
+  }
+  
+  .search-overlay__panel {
+    padding: 8px;
+  }
+  
+  .card {
+    padding: 10px;
+    margin-bottom: 6px;
+  }
+  
   .pdf-document-wrapper {
-    max-height: 400px;
+    max-height: 250px;
+  }
+}
+
+@media (max-width: 360px) {
+  .hash-multiline {
+    font-size: 0.7em;
+    line-height: 1.2;
+  }
+  
+  .stat {
+    margin-bottom: 0.3rem;
+  }
+  
+  .stat .value {
+    font-size: 10px;
+  }
+  
+  .value.muted.hash-multiline {
+    word-break: break-word;
+    hyphens: auto;
+  }
+
+  .search-overlay {
+    top: 52px;
+    padding: 6px;
+  }
+  
+  .search-overlay__panel {
+    padding: 6px;
+  }
+  
+  .card {
+    padding: 8px;
+    margin-bottom: 4px;
+  }
+  
+  .tx-items {
+    padding: 6px;
+    flex-direction: column;
+    gap: 6px;
+  }
+  
+  .tx-amount {
+    font-size: 12px;
+  }
+  
+  .pdf-document-wrapper {
+    max-height: 200px;
   }
   
   .pdf-controls {
-    flex-direction: column;
     gap: 8px;
   }
   
+  .pdf-nav-button {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+  
   .pdf-page-info {
-    order: -1;
+    font-size: 11px;
+    min-width: 80px;
+  }
+}
+
+@media (max-width: 320px) {
+  .hash-multiline {
+    font-size: 0.65em;
+    line-height: 1.15;
+    letter-spacing: -0.1px;
+  }
+  
+  .card {
+    padding: 8px;
+  }
+  
+  .tx-item, .comment-item {
+    padding: 6px;
+  }
+  
+  .value.muted.hash-multiline:hover::after {
+    max-width: 280px;
+    left: 10px;
+    transform: translateX(0);
+    text-align: left;
+  }
+  
+  .value.muted.hash-multiline:hover::before {
+    left: 20px;
+    transform: translateX(0);
+  }
+
+  .search-overlay {
+    top: 48px;
+    padding: 4px;
+  }
+  
+  .search-overlay__panel {
+    padding: 4px;
+    border-radius: 12px;
+  }
+  
+  .tx-items {
+    padding: 4px;
+    border-radius: 6px;
+  }
+  
+  .tx-amount {
+    font-size: 11px;
+  }
+  
+  .pdf-document-wrapper {
+    max-height: 180px;
+  }
+  
+  .pdf-nav-button {
+    padding: 3px 6px;
+    font-size: 10px;
+  }
+  
+  .pdf-page-info {
+    font-size: 10px;
+    min-width: 70px;
   }
 }

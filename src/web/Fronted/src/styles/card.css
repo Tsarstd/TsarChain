@@ -646,42 +646,194 @@
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .navigation-controls {
-    padding: 0 20px;
     flex-direction: column;
+    gap: 12px;
     align-items: stretch;
+    padding: 0 10px;
   }
   
   .nav-input-group {
     max-width: 100%;
+    order: 2;
   }
   
   .nav-button--back {
     align-self: flex-start;
+    order: 1;
   }
-
+  
   .lane-scroll {
-    grid-auto-columns: minmax(200px, 1fr);
-    gap: 14px;
-    width: 100%;
+    grid-auto-columns: minmax(180px, 1fr);
+    gap: 8px;
+    padding: 8px 10px;
     mask-image: none;
   }
   
-  .lane-card {
-    min-height: 200px;
-    padding: 16px;
+  .lane-card__graffheader,
+  .lane-card__blockheight {
+    font-size: 20px;
+    top: 6%;
   }
-
+  
+  .lane-card__creator,
+  .lane-card__bid,
+  .lane-card__graf {
+    padding: 4px 30px;
+    font-size: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  
+  .lane-card__mp4,
+  .lane-card__pdf,
+  .lane-card__jpeg,
+  .lane-card__mkv {
+    font-size: 8px;
+    padding: 1px 3px;
+  }
+  
   .lane-card__date {
     font-size: 10px;
   }
   
   .lane-card__time-ago {
+    font-size: 7px;
+  }
+  
+  .lane-card__id {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 480px) {
+  .navigation-controls {
+    padding: 0 2px;
+    gap: 4px;
+  }
+  
+  .lane-scroll {
+    grid-auto-columns: minmax(180px, 1fr);
+    gap: 10px;
+    padding: 6px 8px;
+  }
+  
+  .lane-card {
+    padding: 10px;
+    min-height: 160px;
+    gap: 4px;
+  }
+  
+  .lane-card__graffheader,
+  .lane-card__blockheight {
+    font-size: 20px;
+    top: 4%;
+  }
+  
+  .lane-card__creator,
+  .lane-card__bid,
+  .lane-card__graf {
+    position: relative;
+    padding: 3px 25px;
+    font-size: 7px;
+    top: -2.5%;
+  }
+  
+  .lane-card__grid {
+    gap: 15px;
+  }
+}
+
+@media (max-width: 360px) {
+  .lane-scroll {
+    grid-auto-columns: minmax(130px, 1fr);
+    gap: 5px;
+    padding: 5px 6px;
+  }
+  
+  .lane-card {
+    padding: 10px;
+    min-height: 140px;
+    gap: 6px;
+  }
+  
+  .lane-card__graffheader,
+  .lane-card__blockheight {
+    font-size: 14px;
+  }
+  
+  .lane-card__creator,
+  .lane-card__bid,
+  .lane-card__graf {
+    padding: 2px 15px;
+    font-size: 6px;
+  }
+  
+  .lane-card__date {
+    font-size: 9px;
+  }
+  
+  .lane-card__id {
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 320px) {
+  .navigation-controls {
+    padding: 0 5px;
+  }
+  
+  .nav-input {
+    padding: 6px 8px;
+    font-size: 11px;
+    height: 32px;
+  }
+  
+  .nav-button {
+    padding: 6px 8px;
+    font-size: 11px;
+    height: 32px;
+    min-width: 45px;
+  }
+  
+  .lane-scroll {
+    grid-auto-columns: minmax(120px, 1fr);
+    gap: 4px;
+    padding: 4px 5px;
+  }
+  
+  .lane-card {
+    padding: 8px;
+    min-height: 130px;
+    gap: 5px;
+  }
+  
+  .lane-card__graffheader,
+  .lane-card__blockheight {
+    font-size: 13px;
+  }
+  
+  .lane-card__creator,
+  .lane-card__bid,
+  .lane-card__graf {
+    padding: 2px 12px;
+    font-size: 5.5px;
+  }
+  
+  .lane-card__mp4,
+  .lane-card__pdf,
+  .lane-card__jpeg,
+  .lane-card__mkv {
+    font-size: 6.5px;
+    padding: 0 2px;
+  }
+  
+  .lane-card__date {
     font-size: 8px;
   }
   
-  .lane-card__genesis-label {
-    font-size: 12px;
-    font-weight: 700;
-    padding: 1px 6px;
+  .lane-card__time-ago {
+    font-size: 6px;
   }
 }

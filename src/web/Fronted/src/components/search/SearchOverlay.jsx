@@ -1,4 +1,5 @@
 import SearchResultPanel from "./SearchResults";
+import { IoClose } from "react-icons/io5";
 
 const SearchOverlay = ({ open, status, kind, result, message, onSearchClick, onClose }) => {
   if (!open) return null;
@@ -6,11 +7,8 @@ const SearchOverlay = ({ open, status, kind, result, message, onSearchClick, onC
     <div className="search-overlay" role="dialog" aria-modal="true">
       <div className="search-overlay__panel">
         <div className="search-overlay__header">
-          <div>
-            <h3>Search Result</h3>
-          </div>
           <button className="btn-ghost" type="button" onClick={onClose}>
-            Close
+            <IoClose />
           </button>
         </div>
         <SearchResultPanel

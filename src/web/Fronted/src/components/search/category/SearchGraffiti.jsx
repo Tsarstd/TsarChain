@@ -1,7 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ClickableValue } from ".././SearchResults";
 import { Document, Page, pdfjs } from 'react-pdf';
-import { fmtBytes, fmtTimestamp, fmtTsar } from "../../../utils/format"
+import { 
+  fmtBytes, 
+  fmtTimestamp, 
+  fmtTsar, 
+  fmtAddress,
+  fmtHash,
+  fmtTxid,
+  formatHashForDisplay,
+  getMaxCharsPerLine 
+} from "../../../utils/format"
 import { GrNext, GrPrevious } from "react-icons/gr";
 
 // Konfigurasi worker PDF
@@ -11,6 +20,8 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
   const mime = String(data?.mime || "").toLowerCase();
   const isVideo = mime.includes("video") || mime.includes("mp4");
   const isPdf = mime.includes("pdf") || (data?.preview_url && data.preview_url.toLowerCase().endsWith('.pdf'));
+  const [isMobile, setIsMobile] = useState(false);
+  const [maxCharsPerLine, setMaxCharsPerLine] = useState(getMaxCharsPerLine());
   const [showDetails, setShowDetails] = useState(false);
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
@@ -25,11 +36,67 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
   const goToPrevPage = () => setPageNumber(pageNumber - 1);
   const goToNextPage = () => setPageNumber(pageNumber + 1);
 
-  return (
-    <div className="card">
-      <span className="graffiti-details">Graffiti Details #{data?.block_height ?? "-"}</span>
-      <div className="divider" />
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth <= 768;
+      setIsMobile(mobile);
+      setMaxCharsPerLine(getMaxCharsPerLine());
+    };
 
+  checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  const renderHash = (hash, className = "") => {
+    if (!hash) return "-";
+    
+    if (isMobile) {
+      const formattedHash = formatHashForDisplay(hash, maxCharsPerLine);
+      return (
+        <span className={`value hash-multiline ${className}`} style={{whiteSpace: 'pre-wrap'}}>
+          {formattedHash}
+        </span>
+      );
+    }
+    
+    return <span className={`value ${className}`}>{hash}</span>;
+  };
+
+  const renderClickableHash = (value, onSearchClick, info, displayValue = null) => {
+    if (!value) return "-";
+    
+    const display = displayValue || value;
+    
+    if (isMobile) {
+      const formattedHash = formatHashForDisplay(display, maxCharsPerLine);
+      return (
+        <ClickableValue 
+          value={value} 
+          onSearchClick={onSearchClick} 
+          className="value muted hash-multiline"
+          info={info}
+          style={{whiteSpace: 'pre-wrap'}}
+        >
+          {formattedHash}
+        </ClickableValue>
+      );
+    }
+    
+    return (
+      <ClickableValue 
+        value={value} 
+        onSearchClick={onSearchClick} 
+        className="value muted"
+        info={info}
+      >
+        {display}
+      </ClickableValue>
+    );
+  };
+
+  return (
+      <>
       {/* Media Preview */}
       {data?.preview_url ? (
         isVideo ? (
@@ -103,44 +170,58 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
       ) : (
         <div className="muted">Preview is not available</div>
       )}
+      <div className="divider" />
+      {/* END OF Media Preview */}
 
       {/* Toggle Button */}
-      <div style={{ display: 'flex', justifyContent: 'right', margin: '15px 0' }}>
-        <button 
-          onClick={() => setShowDetails(!showDetails)}
-          style={{
-            padding: '8px 20px',
-            backgroundColor: showDetails ? '#cd7213' : '#9a5710',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '14px',
-            transition: 'background-color 0.3s ease',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-          }}
-          onMouseEnter={(e) => e.target.style.backgroundColor = '#eb8c27'}
-          onMouseLeave={(e) => e.target.style.backgroundColor = showDetails ? '#cd7213' : '#9a5710'}
+      <div 
+        style={{
+        maxWidth: '1250px',
+        borderRadius: '3px',
+        padding: '1.5rem',
+        margin: '0 auto 0.5rem auto'
+        }}
         >
-          {showDetails ? 'Hide Details' : 'View Details'}
-        </button>
+        <div style={{ display: 'flex', justifyContent: 'right' }}>
+          <button 
+            onClick={() => setShowDetails(!showDetails)}
+            style={{
+              padding: '8px 20px',
+              backgroundColor: showDetails ? '#cd7213' : '#9a5710',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              transition: 'background-color 0.3s ease',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+            }}
+            onMouseEnter={(e) => e.target.style.backgroundColor = '#eb8c27'}
+            onMouseLeave={(e) => e.target.style.backgroundColor = showDetails ? '#cd7213' : '#9a5710'}
+          >
+            {showDetails ? 'Hide Details' : 'View Details'}
+          </button>
+        </div>
       </div>
+      {/* END OF Toggle Button */}
 
-      <div className="divider" />
-
+    <div className="card">
       {showDetails && (
         <div className="graffiti-details-border">
           <div className="stat">
             <div className="grid">
               <div className="stat">
                 <span className="info-label">Graffiti ID</span>
-                <span className="value">{data?.art_id || "-"}</span>
+                {renderHash(data?.art_id, "wrap")}
               </div>
               <div className="stat">
                 <span className="info-label">Creator</span>
-                <ClickableValue value={data?.creator || "-"} onSearchClick={onSearchClick} className="value muted">
-                  {data?.creator || "-"}
-                </ClickableValue>
+                  {renderClickableHash(
+                    data.creator,
+                    onSearchClick,
+                    data.creator,
+                    fmtAddress(data.creator) || "-"
+                  )}
               </div>
             </div>
             <div className="grid">
@@ -163,16 +244,22 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
               </div>
               <div className="stat">
                 <span className="info-label">Block Hash</span>
-                <ClickableValue value={data?.block_hash ?? "-"} onSearchClick={onSearchClick} className="value muted">
-                  {data?.block_hash ?? "-"}
-                </ClickableValue>
+                  {renderClickableHash(
+                    data.block_hash,
+                    onSearchClick,
+                    data.block_hash,
+                    fmtHash(data.block_hash)
+                  )}
               </div>
             </div>
             <div className="stat">
               <span className="info-label">Transaction ID</span>
-              <ClickableValue value={data?.txid || "-"} onSearchClick={onSearchClick} className="value muted">
-                {data?.txid || "-"}
-              </ClickableValue>
+                {renderClickableHash(
+                  data.txid,
+                  onSearchClick,
+                  data.txid,
+                  fmtTxid(data.txid)
+                )}
             </div>
           </div>
 
@@ -182,11 +269,11 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
             <div className="grid">
               <div className="stat">
                 <span className="info-label">SHA256 File</span>
-                <span className="value">{data?.sha256 || "-"}</span>
+                {renderHash(data?.sha256, "wrap")}
               </div>
               <div className="stat">
                 <span className="info-label">Graffiti Merkle</span>
-                <span className="value">{data?.mroot || "-"}</span>
+                {renderHash(data?.mroot, "wrap")}
               </div>
             </div>
             <div className="grid">
@@ -214,9 +301,12 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
           <div className="grid">
             <div className="stat">
               <span className="info-label">Pool Address</span>
-              <ClickableValue value={data?.pool_address} onSearchClick={onSearchClick} className="value muted">
-                {data?.pool_address}
-              </ClickableValue>
+              {renderClickableHash(
+                data.pool_address,
+                onSearchClick,
+                data.pool_address,
+                fmtAddress(data.pool_address)
+              )}
             </div>
             <div className="stat">
               <span className="info-label">Pool Balance</span>
@@ -226,9 +316,12 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
           <div className="grid">
             <div className="stat">
               <span className="info-label">Storage Address</span>
-              <ClickableValue value={data?.storer} onSearchClick={onSearchClick} className="value muted">
-                {data?.storer}
-              </ClickableValue>
+              {renderClickableHash(
+                data.storer,
+                onSearchClick,
+                data.storer,
+                fmtAddress(data.storer)
+              )}
             </div>
             <div className="stat">
               <span className="info-label">Storage Income From Comment</span>
@@ -264,6 +357,7 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
         ))}
       </div>
     </div>
+    </>
   );
 };
 

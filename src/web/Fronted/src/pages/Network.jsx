@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ClickableValue } from "../components/search/SearchResults";
 import { fetchNetwork } from "../api/explorer";
-import { fmtBytes, fmtHashrate, fmtNumber, fmtTimestamp, fmtTsar } from "../utils/format";
+import { fmtBytes, fmtHashrate, fmtNumber, fmtTimestamp, fmtTsar, fmtAddress } from "../utils/format";
 
 import { 
   RiGlobalLine, 
@@ -195,17 +195,17 @@ const Network = ({onSearchClick}) => {
             <span className="summary-label">Height</span>
             <span className="summary-value highlight">{fmtNumber(chain.tip_height)}</span>
           </div>
-          <div className="summary-divider"></div>
           <div className="summary-stat">
             <span className="summary-label">Peers</span>
             <span className="summary-value">{fmtNumber(peersCount)}</span>
           </div>
-          <div className="summary-divider"></div>
           <div className="summary-stat">
             <span className="summary-label">Hashrate</span>
             <span className="summary-value">{fmtHashrate(chain.est_network_hashrate_hps_window)}</span>
           </div>
-          <div className="summary-divider"></div>
+        </div>
+        <div className="divider"/>
+        <div className="summary-bar">
           <div className="summary-stat">
             <span className="summary-label">Supply</span>
             <span className="summary-value">{fmtTsar(supply.circulating_estimate)}</span>
@@ -327,7 +327,7 @@ const Network = ({onSearchClick}) => {
           <StatCard
             label="Pool Balances"
             value={fmtTsar(graffiti.pool_balances)}
-            subtext="Total pool balances"
+            subtext="Total storage pool balances"
           />
           <StatCard
             label="Total Fees"
@@ -442,14 +442,20 @@ const Network = ({onSearchClick}) => {
                 <div className="table-col rank">
                   <div className="rank-badge">{idx + 1}</div>
                 </div>
-                <div className="table-col address mono">
-                  <ClickableValue value={addr} onSearchClick={onSearchClick}>
-                    {addr}
-                  </ClickableValue>
-                </div>
+                  <div className="table-col address">
+                    <div className="table-col address-list">
+                      <ClickableValue
+                      value={addr}
+                      onSearchClick={onSearchClick}
+                      className="value muted"
+                      info={addr}
+                      >
+                        {fmtAddress(addr) || "-"}
+                      </ClickableValue>
+                    </div>
+                  </div>
                 <div className="table-col blocks">
                   <span className="block-count">{fmtNumber(found)}</span>
-                  <span className="block-label">blocks</span>
                 </div>
               </div>
             ))}

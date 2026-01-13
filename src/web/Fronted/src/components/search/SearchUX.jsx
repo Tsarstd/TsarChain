@@ -19,7 +19,7 @@ export const getStatusBadge = (status) => {
   if (statusLower.includes("unconfirmed")) {
     return { 
       type: "unconfirmed", 
-      label: "⏳ Pending",
+      label: "Pending",
       color: "#717170ff"
     };
   }
@@ -27,7 +27,7 @@ export const getStatusBadge = (status) => {
   if (statusLower.includes("confirmed")) {
     return { 
       type: "confirmed", 
-      label: "✓ Confirmed",
+      label: "Confirmed",
       color: "#4f772d"
     };
   }
@@ -68,7 +68,7 @@ export const getDirectionBadge = (direction) => {
 export const getAddressType = (address) => {
   const clean = String(address || "").trim();
   if (!clean) return null;
-  if (clean.length === 44) return { type: "p2wpkh", label: "Citizen Address" };
-  if (clean.length === 64) return { type: "p2wsh", label: "Pool Address" };
+  if (clean.length === 44) return { type: "P2WPKH", label: "Citizen Address" };
+  if (clean.length === 64) return { type: "P2WSH", label: "Pool Address" };
   return null;
 }
