@@ -347,16 +347,17 @@ def _find_tx_and_meta(self, txid_hex: str):
     for tx in mem:
         txid = tx.txid.hex() if getattr(tx, "txid", None) else ""
         if txid == txid_hex:
-            return ("mempool", tx, None, 0, chain, mem, tip_height)
+            return ("mempool", tx, None, 0, None, chain, mem, tip_height)
     for b in chain:
         h = int(getattr(b, "height", 0))
+        timestamp = int(getattr(b, "timestamp", 0))
         for tx in getattr(b, "transactions", []) or []:
             txid = tx.txid.hex() if getattr(tx, "txid", None) else ""
             if txid == txid_hex:
                 conf = max(0, tip_height - h + 1)
-                return ("chain", tx, h, conf, chain, mem, tip_height)
+                return ("chain", tx, h, timestamp, conf, chain, mem, tip_height)
 
-    return (None, None, None, 0, chain, mem, tip_height)
+    return (None, None, None, 0, 0, chain, mem, tip_height)
 
 def _get_tx_history(self, address: str, limit: int = 50, offset: int = 0, direction: str | None = None, status: str | None = None) -> dict:
     if not isinstance(address, str):
@@ -540,7 +541,7 @@ def _get_tx_detail(self, txid_hex: str, src_tag: str | None = None) -> dict:
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
     
-    where, tx, height, conf, chain, mem, tip_height = self._find_tx_and_meta(txid_hex)
+    where, tx, height, timestamp, conf, chain, mem, tip_height = self._find_tx_and_meta(txid_hex)
     if tx is None:
         return {"error": "tx not found", "txid": txid_hex}
 
@@ -570,10 +571,30 @@ def _get_tx_detail(self, txid_hex: str, src_tag: str | None = None) -> dict:
     for n, o in enumerate(getattr(tx, "outputs", []) or []):
         amt = int(getattr(o, "amount", 0))
         total_out += amt
+        event_info = None
+        spk = getattr(o, "script_pubkey", None)
+        if spk is not None:
+            try:
+                meta = GRAFFITI.parse_from_script(spk)
+                if meta:
+                    ev = str(meta.get("event", "")).upper()
+                    if ev == "POST":
+                        event_info = "POST"
+                    elif ev == "COMMENT":
+                        event_info = "COMMENT"
+                    elif ev == "PAYOUT":
+                        recipients = meta.get("recipients")
+                        if not isinstance(recipients, list):
+                            recipients = []
+                        event_info = "PAYOUT"
+            except Exception:
+                log.debug("[_get_tx_detail] Failed to parse graffiti for output %s", n, exc_info=True)
+        
         vout.append({
             "index": n,
             "amount": amt,
-            "address": self._txout_to_address(o)
+            "address": self._txout_to_address(o),
+            "event": event_info
         })
 
     fee = None
@@ -593,12 +614,13 @@ def _get_tx_detail(self, txid_hex: str, src_tag: str | None = None) -> dict:
         "status": "unconfirmed" if where == "mempool" else "confirmed",
         "confirmations": conf,
         "height": height,
+        "timestamp": timestamp,
         "is_coinbase": is_coinbase,
         "inputs": vin,
         "outputs": vout,
         "total_in": None if is_coinbase else total_in,
         "total_out": total_out,
-        "fee": fee
+        "fee": fee,
     }
 
 # ----------------------- Helpers For Block (wallet - explorer tab) -------------------------
@@ -752,7 +774,7 @@ def _serialize_tx_basic(self, tx) -> dict:
     
     return {"txid": txid, "vin": [{} for _ in range(n_in)], "vout": vout_list}
 
-def _serialize_block(self, b) -> dict: #NOTE: need to minimalize
+def _serialize_block(self, b) -> dict:
     def _to_hex(x):
         if isinstance(x, (bytes, bytearray)):
             return x.hex()

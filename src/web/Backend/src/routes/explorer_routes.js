@@ -72,6 +72,24 @@ const inferMediaType = (meta, filePath) => {
   return "application/octet-stream";
 };
 
+router.get("/receipt", async (req, res, next) => {
+  try {
+    const txid = req.query.txid;
+    if (!txid) {
+      return res.status(400).json({ error: "missing_txid" });
+    }
+
+    const data = await svc.getReceipt(txid);
+    if (data.status === "error") {
+      return res.status(400).json({ error: data.message });
+    }
+    
+    res.json({ status: "ok", data });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/network", async (_req, res, next) => {
   try {
     const snap = await svc.getNetwork();

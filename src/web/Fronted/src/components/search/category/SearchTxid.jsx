@@ -1,20 +1,23 @@
 import { ClickableValue } from ".././SearchResults";
 import { useState, useEffect, useMemo } from "react";
+import { saveAs } from 'file-saver';
 
 import {  
   fmtTsar, 
   fmtAddress,
   fmtTxid,
+  fmtTimestamp,
   formatHashForDisplay,
   getMaxCharsPerLine 
 } from "../../../utils/format"
-import { getVoutLabel, getAddressType } from "../SearchUX";
 
+import { getVoutLabel, getAddressType } from "../SearchUX";
 
 
 const ResultTx = ({ data, onSearchClick }) => {
   const [isMobile, setIsMobile] = useState(false);
   const [maxCharsPerLine, setMaxCharsPerLine] = useState(getMaxCharsPerLine());
+  const [isGeneratingReceipt, setIsGeneratingReceipt] = useState(false);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -27,6 +30,32 @@ const ResultTx = ({ data, onSearchClick }) => {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  const downloadReceiptDirect = async () => {
+    if (!data?.txid) return;
+    
+    setIsGeneratingReceipt(true);
+    
+    try {
+      const response = await fetch(`/api/receipt?txid=${data.txid}`);
+      const result = await response.json();
+      
+      if (response.ok && result.status === "ok") {
+        const dataUrl = result.data.data_url;
+        const base64Response = await fetch(dataUrl);
+        const blob = await base64Response.blob();
+        
+        saveAs(blob, `${data.txid}.jpg`);
+      } else {
+        throw new Error(result.message || 'Failed to generate receipt');
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      alert('Failed to download receipt: ' + error.message);
+    } finally {
+      setIsGeneratingReceipt(false);
+    }
+  };
 
   const groupedInputs = useMemo(() => {
     if (!data?.inputs) return [];
@@ -51,6 +80,18 @@ const ResultTx = ({ data, onSearchClick }) => {
     return Object.values(groups);
   }, [data?.inputs]);
 
+  const fmtEventType = (eventType) => {
+    if (!eventType) return "";
+    
+    const eventMap = {
+      'POST': 'Post',
+      'COMMENT': 'Comment', 
+      'PAYOUT': 'Payout'
+    };
+    
+    return eventMap[eventType] || eventType;
+  };
+
   // GROUP OUTPUTS BY ADDRESS
   const groupedOutputs = useMemo(() => {
     if (!data?.outputs) return [];
@@ -59,34 +100,53 @@ const ResultTx = ({ data, onSearchClick }) => {
     const inputAddresses = new Set(data.inputs?.map(inp => inp.address) || []);
     
     data.outputs.forEach((out, idx) => {
-      const vout = typeof out?.vout === "number" ? out.vout : idx;
+      const vout = out?.index ?? idx;
       const address = out?.address || 'OP_RETURN';
-      const isOP_RETURN = address === 'OP_RETURN';
+      const isOP_RETURN = address === 'OP_RETURN' || address === null;
       const isChange = !isOP_RETURN && inputAddresses.has(address);
+      const hasEvent = out?.event !== null && out?.event !== undefined;
+      const groupKey = isOP_RETURN ? 'OP_RETURN' : address;
       
-      if (!groups[address]) {
+      if (!groups[groupKey]) {
         const addressType = !isOP_RETURN 
           ? getAddressType(address)
-          : { type: "opreturn", label: "Graffiti" };
+          : { 
+              type: "opreturn", 
+              label: "Graffiti"
+            };
         
-        groups[address] = {
-          address,
+        groups[groupKey] = {
+          address: groupKey,
           addressType,
           isChange,
           isOP_RETURN,
+          hasEvent: false,
+          eventType: null,
           outputs: []
         };
       }
       
-      groups[address].outputs.push({
+      groups[groupKey].outputs.push({
         vout,
         amount: out.amount,
-        voutLabel: getVoutLabel(vout)
+        voutLabel: getVoutLabel(vout),
+        event: out.event
       });
+      
+      if (hasEvent) {
+        groups[groupKey].hasEvent = true;
+        groups[groupKey].eventType = out.event;
+      }
     });
     
     return Object.values(groups);
   }, [data?.outputs, data?.inputs]);
+
+  useEffect(() => {
+    console.log('Data dari backend:', data);
+    console.log('Outputs dengan event:', data?.outputs?.filter(out => out.event));
+    console.log('Grouped outputs akhir:', groupedOutputs);
+    }, [data, groupedOutputs]);
 
   // COUNT UNIQUE RECIPIENTS
   const recipientCount = useMemo(() => {
@@ -151,7 +211,44 @@ const ResultTx = ({ data, onSearchClick }) => {
 
   return (
     <>
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        marginBottom: '20px'
+      }}>
       <h1 className="txid-details">{renderHash(data?.txid, "wrap")}</h1>
+
+        <button
+          onClick={downloadReceiptDirect}
+          disabled={isGeneratingReceipt}
+          style={{
+            padding: '10px 20px',
+            backgroundColor: '#4CAF50',
+            color: 'white',
+            border: 'none',
+            borderRadius: '5px',
+            cursor: 'pointer',
+            fontSize: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            opacity: isGeneratingReceipt ? 0.7 : 1
+          }}
+        >
+          {isGeneratingReceipt ? (
+            <>
+              <span className="spinner"></span>
+              Generating...
+            </>
+          ) : (
+            <>
+              <span>📄</span>
+              Download Receipt
+            </>
+          )}
+        </button>
+      </div>
       <div className="divider" />
       
       {/* START OF TX INFO */}
@@ -168,6 +265,10 @@ const ResultTx = ({ data, onSearchClick }) => {
               data?.block_height === "-" ? "Genesis (0)" :
               data?.block_height}
             </span>
+          </div>
+          <div className="stat">
+            <span className="info-label">Timestamp</span>
+            <span className="value">{fmtTimestamp(data?.timestamp ?? 0)}</span>
           </div>
           <div className="stat">
             <span className="info-label">Confirmations</span>
@@ -325,7 +426,7 @@ const ResultTx = ({ data, onSearchClick }) => {
                     minWidth: '150px',
                     textOverflow: 'ellipsis'
                   }}>
-                    {group.address !== 'OP_RETURN' ? (
+                    {!group.isOP_RETURN ? (
                       renderClickableHash(
                         group.address,
                         onSearchClick,
@@ -340,12 +441,19 @@ const ResultTx = ({ data, onSearchClick }) => {
                     <div style={{ 
                       display: 'flex', 
                       alignItems: 'center', 
-                      flexShrink: 0
+                      flexShrink: 0,
                     }}>
                       <span className={`addr-badge addr-${group.addressType.type}`}>
                         {group.addressType.label}
                       </span>
-                      {group.address !== 'OP_RETURN' && (
+                      
+                      {group.hasEvent && group.eventType && (
+                        <span className={`event-badge event-${group.eventType.toLowerCase()}`}>
+                          {fmtEventType(group.eventType)}
+                        </span>
+                      )}
+                      
+                      {!group.isOP_RETURN && (
                         <span className={`addr-badge addr-type-${group.addressType.type}`}>
                           {group.addressType.type}
                         </span>
@@ -358,17 +466,23 @@ const ResultTx = ({ data, onSearchClick }) => {
               {/* Outputs List */}
               <div className="stat">
                 <div className="tx-items">
-                  {group.outputs.map((output) => (
-                    <div style={{ 
+                  {group.outputs.map((output, idx) => (
+                    <div key={idx} style={{ 
                       display: 'flex', 
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       width: '100%'
                     }}>
-                      <div className="tx-vout">
-                        <span className={`vout-badge vout-${output.vout}`}>
-                          {output.voutLabel}
-                        </span>
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}>
+                        <div className="tx-vout">
+                          <span className={`vout-badge vout-${output.vout}`}>
+                            {output.voutLabel}
+                          </span>
+                        </div>
                       </div>
                       <div style={{ flex: 1, textAlign: 'right', color: '#ffffff' }}>
                         <span className="value muted">{fmtTsar(output.amount)}</span>

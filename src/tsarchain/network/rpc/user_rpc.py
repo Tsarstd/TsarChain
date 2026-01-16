@@ -364,7 +364,6 @@ def handle_user_rpc(
             start = time.perf_counter()
             
         ip = client_ip()
-        rl_key = f"info:{ip}"
         ok, pow_resp = _allow_rpc_with_pow(
             self,
             scope="rpc:info",
@@ -405,7 +404,6 @@ def handle_user_rpc(
 
     elif mtype == "GET_BLOCK":
         ip = client_ip()
-        rl_key = f"blk:{ip}"
         ok, pow_resp = _allow_rpc_with_pow(
             self,
             scope="rpc:block_fetch",
@@ -540,7 +538,6 @@ def handle_user_rpc(
             start = time.perf_counter()
 
         ip = client_ip()
-        tx_key = f"txsub:{ip}"
         sender_addr = str(message.get("from_addr") or message.get("from") or "").strip().lower()
         if not sender_addr and isinstance(message.get("data"), dict):
             sender_addr = str((message.get("data") or {}).get("from_addr") or "").strip().lower()
@@ -606,7 +603,6 @@ def handle_user_rpc(
         ip = client_ip()
         mode = str(message.get("mode", "")).strip().lower()
         if mode not in ("inline", "inline_full"):
-            mp_key = f"mempool:{ip}"
             ok, pow_resp = _allow_rpc_with_pow(
                 self,
                 scope="rpc:mempool",
@@ -656,7 +652,6 @@ def handle_user_rpc(
 
         if mode in ("inline", "inline_full"):
             ip = client_ip()
-            mp_key = f"mempool:{ip}"
             ok, pow_resp = _allow_rpc_with_pow(
                 self,
                 scope="rpc:mempool",
@@ -736,7 +731,6 @@ def handle_user_rpc(
             start = time.perf_counter()
             
         ip = client_ip()
-        hist_key = f"hist:{ip}"
         addr_str = (message.get("address") or "").strip().lower()
         if not addr_str:
             return {"error": "missing address"}
@@ -779,7 +773,6 @@ def handle_user_rpc(
 
     elif mtype == "GET_TX_DETAIL":     
         ip = client_ip()
-        hist_key = f"hist:{ip}"
         txid_hex = message.get("txid")
         if not txid_hex:
             return {"error": "missing txid"}
@@ -808,7 +801,6 @@ def handle_user_rpc(
             start = time.perf_counter()
             
         ip = client_ip()
-        hist_key = f"hist:{ip}"
         address = (message.get("address") or "").strip().lower()
         if not address:
             return {"error": "missing address"}
@@ -851,7 +843,6 @@ def handle_user_rpc(
             start = time.perf_counter()
         
         ip = client_ip()
-        reg_key = f"chatreg:{ip}"
         addr_s   = (message.get("address")  or "").strip().lower()
         ok, pow_resp = _allow_rpc_with_pow(
             self,
@@ -994,7 +985,6 @@ def handle_user_rpc(
             start = time.perf_counter()
 
         ip = client_ip()
-        rl_key_ip = f"chatlookup:{ip}"
         addr_s = (message.get("address") or "").strip().lower()
         if not addr_s:
             return {"error": "missing address"}
@@ -1146,7 +1136,6 @@ def handle_user_rpc(
             start = time.perf_counter()
             
         ip = client_ip()
-        reg_key = f"chatreg:{ip}"
         addr_s = (message.get("address") or "").strip().lower()
         ok, pow_resp = _allow_rpc_with_pow(
             self,
@@ -1422,7 +1411,6 @@ def handle_user_rpc(
             start = time.perf_counter()
 
         ip = client_ip()
-        relay_key = f"chatrelay:{ip}"
         ok, pow_resp = _allow_rpc_with_pow(
             self,
             scope="rpc:chat_relay",
@@ -1568,7 +1556,6 @@ def handle_user_rpc(
             start = time.perf_counter()
 
         ip = client_ip()
-        stor_key = f"stor_list:{ip}"
         ok, pow_resp = _allow_rpc_with_pow(
             self,
             scope="rpc:stor_list",
@@ -1628,7 +1615,6 @@ def handle_user_rpc(
             start = time.perf_counter()
 
         ip = client_ip()
-        graf_key = f"graf:{ip}"
         ok, pow_resp = _allow_rpc_with_pow(
             self,
             scope="rpc:graffiti",
@@ -1667,7 +1653,6 @@ def handle_user_rpc(
             start = time.perf_counter()
 
         ip = client_ip()
-        tx_key = f"txsub:{ip}"
         ok, pow_resp = _allow_rpc_with_pow(
             self,
             scope="rpc:tx",
@@ -1708,7 +1693,6 @@ def handle_user_rpc(
 
     elif mtype == "GRAFFITI_GET_POSTS":
         ip = client_ip()
-        graf_key = f"graf:{ip}"
         ok, pow_resp = _allow_rpc_with_pow(
             self,
             scope="rpc:graffiti",
@@ -1741,7 +1725,6 @@ def handle_user_rpc(
             start = time.perf_counter()
 
         ip = client_ip()
-        graf_key = f"graf:{ip}"
         ok, pow_resp = _allow_rpc_with_pow(
             self,
             scope="rpc:graffiti",
@@ -1782,7 +1765,6 @@ def handle_user_rpc(
             start = time.perf_counter()
 
         ip = client_ip()
-        graf_key = f"graf:{ip}"
         ok, pow_resp = _allow_rpc_with_pow(
             self,
             scope="rpc:graffiti",

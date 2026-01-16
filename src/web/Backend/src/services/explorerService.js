@@ -131,19 +131,40 @@ const normalizeTx = (tx, fallbackTxid) => {
   const status = obj.status || (Number(confirmations || 0) > 0 ? "confirmed" : "unconfirmed");
   let isCoinbase = obj.is_coinbase;
 
+  // NORMALIZE INPUTS
   const normInputs = Array.isArray(inputs)
     ? inputs.map((inp) => ({
         txid: inp?.txid || inp?.prev_txid || inp?.tx || "",
-        vout: inp?.vout ?? inp?.index ?? inp?.n ?? 0,
+        vout: inp?.vout ?? inp?.prev_index ?? inp?.index ?? inp?.n ?? 0,
         address: inp?.address || inp?.addr || inp?.scriptpubkey_address || "",
         amount: inp?.amount ?? inp?.value ?? 0,
+        is_coinbase: inp?.is_coinbase || false
       }))
     : [];
+
+  // NORMALIZE OUTPUTS
   const normOutputs = Array.isArray(outputs)
-    ? outputs.map((out) => ({
-        address: out?.address || out?.scriptpubkey_address || "",
-        amount: out?.amount ?? out?.value ?? 0,
-      }))
+    ? outputs.map((out, idx) => {
+        const vout = out?.index ?? out?.vout ?? idx;
+        const address = out?.address || out?.scriptpubkey_address || null;
+        
+        let event = null;
+        if (out?.event !== undefined && out?.event !== null) {
+          if (typeof out.event === 'string') {
+            event = out.event;
+          } 
+          else if (typeof out.event === 'object' && out.event.type) {
+            event = out.event.type;
+          }
+        }
+        
+        return {
+          vout,
+          amount: out?.amount ?? out?.value ?? 0,
+          address: address,
+          event: event
+        };
+      })
     : [];
 
   if (isCoinbase === undefined && normInputs.length > 0) {
@@ -210,6 +231,11 @@ class ExplorerService {
   constructor(options = {}) {
     this.nodeHost = options.nodeHost;
     this.nodePort = options.nodePort;
+  }
+
+  async getReceipt(txid) {
+    const receipt = await rpcCall("receipt", txid, this.nodeHost, this.nodePort);
+    return receipt;
   }
 
   async getNetwork() {

@@ -162,6 +162,56 @@
   color: #f8f9fa; 
 }
 
+/* Event Badge Styles */
+.event-badge {
+  padding: 3px 6px;
+  font-size: 10px;
+  border: solid 1px #b6b6b67c;
+  font-weight: 300;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.2), inset 0 -1px 1px rgba(0, 0, 0, 0.3);
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  transform: translateZ(0);
+  flex-shrink: 0;
+  max-width: 120px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.event-badge::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    45deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.1) 50%,
+    transparent 70%
+  );
+  animation: shine 3s ease-in-out infinite;
+}
+
+.event-post {
+  background: linear-gradient(135deg, #e26b38 0%, #9a5425e3 100%);
+  color: white;
+}
+
+.event-comment {
+  background: linear-gradient(135deg, #26a350 0%, #1f5d36b7 100%);
+  color: white;
+}
+
+.event-payout {
+  background: linear-gradient(135deg, #45a3e2 0%, #2d5587dd 100%);
+  color: white;
+}
+
 /* STYLE FOR ADDRESS QUERY */
 
 .tx-meta {

@@ -11,6 +11,7 @@ from kremlin.services.rpc_client import NodeClient
 from tsarchain.network.protocol import load_or_create_keypair_at
 from tsarchain.utils import config as CFG
 from web.Backend.src.python import database_web as webdb
+from web.Backend.src.python import build_receipt
 
 from tsarchain.utils.tsar_logging import get_ctx_logger, setup_logging
 log = get_ctx_logger('tsarchain.web.Backend.py_rpc_client')
@@ -101,6 +102,22 @@ def _cache_fetch(key: str, fetch_fn):
 # ======================================
 # ============= RPC START ==============
 # ======================================
+
+def rpc_receipt(client, txid: str):
+    txid_norm = str(txid or "").strip().lower()
+    if not txid_norm:
+        return {"status": "error", "message": "Missing txid"}
+    
+    tx_data = rpc_tx(client, txid_norm)
+    log.info("tx_data=%s", tx_data)
+    
+    if isinstance(tx_data, dict) and tx_data.get("error"):
+        return {"status": "error", "message": f"Failed to fetch transaction: {tx_data.get('error')}"}
+    
+    # Generate receipt
+    receipt_gen = build_receipt.PaymentReceiptGenerator()
+    result = receipt_gen.generate_receipt_base64(tx_data)
+    return result
 
 def rpc_network(client):
     key = _cache_key("network")
@@ -497,6 +514,8 @@ def _dispatch_rpc(op: str, param: object | None, host: str, port: int):
         except Exception as exc:
             log.warning("[dispatch_rpc] Failed to start prefetch: %s", exc)
     
+    if op == "receipt":
+        return rpc_receipt(client, param_norm)
     if op == "network":
         return rpc_network(client)
     if op == "block":

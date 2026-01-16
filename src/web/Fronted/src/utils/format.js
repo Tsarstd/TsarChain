@@ -38,14 +38,17 @@ export const fmtNumber = (n) => {
 
 export const fmtTsar = (sat) => {
   if (sat === null || sat === undefined || sat === "") return "-";
+  
   const n = Number(sat);
   if (Number.isNaN(n)) return String(sat);
+  
   const whole = Math.trunc(n / 1e8);
   const frac = Math.abs(n % 1e8)
     .toString()
-    .padStart(8, "0")
-    .replace(/0+$/, "");
-  return `${whole.toLocaleString("id-ID")}${frac ? "," + frac : ""} TSAR`;
+    .padStart(8, "0");
+    
+  const formattedWhole = whole.toLocaleString("id-ID");
+  return `${formattedWhole},${frac} TSAR`;
 };
 
 export const fmtBytes = (b) => {
