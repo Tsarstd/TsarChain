@@ -39,6 +39,7 @@ mod validation;
 mod utxo;
 mod txcodec;
 mod mining;
+mod generate_receipt;
 
 // ---------------------
 // RandomX VM cache
@@ -989,5 +990,18 @@ fn tsarcore_native(_py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(mining::randomx_mine, m)?)?;
     m.add_class::<storage::NativeStorage>()?;
     m.add_class::<networking::SecureChannelNative>()?;
+
+    m.add_function(wrap_pyfunction!(generate_receipt::generate_qr_code, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_receipt::format_tsar_amount, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_receipt::split_amount_parts, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_receipt::pool_address, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_receipt::truncate_text, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_receipt::calculate_change_and_fee, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_receipt::draw_table_row_data, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_receipt::draw_txid_grid_data, m)?)?;
+    
+    m.add_class::<generate_receipt::TableRowData>()?;
+    m.add_class::<generate_receipt::TxidGridData>()?;
+
     Ok(())
 }

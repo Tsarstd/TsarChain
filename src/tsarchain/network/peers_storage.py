@@ -5,91 +5,77 @@
 
 from __future__ import annotations
 
-import json, lmdb, os, threading, time
-from pathlib import Path
+import json, time
 from typing import Dict, Optional
 
 from ..utils import config as CFG
+from ..storage.kv import get, put, kv_enabled
 
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.peers_storage")
 
-_ENV = None
-_DB = None
-_LOCK = threading.RLock()
-
-_RECORD_PATHS = {
-    "node_key": Path(CFG.NODE_KEY_PATH),
-    "archivist_key": Path(CFG.ARCHIVIST_KEY_PATH),
-    "peer_keys": Path(CFG.PEER_KEYS_PATH),
-}
-
-
-def _lmdb_enabled() -> bool:
-    backend = str(CFG.KV_BACKEND).lower()
-    return backend == "lmdb" and lmdb is not None
-
-
-def _ensure_env():
-    global _ENV, _DB
-    if not _lmdb_enabled():
-        return None, None
-    with _LOCK:
-        if _ENV is None:
-            path = CFG.KEYS_DATA_DIR
-            os.makedirs(path, exist_ok=True)
-            size = int(CFG.LMDB_MAP_SIZE_INIT)
-            _ENV = lmdb.open(
-                path,
-                map_size=size,
-                max_dbs=4,
-                subdir=True,
-                create=True,
-                lock=True,
-            )
-            _DB = _ENV.open_db(b"node_secrets")
-        return _ENV, _DB
-
+KEYS_DB_NAME = "node_secrets"
 
 def _load_record(name: str) -> Optional[Dict]:
-    env, db = _ensure_env()
-    if env and db:
-        with env.begin(write=False, db=db) as txn:
-            raw = txn.get(name.encode("utf-8"))
-        if raw:
-            return json.loads(raw.decode("utf-8"))
-
+    if kv_enabled():
+        raw = get(KEYS_DB_NAME, name.encode("utf-8"))
+        if raw is not None:
+            try:
+                return json.loads(raw.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                log.warning(f"Failed to decode KV record for {name}: {e}")
+                # Fallback to JSON file
+    
     # JSON fallback / legacy migration
-    paths = [
-        _RECORD_PATHS.get(name),
-    ]
-    for path in paths:
-        if not path:
-            continue
-        if path.exists():
-            data = json.loads(path.read_text(encoding="utf-8"))
-            if env and db:
-                _store_record(name, data)
-            return data
+    record_paths = {
+        "node_key": CFG.NODE_KEY_PATH,
+        "archivist_key": CFG.ARCHIVIST_KEY_PATH,
+        "peer_keys": CFG.PEER_KEYS_PATH,
+    }
+    
+    path = record_paths.get(name)
+    if path:
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                # Migrate to KV if enabled
+                if kv_enabled():
+                    _store_record(name, data)
+                return data
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            log.debug(f"No JSON file found for {name}: {e}")
+    
     return None
 
 
 def _store_record(name: str, data: Dict) -> None:
-    env, db = _ensure_env()
     payload = json.dumps(data, separators=CFG.CANONICAL_SEP).encode("utf-8")
+    
+    # Store in KV (primary storage)
+    if kv_enabled():
+        put(KEYS_DB_NAME, name.encode("utf-8"), payload)
+        log.debug(f"Stored record '{name}' to KV storage")
+    else:
+        log.debug("KV storage not enabled, using JSON fallback only")
+    
+    # JSON fallback for backward compatibility
+    record_paths = {
+        "node_key": CFG.NODE_KEY_PATH,
+        "archivist_key": CFG.ARCHIVIST_KEY_PATH,
+        "peer_keys": CFG.PEER_KEYS_PATH,
+    }
+    
+    path = record_paths.get(name)
+    if path:
+        try:
+            import os
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2)
+            log.debug(f"Stored record '{name}' to JSON fallback at {path}")
+        except (IOError, OSError) as e:
+            log.error(f"Failed to write JSON fallback for {name}: {e}")
 
-    if env and db:
-        with _LOCK:
-            with env.begin(write=True, db=db) as txn:
-                txn.put(name.encode("utf-8"), payload)
-        return
-
-    # JSON fallback
-    path = _RECORD_PATHS.get(name)
-    if path is None:
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 # ======== SAVE & LOAD KEYS ==============
 
@@ -108,6 +94,5 @@ def load_peer_keys() -> Dict[str, str]:
     return {}
 
 def save_peer_keys(keys: Dict[str, str]) -> None:
-    # normalise and persist
     serialised = {str(k): str(v) for k, v in keys.items()}
     _store_record("peer_keys", serialised)

@@ -13,6 +13,9 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.27.2", features = ["extension-module"] }
 secp256k1 = "0.31.1"
+image = "0.25.9"
+qrcode = "0.14.0"
+rust_decimal = { version = "1.33.0", features = ["maths"] }
 sha2 = "0.10"
 ripemd = "0.1"
 rayon = { version = "1.10", optional = true }

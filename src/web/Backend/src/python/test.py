@@ -1,7 +1,5 @@
 from web.Backend.src.python import build_receipt
 import time
-from tsarchain.utils import config as CFG
-
 
 def coinbase_tx():
     return {
@@ -263,17 +261,15 @@ def payout_tx():
     }
 
 def rpc_receipt():
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
+    start = time.perf_counter()
         
-    tx_data = comment_tx()
+    tx_data = mempool_tx()
     receipt_gen = build_receipt.PaymentReceiptGenerator()
     result = receipt_gen.generate_receipt_base64(tx_data)
     
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        print("[generated] bench :", result)
+    end = time.perf_counter()
+    result = round((end - start) * 1000.0, 3)
+    print("[generated] bench :", result)
             
     return result
 

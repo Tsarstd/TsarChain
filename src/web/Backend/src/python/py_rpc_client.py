@@ -2,9 +2,10 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 
-import json
 import os
 import sys
+import json
+import time
 import threading
 
 from kremlin.services.rpc_client import NodeClient
@@ -109,14 +110,21 @@ def rpc_receipt(client, txid: str):
         return {"status": "error", "message": "Missing txid"}
     
     tx_data = rpc_tx(client, txid_norm)
-    log.info("tx_data=%s", tx_data)
-    
     if isinstance(tx_data, dict) and tx_data.get("error"):
         return {"status": "error", "message": f"Failed to fetch transaction: {tx_data.get('error')}"}
     
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
     # Generate receipt
     receipt_gen = build_receipt.PaymentReceiptGenerator()
     result = receipt_gen.generate_receipt_base64(tx_data)
+    
+    if CFG.DEBUG_BENCHMARKS:
+        end = time.perf_counter()
+        ms = round((end - start) * 1000.0, 3)
+        if ms > 120.0:
+            log.warning("[GENERATED_RECEIPT] Benchmark : %.3f ms", ms)
+    
     return result
 
 def rpc_network(client):
