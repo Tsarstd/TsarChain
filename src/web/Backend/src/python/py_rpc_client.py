@@ -116,7 +116,8 @@ def rpc_receipt(client, txid: str):
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
     # Generate receipt
-    receipt_gen = build_receipt.PaymentReceiptGenerator()
+    output_dir = "data/web/receipts"
+    receipt_gen = build_receipt.PaymentReceiptGenerator(output_dir)
     result = receipt_gen.generate_receipt_base64(tx_data)
     
     if CFG.DEBUG_BENCHMARKS:
@@ -232,6 +233,7 @@ def rpc_address(client, addr: str):
     balances = _rpc_send(client, {"type": "GET_BALANCES", "addresses": [addr_norm]}) or {}
     utxos = _rpc_send(client, {"type": "GET_UTXOS", "address": addr_norm}) or {}
     history = _rpc_send(client, {"type": "GET_TX_HISTORY", "address": addr_norm, "limit": 200}) or {}
+    log.info("history = %s", history)
     history_list = []
     if isinstance(history, dict):
         history_list = history.get("items") or []
@@ -343,6 +345,7 @@ def rpc_address(client, addr: str):
         "history": history_list,
         "height": history.get("height") if isinstance(history, dict) else None,
     }
+    log.info("data = %s", out)
     if not had_error:
         _cache_set(key, out)
     elif error_ttl is not None:

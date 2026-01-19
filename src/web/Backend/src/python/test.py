@@ -4,7 +4,7 @@ import time
 def coinbase_tx():
     return {
         'type': 'TX_DETAIL',
-        'txid': 'ba4f5aab0fddbce27b18ba118c1080a0b458920c8175e632e68db9d7ac72cac7',
+        'txid': 'ba4f5aab0fddbce27b18ba118c1080a5005892s28175e632e68db9d7ac72cac7',
         'status': 'confirmed',
         'confirmations': 19,
         'height': 26,
@@ -21,7 +21,32 @@ def coinbase_tx():
         ],
         'total_in': None,
         'total_out': 25000000000,
-        'fee': None
+        'fee': None,
+        'bonus': None
+    }
+    
+def coinbase_tx_bonus():
+    return {
+        'type': 'TX_DETAIL',
+        'txid': 'ba4f5aab0fddbce27b18ba118c1080a0b45892s28175e632e68db9d7ac72cac7',
+        'status': 'confirmed',
+        'confirmations': 19,
+        'height': 26,
+        'timestamp': 1768028055,
+        'is_coinbase': True,
+        'inputs': [],
+        'outputs': [
+            {
+                'index': 0,
+                'amount': 25000004355,
+                'address': 'tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr',
+                'event': None
+            }
+        ],
+        'total_in': None,
+        'total_out': 25000004355,
+        'fee': None,
+        'bonus': 4355
     }
 
 def common_tx():
@@ -69,7 +94,8 @@ def common_tx():
         ],
         'total_in': 248924999988304,
         'total_out': 248924999978920,
-        'fee': 9384
+        'fee': 9384,
+        'bonus': 42228
     }
     
 def mempool_tx():
@@ -119,7 +145,8 @@ def mempool_tx():
         ],
         'total_in': 247314110261732,
         'total_out': 247314110189924,
-        'fee': 71808
+        'fee': 71808,
+        'bonus': 42228
     }
 
 def post_tx():
@@ -161,7 +188,8 @@ def post_tx():
         ],
         'total_in': 24749987318,
         'total_out': 24749981504,
-        'fee': 5814
+        'fee': 5814,
+        'bonus': 42228
     }
 
 def comment_tx():
@@ -221,7 +249,8 @@ def comment_tx():
         ],
         'total_in': 1184899994186,
         'total_out': 1184899982694,
-        'fee': 11492
+        'fee': 11492,
+        'bonus': 42228
     }
 
 def payout_tx():
@@ -257,15 +286,35 @@ def payout_tx():
         ],
         'total_in': 10000000,
         'total_out': 9978954,
-        'fee': 21046
+        'fee': 21046,
+        'bonus': 42228
     }
 
 def rpc_receipt():
     start = time.perf_counter()
+    output_dir = "data/web/receipts"
+    receipt_gen = build_receipt.PaymentReceiptGenerator(output_dir)
         
-    tx_data = mempool_tx()
-    receipt_gen = build_receipt.PaymentReceiptGenerator()
-    result = receipt_gen.generate_receipt_base64(tx_data)
+    tx_common = common_tx()
+    result = receipt_gen.generate_receipt_base64(tx_common)
+    
+    tx_mempool = mempool_tx()
+    result = receipt_gen.generate_receipt_base64(tx_mempool)
+    
+    tx_comment = comment_tx()
+    result = receipt_gen.generate_receipt_base64(tx_comment)
+    
+    tx_post = post_tx()
+    result = receipt_gen.generate_receipt_base64(tx_post)
+    
+    tx_payout = payout_tx()
+    result = receipt_gen.generate_receipt_base64(tx_payout)
+    
+    tx_coinbase = coinbase_tx()
+    result = receipt_gen.generate_receipt_base64(tx_coinbase)
+    
+    tx_coinbase_bonus = coinbase_tx_bonus()
+    result = receipt_gen.generate_receipt_base64(tx_coinbase_bonus)
     
     end = time.perf_counter()
     result = round((end - start) * 1000.0, 3)

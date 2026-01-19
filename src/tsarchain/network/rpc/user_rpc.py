@@ -97,11 +97,11 @@ def _identity_from_msg(message: dict[str, Any] | None) -> str | None:
     return None
 
 def _summarize_block(self: "Network", b: Any) -> dict:
-    height     = int(getattr(b, "height", getattr(b, "index", 0)))
-    ts         = int(getattr(b, "timestamp")) 
+    height     = getattr(b, "height")
+    ts         = getattr(b, "timestamp")
     txs        = getattr(b, "transactions", []) or []
     first_tx   = txs[0]
-    block_id   = str(getattr(first_tx, "block_id", None))
+    block_id   = getattr(first_tx, "block_id")
     tx_count   = len(txs)
     
     graffiti_posts = 0

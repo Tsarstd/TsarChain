@@ -23,19 +23,29 @@ class PaymentReceiptGenerator:
     _font_cache = {}
     _stamp_cache = {}
     _rotated_stamp_cache = {}
+    _tx_sticker_cache = {}
     
-    def __init__(self):
+    def __init__(self, path: str):
+        self.path          = path
         self.template_path = "src/web/Backend/src/template/receipt_template.jpg"
         self.font_template = "src/web/Backend/src/template/font_template.ttf"
+        self.qr_prefix     = "https://www.tsarchain.com/?search="
+        
+        # Confirmation Stamp
         self.confirmed     = "src/web/Backend/src/template/confirmed.png"
         self.unconfirmed   = "src/web/Backend/src/template/mempool.png"
         
-        self.output_dir    = "data/web/receipts"
-        os.makedirs(self.output_dir, exist_ok=True)
+        # Transactions Type Sticker
+        self.coinbase      = "src/web/Backend/src/template/coinbase.png"
+        self.regular       = "src/web/Backend/src/template/regular.png"
+        self.post          = "src/web/Backend/src/template/post.png"
+        self.comment       = "src/web/Backend/src/template/comment.png"
+        self.payout        = "src/web/Backend/src/template/payout.png"
         
-        self.qr_prefix = "https://www.tsarchain.com/?search="
+        os.makedirs(self.path, exist_ok=True)
         self._ensure_template_cache()
         self._ensure_font_cache()
+        self._ensure_tx_sticker_cache()
 
         self.title_font = self.__class__._font_cache['title_28']
         self.normal_font = self.__class__._font_cache['normal_20']
@@ -72,6 +82,26 @@ class PaymentReceiptGenerator:
                 except Exception as e:
                     log.warning(f"Failed to load font {font_template}: {e}")
                     cls._font_cache[key] = ImageFont.load_default()
+    
+    def _ensure_tx_sticker_cache(self):
+        if not self.__class__._tx_sticker_cache:
+            sticker_paths = {
+                'coinbase': self.coinbase,
+                'regular': self.regular,
+                'post': self.post,
+                'comment': self.comment,
+                'payout': self.payout
+            }
+            
+            for tx_type, path in sticker_paths.items():
+                if os.path.exists(path):
+                    sticker = Image.open(path)
+                    sticker = sticker.resize((185, 185), Image.Resampling.LANCZOS)
+                    if sticker.mode != 'RGBA':
+                        sticker = sticker.convert('RGBA')
+                    self.__class__._tx_sticker_cache[tx_type] = sticker
+                else:
+                    self.__class__._tx_sticker_cache[tx_type] = None
     
     @classmethod
     def _get_stamp(cls, status: str) -> Optional[Image.Image]:
@@ -124,14 +154,35 @@ class PaymentReceiptGenerator:
         
         rotated_stamp.offset_x = offset_x
         rotated_stamp.offset_y = offset_y
-        
         return rotated_stamp
+    
+    def _get_tx_type_sticker(self, tx_data: Dict[str, Any]) -> Optional[Image.Image]:
+        # Skip for mempool/unconfirmed
+        if tx_data.get('status') != 'confirmed':
+            return None
+    
+        tx_type = self._determine_tx_type(tx_data)
+        if tx_type in self.__class__._tx_sticker_cache:
+            return self.__class__._tx_sticker_cache[tx_type]
+        
+        return None
+    
+    def _determine_tx_type(self, tx_data: Dict[str, Any]) -> str:
+        if tx_data.get('is_coinbase', False):
+            return 'coinbase'
+        
+        outputs = tx_data.get('outputs', [])
+        for output in outputs:
+            event = output.get('event')
+            if event == 'POST':
+                return 'post'
+            elif event == 'COMMENT':
+                return 'comment'
+            elif event == 'PAYOUT':
+                return 'payout'
 
-    def _split_amount_parts(self, amount: Any) -> Tuple[str, str, str]:
-        amount_str = str(amount)
-        result = generated_receipt.split_amount_parts(amount_str, CFG.TSAR)
-        if isinstance(result, tuple) and len(result) == 3:
-            return result
+        return 'regular'
+
 
     def _qr_code(self, txid: str) -> Image.Image:
         qr_data = self.qr_prefix + txid
@@ -153,7 +204,7 @@ class PaymentReceiptGenerator:
         unit_color: Tuple[int, int, int] = (62, 62, 62)
         ) -> int:
         
-        integer_part, decimal_part, unit = self._split_amount_parts(amount)
+        integer_part, decimal_part, unit = generated_receipt.split_amount_parts(str(amount), CFG.TSAR)
         
         # integer
         draw.text((x, y), integer_part, font=font, fill=normal_color)
@@ -187,9 +238,6 @@ class PaymentReceiptGenerator:
     def _format_datetime(self, timestamp: int) -> str:
         dt = datetime.fromtimestamp(timestamp)
         return dt.strftime("%B %d, %Y - %H:%M:%S")
-
-    def _pool_address(self, address: str) -> str:
-        return generated_receipt.pool_address(address)
     
     def _truncate_text(self, text: Any, max_length: int = 64) -> str:
         text_str = str(text) if text else ""
@@ -283,6 +331,43 @@ class PaymentReceiptGenerator:
             img.paste(rotated_stamp, (pos_x, pos_y))
         
         return img
+    
+    def _draw_pool_label(
+        self, draw, y_position, address, formatted_address, 
+        right_text, font_left, font_right, page_width, 
+        is_amount=False, amount_value=None
+        ):
+        
+        is_pool_address = len(address) == 64 if address else False
+        
+        if is_amount and amount_value is not None:
+            amount_str = self._format_tsar_amount(amount_value)
+            right_text_width = draw.textlength(amount_str, font_right)
+        else:
+            right_text_width = draw.textlength(right_text, font_right)
+        
+        address_text_width = draw.textlength(formatted_address, font_left)
+        draw.text((50, y_position), formatted_address, font=font_left, fill=(62, 62, 62))
+        
+        if is_pool_address:
+            pool_text = "-> Pool Address"
+            pool_text_width = draw.textlength(pool_text, font_left)
+            pool_x = 50 + address_text_width + 5
+            if pool_x + pool_text_width < page_width - 50 - right_text_width - 10:
+                draw.text((pool_x, y_position), pool_text, 
+                        font=font_left, fill=(173, 47, 198))  # Highlight
+        
+        if is_amount and amount_value is not None:
+            amount_x = page_width - 50 - right_text_width
+            self._draw_amount_with_style(draw, amount_x, y_position, 
+                                        amount_value, font_right)
+        else:
+            text_x = page_width - 50 - right_text_width
+            draw.text((text_x, y_position), right_text, font=font_right, fill=(62, 62, 62))
+        
+        y_position += 20
+        draw.line([(50, y_position), (page_width - 50, y_position)], fill=(195, 195, 195), width=1)
+        return y_position + 10
 
     def generate_receipt(self, tx_data: Dict[str, Any]) -> Tuple[bool, str, Optional[bytes]]:
         try:    
@@ -291,15 +376,10 @@ class PaymentReceiptGenerator:
             
             txid = tx_data.get('txid', 'Unknown')
             
-            # bg
-            if os.path.exists(self.template_path):
-                img = Image.open(self.template_path)
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-            else:
-                # TODO: FORMAL style
-                img = Image.new('RGB', (800, 1200), color=(255, 255, 255))
-                log.info("Using Formal background")
+            # BG TEMPLATE (800 x 1200 px - 150 ppi)
+            img = Image.open(self.template_path)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
             
             draw = ImageDraw.Draw(img)
             width, height = img.size
@@ -355,11 +435,6 @@ class PaymentReceiptGenerator:
                                             confirmations_str, 
                                             self.small_font, self.small_font, width)
             
-            is_coinbase = tx_data.get('is_coinbase', False)
-            y_position = self._draw_table_row(draw, y_position, "Coinbase :", 
-                                            "Yes" if is_coinbase else "No", 
-                                            self.small_font, self.small_font, width)
-            
             y_position += 20
             
             # ============= INPUTS =============
@@ -379,13 +454,15 @@ class PaymentReceiptGenerator:
                     input_groups[addr].append(inp)
                 
                 for addr, utxos in list(input_groups.items())[:3]:  # Max 3 address
-                    formatted_addr = self._pool_address(addr)
+                    formatted_addr = generated_receipt.pool_address(addr)
                     utxo_count = len(utxos)
                     utxo_text = f"Used {utxo_count} UTXO{'s' if utxo_count != 1 else ''}"
-                    y_position = self._draw_table_row(draw, y_position, 
-                                                    f"- {formatted_addr}", 
-                                                    utxo_text, 
-                                                    self.small_font, self.small_font, width)
+                    y_position = self._draw_pool_label(
+                        draw, y_position, 
+                        addr, f"- {formatted_addr}", 
+                        utxo_text, 
+                        self.small_font, self.small_font, width
+                    )
                 
                 total_input = sum(inp.get('amount', 0) for inp in inputs)
                 y_position = self._draw_table_row(draw, y_position, "Total Input :", 
@@ -426,12 +503,8 @@ class PaymentReceiptGenerator:
                 
                 # reward mining
                 if not inputs:  # Coinbase
-                    total_reward = sum(out.get('amount', 0) for out in outputs)
-                    y_position = self._draw_table_row(draw, y_position, "Mining Reward :", 
-                                                    self._format_tsar_amount(total_reward), 
-                                                    self.small_font, self.small_font, width,
-                                                    is_amount=True, amount_value=total_reward)
-                    
+                    bonus = tx_data.get('bonus') or 0
+                    reward = sum(out.get('amount', 0) for out in outputs) - bonus
                     # miner
                     recipient_groups = {}
                     for out in outputs:
@@ -444,18 +517,18 @@ class PaymentReceiptGenerator:
                     for addr, outs in list(recipient_groups.items()):
                         y_position = self._draw_table_row(draw, y_position, 
                                                         f"- {self._truncate_text(addr, 64)}", 
-                                                        f"{len(outs)} outputs", 
-                                                        self.small_font, self.small_font, width)
-                        
-                        total_addr = sum(o.get('amount', 0) for o in outs)
-                        y_position = self._draw_table_row(draw, y_position, 
-                                                        "  Amount :", 
-                                                        self._format_tsar_amount(total_addr), 
+                                                        self._format_tsar_amount(reward), 
                                                         self.small_font, self.small_font, width,
-                                                        is_amount=True, amount_value=total_addr)
- 
-                else:
+                                                        is_amount=True, amount_value=reward)
+                        
+                    if bonus > 0:
+                        y_position = self._draw_table_row(draw, y_position, "Bonus :", 
+                                                        self._format_tsar_amount(bonus), 
+                                                        self.small_font, self.small_font, width,
+                                                        is_amount=True, amount_value=bonus)
+                    y_position += 30
 
+                else:
                     if recipient_outputs:
                         recipient_groups = {}
                         for out in recipient_outputs:
@@ -466,12 +539,14 @@ class PaymentReceiptGenerator:
                         
                         for addr, outs in list(recipient_groups.items()):
                             total_addr = sum(o.get('amount', 0) for o in outs)
-                            formatted_addr = self._pool_address(addr)
-                            y_position = self._draw_table_row(draw, y_position, 
-                                                            f"- {formatted_addr}", 
-                                                            self._format_tsar_amount(total_addr), 
-                                                            self.small_font, self.small_font, width,
-                                                            is_amount=True, amount_value=total_addr)
+                            formatted_addr = generated_receipt.pool_address(addr)
+                            y_position = self._draw_pool_label(
+                                draw, y_position,
+                                addr, f"- {formatted_addr}",
+                                self._format_tsar_amount(total_addr),
+                                self.small_font, self.small_font, width,
+                                is_amount=True, amount_value=total_addr
+                            )
                     else:
                         y_position = self._draw_table_row(draw, y_position, "Recipient :", 
                                                         "No external recipients", 
@@ -504,35 +579,29 @@ class PaymentReceiptGenerator:
                                                     self._format_tsar_amount(total_spend), 
                                                     self.small_font, self.small_font, width,
                                                     is_amount=True, amount_value=total_spend)
-                
-                # event (POST, COMMENT, PAYOUT)
-                if event_outputs:
-                    for event_out in event_outputs:
-                        event_type = event_out.get('event', 'Unknown Event')
-                        y_position = self._draw_table_row(draw, y_position, 
-                                                        f"Event :", 
-                                                        f"{event_type}", 
-                                                        self.small_font, self.small_font, width)
             
             y_position += 30
             
             # ============= SUMMARY =============
-            summary_y_start = y_position
-            draw.text((50, y_position), "Summary", font=self.normal_font, fill=(232, 114, 35))
-            y_position += 40
+            summary_y_start = int(y_position)  # Konversi ke integer
+            draw.text((50, summary_y_start), "Summary", font=self.normal_font, fill=(232, 114, 35))
+            y_position = summary_y_start + 40
             summary_left_x = 50
-            summary_width = 400
+            summary_width = 410
 
             total_input_val = sum(inp.get('amount', 0) for inp in inputs)
 
             if not inputs:  # coinbase
-                total_recipient_val = sum(out.get('amount', 0) for out in outputs)
-                summary_lines = [
-                    ("Mining Reward :", total_recipient_val, False),
-                    # ("Fee :", fee, False),
-                    ("", 0, "separator"),
-                    ("Total Reward :", total_recipient_val, False)
-                ]
+                bonus = tx_data.get('bonus') or 0
+                reward = sum(out.get('amount', 0) for out in outputs) - bonus
+                total_recipient_val = bonus + reward
+                summary_lines = [("Mining Reward :", reward, False)]
+                
+                if bonus > 0:
+                    summary_lines.append(("Bonus :", bonus, "plus"))
+                    summary_lines.append(("", 0, "separator"))
+                    summary_lines.append(("Total Reward :", total_recipient_val, False))
+                    
             else:
                 total_recipient_val = sum(out.get('amount', 0) for out in outputs 
                                         if out.get('address') and 
@@ -541,15 +610,15 @@ class PaymentReceiptGenerator:
                 total_spend = total_recipient_val + fee
                 summary_lines = [
                     ("Total Input :", total_input_val, False),
-                    ("Total Spend :", total_spend, True),
+                    ("Total Spend :", total_spend, "minus"),
                     ("", 0, "separator"),
                     ("Change :", change_amount, False)
                 ]
 
             # summary
-            current_y = y_position
-            for label, amount, show_minus in summary_lines:
-                if show_minus == "separator":
+            current_y = int(y_position)
+            for label, amount, sign_type in summary_lines:
+                if sign_type == "separator":
                     line_y = current_y + 5
                     draw.line([(summary_left_x, line_y), (summary_left_x + summary_width, line_y)], 
                             fill=(195, 195, 195), width=1)
@@ -563,34 +632,55 @@ class PaymentReceiptGenerator:
                 amount_text = self._format_tsar_amount(amount)
                 amount_width = draw.textlength(amount_text, font=self.small_font)
                 
-                minus_sign = "-"
-                minus_width = draw.textlength(minus_sign, font=self.small_font) if show_minus else 0
-                
+                if sign_type == "minus":
+                    sign = "-"
+                    sign_width = draw.textlength(sign, font=self.small_font)
+                    sign_x = summary_left_x + summary_width - amount_width - sign_width - 3
+                    draw.text((sign_x, current_y), sign, 
+                            font=self.small_font, fill=(62, 62, 62))
+                elif sign_type == "plus":
+                    sign = "+"
+                    sign_width = draw.textlength(sign, font=self.small_font)
+                    sign_x = summary_left_x + summary_width - amount_width - sign_width - 3
+                    draw.text((sign_x, current_y), sign, 
+                            font=self.small_font, fill=(62, 62, 62))
                 # amount
                 amount_x = summary_left_x + summary_width - amount_width
-                
-                if show_minus:
-                    minus_x = amount_x - minus_width - 3
-                    draw.text((minus_x, current_y), minus_sign, 
-                            font=self.small_font, fill=(62, 62, 62))
-                
                 self._draw_amount_with_style(draw, amount_x, current_y, 
                                             amount, self.small_font)
-                
                 current_y += 30
 
-            summary_y_end = current_y
-
+            # ============= TX TYPE STICKER =============
+            if status == 'confirmed':
+                sticker = self._get_tx_type_sticker(tx_data)
+                if sticker:
+                    sticker_size = 185
+                    summary_height = current_y - summary_y_start
+                    sticker_y = summary_y_start + (summary_height - sticker_size) // 2
+                    sticker_x = summary_left_x + summary_width + 100
+                    if sticker.mode == 'RGBA':
+                        img.paste(sticker, (sticker_x, sticker_y), sticker)
+                    else:
+                        img.paste(sticker, (sticker_x, sticker_y))
+                        
+            current_y += 30
+            
             # QR code
             qr_img = self._qr_code(txid)
             qr_size = 180
             qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
             qr_x = width - 60 - qr_size
-            qr_y = summary_y_start + (summary_y_end - summary_y_start - qr_size) // 2
+            summary_height = current_y - summary_y_start
+            min_summary_height = qr_size
 
+            if summary_height < min_summary_height:
+                qr_y = summary_y_start + summary_height + 25
+            else:
+                qr_y = summary_y_start + (summary_height - qr_size) // 2
+
+            min_qr_y = summary_y_start + 40
+            qr_y = max(min_qr_y, int(qr_y))
             qr_x = int(qr_x)
-            qr_y = int(qr_y)
-
             
             if qr_img.mode == 'RGBA':
                 img.paste(qr_img, (qr_x, qr_y), qr_img)
@@ -598,15 +688,15 @@ class PaymentReceiptGenerator:
                 img.paste(qr_img, (qr_x, qr_y))
 
             # footer
-            y_position = max(summary_y_end, qr_y + qr_size) + 20
+            y_position = max(current_y, qr_y + qr_size) + 20
 
             scan_text = "Scan for details"
             scan_text_width = draw.textlength(scan_text, font=self.small_font)
             draw.text((qr_x + (qr_size - scan_text_width) // 2, qr_y + qr_size + 10),
-                    scan_text, font=self.small_font, fill=(100, 100, 100))
+                       scan_text, font=self.small_font, fill=(100, 100, 100))
             
             # ============= FOOTER =============
-            footer_y = y_position + 20
+            footer_y = int(y_position + 20)
 
             # closing
             footer_text = f"Generated by TsarChain Explorer"
@@ -614,11 +704,12 @@ class PaymentReceiptGenerator:
             draw.text(((width - footer_width) // 2, footer_y + 40), footer_text,
                      font=self.small_font, fill=(100, 100, 100))
             
-            # ============= SAVE IMAGE =============
+            # ============= STATUS STAMP =============
             img = self._add_status_stamp(img, status)
             
+            # ============= SAVE IMAGE =============
             output_filename = f"{txid[:64]}.jpg"
-            output_path = os.path.join(self.output_dir, output_filename)
+            output_path = os.path.join(self.path, output_filename)
             
             img.save(
                 output_path, 

@@ -3,13 +3,13 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173; Merkle; Signal-X3DH
 
-import socket, threading, json, time, collections, hashlib
+import socket, threading, json, time, collections
 from collections import deque
 from bech32 import convertbits, bech32_decode, bech32_encode
 
 # ---------------- Local Project ----------------
 from ..core.tx import Tx, TxIn, TxOut
-from ..utils.helpers import Script, OP_RETURN, last_pushdata, compute_tx_weight_vsize, bits_to_target, target_to_difficulty, _estimate_block_size_bytes
+from ..utils.helpers import Script, OP_RETURN, last_pushdata, compute_tx_weight_vsize, _estimate_block_size_bytes
 from ..contracts import graffiti as GRAFFITI
 from .protocol import send_message, recv_message,build_envelope, SecureChannel
 from ..utils import config as CFG
@@ -101,7 +101,7 @@ def _send_to_peer(self, peer: tuple[str,int], payload: dict) -> None:
 def _chat_enqueue_locked(self, to_addr: str, msg: dict) -> None:
     mb = self.chat_mailboxes.get(to_addr)
     if mb is None:
-        mb = deque(maxlen=500)       # batas 500 per inbox
+        mb = deque(maxlen=50)       # batas 50 per inbox
         self.chat_mailboxes[to_addr] = mb
     mb.append(msg)
 
@@ -222,9 +222,10 @@ def _gc_mailboxes(self):
             if until <= now:
                 self.backoff_until.pop(k, None)
     self.chat_gc_last = now
+# ------------------------------ END OF P2P Chat ------------------------------
+
 
 # ------------- HISTORY HELPERS (script <-> address, scan chain) -------------
-
 def _txin_prevkey(self, tin) -> str:
     txid = getattr(tin, "txid", None)
     if isinstance(txid, (bytes, bytearray)):
@@ -360,6 +361,8 @@ def _find_tx_and_meta(self, txid_hex: str):
     return (None, None, None, 0, 0, chain, mem, tip_height)
 
 def _get_tx_history(self, address: str, limit: int = 50, offset: int = 0, direction: str | None = None, status: str | None = None) -> dict:
+    start = time.perf_counter()
+    
     if not isinstance(address, str):
         return {"items": [], "total": 0, "limit": limit, "offset": offset}
 
@@ -533,8 +536,13 @@ def _get_tx_history(self, address: str, limit: int = 50, offset: int = 0, direct
             cache.move_to_end(target_spk_hex)
             while len(cache) > max_cache:
                 cache.popitem(last=False)
-
+                
+    end = time.perf_counter()
+    result = round((end - start) * 1000.0, 3)
+    log.debug("[tx history] Benchmark : %.3f ms", result)
     return _slice_items(items)
+
+# ------------- END OF HISTORY HELPERS -------------
 
 
 def _get_tx_detail(self, txid_hex: str, src_tag: str | None = None) -> dict:
@@ -601,12 +609,50 @@ def _get_tx_detail(self, txid_hex: str, src_tag: str | None = None) -> dict:
     if not is_coinbase and vin and total_in >= total_out:
         fee = total_in - total_out
         
+    # ===== BONUS CALCULATED =====
+    # 'bonus' is an additional mining reward from transaction fees
+    bonus = None
+    if where == "chain":  # Only for confirmed transactions
+        block = None
+        for b in chain:
+            if int(getattr(b, "height", 0)) == height:
+                block = b
+                break
+        
+        if block:
+            total_block_fee = 0
+            for tx_in_block in getattr(block, "transactions", []) or []:
+                if self._is_coinbase_tx(tx_in_block):
+                    continue
+
+                tx_total_in = 0
+                tx_total_out = 0
+                
+                # Inputs
+                for tin_block in getattr(tx_in_block, "inputs", []) or []:
+                    key = self._txin_prevkey(tin_block)
+                    amt, _ = opmap.get(key, (0, None))
+                    tx_total_in += int(amt) if amt is not None else 0
+                
+                # Outputs
+                for o_block in getattr(tx_in_block, "outputs", []) or []:
+                    tx_total_out += int(getattr(o_block, "amount", 0))
+                
+                # Fee = total input - total output
+                tx_fee = tx_total_in - tx_total_out
+                if tx_fee > 0:
+                    total_block_fee += tx_fee
+            
+            bonus = total_block_fee
+            
+    # ===== END BONUS =====
+    
     if CFG.DEBUG_BENCHMARKS:
         end = time.perf_counter()
         result = round((end - start) * 1000.0, 3)
         tag = src_tag or "-"
         if result > 15.0:
-            log.debug("[GET_TX_DETAIL] Benchmark : %.3f ms src=%s", result, tag)
+            log.warning("[GET_TX_DETAIL] Benchmark : %.3f ms src=%s", result, tag)
         
     return {
         "type": "TX_DETAIL",
@@ -621,12 +667,12 @@ def _get_tx_detail(self, txid_hex: str, src_tag: str | None = None) -> dict:
         "total_in": None if is_coinbase else total_in,
         "total_out": total_out,
         "fee": fee,
+        "bonus": bonus,
     }
 
-# ----------------------- Helpers For Block (wallet - explorer tab) -------------------------
+# ----------------------- Helpers For Block -------------------------
 
 def _bhash_hex(self, b) -> str:
-    # 1) Method .hash()
     h = getattr(b, "hash", None)
     if callable(h):
         v = h()
@@ -638,23 +684,6 @@ def _bhash_hex(self, b) -> str:
         return h.hex()
     elif isinstance(h, str) and len(h) >= 64:
         return h
-
-    # 2) Method .header() -> bytes
-    hdr_fn = getattr(b, "header", None)
-    if callable(hdr_fn):
-        bb = hdr_fn()
-        if isinstance(bb, (bytes, bytearray)) and len(bb) > 0:
-            return hashlib.sha256(hashlib.sha256(bb).digest()).hexdigest()
-
-    # 3) Header object with serialize method(s)
-    hdr_obj = getattr(b, "header", None)
-    if hdr_obj is not None and not callable(hdr_obj):
-        for meth in ("serialize_block", "serialize", "to_bytes", "serialize_header", "serialize_header_only"):
-            fn = getattr(hdr_obj, meth, None)
-            if callable(fn):
-                bb = fn()
-                if isinstance(bb, (bytes, bytearray)) and len(bb) > 0:
-                    return hashlib.sha256(hashlib.sha256(bb).digest()).hexdigest()
     return ""
 
 def _extract_block_id_from_block(self, b) -> str | None:
@@ -744,19 +773,11 @@ def _handle_get_block_hash(self, height: int) -> dict:
     return {"type": "BLOCK_HASH", "height": height, "hash": h_hex or "", "cache_hit": cache_hit}
 
 def _prevhash_hex(self, b) -> str:
-    for name in ("prev_hash", "previous_hash", "prev_block_hash"):
-        v = getattr(b, name, None)
-        if isinstance(v, (bytes, bytearray)):
-            return v.hex()
-        if isinstance(v, str):
-            return v
-    hdr = getattr(b, "header", None)
-    if hdr is not None:
-        v = getattr(hdr, "prev_hash", None)
-        if isinstance(v, (bytes, bytearray)):
-            return v.hex()
-        if isinstance(v, str):
-            return v
+    v = getattr(b, "prev_block_hash", None)
+    if isinstance(v, (bytes, bytearray)):
+        return v.hex()
+    if isinstance(v, str):
+        return v
     return ""
 
 def _serialize_tx_basic(self, tx) -> dict:
@@ -782,76 +803,48 @@ def _serialize_block(self, b) -> dict:
             return x
         return None
 
-    # Height / time / nonce / difficulty
-    height = int(getattr(b, "height", getattr(b, "index", 0)))
+    # block
+    height = getattr(b, "height")
+    hash = self._bhash_hex(b)
+    prev_hash = self._prevhash_hex(b)
+    timestamp = getattr(b, "timestamp")
+    version = getattr(b, "version")
+    block_id = self._extract_block_id_from_block(b)
+    
+    # Nonce
+    nonce = getattr(b, "nonce")
 
-    ts = None
-    for name in ("time", "timestamp"):
-        v = getattr(b, name, None)
-        if v is not None:
-            ts = int(v); break
-
-    nonce = None
-    for obj in (b, getattr(b, "header", None)):
-        if obj is None or callable(obj):
-            continue
-        v = getattr(obj, "nonce", None)
-        if v is not None:
-            nonce = int(v); break
-
-    diff = None
-    for obj in (b, getattr(b, "header", None)):
-        if obj is None or callable(obj):
-            continue
-        v = getattr(obj, "difficulty", None)
-        if v is not None:
-            diff = v; break
-
-    # Version / bits / merkle root
-    version = getattr(b, "version", None)
-    bits    = getattr(b, "bits", None)
-    mroot   = getattr(b, "merkle_root", None)
-    if mroot is None:
-        hdr = getattr(b, "header", None)
-        if hdr is not None and not callable(hdr):
-            mroot = getattr(hdr, "merkle_root", None)
+    # Merkle root
+    mroot = getattr(b, "merkle_root")
     mroot_hex = _to_hex(mroot)
+    
+    # Bits
+    bits = getattr(b, "bits")
+    
+    # Chainwork & Difficulty
+    meta = getattr(b, "_meta", {})
+    chainwork = meta.get("chainwork")
+    diff = meta.get("difficulty")
 
-    # meta fallback (if block carries _meta from storage)
-    meta = getattr(b, "_meta", None)
-    meta_dict = meta if isinstance(meta, dict) else {}
-
-    # chainwork / size_bytes
-    chainwork = getattr(b, "chainwork", None)
+    # Size estimation
     size_bytes = _estimate_block_size_bytes(b)
-    if meta_dict:
-        chainwork = chainwork if chainwork is not None else meta_dict.get("chainwork")
-        if diff is None:
-            diff = meta_dict.get("difficulty")
-
-    # difficulty fallback from bits
-    if diff is None and bits is not None:
-        diff = int(target_to_difficulty(bits_to_target(int(bits))))
-
-    # Transactions (light) + compute size/weight fallback
+    
+    # Transactions processing
     txs = []
-    graffiti_posts = []
-    graffiti_comments = []
-    graffiti_payouts = []
+    graffiti_posts, graffiti_comments, graffiti_payouts = [], [], []
+    
     for tx in getattr(b, "transactions", []) or []:
         txs.append(self._serialize_tx_basic(tx))
-        txid_hex = ""
-        tid = getattr(tx, "txid", None)
-        if isinstance(tid, (bytes, bytearray)):
-            txid_hex = tid.hex()
-        elif isinstance(tid, str):
-            txid_hex = tid
-
+        txid_hex = _to_hex(getattr(tx, "txid"))
+        
         for tx_out in getattr(tx, "outputs", []) or []:
-            spk = getattr(tx_out, "script_pubkey", None)
-            meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+            if not (spk := getattr(tx_out, "script_pubkey", None)):
+                continue
+            
+            meta = GRAFFITI.parse_from_script(spk) 
             if not meta:
                 continue
+                
             ev = str(meta.get("event", "")).upper()
             if ev == "POST":
                 graffiti_posts.append({
@@ -869,46 +862,29 @@ def _serialize_block(self, b) -> dict:
                     "commenter": meta.get("commenter"),
                 })
             elif ev == "PAYOUT":
-                recipients = meta.get("recipients")
-                if not isinstance(recipients, list):
-                    recipients = []
+                recipients = meta.get("recipients", [])
                 graffiti_payouts.append({
                     "txid": txid_hex,
                     "art_id": meta.get("art_id"),
                     "epoch": meta.get("epoch"),
-                    "recipients": recipients,
+                    "recipients": recipients if isinstance(recipients, list) else [],
                 })
 
-    # chainwork fallback (use prev chainwork + work_from_bits if available)
-    if chainwork is None and bits is not None:
-        try:
-            bc = getattr(getattr(self, "broadcast", None), "blockchain", None)
-            work_val = bc._work_from_bits(int(bits)) if bc and hasattr(bc, "_work_from_bits") else None
-            if work_val is None:
-                raise AttributeError
-            prev_cw = None
-            chain = getattr(bc, "chain", []) if bc else []
-            if isinstance(chain, list) and isinstance(height, int) and height > 0 and height - 1 < len(chain):
-                prev_blk = chain[height - 1]
-                prev_cw = getattr(prev_blk, "chainwork", None)
-                if prev_cw is None and hasattr(bc, "_compute_chainwork_for_chain"):
-                    try:
-                        prev_cw = bc._compute_chainwork_for_chain(chain[:height])  # exclude current
-                    except Exception:
-                        prev_cw = None
-                        
-            chainwork = (int(prev_cw) if prev_cw is not None else 0) + int(work_val)
-        except Exception:
-            log.exception("[_serialize_block] chainwork fallback failed")
+    # Graffiti in mempool count
+    graffiti_on_mempool = 0
+    if (mem := getattr(self, "mempool", None)):
+        for tx in mem.get_all_txs():
+            if any(GRAFFITI.parse_from_script(getattr(tx_out, "script_pubkey", None)) 
+                   for tx_out in getattr(tx, "outputs", []) or []):
+                graffiti_on_mempool += 1
 
-    blk_id = self._extract_block_id_from_block(b)
-    block_dict = {
+    return {
         "type": "BLOCK",
-        "block_id": blk_id,
-        "hash": self._bhash_hex(b),
-        "prev_hash": self._prevhash_hex(b),
+        "block_id": block_id,
+        "hash": hash,
+        "prev_hash": prev_hash,
         "height": height,
-        "time": ts,
+        "time": timestamp,
         "nonce": nonce,
         "difficulty": diff,
         "version": version,
@@ -922,24 +898,8 @@ def _serialize_block(self, b) -> dict:
         "comments": graffiti_comments,
         "payouts": graffiti_payouts,
         "payout_count": len(graffiti_payouts),
+        "graffiti_on_mempool": graffiti_on_mempool,
     }
-    mem = getattr(self, "mempool", None)
-    if mem:
-        count = 0
-        for tx in mem.get_all_txs():
-            for tx_out in getattr(tx, "outputs", []) or []:
-                spk = getattr(tx_out, "script_pubkey", None)
-                meta = None
-                try:
-                    meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
-                except Exception:
-                    log.exception("[_serialize_block] unexpected error")
-                    meta = None
-                if meta and str(meta.get("event", "")).upper() == "POST":
-                    count += 1
-                    break
-        block_dict["graffiti_on_mempool"] = count
-    return block_dict
 
 
 # ----------------------- TX template (wallet) -------------------------
@@ -1181,6 +1141,7 @@ def _handle_create_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, 
         if u:
             preselected.append(u)
             pre_acc += int(u["amount"])
+            
     if force_inputs:
         missing = [k for k in forced_keys if k not in utxo_by_key]
         if missing:
@@ -1210,6 +1171,7 @@ def _handle_create_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, 
                 preselected.append(u)
                 pre_acc += amt
                 missing.remove(key)
+                
         if missing:
             locks = {}
             sender_spk = self._addr_to_spk(from_addr)
