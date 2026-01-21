@@ -36,6 +36,26 @@ class UTXOBalanceMixin:
         if isinstance(tx_out, dict):
             return int(tx_out.get("amount", 0) or 0)
         return int(getattr(tx_out, "amount", 0) or 0)
+    
+    def _normalize_target_spk_hex(self, x: str) -> str:
+        x = (x or "").strip().lower()
+        if x.startswith("tsar1"):
+            hrp, data = bech32_decode(x)
+            if hrp != "tsar" or data is None:
+                raise ValueError("invalid tsar bech32 address")
+            prog = convertbits(data[1:], 5, 8, False)
+            if prog is None or len(prog) not in (20, 32):
+                raise ValueError("invalid witness program length")
+            if len(prog) == 20:
+                return "0014" + bytes(prog).hex()
+            return "0020" + bytes(prog).hex()
+        if x.startswith("00") and len(x) in (42, 66):
+            return "00" + x[2:]
+        if x.startswith("0014") and len(x) == 44:
+            return x
+        if x.startswith("0020") and len(x) == 68:
+            return x
+        return x
 
     def _ensure_index_locked(self):
         if self._address_index is not None:
@@ -79,30 +99,11 @@ class UTXOBalanceMixin:
 
     def get_balance(self, identifier: str, mode: str = "total",
                     current_height: int = None, maturity: int = CFG.COINBASE_MATURITY):
-        def _normalize_target_spk_hex(x: str) -> str:
-            x = (x or "").strip().lower()
-            if x.startswith("tsar1"):
-                hrp, data = bech32_decode(x)
-                if hrp != "tsar" or data is None:
-                    raise ValueError("invalid tsar bech32 address")
-                prog = convertbits(data[1:], 5, 8, False)
-                if prog is None or len(prog) not in (20, 32):
-                    raise ValueError("invalid witness program length")
-                if len(prog) == 20:
-                    return "0014" + bytes(prog).hex()
-                return "0020" + bytes(prog).hex()
-            if x.startswith("00") and len(x) in (42, 66):
-                return "00" + x[2:]
-            if x.startswith("0014") and len(x) == 44:
-                return x
-            if x.startswith("0020") and len(x) == 68:
-                return x
-            return x
 
         if current_height is None:
             current_height = self._get_tip_height_from_state()
 
-        target_spk_hex = _normalize_target_spk_hex(identifier)
+        target_spk_hex = self._normalize_target_spk_hex(identifier)
 
         total = mature = immature = 0
         with self._lock:
@@ -131,29 +132,20 @@ class UTXOBalanceMixin:
         if mode == "spendable":
             return int(mature)
         return {"total": int(total), "mature": int(mature), "immature": int(immature)}
+    
+    def count_utxos(self, identifier: str) -> int:
+        target_spk_hex = self._normalize_target_spk_hex(identifier)
+        with self._lock:
+            keys = list(self._get_index_bucket(target_spk_hex))
+            valid_count = 0
+            for key in keys:
+                if key in self.utxos:
+                    valid_count += 1
+            
+            return valid_count
 
     def get(self, identifier: str):
-        def _normalize_target_spk_hex(x: str) -> str:
-            x = (x or "").strip().lower()
-            if x.startswith("tsar1"):
-                hrp, data = bech32_decode(x)
-                if hrp != "tsar" or data is None:
-                    raise ValueError("invalid tsar bech32 address")
-                prog = convertbits(data[1:], 5, 8, False)
-                if prog is None or len(prog) not in (20, 32):
-                    raise ValueError("invalid witness program length")
-                if len(prog) == 20:
-                    return "0014" + bytes(prog).hex()
-                return "0020" + bytes(prog).hex()
-            if x.startswith("00") and len(x) in (42, 66):
-                return "00" + x[2:]
-            if x.startswith("0014") and len(x) == 44:
-                return x
-            if x.startswith("0020") and len(x) == 68:
-                return x
-            return x
-
-        target_spk_hex = _normalize_target_spk_hex(identifier)
+        target_spk_hex = self._normalize_target_spk_hex(identifier)
         result = {}
         with self._lock:
             keys = list(self._get_index_bucket(target_spk_hex))

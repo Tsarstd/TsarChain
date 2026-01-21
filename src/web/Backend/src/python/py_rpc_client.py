@@ -224,134 +224,43 @@ def rpc_tx(client, txid: str):
     return _cache_fetch(key, lambda: _rpc_send(client, {"type": "GET_TX_DETAIL", "txid": txid_norm}))
 
 def rpc_address(client, addr: str):
-    addr_norm = str(addr or "").strip()
+    addr_norm = addr.strip()
     key = _cache_key("address", addr_norm.lower())
     cached = _cache_get(key)
     if cached is not None:
         return cached
-
+    
     balances = _rpc_send(client, {"type": "GET_BALANCES", "addresses": [addr_norm]}) or {}
-    utxos = _rpc_send(client, {"type": "GET_UTXOS", "address": addr_norm}) or {}
+    utxos = _rpc_send(client, {"type": "GET_TOTAL_UTXO", "address": addr_norm}) or {}
     history = _rpc_send(client, {"type": "GET_TX_HISTORY", "address": addr_norm, "limit": 200}) or {}
-    log.info("history = %s", history)
-    history_list = []
-    if isinstance(history, dict):
-        history_list = history.get("items") or []
-        if not history_list:
-            for key in ["history", "transactions", "txs", "data"]:
-                if key in history and isinstance(history[key], list):
-                    history_list = history[key]
-                    break
-                
-    if not isinstance(history_list, list):
-        history_list = []
-        
-    had_error = _payload_has_error(balances) or _payload_has_error(utxos) or _payload_has_error(history)
-    error_ttl = None
-    if had_error:
-        for resp in (balances, utxos, history):
-            if not _payload_has_error(resp):
-                continue
-            ttl = webdb.cache_ttl_for_error(resp.get("error") if isinstance(resp, dict) else None)
-            if ttl is None:
-                error_ttl = None
-                break
-            if error_ttl is None or ttl > error_ttl:
-                error_ttl = ttl
-
-    if not isinstance(balances, dict):
-        balances = {}
-    if not isinstance(utxos, (dict, list)):
-        utxos = {}
-    if not isinstance(history, (dict, list)):
-        history = {}
-
-    spendable = immature = 0
-    items = balances.get("items") or balances.get("balances") or balances.get("map") or {}
-    entry = {}
-    if isinstance(items, dict):
-        entry = items.get(addr_norm) or next(iter(items.values()), {}) or {}
-    elif isinstance(items, list):
-        entry = items[0] if items else {}
-    if isinstance(entry, dict):
-        spendable = int(entry.get("spendable") or 0)
-        immature = int(entry.get("immature") or 0)
-        outgoing = int(entry.get("pending_outgoing") or 0)
-        incoming = int(entry.get("pending_incoming") or 0)
-
-    utxo_list = []
-    if isinstance(utxos, dict):
-        raw = utxos.get("utxos") or utxos.get("items")
-        if isinstance(raw, dict):
-            for utxo_key, val in raw.items():
-                txid = utxo_key
-                idx = 0
-                if isinstance(utxo_key, str) and ":" in utxo_key:
-                    txid, idx_s = utxo_key.rsplit(":", 1)
-                    try:
-                        idx = int(idx_s)
-                    except Exception:
-                        idx = 0
-                if isinstance(val, dict):
-                    amount = val.get("amount") or val.get("value") or val.get("tx_out", {}).get("amount", 0)
-                    height = val.get("block_height") or val.get("height")
-                    confirmations = val.get("confirmations")
-                else:
-                    amount = val
-                    height = None
-                    confirmations = None
-                utxo_list.append({
-                    "txid": txid,
-                    "vout": idx,
-                    "amount": amount or 0,
-                    "height": height,
-                    "confirmations": confirmations,
-                })
-        elif isinstance(raw, list):
-            utxo_list = [u for u in raw if isinstance(u, dict)]
-        else:
-            # fallback: utxos dict may already be outpoint map
-            if utxos and all(isinstance(v, dict) for v in utxos.values()):
-                for utxo_key, val in utxos.items():
-                    txid = utxo_key
-                    idx = 0
-                    if isinstance(utxo_key, str) and ":" in utxo_key:
-                        txid, idx_s = utxo_key.rsplit(":", 1)
-                        try:
-                            idx = int(idx_s)
-                        except Exception:
-                            idx = 0
-                    amount = val.get("amount") or val.get("value") or val.get("tx_out", {}).get("amount", 0)
-                    utxo_list.append({
-                        "txid": txid,
-                        "vout": idx,
-                        "amount": amount or 0,
-                        "height": val.get("block_height") or val.get("height"),
-                        "confirmations": val.get("confirmations"),
-                    })
-    elif isinstance(utxos, list):
-        utxo_list = [u for u in utxos if isinstance(u, dict)]
-
-    balance = sum(int(u.get("amount", 0) or 0) for u in utxo_list if isinstance(u, dict))
-
+    balance_info = balances.get("items", {}).get(addr_norm, {})
     out = {
         "address": addr_norm,
-        "spendable": spendable,
-        "immature": immature,
-        "outgoing": outgoing,
-        "incoming": incoming,
-        "balance": balance,
-        "utxos": utxo_list or [],
-        "history": history_list,
-        "height": history.get("height") if isinstance(history, dict) else None,
+        "spendable": balance_info.get("spendable", 0),
+        "immature": balance_info.get("immature", 0),
+        "outgoing": balance_info.get("pending_outgoing", 0),
+        "incoming": balance_info.get("pending_incoming", 0),
+        "balance": balance_info.get("balance", 0),
+        "utxo_count": utxos.get("count", 0),
+        "history": history.get("items", []),
+        "height": history.get("height"),
+        "total_txs": history.get("total", 0)
     }
-    log.info("data = %s", out)
-    if not had_error:
+    had_error = _payload_has_error(balances) or _payload_has_error(utxos) or _payload_has_error(history)
+    if had_error:
+        error_ttl = None
+        for resp in (balances, utxos, history):
+            if _payload_has_error(resp):
+                ttl = webdb.cache_ttl_for_error(resp.get("error"))
+                if ttl and (error_ttl is None or ttl > error_ttl):
+                    error_ttl = ttl
+        
+        if error_ttl:
+            _cache_set(key, out, error_ttl)
+    else:
         _cache_set(key, out)
-    elif error_ttl is not None:
-        _cache_set(key, out, error_ttl)
+    
     return out
-
 
 def rpc_graffiti(client, art_id: str):
     art_norm = str(art_id or "").strip()

@@ -328,7 +328,7 @@ def handle_user_rpc(
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
             src_tag = (message.get("rpc_source") or "-")
-            if result > 15.0:
+            if result > 35.0:
                 log.warning("[GET_BALANCES] Benchmark : %.3f ms src=%s", result, src_tag)
             
         return {"type": "BALANCES", "height": tip_height, "items": items}
@@ -765,7 +765,7 @@ def handle_user_rpc(
             result = round((end - start) * 1000.0, 3)
             src_tag = (message.get("rpc_source") or "-")
             if result > 15.0:
-                log.debug("[GET_TX_HISTORY] Benchmark : %.3f ms src=%s", result, src_tag)
+                log.warning("[GET_TX_HISTORY] Benchmark : %.3f ms src=%s", result, src_tag)
         
         return {"type": "TX_HISTORY", "address": addr_str, **history}
 
@@ -796,7 +796,7 @@ def handle_user_rpc(
 
 #----------------------#-------------------
 
-    elif mtype == "GET_UTXOS":
+    elif mtype == "GET_TOTAL_UTXO":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
             
@@ -823,16 +823,16 @@ def handle_user_rpc(
         if len(address) > CFG.MAX_UTXO_ADDR_LEN:
             return {"error": "address too long"}
         
-        utxos = self.broadcast.utxodb.get(address)
+        count = self.broadcast.utxodb.count_utxos(address)
         
         if CFG.DEBUG_BENCHMARKS:
             end = time.perf_counter()
             result = round((end - start) * 1000.0, 3)
             src_tag = (message.get("rpc_source") or "-")
-            if result > 15.0:
-                log.debug("[GET_UTXOS] Benchmark : %.3f ms src=%s", result, src_tag)
+            if result > 5.0:
+                log.warning("[GET_TOTAL_UTXO] Benchmark : %.3f ms src=%s", result, src_tag)
             
-        return {"type": "UTXOS", "address": address, "utxos": utxos}
+        return {"type": "UTXOS_COUNT", "count": count}
 
 # =============================================================================
 # ---------------------------- P2P Chat RPC -----------------------------------

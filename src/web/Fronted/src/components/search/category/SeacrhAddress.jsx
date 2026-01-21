@@ -1,10 +1,13 @@
 import { useState, useEffect } from "react";
 import { ClickableValue } from ".././SearchResults";
 import {  
+  fmtAddress,
+  fmtDateLong,
   fmtTsar, 
   fmtTxid,
+  timeAgo,
   formatHashForDisplay,
-  getMaxCharsPerLine 
+  getMaxCharsPerLine
 } from "../../../utils/format"
 import { getStatusBadge, getDirectionBadge } from "../SearchUX";
 
@@ -127,6 +130,44 @@ const ResultAddress = ({ data, onSearchClick }) => {
     );
   };
 
+  const renderAddressLabel = (direction, fromAddress, toAddress) => {
+    if (direction === 'in') {
+      if (fromAddress === 'coinbase') {
+        return (
+          <>
+            <span className="tx-address-label">From : </span>
+            <span className="coinbase-label">Coinbase</span>
+          </>
+        );
+      } else {
+        return (
+          <>
+            <span className="tx-address-label">From : </span>
+            {renderClickableHash(
+              fromAddress,
+              onSearchClick,
+              fromAddress,
+              fmtAddress(fromAddress)
+            )}
+          </>
+        );
+      }
+    } else if (direction === 'out') {
+      return (
+        <>
+          <span className="tx-address-label">To : </span>
+            {renderClickableHash(
+              toAddress,
+              onSearchClick,
+              toAddress,
+              fmtAddress(toAddress)
+            )}
+        </>
+      );
+    }
+    return null;
+  };
+
   return (
     <>
       <h1 className="address-details">{renderHash(data?.address, "wrap")}</h1>
@@ -158,7 +199,11 @@ const ResultAddress = ({ data, onSearchClick }) => {
           </div>
           <div className="stat">
             <span className="info-label">UTXO Set</span>
-            <span className="value">{data?.utxos?.length || 0}</span>
+            <span className="value">{data?.utxo_count || 0}</span>
+          </div>
+          <div className="stat">
+            <span className="info-label">Total Transactions</span>
+            <span className="value">{data?.total_txs || 0}</span>
           </div>
         </div>
         <div className="divider2" />
@@ -176,15 +221,20 @@ const ResultAddress = ({ data, onSearchClick }) => {
             const confirmations = h.confirmations;
             
             return (
-              <div className="tx-item">
-                <div className="tx-items" key={h.txid || h.id || idx}>
+              <div className="tx-item" key={h.txid || h.id || idx}>
+                <div className="tx-items">
                   <div className="stat">
-                    {renderClickableHash(
-                      h.txid,
-                      onSearchClick,
-                      h.txid,
-                      fmtTxid(h.txid) || "-"
-                    )}
+                    <span className="value">{fmtDateLong(h.timestamp)}</span>
+                      {renderClickableHash(
+                        h.txid,
+                        onSearchClick,
+                        h.txid,
+                        fmtTxid(h.txid) || "-"
+                      )}
+                      {/* From/To Address */}
+                      <div className="tx-address-row">
+                        {renderAddressLabel(h.direction, h.from, h.to)}
+                      </div>
                     <div className="tx-meta">
                       <span 
                         className="direction-badge" 
@@ -204,6 +254,9 @@ const ResultAddress = ({ data, onSearchClick }) => {
                       {confirmations > 0 ? (
                         <span className="tx-confirms">{confirmations} Confirms</span>
                       ) : null}
+                    </div>
+                    <div className="tx-meta">
+                      <span className="value">{timeAgo(h.timestamp)}</span>
                     </div>
                   </div>
                   <div className="stat">

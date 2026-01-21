@@ -277,6 +277,22 @@
   align-items: flex-end;
 }
 
+.tx-address-row {
+  margin-top: 2px;
+  font-size: 12px;
+  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.tx-address-label {
+  color: #aaa;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 /* STYLE FOR VOUT */
 
 .vout-badge {
@@ -392,6 +408,14 @@
     font-size: 21px;
     padding: 4px 8px;
   }
+
+  .tx-address-row {
+    font-size: 11px;
+  }
+  
+  .tx-address-label {
+    font-size: 10px;
+  }
   
   .coinbase-label {
     font-size: 10px;
@@ -407,6 +431,7 @@
   .addr-badge,
   .tx-height,
   .tx-confirms,
+  .event-badge,
   .status-badge,
   .direction-badge {
     font-size: 4px;
@@ -431,13 +456,22 @@
     font-size: 20px;
     padding: 3px 40px;
   }
+
+  .tx-address-row {
+    font-size: 11px;
+  }
+  
+  .tx-address-label {
+    font-size: 10px;
+  }
   
   .addr-badge,
+  .event-badge,
   .tx-height,
   .tx-confirms,
   .status-badge,
   .direction-badge {
-    font-size: 4px;
+    font-size: 6px;
     padding: 3px 6px;
   }
 }
@@ -453,6 +487,14 @@
   .address-details {
     font-size: 12px;
     padding: 2px 4px;
+  }
+
+  .tx-address-row {
+    font-size: 11px;
+  }
+  
+  .tx-address-label {
+    font-size: 10px;
   }
   
   .coinbase-label {

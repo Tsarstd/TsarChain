@@ -197,6 +197,8 @@ const normalizeAddress = (addr) => {
     ...addr,
     balance,
     utxos,
+    utxo_count: addr.utxo_count || utxos.length,
+    total_txs: addr.total_txs || (Array.isArray(addr.history) ? addr.history.length : 0),
     history: Array.isArray(addr.history) ? addr.history : [],
   };
 };

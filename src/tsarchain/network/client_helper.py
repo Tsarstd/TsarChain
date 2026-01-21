@@ -401,10 +401,20 @@ def _get_tx_history(self, address: str, limit: int = 50, offset: int = 0, direct
             filtered = [it for it in filtered if it["direction"] == direction]
         if status in ("confirmed", "unconfirmed"):
             filtered = [it for it in filtered if it["status"] == status]
-        total = len(filtered)
-        start = max(0, int(offset))
-        end   = max(start, int(start + max(0, int(limit))))
-        return {"items": filtered[start:end], "total": total, "limit": int(limit), "offset": int(offset)}
+        
+        optimized_items = []
+        for item in filtered:
+            optimized = dict(item)
+            if optimized["direction"] == "in":
+                optimized.pop("to", None)
+            elif optimized["direction"] == "out":
+                optimized.pop("from", None)
+            optimized_items.append(optimized)
+        
+        total = len(optimized_items)
+        start_idx = max(0, int(offset))
+        end_idx   = max(start_idx, int(start_idx + max(0, int(limit))))
+        return {"items": optimized_items[start_idx:end_idx], "total": total, "limit": int(limit), "offset": int(offset)}
 
     now = time.time()
     with cache_lock:
@@ -426,7 +436,7 @@ def _get_tx_history(self, address: str, limit: int = 50, offset: int = 0, direct
     opmap_chain, opmap_mem = self._build_outpoint_map(chain, mem)
     items = []
 
-    def _append_item(tx, where, h_or_none):
+    def _append_item(tx, where, h_or_none, timestamp):
         txid = tx.txid.hex() if getattr(tx, "txid", None) else ""
         is_cb = self._is_coinbase_tx(tx)
         conf = 0
@@ -493,14 +503,17 @@ def _get_tx_history(self, address: str, limit: int = 50, offset: int = 0, direct
             "height": height,
             "from": frm,
             "to": to,
+            "timestamp": timestamp,
         })
 
     for tx in mem:
-        _append_item(tx, "mempool", None)
+        _append_item(tx, "mempool", None, int(time.time()))
+
     for b in chain:
         h = int(getattr(b, "height", 0))
+        block_timestamp = int(getattr(b, "timestamp", 0))
         for tx in getattr(b, "transactions", []) or []:
-            _append_item(tx, "chain", h)
+            _append_item(tx, "chain", h, block_timestamp)
             
     by_id = {}
     for it in items:
@@ -523,6 +536,7 @@ def _get_tx_history(self, address: str, limit: int = 50, offset: int = 0, direct
         return (st, -h)
     items.sort(key=_key)
 
+    # cache
     if len(items) <= max_cache_items:
         now = time.time()
         with cache_lock:
@@ -539,7 +553,9 @@ def _get_tx_history(self, address: str, limit: int = 50, offset: int = 0, direct
                 
     end = time.perf_counter()
     result = round((end - start) * 1000.0, 3)
-    log.debug("[tx history] Benchmark : %.3f ms", result)
+    if result > 25.0:
+        log.warning("[_get_tx_history] Benchmark : %.3f ms", result)
+    
     return _slice_items(items)
 
 # ------------- END OF HISTORY HELPERS -------------
@@ -582,21 +598,18 @@ def _get_tx_detail(self, txid_hex: str, src_tag: str | None = None) -> dict:
         event_info = None
         spk = getattr(o, "script_pubkey", None)
         if spk is not None:
-            try:
-                meta = GRAFFITI.parse_from_script(spk)
-                if meta:
-                    ev = str(meta.get("event", "")).upper()
-                    if ev == "POST":
-                        event_info = "POST"
-                    elif ev == "COMMENT":
-                        event_info = "COMMENT"
-                    elif ev == "PAYOUT":
-                        recipients = meta.get("recipients")
-                        if not isinstance(recipients, list):
-                            recipients = []
-                        event_info = "PAYOUT"
-            except Exception:
-                log.debug("[_get_tx_detail] Failed to parse graffiti for output %s", n, exc_info=True)
+            meta = GRAFFITI.parse_from_script(spk)
+            if meta:
+                ev = str(meta.get("event", "")).upper()
+                if ev == "POST":
+                    event_info = "POST"
+                elif ev == "COMMENT":
+                    event_info = "COMMENT"
+                elif ev == "PAYOUT":
+                    recipients = meta.get("recipients")
+                    if not isinstance(recipients, list):
+                        recipients = []
+                    event_info = "PAYOUT"
         
         vout.append({
             "index": n,

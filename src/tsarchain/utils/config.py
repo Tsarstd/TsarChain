@@ -374,7 +374,7 @@ BROADCAST_FAIL_BACKOFF_S = 120  # seconds to wait when broadcast keeps failing
 # ---- ANTI-DOS LIMITS ----
 MAX_ADDRS_PER_REQ              = 15  # max addresses accepted per addr message
 MAX_HISTORY_LIMIT              = 200  # cap on stored addr history per peer
-MAX_UTXO_ADDR_LEN              = 68  # sanity limit for UTXO address strings
+MAX_UTXO_ADDR_LEN              = 64  # sanity limit for UTXO address strings
 NONCE_PER_SENDER_MAX           = 256  # per-sender nonce cache bound
 NONCE_GLOBAL_MAX               = 100_000  # global nonce cache bound across senders
 
