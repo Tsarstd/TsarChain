@@ -1,6 +1,8 @@
 import { ClickableValue } from ".././SearchResults";
 import { useState, useEffect, useMemo } from "react";
 import { saveAs } from 'file-saver';
+import { IoReceiptSharp } from "react-icons/io5";
+import { FaCopy } from "react-icons/fa";
 
 import {  
   fmtTsar, 
@@ -18,6 +20,7 @@ const ResultTx = ({ data, onSearchClick }) => {
   const [isMobile, setIsMobile] = useState(false);
   const [maxCharsPerLine, setMaxCharsPerLine] = useState(getMaxCharsPerLine());
   const [isGeneratingReceipt, setIsGeneratingReceipt] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("");
 
   useEffect(() => {
     const checkMobile = () => {
@@ -54,6 +57,46 @@ const ResultTx = ({ data, onSearchClick }) => {
       alert('Failed to download receipt: ' + error.message);
     } finally {
       setIsGeneratingReceipt(false);
+    }
+  };
+
+  const copyToClipboard = async () => {
+    if (!data?.txid) return;
+    
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(data.txid);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = data.txid;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        
+        const successful = document.execCommand('copy');
+        if (!successful) {
+          throw new Error('Fallback copy failed');
+        }
+        
+        document.body.removeChild(textArea);
+      }
+      
+      setCopyStatus("Copied!");
+      setTimeout(() => setCopyStatus(""), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+      
+      try {
+        prompt('Copy this TxID:', data.txid);
+        setCopyStatus("Use prompt to copy");
+      } catch {
+        setCopyStatus("Failed!");
+      }
+      
+      setTimeout(() => setCopyStatus(""), 2000);
     }
   };
 
@@ -159,21 +202,6 @@ const ResultTx = ({ data, onSearchClick }) => {
     }).length;
   }, [groupedOutputs, data?.inputs]);
 
-  const renderHash = (hash, className = "") => {
-    if (!hash) return "-";
-    
-    if (isMobile) {
-      const formattedHash = formatHashForDisplay(hash, maxCharsPerLine);
-      return (
-        <span className={`value hash-multiline ${className}`} style={{whiteSpace: 'pre-wrap'}}>
-          {formattedHash}
-        </span>
-      );
-    }
-    
-    return <span className={`value ${className}`}>{hash}</span>;
-  };
-
   const renderClickableHash = (value, onSearchClick, info, displayValue = null) => {
     if (!value) return "-";
     
@@ -206,49 +234,130 @@ const ResultTx = ({ data, onSearchClick }) => {
     );
   };
 
+  const splitTxidGrid = (txid) => {
+    if (!txid || txid.length !== 64) return [];
+    const chunks = [];
+    for (let i = 0; i < 60; i += 5) {
+      chunks.push(txid.substring(i, i + 5));
+    }
+    const lastFourChars = txid.substring(60).split('');
+    chunks.push(...lastFourChars);
+    
+    return [
+      chunks.slice(0, 4),    // Line 1: chunks 0-3 (5 character)
+      chunks.slice(4, 8),    // Line 2: chunks 4-7 (5 character)
+      chunks.slice(8, 12),   // Line 3: chunks 8-11 (5 character)
+      chunks.slice(12, 16)   // Line 4: chunks 12-15 (1 character each)
+    ];
+  };
 
+  const highlightPositions = [
+    [0, 0], [0, 2], // Row 1, Column 1 & 3
+    [1, 1], [1, 3], // Row 2, Column 2 & 4
+    [2, 0], [2, 2], // Row 3, Column 1 & 3
+    [3, 0]          // Row 4, Column 1
+  ];
 
+  const renderTxidGrid = (txid) => {
+    if (!txid) return "-";
+    
+    const grid = splitTxidGrid(txid);
+    
+    const isHighlighted = (row, col) => {
+      return highlightPositions.some(pos => pos[0] === row && pos[1] === col);
+    };
+
+    return (
+      <div className="txid-container">
+        {grid.map((row, rowIndex) => (
+          <div key={rowIndex} className="txid-row">
+            {row.map((chunk, colIndex) => {
+              const isLastRow = rowIndex === 3;
+              const isHighlightedCell = isHighlighted(rowIndex, colIndex);
+              
+              if (isLastRow) {
+                // Last 4 Char
+                return (
+                  <div key={colIndex} className="txid-cell">
+                    <div className={`txid-single-char-container ${isHighlightedCell ? 'highlighted' : ''}`}>
+                      <span className="txid-single-char">
+                        {chunk}
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
+              
+              // Baris 1-3: chunk 5 karakter
+              return (
+                <div key={colIndex} className="txid-cell">
+                  <div className={`txid-chunk-container ${isHighlightedCell ? 'highlighted' : ''}`}>
+                    <div className="txid-chunk-grid">
+                      {chunk.split('').map((char, charIndex) => (
+                        <div key={charIndex} className="txid-chunk-char">
+                          {char}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <>
+      {/* HEADER SECTION */}
       <div style={{ 
         display: 'flex', 
-        justifyContent: 'space-between', 
+        flexDirection: 'column',
         alignItems: 'center',
-        marginBottom: '20px'
+        marginBottom: '15px',
+        width: '100%'
       }}>
-      <h1 className="txid-details">{renderHash(data?.txid, "wrap")}</h1>
-
-        <button
-          onClick={downloadReceiptDirect}
-          disabled={isGeneratingReceipt}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#4CAF50',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            cursor: 'pointer',
-            fontSize: '14px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            opacity: isGeneratingReceipt ? 0.7 : 1
-          }}
-        >
-          {isGeneratingReceipt ? (
-            <>
-              <span className="spinner"></span>
-              Generating...
-            </>
-          ) : (
-            <>
-              <span>📄</span>
-              Download Receipt
-            </>
-          )}
-        </button>
+        {/* TXID */}
+        <h1 className="stat"> Transaction ID
+        </h1>
+        <h1 className="txid-details">
+          {renderTxidGrid(data?.txid)}
+          <div className="divider2" />
+        </h1>
+        {/* BUTTONS CONTAINER - CENTERED */}
+        <div className="action-buttons">
+          {/* DOWNLOAD RECEIPT BUTTON */}
+          <button
+            onClick={downloadReceiptDirect}
+            disabled={isGeneratingReceipt}
+            className={`action-button receipt-button ${isGeneratingReceipt ? 'disabled' : ''}`}
+          >
+            {isGeneratingReceipt ? (
+              <>
+                <span className="spinner"></span>
+                Generating...
+              </>
+            ) : (
+              <>
+                <span><IoReceiptSharp /></span>
+                Download Receipt
+              </>
+            )}
+          </button>
+          
+          {/* COPY TXID BUTTON */}
+          <button
+            onClick={copyToClipboard}
+            className={`action-button copy-button`}
+          >
+            <span><FaCopy /></span>
+            {copyStatus || "Copy"}
+          </button>
+        </div>
       </div>
+      
       <div className="divider" />
       
       {/* START OF TX INFO */}

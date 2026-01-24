@@ -123,7 +123,6 @@ def send_message(sock: socket.socket, payload: bytes, *, max_len: int | None = N
     body = CFG.NETWORK_MAGIC + payload
     n = len(body)
     hdr = struct.pack(">I", n)
-    
     try:
         sock.sendall(hdr + body)
     except Exception as e:
@@ -169,9 +168,6 @@ def recv_exact(sock: socket.socket, n: int) -> bytes:
         if not part:
             raise ConnectionError("Connection closed")
         buf += part
-        
-    if log.isEnabledFor(5):  # TRACE
-        log.trace("[recv_exact] got %s bytes", len(buf))
     return buf
 
 def sniff_first_json_frame(sock: socket.socket, timeout: float = 2.0, *, peer_ip: str | None = None, on_misbehave=None) -> tuple[bytes | None, dict | None]:
@@ -250,7 +246,6 @@ def build_envelope(inner_msg: dict, node_ctx: dict, extra: dict | None = None) -
     }
     if extra:
         outer.update(extra)
-
     to_sign = canonical_dumps({"msg": inner_msg, "ts": ts_now, "nonce": nonce, "from": node_ctx["node_id"]})
     outer["sig"] = sign_message_hex(node_ctx["privkey"], to_sign)    
     return outer

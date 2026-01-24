@@ -101,6 +101,88 @@
   text-align: center;
 }
 
+/* BUTTON CONTAINER */
+.action-buttons {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+/* BASE BUTTON STYLE */
+.action-button {
+  padding: 10px 20px;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 160px;
+  justify-content: center;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+/* HOVER EFFECT FOR ALL BUTTONS */
+.action-button::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    45deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.1) 50%,
+    transparent 70%
+  );
+  animation: shine 3s ease-in-out infinite;
+}
+
+.action-button.receipt-button {
+  background: linear-gradient(135deg, #dd6a05 0%, #593411cf 100%);
+  border: 1px solid rgba(237, 182, 115, 0.618);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+}
+
+.action-button.receipt-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.4);
+}
+
+.action-button.receipt-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.action-button.copy-button {
+  background: linear-gradient(135deg, rgba(64, 46, 36, 0.8) 0%, rgba(0, 0, 0, 0.47) 100%);
+  border: 1px solid rgba(171, 171, 171, 0.618);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+}
+
+.action-button.copy-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.4);
+}
+
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: white;
+  animation: spin 1s ease-in-out infinite;
+}
+
 /* STYLE FOR ADDRESS TYPE */
 
 .addr-badge {
@@ -384,6 +466,10 @@
   }
 }
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 @keyframes gradient-wave {
   0% {
     background-position: 0% 60%;
@@ -401,6 +487,17 @@
   .graffiti-details {
     font-size: 16px;
     padding: 4px 8px;
+  }
+
+  .txid-action-buttons {
+    gap: 10px;
+    margin-top: 12px;
+  }
+  
+  .action-button {
+    padding: 8px 16px;
+    font-size: 13px;
+    min-width: 140px;
   }
   
   .txid-details,
@@ -449,6 +546,19 @@
   .graffiti-details {
     font-size: 14px;
     padding: 3px 6px;
+  }
+
+  .txid-action-buttons {
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .action-button {
+    width: 100%;
+    max-width: 200px;
+    min-width: unset;
+    padding: 8px;
+    font-size: 12px;
   }
   
   .txid-details,

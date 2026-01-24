@@ -1,19 +1,21 @@
 import { useState, useEffect } from "react";
 import { ClickableValue } from ".././SearchResults";
+import { FaCopy } from "react-icons/fa";
+import { getStatusBadge, getDirectionBadge } from "../SearchUX";
 import {  
   fmtAddress,
-  fmtDateLong,
+  fmtTimestamp,
   fmtTsar, 
   fmtTxid,
   timeAgo,
   formatHashForDisplay,
   getMaxCharsPerLine
 } from "../../../utils/format"
-import { getStatusBadge, getDirectionBadge } from "../SearchUX";
 
 const ResultAddress = ({ data, onSearchClick }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+  const [copyStatus, setCopyStatus] = useState("");
 
   const [isMobile, setIsMobile] = useState(false);
   const [maxCharsPerLine, setMaxCharsPerLine] = useState(getMaxCharsPerLine());
@@ -45,6 +47,46 @@ const ResultAddress = ({ data, onSearchClick }) => {
   const handlePageChange = (page) => {
     if (page >= 1 && page <= totalPages) {
       setCurrentPage(page);
+    }
+  };
+
+  const copyToClipboard = async () => {
+    if (!data?.address) return;
+    
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(data.address);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = data.address;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        
+        const successful = document.execCommand('copy');
+        if (!successful) {
+          throw new Error('Fallback copy failed');
+        }
+        
+        document.body.removeChild(textArea);
+      }
+      
+      setCopyStatus("Copied!");
+      setTimeout(() => setCopyStatus(""), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+      
+      try {
+        prompt('Copy this Address:', data.address);
+        setCopyStatus("Use prompt to copy");
+      } catch {
+        setCopyStatus("Failed!");
+      }
+      
+      setTimeout(() => setCopyStatus(""), 2000);
     }
   };
   
@@ -81,21 +123,6 @@ const ResultAddress = ({ data, onSearchClick }) => {
     }
     
     return pageNumbers;
-  };
-
-  const renderHash = (hash, className = "") => {
-    if (!hash) return "-";
-    
-    if (isMobile) {
-      const formattedHash = formatHashForDisplay(hash, maxCharsPerLine);
-      return (
-        <span className={`value hash-multiline ${className}`} style={{whiteSpace: 'pre-wrap'}}>
-          {formattedHash}
-        </span>
-      );
-    }
-    
-    return <span className={`value ${className}`}>{hash}</span>;
   };
 
   const renderClickableHash = (value, onSearchClick, info, displayValue = null) => {
@@ -135,8 +162,7 @@ const ResultAddress = ({ data, onSearchClick }) => {
       if (fromAddress === 'coinbase') {
         return (
           <>
-            <span className="tx-address-label">From : </span>
-            <span className="coinbase-label">Coinbase</span>
+            <span className="tx-address-label">From : Coinbase</span>
           </>
         );
       } else {
@@ -168,10 +194,205 @@ const ResultAddress = ({ data, onSearchClick }) => {
     return null;
   };
 
+  const splitAddressGrid = (address) => {
+    if (!address) return [];
+    
+    const len = address.length;
+    
+    // P2WPKH
+    if (len === 44) {
+      const rows = [];
+      
+      rows.push(address.substring(0, 4).split(''));
+      
+      const row2 = [];
+      for (let i = 4; i < 24; i += 5) {
+        row2.push(address.substring(i, i + 5));
+      }
+      rows.push(row2);
+      
+      const row3 = [];
+      for (let i = 24; i < 44; i += 5) {
+        row3.push(address.substring(i, i + 5));
+      }
+      rows.push(row3);
+
+      const row4 = [
+        "Citizen Address",
+        "P2WPKH"
+      ];
+      rows.push(row4);
+      
+      return rows;
+    }
+    
+    // P2WSH
+    if (len === 64) {
+      const rows = [];
+      
+      rows.push(address.substring(0, 4).split(''));
+      
+      const row2 = [];
+      for (let i = 4; i < 24; i += 5) {
+        row2.push(address.substring(i, i + 5));
+      }
+      rows.push(row2);
+      
+      const row3 = [];
+      for (let i = 24; i < 44; i += 5) {
+        row3.push(address.substring(i, i + 5));
+      }
+      rows.push(row3);
+      
+      const row4 = [];
+      for (let i = 44; i < 64; i += 5) {
+        row4.push(address.substring(i, i + 5));
+      }
+      rows.push(row4);
+      
+      const row5 = [
+        "Pool Address",
+        "P2WSH"
+      ];
+      rows.push(row5);
+      
+      return rows;
+    }
+    return [];
+  };
+
+  const getHighlightPositions = (addressLength) => {
+    if (addressLength === 44) { // P2WPKH
+      return [
+        [1, 0], [1, 2], // Baris 2, kolom 0 dan 2
+        [2, 1], [2, 3]  // Baris 3, kolom 1 dan 3
+      ];
+    } else if (addressLength === 64) { // P2WSH
+      return [
+        [1, 0], [1, 2], // Baris 2, kolom 0 dan 2
+        [2, 1], [2, 3], // Baris 3, kolom 1 dan 3
+        [3, 0], [3, 2]  // Baris 4, kolom 0 dan 2
+      ];
+    }
+    return [];
+  };
+
+  const renderAddressGrid = (address) => {
+    if (!address) return "-";
+    
+    const grid = splitAddressGrid(address);
+    
+    if (grid.length === 0) {
+      return <span className="value wrap">{address}</span>;
+    }
+
+    const isP2WPKH = address.length === 44;
+    const isP2WSH = address.length === 64;
+    const highlightPositions = getHighlightPositions(address.length);
+    
+    const isHighlighted = (row, col) => {
+      return highlightPositions.some(pos => pos[0] === row && pos[1] === col);
+    };
+
+    return (
+      <div className="address-container">
+        {grid.map((row, rowIndex) => {
+          const isLabelRow = (isP2WPKH && rowIndex === 3) || (isP2WSH && rowIndex === 4);
+          
+          if (isLabelRow) {
+            const labelClass = isP2WPKH ? "address-label-p2wpkh" : "address-label-p2wsh";
+            
+            return (
+              <div key={rowIndex} className="address-row">
+                <div className="address-cell">
+                  <div className={`${labelClass}`}>
+                    <span className="address-label">
+                      {row[0]}
+                    </span>
+                  </div>
+                </div>
+                <div className="address-cell">
+                  <div className={`${labelClass}`}>
+                    <span className="address-label">
+                      {row[1]}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+          
+          const isSingleCharRow = rowIndex === 0;
+          
+          return (
+            <div key={rowIndex} className="address-row">
+              {row.map((cell, colIndex) => {
+                if (isSingleCharRow) {
+                  return (
+                    <div key={colIndex} className="address-cell">
+                      <div className={`address-char-container`}>
+                        <span className="address-char">
+                          {cell}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }
+                
+                const shouldHighlight = isHighlighted(rowIndex, colIndex);
+                return (
+                  <div key={colIndex} className="address-cell">
+                    <div className={`address-chunk-container ${shouldHighlight ? 'highlighted' : ''}`}>
+                      <div className="address-chunk-grid">
+                        {cell.split('').map((char, charIndex) => (
+                          <div key={charIndex} className="address-chunk-char">
+                            {char}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <>
-      <h1 className="address-details">{renderHash(data?.address, "wrap")}</h1>
-        <div className="divider" />
+      {/* HEADER SECTION */}
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column',
+        alignItems: 'center',
+        marginBottom: '20px',
+        width: '100%'
+      }}>
+        {/* ADDRESS */}
+        <h1 className="stat"> Address Info
+        </h1>
+        <h1 className="address-details">
+          {renderAddressGrid(data?.address)}
+          <div className="divider2" />
+        </h1>
+        
+        {/* BUTTONS CONTAINER - CENTERED */}
+        <div className="action-buttons">
+          {/* COPY ADDRESS BUTTON */}
+          <button
+            onClick={copyToClipboard}
+            className={`action-button copy-button`}
+          >
+            <span><FaCopy /></span>
+            {copyStatus || "Copy"}
+          </button>
+        </div>
+      </div>
+
+      <div className="divider" />
 
       <div className="card">
         <div className="grid">
@@ -224,7 +445,7 @@ const ResultAddress = ({ data, onSearchClick }) => {
               <div className="tx-item" key={h.txid || h.id || idx}>
                 <div className="tx-items">
                   <div className="stat">
-                    <span className="value">{fmtDateLong(h.timestamp)}</span>
+                    <span className="value">{fmtTimestamp(h.timestamp)}</span>
                       {renderClickableHash(
                         h.txid,
                         onSearchClick,

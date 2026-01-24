@@ -18,6 +18,8 @@ import "./styles/search.css";
 import "./styles/footer.css";
 import "./styles/nav_bar.css";
 import "./styles/label.css";
+import "./styles/txid.css";
+import "./styles/address.css";
 
 const App = () => {
   const location = useLocation();

@@ -1,0 +1,157 @@
+.address-container {
+  display: table;
+  margin: 10px auto;
+}
+
+.address-row {
+  display: table-row;
+}
+
+.address-cell {
+  display: table-cell;
+  vertical-align: middle;
+}
+
+.address-char-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 6px;
+  background: linear-gradient(135deg, rgba(77, 77, 77, 0.809), rgba(42, 42, 42, 0.768));
+  border: 1px solid rgb(128, 121, 115);
+  min-width: 120px;
+}
+
+.address-char {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.address-chunk-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px;
+  background: var(--text);
+  border: 1px solid rgb(128, 121, 115);
+}
+
+.address-chunk-container.highlighted  {
+  background: #979797;
+  border: 1px solid rgb(128, 121, 115);
+}
+
+.address-chunk-grid {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.address-chunk-char {
+  flex: 1;
+  text-align: center;
+  font-size: 20px;
+  font-weight: 600;
+  color: #979797;
+}
+
+.address-label-p2wsh {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 6px;
+  background: linear-gradient(135deg, #1f5676 0%, #123f57c6 100%);
+  border: 1px solid rgb(128, 121, 115);
+  height: 100%;
+}
+
+.address-label-p2wpkh {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 6px;
+  background: linear-gradient(135deg, #48721e 0%, #3d5c21af 100%);
+  border: 1px solid rgb(128, 121, 115);
+  height: 100%;
+}
+
+.address-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  text-align: center;
+}
+
+.address-chunk-container.highlighted .address-chunk-char {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Responsive untuk Address Grid */
+@media (max-width: 768px) {
+  .address-chunk-container.highlighted {
+    font-weight: 600;
+  }
+
+  .address-container {
+    transform: scale(0.9);
+    transform-origin: center top;
+  }
+
+  .address-char-container {
+    min-width: 75px;
+    padding: 4px;
+  }
+  
+  .address-char {
+    font-size: 12px;
+  }
+  
+  .address-chunk-container {
+    min-width: 75px;
+    padding: 4px;
+  }
+  
+  .address-chunk-char {
+    font-size: 12px;
+  }
+  
+  .address-label {
+    font-size: 10px;
+    min-width: 75px;
+  }
+}
+
+@media (max-width: 480px) {
+  .address-chunk-container.highlighted {
+    font-weight: 600;
+  }
+
+  .address-container {
+    transform: scale(1.0);
+  }
+
+  .address-char-container {
+    min-width: 75px;
+    padding: 4px;
+  }
+  
+  .address-char {
+    font-size: 15px;
+  }
+  
+  .address-chunk-container {
+    min-width: 75px;
+    padding: 4px;
+  }
+  
+  .address-chunk-char {
+    font-size: 15px;
+  }
+  
+  .address-label {
+    font-size: 9px;
+    min-width: 75px;
+  }
+}

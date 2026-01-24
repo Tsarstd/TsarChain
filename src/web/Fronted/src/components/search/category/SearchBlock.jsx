@@ -99,7 +99,6 @@ const ResultBlock = ({ data, onSearchClick }) => {
               onSearchClick={onSearchClick}
               className="value muted"
               info="Click To See Graffiti Post"
-              style={isMobile ? {whiteSpace: 'pre-wrap'} : {}}
             >
               {isMobile ? formatHashForDisplay((data.block_id) || "-", maxCharsPerLine) : (data.block_id) || "-"}
             </ClickableValue>
