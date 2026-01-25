@@ -4,12 +4,12 @@
 
 from __future__ import annotations
 
-import base64
-import json
 import os
-import socket
-import threading
+import json
 import time
+import socket
+import base64
+import threading
 from typing import Any, Callable, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -67,10 +67,8 @@ def _open_store():
             _store = None
     return _store
 
-
 def _json_dumps(obj: object) -> bytes:
     return json.dumps(obj, ensure_ascii=True, default=str, separators=(",", ":")).encode("utf-8")
-
 
 def _json_loads(raw: bytes) -> Optional[dict]:
     try:
@@ -78,6 +76,65 @@ def _json_loads(raw: bytes) -> Optional[dict]:
     except Exception:
         return None
 
+# ============= RECEIPT CACHE HELPER ==============
+
+def get_receipt_file(txid: str) -> str:
+    txid_norm = str(txid or "").strip().lower()
+    if not txid_norm:
+        return ""
+    output_dir = "data/web/receipts"
+    os.makedirs(output_dir, exist_ok=True)
+    return os.path.join(output_dir, f"{txid_norm[:64]}.jpg")
+
+def is_receipt_fresh(file_path: str, max_age_seconds: int) -> bool:
+    if not os.path.exists(file_path):
+        return False
+    
+    try:
+        file_age = time.time() - os.path.getmtime(file_path)
+        return file_age <= max_age_seconds
+    except Exception:
+        return False
+
+def read_receipt_file(file_path: str, txid: str) -> dict:
+    with open(file_path, "rb") as f:
+        image_bytes = f.read()
+    
+    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+    return {
+        "status": "success",
+        "message": "Receipt generated successfully (from cache)",
+        "data_url": f"data:image/jpeg;base64,{base64_image}",
+        "filename": f"{txid[:64]}.jpg",
+        "size_bytes": len(image_bytes)
+    }
+
+def schedule_receipt_deletion(txid: str, delay_seconds: int):
+    def delete_file():
+        file_path = get_receipt_file(txid)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            log.debug(f"Auto-deleted receipt file after {delay_seconds}s: {file_path}")
+    
+    timer = threading.Timer(delay_seconds, delete_file)
+    timer.daemon = True
+    timer.start()
+
+def cleanup_receipt_files(max_age_seconds: int):
+    output_dir = "data/web/receipts"
+    if not os.path.exists(output_dir):
+        return
+    
+    current_time = time.time()
+    for filename in os.listdir(output_dir):
+        if filename.endswith('.jpg'):
+            file_path = os.path.join(output_dir, filename)
+            file_age = current_time - os.path.getmtime(file_path)
+            if file_age > max_age_seconds:
+                os.remove(file_path)
+                log.debug(f"Cleaned up stale receipt file: {filename} (age: {file_age:.1f}s)")
+
+# ============= RECEIPT CACHE END ==============
 
 def _is_expired(entry: dict, now_ts: Optional[int] = None) -> bool:
     now_ts = int(now_ts or time.time())
@@ -91,7 +148,6 @@ def _is_expired(entry: dict, now_ts: Optional[int] = None) -> bool:
         return False
     return ts <= 0 or now_ts - ts > ttl
 
-
 def make_cache_key(prefix: str, *parts: object) -> str:
     items = []
     for part in (prefix, *parts):
@@ -103,7 +159,6 @@ def make_cache_key(prefix: str, *parts: object) -> str:
         items.append(txt)
     return ":".join(items)
 
-
 def should_cache_error(reason: object) -> bool:
     txt = str(reason or "").strip().lower()
     if not txt:
@@ -111,7 +166,6 @@ def should_cache_error(reason: object) -> bool:
     if txt == "not_found" or txt == "height_out_of_range":
         return True
     return "not found" in txt
-
 
 def cache_ttl_for_error(reason: object) -> Optional[int]:
     txt = str(reason or "").strip().lower()
@@ -124,7 +178,6 @@ def cache_ttl_for_error(reason: object) -> Optional[int]:
     if should_cache_error(txt):
         return WEB_CACHE_TTL_SEC
     return None
-
 
 def cache_get_json(key: str, refresh_ttl: bool = False) -> Optional[object]:
     store = _open_store()
@@ -160,8 +213,7 @@ def cache_get_json(key: str, refresh_ttl: bool = False) -> Optional[object]:
     
     return entry.get("payload")
 
-
-def cache_set_json(key: str, payload: object, ttl_sec: int = WEB_CACHE_TTL_SEC) -> None:
+def cache_set(key: str, payload: object, ttl_sec: int = WEB_CACHE_TTL_SEC) -> None:
     store = _open_store()
     if store is None:
         return
@@ -175,10 +227,8 @@ def cache_set_json(key: str, payload: object, ttl_sec: int = WEB_CACHE_TTL_SEC) 
     except Exception:
         log.warning("[webdb] cache_set failed key=%s", key)
 
-
 def _media_meta_key(art_id: str) -> bytes:
     return f"meta:{art_id}".encode("utf-8")
-
 
 def _media_data_key(art_id: str) -> bytes:
     return f"data:{art_id}".encode("utf-8")
@@ -210,7 +260,6 @@ def save_blocks_permanent(blocks: list) -> None:
         except Exception:
             log.warning("[webdb] Failed to save block %s", height)
 
-
 def get_block_from_storage(height: int) -> Optional[dict]:
     store = _open_store()
     if store is None:
@@ -225,7 +274,6 @@ def get_block_from_storage(height: int) -> Optional[dict]:
         pass
     
     return None
-
 
 def get_block_range_from_storage(start: int, limit: int) -> dict:
     store = _open_store()
@@ -410,11 +458,9 @@ def start_prefetch_thread(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str
     
     log.info("[webdb] Block prefetch thread started (interval=%ds)", PREFETCH_INTERVAL)
 
-
 def stop_prefetch_thread() -> None:
     global _prefetch_running
     _prefetch_running = False
-
 
 def _cache_media_error(art_id: str, reason: str, ttl_sec: int = WEB_CACHE_TTL_SEC) -> None:
     store = _open_store()
@@ -468,7 +514,6 @@ def _load_media_entry(art_id: str) -> Optional[dict]:
         return None
     return entry
 
-
 def _guess_media_ext(meta: dict, art_id: str) -> str:
     fname = str(meta.get("filename") or f"{art_id}.bin")
     ext = os.path.splitext(fname)[1] or ""
@@ -481,10 +526,10 @@ def _guess_media_ext(meta: dict, art_id: str) -> str:
         return ".mp4" if ext.lower() != ".mp4" else ext
     return ext or ".bin"
 
-
 def _write_cache_file(cache_root: str, art_id: str, meta: dict, data: bytes) -> str:
     os.makedirs(cache_root, exist_ok=True)
     ext = _guess_media_ext(meta, art_id)
+    log.info("mime=%s", ext)
     cache_path = os.path.join(cache_root, f"{art_id}{ext}")
     try:
         if not os.path.exists(cache_path) or os.path.getsize(cache_path) != len(data):
@@ -493,7 +538,6 @@ def _write_cache_file(cache_root: str, art_id: str, meta: dict, data: bytes) -> 
     except Exception:
         log.warning("[webdb] cache write failed art=%s", art_id[:16])
     return cache_path
-
 
 def _get_cached_graffiti_file(art_id: str, cache_dir: Optional[str]) -> Optional[dict]:
     store = _open_store()
@@ -510,7 +554,6 @@ def _get_cached_graffiti_file(art_id: str, cache_dir: Optional[str]) -> Optional
     cache_root = cache_dir or os.path.join("data", "web", "graffiti_cache")
     cache_path = _write_cache_file(cache_root, art_id, entry.get("meta") or {}, bytes(data_raw))
     return {"status": "ok", "meta": entry.get("meta") or {}, "cache_path": cache_path}
-
 
 def _pick_endpoint(meta: Dict[str, Any]) -> Optional[Tuple[str, int]]:
     host = str(meta.get("ip") or "").strip()
@@ -536,7 +579,6 @@ def _pick_endpoint(meta: Dict[str, Any]) -> Optional[Tuple[str, int]]:
                     return None
                 return host_part, port
     return None
-
 
 def _send_storage_request(
     host: str,
@@ -588,7 +630,6 @@ def _send_storage_request(
             resp["reason"] = "pow_required"
     return resp
 
-
 def fetch_storers(
     rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
     limit: Optional[int] = None,
@@ -607,7 +648,7 @@ def fetch_storers(
     if isinstance(resp, dict) and resp.get("error"):
         ttl_err = cache_ttl_for_error(resp.get("error"))
         if ttl_err is not None:
-            cache_set_json(cache_key, [], ttl_sec=ttl_err)
+            cache_set(cache_key, [], ttl_sec=ttl_err)
         return []
 
     storers = resp.get("storers") or resp.get("items") or []
@@ -620,7 +661,7 @@ def fetch_storers(
         valid.append(meta)
     valid.sort(key=lambda m: int(m.get("last_seen", 0)), reverse=True)
     if ttl_sec > 0:
-        cache_set_json(cache_key, valid, ttl_sec=ttl_sec)
+        cache_set(cache_key, valid, ttl_sec=ttl_sec)
     if limit is not None and limit > 0:
         return valid[:limit]
     return valid
@@ -883,7 +924,7 @@ __all__ = [
     "WEB_CACHE_ERROR_TTL_SHORT",
     "WEB_STOR_LIST_TTL_SEC",
     "cache_get_json",
-    "cache_set_json",
+    "cache_set",
     "cache_ttl_for_error",
     "fetch_graffiti_file",
     "fetch_storers",
@@ -896,4 +937,10 @@ __all__ = [
     "prefetch_blocks",
     "start_prefetch_thread",
     "stop_prefetch_thread",
+    "cleanup_receipt_files",
+    "schedule_receipt_deletion",
+    "read_receipt_file",
+    "is_receipt_fresh",
+    "get_receipt_file"
+    
 ]

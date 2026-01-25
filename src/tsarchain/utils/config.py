@@ -115,7 +115,7 @@ KV_ITER_CHUNK      = 512 # number of entries per chunk when iterating prefix sca
 
 # ---- WEB CACHE (LMDB) ----
 WEB_DATABASE_PATH  = "data/web"  # dedicated LMDB path for web cache
-LMDB_WEB_SIZE_INIT = 100 * 1024 * 1024  # initial web LMDB size (100 MB)
+LMDB_WEB_SIZE_INIT = 100 * 1024  # initial web LMDB size (100 KB)
 LMDB_WEB_SIZE_MAX  = 128 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
 
 # ---- SNAPSHOT SIGNING ----

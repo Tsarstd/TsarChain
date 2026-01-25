@@ -17,12 +17,14 @@ from web.Backend.src.python import build_receipt
 from tsarchain.utils.tsar_logging import get_ctx_logger, setup_logging
 log = get_ctx_logger('tsarchain.web.Backend.py_rpc_client')
 
-_CLIENT_CACHE = {}
-_CLIENT_LOCK = threading.RLock()
-_CACHE_SCOPE = "default"
-_prefetch_started = False
+_CLIENT_CACHE       = {}
+_CLIENT_LOCK        = threading.RLock()
+_CACHE_SCOPE        = "default"
+_prefetch_started   = False
 _prefetch_host_port = None
-RPC_SOURCE = os.environ.get("TSAR_RPC_SOURCE") or "web_backend"
+RPC_SOURCE          = "web_backend"
+
+RECEIPT_TTL         = 30
 
 def _emit(out: object) -> None:
     try:
@@ -53,11 +55,16 @@ def _get_client(host: str, port: int):
             _CLIENT_CACHE[key] = client
         
         return client
-
+    
 def _drop_client(host: str, port: int) -> None:
     key = f"{host}:{port}"
     with _CLIENT_LOCK:
         _CLIENT_CACHE.pop(key, None)
+    
+def _payload_has_error(payload: object) -> bool:
+    return isinstance(payload, dict) and bool(payload.get("error"))
+
+# ============= CACHE HELPER START ==============
 
 def _set_cache_scope(host: str, port: int) -> None:
     global _CACHE_SCOPE
@@ -65,9 +72,6 @@ def _set_cache_scope(host: str, port: int) -> None:
 
 def _cache_key(kind: str, *parts: object) -> str:
     return webdb.make_cache_key("web", _CACHE_SCOPE, kind, *parts)
-
-def _payload_has_error(payload: object) -> bool:
-    return isinstance(payload, dict) and bool(payload.get("error"))
 
 def _cache_policy(payload: object) -> tuple[bool, int | None]:
     if payload is None:
@@ -86,9 +90,9 @@ def _cache_get(key: str, refresh_ttl: bool = False):
 
 def _cache_set(key: str, payload: object, ttl_sec: int | None = None) -> None:
     if ttl_sec is None:
-        webdb.cache_set_json(key, payload)
+        webdb.cache_set(key, payload)
     else:
-        webdb.cache_set_json(key, payload, ttl_sec=ttl_sec)
+        webdb.cache_set(key, payload, ttl_sec=ttl_sec)
 
 def _cache_fetch(key: str, fetch_fn):
     cached = _cache_get(key)
@@ -100,31 +104,68 @@ def _cache_fetch(key: str, fetch_fn):
         _cache_set(key, payload, ttl_sec)
     return payload
 
+# ============= CACHE HELPER END ==============
+
 # ======================================
 # ============= RPC START ==============
 # ======================================
 
-def rpc_receipt(client, txid: str):
+def rpc_receipt(client, txid: str): # Receipt TXID Generator
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+    
     txid_norm = str(txid or "").strip().lower()
     if not txid_norm:
         return {"status": "error", "message": "Missing txid"}
     
+    file_path = webdb.get_receipt_file(txid_norm)
+    cache_key = _cache_key("receipt", txid_norm)
+    cached = _cache_get(cache_key, refresh_ttl=True)
+    if cached is not None:
+        if webdb.is_receipt_fresh(file_path, max_age_seconds=RECEIPT_TTL):
+            # File exists and is fresh (< 30 seconds)
+            result = webdb.read_receipt_file(file_path, txid_norm)
+            if result is not None:
+                if CFG.DEBUG_BENCHMARKS:
+                    end = time.perf_counter()
+                    ms = round((end - start) * 1000.0, 3)
+                    if ms > 50.0:
+                        log.warning("[CACHE_HIT_RECEIPT] Benchmark: %.3f ms", ms)
+                    
+                return result
+            else:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+        else:
+            # File is stale (> 30 seconds), clean it up
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
     tx_data = rpc_tx(client, txid_norm)
     if isinstance(tx_data, dict) and tx_data.get("error"):
         return {"status": "error", "message": f"Failed to fetch transaction: {tx_data.get('error')}"}
     
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-    # Generate receipt
     output_dir = "data/web/receipts"
     receipt_gen = build_receipt.PaymentReceiptGenerator(output_dir)
     result = receipt_gen.generate_receipt_base64(tx_data)
-    
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        ms = round((end - start) * 1000.0, 3)
-        if ms > 120.0:
-            log.warning("[GENERATED_RECEIPT] Benchmark : %.3f ms", ms)
+    if result.get("status") == "success" and txid_norm:
+        # Update cache metadata with 30 second TTL
+        cache_info = {
+            "txid": txid_norm,
+            "file_path": file_path,
+            "generated_at": int(time.time()),
+            "scheduled_deletion": int(time.time()) + RECEIPT_TTL
+        }
+        _cache_set(cache_key, cache_info, ttl_sec=RECEIPT_TTL)
+        
+        # Schedule file deletion after 30 seconds
+        webdb.schedule_receipt_deletion(txid_norm, delay_seconds=RECEIPT_TTL)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            ms = round((end - start) * 1000.0, 3)
+            if ms > 100.0:
+                log.warning("[GENERATED_RECEIPT] Benchmark: %.3f ms (new generation)", ms)
     
     return result
 
@@ -156,7 +197,7 @@ def rpc_block(client, val: str):
         if ttl_err is not None:
             _cache_set(key, resp, ttl_err)
         return resp
-    webdb.cache_set_json(key, resp, ttl_sec=0)
+    webdb.cache_set(key, resp, ttl_sec=0)
     return resp
 
 def rpc_block_range(client, opts: dict):
@@ -475,23 +516,36 @@ def _emit_worker(req_id: object, payload: object) -> None:
 
 
 def _worker_loop() -> None:
+    global _last_cleanup
+    _last_cleanup = 0
+    
     for line in sys.stdin:
         raw = (line or "").strip()
         if not raw:
             continue
+        
         try:
             req = json.loads(raw)
         except Exception:
             log.exception("[worker] bad_json")
             continue
+        
         if not isinstance(req, dict):
             log.warning("[worker] bad_request")
             continue
+        
         req_id = req.get("id")
         op = req.get("op")
         if req_id is None or not op:
             _emit_worker(req_id, {"error": "missing_op"})
             continue
+        
+        # Run periodic cleanup every 60 seconds
+        current_time = time.time()
+        if current_time - _last_cleanup > 60:  # Every 1 minute
+            webdb.cleanup_receipt_files(35)  # Clean files > 35s (5s buffer)
+            _last_cleanup = current_time
+        
         host, port = _parse_host_port(req.get("host"), req.get("port"))
         try:
             out = _dispatch_rpc(str(op), req.get("param"), host, port)

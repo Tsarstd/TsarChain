@@ -77,9 +77,6 @@ class DifficultyMixin:
                 T = int(CFG.TARGET_BLOCK_TIME)
                 M = min(int(CFG.EDA_WINDOW), len(prefix))
                 if M >= 2:
-                    def _ts(b) -> int:
-                        t = getattr(b, "timestamp", 0)
-                        return int(t) if isinstance(t, (int, float)) else 0
                     times = [_ts(b) for b in prefix[-M:]]
                     intervals = []
                     for i in range(1, len(times)):
