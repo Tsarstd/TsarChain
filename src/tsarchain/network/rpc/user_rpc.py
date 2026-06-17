@@ -1316,7 +1316,7 @@ def handle_user_rpc(
         # === Onion-lite relay (opsional) ===
         relay_hops = int(CFG.CHAT_NUM_HOPS)
         if CFG.CHAT_FORCE_RELAY and len(self.peers) >= max(1, relay_hops):
-            route = choose_relay_route(self, hops=relay_hops)
+            route = choose_relay_route(self, relay_hops)
             if not route:
                 log.debug("[process_message] CHAT_SEND relay requested but no peers available; falling back to direct queue")
             else:

@@ -835,9 +835,8 @@ def _serialize_block(self, b) -> dict:
     bits = getattr(b, "bits")
     
     # Chainwork & Difficulty
-    meta = getattr(b, "_meta", {})
-    chainwork = meta.get("chainwork")
-    diff = meta.get("difficulty")
+    chainwork = getattr(b, "chainwork", None)
+    diff = getattr(b, "difficulty", None)
 
     # Size estimation
     size_bytes = _estimate_block_size_bytes(b)

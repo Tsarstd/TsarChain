@@ -54,7 +54,6 @@ def _store_record(name: str, data: Dict) -> None:
     # Store in KV (primary storage)
     if kv_enabled():
         put(KEYS_DB_NAME, name.encode("utf-8"), payload)
-        log.debug(f"Stored record '{name}' to KV storage")
     else:
         log.debug("KV storage not enabled, using JSON fallback only")
     
@@ -72,7 +71,6 @@ def _store_record(name: str, data: Dict) -> None:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
-            log.debug(f"Stored record '{name}' to JSON fallback at {path}")
         except (IOError, OSError) as e:
             log.error(f"Failed to write JSON fallback for {name}: {e}")
 

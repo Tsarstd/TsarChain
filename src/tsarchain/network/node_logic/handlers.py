@@ -235,7 +235,7 @@ def _handle_full_sync(self, message, addr):
     self.broadcast.receive_full_sync(payload)
     return {"status": "ok"}
 
-def _handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict:
+def _handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict: #get block by heigt
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
         
@@ -247,14 +247,13 @@ def _handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict:
     b = chain[height]
     d = self._serialize_block(b)
     d["type"] = "BLOCK"
-    
+    log.debug("[_handle_get_block_at] result: %s", d)
     if CFG.DEBUG_BENCHMARKS:
         end = time.perf_counter()
         result = round((end - start) * 1000.0, 3)
         tag = src_tag or "-"
         if result > 15.0:
             log.debug("[GET_BLOCK] 'height' Benchmark : %.3f ms src=%s", result, tag)
-        
     return d
 
 def _handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict:
@@ -267,6 +266,7 @@ def _handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict
     for b in chain:
         if self._bhash_hex(b).lower() == hx:
             d = self._serialize_block(b)
+            log.debug("[_handle_get_block_by_hash] result: %s", d)
             d["type"] = "BLOCK"
             
             if CFG.DEBUG_BENCHMARKS:
@@ -275,7 +275,6 @@ def _handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict
                 tag = src_tag or "-"
                 if result > 15.0:
                     log.debug("[GET_BLOCK] 'hash' Benchmark : %.3f ms src=%s", result, tag)
-                
             return d
     return {"type": "BLOCK", "error": "not_found"}
 

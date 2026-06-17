@@ -41,11 +41,13 @@ class BlockHeader:
 
 
 class Block:
-    def __init__(self, height: int, prev_block_hash: bytes, transactions: List[Tx], version: int = 1, bits: int = CFG.INITIAL_BITS, timestamp: Optional[int] = None, nonce: int = 0, merkle_root_precomputed: bytes | None = None):
+    def __init__(self, height: int, prev_block_hash: bytes, transactions: List[Tx], version: int = 1, bits: int = CFG.INITIAL_BITS, timestamp: Optional[int] = None, nonce: int = 0, merkle_root_precomputed: bytes | None = None, difficulty=None, chainwork=None):
         self.height = height
         self.version = version
         self.prev_block_hash = prev_block_hash
         self.transactions = transactions
+        self.difficulty = difficulty
+        self.chainwork = chainwork
         if merkle_root_precomputed is not None:
             self.merkle_root = bytes(merkle_root_precomputed)
         else:
@@ -69,6 +71,8 @@ class Block:
             "prev_block_hash": self.prev_block_hash.hex(),
             "merkle_root": self.merkle_root.hex(),
             "timestamp": self.timestamp,
+            "difficulty": self.difficulty,
+            "chainwork": self.chainwork,
             "bits": int(self.bits),
             "nonce": self.nonce,
             "hash": self.hash().hex(),
@@ -122,6 +126,9 @@ class Block:
             bits=cls._parse_bits(data.get("bits")),
             version=data.get("version", 1),
             merkle_root_precomputed=mr_bytes,)
+        
+        obj.difficulty = data.get("difficulty")
+        obj.chainwork = data.get("chainwork")
         
         # cache hash if provided to avoid double PoW verify; validation will still verify
         try:

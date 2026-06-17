@@ -95,6 +95,7 @@ class ChainOpsMixin:
             self.chain.append(block)
             self.total_blocks = len(self.chain)
             setattr(block, "chainwork", self._work_from_bits(block.bits))
+            block.difficulty = self._work_from_bits(block.bits)
             try:
                 if hasattr(self, "_hash_cache"):
                     self._hash_cache[int(block.height)] = block.hash().hex()
@@ -133,6 +134,7 @@ class ChainOpsMixin:
         if prev_cw is None:
             prev_cw = self._compute_chainwork_for_chain(self.chain[:-1])
         self.chain[-1].chainwork = int(prev_cw) + self._work_from_bits(block.bits)
+        block.difficulty = self._work_from_bits(block.bits)
         self._mark_chain_dirty(block.height)
         try:
             if hasattr(self, "_hash_cache"):
@@ -198,6 +200,7 @@ class ChainOpsMixin:
 
             old_tip = self.chain[-1]
             self.chain[-1] = block
+            block.difficulty = self._work_from_bits(block.bits)
             prev_cw = getattr(parent, "chainwork", None)
             if prev_cw is None:
                 prev_cw = self._compute_chainwork_for_chain(self.chain[:-1])

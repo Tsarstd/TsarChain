@@ -20,20 +20,9 @@ class UTXODatabaseMixin:
         tx_out = entry.get("tx_out")
         if hasattr(tx_out, "to_dict"):
             tx_out_dict = tx_out.to_dict()
-        elif isinstance(tx_out, dict):
-            tx_out_dict = dict(tx_out)
         else:
-            amount = getattr(tx_out, "amount", 0) if tx_out is not None else 0
-            spk = getattr(tx_out, "script_pubkey", None) if tx_out is not None else None
-            spk_hex = None
-            if spk is not None:
-                if hasattr(spk, "serialize"):
-                    spk_hex = spk.serialize().hex()
-                elif isinstance(spk, (bytes, bytearray)):
-                    spk_hex = bytes(spk).hex()
-                elif isinstance(spk, str):
-                    spk_hex = spk
-            tx_out_dict = {"amount": amount, "script_pubkey": spk_hex}
+            tx_out_dict = dict(tx_out)
+
         address = None
         script_type = None
         spk_bytes = None

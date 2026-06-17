@@ -192,6 +192,7 @@ def rpc_block(client, val: str):
     if cached is not None:
         return cached
     resp = _rpc_send(client, payload)
+    log.debug("[rpc_block] payload: %s, resp: %s", payload, resp)
     if _payload_has_error(resp):
         ttl_err = webdb.cache_ttl_for_error(resp.get("error") if isinstance(resp, dict) else None)
         if ttl_err is not None:

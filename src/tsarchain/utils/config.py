@@ -168,8 +168,8 @@ CHAT_STATE    = "data_user/chat_config.json"  # cached chat preferences and poin
 
 # ---- NODE KEYS FILES ----
 KEYS_DATA_DIR         = os.path.join("data/keys")  # root folder for node-specific secrets
-NODE_KEY_PATH         = os.path.join(KEYS_DATA_DIR, "node")  # primary node identity key storage path
-PEER_KEYS_PATH        = os.path.join(KEYS_DATA_DIR, "node/peer_keys")  # known peer key cache linked to node_data
+NODE_KEY_PATH         = os.path.join(KEYS_DATA_DIR, "node.json")  # primary node identity key storage path
+PEER_KEYS_PATH        = os.path.join(KEYS_DATA_DIR, "node/peer_keys.json")  # known peer key cache linked to node_data
 
 
 # =============================================================================
@@ -186,7 +186,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "000451f1140825e67025f51bd482568fb35f203bdda96f7ad3037b6d5a197970"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "000337fb8f200e5f0f0a0ba4edec424ae24946556e6ab2b8c1f26927ec133eff"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
