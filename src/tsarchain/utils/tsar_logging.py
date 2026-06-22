@@ -5,13 +5,27 @@
 '''
 HOW TO USE logging in your code:
 
-self.log.trace("very technical details, like : PING , mining detail, etc. usually unnecessary")
-self.log.info("normal event / milestone")
-self.log.debug("technical details for diagnosis")
-self.log.warning("a non-fatal condition that needs attention")
-self.log.error("handled error")
-self.log.critical("fatal condition")
-self.log.exception("context message when an exception occurs") >automatically include traceback
+First, you must import the logger from tsar_logging.py, like this:
+
+from ..utils.tsar_logging import get_ctx_logger, setup_logging
+log = get_ctx_logger('your_module_name')
+
+Then, you can use the logger to log messages at different levels:
+
+log.trace("very technical details, like : PING , mining detail, etc. usually unnecessary")
+log.info("normal event / milestone")
+log.debug("technical details for diagnosis")
+log.warning("a non-fatal condition that needs attention")
+log.error("handled error")
+log.critical("fatal condition")
+log.exception("context message when an exception occurs") *automatically include traceback
+
+--------------
+and, in entyr point of your main app, call setup_logging() to configure logging.
+
+example:
+if __name__ == "__main__":
+    setup_logging("your_path_log", force=True)
 '''
 
 from __future__ import annotations

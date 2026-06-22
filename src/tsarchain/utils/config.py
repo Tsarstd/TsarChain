@@ -185,8 +185,8 @@ ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
 # ---- GENESIS SETTINGS ----
-ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "000337fb8f200e5f0f0a0ba4edec424ae24946556e6ab2b8c1f26927ec133eff"  # reference hash of committed genesis block
+ALLOW_AUTO_GENESIS       = 1 # enable (1) or disable (0) automatic genesis construction
+GENESIS_HASH_HEX         = ""  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -664,8 +664,8 @@ GRAFFITI_EXPIRE_AFTER_BLOCKS  = 8        # default retention window after graffi
 GRAFFITI_PROOF_EPOCH_BLOCKS   = 15        # block interval between retention proofs
 GRAFFITI_PROOF_EPOCH_DRIFT    = 1         # allowed epoch drift for proof/payout (future/past)
 GRAFFITI_PROOF_CHUNK_BYTES    = 100 * 1024  # bytes challenged per proof (deterministic)
-GRAFFITI_MAX_SIZE_BYTES       = 300 * 1024 * 1024  # hard cap for upload/download payload
-GRAFFITI_MAX_MSG_BYTES        = 301 * 1024 * 1024  # per-message cap for graffiti transfer (storage RPC) STOR_INIT/STOR_PUT
+GRAFFITI_MAX_SIZE_BYTES       = 150 * 1024 * 1024  # hard cap for upload/download payload
+GRAFFITI_MAX_MSG_BYTES        = 151 * 1024 * 1024  # per-message cap for graffiti transfer (storage RPC) STOR_INIT/STOR_PUT
 GRAFFITI_ALLOWED_MIME         = ("image/jpeg", "video/mp4", "video/x-matroska", "application/pdf")  # whitelist MIME types
 GRAFFITI_ALLOWED_EXT          = ("jpg", "jpeg", "mp4", "mkv", "pdf")  # extension fallback when MIME unavailable
 

@@ -443,7 +443,7 @@ class ChainOpsMixin:
 
         return True
 
-    def print_chain(
+    def print_chain( # Just for GUI/CLI display, not for core operations
         self,
         max_blocks: int | None = None,
         columns: tuple[str, ...] = ("height", "time", "txs", "block_id", "hash", "prev"),

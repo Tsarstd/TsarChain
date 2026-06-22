@@ -29,7 +29,7 @@ class PaymentReceiptGenerator:
         self.path          = path
         self.template_path = "src/web/Backend/src/template/receipt_template.jpg"
         self.font_template = "src/web/Backend/src/template/font_template.ttf"
-        self.qr_prefix     = "https://www.tsarchain.com/?search="
+        self.qr_prefix     = "https://localhost:5173/?search="
         
         # Confirmation Stamp
         self.confirmed     = "src/web/Backend/src/template/confirmed.png"
