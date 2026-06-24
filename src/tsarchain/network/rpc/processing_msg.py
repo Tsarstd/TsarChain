@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Optional
 # ---------------- Local Project ----------------
 from .miner_rpc import handle_miner_rpc
 from .storage_rpc import handle_storage_rpc
-from .user_rpc import handle_user_rpc
+from .user_rpc.dispatcher import handle_user_rpc
 from ...contracts import graffiti as GRAFFITI
 from ...utils import config as CFG
 from ..node_logic.ratelimit import ban_ip

@@ -419,40 +419,50 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     │   │   │   │   └── sync.py                  # sync logic
     │   │   │   │
     │   │   │   ├── rpc/
-    │   │   │   │   ├── miner_rpc.py             # miner RPC api gateway
-    │   │   │   │   ├── processing_msg.py        # role base & security RPC api
-    │   │   │   │   ├── storage_rpc.py           # storage RPC api gateway
-    │   │   │   │   └── user_rpc.py              # user RPC api gateway
+    │   │   │   │   ├── user_rpc/
+    │   │   │   │   |   ├── category/
+    |   │   │   │   │   |   ├── chat.py                # All Chat RPC on Wallet
+    |   │   │   │   │   |   ├── explorer.py            # Exploring Tsarchain RPC (Block Detail, Tx Details, etc)
+    |   │   │   │   │   |   ├── graff_activities.py    # All Graffiti RPC
+    |   │   │   │   │   |   ├── networking.py          # Ping, Get peers & Stor List
+    |   │   │   │   │   |   └── transactions.py        # All Transactions RPC
+    |   │   │   │   │   |
+    │   │   │   │   |   ├── common.py                  # common helper
+    │   │   │   │   |   └── dispatcher.py              # Handler Map RPC
+    │   │   │   │   |
+    │   │   │   │   ├── miner_rpc.py                   # miner RPC api gateway
+    │   │   │   │   ├── processing_msg.py              # role base & security RPC api
+    │   │   │   │   └── storage_rpc.py                 # storage RPC api gateway
     │   │   │   │
-    │   │   │   ├── broadcast.py                 # Broadcast initialize
-    │   │   │   ├── client_helper.py             # helper for RPC api
-    │   │   │   ├── dandelion_pp.py              # minimal dandelion ++ modul
-    │   │   │   ├── node.py                      # Node initialize
-    │   │   │   ├── peers_storage.py             # keys management storage
-    │   │   │   ├── pow_token.py                 # POW toke module
-    │   │   │   └── protocol.py                  # handshake & p2p transport protocol
+    │   │   │   ├── broadcast.py                       # Broadcast initialize
+    │   │   │   ├── client_helper.py                   # helper for RPC api
+    │   │   │   ├── dandelion_pp.py                    # minimal dandelion ++ modul
+    │   │   │   ├── node.py                            # Node initialize
+    │   │   │   ├── peers_storage.py                   # keys management storage
+    │   │   │   ├── pow_token.py                       # POW toke module
+    │   │   │   └── protocol.py                        # handshake & p2p transport protocol
     │   │   │
     │   │   ├── storage/
     │   │   │   ├── utxo_logic/
-    │   │   │   │   ├── balances.py              # Balance lookup logic
-    │   │   │   │   ├── database.py              # UTXO database logic
-    │   │   │   │   ├── graff_utxo.py            # graffiti UTXO logic
-    │   │   │   │   └── validate.py              # core validation UTXO logic
+    │   │   │   │   ├── balances.py                    # Balance lookup logic
+    │   │   │   │   ├── database.py                    # UTXO database logic
+    │   │   │   │   ├── graff_utxo.py                  # graffiti UTXO logic
+    │   │   │   │   └── validate.py                    # core validation UTXO logic
     │   │   │   │
-    │   │   │   ├── db.py                        # JSON database logic
-    │   │   │   ├── kv.py                        # LMDB database logic
-    │   │   │   └── utxo.py                      # UTXO initialize
+    │   │   │   ├── db.py                              # JSON database logic
+    │   │   │   ├── kv.py                              # LMDB database logic
+    │   │   │   └── utxo.py                            # UTXO initialize
     │   │   │
     │   │   └── utils/
     │   │       ├── cosmetic
-    │   │       │   ├── interface.py             # colorama CLI module
-    │   │       │   ├── thread_check.py          # thread monitoring
-    │   │       │   └── tui.py                   # TUI for CLI
+    │   │       │   ├── interface.py                   # colorama CLI module
+    │   │       │   ├── thread_check.py                # thread monitoring
+    │   │       │   └── tui.py                         # TUI for CLI
     │   │       │
-    │   │       ├── bootstrap.py                 # auto backup / snapshot logic
-    │   │       ├── config.py                    # ALL project Configuration
-    │   │       ├── helpers.py                   # script helpers
-    │   │       └── tsar_logging.py              # logging module
+    │   │       ├── bootstrap.py                       # auto backup / snapshot logic
+    │   │       ├── config.py                          # ALL project Configuration
+    │   │       ├── helpers.py                         # script helpers
+    │   │       └── tsar_logging.py                    # logging module
     │   │
     │   └── web/                    # TsarChain Explorer Website
     │       ├── Backend/            # ALL Backend Website Module

@@ -186,7 +186,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "000b116d98b1545c50273567d8f0aa3320cc8ead429d462908cec680edec8641"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "00064e983c7468f9250dc7332eb5f82c60c1254a983d2e09d0acf195f9972206"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -513,6 +513,16 @@ MAX_HANDSHAKE_BYTES  = 16 * 1024  # cap size for initial handshake frames (HS1/H
 # ---- CLIENT THROTTLING ----
 NODE_CACHE_TTL          = 60    # seconds cached node metadata stays valid
 WALLET_RPC_MIN_INTERVAL = 0.45  # minimum spacing between wallet RPC calls
+
+# ---- PING LOOKUP THROTTLING ----
+PING_RL_IP_BURST    = 5 # ping requests allowed per IP before throttling
+PING_RL_IP_WINDOW_S = 10 # time window (seconds) evaluated by the limiter
+PING_RL_BACKOFF_S   = 30 # seconds to backoff when the limiter trips
+
+# ---- GET PEERS LOOKUP THROTTLING ----
+GET_PEERS_RL_IP_BURST    = 5 # get_peers requests allowed per IP before throttling
+GET_PEERS_RL_IP_WINDOW_S = 10 # time window (seconds) evaluated by the limiter
+GET_PEERS_RL_BACKOFF_S   = 30 # seconds to backoff when the limiter trips
 
 # ---- BALANCE LOOKUP THROTTLING ----
 BALANCE_RL_IP_BURST    = 15   # balance queries allowed per IP before throttling

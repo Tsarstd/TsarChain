@@ -989,7 +989,7 @@ def _select_utxos_for(self, utxos: list[dict], target_amount_sat: int, fee_rate:
 
     raise ValueError(f"insufficient funds: have={acc}, need={target_amount_sat + est_fee}")
 
-def _handle_create_tx(self, from_addr, to_addr, amount, fee_rate):
+def _create_template_tx(self, from_addr, to_addr, amount, fee_rate):
     if not isinstance(from_addr, str) or not isinstance(to_addr, str):
         raise ValueError("from/to address must be string")
 
@@ -1096,7 +1096,7 @@ def _guard_graffiti_output(self, spk: Script) -> None:
         if tip < 0:
             raise ValueError("graffiti_comment_tip_negative")
 
-def _handle_create_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, force_inputs: list[str] | None = None):
+def _create_template_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, force_inputs: list[str] | None = None):
     if not isinstance(from_addr, str):
         raise ValueError("from must be string")
     if not isinstance(outputs, list) or not outputs:
@@ -1318,10 +1318,10 @@ _CLIENT_HELPER = {
     "_addr_to_spk": _addr_to_spk,
     "_estimate_tx_size": _estimate_tx_size,
     "_select_utxos_for": _select_utxos_for,
-    "_handle_create_tx": _handle_create_tx,
+    "_create_template_tx": _create_template_tx,
     "_deserialize_spk_hex": _deserialize_spk_hex,
     "_guard_graffiti_output": _guard_graffiti_output,
-    "_handle_create_tx_multi": _handle_create_tx_multi,
+    "_create_template_tx_multi": _create_template_tx_multi,
 }
 
 def install_client_helper(target_cls) -> None:

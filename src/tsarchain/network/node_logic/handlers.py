@@ -253,6 +253,11 @@ def _handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict:
         tag = src_tag or "-"
         if result > 15.0:
             log.debug("[GET_BLOCK] 'height' Benchmark : %.3f ms src=%s", result, tag)
+            
+    serialized = json.dumps(d, separators=CFG.CANONICAL_SEP).encode("utf-8")
+    size_bytes = len(serialized)
+    log.debug("GET_BLOCK 'height' response size: %d bytes (%.2f KB)", size_bytes, size_bytes / 1024.0)
+    
     return d
 
 def _handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict:
@@ -273,6 +278,11 @@ def _handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict
                 tag = src_tag or "-"
                 if result > 15.0:
                     log.debug("[GET_BLOCK] 'hash' Benchmark : %.3f ms src=%s", result, tag)
+                    
+            serialized = json.dumps(d, separators=CFG.CANONICAL_SEP).encode("utf-8")
+            size_bytes = len(serialized)
+            log.debug("GET_BLOCK 'hash' response size: %d bytes (%.2f KB)", size_bytes, size_bytes / 1024.0)
+            
             return d
     return {"type": "BLOCK", "error": "not_found"}
 

@@ -1,0 +1,719 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Tsar Studio
+# Part of TsarChain — see LICENSE and TRADEMARKS.md
+# Refs: see REFERENCES.md
+
+import time
+import json
+import secrets
+
+from bech32 import convertbits, bech32_decode
+from .....utils.helpers import hash160
+
+from .....utils import config as CFG
+from ...user_rpc import common as CM
+
+# ---------------- Logger ----------------
+from .....utils.tsar_logging import get_ctx_logger
+log = get_ctx_logger("tsarchain.network.rpc.user_rpc.category.chat")
+
+
+def chat_register(self, message, pow_obj, base_identity, addr, *,
+                     client_ip, **kwargs):
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+    
+    addr_s   = (message.get("address")  or "").strip().lower()
+    ok, pow_resp = CM._allow_rpc_with_pow(
+        self,
+        scope="rpc:chat_reg",
+        table=self.rl_ip,
+        ip=client_ip,
+        identity=addr_s or base_identity,
+        key_label="chatreg",
+        burst=CFG.CHAT_REG_RL_IP_BURST,
+        window_s=CFG.CHAT_REG_RL_WINDOW_S,
+        backoff_s=CFG.CHAT_REG_RL_BACKOFF_S,
+        pow_obj=pow_obj,
+        difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+    )
+    if not ok:
+        return pow_resp
+    addr_key = f"chatreg_addr:{addr_s}" if addr_s else None
+    if addr_key:
+        ok, pow_resp = CM._allow_rpc_with_pow(
+            self,
+            scope="rpc:chat_reg_addr",
+            table=self.rl_addr,
+            ip=client_ip,
+            identity=addr_s or base_identity,
+            key_label=addr_key,
+            burst=CFG.CHAT_REG_RL_ADDR_BURST,
+            window_s=CFG.CHAT_REG_RL_ADDR_WINDOW_S,
+            backoff_s=CFG.CHAT_REG_RL_ADDR_BACKOFF_S,
+            pow_obj=pow_obj,
+            difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+        )
+        if not ok:
+            return pow_resp
+    chat_pub = ((message.get("chat_pub") or message.get("pubkey") or "").strip().lower())
+
+    presence_sig = (message.get("presence_sig") or "").strip().lower()
+    if not presence_sig:
+        return {"error": "presence_sig_required"}
+
+    spend_pk = (message.get("spend_pub") or "").strip().lower()
+    reg_sig  = (message.get("reg_sig")  or "")
+    ts_val   = int(message.get("ts", 0))
+    spk_reg  = (message.get("spk") or "").strip().lower()
+    sig_reg  = (message.get("sig") or "").strip().lower()
+    opk_reg  = (message.get("opk") or "").strip().lower()
+
+    if not addr_s or not chat_pub or not spend_pk or not reg_sig or not ts_val:
+        return {"error": "missing fields"}
+
+    if not addr_s.startswith(CFG.ADDRESS_PREFIX):
+        return {"error": "bad address format"}
+
+    if not (len(chat_pub) == 64 and all(c in "0123456789abcdef" for c in chat_pub)):
+        return {"error": "bad chat_pub"}
+
+    if not (len(spend_pk) == 66 and all(c in "0123456789abcdef" for c in spend_pk)):
+        return {"error": "bad spend_pub"}
+
+    # Anti replay time window (±5 minutes)
+    if abs(time.time() - ts_val) > 300:
+        return {"error": "stale ts"}
+    hrp, data = bech32_decode(addr_s)
+    if hrp != CFG.ADDRESS_PREFIX or not data:
+        return {"error": "bad address hrp"}
+    witver = data[0]
+    prog   = bytes(convertbits(data[1:], 5, 8, False))
+    if witver != 0 or len(prog) != 20:
+        return {"error": "address not p2wpkh"}
+    if hash160(bytes.fromhex(spend_pk)) != prog:
+        return {"error": "register proof mismatch"}
+    
+    pres_bytes = b"|".join([
+        b"CHAT_PRESENCE",
+        addr_s.encode(),
+        bytes.fromhex(chat_pub),
+        bytes.fromhex(spend_pk),
+        str(ts_val).encode()
+    ])
+    reg_bytes = b"|".join([
+        b"CHAT_REG",
+        addr_s.encode(),
+        bytes.fromhex(spend_pk),
+        bytes.fromhex(chat_pub),
+        str(int(ts_val)).encode()
+    ])
+
+    sig_check = CM._verify_chat_signatures([
+        ("presence", spend_pk, pres_bytes, presence_sig),
+        ("register", spend_pk, reg_bytes, reg_sig),
+    ])
+    if not sig_check.get("presence"):
+        return {"error": "bad_presence_sig"}
+    if not sig_check.get("register"):
+        log.debug("[process_message] CHAT_REGISTER bad reg_sig from %s", addr)
+        return {"error": "bad reg_sig"}
+
+    spk_valid = False
+    if spk_reg and sig_reg:
+        if not (len(spk_reg) == 64 and all(c in "0123456789abcdef" for c in spk_reg)):
+            return {"error": "bad_spk"}
+        
+        payload = b"TSAR-SPK|" + bytes.fromhex(spk_reg) + b"|" + bytes.fromhex(spend_pk)
+        sig_ok = CM._verify_chat_signatures([("spk", spend_pk, payload, sig_reg)])
+        spk_valid = bool(sig_ok.get("spk"))
+        if not spk_valid:
+            return {"error": "bad_spk_sig"}
+
+    now = time.time()
+    pid = secrets.token_hex(16)
+    with self.chat_lock:
+        self.chat_spend_pub[addr_s] = spend_pk
+        self.chat_presence_pub[addr_s] = chat_pub
+        self.chat_presence_seen.add(pid)
+        b = self.chat_prekeys.get(addr_s) or {}
+        if "ik" not in b: 
+            b["ik"] = chat_pub
+            b["ts"] = int(now)
+        b["ts"] = int(now)
+        if spk_valid:
+            b["spk"] = spk_reg
+            b["sig"] = sig_reg
+        if opk_reg and len(opk_reg) == 64:
+            b.setdefault("opk_list", []).append(opk_reg)
+        self.chat_prekeys[addr_s] = b
+
+    pres = {"pid": pid, "address": addr_s, "pubkey": chat_pub, "spend_pub": spend_pk, "presence_sig": presence_sig, "ts": int(now), "hops": 0}
+    self._relay_presence_async(pres, exclude=addr)
+    
+    if CFG.DEBUG_BENCHMARKS:
+        end = time.perf_counter()
+        result = round((end - start) * 1000.0, 3)
+        log.debug("[CHAT_REGISTER] Benchmark : %.3f ms", result)
+        
+    return {"type": "CHAT_REGISTERED", "address": addr_s, "pubkey": chat_pub}
+
+def chat_lookup_pub(self, message, pow_obj, base_identity, *,
+                     client_ip, **kwargs):
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+        
+    addr_s = (message.get("address") or "").strip().lower()
+    if not addr_s:
+        return {"error": "missing address"}
+    ok, pow_resp = CM._allow_rpc_with_pow(
+        self,
+        scope="rpc:chat_lookup",
+        table=self.rl_ip,
+        ip=client_ip,
+        identity=addr_s or base_identity,
+        key_label="chatlookup",
+        burst=CFG.CHAT_LOOKUP_RL_IP_BURST,
+        window_s=CFG.CHAT_LOOKUP_RL_IP_WINDOW_S,
+        backoff_s=CFG.CHAT_LOOKUP_RL_BACKOFF_S,
+        pow_obj=pow_obj,
+        difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+    )
+    if not ok:
+        return pow_resp
+    rl_key_addr = f"chatlookup_addr:{addr_s}"
+    ok, pow_resp = CM._allow_rpc_with_pow(
+        self,
+        scope="rpc:chat_lookup_addr",
+        table=self.rl_addr,
+        ip=client_ip,
+        identity=addr_s or base_identity,
+        key_label=rl_key_addr,
+        burst=CFG.CHAT_LOOKUP_RL_ADDR_BURST,
+        window_s=CFG.CHAT_LOOKUP_RL_ADDR_WINDOW_S,
+        backoff_s=CFG.CHAT_LOOKUP_RL_ADDR_BACKOFF_S,
+        pow_obj=pow_obj,
+        difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+    )
+    if not ok:
+        return pow_resp
+    pubhex = self.chat_presence_pub.get(addr_s)
+    last_seen = None
+    b = self.chat_prekeys.get(addr_s) or {}
+    ts_field = b.get("ts")
+    if isinstance(ts_field, (int, float)):
+        last_seen = int(ts_field)
+
+    if CFG.DEBUG_BENCHMARKS:
+        end = time.perf_counter()
+        result = round((end - start) * 1000.0, 3)
+        log.debug("[CHAT_LOOKUP_PUB] Benchmark : %.3f ms", result)
+
+    return {"type": "CHAT_PUBKEY", "address": addr_s, "pubkey": pubhex, "found": bool(pubhex), "last_seen": last_seen}
+
+def chat_presence(self, message, pow_obj, base_identity, addr, *,
+                  client_ip, **kwargs):
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+        
+    addr_s = (message.get("address") or "").strip().lower()
+    pubhex = (message.get("pubkey")  or "").strip().lower()
+    spend_pk = (message.get("spend_pub") or "").strip().lower()
+    presence_sig = (message.get("presence_sig") or "").strip().lower()
+    hops   = int(message.get("hops") or 0)
+    ts_val = int(message.get("ts")   or 0)
+
+    if abs(time.time() - ts_val) > CFG.PRESENCE_TTL_S:
+        log.debug("[process_message] CHAT_PRESENCE stale ts from %s", addr)
+        return {"error": "presence_stale"}
+
+    # signature presence verification
+    if not (pubhex and spend_pk and presence_sig):
+        return {"error": "presence_missing_fields"}
+    if not (len(pubhex) == 64 and all(c in "0123456789abcdef" for c in pubhex)):
+        return {"error": "presence_bad_pub"}
+    if not (len(spend_pk) == 66 and all(c in "0123456789abcdef" for c in spend_pk)):
+        return {"error": "presence_bad_spend_pub"}
+    hrp, data = bech32_decode(addr_s)
+    if hrp != CFG.ADDRESS_PREFIX or not data:
+        return {"error": "presence_bad_hrp"}
+    prog = bytes(convertbits(data[1:], 5, 8, False))
+    if len(prog) != 20:
+        return {"error": "presence_bad_prog"}
+    if hash160(bytes.fromhex(spend_pk)) != prog:
+        return {"error": "presence_addr_mismatch"}
+    
+    pres_bytes = b"|".join([b"CHAT_PRESENCE", addr_s.encode(), bytes.fromhex(pubhex), bytes.fromhex(spend_pk), str(ts_val).encode()])
+    sig_ok = CM._verify_chat_signatures([("presence", spend_pk, pres_bytes, presence_sig)])
+    if not sig_ok.get("presence"):
+        return {"error": "presence_bad_sig"}
+
+    if hops >= CFG.PRESENCE_MAX_HOPS:
+        log.debug("[process_message] CHAT_PRESENCE max hops from %s", addr)
+        return {"error": "presence_hops"}
+
+    ok, pow_resp = CM._allow_rpc_with_pow(
+        self,
+        scope="rpc:chat_presence",
+        table=self.rl_ip,
+        ip=client_ip,
+        identity=addr_s or base_identity,
+        key_label="chat_presence",
+        burst=CFG.CHAT_RL_IP_BURST,
+        window_s=CFG.CHAT_RL_IP_WINDOWS,
+        backoff_s=CFG.CHAT_BACKOFF_S,
+        pow_obj=pow_obj,
+        difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+    )
+    if not ok:
+        return pow_resp
+
+    ok, pow_resp = CM._allow_rpc_with_pow(
+        self,
+        scope="rpc:chat_presence_addr",
+        table=self.rl_addr,
+        ip=client_ip,
+        identity=addr_s or base_identity,
+        key_label=f"presence:{addr_s}",
+        burst=CFG.PRESENCE_RL_ADDR_BURST,
+        window_s=CFG.PRESENCE_RL_ADDR_WINDOWS,
+        backoff_s=CFG.CHAT_BACKOFF_S,
+        pow_obj=pow_obj,
+        difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+    )
+    if not ok:
+        return pow_resp
+
+    pid = message.get("pid") or secrets.token_hex(16)
+    with self.chat_lock:
+        self.chat_presence_pub[addr_s] = pubhex
+        self.chat_spend_pub[addr_s] = spend_pk
+        self.chat_presence_seen.add(pid)
+        b = self.chat_prekeys.get(addr_s) or {}
+        if "ik" not in b:
+            b["ik"] = pubhex
+        b["ts"] = int(time.time())
+        self.chat_prekeys[addr_s] = b
+
+    message["hops"] = hops + 1
+    self._relay_presence_async(message, exclude=addr)
+    
+    if CFG.DEBUG_BENCHMARKS:
+        end = time.perf_counter()
+        result = round((end - start) * 1000.0, 3)
+        log.debug("[CHAT_PRESENCE] Benchmark : %.3f ms", result)
+    
+    return {"type": "CHAT_PRESENCE_OK"}
+
+# ====== PREKEY BUNDLE ======
+
+def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
+                         client_ip, **kwargs):
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+
+    addr_s = (message.get("address") or "").strip().lower()
+    ok, pow_resp = CM._allow_rpc_with_pow(
+        self,
+        scope="rpc:chat_reg",
+        table=self.rl_ip,
+        ip=client_ip,
+        identity=addr_s or base_identity,
+        key_label="chatreg",
+        burst=CFG.CHAT_REG_RL_IP_BURST,
+        window_s=CFG.CHAT_REG_RL_WINDOW_S,
+        backoff_s=CFG.CHAT_REG_RL_BACKOFF_S,
+        pow_obj=pow_obj,
+        difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+    )
+    if not ok:
+        return pow_resp
+    ik  = (message.get("ik")  or "").strip().lower()
+    spk = (message.get("spk") or "").strip().lower()
+    sig = (message.get("sig") or "").strip().lower()
+    opk = (message.get("opk") or None)
+    if not addr_s or not ik or not spk or not sig:
+        return {"error":"missing fields"}
+    # validation: addr -> spend_pub exists? and SPK signature is signed by spend key
+    sp = (self.chat_spend_pub.get(addr_s) or "").strip().lower()
+    if not sp: return {"error":"unknown_address"}
+    payload = b"TSAR-SPK|" + bytes.fromhex(spk) + b"|" + bytes.fromhex(sp)
+    sig_ok = CM._verify_chat_signatures([("spk", sp, payload, sig)])
+    if not sig_ok.get("spk"):
+        return {"error":"bad_spk_sig"}
+    with self.chat_lock:
+        rec = self.chat_prekeys.get(addr_s) or {}
+        rec.update({"ik": ik, "spk": spk, "sig": sig, "ts": int(time.time())})
+        if isinstance(opk, str) and len(opk)==64:
+            lst = rec.setdefault("opk_list", [])
+            lst.append(opk)
+            if len(lst) > CFG.CHAT_OPK_MAX_STORED:
+                # keep it from getting bloated, only keep the latest OPK
+                rec["opk_list"] = lst[-CFG.CHAT_OPK_MAX_STORED:]
+        self.chat_prekeys[addr_s] = rec
+
+    if CFG.DEBUG_BENCHMARKS:
+        end = time.perf_counter()
+        result = round((end - start) * 1000.0, 3)
+        log.debug("[CHAT_PUBLISH_PREKEYS] Benchmark : %.3f ms", result)
+        
+    return {"type":"CHAT_PUBLISH_PREKEYS"}
+
+def chat_get_prekey(self, message, *,
+                    client_ip, is_miner_sender, **kwargs):
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+        
+    addr_s = (message.get("address") or "").strip().lower()
+    b = self.chat_prekeys.get(addr_s) or {}
+    if not b or ("ik" not in b or "spk" not in b or "sig" not in b):
+        return {"error":"no_bundle"}
+    # consume satu OPK jika ada
+    opk = None
+    with self.chat_lock:
+        lst = b.get("opk_list") or []
+        if lst:
+            opk = lst.pop(0)
+        self.chat_prekeys[addr_s] = b
+    sp = self.chat_spend_pub.get(addr_s)
+    
+    if CFG.DEBUG_BENCHMARKS:
+        end = time.perf_counter()
+        result = round((end - start) * 1000.0, 3)
+        log.debug("[CHAT_GET_PREKEY] Benchmark : %.3f ms", result)
+    
+    return {"type":"CHAT_PREKEY_BUNDLE","bundle":{"ik": b["ik"], "spk": b["spk"], "sig": b["sig"], "opk": opk, "spend_pub": sp}}
+
+# ====== END OF PREKEY BUNDLE ======
+
+def chat_send(self, message, pow_obj, base_identity, *,
+              client_ip, choose_relay_route, relay_chain, **kwargs):
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+    
+    frm = (message.get("from") or "").strip().lower()
+    to  = (message.get("to")   or "").strip().lower()
+    enc = message.get("enc")
+    mid = message.get("msg_id")
+    ts  = int(message.get("ts") or 0)
+    chat_sig = (message.get("chat_sig") or "").strip().lower()
+    ratchet_pn = int(message.get("ratchet_pn") or 0)
+    ratchet_n = int(message.get("ratchet_n") or 0)
+    max_idx = CFG.CHAT_RATCHET_INDEX_MAX
+    if not (0 <= ratchet_pn <= max_idx and 0 <= ratchet_n <= max_idx):
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "ratchet_index_out_of_range"}
+
+    ok, pow_resp = CM._allow_rpc_with_pow(
+        self,
+        scope="rpc:chat_send",
+        table=self.rl_ip,
+        ip=client_ip,
+        identity=frm or base_identity,
+        key_label="chat_send",
+        burst=CFG.CHAT_RL_IP_BURST,
+        window_s=CFG.CHAT_RL_IP_WINDOWS,
+        backoff_s=CFG.CHAT_BACKOFF_S,
+        pow_obj=pow_obj,
+        difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+    )
+    if not ok:
+        return {"type": "CHAT_ACK", **(pow_resp or {})}
+
+    ok, pow_resp = CM._allow_rpc_with_pow(
+        self,
+        scope="rpc:chat_send_addr",
+        table=self.rl_addr,
+        ip=client_ip,
+        identity=frm or base_identity,
+        key_label=f"chat_send:{frm}",
+        burst=CFG.CHAT_RL_ADDR_BURST,
+        window_s=CFG.CHAT_RL_ADDR_WINDOWS,
+        backoff_s=CFG.CHAT_BACKOFF_S,
+        pow_obj=pow_obj,
+        difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+    )
+    if not ok:
+        return {"type": "CHAT_ACK", **(pow_resp or {})}
+
+    if not (frm and to and enc and (mid is not None) and ts):
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_fields"}
+
+    now = int(time.time())
+    if abs(now - ts) > CFG.CHAT_TS_DRIFT_S:
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "ts_drift"}
+
+    if self._dedup_mid(frm, mid):
+        return {"type": "CHAT_ACK", "status": "duplicate"}
+
+    # ---- Encrypted only ----
+    nonce_hex = str((enc or {}).get("nonce") or "")
+    ct_hex    = str((enc or {}).get("ct")    or "")
+    fp_hex    = (message.get("from_pub")    or "").strip().lower()     # eph X25519
+    fs_hex = (message.get("from_static") or "").strip().lower()
+    exp = self.chat_presence_pub.get(frm)
+
+    if not exp:
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "no_presence"}
+    if fs_hex != exp:
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}
+
+    if not (len(ct_hex) // 2 <= CFG.CHAT_MAX_CT_BYTES):
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "too_large"}
+
+    if not (len(nonce_hex) == 24 and all(c in "0123456789abcdef" for c in nonce_hex)):
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_nonce"}
+
+    if not (len(fp_hex) == 64 and all(c in "0123456789abcdef" for c in fp_hex)):
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_pub"}
+
+    if not (len(fs_hex) == 64 and all(c in "0123456789abcdef" for c in fs_hex)):
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}
+
+    # routing authenticity signature verification (without decryption)
+    if not chat_sig:
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "sig_required"}
+    sp = (self.chat_spend_pub.get(frm) or "").strip().lower()
+    if not sp:
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "no_spend_pub"}
+    
+    chat_bytes = b"|".join([
+        b"CHAT_SEND",
+        frm.encode(), to.encode(),
+        str(mid).encode(), str(ts).encode(),
+        bytes.fromhex(fp_hex), bytes.fromhex(fs_hex),
+        str(ratchet_pn).encode(), str(ratchet_n).encode(),
+        bytes.fromhex(nonce_hex), bytes.fromhex(ct_hex)
+    ])
+    chat_verify = CM._verify_chat_signatures([("chat_send", sp, chat_bytes, chat_sig)])
+    if not chat_verify.get("chat_send"):
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_sig"}
+
+    # === Onion-lite relay (opsional) ===
+    relay_hops = int(CFG.CHAT_NUM_HOPS)
+    if CFG.CHAT_FORCE_RELAY and len(self.peers) >= max(1, relay_hops):
+        route = choose_relay_route(self, relay_hops)
+        if not route:
+            log.debug("[process_message] CHAT_SEND relay requested but no peers available; falling back to direct queue")
+        else:
+            inner = {
+                "type": "CHAT_SEND_INNER",
+                "to": to,
+                "msg": {
+                    "from": frm,
+                    "msg_id": mid,
+                    "ts": ts,
+                    "from_static": fs_hex,
+                    "from_pub": (message.get("from_pub") or "").strip().lower(),
+                    "enc": {"nonce": enc.get("nonce"), "ct": enc.get("ct")},
+                    "used_opk": message.get("used_opk"),
+                    "ratchet_pn": ratchet_pn,
+                    "ratchet_n": ratchet_n,
+                },
+            }
+            relay_chain(self, route, inner)
+            return {"type": "CHAT_ACK", "status": "relayed", "hops": len(route)}
+
+    ok = self._mailbox_put(to, {
+        "type": "CHAT_ITEM",
+        "from": frm,
+        "to": to,
+        "enc": {"nonce": enc.get("nonce"), "ct": enc.get("ct")},
+        "from_pub": (message.get("from_pub") or "").strip().lower(),
+        "from_static": fs_hex,
+        "used_opk": message.get("used_opk"),
+        "ratchet_pn": ratchet_pn,
+        "ratchet_n": ratchet_n,
+        "msg_id": mid,
+        "ts": ts,
+    }, CFG.CHAT_TTL_S, CFG.CHAT_MAILBOX_MAX, CFG.CHAT_GLOBAL_QUEUE_MAX)
+
+    if not ok:
+        return {"type": "CHAT_ACK", "status": "mailbox_full"}
+    self._enqueue_rcpt(frm, "delivered", mid, frm, to, ts)
+    
+    if CFG.DEBUG_BENCHMARKS:
+        end = time.perf_counter()
+        result = round((end - start) * 1000.0, 3)
+        log.debug("[CHAT_SEND] Benchmark : %.3f ms", result)
+        
+    return {"type": "CHAT_ACK", "status": "queued"}
+
+def chat_read(self, message, pow_obj, base_identity, *,
+              client_ip, **kwargs):
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+
+    sender = (message.get("sender") or "").strip().lower()
+    reader = (message.get("reader") or "").strip().lower()
+    mid    = message.get("msg_id")
+    ts_val = int(message.get("ts") or 0)
+    read_sig = (message.get("read_sig") or "").strip().lower()
+
+    if not sender or not reader or mid is None or ts_val <= 0:
+        return {"error": "bad_fields"}
+    if not read_sig:
+        return {"error": "sig_required"}
+
+    ok, pow_resp = CM._allow_rpc_with_pow(
+        self,
+        scope="rpc:chat_read",
+        table=self.rl_ip,
+        ip=client_ip,
+        identity=reader or base_identity,
+        key_label="chat_read",
+        burst=8,
+        window_s=10,
+        backoff_s=CFG.CHAT_BACKOFF_S,
+        pow_obj=pow_obj,
+        difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+    )
+    if not ok:
+        return pow_resp
+
+    # read receipt verification
+    sp = (self.chat_spend_pub.get(reader) or "").strip().lower()
+    if not sp:
+        return {"error": "no_spend_pub"}
+    rr = b"|".join([
+        b"CHAT_READ",
+        sender.encode(), reader.encode(),
+        str(mid).encode(), str(ts_val).encode()
+    ])
+    read_check = CM._verify_chat_signatures([("read", sp, rr, read_sig)])
+    if not read_check.get("read"):
+        return {"error": "bad_sig"}
+
+    self._enqueue_rcpt(sender, "read", mid, sender, reader, int(time.time()))
+    
+    if CFG.DEBUG_BENCHMARKS:
+        end = time.perf_counter()
+        result = round((end - start) * 1000.0, 3)
+        log.debug("[CHAT_READ] Benchmark : %.3f ms", result)
+        
+    return {"type": "CHAT_READ_OK"}
+
+def chat_pull(self, message, *,
+              client_ip, **kwargs):
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+        
+    me = (message.get("address") or "").strip().lower()
+    if not me:
+        return {"type": "CHAT_NONE", "items": [], "error": "bad_address"}
+    n_raw = message.get("n", message.get("max", 20))
+    n = int(n_raw)
+    if n > CFG.CHAT_PULL_MAX_ITEMS:
+        n = CFG.CHAT_PULL_MAX_ITEMS
+    if n < 0:
+        n = 0
+    ts = int(message.get("ts", 0))
+    pull_sig = (message.get("pull_sig") or "").strip().lower()
+
+    now = int(time.time())
+    if abs(now - ts) > CFG.CHAT_TS_DRIFT_S:
+        return {"type": "CHAT_NONE", "items": [], "error": "ts_drift"}
+
+    spend_pk = self.chat_spend_pub.get(me)
+    if not spend_pk:
+        return {"type": "CHAT_NONE", "items": [], "error": "not_registered"}
+
+    msg_bytes = b"|".join([b"CHAT_PULL", me.encode(), str(ts).encode()])
+    pull_check = CM._verify_chat_signatures([("pull", spend_pk, msg_bytes, pull_sig)])
+    if not pull_check.get("pull"):
+        return {"type": "CHAT_NONE", "items": [], "error": "bad_sig"}
+
+    items = self._mailbox_pull(me, n)
+    self._gc_mailboxes()
+    
+    if CFG.DEBUG_BENCHMARKS:
+        end = time.perf_counter()
+        result = round((end - start) * 1000.0, 3)
+        log.debug("[CHAT_PULL] Benchmark : %.3f ms", result)
+        
+    return {"type": "CHAT_ITEMS", "items": items}
+
+def chat_relay(self, message, pow_obj, base_identity, *,
+               client_ip, send_chat_relay, **kwargs):
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
+    
+    ok, pow_resp = CM._allow_rpc_with_pow(
+        self,
+        scope="rpc:chat_relay",
+        table=self.rl_ip,
+        ip=client_ip,
+        identity=base_identity,
+        key_label="chatrelay",
+        burst=CFG.CHAT_RELAY_RL_IP_BURST,
+        window_s=CFG.CHAT_RELAY_RL_WINDOW_S,
+        backoff_s=CFG.CHAT_RELAY_RL_BACKOFF_S,
+        pow_obj=pow_obj,
+        difficulty=int(CFG.RPC_POW_DIFFICULTY_CHAT),
+    )
+    if not ok:
+        return pow_resp
+
+    # payload: {"route": [peer1, peer2, ...], "inner": {...}}
+    route_raw = list(message.get("route") or [])
+    route: list[tuple] = []
+    for hop in route_raw:
+        if isinstance(hop, (list, tuple)) and len(hop) >= 2:
+            try:
+                hop_norm = (str(hop[0]), int(hop[1]))
+            except Exception:
+                return {"error": "bad_route_entry"}
+            if hop_norm not in self.peers:
+                log.warning("[CHAT_RELAY] unknown hop=%s from=%s", hop_norm, client_ip)
+                return {"error": "unknown_hop"}
+            route.append(hop_norm)
+        else:
+            return {"error": "bad_route_entry"}
+    if len(route) > CFG.CHAT_RELAY_MAX_HOPS:
+        return {"error": "route_too_long"}
+    inner = message.get("inner") or {}
+    allowed_inner_types = {"CHAT_SEND_INNER"}
+    if not isinstance(inner, dict) or inner.get("type") not in allowed_inner_types:
+        return {"error": "bad_inner_type"}
+    if inner.get("type") == "CHAT_SEND_INNER":
+        msg_obj = inner.get("msg")
+        if not isinstance(msg_obj, dict) or not inner.get("to"):
+            return {"error": "bad_inner"}
+        allowed_msg_keys = {"from", "msg_id", "ts", "from_static", "from_pub", "enc", "used_opk", "ratchet_pn", "ratchet_n"}
+        for k in msg_obj.keys():
+            if k not in allowed_msg_keys:
+                return {"error": "bad_inner_field"}
+    try:
+        inner_size = len(json.dumps(inner, separators=CFG.CANONICAL_SEP).encode("utf-8"))
+    except Exception:
+        inner_size = CFG.CHAT_RELAY_MAX_INNER_BYTES + 1
+    if inner_size > CFG.CHAT_RELAY_MAX_INNER_BYTES:
+        return {"error": "payload_too_large"}
+    if route:
+        nxt = route.pop(0)
+        return send_chat_relay(self, nxt, {"type": "CHAT_RELAY", "route": route, "inner": inner})
+    # last hop: deliver inner ke mailbox
+    if (inner or {}).get("type") == "CHAT_SEND_INNER":
+        to  = (inner.get("to") or "").strip().lower()
+        msg = inner.get("msg") or {}
+        ok = self._mailbox_put(to, {
+            "type": "CHAT_ITEM",
+            "from": msg.get("from"),
+            "to": to,
+            "enc": msg.get("enc"),
+            "from_pub": msg.get("from_pub"),
+            "from_static": msg.get("from_static"),
+            "used_opk": msg.get("used_opk"),
+            "ratchet_pn": msg.get("ratchet_pn"),
+            "ratchet_n": msg.get("ratchet_n"),
+            "msg_id": msg.get("msg_id"),
+            "ts": msg.get("ts"),
+        }, CFG.CHAT_TTL_S, CFG.CHAT_MAILBOX_MAX, CFG.CHAT_GLOBAL_QUEUE_MAX)
+        
+        if CFG.DEBUG_BENCHMARKS:
+            end = time.perf_counter()
+            result = round((end - start) * 1000.0, 3)
+            log.debug("[CHAT_RELAY] Benchmark : %.3f ms", result)
+            
+        return {"type": "CHAT_RELAY_ACK", "status": ("queued" if ok else "rejected")}
+    return {"error": "bad_inner"}
+
