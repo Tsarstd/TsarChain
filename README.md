@@ -468,11 +468,12 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     │       ├── Backend/            # ALL Backend Website Module
     │       └── Fronted/            # ALL Frontend Website Module
     │
-    ├── tests/                      # Unit testing (native & double rachet)
     ├── tools/                      # LMDB database tools & Snapshot maintenance
     │
-    └── tsarcore_native/
-        └── src/                    # ALL Native Module (Rust + PyO3)
+    ├── tsarcore_native/
+    │        └── src/                    # ALL Native Module (Rust + PyO3)
+    │
+    └── unit_tests/                      # All Unit testing
 
   ```
   </details>

@@ -27,7 +27,7 @@ class ChainOpsMixin:
     
     def replace_with(self, other_chain: "Blockchain"):
         with self.lock:
-            # 1) pastikan kandidat valid full
+            # 1) Ensure the candidate is fully valid.
             if not self._validate_complete_chain(other_chain.chain):
                 raise ValueError("Cannot replace with invalid chain")
 

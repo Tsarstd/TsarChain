@@ -29,7 +29,7 @@ from kremlin.tab_ui.network_tab import NetworkTab
 from kremlin.tab_ui.history_tab import HistoryTab
 from kremlin.tab_ui.dev_tab import DevTab
 
-from kremlin.security.chat_security import ChatManager
+from kremlin.security.chat.triple_xdh import ChatManager
 from kremlin.security.data_security import list_addresses_in_keystore, create_keypair, WALLET_FILE
 
 from kremlin.services.rpc_client import NodeClient

@@ -11,7 +11,7 @@ from tkinter import font as tkfont
 from datetime import datetime
 
 from tsarchain.utils import config as CFG
-from ..security.chat_security import ChatManager
+from ..security.chat.triple_xdh import ChatManager
 from ..security.data_security import load_chat_state, save_chat_state
 from ..theme import ChatTheme
 

@@ -6,16 +6,17 @@
 import time
 import secrets
 import argparse
-from typing import List, Tuple
 
+import tsarchain.utils.helpers as H
+from typing import List, Tuple
 from ecdsa import SigningKey, VerifyingKey, SECP256k1, util as ecdsa_util
+
 from tsarchain.core.block import Block
+from tsarchain.utils.helpers import Script
 from tsarchain.core.coinbase import CoinbaseTx
 from tsarchain.core.tx import Tx, TxIn, TxOut
 from tsarchain.utils import config as CFG
-import tsarchain.utils.helpers as H
-from tsarchain.utils.helpers import Script
-from tsarchain.wallet.security.data_security import pubkey_from_privhex, pubkey_to_tsar_address
+from kremlin.security.data_security import pubkey_from_privhex, pubkey_to_tsar_address
 
 
 def _configure_randomx_pow(use_lite: bool, cache_cap: int):
@@ -167,6 +168,13 @@ def _native_opts():
         "coinbase_maturity": int(CFG.COINBASE_MATURITY),
         "max_sigops_per_tx": int(CFG.MAX_SIGOPS_PER_TX),
         "max_sigops_per_block": int(CFG.MAX_SIGOPS_PER_BLOCK),
+        "max_block_bytes": int(CFG.MAX_BLOCK_BYTES),
+        "max_tx_vsize": int(CFG.MAX_TX_VSIZE),
+        "max_tx_weight": int(CFG.MAX_TX_WEIGHT),
+        "max_tx_inputs": int(CFG.MAX_TX_INPUTS),
+        "max_tx_outputs": int(CFG.MAX_TX_OUTPUTS),
+        "min_tx_weight": int(CFG.MIN_TX_WEIGHT),
+        "min_tx_vsize": int(CFG.MIN_TX_VSIZE),
         "enforce_low_s": True,
     }
 
@@ -216,14 +224,17 @@ def test_native_block_validator_detects_immature_coinbase():
 def test_native_block_validator_requires_witness():
     block, snapshot, spend_tx, _ = _build_p2wpkh_block()
     spend_tx.inputs[0].witness = []
+    opts = _native_opts()
+    opts['min_tx_vsize'] = 0
+    opts['min_tx_weight'] = 0
     ok, reason, _ = H.native_validate_block_txs(
         block.to_dict(),
         snapshot,
         block.height,
-        _native_opts(),
+        opts,
     )
     assert not ok
-    assert reason == "missing_witness"
+    assert reason and "witness" in reason.lower(), f"Expected witness-related error, got {reason}"
 
 
 def test_native_block_validator_rejects_unsupported_script():

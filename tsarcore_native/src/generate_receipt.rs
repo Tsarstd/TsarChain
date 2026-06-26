@@ -196,7 +196,7 @@ pub fn calculate_change_and_fee(
 
 // NEWWWWWW
 
-#[pyclass]
+#[pyclass(skip_from_py_object)]
 #[derive(Debug, Clone)]
 pub struct TableRowData {
     #[pyo3(get, set)]
@@ -251,7 +251,7 @@ pub fn draw_table_row_data(
     })
 }
 
-#[pyclass]
+#[pyclass(skip_from_py_object)]
 #[derive(Debug, Clone)]
 pub struct TxidGridData {
     #[pyo3(get)]

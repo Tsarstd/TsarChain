@@ -12,15 +12,16 @@ from typing import Callable, Optional, Dict, Any, Tuple
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec, x25519
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, PrivateFormat, NoEncryption
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 # ---------------- Local Project (With Node) ----------------
 from tsarchain.utils import config as CFG
 from tsarchain.utils.helpers import sign_digest_der_low_s_native
 
 # ---------------- Local Project (Wallet Only) ----------------
-from .data_security import (Wallet,
+from ..chat.chat_common import pack, unpack
+from ..chat.double_ratchet import RatchetSession
+from ..data_security import (Wallet,
     load_or_create_chat_dh_key,
     get_prekey_bundle_local,
     get_local_prekeys_for_recv,
@@ -66,79 +67,6 @@ class ChatManager:
         self.on_partner_presence: Optional[Callable[[str, Optional[int]], None]] = None
         self.presence_ts: Dict[str, int] = {}
         os.makedirs(CFG.CHAT_SESSION_DIR, exist_ok=True)
-
-    # ---------- helpers: EC (secp for register), X25519 for chat ----------
-    def _pack(self, s: str, bucket_sizes=(128, 256, 512, 1024)) -> bytes:
-        b = s.encode("utf-8")
-        L = len(b)
-        target = next((k for k in bucket_sizes if L + 2 <= k), L + 2)
-        pad = os.urandom(max(0, target - (L + 2)))
-        return len(b).to_bytes(2, "big") + b + pad
-
-    def _unpack(self, pt: bytes) -> str:
-        if len(pt) < 2:
-            return ""
-        L = int.from_bytes(pt[:2], "big")
-        raw = pt[2:2+L]
-        return raw.decode("utf-8", "ignore")
-
-    @staticmethod
-    def _aad_bytes(frm: str, to: str, mid: int, ts: int,
-                from_static_hex: str, from_pub_hex: str,
-                pn: Optional[int] = None, n: Optional[int] = None) -> bytes:
-        parts = [
-            b"TSAR-AAD1",
-            frm.encode(), to.encode(),
-            str(int(mid)).encode(), str(int(ts)).encode(),
-            bytes.fromhex(from_static_hex),
-            bytes.fromhex(from_pub_hex),
-        ]
-        if pn is not None:
-            parts.append(str(int(pn)).encode())
-        if n is not None:
-            parts.append(str(int(n)).encode())
-        return b"|".join(parts)
-        
-    @staticmethod
-    def _hkdf_sha256(secret: bytes, info: bytes, length: int = 32, salt: bytes | None = None) -> bytes:
-        return HKDF(algorithm=hashes.SHA256(), length=length, salt=salt, info=info).derive(secret)
-
-    @staticmethod
-    def _x_priv_from_hex(h: str) -> x25519.X25519PrivateKey:
-        return x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(h))
-
-    @staticmethod
-    def _x_pub_from_hex(h: str) -> x25519.X25519PublicKey:
-        return x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(h))
-
-    def _chat_encrypt_for(self, my_static_sk_hex: str, recipient_dh_pub_hex: str, padded_pt: bytes, aad_fields: dict) -> tuple[dict, str]:
-        rec_pk = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(recipient_dh_pub_hex))
-        eph_sk = x25519.X25519PrivateKey.generate()
-        eph_pub_hex = eph_sk.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
-        my_sk = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_static_sk_hex))
-        
-        dh1 = eph_sk.exchange(rec_pk)
-        dh2 = my_sk.exchange(rec_pk)
-        key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:chat:v2").derive(dh1 + dh2)
-        
-        nonce = os.urandom(12)
-        aad = self._aad_bytes(aad_fields["frm"], aad_fields["to"], aad_fields["mid"], aad_fields["ts"], aad_fields["from_static"], eph_pub_hex)
-        ct = AESGCM(key).encrypt(nonce, padded_pt, aad)
-        return {"nonce": nonce.hex(), "ct": ct.hex()}, eph_pub_hex
-
-    def _chat_decrypt_with(self, my_dh_sk_hex: str, sender_eph_pub_hex: str, sender_static_pub_hex: str, enc: dict, aad: bytes) -> str | None:
-        my_sk  = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_dh_sk_hex))
-        e_pub  = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(sender_eph_pub_hex))
-        s_pub  = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(sender_static_pub_hex))
-        
-        dh1 = my_sk.exchange(e_pub)
-        dh2 = my_sk.exchange(s_pub)
-        key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:chat:v2").derive(dh1 + dh2)
-        
-        nonce = bytes.fromhex(enc.get("nonce") or "")
-        ct    = bytes.fromhex(enc.get("ct") or "")
-        pt = AESGCM(key).decrypt(nonce, ct, aad)
-        return self._unpack(pt)
 
     # ---------- key management ----------
     def _now(self) -> float:
@@ -202,9 +130,6 @@ class ChatManager:
 
     def _session_key(self, me: str, peer: str) -> Tuple[str, str]:
         return (self._canon(me), self._canon(peer))
-
-    def _session_path(self, me: str, peer: str) -> str:
-        return os.path.join(CFG.CHAT_SESSION_DIR, self._canon(me) or "_", f"{self._canon(peer) or '_'}")
 
     def _load_session_from_disk(self, me: str, peer: str) -> Optional["RatchetSession"]:
         provider = self._pwd_provider_for(me)
@@ -307,16 +232,6 @@ class ChatManager:
         sk_hex, pk_hex = load_or_create_chat_dh_key(a, self._pwd_provider_for(a))
         self._chat_dh_cache[a] = (sk_hex, pk_hex, now + self.key_ttl_sec)
         return sk_hex, pk_hex
-    
-    # ---------- Safety Number (60 digit) ----------
-    def safety_number(self, addr_a: str, addr_b: str) -> str:
-        pa = (self.expected_pub_or_lookup(addr_a) or "").lower()
-        pb = (self.expected_pub_or_lookup(addr_b) or "").lower()
-        keys = "|".join(sorted([pa, pb])).encode()
-        h = hashlib.sha256(b"TSAR-SAFETY|"+keys).digest()
-        # 60-digit decimal fingerprint
-        n = int.from_bytes(h, "big") % (10**60)
-        return f"{n:060d}"
 
     # ---------- Session bootstrap (X3DH-like) + Double Ratchet ----------
     def ensure_session(self, me_addr: str, peer_addr: str, cb: Callable[[Optional[str]],None]) -> None:
@@ -551,7 +466,7 @@ class ChatManager:
                 return
             mid = random.randint(0, 2**31 - 1)
             ts = int(time.time())
-            pt = self._pack(text)
+            pt = pack(text)
             try:
                 msg = sess.encrypt(pt, frm, to, mid, ts)
             except Exception as exc:
@@ -799,7 +714,7 @@ class ChatManager:
                     if sess:
                         pt = sess.decrypt(enc, frm, me, mid, ts, header)
                         if pt is not None:
-                            msg_text = self._unpack(pt)
+                            msg_text = unpack(pt)
                         self._persist_session(me, frm, sess)
 
                     if msg_text is not None:
@@ -818,289 +733,3 @@ class ChatManager:
             log.debug("[pool] Benchmark : %.3f ms", result)
             
         self.rpc_send({"type": "CHAT_PULL", "address": me, "n": int(n), "ts": ts_now, "pull_sig": pull_sig}, _on)
-
-
-# ==================================================
-# ============ Double Ratchet (minimal) ============
-# ==================================================
-class RatchetSession:
-    def __init__(
-        self,
-        root_key: bytes,
-        send_ck: Optional[bytes],
-        recv_ck: Optional[bytes],
-        my_ratchet_priv: Optional[x25519.X25519PrivateKey],
-        their_ratchet_pub_hex: Optional[str],
-        my_identity: str,
-        their_identity: str,
-        my_static_hex: Optional[str],
-        ns: int = 0,
-        nr: int = 0,
-        pn: int = 0,
-        skipped: Optional[Dict[str, str]] = None,
-    ) -> None:
-        
-        self.rk = root_key
-        self.CKs = send_ck
-        self.CKr = recv_ck
-        self.DHs = my_ratchet_priv or x25519.X25519PrivateKey.generate()
-        self.DHr = (their_ratchet_pub_hex or None)
-        self.Ns = int(ns)
-        self.Nr = int(nr)
-        self.Pn = int(pn)
-        self.skipped: Dict[str, bytes] = {}
-        
-        if skipped:
-            for k, v in skipped.items():
-                self.skipped[k] = bytes.fromhex(v)
-                
-        self.my_identity = my_identity
-        self.their_identity = their_identity
-        self.my_static_hex = my_static_hex or my_identity
-        self._needs_send_rotation = False
-
-    @staticmethod
-    def _kdf(secret: bytes, info: bytes, length: int = 32, salt: Optional[bytes] = None) -> bytes:
-        return HKDF(algorithm=hashes.SHA256(), length=length, salt=salt, info=info).derive(secret)
-
-    @staticmethod
-    def _kdf_rk(root_key: bytes, shared_secret: bytes) -> tuple[bytes, bytes]:
-        material = RatchetSession._kdf(shared_secret, b"tsar:ratchet:rk", length=64, salt=root_key)
-        return material[:32], material[32:]
-
-    @staticmethod
-    def _kdf_ck(chain_key: bytes) -> tuple[bytes, bytes]:
-        material = RatchetSession._kdf(chain_key, b"tsar:ratchet:ck", length=64)
-        return material[:32], material[32:]
-
-    @staticmethod
-    def _serialize_priv(priv: x25519.X25519PrivateKey) -> str:
-        return priv.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()).hex()
-
-    @staticmethod
-    def _deserialize_priv(data: str) -> x25519.X25519PrivateKey:
-        return x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(data))
-
-    @classmethod
-    def init_as_initiator(
-        cls,
-        root_key: bytes,
-        my_identity: str,
-        their_identity: str,
-        my_ratchet_priv: x25519.X25519PrivateKey,
-        their_ratchet_pub_hex: str,
-        my_static_hex: Optional[str] = None,
-    ) -> "RatchetSession":
-        
-        sck = cls._kdf(root_key, b"tsar:ratchet:send")
-        rck = cls._kdf(root_key, b"tsar:ratchet:recv")
-        
-        return cls(root_key, sck, rck, my_ratchet_priv, their_ratchet_pub_hex, my_identity, their_identity, my_static_hex, ns=0, nr=0, pn=0)
-
-    @classmethod
-    def init_as_responder(
-        cls,
-        root_key: bytes,
-        my_identity: str,
-        their_identity: str,
-        their_first_eph: str,
-        my_ratchet_priv: Optional[x25519.X25519PrivateKey] = None,
-        my_static_hex: Optional[str] = None,
-    ) -> "RatchetSession":
-        
-        sck = cls._kdf(root_key, b"tsar:ratchet:recv")
-        rck = cls._kdf(root_key, b"tsar:ratchet:send")
-        inst = cls(root_key, sck, rck, my_ratchet_priv, their_first_eph, my_identity, their_identity, my_static_hex, ns=0, nr=0, pn=0)
-        inst._needs_send_rotation = True
-        
-        return inst
-
-    def to_dict(self) -> dict:
-        return {
-            "rk": self.rk.hex(),
-            "cks": self.CKs.hex() if self.CKs else None,
-            "ckr": self.CKr.hex() if self.CKr else None,
-            "dhs": self._serialize_priv(self.DHs),
-            "dhr": self.DHr,
-            "ns": self.Ns,
-            "nr": self.Nr,
-            "pn": self.Pn,
-            "skipped": {k: v.hex() for k, v in self.skipped.items()},
-            "my_identity": self.my_identity,
-            "their_identity": self.their_identity,
-            "my_static_hex": self.my_static_hex,
-            "needs_send_rotation": getattr(self, "_needs_send_rotation", False),
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "RatchetSession":
-        rk = bytes.fromhex(data["rk"])
-        cks = bytes.fromhex(data["cks"]) if data.get("cks") else None
-        ckr = bytes.fromhex(data["ckr"]) if data.get("ckr") else None
-        dhs = cls._deserialize_priv(data["dhs"])
-        inst = cls(
-            root_key=rk,
-            send_ck=cks,
-            recv_ck=ckr,
-            my_ratchet_priv=dhs,
-            their_ratchet_pub_hex=data.get("dhr"),
-            my_identity=data.get("my_identity", ""),
-            their_identity=data.get("their_identity", ""),
-            my_static_hex=data.get("my_static_hex"),
-            ns=int(data.get("ns", 0)),
-            nr=int(data.get("nr", 0)),
-            pn=int(data.get("pn", 0)),
-            skipped=data.get("skipped"),
-        )
-        inst._needs_send_rotation = bool(data.get("needs_send_rotation", False))
-        
-        return inst
-
-    def _remote_pub(self, pub_hex: str) -> x25519.X25519PublicKey:
-        return x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(pub_hex))
-
-    def _skip_key_id(self, dh_hex: str, index: int) -> str:
-        return f"{dh_hex}:{index}"
-
-    def _store_skipped(self, dh_hex: str, index: int, mk: bytes) -> None:
-        key = self._skip_key_id(dh_hex, index)
-        if len(self.skipped) >= CFG.CHAT_RATCHET_MAX_SKIP:
-            try:
-                oldest = next(iter(self.skipped))
-                self.skipped.pop(oldest, None)
-            except StopIteration:
-                log.exception("error__store_skipped")
-                pass
-        self.skipped[key] = mk
-
-    def _consume_skipped(self, dh_hex: str, index: int) -> Optional[bytes]:
-        key = self._skip_key_id(dh_hex, index)
-        return self.skipped.pop(key, None)
-
-    def _next_sending_message_key(self) -> tuple[bytes, int]:
-        if self.CKs is None:
-            raise ValueError("send chain not established")
-        self.CKs, mk = self._kdf_ck(self.CKs)
-        idx = self.Ns
-        self.Ns += 1
-        return mk, idx
-
-    def _next_receiving_message_key(self) -> tuple[bytes, int]:
-        if self.CKr is None:
-            raise ValueError("recv chain not established")
-        self.CKr, mk = self._kdf_ck(self.CKr)
-        idx = self.Nr
-        self.Nr += 1
-        return mk, idx
-
-    def _skip_message_keys(self, until: int, dh_hex: Optional[str]) -> None:
-        if dh_hex is None or self.CKr is None:
-            return
-        while self.Nr < until:
-            mk, idx = self._next_receiving_message_key()
-            self._store_skipped(dh_hex, idx, mk)
-
-    def _rotate_send_chain(self) -> None:
-        if self.DHr is None:
-            raise ValueError("cannot rotate send chain without peer key")
-        remote = self._remote_pub(self.DHr)
-        self.DHs = x25519.X25519PrivateKey.generate()
-        self.Pn = self.Ns
-        self.Ns = 0
-        self.rk, self.CKs = self._kdf_rk(self.rk, self.DHs.exchange(remote))
-        self._needs_send_rotation = False
-
-    def _dh_ratchet(self, their_pub_hex: str) -> None:
-        their_pub = self._remote_pub(their_pub_hex)
-        # preserve prior sending key for recv chain update
-        prev_dhs = self.DHs
-        if prev_dhs is None:
-            prev_dhs = x25519.X25519PrivateKey.generate()
-        self.Pn = self.Ns
-        self.Ns = 0
-        self.Nr = 0
-        self.rk, self.CKr = self._kdf_rk(self.rk, prev_dhs.exchange(their_pub))
-        self.DHr = their_pub_hex
-        self.DHs = x25519.X25519PrivateKey.generate()
-        self.rk, self.CKs = self._kdf_rk(self.rk, self.DHs.exchange(their_pub))
-        self._needs_send_rotation = False
-
-    def encrypt(self, pt: bytes, frm: str, to: str, mid: int, ts: int) -> dict:
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-        
-        if getattr(self, "_needs_send_rotation", False):
-            self._rotate_send_chain()
-        mk, idx = self._next_sending_message_key()
-        header = {
-            "eph_pub": self.DHs.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex(),
-            "static_pub": self.my_static_hex or self.my_identity,
-            "pn": self.Pn,
-            "n": idx,
-        }
-        nonce = os.urandom(12)
-        aad = ChatManager._aad_bytes(frm, to, mid, ts, header["static_pub"], header["eph_pub"], header["pn"], header["n"])
-        ct = AESGCM(mk).encrypt(nonce, pt, aad)
-        
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            log.debug("[encrypt] Benchmark : %.3f ms", result)
-            
-        return {
-            "ratchet": header,
-            "enc": {"nonce": nonce.hex(), "ct": ct.hex()},
-        }
-
-    def _decrypt_with_mk(self, mk: bytes, enc: dict, frm: str, to: str, mid: int, ts: int, static_hex: str, eph_hex: str, pn: int, n: int) -> Optional[bytes]:
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-        
-        nonce = bytes.fromhex(enc.get("nonce") or "")
-        ct = bytes.fromhex(enc.get("ct") or "")
-        aad = ChatManager._aad_bytes(frm, to, mid, ts, static_hex, eph_hex, pn, n)
-        pt = AESGCM(mk).decrypt(nonce, ct, aad)
-        
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            log.debug("[_decrypt_with_mk] Benchmark : %.3f ms", result)
-        
-        return pt
-
-    def decrypt(self, enc: dict, frm: str, to: str, mid: int, ts: int, header: dict) -> Optional[bytes]:
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-        
-        eph_hex = (header.get("eph_pub") or "").lower()
-        static_hex = (header.get("static_pub") or "").lower()
-        pn = int(header.get("pn", 0))
-        n = int(header.get("n", 0))
-
-        if not eph_hex or not static_hex:
-            log.debug("[ratchet.decrypt] missing header pieces frm=%s mid=%s", frm, mid)
-            return None
-
-        skipped_mk = self._consume_skipped(eph_hex, n)
-        if skipped_mk:
-            return self._decrypt_with_mk(skipped_mk, enc, frm, to, mid, ts, static_hex, eph_hex, pn, n)
-
-        if self.DHr is not None:
-            self._skip_message_keys(pn, self.DHr)
-
-        if self.DHr != eph_hex:
-            self._dh_ratchet(eph_hex)
-
-        self._skip_message_keys(n, self.DHr)
-        mk, idx = self._next_receiving_message_key()
-        pt = self._decrypt_with_mk(mk, enc, frm, to, mid, ts, static_hex, eph_hex, pn, n)
-        if pt is None:
-            # store for possible reprocessing if decrypt failed
-            self._store_skipped(eph_hex, idx, mk)
-            
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            log.debug("[decrypt] Benchmark : %.3f ms", result)  
-              
-        return pt

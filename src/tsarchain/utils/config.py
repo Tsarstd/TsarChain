@@ -157,9 +157,9 @@ CHAIN_JOURNAL_MAX_BYTES = 8 * 1024 * 1024
 STATE_HEIGHT_CACHE_TTL  = 2.0  # height for utxo validation & cache
 
 # ---- ARCHIVIST LMDB PATH ----
-ARCHIVIST_INDEX_DB_PATH = os.path.join("data/archivist/storage/index_db")
-ARCHIVIST_FINAL_DB_PATH = os.path.join("data/archivist/storage/final_db")
-ARCHIVIST_KEY_PATH      = os.path.join("data/archivist/archivist_key.json")  # primary node identity key storage path
+ARCHIVIST_INDEX_DB_PATH = "data/archivist/storage/index_db"
+ARCHIVIST_FINAL_DB_PATH = "data/archivist/storage/final_db"
+ARCHIVIST_KEY_PATH      = "data/archivist/archivist_key.json" # primary node identity key storage path
 
 # ---- WALLET KEY FILES ----
 USER_KEY_PATH = "data_user/user_key.json"  # default user keypair location
@@ -167,7 +167,7 @@ REGISTRY_PATH = "data_user/wallet_registry.json"  # registry of created wallets
 CHAT_STATE    = "data_user/chat_config.json"  # cached chat preferences and pointers
 
 # ---- NODE KEYS FILES ----
-KEYS_DATA_DIR         = os.path.join("data/keys")  # root folder for node-specific secrets
+KEYS_DATA_DIR         = "data/keys"  # root folder for node-specific secrets
 NODE_KEY_PATH         = os.path.join(KEYS_DATA_DIR, "node.json")  # primary node identity key storage path
 PEER_KEYS_PATH        = os.path.join(KEYS_DATA_DIR, "node/peer_keys.json")  # known peer key cache linked to node_data
 
@@ -186,7 +186,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "00064e983c7468f9250dc7332eb5f82c60c1254a983d2e09d0acf195f9972206"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "0015a07a3f3babfcb0ce84a662568fa6d82913b9dd44382251667fbc211bc6d8"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -259,7 +259,7 @@ GENESIS_REWARD_AMOUNT = 2_500_000 * TSAR  # allocation granted when genesis rewa
 # ---- BASE DIFFICULTY ----
 INITIAL_BITS      = 0x1F9FFFFF  # starting difficulty bits assigned to block zero
 MAX_BITS          = 0x1F9FFFFF  # cap for easiest allowed difficulty
-TARGET_BLOCK_TIME = 37  # aim for ~37 seconds block cadence
+TARGET_BLOCK_TIME = 68  # aim for ~68 seconds block cadence
 LWMA_WINDOW       = 75  # block count considered by LWMA difficulty algo
 FUTURE_DRIFT      = 600  # max seconds a block timestamp may lead wall clock
 MTP_WINDOWS       = 11  # number of blocks in median time past calculation
@@ -693,7 +693,7 @@ STORAGE_SIZE_INIT                  = 100 * 1024 * 1024  # initial storage size a
 STORAGE_MAX_BYTES                  = 128 * 1024 * 1024 * 1024  # cap on cumulative storage usage (64GB)
 RETENTION_GC_SEC                   = 3  # interval between retention garbage collection runs
 ARCHIVIST_AUTO_PAYOUT_GUARD_FILE   = os.path.join(STORAGE_DIR, "payout_guard/auto_payout_guard.json")
-ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC = 60
+ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC = 135
 
 
 # =============================================================================
