@@ -216,7 +216,7 @@ pip install -r requirements.txt
   maturin develop --release --features parallel
 
   # -- Run Test --
-  python tests/native_test.py
+  python benchmarks/native_test.py
   ```
   > ⚠️ If there are any installation problems or issues, read the complete instructions and troubleshooting steps at: [`INSTALL_NATIVE.md`](INSTALL_NATIVE.md)
 
@@ -324,6 +324,7 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     │   └── wallet.py                            # Wallet GUI (Kremlin Wallet) 
     │
     ├── assets/                                  # Logo, img, etc.
+    ├── benchmarks/                              # tsarcore_native bechmarks test
     ├── docs/                                    # Documentation, Whitepaper & Draft Protocol
     ├── scripts/                                 # Development utility scripts
     ├── src/
@@ -338,7 +339,11 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     │   │
     │   ├── kremlin/                            
     │   │   ├── security/
-    │   │   │   ├── chat_security.py             # Chat 3XDH + Double Rachet Logic
+    │   │   │   ├── chat/
+    │   │   │   │     ├── chat_common.py         # Helper & Common chat logic
+    │   │   │   │     ├── double_ratchet.py      # Double Rachet Logic
+    │   │   │   │     └── triple_xdh.py          # 3XDH Logic
+    │   │   │   │
     │   │   │   └── data_security.py             # Wallet security management
     │   │   │
     │   │   ├── services/

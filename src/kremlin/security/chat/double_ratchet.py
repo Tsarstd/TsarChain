@@ -7,18 +7,16 @@ import os
 import time
 from typing import Optional, Dict
 
-from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import x25519
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, PrivateFormat, NoEncryption
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from kremlin.security.chat.chat_common import build_aad_bytes
+from ..chat import chat_common as COM
 from tsarchain.utils import config as CFG
 
 # ---------------- Logger ----------------
 from tsarchain.utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.wallet.chat_security")
+log = get_ctx_logger("tsarchain.wallet.security.chat.double_ratchet")
 
 class RatchetSession:
     def __init__(
@@ -56,28 +54,6 @@ class RatchetSession:
         self.my_static_hex = my_static_hex or my_identity
         self._needs_send_rotation = False
 
-    @staticmethod
-    def _kdf(secret: bytes, info: bytes, length: int = 32, salt: Optional[bytes] = None) -> bytes:
-        return HKDF(algorithm=hashes.SHA256(), length=length, salt=salt, info=info).derive(secret)
-
-    @staticmethod
-    def _kdf_rk(root_key: bytes, shared_secret: bytes) -> tuple[bytes, bytes]:
-        material = RatchetSession._kdf(shared_secret, b"tsar:ratchet:rk", length=64, salt=root_key)
-        return material[:32], material[32:]
-
-    @staticmethod
-    def _kdf_ck(chain_key: bytes) -> tuple[bytes, bytes]:
-        material = RatchetSession._kdf(chain_key, b"tsar:ratchet:ck", length=64)
-        return material[:32], material[32:]
-
-    @staticmethod
-    def _serialize_priv(priv: x25519.X25519PrivateKey) -> str:
-        return priv.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()).hex()
-
-    @staticmethod
-    def _deserialize_priv(data: str) -> x25519.X25519PrivateKey:
-        return x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(data))
-
     @classmethod
     def init_as_initiator(
         cls,
@@ -89,8 +65,8 @@ class RatchetSession:
         my_static_hex: Optional[str] = None,
     ) -> "RatchetSession":
         
-        sck = cls._kdf(root_key, b"tsar:ratchet:send")
-        rck = cls._kdf(root_key, b"tsar:ratchet:recv")
+        sck = COM.hkdf(root_key, b"tsar:ratchet:send")
+        rck = COM.hkdf(root_key, b"tsar:ratchet:recv")
         
         return cls(root_key, sck, rck, my_ratchet_priv, their_ratchet_pub_hex, my_identity, their_identity, my_static_hex, ns=0, nr=0, pn=0)
 
@@ -105,8 +81,8 @@ class RatchetSession:
         my_static_hex: Optional[str] = None,
     ) -> "RatchetSession":
         
-        sck = cls._kdf(root_key, b"tsar:ratchet:recv")
-        rck = cls._kdf(root_key, b"tsar:ratchet:send")
+        sck = COM.hkdf(root_key, b"tsar:ratchet:recv")
+        rck = COM.hkdf(root_key, b"tsar:ratchet:send")
         inst = cls(root_key, sck, rck, my_ratchet_priv, their_first_eph, my_identity, their_identity, my_static_hex, ns=0, nr=0, pn=0)
         inst._needs_send_rotation = True
         
@@ -117,7 +93,7 @@ class RatchetSession:
             "rk": self.rk.hex(),
             "cks": self.CKs.hex() if self.CKs else None,
             "ckr": self.CKr.hex() if self.CKr else None,
-            "dhs": self._serialize_priv(self.DHs),
+            "dhs": COM.serialize_priv(self.DHs),
             "dhr": self.DHr,
             "ns": self.Ns,
             "nr": self.Nr,
@@ -134,7 +110,7 @@ class RatchetSession:
         rk = bytes.fromhex(data["rk"])
         cks = bytes.fromhex(data["cks"]) if data.get("cks") else None
         ckr = bytes.fromhex(data["ckr"]) if data.get("ckr") else None
-        dhs = cls._deserialize_priv(data["dhs"])
+        dhs = COM.deserialize_priv(data["dhs"])
         inst = cls(
             root_key=rk,
             send_ck=cks,
@@ -177,7 +153,7 @@ class RatchetSession:
     def _next_sending_message_key(self) -> tuple[bytes, int]:
         if self.CKs is None:
             raise ValueError("send chain not established")
-        self.CKs, mk = self._kdf_ck(self.CKs)
+        self.CKs, mk = COM.hkdf_ck(self.CKs)
         idx = self.Ns
         self.Ns += 1
         return mk, idx
@@ -185,7 +161,7 @@ class RatchetSession:
     def _next_receiving_message_key(self) -> tuple[bytes, int]:
         if self.CKr is None:
             raise ValueError("recv chain not established")
-        self.CKr, mk = self._kdf_ck(self.CKr)
+        self.CKr, mk = COM.hkdf_ck(self.CKr)
         idx = self.Nr
         self.Nr += 1
         return mk, idx
@@ -204,7 +180,7 @@ class RatchetSession:
         self.DHs = x25519.X25519PrivateKey.generate()
         self.Pn = self.Ns
         self.Ns = 0
-        self.rk, self.CKs = self._kdf_rk(self.rk, self.DHs.exchange(remote))
+        self.rk, self.CKs = COM.hkdf_rk(self.rk, self.DHs.exchange(remote))
         self._needs_send_rotation = False
 
     def _dh_ratchet(self, their_pub_hex: str) -> None:
@@ -216,10 +192,10 @@ class RatchetSession:
         self.Pn = self.Ns
         self.Ns = 0
         self.Nr = 0
-        self.rk, self.CKr = self._kdf_rk(self.rk, prev_dhs.exchange(their_pub))
+        self.rk, self.CKr = COM.hkdf_rk(self.rk, prev_dhs.exchange(their_pub))
         self.DHr = their_pub_hex
         self.DHs = x25519.X25519PrivateKey.generate()
-        self.rk, self.CKs = self._kdf_rk(self.rk, self.DHs.exchange(their_pub))
+        self.rk, self.CKs = COM.hkdf_rk(self.rk, self.DHs.exchange(their_pub))
         self._needs_send_rotation = False
 
     def encrypt(self, pt: bytes, frm: str, to: str, mid: int, ts: int) -> dict:
@@ -236,7 +212,7 @@ class RatchetSession:
             "n": idx,
         }
         nonce = os.urandom(12)
-        aad = build_aad_bytes(frm, to, mid, ts, header["static_pub"], header["eph_pub"], header["pn"], header["n"])
+        aad = COM.build_aad_bytes(frm, to, mid, ts, header["static_pub"], header["eph_pub"], header["pn"], header["n"])
         ct = AESGCM(mk).encrypt(nonce, pt, aad)
         
         if CFG.DEBUG_BENCHMARKS:
@@ -255,7 +231,7 @@ class RatchetSession:
         
         nonce = bytes.fromhex(enc.get("nonce") or "")
         ct = bytes.fromhex(enc.get("ct") or "")
-        aad = build_aad_bytes(frm, to, mid, ts, static_hex, eph_hex, pn, n)
+        aad = COM.build_aad_bytes(frm, to, mid, ts, static_hex, eph_hex, pn, n)
         pt = AESGCM(mk).decrypt(nonce, ct, aad)
         
         if CFG.DEBUG_BENCHMARKS:

@@ -16,10 +16,9 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 # ---------------- Local Project (With Node) ----------------
 from tsarchain.utils import config as CFG
-from tsarchain.utils.helpers import sign_digest_der_low_s_native
 
 # ---------------- Local Project (Wallet Only) ----------------
-from ..chat.chat_common import pack, unpack
+from ..chat import chat_common as COM
 from ..chat.double_ratchet import RatchetSession
 from ..data_security import (Wallet,
     load_or_create_chat_dh_key,
@@ -37,7 +36,7 @@ from ..data_security import (Wallet,
 
 # ---------------- Logger ----------------
 from tsarchain.utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.wallet.chat_security")
+log = get_ctx_logger("tsarchain.wallet.security.chat.triple_xdh")
 
 
 class ChatManager:
@@ -74,14 +73,14 @@ class ChatManager:
     
     def _pwd_cache_put(self, addr: str, pwd: str, ttl_sec: Optional[int] = None) -> None:
         ttl = ttl_sec if ttl_sec is not None else CFG.CHAT_PWD_CACHE_TTL_SEC
-        self._pwd_cache[self._canon(addr)] = (pwd, self._now() + int(ttl))
+        self._pwd_cache[COM.canon(addr)] = (pwd, self._now() + int(ttl))
         
     def _pwd_cache_get(self, addr: str) -> Optional[str]:
-        rec = self._pwd_cache.get(self._canon(addr))
+        rec = self._pwd_cache.get(COM.canon(addr))
         return rec[0] if rec and self._now() < rec[1] else None
     
     def _pwd_provider_for(self, addr: str):
-        a = self._canon(addr)
+        a = COM.canon(addr)
         def _provider(_prompt: str = "") -> Optional[str]:
             pwd = self._pwd_cache_get(a)
             if pwd:
@@ -129,7 +128,7 @@ class ChatManager:
         return False
 
     def _session_key(self, me: str, peer: str) -> Tuple[str, str]:
-        return (self._canon(me), self._canon(peer))
+        return (COM.canon(me), COM.canon(peer))
 
     def _load_session_from_disk(self, me: str, peer: str) -> Optional["RatchetSession"]:
         provider = self._pwd_provider_for(me)
@@ -156,7 +155,7 @@ class ChatManager:
         return sess
     
     def try_unlock(self, address: str) -> tuple[Optional[str], Optional[str]]:
-        addr = self._canon(address)
+        addr = COM.canon(address)
         pwd = self.password_prompt_cb(addr)
         if pwd:
             self._pwd_cache_put(addr, pwd)
@@ -169,7 +168,7 @@ class ChatManager:
         return priv_hex, None
 
     def get_priv_for_chat(self, address: str) -> Optional[str]:
-        addr = self._canon(address)
+        addr = COM.canon(address)
         cached = self.priv_cache.get(addr)
         if cached and self._now() < cached[1]:
             return cached[0]
@@ -189,7 +188,7 @@ class ChatManager:
 
     # ---------- pubkey directory ----------
     def lookup_pub(self, addr: str, cb: Callable[[Optional[str]], None]) -> None:
-        a = self._canon(addr)
+        a = COM.canon(addr)
         if a in self.pub_cache:
             cb(self.pub_cache[a]); return
 
@@ -216,7 +215,7 @@ class ChatManager:
         self.rpc_send({"type": "CHAT_LOOKUP_PUB", "address": a}, _on)
 
     def expected_pub_or_lookup(self, addr: str) -> Optional[str]:
-        a = self._canon(addr)
+        a = COM.canon(addr)
         pub = self.pub_cache.get(a)
         if pub is None:
             self.lookup_pub(a, lambda _p: None)
@@ -224,7 +223,7 @@ class ChatManager:
 
     # ---------- chat DH cache ----------
     def _get_chat_dh(self, address: str) -> tuple[str, str]:
-        a = self._canon(address)
+        a = COM.canon(address)
         now = self._now()
         cached = self._chat_dh_cache.get(a)
         if cached and now < cached[2]:
@@ -235,8 +234,8 @@ class ChatManager:
 
     # ---------- Session bootstrap (X3DH-like) + Double Ratchet ----------
     def ensure_session(self, me_addr: str, peer_addr: str, cb: Callable[[Optional[str]],None]) -> None:
-        me = self._canon(me_addr)
-        peer = self._canon(peer_addr)
+        me = COM.canon(me_addr)
+        peer = COM.canon(peer_addr)
         if self._get_session(me, peer):
             cb(None); return
             
@@ -321,34 +320,16 @@ class ChatManager:
         emojis = ["🐙","🦊","🐼","🐧","🐯","🐸","🦁","🐵","🦄","🐺","🐤","🦉","🐢","🐬","🦒","🐳"]
         return "".join(emojis[digest[i] % len(emojis)] for i in range(6))
 
-    # ---------- high-level ops: register / send / poll ----------
-    def _canon(self, address: str) -> str:
-        return (address or "").strip().lower()
-
-    @staticmethod
-    def _ec_priv_from_hex(h: str) -> ec.EllipticCurvePrivateKey:
-        return ec.derive_private_key(int.from_bytes(bytes.fromhex(h), "big"), ec.SECP256K1())
-
-    def pub_hex_from_priv(self, sk: ec.EllipticCurvePrivateKey) -> str:
-        nums = sk.public_key().public_numbers()
-        prefix = 0x02 | (nums.y & 1)
-        return f"{prefix:02x}{nums.x:064x}"
-
-    def sign(self, priv_hex: str, data: bytes) -> str:
-        digest = hashlib.sha256(data).digest()
-        sig = sign_digest_der_low_s_native(priv_hex, digest)
-        return sig.hex()
-
     def register(self, address: str, on_done: Callable[[Optional[Dict[str, Any]]], None]) -> None:
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
         
-        addr = self._canon(address)
+        addr = COM.canon(address)
         priv_hex = self.get_priv_for_chat(addr)
         if not priv_hex:
             on_done({"error": "unlock_failed"}); return
             
-        spend_pub = self.pub_hex_from_priv(self._ec_priv_from_hex(priv_hex))
+        spend_pub = COM.pub_hex_from_priv(COM.ec_priv_from_hex(priv_hex))
         chat_sk_hex, chat_pk_hex = self._get_chat_dh(addr)
         ts_now = int(time.time())
         reg_bytes = b"|".join([
@@ -358,7 +339,7 @@ class ChatManager:
             bytes.fromhex(chat_pk_hex),
             str(ts_now).encode()
         ])
-        reg_sig = self.sign(priv_hex, reg_bytes).lower()
+        reg_sig = COM.sign(priv_hex, reg_bytes).lower()
         
         pres_bytes = b"|".join([
             b"CHAT_PRESENCE",
@@ -367,7 +348,7 @@ class ChatManager:
             bytes.fromhex(spend_pub),
             str(ts_now).encode()
         ])
-        presence_sig = self.sign(priv_hex, pres_bytes).lower()
+        presence_sig = COM.sign(priv_hex, pres_bytes).lower()
         
         bundle = {}
         ensure_signed_prekey(addr, self._pwd_provider_for(addr))
@@ -375,7 +356,7 @@ class ChatManager:
         spk_hex = (bundle.get("spk") or "").lower()
         if spk_hex:
             payload_spk = b"TSAR-SPK|" + bytes.fromhex(spk_hex) + b"|" + bytes.fromhex(spend_pub)
-            bundle["sig"] = self.sign(priv_hex, payload_spk)
+            bundle["sig"] = COM.sign(priv_hex, payload_spk)
 
         def _on(resp: Optional[Dict[str, Any]]):
             if not resp:
@@ -446,8 +427,8 @@ class ChatManager:
 
     def send_message(self, from_addr: str, to_addr: str, text: str,
                     on_queued, on_result) -> None:
-        frm = self._canon(from_addr)
-        to  = self._canon(to_addr)
+        frm = COM.canon(from_addr)
+        to  = COM.canon(to_addr)
 
         priv_hex = self.get_priv_for_chat(frm)
         if not priv_hex:
@@ -466,7 +447,7 @@ class ChatManager:
                 return
             mid = random.randint(0, 2**31 - 1)
             ts = int(time.time())
-            pt = pack(text)
+            pt = COM.pack(text)
             try:
                 msg = sess.encrypt(pt, frm, to, mid, ts)
             except Exception as exc:
@@ -495,7 +476,7 @@ class ChatManager:
                 on_result({"status": "ratchet_header_invalid"})
                 return
 
-            chat_sig = self.sign(priv_hex, b"|".join(sig_parts)).lower()
+            chat_sig = COM.sign(priv_hex, b"|".join(sig_parts)).lower()
             payload = {
                 "type": "CHAT_SEND",
                 "from": frm,
@@ -544,7 +525,7 @@ class ChatManager:
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
         
-        addr = self._canon(address)
+        addr = COM.canon(address)
         if not self._can_publish_prekeys(addr):
             (on_done or (lambda _r: None))({"skipped": "cooldown"})
             return
@@ -563,9 +544,9 @@ class ChatManager:
 
         priv_hex_for_sign = self.get_priv_for_chat(addr)
         if priv_hex_for_sign and bundle.get("spk"):
-            spend_pub = self.pub_hex_from_priv(self._ec_priv_from_hex(priv_hex_for_sign))
+            spend_pub = COM.pub_hex_from_priv(COM.ec_priv_from_hex(priv_hex_for_sign))
             payload_spk = b"TSAR-SPK|" + bytes.fromhex(bundle["spk"]) + b"|" + bytes.fromhex(spend_pub)
-            bundle["sig"] = self.sign(priv_hex_for_sign, payload_spk)
+            bundle["sig"] = COM.sign(priv_hex_for_sign, payload_spk)
 
         payload = {
             "type": "CHAT_PUBLISH_PREKEYS",
@@ -601,14 +582,14 @@ class ChatManager:
             return
         ts = int(time.time())
         rr = b"|".join([b"CHAT_READ", sender.encode(), reader.encode(), str(msg_id).encode(), str(ts).encode()])
-        read_sig = self.sign(priv_hex, rr).lower()
+        read_sig = COM.sign(priv_hex, rr).lower()
         self.rpc_send({"type": "CHAT_READ", "sender": sender, "reader": reader, "msg_id": int(msg_id), "ts": ts, "read_sig": read_sig}, on_result)
 
     def poll(self, address: str, n: int, on_items, on_done=None) -> None:
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
             
-        me = self._canon(address)
+        me = COM.canon(address)
         priv_hex = self.get_priv_for_chat(me)
         if not priv_hex:
             if on_done: on_done({"error": "unlock_failed"}); return
@@ -616,7 +597,7 @@ class ChatManager:
 
         self._ensure_prekey_inventory(me)
         ts_now = int(time.time())
-        pull_sig = self.sign(priv_hex, b"|".join([b"CHAT_PULL", me.encode(), str(ts_now).encode()]))
+        pull_sig = COM.sign(priv_hex, b"|".join([b"CHAT_PULL", me.encode(), str(ts_now).encode()]))
 
         def _on(resp):
             if resp and resp.get("type") == "CHAT_NONE" and str(resp.get("error")) == "not_registered":
@@ -714,7 +695,7 @@ class ChatManager:
                     if sess:
                         pt = sess.decrypt(enc, frm, me, mid, ts, header)
                         if pt is not None:
-                            msg_text = unpack(pt)
+                            msg_text = COM.unpack(pt)
                         self._persist_session(me, frm, sess)
 
                     if msg_text is not None:
