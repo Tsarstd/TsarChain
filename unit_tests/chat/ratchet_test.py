@@ -1,23 +1,15 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Tsar Studio
+# Copyright (c) 2026 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: Signal-X3DH; Signal-DoubleRatchet; RFC7748-X25519; RFC5869-HKDF
 
-import os
-import sys
-
 import pytest
+
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from cryptography.exceptions import InvalidTag
-
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-SRC_ROOT = os.path.join(PROJECT_ROOT, "src")
-for path in (PROJECT_ROOT, SRC_ROOT):
-    if path not in sys.path:
-        sys.path.append(path)
 
 from kremlin.security.chat.double_ratchet import RatchetSession  # noqa: E402
 from tsarchain.utils import config as CFG

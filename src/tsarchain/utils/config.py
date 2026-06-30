@@ -166,6 +166,10 @@ USER_KEY_PATH = "data_user/user_key.json"  # default user keypair location
 REGISTRY_PATH = "data_user/wallet_registry.json"  # registry of created wallets
 CHAT_STATE    = "data_user/chat_config.json"  # cached chat preferences and pointers
 
+# ---- CHAT KEY FILES ----
+CHAT_KEYS_DIR = "data_user/chat_keys"
+PREKEY_DIR    = "data_user/chat_prekeys"
+
 # ---- NODE KEYS FILES ----
 KEYS_DATA_DIR         = "data/keys"  # root folder for node-specific secrets
 NODE_KEY_PATH         = os.path.join(KEYS_DATA_DIR, "node.json")  # primary node identity key storage path

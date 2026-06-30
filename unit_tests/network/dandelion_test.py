@@ -2,8 +2,8 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain - see LICENSE and TRADEMARKS.md
 
-from typing import List, Tuple
 import pytest
+from typing import List, Tuple
 
 from tsarchain.network.dandelion_pp import DandelionPP
 from tsarchain.utils import config as CFG
