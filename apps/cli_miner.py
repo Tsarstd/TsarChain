@@ -204,7 +204,7 @@ class LightMiner:
             "port": getattr(self.network, "port", 0),
             "peers": [],
         }
-        resp = self.network._rpc_request(peer, payload, timeout=max(8.0, CFG.SYNC_TIMEOUT))
+        resp = self.network.rpc_request(peer, payload, timeout=max(8.0, CFG.SYNC_TIMEOUT))
         if resp and resp.get("type") == "HELLO_RESPONSE":
             self.network.peers.add(peer)
             self.network.outbound_peers.add(peer)
@@ -222,7 +222,7 @@ class LightMiner:
             return height
         if not self.network:
             return -1
-        info = self.network._rpc_request(peer, {"type": "GET_INFO"}, timeout=max(8.0, CFG.SYNC_TIMEOUT))
+        info = self.network.rpc_request(peer, {"type": "GET_INFO"}, timeout=max(8.0, CFG.SYNC_TIMEOUT))
         if info and isinstance(info, dict):
             return int(info.get("height", -1))
         return -1
@@ -238,7 +238,7 @@ class LightMiner:
         for i in range(0, len(heights), chunk_size):
             chunk = heights[i : i + chunk_size]
             payload = {"type": "GET_BLOCKS", "heights": chunk, "port": getattr(self.network, "port", 0)}
-            resp = self.network._rpc_request(peer, payload, timeout=max(15.0, CFG.SYNC_TIMEOUT))
+            resp = self.network.rpc_request(peer, payload, timeout=max(15.0, CFG.SYNC_TIMEOUT))
             if not resp or resp.get("type") != "BLOCKS":
                 return []
             items = resp.get("blocks") or []
@@ -252,7 +252,7 @@ class LightMiner:
         if not self.network or height < 0:
             return None
         payload = {"type": "GET_BLOCK_HASH", "height": int(height), "port": getattr(self.network, "port", 0)}
-        resp = self.network._rpc_request(peer, payload, timeout=max(6.0, CFG.SYNC_TIMEOUT))
+        resp = self.network.rpc_request(peer, payload, timeout=max(6.0, CFG.SYNC_TIMEOUT))
         if resp and resp.get("type") == "BLOCK":
             hx = resp.get("hash")
             if isinstance(hx, str) and hx:

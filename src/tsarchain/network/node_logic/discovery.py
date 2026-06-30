@@ -21,12 +21,12 @@ log = get_ctx_logger("tsarchain.network.node_logic.discovery")
 
 def discover_peers_loop(self):
     while not self._stop.is_set():
-        self._discover_peers()
+        _discover_peers(self)
         time.sleep(CFG.DISCOVERY_INTERVAL)
 
 
 def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
-    norm = self._normalize_peer(peer)
+    norm = self.normalize_peer(peer)
     if not norm:
         return False
     ip, port = norm
@@ -63,8 +63,8 @@ def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
                     node_id=self.node_id,
                     node_pub=self.pubkey,
                     node_priv=self.privkey,
-                    get_pinned=self._get_pinned,
-                    set_pinned=self._set_pinned,
+                    get_pinned=self.get_pinned,
+                    set_pinned=self.set_pinned,
                 )
                 chan.handshake()
                 s.settimeout(1.0)
@@ -85,14 +85,14 @@ def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
     except (socket.timeout, ConnectionRefusedError, OSError):
         return False
     except Exception:
-        log.exception("[_attempt_hello] Error dialing %s", norm)
+        log.exception("[attempt_hello] Error dialing %s", norm)
         return False
     finally:
         self._peer_last_dial[norm] = now
 
     self.broadcast.send_mempool_to_peer(norm)
     if not CFG.ENABLE_FULL_SYNC:
-        self._request_mempool_snapshot(norm, force=True)
+        self.request_mempool_snapshot(norm, force=True)
     return True
 
 
@@ -111,19 +111,19 @@ def _discover_peers(self):
     random.shuffle(candidates)
 
     for peer in candidates:
-        norm = self._normalize_peer(peer)
+        norm = self.normalize_peer(peer)
         if not norm:
             continue
         if norm in found_peers:
             continue
         if limit > 0 and len(found_peers) >= limit and norm not in self.outbound_peers:
             break
-        if self._attempt_hello(norm):
+        if _attempt_hello(self, norm):
             found_peers.add(norm)
-            self._reward_peer(norm)
+            self.reward_peer(norm)
             rpc_client._prefetch_peer_channel(self, norm)
         else:
-            self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
+            self.penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
 
     if len(found_peers) < limit:
         for port in range(CFG.PORT_START, CFG.PORT_END + 1):
@@ -134,9 +134,9 @@ def _discover_peers(self):
                 continue
             if limit > 0 and len(found_peers) >= limit and norm not in self.outbound_peers:
                 break
-            if self._attempt_hello(norm):
+            if _attempt_hello(self, norm):
                 found_peers.add(norm)
-                self._reward_peer(norm)
+                self.reward_peer(norm)
 
     with self.lock:
         self.peers.update(found_peers)
@@ -145,6 +145,3 @@ def _discover_peers(self):
             if len(retained) < limit or peer in retained:
                 retained.add(peer)
         self.outbound_peers = retained
-
-
-__all__ = ("discover_peers_loop", "_attempt_hello", "_discover_peers")

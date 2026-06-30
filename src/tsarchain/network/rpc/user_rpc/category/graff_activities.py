@@ -17,7 +17,7 @@ log = get_ctx_logger("tsarchain.network.rpc.user_rpc.category.graff_activities")
 def get_posts(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
     
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:graffiti",
         table=self.rl_ip,
@@ -46,7 +46,7 @@ def get_comments(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:graffiti",
         table=self.rl_ip,
@@ -84,7 +84,7 @@ def get_art(self, message, pow_obj, base_identity, *,
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
         
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:graffiti",
         table=self.rl_ip,
@@ -123,7 +123,7 @@ def get_payouts(self, message, pow_obj, base_identity, *,
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
 
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:graffiti",
         table=self.rl_ip,

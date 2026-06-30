@@ -30,6 +30,3 @@ def register_storage_peer(self, peer_ip: str, meta: Dict) -> None:
                 if key != (peer_ip, port):
                     self.storage_peers.pop(key, None)
         self.storage_peers[(peer_ip, port)] = meta
-
-
-__all__ = ("init_storage_registry", "register_storage_peer")

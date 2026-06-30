@@ -24,7 +24,7 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
         start = time.perf_counter()
     
     addr_s   = (message.get("address")  or "").strip().lower()
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:chat_reg",
         table=self.rl_ip,
@@ -41,7 +41,7 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
         return pow_resp
     addr_key = f"chatreg_addr:{addr_s}" if addr_s else None
     if addr_key:
-        ok, pow_resp = CM._allow_rpc_with_pow(
+        ok, pow_resp = CM.allow_rpc_with_pow(
             self,
             scope="rpc:chat_reg_addr",
             table=self.rl_addr,
@@ -109,7 +109,7 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
         str(int(ts_val)).encode()
     ])
 
-    sig_check = CM._verify_chat_signatures([
+    sig_check = CM.verify_chat_signatures([
         ("presence", spend_pk, pres_bytes, presence_sig),
         ("register", spend_pk, reg_bytes, reg_sig),
     ])
@@ -125,7 +125,7 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
             return {"error": "bad_spk"}
         
         payload = b"TSAR-SPK|" + bytes.fromhex(spk_reg) + b"|" + bytes.fromhex(spend_pk)
-        sig_ok = CM._verify_chat_signatures([("spk", spend_pk, payload, sig_reg)])
+        sig_ok = CM.verify_chat_signatures([("spk", spend_pk, payload, sig_reg)])
         spk_valid = bool(sig_ok.get("spk"))
         if not spk_valid:
             return {"error": "bad_spk_sig"}
@@ -166,7 +166,7 @@ def chat_lookup_pub(self, message, pow_obj, base_identity, *,
     addr_s = (message.get("address") or "").strip().lower()
     if not addr_s:
         return {"error": "missing address"}
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:chat_lookup",
         table=self.rl_ip,
@@ -182,7 +182,7 @@ def chat_lookup_pub(self, message, pow_obj, base_identity, *,
     if not ok:
         return pow_resp
     rl_key_addr = f"chatlookup_addr:{addr_s}"
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:chat_lookup_addr",
         table=self.rl_addr,
@@ -244,7 +244,7 @@ def chat_presence(self, message, pow_obj, base_identity, addr, *,
         return {"error": "presence_addr_mismatch"}
     
     pres_bytes = b"|".join([b"CHAT_PRESENCE", addr_s.encode(), bytes.fromhex(pubhex), bytes.fromhex(spend_pk), str(ts_val).encode()])
-    sig_ok = CM._verify_chat_signatures([("presence", spend_pk, pres_bytes, presence_sig)])
+    sig_ok = CM.verify_chat_signatures([("presence", spend_pk, pres_bytes, presence_sig)])
     if not sig_ok.get("presence"):
         return {"error": "presence_bad_sig"}
 
@@ -252,7 +252,7 @@ def chat_presence(self, message, pow_obj, base_identity, addr, *,
         log.debug("[process_message] CHAT_PRESENCE max hops from %s", addr)
         return {"error": "presence_hops"}
 
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:chat_presence",
         table=self.rl_ip,
@@ -268,7 +268,7 @@ def chat_presence(self, message, pow_obj, base_identity, addr, *,
     if not ok:
         return pow_resp
 
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:chat_presence_addr",
         table=self.rl_addr,
@@ -313,7 +313,7 @@ def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
         start = time.perf_counter()
 
     addr_s = (message.get("address") or "").strip().lower()
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:chat_reg",
         table=self.rl_ip,
@@ -338,7 +338,7 @@ def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
     sp = (self.chat_spend_pub.get(addr_s) or "").strip().lower()
     if not sp: return {"error":"unknown_address"}
     payload = b"TSAR-SPK|" + bytes.fromhex(spk) + b"|" + bytes.fromhex(sp)
-    sig_ok = CM._verify_chat_signatures([("spk", sp, payload, sig)])
+    sig_ok = CM.verify_chat_signatures([("spk", sp, payload, sig)])
     if not sig_ok.get("spk"):
         return {"error":"bad_spk_sig"}
     with self.chat_lock:
@@ -403,7 +403,7 @@ def chat_send(self, message, pow_obj, base_identity, *,
     if not (0 <= ratchet_pn <= max_idx and 0 <= ratchet_n <= max_idx):
         return {"type": "CHAT_ACK", "status": "rejected", "reason": "ratchet_index_out_of_range"}
 
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:chat_send",
         table=self.rl_ip,
@@ -419,7 +419,7 @@ def chat_send(self, message, pow_obj, base_identity, *,
     if not ok:
         return {"type": "CHAT_ACK", **(pow_resp or {})}
 
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:chat_send_addr",
         table=self.rl_addr,
@@ -484,7 +484,7 @@ def chat_send(self, message, pow_obj, base_identity, *,
         str(ratchet_pn).encode(), str(ratchet_n).encode(),
         bytes.fromhex(nonce_hex), bytes.fromhex(ct_hex)
     ])
-    chat_verify = CM._verify_chat_signatures([("chat_send", sp, chat_bytes, chat_sig)])
+    chat_verify = CM.verify_chat_signatures([("chat_send", sp, chat_bytes, chat_sig)])
     if not chat_verify.get("chat_send"):
         return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_sig"}
 
@@ -554,7 +554,7 @@ def chat_read(self, message, pow_obj, base_identity, *,
     if not read_sig:
         return {"error": "sig_required"}
 
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:chat_read",
         table=self.rl_ip,
@@ -579,7 +579,7 @@ def chat_read(self, message, pow_obj, base_identity, *,
         sender.encode(), reader.encode(),
         str(mid).encode(), str(ts_val).encode()
     ])
-    read_check = CM._verify_chat_signatures([("read", sp, rr, read_sig)])
+    read_check = CM.verify_chat_signatures([("read", sp, rr, read_sig)])
     if not read_check.get("read"):
         return {"error": "bad_sig"}
 
@@ -618,7 +618,7 @@ def chat_pull(self, message, *,
         return {"type": "CHAT_NONE", "items": [], "error": "not_registered"}
 
     msg_bytes = b"|".join([b"CHAT_PULL", me.encode(), str(ts).encode()])
-    pull_check = CM._verify_chat_signatures([("pull", spend_pk, msg_bytes, pull_sig)])
+    pull_check = CM.verify_chat_signatures([("pull", spend_pk, msg_bytes, pull_sig)])
     if not pull_check.get("pull"):
         return {"type": "CHAT_NONE", "items": [], "error": "bad_sig"}
 
@@ -637,7 +637,7 @@ def chat_relay(self, message, pow_obj, base_identity, *,
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
     
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:chat_relay",
         table=self.rl_ip,

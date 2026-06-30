@@ -6,6 +6,7 @@
 import time
 from typing import TYPE_CHECKING, Any, Optional
 
+from ..node_logic import handlers
 from ...utils import config as CFG
 
 # ---------------- Logger ----------------
@@ -14,9 +15,6 @@ log = get_ctx_logger("tsarchain.network.rpc.miner_rpc")
 
 if TYPE_CHECKING:
     from ..node import Network
-
-__all__ = ["handle_miner_rpc"]
-
 
 def handle_miner_rpc(
     self: "Network",
@@ -34,7 +32,7 @@ def handle_miner_rpc(
     ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
 
     if mtype == "HELLO":
-        return self._handle_hello(message, addr, src_node_id=src_node_id, src_pubkey=src_pubkey)
+        return handlers.handle_hello(self, message, addr, src_node_id=src_node_id, src_pubkey=src_pubkey)
 
 #----------------------#-------------------
 
@@ -125,7 +123,7 @@ def handle_miner_rpc(
         if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_SYNC_RL_IP_BURST, CFG.MINER_SYNC_RL_WINDOW_S, CFG.MINER_SYNC_RL_IP_BURST, backoff_key=rl_key):
             self._backoff(rl_key, CFG.MINER_SYNC_RL_BACKOFF_S)
             return {"error": "rate_limited"}
-        return self._handle_get_full_sync(message, addr)
+        return handlers.handle_get_full_sync(self, message, addr)
 
 #----------------------#-------------------
 
@@ -134,7 +132,7 @@ def handle_miner_rpc(
         if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_HEADERS_RL_IP_BURST, CFG.MINER_HEADERS_RL_WINDOW_S, CFG.MINER_HEADERS_RL_IP_BURST, backoff_key=rl_key):
             self._backoff(rl_key, CFG.MINER_HEADERS_RL_BACKOFF_S)
             return {"error": "rate_limited"}
-        return self._handle_get_headers(message, addr)
+        return handlers.handle_get_headers(self, message, addr)
 
 #----------------------#-------------------
 
@@ -143,7 +141,7 @@ def handle_miner_rpc(
         if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_BLOCKS_RL_IP_BURST, CFG.MINER_BLOCKS_RL_WINDOW_S, CFG.MINER_BLOCKS_RL_IP_BURST, backoff_key=rl_key):
             self._backoff(rl_key, CFG.MINER_BLOCKS_RL_BACKOFF_S)
             return {"error": "rate_limited"}
-        return self._handle_get_blocks(message, addr)
+        return handlers.handle_get_blocks(self, message, addr)
 
 #----------------------#-------------------
 
@@ -160,27 +158,7 @@ def handle_miner_rpc(
         if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_SYNC_RL_IP_BURST, CFG.MINER_SYNC_RL_WINDOW_S, CFG.MINER_SYNC_RL_IP_BURST, backoff_key=rl_key):
             self._backoff(rl_key, CFG.MINER_SYNC_RL_BACKOFF_S)
             return {"error": "rate_limited"}
-        return self._handle_full_sync(message, addr)
-
-#----------------------#-------------------
-
-    if mtype == "CHAIN":
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-
-        rl_key = f"miner:chain:{ip}"
-        if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_SYNC_RL_IP_BURST, CFG.MINER_SYNC_RL_WINDOW_S, CFG.MINER_SYNC_RL_IP_BURST, backoff_key=rl_key):
-            self._backoff(rl_key, CFG.MINER_SYNC_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
-
-        if self._validate_incoming_chain(message):
-            if CFG.DEBUG_BENCHMARKS:
-                end = time.perf_counter()
-                result = round((end - start) * 1000.0, 3)
-                log.debug("[CHAIN] Benchmark : %.3f ms", result)
-                
-            return {"status": "ok"}
-        return None
+        return handlers.handle_full_sync(self, message, addr)
 
 #----------------------#-------------------
 

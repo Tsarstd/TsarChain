@@ -157,6 +157,3 @@ def allow_handshake(
         return False
 
     return True
-
-
-__all__ = ("allow_handshake", "ban_ip", "ban_peer", "is_banned")

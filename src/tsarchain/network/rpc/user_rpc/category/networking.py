@@ -16,7 +16,7 @@ log = get_ctx_logger("tsarchain.network.rpc.user_rpc.category.networking")
 def ping(self, message, pow_obj, base_identity, addr, mtype, *,
                      client_ip, is_miner_sender, **kwargs):
     
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:ping",
         table=self.rl_ip,
@@ -37,7 +37,7 @@ def ping(self, message, pow_obj, base_identity, addr, mtype, *,
 def get_peers(self, message, pow_obj, base_identity, addr, mtype, *,
                      client_ip, is_miner_sender, **kwargs):
     
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:get_peers",
         table=self.rl_ip,
@@ -62,7 +62,7 @@ def stor_list(self, message, pow_obj, base_identity, *,
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
 
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:stor_list",
         table=self.rl_ip,

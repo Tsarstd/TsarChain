@@ -23,7 +23,7 @@ def new_tx(self, message, pow_obj, base_identity, addr, *, client_ip, **kwargs):
 
     ident_tx = sender_addr or base_identity
 
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:new_tx",
         table=self.rl_ip,
@@ -41,7 +41,7 @@ def new_tx(self, message, pow_obj, base_identity, addr, *, client_ip, **kwargs):
 
     if sender_addr:
         addr_key = f"txaddr:{sender_addr}"
-        ok, pow_resp = CM._allow_rpc_with_pow(
+        ok, pow_resp = CM.allow_rpc_with_pow(
             self,
             scope="rpc:tx_addr",
             table=self.rl_addr,
@@ -79,7 +79,7 @@ def create_tx(self, message, pow_obj, base_identity, addr, mtype, *,
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
         
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:tx",
         table=self.rl_ip,
@@ -118,7 +118,7 @@ def create_tx_multi(self, message, pow_obj, base_identity, addr, mtype, *,
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
 
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:tx_multi",
         table=self.rl_ip,

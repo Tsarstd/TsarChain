@@ -24,15 +24,15 @@ _RPC_CONN_TTL = float(CFG.RPC_CONN_TTL_SEC)
 _RPC_PREFETCH_TIMEOUT = float(CFG.RPC_PREFETCH_TIMEOUT)
 
 
-def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[float] = None) -> Optional[dict]:
-    norm = self._normalize_peer(peer)
+def rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[float] = None) -> Optional[dict]:
+    norm = self.normalize_peer(peer)
     if not norm:
         return None
 
     now = time.time()
     retry_at = self._rpc_backoff.get(norm, 0.0)
     if now < retry_at:
-        log.debug("[_rpc_request] backoff active for %s (%.1fs remaining)", norm, retry_at - now)
+        log.debug("[rpc_request] backoff active for %s (%.1fs remaining)", norm, retry_at - now)
         return None
     timeout = float(timeout or CFG.SYNC_TIMEOUT)
     cache = getattr(self, "_rpc_conn_cache", None)
@@ -106,8 +106,8 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
                     node_id=self.node_id,
                     node_pub=self.pubkey,
                     node_priv=self.privkey,
-                    get_pinned=self._get_pinned,
-                    set_pinned=self._set_pinned,
+                    get_pinned=self.get_pinned,
+                    set_pinned=self.set_pinned,
                 )
                 chan.handshake()
 
@@ -134,7 +134,7 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
             sock_new.close()
         self._rpc_backoff[norm] = time.time() + max(5.0, float(CFG.TEMP_BAN_SECONDS))
         if isinstance(exc, AttributeError):
-            log.warning("[_rpc_request] Handshake aborted by %s; backing off", norm)
+            log.warning("[rpc_request] Handshake aborted by %s; backing off", norm)
         return None
 
     self._rpc_backoff.pop(norm, None)
@@ -163,8 +163,8 @@ def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[f
     return inner
 
 
-def _request_mempool_inline(self, peer: Tuple[str, int], *, force: bool = False) -> Optional[bool]:
-    norm = self._normalize_peer(peer)
+def request_mempool_inline(self, peer: Tuple[str, int], *, force: bool = False) -> Optional[bool]:
+    norm = self.normalize_peer(peer)
     if not norm:
         return False
 
@@ -184,7 +184,7 @@ def _request_mempool_inline(self, peer: Tuple[str, int], *, force: bool = False)
     if self.node_id:
         payload["node_id"] = self.node_id
 
-    resp = self._rpc_request(norm, payload, timeout=max(10.0, CFG.SYNC_TIMEOUT))
+    resp = self.rpc_request(norm, payload, timeout=max(10.0, CFG.SYNC_TIMEOUT))
     if not resp:
         return None
 
@@ -211,12 +211,12 @@ def _request_mempool_inline(self, peer: Tuple[str, int], *, force: bool = False)
     self._peer_last_mempool_sync[norm] = now
     self._snapshot_unreachable.discard(norm)
     if added:
-        self._reward_peer(norm, CFG.PEER_SCORE_REWARD)
+        self.reward_peer(norm, CFG.PEER_SCORE_REWARD)
     return True
 
 
-def _request_mempool_snapshot(self, peer: Tuple[str, int], *, force: bool = False) -> Optional[bool]:
-    norm = self._normalize_peer(peer)
+def request_mempool_snapshot(self, peer: Tuple[str, int], *, force: bool = False) -> Optional[bool]:
+    norm = self.normalize_peer(peer)
     if not norm:
         return False
 
@@ -237,11 +237,11 @@ def _request_mempool_snapshot(self, peer: Tuple[str, int], *, force: bool = Fals
         payload["force"] = True
         payload["min_interval"] = 0
 
-    resp = self._rpc_request(norm, payload, timeout=max(10.0, CFG.SYNC_TIMEOUT))
+    resp = self.rpc_request(norm, payload, timeout=max(10.0, CFG.SYNC_TIMEOUT))
     if not resp:
-        log.debug("[_request_mempool_snapshot] no response from %s", norm)
+        log.debug("[request_mempool_snapshot] no response from %s", norm)
         self._snapshot_unreachable.add(norm)
-        self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
+        self.penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
         return None
 
     if resp.get("type") != "MEMPOOL_SYNC" or resp.get("status") == "error":
@@ -251,15 +251,15 @@ def _request_mempool_snapshot(self, peer: Tuple[str, int], *, force: bool = Fals
     self._peer_last_mempool_sync[norm] = now
     self._snapshot_unreachable.discard(norm)
     if int(resp.get("count", 0)) > 0:
-        self._reward_peer(norm, CFG.PEER_SCORE_REWARD)
+        self.reward_peer(norm, CFG.PEER_SCORE_REWARD)
     return True
 
 
-def _request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> bool:
+def request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> bool:
     if not force and not CFG.ENABLE_FULL_SYNC:
-        return self._request_mempool_snapshot(peer, force=True)
+        return self.request_mempool_snapshot(peer, force=True)
 
-    norm = self._normalize_peer(peer)
+    norm = self.normalize_peer(peer)
     if not norm:
         return False
 
@@ -279,11 +279,11 @@ def _request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> b
         "nonce": secrets.token_hex(16),
     }
     sync_start = time.time()
-    resp = self._rpc_request(norm, payload, timeout=max(20.0, CFG.SYNC_TIMEOUT * 2))
+    resp = self.rpc_request(norm, payload, timeout=max(20.0, CFG.SYNC_TIMEOUT * 2))
     self._full_sync_last_request[norm] = now
     if not resp:
-        log.info("[_request_full_sync] %s did not respond (elapsed=%.2fs)", norm, time.time() - sync_start)
-        self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
+        log.info("[request_full_sync] %s did not respond (elapsed=%.2fs)", norm, time.time() - sync_start)
+        self.penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
         return False
 
     if resp.get("type") == "SYNC_REJECT":
@@ -299,19 +299,19 @@ def _request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> b
     nonce_val = str(resp.get("nonce") or "")
     sender_key = f"{norm[0]}:{norm[1]}"
     if not (ts_val and nonce_val and self._nonce_guard("full_sync_resp", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
-        log.warning("[_request_full_sync] replay guard reject from %s", norm)
+        log.warning("[request_full_sync] replay guard reject from %s", norm)
         return False
     
     ok = self.broadcast.receive_full_sync(data)
     if ok:
         self._peer_last_sync[norm] = time.time()
-        self._reward_peer(norm, CFG.PEER_SCORE_REWARD * 3)
+        self.reward_peer(norm, CFG.PEER_SCORE_REWARD * 3)
         self._full_sync_backoff.pop(norm, None)
         chain_blocks = len(data.get("chain") or [])
         utxo_entries = len(data.get("utxos") or {})
         mempool_entries = len(data.get("mempool") or [])
         log.info(
-            "[_request_full_sync] Applied snapshot from %s in %.2fs (blocks=%d, utxos=%d, mempool=%d)",
+            "[request_full_sync] Applied snapshot from %s in %.2fs (blocks=%d, utxos=%d, mempool=%d)",
             norm,
             time.time() - sync_start,
             chain_blocks,
@@ -319,8 +319,8 @@ def _request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> b
             mempool_entries,
         )
         return True
-    self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
-    log.info("[_request_full_sync] Snapshot from %s failed validation (elapsed=%.2fs)", norm, time.time() - sync_start)
+    self.penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY)
+    log.info("[request_full_sync] Snapshot from %s failed validation (elapsed=%.2fs)", norm, time.time() - sync_start)
     return False
 
 
@@ -335,7 +335,7 @@ def _prefetch_rpc_connections(self):
     if cache is None or cache_lock is None or prefetched is None:
         return
     for peer in peers:
-        norm = self._normalize_peer(peer)
+        norm = self.normalize_peer(peer)
         if not norm or norm in prefetched:
             continue
         try:
@@ -350,8 +350,8 @@ def _prefetch_rpc_connections(self):
                     node_id=self.node_id,
                     node_pub=self.pubkey,
                     node_priv=self.privkey,
-                    get_pinned=self._get_pinned,
-                    set_pinned=self._set_pinned,
+                    get_pinned=self.get_pinned,
+                    set_pinned=self.set_pinned,
                 )
                 chan.handshake()
             sock.settimeout(float(CFG.SYNC_TIMEOUT))
@@ -374,7 +374,7 @@ def _prefetch_peer_channel(self, peer: Tuple[str, int]):
     prefetched = getattr(self, "_rpc_prefetched", None)
     if cache is None or cache_lock is None or prefetched is None:
         return
-    norm = self._normalize_peer(peer)
+    norm = self.normalize_peer(peer)
     if not norm or norm in prefetched:
         return
     try:
@@ -389,8 +389,8 @@ def _prefetch_peer_channel(self, peer: Tuple[str, int]):
                 node_id=self.node_id,
                 node_pub=self.pubkey,
                 node_priv=self.privkey,
-                get_pinned=self._get_pinned,
-                set_pinned=self._set_pinned,
+                get_pinned=self.get_pinned,
+                set_pinned=self.set_pinned,
             )
             chan.handshake()
         sock.settimeout(float(CFG.SYNC_TIMEOUT))
@@ -402,13 +402,3 @@ def _prefetch_peer_channel(self, peer: Tuple[str, int]):
         log.exception("error_prefetch_peer_channel")
         sock.close()
         return
-
-
-__all__ = (
-    "_rpc_request",
-    "_request_mempool_inline",
-    "_request_mempool_snapshot",
-    "_request_full_sync",
-    "_prefetch_rpc_connections",
-    "_prefetch_peer_channel",
-)

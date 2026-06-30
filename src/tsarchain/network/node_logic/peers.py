@@ -26,7 +26,7 @@ def normalize_peer(self, peer: Any) -> Optional[Tuple[str, int]]:
 
 
 def penalize_peer(self, peer: Any, amount: int) -> None:
-    norm = self._normalize_peer(peer)
+    norm = self.normalize_peer(peer)
     if norm is None:
         return
     delta = max(1, int(amount))
@@ -42,7 +42,7 @@ def penalize_peer(self, peer: Any, amount: int) -> None:
 
 
 def reward_peer(self, peer: Any, amount: int = CFG.PEER_SCORE_REWARD) -> None:
-    norm = self._normalize_peer(peer)
+    norm = self.normalize_peer(peer)
     if norm is None:
         return
     delta = max(0, int(amount))
@@ -53,30 +53,19 @@ def reward_peer(self, peer: Any, amount: int = CFG.PEER_SCORE_REWARD) -> None:
         if len(self.outbound_peers) < CFG.MAX_OUTBOUND_PEERS or norm in self.outbound_peers:
             self.outbound_peers.add(norm)
 
+def publish_block(self, block: "Block", exclude: Optional[Tuple[str, int]] = None, force: bool = True) -> int:
+    Block = None
+    if Block is not None and not isinstance(block, Block):
+        raise TypeError("block must be a Block instance")
+    peers = _collect_broadcast_peers(self)
+    if not peers:
+        return 0
+    return self.broadcast.broadcast_block(block, peers, exclude=exclude, force=force)
 
-def collect_broadcast_peers(self) -> Set[Tuple[str, int]]:
+def _collect_broadcast_peers(self) -> Set[Tuple[str, int]]:
     with self.lock:
         targets: Set[Tuple[str, int]] = set(self.outbound_peers)
         targets.update(self.inbound_peers)
         if not targets:
             targets.update(self.peers)
     return targets
-
-
-def publish_block(self, block: "Block", exclude: Optional[Tuple[str, int]] = None, force: bool = True) -> int:
-    Block = None
-    if Block is not None and not isinstance(block, Block):
-        raise TypeError("block must be a Block instance")
-    peers = self._collect_broadcast_peers()
-    if not peers:
-        return 0
-    return self.broadcast.broadcast_block(block, peers, exclude=exclude, force=force)
-
-
-__all__ = (
-    "normalize_peer",
-    "penalize_peer",
-    "reward_peer",
-    "collect_broadcast_peers",
-    "publish_block",
-)

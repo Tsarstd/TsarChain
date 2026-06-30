@@ -342,7 +342,7 @@ class ReceiveMixin:
                     if not handled and CFG.ENABLE_FULL_SYNC:
                         targets = [origin] if origin else list(peers)
                         for p in targets:
-                            self._request_full_sync(p)
+                            self.request_full_sync(p)
                     return False
                 if block.prev_block_hash != tip_h:
                     potential_fork = True
@@ -373,7 +373,7 @@ class ReceiveMixin:
                         if self.network:
                             target = origin if origin else (next(iter(peers)) if peers else None)
                             if target:
-                                self.network._request_full_sync(target, force=True)
+                                self.network.request_full_sync(target, force=True)
                             else:
                                 self.network.request_sync(fast=True)
                     return False
@@ -419,7 +419,7 @@ class ReceiveMixin:
                         last_req = self.network._full_sync_last_request.get(peer_key, 0.0)
                         if time.time() - last_req > float(CFG.FULL_SYNC_BACKOFF_INITIAL):
                             self.network._full_sync_last_request[peer_key] = time.time()
-                            self.network._request_full_sync(peer_key, force=True)
+                            self.network.request_full_sync(peer_key, force=True)
                     except Exception:
                         log.warning("[receive_block] full_sync_on_mismatch failed", exc_info=True)
                 self._log_block_reject(
@@ -434,7 +434,7 @@ class ReceiveMixin:
                     targets = [origin] if origin else list(peers)
                     for p in targets:
                         CFG.ENABLE_FULL_SYNC = True
-                        self._request_full_sync(p)
+                        self.request_full_sync(p)
                 return False
             if add_start is not None:
                 add_ms = round((time.perf_counter() - add_start) * 1000.0, 3)

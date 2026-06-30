@@ -64,7 +64,7 @@ def handle_user_rpc(self, message, addr, mtype, *, client_ip, is_miner_sender,
         return None
 
     pow_obj = message.get("pow")
-    base_identity = CM._identity_from_msg(message)
+    base_identity = CM.identity_from_msg(message)
     ip = client_ip()
 
     return handler(

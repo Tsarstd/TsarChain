@@ -7,25 +7,26 @@ from __future__ import annotations
 
 import socket
 import threading
-from typing import Any, Dict, List, Optional, Tuple, Set
 from collections import OrderedDict
+from typing import Any, Dict, List, Optional, Tuple, Set
 
 # ---------------- Local Project ----------------
-from ..utils import config as CFG
+from .node_logic import sync
+from .node_logic import peers
+from .node_logic import server
+from .node_logic import discovery
+from .node_logic import chat_state
+from .node_logic import rpc_client
+from .node_logic import storage_registry
+
+
 from ..core.block import Block
 from .broadcast import Broadcast
-from .protocol import build_envelope, load_or_create_keypair_at
+from ..utils import config as CFG
 from .client_helper import install_client_helper
 from .peers_storage import load_peer_keys, save_peer_keys
+from .protocol import build_envelope, load_or_create_keypair_at
 
-from .node_logic import chat_state
-from .node_logic import discovery as discovery_logic
-from .node_logic import handlers as handlers_logic
-from .node_logic import peers as peers_logic
-from .node_logic import rpc_client as rpc_client_logic
-from .node_logic import server as server_logic
-from .node_logic import storage_registry
-from .node_logic import sync as sync_logic
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
@@ -103,7 +104,7 @@ class Network:
         if not bootstrap_nodes:
             raise ValueError("No valid bootstrap peers configured")
 
-        primary_peer = self._normalize_peer(CFG.BOOTSTRAP_NODE) or next(iter(bootstrap_nodes))
+        primary_peer = self.normalize_peer(CFG.BOOTSTRAP_NODE) or next(iter(bootstrap_nodes))
 
         is_bootstrap_self = any(self._is_self_bootstrap(h, p) for h, p in bootstrap_nodes)
         if is_bootstrap_self:
@@ -116,18 +117,18 @@ class Network:
         self.peers.update(self.persistent_peers)
         for peer in self.persistent_peers:
             self.peer_scores[peer] = CFG.PEER_SCORE_START
-        
+
         # --- graceful shutdown controls ---
         self._stop = threading.Event()
         self._server_sock = None
         self._threads: list[threading.Thread] = []
 
-        self.server_thread = threading.Thread(target=self.start_server, daemon=True)
-        self.discovery_thread = threading.Thread(target=self.discover_peers_loop, daemon=True)
-        self.sync_thread = threading.Thread(target=self.sync_loop, daemon=True)
+        self.server_thread = threading.Thread(target=server.start_server, args=(self,), daemon=True)
+        self.discovery_thread = threading.Thread(target=discovery.discover_peers_loop, args=(self,), daemon=True)
+        self.sync_thread = threading.Thread(target=sync.sync_loop, args=(self,), daemon=True)
         self._threads = [self.server_thread, self.discovery_thread, self.sync_thread]
         try:
-            rpc_client_logic._prefetch_rpc_connections(self)
+            rpc_client._prefetch_rpc_connections(self)
         except Exception:
             log.debug("[__init__] rpc prefetch skipped", exc_info=True)
 
@@ -152,6 +153,80 @@ class Network:
         self.discovery_thread.start()
         self.sync_thread.start()
 
+
+    # --------------------------- WRAPPER -------------------------
+    
+    def penalize_peer(self, peer: Any, amount: int) -> None:
+        return peers.penalize_peer(self, peer, amount)
+
+    def reward_peer(self, peer: Any, amount: int = CFG.PEER_SCORE_REWARD) -> None:
+        return peers.reward_peer(self, peer, amount)
+
+    def publish_block(self, block: "Block", exclude: Optional[Tuple[str, int]] = None, force: bool = True) -> int:
+        return peers.publish_block(self, block, exclude=exclude, force=force)
+    
+    def normalize_peer(self, peer: Any) -> Optional[Tuple[str, int]]:
+        return peers.normalize_peer(self, peer)
+    
+    def request_sync(self, fast: bool = False) -> None:
+        return sync.request_sync(self, fast=fast)
+
+    def sync_with_peers(self):
+        return sync.sync_with_peers(self)
+
+    def is_caught_up(self, freshness: float = 10.0, height_slack: int = 0) -> bool:
+        return sync.is_caught_up(self, freshness=freshness, height_slack=height_slack)
+
+    def get_best_peer_height(self) -> int:
+        return sync.get_best_peer_height(self)
+
+    def handle_block_gap(self, block, origin: Optional[Tuple[str, int]]) -> None:
+        return sync.handle_block_gap(self, block, origin)
+
+    def rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[float] = None) -> Optional[dict]:
+        return rpc_client.rpc_request(self, peer, payload, timeout)
+
+    def request_mempool_inline(self, peer: Tuple[str, int], *, force: bool = False) -> Optional[bool]:
+        return rpc_client.request_mempool_inline(self, peer, force=force)
+
+    def request_mempool_snapshot(self, peer: Tuple[str, int], *, force: bool = False) -> Optional[bool]:
+        return rpc_client.request_mempool_snapshot(self, peer, force=force)
+
+    def request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> bool:
+        return rpc_client.request_full_sync(self, peer, force=force)
+    
+    # ------------------------------ END OF WRAPPER ------------------------------
+
+    # ------------------------------ Shutdown ------------------------------
+
+    def shutdown(self):
+        self._stop.set()
+        if self._server_sock:
+            self._server_sock.close()
+        
+        for t in self._threads:
+            if t.is_alive():
+                t.join(timeout=1.5)
+            
+        with self.lock:
+            Network.active_ports.discard(self.port)
+        self.broadcast.shutdown()
+        
+        log.info("[shutdown] Node at port %s stopped", self.port)
+    
+    # ------------------------------ Pinned ------------------------------
+    
+    def get_pinned(self, nid: str):
+        # may return None if not yet available
+        return self.peer_pubkeys.get(nid)
+
+    def set_pinned(self, nid: str, pk: str) -> None:
+        with self._peer_keys_lock:
+            if self.peer_pubkeys.get(nid) == pk:
+                return
+            self.peer_pubkeys[nid] = pk
+            save_peer_keys(self.peer_pubkeys)
+            
     # -------------------------- Server / Accept ---------------------------
 
     def _find_available_port(self) -> Optional[int]:
@@ -208,134 +283,5 @@ class Network:
                 local_ips.add(ip)
 
         return any(ip in local_ips for ip in target_ips)
-
-    def _normalize_peer(self, peer: Any) -> Optional[Tuple[str, int]]:
-        return peers_logic.normalize_peer(self, peer)
-
-    def _penalize_peer(self, peer: Any, amount: int) -> None:
-        return peers_logic.penalize_peer(self, peer, amount)
-
-    def _reward_peer(self, peer: Any, amount: int = CFG.PEER_SCORE_REWARD) -> None:
-        return peers_logic.reward_peer(self, peer, amount)
-
-    def start_server(self):
-        return server_logic.start_server(self)
-
-    def _get_pinned(self, nid: str):
-        # may return None if not yet available
-        return self.peer_pubkeys.get(nid)
-
-    def _set_pinned(self, nid: str, pk: str) -> None:
-        with self._peer_keys_lock:
-            if self.peer_pubkeys.get(nid) == pk:
-                return
-            self.peer_pubkeys[nid] = pk
-            save_peer_keys(self.peer_pubkeys)
-
-    def handle_connection(self, conn, addr):
-        return server_logic.handle_connection(self, conn, addr)
-
-    # --------------------------- Discovery / Sync -------------------------
-
-    def discover_peers_loop(self):
-        return discovery_logic.discover_peers_loop(self)
-
-    def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
-        return discovery_logic._attempt_hello(self, peer)
-
-    def _discover_peers(self):
-        return discovery_logic._discover_peers(self)
-
-    def sync_loop(self):
-        return sync_logic.sync_loop(self)
-
-    def request_sync(self, fast: bool = False) -> None:
-        return sync_logic.request_sync(self, fast=fast)
-
-    def sync_with_peers(self):
-        return sync_logic.sync_with_peers(self)
-
-    def _sync_peer(self, peer: Tuple[str, int]) -> bool:
-        return sync_logic._sync_peer(self, peer)
-
-    def is_caught_up(self, freshness: float = 10.0, height_slack: int = 0) -> bool:
-        return sync_logic.is_caught_up(self, freshness=freshness, height_slack=height_slack)
-
-    def get_best_peer_height(self) -> int:
-        return sync_logic.get_best_peer_height(self)
-
-    def _collect_broadcast_peers(self) -> Set[Tuple[str, int]]:
-        return peers_logic.collect_broadcast_peers(self)
-
-    def publish_block(self, block: "Block", exclude: Optional[Tuple[str, int]] = None, force: bool = True) -> int:
-        return peers_logic.publish_block(self, block, exclude=exclude, force=force)
-
-    def _build_locator(self) -> List[str]:
-        return sync_logic._build_locator(self)
-
-    def _request_headers(self, peer: Tuple[str, int], locator: List[str]) -> Optional[dict]:
-        return sync_logic._request_headers(self, peer, locator)
-
-    def _determine_missing_blocks(self, headers: List[dict]) -> List[int]:
-        return sync_logic._determine_missing_blocks(self, headers)
-
-    def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[int, float]:
-        return sync_logic._download_blocks(self, peer, heights)
-
-    def _apply_block_from_sync(self, block_obj: Dict[str, Any], peer: Tuple[str, int]) -> bool:
-        return sync_logic._apply_block_from_sync(self, block_obj, peer)
-
-    def handle_block_gap(self, block, origin: Optional[Tuple[str, int]]) -> None:
-        return sync_logic.handle_block_gap(self, block, origin)
-
-    def _rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[float] = None) -> Optional[dict]:
-        return rpc_client_logic._rpc_request(self, peer, payload, timeout)
-
-    def _request_mempool_inline(self, peer: Tuple[str, int], *, force: bool = False) -> Optional[bool]:
-        return rpc_client_logic._request_mempool_inline(self, peer, force=force)
-
-    def _request_mempool_snapshot(self, peer: Tuple[str, int], *, force: bool = False) -> Optional[bool]:
-        return rpc_client_logic._request_mempool_snapshot(self, peer, force=force)
-
-    def _request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> bool:
-        return rpc_client_logic._request_full_sync(self, peer, force=force)
-
-    def _handle_hello(self, message, addr, *, src_node_id: Optional[str] = None, src_pubkey: Optional[str] = None):
-        return handlers_logic._handle_hello(self, message, addr, src_node_id=src_node_id, src_pubkey=src_pubkey)
-
-    def _handle_get_headers(self, message, addr):
-        return handlers_logic._handle_get_headers(self, message, addr)
-
-    def _handle_get_blocks(self, message, addr):
-        return handlers_logic._handle_get_blocks(self, message, addr)
-
-    def _handle_get_full_sync(self, message, addr):
-        return handlers_logic._handle_get_full_sync(self, message, addr)
-
-    def _handle_full_sync(self, message, addr):
-        return handlers_logic._handle_full_sync(self, message, addr)
-
-    def _handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict:
-        return handlers_logic._handle_get_block_at(self, height, src_tag=src_tag)
-
-    def _handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict:
-        return handlers_logic._handle_get_block_by_hash(self, hx, src_tag=src_tag)
-
-    # ------------------------------ Shutdown ------------------------------
-
-    def shutdown(self):
-        self._stop.set()
-        if self._server_sock:
-            self._server_sock.close()
-        
-        for t in self._threads:
-            if t.is_alive():
-                t.join(timeout=1.5)
-            
-        with self.lock:
-            Network.active_ports.discard(self.port)
-        self.broadcast.shutdown()
-        
-        log.info("[shutdown] Node at port %s stopped", self.port)
         
 install_client_helper(Network)

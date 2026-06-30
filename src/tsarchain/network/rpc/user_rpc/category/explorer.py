@@ -5,6 +5,7 @@
 
 import time,json
 
+from ....node_logic import handlers
 from .....utils import config as CFG
 from ...user_rpc import common as CM
 
@@ -27,7 +28,7 @@ def get_balances(self, message, addr, pow_obj, base_identity, *,
         return {"error": "too many addresses (max %d)" % CFG.MAX_ADDRS_PER_REQ}
     
 
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:balance",
         table=self.rl_ip,
@@ -138,7 +139,7 @@ def get_network_info(self, message, pow_obj, base_identity, *,
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
 
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:info",
         table=self.rl_ip,
@@ -183,7 +184,7 @@ def get_network_info(self, message, pow_obj, base_identity, *,
 def get_block(self, message, pow_obj, base_identity,*,
                      client_ip, **kwargs):
     
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:block_fetch",
         table=self.rl_ip,
@@ -200,18 +201,18 @@ def get_block(self, message, pow_obj, base_identity,*,
         return pow_resp
     src_tag = message.get("rpc_source")
     if "height" in message:
-        return self._handle_get_block_at(int(message["height"]), src_tag=src_tag)
+        return handlers.handle_get_block_at(self, int(message["height"]), src_tag=src_tag)
     hx = str(message.get("hash") or "").strip()
     if not hx:
         return {"type": "BLOCK", "error": "missing_height_or_hash"}
-    return self._handle_get_block_by_hash(hx, src_tag=src_tag)
+    return handlers.handle_get_block_by_hash(self, hx, src_tag=src_tag)
 
 def get_block_range(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
         
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:block_range",
         table=self.rl_ip,
@@ -279,7 +280,7 @@ def get_block_range(self, message, pow_obj, base_identity, *,
             b = chain[h]
         except Exception:
             break
-        items.append(CM._summarize_block(self, b))
+        items.append(CM.summarize_block(self, b))
         h -= 1
 
     has_more = h >= 0
@@ -312,7 +313,7 @@ def get_mempool(self, message, pow_obj, base_identity, addr, *,
     
     mode = str(message.get("mode", "")).strip().lower()
     if mode not in ("inline", "inline_full"):
-        ok, pow_resp = CM._allow_rpc_with_pow(
+        ok, pow_resp = CM.allow_rpc_with_pow(
             self,
             scope="rpc:mempool",
             table=self.rl_ip,
@@ -337,7 +338,7 @@ def get_mempool(self, message, pow_obj, base_identity, addr, *,
         target = None
         if isinstance(addr, tuple):
             if peer_port > 0:
-                target = self._normalize_peer((addr[0], peer_port))
+                target = self.normalize_peer((addr[0], peer_port))
             if not target:
                 # fall back to known peers with same IP
                 with self.lock:
@@ -360,7 +361,7 @@ def get_mempool(self, message, pow_obj, base_identity, addr, *,
         return {"type": "MEMPOOL_SYNC", "count": int(pushed)}
 
     if mode in ("inline", "inline_full"):
-        ok, pow_resp = CM._allow_rpc_with_pow(
+        ok, pow_resp = CM.allow_rpc_with_pow(
             self,
             scope="rpc:mempool",
             table=self.rl_ip,
@@ -440,7 +441,7 @@ def get_tx_history(self, message, pow_obj, base_identity, *,
     addr_str = (message.get("address") or "").strip().lower()
     if not addr_str:
         return {"error": "missing address"}
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:history",
         table=self.rl_ip,
@@ -486,7 +487,7 @@ def get_tx_detail(self, message, pow_obj, base_identity, *,
     txid_hex = message.get("txid")
     if not txid_hex:
         return {"error": "missing txid"}
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:history",
         table=self.rl_ip,
@@ -512,7 +513,7 @@ def get_total_utxo(self, message, pow_obj, base_identity, *,
     address = (message.get("address") or "").strip().lower()
     if not address:
         return {"error": "missing address"}
-    ok, pow_resp = CM._allow_rpc_with_pow(
+    ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:history",
         table=self.rl_ip,

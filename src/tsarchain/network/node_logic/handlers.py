@@ -17,7 +17,7 @@ from .storage_registry import register_storage_peer
 log = get_ctx_logger("tsarchain.network.node_logic.handlers")
 
 
-def _handle_hello(self, message, addr, *, src_node_id: str | None = None, src_pubkey: str | None = None):
+def handle_hello(self, message, addr, *, src_node_id: str | None = None, src_pubkey: str | None = None):
     peer_ip = addr[0] if isinstance(addr, tuple) and len(addr) > 0 else str(message.get("ip", "")).strip()
     peer_port = int(message.get("port", 0))
     peer_tuple = (peer_ip, peer_port) if peer_ip and isinstance(peer_port, int) and peer_port > 0 else None
@@ -95,8 +95,7 @@ def _handle_hello(self, message, addr, *, src_node_id: str | None = None, src_pu
             self.broadcast.send_mempool_to_peer(dst)
 
     if (not is_storage) and peer_tuple:
-        self._reward_peer(peer_tuple)
-
+        self.reward_peer(peer_tuple)
     return {
         "type": "HELLO_RESPONSE",
         "port": self.port,
@@ -105,7 +104,7 @@ def _handle_hello(self, message, addr, *, src_node_id: str | None = None, src_pu
     }
 
 
-def _handle_get_headers(self, message, addr):
+def handle_get_headers(self, message, addr):
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
     
@@ -150,7 +149,6 @@ def _handle_get_headers(self, message, addr):
         result = round((end - start) * 1000.0, 3)
         if result > 15.0:
             log.warning("[GET_HEADERS] Benchmark : %.3f ms", result)
-        
     return {
         "type": "HEADERS",
         "headers": headers,
@@ -159,7 +157,7 @@ def _handle_get_headers(self, message, addr):
     }
 
 
-def _handle_get_blocks(self, message, addr):
+def handle_get_blocks(self, message, addr):
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
         
@@ -182,11 +180,10 @@ def _handle_get_blocks(self, message, addr):
         result = round((end - start) * 1000.0, 3)
         if result > 15.0:
             log.warning("[GET_BLOCKS] Benchmark : %.3f ms", result)
-        
     return {"type": "BLOCKS", "blocks": blocks}
 
 
-def _handle_get_full_sync(self, message, addr):
+def handle_get_full_sync(self, message, addr):
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
     
@@ -221,21 +218,20 @@ def _handle_get_full_sync(self, message, addr):
         end = time.perf_counter()
         result = round((end - start) * 1000.0, 3)
         log.debug("[GET_FULL_SYNC] Benchmark : %.3f ms", result)
-            
     return full_obj
 
 
-def _handle_full_sync(self, message, addr):
+def handle_full_sync(self, message, addr):
     now = time.time()
     if now - getattr(self, "_last_fullsync_log", 0.0) > 5.0:
-        log.trace("[_handle_full_sync] Received full sync from %s:%s", addr[0], addr[1] if len(addr) > 1 else 0)
+        log.trace("[handle_full_sync] Received full sync from %s:%s", addr[0], addr[1] if len(addr) > 1 else 0)
         self._last_fullsync_log = now
 
     payload = message.get("data", message)
     self.broadcast.receive_full_sync(payload)
     return {"status": "ok"}
 
-def _handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict: #get block by heigt
+def handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict: #get block by heigt
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
         
@@ -260,7 +256,7 @@ def _handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict:
     
     return d
 
-def _handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict:
+def handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict:
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
         
@@ -285,14 +281,3 @@ def _handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict
             
             return d
     return {"type": "BLOCK", "error": "not_found"}
-
-
-__all__ = (
-    "_handle_hello",
-    "_handle_get_headers",
-    "_handle_get_blocks",
-    "_handle_get_full_sync",
-    "_handle_full_sync",
-    "_handle_get_block_at",
-    "_handle_get_block_by_hash",
-)

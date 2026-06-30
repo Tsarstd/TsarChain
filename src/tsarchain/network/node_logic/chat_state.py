@@ -30,6 +30,3 @@ def init_chat_state(self) -> None:
     self.backoff_until = {}
     self.chat_gc_last = 0
     self.chat_prekeys = {}
-
-
-__all__ = ("init_chat_state",)

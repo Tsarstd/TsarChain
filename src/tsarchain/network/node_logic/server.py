@@ -57,14 +57,14 @@ def start_server(self):
                     log.debug("[start_server] inbound capacity full for %s", ip)
                     continue
                 
-                threading.Thread(target=self.handle_connection, args=(conn, addr), daemon=True).start()
+                threading.Thread(target=_handle_connection, args=(self, conn, addr), daemon=True).start()
             except Exception:
                 if self._stop.is_set():
                     break
                 continue
 
 
-def handle_connection(self, conn, addr):
+def _handle_connection(self, conn, addr):
     peer = (addr[0], int(addr[1]) if len(addr) > 1 else 0)
     try:
         conn.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
@@ -93,8 +93,8 @@ def handle_connection(self, conn, addr):
                 node_id=self.node_id,
                 node_pub=self.pubkey,
                 node_priv=self.privkey,
-                get_pinned=self._get_pinned,
-                set_pinned=self._set_pinned,
+                get_pinned=self.get_pinned,
+                set_pinned=self.set_pinned,
                 peer_ip=ip,
                 on_misbehave=ban_ip,
             )
@@ -200,6 +200,3 @@ def handle_connection(self, conn, addr):
                 else:
                     self._inbound_ips.pop(ip, None)
         conn.close()
-
-
-__all__ = ("start_server", "handle_connection")

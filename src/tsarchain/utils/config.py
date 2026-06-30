@@ -89,10 +89,6 @@ import appdirs
 MODE   = "dev"  # default runtime profile, switch to "prod" for live nodes
 IS_DEV = (MODE.lower() == "dev")  # cached boolean to simplify dev/prod toggles
 
-# ---- SYNC OVERRIDES ----
-FULL_SYNC_DEV  = False  # opt-in full sync flag for development builds
-FULL_SYNC_PROD = False  # opt-in full sync flag for production deployments
-
 # ---- APP METADATA ----
 APP_NAME        = "Kremlin"  # display name used for user data directories
 APP_AUTHOR      = "TsarStudio"  # vendor string passed into platform dir helpers
@@ -190,7 +186,7 @@ CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical 
 
 # ---- GENESIS SETTINGS ----
 ALLOW_AUTO_GENESIS       = 0 # enable (1) or disable (0) automatic genesis construction
-GENESIS_HASH_HEX         = "0015a07a3f3babfcb0ce84a662568fa6d82913b9dd44382251667fbc211bc6d8"  # reference hash of committed genesis block
+GENESIS_HASH_HEX         = "00033012747f1ddc47c018caab0a0bd7e26c55db45224d17d39bd4ec9a9f21e2"  # reference hash of committed genesis block
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
 
@@ -400,7 +396,7 @@ RPC_POW_DIFFICULTY_READ        = 12  # difficulty bits for read-only RPC (info/h
 RPC_POW_DIFFICULTY_CHAT        = 14  # difficulty bits for chat presence/send/lookup
 
 # ---- FULL SYNC GUARD ----
-ENABLE_FULL_SYNC          = FULL_SYNC_DEV if IS_DEV else FULL_SYNC_PROD  # controls whether expensive full sync is allowed
+ENABLE_FULL_SYNC          = False
 FULL_SYNC_MAX_BLOCKS      = 5_000  # cap on blocks served per full-sync round
 FULL_SYNC_MIN_INTERVAL    = 60  # seconds a peer must wait between full-sync requests
 FULL_SYNC_BACKOFF_INITIAL = 120  # starting backoff between full sync retries

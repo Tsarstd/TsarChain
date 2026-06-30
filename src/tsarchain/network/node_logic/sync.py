@@ -35,7 +35,7 @@ def request_sync(self, fast: bool = False) -> None:
 def sync_with_peers(self):
     """
     Run a single round of sync: select outbound peers (plus high-ranking candidates),
-    call _sync_peer for headers/blocks, then pull an inline/snapshot or full sync mempool if needed.
+    call sync_peer for headers/blocks, then pull an inline/snapshot or full sync mempool if needed.
     """
     with self.lock:
         selected = [p for p in self.outbound_peers if p in self.peers]
@@ -61,25 +61,25 @@ def sync_with_peers(self):
 
     random.shuffle(selected)
     for peer in selected:
-        norm = self._normalize_peer(peer)
+        norm = self.normalize_peer(peer)
         if not norm:
             continue
         try:
-            synced = self._sync_peer(norm)
+            synced = _sync_peer(self, norm)
             allow_mempool = self.is_caught_up(freshness=20.0, height_slack=0)
             pending_mempool_pull = bool(getattr(self, "_pending_mempool_pull", False))
             inline_status: Optional[bool] = None
             if allow_mempool:
                 if pending_mempool_pull:
-                    pulled = self._request_mempool_inline(norm, force=True)
+                    pulled = self.request_mempool_inline(norm, force=True)
                     if pulled is False or pulled is None:
-                        pulled = self._request_mempool_snapshot(norm, force=True)
+                        pulled = self.request_mempool_snapshot(norm, force=True)
                     if pulled:
                         self._pending_mempool_pull = False
                         
-                inline_status = self._request_mempool_inline(norm)
+                inline_status = self.request_mempool_inline(norm)
                 if inline_status is False:
-                    retry_inline = self._request_mempool_inline(norm, force=True)
+                    retry_inline = self.request_mempool_inline(norm, force=True)
                     if retry_inline is True:
                         inline_status = True
                     elif retry_inline is not None:
@@ -87,18 +87,71 @@ def sync_with_peers(self):
 
             if not synced:
                 if CFG.ENABLE_FULL_SYNC:
-                    self._request_full_sync(norm)
+                    self.request_full_sync(norm)
                 elif allow_mempool and inline_status is False:
                     if norm not in self._snapshot_unreachable:
-                        self._request_mempool_snapshot(norm)
+                        self.request_mempool_snapshot(norm)
                         
             elif allow_mempool and inline_status is False:
                 if norm not in self._snapshot_unreachable:
-                    self._request_mempool_snapshot(norm)
+                    self.request_mempool_snapshot(norm)
         except Exception:
             log.exception("[sync_with_peers] Error syncing with peer %s", norm)
-            self._penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY * 2)
+            self.penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY * 2)
 
+
+def handle_block_gap(self, block, origin: Optional[Tuple[str, int]]) -> None:
+    peer = self.normalize_peer(origin)
+    self.request_sync(fast=True)
+    if not peer:
+        return
+
+    now = time.time()
+    last = self._recent_gap_requests.get(peer, 0.0)
+    if now - last < float(CFG.HEADERS_SYNC_MIN_INTERVAL):
+        return
+
+    self._recent_gap_requests[peer] = now
+    height = int(getattr(block, "height", 0))
+    # Enlarge the download window when it's far behind to avoid bouncing back and forth between small spans.
+    # Use the HEADERS_FANOUT factor and limit it with BLOCK_DOWNLOAD_BATCH_MAX.
+    span = max(32, int(CFG.HEADERS_FANOUT) * 2)
+    span = min(span, int(CFG.BLOCK_DOWNLOAD_BATCH_MAX))
+    start_h = max(0, height - span)
+    missing = list(range(start_h, height + 1))
+    _download_blocks(self, peer, missing)
+
+
+def is_caught_up(self, freshness: float = 10.0, height_slack: int = 0) -> bool:
+    """
+    Check if the node is sufficiently synchronized: it needs a recent peer sync (freshness)
+    and the local block height difference to the best peer <= slack.
+    """
+    now = time.time()
+    freshness = max(0.0, float(freshness))
+    slack = max(0, int(height_slack))
+    with self.lock:
+        if not self._peer_last_sync:
+            return False
+        recent = any(now - ts <= freshness for ts in self._peer_last_sync.values())
+        if not recent:
+            return False
+        candidates = [h for h in self._peer_best_height.values() if isinstance(h, int) and h >= 0]
+        if not candidates:
+            return False
+        best_remote = max(candidates)
+    local_height = int(self.broadcast.blockchain.height)
+    return (best_remote - local_height) <= slack
+
+def get_best_peer_height(self) -> int:
+    with self.lock:
+        candidates = [h for h in self._peer_best_height.values() if isinstance(h, int) and h >= 0]
+    return max(candidates) if candidates else -1
+
+
+# ----------------------------------------------------------------------
+# INTERNAL METHOD
+# ----------------------------------------------------------------------
 
 def _sync_peer(self, peer: Tuple[str, int]) -> bool:
     """
@@ -111,31 +164,31 @@ def _sync_peer(self, peer: Tuple[str, int]) -> bool:
     if now - self._peer_last_sync.get(peer, 0.0) < min_iv:
         return False
 
-    locator = self._build_locator()
-    headers_resp = self._request_headers(peer, locator)
+    locator = _build_locator(self)
+    headers_resp = _request_headers(self, peer, locator)
     if not headers_resp:
-        self._penalize_peer(peer, CFG.PEER_SCORE_FAILURE_PENALTY)
+        self.penalize_peer(peer, CFG.PEER_SCORE_FAILURE_PENALTY)
         return False
 
     if headers_resp.get("type") == "SYNC_REJECT":
         retry = float(headers_resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
         self._full_sync_backoff[peer] = now + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
-        log.info("[_sync_peer] %s rejected header request (retry in %.1fs)", peer, min(retry, CFG.FULL_SYNC_BACKOFF_MAX))
+        log.info("[sync_peer] %s rejected header request (retry in %.1fs)", peer, min(retry, CFG.FULL_SYNC_BACKOFF_MAX))
         return False
 
     headers = headers_resp.get("headers") or []
     if not headers:
         self._peer_last_sync[peer] = now
-        self._reward_peer(peer)
+        self.reward_peer(peer)
         return True
 
-    missing = self._determine_missing_blocks(headers)
+    missing = _determine_missing_blocks(self, headers)
     if not missing:
         self._peer_last_sync[peer] = now
-        self._reward_peer(peer)
+        self.reward_peer(peer)
         return True
 
-    self._download_blocks(peer, missing)
+    _download_blocks(self, peer, missing)
     if headers_resp.get("more"):
         self.request_sync(fast=True)
         return True
@@ -174,7 +227,7 @@ def _request_headers(self, peer: Tuple[str, int], locator: List[str]) -> Optiona
         "limit": int(CFG.HEADERS_BATCH_MAX),
         "port": self.port,
     }
-    return self._rpc_request(peer, payload, timeout=max(10.0, CFG.SYNC_TIMEOUT))
+    return self.rpc_request(peer, payload, timeout=max(10.0, CFG.SYNC_TIMEOUT))
 
 
 def _determine_missing_blocks(self, headers: List[dict]) -> List[int]:
@@ -206,6 +259,7 @@ def _determine_missing_blocks(self, headers: List[dict]) -> List[int]:
         missing.extend(range(start, end + 1))
     return sorted(set(missing))
 
+
 def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[int, float]:
     start_time = time.time()
     if not heights:
@@ -223,10 +277,10 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
     for idx in range(0, len(unique_heights), batch_size):
         chunk = unique_heights[idx : idx + batch_size]
         payload = {"type": "GET_BLOCKS", "heights": chunk, "port": self.port}
-        resp = self._rpc_request(peer, payload, timeout=max(15.0, CFG.SYNC_TIMEOUT))
+        resp = self.rpc_request(peer, payload, timeout=max(15.0, CFG.SYNC_TIMEOUT))
         if not resp:
             log.info(
-                "[_download_blocks] %s no response for chunk %d/%d (heights %s-%s)",
+                "[download_blocks] %s no response for chunk %d/%d (heights %s-%s)",
                 peer,
                 (idx // batch_size) + 1,
                 total_chunks,
@@ -248,20 +302,20 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
                         continue
                     # already have a different block at this height -> prefer full sync once
                     if not triggered_fullsync:
-                        self._request_full_sync(peer, force=True)
+                        self.request_full_sync(peer, force=True)
                         triggered_fullsync = True
                     return total_applied, time.time() - start_time
                     
-                applied = self._apply_block_from_sync(block_obj, peer)
+                applied = _apply_block_from_sync(self, block_obj, peer)
                 if applied:
                     total_applied += 1
                     applied_in_chunk += 1
                 else:
                     blk_hash = block_obj.get("hash")
                     label = str(blk_hash or "unknown")
-                    log.warning("[_download_blocks] Block %s rejected during sync from %s", label[:12], peer)
+                    log.warning("[download_blocks] Block %s rejected during sync from %s", label[:12], peer)
                     if not triggered_fullsync:
-                        self._request_full_sync(peer, force=True)
+                        self.request_full_sync(peer, force=True)
                         triggered_fullsync = True
                     return total_applied, time.time() - start_time
 
@@ -269,13 +323,13 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
             retry = float(resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
             self._full_sync_backoff[peer] = time.time() + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
             log.info(
-                "[_download_blocks] %s asked to retry later (retry %.1fs)",
+                "[download_blocks] %s asked to retry later (retry %.1fs)",
                 peer,
                 min(retry, CFG.FULL_SYNC_BACKOFF_MAX),
             )
             break
         else:
-            log.info("[_download_blocks] %s returned unexpected type=%s", peer, resp.get("type"))
+            log.info("[download_blocks] %s returned unexpected type=%s", peer, resp.get("type"))
             break
 
     elapsed = time.time() - start_time
@@ -289,69 +343,3 @@ def _apply_block_from_sync(self, block_obj: Dict[str, Any], peer: Tuple[str, int
         "port": peer[1],
     }
     return bool(self.broadcast.receive_block(message, peer, self.peers))
-
-
-def handle_block_gap(self, block, origin: Optional[Tuple[str, int]]) -> None:
-    peer = self._normalize_peer(origin)
-    self.request_sync(fast=True)
-    if not peer:
-        return
-
-    now = time.time()
-    last = self._recent_gap_requests.get(peer, 0.0)
-    if now - last < float(CFG.HEADERS_SYNC_MIN_INTERVAL):
-        return
-
-    self._recent_gap_requests[peer] = now
-    height = int(getattr(block, "height", 0))
-    # Enlarge the download window when it's far behind to avoid bouncing back and forth between small spans.
-    # Use the HEADERS_FANOUT factor and limit it with BLOCK_DOWNLOAD_BATCH_MAX.
-    span = max(32, int(CFG.HEADERS_FANOUT) * 2)
-    span = min(span, int(CFG.BLOCK_DOWNLOAD_BATCH_MAX))
-    start_h = max(0, height - span)
-    missing = list(range(start_h, height + 1))
-    self._download_blocks(peer, missing)
-
-
-def is_caught_up(self, freshness: float = 10.0, height_slack: int = 0) -> bool:
-    """
-    Check if the node is sufficiently synchronized: it needs a recent peer sync (freshness)
-    and the local block height difference to the best peer <= slack.
-    """
-    now = time.time()
-    freshness = max(0.0, float(freshness))
-    slack = max(0, int(height_slack))
-    with self.lock:
-        if not self._peer_last_sync:
-            return False
-        recent = any(now - ts <= freshness for ts in self._peer_last_sync.values())
-        if not recent:
-            return False
-        candidates = [h for h in self._peer_best_height.values() if isinstance(h, int) and h >= 0]
-        if not candidates:
-            return False
-        best_remote = max(candidates)
-    local_height = int(self.broadcast.blockchain.height)
-    return (best_remote - local_height) <= slack
-
-
-def get_best_peer_height(self) -> int:
-    with self.lock:
-        candidates = [h for h in self._peer_best_height.values() if isinstance(h, int) and h >= 0]
-    return max(candidates) if candidates else -1
-
-
-__all__ = (
-    "sync_loop",
-    "request_sync",
-    "sync_with_peers",
-    "_sync_peer",
-    "_build_locator",
-    "_request_headers",
-    "_determine_missing_blocks",
-    "_download_blocks",
-    "_apply_block_from_sync",
-    "handle_block_gap",
-    "is_caught_up",
-    "get_best_peer_height",
-)

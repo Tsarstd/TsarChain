@@ -331,7 +331,7 @@ class SimpleMiner:
         # If nothing recorded, query seeds directly
         if not heights:
             for peer in peers:
-                info = self.network._rpc_request(peer, {"type": "GET_INFO"}, timeout=max(8.0, CFG.SYNC_TIMEOUT))
+                info = self.network.rpc_request(peer, {"type": "GET_INFO"}, timeout=max(8.0, CFG.SYNC_TIMEOUT))
                 if not info:
                     continue
                 h = int(info.get("height", -1))
@@ -354,7 +354,7 @@ class SimpleMiner:
         if not seeds:
             return None
         peer = seeds[0]
-        resp = self.network._rpc_request(
+        resp = self.network.rpc_request(
             peer, {"type": "GET_BLOCK_HASH", "height": int(height)}, timeout=max(8.0, CFG.SYNC_TIMEOUT)
         )
         if resp and resp.get("type") == "BLOCK":
@@ -419,7 +419,7 @@ class SimpleMiner:
                         seeds = self._bootstrap_seeds()
                         peer = seeds[0] if seeds else None
                         if peer:
-                            self.network._request_full_sync(peer, force=True)
+                            self.network.request_full_sync(peer, force=True)
                         self.network.request_sync(fast=True)
                     time.sleep(2)
                     continue
@@ -501,7 +501,7 @@ class SimpleMiner:
                         seeds = self._bootstrap_seeds()
                         peer = seeds[0] if seeds else None
                         if peer:
-                            self.network._request_full_sync(peer, force=True)
+                            self.network.request_full_sync(peer, force=True)
                         self.network.request_sync(fast=True)
                     time.sleep(2)
                     continue

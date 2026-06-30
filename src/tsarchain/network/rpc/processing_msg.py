@@ -29,7 +29,7 @@ __all__ = ["process_message"]
 # --------------------------------------------------------------------------
 MINER_RPC_TYPES = {
         "HELLO", "GET_INFO", "NEW_BLOCK", "GET_FULL_SYNC", "FULL_SYNC",
-        "CHAIN", "MEMPOOL", "GET_HEADERS", "GET_BLOCKS", "GET_BLOCK_HASH"
+        "MEMPOOL", "GET_HEADERS", "GET_BLOCKS", "GET_BLOCK_HASH"
 }
 
 STORAGE_RPC_TYPES = {

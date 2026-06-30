@@ -3,21 +3,25 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP141; BIP173; Merkle; Signal-X3DH
 
-import socket, threading, json, time, collections
+import json
+import time
+import socket
+import threading
+import collections
+
 from collections import deque
 from bech32 import convertbits, bech32_decode, bech32_encode
 
 # ---------------- Local Project ----------------
-from ..core.tx import Tx, TxIn, TxOut
-from ..utils.helpers import Script, OP_RETURN, last_pushdata, compute_tx_weight_vsize, _estimate_block_size_bytes
-from ..contracts import graffiti as GRAFFITI
-from .protocol import send_message, recv_message,build_envelope, SecureChannel
 from ..utils import config as CFG
+from ..core.tx import Tx, TxIn, TxOut
+from ..contracts import graffiti as GRAFF
+from .protocol import send_message, recv_message,build_envelope, SecureChannel
+from ..utils.helpers import Script, OP_RETURN, last_pushdata, compute_tx_weight_vsize, _estimate_block_size_bytes
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.client_helper")
-
 
 # ------------------------------ Guard ------------------------------
 def _tb_now(self):
@@ -89,7 +93,7 @@ def _send_to_peer(self, peer: tuple[str,int], payload: dict) -> None:
             chan = SecureChannel(
                 s, role="client",
                 node_id=self.node_id, node_pub=self.pubkey, node_priv=self.privkey,
-                get_pinned=self._get_pinned, set_pinned=self._set_pinned,
+                get_pinned=self.get_pinned, set_pinned=self.set_pinned,
             )
             chan.handshake()
             chan.send(raw)
@@ -598,7 +602,7 @@ def _get_tx_detail(self, txid_hex: str, src_tag: str | None = None) -> dict:
         event_info = None
         spk = getattr(o, "script_pubkey", None)
         if spk is not None:
-            meta = GRAFFITI.parse_from_script(spk)
+            meta = GRAFF.parse_from_script(spk)
             if meta:
                 ev = str(meta.get("event", "")).upper()
                 if ev == "POST":
@@ -853,7 +857,7 @@ def _serialize_block(self, b) -> dict:
             if not (spk := getattr(tx_out, "script_pubkey", None)):
                 continue
             
-            meta = GRAFFITI.parse_from_script(spk) 
+            meta = GRAFF.parse_from_script(spk) 
             if not meta:
                 continue
                 
@@ -886,7 +890,7 @@ def _serialize_block(self, b) -> dict:
     graffiti_on_mempool = 0
     if (mem := getattr(self, "mempool", None)):
         for tx in mem.get_all_txs():
-            if any(GRAFFITI.parse_from_script(getattr(tx_out, "script_pubkey", None)) 
+            if any(GRAFF.parse_from_script(getattr(tx_out, "script_pubkey", None)) 
                    for tx_out in getattr(tx, "outputs", []) or []):
                 graffiti_on_mempool += 1
 
@@ -1071,7 +1075,7 @@ def _guard_graffiti_output(self, spk: Script) -> None:
     if len(data) > int(CFG.MAX_GRAFFITI_OPRET):
         raise ValueError("graffiti_opreturn_too_large")
 
-    meta = GRAFFITI.parse_payload(data)
+    meta = GRAFF.parse_payload(data)
     if not meta:
         raise ValueError("graffiti_payload_invalid")
 

@@ -19,7 +19,7 @@ log = get_ctx_logger("tsarchain.network.rpc.user_rpc.common")
 if TYPE_CHECKING:
     from ...node import Network
 
-def _verify_chat_signatures(tasks: list[tuple[str, str, bytes, str]]) -> dict[str, bool]:
+def verify_chat_signatures(tasks: list[tuple[str, str, bytes, str]]) -> dict[str, bool]:
     """
     tasks: [(label, pub_hex, payload_bytes, sig_hex), ...]
     Returns mapping label -> bool
@@ -47,26 +47,7 @@ def _verify_chat_signatures(tasks: list[tuple[str, str, bytes, str]]) -> dict[st
         verdict[label] = bool(ok)
     return verdict
 
-def _norm_identity(val: Any) -> str | None:
-    if val is None:
-        return None
-    if isinstance(val, list) and val:
-        val = val[0]
-    s = str(val or "").strip().lower()
-    return s or None
-
-def _subnet_key(ip: str) -> str | None:
-    try:
-        obj = ipaddress.ip_address(ip)
-    except ValueError:
-        return None
-    if obj.version == 4:
-        parts = ip.split(".")
-        return ".".join(parts[:3]) if len(parts) >= 3 else None
-    parts = ip.split(":")
-    return ":".join(parts[:4]) if len(parts) >= 4 else None
-
-def _identity_from_msg(message: dict[str, Any] | None) -> str | None:
+def identity_from_msg(message: dict[str, Any] | None) -> str | None:
     if not isinstance(message, dict):
         return None
     candidates = [
@@ -91,7 +72,7 @@ def _identity_from_msg(message: dict[str, Any] | None) -> str | None:
             return ident
     return None
 
-def _summarize_block(self: "Network", b: Any) -> dict:
+def summarize_block(self: "Network", b: Any) -> dict:
     height     = getattr(b, "height")
     ts         = getattr(b, "timestamp")
     txs        = getattr(b, "transactions", []) or []
@@ -133,7 +114,7 @@ def _summarize_block(self: "Network", b: Any) -> dict:
         "graffiti_count": graffiti_posts + graffiti_comments + graffiti_payouts,
     }
 
-def _allow_rpc_with_pow(
+def allow_rpc_with_pow(
     self,
     *,
     scope: str,
@@ -184,3 +165,23 @@ def _allow_rpc_with_pow(
         "retry_after": max(1, backoff_s or 1),
         "pow_challenge": challenge,
     }
+    
+
+def _norm_identity(val: Any) -> str | None:
+    if val is None:
+        return None
+    if isinstance(val, list) and val:
+        val = val[0]
+    s = str(val or "").strip().lower()
+    return s or None
+
+def _subnet_key(ip: str) -> str | None:
+    try:
+        obj = ipaddress.ip_address(ip)
+    except ValueError:
+        return None
+    if obj.version == 4:
+        parts = ip.split(".")
+        return ".".join(parts[:3]) if len(parts) >= 3 else None
+    parts = ip.split(":")
+    return ":".join(parts[:4]) if len(parts) >= 4 else None
