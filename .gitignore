@@ -34,7 +34,9 @@ build/
 .ruff_cache/
 .hypothesis/
 .coverage
+.sonar/
 coverage.xml
+sonar-project.properties
 htmlcov/
 
 /tsarcore_native/target/
