@@ -59,7 +59,7 @@ const StatCard = ({ icon: Icon, label, value, subtext, type = "normal" }) => (
       <span className="stat-label">{label}</span>
     </div>
     <div className="stat-value">
-      {typeof value === 'string' || typeof value === 'number' ? value : value}
+      {value}
     </div>
     {subtext && <div className="stat-subtext">{subtext}</div>}
   </div>

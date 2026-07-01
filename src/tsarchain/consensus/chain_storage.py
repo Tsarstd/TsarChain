@@ -182,7 +182,7 @@ class StorageMixin:
         if kv_enabled():
             clear_db('chain')
         else:
-            AtomicJSONFile.save(CFG.BLOCK_FILE)
+            AtomicJSONFile(CFG.BLOCK_FILE).save({})
         meta_path = CFG.SNAPSHOT_META_PATH
         if meta_path and os.path.exists(meta_path):
             os.remove(meta_path)

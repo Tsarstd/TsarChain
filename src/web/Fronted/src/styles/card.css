@@ -385,7 +385,6 @@
   align-self: center;
   padding: 6px 100px;
   border-radius: 4px;
-  position: relative;
   top: -3.5%;
   font-size: 9.5px;
   font-weight: 550;
@@ -438,7 +437,6 @@
   align-self: center;
   padding: 6px 100px;
   border-radius: 4px;
-  position: relative;
   top: -3.5%;
   font-size: 12px;
   font-weight: 700;
@@ -584,7 +582,6 @@
   letter-spacing: 1px;
   animation: genesis-glow 2s ease-in-out infinite alternate;
   margin-top: 4px;
-  padding: 2px 0;
   background: linear-gradient(135deg, 
     rgba(255, 215, 0, 0.1) 0%, 
     rgba(218, 165, 32, 0.05) 100%);

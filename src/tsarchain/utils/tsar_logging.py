@@ -50,7 +50,6 @@ logging.Logger.trace = _trace
 
 # --- Module filter helpers ---
 MODULES = ("consensus", "contracts", "core", "mempool", "network", "storage", "utils", "wallet", "native")
-_RE_LOG_PLAIN = re.compile(r"\]\s+\S+\s+([^:]+):\s")
 
 def _module_from_logger_name(name: str | None) -> str | None:
     if not name:
@@ -720,49 +719,67 @@ class TsarLogViewer:
         mode = self.format_mode.get() if tk else "Auto"
         txt = line.rstrip("\n")
         level = None
+        module = None
 
-        def _from_plain(s: str):
-            nonlocal level
+        def detect_level_from_text(s: str) -> Optional[str]:
             up = s.upper()
-            for name, _lvl in self.LEVELS[1:]:
+            for name, _ in self.LEVELS[1:]:
                 token = f"[{name.upper()}]"
                 if token in up:
-                    level = name
-                    break
-            m = _RE_LOG_PLAIN.search(s)
-            logger_name = m.group(1) if m else None
-            module = _module_from_logger_name(logger_name)
-            return s, module
+                    return name
+            return None
 
-        def _from_json(s: str):
-            nonlocal level
+        def extract_module_from_plain(s: str) -> Optional[str]:
+            bracket_pos = s.find(']')
+            if bracket_pos == -1:
+                return None
+            after = s[bracket_pos+1:].strip()
+            tokens = after.split(maxsplit=2)
+            if len(tokens) >= 2:
+                logger_name = tokens[1]
+                if logger_name.endswith(':'):
+                    logger_name = logger_name[:-1]
+                return _module_from_logger_name(logger_name)
+            return None
+
+        if mode == "Plain":
+            level = detect_level_from_text(txt)
+            module = extract_module_from_plain(txt)
+            return txt, level, module
+
+        elif mode == "JSON":
             try:
-                obj = json.loads(s)
+                obj = json.loads(txt)
                 lvl = str(obj.get("lvl", obj.get("level", ""))).upper()
                 if lvl in {"TRACE","DEBUG","INFO","WARNING","ERROR","CRITICAL"}:
                     level = lvl.title()
                 logger_name = obj.get("logger", "")
                 module = _module_from_logger_name(str(logger_name))
-                if self.pretty_json.get():
-                    return json.dumps(obj, ensure_ascii=False, indent=2), module
-                return json.dumps(obj, ensure_ascii=False), module
+                text = (json.dumps(obj, ensure_ascii=False, indent=2)
+                        if self.pretty_json.get()
+                        else json.dumps(obj, ensure_ascii=False))
+                return text, level, module
             except Exception:
-                text, module = _from_plain(s)
-                return text, module
+                level = detect_level_from_text(txt)
+                module = extract_module_from_plain(txt)
+                return txt, level, module
 
-        if mode == "Plain":
-            text, module = _from_plain(txt)
-            return text, level, module
-        elif mode == "JSON":
-            text, module = _from_json(txt)
-            return text, level, module
-        else:  # Auto
+        else:
             try:
-                text, module = _from_json(txt)
+                obj = json.loads(txt)
+                lvl = str(obj.get("lvl", obj.get("level", ""))).upper()
+                if lvl in {"TRACE","DEBUG","INFO","WARNING","ERROR","CRITICAL"}:
+                    level = lvl.title()
+                logger_name = obj.get("logger", "")
+                module = _module_from_logger_name(str(logger_name))
+                text = (json.dumps(obj, ensure_ascii=False, indent=2)
+                        if self.pretty_json.get()
+                        else json.dumps(obj, ensure_ascii=False))
                 return text, level, module
             except Exception:
-                text, module = _from_plain(txt)
-                return text, level, module
+                level = detect_level_from_text(txt)
+                module = extract_module_from_plain(txt)
+                return txt, level, module
 
     def _append_line(self, line: str, *, level_hint: Optional[str] = None, module_hint: Optional[str] = None):
         tag = (level_hint or "Info").upper()

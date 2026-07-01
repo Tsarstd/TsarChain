@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import PropTypes from "prop-types";
 import { ResultBlock } from "./category/SearchBlock";
 import { ResultTx } from "./category/SearchTxid";
 import { ResultAddress } from "./category/SeacrhAddress";
@@ -13,19 +14,27 @@ export const ClickableValue = ({ value, onSearchClick, className = "", info, chi
   }
   
   const finalClassName = `value muted ${className}`.trim();
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onSearchClick(value);
+    }
+  };
   
   return (
     <span
       className={finalClassName}
+      role="button"
+      tabIndex={0}
       style={{
         cursor: "pointer",
         color: "#5e9de6ff",
         transition: "color 0.2s",
         alignSelf: "baseline",
       }}
-      onClick={() => {
-        onSearchClick(value);
-      }}
+      onClick={() => onSearchClick(value)}
+      onKeyDown={handleKeyDown}
       data-tooltip={info}
       onMouseEnter={(e) => e.target.style.color = "#4d7fb7ff"}
       onMouseLeave={(e) => e.target.style.color = "#5e9de6ff"}
@@ -58,6 +67,14 @@ const SearchResultPanel = ({ status, result, kind, message, onSearchClick }) => 
   }, [status, result, kind, message, onSearchClick]);
 
   return body;
+};
+
+SearchResultPanel.propTypes = {
+  status: PropTypes.oneOf(["idle", "loading", "done", "error"]),
+  result: PropTypes.object,
+  kind: PropTypes.string,
+  message: PropTypes.string,
+  onSearchClick: PropTypes.func.isRequired,
 };
 
 export { ResultBlock };

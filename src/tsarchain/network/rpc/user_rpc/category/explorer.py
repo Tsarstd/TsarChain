@@ -310,6 +310,9 @@ def get_block_range(self, message, pow_obj, base_identity, *,
 
 def get_mempool(self, message, pow_obj, base_identity, addr, *,
                      client_ip, is_miner_sender, **kwargs):
+
+    if CFG.DEBUG_BENCHMARKS:
+        start = time.perf_counter()
     
     mode = str(message.get("mode", "")).strip().lower()
     if mode not in ("inline", "inline_full"):
@@ -328,10 +331,11 @@ def get_mempool(self, message, pow_obj, base_identity, addr, *,
         )
         if not ok:
             return pow_resp
+        
     if mode == "snapshot":
         if CFG.DEBUG_BENCHMARKS:
             start = time.perf_counter()
-
+        
         if not is_miner_sender():
             return {"error": "forbidden: miners-only endpoint"}
         peer_port = int(message.get("port", 0))
@@ -416,6 +420,7 @@ def get_mempool(self, message, pow_obj, base_identity, addr, *,
             "count": len(inline),
             "txs": inline,
         }
+    # --- fallback: mode txids (default) ---
     txs = self.broadcast.mempool.get_all_txs()
     hexes = []
     for t in txs:

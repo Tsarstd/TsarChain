@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { IoSearch, IoMenu, IoClose } from "react-icons/io5";
+import PropTypes from "prop-types";
 import { assets } from "../../assets/assets";
 
 const Navbar = ({ query, onQueryChange, onSearch }) => {
@@ -104,6 +105,12 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
       </div>
     </header>
   );
+};
+
+Navbar.propTypes = {
+  query: PropTypes.string.isRequired,
+  onQueryChange: PropTypes.func,
+  onSearch: PropTypes.func,
 };
 
 export default Navbar;

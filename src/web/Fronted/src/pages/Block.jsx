@@ -311,9 +311,53 @@ const Home = ({ onSearchClick }) => {
     }, 0);
   };
 
+  const handleTouchStart = (event) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    const el = scrollerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    dragRef.current.isDown = true;
+    dragRef.current.startX = touch.clientX - rect.left;
+    dragRef.current.scrollLeft = el.scrollLeft;
+    dragRef.current.moved = false;
+    dragRef.current.wasDrag = false;
+    setIsDragging(true);
+  };
+
+  const handleTouchMove = (event) => {
+    if (!dragRef.current.isDown) return;
+    const el = scrollerRef.current;
+    if (!el) return;
+    const touch = event.touches[0];
+    if (!touch) return;
+    event.preventDefault();
+    const rect = el.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const walk = x - dragRef.current.startX;
+    if (Math.abs(walk) > 6) {
+      dragRef.current.moved = true;
+    }
+    el.scrollLeft = dragRef.current.scrollLeft - walk;
+  };
+
+  const handleTouchEnd = () => {
+    endDrag();
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      const el = scrollerRef.current;
+      if (!el) return;
+      const scrollAmount = e.key === 'ArrowLeft' ? -300 : 300;
+      el.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    }
+  };
+
   const handleNavigateToBlock = async () => {
-    const targetHeight = parseInt(navInput);
-    if (isNaN(targetHeight) || targetHeight < 0) {
+    const targetHeight = Number.parseInt(navInput);
+    if (Number.isNaN(targetHeight) || targetHeight < 0) {
       setMessage("Input a valid Block Height");
       return;
     }
@@ -530,11 +574,18 @@ const Home = ({ onSearchClick }) => {
           <div
             className={`lane-scroll ${isDragging ? "lane-scroll--dragging" : ""}`}
             ref={scrollerRef}
+            role="list"
+            aria-label="Block list"
+            tabIndex={-1}
             onScroll={handleScroll}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={endDrag}
             onMouseLeave={endDrag}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onKeyDown={handleKeyDown}
             onClickCapture={handleClickCapture}
           >
             {blocks.map((item) => (

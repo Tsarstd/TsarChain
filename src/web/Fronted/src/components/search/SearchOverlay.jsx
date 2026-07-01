@@ -1,3 +1,4 @@
+import PropTypes from "prop-types"; // ← tambahkan ini
 import SearchResultPanel from "./SearchResults";
 import { IoClose } from "react-icons/io5";
 
@@ -21,6 +22,24 @@ const SearchOverlay = ({ open, status, kind, result, message, onSearchClick, onC
       </div>
     </div>
   );
+};
+
+SearchOverlay.propTypes = {
+  open: PropTypes.bool.isRequired,
+  status: PropTypes.oneOf(["idle", "loading", "done", "error"]),
+  kind: PropTypes.string,
+  result: PropTypes.object,
+  message: PropTypes.string,
+  onSearchClick: PropTypes.func,
+  onClose: PropTypes.func.isRequired,
+};
+
+SearchOverlay.defaultProps = {
+  status: "idle",
+  kind: "",
+  result: null,
+  message: "",
+  onSearchClick: () => {},
 };
 
 export default SearchOverlay;

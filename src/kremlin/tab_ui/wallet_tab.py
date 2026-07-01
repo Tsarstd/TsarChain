@@ -370,32 +370,6 @@ class WalletsMixin:
         self._wallets_after_change()
         self._toast("Address deleted", kind="info")
 
-    def backup_keystore(self) -> None:
-        pwd = self._ask_password("Backup Keystore", "Input keystore Password:")
-        if not pwd:
-            return
-
-        data = get_encrypted_keystore_bytes(pwd)
-        if not data:
-            messagebox.showerror("Backup failed", "Keystore is empty or the password is incorrect.")
-            return
-
-        path = filedialog.asksaveasfilename(
-            title="Simpan Encrypted Keystore",
-            defaultextension=".enc",
-            filetypes=[("Encrypted Wallet (*.enc)", "*.enc")],
-            initialfile="kremlin_keystore.enc",
-        )
-        if not path:
-            return
-        if isinstance(data, str):
-            data = data.encode("utf-8")
-        with open(path, "wb") as f:
-            f.write(data)
-
-        self._toast("Keystore backup saved", kind="info")
-        messagebox.showinfo("Backup OK", f"Saved to:\n{path}")
-
     # ===================== BALANCE BLOCK =====================
 
     def _build_balance_block(self, parent: tk.Widget) -> Dict[str, tk.Label]:

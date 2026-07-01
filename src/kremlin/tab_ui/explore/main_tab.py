@@ -388,7 +388,6 @@ class ExplorePanel(tk.Frame):
         widget.bind("<Button-3>", popup)
         widget.bind("<Control-c>", lambda e: (do_copy(), "break"))
         widget.bind("<Control-C>", lambda e: (do_copy(), "break"))
-        widget.configure(cursor="xterm")
 
     # ---------- rendering helpers ----------
     def _cleanup_media_players(self):

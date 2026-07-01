@@ -51,6 +51,7 @@ class UTXODatabaseMixin:
         with self._lock:
             return {key: self._serialize_entry(value) for key, value in self.utxos.items()}
 
+    @classmethod
     def from_dict(cls, data: dict):
         utxo_db = cls()
         utxo_db.utxos.clear()
