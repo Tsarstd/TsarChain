@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import PropTypes from "prop-types";
 import { ClickableValue } from ".././SearchResults";
 import { FaCopy } from "react-icons/fa";
 import { getStatusBadge, getDirectionBadge } from "../SearchUX";
@@ -535,6 +536,34 @@ const ResultAddress = ({ data, onSearchClick }) => {
       </div>
     </>
   );
+};
+
+ResultAddress.propTypes = {
+  data: PropTypes.shape({
+    address: PropTypes.string,
+    balance: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    spendable: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    immature: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    incoming: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    outgoing: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    utxo_count: PropTypes.number,
+    total_txs: PropTypes.number,
+    history: PropTypes.arrayOf(
+      PropTypes.shape({
+        txid: PropTypes.string,
+        timestamp: PropTypes.number,
+        height: PropTypes.number,
+        confirmations: PropTypes.number,
+        direction: PropTypes.string,
+        from: PropTypes.string,
+        to: PropTypes.string,
+        amount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        status: PropTypes.string,
+      })
+    ),
+  }),
+  onSearchClick: PropTypes.func.isRequired,
 };
 
 export { ResultAddress };

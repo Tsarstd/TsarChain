@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import PropTypes from "prop-types";
 import { useNavigate } from "react-router-dom";
 import { fetchBlockRange, fetchByKind } from "../api/explorer";
 import { fmtDateLong, timeAgo } from "../utils/format";
@@ -574,7 +575,7 @@ const Home = ({ onSearchClick }) => {
           <div
             className={`lane-scroll ${isDragging ? "lane-scroll--dragging" : ""}`}
             ref={scrollerRef}
-            role="list"
+            role="region"
             aria-label="Block list"
             tabIndex={-1}
             onScroll={handleScroll}
@@ -616,6 +617,26 @@ const Home = ({ onSearchClick }) => {
       </section>
     </main>
   );
+};
+
+Home.propTypes = {
+  onSearchClick: PropTypes.func,
+};
+
+BlockCard.propTypes = {
+  item: PropTypes.shape({
+    graffiti_posts: PropTypes.number,
+    graffiti_comments: PropTypes.number,
+    block_id: PropTypes.string,
+    graffiti_count: PropTypes.number,
+    timestamp: PropTypes.number,
+    height: PropTypes.number,
+    hash: PropTypes.string,
+    tx_count: PropTypes.number,
+  }),
+  onSelect: PropTypes.func.isRequired,
+  active: PropTypes.bool,
+  isGenesis: PropTypes.bool,
 };
 
 export default Home;

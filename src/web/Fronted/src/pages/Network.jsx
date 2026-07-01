@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-
+import PropTypes from "prop-types";
 import { ClickableValue } from "../components/search/SearchResults";
 import { fetchNetwork } from "../api/explorer";
 import { fmtBytes, fmtHashrate, fmtNumber, fmtTimestamp, fmtTsar, fmtAddress } from "../utils/format";
@@ -65,6 +65,14 @@ const StatCard = ({ icon: Icon, label, value, subtext, type = "normal" }) => (
   </div>
 );
 
+StatCard.propTypes = {
+  icon: PropTypes.elementType,
+  label: PropTypes.string.isRequired,
+  value: PropTypes.node,
+  subtext: PropTypes.string,
+  type: PropTypes.oneOf(["normal", "primary", "accent", "warning", "critical"]), 
+};
+
 const SectionHeader = ({ icon: Icon, title, subtitle }) => (
   <div className="section-header">
     <div className="section-title">
@@ -75,6 +83,12 @@ const SectionHeader = ({ icon: Icon, title, subtitle }) => (
   </div>
 );
 
+SectionHeader.propTypes = {
+  icon: PropTypes.elementType,
+  title: PropTypes.string.isRequired,
+  subtitle: PropTypes.string,
+};
+
 const InfoSection = ({ children, title, icon, cols = 2 }) => (
   <div className="info-section">
     <SectionHeader icon={icon} title={title} />
@@ -83,6 +97,13 @@ const InfoSection = ({ children, title, icon, cols = 2 }) => (
     </div>
   </div>
 );
+
+InfoSection.propTypes = {
+  children: PropTypes.node.isRequired,
+  title: PropTypes.string.isRequired,
+  icon: PropTypes.elementType,
+  cols: PropTypes.number,
+};
 
 const HashDisplay = ({ hash, label, onSearchClick, clickable = true }) => (
   <div className="hash-display">
@@ -98,6 +119,13 @@ const HashDisplay = ({ hash, label, onSearchClick, clickable = true }) => (
     </div>
   </div>
 );
+
+HashDisplay.propTypes = {
+  hash: PropTypes.string,
+  label: PropTypes.string.isRequired,
+  onSearchClick: PropTypes.func,
+  clickable: PropTypes.bool,
+};
 
 const Network = ({onSearchClick}) => {
   const [snap, setSnap] = useState(null);
@@ -467,6 +495,10 @@ const Network = ({onSearchClick}) => {
       </div>
     </main>
   );
+};
+
+Network.propTypes = {
+  onSearchClick: PropTypes.func,
 };
 
 export default Network;

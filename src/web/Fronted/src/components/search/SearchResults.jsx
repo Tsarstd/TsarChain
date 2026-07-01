@@ -5,14 +5,13 @@ import { ResultTx } from "./category/SearchTxid";
 import { ResultAddress } from "./category/SeacrhAddress";
 import { ResultGraffiti } from "./category/SearchGraffiti";
 
-
 export const ClickableValue = ({ value, onSearchClick, className = "", info, children }) => {
   const displayValue = children || value;
-  
+
   if (!value || value === "-" || !onSearchClick) {
     return <span className={className}>{displayValue}</span>;
   }
-  
+
   const finalClassName = `value muted ${className}`.trim();
 
   const handleKeyDown = (e) => {
@@ -21,7 +20,7 @@ export const ClickableValue = ({ value, onSearchClick, className = "", info, chi
       onSearchClick(value);
     }
   };
-  
+
   return (
     <span
       className={finalClassName}
@@ -42,6 +41,14 @@ export const ClickableValue = ({ value, onSearchClick, className = "", info, chi
       {displayValue}
     </span>
   );
+};
+
+ClickableValue.propTypes = {
+  value: PropTypes.string,
+  onSearchClick: PropTypes.func,
+  className: PropTypes.string,
+  info: PropTypes.string,
+  children: PropTypes.node,
 };
 
 const SearchResultPanel = ({ status, result, kind, message, onSearchClick }) => {

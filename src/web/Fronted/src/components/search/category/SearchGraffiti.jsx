@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import PropTypes from "prop-types";
 import { ClickableValue } from ".././SearchResults";
 import { Document, Page, pdfjs } from 'react-pdf';
 import { 
@@ -105,7 +106,14 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
             controls
             preload="metadata"
             src={data.preview_url}
-          />
+          >
+            <track
+              kind="captions"
+              src={data?.captions_url || ''}
+              label="Captions"
+              default={!!data?.captions_url}
+            />
+          </video>
         ) : isPdf ? (
           <div className="pdf-preview-container">
             
@@ -359,6 +367,50 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
     </div>
     </>
   );
+};
+
+ResultGraffiti.propTypes = {
+  data: PropTypes.shape({
+    // Base
+    mime: PropTypes.string,
+    preview_url: PropTypes.string,
+    captions_url: PropTypes.string,
+    art_id: PropTypes.string,
+    creator: PropTypes.string,
+    amount_paid: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    block_height: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    block_hash: PropTypes.string,
+    txid: PropTypes.string,
+    sha256: PropTypes.string,
+    mroot: PropTypes.string,
+    mchunk: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    mcount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    size: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    size_bytes: PropTypes.number,
+    pool_address: PropTypes.string,
+    storer: PropTypes.string,
+
+    // Stats object
+    stats: PropTypes.shape({
+      creator_paid: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+      pool_balance: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+      storage_paid: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+      last_paid_epoch: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    }),
+
+    // Array comments
+    comments: PropTypes.arrayOf(
+      PropTypes.shape({
+        commenter: PropTypes.string,
+        ts: PropTypes.number,
+        comment_text: PropTypes.string,
+        comment: PropTypes.string,
+        amount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        tip: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+      })
+    ),
+  }),
+  onSearchClick: PropTypes.func.isRequired,
 };
 
 export { ResultGraffiti }

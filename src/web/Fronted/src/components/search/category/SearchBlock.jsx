@@ -1,5 +1,6 @@
 import { ClickableValue } from ".././SearchResults";
 import { useState, useEffect } from 'react';
+import PropTypes from "prop-types";
 import { 
   fmtBytes, 
   fmtTimestamp, 
@@ -367,6 +368,76 @@ const ResultBlock = ({ data, onSearchClick }) => {
 
     </div>
   );
+};
+
+ResultBlock.propTypes = {
+  data: PropTypes.shape({
+    // Base
+    height: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    block_id: PropTypes.string,
+    hash: PropTypes.string,
+    prev_block_hash: PropTypes.string,
+    timestamp: PropTypes.number,
+    nonce: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    difficulty: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    size_bytes: PropTypes.number,
+    chainwork: PropTypes.string,
+    bits: PropTypes.string,
+    version: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    merkle_root: PropTypes.string,
+
+    // Graffiti (array of objects)
+    graffiti: PropTypes.arrayOf(
+      PropTypes.shape({
+        creator: PropTypes.string,
+        txid: PropTypes.string,
+        sha256: PropTypes.string,
+        hash: PropTypes.string, // fallback
+      })
+    ),
+
+    // Transactions
+    transactions: PropTypes.arrayOf(
+      PropTypes.shape({
+        txid: PropTypes.string,
+        inputs: PropTypes.array,
+        outputs: PropTypes.array,
+      })
+    ),
+
+    // Comments
+    comments: PropTypes.arrayOf(
+      PropTypes.shape({
+        commenter: PropTypes.string,
+        art_id: PropTypes.string,
+        txid: PropTypes.string,
+        comment_len: PropTypes.number,
+      })
+    ),
+
+    // Payouts & metada
+    payouts: PropTypes.arrayOf(
+      PropTypes.shape({
+        txid: PropTypes.string,
+        art_id: PropTypes.string,
+        epoch: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        recipients: PropTypes.arrayOf(
+          PropTypes.shape({
+            addr: PropTypes.string,
+            amount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+          })
+        ),
+      })
+    ),
+    payout_count: PropTypes.number,
+
+    // Meta
+    _meta: PropTypes.shape({
+      payouts: PropTypes.array,
+      payout_count: PropTypes.number,
+    }),
+  }),
+  onSearchClick: PropTypes.func.isRequired,
 };
 
 export { ResultBlock }

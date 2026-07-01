@@ -1,5 +1,6 @@
 import { ClickableValue } from ".././SearchResults";
 import { useState, useEffect, useMemo } from "react";
+import PropTypes from "prop-types";
 import { saveAs } from 'file-saver';
 import { IoReceiptSharp } from "react-icons/io5";
 import { FaCopy } from "react-icons/fa";
@@ -615,6 +616,35 @@ const ResultTx = ({ data, onSearchClick }) => {
       </div>
     </>
   );
+};
+
+ResultTx.propTypes = {
+  data: PropTypes.shape({
+    txid: PropTypes.string,
+    inputs: PropTypes.arrayOf(
+      PropTypes.shape({
+        address: PropTypes.string,
+        txid: PropTypes.string,
+        amount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        is_coinbase: PropTypes.bool,
+      })
+    ),
+    outputs: PropTypes.arrayOf(
+      PropTypes.shape({
+        address: PropTypes.string,
+        amount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        index: PropTypes.number,
+        event: PropTypes.string,
+      })
+    ),
+    status: PropTypes.string,
+    block_height: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    timestamp: PropTypes.number,
+    confirmations: PropTypes.number,
+    fee: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    is_coinbase: PropTypes.bool,
+  }),
+  onSearchClick: PropTypes.func.isRequired,
 };
 
 export { ResultTx }

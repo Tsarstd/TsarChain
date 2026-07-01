@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import PropTypes from "prop-types";
 import { useNavigate } from "react-router-dom";
 import { fetchGraffitiDetail, fetchGraffitiList } from "../api/explorer";
 import { fmtBytes } from "../utils/format";
@@ -395,7 +396,7 @@ const Graffiti = ({onSearchClick}) => {
           <div
             className={`lane-scroll ${isDragging ? "lane-scroll--dragging" : ""}`}
             ref={scrollerRef}
-            role="list"
+            role="region"
             aria-label="Graffiti list"
             tabIndex={-1}
             onScroll={handleScroll}
@@ -436,6 +437,31 @@ const Graffiti = ({onSearchClick}) => {
       </section>
     </main>
   );
+};
+
+Graffiti.propTypes = {
+  onSearchClick: PropTypes.func,
+};
+
+GraffitiCard.propTypes = {
+  item: PropTypes.shape({
+    art_id: PropTypes.string,
+    creator: PropTypes.string,
+    block_height: PropTypes.number,
+    mime: PropTypes.string,
+    size: PropTypes.number,
+    size_bytes: PropTypes.number,
+    
+    stats: PropTypes.shape({
+      comments: PropTypes.number,
+    }),
+    
+    comments: PropTypes.array,
+    comments_length: PropTypes.number,
+  }),
+  onSelect: PropTypes.func.isRequired,
+  active: PropTypes.bool,
+  isGenesis: PropTypes.bool,
 };
 
 export default Graffiti;
