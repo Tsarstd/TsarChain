@@ -13,9 +13,28 @@ const explorerRouter = require("./src/routes/explorer_routes");
 const healthRouter = require("./src/routes/health");
 
 const app = express();
-const cfg = getConfig();
+app.disable('x-powered-by');
 
-app.use(cors());
+const cfg = getConfig();
+const allowedOrigins = cfg.allowedOrigins || ['http://localhost:3000'];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (origin == null) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS policy: Domain ini tidak diizinkan!'));
+    }
+  },
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
+
 app.use(bodyParser.json());
 
 const apiLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 120 });

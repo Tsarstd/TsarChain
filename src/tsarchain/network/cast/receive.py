@@ -524,17 +524,17 @@ class ReceiveMixin:
                         bcast_ms,
                     )
 
-            return True
+            accepted = True
         except Exception:
             log.exception("[receive_block] Error processing incoming block")
-            return False
+            
         finally:
             if inflight and block_id:
                 with self.lock:
                     self._processing_blocks.discard(block_id)
                     if not accepted:
                         self.seen_blocks.discard(block_id)
-                    return accepted
+        return accepted
 
     def receive_tx(self, message: Dict[str, Any], addr, peers: Set[Tuple[str, int]]) -> bool:
         try:

@@ -24,7 +24,7 @@ All cryptographic primitives follow the Signal protocol specifications.
 
 import os
 import time
-import random
+import secrets
 import hashlib
 from typing import Callable, Optional, Dict, Any, Tuple
 
@@ -504,7 +504,7 @@ class ChatManager:
             if not sess:
                 on_result({"status": "sess_missing"})
                 return
-            mid = random.randint(0, 2**31 - 1)
+            mid = secrets.randbelow(2**31)
             ts = int(time.time())
             pt = COM.pack(text)
             try:

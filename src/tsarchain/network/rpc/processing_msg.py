@@ -18,6 +18,7 @@ from ..node_logic.ratelimit import ban_ip
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.rpc.processing_msg")
 
+_secure_random = random.SystemRandom()
 
 if TYPE_CHECKING:
     from ..node import Network
@@ -227,8 +228,8 @@ def _overlay_realtime_mempool_stats(snapshot: dict, network: "Network") -> None:
 def _choose_relay_route(self, hops: int = 2) -> list[tuple]:
     with self.lock:
         pool = list(self.peers)
-    random.shuffle(pool)
-    return pool[:max(1,hops)]
+    _secure_random.shuffle(pool)
+    return pool[:max(1, hops)]
 
 def _relay_chain(self, route: list[tuple], inner: dict, src_addr=None):
     if not route:

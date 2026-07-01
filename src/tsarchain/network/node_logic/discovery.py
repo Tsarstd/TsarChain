@@ -18,6 +18,7 @@ from ..protocol import SecureChannel, build_envelope, recv_message, send_message
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.node_logic.discovery")
 
+_secure_random = random.SystemRandom()
 
 def discover_peers_loop(self):
     while not self._stop.is_set():
@@ -108,7 +109,7 @@ def _discover_peers(self):
             reverse=True,
         )
     candidates.extend(scored)
-    random.shuffle(candidates)
+    _secure_random.shuffle(candidates)
 
     for peer in candidates:
         norm = self.normalize_peer(peer)

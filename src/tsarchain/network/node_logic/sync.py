@@ -14,6 +14,7 @@ from ...utils import config as CFG
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.node_logic.sync")
 
+_secure_random = random.SystemRandom()
 
 def sync_loop(self):
     while not self._stop.is_set():
@@ -59,7 +60,7 @@ def sync_with_peers(self):
         self._last_sync_count = len(selected)
         self._last_sync_log = now
 
-    random.shuffle(selected)
+    _secure_random.shuffle(selected)
     for peer in selected:
         norm = self.normalize_peer(peer)
         if not norm:

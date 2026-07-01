@@ -9,7 +9,7 @@ deduplication so integration can stay contained inside Broadcast/Gossip.
 
 from __future__ import annotations
 
-import random
+import secrets
 import threading
 from typing import Dict, Optional, Set, Tuple
 
@@ -18,6 +18,7 @@ from ..utils import config as CFG
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.dandelion_pp")
 
+_secure_random = secrets.SystemRandom()
 
 class DandelionPP:
     def __init__(self, host) -> None:
@@ -109,7 +110,7 @@ class DandelionPP:
         candidates = [p for p in peers if p and p != exclude]
         if not candidates:
             return None
-        return random.choice(candidates)
+        return _secure_random.choice(candidates)
 
     def _send_stem(self, peer: Tuple[str, int], payload: dict, tx_id: str) -> bool:
         msg = {"type": "NEW_TX", "data": payload, "phase": "stem"}
@@ -141,7 +142,7 @@ class DandelionPP:
     def _compute_fluff_delay(self) -> float:
         # Keep deterministic-ish but jittered delay to reduce timing leaks
         base = max(CFG.MIN_FLUFF_DELAY_S, min(CFG.MAX_FLUFF_DELAY_S, float(CFG.SYNC_TIMEOUT or 2)))
-        jitter = random.uniform(0.25, 0.75) * base
+        jitter = _secure_random.uniform(0.25, 0.75) * base
         log.debug("[DandelionPP] computed fluff delay: %.2f seconds", base + jitter)
         return max(0.5, min(CFG.MAX_FLUFF_DELAY_S, base + jitter))
 

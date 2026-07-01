@@ -5,7 +5,7 @@
 import os
 import time
 import base64
-import random
+import secrets
 
 from io import BytesIO
 from datetime import datetime
@@ -123,9 +123,9 @@ class PaymentReceiptGenerator:
     
     @classmethod
     def _get_rotated_stamp(cls, status: str) -> Optional[Image.Image]:
-        rotation_angle = random.randint(-50, 50)
-        offset_x = random.randint(-10, 10)
-        offset_y = random.randint(-10, 10)
+        rotation_angle = secrets.randbelow(101) - 50
+        offset_x = secrets.randbelow(21) - 10
+        offset_y = secrets.randbelow(21) - 10
         cache_key = f"rotated_{status}_{rotation_angle}_{offset_x}_{offset_y}"
         
         if cache_key in cls._rotated_stamp_cache:

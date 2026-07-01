@@ -213,9 +213,8 @@ class TkVLCPlayer:
             self._update_play_label()
             self._maybe_update_video_size()
         finally:
-            if self._disposed:
-                return
-            self._timer = self.frame.after(self._poll_ms, self._poll)
+            if not self._disposed:
+                self._timer = self.frame.after(self._poll_ms, self._poll)
 
     def _set_slider(self, ms_val: int | float):
         if self._duration_ms <= 0:

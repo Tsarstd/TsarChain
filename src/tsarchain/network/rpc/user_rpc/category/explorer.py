@@ -14,7 +14,7 @@ from .....utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.rpc.user_rpc.category.explorer")
 
 
-def get_balances(self, message, addr, pow_obj, base_identity, *,
+def get_balances(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
     if CFG.DEBUG_BENCHMARKS:
         start = time.perf_counter()
