@@ -12,13 +12,13 @@ from bech32 import bech32_encode, convertbits
 
 # ---------------- Local Project ----------------
 from ..core.block import Block
-from ..storage.utxo import UTXODB
-from ..utils import config as CFG
-from ..utils.helpers import bits_to_target, merkle_root
 from ..utils import helpers as H
-from ..contracts import graffiti as GRAFFITI
-from ..contracts.graffiti_registry import GraffitiRegistry
+from ..storage.utxo import UTXODB
 from .genesis import GENESIS_HASH
+from ..utils import config as CFG
+from ..contracts import graffiti as GRAFFITI
+from ..utils.helpers import bits_to_target, merkle_root
+from ..contracts.graffiti_registry import GraffitiRegistry
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
@@ -35,6 +35,8 @@ class ValidationMixin:
 # =============================================================================
 
     def _warm_pow_context(self, height: int): # pre-warm for next epoch
+        if CFG.POW_ALGO != "randomx":
+            return
         epoch_blocks = max(1, int(CFG.RANDOMX_KEY_EPOCH_BLOCKS))
         if epoch_blocks <= 0:
             return

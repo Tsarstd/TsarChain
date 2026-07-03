@@ -59,8 +59,6 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
     chat_pub = ((message.get("chat_pub") or message.get("pubkey") or "").strip().lower())
 
     presence_sig = (message.get("presence_sig") or "").strip().lower()
-    if not presence_sig:
-        return {"error": "presence_sig_required"}
 
     spend_pk = (message.get("spend_pub") or "").strip().lower()
     reg_sig  = (message.get("reg_sig")  or "")
@@ -69,7 +67,7 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
     sig_reg  = (message.get("sig") or "").strip().lower()
     opk_reg  = (message.get("opk") or "").strip().lower()
 
-    if not addr_s or not chat_pub or not spend_pk or not reg_sig or not ts_val:
+    if not addr_s or not chat_pub or not spend_pk or not reg_sig or not ts_val or not presence_sig:
         return {"error": "missing fields"}
 
     if not addr_s.startswith(CFG.ADDRESS_PREFIX):
@@ -223,13 +221,11 @@ def chat_presence(self, message, pow_obj, base_identity, addr, *,
     hops   = int(message.get("hops") or 0)
     ts_val = int(message.get("ts")   or 0)
 
-    if abs(time.time() - ts_val) > CFG.PRESENCE_TTL_S:
-        log.debug("[process_message] CHAT_PRESENCE stale ts from %s", addr)
-        return {"error": "presence_stale"}
-
     # signature presence verification
     if not (pubhex and spend_pk and presence_sig):
         return {"error": "presence_missing_fields"}
+    if abs(time.time() - ts_val) > CFG.PRESENCE_TTL_S:
+        return {"error": "presence_stale"}
     if not (len(pubhex) == 64 and all(c in "0123456789abcdef" for c in pubhex)):
         return {"error": "presence_bad_pub"}
     if not (len(spend_pk) == 66 and all(c in "0123456789abcdef" for c in spend_pk)):
