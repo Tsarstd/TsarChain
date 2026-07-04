@@ -14,18 +14,18 @@ from collections import OrderedDict
 
 # ---------------- Local Project ----------------
 from ..core.block import Block
-from ..storage.utxo import UTXODB
-from ..mempool.pool import TxPoolDB
-from ..storage.kv import kv_enabled, iter_prefix
-from ..utils import config as CFG
-from .chain_ops import ChainOpsMixin
-from .difficulty import DifficultyMixin
-from .genesis import GENESIS_HASH, GenesisMixin
 from .mining import MiningMixin
 from .rewards import RewardMixin
-from .chain_storage import StorageMixin
+from ..utils import config as CFG
+from ..storage.utxo import UTXODB
+from ..mempool.pool import TxPoolDB
+from .chain_ops import ChainOpsMixin
 from .utxo_validate import UTXOMixin
+from .difficulty import DifficultyMixin
+from .chain_storage import StorageMixin
 from .validation import ValidationMixin
+from .genesis import GENESIS_HASH, GenesisMixin
+from ..storage.kv import kv_enabled, iter_prefix
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger

@@ -78,32 +78,6 @@ class ValidationMixin:
 # =============================================================================
 # 1. VALIDATION PROCESSING
 # =============================================================================
-    def _compute_txids_for_block(self, block: Block) -> bool:
-        txs = getattr(block, "transactions", []) or []
-        for tx in txs:
-            raw_no_witness = self._serialize_tx_cached(tx, include_witness=False)
-            if raw_no_witness is None:
-                self._last_block_validation_error = "tx_serialize_failed"
-                return False
-            txid_bytes = H.hash256(raw_no_witness)
-            existing = getattr(tx, "txid", None)
-            existing_bytes = None
-            if isinstance(existing, (bytes, bytearray)):
-                existing_bytes = bytes(existing)
-                
-            elif isinstance(existing, str):
-                existing_bytes = bytes.fromhex(existing)
-                
-            if existing_bytes is not None and existing_bytes != txid_bytes:
-                self._last_block_validation_error = "txid_mismatch"
-                return False
-            
-            setattr(tx, "_cached_txid_bytes", txid_bytes)
-            setattr(tx, "_cached_raw_tx_nowit", raw_no_witness)
-            setattr(tx, "txid", txid_bytes)
-            setattr(tx, "txid_hex", txid_bytes.hex())
-        return True
-
     def validate_block(self, block: Block) -> bool:  
         try:
             if not all([block.height is not None, block.prev_block_hash, block.transactions]):
@@ -178,6 +152,32 @@ class ValidationMixin:
             log.exception("[validate_block] Unexpected error during block validation")
             return False
     
+    def _compute_txids_for_block(self, block: Block) -> bool:
+        txs = getattr(block, "transactions", []) or []
+        for tx in txs:
+            raw_no_witness = self._serialize_tx_cached(tx, include_witness=False)
+            if raw_no_witness is None:
+                self._last_block_validation_error = "tx_serialize_failed"
+                return False
+            txid_bytes = H.hash256(raw_no_witness)
+            existing = getattr(tx, "txid", None)
+            existing_bytes = None
+            if isinstance(existing, (bytes, bytearray)):
+                existing_bytes = bytes(existing)
+                
+            elif isinstance(existing, str):
+                existing_bytes = bytes.fromhex(existing)
+                
+            if existing_bytes is not None and existing_bytes != txid_bytes:
+                self._last_block_validation_error = "txid_mismatch"
+                return False
+            
+            setattr(tx, "_cached_txid_bytes", txid_bytes)
+            setattr(tx, "_cached_raw_tx_nowit", raw_no_witness)
+            setattr(tx, "txid", txid_bytes)
+            setattr(tx, "txid_hex", txid_bytes.hex())
+        return True
+
     def _validate_pow(self, block: Block) -> bool:
         header_hash = block.hash()
         target = bits_to_target(block.bits)
@@ -666,7 +666,8 @@ class ValidationMixin:
         for tx in block.transactions or []:
             cached = getattr(tx, "_cached_raw_tx_w", None)
             if isinstance(cached, (bytes, bytearray)):
-                size += len(cached); continue
+                size += len(cached)
+                continue
             if hasattr(tx, 'serialize') and callable(getattr(tx, 'serialize', None)):
                 try:
                     raw = tx.serialize()
@@ -675,11 +676,15 @@ class ValidationMixin:
                 except Exception:
                     log.debug("[_estimate_block_size] tx.serialize failed", exc_info=True)
             if hasattr(tx, 'raw') and isinstance(getattr(tx, 'raw'), (bytes, bytearray)):
-                size += len(tx.raw); continue
+                size += len(tx.raw)
+                continue
             if hasattr(tx, 'size_bytes'):
                 v = tx.size_bytes
-                if callable(v): size += int(v()); 
-                else: size += int(v); continue
+                if callable(v):
+                    size += int(v())
+                else:
+                    size += int(v)
+                continue
             return None
         return int(size)
 

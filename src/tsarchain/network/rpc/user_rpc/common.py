@@ -7,10 +7,10 @@ import hashlib
 import ipaddress
 from typing import TYPE_CHECKING, Any
 
-from ....utils.helpers import batch_verify_der_low_s
-from ....contracts import graffiti as GRAFFITI
-from ...pow_token import issue_pow, verify_pow
 from ....utils import config as CFG
+from ...pow_token import issue_pow, verify_pow
+from ....contracts import graffiti as GRAFFITI
+from ....utils.helpers import batch_verify_der_low_s
 
 # ---------------- Logger ----------------
 from ....utils.tsar_logging import get_ctx_logger

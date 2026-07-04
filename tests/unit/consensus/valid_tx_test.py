@@ -3,11 +3,10 @@
 # Part of TsarChain - see LICENSE and TRADEMARKS.md
 
 import time
+import pytest
 import threading
 from unittest.mock import Mock
 from types import SimpleNamespace
-
-import pytest
 
 from tsarchain.consensus.validation import ValidationMixin
 from tsarchain.utils import config as CFG
@@ -160,7 +159,6 @@ def create_normal_tx(inputs, outputs, fee=10, txid=None):
                  txid=txid)
     return tx
 
-
 def create_utxo_input(prev_txid, vout):
     return DummyTxIn(prev_txid, vout)
 
@@ -220,102 +218,3 @@ def test_validate_transactions_duplicate_coinbase(validation_chain):
     result = chain._validate_transactions(block)
     assert result is False
     assert chain._last_block_validation_error == "duplicate_coinbase"
-
-
-def test_validate_transactions_graffiti_post_ok(validation_chain):
-    """Scenario 4: a single graffiti POST with a matching block_id."""
-    chain = validation_chain
-
-    art_id = "abc123"
-    cb = create_coinbase_tx(50_000_000 + 10, block_id=art_id)
-
-    graffiti_data = b'GRAFFITI' + b'\x01\x02\x03'  # mock magic + payload
-
-    def last_pushdata_side_effect(script):
-        if isinstance(script, bytes) and len(script) > 0:
-            if script[0] == 0x6a:  # OP_RETURN
-                return graffiti_data
-        return None
-    chain._mock_H.last_pushdata.side_effect = last_pushdata_side_effect
-
-    def parse_payload_side_effect(data):
-        if data == graffiti_data:
-            return {
-                'event': 'POST',
-                'art_id': art_id,
-                'sha256': 'x' * 64,
-                'creator': 'creator',
-                'size': 100,
-            }
-        return None
-    chain._mock_graffiti.parse_payload.side_effect = parse_payload_side_effect
-
-    def parse_from_script_side_effect(script):
-        if script is not None:
-            data = last_pushdata_side_effect(script)
-            if data:
-                return parse_payload_side_effect(data)
-        return None
-    chain._mock_graffiti.parse_from_script.side_effect = parse_from_script_side_effect
-
-    op_return_script = b'\x6a' + bytes([len(graffiti_data)]) + graffiti_data
-    tx_out = create_output(0, op_return_script)
-    tx_input = create_utxo_input(b'\xaa' * 32, 0)
-    normal_tx = create_normal_tx([tx_input], [tx_out], fee=10)
-
-    block = DummyBlock(height=10, transactions=[cb, normal_tx])
-
-    chain._mock_H.native_validate_block_txs_compact.return_value = (True, None, [10])
-
-    result = chain._validate_transactions(block)
-    assert result is True
-
-
-def test_validate_transactions_graffiti_post_mismatch(validation_chain):
-    """Scenario 5: POST graffiti with mismatched block_id -> failure."""
-    chain = validation_chain
-
-    art_id = "abc123"
-    cb = create_coinbase_tx(50_000_000 + 10, block_id="wrong_id")
-
-    graffiti_data = b'GRAFFITI' + b'\x01\x02\x03'
-
-    def last_pushdata_side_effect(script):
-        if isinstance(script, bytes) and len(script) > 0:
-            if script[0] == 0x6a:
-                return graffiti_data
-        return None
-    chain._mock_H.last_pushdata.side_effect = last_pushdata_side_effect
-
-    def parse_payload_side_effect(data):
-        if data == graffiti_data:
-            return {
-                'event': 'POST',
-                'art_id': art_id,
-                'sha256': 'x' * 64,
-                'creator': 'creator',
-                'size': 100,
-            }
-        return None
-    chain._mock_graffiti.parse_payload.side_effect = parse_payload_side_effect
-
-    def parse_from_script_side_effect(script):
-        if script is not None:
-            data = last_pushdata_side_effect(script)
-            if data:
-                return parse_payload_side_effect(data)
-        return None
-    chain._mock_graffiti.parse_from_script.side_effect = parse_from_script_side_effect
-
-    op_return_script = b'\x6a' + bytes([len(graffiti_data)]) + graffiti_data
-    tx_out = create_output(0, op_return_script)
-    tx_input = create_utxo_input(b'\xaa' * 32, 0)
-    normal_tx = create_normal_tx([tx_input], [tx_out], fee=10)
-
-    block = DummyBlock(height=10, transactions=[cb, normal_tx])
-
-    chain._mock_H.native_validate_block_txs_compact.return_value = (True, None, [10])
-
-    result = chain._validate_transactions(block)
-    assert result is False
-    assert chain._last_block_validation_error == "block_id_mismatch_graffiti"

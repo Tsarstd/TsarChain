@@ -79,37 +79,39 @@ def stor_list(self, message, pow_obj, base_identity, *,
         return pow_resp
 
     by_addr = {}
-    for v in self.storage_peers.values():
-        k = (v.get("address") or "").lower()
-        old = by_addr.get(k)
-        if not old:
-            by_addr[k] = dict(v)
-        else:
-            cand = dict(v)
-            if (old.get("port") or 0) == 0 and (cand.get("port") or 0) > 0:
-                by_addr[k] = cand
-            elif int(cand.get("last_seen") or 0) > int(old.get("last_seen") or 0):
-                by_addr[k] = cand
+    with self.lock:
+        for v in self.storage_peers.values():
+            if not isinstance(v, dict):
+                continue
+            addr = v.get("addr")
+            if not addr:
+                continue
+            addr = addr.lower()
+            old = by_addr.get(addr)
+            if old is None:
+                by_addr[addr] = dict(v)
+            else:
+                cand = dict(v)
+                if ((old.get("port") or 0) == 0 and (cand.get("port") or 0) > 0) or \
+                   (int(cand.get("last_seen") or 0) > int(old.get("last_seen") or 0)):
+                    by_addr[addr] = cand
 
     items = []
-    with self.lock:
-        for (ip, p), meta in (self.storage_peers or {}).items():
-            if not isinstance(meta, dict): 
-                continue
-            items.append({
-                "addr": meta.get("addr"),
-                "url": meta.get("url",""),
-                "ip": ip,
-                "port": int(meta.get("port",0)),
-                "last_seen": int(meta.get("last_seen",0)),
-                "alive": bool(meta.get("alive",False)),
-            })
-            
+    for meta in by_addr.values():
+        items.append({
+            "addr": meta.get("addr"),
+            "url": meta.get("url", ""),
+            "ip": meta.get("addr"),
+            "port": int(meta.get("port", 0)),
+            "last_seen": int(meta.get("last_seen", 0)),
+            "alive": bool(meta.get("alive", False)),
+        })
+
     if CFG.DEBUG_BENCHMARKS:
         end = time.perf_counter()
         result = round((end - start) * 1000.0, 3)
         src_tag = (message.get("rpc_source") or "-")
         if result > 15.0:
             log.debug("[STOR_LIST] Benchmark : %.3f ms src=%s", result, src_tag)
-        
-    return {"type":"STOR_LIST","storers": items}
+
+    return {"type": "STOR_LIST", "storers": items}

@@ -49,6 +49,7 @@ def handle_storage_rpc(
     src_node_id: Optional[str] = None,
     src_pubkey: Optional[str] = None,
 ) -> dict | None:
+    
     ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
     rl_key = f"storage_rpc:{ip}"
     if not self._tb_allow(self.rl_ip, rl_key, CFG.STORAGE_RPC_RL_IP_BURST, CFG.STORAGE_RPC_RL_WINDOW_S, CFG.STORAGE_RPC_RL_IP_BURST, backoff_key=rl_key):
