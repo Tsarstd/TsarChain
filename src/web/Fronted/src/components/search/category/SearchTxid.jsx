@@ -1,5 +1,5 @@
-import { ClickableValue } from ".././SearchResults";
-import { useState, useEffect, useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useRenderHelpers, copyToClipboard } from "./SearchHelpers";
 import PropTypes from "prop-types";
 import { saveAs } from 'file-saver';
 import { IoReceiptSharp } from "react-icons/io5";
@@ -9,31 +9,16 @@ import {
   fmtTsar, 
   fmtAddress,
   fmtTxid,
-  fmtTimestamp,
-  formatHashForDisplay,
-  getMaxCharsPerLine 
+  fmtTimestamp
 } from "../../../utils/format"
 
 import { getVoutLabel, getAddressType } from "../SearchUX";
 
 
 const ResultTx = ({ data, onSearchClick }) => {
-  const [isMobile, setIsMobile] = useState(false);
-  const [maxCharsPerLine, setMaxCharsPerLine] = useState(getMaxCharsPerLine());
+  const { renderClickableHash } = useRenderHelpers();
   const [isGeneratingReceipt, setIsGeneratingReceipt] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
-
-  useEffect(() => {
-    const checkMobile = () => {
-      const mobile = window.innerWidth <= 768;
-      setIsMobile(mobile);
-      setMaxCharsPerLine(getMaxCharsPerLine());
-    };
-
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
 
   const downloadReceiptDirect = async () => {
     if (!data?.txid) return;
@@ -58,46 +43,6 @@ const ResultTx = ({ data, onSearchClick }) => {
       alert('Failed to download receipt: ' + error.message);
     } finally {
       setIsGeneratingReceipt(false);
-    }
-  };
-
-  const copyToClipboard = async () => {
-    if (!data?.txid) return;
-    
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(data.txid);
-      } else {
-        const textArea = document.createElement('textarea');
-        textArea.value = data.txid;
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-999999px';
-        textArea.style.top = '-999999px';
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        
-        const successful = document.execCommand('copy');
-        if (!successful) {
-          throw new Error('Fallback copy failed');
-        }
-        
-        document.body.removeChild(textArea);
-      }
-      
-      setCopyStatus("Copied!");
-      setTimeout(() => setCopyStatus(""), 2000);
-    } catch (err) {
-      console.error('Failed to copy:', err);
-      
-      try {
-        prompt('Copy this TxID:', data.txid);
-        setCopyStatus("Use prompt to copy");
-      } catch {
-        setCopyStatus("Failed!");
-      }
-      
-      setTimeout(() => setCopyStatus(""), 2000);
     }
   };
 
@@ -203,38 +148,6 @@ const ResultTx = ({ data, onSearchClick }) => {
     }).length;
   }, [groupedOutputs, data?.inputs]);
 
-  const renderClickableHash = (value, onSearchClick, info, displayValue = null) => {
-    if (!value) return "-";
-    
-    const display = displayValue || value;
-    
-    if (isMobile) {
-      const formattedHash = formatHashForDisplay(display, maxCharsPerLine);
-      return (
-        <ClickableValue 
-          value={value} 
-          onSearchClick={onSearchClick} 
-          className="value muted hash-multiline"
-          info={info}
-          style={{whiteSpace: 'pre-wrap'}}
-        >
-          {formattedHash}
-        </ClickableValue>
-      );
-    }
-    
-    return (
-      <ClickableValue 
-        value={value} 
-        onSearchClick={onSearchClick} 
-        className="value muted"
-        info={info}
-      >
-        {display}
-      </ClickableValue>
-    );
-  };
-
   const splitTxidGrid = (txid) => {
     if (!txid || txid.length !== 64) return [];
     const chunks = [];
@@ -337,20 +250,20 @@ const ResultTx = ({ data, onSearchClick }) => {
           >
             {isGeneratingReceipt ? (
               <>
-                <span className="spinner"></span>
-                Generating...
+              <span className="spinner"></span>
+              Generating...
               </>
             ) : (
               <>
-                <span><IoReceiptSharp /></span>
-                Download Receipt
+              <span><IoReceiptSharp /></span>
+              Download Receipt
               </>
             )}
           </button>
           
           {/* COPY TXID BUTTON */}
           <button
-            onClick={copyToClipboard}
+            onClick={() => copyToClipboard(data.txid, setCopyStatus)}
             className={`action-button copy-button`}
           >
             <span><FaCopy /></span>

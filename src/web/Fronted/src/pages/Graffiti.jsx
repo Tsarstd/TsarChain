@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import PropTypes from "prop-types";
 import { useNavigate } from "react-router-dom";
 import { fetchGraffitiDetail, fetchGraffitiList } from "../api/explorer";
 import { fmtBytes } from "../utils/format";
+import { useDragScroll } from "./Block";
 import { ResultGraffiti } from "../components/search/SearchResults";
 
 const PAGE_SIZE = 20;
@@ -93,18 +94,9 @@ const Graffiti = ({onSearchClick}) => {
   const [detail, setDetail] = useState(null);
   const [detailStatus, setDetailStatus] = useState("idle");
   const [selectedId, setSelectedId] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [navInput, setNavInput] = useState(""); // State untuk input navigasi
-  const [isNavigating, setIsNavigating] = useState(false); // State untuk proses navigasi
-
-  const scrollerRef = useRef(null);
-  const dragRef = useRef({
-    isDown: false,
-    startX: 0,
-    scrollLeft: 0,
-    moved: false,
-    wasDrag: false,
-  });
+  const [navInput, setNavInput] = useState("");
+  const [isNavigating, setIsNavigating] = useState(false);
+  const { scrollerRef, isDragging, dragHandlers } = useDragScroll();
 
   const loadMore = useCallback(async () => {
     if (loading || !hasMore) return;
@@ -139,102 +131,6 @@ const Graffiti = ({onSearchClick}) => {
       loadMore();
     }
   }, [items.length, loading, loadMore]);
-
-  const handleScroll = useCallback(() => {
-    const el = scrollerRef.current;
-    if (!el || loading || !hasMore) return;
-    if (el.scrollLeft + el.clientWidth >= el.scrollWidth - SCROLL_THRESHOLD) {
-      loadMore();
-    }
-  }, [hasMore, loading, loadMore]);
-
-  const handleMouseDown = (event) => {
-    if (event.button !== undefined && event.button !== 0) return;
-    const el = scrollerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    dragRef.current.isDown = true;
-    dragRef.current.startX = event.clientX - rect.left;
-    dragRef.current.scrollLeft = el.scrollLeft;
-    dragRef.current.moved = false;
-    dragRef.current.wasDrag = false;
-    setIsDragging(true);
-  };
-
-  const handleMouseMove = (event) => {
-    if (!dragRef.current.isDown) return;
-    const el = scrollerRef.current;
-    if (!el) return;
-    event.preventDefault();
-    const rect = el.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const walk = x - dragRef.current.startX;
-    if (Math.abs(walk) > 6) {
-      dragRef.current.moved = true;
-    }
-    el.scrollLeft = dragRef.current.scrollLeft - walk;
-  };
-
-  const endDrag = () => {
-    dragRef.current.isDown = false;
-    dragRef.current.wasDrag = dragRef.current.moved;
-    setIsDragging(false);
-    setTimeout(() => {
-      dragRef.current.wasDrag = false;
-    }, 0);
-  };
-
-  const handleTouchStart = (event) => {
-    const touch = event.touches[0];
-    if (!touch) return;
-    const el = scrollerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    dragRef.current.isDown = true;
-    dragRef.current.startX = touch.clientX - rect.left;
-    dragRef.current.scrollLeft = el.scrollLeft;
-    dragRef.current.moved = false;
-    dragRef.current.wasDrag = false;
-    setIsDragging(true);
-  };
-
-  const handleTouchMove = (event) => {
-    if (!dragRef.current.isDown) return;
-    const el = scrollerRef.current;
-    if (!el) return;
-    const touch = event.touches[0];
-    if (!touch) return;
-    event.preventDefault();
-    const rect = el.getBoundingClientRect();
-    const x = touch.clientX - rect.left;
-    const walk = x - dragRef.current.startX;
-    if (Math.abs(walk) > 6) {
-      dragRef.current.moved = true;
-    }
-    el.scrollLeft = dragRef.current.scrollLeft - walk;
-  };
-
-  const handleTouchEnd = () => {
-    endDrag();
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      e.preventDefault();
-      const el = scrollerRef.current;
-      if (!el) return;
-      const scrollAmount = e.key === 'ArrowLeft' ? -300 : 300;
-      el.scrollBy({ left: scrollAmount, behavior: 'smooth' });
-    }
-  };
-
-  const handleClickCapture = (event) => {
-    if (dragRef.current.wasDrag) {
-      event.preventDefault();
-      event.stopPropagation();
-      dragRef.current.wasDrag = false;
-    }
-  };
 
   const handleSelect = async (item) => {
     if (!item?.art_id) return;
@@ -352,6 +248,14 @@ const Graffiti = ({onSearchClick}) => {
     }
   };
 
+  const handleScroll = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el || loading || !hasMore) return;
+    if (el.scrollLeft + el.clientWidth >= el.scrollWidth - SCROLL_THRESHOLD) {
+      loadMore();
+    }
+  }, [hasMore, loading, loadMore, scrollerRef]);
+
   const genesisId = !hasMore && items.length
     ? items[items.length - 1]?.art_id
     : null;
@@ -400,15 +304,7 @@ const Graffiti = ({onSearchClick}) => {
             aria-label="Graffiti list"
             tabIndex={-1}
             onScroll={handleScroll}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={endDrag}
-            onMouseLeave={endDrag}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-            onKeyDown={handleKeyDown}
-            onClickCapture={handleClickCapture}
+            {...dragHandlers}
           >
             {items.map((item) => (
               <GraffitiCard

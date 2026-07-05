@@ -439,8 +439,14 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     │   │   │   │   ├── processing_msg.py              # role base & security RPC api
     │   │   │   │   └── storage_rpc.py                 # storage RPC api gateway
     │   │   │   │
+    │   │   │   ├── rpc_helper/
+    |   │   │   │   ├── chat_mixin.py                  # Helper for chat rpc
+    |   │   │   │   ├── explorer_mixin.py              # Explorer helper 'block,tx details, etc'
+    |   │   │   │   ├── guard_mixin.py                 # Guar tb_allow rpc
+    |   │   │   │   ├── history_mixin.py               # History tx helper rpc
+    |   │   │   │   └── tx_mixin.py                    # All Transaction model helper (regular, post, comment, payouts)
+    |   │   │   │
     │   │   │   ├── broadcast.py                       # Broadcast initialize
-    │   │   │   ├── client_helper.py                   # helper for RPC api
     │   │   │   ├── dandelion_pp.py                    # minimal dandelion ++ modul
     │   │   │   ├── node.py                            # Node initialize
     │   │   │   ├── peers_storage.py                   # keys management storage
@@ -478,7 +484,7 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     ├── tsarcore_native/
     │        └── src/                    # ALL Native Module (Rust + PyO3)
     │
-    └── unit_tests/                      # All Unit testing
+    └── tests/                      # All Unit testing
 
   ```
   </details>

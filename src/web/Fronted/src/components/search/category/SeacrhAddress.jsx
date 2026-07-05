@@ -1,42 +1,25 @@
-import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { ClickableValue } from ".././SearchResults";
 import { FaCopy } from "react-icons/fa";
+import { useState, useEffect } from "react";
 import { getStatusBadge, getDirectionBadge } from "../SearchUX";
+import { useRenderHelpers, copyToClipboard } from "./SearchHelpers";
 import {  
   fmtAddress,
   fmtTimestamp,
   fmtTsar, 
   fmtTxid,
-  timeAgo,
-  formatHashForDisplay,
-  getMaxCharsPerLine
+  timeAgo
 } from "../../../utils/format"
 
 const ResultAddress = ({ data, onSearchClick }) => {
+  const { renderClickableHash } = useRenderHelpers();
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   const [copyStatus, setCopyStatus] = useState("");
 
-  const [isMobile, setIsMobile] = useState(false);
-  const [maxCharsPerLine, setMaxCharsPerLine] = useState(getMaxCharsPerLine());
-  
   useEffect(() => {
     setCurrentPage(1);
   }, [data?.address]);
-
-  
-  useEffect(() => {
-    const checkMobile = () => {
-      const mobile = window.innerWidth <= 768;
-      setIsMobile(mobile);
-      setMaxCharsPerLine(getMaxCharsPerLine());
-    };
-
-  checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
   
   const historyData = data?.history || [];
   const totalItems = Math.min(historyData.length, 200); // limit
@@ -48,46 +31,6 @@ const ResultAddress = ({ data, onSearchClick }) => {
   const handlePageChange = (page) => {
     if (page >= 1 && page <= totalPages) {
       setCurrentPage(page);
-    }
-  };
-
-  const copyToClipboard = async () => {
-    if (!data?.address) return;
-    
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(data.address);
-      } else {
-        const textArea = document.createElement('textarea');
-        textArea.value = data.address;
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-999999px';
-        textArea.style.top = '-999999px';
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        
-        const successful = document.execCommand('copy');
-        if (!successful) {
-          throw new Error('Fallback copy failed');
-        }
-        
-        document.body.removeChild(textArea);
-      }
-      
-      setCopyStatus("Copied!");
-      setTimeout(() => setCopyStatus(""), 2000);
-    } catch (err) {
-      console.error('Failed to copy:', err);
-      
-      try {
-        prompt('Copy this Address:', data.address);
-        setCopyStatus("Use prompt to copy");
-      } catch {
-        setCopyStatus("Failed!");
-      }
-      
-      setTimeout(() => setCopyStatus(""), 2000);
     }
   };
   
@@ -124,38 +67,6 @@ const ResultAddress = ({ data, onSearchClick }) => {
     }
     
     return pageNumbers;
-  };
-
-  const renderClickableHash = (value, onSearchClick, info, displayValue = null) => {
-    if (!value) return "-";
-    
-    const display = displayValue || value;
-    
-    if (isMobile) {
-      const formattedHash = formatHashForDisplay(display, maxCharsPerLine);
-      return (
-        <ClickableValue 
-          value={value} 
-          onSearchClick={onSearchClick} 
-          className="value muted hash-multiline"
-          info={info}
-          style={{whiteSpace: 'pre-wrap'}}
-        >
-          {formattedHash}
-        </ClickableValue>
-      );
-    }
-    
-    return (
-      <ClickableValue 
-        value={value} 
-        onSearchClick={onSearchClick} 
-        className="value muted"
-        info={info}
-      >
-        {display}
-      </ClickableValue>
-    );
   };
 
   const renderAddressLabel = (direction, fromAddress, toAddress) => {
@@ -384,7 +295,7 @@ const ResultAddress = ({ data, onSearchClick }) => {
         <div className="action-buttons">
           {/* COPY ADDRESS BUTTON */}
           <button
-            onClick={copyToClipboard}
+            onClick={() => copyToClipboard(data.address, setCopyStatus)}
             className={`action-button copy-button`}
           >
             <span><FaCopy /></span>

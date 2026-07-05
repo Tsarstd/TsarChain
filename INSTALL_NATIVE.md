@@ -108,9 +108,9 @@ print("OK")
 PY
 ```
 
-## 5) How to Test with `native_test.py`
+## 5) How to Test with `native_bench.py`
 
-`tests/native_test.py` is the all-in-one harness for the Rust bindings. It now runs **only native paths** and checks:
+`benchmarks/native_bench.py` is the all-in-one harness for the Rust bindings. It now runs **only native paths** and checks:
 
 - Deterministic vectors for `hash256`, `hash160`, `merkle_root`, `bip143_sig_hash`, strict DER low-S verification (single + batch).
 - Native block validation via `validate_block_txs_native` (happy-path block + common failure reasons: witness tamper, immature coinbase, missing witness, unsupported script).
@@ -120,13 +120,13 @@ PY
 
 ```bash
 # from repo root, inside your project venv
-python tests/native_test.py
+python benchmarks/native_bench.py
 ```
 
 Useful knobs (keep or drop as needed):
 
 ```bash
-python tests/native_test.py \
+python benchmarks/native_bench.py \
   --sigops-iters 250000 \
   --merkle-n 1000 --merkle-reps 200 \
   --ecdsa-keys 200 --ecdsa-iters 5000 \
@@ -153,16 +153,20 @@ Functions available: ['count_sigops_in_script', 'bip143_sig_hash', 'verify_der_s
 
 == native block validation ==
 [block] valid block: ok
+[validate_block] fail height=1 txs=2 reason=pubkey_hash_mismatch
 [block] invalid witness: ok
+[validate_block] fail height=1 txs=2 reason=coinbase_immature conf=0 need>=3
 [block] immature coinbase: ok
+[validate_block] fail height=1 txs=2 reason=missing_witness
 [block] missing witness: ok
+[validate_block] fail height=1 txs=2 reason=unsupported_script
 [block] unsupported script: ok
 
 == microbench ==
-[sigops] 250.000 loops in 0.082s -> 3.050.979 ops/s
-[merkle] 200 trees (n=1000) in 0.069s -> 2911.8 trees/s
-[ecdsa-single] 5.000 verifications in 0.244s -> 20.520 verif/s
-[ecdsa-batch] ~2.048 verifications in 0.016s -> ~129.737 verif/s
+[sigops] 250.000 loops in 0.086s -> 2.897.277 ops/s
+[merkle] 200 trees (n=1000) in 0.068s -> 2924.0 trees/s
+[ecdsa-single] 5.000 verifications in 0.252s -> 19.870 verif/s
+[ecdsa-batch] ~2.048 verifications in 0.014s -> ~146.597 verif/s
 [hash256] 1.500.000B in 0.001s
 [hash160] 1.500.000B in 0.001s
 ```

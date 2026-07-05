@@ -68,6 +68,122 @@ const BlockCard = ({ item, onSelect, active, isGenesis }) => {
   );
 };
 
+// ============ Custom Hook for Drag Scroll ============
+export const useDragScroll = () => {
+  const scrollerRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef({
+    isDown: false,
+    startX: 0,
+    scrollLeft: 0,
+    moved: false,
+    wasDrag: false,
+  });
+
+  const endDrag = () => {
+    dragRef.current.isDown = false;
+    dragRef.current.wasDrag = dragRef.current.moved;
+    setIsDragging(false);
+    setTimeout(() => {
+      dragRef.current.wasDrag = false;
+    }, 0);
+  };
+
+  const handleMouseDown = (event) => {
+    if (event.button !== undefined && event.button !== 0) return;
+    const el = scrollerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    dragRef.current.isDown = true;
+    dragRef.current.startX = event.clientX - rect.left;
+    dragRef.current.scrollLeft = el.scrollLeft;
+    dragRef.current.moved = false;
+    dragRef.current.wasDrag = false;
+    setIsDragging(true);
+  };
+
+  const handleMouseMove = (event) => {
+    if (!dragRef.current.isDown) return;
+    const el = scrollerRef.current;
+    if (!el) return;
+    event.preventDefault();
+    const rect = el.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const walk = x - dragRef.current.startX;
+    if (Math.abs(walk) > 6) {
+      dragRef.current.moved = true;
+    }
+    el.scrollLeft = dragRef.current.scrollLeft - walk;
+  };
+
+  const handleTouchStart = (event) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    const el = scrollerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    dragRef.current.isDown = true;
+    dragRef.current.startX = touch.clientX - rect.left;
+    dragRef.current.scrollLeft = el.scrollLeft;
+    dragRef.current.moved = false;
+    dragRef.current.wasDrag = false;
+    setIsDragging(true);
+  };
+
+  const handleTouchMove = (event) => {
+    if (!dragRef.current.isDown) return;
+    const el = scrollerRef.current;
+    if (!el) return;
+    const touch = event.touches[0];
+    if (!touch) return;
+    event.preventDefault();
+    const rect = el.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const walk = x - dragRef.current.startX;
+    if (Math.abs(walk) > 6) {
+      dragRef.current.moved = true;
+    }
+    el.scrollLeft = dragRef.current.scrollLeft - walk;
+  };
+
+  const handleTouchEnd = endDrag;
+  const handleMouseUp = endDrag;
+  const handleMouseLeave = endDrag;
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      const el = scrollerRef.current;
+      if (!el) return;
+      const scrollAmount = e.key === 'ArrowLeft' ? -300 : 300;
+      el.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    }
+  };
+
+  const handleClickCapture = (event) => {
+    if (dragRef.current.wasDrag) {
+      event.preventDefault();
+      event.stopPropagation();
+      dragRef.current.wasDrag = false;
+    }
+  };
+
+  return {
+    scrollerRef,
+    isDragging,
+    dragHandlers: {
+      onMouseDown: handleMouseDown,
+      onMouseMove: handleMouseMove,
+      onMouseUp: handleMouseUp,
+      onMouseLeave: handleMouseLeave,
+      onTouchStart: handleTouchStart,
+      onTouchMove: handleTouchMove,
+      onTouchEnd: handleTouchEnd,
+      onKeyDown: handleKeyDown,
+      onClickCapture: handleClickCapture,
+    },
+  };
+};
 
 const Home = ({ onSearchClick }) => {
   const navigate = useNavigate();
@@ -80,19 +196,10 @@ const Home = ({ onSearchClick }) => {
   const [detailStatus, setDetailStatus] = useState("idle");
   const [detailMessage, setDetailMessage] = useState("");
   const [selectedHeight, setSelectedHeight] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
   const [navInput, setNavInput] = useState("");
   const [isNavigating, setIsNavigating] = useState(false);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
-
-  const scrollerRef = useRef(null);
-  const dragRef = useRef({
-    isDown: false,
-    startX: 0,
-    scrollLeft: 0,
-    moved: false,
-    wasDrag: false,
-  });
+  const { scrollerRef, isDragging, dragHandlers } = useDragScroll();
 
   const handleSearchClickLocal = useCallback((value) => {
     if (onSearchClick) {
@@ -255,6 +362,7 @@ const Home = ({ onSearchClick }) => {
     return () => clearInterval(refreshInterval);
   }, []);
 
+
   useEffect(() => {
     const cached = getCachedBlocks();
     if (cached && cached.length > 0) {
@@ -268,93 +376,6 @@ const Home = ({ onSearchClick }) => {
     }
   }, [blocks.length, loadBlocks, loading]);
 
-  const handleScroll = useCallback(() => {
-    const el = scrollerRef.current;
-    if (!el || loading || !hasMore) return;
-    if (el.scrollLeft + el.clientWidth >= el.scrollWidth - SCROLL_THRESHOLD) {
-      loadBlocks(nextHeight);
-    }
-  }, [hasMore, loading, loadBlocks, nextHeight]);
-
-  const handleMouseDown = (event) => {
-    if (event.button !== undefined && event.button !== 0) return;
-    const el = scrollerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    dragRef.current.isDown = true;
-    dragRef.current.startX = event.clientX - rect.left;
-    dragRef.current.scrollLeft = el.scrollLeft;
-    dragRef.current.moved = false;
-    dragRef.current.wasDrag = false;
-    setIsDragging(true);
-  };
-
-  const handleMouseMove = (event) => {
-    if (!dragRef.current.isDown) return;
-    const el = scrollerRef.current;
-    if (!el) return;
-    event.preventDefault();
-    const rect = el.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const walk = x - dragRef.current.startX;
-    if (Math.abs(walk) > 6) {
-      dragRef.current.moved = true;
-    }
-    el.scrollLeft = dragRef.current.scrollLeft - walk;
-  };
-
-  const endDrag = () => {
-    dragRef.current.isDown = false;
-    dragRef.current.wasDrag = dragRef.current.moved;
-    setIsDragging(false);
-    setTimeout(() => {
-      dragRef.current.wasDrag = false;
-    }, 0);
-  };
-
-  const handleTouchStart = (event) => {
-    const touch = event.touches[0];
-    if (!touch) return;
-    const el = scrollerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    dragRef.current.isDown = true;
-    dragRef.current.startX = touch.clientX - rect.left;
-    dragRef.current.scrollLeft = el.scrollLeft;
-    dragRef.current.moved = false;
-    dragRef.current.wasDrag = false;
-    setIsDragging(true);
-  };
-
-  const handleTouchMove = (event) => {
-    if (!dragRef.current.isDown) return;
-    const el = scrollerRef.current;
-    if (!el) return;
-    const touch = event.touches[0];
-    if (!touch) return;
-    event.preventDefault();
-    const rect = el.getBoundingClientRect();
-    const x = touch.clientX - rect.left;
-    const walk = x - dragRef.current.startX;
-    if (Math.abs(walk) > 6) {
-      dragRef.current.moved = true;
-    }
-    el.scrollLeft = dragRef.current.scrollLeft - walk;
-  };
-
-  const handleTouchEnd = () => {
-    endDrag();
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      e.preventDefault();
-      const el = scrollerRef.current;
-      if (!el) return;
-      const scrollAmount = e.key === 'ArrowLeft' ? -300 : 300;
-      el.scrollBy({ left: scrollAmount, behavior: 'smooth' });
-    }
-  };
 
   const handleNavigateToBlock = async () => {
     const targetHeight = Number.parseInt(navInput);
@@ -485,14 +506,6 @@ const Home = ({ onSearchClick }) => {
     }
   };
 
-  const handleClickCapture = (event) => {
-    if (dragRef.current.wasDrag) {
-      event.preventDefault();
-      event.stopPropagation();
-      dragRef.current.wasDrag = false;
-    }
-  };
-
   const handleSelect = async (item) => {
     if (!item || item.height === undefined) return;
     
@@ -531,6 +544,14 @@ const Home = ({ onSearchClick }) => {
       setDetailMessage(err.message || "Gagal memuat detail block.");
     }
   };
+
+  const handleScroll = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el || loading || !hasMore) return;
+    if (el.scrollLeft + el.clientWidth >= el.scrollWidth - SCROLL_THRESHOLD) {
+      loadBlocks(nextHeight);
+    }
+  }, [hasMore, loading, loadBlocks, nextHeight, scrollerRef]);
 
   return (
     <main className="page">
@@ -579,15 +600,7 @@ const Home = ({ onSearchClick }) => {
             aria-label="Block list"
             tabIndex={-1}
             onScroll={handleScroll}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={endDrag}
-            onMouseLeave={endDrag}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-            onKeyDown={handleKeyDown}
-            onClickCapture={handleClickCapture}
+            {...dragHandlers}
           >
             {blocks.map((item) => (
               <BlockCard

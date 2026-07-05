@@ -19,11 +19,15 @@ from .node_logic import chat_state
 from .node_logic import rpc_client
 from .node_logic import storage_registry
 
+from .rpc_helper.tx_mixin import TxMixin
+from .rpc_helper.chat_mixin import ChatMixin
+from .rpc_helper.guard_mixin import GuardMixin
+from .rpc_helper.history_mixin import HistoryMixin
+from .rpc_helper.explorer_mixin import ExplorerMixin
 
 from ..core.block import Block
 from .broadcast import Broadcast
 from ..utils import config as CFG
-from .client_helper import install_client_helper
 from .peers_storage import load_peer_keys, save_peer_keys
 from .protocol import build_envelope, load_or_create_keypair_at
 
@@ -33,7 +37,14 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.node")
 
 
-class Network:
+class Network (
+    ChatMixin,
+    HistoryMixin,
+    ExplorerMixin,
+    TxMixin,
+    GuardMixin,
+    ):
+    
     active_ports = set()
     _instance_lock = threading.Lock()
 
@@ -283,5 +294,3 @@ class Network:
                 local_ips.add(ip)
 
         return any(ip in local_ips for ip in target_ips)
-        
-install_client_helper(Network)

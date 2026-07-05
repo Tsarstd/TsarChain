@@ -12,19 +12,20 @@ import queue
 from typing import List, Optional
 from collections import OrderedDict
 
-# ---------------- Local Project ----------------
-from ..core.block import Block
+# ---------------- MIXIN ----------------
 from .mining import MiningMixin
 from .rewards import RewardMixin
-from ..utils import config as CFG
-from ..storage.utxo import UTXODB
-from ..mempool.pool import TxPoolDB
 from .chain_ops import ChainOpsMixin
 from .utxo_validate import UTXOMixin
 from .difficulty import DifficultyMixin
 from .chain_storage import StorageMixin
 from .validation import ValidationMixin
 from .genesis import GENESIS_HASH, GenesisMixin
+
+from ..core.block import Block
+from ..utils import config as CFG
+from ..storage.utxo import UTXODB
+from ..mempool.pool import TxPoolDB
 from ..storage.kv import kv_enabled, iter_prefix
 
 # ---------------- Logger ----------------
@@ -34,7 +35,16 @@ log = get_ctx_logger("tsarchain.consensus.blockchain")
 __all__ = ["Blockchain"]
 
 
-class Blockchain(GenesisMixin, RewardMixin, DifficultyMixin, UTXOMixin, StorageMixin, ValidationMixin, ChainOpsMixin, MiningMixin,):
+class Blockchain(
+    GenesisMixin,
+    RewardMixin,
+    DifficultyMixin,
+    UTXOMixin,
+    StorageMixin,
+    ValidationMixin,
+    ChainOpsMixin,
+    MiningMixin
+    ):
     
     def __init__(self, miner_address: str | None = None, in_memory: bool = False, use_cores: int | None = None,):
         self.in_memory = in_memory

@@ -1,6 +1,6 @@
-import { ClickableValue } from ".././SearchResults";
-import { useState, useEffect } from 'react';
 import PropTypes from "prop-types";
+import { ClickableValue } from ".././SearchResults";
+import { useRenderHelpers, useMobile } from "./SearchHelpers";
 import { 
   fmtBytes, 
   fmtTimestamp, 
@@ -9,26 +9,13 @@ import {
   fmtHash,
   fmtTxid,
   fmtAddress,
-  formatHashForDisplay,
-  getMaxCharsPerLine
+  formatHashForDisplay
 } from "../../../utils/format"
 
 
 const ResultBlock = ({ data, onSearchClick }) => {
-  const [isMobile, setIsMobile] = useState(false);
-  const [maxCharsPerLine, setMaxCharsPerLine] = useState(getMaxCharsPerLine());
-
-  useEffect(() => {
-    const checkMobile = () => {
-      const mobile = window.innerWidth <= 768;
-      setIsMobile(mobile);
-      setMaxCharsPerLine(getMaxCharsPerLine());
-    };
-
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
+  const { renderHash, renderClickableHash } = useRenderHelpers();
+  const { isMobile, maxCharsPerLine } = useMobile();
 
   const payouts = Array.isArray(data?.payouts)
     ? data.payouts
@@ -37,53 +24,6 @@ const ResultBlock = ({ data, onSearchClick }) => {
       : [];
   const payoutCount =
     data?.payout_count ?? data?._meta?.payout_count ?? payouts.length ?? 0;
-
-  const renderHash = (hash, className = "") => {
-    if (!hash) return "-";
-    
-    if (isMobile) {
-      const formattedHash = formatHashForDisplay(hash, maxCharsPerLine);
-      return (
-        <span className={`value hash-multiline ${className}`} style={{whiteSpace: 'pre-wrap'}}>
-          {formattedHash}
-        </span>
-      );
-    }
-    
-    return <span className={`value ${className}`}>{hash}</span>;
-  };
-
-  const renderClickableHash = (value, onSearchClick, info, displayValue = null) => {
-    if (!value) return "-";
-    
-    const display = displayValue || value;
-    
-    if (isMobile) {
-      const formattedHash = formatHashForDisplay(display, maxCharsPerLine);
-      return (
-        <ClickableValue 
-          value={value} 
-          onSearchClick={onSearchClick} 
-          className="value muted hash-multiline"
-          info={info}
-          style={{whiteSpace: 'pre-wrap'}}
-        >
-          {formattedHash}
-        </ClickableValue>
-      );
-    }
-    
-    return (
-      <ClickableValue 
-        value={value} 
-        onSearchClick={onSearchClick} 
-        className="value muted"
-        info={info}
-      >
-        {display}
-      </ClickableValue>
-    );
-  };
 
   return (
     <div className="card">

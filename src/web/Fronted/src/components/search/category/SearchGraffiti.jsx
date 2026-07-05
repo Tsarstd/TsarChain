@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { ClickableValue } from ".././SearchResults";
+import { useState } from "react";
+import { useRenderHelpers } from "./SearchHelpers";
+import { ClickableValue } from "../SearchResults";
 import { Document, Page, pdfjs } from 'react-pdf';
 import { 
   fmtBytes, 
@@ -8,9 +9,7 @@ import {
   fmtTsar, 
   fmtAddress,
   fmtHash,
-  fmtTxid,
-  formatHashForDisplay,
-  getMaxCharsPerLine 
+  fmtTxid
 } from "../../../utils/format"
 import { GrNext, GrPrevious } from "react-icons/gr";
 
@@ -21,8 +20,7 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
   const mime = String(data?.mime || "").toLowerCase();
   const isVideo = mime.includes("video") || mime.includes("mp4");
   const isPdf = mime.includes("pdf") || (data?.preview_url && data.preview_url.toLowerCase().endsWith('.pdf'));
-  const [isMobile, setIsMobile] = useState(false);
-  const [maxCharsPerLine, setMaxCharsPerLine] = useState(getMaxCharsPerLine());
+  const { renderHash, renderClickableHash } = useRenderHelpers();
   const [showDetails, setShowDetails] = useState(false);
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
@@ -36,65 +34,6 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
   // Navigasi halaman PDF
   const goToPrevPage = () => setPageNumber(pageNumber - 1);
   const goToNextPage = () => setPageNumber(pageNumber + 1);
-
-  useEffect(() => {
-    const checkMobile = () => {
-      const mobile = window.innerWidth <= 768;
-      setIsMobile(mobile);
-      setMaxCharsPerLine(getMaxCharsPerLine());
-    };
-
-  checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
-
-  const renderHash = (hash, className = "") => {
-    if (!hash) return "-";
-    
-    if (isMobile) {
-      const formattedHash = formatHashForDisplay(hash, maxCharsPerLine);
-      return (
-        <span className={`value hash-multiline ${className}`} style={{whiteSpace: 'pre-wrap'}}>
-          {formattedHash}
-        </span>
-      );
-    }
-    
-    return <span className={`value ${className}`}>{hash}</span>;
-  };
-
-  const renderClickableHash = (value, onSearchClick, info, displayValue = null) => {
-    if (!value) return "-";
-    
-    const display = displayValue || value;
-    
-    if (isMobile) {
-      const formattedHash = formatHashForDisplay(display, maxCharsPerLine);
-      return (
-        <ClickableValue 
-          value={value} 
-          onSearchClick={onSearchClick} 
-          className="value muted hash-multiline"
-          info={info}
-          style={{whiteSpace: 'pre-wrap'}}
-        >
-          {formattedHash}
-        </ClickableValue>
-      );
-    }
-    
-    return (
-      <ClickableValue 
-        value={value} 
-        onSearchClick={onSearchClick} 
-        className="value muted"
-        info={info}
-      >
-        {display}
-      </ClickableValue>
-    );
-  };
 
   return (
       <>
