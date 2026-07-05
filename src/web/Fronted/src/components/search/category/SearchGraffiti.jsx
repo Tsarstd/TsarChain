@@ -67,7 +67,7 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
                 }
                 error={
                   <div className="pdf-error muted">
-                    PDF preview could not be loaded. 
+                    PDF preview could not be loaded.{' '}
                     <a href={data.preview_url} target="_blank" rel="noopener noreferrer">
                       Open PDF directly
                     </a>

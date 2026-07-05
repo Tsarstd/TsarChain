@@ -250,13 +250,13 @@ const ResultTx = ({ data, onSearchClick }) => {
           >
             {isGeneratingReceipt ? (
               <>
-              <span className="spinner"></span>
-              Generating...
+                <span className="spinner"></span>
+                {' '}Generating...
               </>
             ) : (
               <>
-              <span><IoReceiptSharp /></span>
-              Download Receipt
+                <span><IoReceiptSharp /></span>
+                {' '}Download Receipt
               </>
             )}
           </button>

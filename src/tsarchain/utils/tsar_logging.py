@@ -299,7 +299,7 @@ class TsarLogViewer:
         self._tail_fp = None
         self._tail_last_size = 0
         self._stop_event = threading.Event()
-        self._counts = {name: 0 for (name, _) in self.LEVELS}
+        self._counts = dict.fromkeys([name for name, _ in self.LEVELS], 0)
         
         self._buf = deque(maxlen=10000)
         self._current_module_filter = "All"

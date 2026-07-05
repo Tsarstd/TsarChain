@@ -117,48 +117,45 @@ class ChainOpsMixin:
             else:
                 self.total_supply = self.calculate_total_supply()
 
-            if self.in_memory:
-                self._ensure_utxodb()
-            return True
-
-        last_block = self.get_last_block()
-        if block.height != last_block.height + 1:
-            raise ValueError(f"[Blockchain] Height mismatch: {block.height} bukan {last_block.height + 1}")
-        if block.prev_block_hash != last_block.hash():
-            raise ValueError("[Blockchain] prev_block_hash does not match the last block")
-
-        self.chain.append(block)
-        self.total_blocks = len(self.chain)
-
-        prev_cw = getattr(last_block, "chainwork", None)
-        if prev_cw is None:
-            prev_cw = self._compute_chainwork_for_chain(self.chain[:-1])
-        self.chain[-1].chainwork = int(prev_cw) + self._work_from_bits(block.bits)
-        block.difficulty = self._work_from_bits(block.bits)
-        self._mark_chain_dirty(block.height)
-        try:
-            if hasattr(self, "_hash_cache"):
-                self._hash_cache[int(block.height)] = block.hash().hex()
-        except Exception:
-            log.debug("[add_block] cache tip hash failed", exc_info=True)
-
-        if not self.in_memory:
-            store = self._ensure_utxodb()
-            if store is not None:
-                blk_hash = block.hash().hex()
-                store.update(
-                    block.transactions,
-                    block_height=block.height,
-                    block_hash=blk_hash,
-                    autosave=False,
-                )
-                self._mark_utxo_dirty()
-
-        self._prune_mempool_confirmed(block)
-        if not self.in_memory:
-            self._schedule_persist()
         else:
-            self.total_supply = self.calculate_total_supply()
+            last_block = self.get_last_block()
+            if block.height != last_block.height + 1:
+                raise ValueError(f"[Blockchain] Height mismatch: {block.height} bukan {last_block.height + 1}")
+            if block.prev_block_hash != last_block.hash():
+                raise ValueError("[Blockchain] prev_block_hash does not match the last block")
+
+            self.chain.append(block)
+            self.total_blocks = len(self.chain)
+
+            prev_cw = getattr(last_block, "chainwork", None)
+            if prev_cw is None:
+                prev_cw = self._compute_chainwork_for_chain(self.chain[:-1])
+            self.chain[-1].chainwork = int(prev_cw) + self._work_from_bits(block.bits)
+            block.difficulty = self._work_from_bits(block.bits)
+            self._mark_chain_dirty(block.height)
+            try:
+                if hasattr(self, "_hash_cache"):
+                    self._hash_cache[int(block.height)] = block.hash().hex()
+            except Exception:
+                log.debug("[add_block] cache tip hash failed", exc_info=True)
+
+            if not self.in_memory:
+                store = self._ensure_utxodb()
+                if store is not None:
+                    blk_hash = block.hash().hex()
+                    store.update(
+                        block.transactions,
+                        block_height=block.height,
+                        block_hash=blk_hash,
+                        autosave=False,
+                    )
+                    self._mark_utxo_dirty()
+
+            self._prune_mempool_confirmed(block)
+            if not self.in_memory:
+                self._schedule_persist()
+            else:
+                self.total_supply = self.calculate_total_supply()
 
         if self.in_memory:
             self._ensure_utxodb()

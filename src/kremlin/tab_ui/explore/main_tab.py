@@ -373,7 +373,7 @@ class ExplorePanel(tk.Frame):
             except Exception:
                 txt = ""
             if not txt:
-                return "break"
+                return None
             self.clipboard_clear()
             self.clipboard_append(txt)
             _flash()
