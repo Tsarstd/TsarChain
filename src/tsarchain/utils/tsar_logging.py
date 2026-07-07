@@ -747,23 +747,6 @@ class TsarLogViewer:
             module = extract_module_from_plain(txt)
             return txt, level, module
 
-        elif mode == "JSON":
-            try:
-                obj = json.loads(txt)
-                lvl = str(obj.get("lvl", obj.get("level", ""))).upper()
-                if lvl in {"TRACE","DEBUG","INFO","WARNING","ERROR","CRITICAL"}:
-                    level = lvl.title()
-                logger_name = obj.get("logger", "")
-                module = _module_from_logger_name(str(logger_name))
-                text = (json.dumps(obj, ensure_ascii=False, indent=2)
-                        if self.pretty_json.get()
-                        else json.dumps(obj, ensure_ascii=False))
-                return text, level, module
-            except Exception:
-                level = detect_level_from_text(txt)
-                module = extract_module_from_plain(txt)
-                return txt, level, module
-
         else:
             try:
                 obj = json.loads(txt)

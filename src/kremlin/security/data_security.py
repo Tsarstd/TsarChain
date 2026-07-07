@@ -549,7 +549,7 @@ class Security:
     @staticmethod
     def check_attempt(address: str) -> bool:
         if address in Security._attempts:
-            lockout_until = Security._attempts[address]
+            lockout_until = Security._attempts[address][1]
             if time.time() < lockout_until:
                 raise ValueError(f"Account locked. Try again in {int(lockout_until - time.time())} seconds")
         return True

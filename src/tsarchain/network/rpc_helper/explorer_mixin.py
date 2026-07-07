@@ -9,7 +9,7 @@ import collections
 # ---------------- Local Project ----------------
 from ...utils import config as CFG
 from ...contracts import graffiti as GRAFF
-from ...utils.helpers import last_pushdata, _estimate_block_size_bytes
+from ...utils.helpers import last_pushdata, estimate_block_size_bytes
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
@@ -293,7 +293,7 @@ class ExplorerMixin:
         diff = getattr(b, "difficulty", None)
 
         # Size estimation
-        size_bytes = _estimate_block_size_bytes(b)
+        size_bytes = estimate_block_size_bytes(b)
         
         # Transactions processing
         txs = []

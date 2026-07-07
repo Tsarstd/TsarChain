@@ -8,7 +8,7 @@ import json
 import time
 import threading
 
-from kremlin.services.rpc_client import NodeClient
+from kremlin.services.rpc_kremlin import NodeClient
 from tsarchain.network.protocol import load_or_create_keypair_at
 from tsarchain.utils import config as CFG
 from web.Backend.src.python import database_web as webdb

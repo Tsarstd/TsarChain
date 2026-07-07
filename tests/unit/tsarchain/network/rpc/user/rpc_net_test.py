@@ -26,6 +26,7 @@ def mock_network():
     net.storage_peers = {
         ("10.0.0.1", 8080): {
             "addr": "10.0.0.1",
+            "ip": "10.0.0.1",
             "port": 8080,
             "last_seen": 1000,
             "alive": True,
@@ -33,6 +34,7 @@ def mock_network():
         },
         ("10.0.0.2", 8081): {
             "addr": "10.0.0.2",
+            "ip": "10.0.0.2",
             "port": 8081,
             "last_seen": 2000,
             "alive": False,
@@ -41,6 +43,7 @@ def mock_network():
         # Duplicate address with better port
         ("10.0.0.1", 9999): {
             "addr": "10.0.0.1",
+            "ip": "10.0.0.1",
             "port": 9999,
             "last_seen": 1500,
             "alive": True,

@@ -32,7 +32,7 @@ from kremlin.tab_ui.dev_tab import DevTab
 from kremlin.security.chat.triple_xdh import ChatManager
 from kremlin.security.data_security import list_addresses_in_keystore, create_keypair, WALLET_FILE
 
-from kremlin.services.rpc_client import NodeClient
+from kremlin.services.rpc_kremlin import NodeClient
 from kremlin.services.contact_management import ContactManager
 from kremlin.services.send_service import SendService
 from kremlin.services.tx_history import HistoryService

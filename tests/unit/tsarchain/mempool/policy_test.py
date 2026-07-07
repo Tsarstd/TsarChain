@@ -54,9 +54,6 @@ class DummyMempoolPolicy(MempoolPolicyMixin):
     def _maybe_flush_after_mutation(self):
         pass
         
-    def _estimate_tx_size(self, tx):
-        return 100
-        
     def _remove_fee_record(self, txid):
         pass
         
@@ -80,7 +77,8 @@ class DummyMempoolPolicy(MempoolPolicyMixin):
 
 @pytest.fixture
 def mempool():
-    return DummyMempoolPolicy()
+    with patch("tsarchain.mempool.policy._estimate_tx_size_bytes", return_value=100):
+        yield DummyMempoolPolicy()
 
 # Test _prevout_key
 def test_prevout_key(mempool):

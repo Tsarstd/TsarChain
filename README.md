@@ -333,7 +333,7 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     │   │   ├── connect.py                       # P2P network logic ( send & receive )
     │   │   ├── database.py                      # database logic
     │   │   ├── node_route.py                    # node RPC route
-    │   │   ├── server.py                        # server start module
+    │   │   ├── server_archivist.py              # server start module
     │   │   ├── storage.guard.py                 # ratelimit guard archivist
     │   │   └── wallet_route.py                  # user RPC route
     │   │
@@ -350,7 +350,7 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     │   │   │   ├── contact_management.py        # Contacts Management
     │   │   │   ├── graffiti_service.py          # Post, Upload & Comment graffiti service logic
     │   │   │   ├── media.py                     # VLC media player
-    │   │   │   ├── rpc_client.py                # RPC API logic
+    │   │   │   ├── rpc_kremlin.py               # RPC API logic
     │   │   │   ├── send_services.py             # send TX logic
     │   │   │   └── tx_history.py                # History Transactions cached Management
     │   │   │
@@ -419,7 +419,7 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     │   │   │   │   ├── peers.py                 # reward and penalty peers
     │   │   │   │   ├── ratelimit.py             # rate limiting logic
     │   │   │   │   ├── rpc_client.py            # peer caching & request management
-    │   │   │   │   ├── server.py                # starting server logic
+    │   │   │   │   ├── server_node.py           # starting server logic
     │   │   │   │   ├── storage_registry.py      # registry storage node
     │   │   │   │   └── sync.py                  # sync logic
     │   │   │   │

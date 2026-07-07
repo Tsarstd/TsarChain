@@ -4,14 +4,21 @@
 # Refs: see REFERENCES.md
 
 from __future__ import annotations
-import time, threading, fitz
+
+import time
+import fitz
+import threading
+import tkinter as tk
+
+from PIL import Image, ImageTk
 from decimal import Decimal, ROUND_DOWN
 from typing import Any, Dict, Optional
 from tkinter import ttk, filedialog, messagebox, StringVar
-import tkinter as tk
-from PIL import Image, ImageTk
 
-from tsarchain.contracts.graffiti import calc_comment_split, calc_upload_fee_sats, derive_pool_address
+from tsarchain.contracts.graffiti import calc_comment_split, calc_upload_fee_sats
+from ..services.media import TkVLCPlayer
+from tsarchain.utils import config as CFG
+from ..theme import GraffitiTheme, lighten
 from ..services.graffiti_service import (
     build_comment_plan,
     build_post_plan,
@@ -22,9 +29,6 @@ from ..services.graffiti_service import (
     select_upload_storers,
     upload_graffiti,
 )
-from ..services.media import TkVLCPlayer
-from ..theme import GraffitiTheme, lighten
-from tsarchain.utils import config as CFG
 
 from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.graffiti_tab")

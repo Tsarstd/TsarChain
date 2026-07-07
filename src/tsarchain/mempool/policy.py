@@ -10,6 +10,7 @@ from typing import Iterable
 
 from ..core.tx import Tx
 from ..utils import config as CFG
+from ..utils.helpers import _estimate_tx_size_bytes
 from .types import PrevoutRef, normalize_prevout_set
 
 from ..utils.tsar_logging import get_ctx_logger
@@ -64,7 +65,7 @@ class MempoolPolicyMixin:
                 if tx_obj is None:
                     continue
                 self._drop_tx_prevouts(tx_obj)
-                size = self._size_map.pop(txid, self._estimate_tx_size(tx_obj))
+                size = self._size_map.pop(txid, _estimate_tx_size_bytes(tx_obj))
                 self.current_size -= size
                 freed += size
             if freed > 0:
@@ -173,14 +174,14 @@ class MempoolPolicyMixin:
 
         if conflicts:
             new_fee = int(getattr(transaction_obj, "fee", 0))
-            new_size = max(1, self._estimate_tx_size(transaction_obj))
+            new_size = max(1, _estimate_tx_size_bytes(transaction_obj))
             new_rate = new_fee / new_size
             worst_old_rate = 0.0
             worst_old_fee = 0
             conflict_txids: list[str] = []
             for old in conflicts:
                 old_fee = int(getattr(old, "fee", 0))
-                old_rate = old_fee / max(1, self._estimate_tx_size(old))
+                old_rate = old_fee / max(1, _estimate_tx_size_bytes(old))
                 worst_old_rate = max(worst_old_rate, old_rate)
                 worst_old_fee = max(worst_old_fee, old_fee)
                 conflict_txids.append(

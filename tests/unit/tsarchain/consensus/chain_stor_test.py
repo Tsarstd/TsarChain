@@ -123,36 +123,6 @@ def mock_block(mock_tx):
 # ----------------------------------------------------------------------
 # Tests for helper methods
 # ----------------------------------------------------------------------
-def test_estimate_tx_size_bytes(storage, mock_tx):
-    # No inputs/outputs -> minimal size
-    size = storage._estimate_tx_size_bytes(mock_tx)
-    assert size >= len(mock_tx.to_dict())
-
-    # With inputs and outputs
-    txin = MagicMock(spec=TxIn)
-    txin.script_sig = MagicMock()
-    txin.script_sig.serialize = Mock(return_value=b'\x01'*10)
-    txin.witness = [b'\x02'*20]
-    txin.to_dict = Mock(return_value={})
-    mock_tx.inputs = [txin]
-
-    txout = MagicMock(spec=TxOut)
-    txout.script_pubkey = MagicMock()
-    txout.script_pubkey.serialize = Mock(return_value=b'\x03'*15)
-    txout.amount = 100
-    txout.to_dict = Mock(return_value={})
-    mock_tx.outputs = [txout]
-
-    size2 = storage._estimate_tx_size_bytes(mock_tx)
-    assert size2 > size
-
-
-def test_estimate_block_size_bytes(storage, mock_block):
-    size = storage._estimate_block_size_bytes(mock_block)
-    assert size >= 80  # header
-    assert size >= len(json.dumps(mock_block.to_dict()))
-
-
 def test_build_block_meta(storage, mock_block):
     cw_prev = 1000
     meta = storage._build_block_meta(mock_block, cw_prev)
@@ -456,8 +426,8 @@ def test_save_chain_with_kv(storage, monkeypatch):
     block1.chainwork = 0
     block1.hash = Mock(return_value=b'\x01'*32)
     block1.transactions = []
-    # Need to mock _estimate_block_size_bytes and _build_block_meta to return something
-    storage._estimate_block_size_bytes = Mock(return_value=100)
+
+    monkeypatch.setattr('tsarchain.consensus.chain_storage.estimate_block_size_bytes', Mock(return_value=100))
     storage._build_block_meta = Mock(return_value={"chainwork": 100})
     storage._serialize_block_for_store = Mock(return_value=({"height": 0}, 100))
 
@@ -839,7 +809,8 @@ def test_compute_state_snapshot(storage, monkeypatch):
     storage._ensure_utxodb = Mock(return_value=utxo)
 
     # Mock helpers
-    storage._estimate_block_size_bytes = Mock(return_value=200)
+    mock_estimate = Mock(return_value=200)
+    monkeypatch.setattr('tsarchain.consensus.chain_storage.estimate_block_size_bytes', mock_estimate)
     storage._compute_chainwork_for_chain = Mock(return_value=100)
     storage.median_time_past = Mock(return_value=1500)
     storage._scheduled_reward = Mock(return_value=50_000_000_000)
@@ -867,9 +838,9 @@ def test_compute_state_snapshot(storage, monkeypatch):
     assert storage._state_snapshot_cache["data"] == snapshot
 
     # Second call should use cache
-    storage._estimate_block_size_bytes = Mock()  # should not be called
+    mock_estimate.reset_mock()
     snapshot2 = storage._compute_state_snapshot()
-    storage._estimate_block_size_bytes.assert_not_called()
+    mock_estimate.assert_not_called()
     assert snapshot2 == snapshot
 
 

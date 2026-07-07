@@ -816,3 +816,185 @@ def test_pwd_cache_used(chat_manager):
         chat_manager.password_prompt_cb.assert_not_called()
         mock_wallet.unlock.assert_called_once_with("cached_pwd", addr)
         assert priv == "priv_from_cached_pwd"
+
+# --- New tests to increase coverage ---
+def test_poll_x3dh_responder_bootstrap(chat_manager, mock_common):
+    me = "alice@example.com"
+    on_items = MagicMock()
+    on_done = MagicMock()
+    chat_manager.get_priv_for_chat = MagicMock(return_value=VALID_CHAT_PRIV_HEX)
+    
+    chat_manager._get_session = MagicMock(return_value=None)
+    
+    with patch.object(chat_manager, "_ensure_prekey_inventory"):
+        chat_manager.poll(me, 5, on_items, on_done)
+    
+    with patch("kremlin.security.chat.triple_xdh.x25519.X25519PrivateKey") as mock_x_priv, \
+         patch("kremlin.security.chat.triple_xdh.x25519.X25519PublicKey") as mock_x_pub, \
+         patch("kremlin.security.chat.triple_xdh.HKDF") as mock_hkdf, \
+         patch("kremlin.security.chat.triple_xdh.RatchetSession") as mock_rs:
+        
+        mock_hkdf.return_value.derive.return_value = b"root_key_32_bytes"
+        mock_sess = MagicMock()
+        mock_sess.decrypt.return_value = b"responder_packed_text"
+        mock_rs.init_as_responder.return_value = mock_sess
+        
+        args, kwargs = chat_manager.rpc_send.call_args
+        _, cb_rpc = args
+        items_resp = {
+            "type": "CHAT_ITEMS",
+            "items": [
+                {
+                    "type": "CHAT_ITEM",
+                    "from": "bob@example.com",
+                    "from_pub": "00"*32,
+                    "from_static": "00"*32,
+                    "used_opk": "00"*32,
+                    "msg_id": 123,
+                    "ts": 12345,
+                    "enc": {"nonce": "nonce", "ct": "ct"},
+                    "ratchet_pn": 0,
+                    "ratchet_n": 0,
+                }
+            ]
+        }
+        cb_rpc(items_resp)
+        
+        mock_rs.init_as_responder.assert_called_once()
+        on_items.assert_called_once()
+
+def test_ensure_prekey_inventory_refill_and_rotate(chat_manager, mock_common):
+    # Unmock the method for this test
+    chat_manager._ensure_prekey_inventory = chat_manager.__class__._ensure_prekey_inventory.__get__(chat_manager, chat_manager.__class__)
+    addr = "alice@example.com"
+    chat_manager._last_inventory_check.pop(addr, None)
+    
+    mock_common.get_prekey_inventory.side_effect = [
+        {"created": str(int(time.time()) - 99999999), "opk_queue": 0},
+        {"created": str(int(time.time())), "opk_queue": 100}
+    ]
+    
+    with patch.object(chat_manager, "publish_prekeys") as mock_publish:
+        chat_manager._ensure_prekey_inventory(addr, force=True)
+        mock_common.rotate_signed_prekey.assert_called_once()
+        assert mock_common.add_one_time_prekeys.call_count > 0
+        mock_publish.assert_called_once()
+
+def test_ensure_session_invalid_spend_pub(chat_manager, mock_common):
+    me, peer = "alice@example.com", "bob@example.com"
+    cb = MagicMock()
+    chat_manager._get_chat_dh = MagicMock(return_value=(VALID_CHAT_PRIV_HEX, VALID_CHAT_PUB_HEX))
+    chat_manager.ensure_session(me, peer, cb)
+    args, _ = chat_manager.rpc_send.call_args
+    cb_rpc = args[1]
+    
+    cb_rpc({"type": "CHAT_PREKEY_BUNDLE", "bundle": {"spk": "00", "sig": "00"}})
+    cb.assert_called_with("bundle_missing_spend_pub")
+    
+    cb_rpc({"type": "CHAT_PREKEY_BUNDLE", "bundle": {"spend_pub": "invalid", "spk": "00", "sig": "00"}})
+    cb.assert_called_with("bundle_invalid_spend_pub")
+    
+    cb_rpc({"type": "UNKNOWN_RESP"})
+    cb.assert_called_with("no_bundle")
+
+def test_send_message_errors(chat_manager, mock_common):
+    frm, to = "alice@example.com", "bob@example.com"
+    on_queued = MagicMock()
+    on_result = MagicMock()
+    chat_manager.get_priv_for_chat = MagicMock(return_value=VALID_CHAT_PRIV_HEX)
+    chat_manager._ensure_registered = MagicMock(side_effect=lambda addr, cb: cb(None))
+    
+    mock_sess = MagicMock()
+    mock_sess.encrypt.side_effect = Exception("enc err")
+    chat_manager._get_session = MagicMock(return_value=mock_sess)
+    chat_manager.send_message(frm, to, "hello", on_queued, on_result)
+    on_result.assert_called_with({"status": "encrypt_failed", "reason": "enc err"})
+    
+    chat_manager._ensure_registered = MagicMock(side_effect=lambda addr, cb: cb("register_failed_err"))
+    chat_manager.send_message(frm, to, "hello", on_queued, on_result)
+    on_result.assert_called_with({"status": "register_failed", "reason": "register_failed_err"})
+
+    chat_manager._ensure_registered = MagicMock(side_effect=lambda addr, cb: cb(None))
+    chat_manager._get_session = MagicMock(return_value=None)
+    chat_manager.ensure_session = MagicMock(side_effect=lambda frm, to, cb: cb("ensure_fail"))
+    chat_manager.send_message(frm, to, "hello", on_queued, on_result)
+    on_result.assert_called_with({"status": "sess_error", "reason": "ensure_fail"})
+
+    chat_manager.ensure_session = MagicMock(side_effect=lambda frm, to, cb: cb(None))
+    chat_manager.send_message(frm, to, "hello", on_queued, on_result)
+    on_result.assert_called_with({"status": "sess_missing"})
+
+    mock_sess2 = MagicMock()
+    mock_sess2.encrypt.return_value = {"enc": {"nonce": "invalid_hex", "ct": "00"}, "ratchet": {"pn": 0, "n": 0}}
+    chat_manager._get_session = MagicMock(return_value=mock_sess2)
+    chat_manager.ensure_session = MagicMock(side_effect=lambda frm, to, cb: cb(None))
+    chat_manager.send_message(frm, to, "hello", on_queued, on_result)
+    on_result.assert_called_with({"status": "ratchet_header_invalid"})
+
+def test_register_error_handling(chat_manager, mock_common):
+    addr = "alice@example.com"
+    chat_manager.get_priv_for_chat = MagicMock(return_value=VALID_CHAT_PRIV_HEX)
+    chat_manager._get_chat_dh = MagicMock(return_value=(VALID_CHAT_PRIV_HEX, VALID_CHAT_PUB_HEX))
+    
+    cb = MagicMock()
+    chat_manager.register(addr, cb)
+    args, _ = chat_manager.rpc_send.call_args
+    cb_rpc = args[1]
+    
+    cb_rpc(None)
+    cb.assert_called_with(None)
+    
+    cb_rpc({"error": "rate_limited", "type": "CHAT_REGISTER"})
+    cb.assert_called_with({"error": "rate_limited", "type": "CHAT_REGISTER"})
+
+def test_ensure_registered_error_handling(chat_manager):
+    addr = "alice@example.com"
+    cb = MagicMock()
+    chat_manager.register = MagicMock(side_effect=lambda addr, on_done: on_done({"error": "err", "type": "CHAT_REGISTER"}))
+    chat_manager._ensure_registered(addr, cb)
+    cb.assert_called_with("register_failed")
+
+def test_publish_prekeys_error_handling(chat_manager, mock_common):
+    addr = "alice@example.com"
+    chat_manager._can_publish_prekeys.return_value = True
+    chat_manager.get_priv_for_chat = MagicMock(return_value=VALID_CHAT_PRIV_HEX)
+    
+    cb = MagicMock()
+    chat_manager.publish_prekeys(addr, cb)
+    args, _ = chat_manager.rpc_send.call_args
+    cb_rpc = args[1]
+    
+    cb_rpc({"error": "failed"})
+    assert addr not in chat_manager._last_prekey_publish
+    cb.assert_called_with({"error": "failed"})
+
+def test_get_priv_for_chat_empty_pwd(chat_manager):
+    addr = "alice@example.com"
+    chat_manager._pwd_cache_get = MagicMock(return_value=None)
+    chat_manager.password_prompt_cb = MagicMock(return_value="")
+    assert chat_manager.get_priv_for_chat(addr) is None
+
+def test_get_chat_dh_cache_hit(chat_manager):
+    addr = "alice@example.com"
+    chat_manager._chat_dh_cache[addr] = ("sk", "pk", time.time() + 100)
+    sk, pk = chat_manager._get_chat_dh(addr)
+    assert sk == "sk"
+    assert pk == "pk"
+
+def test_expected_pub_or_lookup_miss(chat_manager):
+    addr = "alice@example.com"
+    with patch.object(chat_manager, "lookup_pub") as mock_lookup:
+        chat_manager.expected_pub_or_lookup(addr)
+        mock_lookup.assert_called_once()
+        
+def test_ensure_session_fast_path(chat_manager):
+    me, peer = "alice@example.com", "bob@example.com"
+    chat_manager._get_session = MagicMock(return_value=MagicMock())
+    cb = MagicMock()
+    chat_manager.ensure_session(me, peer, cb)
+    cb.assert_called_with(None)
+    chat_manager.rpc_send.assert_not_called()
+
+def test_delete_session(chat_manager, mock_common):
+    chat_manager._delete_session("a", "b")
+    mock_common.delete_chat_session.assert_called_once_with("a", "b")

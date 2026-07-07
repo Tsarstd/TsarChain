@@ -15,7 +15,7 @@ import time
 import multiprocessing as mp
 from typing import Any, Dict, Optional
 
-from archivist.server import StorageServer
+from archivist.server_archivist import StorageServer
 from archivist.connect import RPC, NodeDirectory
 from tsarchain.network.protocol import send_message, recv_message
 from tsarchain.storage.db import AtomicJSONFile

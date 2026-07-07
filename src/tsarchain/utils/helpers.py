@@ -354,7 +354,7 @@ def _estimate_tx_size_bytes(tx) -> int:
     size = max(size, len(tx.to_dict(include_txid=True)))
     return int(size)
 
-def _estimate_block_size_bytes(block) -> int:
+def estimate_block_size_bytes(block) -> int:
     txs = getattr(block, "transactions", []) or []
     total = 80  # header bytes
     for tx in txs:

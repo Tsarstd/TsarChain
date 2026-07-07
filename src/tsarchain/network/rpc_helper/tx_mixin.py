@@ -171,7 +171,7 @@ class TxMixin:
         change = 0
         fee_est = 0
         def _est_fee(n_in: int, n_out: int) -> int:
-            return fee_rate * self._estimate_tx_size(n_in, n_out, True)
+            return fee_rate * self._est_tx_size(n_in, n_out, True)
 
         # Greedy accumulate
         while True:
@@ -281,7 +281,7 @@ class TxMixin:
             raise ValueError("decode bech32 failed")
         return Script([0, bytes(decoded)])
 
-    def _estimate_tx_size(self, n_inputs, n_outputs, segwit=True):
+    def _est_tx_size(self, n_inputs, n_outputs, segwit=True):
         return CFG.TX_BASE_VBYTES + n_inputs * CFG.SEGWIT_INPUT_VBYTES + n_outputs * CFG.SEGWIT_OUTPUT_VBYTES
     
     def _build_utxos_list(self, utxos_map, tip_height):
@@ -355,13 +355,13 @@ class TxMixin:
         for c in candidates:
             selected.append(c)
             acc += c["amount"]
-            est_size = self._estimate_tx_size(len(selected), n_outputs, True)
+            est_size = self._est_tx_size(len(selected), n_outputs, True)
             est_fee  = fee_rate * est_size
             if acc >= target_amount_sat + est_fee:
                 change = acc - target_amount_sat - est_fee
                 if change < CFG.DUST_THRESHOLD_SAT:
                     n_outputs = 1
-                    est_fee  = fee_rate * self._estimate_tx_size(len(selected), n_outputs, True)
+                    est_fee  = fee_rate * self._est_tx_size(len(selected), n_outputs, True)
                     if acc < target_amount_sat + est_fee:
                         continue
                     change = 0

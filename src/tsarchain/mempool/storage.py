@@ -12,6 +12,7 @@ from collections import OrderedDict
 from ..core.tx import Tx
 from ..storage.kv import kv_enabled, iter_prefix, batch, clear_db
 from ..utils import config as CFG
+from ..utils.helpers import _estimate_tx_size_bytes
 
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.mempool.storage")
@@ -58,7 +59,7 @@ class MempoolStorageMixin:
                 
             size = int(hinted_size) if hinted_size is not None else None
             if size is None:
-                size = self._estimate_tx_size(tx_obj)
+                size = _estimate_tx_size_bytes(tx_obj)
 
             self._pool[txid] = tx_obj
             self._size_map[txid] = size
@@ -87,7 +88,7 @@ class MempoolStorageMixin:
         tx_dict = tx_obj.to_dict(include_txid=True)
         if not tx_dict.get("txid") and getattr(tx_obj, "txid", None):
             tx_dict["txid"] = tx_obj.txid.hex()
-        tx_size = self._estimate_tx_size(tx_obj)
+        tx_size = _estimate_tx_size_bytes(tx_obj)
         meta = {
             "schema_version": int(CFG.DATA_SCHEMA_VERSION),
             "received_at": getattr(tx_obj, "_received_at", None),
@@ -122,7 +123,7 @@ class MempoolStorageMixin:
     def _compute_fee_rate(self, tx_obj: Tx, tx_size: int | None = None) -> float:
         fee = float(getattr(tx_obj, "fee", 0) or 0)
         if tx_size is None:
-            tx_size = self._estimate_tx_size(tx_obj)
+            tx_size = _estimate_tx_size_bytes(tx_obj)
         return fee / max(1, int(tx_size))
 
     def _record_fee_rate(self, txid: str, tx_obj: Tx, tx_size: int | None = None) -> None:
@@ -181,7 +182,7 @@ class MempoolStorageMixin:
             for tx in tx_objects:
                 txid = self._normalize_txid(tx.txid)
                 self._pool[txid] = tx
-                self._size_map[txid] = self._estimate_tx_size(tx)
+                self._size_map[txid] = _estimate_tx_size_bytes(tx)
                 self._index_tx_prevouts(tx)
                 self._record_fee_rate(txid, tx, self._size_map[txid])
             self.current_size = sum(self._size_map.values())
@@ -204,26 +205,12 @@ class MempoolStorageMixin:
         with self._lock:
             return norm in self._pool
 
-    def _estimate_tx_size(self, tx: Tx) -> int:
-        size = 0
-        for txin in getattr(tx, "inputs", []) or []:
-            size += 40
-            if getattr(txin, "script_sig", None):
-                size += len(txin.script_sig.serialize())
-            if getattr(txin, "witness", None):
-                size += sum(len(w) for w in txin.witness)
-        for txout in getattr(tx, "outputs", []) or []:
-            size += 8
-            if getattr(txout, "script_pubkey", None):
-                size += len(txout.script_pubkey.serialize())
-        return max(size, len(tx.to_dict(include_txid=True)))
-
     def add_tx(self, tx: Tx) -> None:
         tx_obj = self._tx_from_any(tx)
         if not hasattr(tx_obj, "_received_at"):
             setattr(tx_obj, "_received_at", time.time())
         txid = self._normalize_txid(tx_obj.txid)
-        tx_size = self._estimate_tx_size(tx_obj)
+        tx_size = _estimate_tx_size_bytes(tx_obj)
         self._ensure_space(tx_size)
 
         with self._lock:

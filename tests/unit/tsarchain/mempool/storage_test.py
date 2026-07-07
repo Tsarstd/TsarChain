@@ -130,9 +130,6 @@ def test_has_tx(mempool):
     assert mempool.has_tx(b"\xab\xc0") == False
     assert mempool.has_tx("ABC")
 
-def test_estimate_tx_size(mempool):
-    assert mempool._estimate_tx_size(Tx()) > 0
-
 def test_add_tx(mempool):
     tx = Tx()
     tx.txid = bytes.fromhex("def0")

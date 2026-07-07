@@ -5,13 +5,21 @@
 
 from __future__ import annotations
 
-import base64, json, os, socket, time, hashlib, mimetypes
-from decimal import Decimal, InvalidOperation, ROUND_DOWN
-from typing import Any, Callable, Dict, Optional, Tuple
-from urllib.parse import urlparse
+import os
+import json
+import time
+import base64
+import socket
+import hashlib
+import mimetypes
 
-from tsarchain.network.protocol import send_message, recv_message
+from urllib.parse import urlparse
+from typing import Any, Callable, Dict, Optional, Tuple
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
+
 from tsarchain.utils import config as CFG
+from tsarchain.network.pow_token import solve_pow
+from tsarchain.network.protocol import send_message, recv_message
 from tsarchain.contracts.graffiti import (
     build_comment_metadata,
     build_metadata,
@@ -23,7 +31,6 @@ from tsarchain.contracts.graffiti import (
     merkle_root_for_file,
     validate_graffiti_file,
 )
-from tsarchain.network.pow_token import solve_pow
 
 from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.graffiti_service")

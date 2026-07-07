@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain - see LICENSE and TRADEMARKS.md
 
+import time
 import pytest
 from unittest.mock import Mock, patch
 
@@ -279,3 +280,235 @@ def test_mine_block_with_graffiti_post_anchoring(mining_node):
         mock_coinbase_cls.assert_called_once_with(
             to_address='miner_addr', reward=100 + 5, height=1, block_id='art_graffiti_abc'
         )
+
+
+def test_mine_block_reload_chain(mining_node):
+    mining_node.chain = []
+    mining_node._reload_chain_from_kv.return_value = True
+    with patch('tsarchain.consensus.mining.CFG.ALLOW_AUTO_GENESIS', False):
+        res = mining_node.mine_block('miner_address')
+        assert res is None
+
+def test_mine_block_reward_exceeds_supply(mining_node):
+    mining_node.chain = [Mock()]
+    mining_node.chain[0].hash.return_value = b'prev_hash'
+    mining_node.chain[0].height = 0
+    mining_node.get_last_block.return_value = mining_node.chain[0]
+    mining_node.total_supply = 20999990
+    with patch('tsarchain.consensus.mining.CFG.MAX_SUPPLY', 21000000), \
+        patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
+        patch('tsarchain.consensus.mining.CoinbaseTx') as mock_cb:
+        
+        mock_block_cls.return_value.mine.return_value = True
+        mining_node.mine_block('miner_address')
+        mock_cb.assert_called_once()
+        args, kwargs = mock_cb.call_args
+        assert kwargs['reward'] == 10
+
+def test_mine_block_no_mempool(mining_node):
+    mining_node.chain = [Mock()]
+    mining_node.chain[0].hash.return_value = b'prev_hash'
+    mining_node.chain[0].height = 0
+    mining_node.get_last_block.return_value = mining_node.chain[0]
+    delattr(mining_node, 'get_mempool')
+    with patch('tsarchain.consensus.mining.TxPoolDB') as mock_txpool, \
+        patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
+        patch('tsarchain.consensus.mining.CoinbaseTx'):
+
+        mock_block_cls.return_value.mine.return_value = True
+        mock_block_cls.return_value.prev_block_hash = b'prev_hash'
+        mock_block_cls.return_value.height = 1
+        mining_node.mine_block('miner_address')
+        mock_txpool.assert_called_once()
+        mining_node.attach_mempool.assert_called_once()
+
+def test_mine_block_double_spend_in_block(mining_node):
+    mining_node.chain = [Mock()]
+    mining_node.chain[0].hash.return_value = b'prev_hash'
+    mining_node.chain[0].height = 0
+    mining_node.get_last_block.return_value = mining_node.chain[0]
+    
+    tx1 = Mock()
+    tx1.txid = b'tx1'
+    tx1.inputs = [Mock(txid=b'prev1', vout=0)]
+    tx1.outputs = []
+    tx1.fee = 10
+    tx1._received_at = 1
+    
+    tx2 = Mock()
+    tx2.txid = b'tx2'
+    tx2.inputs = [Mock(txid=b'prev1', vout=0)]
+    tx2.outputs = []
+    tx2.fee = 10
+    tx2._received_at = 2
+    
+    mining_node._mempool.get_all_txs.return_value = [tx1, tx2]
+    mining_node._mempool.validate_transaction.return_value = True
+    
+    with patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
+        patch('tsarchain.consensus.mining.CoinbaseTx'):
+
+        mock_block_cls.return_value.mine.return_value = True
+        mock_block_cls.return_value.prev_block_hash = b'prev_hash'
+        mock_block_cls.return_value.height = 1
+        mining_node.mine_block('miner_address')
+        block_txs = mock_block_cls.call_args[0][2]
+        assert len(block_txs) == 2
+        assert block_txs[1] == tx1
+
+def test_mine_block_validate_transaction_fails(mining_node):
+    mining_node.chain = [Mock()]
+    mining_node.chain[0].hash.return_value = b'prev_hash'
+    mining_node.chain[0].height = 0
+    mining_node.get_last_block.return_value = mining_node.chain[0]
+    
+    tx = Mock()
+    tx.txid = b'tx_fail'
+    tx.inputs = []
+    tx.outputs = []
+    tx.fee = 10
+    tx._received_at = 1
+    
+    mining_node._mempool.get_all_txs.return_value = [tx]
+    mining_node._mempool.validate_transaction.return_value = False
+    mining_node._mempool.last_error_reason = 'bad_tx'
+    
+    with patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
+        patch('tsarchain.consensus.mining.CoinbaseTx'):
+
+        mock_block_cls.return_value.mine.return_value = True
+        mock_block_cls.return_value.prev_block_hash = b'prev_hash'
+        mock_block_cls.return_value.height = 1
+        mining_node.mine_block('miner_address')
+        block_txs = mock_block_cls.call_args[0][2]
+        assert len(block_txs) == 1
+
+def test_mine_block_multiple_graffiti_posts(mining_node):
+    mining_node.chain = [Mock()]
+    mining_node.chain[0].hash.return_value = b'prev_hash'
+    mining_node.chain[0].height = 0
+    mining_node.get_last_block.return_value = mining_node.chain[0]
+    
+    post1 = Mock()
+    post1.txid = b'post1'
+    post1.inputs = []
+    post1.fee = 10
+    post1.outputs = [Mock(script_pubkey=b'post1_spk')]
+    post1._received_at = 1
+    
+    post2 = Mock()
+    post2.txid = b'post2'
+    post2.inputs = []
+    post2.fee = 10
+    post2.outputs = [Mock(script_pubkey=b'post2_spk')]
+    post2._received_at = 2
+    
+    mining_node._mempool.get_all_txs.return_value = [post1, post2]
+    
+    def parse_mock(spk):
+        if spk == b'post1_spk': return {'event': 'POST', 'art_id': 'art1'}
+        if spk == b'post2_spk': return {'event': 'POST', 'art_id': 'art2'}
+        return None
+        
+    with patch('tsarchain.consensus.mining.GRAFFITI.parse_from_script', side_effect=parse_mock), \
+        patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
+        patch('tsarchain.consensus.mining.CoinbaseTx'):
+
+        mock_block_cls.return_value.mine.return_value = True
+        mock_block_cls.return_value.prev_block_hash = b'prev_hash'
+        mock_block_cls.return_value.height = 1
+        mining_node.mine_block('miner_address')
+        block_txs = mock_block_cls.call_args[0][2]
+        assert len(block_txs) == 2
+        assert block_txs[1] == post1
+
+def test_mine_block_mine_fails(mining_node):
+    mining_node.chain = [Mock()]
+    mining_node.chain[0].hash.return_value = b'prev_hash'
+    mining_node.chain[0].height = 0
+    mining_node.get_last_block.return_value = mining_node.chain[0]
+    with patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
+        patch('tsarchain.consensus.mining.CoinbaseTx'):
+
+        mock_block_cls.return_value.mine.return_value = False
+        res = mining_node.mine_block('miner_address')
+        assert res is None
+
+def test_mine_block_stale_candidate(mining_node):
+    mining_node.chain = [Mock()]
+    mining_node.chain[0].hash.return_value = b'prev_hash'
+    mining_node.chain[0].height = 0
+    mining_node.get_last_block.return_value = Mock(hash=lambda: b'different_hash', height=10)
+    with patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
+        patch('tsarchain.consensus.mining.CoinbaseTx'):
+
+        mock_block_cls.return_value.mine.return_value = True
+        mock_block_cls.return_value.prev_block_hash = b'prev_hash'
+        mock_block_cls.return_value.height = 1
+        res = mining_node.mine_block('miner_address')
+        assert res is None
+
+def test_mine_block_cooloff(mining_node):
+    mining_node.chain = [Mock()]
+    mining_node.chain[0].hash.return_value = b'prev_hash'
+    mining_node.chain[0].height = 0
+    mining_node.get_last_block.return_value = mining_node.chain[0]
+    mining_node._mining_cooloff_until = time.time() + 0.1
+    with patch('tsarchain.consensus.mining.CFG.MINING_COOLDOWN_AFTER_BLOCK', 1.0), \
+        patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
+        patch('tsarchain.consensus.mining.time.sleep') as mock_sleep, \
+        patch('tsarchain.consensus.mining.CoinbaseTx'):
+
+        mock_block_cls.return_value.mine.return_value = True
+        mock_block_cls.return_value.prev_block_hash = b'prev_hash'
+        mock_block_cls.return_value.height = 1
+        mock_block_cls.return_value.hash.return_value = b'new_hash'
+        mining_node.mine_block('miner_address')
+        mock_sleep.assert_called_once()
+
+def test_mine_block_validate_block_fails(mining_node):
+    mining_node.chain = [Mock()]
+    mining_node.chain[0].hash.return_value = b'prev_hash'
+    mining_node.chain[0].height = 0
+    mining_node.get_last_block.return_value = mining_node.chain[0]
+    mining_node.validate_block.return_value = False
+    with patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
+        patch('tsarchain.consensus.mining.CoinbaseTx'):
+
+        mock_block_cls.return_value.mine.return_value = True
+        mock_block_cls.return_value.prev_block_hash = b'prev_hash'
+        mock_block_cls.return_value.height = 1
+        mock_block_cls.return_value.hash.return_value = b'new_hash'
+        res = mining_node.mine_block('miner_address')
+        assert res is None
+
+def test_mine_block_add_block_fails(mining_node):
+    mining_node.chain = [Mock()]
+    mining_node.chain[0].hash.return_value = b'prev_hash'
+    mining_node.chain[0].height = 0
+    mining_node.get_last_block.return_value = mining_node.chain[0]
+    mining_node.add_block.return_value = False
+    with patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
+        patch('tsarchain.consensus.mining.CoinbaseTx'):
+
+        mock_block_cls.return_value.mine.return_value = True
+        mock_block_cls.return_value.prev_block_hash = b'prev_hash'
+        mock_block_cls.return_value.height = 1
+        mock_block_cls.return_value.hash.return_value = b'new_hash'
+        res = mining_node.mine_block('miner_address')
+        assert res is None
+
+def test_select_graffiti_art_id_script_none(mining_node):
+    tx = Mock()
+    tx.outputs = [Mock(script_pubkey=None)]
+    res = mining_node._select_graffiti_art_id([tx])
+    assert res is None
+
+def test_select_graffiti_art_id_txid_str(mining_node):
+    tx = Mock()
+    tx.outputs = [Mock(script_pubkey=b'spk')]
+    tx.txid = 'txid_str'
+    with patch('tsarchain.consensus.mining.GRAFFITI.parse_from_script') as p:
+        p.return_value = {'event': 'POST', 'art_id': 'art1'}
+        res = mining_node._select_graffiti_art_id([tx])
+        assert res == 'art1'

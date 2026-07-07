@@ -23,6 +23,78 @@ def _mask_addr(addr: str) -> str:
     a = (addr or "").strip()
     return f"{a[:10]}-{a[-6:]}" if len(a) >= 20 else a
 
+# =========================================================
+# Model / Business Logic
+# =========================================================
+class ContactService:
+    def __init__(self, get_password_cb: Callable[[], Optional[str]]):
+        self.get_pwd = get_password_cb
+        self._contacts: Dict[str, str] = {}  # address -> alias
+
+    def load(self) -> Dict[str, str]:
+        pwd = self.get_pwd()
+        if not pwd:
+            return self._contacts
+        self._contacts = list_contacts_in_keystore(pwd) or {}
+        return self._contacts
+
+    def pairs(self) -> List[Mask]:
+        items: List[Mask] = []
+        for addr, alias in sorted(self._contacts.items(), key=lambda kv: kv[1].lower()):
+            items.append((f"{alias} - {_mask_addr(addr)}", addr))
+        return items
+
+    def upsert(self, address: str, alias: str) -> Tuple[bool, Optional[str]]:
+        address = (address or "").strip().lower()
+        alias = (alias or "").strip()
+        if not address.startswith("tsar1"):
+            return False, "Address must start with tsar1"
+        if not alias:
+            return False, "Alias cannot be empty"
+        pwd = self.get_pwd()
+        if not pwd:
+            return False, None  # Cancelled by user
+        upsert_contact_in_keystore(address, alias, pwd)
+        self._contacts[address] = alias
+        return True, None
+
+    def delete(self, address: str) -> Tuple[bool, Optional[str]]:
+        address = (address or "").strip().lower()
+        pwd = self.get_pwd()
+        if not pwd:
+            return False, None
+        delete_contact_from_keystore(address, pwd)
+        self._contacts.pop(address, None)
+        return True, None
+
+    def search_contacts(self, keyword: str) -> List[Tuple[str, str]]:
+        """Returns a list of (addr, alias) sorted by relevance to keyword."""
+        key = (keyword or "").strip().lower()
+        
+        def _rank(alias: str, addr: str, k: str):
+            if not k:
+                return (0, alias.lower())
+            al = alias.lower(); ad = addr.lower()
+            if al.startswith(k): return (0, al)
+            if ad.startswith(k): return (1, al)
+            if k in al or k in ad: return (2, al)
+            return None
+
+        ranked: List[tuple[tuple[int, str], str, str]] = []
+        for addr, alias in self._contacts.items():
+            r = _rank(alias, addr, key)
+            if r is not None:
+                ranked.append((r, addr, alias))
+        
+        # Sort by rank tuple
+        ranked.sort(key=lambda t: t[0])
+        # Return just (addr, alias)
+        return [(addr, alias) for _r, addr, alias in ranked]
+
+
+# =========================================================
+# View / UI Components
+# =========================================================
 class _ContactForm(tk.Toplevel):
     def __init__(self, parent, colors, title="Contact", alias="", address=""):
         super().__init__(parent)
@@ -70,6 +142,7 @@ class _ContactForm(tk.Toplevel):
 
 
 class ContactManager:
+    """Controller & UI Manager for Contacts."""
     def __init__(
         self,
         root: tk.Misc,
@@ -81,8 +154,11 @@ class ContactManager:
             theme = get_theme().contacts
         self.theme = theme
         self.root = root
-        self.get_pwd = get_password_cb
         self.toast = toast_cb or (lambda m: None)
+        
+        # Instantiate the business logic service
+        self.service = ContactService(get_password_cb)
+        
         self.colors = {
             "bg": theme.bg,
             "panel_bg": theme.panel_bg,
@@ -94,8 +170,6 @@ class ContactManager:
             "on": theme.state_on,
             "off": theme.state_off,
         }
-
-        self._contacts: Dict[str, str] = {}  # address -> alias
 
     def apply_theme(self, theme: ContactsTheme) -> None:
         self.theme = theme
@@ -111,44 +185,24 @@ class ContactManager:
             "off": theme.state_off,
         })
 
-    # ---------- Data ----------
+    # ---------- Proxies to Service ----------
     def load(self) -> Dict[str, str]:
-        pwd = self.get_pwd()
-        if not pwd:
-            return self._contacts
-        self._contacts = list_contacts_in_keystore(pwd) or {}
-        return self._contacts
+        return self.service.load()
 
     def pairs(self) -> List[Mask]:
-        items: List[Mask] = []
-        for addr, alias in sorted(self._contacts.items(), key=lambda kv: kv[1].lower()):
-            items.append((f"{alias} - {_mask_addr(addr)}", addr))
-        return items
+        return self.service.pairs()
 
     def upsert(self, address: str, alias: str) -> bool:
-        address = (address or "").strip().lower()
-        alias = (alias or "").strip()
-        if not address.startswith("tsar1"):
-            messagebox.showwarning("Invalid", "Address must start with tsar1")
-            return False
-        if not alias:
-            messagebox.showwarning("Invalid", "Alias cannot be empty")
-            return False
-        pwd = self.get_pwd()
-        if not pwd:
-            return False
-        upsert_contact_in_keystore(address, alias, pwd)
-        self._contacts[address] = alias
-        return True
+        success, err = self.service.upsert(address, alias)
+        if not success and err:
+            messagebox.showwarning("Invalid", err)
+        return success
 
     def delete(self, address: str) -> bool:
-        address = (address or "").strip().lower()
-        pwd = self.get_pwd()
-        if not pwd:
-            return False
-        delete_contact_from_keystore(address, pwd)
-        self._contacts.pop(address, None)
-        return True
+        success, err = self.service.delete(address)
+        if not success and err:
+            messagebox.showwarning("Error", err)
+        return success
 
     # ---------- UI helpers ----------
     def _styled_entry(self, parent) -> tk.Entry:
@@ -195,7 +249,7 @@ class ContactManager:
         qentry = self._styled_entry(hdr)
         qentry.configure(textvariable=qvar)
         qentry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        qentry.bind("<KeyRelease>", lambda _e: _rebuild())
+        # Use trace instead of KeyRelease for reliable filtering
         qvar.trace_add("write", lambda *_: _rebuild())
 
         # ---- area scrollable (grid 2 kolom) ----
@@ -269,32 +323,19 @@ class ContactManager:
                 _apply_presence(None)
 
             return card
-        
-        def _rank(alias: str, addr: str, key: str):
-            if not key:
-                return (0, alias.lower())
-            al = alias.lower(); ad = addr.lower()
-            if al.startswith(key): return (0, al)
-            if ad.startswith(key): return (1, al)
-            if key in al or key in ad: return (2, al)
-            return None
 
         def _rebuild():
             for w in grid.winfo_children():
                 w.destroy()
             state["cards"].clear()
             _set_sel(None)
-            key = (qvar.get() or "").strip().lower()
-
-            ranked: List[tuple[tuple[int, str], str, str]] = []
-            for addr, alias in self._contacts.items():
-                r = _rank(alias, addr, key)
-                if r is not None:
-                    ranked.append((r, addr, alias))
-            ranked.sort(key=lambda t: t[0])
+            
+            key = qvar.get()
+            # Delegate searching and sorting to the service
+            ranked_contacts = self.service.search_contacts(key)
 
             col = row = 0
-            for _r, addr, alias in ranked:
+            for addr, alias in ranked_contacts:
                 wrap = tk.Frame(grid, bg=c["bg"])
                 wrap.grid(row=row, column=col, sticky="nsew", padx=10, pady=10)
                 _mk_card(wrap, addr, alias).pack(fill=tk.BOTH, expand=True)
@@ -331,7 +372,7 @@ class ContactManager:
             a = state["sel_addr"]
             if not a:
                 messagebox.showinfo("Edit Contact", "Select a contact first."); return
-            alias0 = self._contacts.get(a, "")
+            alias0 = self.service._contacts.get(a, "")
             res = self._ask_contact(dlg, title="Edit Contact", alias=alias0, address=a)
             if not res: return
             new_addr, new_alias = res
@@ -355,7 +396,7 @@ class ContactManager:
             a = state["sel_addr"]
             if not a:
                 return
-            alias = self._contacts.get(a, "")
+            alias = self.service._contacts.get(a, "")
             try:
                 if on_pick: on_pick(a, alias)
             finally:
@@ -381,10 +422,16 @@ class ContactManager:
         # terakhir: render grid
         _rebuild()
 
-        # live filter
-        qentry.bind("<KeyRelease>", lambda _e: _rebuild())
         qentry.focus_set()
         center_window(dlg, self.root)
+        
+        # save state onto dlg object so tests can reach it easily
+        dlg._test_state = state
+        dlg._test_qvar = qvar
+        dlg._test_use_btn = use_btn
+        dlg._test_qentry = qentry
+        dlg._test_add_btn = add_btn
+        dlg._test_grid = grid
 
     # ---------- UX helper: context menu for Entry/Combobox ----------
     def attach_to_entry(self, widget: tk.Widget, on_pick: Callable[[str, str], None]) -> None:

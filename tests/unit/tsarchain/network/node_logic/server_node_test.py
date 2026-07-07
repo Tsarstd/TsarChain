@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tsarchain.network.node_logic.server import start_server, _handle_connection
+from tsarchain.network.node_logic.server_node import start_server, _handle_connection
 
 
 class MockNode:
@@ -40,10 +40,10 @@ def mock_node():
 # ---------------------------------------------------------
 # start_server tests
 # ---------------------------------------------------------
-@patch("tsarchain.network.node_logic.server.socket.socket")
-@patch("tsarchain.network.node_logic.server.threading.Thread")
-@patch("tsarchain.network.node_logic.server.allow_handshake")
-@patch("tsarchain.network.node_logic.server.CFG")
+@patch("tsarchain.network.node_logic.server_node.socket.socket")
+@patch("tsarchain.network.node_logic.server_node.threading.Thread")
+@patch("tsarchain.network.node_logic.server_node.allow_handshake")
+@patch("tsarchain.network.node_logic.server_node.CFG")
 def test_start_server_success(mock_cfg, mock_allow, mock_thread, mock_socket, mock_node):
     mock_cfg.BUFFER_SIZE = 8192
     mock_cfg.MAX_INBOUND_PEERS = 100
@@ -69,9 +69,9 @@ def test_start_server_success(mock_cfg, mock_allow, mock_thread, mock_socket, mo
     mock_thread.assert_called_once()
 
 
-@patch("tsarchain.network.node_logic.server.socket.socket")
-@patch("tsarchain.network.node_logic.server.allow_handshake")
-@patch("tsarchain.network.node_logic.server.CFG")
+@patch("tsarchain.network.node_logic.server_node.socket.socket")
+@patch("tsarchain.network.node_logic.server_node.allow_handshake")
+@patch("tsarchain.network.node_logic.server_node.CFG")
 def test_start_server_handshake_deny(mock_cfg, mock_allow, mock_socket, mock_node):
     mock_cfg.BUFFER_SIZE = 8192
     mock_allow.return_value = False
@@ -93,9 +93,9 @@ def test_start_server_handshake_deny(mock_cfg, mock_allow, mock_socket, mock_nod
     mock_conn.close.assert_called_once()
 
 
-@patch("tsarchain.network.node_logic.server.socket.socket")
-@patch("tsarchain.network.node_logic.server.allow_handshake")
-@patch("tsarchain.network.node_logic.server.CFG")
+@patch("tsarchain.network.node_logic.server_node.socket.socket")
+@patch("tsarchain.network.node_logic.server_node.allow_handshake")
+@patch("tsarchain.network.node_logic.server_node.CFG")
 def test_start_server_inbound_full(mock_cfg, mock_allow, mock_socket, mock_node):
     mock_cfg.BUFFER_SIZE = 8192
     mock_cfg.MAX_INBOUND_PEERS = 1
@@ -121,9 +121,9 @@ def test_start_server_inbound_full(mock_cfg, mock_allow, mock_socket, mock_node)
     mock_conn.close.assert_called_once()
 
 
-@patch("tsarchain.network.node_logic.server.socket.socket")
-@patch("tsarchain.network.node_logic.server.allow_handshake")
-@patch("tsarchain.network.node_logic.server.CFG")
+@patch("tsarchain.network.node_logic.server_node.socket.socket")
+@patch("tsarchain.network.node_logic.server_node.allow_handshake")
+@patch("tsarchain.network.node_logic.server_node.CFG")
 def test_start_server_inbound_ip_full(mock_cfg, mock_allow, mock_socket, mock_node):
     mock_cfg.BUFFER_SIZE = 8192
     mock_cfg.MAX_INBOUND_PEERS = 100
@@ -152,9 +152,9 @@ def test_start_server_inbound_ip_full(mock_cfg, mock_allow, mock_socket, mock_no
 # ---------------------------------------------------------
 # _handle_connection tests
 # ---------------------------------------------------------
-@patch("tsarchain.network.node_logic.server.sniff_first_json_frame")
-@patch("tsarchain.network.node_logic.server.allow_handshake")
-@patch("tsarchain.network.node_logic.server.CFG")
+@patch("tsarchain.network.node_logic.server_node.sniff_first_json_frame")
+@patch("tsarchain.network.node_logic.server_node.allow_handshake")
+@patch("tsarchain.network.node_logic.server_node.CFG")
 def test_handle_connection_sniff_deny(mock_cfg, mock_allow, mock_sniff, mock_node):
     mock_cfg.BUFFER_SIZE = 8192
     mock_cfg.HANDSHAKE_TIMEOUT = 5.0
@@ -168,10 +168,10 @@ def test_handle_connection_sniff_deny(mock_cfg, mock_allow, mock_sniff, mock_nod
     assert ("127.0.0.1", 12345) not in mock_node.inbound_peers
 
 
-@patch("tsarchain.network.node_logic.server.sniff_first_json_frame")
-@patch("tsarchain.network.node_logic.server.allow_handshake")
-@patch("tsarchain.network.node_logic.server.ban_ip")
-@patch("tsarchain.network.node_logic.server.CFG")
+@patch("tsarchain.network.node_logic.server_node.sniff_first_json_frame")
+@patch("tsarchain.network.node_logic.server_node.allow_handshake")
+@patch("tsarchain.network.node_logic.server_node.ban_ip")
+@patch("tsarchain.network.node_logic.server_node.CFG")
 def test_handle_connection_not_dict_ban(mock_cfg, mock_ban, mock_allow, mock_sniff, mock_node):
     mock_cfg.BUFFER_SIZE = 8192
     mock_cfg.HANDSHAKE_TIMEOUT = 5.0
@@ -185,12 +185,12 @@ def test_handle_connection_not_dict_ban(mock_cfg, mock_ban, mock_allow, mock_sni
     mock_conn.close.assert_called_once()
 
 
-@patch("tsarchain.network.node_logic.server.sniff_first_json_frame")
-@patch("tsarchain.network.node_logic.server.allow_handshake")
-@patch("tsarchain.network.node_logic.server.SecureChannel")
-@patch("tsarchain.network.node_logic.server.process_message")
-@patch("tsarchain.network.node_logic.server.build_envelope")
-@patch("tsarchain.network.node_logic.server.CFG")
+@patch("tsarchain.network.node_logic.server_node.sniff_first_json_frame")
+@patch("tsarchain.network.node_logic.server_node.allow_handshake")
+@patch("tsarchain.network.node_logic.server_node.SecureChannel")
+@patch("tsarchain.network.node_logic.server_node.process_message")
+@patch("tsarchain.network.node_logic.server_node.build_envelope")
+@patch("tsarchain.network.node_logic.server_node.CFG")
 def test_handle_connection_p2p_secure(mock_cfg, mock_build_env, mock_process, mock_channel, mock_allow, mock_sniff, mock_node):
     mock_cfg.BUFFER_SIZE = 8192
     mock_cfg.HANDSHAKE_TIMEOUT = 5.0
@@ -217,12 +217,12 @@ def test_handle_connection_p2p_secure(mock_cfg, mock_build_env, mock_process, mo
     mock_conn.close.assert_called_once()
 
 
-@patch("tsarchain.network.node_logic.server.sniff_first_json_frame")
-@patch("tsarchain.network.node_logic.server.allow_handshake")
-@patch("tsarchain.network.node_logic.server.process_message")
-@patch("tsarchain.network.node_logic.server.build_envelope")
-@patch("tsarchain.network.node_logic.server.send_message")
-@patch("tsarchain.network.node_logic.server.CFG")
+@patch("tsarchain.network.node_logic.server_node.sniff_first_json_frame")
+@patch("tsarchain.network.node_logic.server_node.allow_handshake")
+@patch("tsarchain.network.node_logic.server_node.process_message")
+@patch("tsarchain.network.node_logic.server_node.build_envelope")
+@patch("tsarchain.network.node_logic.server_node.send_message")
+@patch("tsarchain.network.node_logic.server_node.CFG")
 def test_handle_connection_legacy_rpc(mock_cfg, mock_send, mock_build_env, mock_process, mock_allow, mock_sniff, mock_node):
     mock_cfg.BUFFER_SIZE = 8192
     mock_cfg.HANDSHAKE_TIMEOUT = 5.0
@@ -242,14 +242,14 @@ def test_handle_connection_legacy_rpc(mock_cfg, mock_send, mock_build_env, mock_
     mock_conn.close.assert_called_once()
 
 
-@patch("tsarchain.network.node_logic.server.sniff_first_json_frame")
-@patch("tsarchain.network.node_logic.server.allow_handshake")
-@patch("tsarchain.network.node_logic.server.process_message")
-@patch("tsarchain.network.node_logic.server.is_envelope")
-@patch("tsarchain.network.node_logic.server.verify_and_unwrap")
-@patch("tsarchain.network.node_logic.server.build_envelope")
-@patch("tsarchain.network.node_logic.server.send_message")
-@patch("tsarchain.network.node_logic.server.CFG")
+@patch("tsarchain.network.node_logic.server_node.sniff_first_json_frame")
+@patch("tsarchain.network.node_logic.server_node.allow_handshake")
+@patch("tsarchain.network.node_logic.server_node.process_message")
+@patch("tsarchain.network.node_logic.server_node.is_envelope")
+@patch("tsarchain.network.node_logic.server_node.verify_and_unwrap")
+@patch("tsarchain.network.node_logic.server_node.build_envelope")
+@patch("tsarchain.network.node_logic.server_node.send_message")
+@patch("tsarchain.network.node_logic.server_node.CFG")
 def test_handle_connection_legacy_rpc_envelope(mock_cfg, mock_send, mock_build_env, mock_verify, mock_is_env, mock_process, mock_allow, mock_sniff, mock_node):
     mock_cfg.BUFFER_SIZE = 8192
     mock_cfg.HANDSHAKE_TIMEOUT = 5.0

@@ -15,12 +15,108 @@ from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.services.media")
 
 def _fmt_ms(ms: int | float | None) -> str:
+    if ms is None or ms < 0:
+        ms = 0
     total = max(0, int(ms) // 1000)
     m, s = divmod(total, 60)
     h, m = divmod(m, 60)
     if h:
         return f"{h:02d}:{m:02d}:{s:02d}"
     return f"{m:02d}:{s:02d}"
+
+
+class VLCPlayerService:
+    """
+    Business Logic untuk membungkus instance vlc.
+    Tidak mengandung elemen Tkinter apa pun.
+    """
+    def __init__(self, init_volume: int = 40, on_end: Optional[Callable[[], None]] = None):
+        if vlc is None:
+            raise RuntimeError("python-vlc tidak tersedia")
+        
+        self._instance = vlc.Instance("--quiet")
+        self._player = self._instance.media_player_new()
+        
+        # Audio
+        self._player.audio_set_volume(int(init_volume))
+        
+        # Events
+        self._on_end = on_end
+        em = self._player.event_manager()
+        em.event_attach(vlc.EventType.MediaPlayerEndReached, self._handle_end)
+        
+        self._ended = False
+        self._disposed = False
+
+    def load(self, path: str):
+        if not os.path.isfile(path):
+            raise FileNotFoundError(path)
+        media = self._instance.media_new(path)
+        self._player.set_media(media)
+        self._ended = False
+
+    def attach_window(self, win_id: int):
+        try:
+            if sys.platform.startswith("win"):
+                self._player.set_hwnd(win_id)
+            elif sys.platform == "darwin":
+                self._player.set_nsobject(win_id)
+            else:
+                self._player.set_xwindow(win_id)
+        except Exception as exc:
+            log.exception("Unhandled exception in attach_window")
+            raise
+
+    def play(self):
+        if self._ended:
+            self._player.stop()
+            self._player.set_time(0)
+            self._ended = False
+        self._player.play()
+
+    def pause(self):
+        self._player.pause()
+
+    def stop(self):
+        self._player.stop()
+        self._player.set_time(0)
+        self._ended = False
+
+    def toggle_play(self):
+        if self.is_playing():
+            self.pause()
+        else:
+            self.play()
+
+    def is_playing(self) -> bool:
+        return self._player.is_playing() == 1
+
+    def get_time(self) -> int:
+        return self._player.get_time()
+
+    def get_length(self) -> int:
+        return self._player.get_length()
+
+    def set_time(self, ms: int):
+        self._player.set_time(ms)
+
+    def set_volume(self, volume: int):
+        self._player.audio_set_volume(int(volume))
+
+    def get_video_size(self) -> tuple[int, int]:
+        return self._player.video_get_size(0)
+
+    def dispose(self):
+        self._disposed = True
+        self._player.stop()
+        self._player.release()
+        self._instance.release()
+
+    def _handle_end(self, _event):
+        self._ended = True
+        if self._on_end:
+            self._on_end()
+
 
 class TkVLCPlayer:
     """
@@ -44,12 +140,16 @@ class TkVLCPlayer:
         init_volume: int = 40,
         on_error: Optional[Callable[[str], None]] = None,
     ):
-        if vlc is None:
-            raise RuntimeError("python-vlc tidak tersedia")
-
+        self.master = master
+        self._poll_ms = max(80, int(poll_ms))
+        self._on_error = on_error
+        
         w_default = int(width) if width else 50
         h_default = int(height) if height else 50
-        self.master = master
+        self._max_width = int(max_width) if max_width else None
+        self._max_height = int(max_height) if max_height else None
+        self._last_video_size: tuple[int, int] = (w_default, h_default)
+        
         self.frame = tk.Frame(master, bg=bg)
         self.video_panel = tk.Frame(self.frame, bg="black", width=w_default, height=h_default)
         self.video_panel.pack(fill="both", expand=True)
@@ -106,59 +206,45 @@ class TkVLCPlayer:
         )
         self.volume_scale.pack(side="left", fill="x")
 
-        self._on_error = on_error
-        self._poll_ms = max(80, int(poll_ms))
+        # Service / Logic
+        self.service = VLCPlayerService(
+            init_volume=init_volume, 
+            on_end=lambda: self.frame.after(0, self._on_end_main)
+        )
+
         self._user_dragging = False
         self._updating_pos = False
         self._duration_ms = 0
         self._timer = None
         self._disposed = False
-        self._ended = False
-        self._last_video_size: tuple[int, int] = (w_default, h_default)
-        self._max_width = int(max_width) if max_width else None
-        self._max_height = int(max_height) if max_height else None
-
-        self._instance = vlc.Instance("--quiet")
-        self._player = self._instance.media_player_new()
-        em = self._player.event_manager()
-        em.event_attach(vlc.EventType.MediaPlayerEndReached, self._handle_end)
 
         self._attach_handle()
 
-    # ---------- public API ----------
     def load(self, path: str, autoplay: bool = True):
-        if not os.path.isfile(path):
-            raise FileNotFoundError(path)
-        media = self._instance.media_new(path)
-        self._player.set_media(media)
-        self._attach_handle()
-        self._ended = False
-        if autoplay:
-            self.play()
-        else:
-            self._update_play_label()
-            self._start_poll()
+        try:
+            self.service.load(path)
+            self._attach_handle()
+            if autoplay:
+                self.play()
+            else:
+                self._update_play_label()
+                self._start_poll()
+        except Exception as e:
+            self._emit_error(str(e))
 
     def toggle_play(self):
-        playing = self._player.is_playing()
-        if playing:
-            self.pause()
-        else:
-            self.play()
+        self.service.toggle_play()
+        self._update_play_label()
+        self._start_poll()
 
     def play(self):
-        # Jika sudah end, reset ke awal agar bisa replay.
-        if self._ended:
-            self._player.stop()
-            self._player.set_time(0)
-            self._ended = False
-        self._player.play()
-        self._player.audio_set_volume(int(self.volume_var.get()))
+        self.service.play()
+        self.service.set_volume(int(self.volume_var.get()))
         self._update_play_label()
         self._start_poll()
 
     def pause(self):
-        self._player.pause()
+        self.service.pause()
         self._update_play_label()
 
     def dispose(self):
@@ -166,13 +252,10 @@ class TkVLCPlayer:
         if self._timer is not None:
             self.frame.after_cancel(self._timer)
         self._timer = None
-        self._player.stop()
-        self._player.release()
-        self._instance.release()
+        self.service.dispose()
         if self.frame.winfo_exists():
             self.frame.destroy()
 
-    # ---------- internal helpers ----------
     def _emit_error(self, msg: str):
         if callable(self._on_error):
             self._on_error(msg)
@@ -181,14 +264,8 @@ class TkVLCPlayer:
         try:
             self.video_panel.update_idletasks()
             win_id = self.video_panel.winfo_id()
-            if sys.platform.startswith("win"):
-                self._player.set_hwnd(win_id)
-            elif sys.platform == "darwin":
-                self._player.set_nsobject(win_id)
-            else:
-                self._player.set_xwindow(win_id)
+            self.service.attach_window(win_id)
         except Exception as exc:
-            log.exception("Unhandled exception")
             self._emit_error(f"attach_failed:{exc}")
 
     def _start_poll(self):
@@ -203,10 +280,10 @@ class TkVLCPlayer:
         if self._disposed:
             return
         try:
-            length = self._player.get_length()
+            length = self.service.get_length()
             if length and length > 0:
                 self._duration_ms = length
-            pos = self._player.get_time()
+            pos = self.service.get_time()
             self._update_time_label(pos, self._duration_ms)
             if not self._user_dragging and self._duration_ms > 0:
                 self._set_slider(pos)
@@ -229,10 +306,10 @@ class TkVLCPlayer:
             return
         ratio = max(0.0, min(1.0, float(self.pos_var.get()) / 1000.0))
         target_ms = int(ratio * self._duration_ms)
-        self._player.set_time(target_ms)
+        self.service.set_time(target_ms)
 
     def _on_volume(self, _value: str | float | None = None):
-        self._player.audio_set_volume(int(float(self.volume_var.get())))
+        self.service.set_volume(int(float(self.volume_var.get())))
 
     def _on_seek_press(self, _event=None):
         self._user_dragging = True
@@ -249,24 +326,21 @@ class TkVLCPlayer:
         self.time_var.set(f"{_fmt_ms(pos_ms)} / {_fmt_ms(total_ms)}")
 
     def _update_play_label(self, paused: bool | None = None):
-        playing = self._player.is_playing()
+        playing = self.service.is_playing()
         if paused is True:
             playing = False
         self.play_label.set("Pause" if playing else "Play")
 
-    def _handle_end(self, _event=None):
-        self.frame.after(0, self._on_end_main)
-
     def _on_end_main(self):
-        self._ended = True
         if self._duration_ms > 0:
             self._set_slider(self._duration_ms)
-        self._player.set_time(0)
+            self._update_time_label(self._duration_ms, self._duration_ms)
+        self.service.set_time(0)
         self._set_slider(0)
         self._update_play_label(paused=True)
 
     def _maybe_update_video_size(self):
-        w, h = self._player.video_get_size(0)
+        w, h = self.service.get_video_size()
         if not w or not h:
             return
         target_w, target_h = w, h

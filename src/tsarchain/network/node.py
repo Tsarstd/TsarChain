@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple, Set
 # ---------------- Local Project ----------------
 from .node_logic import sync
 from .node_logic import peers
-from .node_logic import server
+from .node_logic import server_node
 from .node_logic import discovery
 from .node_logic import chat_state
 from .node_logic import rpc_client
@@ -134,7 +134,7 @@ class Network (
         self._server_sock = None
         self._threads: list[threading.Thread] = []
 
-        self.server_thread = threading.Thread(target=server.start_server, args=(self,), daemon=True)
+        self.server_thread = threading.Thread(target=server_node.start_server, args=(self,), daemon=True)
         self.discovery_thread = threading.Thread(target=discovery.discover_peers_loop, args=(self,), daemon=True)
         self.sync_thread = threading.Thread(target=sync.sync_loop, args=(self,), daemon=True)
         self._threads = [self.server_thread, self.discovery_thread, self.sync_thread]

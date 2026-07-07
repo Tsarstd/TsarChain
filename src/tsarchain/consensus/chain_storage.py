@@ -5,15 +5,16 @@
 
 from __future__ import annotations
 
-import datetime as dt
-import json
 import os
-from collections import Counter
-from typing import Optional
-import shutil
 import time
+import json
+import shutil
 import hashlib
 import threading
+import datetime as dt
+
+from typing import Optional
+from collections import Counter
 
 from ..core.block import Block
 from ..core.tx import Tx
@@ -22,7 +23,7 @@ from ..storage.kv import kv_enabled, batch, iter_prefix, clear_db, delete, _ensu
 from ..storage.db import AtomicJSONFile
 from ..utils import config as CFG
 from ..utils.bootstrap import annotate_local_snapshot_meta
-from ..utils.helpers import bits_to_target, target_to_difficulty
+from ..utils.helpers import bits_to_target, target_to_difficulty, estimate_block_size_bytes
 from ..contracts import graffiti as GRAFFITI
 from ..contracts.graffiti_registry import GraffitiRegistry
 from .genesis import GENESIS_HASH
@@ -34,36 +35,10 @@ class StorageMixin:
 # =============================================================================
 # 1. HELPER
 # =============================================================================
-    def _estimate_tx_size_bytes(self, tx: Tx) -> int:
-        size = 0
-        for txin in getattr(tx, "inputs", []) or []:
-            size += 40
-            if getattr(txin, "script_sig", None):
-                size += len(txin.script_sig.serialize())
-            if getattr(txin, "witness", None):
-                size += sum(len(w) for w in txin.witness)
-        for txout in getattr(tx, "outputs", []) or []:
-            size += 8
-            if getattr(txout, "script_pubkey", None):
-                size += len(txout.script_pubkey.serialize())
-        size = max(size, len(tx.to_dict(include_txid=True)))
-        return int(size)
-
-    def _estimate_block_size_bytes(self, block: Block) -> int:
-        txs = getattr(block, "transactions", []) or []
-        total = 80  # header bytes
-        for tx in txs:
-            if isinstance(tx, Tx):
-                total += self._estimate_tx_size_bytes(tx)
-            else:
-                total += len(json.dumps(tx))
-        total = max(total, len(json.dumps(block.to_dict())))
-        return int(total)
-
     def _build_block_meta(self, block: Block, chainwork_so_far: int = 0) -> dict:
         txs = getattr(block, "transactions", []) or []
         tx_count = len(txs)
-        size_b = self._estimate_block_size_bytes(block)
+        size_b = estimate_block_size_bytes(block)
         cw = getattr(block, "chainwork", None)
         cw = int(chainwork_so_far) + int(self._work_from_bits(getattr(block, "bits", CFG.MAX_BITS)))
         target_val = None
@@ -682,7 +657,7 @@ class StorageMixin:
         total_blocks = len(chain)
         tip_block = chain[-1] if chain else None
         genesis_block = chain[0] if chain else None
-        total_block_size_bytes = sum(self._estimate_block_size_bytes(b) for b in chain)
+        total_block_size_bytes = sum(estimate_block_size_bytes(b) for b in chain)
 
         tip_chainwork = None
         cw = getattr(tip_block, "chainwork", None)

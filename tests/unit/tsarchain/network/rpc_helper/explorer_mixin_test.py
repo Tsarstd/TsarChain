@@ -334,7 +334,7 @@ def test_serialize_block_basic(mixin):
     mem_tx2.outputs = [Mock(script_pubkey=b'plain')]
     mixin.mempool.get_all_txs.return_value = [mem_tx1, mem_tx2]
 
-    with patch('tsarchain.network.rpc_helper.explorer_mixin._estimate_block_size_bytes') as mock_est_size, \
+    with patch('tsarchain.network.rpc_helper.explorer_mixin.estimate_block_size_bytes') as mock_est_size, \
          patch('tsarchain.network.rpc_helper.explorer_mixin.GRAFF') as mock_graff, \
          patch.object(mixin, '_bhash_hex', return_value='blockhash'), \
          patch.object(mixin, '_prevhash_hex', return_value='prevhash'), \
@@ -406,7 +406,7 @@ def test_serialize_block_with_comments_and_payouts(mixin):
 
     mixin.mempool.get_all_txs.return_value = []
 
-    with patch('tsarchain.network.rpc_helper.explorer_mixin._estimate_block_size_bytes') as mock_est_size, \
+    with patch('tsarchain.network.rpc_helper.explorer_mixin.estimate_block_size_bytes') as mock_est_size, \
          patch('tsarchain.network.rpc_helper.explorer_mixin.GRAFF') as mock_graff, \
          patch.object(mixin, '_bhash_hex', return_value='h'), \
          patch.object(mixin, '_prevhash_hex', return_value='p'), \
@@ -443,7 +443,7 @@ def test_serialize_block_no_graffiti(mixin):
     block.transactions = [Mock(txid=b'tx', inputs=[], outputs=[Mock(script_pubkey=b'plain')])]
     mixin.mempool.get_all_txs.return_value = []
 
-    with patch('tsarchain.network.rpc_helper.explorer_mixin._estimate_block_size_bytes') as mock_est_size, \
+    with patch('tsarchain.network.rpc_helper.explorer_mixin.estimate_block_size_bytes') as mock_est_size, \
          patch('tsarchain.network.rpc_helper.explorer_mixin.GRAFF') as mock_graff, \
          patch.object(mixin, '_bhash_hex', return_value=''), \
          patch.object(mixin, '_prevhash_hex', return_value=''), \

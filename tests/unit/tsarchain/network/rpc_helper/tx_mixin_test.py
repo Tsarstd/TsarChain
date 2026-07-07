@@ -88,12 +88,12 @@ def test_addr_to_spk_decode_fails(mixin):
         mixin._addr_to_spk(addr)
 
 
-# ---------- Tests for _estimate_tx_size ----------
-def test_estimate_tx_size(mixin):
+# ---------- Tests for _est_tx_size ----------
+def test_est_tx_size(mixin):
     # Formula: base + n_inputs * input_vbytes + n_outputs * output_vbytes
     n_in, n_out = 2, 3
     expected = CFG.TX_BASE_VBYTES + n_in * CFG.SEGWIT_INPUT_VBYTES + n_out * CFG.SEGWIT_OUTPUT_VBYTES
-    assert mixin._estimate_tx_size(n_in, n_out) == expected
+    assert mixin._est_tx_size(n_in, n_out) == expected
 
 
 # ---------- Tests for _check_tx_limits ----------
