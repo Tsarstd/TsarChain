@@ -30,7 +30,8 @@ class UTXOValidationMixin:
         vout = getattr(tx_input, "vout", None)
         if vout is None:
             vout = getattr(tx_input, "prev_index", None)     
-        vout = int(vout)
+        if vout is not None:
+            vout = int(vout)
         return prev_txid_hex, vout
 
     def _is_unspendable_opreturn(self, tx_out) -> bool:
@@ -211,7 +212,15 @@ class UTXOValidationMixin:
                     for index, tx_out in enumerate(getattr(tx, "outputs", []) or []):
                         self.add(txid_hex, index, tx_out, is_coinbase=is_coinbase, block_height=height, autosave=False)
                         amount = int(getattr(tx_out, "amount", 0))
-                        script_bytes = self._script_bytes(getattr(tx_out, "script_pubkey", None))
+                        
+                        script_bytes = getattr(tx_out, "script_pubkey", None)
+                        if hasattr(script_bytes, "serialize"):
+                            script_bytes = script_bytes.serialize()
+                        elif isinstance(script_bytes, str):
+                            script_bytes = bytes.fromhex(script_bytes)
+                        elif isinstance(script_bytes, (bytes, bytearray)):
+                            script_bytes = bytes(script_bytes)
+                            
                         address = None
                         if hasattr(self, "script_to_address"):
                             address = self.script_to_address(getattr(tx_out, "script_pubkey", None))
@@ -313,21 +322,41 @@ class UTXOValidationMixin:
             if len(b) >= 1 and b[0] == 0x6A:
                 continue
 
+        is_coinbase = bool(getattr(tx, "is_coinbase", False))
+        txid_hex = _txid_hex(getattr(tx, "txid", None)) or getattr(tx, "txid_hex", lambda: None)()
+        
+        detected_layout = None
+        for k, v in utxos.items():
+            if isinstance(k, str) and ":" in k:
+                detected_layout = "flat_string"
+                break
+            if isinstance(k, tuple) and len(k) == 2:
+                detected_layout = "flat_tuple"
+                break
+            if isinstance(v, dict) and all(isinstance(_, int) for _ in v.keys()):
+                detected_layout = "per_txid_dict"
+                break
+            if isinstance(v, list):
+                detected_layout = "per_address_list"
+                break
+
         def _insert_output(snapshot: dict, txid_hex: str, n: int, entry: dict, address: str | None):
-            layout = None
-            for k, v in snapshot.items():
-                if isinstance(k, str) and ":" in k:
-                    layout = "flat_string"
-                    break
-                if isinstance(k, tuple) and len(k) == 2:
-                    layout = "flat_tuple"
-                    break
-                if isinstance(v, dict) and all(isinstance(_, int) for _ in v.keys()):
-                    layout = "per_txid_dict"
-                    break
-                if isinstance(v, list):
-                    layout = "per_address_list"
-                    break
+            layout = detected_layout
+            
+            if layout is None:
+                for k, v in snapshot.items():
+                    if isinstance(k, str) and ":" in k:
+                        layout = "flat_string"
+                        break
+                    if isinstance(k, tuple) and len(k) == 2:
+                        layout = "flat_tuple"
+                        break
+                    if isinstance(v, dict) and all(isinstance(_, int) for _ in v.keys()):
+                        layout = "per_txid_dict"
+                        break
+                    if isinstance(v, list):
+                        layout = "per_address_list"
+                        break
 
             if layout == "flat_string":
                 snapshot[f"{txid_hex}:{int(n)}"] = entry
@@ -350,9 +379,6 @@ class UTXOValidationMixin:
                     return
 
             snapshot[f"{txid_hex}:{int(n)}"] = entry
-
-        is_coinbase = bool(getattr(tx, "is_coinbase", False))
-        txid_hex = _txid_hex(getattr(tx, "txid", None)) or getattr(tx, "txid_hex", lambda: None)()
 
         if not is_coinbase:
             for txin in getattr(tx, "inputs", []):

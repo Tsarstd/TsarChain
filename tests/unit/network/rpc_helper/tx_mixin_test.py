@@ -417,6 +417,145 @@ def test_create_template_tx_multi_with_opret(mixin):
     tx_dict = result["tx"]
     last_out = tx_dict["outputs"][-1]
     assert last_out["script_pubkey"].startswith("6a")  # OP_RETURN
+    
+# ---------- Tests for _build_utxos_list ----------
+def test_build_utxos_list(mixin):
+    """Test _build_utxos_list with various UTXO formats and coinbase maturity."""
+    tip_height = 100
+    mixin.broadcast.blockchain.height = tip_height
+
+    utxos_map = {
+        "tx1:0": {"amount": 1000, "script_pubkey": b"spk_bytes", "block_height": 50, "is_coinbase": False},
+        "tx2:1": {"amount": 2000, "script_pubkey": "deadbeef", "block_height": 60, "is_coinbase": False},
+        "tx3:2": {"amount": 3000, "script_pubkey": b"", "block_height": 70, "is_coinbase": True},   # coinbase but mature?
+        "tx4:3": {"amount": 4000, "script_pubkey": "beef", "block_height": 99, "is_coinbase": True}, # coinbase, confirmations = 2 (<3) -> filtered
+    }
+    result = mixin._build_utxos_list(utxos_map, tip_height)
+    assert len(result) == 3
+    txids = {u["txid"] for u in result}
+    assert txids == {"tx1", "tx2", "tx3"}
+    for u in result:
+        if u["txid"] == "tx1":
+            assert u["scriptPubKey"] == b"spk_bytes"
+        elif u["txid"] == "tx2":
+            assert u["scriptPubKey"] == bytes.fromhex("deadbeef")
+        elif u["txid"] == "tx3":
+            assert u["scriptPubKey"] == b""
+
+    result_empty = mixin._build_utxos_list(None, tip_height)
+    assert result_empty == []
+
+    result_empty2 = mixin._build_utxos_list({}, tip_height)
+    assert result_empty2 == []
+
+
+# ---------- Tests for _create_template_tx_multi with force_inputs ----------
+def test_create_template_tx_multi_force_inputs(mixin):
+    """Test force_inputs handling: valid, global UTXO fallback, and missing error."""
+    from_addr = make_bech32_addr(b"a"*20)
+    to_addr = make_bech32_addr(b"b"*20)
+    outputs = [{"address": to_addr, "amount": 1000}]
+    fee_rate = 34
+
+    txid1 = "a" * 64
+    txid2 = "b" * 64
+    txid3 = "c" * 64
+    txid4 = "d" * 64
+
+    utxos_map = {
+        f"{txid1}:0": {"amount": 5000, "script_pubkey": "deadbeef", "block_height": 50, "is_coinbase": False},
+        f"{txid2}:1": {"amount": 6000, "script_pubkey": "beefdead", "block_height": 60, "is_coinbase": False},
+    }
+    mixin.broadcast.utxodb.get.return_value = utxos_map
+
+    global_utxos = {
+        f"{txid3}:2": {"tx_out": {"amount": 7000, "script_pubkey": b"spk_global"}, "is_coinbase": False, "block_height": 70},
+        f"{txid4}:3": {"tx_out": {"amount": 8000, "script_pubkey": b"spk_global2"}, "is_coinbase": False, "block_height": 80},
+    }
+    mixin.broadcast.utxodb.utxos = global_utxos
+
+    force_inputs = [f"{txid1}:0", f"{txid2}:1"]
+    result = mixin._create_template_tx_multi(from_addr, outputs, fee_rate, force_inputs=force_inputs)
+    input_txids = {inp["txid"] for inp in result["inputs"]}
+    assert input_txids == {txid1, txid2}
+    assert len(result["inputs"]) == 2
+
+    force_inputs = [f"{txid1}:0", f"{txid3}:2"]
+    result = mixin._create_template_tx_multi(from_addr, outputs, fee_rate, force_inputs=force_inputs)
+    input_txids = {inp["txid"] for inp in result["inputs"]}
+    assert {txid1, txid3}.issubset(input_txids)   # tidak memeriksa panjang
+
+    txid5 = "e" * 64
+    force_inputs = [f"{txid1}:0", f"{txid5}:4"]
+    with pytest.raises(ValueError, match="forced_input_missing"):
+        mixin._create_template_tx_multi(from_addr, outputs, fee_rate, force_inputs=force_inputs)
+
+
+# ---------- Tests for _guard_graffiti_output COMMENT edge cases ----------
+def test_guard_graffiti_output_comment_edge_cases(mixin, monkeypatch):
+    """Test COMMENT validation: empty comment, fee too low, negative tip."""
+    monkeypatch.setattr(CFG, "GRAFFITI_COMMENT_MAX_BYTES", 140)
+    monkeypatch.setattr(CFG, "GRAFFITI_COMMENT_MIN_FEE", 100 * CFG.TSAR)
+    monkeypatch.setattr(CFG, "GRAFFITI_MAGIC", b"TSAR_GRAF1|")
+
+    creator = make_bech32_addr(b"c"*20)
+    commenter = make_bech32_addr(b"d"*20)
+    art_id = "graf" + "a"*60
+
+    def make_spk_from_meta(meta):
+        payload = GRAFF.encode_payload(meta)
+        return Script([OP_RETURN, payload])
+
+    meta_empty_comment = {
+        "event": "COMMENT",
+        "art_id": art_id,
+        "comment": "",
+        "amount": CFG.GRAFFITI_COMMENT_MIN_FEE,
+        "tip": 0,
+        "creator": creator,
+        "commenter": commenter,
+    }
+    spk_empty = make_spk_from_meta(meta_empty_comment)
+    with pytest.raises(ValueError, match="graffiti_payload_invalid"):
+        mixin._guard_graffiti_output(spk_empty)
+
+    meta_low_fee = {
+        "event": "COMMENT",
+        "art_id": art_id,
+        "comment": "68656c6c6f",   # "hello"
+        "amount": CFG.GRAFFITI_COMMENT_MIN_FEE - 1,
+        "tip": 0,
+        "creator": creator,
+        "commenter": commenter,
+    }
+    spk_low = make_spk_from_meta(meta_low_fee)
+    with pytest.raises(ValueError, match="graffiti_payload_invalid"):
+        mixin._guard_graffiti_output(spk_low)
+
+    meta_neg_tip = {
+        "event": "COMMENT",
+        "art_id": art_id,
+        "comment": "68656c6c6f",
+        "amount": CFG.GRAFFITI_COMMENT_MIN_FEE,
+        "tip": -1,
+        "creator": creator,
+        "commenter": commenter,
+    }
+    spk_neg = make_spk_from_meta(meta_neg_tip)
+    with pytest.raises(ValueError, match="graffiti_payload_invalid"):
+        mixin._guard_graffiti_output(spk_neg)
+
+    meta_valid = {
+        "event": "COMMENT",
+        "art_id": art_id,
+        "comment": "68656c6c6f",
+        "amount": CFG.GRAFFITI_COMMENT_MIN_FEE,
+        "tip": 0,
+        "creator": creator,
+        "commenter": commenter,
+    }
+    spk_valid = make_spk_from_meta(meta_valid)
+    mixin._guard_graffiti_output(spk_valid)
 
 
 # ---------- Tests for _deserialize_spk_hex ----------

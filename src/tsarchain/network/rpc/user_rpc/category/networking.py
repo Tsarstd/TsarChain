@@ -101,7 +101,7 @@ def stor_list(self, message, pow_obj, base_identity, *,
         items.append({
             "addr": meta.get("addr"),
             "url": meta.get("url", ""),
-            "ip": meta.get("addr"),
+            "ip": meta.get("ip", ""),
             "port": int(meta.get("port", 0)),
             "last_seen": int(meta.get("last_seen", 0)),
             "alive": bool(meta.get("alive", False)),

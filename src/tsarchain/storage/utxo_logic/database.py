@@ -27,9 +27,21 @@ class UTXODatabaseMixin:
         script_type = None
         spk_bytes = None
         if hasattr(tx_out, "script_pubkey"):
-            spk_bytes = tx_out.script_pubkey.serialize()
-        elif isinstance(tx_out_dict.get("script_pubkey"), str):
-            spk_bytes = bytes.fromhex(tx_out_dict["script_pubkey"])
+            spk = tx_out.script_pubkey
+            if hasattr(spk, "serialize"):
+                spk_bytes = spk.serialize()
+            elif isinstance(spk, (bytes, bytearray)):
+                spk_bytes = bytes(spk)
+            elif isinstance(spk, str):
+                try:
+                    spk_bytes = bytes.fromhex(spk)
+                except ValueError:
+                    pass
+        if not spk_bytes and isinstance(tx_out_dict.get("script_pubkey"), str):
+            try:
+                spk_bytes = bytes.fromhex(tx_out_dict["script_pubkey"])
+            except ValueError:
+                pass
         if spk_bytes:
             if len(spk_bytes) == 22 and spk_bytes[0] == 0x00 and spk_bytes[1] == 0x14:
                 script_type = "p2wpkh"

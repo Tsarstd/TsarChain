@@ -140,7 +140,7 @@ class NodeClient:
                         chan.send(json.dumps(ping_env).encode("utf-8"))
                         resp = chan.recv(CFG.CONNECT_TIMEOUT_SCAN)
                     except Exception:
-                        log.exception("Unhandled exception")
+                        log.exception("SecureChannel handshake or encrypted I/O failed for %s:%d.", ip, port)
                         if CFG.P2P_ENC_REQUIRED:
                             raise
                         send_message(s, json.dumps(ping_env).encode("utf-8"))
@@ -159,7 +159,7 @@ class NodeClient:
                                 found.append((ip, port))
                                 continue
                         except Exception:
-                            log.exception("Unhandled exception")
+                            log.exception("Failed to verify/unwrap envelope response from %s:%d.", ip, port)
                             if CFG.ENVELOPE_REQUIRED:
                                 continue
                             found.append((ip, port))

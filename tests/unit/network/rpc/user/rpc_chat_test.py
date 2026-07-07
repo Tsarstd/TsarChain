@@ -1,6 +1,8 @@
-# test_chat.py
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Tsar Studio
+# Part of TsarChain - see LICENSE and TRADEMARKS.md
+
 import pytest
-import time
 from unittest.mock import Mock, patch
 from threading import Lock
 

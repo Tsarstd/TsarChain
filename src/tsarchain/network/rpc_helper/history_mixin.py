@@ -6,7 +6,7 @@ import time
 import threading
 import collections
 
-from bech32 import convertbits, bech32_encode
+from bech32 import convertbits, bech32_encode, bech32_decode
 
 from ...utils import config as CFG
 

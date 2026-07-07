@@ -39,8 +39,8 @@ class UTXOBalanceMixin:
     
     def _normalize_target_spk_hex(self, x: str) -> str:
         x = (x or "").strip().lower()
-        if x.startswith("tsar1"):
-            hrp, data = bech32_decode(x)
+        hrp, data = bech32_decode(x)
+        if hrp is not None:
             if hrp != "tsar" or data is None:
                 raise ValueError("invalid tsar bech32 address")
             prog = convertbits(data[1:], 5, 8, False)
@@ -49,6 +49,7 @@ class UTXOBalanceMixin:
             if len(prog) == 20:
                 return "0014" + bytes(prog).hex()
             return "0020" + bytes(prog).hex()
+            
         if x.startswith("00") and len(x) in (42, 66):
             return "00" + x[2:]
         if x.startswith("0014") and len(x) == 44:
@@ -64,6 +65,8 @@ class UTXOBalanceMixin:
         self._address_index = defaultdict(set)
         self._key_to_spk.clear()
         for key, entry in self.utxos.items():
+            if entry is None:
+                continue
             tx_out = entry.get("tx_out")
             spk_hex = self._script_hex_from_tx_out(tx_out)
             if spk_hex:

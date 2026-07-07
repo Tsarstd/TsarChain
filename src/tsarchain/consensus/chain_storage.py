@@ -114,17 +114,12 @@ class StorageMixin:
                     continue
                 event = str(meta.get("event", "")).upper()
                 if event == "POST":
-                    sha_hex = meta.get("sha256")
-                    creator = meta.get("creator")
-                    art_id = meta.get("art_id")
-                    if not art_id and sha_hex and creator:
-                        art_id = GRAFFITI.compute_art_id(sha_hex, creator)
                     posts.append({
                         "txid": txid_hex,
                         "sha256": meta.get("sha256"),
                         "size": meta.get("size"),
                         "mime": meta.get("mime"),
-                        "creator": creator,
+                        "creator": meta.get("creator"),
                     })
                 elif event == "COMMENT":
                     comments.append({
@@ -252,55 +247,57 @@ class StorageMixin:
                 return
             self._snapshot_backup_active = True
 
-        def _run_backup(height: int, ts_hint: int | None):
-            try:
-                # 1) copy LMDB env -> data/snapshot/
-                self._copy_snapshot_env(target_dir)
-
-                backup_dir = os.path.abspath(target_dir)
-                snapshot_data_path = os.path.join(backup_dir, "data.mdb")
-
-                # 2) tip timestamp
-                tip_ts = ts_hint
-                if tip_ts is None and self.chain:
-                    tip_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
-
-                # 3) meta baseline from DB live
-                meta = annotate_local_snapshot_meta(height=height, tip_timestamp=tip_ts)
-
-                # 3b) override size & sha256 with snapshot file
-                if meta and os.path.exists(snapshot_data_path):
-                    try:
-                        stat = os.stat(snapshot_data_path)
-                        meta["size"] = int(stat.st_size)
-                        snap_sha = self._hash_file(snapshot_data_path)
-                        if snap_sha:
-                            meta["sha256"] = snap_sha
-                    except Exception:
-                        log.exception("[backup_snapshot] Failed to recompute hash/size for snapshot env")
-
-                if meta:
-                    # 4) write snapshot.meta.json to snapshot folder
-                    meta_name = os.path.basename(CFG.SNAPSHOT_META_PATH or "snapshot.meta.json")
-                    backup_meta_path = os.path.join(backup_dir, meta_name)
-                    with open(backup_meta_path, "w", encoding="utf-8") as fh:
-                        json.dump(meta, fh, indent=2, sort_keys=True)
-
-                    # 5) generate snapshot.manifest.json from overridden meta
-                    self._write_snapshot_manifest(backup_dir, meta, height)
-
-                self._snapshot_last_backup_height = height
-                log.info("[backup_snapshot] Snapshot updated at height %s to %s", height, target_dir)
-            finally:
-                with self._snapshot_backup_lock:
-                    self._snapshot_backup_active = False
-
         threading.Thread(
-            target=_run_backup,
-            args=(tip_height, tip_timestamp),
+            target=self._run_backup,
+            args=(target_dir, tip_height, tip_timestamp),
             name="tsarchain.snapshot_backup",
             daemon=True,
         ).start()
+        
+    def _run_backup(self, target_dir: str, height: int, ts_hint: int | None):
+        try:
+            # 1) copy LMDB env -> data/snapshot/
+            self._copy_snapshot_env(target_dir)
+
+            backup_dir = os.path.abspath(target_dir)
+            snapshot_data_path = os.path.join(backup_dir, "data.mdb")
+
+            # 2) tip timestamp
+            tip_ts = ts_hint
+            if tip_ts is None and self.chain:
+                tip_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
+
+            # 3) meta baseline from DB live
+            meta = annotate_local_snapshot_meta(height=height, tip_timestamp=tip_ts)
+
+            # 3b) override size & sha256 with snapshot file
+            if meta and os.path.exists(snapshot_data_path):
+                try:
+                    stat = os.stat(snapshot_data_path)
+                    meta["size"] = int(stat.st_size)
+                    snap_sha = self._hash_file(snapshot_data_path)
+                    if snap_sha:
+                        meta["sha256"] = snap_sha
+                except Exception:
+                    log.exception("[backup_snapshot] Failed to recompute hash/size for snapshot env")
+
+            if meta:
+                # 4) write snapshot.meta.json to snapshot folder
+                meta_name = os.path.basename(CFG.SNAPSHOT_META_PATH or "snapshot.meta.json")
+                backup_meta_path = os.path.join(backup_dir, meta_name)
+                with open(backup_meta_path, "w", encoding="utf-8") as fh:
+                    json.dump(meta, fh, indent=2, sort_keys=True)
+
+                # 5) generate snapshot.manifest.json from overridden meta
+                self._write_snapshot_manifest(backup_dir, meta, height)
+
+            self._snapshot_last_backup_height = height
+            log.info("[backup_snapshot] Snapshot updated at height %s to %s", height, target_dir)
+        except Exception:
+            log.exception("[backup_snapshot] Unexpected error during snapshot backup:")
+        finally:
+            with self._snapshot_backup_lock:
+                self._snapshot_backup_active = False
 
 
     def _copy_snapshot_env(self, target_dir: str) -> None:

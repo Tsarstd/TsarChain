@@ -457,6 +457,9 @@ REPLAY_WINDOW_SEC    = 60  # Acceptable skew window for anti-replay stamps
 # =============================================================================
 # 10. CHAT & PRESENCE
 # =============================================================================
+# ---- CHAT SPK ----
+CHAT_SPK              = b"TSAR-SPK|"
+
 # ---- CHAT PAYLOAD LIMITS ----
 CHAT_MAX_CT_BYTES     = 2 * 1024  # ciphertext size cap per chat message
 CHAT_TS_DRIFT_S       = 120  # tolerated timestamp drift for chat payloads

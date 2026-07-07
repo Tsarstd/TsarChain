@@ -4,13 +4,21 @@
 # Refs: BIP173
 
 from __future__ import annotations
-import json, re, time, hashlib, math, mimetypes, os
+
+import os
+import re
+import json
+import time
+import math
+import hashlib
+import mimetypes
+
 from typing import Any, Dict, Optional
 from bech32 import bech32_decode, bech32_encode, convertbits
 
-from ..utils.helpers import Script, OP_RETURN, hash160, compute_tx_weight_vsize
 from ..utils import config as CFG
 from ..core.tx import Tx, TxIn, TxOut
+from ..utils.helpers import Script, OP_RETURN, hash160, compute_tx_weight_vsize
 
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.contracts.graffiti")
@@ -113,7 +121,7 @@ def validate_graffiti_file(size_bytes: int, mime: str | None = None, filename: s
         if not mime_norm:
             if ext in ("jpg", "jpeg"):
                 mime_norm = "image"
-            elif ext == ("mp4", "mkv"):
+            elif ext in ("mp4", "mkv"):
                 mime_norm = "video"
     else:
         raise ValueError("mime_not_allowed")

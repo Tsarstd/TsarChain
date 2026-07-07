@@ -278,7 +278,7 @@ class ChatManager:
 
             try:
                 vk = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(spend_pub))
-                payload = b"TSAR-SPK|" + bytes.fromhex(spk) + b"|" + bytes.fromhex(spend_pub)
+                payload = CFG.CHAT_SPK + bytes.fromhex(spk) + b"|" + bytes.fromhex(spend_pub)
                 vk.verify(bytes.fromhex(sig_hex), payload, ec.ECDSA(hashes.SHA256()))
             except Exception as e:
                 log.exception("Unhandled exception")
@@ -358,7 +358,7 @@ class ChatManager:
         bundle = COM.get_prekey_bundle_local(addr, self._pwd_provider_for(addr)) or {}
         spk_hex = (bundle.get("spk") or "").lower()
         if spk_hex:
-            payload_spk = b"TSAR-SPK|" + bytes.fromhex(spk_hex) + b"|" + bytes.fromhex(spend_pub)
+            payload_spk = CFG.CHAT_SPK + bytes.fromhex(spk_hex) + b"|" + bytes.fromhex(spend_pub)
             bundle["sig"] = COM.sign(priv_hex, payload_spk)
 
         def _on(resp: Optional[Dict[str, Any]]):
@@ -452,7 +452,7 @@ class ChatManager:
         priv_hex_for_sign = self.get_priv_for_chat(addr)
         if priv_hex_for_sign and bundle.get("spk"):
             spend_pub = COM.pub_hex_from_priv(COM.ec_priv_from_hex(priv_hex_for_sign))
-            payload_spk = b"TSAR-SPK|" + bytes.fromhex(bundle["spk"]) + b"|" + bytes.fromhex(spend_pub)
+            payload_spk = CFG.CHAT_SPK + bytes.fromhex(bundle["spk"]) + b"|" + bytes.fromhex(spend_pub)
             bundle["sig"] = COM.sign(priv_hex_for_sign, payload_spk)
 
         payload = {

@@ -234,7 +234,7 @@ def ensure_signed_prekey(addr: str, password_provider=None) -> dict:
     sp_priv = get_priv_for_address(addr, pwd)
     sp_pub = WALL.pubkey_from_privhex(sp_priv)
     spk_sk, spk_pk = chat_dh_gen_keypair()
-    payload = b"TSAR-SPK|" + bytes.fromhex(spk_pk) + b"|" + sp_pub
+    payload = CFG.CHAT_SPK + bytes.fromhex(spk_pk) + b"|" + sp_pub
     sig = _ecdsa_sign_spend(sp_priv, payload)
 
     record = record or {}
@@ -286,7 +286,7 @@ def rotate_signed_prekey(addr: str, password_provider=None) -> dict:
     sp_priv = get_priv_for_address(addr, pwd)
     sp_pub  = WALL.pubkey_from_privhex(sp_priv)
     spk_sk, spk_pk = chat_dh_gen_keypair()
-    payload = b"TSAR-SPK|" + bytes.fromhex(spk_pk) + b"|" + sp_pub
+    payload = CFG.CHAT_SPK + bytes.fromhex(spk_pk) + b"|" + sp_pub
     sig = _ecdsa_sign_spend(sp_priv, payload)
     record = _load_prekey_record(addr, password_provider) or {}
     record.update({

@@ -3,7 +3,15 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP173; BIP39; libsecp256k1; Signal-X3DH; RFC7748-X25519; NIST-800-38D-AES-GCM
 
-import os, json, hashlib, base64, appdirs, time, re, threading
+import os
+import re
+import json
+import time
+import base64
+import hashlib
+import appdirs
+import threading
+
 from pathlib import Path
 from mnemonic import Mnemonic
 from nacl.signing import SigningKey
@@ -147,10 +155,16 @@ def _secure_load(namespace: str, key: str, path: Optional[Path], password_provid
         return None, False
     if "enc" in obj:
         if not callable(password_provider):
-            raise ValueError("password required")
+            raise ValueError(
+                f"Password provider is not callable for encrypted '{namespace}.{key}'. "
+                "Expected a function, but got {type(password_provider).__name__}."
+            )
         pwd = password_provider(prompt)
         if not pwd:
-            raise ValueError("password required")
+            raise ValueError(
+                f"Password provider returned empty/falsy value for encrypted '{namespace}.{key}'. "
+                "A non-empty password (str/bytes) is required to decrypt the blob."
+            )
         plain = decrypt_blob(obj["enc"], pwd)
         return json.loads(plain.decode("utf-8")), False
     return obj, True
@@ -171,7 +185,7 @@ def load_chat_state(default: Optional[Dict] = None) -> Dict:
     try:
         data, legacy = _secure_load("chat_state", "default", path_obj, _app_secret_provider, "Load chat state")
     except Exception:
-        log.exception("Unhandled exception")
+        log.exception("Failed to load chat state from %s; falling back to default", path_obj)
         return fallback.copy()
     if data is None:
         return fallback.copy()
@@ -179,7 +193,7 @@ def load_chat_state(default: Optional[Dict] = None) -> Dict:
         try:
             _secure_store("chat_state", "default", path_obj, data, _app_secret_provider, "Migrate chat state")
         except Exception:
-            log.exception("Unhandled exception")
+            log.exception("Failed to migrate (re‑save) chat state to %s after successful load", path_obj)
             pass
     return {
         "blocked": list(dict.fromkeys(data.get("blocked", []) or [])),

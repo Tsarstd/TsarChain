@@ -15,7 +15,6 @@ from ..user_rpc.category import graff_activities as GRAFF
 from ....utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.rpc.user_rpc.dispatcher")
 
-# __all__ = ["handle_user_rpc"]
 
 HANDLER_MAP = {
     # Networking

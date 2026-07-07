@@ -3,10 +3,18 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: RFC7748-X25519; RFC5869-HKDF; NIST-800-38D-AES-GCM
 
-import socket, struct, time, os, json, secrets, hashlib, errno
+import os
+import time
+import json
+import errno
+import socket
+import struct
+import secrets
+import hashlib
 import threading
-from nacl.signing import SigningKey, VerifyKey
+
 from nacl.encoding import HexEncoder
+from nacl.signing import SigningKey, VerifyKey
 from tsarcore_native import SecureChannelNative
 
 # ---------------- Local Project ----------------

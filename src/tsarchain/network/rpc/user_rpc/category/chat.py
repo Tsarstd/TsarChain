@@ -122,7 +122,7 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
         if not (len(spk_reg) == 64 and all(c in "0123456789abcdef" for c in spk_reg)):
             return {"error": "bad_spk"}
         
-        payload = b"TSAR-SPK|" + bytes.fromhex(spk_reg) + b"|" + bytes.fromhex(spend_pk)
+        payload = CFG.CHAT_SPK + bytes.fromhex(spk_reg) + b"|" + bytes.fromhex(spend_pk)
         sig_ok = CM.verify_chat_signatures([("spk", spend_pk, payload, sig_reg)])
         spk_valid = bool(sig_ok.get("spk"))
         if not spk_valid:
@@ -333,7 +333,7 @@ def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
     # validation: addr -> spend_pub exists? and SPK signature is signed by spend key
     sp = (self.chat_spend_pub.get(addr_s) or "").strip().lower()
     if not sp: return {"error":"unknown_address"}
-    payload = b"TSAR-SPK|" + bytes.fromhex(spk) + b"|" + bytes.fromhex(sp)
+    payload = CFG.CHAT_SPK + bytes.fromhex(spk) + b"|" + bytes.fromhex(sp)
     sig_ok = CM.verify_chat_signatures([("spk", sp, payload, sig)])
     if not sig_ok.get("spk"):
         return {"error":"bad_spk_sig"}

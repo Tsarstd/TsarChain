@@ -314,7 +314,10 @@ class ValidationMixin:
             elif isinstance(spk_obj, (bytes, bytearray)):
                 spk_bytes = bytes(spk_obj)
             elif isinstance(spk_obj, str):
-                spk_bytes = bytes.fromhex(spk_obj)
+                try:
+                    spk_bytes = bytes.fromhex(spk_obj)
+                except ValueError:
+                    return None
             else:
                 return None
             if len(spk_bytes) == 22 and spk_bytes[0] == 0x00 and spk_bytes[1] == 0x14:

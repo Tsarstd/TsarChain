@@ -4,6 +4,7 @@
 
 import time
 import threading
+from typing import Union
 
 from ...utils import config as CFG
 
@@ -12,6 +13,8 @@ from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.rpc_helper.guard_mixin")
 
 class GuardMixin:
+    _init_lock = threading.RLock()
+
     def _tb_now(self):
         return time.time()
 
@@ -38,30 +41,45 @@ class GuardMixin:
         self.backoff_until[key] = max(self._tb_now() + secs, self.backoff_until.get(key, 0))
         log.warning("[ratelimit] backoff set key=%s for %.2fs", key, secs)
 
-    def _nonce_guard(self, scope: str, sender_key: str, nonce: str, ts: int, window: int) -> bool:
-        if not (scope and sender_key and nonce and isinstance(ts, int)):
-            return False
-        now = time.time()
-        if abs(now - ts) > window:
-            log.warning("[nonce_guard] ts window violation scope=%s sender=%s", scope, sender_key)
-            return False
+    def _ensure_nonce_guard_initialized(self):
+        if (hasattr(self, "_nonce_guard_lock") and self._nonce_guard_lock is not None and
+            hasattr(self, "_nonce_guard_table") and self._nonce_guard_table is not None):
+            return
+
+        with GuardMixin._init_lock:
+            if not hasattr(self, "_nonce_guard_lock") or self._nonce_guard_lock is None:
+                self._nonce_guard_lock = threading.RLock()
+            if not hasattr(self, "_nonce_guard_table") or self._nonce_guard_table is None:
+                self._nonce_guard_table = {}
+
+    def _nonce_guard(self, scope: str, sender_key: str, nonce: str, ts: Union[int, float], window: int) -> bool:
         
+        if not (scope and sender_key and nonce and isinstance(ts, (int, float))):
+            return False
+
+        now = self._tb_now()
+        if abs(now - ts) > window:
+            log.warning("[nonce_guard] ts window violation scope=%s sender=%s",
+                        scope, sender_key)
+            return False
+
         max_entries = max(1, int(CFG.NONCE_PER_SENDER_MAX))
         bucket_key = f"{scope}:{sender_key}"
-        guard_lock = getattr(self, "_nonce_guard_lock", threading.RLock())
-        with guard_lock:
-            table = getattr(self, "_nonce_guard_table", None)
-            bucket = table.setdefault(bucket_key, {})
+        self._ensure_nonce_guard_initialized()
+
+        with self._nonce_guard_lock:
+            bucket = self._nonce_guard_table.setdefault(bucket_key, {})
             # prune expired
             for n, t in list(bucket.items()):
                 if now - t > window:
                     bucket.pop(n, None)
             if nonce in bucket:
-                log.warning("[nonce_guard] replay scope=%s sender=%s nonce=%s", scope, sender_key, nonce[:16])
+                log.warning("[nonce_guard] replay scope=%s sender=%s nonce=%s",
+                            scope, sender_key, nonce[:16])
                 return False
             bucket[nonce] = now
             # enforce size
             if len(bucket) > max_entries:
-                for n, _t in sorted(bucket.items(), key=lambda it: it[1])[: len(bucket) - max_entries]:
+                for n, _t in sorted(bucket.items(), key=lambda it: it[1])[:len(bucket) - max_entries]:
                     bucket.pop(n, None)
         return True

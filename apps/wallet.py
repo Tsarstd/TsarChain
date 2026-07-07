@@ -947,7 +947,7 @@ class KremlinWalletGUI(WalletsMixin):
                 for key in ("balances","items","map"):
                     m = d.get(key)
                     if isinstance(m, dict):
-                        return m.get(addr) or (list(m.values())[0] if m else {})
+                        return m.get(addr) or next(iter(m.values()), {})
                 if isinstance(d.get("balance"), dict):
                     return d["balance"]
                 return None
@@ -1173,11 +1173,11 @@ class KremlinWalletGUI(WalletsMixin):
         if enabled:
             prev = getattr(w, "_prev_state", None)
             if prev is None:
-                w.configure(state="normal")
+                w["state"] = "normal"
             else:
-                w.configure(state=prev)
+                w["state"] = prev
         else:
-            w.configure(state="disabled")
+            w["state"] = "disabled"
 
     def _busy_start(self, key: str, widgets: Sequence[tk.Widget] = ()) -> bool:
         if key in self._busy_keys:

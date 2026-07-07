@@ -148,6 +148,57 @@ class TxMempoolValidator:
             is_cb, born = self.utxo._get_utxo_meta(entry)
             items.append((txid_b, vout_i, int(amt), spk_bytes, bool(is_cb), int(born)))
         return items
+    
+    # Graffiti OP_RETURN guard (size/comment/min fee)
+    def _validate_graffiti_output(self, spk_obj) -> bool:
+        raw = None
+        if hasattr(spk_obj, "serialize"):
+            raw = spk_obj.serialize()
+        elif isinstance(spk_obj, (bytes, bytearray)):
+            raw = bytes(spk_obj)
+        elif isinstance(spk_obj, str):
+            try:
+                raw = bytes.fromhex(spk_obj)
+            except ValueError:
+                return True
+        if not raw:
+            return True
+        data = last_pushdata(raw)
+        if not data or not data.startswith(CFG.GRAFFITI_MAGIC):
+            return True
+        if len(data) > int(CFG.MAX_GRAFFITI_OPRET):
+            self.last_error_reason = "graffiti_opreturn_too_large"
+            return False
+        meta = GRAFFITI.parse_payload(data)
+        if not meta:
+            self.last_error_reason = "graffiti_payload_invalid"
+            return False
+        event = str(meta.get("event", "")).upper()
+        if event == "POST":
+            size_val = int(meta.get("size", 0))
+            if size_val <= 0:
+                self.last_error_reason = "graffiti_size_invalid"
+                return False
+            if size_val > int(CFG.GRAFFITI_MAX_SIZE_BYTES):
+                self.last_error_reason = "graffiti_size_exceeds_limit"
+                return False
+        elif event == "COMMENT":
+            comment_len = int(meta.get("comment_len", 0))
+            if comment_len <= 0:
+                self.last_error_reason = "graffiti_comment_empty"
+                return False
+            if comment_len > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
+                self.last_error_reason = "graffiti_comment_too_large"
+                return False
+            amount = int(meta.get("amount", 0))
+            if amount < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
+                self.last_error_reason = "graffiti_comment_fee_too_low"
+                return False
+            tip = int(meta.get("tip", 0))
+            if tip < 0:
+                self.last_error_reason = "graffiti_comment_tip_negative"
+                return False
+        return True
 
     def validate_transaction(self, tx: Tx, utxo_set: dict[str, Any], spend_at_height: int | None = None,) -> bool:
         if CFG.DEBUG_BENCHMARKS:
@@ -184,60 +235,9 @@ class TxMempoolValidator:
         if vout > int(CFG.MAX_TX_OUTPUTS):
             self.last_error_reason = "tx_outputs_exceed_limit"
             return False
-        
-        # Graffiti OP_RETURN guard (size/comment/min fee)
-        def _validate_graffiti_output(spk_obj) -> bool:
-            raw = None
-            if hasattr(spk_obj, "serialize"):
-                raw = spk_obj.serialize()
-            elif isinstance(spk_obj, (bytes, bytearray)):
-                raw = bytes(spk_obj)
-            elif isinstance(spk_obj, str):
-                try:
-                    raw = bytes.fromhex(spk_obj)
-                except ValueError:
-                    return True
-            if not raw:
-                return True
-            data = last_pushdata(raw)
-            if not data or not data.startswith(CFG.GRAFFITI_MAGIC):
-                return True
-            if len(data) > int(CFG.MAX_GRAFFITI_OPRET):
-                self.last_error_reason = "graffiti_opreturn_too_large"
-                return False
-            meta = GRAFFITI.parse_payload(data)
-            if not meta:
-                self.last_error_reason = "graffiti_payload_invalid"
-                return False
-            event = str(meta.get("event", "")).upper()
-            if event == "POST":
-                size_val = int(meta.get("size", 0))
-                if size_val <= 0:
-                    self.last_error_reason = "graffiti_size_invalid"
-                    return False
-                if size_val > int(CFG.GRAFFITI_MAX_SIZE_BYTES):
-                    self.last_error_reason = "graffiti_size_exceeds_limit"
-                    return False
-            elif event == "COMMENT":
-                comment_len = int(meta.get("comment_len", 0))
-                if comment_len <= 0:
-                    self.last_error_reason = "graffiti_comment_empty"
-                    return False
-                if comment_len > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
-                    self.last_error_reason = "graffiti_comment_too_large"
-                    return False
-                amount = int(meta.get("amount", 0))
-                if amount < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
-                    self.last_error_reason = "graffiti_comment_fee_too_low"
-                    return False
-                tip = int(meta.get("tip", 0))
-                if tip < 0:
-                    self.last_error_reason = "graffiti_comment_tip_negative"
-                    return False
-            return True
 
         for tx_out in getattr(tx, "outputs", []) or []:
-            if not _validate_graffiti_output(getattr(tx_out, "script_pubkey", None)):
+            if not self._validate_graffiti_output(getattr(tx_out, "script_pubkey", None)):
                 return False
 
         current_height = (spend_at_height if spend_at_height is not None else self.utxo._get_tip_height_from_state())

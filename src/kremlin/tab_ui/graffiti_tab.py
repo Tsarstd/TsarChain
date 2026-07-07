@@ -662,7 +662,6 @@ class GraffitiTab(ttk.Frame):
         self.receipt_var.set("receipt: -")
         if self.post_info_var:
             self.post_info_var.set("Uploading blob to storage node...")
-
         self._begin_upload()
 
     def _begin_upload(self) -> None:
