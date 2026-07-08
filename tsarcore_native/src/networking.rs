@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use aes_gcm::{
     aead::{Aead, Payload},
-    Aes256Gcm, KeyInit, Nonce,
+    Aes256Gcm, KeyInit,
 };
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey, Signer, Verifier};
 use hkdf::Hkdf;
@@ -17,7 +17,7 @@ use pyo3::{
     types::{PyBytes, PyDict, PyDictMethods},
     Bound,
 };
-use rand_core::{OsRng, RngCore};
+use rand::Rng;
 use sha2::{Digest, Sha256};
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
 
@@ -258,7 +258,7 @@ impl SecureChannelNative {
         }
         let signing_key = self.signing_key()?;
 
-        let mut rng = OsRng;
+        let mut rng = rand::rng();
         let eph = StaticSecret::random_from_rng(&mut rng);
         let eph_pub = X25519PublicKey::from(&eph);
         let mut salt = [0u8; 16];
@@ -496,7 +496,7 @@ impl SecureChannelNative {
             .verify(&to_verify, &signature)
             .map_err(|_| PyValueError::new_err("bad HS1 signature"))?;
 
-        let mut rng = OsRng;
+        let mut rng = rand::rng();
         let eph = StaticSecret::random_from_rng(&mut rng);
         let eph_pub = X25519PublicKey::from(&eph);
         let mut salt2 = [0u8; 16];
@@ -591,7 +591,7 @@ impl SecureChannelNative {
             .as_ref()
             .ok_or_else(|| PyValueError::new_err("secure channel not established"))?;
         let nonce_bytes = seq_to_nonce(seq, self.nonce_len)?;
-        let nonce = Nonce::from_slice(&nonce_bytes);
+        let nonce = nonce_bytes.as_slice().try_into().unwrap();
         let ciphertext = aes
             .encrypt(
                 nonce,
@@ -635,7 +635,7 @@ impl SecureChannelNative {
             .as_ref()
             .ok_or_else(|| PyValueError::new_err("secure channel not established"))?;
         let nonce_bytes = seq_to_nonce(seq, self.nonce_len)?;
-        let nonce = Nonce::from_slice(&nonce_bytes);
+        let nonce = nonce_bytes.as_slice().try_into().unwrap();
         let plaintext = aes
             .decrypt(
                 nonce,
