@@ -2,7 +2,7 @@ import PropTypes from "prop-types";
 import { FaCopy } from "react-icons/fa";
 import { useState, useEffect } from "react";
 import { getStatusBadge, getDirectionBadge } from "../SearchUX";
-import { useRenderHelpers, copyToClipboard } from "./SearchHelpers";
+import { useRenderHelpers, copyToClipboard } from "../SearchHelpers";
 import {  
   fmtAddress,
   fmtTimestamp,

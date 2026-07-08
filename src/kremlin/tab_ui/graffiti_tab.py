@@ -34,6 +34,221 @@ from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.graffiti_tab")
 
 
+class GraffitiController:
+    def __init__(self, app):
+        self.app = app
+        self.reset_state()
+
+    def reset_state(self):
+        self.selected_path: str | None = None
+        self.selected_sha: str | None = None
+        self.selected_size: int | None = None
+        self.selected_mime: str | None = None
+        self.selected_merkle_root: str | None = None
+        self.selected_merkle_chunk: int | None = None
+        self.selected_merkle_count: int | None = None
+        self.receipt_id: str | None = None
+        self.opret_hex: str | None = None
+        self.uploading = False
+        self.assigned_storers: list[Dict[str, Any]] = []
+        self._upload_candidates: list[Dict[str, Any]] = []
+        self._active_storer: Optional[Dict[str, Any]] = None
+        self._upload_ctx: dict[str, Any] = {}
+        self._post_plan: Optional[Dict[str, Any]] = None
+
+    def fetch_storers_sync(self) -> list[Dict[str, Any]]:
+        rpc = getattr(self.app, "rpc", None)
+        if not rpc or not hasattr(rpc, "send"):
+            return []
+        resp = rpc.send({"type": "STOR_LIST"}) or {}
+        return select_upload_storers(resp, replication_r=CFG.GRAFFITI_REPLICATION_R)
+
+    def process_file(self, path: str):
+        info = read_graffiti_file_info(path)
+        self.selected_path = path
+        self.selected_size = info.get("size")
+        self.selected_mime = info.get("mime")
+        self.selected_sha = info.get("sha")
+        self.selected_merkle_root = info.get("merkle_root")
+        self.selected_merkle_chunk = info.get("merkle_chunk")
+        self.selected_merkle_count = info.get("merkle_count")
+        self.receipt_id = None
+        self.opret_hex = None
+        return info
+
+    def calc_fee_tsar(self) -> float:
+        if not self.selected_size:
+            return 0.0
+        fee_sats = calc_upload_fee_sats(int(self.selected_size))
+        return float(fee_sats / CFG.TSAR)
+
+    def prepare_upload(self, creator_addr: str) -> bool:
+        storers = self.fetch_storers_sync()
+        online = filter_online_storers(storers)
+        if not online:
+            raise ValueError("Storage node unavailable. Please try again when a storage node is online.")
+        
+        self.assigned_storers = online
+        upload_ctx = build_upload_context(self.selected_sha, creator_addr)
+        
+        self._upload_candidates = list(online)
+        self._upload_ctx = {
+            "gid": upload_ctx.get("graffiti_id"),
+            "receipt_id": upload_ctx.get("receipt_id"),
+            "art_id": upload_ctx.get("art_id"),
+            "creator": creator_addr
+        }
+        self.uploading = True
+        self._post_plan = None
+        self.opret_hex = None
+        self.receipt_id = None
+        return True
+
+    def perform_upload_step(self, progress_cb, done_cb):
+        if not self._upload_candidates:
+            done_cb({"error": "no storage node available"})
+            return
+            
+        storer = self._upload_candidates.pop(0)
+        self._active_storer = storer
+        
+        def work():
+            res = upload_graffiti(
+                storer_meta=storer,
+                file_path=self.selected_path,
+                creator_addr=self._upload_ctx.get("creator"),
+                graffiti_id=self._upload_ctx.get("gid"),
+                sha256_hex=self.selected_sha,
+                art_id=self._upload_ctx.get("art_id"),
+                receipt_id=self._upload_ctx.get("receipt_id"),
+                merkle_root=self.selected_merkle_root,
+                merkle_chunk=self.selected_merkle_chunk,
+                merkle_count=self.selected_merkle_count,
+                progress_cb=progress_cb,
+            )
+            done_cb(res)
+            
+        threading.Thread(target=work, daemon=True).start()
+
+    def process_upload_result(self, res: dict):
+        self.uploading = False
+        if not isinstance(res, dict) or res.get("status") != "ok":
+            return False, res
+
+        receipt = res.get("receipt") or {}
+        fallback_sha = (self.selected_sha or "")[:12]
+        rcpt_id = receipt.get("id") or receipt.get("receipt_id") or f"rcpt-{fallback_sha or int(time.time())}"
+        self.receipt_id = rcpt_id
+        return True, res
+
+    def prepare_post_plan(self, storer_meta: dict, creator_addr: str) -> dict:
+        if not (self.selected_sha and self.selected_size is not None and self.selected_mime and self.receipt_id):
+            raise RuntimeError("upload metadata incomplete")
+            
+        plan = build_post_plan(
+            sha256_hex=self.selected_sha,
+            size_bytes=int(self.selected_size),
+            mime=self.selected_mime,
+            creator_addr=creator_addr,
+            storer_meta=storer_meta,
+            receipt_id=self.receipt_id,
+            merkle_root=self.selected_merkle_root,
+            merkle_chunk=self.selected_merkle_chunk,
+            merkle_count=self.selected_merkle_count,
+        )
+        self.opret_hex = plan["opret_hex"]
+        self._post_plan = plan
+        return plan
+
+    def get_post_plan(self):
+        return self._post_plan
+        
+    def broadcast_post(self, creator_addr, fee_rate, ask_pwd, on_progress, on_done):
+        plan = self._post_plan
+        if not plan:
+            raise ValueError("No post plan available")
+        
+        svc = getattr(self.app, "send_svc", None)
+        rpc_send = getattr(self.app, "rpc_send", None)
+        if not rpc_send:
+            rpc = getattr(self.app, "rpc", None)
+            rpc_send = getattr(rpc, "send_async", None)
+        if not svc or not rpc_send:
+            raise ValueError("Send service is not available")
+        
+        if ask_pwd:
+            pw_provider = lambda addr: ask_pwd("Unlock Address", f"Enter password for {addr}:")
+        else:
+            pw_provider = lambda _addr: None
+            
+        svc.create_sign_broadcast(
+            from_addr=creator_addr,
+            to_addr=plan["pool_addr"],
+            amount_sats=plan["fee_sats"],
+            password_provider=pw_provider,
+            rpc_send=rpc_send,
+            fee_rate=fee_rate,
+            on_progress=on_progress,
+            on_done=on_done,
+            opret_hex=plan["opret_hex"],
+        )
+
+    def broadcast_comment(self, art, commenter, base_raw, tip_raw, text, fee_rate, ask_pwd, on_progress, on_done):
+        plan = build_comment_plan(
+            art=art,
+            commenter_addr=commenter,
+            base_amount_raw=base_raw,
+            tip_amount_raw=tip_raw,
+            comment_text=text,
+        )
+        
+        svc = getattr(self.app, "send_svc", None)
+        rpc_send = getattr(self.app, "rpc_send", None)
+        if not rpc_send:
+            rpc = getattr(self.app, "rpc", None)
+            rpc_send = getattr(rpc, "send_async", None)
+        if not svc or not rpc_send:
+            raise ValueError("Send service tidak tersedia.")
+            
+        if ask_pwd:
+            pw_provider = lambda addr: ask_pwd("Unlock Address", f"Masukkan password untuk {addr}:")
+        else:
+            pw_provider = lambda _addr: None
+            
+        svc.create_sign_broadcast(
+            from_addr=commenter,
+            to_addr="",
+            amount_sats=0,
+            password_provider=pw_provider,
+            rpc_send=rpc_send,
+            fee_rate=fee_rate,
+            on_progress=on_progress,
+            on_done=on_done,
+            opret_hex=plan["opret_hex"],
+            extra_outputs=plan["outputs"],
+        )
+
+    @staticmethod
+    def decode_comment_hex(comment_hex: Optional[str]) -> str:
+        raw = bytes.fromhex(comment_hex or "")
+        text = raw.decode("utf-8", errors="replace")
+        return text[:80] + ("..." if len(text) > 80 else "")
+
+    @staticmethod
+    def format_ts(ts_value: Any) -> str:
+        ts = int(ts_value)
+        if ts <= 0: return "-"
+        return time.strftime("%Y-%m-%d %H:%M", time.localtime(ts))
+
+    @staticmethod
+    def format_tsar(sats: Any) -> str:
+        dec = Decimal(int(sats)) / Decimal(CFG.TSAR)
+        quant = Decimal("1").scaleb(-CFG.MAX_DECIMALS)
+        val = dec.quantize(quant, rounding=ROUND_DOWN)
+        txt = format(val, "f").rstrip("0").rstrip(".")
+        return txt or "0"
+
+
 # ========= Graffiti Tab (UI) =========
 class GraffitiTab(ttk.Frame):
     PREVIEW_MAX_W = 854
@@ -43,25 +258,8 @@ class GraffitiTab(ttk.Frame):
         super().__init__(*args, **kwargs)
         self.app = app
         self.theme = theme
-        # state
-        self.selected_path: str | None = None
-        self.selected_sha: str | None = None
-        self.selected_size: int | None = None
-        self.selected_mime: str | None = None
-        self.selected_merkle_root: str | None = None
-        self.selected_merkle_chunk: int | None = None
-        self.selected_merkle_count: int | None = None
-        
-        self.receipt_id: str | None = None
-        self.opret_hex: str | None = None
-        self.uploading = False
-        
-        self.assigned_storers: list[Dict[str, Any]] = []
+        self.controller = GraffitiController(self.app)
         self.storer_info: StringVar | None = None
-        self._upload_candidates: list[Dict[str, Any]] = []
-        self._active_storer: Optional[Dict[str, Any]] = None
-        
-        self._upload_ctx: dict[str, Any] = {}
         self.creator_var = StringVar()
         self.creator_cb: ttk.Combobox | None = None
         self.cost_info_var = StringVar(value="Pilih file untuk menampilkan biaya & detail.")
@@ -78,7 +276,6 @@ class GraffitiTab(ttk.Frame):
         self._pdf_nav_frame: tk.Frame | None = None
 
         self.post_send_btn: ttk.Button | None = None
-        self._post_plan: Optional[Dict[str, Any]] = None
         self.catalog_posts: list[Dict[str, Any]] = []
         self._catalog_map: dict[str, Dict[str, Any]] = {}
         self._selected_art: Optional[Dict[str, Any]] = None
@@ -96,7 +293,6 @@ class GraffitiTab(ttk.Frame):
         self.art_info_var = StringVar(value="Pilih karya untuk melihat detail.")
         self.comment_split_var = StringVar(value="")
         self.comment_send_btn: ttk.Button | None = None
-        self._comment_plan: Optional[Dict[str, Any]] = None
         self.payout_tree: ttk.Treeview | None = None
         self.payout_status_var = StringVar(value="Payout history pending.")
 
@@ -252,11 +448,7 @@ class GraffitiTab(ttk.Frame):
         rpc.send_async({"type": "STOR_LIST"}, handle)
 
     def _fetch_storers_sync(self) -> list[Dict[str, Any]]:
-        rpc = getattr(self.app, "rpc", None)
-        if not rpc or not hasattr(rpc, "send"):
-            return []
-        resp = rpc.send({"type": "STOR_LIST"}) or {}
-        return select_upload_storers(resp, replication_r=CFG.GRAFFITI_REPLICATION_R)
+        return self.controller.fetch_storers_sync()
 
     def _refresh_creator_wallets(self):
         if not self.creator_cb:
@@ -321,11 +513,11 @@ class GraffitiTab(ttk.Frame):
 
     def _render_preview(self) -> None:
         """Render preview for selected file (image/mp4/pdf)."""
-        if not self.preview_frame or not self.selected_path or not self.selected_mime:
+        if not self.preview_frame or not self.controller.selected_path or not self.controller.selected_mime:
             return
         self._clear_preview()
-        path = self.selected_path
-        mime = (self.selected_mime or "").lower()
+        path = self.controller.selected_path
+        mime = (self.controller.selected_mime or "").lower()
         log.debug("graffiti_tab: render preview path=%s mime=%s", path, mime)
 
         # Video (mp4 & mkv)
@@ -500,11 +692,10 @@ class GraffitiTab(ttk.Frame):
         """Calculate upload cost info based on size."""
         if not self.cost_info_var:
             return
-        if not self.selected_size or not self.selected_mime:
+        if not self.controller.selected_size or not self.controller.selected_mime:
             self.cost_info_var.set("Select a file to display costs.")
             return
-        fee_sats = calc_upload_fee_sats(int(self.selected_size))
-        fee_tsar = fee_sats / CFG.TSAR
+        fee_tsar = self.controller.calc_fee_tsar()
         self.cost_info_var.set(f"Est. fee: {fee_tsar:.8f} TSAR")
 
     def _open_creator_catalog(self) -> None:
@@ -584,84 +775,60 @@ class GraffitiTab(ttk.Frame):
         path = filedialog.askopenfilename(title="Select file for Graffiti")
         if not path:
             return
-        self.selected_path = path
         self.file_var.set(path)
 
         # compute
         try:
-            info = read_graffiti_file_info(path)
+            info = self.controller.process_file(path)
         except Exception as e:
             log.exception("Unhandled exception")
             messagebox.showerror("Graffiti", f"Failed to read file: {e}")
             return
 
-        self.selected_size = info.get("size")
-        self.selected_mime = info.get("mime")
-        self.selected_sha = info.get("sha")
-        self.selected_merkle_root = info.get("merkle_root")
-        self.selected_merkle_chunk = info.get("merkle_chunk")
-        self.selected_merkle_count = info.get("merkle_count")
         self.meta_var.set(
-            f"size: {self.selected_size} bytes, file: {self.selected_mime}, sha256: {self.selected_sha[:64]}"
+            f"size: {self.controller.selected_size} bytes, file: {self.controller.selected_mime}, sha256: {str(self.controller.selected_sha)[:64]}"
         )
-        if self.selected_merkle_root:
+        if self.controller.selected_merkle_root:
             log.info(
                 "graffiti_tab: merkle root=%s mchunk=%s mcount=%s",
-                self.selected_merkle_root[:16],
-                self.selected_merkle_chunk,
-                self.selected_merkle_count,
+                str(self.controller.selected_merkle_root)[:16],
+                self.controller.selected_merkle_chunk,
+                self.controller.selected_merkle_count,
             )
         log.debug(
             "graffiti_tab: file selected path=%s size=%s mime=%s sha=%s",
             path,
-            self.selected_size,
-            self.selected_mime,
-            self.selected_sha,
+            self.controller.selected_size,
+            self.controller.selected_mime,
+            self.controller.selected_sha,
         )
         self._render_preview()
         self._update_cost_info()
-        self.receipt_id = None
         self.receipt_var.set("receipt: -")
-        self.opret_hex = None
         if self.post_info_var:
             self.post_info_var.set("The file is ready. Click Upload & Broadcast when ready.")
         if self.post_send_btn:
             self.post_send_btn.config(state="normal")
 
     def _start_upload_and_broadcast(self):
-        if self.uploading:
+        if self.controller.uploading:
             return
-        if not self.selected_path or not self.selected_sha or self.selected_size is None or not self.selected_mime:
+        if not self.controller.selected_path or not self.controller.selected_sha or self.controller.selected_size is None or not self.controller.selected_mime:
             messagebox.showwarning("Graffiti", "Select a file first.")
             return
-        storers = self._fetch_storers_sync()
-        online = filter_online_storers(storers)
-        if not online:
-            messagebox.showerror("Graffiti", "Storage node unavailable. Please try again when a storage node is online.")
-            return
-        self.assigned_storers = online
         creator_addr = (self.creator_var.get() or "").strip()
         if not creator_addr:
             messagebox.showwarning("Graffiti", "Select a creator wallet first.")
             return
         try:
-            upload_ctx = build_upload_context(self.selected_sha, creator_addr)
+            ok = self.controller.prepare_upload(creator_addr)
         except Exception as exc:
             log.exception("Unhandled exception")
             messagebox.showerror("Graffiti", f"Failed to compute art_id: {exc}")
             return
 
-        gid = upload_ctx.get("graffiti_id")
-        receipt_id = upload_ctx.get("receipt_id")
-        art_id = upload_ctx.get("art_id")
-        self._upload_candidates = list(online)
-        self._upload_ctx = {"gid": gid, "receipt_id": receipt_id, "art_id": art_id, "creator": creator_addr}
-        self.uploading = True
-        self._post_plan = None
         if self.post_send_btn:
             self.post_send_btn.config(state="disabled")
-        self.opret_hex = None
-        self.receipt_id = None
         self.pbar["value"] = 0
         self.receipt_var.set("receipt: -")
         if self.post_info_var:
@@ -669,42 +836,12 @@ class GraffitiTab(ttk.Frame):
         self._begin_upload()
 
     def _begin_upload(self) -> None:
-        if not self._upload_candidates:
-            self._reset_upload_state("Upload failed: no storage node available.")
-            return
-        
-        storer = self._upload_candidates.pop(0)
-        gid = self._upload_ctx.get("gid")
-        receipt_id = self._upload_ctx.get("receipt_id")
-        art_id = self._upload_ctx.get("art_id")
-        creator_addr = self._upload_ctx.get("creator")
-        path = self.selected_path
-        sha = self.selected_sha
-        self._active_storer = storer
-        if not creator_addr:
-            self._reset_upload_state("Upload failed: missing creator wallet identity.")
-            return
-
         def progress(sent: int, total: int):
             self.after(0, lambda: self._update_progress(sent, total))
-
-        def work():
-            res = upload_graffiti(
-                storer_meta=storer,
-                file_path=path,
-                creator_addr=creator_addr,
-                graffiti_id=gid,
-                sha256_hex=sha,
-                art_id=art_id,
-                receipt_id=receipt_id,
-                merkle_root=self.selected_merkle_root,
-                merkle_chunk=self.selected_merkle_chunk,
-                merkle_count=self.selected_merkle_count,
-                progress_cb=progress,
-            )
+        def done(res: dict):
             self.after(0, lambda: self._handle_upload_result(res, trigger_broadcast=True))
-
-        threading.Thread(target=work, daemon=True).start()
+        
+        self.controller.perform_upload_step(progress_cb=progress, done_cb=done)
 
     def _update_progress(self, sent: int, total: int) -> None:
         total = max(total, 1)
@@ -713,10 +850,12 @@ class GraffitiTab(ttk.Frame):
         self.receipt_var.set(f"Uploading: {sent:,}/{total:,} bytes")
 
     def _handle_upload_result(self, res: Optional[Dict[str, Any]], *, trigger_broadcast: bool = True, txid: Optional[str] = None) -> None:
-        self.uploading = False
+        ok, res = self.controller.process_upload_result(res or {})
+        
         if self.post_send_btn:
             self.post_send_btn.config(state="disabled" if trigger_broadcast else "normal")
-        if not isinstance(res, dict) or res.get("status") != "ok":
+            
+        if not ok:
             self.pbar["value"] = 0
             detail = (res or {}).get("reason") or (res or {}).get("error") or (res or {}).get("stage") or "upload_failed"
             extra = (res or {}).get("resp") or {}
@@ -724,20 +863,16 @@ class GraffitiTab(ttk.Frame):
                 detail = f"{detail} ({extra.get('reason')})"
             messagebox.showerror("Graffiti", f"Upload failed: {detail}")
             self.receipt_var.set("receipt: -")
-            if self._upload_candidates:
+            if self.controller._upload_candidates:
                 if self.post_info_var:
                     self.post_info_var.set("Retrying upload on another storage node...")
-                self.uploading = True
+                self.controller.uploading = True
                 self._begin_upload()
                 return
             self._reset_upload_state("Upload failed. No storage node reachable.")
             return
 
-        receipt = res.get("receipt") or {}
-        fallback_sha = (self.selected_sha or "")[:12]
-        rcpt_id = receipt.get("id") or receipt.get("receipt_id") or f"rcpt-{fallback_sha or int(time.time())}"
-        self.receipt_id = rcpt_id
-        self.receipt_var.set(f"receipt: {rcpt_id}")
+        self.receipt_var.set(f"receipt: {self.controller.receipt_id}")
         self.pbar["value"] = 100
         try:
             if trigger_broadcast:
@@ -753,45 +888,16 @@ class GraffitiTab(ttk.Frame):
             messagebox.showerror("Graffiti", f"Prepare POST failed: {exc}")
 
     def _prepare_post_plan_preupload(self, storer_meta: Dict[str, Any], receipt_id: str, art_id: str) -> None:
-        if not (self.selected_sha and self.selected_size is not None and self.selected_mime):
-            raise RuntimeError("upload metadata incomplete")
         creator = (self.creator_var.get() or "").strip().lower()
-        plan = build_post_plan(
-            sha256_hex=self.selected_sha,
-            size_bytes=int(self.selected_size),
-            mime=self.selected_mime,
-            creator_addr=creator,
-            storer_meta=storer_meta,
-            receipt_id=receipt_id,
-            art_id=art_id,
-            merkle_root=self.selected_merkle_root,
-            merkle_chunk=self.selected_merkle_chunk,
-            merkle_count=self.selected_merkle_count,
-        )
-        self.opret_hex = plan["opret_hex"]
-        self._post_plan = plan
+        plan = self.controller.prepare_post_plan(storer_meta, creator)
         info = f"Pool: {plan['pool_addr']} | Fee: {plan['tsar_fee']:.8f} TSAR ({plan['fee_sats']} sats)."
         if self.post_info_var:
             self.post_info_var.set(info + " Ready to sign.")
 
     def _prepare_post_tx(self, upload_result: Dict[str, Any]) -> None:
-        if not (self.selected_sha and self.selected_size is not None and self.selected_mime and self.receipt_id):
-            raise RuntimeError("upload metadata incomplete")
         storer_meta = upload_result.get("storer") or {}
         creator = (self.creator_var.get() or "").strip().lower()
-        plan = build_post_plan(
-            sha256_hex=self.selected_sha,
-            size_bytes=int(self.selected_size),
-            mime=self.selected_mime,
-            creator_addr=creator,
-            storer_meta=storer_meta,
-            receipt_id=self.receipt_id,
-            merkle_root=self.selected_merkle_root,
-            merkle_chunk=self.selected_merkle_chunk,
-            merkle_count=self.selected_merkle_count,
-        )
-        self.opret_hex = plan["opret_hex"]
-        self._post_plan = plan
+        plan = self.controller.prepare_post_plan(storer_meta, creator)
         info = f"Pool: {plan['pool_addr']} | Fee: {plan['tsar_fee']:.8f} TSAR ({plan['fee_sats']} sats)."
         if self.post_info_var:
             self.post_info_var.set(info + " Ready to broadcast.")
@@ -805,7 +911,7 @@ class GraffitiTab(ttk.Frame):
             raise RuntimeError(f"prefill send tab failed: {exc}") from exc
 
     def _broadcast_post_tx(self, auto: bool = False, after_success=None) -> None:
-        plan = self._post_plan
+        plan = self.controller.get_post_plan()
         if not plan:
             if not auto:
                 messagebox.showwarning("Graffiti", "Upload first before broadcast.")
@@ -813,14 +919,6 @@ class GraffitiTab(ttk.Frame):
         creator = (self.creator_var.get() or "").strip().lower()
         if not creator:
             messagebox.showwarning("Graffiti", "Select the wallet creator first.")
-            return
-        svc = getattr(self.app, "send_svc", None)
-        rpc_send = getattr(self.app, "rpc_send", None)
-        if not rpc_send:
-            rpc = getattr(self.app, "rpc", None)
-            rpc_send = getattr(rpc, "send_async", None)
-        if not svc or not rpc_send:
-            messagebox.showerror("Graffiti", "Send service is not available.")
             return
         self.post_info_var.set("Broadcasting POST transaction...")
         if self.post_send_btn:
@@ -848,20 +946,13 @@ class GraffitiTab(ttk.Frame):
         try:
             fee_rate = int(getattr(self.app.send_tab, "fee_rate_var", None).get())
             ask_pwd = getattr(self.app, "_ask_password", None)
-            if ask_pwd:
-                pw_provider = lambda addr: ask_pwd("Unlock Address", f"Enter password for {addr}:")
-            else:
-                pw_provider = lambda _addr: None
-            svc.create_sign_broadcast(
-                from_addr=creator,
-                to_addr=plan["pool_addr"],
-                amount_sats=plan["fee_sats"],
-                password_provider=pw_provider,
-                rpc_send=rpc_send,
+            
+            self.controller.broadcast_post(
+                creator_addr=creator,
                 fee_rate=fee_rate,
+                ask_pwd=ask_pwd,
                 on_progress=on_progress,
-                on_done=on_done,
-                opret_hex=plan["opret_hex"],
+                on_done=on_done
             )
         except Exception as exc:
             log.exception("Unhandled exception")
@@ -898,22 +989,13 @@ class GraffitiTab(ttk.Frame):
             self.comment_status_var.set("Belum ada komentar untuk karya ini.")
 
     def _decode_comment_hex(self, comment_hex: Optional[str]) -> str:
-        raw = bytes.fromhex(comment_hex or "")
-        text = raw.decode("utf-8", errors="replace")
-        return text[:80] + ("..." if len(text) > 80 else "")
+        return GraffitiController.decode_comment_hex(comment_hex)
 
     def _format_ts(self, ts_value: Any) -> str:
-        ts = int(ts_value)
-        if ts <= 0:
-            return "-"
-        return time.strftime("%Y-%m-%d %H:%M", time.localtime(ts))
+        return GraffitiController.format_ts(ts_value)
 
     def _format_tsar(self, sats: Any) -> str:
-        dec = Decimal(int(sats)) / Decimal(CFG.TSAR)
-        quant = Decimal("1").scaleb(-CFG.MAX_DECIMALS)
-        val = dec.quantize(quant, rounding=ROUND_DOWN)
-        txt = format(val, "f").rstrip("0").rstrip(".")
-        return txt or "0"
+        return GraffitiController.format_tsar(sats)
 
     def _update_comment_split_preview(self) -> None:
         base = parse_amount_str(self.comment_amount_var.get(), int(CFG.GRAFFITI_COMMENT_MIN_FEE))
@@ -927,41 +1009,7 @@ class GraffitiTab(ttk.Frame):
     def _broadcast_comment_tx(self) -> None:
         commenter = (self.comment_wallet_var.get() or "").strip().lower()
         comment_txt = self.comment_text.get("1.0", tk.END).strip() if self.comment_text else ""
-        try:
-            plan = build_comment_plan(
-                art=self._selected_art,
-                commenter_addr=commenter,
-                base_amount_raw=self.comment_amount_var.get(),
-                tip_amount_raw=self.comment_tip_var.get(),
-                comment_text=comment_txt,
-            )
-        except ValueError as exc:
-            msg = str(exc)
-            box = messagebox.showwarning if "Pilih" in msg or "belum" in msg else messagebox.showerror
-            box("Graffiti", msg)
-            return
-        except Exception as exc:
-            log.exception("Unhandled exception")
-            messagebox.showerror("Graffiti", f"Metadata komentar invalid: {exc}")
-            return
-
-        opret_hex = plan["opret_hex"]
-        outputs = plan["outputs"]
-        svc = getattr(self.app, "send_svc", None)
-        rpc_send = getattr(self.app, "rpc_send", None)
-        if not rpc_send:
-            rpc_send = getattr(getattr(self.app, "rpc", None), "send_async", None)
-        if not svc or not rpc_send:
-            messagebox.showerror("Graffiti", "Send service tidak tersedia.")
-            return
         
-        fee_rate = int(getattr(self.app.send_tab, "fee_rate_var", None).get())
-        ask_pwd = getattr(self.app, "_ask_password", None)
-        if ask_pwd:
-            pw_provider = lambda addr: ask_pwd("Unlock Address", f"Masukkan password untuk {addr}:")
-        else:
-            pw_provider = lambda _addr: None
-
         self.comment_status_var.set("Broadcasting COMMENT transaction...")
         if self.comment_send_btn:
             self.comment_send_btn.config(state="disabled")
@@ -984,17 +1032,19 @@ class GraffitiTab(ttk.Frame):
             self.after(0, finish)
 
         try:
-            svc.create_sign_broadcast(
-                from_addr=commenter,
-                to_addr="",
-                amount_sats=0,
-                password_provider=pw_provider,
-                rpc_send=rpc_send,
+            fee_rate = int(getattr(self.app.send_tab, "fee_rate_var", None).get())
+            ask_pwd = getattr(self.app, "_ask_password", None)
+            
+            self.controller.broadcast_comment(
+                art=self._selected_art,
+                commenter=commenter,
+                base_raw=self.comment_amount_var.get(),
+                tip_raw=self.comment_tip_var.get(),
+                text=comment_txt,
                 fee_rate=fee_rate,
+                ask_pwd=ask_pwd,
                 on_progress=on_progress,
-                on_done=on_done,
-                opret_hex=opret_hex,
-                extra_outputs=outputs,
+                on_done=on_done
             )
         except Exception as exc:
             log.exception("Unhandled exception")

@@ -9,10 +9,10 @@ import threading
 from unittest.mock import MagicMock, Mock, patch
 
 
+from tsarchain.core.tx import Tx
 from tsarchain.core.block import Block
 from tsarchain.utils import config as CFG
 from tsarchain.storage.utxo import UTXODB
-from tsarchain.core.tx import Tx, TxIn, TxOut
 from tsarchain.consensus.chain_storage import StorageMixin
 from tsarchain.contracts.graffiti_registry import GraffitiRegistry
 

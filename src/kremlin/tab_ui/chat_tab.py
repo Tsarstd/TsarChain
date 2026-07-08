@@ -19,6 +19,87 @@ from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.chat_tab")
 
 
+class ChatService:
+    def __init__(self, chat_mgr):
+        self.chat_mgr = chat_mgr
+        self.history = {}
+        self.verified_contacts = {}
+        self.blocked = set()
+        self.online = False
+    
+    def load_state(self):
+        data = load_chat_state()
+        self.blocked = set(data.get("blocked", []))
+        self.chat_mgr.pub_cache.update(data.get("pubcache", {}) or {})
+        self.history = data.get("history", {}) or {}
+        self.verified_contacts = data.get("verified", {}) or {}
+        return data.get("textsize")
+
+    def save_state(self, textsize=None):
+        data = {
+            "blocked": sorted(self.blocked),
+            "pubcache": self.chat_mgr.pub_cache,
+            "textsize": textsize,
+            "history": self.history,
+            "verified": self.verified_contacts,
+        }
+        save_chat_state(data)
+
+    def is_blocked(self, addr):
+        return (addr or "").strip().lower() in self.blocked
+
+    def toggle_block(self, addr):
+        addr = (addr or "").strip().lower()
+        if not addr: return False
+        if addr in self.blocked:
+            self.blocked.discard(addr)
+            return False
+        else:
+            self.blocked.add(addr)
+            self.drop_sessions(addr)
+            return True
+
+    def drop_sessions(self, peer):
+        p = (peer or "").strip().lower()
+        if not p: return
+        for key in list(getattr(self.chat_mgr, "_sessions", {}).keys()):
+            if p in key:
+                try:
+                    self.chat_mgr._sessions.pop(key, None)
+                    self.chat_mgr._pending_used_opk.pop(key, None)
+                    self.chat_mgr._delete_session(key[0], key[1])
+                except Exception:
+                    pass
+
+    def store_history(self, me_addr, peer_addr, entry):
+        conv = "|".join(sorted([(me_addr or "").strip().lower(), (peer_addr or "").strip().lower()]))
+        if not conv.strip("|"): return
+        bucket = self.history.setdefault(conv, [])
+        bucket.append(entry)
+        if len(bucket) > CFG.CHAT_HISTORY_MAX_PER_PEER:
+            self.history[conv] = bucket[-CFG.CHAT_HISTORY_MAX_PER_PEER:]
+
+    def get_history(self, me_addr, peer_addr):
+        conv = "|".join(sorted([(me_addr or "").strip().lower(), (peer_addr or "").strip().lower()]))
+        return self.history.get(conv) or []
+        
+    def update_msg_status(self, mid, status):
+        if mid is None: return False
+        updated = False
+        for conv, bucket in list(self.history.items()):
+            for rec in bucket:
+                if rec.get("msg_id") == mid:
+                    if rec.get("status") != status:
+                        rec["status"] = status
+                        updated = True
+                    break
+        return updated
+
+    def set_verified(self, addr, pubkey):
+        self.verified_contacts[addr] = pubkey
+
+
+
 class ChatTab:
     def __init__(
         self,
@@ -36,8 +117,7 @@ class ChatTab:
         self.toast = toast_cb
         self.get_wallets_cb = get_wallets_cb
         self.contact_mgr = contact_mgr
-        self._chat_history: dict[str, list[dict]] = {}
-        self._verified_contacts: dict[str, str] = {}
+        self.service = ChatService(chat_mgr)
         self._rendered_conv: Optional[str] = None
         self.set_palette(theme)
         if hasattr(self.chat_mgr, "key_ttl_sec"):
@@ -54,14 +134,13 @@ class ChatTab:
         self._chat_priv_cache = {}
         self._msg_meta_map = {}
         self._chat_key_ttl_sec = 15 * 60
-        self.chat_blocked = set()
         self._hero_visible = False
         self.peer_status_var = tk.StringVar(value="Contact: unknown")
 
         def _on_key_changed(addr, old, new):
-            self._drop_sessions_for_peer(addr)
-            if addr in self._verified_contacts:
-                self._verified_contacts.pop(addr, None)
+            self.service.drop_sessions(addr)
+            if addr in self.service.verified_contacts:
+                self.service.verified_contacts.pop(addr, None)
                 self._chat_state_save()
             messagebox.showwarning("Partner key changed",
                 f"Public key untuk {self._alias_label(addr) or self._mask_addr(addr)} telah berubah.\n\n"
@@ -637,26 +716,15 @@ class ChatTab:
         self._chat_enter_hero()
 
     def _chat_state_load(self):
-        data = load_chat_state()
-        self.chat_blocked = set(data.get("blocked", []))
-        self.chat_mgr.pub_cache.update(data.get("pubcache", {}) or {})
-        tsz = data.get("textsize")
+        tsz = self.service.load_state()
         if tsz:
             self.chat_textsize_var.set(tsz)
-        self._chat_history = data.get("history", {}) or {}
-        self._verified_contacts = data.get("verified", {}) or {}
 
     def _chat_state_save(self):
-        data = {
-            "blocked": sorted(self.chat_blocked),
-            "pubcache": self.chat_mgr.pub_cache,
-            "textsize": self.chat_textsize_var.get(),
-            "history": self._chat_history,
-            "verified": self._verified_contacts,
-        }
-        save_chat_state(data)
+        self.service.save_state(self.chat_textsize_var.get())
 
     def _chat_set_online_ui(self, on: bool) -> None:
+        self.service.online = bool(on)
         self._chat_online = bool(on)
         from_addr = (self.chat_from_var.get() or "").strip().lower()
         from_name = self._alias_label(from_addr) or self._mask_addr(from_addr)
@@ -683,36 +751,24 @@ class ChatTab:
         if not btn:
             return
         addr = (self.chat_to_var.get() or "").strip().lower()
-        blocked = bool(addr and addr in self.chat_blocked)
+        blocked = bool(addr and self.service.is_blocked(addr))
         btn.config(text=("Unblock" if blocked else "Block"), state=(tk.NORMAL if addr else tk.DISABLED))
 
     def _toggle_block_current(self) -> None:
         addr = (self.chat_to_var.get() or "").strip().lower()
         if not addr:
             return
-        if addr in self.chat_blocked:
-            self.chat_blocked.discard(addr)
-            self.toast(f"{self._alias_label(addr) or addr} unblocked", "info")
-        else:
-            self.chat_blocked.add(addr)
+        is_blocked = self.service.toggle_block(addr)
+        if is_blocked:
             self.toast(f"{self._alias_label(addr) or addr} diblokir", "warn")
-            self._drop_sessions_for_peer(addr)
+        else:
+            self.toast(f"{self._alias_label(addr) or addr} unblocked", "info")
         self._chat_state_save()
         self._update_block_btn()
         self._chat_update_send_state()
 
     def _drop_sessions_for_peer(self, peer: str) -> None:
-        p = (peer or "").strip().lower()
-        if not p:
-            return
-        for key in list(getattr(self.chat_mgr, "_sessions", {}).keys()):
-            if p in key:
-                try:
-                    self.chat_mgr._sessions.pop(key, None)
-                    self.chat_mgr._pending_used_opk.pop(key, None)
-                    self.chat_mgr._delete_session(key[0], key[1])
-                except Exception:
-                    log.exception("Unhandled exception")
+        self.service.drop_sessions(peer)
 
     def _current_conv_key(self) -> Optional[str]:
         frm = (self.chat_from_var.get() or "").strip().lower()
@@ -722,13 +778,7 @@ class ChatTab:
         return "|".join(sorted([frm, to]))
 
     def _store_history_entry(self, me_addr: str, peer_addr: str, entry: dict) -> None:
-        conv = "|".join(sorted([(me_addr or "").strip().lower(), (peer_addr or "").strip().lower()]))
-        if not conv.strip("|"):
-            return
-        bucket = self._chat_history.setdefault(conv, [])
-        bucket.append(entry)
-        if len(bucket) > CFG.CHAT_HISTORY_MAX_PER_PEER:
-            self._chat_history[conv] = bucket[-CFG.CHAT_HISTORY_MAX_PER_PEER:]
+        self.service.store_history(me_addr, peer_addr, entry)
         self._chat_state_save()
 
     def _chat_render_history_for_current(self, force: bool = False) -> None:
@@ -745,8 +795,9 @@ class ChatTab:
             txt.delete("1.0", tk.END)
             if not conv:
                 return
-            bucket = self._chat_history.get(conv) or []
             frm = (self.chat_from_var.get() or "").strip().lower()
+            peer = (self.chat_to_var.get() or "").strip().lower()
+            bucket = self.service.get_history(frm, peer)
             for ent in bucket:
                 side = "me" if (ent.get("from") or "").lower() == frm else "peer"
                 name = self._alias_label(ent.get("from") or "") if side == "peer" else (self._alias_label(frm) or "Me")
@@ -987,13 +1038,7 @@ class ChatTab:
                         self.chat_log.configure(state="disabled")
 
         if mid is not None:
-            updated = False
-            for conv, bucket in list(self._chat_history.items()):
-                for rec in bucket:
-                    if rec.get("msg_id") == mid:
-                        rec["status"] = new_status
-                        updated = True
-                        break
+            updated = self.service.update_msg_status(mid, new_status)
             if updated:
                 self._chat_state_save()
 
@@ -1013,7 +1058,7 @@ class ChatTab:
             return
         exp_pub = self.chat_mgr.expected_pub_or_lookup(to)
         if exp_pub:
-            verified = self._verified_contacts.get(to) == exp_pub
+            verified = self.service.verified_contacts.get(to) == exp_pub
             self._chat_set_verified(bool(verified), "" if verified else "not verified")
             sas = self.chat_mgr.sas(frm, to)
             self.chat_sas_var.set(sas)
@@ -1051,7 +1096,7 @@ class ChatTab:
                         self._chat_update_status(mid, label)
                     continue
                 sender_addr = (it.get("from") or "").strip().lower()
-                if sender_addr in self.chat_blocked:
+                if self.service.is_blocked(sender_addr):
                     continue
                 text        = it.get("text") or ""
                 ts          = int(it.get("ts") or 0)
@@ -1113,7 +1158,7 @@ class ChatTab:
         text     = (self.chat_input.get("1.0", "end").strip() or "")
         if not (frm_addr and to_addr and text):
             self.toast("Lengkapi From/To & pesan.", kind="warn"); return
-        if to_addr in self.chat_blocked:
+        if self.service.is_blocked(to_addr):
             self.toast("Kontak ini diblokir. Unblock sebelum mengirim.", kind="warn")
             return
 
@@ -1161,7 +1206,7 @@ class ChatTab:
         online = getattr(self, "_chat_online", False)
         to_val = (self.chat_to_var.get() or "").strip().lower()
         has_to = bool(to_val)
-        blocked = has_to and to_val in self.chat_blocked
+        blocked = has_to and self.service.is_blocked(to_val)
         if getattr(self, "chat_send_btn", None):
             state = (tk.NORMAL if (online and has_to and not blocked) else tk.DISABLED)
             self.chat_send_btn.config(state=state)
@@ -1235,7 +1280,7 @@ class ChatTab:
             f"SAS dengan {alias}:\n\n{sas}\n\n"
             "Cocokkan 6 emoji ini via panggilan/IRL. Jika sama, kontak ini autentik.")
         if messagebox.askyesno("Mark Verified", "Tandai kontak ini sebagai terverifikasi?"):
-            self._verified_contacts[to] = exp_pub
+            self.service.set_verified(to, exp_pub)
             self._chat_state_save()
             self._chat_update_security_badges()
 

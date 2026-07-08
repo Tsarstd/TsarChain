@@ -1,8 +1,12 @@
-use pyo3::prelude::*;
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2025 Tsar Studio
+// Part of TsarChain - see LICENSE and TRADEMARKS.md
+
 use qrcode::QrCode;
-use image::{DynamicImage, ImageBuffer, Luma, Rgba};
-use rust_decimal::Decimal;
+use pyo3::prelude::*;
 use std::str::FromStr;
+use rust_decimal::Decimal;
+use image::{DynamicImage, ImageBuffer, Luma, Rgba};
 
 #[pyfunction]
 pub fn generate_qr_code(data: &str) -> PyResult<Vec<u8>> {

@@ -8,14 +8,14 @@ import json
 import time
 import threading
 
-from kremlin.services.rpc_kremlin import NodeClient
-from tsarchain.network.protocol import load_or_create_keypair_at
 from tsarchain.utils import config as CFG
-from web.Backend.src.python import database_web as webdb
 from web.Backend.src.python import build_receipt
+from kremlin.services.rpc_kremlin import NodeClient
+from web.Backend.src.python import database_web as webdb
+from tsarchain.network.protocol import load_or_create_keypair_at
 
 from tsarchain.utils.tsar_logging import get_ctx_logger, setup_logging
-log = get_ctx_logger('tsarchain.web.Backend.py_rpc_client')
+log = get_ctx_logger('tsarchain.web.Backend.web_rpc_client')
 
 _CLIENT_CACHE       = {}
 _CLIENT_LOCK        = threading.RLock()

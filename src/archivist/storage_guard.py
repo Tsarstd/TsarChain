@@ -9,9 +9,9 @@ Guard & rate limiter specifically for storage nodes (Archivist).
 
 from __future__ import annotations
 
+import time
 import ipaddress
 import threading
-import time
 from typing import Dict
 
 from tsarchain.utils import config as CFG

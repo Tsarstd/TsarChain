@@ -178,11 +178,125 @@ class CreateWalletDialog(tk.Toplevel):
         self.destroy()
 
 
-# ---------------- Wallets Mixin ----------------
+# ---------------- Wallet Controller ----------------
+class WalletController:
+    def __init__(self, app=None):
+        self.app = app
+        self._bal_cache = {}
+        self._cache_dir = os.path.join(os.path.abspath(os.getcwd()), ".tsarcache")
+        self._bal_cache_path = os.path.join(self._cache_dir, "balances.json")
+        self.init_balance_cache()
 
+    def init_balance_cache(self) -> None:
+        os.makedirs(self._cache_dir, exist_ok=True)
+        self._bal_cache = self.load_balance_cache()
+
+    def load_balance_cache(self) -> dict:
+        if not os.path.exists(self._bal_cache_path):
+            return {}
+        try:
+            with open(self._bal_cache_path, "r", encoding="utf-8") as f:
+                d = json.load(f)
+                return d if isinstance(d, dict) else {}
+        except Exception:
+            return {}
+
+    def save_balance_cache(self) -> None:
+        tmp = self._bal_cache_path + ".tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self._bal_cache, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, self._bal_cache_path)
+        except Exception:
+            log.exception("Failed to save balance cache")
+
+    def clear_balance_cache(self):
+        self._bal_cache = {}
+        if os.path.exists(self._bal_cache_path):
+            try:
+                os.remove(self._bal_cache_path)
+            except OSError:
+                pass
+
+    def cache_balance(self, addr: str, data: dict):
+        self._bal_cache[addr] = data
+        if len(self._bal_cache) > 2000:
+            oldest = sorted(self._bal_cache.items(), key=lambda kv: kv[1].get("ts", 0))[:100]
+            for k, _ in oldest:
+                self._bal_cache.pop(k, None)
+        self.save_balance_cache()
+
+    def get_cached_balance(self, addr: str) -> Optional[dict]:
+        d = self._bal_cache.get(addr)
+        if isinstance(d, dict):
+            return {
+                "balance": int(d.get("balance", 0)),
+                "spendable": int(d.get("spendable", 0)),
+                "immature": int(d.get("immature", 0)),
+                "pending_outgoing": int(d.get("pending_outgoing", 0)),
+                "pending_incoming": int(d.get("pending_incoming", 0)),
+                "maturity": int(d.get("maturity", d.get("coinbase_maturity", CFG.COINBASE_MATURITY))),
+            }
+        return None
+
+    def normalize_balance_resp(self, resp: Optional[Dict[str, Any]], target_addr: Optional[str] = None):
+        if not resp or "error" in resp or not isinstance(resp, dict):
+            return None
+        typ = str(resp.get("type", "")).upper()
+        if typ == "BALANCES" and isinstance(resp.get("items"), dict):
+            if target_addr and target_addr in resp["items"]:
+                d = resp["items"][target_addr] or {}
+                return {
+                    "balance": int(d.get("balance", d.get("total", 0)) or 0),
+                    "spendable": int(d.get("spendable", d.get("confirmed", d.get("mature", d.get("total", 0)))) or 0),
+                    "immature": int(d.get("immature", 0) or 0),
+                    "pending_outgoing": int(d.get("pending_outgoing", d.get("pending", d.get("unconfirmed", 0))) or 0),
+                    "pending_incoming": int(d.get("pending_incoming", 0) or 0),
+                    "maturity": int(d.get("maturity", CFG.COINBASE_MATURITY)),
+                }
+            return None
+        return {
+            "balance": int(resp.get("balance", resp.get("total", 0)) or 0),
+            "spendable": int(resp.get("spendable", resp.get("confirmed", resp.get("mature", resp.get("total", 0)))) or 0),
+            "immature": int(resp.get("immature", 0) or 0),
+            "pending_outgoing": int(resp.get("pending_outgoing", resp.get("pending", resp.get("unconfirmed", 0))) or 0),
+            "pending_incoming": int(resp.get("pending_incoming", 0) or 0),
+            "maturity": int(resp.get("maturity", CFG.COINBASE_MATURITY)),
+        }
+
+    def sync_keystore_addresses(self, pwd: str, current_wallets: list[str]) -> tuple[list[str], list[str], list[str]]:
+        keystore_addrs = list_addresses_in_keystore(pwd)
+        if keystore_addrs is None:
+            raise ValueError("Unable to read keystore")
+        old = set(current_wallets or [])
+        new = set(keystore_addrs)
+        return list(new - old), list(old - new), sorted(list(new))
+
+    def delete_wallet_data(self, pwd: str, existing_wallets: list[str]) -> tuple[list[str], int]:
+        list_addresses_in_keystore(pwd) # verify password
+        Security.secure_erase(pwd)
+        removed_labels = []
+        def _remove_path(path: Optional[str], label: str) -> None:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                    removed_labels.append(label)
+                except OSError:
+                    pass
+        _remove_path(WALLET_FILE, "Keystore")
+        _remove_path(CFG.REGISTRY_PATH, "Wallet registry")
+        _remove_path(self._bal_cache_path, "Balance cache")
+        cleared_hist = sum(1 for addr in existing_wallets if HistoryService.cache_clear(addr))
+        self.clear_balance_cache()
+        return removed_labels, cleared_hist
+
+
+# ---------------- Wallets Mixin ----------------
 class WalletsMixin:
     
     def _build_wallets_frame(self) -> None:
+        if not hasattr(self, "wallet_controller"):
+            self.wallet_controller = WalletController(self)
         f = tk.Frame(self.main, bg=self.bg)
         self.frames["wallets"] = f
 
@@ -429,32 +543,7 @@ class WalletsMixin:
         }
 
     def _normalize_balance_resp(self, resp: Optional[Dict[str, Any]], target_addr: Optional[str] = None):
-        if not resp or "error" in resp or not isinstance(resp, dict):
-            return None
-
-        typ = str(resp.get("type", "")).upper()
-
-        if typ == "BALANCES" and isinstance(resp.get("items"), dict):
-            if target_addr and target_addr in resp["items"]:
-                d = resp["items"][target_addr] or {}
-                return {
-                    "balance": int(d.get("balance", d.get("total", 0)) or 0),
-                    "spendable": int(d.get("spendable", d.get("confirmed", d.get("mature", d.get("total", 0)))) or 0),
-                    "immature": int(d.get("immature", 0) or 0),
-                    "pending_outgoing": int(d.get("pending_outgoing", d.get("pending", d.get("unconfirmed", 0))) or 0),
-                    "pending_incoming": int(d.get("pending_incoming", 0) or 0),
-                    "maturity": int(d.get("maturity", CFG.COINBASE_MATURITY)),
-                }
-            return None
-
-        return {
-            "balance": int(resp.get("balance", resp.get("total", 0)) or 0),
-            "spendable": int(resp.get("spendable", resp.get("confirmed", resp.get("mature", resp.get("total", 0)))) or 0),
-            "immature": int(resp.get("immature", 0) or 0),
-            "pending_outgoing": int(resp.get("pending_outgoing", resp.get("pending", resp.get("unconfirmed", 0))) or 0),
-            "pending_incoming": int(resp.get("pending_incoming", 0) or 0),
-            "maturity": int(resp.get("maturity", CFG.COINBASE_MATURITY)),
-        }
+        return self.wallet_controller.normalize_balance_resp(resp, target_addr)
 
     def _update_balance_block(self, bal_labels: Dict[str, tk.Label], resp: Dict[str, Any]) -> None:
         def _sat(v):
@@ -527,21 +616,12 @@ class WalletsMixin:
                     "pending_outgoing": int(_sat(pend)),
                     "pending_incoming": int(_sat(incoming_amt)),
                     "maturity": int(mat if mat is not None else CFG.COINBASE_MATURITY),
-                    "ts": int(time.time()),}
-            if not hasattr(self, "_bal_cache"):
-                self._init_balance_cache()
-            self._bal_cache[addr] = cached
-
-            if len(self._bal_cache) > 2000:
-                oldest = sorted(self._bal_cache.items(), key=lambda kv: kv[1].get("ts", 0))[:100]
-                for k, _ in oldest:
-                    self._bal_cache.pop(k, None)
-            self._save_balance_cache()
+                    "ts": int(time.time()),
+                }
+                self.wallet_controller.cache_balance(addr, cached)
 
     def clear_balance_cache(self):
-        self._bal_cache = {}
-        if os.path.exists(self._bal_cache_path):
-            os.remove(self._bal_cache_path)
+        self.wallet_controller.clear_balance_cache()
         self._toast("Balance cache cleared", ms=1400, kind="info")
 
     def reset_wallet_data(self) -> None:
@@ -563,8 +643,10 @@ class WalletsMixin:
             self._toast("Reset cancelled.", kind="warn")
             return
         pwd = pwd.strip()
+        existing_wallets = list(getattr(self, "wallets", []) or [])
+        errors: list[str] = []
         try:
-            list_addresses_in_keystore(pwd)
+            removed_labels, cleared_hist = self.wallet_controller.delete_wallet_data(pwd, existing_wallets)
         except Exception as exc:
             log.exception("Unhandled exception")
             messagebox.showerror(
@@ -572,35 +654,10 @@ class WalletsMixin:
                 f"Wrong password or keystore cannot be opened.\n\nDetails: {exc}",
             )
             return
-        finally:
-            Security.secure_erase(pwd)
-
-        existing_wallets = list(getattr(self, "wallets", []) or [])
-        removed_labels: list[str] = []
-        errors: list[str] = []
-
-        def _remove_path(path: Optional[str], label: str) -> None:
-            if not path:
-                return
-            if os.path.exists(path):
-                os.remove(path)
-                removed_labels.append(label)
-
-        _remove_path(WALLET_FILE, "Keystore")
-        _remove_path(CFG.REGISTRY_PATH, "Wallet registry")
-        bal_cache_path = getattr(self, "_bal_cache_path", None)
-        _remove_path(bal_cache_path, "Balance cache")
-
-        cleared_hist = 0
-        for addr in existing_wallets:
-            if HistoryService.cache_clear(addr):
-                cleared_hist += 1
 
         self.wallets = []
         save_registry(self.wallets)
 
-        if hasattr(self, "_bal_cache"):
-            self._bal_cache = {}
         if hasattr(self, "_ks_pwd_cache"):
             self._ks_pwd_cache = None
 
@@ -1180,42 +1237,13 @@ class WalletsMixin:
         self._wallets_update_mode()
 
 
-    # ---------- Balance Cache: init, load, save ----------
     def _init_balance_cache(self) -> None:
-        base = getattr(self, "_cache_dir", None)
-        if not base:
-            base = os.path.join(os.path.abspath(os.getcwd()), ".tsarcache")
-            self._cache_dir = base
-        os.makedirs(base, exist_ok=True)
-        self._bal_cache_path = os.path.join(base, "balances.json")
-        self._bal_cache = self._load_balance_cache()
-
-    def _load_balance_cache(self) -> dict:
-        if not os.path.exists(self._bal_cache_path):
-            return {}
-        with open(self._bal_cache_path, "r", encoding="utf-8") as f:
-            d = json.load(f)
-            return d if isinstance(d, dict) else {}
-
-    def _save_balance_cache(self) -> None:
-        tmp = self._bal_cache_path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(self._bal_cache, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, self._bal_cache_path)
+        self.wallet_controller.init_balance_cache()
 
     def _preload_cached_balance(self, address: str, labels: dict) -> None:
-        d = self._bal_cache.get(address)
-        if not isinstance(d, dict):
-            return
-        data = {
-            "balance": int(d.get("balance", 0)),
-            "spendable": int(d.get("spendable", 0)),
-            "immature": int(d.get("immature", 0)),
-            "pending_outgoing": int(d.get("pending_outgoing", 0)),
-            "pending_incoming": int(d.get("pending_incoming", 0)),
-            "maturity": int(d.get("maturity", d.get("coinbase_maturity", CFG.COINBASE_MATURITY))),
-        }
-        self._update_balance_block(labels, data)
+        data = self.wallet_controller.get_cached_balance(address)
+        if data:
+            self._update_balance_block(labels, data)
 
     # ------ Password Input ------
     def _ask_password(self, title: str, prompt: str) -> str | None:
@@ -1313,30 +1341,22 @@ class WalletsMixin:
                                                 show="*", parent=self.root)
         if not pwd:
             return
-        keystore_addrs = list_addresses_in_keystore(pwd)
-
-        if keystore_addrs is None:
+        try:
+            added, removed, final = self.wallet_controller.sync_keystore_addresses(pwd, self.wallets)
+        except ValueError:
             messagebox.showerror("Sync failed", "Unable to read keystore.")
             return
-
-        old = set(self.wallets or [])
-        new = set(keystore_addrs)
-        added = list(new - old)
-        removed = list(old - new)
 
         if removed:
             if not messagebox.askyesno(
                 "Remove non-keystore addresses?",
                 "The following addresses are not present in the encrypted keystore:\n\n"
-                + "\n".join(removed[:10]) + ("\nâ€¦" if len(removed) > 10 else "")
+                + "\n".join(removed[:10]) + ("\n…" if len(removed) > 10 else "")
                 + "\n\nRemove them from the UI list?",
                 icon="warning",
             ):
-                final = sorted(old | new)
-            else:
-                final = sorted(new)
-        else:
-            final = sorted(new)
+                final = sorted(set(self.wallets or []) | set(final))
+        
 
         self.wallets = final
         save_registry(self.wallets)

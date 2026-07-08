@@ -15,6 +15,7 @@ env/
 /data_peer/
 /data_user/
 /logging/
+/MagicMock
 
 /target/
 /rust-analyzer/
@@ -41,6 +42,8 @@ htmlcov/
 
 /tsarcore_native/target/
 tsarcore_native/Cargo.lock
+tsarcore_native/cobertura.xml
 
 .DS_Store
 Thumbs.db
+dummy.log

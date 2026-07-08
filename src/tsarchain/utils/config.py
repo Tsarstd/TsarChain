@@ -259,7 +259,7 @@ GENESIS_REWARD_AMOUNT = 2_500_000 * TSAR  # allocation granted when genesis rewa
 # ---- BASE DIFFICULTY ----
 INITIAL_BITS      = 0x1F9FFFFF  # starting difficulty bits assigned to block zero
 MAX_BITS          = 0x1F9FFFFF  # cap for easiest allowed difficulty
-TARGET_BLOCK_TIME = 68  # aim for ~68 seconds block cadence
+TARGET_BLOCK_TIME = 46  # aim for ~68 seconds block cadence
 LWMA_WINDOW       = 75  # block count considered by LWMA difficulty algo
 FUTURE_DRIFT      = 600  # max seconds a block timestamp may lead wall clock
 MTP_WINDOWS       = 11  # number of blocks in median time past calculation
@@ -694,7 +694,7 @@ ARCHIV_PEER_KEYS                   = "data/archivist/data_peer/storage_peer_keys
 STORAGE_DIR                        = "data/archivist/storage"  # folder holding uploaded storage blobs
 STORAGE_SIZE_INIT                  = 100 * 1024 * 1024  # initial storage size allocation (100MB)
 STORAGE_MAX_BYTES                  = 128 * 1024 * 1024 * 1024  # cap on cumulative storage usage (64GB)
-RETENTION_GC_SEC                   = 3  # interval between retention garbage collection runs
+RETENTION_GC_SEC                   = 30  # interval between retention garbage collection runs
 ARCHIVIST_AUTO_PAYOUT_GUARD_FILE   = os.path.join(STORAGE_DIR, "payout_guard/auto_payout_guard.json")
 ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC = 135
 

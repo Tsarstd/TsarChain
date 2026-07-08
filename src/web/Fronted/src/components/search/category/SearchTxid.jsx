@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { useRenderHelpers, copyToClipboard } from "./SearchHelpers";
+import { useRenderHelpers, copyToClipboard } from "../SearchHelpers";
 import PropTypes from "prop-types";
 import { saveAs } from 'file-saver';
 import { IoReceiptSharp } from "react-icons/io5";

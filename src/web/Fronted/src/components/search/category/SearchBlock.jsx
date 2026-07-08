@@ -1,6 +1,6 @@
 import PropTypes from "prop-types";
 import { ClickableValue } from ".././SearchResults";
-import { useRenderHelpers, useMobile } from "./SearchHelpers";
+import { useRenderHelpers, useMobile } from "../SearchHelpers";
 import { 
   fmtBytes, 
   fmtTimestamp, 

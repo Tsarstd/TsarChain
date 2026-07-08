@@ -331,7 +331,7 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     │   │
     │   ├── archivist/
     │   │   ├── connect.py                       # P2P network logic ( send & receive )
-    │   │   ├── database.py                      # database logic
+    │   │   ├── database_archivist.py            # database logic
     │   │   ├── node_route.py                    # node RPC route
     │   │   ├── server_archivist.py              # server start module
     │   │   ├── storage.guard.py                 # ratelimit guard archivist

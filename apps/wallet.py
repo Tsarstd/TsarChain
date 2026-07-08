@@ -233,7 +233,6 @@ class KremlinWalletGUI(WalletsMixin):
         self._chat_priv_cache = self.chat_mgr.priv_cache
         self._chat_pub_cache  = self.chat_mgr.pub_cache
         self._read_sent       = self.chat_mgr.read_sent
-        self._init_balance_cache()
 
         self.chat_textsize_var     = tk.StringVar(value="Medium")
         self.font_chat_body        = tkfont.Font(family="Segoe UI", size=13)
@@ -294,6 +293,7 @@ class KremlinWalletGUI(WalletsMixin):
 
         # 7) Build frames/tab
         self._build_wallets_frame()
+        self._init_balance_cache()
         self._build_send_frame()
         self._build_network_frame()
         self._build_dev_frame()

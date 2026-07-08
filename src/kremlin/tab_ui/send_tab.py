@@ -22,6 +22,53 @@ from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.send_tab")
 
 
+class SendController:
+    def __init__(self, svc: SendService):
+        self.svc = svc
+        self._bal_cache: Dict[str, Dict[str, int]] = {}
+
+    def validate_recipient(self, addr: str) -> tuple[bool, str]:
+        dst = addr.strip().lower()
+        if not dst:
+            return False, "Enter recipient address."
+        if not dst.startswith("tsar1") or len(dst) < 44:
+            return False, "Address looks invalid (must start with tsar1, length ~44)."
+        return True, ""
+
+    def validate_amount(self, amount_text: str, spendable_sats: int, fee_sats: int, is_placeholder_active: bool) -> tuple[bool, int, str]:
+        if is_placeholder_active:
+            return False, 0, ""
+        text = amount_text.strip()
+        if not text:
+            return False, 0, ""
+        
+        try:
+            atoms, _ = self.svc.parse_amount_str(text)
+            if atoms <= 0:
+                return False, 0, ""
+        except ValueError as exc:
+            return False, 0, str(exc)
+        except Exception:
+            return False, 0, "Invalid amount"
+
+        if atoms + fee_sats > spendable_sats:
+            return False, atoms, "Not enough balance for amount + fee."
+
+        return True, atoms, ""
+
+    def calculate_percent_amount(self, frac: float, spendable_sats: int, vbytes: int, fee_rate: float) -> str:
+        est_fee = int(round(vbytes * fee_rate))
+        usable = max(spendable_sats - est_fee, 0)
+        atoms = int(round(usable * frac))
+        ts = atoms / CFG.TSAR
+        return "{:.8f}".format(ts).rstrip("0").rstrip(".")
+
+    def cache_balance(self, addr: str, data: dict) -> None:
+        self._bal_cache[addr] = data
+
+    def get_spendable(self, addr: str) -> int:
+        return int(self._bal_cache.get(addr, {}).get("spendable", 0))
+
 class SendTab:
     # ----- Prefill helpers (used by GraffitiTab) -----
     def set_recipient(self, addr: str) -> None:
@@ -89,21 +136,9 @@ class SendTab:
         self._warning_color = theme.warning
         self._danger_color = theme.danger
 
-    def update_theme(self, theme: SendTheme) -> None:
-        self.theme = theme
-        self.palette.update({
-            "bg": theme.bg,
-            "panel_bg": theme.panel_bg,
-            "fg": theme.fg,
-            "muted": theme.muted,
-            "accent": theme.accent,
-            "border": theme.border,
-            "card": theme.card_bg,
-            "slider_trough": theme.slider_trough,
-        })
-
         # Services & state
         self.svc = SendService()
+        self.controller = SendController(self.svc)
         self._frame: ttk.Frame | None = None
         self._send_widgets: list[tk.Widget] = []
 
@@ -124,9 +159,6 @@ class SendTab:
         self.fee_tsar_var = tk.StringVar(value="-")
         self.total_tsar_var = tk.StringVar(value="-")
 
-        # Spendable cache per address
-        self._bal_cache: Dict[str, Dict[str, int]] = {}
-
         # Widgets that we need later
         self.btn_review: tk.Button | None = None
         self.log_text: tk.Text | None = None
@@ -140,6 +172,20 @@ class SendTab:
         self._amt_hint = "0"
         self._amt_placeholder_active = True
         self._amt_shell: tk.Frame | None = None
+
+    def update_theme(self, theme: SendTheme) -> None:
+        self.theme = theme
+        self.palette.update({
+            "bg": theme.bg,
+            "panel_bg": theme.panel_bg,
+            "fg": theme.fg,
+            "muted": theme.muted,
+            "accent": theme.accent,
+            "border": theme.border,
+            "card": theme.card_bg,
+            "slider_trough": theme.slider_trough,
+        })
+
 
     # ===== Public lifecycle =====
     def build(self, parent: tk.Misc) -> ttk.Frame:
@@ -501,7 +547,7 @@ class SendTab:
                 return
 
             spendable = int(data.get("spendable", 0))
-            self._bal_cache[addr] = data
+            self.controller.cache_balance(addr, data)
             ts = spendable / CFG.TSAR
             label = f"Spendable: {ts:.8f}".rstrip("0").rstrip(".") + " TSAR"
             if self.from_spend_lbl:
@@ -517,14 +563,13 @@ class SendTab:
     # Quick amount helpers
     def _fill_percent(self, frac: float) -> None:
         addr = (self.from_var.get() or "").strip().lower()
-        sp = int(self._bal_cache.get(addr, {}).get("spendable", 0))
+        sp = self.controller.get_spendable(addr)
         fee_rate = self.svc.clamp_fee_rate(float(self.fee_rate_var.get() or 0))
         vbytes = self._estimate_vbytes_safe()
-        est_fee = int(round(vbytes * fee_rate))
-        usable = max(sp - est_fee, 0)
-        atoms = int(round(usable * frac))
-        ts = atoms / CFG.TSAR
-        self.amount_var.set(("{:.8f}".format(ts)).rstrip("0").rstrip("."))
+        
+        amount_str = self.controller.calculate_percent_amount(frac, sp, vbytes, fee_rate)
+        
+        self.amount_var.set(amount_str)
         self._amt_placeholder_active = False
         if self.amount_entry:
             self.amount_entry.config(fg=self.palette["accent"])
@@ -552,56 +597,36 @@ class SendTab:
         self.fee_sat_var.set(str(fee_sat))
         self.fee_tsar_var.set("{:.8f}".format(fee_sat / CFG.TSAR).rstrip("0").rstrip("."))
 
-        try:
-            atoms_for_total, _ = self.svc.parse_amount_str((self.amount_var.get() or "").strip())
-            self.amount_err.set("")
-        except ValueError as exc:
-            self.amount_err.set(str(exc))
-            atoms_for_total = 0
-        except Exception:
-            log.exception("Unhandled exception")
-            atoms_for_total = 0
+        src = (self.from_var.get() or "").strip().lower()
+        spendable = self.controller.get_spendable(src)
+
+        is_amt_valid, atoms_for_total, amt_err = self.controller.validate_amount(
+            self.amount_var.get() or "", spendable, fee_sat, self._amt_placeholder_active)
+        
+        self.amount_err.set(amt_err)
+
         total_tsar = (atoms_for_total + fee_sat) / CFG.TSAR
         self.total_tsar_var.set("{:.8f}".format(total_tsar).rstrip("0").rstrip("."))
 
         # Validations
         ok = True
 
-        src = (self.from_var.get() or "").strip().lower()
         if not src:
             self.from_err.set("Please choose a wallet.")
             ok = False
         else:
             self.from_err.set("")
 
-        dst = (self.to_var.get() or "").strip().lower()
-        if not dst:
-            self.to_err.set("Enter recipient address.")
+        is_dst_valid, dst_err = self.controller.validate_recipient(self.to_var.get() or "")
+        self.to_err.set(dst_err)
+        if not is_dst_valid:
             ok = False
-        elif not dst.startswith("tsar1") or len(dst) < 44:
-            self.to_err.set("Address looks invalid (must start with tsar1, length ~44).")
-            ok = False
-        else:
-            self.to_err.set("")
 
-        text = (self.amount_var.get() or "").strip()
-        if self._amt_placeholder_active or text == "":
-            atoms = 0
-            self.amount_err.set("")
+        if not is_amt_valid:
             ok = False
-        else:
-            atoms, _ = self.svc.parse_amount_str(text)
-            if atoms <= 0:
-                raise ValueError
-            self.amount_err.set("")
 
         fr = self.svc.clamp_fee_rate(float(self.fee_rate_var.get() or 0))
         if fr < CFG.MIN_FEE_RATE_SATVB or fr > CFG.MAX_FEE_RATE_SATVB:
-            ok = False
-
-        spendable = int(self._bal_cache.get(src, {}).get("spendable", 0))
-        if atoms + fee_sat > spendable:
-            self.amount_err.set("Not enough balance for amount + fee.")
             ok = False
 
         # Enable/disable send

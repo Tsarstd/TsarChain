@@ -3,15 +3,17 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
 
-import re, time
+import re
+import time
 import threading
 import tkinter as tk
-from tkinter import messagebox, scrolledtext
+
 from datetime import datetime
+from tkinter import messagebox, scrolledtext
 from typing import Optional, Union, Dict, Any, Callable
 
-from .block_search import BlockSearch
 from .txid_search import TxSearch
+from .block_search import BlockSearch
 from .address_search import AddressSearch
 from .graffiti_search import GraffitiSearch
 

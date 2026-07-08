@@ -14,32 +14,33 @@
 //! pip uninstall -y tsarcore_native
 //! cargo clean
 
-use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
+use pyo3::{Py, Bound, PyErr, exceptions};
 use pyo3::types::{PyAny, PyBytes, PyIterator, PyList, PyModule, PyTuple};
-use pyo3::Py;
-use pyo3::{Bound, PyErr};
-use randomx_rs::{RandomXCache, RandomXDataset, RandomXError, RandomXFlag, RandomXVM};
-use ripemd::Ripemd160;
-use secp256k1::ecdsa::Signature;
-use secp256k1::{Message, PublicKey, Secp256k1};
-use sha2::{Digest, Sha256};
+
+use std::time::Instant;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Instant;
-use validation::{validate_block_txs_native, validate_block_txs_compact};
-use hex;
-use secp256k1::SecretKey;
 
-mod networking;
-mod graff_merkle;
-mod storage;
-mod validation;
-mod utxo;
-mod txcodec;
-mod mining;
-mod generate_receipt;
+use secp256k1::SecretKey;
+use secp256k1::ecdsa::Signature;
+use secp256k1::{Message, PublicKey, Secp256k1};
+
+use hex;
+use ripemd::Ripemd160;
+use sha2::{Digest, Sha256};
+use validation::{validate_block_txs_native, validate_block_txs_compact};
+use randomx_rs::{RandomXCache, RandomXDataset, RandomXError, RandomXFlag, RandomXVM};
+
+pub mod utxo;
+pub mod mining;
+pub mod storage;
+pub mod txcodec;
+pub mod networking;
+pub mod validation;
+pub mod graff_merkle;
+pub mod generate_receipt;
 
 // ---------------------
 // RandomX VM cache
@@ -210,7 +211,7 @@ fn purge_stale(vm_cache: &mut HashMap<Vec<u8>, RandomxVmEntry>, cap: usize) {
 // ---------------------
 
 #[pyfunction]
-fn randomx_pow_hash<'py>(
+pub fn randomx_pow_hash<'py>(
     py: Python<'py>,
     header: Bound<'py, PyBytes>,
     key: Bound<'py, PyBytes>,
@@ -267,7 +268,7 @@ fn randomx_pow_hash<'py>(
 static PY_LOGGER: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 #[pyfunction]
-fn set_py_logger(logger: Bound<'_, PyAny>) -> PyResult<()> {
+pub fn set_py_logger(logger: Bound<'_, PyAny>) -> PyResult<()> {
     Python::attach(|py| {
         let _ = PY_LOGGER.set(py, logger.unbind());
         Ok(())
@@ -407,7 +408,7 @@ fn parse_ops(script: &[u8]) -> Vec<(Option<u8>, bool, usize)> {
 }
 
 #[pyfunction]
-fn count_sigops(script: &[u8]) -> PyResult<u32> {
+pub fn count_sigops(script: &[u8]) -> PyResult<u32> {
     let ops = parse_ops(script);
     let mut total: u32 = 0;
     for (idx, (maybe_op, _is_data, _len)) in ops.iter().enumerate() {
@@ -440,13 +441,13 @@ fn count_sigops(script: &[u8]) -> PyResult<u32> {
 }
 
 #[pyfunction]
-fn hash256<'py>(py: Python<'py>, data: &'py [u8]) -> PyResult<Bound<'py, PyBytes>> {
+pub fn hash256<'py>(py: Python<'py>, data: &'py [u8]) -> PyResult<Bound<'py, PyBytes>> {
     let h = sha256d(data);
     Ok(PyBytes::new(py, &h))
 }
 
 #[pyfunction]
-fn hash160<'py>(py: Python<'py>, data: &'py [u8]) -> PyResult<Bound<'py, PyBytes>> {
+pub fn hash160<'py>(py: Python<'py>, data: &'py [u8]) -> PyResult<Bound<'py, PyBytes>> {
     let sha = Sha256::digest(data);
     let ripe = Ripemd160::digest(&sha);
     Ok(PyBytes::new(py, &ripe))
@@ -456,7 +457,7 @@ fn hash160<'py>(py: Python<'py>, data: &'py [u8]) -> PyResult<Bound<'py, PyBytes
 // ECDSA verify (low-S)
 // ---------------------
 #[pyfunction]
-fn secp_verify_der_low_s(pubkey: &[u8], digest32: &[u8], der_sig: &[u8]) -> PyResult<bool> {
+pub fn secp_verify_der_low_s(pubkey: &[u8], digest32: &[u8], der_sig: &[u8]) -> PyResult<bool> {
     use secp256k1::{ecdsa::Signature, Message, Secp256k1};
 
     if digest32.len() != 32 {
@@ -497,7 +498,7 @@ fn secp_verify_der_low_s(pubkey: &[u8], digest32: &[u8], der_sig: &[u8]) -> PyRe
 // ECDSA sign (low-S)
 // ---------------------
 #[pyfunction]
-fn secp_sign_der_low_s<'py>(
+pub fn secp_sign_der_low_s<'py>(
     py: Python<'py>,
     privkey_hex: &str,
     digest32: &[u8],
@@ -767,7 +768,7 @@ mod bip143_native {
 
 #[pyfunction]
 #[pyo3(signature=(tx_bytes, input_index, script_code, value_sat, sighash_type))]
-fn sighash_bip143<'py>(
+pub fn sighash_bip143<'py>(
     py: Python<'py>,
     tx_bytes: &[u8],
     input_index: u32,
@@ -790,7 +791,7 @@ fn sighash_bip143<'py>(
 // -----------------------------------------------------
 #[pyfunction]
 #[pyo3(signature=(triples, enforce_low_s=true, parallel=true))]
-fn secp_verify_der_low_s_many<'py>(
+pub fn secp_verify_der_low_s_many<'py>(
     py: Python<'py>,
     triples: Bound<'py, PyAny>,
     enforce_low_s: bool,
@@ -889,7 +890,7 @@ fn secp_verify_der_low_s_many<'py>(
 // ---------------------
 
 #[pyfunction]
-fn merkle_root<'py>(
+pub fn merkle_root<'py>(
     py: Python<'py>,
     txids_any: Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyBytes>> {
@@ -958,8 +959,9 @@ fn merkle_root<'py>(
 // ---------------
 // Module binding
 // ---------------
+
 #[pymodule]
-fn tsarcore_native(_py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
+pub fn tsarcore_native(_py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(count_sigops, m)?)?;
     m.add_function(wrap_pyfunction!(secp_verify_der_low_s, m)?)?;
     m.add_function(wrap_pyfunction!(sighash_bip143, m)?)?;

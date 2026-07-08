@@ -367,7 +367,11 @@ impl LmdbBackend {
         for (k, maybe_v) in ops.iter() {
             let res = match maybe_v {
                 Some(v) => txn.put(db, &k, &v, WriteFlags::empty()),
-                None => txn.del(db, &k, None),
+                None => match txn.del(db, &k, None) {
+                    Ok(_) => Ok(()),
+                    Err(lmdb::Error::NotFound) => Ok(()),
+                    Err(e) => Err(e),
+                },
             };
             match res {
                 Ok(_) => {}
@@ -389,7 +393,11 @@ impl LmdbBackend {
             for (k, maybe_v) in ops {
                 let res = match maybe_v {
                     Some(v) => txn2.put(db_retry, &k, &v, WriteFlags::empty()),
-                    None => txn2.del(db_retry, &k, None),
+                    None => match txn2.del(db_retry, &k, None) {
+                        Ok(_) => Ok(()),
+                        Err(lmdb::Error::NotFound) => Ok(()),
+                        Err(e) => Err(e),
+                    },
                 };
                 res.map_err(|e| map_err("lmdb put_batch retry", e))?;
             }
@@ -719,30 +727,30 @@ impl NativeStorage {
     }
 
     #[getter]
-    fn backend(&self) -> String {
+    pub fn backend(&self) -> String {
         self.backend_name.clone()
     }
 
     #[getter]
-    fn path(&self) -> String {
+    pub fn path(&self) -> String {
         self.base_path.clone()
     }
 
-    fn put_bytes(&self, db: &str, key: &[u8], value: &[u8]) -> PyResult<()> {
+    pub fn put_bytes(&self, db: &str, key: &[u8], value: &[u8]) -> PyResult<()> {
         match &self.backend {
             Backend::Lmdb(b) => b.put(db, key, value),
             Backend::Json(b) => b.put_bytes(db, key, value),
         }
     }
 
-    fn put_json(&self, db: &str, key: &[u8], json_text: &str) -> PyResult<()> {
+    pub fn put_json(&self, db: &str, key: &[u8], json_text: &str) -> PyResult<()> {
         match &self.backend {
             Backend::Lmdb(b) => b.put(db, key, json_text.as_bytes()),
             Backend::Json(b) => b.put_json_text(db, key, json_text),
         }
     }
 
-    fn get_bytes<'py>(
+    pub fn get_bytes<'py>(
         &self,
         py: Python<'py>,
         db: &str,
@@ -755,7 +763,7 @@ impl NativeStorage {
         Ok(res.map(|v| PyBytes::new(py, &v)))
     }
 
-    fn get_json<'py>(&self, py: Python<'py>, db: &str, key: &[u8]) -> PyResult<Option<Py<PyAny>>>{
+    pub fn get_json<'py>(&self, py: Python<'py>, db: &str, key: &[u8]) -> PyResult<Option<Py<PyAny>>>{
         let json_text_opt = match &self.backend {
             Backend::Json(b) => b.get_json_string(db, key)?,
             Backend::Lmdb(b) => {
@@ -778,14 +786,14 @@ impl NativeStorage {
         }
     }
 
-    fn delete(&self, db: &str, key: &[u8]) -> PyResult<bool> {
+    pub fn delete(&self, db: &str, key: &[u8]) -> PyResult<bool> {
         match &self.backend {
             Backend::Lmdb(b) => b.delete(db, key),
             Backend::Json(b) => b.delete(db, key),
         }
     }
 
-    fn clear_db(&self, db: &str) -> PyResult<u64> {
+    pub fn clear_db(&self, db: &str) -> PyResult<u64> {
         match &self.backend {
             Backend::Lmdb(b) => b.clear_db(db),
             Backend::Json(b) => b.clear_db(db),
@@ -793,7 +801,7 @@ impl NativeStorage {
     }
 
     #[pyo3(signature = (db, prefix, limit=1000, start_after=None))]
-    fn iter_prefix_chunk<'py>(
+    pub fn iter_prefix_chunk<'py>(
         &self,
         py: Python<'py>,
         db: &str,
@@ -803,7 +811,14 @@ impl NativeStorage {
     ) -> PyResult<Bound<'py, PyList>> {
         let items: Vec<(Vec<u8>, Vec<u8>)> = match &self.backend {
             Backend::Lmdb(b) => b.iter_prefix_chunk(db, prefix, start_after, limit)?,
-            Backend::Json(b) => b.iter_prefix(db, prefix)?,
+            Backend::Json(b) => {
+                let mut all = b.iter_prefix(db, prefix)?;
+                if let Some(after) = start_after {
+                    all.retain(|(k, _)| k.as_slice() > after);
+                }
+                all.truncate(limit);
+                all
+            }
         };
         let out = PyList::empty(py);
         for (k, v) in items {
@@ -812,7 +827,7 @@ impl NativeStorage {
         Ok(out)
     }
 
-    fn put_batch(&self, db: &str, ops: Vec<(Vec<u8>, Option<Vec<u8>>)>) -> PyResult<()> {
+    pub fn put_batch(&self, db: &str, ops: Vec<(Vec<u8>, Option<Vec<u8>>)>) -> PyResult<()> {
         match &self.backend {
             Backend::Lmdb(b) => b.put_batch(db, ops),
             Backend::Json(b) => {
@@ -828,7 +843,7 @@ impl NativeStorage {
         }
     }
 
-    fn apply_utxo_ops(
+    pub fn apply_utxo_ops(
         &self,
         ops: Vec<(String, Option<u64>, Option<Vec<u8>>, Option<bool>, Option<i64>)>,
     ) -> PyResult<(u64, u64)> {
@@ -868,7 +883,7 @@ impl NativeStorage {
         }
     }
 
-    fn copy(&self, dest: &str, compact: bool) -> PyResult<()> {
+    pub fn copy(&self, dest: &str, compact: bool) -> PyResult<()> {
         match &self.backend {
             Backend::Lmdb(b) => b.copy_env(dest, compact),
             Backend::Json(_b) => Err(PyErr::new::<PyRuntimeError, _>(
@@ -877,7 +892,7 @@ impl NativeStorage {
         }
     }
 
-    fn iter_prefix<'py>(
+    pub fn iter_prefix<'py>(
         &self,
         py: Python<'py>,
         db: &str,

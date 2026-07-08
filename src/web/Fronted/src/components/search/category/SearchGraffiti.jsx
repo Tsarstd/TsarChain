@@ -1,6 +1,6 @@
 import PropTypes from "prop-types";
 import { useState } from "react";
-import { useRenderHelpers } from "./SearchHelpers";
+import { useRenderHelpers } from "../SearchHelpers";
 import { ClickableValue } from "../SearchResults";
 import { Document, Page, pdfjs } from 'react-pdf';
 import { 

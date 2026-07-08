@@ -25,6 +25,54 @@ if TYPE_CHECKING:
     from apps.wallet import KremlinWalletGUI
 
 
+class HistoryController:
+    def __init__(self):
+        self.hist_offset = 0
+        self.hist_limit = 50
+        self.hist_total = 0
+        self._history_rows_cache: List[Dict[str, Any]] = []
+
+    def change_limit(self, limit: int) -> None:
+        self.hist_limit = limit
+
+    def reset_pagination(self) -> None:
+        self.hist_offset = 0
+
+    def prev_page(self) -> bool:
+        if self.hist_offset <= 0:
+            return False
+        self.hist_offset = max(0, self.hist_offset - self.hist_limit)
+        return True
+
+    def next_page(self) -> bool:
+        if self.hist_offset + self.hist_limit >= self.hist_total:
+            return False
+        self.hist_offset += self.hist_limit
+        return True
+
+    def update_cache(self, items: List[Dict[str, Any]], total: int) -> None:
+        self._history_rows_cache = items
+        self.hist_total = total
+
+    def prepare_csv_data(self) -> list[list[Any]]:
+        res = []
+        for row in self._history_rows_cache:
+            amt = int(row.get("amount", 0))
+            from_addr = row.get("from") or row.get("address", "")
+            height = "" if row.get("height") is None else int(row.get("height"))
+            res.append([
+                row.get("txid", ""),
+                from_addr,
+                row.get("to", ""),
+                amt,
+                amt / CFG.TSAR,
+                row.get("status", ""),
+                int(row.get("confirmations", 0) or 0),
+                height,
+                row.get("direction", ""),
+            ])
+        return res
+
 class HistoryTab(tk.Frame):
     def __init__(
         self,
@@ -37,11 +85,7 @@ class HistoryTab(tk.Frame):
         self.service = history_service
         self.log = getattr(app, "log", None)
         self.address_values: list[str] = list(app.wallets or [])
-
-        self.hist_offset = 0
-        self.hist_limit = 50
-        self.hist_total = 0
-        self._history_rows_cache: List[Dict[str, Any]] = []
+        self.controller = HistoryController()
 
         self.history_tree: ttk.Treeview | None = None
         self.hist_info: tk.Label | None = None
@@ -51,7 +95,7 @@ class HistoryTab(tk.Frame):
         self.history_addr_var = tk.StringVar(value=self.address_values[0] if self.address_values else "")
         self.hist_dir_var = tk.StringVar(value="all")
         self.hist_status_var = tk.StringVar(value="all")
-        self.hist_limit_var = tk.IntVar(value=self.hist_limit)
+        self.hist_limit_var = tk.IntVar(value=self.controller.hist_limit)
 
         self._hist_menu: tk.Menu | None = None
         self.history_addr_combo: ttk.Combobox | None = None
@@ -232,11 +276,11 @@ class HistoryTab(tk.Frame):
 
     # ----------------------------------------------------------- Pagination
     def _hist_change_limit(self) -> None:
-        self.hist_limit = int(self.hist_limit_var.get())
+        self.controller.change_limit(int(self.hist_limit_var.get()))
 
     def _hist_reset_and_refresh(self) -> None:
         self._hist_change_limit()
-        self.hist_offset = 0
+        self.controller.reset_pagination()
         self.refresh_history()
 
     def _hist_on_addr_changed(self) -> None:
@@ -245,20 +289,16 @@ class HistoryTab(tk.Frame):
                 self.history_tree.delete(iid)
         if self.hist_info:
             self.hist_info.configure(text="Loading...")
-        self.hist_offset = 0
+        self.controller.reset_pagination()
         self.refresh_history()
 
     def _hist_prev(self) -> None:
-        if self.hist_offset <= 0:
-            return
-        self.hist_offset = max(0, self.hist_offset - self.hist_limit)
-        self.refresh_history()
+        if self.controller.prev_page():
+            self.refresh_history()
 
     def _hist_next(self) -> None:
-        if self.hist_offset + self.hist_limit >= self.hist_total:
-            return
-        self.hist_offset += self.hist_limit
-        self.refresh_history()
+        if self.controller.next_page():
+            self.refresh_history()
 
     # --------------------------------------------------------- Cache Mgmt
     def _hist_export_csv(self) -> None:
@@ -269,7 +309,7 @@ class HistoryTab(tk.Frame):
         )
         if not path:
             return
-        rows = self._history_rows_cache or []
+        rows = self.controller.prepare_csv_data()
         with open(path, "w", newline="", encoding="utf-8") as fp:
             writer = csv.writer(fp)
             writer.writerow(
@@ -286,22 +326,7 @@ class HistoryTab(tk.Frame):
                 ]
             )
             for row in rows:
-                amt = int(row.get("amount", 0))
-                from_addr = row.get("from") or row.get("address", "")
-                height = "" if row.get("height") is None else int(row.get("height"))
-                writer.writerow(
-                    [
-                        row.get("txid", ""),
-                        from_addr,
-                        row.get("to", ""),
-                        amt,
-                        amt / CFG.TSAR,
-                        row.get("status", ""),
-                        int(row.get("confirmations", 0) or 0),
-                        height,
-                        row.get("direction", ""),
-                    ]
-                )
+                writer.writerow(row)
         messagebox.showinfo("Exported", f"Saved to {path}")
 
     def _hist_clear_all_caches(self) -> None:
@@ -373,18 +398,19 @@ class HistoryTab(tk.Frame):
         status = self.hist_status_var.get()
         direction = None if direction == "all" else direction
         status = None if status == "all" else status
-        res = self.service.cache_list(addr, direction=direction, status=status, limit=self.hist_limit, offset=self.hist_offset)
+        res = self.service.cache_list(addr, direction=direction, status=status, limit=self.controller.hist_limit, offset=self.controller.hist_offset)
         items = res.get("items", [])
-        self.hist_total = int(res.get("total", len(items)))
+        total = int(res.get("total", len(items)))
+        self.controller.update_cache(items, total)
 
         for iid in self.history_tree.get_children():
             self.history_tree.delete(iid)
 
         shown = len(items)
-        start = 0 if self.hist_total == 0 else (self.hist_offset + 1)
-        end = self.hist_offset + shown
+        start = 0 if self.controller.hist_total == 0 else (self.controller.hist_offset + 1)
+        end = self.controller.hist_offset + shown
         if self.hist_info:
-            self.hist_info.configure(text=f"Showing {start}-{end} of {self.hist_total} (cached)")
+            self.hist_info.configure(text=f"Showing {start}-{end} of {self.controller.hist_total} (cached)")
 
         rows: list[tuple[tuple[Any, ...], tuple[str, ...]]] = []
         for entry in items:
@@ -431,7 +457,8 @@ class HistoryTab(tk.Frame):
                     self.app._toast("Failed to Load History", ms=1800, kind="error")
                     return
                 items = resp.get("items", [])
-                self._history_rows_cache = items
+                total = resp.get("total", len(items))
+                self.controller.update_cache(items, total)
                 self.service.cache_merge(addr, items)
                 self._render_from_cache()
             except Exception as exc:
@@ -447,8 +474,8 @@ class HistoryTab(tk.Frame):
         try:
             self.service.fetch_history(
                 address=addr,
-                limit=self.hist_limit,
-                offset=self.hist_offset,
+                limit=self.controller.hist_limit,
+                offset=self.controller.hist_offset,
                 direction=direction,
                 status=status,
                 rpc_send=self.app.rpc.send_async,

@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import fitz
 import threading
+
 from glob import glob
 from io import BytesIO
 from decimal import Decimal

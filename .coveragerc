@@ -1,0 +1,8 @@
+[run]
+omit = 
+    src/kremlin/tab_ui/*
+    src/kremlin/theme.py
+    src/kremlin/ui_utils.py
+    apps/wallet.py
+    apps/archivist_gui.py
+    apps/miner_gui.py

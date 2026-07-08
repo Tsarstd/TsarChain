@@ -20,7 +20,7 @@ from tsarchain.storage.kv import kv_enabled
 from tsarchain.utils import config as CFG
 
 from tsarchain.utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.contracts.storage_node.database")
+log = get_ctx_logger("tsarchain.contracts.storage_node.database_archivist")
 
 
 def _iter_prefix(store, db_name: str, prefix: bytes) -> Iterator[Tuple[bytes, bytes]]:
