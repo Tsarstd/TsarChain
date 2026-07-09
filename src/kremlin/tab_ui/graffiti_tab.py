@@ -505,7 +505,7 @@ class GraffitiTab(ttk.Frame):
             self._pdf_nav_frame = None
         
         if self.preview_frame and self.preview_frame.winfo_exists():
-            for child in list(self.preview_frame.winfo_children()):
+            for child in (self.preview_frame.winfo_children()):
                 child.destroy()
         
         if self.preview_status_var:
@@ -645,7 +645,7 @@ class GraffitiTab(ttk.Frame):
         
         try:
             # Hapus konten sebelumnya
-            for child in list(self.preview_frame.winfo_children()):
+            for child in (self.preview_frame.winfo_children()):
                 if child != self._pdf_nav_frame:
                     child.destroy()
             
@@ -779,7 +779,7 @@ class GraffitiTab(ttk.Frame):
 
         # compute
         try:
-            info = self.controller.process_file(path)
+            self.controller.process_file(path)
         except Exception as e:
             log.exception("Unhandled exception")
             messagebox.showerror("Graffiti", f"Failed to read file: {e}")
@@ -821,7 +821,7 @@ class GraffitiTab(ttk.Frame):
             messagebox.showwarning("Graffiti", "Select a creator wallet first.")
             return
         try:
-            ok = self.controller.prepare_upload(creator_addr)
+            self.controller.prepare_upload(creator_addr)
         except Exception as exc:
             log.exception("Unhandled exception")
             messagebox.showerror("Graffiti", f"Failed to compute art_id: {exc}")
@@ -1065,7 +1065,7 @@ class GraffitiTab(ttk.Frame):
                 pass
             self._current_pdf_doc = None
         
-        for child in list(self.winfo_children()):
+        for child in (self.winfo_children()):
             child.destroy()
         self._build_ui()
         self._refresh_creator_wallets()

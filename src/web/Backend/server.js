@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Basic Express entrypoint for TsarChain web explorer backend
 
-const path = require("path");
+const path = require("node:path");
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");

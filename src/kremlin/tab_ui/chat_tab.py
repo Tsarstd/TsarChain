@@ -62,7 +62,7 @@ class ChatService:
     def drop_sessions(self, peer):
         p = (peer or "").strip().lower()
         if not p: return
-        for key in list(getattr(self.chat_mgr, "_sessions", {}).keys()):
+        for key in (getattr(self.chat_mgr, "_sessions", {}).keys()):
             if p in key:
                 try:
                     self.chat_mgr._sessions.pop(key, None)
@@ -86,7 +86,7 @@ class ChatService:
     def update_msg_status(self, mid, status):
         if mid is None: return False
         updated = False
-        for conv, bucket in list(self.history.items()):
+        for conv, bucket in (self.history.items()):
             for rec in bucket:
                 if rec.get("msg_id") == mid:
                     if rec.get("status") != status:
@@ -488,7 +488,6 @@ class ChatTab:
                 self._on_from_changed()))
 
         self._sync_selected_friend()
-        return
 
     def _sync_selected_friend(self):
         raw = (self.chat_to_var.get() or "").strip().lower()
@@ -515,7 +514,6 @@ class ChatTab:
             self.contact_mgr.pick_contact(title="Contacts (Chat)", on_pick=_on_pick, presence_provider=None)
         except Exception:
             log.exception("Unhandled exception")
-            pass
 
     def _apply_chat_textsize(self, size_label: str) -> None:
         label = (size_label or "medium").strip().lower()
@@ -577,7 +575,6 @@ class ChatTab:
             return
 
         # --- Warna tema (fallback jika atribut belum ada) ---
-        bg = getattr(self, "bg", self.bg)
         fg = getattr(self, "fg", self.fg)
         panel = getattr(self, "panel_bg", self.panel_bg)
 
@@ -629,7 +626,7 @@ class ChatTab:
             self.toast("Pilih address dulu.", kind="warn")
             return False
         
-        priv, err = self.chat_mgr.try_unlock(a)
+        _, err = self.chat_mgr.try_unlock(a)
         if err:
             msg = None
             if "Wallet file not found" in err:
@@ -825,7 +822,7 @@ class ChatTab:
             return
 
         if not self._chat_online:
-            priv, err = self.chat_mgr.try_unlock(addr)
+            _, err = self.chat_mgr.try_unlock(addr)
             if err:
                 msg = None
                 if "Wallet file not found" in err:
@@ -1091,7 +1088,7 @@ class ChatTab:
                 if it.get("type") == "rcpt":
                     mid = it.get("msg_id")
                     rcpt = (it.get("rcpt") or "").lower()
-                    label = "✓ delivered" if rcpt == "delivered" else ("✓ read" if rcpt == "read" else rcpt)
+                    label = "✓ delivered" if rcpt == "delivered" else ("✓ read")
                     if mid is not None:
                         self._chat_update_status(mid, label)
                     continue

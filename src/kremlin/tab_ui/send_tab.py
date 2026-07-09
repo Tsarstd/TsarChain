@@ -684,12 +684,6 @@ class SendTab:
 
         self._send_safety = self.root.after(12000, lambda: on_done())
         on_done = self._make_unlocker(lambda: self._after_send_done(src))
-        def on_error(emsg: str) -> None:
-            try:
-                self._append_log(f"[ERROR] {emsg}")
-                self._toast(emsg, "error")
-            finally:
-                on_done()
 
         def on_broadcasted(res) -> None:
             try:

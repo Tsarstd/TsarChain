@@ -4,6 +4,7 @@
 # Refs: see REFERENCES.md
 
 import time
+from .....utils.benchmarks import benchmark
 import json
 import secrets
 
@@ -18,11 +19,9 @@ from .....utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.rpc.user_rpc.category.chat")
 
 
+@benchmark(label="CHAT_REGISTER", threshold_ms=15.0)
 def chat_register(self, message, pow_obj, base_identity, addr, *,
                      client_ip, **kwargs):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-    
     addr_s   = (message.get("address")  or "").strip().lower()
     ok, pow_resp = CM.allow_rpc_with_pow(
         self,
@@ -149,18 +148,11 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
     pres = {"pid": pid, "address": addr_s, "pubkey": chat_pub, "spend_pub": spend_pk, "presence_sig": presence_sig, "ts": int(now), "hops": 0}
     self._relay_presence_async(pres, exclude=addr)
     
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        log.debug("[CHAT_REGISTER] Benchmark : %.3f ms", result)
-        
     return {"type": "CHAT_REGISTERED", "address": addr_s, "pubkey": chat_pub}
 
+@benchmark(label="CHAT_LOOKUP_PUB", threshold_ms=15.0)
 def chat_lookup_pub(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-        
     addr_s = (message.get("address") or "").strip().lower()
     if not addr_s:
         return {"error": "missing address"}
@@ -202,18 +194,11 @@ def chat_lookup_pub(self, message, pow_obj, base_identity, *,
     if isinstance(ts_field, (int, float)):
         last_seen = int(ts_field)
 
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        log.debug("[CHAT_LOOKUP_PUB] Benchmark : %.3f ms", result)
-
     return {"type": "CHAT_PUBKEY", "address": addr_s, "pubkey": pubhex, "found": bool(pubhex), "last_seen": last_seen}
 
+@benchmark(label="CHAT_PRESENCE", threshold_ms=15.0)
 def chat_presence(self, message, pow_obj, base_identity, addr, *,
                   client_ip, **kwargs):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-        
     addr_s = (message.get("address") or "").strip().lower()
     pubhex = (message.get("pubkey")  or "").strip().lower()
     spend_pk = (message.get("spend_pub") or "").strip().lower()
@@ -294,20 +279,13 @@ def chat_presence(self, message, pow_obj, base_identity, addr, *,
     message["hops"] = hops + 1
     self._relay_presence_async(message, exclude=addr)
     
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        log.debug("[CHAT_PRESENCE] Benchmark : %.3f ms", result)
-    
     return {"type": "CHAT_PRESENCE_OK"}
 
 # ====== PREKEY BUNDLE ======
 
+@benchmark(label="CHAT_PUBLISH_PREKEYS", threshold_ms=15.0)
 def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
                          client_ip, **kwargs):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-
     addr_s = (message.get("address") or "").strip().lower()
     ok, pow_resp = CM.allow_rpc_with_pow(
         self,
@@ -348,18 +326,11 @@ def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
                 rec["opk_list"] = lst[-CFG.CHAT_OPK_MAX_STORED:]
         self.chat_prekeys[addr_s] = rec
 
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        log.debug("[CHAT_PUBLISH_PREKEYS] Benchmark : %.3f ms", result)
-        
     return {"type":"CHAT_PUBLISH_PREKEYS"}
 
+@benchmark(label="CHAT_GET_PREKEY", threshold_ms=15.0)
 def chat_get_prekey(self, message, *,
                     client_ip, is_miner_sender, **kwargs):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-        
     addr_s = (message.get("address") or "").strip().lower()
     b = self.chat_prekeys.get(addr_s) or {}
     if not b or ("ik" not in b or "spk" not in b or "sig" not in b):
@@ -373,20 +344,13 @@ def chat_get_prekey(self, message, *,
         self.chat_prekeys[addr_s] = b
     sp = self.chat_spend_pub.get(addr_s)
     
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        log.debug("[CHAT_GET_PREKEY] Benchmark : %.3f ms", result)
-    
     return {"type":"CHAT_PREKEY_BUNDLE","bundle":{"ik": b["ik"], "spk": b["spk"], "sig": b["sig"], "opk": opk, "spend_pub": sp}}
 
 # ====== END OF PREKEY BUNDLE ======
 
+@benchmark(label="CHAT_SEND", threshold_ms=15.0)
 def chat_send(self, message, pow_obj, base_identity, *,
               client_ip, choose_relay_route, relay_chain, **kwargs):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-    
     frm = (message.get("from") or "").strip().lower()
     to  = (message.get("to")   or "").strip().lower()
     enc = message.get("enc")
@@ -527,18 +491,11 @@ def chat_send(self, message, pow_obj, base_identity, *,
         return {"type": "CHAT_ACK", "status": "mailbox_full"}
     self._enqueue_rcpt(frm, "delivered", mid, frm, to, ts)
     
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        log.debug("[CHAT_SEND] Benchmark : %.3f ms", result)
-        
     return {"type": "CHAT_ACK", "status": "queued"}
 
+@benchmark(label="CHAT_READ", threshold_ms=15.0)
 def chat_read(self, message, pow_obj, base_identity, *,
               client_ip, **kwargs):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-
     sender = (message.get("sender") or "").strip().lower()
     reader = (message.get("reader") or "").strip().lower()
     mid    = message.get("msg_id")
@@ -581,18 +538,11 @@ def chat_read(self, message, pow_obj, base_identity, *,
 
     self._enqueue_rcpt(sender, "read", mid, sender, reader, int(time.time()))
     
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        log.debug("[CHAT_READ] Benchmark : %.3f ms", result)
-        
     return {"type": "CHAT_READ_OK"}
 
+@benchmark(label="CHAT_PULL", threshold_ms=15.0)
 def chat_pull(self, message, *,
               client_ip, **kwargs):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-        
     me = (message.get("address") or "").strip().lower()
     if not me:
         return {"type": "CHAT_NONE", "items": [], "error": "bad_address"}
@@ -621,18 +571,11 @@ def chat_pull(self, message, *,
     items = self._mailbox_pull(me, n)
     self._gc_mailboxes()
     
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        log.debug("[CHAT_PULL] Benchmark : %.3f ms", result)
-        
     return {"type": "CHAT_ITEMS", "items": items}
 
+@benchmark(label="CHAT_RELAY", threshold_ms=15.0)
 def chat_relay(self, message, pow_obj, base_identity, *,
                client_ip, send_chat_relay, **kwargs):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-    
     ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:chat_relay",
@@ -705,11 +648,6 @@ def chat_relay(self, message, pow_obj, base_identity, *,
             "ts": msg.get("ts"),
         }, CFG.CHAT_TTL_S, CFG.CHAT_MAILBOX_MAX, CFG.CHAT_GLOBAL_QUEUE_MAX)
         
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            log.debug("[CHAT_RELAY] Benchmark : %.3f ms", result)
-            
         return {"type": "CHAT_RELAY_ACK", "status": ("queued" if ok else "rejected")}
     return {"error": "bad_inner"}
 

@@ -228,14 +228,14 @@ pip install -r requirements.txt
 
 **Run a Miner/Node**
 ```bash
-# GUI (lite-friendly, limited to 1 core)
-python apps/miner_gui.py
-
 # Stateless CLI miner (no on-disk blockchain, just hashing & receive ephemeral mempool)
 python apps/cli_miner.py
 
 # Full node + miner (keeps blockchain DB + snapshot gateway)
 python apps/cli_node_miner.py
+
+# Archivist Node ( Storage Node )
+python apps/cli_archivist.py
 
 # GUI Wallet
 python apps/kremlin.py
@@ -297,7 +297,6 @@ EDA_EASE_MULTIPLIER     = 2.0
 
 ## ⛏️ Mining Modes
 
-- **GUI Miner (`apps/miner_gui.py`)** ships with Lite GUI mode enabled and limits RandomX to one core by default so the Tkinter UI stays responsive.
 - **Stateless CLI Miner (`apps/cli_miner.py`)** keeps chain data in-memory, pulls the latest tip + a small header window from trusted seeds to derive difficulty, mines empty blocks (coinbase only), and rechecks tip height/hash before broadcasting to avoid duplicating a moved tip. No mempool, no snapshots/DB.
 - **Full Node CLI Miner (`apps/cli_node_miner.py`)** persists the entire blockchain, handles snapshot bootstrap, wallet gateway traffic, and can run `--node-only` for infra roles.
 
@@ -316,11 +315,9 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     TsarChain/
     ├── apps/
     │   │
-    │   ├── archivist_gui.py                     # Storage Node (Archivist GUI)
     │   ├── cli_archivist.py                     # Storage Node (Archivist CLI)
     │   ├── cli_miner.py                         # Miner CLI (Stateless)
     │   ├── cli_node_miner.py                    # Miner CLI (Full Node)
-    │   ├── miner_gui.py                         # Miner GUI (Tkinter - Full Node)
     │   └── wallet.py                            # Wallet GUI (Kremlin Wallet) 
     │
     ├── assets/                                  # Logo, img, etc.

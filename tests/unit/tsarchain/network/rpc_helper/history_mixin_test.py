@@ -156,30 +156,6 @@ def test_is_coinbase_tx_non_coinbase(mixin):
     assert mixin._is_coinbase_tx(tx) is False
 
 
-# ----------------------------------------------------------------------
-# Tests for _spkhex_to_address
-# ----------------------------------------------------------------------
-def test_spkhex_to_address_p2wpkh(mixin):
-    spk_hex = '0014' + 'a' * 40
-    with patch('tsarchain.network.rpc_helper.history_mixin.bech32_encode') as mock_bech32:
-        mock_bech32.return_value = 'tsar1...'
-        result = mixin._spkhex_to_address(spk_hex)
-        assert result == 'tsar1...'
-        args, _ = mock_bech32.call_args
-        assert args[0] == 'tsar'
-        assert args[1][0] == 0
-
-def test_spkhex_to_address_p2wsh(mixin):
-    spk_hex = '0020' + 'b' * 64
-    with patch('tsarchain.network.rpc_helper.history_mixin.bech32_encode') as mock_bech32:
-        mock_bech32.return_value = 'tsar1...'
-        result = mixin._spkhex_to_address(spk_hex)
-        assert result == 'tsar1...'
-
-def test_spkhex_to_address_unknown(mixin):
-    spk_hex = '00' * 20  # arbitrary
-    result = mixin._spkhex_to_address(spk_hex)
-    assert result is None
 
 
 # ----------------------------------------------------------------------
@@ -215,7 +191,7 @@ def test_txout_to_spk_hex_none(mixin):
 def test_txout_to_address(mixin):
     spk_hex = '0014' + 'a' * 40
     txout = DummyTxOut(script_pubkey=spk_hex)
-    with patch.object(mixin, '_spkhex_to_address', return_value='tsar1abc') as mock_spk:
+    with patch('tsarchain.network.rpc_helper.history_mixin.spkhex_to_address', return_value='tsar1abc') as mock_spk:
         result = mixin._txout_to_address(txout)
         assert result == 'tsar1abc'
         mock_spk.assert_called_once_with(spk_hex)
@@ -418,7 +394,7 @@ def test_get_tx_history_cache_miss(mixin):
         opmap_chain = {prev_key: (100, prev_spk_hex)}
         opmap_mem = {}
         with patch.object(mixin, '_build_outpoint_map', return_value=(opmap_chain, opmap_mem)):
-            with patch.object(mixin, '_spkhex_to_address', return_value='tsar1other'):
+            with patch('tsarchain.network.rpc_helper.history_mixin.spkhex_to_address', return_value='tsar1other'):
                 result = mixin._get_tx_history(target_spk)
                 assert len(result['items']) == 1
                 item = result['items'][0]
@@ -441,7 +417,7 @@ def test_get_tx_history_coinbase_incoming(mixin):
 
     with patch.object(mixin, '_normalize_spk_hex', return_value=target_spk):
         with patch.object(mixin, '_build_outpoint_map', return_value=({}, {})):
-            with patch.object(mixin, '_spkhex_to_address', return_value='tsar1coinbase'):
+            with patch('tsarchain.network.rpc_helper.history_mixin.spkhex_to_address', return_value='tsar1coinbase'):
                 result = mixin._get_tx_history(target_spk)
                 assert len(result['items']) == 1
                 item = result['items'][0]
@@ -467,7 +443,7 @@ def test_get_tx_history_deduplication(mixin):
         opmap_chain = {prev_key: (100, target_spk)}
         opmap_mem = {}
         with patch.object(mixin, '_build_outpoint_map', return_value=(opmap_chain, opmap_mem)):
-            with patch.object(mixin, '_spkhex_to_address', return_value='tsar1other'):
+            with patch('tsarchain.network.rpc_helper.history_mixin.spkhex_to_address', return_value='tsar1other'):
                 result = mixin._get_tx_history(target_spk)
                 assert len(result['items']) == 1
                 item = result['items'][0]

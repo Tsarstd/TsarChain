@@ -1,5 +1,5 @@
-const fs = require("fs");
-const path = require("path");
+const fs = require("node:fs");
+const path = require("node:path");
 const router = require("express").Router();
 const { ExplorerService } = require("../services/explorerService");
 const { getConfig } = require("../config/env");
@@ -21,7 +21,8 @@ const touchFile = (filePath) => {
   try {
     const now = new Date();
     fs.utimesSync(filePath, now, now);
-  } catch (_err) {
+  } catch (err) {
+    console.warn("Failed to touch file:", err);
   }
 };
 
@@ -33,7 +34,8 @@ const cleanupGraffitiCache = () => {
   let entries;
   try {
     entries = fs.readdirSync(cacheDir);
-  } catch (_err) {
+  } catch (err) {
+    console.warn("Failed to read cache directory:", err);
     return;
   }
   for (const entry of entries) {
@@ -41,14 +43,16 @@ const cleanupGraffitiCache = () => {
     let stat;
     try {
       stat = fs.statSync(fullPath);
-    } catch (_err) {
+    } catch (err) {
+      console.warn("Failed to stat file:", err);
       continue;
     }
     if (!stat.isFile()) continue;
     if (now - stat.mtimeMs > GRAFFITI_CACHE_TTL_MS) {
       try {
         fs.unlinkSync(fullPath);
-      } catch (_err) {
+      } catch (err) {
+        console.warn("Failed to unlink file:", err);
       }
     }
   }
@@ -179,7 +183,7 @@ router.get("/graffiti/:artId/media", graffitiMediaLimiter, async (req, res, next
     let info = null;
     if (!filePath) {
       info = await svc.getGraffitiMediaInfo(artId);
-      if (!info || info.status !== "ok" || !info.cache_path) {
+      if (info?.status !== "ok" || !info?.cache_path) {
         return res.status(404).json({ error: "media_not_found" });
       }
       filePath = resolveCachePath(info.cache_path);

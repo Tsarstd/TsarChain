@@ -28,6 +28,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from ..chat import chat_common as COM
 from tsarchain.utils import config as CFG
+from tsarchain.utils.benchmarks import benchmark
 
 # ---------------- Logger ----------------
 from tsarchain.utils.tsar_logging import get_ctx_logger
@@ -56,13 +57,13 @@ class RatchetSession:
     ) -> None:
         
         self.rk = root_key
-        self.CKs = send_ck
-        self.CKr = recv_ck
-        self.DHs = my_ratchet_priv or x25519.X25519PrivateKey.generate()
-        self.DHr = (their_ratchet_pub_hex or None)
-        self.Ns = int(ns)
-        self.Nr = int(nr)
-        self.Pn = int(pn)
+        self.cks = send_ck
+        self.ckr = recv_ck
+        self.dhs = my_ratchet_priv or x25519.X25519PrivateKey.generate()
+        self.dhr = (their_ratchet_pub_hex or None)
+        self.ns = int(ns)
+        self.nr = int(nr)
+        self.pn = int(pn)
         self.skipped: Dict[str, bytes] = {}
 
         if skipped:
@@ -113,13 +114,13 @@ class RatchetSession:
     def to_dict(self) -> dict:
         return {
             "rk": self.rk.hex(),
-            "cks": self.CKs.hex() if self.CKs else None,
-            "ckr": self.CKr.hex() if self.CKr else None,
-            "dhs": COM.serialize_priv(self.DHs),
-            "dhr": self.DHr,
-            "ns": self.Ns,
-            "nr": self.Nr,
-            "pn": self.Pn,
+            "cks": self.cks.hex() if self.cks else None,
+            "ckr": self.ckr.hex() if self.ckr else None,
+            "dhs": COM.serialize_priv(self.dhs),
+            "dhr": self.dhr,
+            "ns": self.ns,
+            "nr": self.nr,
+            "pn": self.pn,
             "skipped": {k: v.hex() for k, v in self.skipped.items()},
             "my_identity": self.my_identity,
             "their_identity": self.their_identity,
@@ -164,7 +165,6 @@ class RatchetSession:
                 self.skipped.pop(oldest, None)
             except StopIteration:
                 log.exception("error__store_skipped")
-                pass
         self.skipped[key] = mk
 
     def _consume_skipped(self, dh_hex: str, index: int) -> Optional[bytes]:
@@ -175,25 +175,25 @@ class RatchetSession:
     # Chain Key Derivation
     # ----------------------------------------------------------------------
     def _next_sending_message_key(self) -> tuple[bytes, int]:
-        if self.CKs is None:
+        if self.cks is None:
             raise ValueError("send chain not established")
-        self.CKs, mk = COM.hkdf_ck(self.CKs)
-        idx = self.Ns
-        self.Ns += 1
+        self.cks, mk = COM.hkdf_ck(self.cks)
+        idx = self.ns
+        self.ns += 1
         return mk, idx
 
     def _next_receiving_message_key(self) -> tuple[bytes, int]:
-        if self.CKr is None:
+        if self.ckr is None:
             raise ValueError("recv chain not established")
-        self.CKr, mk = COM.hkdf_ck(self.CKr)
-        idx = self.Nr
-        self.Nr += 1
+        self.ckr, mk = COM.hkdf_ck(self.ckr)
+        idx = self.nr
+        self.nr += 1
         return mk, idx
 
     def _skip_message_keys(self, until: int, dh_hex: Optional[str]) -> None:
-        if dh_hex is None or self.CKr is None:
+        if dh_hex is None or self.ckr is None:
             return
-        while self.Nr < until:
+        while self.nr < until:
             mk, idx = self._next_receiving_message_key()
             self._store_skipped(dh_hex, idx, mk)
 
@@ -201,80 +201,64 @@ class RatchetSession:
     # Ratchet Operations
     # ----------------------------------------------------------------------
     def _rotate_send_chain(self) -> None:
-        if self.DHr is None:
+        if self.dhr is None:
             raise ValueError("cannot rotate send chain without peer key")
-        remote = self._remote_pub(self.DHr)
-        self.DHs = x25519.X25519PrivateKey.generate()
-        self.Pn = self.Ns
-        self.Ns = 0
-        self.rk, self.CKs = COM.hkdf_rk(self.rk, self.DHs.exchange(remote))
+        remote = self._remote_pub(self.dhr)
+        self.dhs = x25519.X25519PrivateKey.generate()
+        self.pn = self.ns
+        self.ns = 0
+        self.rk, self.cks = COM.hkdf_rk(self.rk, self.dhs.exchange(remote))
         self._needs_send_rotation = False
 
     def _dh_ratchet(self, their_pub_hex: str) -> None:
         their_pub = self._remote_pub(their_pub_hex)
         # preserve prior sending key for recv chain update
-        prev_dhs = self.DHs
+        prev_dhs = self.dhs
         if prev_dhs is None:
             prev_dhs = x25519.X25519PrivateKey.generate()
-        self.Pn = self.Ns
-        self.Ns = 0
-        self.Nr = 0
-        self.rk, self.CKr = COM.hkdf_rk(self.rk, prev_dhs.exchange(their_pub))
-        self.DHr = their_pub_hex
-        self.DHs = x25519.X25519PrivateKey.generate()
-        self.rk, self.CKs = COM.hkdf_rk(self.rk, self.DHs.exchange(their_pub))
+        self.pn = self.ns
+        self.ns = 0
+        self.nr = 0
+        self.rk, self.ckr = COM.hkdf_rk(self.rk, prev_dhs.exchange(their_pub))
+        self.dhr = their_pub_hex
+        self.dhs = x25519.X25519PrivateKey.generate()
+        self.rk, self.cks = COM.hkdf_rk(self.rk, self.dhs.exchange(their_pub))
         self._needs_send_rotation = False
 
     # ----------------------------------------------------------------------
     # Encryption / Decryption
     # ----------------------------------------------------------------------
+    @benchmark(label="encrypt", threshold_ms=5.0)
     def encrypt(self, pt: bytes, frm: str, to: str, mid: int, ts: int) -> dict:
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-
         if getattr(self, "_needs_send_rotation", False):
             self._rotate_send_chain()
         mk, idx = self._next_sending_message_key()
         header = {
-            "eph_pub": self.DHs.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex(),
+            "eph_pub": self.dhs.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex(),
             "static_pub": self.my_static_hex or self.my_identity,
-            "pn": self.Pn,
+            "pn": self.pn,
             "n": idx,
         }
         nonce = os.urandom(12)
         aad = COM.build_aad_bytes(frm, to, mid, ts, header["static_pub"], header["eph_pub"], header["pn"], header["n"])
         ct = AESGCM(mk).encrypt(nonce, pt, aad)
 
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            log.debug("[encrypt] Benchmark : %.3f ms", result)
-
         return {
             "ratchet": header,
             "enc": {"nonce": nonce.hex(), "ct": ct.hex()},
         }
 
+    @benchmark(label="_decrypt_with_mk", threshold_ms=5.0)
     def _decrypt_with_mk(self, mk: bytes, enc: dict, frm: str, to: str, mid: int, ts: int, static_hex: str, eph_hex: str, pn: int, n: int) -> Optional[bytes]:
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-
         nonce = bytes.fromhex(enc.get("nonce") or "")
         ct = bytes.fromhex(enc.get("ct") or "")
         aad = COM.build_aad_bytes(frm, to, mid, ts, static_hex, eph_hex, pn, n)
         pt = AESGCM(mk).decrypt(nonce, ct, aad)
 
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            log.debug("[_decrypt_with_mk] Benchmark : %.3f ms", result)
-
         return pt
 
+    @benchmark(label="decrypt", threshold_ms=5.0)
     def decrypt(self, enc: dict, frm: str, to: str, mid: int, ts: int, header: dict) -> Optional[bytes]:
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-
         eph_hex = (header.get("eph_pub") or "").lower()
         static_hex = (header.get("static_pub") or "").lower()
         pn = int(header.get("pn", 0))
@@ -294,22 +278,17 @@ class RatchetSession:
                 return None
 
         # Skip keys if previous chain length is ahead
-        if self.DHr is not None:
-            self._skip_message_keys(pn, self.DHr)
+        if self.dhr is not None:
+            self._skip_message_keys(pn, self.dhr)
 
         # Perform DH ratchet if peer ephemeral key changed
-        if self.DHr != eph_hex:
+        if self.dhr != eph_hex:
             self._dh_ratchet(eph_hex)
 
         # Skip keys up to the current message index
-        self._skip_message_keys(n, self.DHr)
-        mk, idx = self._next_receiving_message_key()
+        self._skip_message_keys(n, self.dhr)
+        mk, _ = self._next_receiving_message_key()
         pt = self._decrypt_with_mk(mk, enc, frm, to, mid, ts, static_hex, eph_hex, pn, n)
-
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            log.debug("[decrypt] Benchmark : %.3f ms", result)
 
         return pt
     

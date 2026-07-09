@@ -30,9 +30,11 @@ def mixin():
     m._find_tx_and_meta = Mock(return_value=(None, None, None, None, None, None, None, None))
     m._is_coinbase_tx = Mock(return_value=False)
     m._txin_prevkey = Mock(return_value="txid:0")
-    m._spkhex_to_address = Mock(return_value="address")
+    patcher = patch('tsarchain.network.rpc_helper.explorer_mixin.spkhex_to_address', return_value="address")
+    m._spkhex_to_address = patcher.start()
     m._txout_to_address = Mock(return_value="address")
-    return m
+    yield m
+    patcher.stop()
 
 
 # ----------------------------------------------------------------------
@@ -251,14 +253,14 @@ def test_handle_get_block_hash_benchmark(mixin):
         mock_cfg.DEBUG_BENCHMARKS = True
         mock_cfg.HASH_CACHE_MAX = 100
         mixin.broadcast.blockchain.get_block_hash.return_value = "hash"
-        with patch('tsarchain.network.rpc_helper.explorer_mixin.log') as mock_log:
-            with patch('time.perf_counter') as mock_time:
-                mock_time.side_effect = [0.0, 0.020]
+        with patch('tsarchain.utils.benchmarks.log') as mock_log:
+            with patch('tsarchain.utils.benchmarks.time') as mock_time:
+                mock_time.perf_counter.side_effect = [0.0, 0.020]
                 result = mixin._handle_get_block_hash(10)
                 assert result["hash"] == "hash"
                 mock_log.warning.assert_called_once()
                 args, _ = mock_log.warning.call_args
-                assert "_handle_get_block_hash" in args[0]
+                assert "GET_BLOCK_HASH" in args[1]
 
 
 # ----------------------------------------------------------------------

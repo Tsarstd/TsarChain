@@ -10,6 +10,7 @@ import time
 from typing import List
 
 from ...utils import config as CFG
+from ...utils.benchmarks import benchmark
 from ...utils.helpers import decode_address
 from ...utils.tsar_logging import get_ctx_logger
 from .storage_registry import register_storage_peer
@@ -104,9 +105,8 @@ def handle_hello(self, message, addr, *, src_node_id: str | None = None, src_pub
     }
 
 
+@benchmark(label="handle_get_headers", threshold_ms=15.0)
 def handle_get_headers(self, message, addr):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
     
     locator = message.get("locator") or []
     limit = int(message.get("limit", CFG.HEADERS_BATCH_MAX))
@@ -143,12 +143,7 @@ def handle_get_headers(self, message, addr):
             }
         )
     more = (start_idx + limit) < len(chain)
-    
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        if result > 15.0:
-            log.warning("[GET_HEADERS] Benchmark : %.3f ms", result)
+
     return {
         "type": "HEADERS",
         "headers": headers,
@@ -157,9 +152,8 @@ def handle_get_headers(self, message, addr):
     }
 
 
+@benchmark(label="handle_get_blocks", threshold_ms=15.0)
 def handle_get_blocks(self, message, addr):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
         
     heights = message.get("heights") or []
     if not isinstance(heights, list):
@@ -175,17 +169,11 @@ def handle_get_blocks(self, message, addr):
         if 0 <= h < len(chain):
             blocks.append(chain[h].to_dict())
             
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        if result > 15.0:
-            log.warning("[GET_BLOCKS] Benchmark : %.3f ms", result)
     return {"type": "BLOCKS", "blocks": blocks}
 
 
+@benchmark(label="handle_get_full_sync", threshold_ms=15.0)
 def handle_get_full_sync(self, message, addr):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
     
     ip = addr[0] if isinstance(addr, tuple) and len(addr) > 0 else "unknown"
     now = time.time()
@@ -213,11 +201,6 @@ def handle_get_full_sync(self, message, addr):
             "reason": "payload_would_exceed_limit",
             "limit_bytes": hard_cap,
         }
-        
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        log.debug("[GET_FULL_SYNC] Benchmark : %.3f ms", result)
     return full_obj
 
 
@@ -231,9 +214,8 @@ def handle_full_sync(self, message, addr):
     self.broadcast.receive_full_sync(payload)
     return {"status": "ok"}
 
+@benchmark(label="handle_get_block_at", threshold_ms=15.0)
 def handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict: #get block by heigt
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
         
     with self.broadcast.lock:
         chain = list(self.broadcast.blockchain.chain)
@@ -243,12 +225,6 @@ def handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict: 
     b = chain[height]
     d = self._serialize_block(b)
     d["type"] = "BLOCK"
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        tag = src_tag or "-"
-        if result > 15.0:
-            log.debug("[GET_BLOCK] 'height' Benchmark : %.3f ms src=%s", result, tag)
             
     serialized = json.dumps(d, separators=CFG.CANONICAL_SEP).encode("utf-8")
     size_bytes = len(serialized)
@@ -256,9 +232,8 @@ def handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict: 
     
     return d
 
+@benchmark(label="handle_get_block_by_hash", threshold_ms=15.0)
 def handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict:
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
         
     hx = (hx or "").strip().lower()
     with self.broadcast.lock:
@@ -267,13 +242,6 @@ def handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict:
         if self._bhash_hex(b).lower() == hx:
             d = self._serialize_block(b)
             d["type"] = "BLOCK"
-            
-            if CFG.DEBUG_BENCHMARKS:
-                end = time.perf_counter()
-                result = round((end - start) * 1000.0, 3)
-                tag = src_tag or "-"
-                if result > 15.0:
-                    log.debug("[GET_BLOCK] 'hash' Benchmark : %.3f ms src=%s", result, tag)
                     
             serialized = json.dumps(d, separators=CFG.CANONICAL_SEP).encode("utf-8")
             size_bytes = len(serialized)

@@ -3,21 +3,21 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
 
-import time,json
+import json
 
 from ....node_logic import handlers
 from .....utils import config as CFG
 from ...user_rpc import common as CM
+from .....utils.benchmarks import benchmark
+from .....utils.helpers import spkhex_to_address
 
 # ---------------- Logger ----------------
 from .....utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.rpc.user_rpc.category.explorer")
 
-
+@benchmark(label="GET_BALANCES", threshold_ms=5.0)
 def get_balances(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
     
     addrs_raw = message.get("addresses") or []
     if not addrs_raw and message.get("address"):
@@ -75,7 +75,7 @@ def get_balances(self, message, pow_obj, base_identity, *,
             if not amt_spk:
                 continue
             amt, spk_hex = amt_spk
-            owner = self._spkhex_to_address(spk_hex) if spk_hex else None
+            owner = spkhex_to_address(spk_hex) if spk_hex else None
             if owner and amt:
                 spent_local[owner] = spent_local.get(owner, 0) + int(amt)
 
@@ -125,19 +125,11 @@ def get_balances(self, message, pow_obj, base_identity, *,
     size_bytes = len(serialized)
     log.debug("GET_BALANCES response size: %d bytes (%.2f KB)", size_bytes, size_bytes / 1024.0)
         
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        src_tag = (message.get("rpc_source") or "-")
-        if result > 35.0:
-            log.warning("[GET_BALANCES] Benchmark : %.3f ms src=%s", result, src_tag)
-        
     return response_dict
 
+@benchmark(label="GET_NETWORK_INFO", threshold_ms=15.0)
 def get_network_info(self, message, pow_obj, base_identity, *,
                      client_ip, overlay_realtime_mempool_stats, **kwargs):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
 
     ok, pow_resp = CM.allow_rpc_with_pow(
         self,
@@ -172,13 +164,6 @@ def get_network_info(self, message, pow_obj, base_identity, *,
     size_bytes = len(serialized)
     log.debug("GET_NETWORK_INFO response size: %d bytes (%.2f KB)", size_bytes, size_bytes / 1024.0)
         
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        src_tag = (message.get("rpc_source") or "-")
-        if result > 15.0:
-            log.warning("[GET_NETWORK_INFO] Benchmark : %.3f ms src=%s", result, src_tag)
-        
     return response_dict
 
 def get_block(self, message, pow_obj, base_identity,*,
@@ -207,11 +192,10 @@ def get_block(self, message, pow_obj, base_identity,*,
         return {"type": "BLOCK", "error": "missing_height_or_hash"}
     return handlers.handle_get_block_by_hash(self, hx, src_tag=src_tag)
 
+@benchmark(label="GET_BLOCK_RANGE", threshold_ms=15.0)
 def get_block_range(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-        
+
     ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:block_range",
@@ -284,13 +268,6 @@ def get_block_range(self, message, pow_obj, base_identity, *,
         h -= 1
 
     has_more = h >= 0
-
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        src_tag = (message.get("rpc_source") or "-")
-        if result > 15.0:
-            log.debug("[GET_BLOCK_RANGE] Benchmark : %.3f ms src=%s", result, src_tag)
     
     response_dict = {
         "type": "BLOCK_RANGE",
@@ -308,11 +285,9 @@ def get_block_range(self, message, pow_obj, base_identity, *,
 
     return response_dict
 
+@benchmark(label="GET_MEMPOOL", threshold_ms=35.0)
 def get_mempool(self, message, pow_obj, base_identity, addr, *,
                      client_ip, is_miner_sender, **kwargs):
-
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
     
     mode = str(message.get("mode", "")).strip().lower()
     if mode not in ("inline", "inline_full"):
@@ -333,8 +308,6 @@ def get_mempool(self, message, pow_obj, base_identity, addr, *,
             return pow_resp
         
     if mode == "snapshot":
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
         
         if not is_miner_sender():
             return {"error": "forbidden: miners-only endpoint"}
@@ -355,12 +328,6 @@ def get_mempool(self, message, pow_obj, base_identity, addr, *,
         min_iv = message.get("min_interval")
         force = bool(message.get("force"))
         pushed = self.broadcast.send_mempool_to_peer(target, min_interval_s=min_iv, force=force)
-        
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            if result > 35.0:
-                log.warning("[GET_MEMPOOL] snapshot mode Benchmark : %.3f ms", result)
             
         return {"type": "MEMPOOL_SYNC", "count": int(pushed)}
 
@@ -429,20 +396,13 @@ def get_mempool(self, message, pow_obj, base_identity, addr, *,
             hexes.append(txid.hex())
         elif isinstance(txid, str):
             hexes.append(txid)
-            
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        if result > 35.0:
-            log.warning("[GET_MEMPOOL] inline mode Benchmark : %.3f ms", result)
         
     return {"type": "MEMPOOL", "mode": "txids", "txs": hexes}
 
+@benchmark(label="GET_TX_HISTORY", threshold_ms=35.0)
 def get_tx_history(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-
+    
     addr_str = (message.get("address") or "").strip().lower()
     if not addr_str:
         return {"error": "missing address"}
@@ -471,13 +431,6 @@ def get_tx_history(self, message, pow_obj, base_identity, *,
                                 direction=message.get("direction"),
                                 status=message.get("status"))
     history["height"] = tip_height
-    
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        src_tag = (message.get("rpc_source") or "-")
-        if result > 15.0:
-            log.warning("[GET_TX_HISTORY] Benchmark : %.3f ms src=%s", result, src_tag)
             
     response_dict = {"type": "TX_HISTORY", "address": addr_str, **history}
     serialized = json.dumps(response_dict, separators=CFG.CANONICAL_SEP).encode("utf-8")
@@ -494,7 +447,7 @@ def get_tx_detail(self, message, pow_obj, base_identity, *,
         return {"error": "missing txid"}
     ok, pow_resp = CM.allow_rpc_with_pow(
         self,
-        scope="rpc:history",
+        scope="rpc:txdetails",
         table=self.rl_ip,
         ip=client_ip,
         identity=base_identity,
@@ -510,14 +463,14 @@ def get_tx_detail(self, message, pow_obj, base_identity, *,
         
     return self._get_tx_detail(txid_hex, message.get("rpc_source"))
 
+@benchmark(label="GET_TOTAL_UTXO", threshold_ms=10.0)
 def get_total_utxo(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-        
+
     address = (message.get("address") or "").strip().lower()
     if not address:
         return {"error": "missing address"}
+
     ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:history",
@@ -538,12 +491,5 @@ def get_total_utxo(self, message, pow_obj, base_identity, *,
         return {"error": "address too long"}
     
     count = self.broadcast.utxodb.count_utxos(address)
-    
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        src_tag = (message.get("rpc_source") or "-")
-        if result > 5.0:
-            log.warning("[GET_TOTAL_UTXO] Benchmark : %.3f ms src=%s", result, src_tag)
         
     return {"type": "UTXOS_COUNT", "count": count}

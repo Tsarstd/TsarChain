@@ -165,15 +165,15 @@ class GraffitiSearch:
 
         _lbl(f"Graffiti #Block {block_h}", fg=p.fg, font=("Segoe UI", 12, "bold"))
         _lbl(f"{mime} | {_fmt_size_h(size)}", fg=p.fg, font=("Consolas", 10))
-        _lbl(f"--------------", fg=p.fg)
+        _lbl("--------------", fg=p.fg)
         _lbl(f"Art ID | {art_id}", fg=p.fg, font=("Consolas", 10))
-        _lbl(f"--------------", fg=p.fg)
+        _lbl("--------------", fg=p.fg)
         _lbl(f"TxID | {txid}", fg=p.value_id, font=("Consolas", 10))
         _lbl(f"SHA256 | {sha256}", fg=p.value_id, font=("Consolas", 10))
         _lbl(f"Graffiti Merkle | {mroot}", fg=p.value_id, font=("Consolas", 10))
         _lbl(f"Merkle Count | {mcount}", fg=p.value_id, font=("Consolas", 10))
-        _lbl(f"Merkle Chunk | {_fmt_size_h(mchunk)}", fg=p.value_id, font=("Consolas", 10))
-        _lbl(f"--------------", fg=p.fg)
+        _lbl(f"Merkle Chunk | {mchunk}", fg=p.value_id, font=("Consolas", 10))
+        _lbl("--------------", fg=p.fg)
         _lbl(f"Creator | {creator}", fg=p.accent, font=("Consolas", 10))
         _lbl(f"Total Comments | {stats.get('comments', 0)}", fg=p.value_num, font=("Consolas", 10))
 
@@ -447,7 +447,7 @@ class GraffitiSearch:
         tk.Label(dlg, text="Select commentator wallet", bg=p.bg, fg=p.fg).pack(anchor="w", padx=10, pady=(10, 4))
         combo = ttk.Combobox(dlg, values=wallets, textvariable=wallet_var, state="readonly", width=46)
         combo.pack(fill="x", padx=10)
-        tk.Label(dlg, text=f"Give a tip to the creator (Optional)", bg=p.bg, fg=p.muted, font=("Consolas", 9)).pack(anchor="w", padx=10, pady=(8, 2))
+        tk.Label(dlg, text="Give a tip to the creator (Optional)", bg=p.bg, fg=p.muted, font=("Consolas", 9)).pack(anchor="w", padx=10, pady=(8, 2))
         tip_entry = tk.Entry(dlg, textvariable=tip_var, bg=p.card_bg, fg=p.fg, insertbackground=p.fg)
         tip_entry.pack(fill="x", padx=10)
 
@@ -540,7 +540,7 @@ class GraffitiSearch:
             self._pdf_current_page = page_num
             
             # Hapus display frame sebelumnya
-            for child in list(container.winfo_children()):
+            for child in (container.winfo_children()):
                 if child.winfo_class() != "Frame" or child == self._pdf_display_frame:
                     continue
                 child.destroy()

@@ -4,6 +4,7 @@
 # Refs: see REFERENCES.md
 
 import time
+from .....utils.benchmarks import benchmark
 
 from .....utils import config as CFG
 from ...user_rpc import common as CM
@@ -13,10 +14,8 @@ from .....utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.rpc.user_rpc.category.transactions")
 
 
+@benchmark(label="NEW_TX", threshold_ms=15.0)
 def new_tx(self, message, pow_obj, base_identity, addr, *, client_ip, **kwargs):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-
     sender_addr = str(message.get("from_addr") or message.get("from") or "").strip().lower()
     if not sender_addr and isinstance(message.get("data"), dict):
         sender_addr = str((message.get("data") or {}).get("from_addr") or "").strip().lower()
@@ -64,21 +63,14 @@ def new_tx(self, message, pow_obj, base_identity, addr, *, client_ip, **kwargs):
     success = self.broadcast.receive_tx(message, addr, self.peers)
     if success:
         txid = (message.get("data") or {}).get("txid")
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            if result > 15.0:
-                log.warning("[NEW_TX] Benchmark : %.3f ms", result)
         return {"status": "ok", "txid": txid}
     else:
         reason = getattr(self.broadcast.mempool, 'last_error_reason', None)
         return {"status": "error", "reason": (reason or "invalid tx")}
 
+@benchmark(label="CREATE_TX", threshold_ms=15.0)
 def create_tx(self, message, pow_obj, base_identity, addr, mtype, *,
                      client_ip, is_miner_sender, **kwargs):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-        
     ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:tx",
@@ -105,19 +97,11 @@ def create_tx(self, message, pow_obj, base_identity, addr, mtype, *,
     except Exception as exc:
         return {"error": str(exc) or "create_tx_failed"}
     
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        if result > 15.0:
-            log.warning("[CREATE_TX] Benchmark : %.3f ms", result)
-    
     return {"type": "TX_TEMPLATE", "data": tpl}
 
+@benchmark(label="CREATE_TX_MULTI", threshold_ms=15.0)
 def create_tx_multi(self, message, pow_obj, base_identity, addr, mtype, *,
                      client_ip, is_miner_sender, **kwargs):
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-
     ok, pow_resp = CM.allow_rpc_with_pow(
         self,
         scope="rpc:tx_multi",
@@ -146,10 +130,4 @@ def create_tx_multi(self, message, pow_obj, base_identity, addr, mtype, *,
     except Exception as exc:
         return {"error": str(exc) or "create_tx_multi_failed"}
     
-    if CFG.DEBUG_BENCHMARKS:
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        if result > 15.0:
-            log.warning("[CREATE_TX_MULTI] Benchmark : %.3f ms", result)
-        
     return {"type": "TX_TEMPLATE", "data": tpl}

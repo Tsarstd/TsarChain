@@ -6,7 +6,7 @@ const pick = (obj, ...keys) => {
   const meta = obj._meta && typeof obj._meta === "object" ? obj._meta : null;
   for (const key of keys) {
     if (obj[key] !== undefined && obj[key] !== null && obj[key] !== "") return obj[key];
-    if (meta && meta[key] !== undefined && meta[key] !== null && meta[key] !== "") return meta[key];
+    if (meta?.[key] !== undefined && meta?.[key] !== null && meta?.[key] !== "") return meta[key];
   }
   return undefined;
 };
@@ -16,6 +16,7 @@ const decodeCommentHex = (hex) => {
   try {
     return Buffer.from(String(hex), "hex").toString("utf8");
   } catch (err) {
+    console.warn("Failed to decode comment hex:", err);
     return "";
   }
 };
@@ -87,13 +88,13 @@ const normalizeBlockSummary = (blk) => {
   const hash = pick(blk, "hash");
   const timestamp = pick(blk, "timestamp", "time");
   const sizeBytes = pick(blk, "size_bytes", "size");
-  const txCountRaw =
-    blk.tx_count ??
-    (Array.isArray(blk.transactions)
-      ? blk.transactions.length
-      : Array.isArray(blk.tx)
-        ? blk.tx.length
-        : 0);
+  let txCountFallback = 0;
+  if (Array.isArray(blk.transactions)) {
+    txCountFallback = blk.transactions.length;
+  } else if (Array.isArray(blk.tx)) {
+    txCountFallback = blk.tx.length;
+  }
+  const txCountRaw = blk.tx_count ?? txCountFallback;
   const graffitiPosts = Number(blk.graffiti_posts ?? 0);
   const graffitiComments = Number(blk.graffiti_comments ?? 0);
   const graffitiCount = Number(
@@ -326,19 +327,21 @@ class ExplorerService {
       // Seacrh TxID First
       try {
         const txData = await this.getTx(query);
-        if (txData && txData.txid) {
+        if (txData?.txid) {
           return { kind: "tx", data: txData };
         }
       } catch (err) {
+        console.warn("Search TX fallback error:", err);
       }
       
       // If TxID not found, find blockhash
       try {
         const blockData = await this.getBlock(query);
-        if (blockData && blockData.hash) {
+        if (blockData?.hash) {
           return { kind: "block", data: blockData };
         }
       } catch (err) {
+        console.warn("Search Block fallback error:", err);
       }
       
       // Txid & blockhash not found

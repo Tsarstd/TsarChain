@@ -5,7 +5,13 @@
 
 from __future__ import annotations
 
-import os, json, shutil, hashlib, tempfile, time
+import os
+import time
+import json
+import shutil
+import hashlib
+import tempfile
+
 import urllib.request
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -31,10 +37,13 @@ class SnapshotBootstrapResult:
     duration_s: float = 0.0
 
 
-def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCallback = None) -> SnapshotBootstrapResult:
-    if kv_enabled:
-        return SnapshotBootstrapResult(status="not support", reason="LMDB not active")
-    ctx = (context or "default").lower()
+def maybe_bootstrap_snapshot(progress_cb: ProgressCallback = None) -> SnapshotBootstrapResult:
+    if str(CFG.KV_BACKEND).lower() != "lmdb":
+        return SnapshotBootstrapResult(status="backend", reason="JSON active, not support snapshot")
+
+    if kv_enabled():
+        return SnapshotBootstrapResult(status="backend", reason="LMDB backend")
+
     start_time = time.time()
     target_dir = CFG.LMDB_DATA_FILE
     if target_dir.lower().endswith(".mdb"):
@@ -56,11 +65,6 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
 
     if not CFG.SNAPSHOT_BOOTSTRAP_ENABLED:
         return SnapshotBootstrapResult(status="skipped", reason="disabled")
-
-    if ctx == "gui" and not CFG.SNAPSHOT_BOOTSTRAP_FOR_GUI:
-        return SnapshotBootstrapResult(status="skipped", reason="gui_disabled")
-    if ctx.startswith("cli") and not CFG.SNAPSHOT_BOOTSTRAP_FOR_CLI:
-        return SnapshotBootstrapResult(status="skipped", reason="cli_disabled")
 
     manifest = _fetch_manifest()
     log.info("manifest: %s", manifest)
@@ -92,7 +96,7 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
     def _emit(message: str) -> None:
         if progress_cb:
             progress_cb(message)
-        log.info("[bootstrap.%s] %s", ctx, message)
+        log.info("[bootstrap.%s] %s", message)
 
     tmp_path = None
     backup_path: Optional[str] = None
@@ -144,7 +148,7 @@ def maybe_bootstrap_snapshot(context: str = "default", progress_cb: ProgressCall
         )
 
     except Exception as exc:
-        log.exception("[bootstrap.%s] Snapshot bootstrap failed", ctx)
+        log.exception("[bootstrap.%s] Snapshot bootstrap failed")
         _emit(f"Snapshot bootstrap failed: {exc}")
         if replaced and os.path.exists(target_file):
             os.remove(target_file)

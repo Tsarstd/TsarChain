@@ -25,7 +25,8 @@ def _load_record(name: str) -> Optional[Dict]:
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 log.warning(f"Failed to decode KV record for {name}: {e}")
                 # Fallback to JSON file
-    
+        return
+
     # JSON fallback / legacy migration
     record_paths = {
         "node_key": CFG.NODE_KEY_PATH,
@@ -43,7 +44,7 @@ def _load_record(name: str) -> Optional[Dict]:
                     _store_record(name, data)
                 return data
         except (FileNotFoundError, json.JSONDecodeError) as e:
-            log.debug(f"No JSON file found for {name}: {e}")
+            log.info(f"No JSON file found for {name}: {e}")
     
     return None
 

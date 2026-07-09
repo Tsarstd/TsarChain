@@ -39,6 +39,8 @@ from tsarchain.utils import config as CFG
 # ---------------- Local Project (Wallet Only) ----------------
 from ..data_security import Wallet
 from ..chat import chat_common as COM
+from tsarchain.utils import config as CFG
+from tsarchain.utils.benchmarks import benchmark
 from ..chat.double_ratchet import RatchetSession
 
 # ---------------- Logger ----------------
@@ -281,24 +283,22 @@ class ChatManager:
                 payload = CFG.CHAT_SPK + bytes.fromhex(spk) + b"|" + bytes.fromhex(spend_pub)
                 vk.verify(bytes.fromhex(sig_hex), payload, ec.ECDSA(hashes.SHA256()))
             except Exception as e:
-                log.exception("Unhandled exception")
                 log.warning("[ensure_session] SPK signature verify failed for %s: %s", peer, e)
                 cb("bundle_spk_verify_failed"); return
 
             # 2) X3DH derive
             eph = x25519.X25519PrivateKey.generate()
-            eph_pub = eph.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
-            IKs = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_sk_hex))
-            IKr = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(rik))
-            SPKr= x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(spk))
-            dh1 = IKs.exchange(SPKr)              # IKs × SPKr
-            dh2 = eph.exchange(IKr)               # EPh × IKr
-            dh3 = eph.exchange(SPKr)              # EPh × SPKr
+            iks = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_sk_hex))
+            ikr = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(rik))
+            spkr= x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(spk))
+            dh1 = iks.exchange(spkr)              # iks × spkr
+            dh2 = eph.exchange(ikr)               # EPh × ikr
+            dh3 = eph.exchange(spkr)              # EPh × spkr
             secret = dh1 + dh2 + dh3
 
             if opk:
-                OPKr = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(opk))
-                secret += IKs.exchange(OPKr)      # optional IKs x OPKr
+                opkr = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(opk))
+                secret += iks.exchange(opkr)      # optional iks x opkr
 
             rk = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:x3dh:v1").derive(secret)
             sess = RatchetSession.init_as_initiator(
@@ -323,17 +323,15 @@ class ChatManager:
     # ----------------------------------------------------------------------
     # Registration & Publishing
     # ----------------------------------------------------------------------
+    @benchmark(label="register", threshold_ms=5.0)
     def register(self, address: str, on_done: Callable[[Optional[Dict[str, Any]]], None]) -> None:
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-
         addr = COM.canon(address)
         priv_hex = self.get_priv_for_chat(addr)
         if not priv_hex:
             on_done({"error": "unlock_failed"}); return
 
         spend_pub = COM.pub_hex_from_priv(COM.ec_priv_from_hex(priv_hex))
-        chat_sk_hex, chat_pk_hex = self._get_chat_dh(addr)
+        _, chat_pk_hex = self._get_chat_dh(addr)
         ts_now = int(time.time())
         reg_bytes = b"|".join([
             b"CHAT_REG",
@@ -401,11 +399,6 @@ class ChatManager:
             if bundle.get("opk"):
                 payload["opk"] = (bundle.get("opk") or "").lower()
 
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            log.debug("[register] Benchmark : %.3f ms", result)
-
         self.rpc_send(payload, _on)
 
     def _ensure_registered(self, addr: str, cb: Callable[[Optional[str]], None]) -> None:
@@ -428,10 +421,8 @@ class ChatManager:
         log.debug("[send_message] auto-register for %s", addr)
         self.register(addr, _on)
 
+    @benchmark(label="publish_prekeys", threshold_ms=5.0)
     def publish_prekeys(self, address: str, on_done=None, force_refresh_bundle: bool = False) -> None:
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-
         addr = COM.canon(address)
         if not self._can_publish_prekeys(addr):
             (on_done or (lambda _r: None))({"skipped": "cooldown"})
@@ -473,11 +464,6 @@ class ChatManager:
                     self._prekey_bundle_cache.pop(addr, None)
             finally:
                 (on_done or (lambda _r: None))(resp)
-
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            log.debug("[publish_prekeys] Benchmark : %.3f ms", result)
 
         self.rpc_send(payload, _after)
 
@@ -592,10 +578,8 @@ class ChatManager:
     # ----------------------------------------------------------------------
     # Message Polling
     # ----------------------------------------------------------------------
+    @benchmark(label="poll", threshold_ms=5.0)
     def poll(self, address: str, n: int, on_items, on_done=None) -> None:
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-
         me = COM.canon(address)
         priv_hex = self.get_priv_for_chat(me)
         if not priv_hex:
@@ -667,22 +651,22 @@ class ChatManager:
                                 try:
                                     self.on_partner_key_changed(frm, exp_static, from_static)
                                 except Exception:
-                                    log.exception("Unhandled exception")
+                                    log.exception("partner key error")
                             continue
 
-                        IKr = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_sk_hex))
-                        SPKs = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(spk_sk))
-                        IKs_pub = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(from_static))
-                        EPh_pub = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(from_pub))
-                        dh1 = SPKs.exchange(IKs_pub)
-                        dh2 = IKr.exchange(EPh_pub)
-                        dh3 = SPKs.exchange(EPh_pub)
+                        ikr = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_sk_hex))
+                        spks = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(spk_sk))
+                        iks_pub = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(from_static))
+                        eph_pub = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(from_pub))
+                        dh1 = spks.exchange(iks_pub)
+                        dh2 = ikr.exchange(eph_pub)
+                        dh3 = spks.exchange(eph_pub)
                         secret = dh1 + dh2 + dh3
                         if used_opk:
                             opk_sk = COM.consume_opk_priv(me, used_opk, provider_me)
                             if opk_sk:
-                                OPKs = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(opk_sk))
-                                secret += OPKs.exchange(IKs_pub)
+                                opks = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(opk_sk))
+                                secret += opks.exchange(iks_pub)
                         rk = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:x3dh:v1").derive(secret)
                         _, my_pk_hex = self._get_chat_dh(me)
                         sess = RatchetSession.init_as_responder(
@@ -690,7 +674,7 @@ class ChatManager:
                             my_identity=my_pk_hex,
                             their_identity=from_static,
                             their_first_eph=from_pub,
-                            my_ratchet_priv=SPKs,
+                            my_ratchet_priv=spks,
                             my_static_hex=my_pk_hex,
                         )
                         key = self._session_key(me, frm)
@@ -713,11 +697,6 @@ class ChatManager:
 
             finally:
                 if on_done: on_done(resp)
-
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            log.debug("[poll] Benchmark : %.3f ms", result)
 
         self.rpc_send({"type": "CHAT_PULL", "address": me, "n": int(n), "ts": ts_now, "pull_sig": pull_sig}, _on)
 

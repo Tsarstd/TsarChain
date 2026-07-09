@@ -120,22 +120,6 @@ def test_prefetch_blocks(mock_store):
         webdb.stop_prefetch_thread()
         mock_pb.assert_called()
 
-def test_send_storage_request():
-    with patch("web.Backend.src.python.database_web.socket.socket") as mock_sock:
-        mock_conn = MagicMock()
-        mock_sock.return_value.__enter__.return_value = mock_conn
-        
-        with patch("web.Backend.src.python.database_web.recv_message", return_value=b'{"status": "ok"}'):
-            res = webdb._send_storage_request("127.0.0.1", 8080, {"test": 1})
-            assert res["status"] == "ok"
-            
-        with patch("web.Backend.src.python.database_web.recv_message", return_value=b'{"pow_challenge": {"target": "0000f", "identity": "a"}}'):
-            with patch("web.Backend.src.python.database_web.solve_pow", return_value="sol1"):
-                # Needs pow, max retry is 1, so it should loop and return bad response
-                with patch("web.Backend.src.python.database_web._send_storage_request", return_value={"status": "ok_after_pow"}):
-                    res2 = webdb._send_storage_request("127.0.0.1", 8080, {"test": 2})
-                    assert res2["status"] == "ok_after_pow"
-
 def test_receipt_cache(tmp_path):
     with patch("web.Backend.src.python.database_web.os.path.getmtime", return_value=time.time()):
         assert webdb.is_receipt_fresh("/does/not/exist", 100) is False
@@ -283,15 +267,6 @@ def test_pick_endpoint():
     assert webdb._pick_endpoint({"url": "http://test.com:8080"}) == ("test.com", 8080)
     assert webdb._pick_endpoint({"url": "test.com"})[0] == "test.com"
     assert webdb._pick_endpoint({"invalid": "data"}) is None
-    
-def test_send_storage_request_pow_fail():
-    with patch("web.Backend.src.python.database_web.socket.socket") as mock_sock:
-        mock_conn = MagicMock()
-        mock_sock.return_value.__enter__.return_value = mock_conn
-        
-        with patch("web.Backend.src.python.database_web.recv_message", return_value=b'{"reason": "rate_limited"}'):
-            res = webdb._send_storage_request("127.0.0.1", 8080, {"test": 1}, max_pow_retry=0)
-            assert res["reason"] == "rate_limited"
 
 def test_open_store_exceptions():
     with patch("web.Backend.src.python.database_web._store", None):
@@ -318,7 +293,3 @@ def test_block_storage_edge_cases(mock_store):
     assert webdb.get_last_stored_height() == 0
     mock_store.iter_prefix.side_effect = Exception("err")
     assert webdb.get_last_stored_height() == -1
-
-
-
-

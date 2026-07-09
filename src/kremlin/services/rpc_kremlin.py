@@ -12,6 +12,7 @@ import tkinter as tk
 # ---------------- Local Project (With Node) ----------------
 from tsarchain.network.protocol import send_message, recv_message, build_envelope, verify_and_unwrap, is_envelope, SecureChannel
 from tsarchain.utils import config as CFG
+from tsarchain.utils.benchmarks import benchmark
 
 # ---------------- Logger ----------------
 from tsarchain.utils.tsar_logging import get_ctx_logger
@@ -118,7 +119,6 @@ class NodeClient:
                 uniq.append(item)
 
         found: List[Tuple[str, int]] = []
-        n_timeout = n_refused = n_other = 0
 
         for ip, port in uniq:
             try:
@@ -166,21 +166,17 @@ class NodeClient:
                             continue
 
             except (TimeoutError, socket.timeout):
-                n_timeout += 1
                 continue
             
             except ConnectionRefusedError:
-                n_refused += 1
                 continue
             
             except OSError as e:
-                n_other += 1
                 if log.isEnabledFor(logging.DEBUG):
                     log.debug("[scan] os error for %s:%d: %s", ip, port, e)
                 continue
             
             except Exception:
-                n_other += 1
                 log.exception("[scan] unexpected scan error for %s:%d", ip, port)
                 continue
 
@@ -249,10 +245,8 @@ class NodeClient:
                 self.dir.mark_good(peer)
                 return outer
 
+    @benchmark(label="send", threshold_ms=10.0)
     def send(self, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-            
         req = secrets.token_hex(6)
         peers = self.dir.get() or self.scan()
         if not peers:
@@ -270,11 +264,6 @@ class NodeClient:
 
         if _throttle("no_response", 10.0):
             log.error("[send] no response from any node", extra=_mk_extra(req=req, rpc=message.get("type")))
-            
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            log.debug("[send] Benchmark : %.3f ms", result)
         
         return {"error": "No response from any node"}
 

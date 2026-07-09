@@ -324,3 +324,11 @@ def test_estimate_block_size():
     b.to_dict.return_value = {}
     assert estimate_block_size_bytes(b) >= 80
 
+def test_spkhex_to_address():
+    from tsarchain.utils.helpers import spkhex_to_address
+    assert spkhex_to_address("0014" + "0"*40) is not None
+    assert spkhex_to_address("0020" + "0"*64) is not None
+    assert spkhex_to_address(bytes.fromhex("0014" + "0"*40)) is not None
+    assert spkhex_to_address("0014" + "0"*10) is None
+    assert spkhex_to_address("1114" + "0"*40) is None
+    assert spkhex_to_address("0020" + "0"*10) is None

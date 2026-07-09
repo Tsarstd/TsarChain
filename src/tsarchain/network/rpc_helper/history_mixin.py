@@ -6,9 +6,9 @@ import time
 import threading
 import collections
 
-from bech32 import convertbits, bech32_encode, bech32_decode
 
 from ...utils import config as CFG
+from ...utils.helpers import spkhex_to_address
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
@@ -48,19 +48,7 @@ class HistoryMixin:
                 b = b""
         return b == b"\x00" * 32
 
-    def _spkhex_to_address(self, spk_hex: str) -> str | None:
-        if isinstance(spk_hex, bytes):
-            spk_hex = spk_hex.hex()
-        spk_hex = spk_hex.lower()
-        if spk_hex.startswith("0014") and len(spk_hex) == 44:
-            prog = bytes.fromhex(spk_hex[4:])
-            data = [0] + convertbits(list(prog), 8, 5, True)
-            return bech32_encode(CFG.ADDRESS_PREFIX, data)
-        if spk_hex.startswith("0020") and len(spk_hex) == 68:
-            prog = bytes.fromhex(spk_hex[4:])
-            data = [0] + convertbits(list(prog), 8, 5, True)
-            return bech32_encode(CFG.ADDRESS_PREFIX, data)
-        return None
+
 
     def _txout_to_spk_hex(self, txout) -> str | None:
         spk = getattr(txout, "script_pubkey", None)
@@ -78,7 +66,7 @@ class HistoryMixin:
         spk_hex = self._txout_to_spk_hex(txout)
         if not spk_hex:
             return None
-        return self._spkhex_to_address(spk_hex)
+        return spkhex_to_address(spk_hex)
 
     def _normalize_spk_hex(self, addr: str) -> str | None:
         def _is_hex(s: str) -> bool:
@@ -269,7 +257,7 @@ class HistoryMixin:
                     net_amt = 0
                 dirn = "out"
                 frm = addr
-                to = self._spkhex_to_address(main_recipient_spk) if main_recipient_spk else None
+                to = spkhex_to_address(main_recipient_spk) if main_recipient_spk else None
                 if to == addr:
                     to = None
             elif received_to_addr > 0:
@@ -278,7 +266,7 @@ class HistoryMixin:
                 frm = "coinbase"
                 if not is_cb and sources:
                     src_spk = next(iter(sources))
-                    frm = self._spkhex_to_address(src_spk)
+                    frm = spkhex_to_address(src_spk)
                 to  = addr
             else:
                 return

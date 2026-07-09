@@ -66,16 +66,16 @@ def test_client_ip(server):
 def test_handle(mock_node, mock_wallet, server):
     # Wallet responds
     mock_wallet.return_value = {"status": "ok_wallet"}
-    assert server._handle({"type": "W"}, client_ip="1.1.1.1") == {"status": "ok_wallet"}
+    assert server._handle({"type": "W"}) == {"status": "ok_wallet"}
     
     # Node responds
     mock_wallet.return_value = None
     mock_node.return_value = {"status": "ok_node"}
-    assert server._handle({"type": "N"}, client_ip="1.1.1.1") == {"status": "ok_node"}
+    assert server._handle({"type": "N"}) == {"status": "ok_node"}
     
     # Unknown
     mock_node.return_value = None
-    assert server._handle({"type": "X"}, client_ip="1.1.1.1") == {"error": "unknown type"}
+    assert server._handle({"type": "X"}) == {"error": "unknown type"}
 
 @patch("archivist.server_archivist.recv_message")
 @patch("archivist.server_archivist.send_message")

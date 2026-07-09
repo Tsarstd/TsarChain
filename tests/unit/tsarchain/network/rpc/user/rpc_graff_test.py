@@ -356,11 +356,11 @@ def test_get_comments_benchmark(mock_self, mock_registry, mock_allow_rpc_success
     # Mock time.perf_counter agar durasi > 15ms
     mock_time = MagicMock()
     mock_time.perf_counter.side_effect = [0.0, 0.020]  # 20ms
-    monkeypatch.setattr(graff_activities, "time", mock_time)
+    monkeypatch.setattr("tsarchain.utils.benchmarks.time", mock_time)
 
     mock_self.broadcast.utxodb._graffiti_registry = mock_registry
     message = {"art_id": "graf123", "rpc_source": "test"}
-    with caplog.at_level("DEBUG", logger="tsarchain.network.rpc.user_rpc.category.graff_activities"):
+    with caplog.at_level("DEBUG", logger="tsarchain.utils.benchmarks"):
         result = graff_activities.get_comments(
             mock_self, message, pow_obj=None, base_identity="id",
             client_ip="127.0.0.1"

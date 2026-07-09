@@ -6,16 +6,8 @@ import pytest
 import base64
 from unittest.mock import MagicMock, patch
 
-from tsarchain.network.rpc.storage_rpc import handle_storage_rpc, _spkhex_to_address
+from tsarchain.network.rpc.storage_rpc import handle_storage_rpc
 
-
-def test_spkhex_to_address():
-    assert _spkhex_to_address("0014" + "0"*40) is not None
-    assert _spkhex_to_address("0020" + "0"*64) is not None
-    assert _spkhex_to_address(bytes.fromhex("0014" + "0"*40)) is not None
-    assert _spkhex_to_address("0014" + "0"*10) is None
-    assert _spkhex_to_address("1114" + "0"*40) is None
-    assert _spkhex_to_address("0020" + "0"*10) is None
 
 @pytest.fixture(autouse=True)
 def mock_config():

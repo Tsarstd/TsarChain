@@ -26,16 +26,22 @@ Notes
 
 from __future__ import annotations
 
-import argparse, errno, signal, time, threading, queue, os, sys
+import os
+import sys
+import time
+import errno
+import signal
+import argparse
+import threading
 import multiprocessing as mp
 from datetime import datetime
 
 # ---------- Local Project ----------
-from tsarchain.consensus.blockchain import Blockchain
-from tsarchain.network.node import Network
 from tsarchain.core.block import Block
-from tsarchain.core.coinbase import CoinbaseTx
 from tsarchain.utils import config as CFG
+from tsarchain.network.node import Network
+from tsarchain.core.coinbase import CoinbaseTx
+from tsarchain.consensus.blockchain import Blockchain
 
 from tsarchain.utils.cosmetic import interface as COL
 from tsarchain.utils.cosmetic.tui import MinerTUI, create_tui_logger
@@ -74,51 +80,6 @@ def clog(message: str, color: str = COL.GREY):
         tui_logger(f"{_stamp()} : {color}{message}{COL.RESET}")
     else:
         print(f"{_stamp()} : {color}{message}{COL.RESET}")
-
-def human_hps(hps: float) -> str:
-    hps = float(hps)
-    units = ["H/s", "kH/s", "MH/s", "GH/s", "TH/s"]
-    i = 0
-    while hps >= 1000.0 and i < len(units)-1:
-        hps /= 1000.0
-        i += 1
-    if hps >= 100:
-        return f"{hps:,.0f} {units[i]}"
-    if hps >= 10:
-        return f"{hps:,.1f} {units[i]}"
-    return f"{hps:,.2f} {units[i]}"
-
-class HashrateReporter(threading.Thread):
-    def __init__(self, q: mp.Queue, name="HashrateReporter"):
-        super().__init__(name=name, daemon=True)
-        self.q = q
-        self.stop_event = mp.Event()
-
-    def run(self):
-        last_line = ""
-        while not self.stop_event.is_set():
-            try:
-                msg = self.q.get(timeout=1.0)
-            except queue.Empty:
-                continue
-            if isinstance(msg, tuple) and len(msg) == 2 and msg[0] == "TOTAL_HPS":
-                hps = human_hps(msg[1])
-                line = f"Hashrate ~ {hps} {COL.DIM}{COL.RESET}"
-                if line != last_line:
-                    clog(line, color=COL.RESET)
-                    last_line = line
-
-
-def _register_bootstrap_peers(network: Network) -> int:
-    fallback_nodes = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
-    count = 0
-    for peer in fallback_nodes:
-        if not peer:
-            continue
-        network.persistent_peers.add(peer)
-        network.peers.add(peer)
-        count += 1
-    return count
 
 
 class LightMiner:
@@ -161,14 +122,12 @@ class LightMiner:
     def start_node(self) -> bool:
         try:
             self.blockchain = Blockchain(
-                db_path=CFG.BLOCK_FILE,
                 in_memory=True,  # <-- no disk persistence, only RAM
                 use_cores=self.cores,
                 miner_address=self.address,
             )
             self.network = Network(blockchain=self.blockchain)
-            peer_count = _register_bootstrap_peers(self.network)
-            clog(f"Connected to TsarChain Network...")
+            clog("Connected to TsarChain Network...")
             return True
         except Exception as exc:
             clog(f"Failed to connect: {exc}")
@@ -329,7 +288,7 @@ class LightMiner:
         )
         result["hash"] = h
 
-    def start_mining(self, timeout: int = 600) -> bool:
+    def start_mining(self) -> bool:
         if not self.validate_address():
             return False
         if not self.start_node():
@@ -342,9 +301,6 @@ class LightMiner:
         mode_label = "FULL-MEM (+2.5GB)" if bool(CFG.RANDOMX_FULL_MEM) else "LIGHT"
         clog(f"RandomX : {mode_label}")
         clog("NOTE    : Stateless mode. Fetches tip window only; mines empty blocks.", color=COL.BG_YELLOW)
-
-        reporter = HashrateReporter(self._progress_q)
-        reporter.start()
 
         while self.mining_alive:
             try:
@@ -446,7 +402,7 @@ class LightMiner:
                     break
                 clog(f"[mining] Error: {exc}")
                 time.sleep(1)
-        reporter.stop_event.set()
+
         return True
 
     def shutdown(self):

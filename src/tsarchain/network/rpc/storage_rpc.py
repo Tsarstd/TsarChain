@@ -10,10 +10,11 @@ Focus: payout & proof (no storage/archivist flow).
 import time
 import base64
 from typing import TYPE_CHECKING, Any, Optional
-from bech32 import convertbits, bech32_encode
 
-from ...contracts import graffiti as GRAFFITI
 from ...utils import config as CFG
+from ...utils.benchmarks import benchmark
+from ...contracts import graffiti as GRAFFITI
+from ...utils.helpers import spkhex_to_address
 
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.rpc.storage_rpc")
@@ -21,24 +22,238 @@ log = get_ctx_logger("tsarchain.network.rpc.storage_rpc")
 if TYPE_CHECKING:
     from ..node import Network
 
-
 __all__ = ["handle_storage_rpc"]
 
+def _proof_epoch_window(self) -> tuple[int, int, int]:
+    tip_height = int(getattr(getattr(self.broadcast, "blockchain", None), "height", 0) or 0)
+    tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
+    drift = int(CFG.GRAFFITI_PROOF_EPOCH_DRIFT)
+    return tip_epoch, max(0, tip_epoch - drift), tip_epoch + drift
 
-def _spkhex_to_address(spk_hex: str) -> str | None:
-    if isinstance(spk_hex, bytes):
-        spk_hex = spk_hex.hex()
-    spk_hex = spk_hex.lower()
-    if spk_hex.startswith("0014") and len(spk_hex) == 44:
-        prog = bytes.fromhex(spk_hex[4:])
-        data = [0] + convertbits(list(prog), 8, 5, True)
-        return bech32_encode(CFG.ADDRESS_PREFIX, data)
-    if spk_hex.startswith("0020") and len(spk_hex) == 68:
-        prog = bytes.fromhex(spk_hex[4:])
-        data = [0] + convertbits(list(prog), 8, 5, True)
-        return bech32_encode(CFG.ADDRESS_PREFIX, data)
-    return None
+@benchmark(label="GRAFFITI_PROOF_SUBMIT", threshold_ms=15.0)
+def _handle_storage_proof_submit(self, message, storer_addr, ip, src_node_id):
+    ts_val = int(message.get("ts", 0))
+    nonce_val = str(message.get("nonce") or "")
+    sender_key = src_node_id or ip
+    if not (ts_val and nonce_val and self._nonce_guard("storage_proof", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
+        return {"error": "replay_guard"}
+         
+    art_id_raw = str(message.get("art_id") or "").strip()
+    art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
+    epoch = int(message.get("epoch", -1))
+    offset = int(message.get("offset", -1))
+    length = int(message.get("length", -1))
+    proof_hash = str(message.get("hash") or "").strip().lower()
+    storer = str(message.get("storer") or "").strip().lower()
+    height = int(message.get("height", 0) or 0)
+    seed = str(message.get("seed") or "").strip().lower()
+    if epoch < 0 or offset < 0 or length <= 0 or not GRAFFITI._is_valid_sha256_hex(proof_hash):
+        return {"error": "bad_fields"}
+    if not storer:
+        return {"error": "missing_storer"}
+    if storer != storer_addr:
+        log.error("[GRAFFITI_PROOF_SUBMIT] missmatch storer: storer=%s storer_addr=%s", storer, storer_addr)
+        return {"error": "storer_mismatch"}
+    reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
+    if not reg:
+        return {"error": "registry_unavailable"}
+    post = reg.get_post(art_id)
+    if not post:
+        return {"error": "unknown_art_id"}
+    size = int(post.get("size") or 0)
+    if size <= 0 or (offset + length) > size:
+        return {"error": "out_of_range", "size": size}
+    mroot = post.get("mroot") or post.get("merkle_root")
+    mchunk = post.get("mchunk") or post.get("merkle_chunk")
+    mcount = post.get("mcount") or post.get("merkle_count")
+    idx = None
+    if mroot or mchunk or mcount:
+        if not (mroot and mchunk and mcount):
+            return {"error": "merkle_meta_incomplete"}
+        try:
+            mchunk = int(mchunk)
+            mcount = int(mcount)
+        except Exception:
+            return {"error": "merkle_meta_invalid"}
+        if mchunk <= 0 or mcount <= 0:
+            return {"error": "merkle_meta_invalid"}
+        if not GRAFFITI._is_valid_sha256_hex(str(mroot)):
+            return {"error": "merkle_root_invalid"}
+    if height < 0:
+        height = 0
+    if GRAFFITI.compute_proof_epoch(height) != epoch:
+        return {"error": "epoch_mismatch"}
+    tip_epoch, min_epoch, max_epoch = _proof_epoch_window(self)
+    if epoch < min_epoch or epoch > max_epoch:
+        log.error("[GRAFFITI_PROOF_SUBMIT] epoch out of range: epoch=%s tip_epoch=%s min_epoch=%s max_epoch=%s", epoch, tip_epoch, min_epoch, max_epoch)
+        return {"error": "epoch_out_of_range", "tip_epoch": tip_epoch}
+    challenge = GRAFFITI.calc_proof_challenge(
+        art_id,
+        size,
+        height,
+        chunk_bytes=int(mchunk) if mroot else None,
+    )
+    if int(challenge.get("offset", -1)) != offset or int(challenge.get("length", -1)) != length:
+        return {"error": "challenge_mismatch"}
+    if seed and seed != challenge.get("seed"):
+        return {"error": "seed_mismatch"}
+    if mroot:
+        chunk_b64 = message.get("chunk")
+        path = message.get("path")
+        if not isinstance(chunk_b64, str) or not chunk_b64:
+            return {"error": "merkle_chunk_required"}
+        if not isinstance(path, list):
+            return {"error": "merkle_path_required"}
+        try:
+            chunk_bytes = base64.b64decode(chunk_b64.encode("ascii"), validate=True)
+        except Exception:
+            return {"error": "merkle_chunk_invalid"}
+        if len(chunk_bytes) != int(length):
+            return {"error": "merkle_chunk_length"}
+        computed_hash = GRAFFITI.hash_proof_chunk(chunk_bytes)
+        if computed_hash != proof_hash:
+            return {"error": "merkle_chunk_hash_mismatch"}
+        if mchunk and offset % int(mchunk) != 0:
+            return {"error": "merkle_offset_mismatch"}
+        if mchunk:
+            idx = offset // int(mchunk)
+            if idx < 0 or (mcount is not None and idx >= int(mcount)):
+                return {"error": "merkle_index_out_of_range"}
+        if not GRAFFITI.verify_merkle_path(str(mroot), proof_hash, path):
+            return {"error": "merkle_path_invalid"}
+    existing = reg.get_proof(art_id, storer, epoch) if hasattr(reg, "get_proof") else None
+    if existing:
+        existing_hash = str(existing.get("hash") or "").strip().lower()
+        if existing_hash and existing_hash != proof_hash:
+            log.error("[GRAFFITI_PROOF_SUBMIT] proof conflict: proof_hash=%s existing_hash=%s", proof_hash, existing_hash)
+            return {"error": "proof_conflict"}
+    reg.record_proof(
+        art_id=art_id,
+        storer=storer,
+        epoch=epoch,
+        offset=offset,
+        length=length,
+        proof_hash=proof_hash,
+        height=height,
+        seed=str(challenge.get("seed", "")),
+    )
+    return {"status": "ok", "art_id": art_id, "epoch": epoch}
 
+@benchmark(label="GRAFFITI_BUILD_PAYOUT", threshold_ms=15.0)
+def _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id):
+    ts_val = int(message.get("ts", 0))
+    nonce_val = str(message.get("nonce") or "")
+    sender_key = src_node_id or ip
+    if not (ts_val and nonce_val and self._nonce_guard("storage_payout", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
+        return {"error": "replay_guard"}
+        
+    art_id_raw = str(message.get("art_id") or "").strip()
+    art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
+    recipients = message.get("recipients") or []
+    
+    if isinstance(recipients, dict):
+        recipients = [{"addr": a, "amount": v} for a, v in recipients.items()]
+    if not recipients and message.get("recipient") and message.get("amount"):
+        amt = int(message.get("amount", 0))
+        recipients = [{"addr": str(message.get("recipient")).strip(), "amount": amt}]
+    if not isinstance(recipients, list) or not recipients:
+        return {"error": "bad_recipients"}
+    if len(recipients) != 1:
+        return {"error": "payout_requires_single_recipient"}
+    
+    rec = recipients[0] if isinstance(recipients[0], dict) else {}
+    rec_addr = str(rec.get("addr") or rec.get("address") or "").strip().lower()
+    rec_amt = int(rec.get("amount", 0) or 0)
+    
+    if not rec_addr or not GRAFFITI._is_valid_tsar_address(rec_addr) or rec_amt <= 0:
+        return {"error": "bad_recipients"}
+    if rec_addr != storer_addr:
+        return {"error": "payout_recipient_mismatch"}
+    
+    recipients = [{"addr": rec_addr, "amount": rec_amt}]
+    fee_rate = int(message.get("fee_rate", CFG.DEFAULT_FEE_RATE_SATVB))
+    epoch = int(message.get("epoch", -1))
+    utxo = getattr(self.broadcast, "utxodb", None)
+    
+    if utxo is None:
+        return {"error": "utxo_unavailable"}
+    
+    utxo._load()
+    reg = getattr(utxo, "_graffiti_registry", None)
+    proof_entry = reg.get_latest_proof(art_id, storer_addr) if reg else None
+    proof_meta = None
+    if proof_entry:
+        proof_meta = {
+            "offset": proof_entry.get("offset"),
+            "length": proof_entry.get("length"),
+            "hash": proof_entry.get("hash"),
+            "seed": proof_entry.get("seed"),
+            "height": proof_entry.get("height"),
+            "epoch": proof_entry.get("epoch"),
+            "storer": proof_entry.get("storer"),
+        }
+
+    tip_height = int(getattr(getattr(self.broadcast, "blockchain", None), "height", 0) or 0)
+    tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
+    if epoch >= 0:
+        if epoch > tip_epoch:
+            return {"error": "epoch_in_future", "tip_epoch": tip_epoch}
+        if not proof_entry:
+            return {"error": "missing_proof", "requested_epoch": epoch}
+        proof_epoch = int(proof_entry.get("epoch", -1))
+        if proof_epoch != epoch:
+            return {"error": "proof_epoch_mismatch", "requested_epoch": epoch, "have": proof_epoch}
+    else:
+        if proof_entry:
+            epoch = int(proof_entry.get("epoch", -1))
+        if epoch > tip_epoch:
+            return {"error": "epoch_in_future", "tip_epoch": tip_epoch}
+        if not proof_entry:
+            return {"error": "missing_proof"}
+
+    cooldown = int(CFG.ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC)
+    if cooldown > 0:
+        now = int(time.time())
+        guard_key = f"{art_id}:{storer_addr}"
+        with self.lock:
+            guard = getattr(self, "_payout_guard", None)
+            if guard is None:
+                guard = {}
+                setattr(self, "_payout_guard", guard)
+            last_ts = int(guard.get(guard_key, 0) or 0)
+            if last_ts and (now - last_ts) < cooldown:
+                return {
+                    "error": "payout_cooldown",
+                    "retry_after": int(cooldown - (now - last_ts)),
+                }
+            guard[guard_key] = now
+
+    tx_obj = GRAFFITI.build_payout_tx(
+        utxo_db=utxo,
+        art_id=art_id,
+        recipients=recipients,
+        fee_rate=fee_rate,
+        epoch=epoch if epoch >= 0 else None,
+        proof=proof_meta,
+    )
+
+    outs = []
+    for o in getattr(tx_obj, "outputs", []) or []:
+        amt = int(getattr(o, "amount", 0) or 0)
+        addr = spkhex_to_address(o.script_pubkey.serialize().hex())
+        outs.append((amt, addr))
+
+    broadcast_flag = bool(message.get("broadcast"))
+    if broadcast_flag:
+        tx_msg = {"type": "NEW_TX", "data": tx_obj.to_dict(include_txid=True)}
+        if CFG.ENABLE_DANDELION_PP:
+            tx_msg["phase"] = "stem"
+        ok = self.broadcast.receive_tx(tx_msg, None, self.peers)
+        if not ok:
+            log.warning("[payout] broadcast failed art=%s", art_id[:16])
+            return {"error": "broadcast_failed"}
+        
+    return {"status": "ok", "tx": tx_obj.to_dict(include_txid=True)}
 
 def handle_storage_rpc(
     self: "Network",
@@ -88,11 +303,6 @@ def handle_storage_rpc(
                 best_score = score
         return best_meta
 
-    def _proof_epoch_window() -> tuple[int, int, int]:
-        tip_height = int(getattr(getattr(self.broadcast, "blockchain", None), "height", 0) or 0)
-        tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
-        drift = int(CFG.GRAFFITI_PROOF_EPOCH_DRIFT)
-        return tip_epoch, max(0, tip_epoch - drift), tip_epoch + drift
 
     peer_meta = _resolve_storage_sender()
     if not peer_meta:
@@ -105,245 +315,9 @@ def handle_storage_rpc(
         return {"error": "storer_unregistered"}
 
     if mtype == "GRAFFITI_PROOF_SUBMIT":
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-            
-        ts_val = int(message.get("ts", 0))
-        nonce_val = str(message.get("nonce") or "")
-        sender_key = src_node_id or ip
-        if not (ts_val and nonce_val and self._nonce_guard("storage_proof", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
-            return {"error": "replay_guard"}
-             
-        art_id_raw = str(message.get("art_id") or "").strip()
-        art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
-        epoch = int(message.get("epoch", -1))
-        offset = int(message.get("offset", -1))
-        length = int(message.get("length", -1))
-        proof_hash = str(message.get("hash") or "").strip().lower()
-        storer = str(message.get("storer") or "").strip().lower()
-        height = int(message.get("height", 0) or 0)
-        seed = str(message.get("seed") or "").strip().lower()
-        if epoch < 0 or offset < 0 or length <= 0 or not GRAFFITI._is_valid_sha256_hex(proof_hash):
-            return {"error": "bad_fields"}
-        if not storer:
-            return {"error": "missing_storer"}
-        if storer != storer_addr:
-            log.error("[GRAFFITI_PROOF_SUBMIT] missmatch storer: storer=%s storer_addr=%s", storer, storer_addr)
-            return {"error": "storer_mismatch"}
-        reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
-        if not reg:
-            return {"error": "registry_unavailable"}
-        post = reg.get_post(art_id)
-        if not post:
-            return {"error": "unknown_art_id"}
-        size = int(post.get("size") or 0)
-        if size <= 0 or (offset + length) > size:
-            return {"error": "out_of_range", "size": size}
-        mroot = post.get("mroot") or post.get("merkle_root")
-        mchunk = post.get("mchunk") or post.get("merkle_chunk")
-        mcount = post.get("mcount") or post.get("merkle_count")
-        idx = None
-        if mroot or mchunk or mcount:
-            if not (mroot and mchunk and mcount):
-                return {"error": "merkle_meta_incomplete"}
-            try:
-                mchunk = int(mchunk)
-                mcount = int(mcount)
-            except Exception:
-                return {"error": "merkle_meta_invalid"}
-            if mchunk <= 0 or mcount <= 0:
-                return {"error": "merkle_meta_invalid"}
-            if not GRAFFITI._is_valid_sha256_hex(str(mroot)):
-                return {"error": "merkle_root_invalid"}
-        if height < 0:
-            height = 0
-        if GRAFFITI.compute_proof_epoch(height) != epoch:
-            return {"error": "epoch_mismatch"}
-        tip_epoch, min_epoch, max_epoch = _proof_epoch_window()
-        if epoch < min_epoch or epoch > max_epoch:
-            log.error("[GRAFFITI_PROOF_SUBMIT] epoch out of range: epoch=%s tip_epoch=%s min_epoch=%s max_epoch=%s", epoch, tip_epoch, min_epoch, max_epoch)
-            return {"error": "epoch_out_of_range", "tip_epoch": tip_epoch}
-        challenge = GRAFFITI.calc_proof_challenge(
-            art_id,
-            size,
-            height,
-            chunk_bytes=int(mchunk) if mroot else None,
-        )
-        if int(challenge.get("offset", -1)) != offset or int(challenge.get("length", -1)) != length:
-            return {"error": "challenge_mismatch"}
-        if seed and seed != challenge.get("seed"):
-            return {"error": "seed_mismatch"}
-        if mroot:
-            chunk_b64 = message.get("chunk")
-            path = message.get("path")
-            if not isinstance(chunk_b64, str) or not chunk_b64:
-                return {"error": "merkle_chunk_required"}
-            if not isinstance(path, list):
-                return {"error": "merkle_path_required"}
-            try:
-                chunk_bytes = base64.b64decode(chunk_b64.encode("ascii"), validate=True)
-            except Exception:
-                return {"error": "merkle_chunk_invalid"}
-            if len(chunk_bytes) != int(length):
-                return {"error": "merkle_chunk_length"}
-            computed_hash = GRAFFITI.hash_proof_chunk(chunk_bytes)
-            if computed_hash != proof_hash:
-                return {"error": "merkle_chunk_hash_mismatch"}
-            if mchunk and offset % int(mchunk) != 0:
-                return {"error": "merkle_offset_mismatch"}
-            if mchunk:
-                idx = offset // int(mchunk)
-                if idx < 0 or (mcount is not None and idx >= int(mcount)):
-                    return {"error": "merkle_index_out_of_range"}
-            if not GRAFFITI.verify_merkle_path(str(mroot), proof_hash, path):
-                return {"error": "merkle_path_invalid"}
-        existing = reg.get_proof(art_id, storer, epoch) if hasattr(reg, "get_proof") else None
-        if existing:
-            existing_hash = str(existing.get("hash") or "").strip().lower()
-            if existing_hash and existing_hash != proof_hash:
-                log.error("[GRAFFITI_PROOF_SUBMIT] proof conflict: proof_hash=%s existing_hash=%s", proof_hash, existing_hash)
-                return {"error": "proof_conflict"}
-        reg.record_proof(
-            art_id=art_id,
-            storer=storer,
-            epoch=epoch,
-            offset=offset,
-            length=length,
-            proof_hash=proof_hash,
-            height=height,
-            seed=str(challenge.get("seed", "")),
-        )
-        
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            if result > 15.0:
-                log.debug("[GRAFFITI_PROOF_SUBMIT] Benchmark : %.3f ms", result)
-            
-        return {"status": "ok", "art_id": art_id, "epoch": epoch}
+        return _handle_storage_proof_submit(self, message, storer_addr, ip, src_node_id)
 
     elif mtype == "GRAFFITI_BUILD_PAYOUT":
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-            
-        ts_val = int(message.get("ts", 0))
-        nonce_val = str(message.get("nonce") or "")
-        sender_key = src_node_id or ip
-        if not (ts_val and nonce_val and self._nonce_guard("storage_payout", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
-            return {"error": "replay_guard"}
-            
-        art_id_raw = str(message.get("art_id") or "").strip()
-        art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
-        recipients = message.get("recipients") or []
-        
-        if isinstance(recipients, dict):
-            recipients = [{"addr": a, "amount": v} for a, v in recipients.items()]
-        if not recipients and message.get("recipient") and message.get("amount"):
-            amt = int(message.get("amount", 0))
-            recipients = [{"addr": str(message.get("recipient")).strip(), "amount": amt}]
-        if not isinstance(recipients, list) or not recipients:
-            return {"error": "bad_recipients"}
-        if len(recipients) != 1:
-            return {"error": "payout_requires_single_recipient"}
-        
-        rec = recipients[0] if isinstance(recipients[0], dict) else {}
-        rec_addr = str(rec.get("addr") or rec.get("address") or "").strip().lower()
-        rec_amt = int(rec.get("amount", 0) or 0)
-        
-        if not rec_addr or not GRAFFITI._is_valid_tsar_address(rec_addr) or rec_amt <= 0:
-            return {"error": "bad_recipients"}
-        if rec_addr != storer_addr:
-            return {"error": "payout_recipient_mismatch"}
-        
-        recipients = [{"addr": rec_addr, "amount": rec_amt}]
-        fee_rate = int(message.get("fee_rate", CFG.DEFAULT_FEE_RATE_SATVB))
-        epoch = int(message.get("epoch", -1))
-        utxo = getattr(self.broadcast, "utxodb", None)
-        
-        if utxo is None:
-            return {"error": "utxo_unavailable"}
-        
-        utxo._load()
-        reg = getattr(utxo, "_graffiti_registry", None)
-        proof_entry = reg.get_latest_proof(art_id, storer_addr) if reg else None
-        proof_meta = None
-        if proof_entry:
-            proof_meta = {
-                "offset": proof_entry.get("offset"),
-                "length": proof_entry.get("length"),
-                "hash": proof_entry.get("hash"),
-                "seed": proof_entry.get("seed"),
-                "height": proof_entry.get("height"),
-                "epoch": proof_entry.get("epoch"),
-                "storer": proof_entry.get("storer"),
-            }
-
-        tip_height = int(getattr(getattr(self.broadcast, "blockchain", None), "height", 0) or 0)
-        tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
-        if epoch >= 0:
-            if epoch > tip_epoch:
-                return {"error": "epoch_in_future", "tip_epoch": tip_epoch}
-            if not proof_entry:
-                return {"error": "missing_proof", "requested_epoch": epoch}
-            proof_epoch = int(proof_entry.get("epoch", -1))
-            if proof_epoch != epoch:
-                return {"error": "proof_epoch_mismatch", "requested_epoch": epoch, "have": proof_epoch}
-        else:
-            if proof_entry:
-                epoch = int(proof_entry.get("epoch", -1))
-            if epoch > tip_epoch:
-                return {"error": "epoch_in_future", "tip_epoch": tip_epoch}
-            if not proof_entry:
-                return {"error": "missing_proof"}
-
-        cooldown = int(CFG.ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC)
-        if cooldown > 0:
-            now = int(time.time())
-            guard_key = f"{art_id}:{storer_addr}"
-            with self.lock:
-                guard = getattr(self, "_payout_guard", None)
-                if guard is None:
-                    guard = {}
-                    setattr(self, "_payout_guard", guard)
-                last_ts = int(guard.get(guard_key, 0) or 0)
-                if last_ts and (now - last_ts) < cooldown:
-                    return {
-                        "error": "payout_cooldown",
-                        "retry_after": int(cooldown - (now - last_ts)),
-                    }
-                guard[guard_key] = now
-
-        tx_obj = GRAFFITI.build_payout_tx(
-            utxo_db=utxo,
-            art_id=art_id,
-            recipients=recipients,
-            fee_rate=fee_rate,
-            epoch=epoch if epoch >= 0 else None,
-            proof=proof_meta,
-        )
-
-        outs = []
-        for o in getattr(tx_obj, "outputs", []) or []:
-            amt = int(getattr(o, "amount", 0) or 0)
-            addr = _spkhex_to_address(o.script_pubkey.serialize().hex())
-            outs.append((amt, addr))
-
-        broadcast_flag = bool(message.get("broadcast"))
-        if broadcast_flag:
-            tx_msg = {"type": "NEW_TX", "data": tx_obj.to_dict(include_txid=True)}
-            if CFG.ENABLE_DANDELION_PP:
-                tx_msg["phase"] = "stem"
-            ok = self.broadcast.receive_tx(tx_msg, None, self.peers)
-            if not ok:
-                log.warning("[payout] broadcast failed art=%s", art_id[:16])
-                return {"error": "broadcast_failed"}
-            
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            if result > 15:
-                log.warning("[GRAFFITI_BUILD_PAYOUT] Benchmark : %.3f ms", result)
-            
-        return {"status": "ok", "tx": tx_obj.to_dict(include_txid=True)}
+        return _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id)
 
     return None

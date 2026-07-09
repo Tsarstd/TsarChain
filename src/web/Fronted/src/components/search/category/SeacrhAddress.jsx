@@ -42,28 +42,18 @@ const ResultAddress = ({ data, onSearchClick }) => {
       for (let i = 1; i <= totalPages; i++) {
         pageNumbers.push(i);
       }
-    } else {
-      if (currentPage <= 3) {
-        for (let i = 1; i <= 4; i++) {
-          pageNumbers.push(i);
-        }
-        pageNumbers.push('...');
-        pageNumbers.push(totalPages);
-      } else if (currentPage >= totalPages - 2) {
-        pageNumbers.push(1);
-        pageNumbers.push('...');
-        for (let i = totalPages - 3; i <= totalPages; i++) {
-          pageNumbers.push(i);
-        }
-      } else {
-        pageNumbers.push(1);
-        pageNumbers.push('...');
-        pageNumbers.push(currentPage - 1);
-        pageNumbers.push(currentPage);
-        pageNumbers.push(currentPage + 1);
-        pageNumbers.push('...');
-        pageNumbers.push(totalPages);
+    } else if (currentPage <= 3) {
+      for (let i = 1; i <= 4; i++) {
+        pageNumbers.push(i);
       }
+      pageNumbers.push('...1', totalPages);
+    } else if (currentPage >= totalPages - 2) {
+      pageNumbers.push(1, '...2');
+      for (let i = totalPages - 3; i <= totalPages; i++) {
+        pageNumbers.push(i);
+      }
+    } else {
+      pageNumbers.push(1, '...3', currentPage - 1, currentPage, currentPage + 1, '...4', totalPages);
     }
     
     return pageNumbers;
@@ -72,11 +62,7 @@ const ResultAddress = ({ data, onSearchClick }) => {
   const renderAddressLabel = (direction, fromAddress, toAddress) => {
     if (direction === 'in') {
       if (fromAddress === 'coinbase') {
-        return (
-          <>
-            <span className="tx-address-label">From : Coinbase</span>
-          </>
-        );
+        return <span className="tx-address-label">From : Coinbase</span>;
       } else {
         return (
           <>
@@ -110,67 +96,27 @@ const ResultAddress = ({ data, onSearchClick }) => {
     if (!address) return [];
     
     const len = address.length;
+    if (len !== 44 && len !== 64) return [];
     
-    // P2WPKH
+    const rows = [];
+    
+    rows.push(address.substring(0, 4).split(''));
+    
+    for (let start = 4; start < len; start += 20) {
+      const row = [];
+      for (let i = start; i < Math.min(start + 20, len); i += 5) {
+        row.push(address.substring(i, i + 5));
+      }
+      rows.push(row);
+    }
+    
     if (len === 44) {
-      const rows = [];
-      
-      rows.push(address.substring(0, 4).split(''));
-      
-      const row2 = [];
-      for (let i = 4; i < 24; i += 5) {
-        row2.push(address.substring(i, i + 5));
-      }
-      rows.push(row2);
-      
-      const row3 = [];
-      for (let i = 24; i < 44; i += 5) {
-        row3.push(address.substring(i, i + 5));
-      }
-      rows.push(row3);
-
-      const row4 = [
-        "Citizen Address",
-        "P2WPKH"
-      ];
-      rows.push(row4);
-      
-      return rows;
+      rows.push(["Citizen Address", "P2WPKH"]);
+    } else {
+      rows.push(["Pool Address", "P2WSH"]);
     }
     
-    // P2WSH
-    if (len === 64) {
-      const rows = [];
-      
-      rows.push(address.substring(0, 4).split(''));
-      
-      const row2 = [];
-      for (let i = 4; i < 24; i += 5) {
-        row2.push(address.substring(i, i + 5));
-      }
-      rows.push(row2);
-      
-      const row3 = [];
-      for (let i = 24; i < 44; i += 5) {
-        row3.push(address.substring(i, i + 5));
-      }
-      rows.push(row3);
-      
-      const row4 = [];
-      for (let i = 44; i < 64; i += 5) {
-        row4.push(address.substring(i, i + 5));
-      }
-      rows.push(row4);
-      
-      const row5 = [
-        "Pool Address",
-        "P2WSH"
-      ];
-      rows.push(row5);
-      
-      return rows;
-    }
-    return [];
+    return rows;
   };
 
   const getHighlightPositions = (addressLength) => {
@@ -190,10 +136,9 @@ const ResultAddress = ({ data, onSearchClick }) => {
   };
 
   const renderAddressGrid = (address) => {
-    if (!address) return "-";
+    if (!address) return <span>-</span>;
     
     const grid = splitAddressGrid(address);
-    
     if (grid.length === 0) {
       return <span className="value wrap">{address}</span>;
     }
@@ -201,76 +146,62 @@ const ResultAddress = ({ data, onSearchClick }) => {
     const isP2WPKH = address.length === 44;
     const isP2WSH = address.length === 64;
     const highlightPositions = getHighlightPositions(address.length);
-    
-    const isHighlighted = (row, col) => {
-      return highlightPositions.some(pos => pos[0] === row && pos[1] === col);
+    const isHighlighted = (r, c) => highlightPositions.some(pos => pos[0] === r && pos[1] === c);
+
+    const renderChunk = (cell, shouldHighlight, cellKey) => {
+      const chars = cell.split('');
+      const charElements = [];
+      for (let i = 0; i < chars.length; i++) {
+        charElements.push(<div key={`c-${i}`} className="address-chunk-char">{chars[i]}</div>);
+      }
+      return (
+        <div key={cellKey} className="address-cell">
+          <div className={`address-chunk-container ${shouldHighlight ? 'highlighted' : ''}`}>
+            <div className="address-chunk-grid">{charElements}</div>
+          </div>
+        </div>
+      );
     };
 
-    return (
-      <div className="address-container">
-        {grid.map((row, rowIndex) => {
-          const isLabelRow = (isP2WPKH && rowIndex === 3) || (isP2WSH && rowIndex === 4);
-          
-          if (isLabelRow) {
-            const labelClass = isP2WPKH ? "address-label-p2wpkh" : "address-label-p2wsh";
-            
-            return (
-              <div key={rowIndex} className="address-row">
-                <div className="address-cell">
-                  <div className={`${labelClass}`}>
-                    <span className="address-label">
-                      {row[0]}
-                    </span>
-                  </div>
-                </div>
-                <div className="address-cell">
-                  <div className={`${labelClass}`}>
-                    <span className="address-label">
-                      {row[1]}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            );
-          }
-          
-          const isSingleCharRow = rowIndex === 0;
-          
-          return (
-            <div key={rowIndex} className="address-row">
-              {row.map((cell, colIndex) => {
-                if (isSingleCharRow) {
-                  return (
-                    <div key={colIndex} className="address-cell">
-                      <div className={`address-char-container`}>
-                        <span className="address-char">
-                          {cell}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                }
-                
-                const shouldHighlight = isHighlighted(rowIndex, colIndex);
-                return (
-                  <div key={colIndex} className="address-cell">
-                    <div className={`address-chunk-container ${shouldHighlight ? 'highlighted' : ''}`}>
-                      <div className="address-chunk-grid">
-                        {cell.split('').map((char, charIndex) => (
-                          <div key={charIndex} className="address-chunk-char">
-                            {char}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+    const rows = [];
+    for (let rIdx = 0; rIdx < grid.length; rIdx++) {
+      const row = grid[rIdx];
+      const rowKey = `row-${rIdx}`;
+      const isLabelRow = (isP2WPKH && rIdx === 3) || (isP2WSH && rIdx === 4);
+      
+      if (isLabelRow) {
+        const labelClass = isP2WPKH ? "address-label-p2wpkh" : "address-label-p2wsh";
+        rows.push(
+          <div key={rowKey} className="address-row">
+            <div className="address-cell">
+              <div className={labelClass}><span className="address-label">{row[0]}</span></div>
+            </div>
+            <div className="address-cell">
+              <div className={labelClass}><span className="address-label">{row[1]}</span></div>
+            </div>
+          </div>
+        );
+        continue;
+      }
+      
+      const isSingleCharRow = rIdx === 0;
+      const cells = [];
+      for (let cIdx = 0; cIdx < row.length; cIdx++) {
+        const cell = row[cIdx];
+        const cellKey = `cell-${rIdx}-${cIdx}`;
+        if (isSingleCharRow) {
+          cells.push(
+            <div key={cellKey} className="address-cell">
+              <div className="address-char-container"><span className="address-char">{cell}</span></div>
             </div>
           );
-        })}
-      </div>
-    );
+        } else {
+          cells.push(renderChunk(cell, isHighlighted(rIdx, cIdx), cellKey));
+        }
+      }
+      rows.push(<div key={rowKey} className="address-row">{cells}</div>);
+    }
+    return <div className="address-container">{rows}</div>;
   };
 
   return (
@@ -353,6 +284,10 @@ const ResultAddress = ({ data, onSearchClick }) => {
             const height = h.height;
             const confirmations = h.confirmations;
             
+            let directionColor = "#8b8b8b";
+            if (directionBadge.type === "incoming") directionColor = "#38b36b";
+            else if (directionBadge.type === "outgoing") directionColor = "#d1495b";
+            
             return (
               <div className="tx-item" key={h.txid || h.id || idx}>
                 <div className="tx-items">
@@ -397,8 +332,7 @@ const ResultAddress = ({ data, onSearchClick }) => {
                       flex: 1,
                       textAlign: 'right',
                       fontSize: '12px',
-                      color: directionBadge.type === "incoming" ? "#38b36b" : 
-                        directionBadge.type === "outgoing" ? "#d1495b" : "#8b8b8b"
+                      color: directionColor
                     }}>
                       {directionBadge.type === "outgoing" ? "-" : "+"}
                       {fmtTsar(h.amount || h.value || 0)}
@@ -421,9 +355,9 @@ const ResultAddress = ({ data, onSearchClick }) => {
               &lt;
             </button>
             
-            {getPageNumbers().map((pageNum, idx) => (
-              pageNum === '...' ? (
-                <span key={`ellipsis-${idx}`} className="pagination-ellipsis">...</span>
+            {getPageNumbers().map((pageNum) => (
+              String(pageNum).startsWith('...') ? (
+                <span key={pageNum} className="pagination-ellipsis">...</span>
               ) : (
                 <button
                   key={`page-${pageNum}`}

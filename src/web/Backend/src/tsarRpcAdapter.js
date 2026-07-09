@@ -1,7 +1,7 @@
-const { spawn } = require("child_process");
-const fs = require("fs");
-const path = require("path");
-const readline = require("readline");
+const { spawn } = require("node:child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+const readline = require("node:readline");
 
 const projectRoot = path.join(__dirname, "..", "..", "..", "..");
 const venvRoot = process.env.VIRTUAL_ENV || path.join(projectRoot, ".venv");
@@ -31,7 +31,8 @@ const handleWorkerLine = (line) => {
   let msg;
   try {
     msg = JSON.parse(raw);
-  } catch (_err) {
+  } catch (err) {
+    console.warn("Failed to parse worker line:", err);
     return;
   }
   if (!msg || typeof msg !== "object" || msg.id === undefined) return;
@@ -39,7 +40,7 @@ const handleWorkerLine = (line) => {
   if (!entry) return;
   pending.delete(msg.id);
   clearTimeout(entry.timeout);
-  const payload = Object.prototype.hasOwnProperty.call(msg, "payload") ? msg.payload : msg;
+  const payload = Object.hasOwn(msg, "payload") ? msg.payload : msg;
   entry.resolve(payload);
 };
 
@@ -96,7 +97,8 @@ async function rpcCall(op, param, host, port) {
       reject(new Error("rpc_timeout"));
       try {
         child.kill();
-      } catch (_err) {
+      } catch (err) {
+        console.warn("Failed to kill worker on timeout:", err);
       }
     }, WORKER_REQUEST_TIMEOUT_MS);
 

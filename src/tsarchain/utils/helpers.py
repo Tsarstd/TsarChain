@@ -1,11 +1,11 @@
-﻿# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: BIP143; BIP141; BIP173; CompactSize; Merkle; libsecp256k1; LowS-Policy; Signal-X3DH
 
 from __future__ import annotations
 import hashlib, json, secrets, string, unicodedata, os
-from bech32 import bech32_decode, convertbits
+from bech32 import bech32_decode, bech32_encode, convertbits
 from typing import Tuple, Optional
 from ecdsa import VerifyingKey
 
@@ -268,6 +268,20 @@ def decode_address(address: str) -> bytes:
     if len(decoded) not in (20, 32):
         raise ValueError(f"Invalid witness program length: {len(decoded)} (expected 20 or 32)")
     return bytes(decoded)
+
+def spkhex_to_address(spk_hex: str) -> str | None:
+    if isinstance(spk_hex, bytes):
+        spk_hex = spk_hex.hex()
+    spk_hex = spk_hex.lower()
+    if spk_hex.startswith("0014") and len(spk_hex) == 44:
+        prog = bytes.fromhex(spk_hex[4:])
+        data = [0] + convertbits(list(prog), 8, 5, True)
+        return bech32_encode(CFG.ADDRESS_PREFIX, data)
+    if spk_hex.startswith("0020") and len(spk_hex) == 68:
+        prog = bytes.fromhex(spk_hex[4:])
+        data = [0] + convertbits(list(prog), 8, 5, True)
+        return bech32_encode(CFG.ADDRESS_PREFIX, data)
+    return None
 
 def decode_der_sig(signature: bytes):
     if signature[0] != 0x30:

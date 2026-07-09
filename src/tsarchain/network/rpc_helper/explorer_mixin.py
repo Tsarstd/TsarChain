@@ -9,18 +9,17 @@ import collections
 # ---------------- Local Project ----------------
 from ...utils import config as CFG
 from ...contracts import graffiti as GRAFF
-from ...utils.helpers import last_pushdata, estimate_block_size_bytes
+from ...utils.benchmarks import benchmark
+from ...utils.helpers import last_pushdata, estimate_block_size_bytes, spkhex_to_address
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.user_rpc_helper.explorer_mixin")
 
 class ExplorerMixin:
+    @benchmark(label="GET_TX_DETAIL", threshold_ms=15.0)
     def _get_tx_detail(self, txid_hex: str, src_tag: str | None = None) -> dict:
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-        
-        where, tx, height, timestamp, conf, chain, mem, tip_height = self._find_tx_and_meta(txid_hex)
+        where, tx, height, timestamp, conf, chain, _, _ = self._find_tx_and_meta(txid_hex)
         if tx is None:
             return {"error": "tx not found", "txid": txid_hex}
 
@@ -37,7 +36,7 @@ class ExplorerMixin:
                     total_in += int(amt)
                 prev_txid = key.split(":")[0]
                 prev_index = int(key.split(":")[1]) if ":" in key else 0
-                addr_prev = self._spkhex_to_address(spk_hex) if spk_hex else None
+                addr_prev = spkhex_to_address(spk_hex) if spk_hex else None
                 vin.append({
                     "prev_txid": prev_txid,
                     "prev_index": prev_index,
@@ -114,13 +113,6 @@ class ExplorerMixin:
                 bonus = total_block_fee
                 
         # ===== END BONUS =====
-        
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            tag = src_tag or "-"
-            if result > 15.0:
-                log.warning("[GET_TX_DETAIL] Benchmark : %.3f ms src=%s", result, tag)
             
         return {
             "type": "TX_DETAIL",
@@ -184,9 +176,8 @@ class ExplorerMixin:
             return None
         return data.decode("utf-8", errors="ignore") or data.hex()
 
+    @benchmark(label="GET_BLOCK_HASH", threshold_ms=15.0)
     def _handle_get_block_hash(self, height: int) -> dict:
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
 
         cache = getattr(self, "_block_hash_cache", None)
         cache_lock = getattr(self, "_block_hash_cache_lock", None)
@@ -225,17 +216,6 @@ class ExplorerMixin:
 
         if h_hex is None:
             return {"type": "BLOCK_HASH", "error": "height_out_of_range", "cache_hit": cache_hit}
-        
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            if result > 15.0:
-                log.warning(
-                    "[_handle_get_block_hash] Benchmark : %.3f ms cache_hit=%s height=%s",
-                    result,
-                    cache_hit,
-                    height,
-                )
             
         return {"type": "BLOCK_HASH", "height": height, "hash": h_hex or "", "cache_hit": cache_hit}
 
@@ -253,7 +233,6 @@ class ExplorerMixin:
         if isinstance(tid, (bytes, bytearray)): txid = tid.hex()
         elif isinstance(tid, str): txid = tid
         n_in  = len(getattr(tx, "inputs", []) or [])
-        n_out = len(getattr(tx, "outputs", []) or [])
         vout_list = []
         for idx, o in enumerate(getattr(tx, "outputs", []) or []):
             amt = int(getattr(o, "amount", 0))
@@ -272,7 +251,6 @@ class ExplorerMixin:
 
         # block
         height = getattr(b, "height")
-        hash = self._bhash_hex(b)
         prev_hash = self._prevhash_hex(b)
         timestamp = getattr(b, "timestamp")
         version = getattr(b, "version")
@@ -347,7 +325,7 @@ class ExplorerMixin:
         return {
             "type": "BLOCK",
             "block_id": block_id,
-            "hash": hash,
+            "hash": self._bhash_hex(b),
             "prev_hash": prev_hash,
             "height": height,
             "time": timestamp,

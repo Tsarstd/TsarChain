@@ -5,16 +5,15 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import time
 from typing import List, TYPE_CHECKING
 
 # ---------------- Local Project ----------------
 from ..core.block import Block
-from ..mempool.pool import TxPoolDB
 from ..utils import config as CFG
-from ..utils.helpers import bits_to_target, merkle_root
 from .genesis import GENESIS_HASH
+from ..mempool.pool import TxPoolDB
+from ..utils.helpers import bits_to_target, merkle_root
 
 if TYPE_CHECKING:
     from .blockchain import Blockchain
@@ -439,130 +438,3 @@ class ChainOpsMixin:
             cumulative_supply += reward
 
         return True
-
-    def print_chain( # Just for GUI/CLI display, not for core operations
-        self,
-        max_blocks: int | None = None,
-        columns: tuple[str, ...] = ("height", "time", "txs", "block_id", "hash", "prev"),
-        widths: dict[str, int] | None = None,
-        hash_len: int = 12,) -> str:
-
-        allowed = {"height", "time", "txs", "block_id", "hash", "prev"}
-        cols = [c for c in columns if c in allowed]
-        if not cols:
-            cols = ["height", "time", "txs", "block_id", "hash", "prev"]
-        w = {
-            "height": 6,
-            "time":   8,
-            "txs":    3,
-            "block_id": 50,
-            "hash":   hash_len,
-            "prev":   hash_len, }
-
-        if widths:
-            w.update({k: int(v) for k, v in widths.items() if k in w and isinstance(v, (int,)) and v > 0})
-
-        def _short(h: str | bytes | None, n: int) -> str:
-            if h is None:
-                return "-"
-            if isinstance(h, bytes):
-                h = h.hex()
-            s = str(h)
-            return s[:n] if len(s) > n else s
-
-        def _fmt_time(ts) -> str:
-            if ts is None:
-                return "--:--:--"
-            if isinstance(ts, (int, float)):
-                try:
-                    return dt.datetime.fromtimestamp(ts).strftime("%H:%M:%S")
-                except Exception:
-                    return "--:--:--"
-            if isinstance(ts, str):
-                try:
-                    t = ts.replace("Z", "+00:00")
-                    return dt.datetime.fromisoformat(t).strftime("%H:%M:%S")
-                except Exception:
-                    for sep in ("T", " "):
-                        if sep in ts:
-                            part = ts.split(sep)[-1]
-                            if len(part) >= 8 and part[2] == ":" and part[5] == ":":
-                                return part[:8]
-                    return "--:--:--"
-            return "--:--:--"
-
-        def _get_hash(b) -> str:
-            try:
-                return b.hash().hex()
-            except Exception:
-                return getattr(b, "hash_hex", None) or getattr(b, "block_hash", None) or "-"
-
-        def _get_prev(b) -> str:
-            prev = getattr(b, "prev_block_hash", None) or getattr(b, "prev_hash", None)
-            if isinstance(prev, bytes):
-                return prev.hex()
-            return prev.hex() if hasattr(prev, "hex") else (prev or "-")
-
-        def _get_block_id(b, h_hex: str) -> str:
-            bid = getattr(b, "block_id", None)
-            if bid:
-                return str(bid)
-            tx_list = getattr(b, "transactions", []) or []
-            if tx_list:
-                cb = tx_list[0]
-                try:
-                    if getattr(cb, "is_coinbase", False):
-                        bid = getattr(cb, "block_id", None)
-                        if bid:
-                            return str(bid)
-                except Exception:
-                    log.exception("[_get_block_id] Failed to get coinbase block_id")
-                    pass
-                if isinstance(cb, dict) and cb.get("is_coinbase"):
-                    bid = cb.get("block_id")
-                    if bid:
-                        return str(bid)
-            if isinstance(h_hex, str) and h_hex != "-":
-                return h_hex[:max(8, min(16, hash_len))]
-            return "-"
-
-        header = " | ".join({
-            "height":  f"{'height':<{w['height']}}",
-            "time":    f"{'time':<{w['time']}}",
-            "txs":     f"{'txs':<{w['txs']}}",
-            "block_id":f"{'block_id':<{w['block_id']}}",
-            "hash":    f"{'hash':<{w['hash']}}",
-            "prev":    f"{'prev':<{w['prev']}}",
-        }[c] for c in cols)
-
-        lines = [header]
-        chain_iter = self.chain if not max_blocks else self.chain[-max_blocks:]
-
-        for b in chain_iter:
-            h_hex = _get_hash(b)
-            row = []
-            for c in cols:
-                if c == "height":
-                    val = getattr(b, "height", "?")
-                    try:
-                        sval = f"{int(val):>{w['height']}}"
-                    except Exception:
-                        sval = f"{str(val):>{w['height']}}"
-                    row.append(sval)
-                elif c == "time":
-                    tstr = _fmt_time(getattr(b, "timestamp", None))
-                    row.append(f"{tstr:<{w['time']}}")
-                elif c == "txs":
-                    txc = len(getattr(b, "transactions", []) or [])
-                    row.append(f"{txc:>{w['txs']}}")
-                elif c == "block_id":
-                    bid = _get_block_id(b, h_hex)
-                    row.append(f"{_short(bid, w['block_id']):<{w['block_id']}}")
-                elif c == "hash":
-                    row.append(f"{_short(h_hex, w['hash']):<{w['hash']}}")
-                elif c == "prev":
-                    prev = _get_prev(b)
-                    row.append(f"{_short(prev, w['prev']):<{w['prev']}}")
-            lines.append(" | ".join(row))
-
-        return "\n".join(lines)

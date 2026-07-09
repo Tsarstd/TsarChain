@@ -16,6 +16,7 @@ from ..utils import helpers as H
 from ..storage.utxo import UTXODB
 from .genesis import GENESIS_HASH
 from ..utils import config as CFG
+from ..utils.benchmarks import benchmark
 from ..contracts import graffiti as GRAFFITI
 from ..utils.helpers import bits_to_target, merkle_root
 from ..contracts.graffiti_registry import GraffitiRegistry
@@ -78,6 +79,7 @@ class ValidationMixin:
     # =============================================================================
     # 1. VALIDATION PROCESSING
     # =============================================================================
+    @benchmark(label="validate_block", threshold_ms=200.0)
     def validate_block(self, block: Block) -> bool:
         try:
             # 1. Check Field Completeness
@@ -86,7 +88,6 @@ class ValidationMixin:
                 return False
 
             # 2. Warm-up POW
-            pow_start = time.perf_counter() if CFG.DEBUG_BENCHMARKS else None
             b_height = int(getattr(block, "height", 0))
             self._warm_pow_context(b_height)
             self._ensure_warm(b_height)
@@ -110,15 +111,7 @@ class ValidationMixin:
                     self._last_block_validation_error = err_msg or self._last_block_validation_error
                     return False
 
-            # 4. Benchmarking Logging with Short-Circuiting
-            pow_ms = round((time.perf_counter() - pow_start) * 1000.0, 3) if pow_start else 0.0
-            (pow_ms > 150.0) and log.warning(
-                "[validate_block] pow_ms=%s height=%s hash_cached=%s",
-                pow_ms, getattr(block, "height", None),
-                isinstance(getattr(block, "_cached_hash", None), (bytes, bytearray))
-            )
-
-            # 5. State & Chain Context Validation
+            # 4. State & Chain Context Validation
             with self.lock:
                 if not self._validate_chain_context_locked(block):
                     self._last_block_validation_error = "chain_context_invalid"
@@ -133,7 +126,7 @@ class ValidationMixin:
                 
                 state_token = self._chain_state_token_locked()
 
-            # 6. Additional Validation Related to Store/UTXO
+            # 5. Additional Validation Related to Store/UTXO
             if not self._check_sigops_budget(block, store, utxo_view):
                 self._last_block_validation_error = "sigops_limit_exceeded"
                 return False
@@ -141,7 +134,7 @@ class ValidationMixin:
             if block.height > 0 and not self._validate_transactions(block, store):
                 return False
 
-            # 7. Finalization
+            # 6. Finalization
             with self.lock:
                 if state_token != self._chain_state_token_locked():
                     self._last_block_validation_error = "chain_state_changed_during_validation"

@@ -164,18 +164,18 @@ def test_validate_snapshot_chain_valid(mock_iter, mock_cfg, mock_kv):
         assert not valid
         assert "first height 1" in reason
 
-@patch("tsarchain.utils.bootstrap.kv_enabled")
-def test_maybe_bootstrap_snapshot_no_lmdb(mock_kv):
-    # Set boolean value of the mock to True so `if kv_enabled:` triggers
-    mock_kv.__bool__.return_value = True
+@patch("tsarchain.utils.bootstrap.CFG")
+def test_maybe_bootstrap_snapshot_no_lmdb(mock_cfg):
+    mock_cfg.KV_BACKEND = "json"
     res = maybe_bootstrap_snapshot()
-    assert res.status == "not support"
-    assert "LMDB not active" in res.reason
+    assert res.status == "backend"
+    assert "JSON active, not support snapshot" in res.reason
 
 @patch("tsarchain.utils.bootstrap.kv_enabled")
 @patch("tsarchain.utils.bootstrap.CFG")
 def test_maybe_bootstrap_snapshot_disabled(mock_cfg, mock_kv):
-    mock_kv.__bool__.return_value = False
+    mock_kv.return_value = False
+    mock_cfg.KV_BACKEND = "lmdb"
     mock_cfg.SNAPSHOT_BOOTSTRAP_ENABLED = False
     mock_cfg.LMDB_DATA_FILE = "test.mdb"
     with patch("os.makedirs"):
@@ -187,16 +187,16 @@ def test_maybe_bootstrap_snapshot_disabled(mock_cfg, mock_kv):
 @patch("tsarchain.utils.bootstrap.CFG")
 @patch("tsarchain.utils.bootstrap._fetch_manifest")
 def test_maybe_bootstrap_snapshot_skipped_no_url(mock_fetch, mock_cfg, mock_kv):
-    mock_kv.__bool__.return_value = False
+    mock_kv.return_value = False
+    mock_cfg.KV_BACKEND = "lmdb"
     mock_cfg.SNAPSHOT_BOOTSTRAP_ENABLED = True
-    mock_cfg.SNAPSHOT_BOOTSTRAP_FOR_GUI = True
     mock_cfg.SNAPSHOT_REQUIRE_SIGNATURE = False
     mock_cfg.LMDB_DATA_FILE = "test.mdb"
     mock_fetch.return_value = {}
     
     with patch("os.makedirs"):
         with patch("os.path.isfile", return_value=False):
-            res = maybe_bootstrap_snapshot("gui")
+            res = maybe_bootstrap_snapshot()
             assert res.status == "skipped"
             assert res.reason == "no_snapshot_url"
 
@@ -205,9 +205,9 @@ def test_maybe_bootstrap_snapshot_skipped_no_url(mock_fetch, mock_cfg, mock_kv):
 @patch("tsarchain.utils.bootstrap._fetch_manifest")
 @patch("tsarchain.utils.bootstrap.urllib.request.urlopen")
 def test_maybe_bootstrap_snapshot_success(mock_urlopen, mock_fetch, mock_cfg, mock_kv):
-    mock_kv.__bool__.return_value = False
+    mock_kv.return_value = False
+    mock_cfg.KV_BACKEND = "lmdb"
     mock_cfg.SNAPSHOT_BOOTSTRAP_ENABLED = True
-    mock_cfg.SNAPSHOT_BOOTSTRAP_FOR_GUI = True
     mock_cfg.SNAPSHOT_REQUIRE_SIGNATURE = False
     mock_cfg.LMDB_DATA_FILE = "test.mdb"
     mock_cfg.SNAPSHOT_MIN_SIZE_BYTES = 1
@@ -225,7 +225,7 @@ def test_maybe_bootstrap_snapshot_success(mock_urlopen, mock_fetch, mock_cfg, mo
          patch("tsarchain.utils.bootstrap._write_meta"), \
          patch("tsarchain.utils.bootstrap._validate_snapshot_chain", return_value=(True, None)):
          
-        res = maybe_bootstrap_snapshot("gui")
+        res = maybe_bootstrap_snapshot()
         assert res.status == "installed"
         assert res.height == 10
         assert res.bytes_written == 100
@@ -234,9 +234,9 @@ def test_maybe_bootstrap_snapshot_success(mock_urlopen, mock_fetch, mock_cfg, mo
 @patch("tsarchain.utils.bootstrap.CFG")
 @patch("tsarchain.utils.bootstrap._fetch_manifest")
 def test_maybe_bootstrap_snapshot_failed_validation(mock_fetch, mock_cfg, mock_kv):
-    mock_kv.__bool__.return_value = False
+    mock_kv.return_value = False
+    mock_cfg.KV_BACKEND = "lmdb"
     mock_cfg.SNAPSHOT_BOOTSTRAP_ENABLED = True
-    mock_cfg.SNAPSHOT_BOOTSTRAP_FOR_GUI = True
     mock_cfg.SNAPSHOT_REQUIRE_SIGNATURE = True
     mock_cfg.LMDB_DATA_FILE = "test.mdb"
     mock_fetch.return_value = {"url": "http://test.com/db", "height": 10, "signature": "bad"}
@@ -245,7 +245,7 @@ def test_maybe_bootstrap_snapshot_failed_validation(mock_fetch, mock_cfg, mock_k
          patch("os.makedirs"), \
          patch("os.path.isfile", return_value=False):
          
-        res = maybe_bootstrap_snapshot("gui")
+        res = maybe_bootstrap_snapshot()
         assert res.status == "failed"
         assert res.reason == "signature_invalid"
 

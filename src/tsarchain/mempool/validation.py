@@ -23,6 +23,7 @@ from ..utils.helpers import (
 )
 from bech32 import bech32_encode, convertbits
 from ..utils import config as CFG
+from ..utils.benchmarks import benchmark
 
 
 from ..utils.tsar_logging import get_ctx_logger
@@ -200,10 +201,8 @@ class TxMempoolValidator:
                 return False
         return True
 
+    @benchmark(label="validate_transaction", threshold_ms=15.0)
     def validate_transaction(self, tx: Tx, utxo_set: dict[str, Any], spend_at_height: int | None = None,) -> bool:
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-
         if getattr(tx, "is_coinbase", False):
             return False
 
@@ -476,11 +475,6 @@ class TxMempoolValidator:
                             self.last_error_reason = "payout_exceeds_pool"
                             return False
                         
-                if CFG.DEBUG_BENCHMARKS:
-                    end = time.perf_counter()
-                    result = round((end - start) * 1000.0, 3)
-                    if result > 15.0:
-                        log.warning("[validate_transaction] Benchmark : %.3f ms", result)
                 return True
             
             else:

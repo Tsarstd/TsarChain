@@ -7,17 +7,14 @@ from __future__ import annotations
 import os
 import json
 import time
-import socket
 import base64
 import threading
 
-from urllib.parse import urlparse
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional
 
 from tsarchain.utils import config as CFG
-from tsarchain.network.pow_token import solve_pow
 from tsarcore_native import open_storage as _native_open_storage
-from tsarchain.network.protocol import send_message, recv_message
+from kremlin.services.graffiti_service import _pick_endpoint, _send_storage_request
 
 from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.web.database_web")
@@ -555,81 +552,6 @@ def _get_cached_graffiti_file(art_id: str, cache_dir: Optional[str]) -> Optional
     cache_path = _write_cache_file(cache_root, art_id, entry.get("meta") or {}, bytes(data_raw))
     return {"status": "ok", "meta": entry.get("meta") or {}, "cache_path": cache_path}
 
-def _pick_endpoint(meta: Dict[str, Any]) -> Optional[Tuple[str, int]]:
-    host = str(meta.get("ip") or "").strip()
-    port = int(meta.get("port") or 0)
-    if host and port > 0:
-        return host, port
-
-    url = str(meta.get("url") or "").strip()
-    if url:
-        parsed = urlparse(url if "://" in url else f"tcp://{url}")
-        netloc = parsed.netloc or parsed.path
-        if netloc:
-            if ":" in netloc:
-                host_part, port_part = netloc.split(":", 1)
-                port = int(port_part)
-            else:
-                host_part = netloc
-            host_part = host_part.strip()
-            if host_part:
-                if port <= 0:
-                    port = CFG.STORAGE_PORT_START or CFG.PORT_START
-                if port <= 0:
-                    return None
-                return host_part, port
-    return None
-
-def _send_storage_request(
-    host: str,
-    port: int,
-    payload: Dict[str, Any],
-    timeout: Optional[float] = None,
-    max_len: Optional[int] = None,
-    identity_hint: Optional[str] = None,
-    max_pow_retry: int = 1,
-) -> Dict[str, Any]:
-    
-    timeout = timeout or CFG.RPC_TIMEOUT
-    if max_len is None:
-        max_len = int(CFG.GRAFFITI_MAX_MSG_BYTES)
-    base_payload = dict(payload)
-    identity_norm = (identity_hint or base_payload.get("wallet_addr") or base_payload.get("creator_addr") or "").strip().lower()
-    resp: Dict[str, Any] = {}
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.settimeout(timeout)
-        sock.connect((host, int(port)))
-        raw = json.dumps(base_payload).encode("utf-8")
-        send_message(sock, raw, max_len=max_len)
-        data = recv_message(sock, timeout, max_len=max_len)
-        if not data:
-            return {"status": "error", "reason": "no_response"}
-        obj = json.loads(data.decode("utf-8"))
-        if isinstance(obj, dict):
-            resp = obj
-        else:
-            resp = {"status": "error", "reason": "bad_response"}
-    pow_challenge = resp.get("pow_challenge") if isinstance(resp, dict) else None
-    need_pow = resp.get("reason") in ("pow_required", "rate_limited") if isinstance(resp, dict) else False
-    if max_pow_retry > 0 and pow_challenge:
-        identity_for_pow = identity_norm or str(pow_challenge.get("identity") or "")
-        solution = solve_pow(pow_challenge, identity=identity_for_pow or "anon")
-        if solution:
-            retry_payload = dict(base_payload)
-            retry_payload["pow"] = solution
-            return _send_storage_request(
-                host,
-                port,
-                retry_payload,
-                timeout=timeout,
-                max_len=max_len,
-                identity_hint=identity_for_pow,
-                max_pow_retry=max_pow_retry - 1,
-            )
-        if need_pow and "reason" not in resp:
-            resp["reason"] = "pow_required"
-    return resp
-
 def fetch_storers(
     rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
     limit: Optional[int] = None,
@@ -665,6 +587,35 @@ def fetch_storers(
     if limit is not None and limit > 0:
         return valid[:limit]
     return valid
+
+def _do_oneshot_fetch(
+    host: str,
+    port: int,
+    msg_cap: int,
+    log_tag: str,
+    art_norm: str,
+    payload: dict,
+    timeout: float,
+    cache_root: str,
+    meta_info: dict,
+) -> object:
+    
+    resp = _send_storage_request(host, port, payload, timeout=max(float(timeout), 12.0), max_len=msg_cap)
+    if not isinstance(resp, dict):
+        return "bad_response"
+    if not resp.get("found"):
+        return resp.get("reason") or "not_found"
+    if resp.get("status") == "error":
+        return resp.get("reason") or "error"
+    data_b64 = resp.get("data_b64")
+    if not data_b64:
+        return "no_data"
+    raw = base64.b64decode(data_b64)
+    meta_out = resp.get("meta") or meta_info
+    cache_path = _write_cache_file(cache_root, art_norm, meta_out, raw)
+    _cache_media_ok_path(art_norm, meta_out, cache_path, len(raw), ttl_sec=0)
+    log.info("[webdb] ok(%s) art=%s host=%s bytes=%s cache=%s", log_tag, art_norm[:16], host, len(raw), True)
+    return {"status": "ok", "meta": meta_out, "cache_path": cache_path}
 
 
 def fetch_graffiti_file(
@@ -744,26 +695,11 @@ def fetch_graffiti_file(
                 "include_data": True,
                 "max_bytes": int(min(max_bytes, data_cap)),
             }
-            resp = _send_storage_request(host, port, payload, timeout=max(float(timeout), 12.0), max_len=msg_cap)
-            if not isinstance(resp, dict):
-                last_error = "bad_response"
+            res = _do_oneshot_fetch(host, port, payload, timeout, msg_cap, art_norm, meta_info, cache_root, "oneshot_unknown")
+            if isinstance(res, str):
+                last_error = res
                 continue
-            if not resp.get("found"):
-                last_error = resp.get("reason") or "not_found"
-                continue
-            if resp.get("status") == "error":
-                last_error = resp.get("reason") or "error"
-                continue
-            data_b64 = resp.get("data_b64")
-            if not data_b64:
-                last_error = "no_data"
-                continue
-            raw = base64.b64decode(data_b64)
-            meta_out = resp.get("meta") or meta_info
-            cache_path = _write_cache_file(cache_root, art_norm, meta_out, raw)
-            _cache_media_ok_path(art_norm, meta_out, cache_path, len(raw), ttl_sec=0)
-            log.info("[webdb] ok(oneshot_unknown) art=%s host=%s bytes=%s cache=%s", art_norm[:16], host, len(raw), True)
-            return {"status": "ok", "meta": meta_out, "cache_path": cache_path}
+            return res
 
         if total_size > max_bytes:
             last_error = "file_too_large"
@@ -791,26 +727,11 @@ def fetch_graffiti_file(
                 "include_data": True,
                 "max_bytes": int(min(int(total_size), int(data_cap))),
             }
-            resp = _send_storage_request(host, port, payload, timeout=max(float(timeout), 12.0), max_len=msg_cap)
-            if not isinstance(resp, dict):
-                last_error = "bad_response"
+            res = _do_oneshot_fetch(host, port, payload, timeout, msg_cap, art_norm, meta_info, cache_root, "oneshot")
+            if isinstance(res, str):
+                last_error = res
                 continue
-            if not resp.get("found"):
-                last_error = resp.get("reason") or "not_found"
-                continue
-            if resp.get("status") == "error":
-                last_error = resp.get("reason") or "error"
-                continue
-            data_b64 = resp.get("data_b64")
-            if not data_b64:
-                last_error = "no_data"
-                continue
-            raw = base64.b64decode(data_b64)
-            meta_out = resp.get("meta") or meta_info
-            cache_path = _write_cache_file(cache_root, art_norm, meta_out, raw)
-            _cache_media_ok_path(art_norm, meta_out, cache_path, len(raw), ttl_sec=0)
-            log.info("[webdb] ok(oneshot) art=%s host=%s bytes=%s cache=%s", art_norm[:16], host, len(raw), True)
-            return {"status": "ok", "meta": meta_out, "cache_path": cache_path}
+            return res
 
         # 3) Large file: chunked download (like wallet upload)
         burst = int(CFG.STOR_GET_RL_IP_BURST)

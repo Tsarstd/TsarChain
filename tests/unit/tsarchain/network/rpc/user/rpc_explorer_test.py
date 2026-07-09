@@ -122,7 +122,8 @@ def mock_self(mock_summarize_block):
 
     # internal methods
     self._build_outpoint_map = MagicMock(return_value=({}, {}))
-    self._spkhex_to_address = MagicMock(return_value="ts1address")
+    patcher = patch('tsarchain.network.rpc.user_rpc.category.explorer.spkhex_to_address', return_value="ts1address")
+    self._spkhex_to_address = patcher.start()
     self._txout_to_address = MagicMock(return_value="ts1address")
     self._txin_prevkey = MagicMock(return_value="prev_outpoint_key")
     self._get_tx_history = MagicMock(return_value={"items": [], "total": 0})
@@ -130,7 +131,8 @@ def mock_self(mock_summarize_block):
     self.normalize_peer = MagicMock(return_value=("1.2.3.4", 8333))
     self._read_snapshot_state = MagicMock(return_value={"height": 100, "difficulty": 1.0})
 
-    return self
+    yield self
+    patcher.stop()
 
 
 # ---------- Tests ----------

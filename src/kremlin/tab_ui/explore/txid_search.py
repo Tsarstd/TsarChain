@@ -117,7 +117,6 @@ class TxSearch:
         else:
             for i, vo in enumerate(vout):
                 val = vo.get("value") or vo.get("amount") or "-"
-                addr = vo.get("scriptpubkey_address") or vo.get("address") or ""
                 p.text.insert("end", f"- [{i}] ", ("mono",))
                 p.text.insert("end", self._fmt_tsar_amount(val) + "\n", "val_num")
         p._finish_render("Tx detail")

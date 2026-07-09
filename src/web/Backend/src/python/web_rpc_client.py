@@ -9,6 +9,7 @@ import time
 import threading
 
 from tsarchain.utils import config as CFG
+from tsarchain.utils.benchmarks import benchmark
 from web.Backend.src.python import build_receipt
 from kremlin.services.rpc_kremlin import NodeClient
 from web.Backend.src.python import database_web as webdb
@@ -110,10 +111,8 @@ def _cache_fetch(key: str, fetch_fn):
 # ============= RPC START ==============
 # ======================================
 
+@benchmark(label="RPC_RECEIPT", threshold_ms=15.0)
 def rpc_receipt(client, txid: str): # Receipt TXID Generator
-    if CFG.DEBUG_BENCHMARKS:
-        start = time.perf_counter()
-    
     txid_norm = str(txid or "").strip().lower()
     if not txid_norm:
         return {"status": "error", "message": "Missing txid"}
@@ -126,12 +125,6 @@ def rpc_receipt(client, txid: str): # Receipt TXID Generator
             # File exists and is fresh (< 30 seconds)
             result = webdb.read_receipt_file(file_path, txid_norm)
             if result is not None:
-                if CFG.DEBUG_BENCHMARKS:
-                    end = time.perf_counter()
-                    ms = round((end - start) * 1000.0, 3)
-                    if ms > 50.0:
-                        log.warning("[CACHE_HIT_RECEIPT] Benchmark: %.3f ms", ms)
-                    
                 return result
             else:
                 if os.path.exists(file_path):
@@ -161,14 +154,9 @@ def rpc_receipt(client, txid: str): # Receipt TXID Generator
         # Schedule file deletion after 30 seconds
         webdb.schedule_receipt_deletion(txid_norm, delay_seconds=RECEIPT_TTL)
         
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            ms = round((end - start) * 1000.0, 3)
-            if ms > 100.0:
-                log.warning("[GENERATED_RECEIPT] Benchmark: %.3f ms (new generation)", ms)
-    
     return result
 
+@benchmark(label="RPC_NETWORK", threshold_ms=15.0)
 def rpc_network(client):
     key = _cache_key("network")
     def _fetch():
@@ -181,6 +169,7 @@ def rpc_network(client):
         return info
     return _cache_fetch(key, _fetch)
 
+@benchmark(label="RPC_BLOCK", threshold_ms=15.0)
 def rpc_block(client, val: str):
     if str(val).isdigit():
         key = _cache_key("block", "h", str(val))
@@ -259,11 +248,13 @@ def rpc_block_range(client, opts: dict):
     
     return resp
 
+@benchmark(label="RPC_TX", threshold_ms=15.0)
 def rpc_tx(client, txid: str):
     txid_norm = str(txid).lower()
     key = _cache_key("tx", txid_norm)
     return _cache_fetch(key, lambda: _rpc_send(client, {"type": "GET_TX_DETAIL", "txid": txid_norm}))
 
+@benchmark(label="RPC_ADDRESS", threshold_ms=15.0)
 def rpc_address(client, addr: str):
     addr_norm = addr.strip()
     key = _cache_key("address", addr_norm.lower())
@@ -303,6 +294,7 @@ def rpc_address(client, addr: str):
     
     return out
 
+@benchmark(label="RPC_GRAFFITI", threshold_ms=15.0)
 def rpc_graffiti(client, art_id: str):
     art_norm = str(art_id or "").strip()
     key = _cache_key("graffiti", art_norm.lower()) if art_norm else None
@@ -334,6 +326,7 @@ def rpc_graffiti(client, art_id: str):
         _cache_set(key, out, error_ttl)
     return out
 
+@benchmark(label="RPC_GRAFFITI_POSTS", threshold_ms=15.0)
 def rpc_graffiti_posts(client, opts: dict):
     limit = int(opts.get("limit", 50) or 50)
     offset = int(opts.get("offset", 0) or 0)
@@ -356,6 +349,7 @@ def rpc_graffiti_posts(client, opts: dict):
         _cache_set(key, out, error_ttl)
     return out
 
+@benchmark(label="RPC_GRAFFITI_FILE", threshold_ms=15.0)
 def rpc_graffiti_file(client, opts: dict, fallback_art_id: str | None):
     art_id = (opts.get("art_id") or fallback_art_id or "").strip()
     storer = (opts.get("storer_addr") or opts.get("storer") or "").strip()
@@ -557,6 +551,7 @@ def _worker_loop() -> None:
         _emit_worker(req_id, out)
 
 
+@benchmark(label="MAIN", threshold_ms=15.0)
 def main():
     out = None
     if len(sys.argv) < 2:

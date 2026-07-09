@@ -31,6 +31,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 # ---------------- Local Project (With Node) ----------------
 from tsarchain.core.tx import Tx
 from tsarchain.utils import config as CFG
+from tsarchain.utils.benchmarks import benchmark
 from tsarchain.utils.helpers import hash160
 from tsarchain.storage.kv import kv_enabled, get as kv_get, put as kv_put, delete as kv_delete
 
@@ -622,10 +623,8 @@ class Security:
 
 class Wallet:
     @staticmethod
+    @benchmark(label="sign_prepared_tx", threshold_ms=5.0)
     def sign_prepared_tx(unsigned_tx_dict, inputs_meta, privkey_hex):
-        if CFG.DEBUG_BENCHMARKS:
-            start = time.perf_counter()
-
         tx = Tx.from_dict(unsigned_tx_dict)
         if len(tx.inputs) != len(inputs_meta):
             raise ValueError("inputs mismatch")
@@ -639,11 +638,6 @@ class Wallet:
         input_amounts = [int(m["amount"]) for m in inputs_meta]
         tx.set_fee_from_input_amounts(input_amounts)
         tx.compute_txid()
-        
-        if CFG.DEBUG_BENCHMARKS:
-            end = time.perf_counter()
-            result = round((end - start) * 1000.0, 3)
-            log.debug("[sign_prepared_tx] Benchmark : %.3f ms", result)
             
         return tx
 

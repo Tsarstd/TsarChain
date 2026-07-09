@@ -329,40 +329,8 @@ def _prefetch_rpc_connections(self):
     Dial bootstrap/persistent peers once at startup to warm up handshake+channel.
     """
     peers = list(getattr(self, "persistent_peers", []))
-    cache = getattr(self, "_rpc_conn_cache", None)
-    cache_lock = getattr(self, "_rpc_conn_cache_lock", None)
-    prefetched = getattr(self, "_rpc_prefetched", None)
-    if cache is None or cache_lock is None or prefetched is None:
-        return
     for peer in peers:
-        norm = self.normalize_peer(peer)
-        if not norm or norm in prefetched:
-            continue
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(_RPC_PREFETCH_TIMEOUT)
-            sock.connect(norm)
-            chan = None
-            if CFG.P2P_ENC_REQUIRED:
-                chan = SecureChannel(
-                    sock,
-                    role="client",
-                    node_id=self.node_id,
-                    node_pub=self.pubkey,
-                    node_priv=self.privkey,
-                    get_pinned=self.get_pinned,
-                    set_pinned=self.set_pinned,
-                )
-                chan.handshake()
-            sock.settimeout(float(CFG.SYNC_TIMEOUT))
-            with cache_lock:
-                cache[norm] = {"chan": chan, "sock": sock, "ts": time.time()}
-            prefetched.add(norm)
-            log.debug("[_prefetch_rpc_connections] warmed channel to %s", norm)
-        except Exception:
-            log.exception("error__prefetch_rpc_connections")
-            sock.close()
-            continue
+        _prefetch_peer_channel(self, peer)
 
 
 def _prefetch_peer_channel(self, peer: Tuple[str, int]):

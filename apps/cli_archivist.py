@@ -5,25 +5,25 @@
 
 from __future__ import annotations
 
-import argparse
-import json
-import secrets
-import socket
 import sys
-import threading
+import json
 import time
+import socket
+import secrets
+import argparse
+import threading
 import multiprocessing as mp
+
 from typing import Any, Dict, Optional
 
-from archivist.server_archivist import StorageServer
-from archivist.connect import RPC, NodeDirectory
-from tsarchain.network.protocol import send_message, recv_message
-from tsarchain.storage.db import AtomicJSONFile
 from tsarchain.utils import config as CFG
+from tsarchain.storage.db import AtomicJSONFile
+from archivist.connect import RPC, NodeDirectory
+from archivist.server_archivist import StorageServer
 from tsarchain.contracts import graffiti as GRAFFITI
+from tsarchain.network.protocol import send_message, recv_message
 
 from tsarchain.utils.tsar_logging import setup_logging, get_ctx_logger
-
 log = get_ctx_logger("apps.cli_archivist")
 
 HEARTBEAT_SEC = 30

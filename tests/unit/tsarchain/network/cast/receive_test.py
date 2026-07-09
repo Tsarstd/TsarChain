@@ -285,3 +285,132 @@ def test_receive_mempool(dummy_node):
     
     assert dummy_node.mempool.add_valid_tx.call_count == 2
     dummy_node.mempool.flush.assert_called_once()
+
+def test_native_script_hex_exception():
+    mock_obj = MagicMock()
+    mock_obj.serialize.side_effect = Exception("Test Error")
+    assert ReceiveMixin._native_script_hex(mock_obj) is None
+
+def test_build_native_prevout_snapshot_no_lookup(dummy_node):
+    del dummy_node.utxodb.lookup_entry
+    mock_block = MagicMock()
+    assert dummy_node._build_native_prevout_snapshot(mock_block) is None
+
+def test_build_native_prevout_snapshot_empty_txs(dummy_node):
+    mock_block = MagicMock()
+    mock_block.transactions = []
+    assert dummy_node._build_native_prevout_snapshot(mock_block) == {}
+
+def test_native_precheck_block_compact_validation(dummy_node):
+    mock_block = MagicMock()
+    mock_block.hash.return_value = b"\x00" * 32
+    mock_block.height = 10
+    
+    mock_tx = MagicMock()
+    mock_tx.version = 1
+    mock_tx.locktime = 0
+    mock_tx.is_coinbase = False
+    mock_tx.txid = b"A" * 32
+    
+    mock_input = MagicMock()
+    mock_input.txid = b"B" * 32
+    mock_input.vout = 0
+    mock_input.sequence = 0xffffffff
+    mock_input.witness = [b"wit"]
+    mock_tx.inputs = [mock_input]
+    
+    mock_out = MagicMock()
+    mock_out.amount = 100
+    mock_out.script_pubkey = b"spk"
+    mock_tx.outputs = [mock_out]
+    
+    mock_block.transactions = [mock_tx]
+    
+    utxo_items = [(b"B"*32, 0, 100, b"spk", False, 5)]
+    snapshot = ({"key": "val"}, utxo_items)
+    
+    with patch.object(dummy_node, "_build_native_prevout_snapshot", return_value=snapshot):
+        with patch("tsarchain.network.cast.receive.native_validate_block_txs_compact", return_value=(True, "", [50])):
+            assert dummy_node._native_precheck_block(mock_block) is True
+
+def test_receive_chain_exception(dummy_node):
+    dummy_node._validate_incoming_chain.side_effect = Exception("error")
+    assert dummy_node.receive_chain({}) is False
+
+@patch("tsarchain.network.cast.receive.Block")
+def test_receive_block_gap_full_sync(mock_block_class, dummy_node):
+    mock_block = MagicMock()
+    mock_block.height = 20
+    mock_block_class.deserialize_block.return_value = mock_block
+    
+    dummy_node.blockchain.get_last_block.return_value.height = 10
+    
+    with patch("tsarchain.network.cast.receive.CFG") as mock_cfg:
+        mock_cfg.ENABLE_FULL_SYNC = True
+        msg = {"data": {"hash": "newhash"}}
+        assert dummy_node.receive_block(msg, ("127.0.0.1", 8333), {("127.0.0.1", 8333)}) is False
+        dummy_node.network.handle_block_gap.assert_called_once()
+
+@patch("tsarchain.network.cast.receive.Block")
+def test_receive_block_validation_fails_prevout(mock_block_class, dummy_node):
+    mock_block = MagicMock()
+    mock_block.height = 10
+    mock_block.prev_block_hash = "prevhash"
+    mock_block_class.deserialize_block.return_value = mock_block
+    
+    dummy_node.blockchain.get_last_block.return_value.height = 9
+    dummy_node.blockchain.get_last_block.return_value.hash.return_value = "prevhash"
+    
+    dummy_node._native_precheck_block = MagicMock(return_value=True)
+    dummy_node.blockchain.validate_block.return_value = False
+    dummy_node.blockchain._last_block_validation_error = "prevout_missing: xyz"
+    
+    msg = {"data": {"hash": "newhash"}}
+    assert dummy_node.receive_block(msg, ("127.0.0.1", 8333), {("127.0.0.1", 8333)}) is False
+    dummy_node.network.request_full_sync.assert_called_once_with(("127.0.0.1", 8333), force=True)
+
+@patch("tsarchain.network.cast.receive.Block")
+def test_receive_block_add_block_exception_swap_tip(mock_block_class, dummy_node):
+    mock_block = MagicMock()
+    mock_block.height = 10
+    mock_block.prev_block_hash = "parent_hash"
+    mock_block_class.deserialize_block.return_value = mock_block
+    
+    parent_block = MagicMock()
+    parent_block.height = 9
+    parent_block.hash.return_value = "parent_hash"
+    
+    dummy_node.blockchain.get_last_block.return_value.height = 9
+    dummy_node.blockchain.get_last_block.return_value.hash.return_value = "parent_hash"
+    dummy_node.blockchain.chain = [parent_block, MagicMock()]
+    
+    dummy_node._native_precheck_block = MagicMock(return_value=True)
+    dummy_node.blockchain.validate_block.return_value = True
+    dummy_node.blockchain.add_block.side_effect = Exception("db_error")
+    dummy_node.blockchain.swap_tip_if_better.return_value = MagicMock(transactions=[])
+    
+    msg = {"data": {"hash": "newhash"}}
+    assert dummy_node.receive_block(msg, ("127.0.0.1", 8333), {("127.0.0.1", 8333)}) is True
+    dummy_node.blockchain.swap_tip_if_better.assert_called_once()
+
+def test_receive_tx_dandelion_stem_declined(dummy_node):
+    tx = MagicMock()
+    tx.txid.hex.return_value = "txhash"
+    dummy_node.mempool.add_valid_tx.return_value = True
+    dummy_node.dandelion.enabled.return_value = True
+    dummy_node.dandelion.handle_inbound_stem.return_value = False # Declined
+    
+    msg = {"data": tx, "phase": "stem"}
+    assert dummy_node.receive_tx(msg, ("127.0.0.1", 8333), set()) is True
+    dummy_node.dandelion.handle_inbound_stem.assert_called_once()
+    dummy_node._broadcast_tx_fluff.assert_called_once()
+
+def test_receive_utxos_ignored_non_empty_chain(dummy_node):
+    dummy_node.blockchain.chain = [MagicMock()]
+    dummy_node.receive_utxos({"data": {"some": "data"}})
+    assert dummy_node._utxo_shared is False
+
+def test_receive_mempool_not_caught_up(dummy_node):
+    dummy_node.network.is_caught_up.return_value = False
+    dummy_node.receive_mempool({"data": []})
+    dummy_node.network.request_sync.assert_called_once_with(fast=True)

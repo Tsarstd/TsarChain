@@ -95,11 +95,11 @@ class StorageServer:
             return str(addr[0])
         return "0.0.0.0"
 
-    def _handle(self, msg, *, client_ip: str):
-        resp = wallet_route.handle_wallet_rpc(self, msg, client_ip=client_ip)
+    def _handle(self, msg):
+        resp = wallet_route.handle_wallet_rpc(self, msg)
         if resp is not None:
             return resp
-        resp = node_route.handle_node_rpc(self, msg, client_ip=client_ip)
+        resp = node_route.handle_node_rpc(self, msg)
         if resp is not None:
             return resp
         return {"error":"unknown type"}
@@ -155,7 +155,7 @@ class StorageServer:
                 self._respond(conn, resp_obj)
                 return
 
-            resp = self._handle(msg, client_ip=ip)
+            resp = self._handle(msg)
             self._respond(conn, resp)
         finally:
             conn.close()
