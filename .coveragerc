@@ -1,5 +1,6 @@
 [run]
 omit = 
+    src/web/Fronted/*
     src/kremlin/tab_ui/*
     src/kremlin/theme.py
     src/kremlin/ui_utils.py
