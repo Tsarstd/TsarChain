@@ -695,7 +695,10 @@ def fetch_graffiti_file(
                 "include_data": True,
                 "max_bytes": int(min(max_bytes, data_cap)),
             }
-            res = _do_oneshot_fetch(host, port, payload, timeout, msg_cap, art_norm, meta_info, cache_root, "oneshot_unknown")
+            res = _do_oneshot_fetch(
+                host=host, port=port, payload=payload, timeout=timeout, msg_cap=msg_cap,
+                art_norm=art_norm, meta_info=meta_info, cache_root=cache_root, log_tag="oneshot_unknown"
+            )
             if isinstance(res, str):
                 last_error = res
                 continue
@@ -727,7 +730,10 @@ def fetch_graffiti_file(
                 "include_data": True,
                 "max_bytes": int(min(int(total_size), int(data_cap))),
             }
-            res = _do_oneshot_fetch(host, port, payload, timeout, msg_cap, art_norm, meta_info, cache_root, "oneshot")
+            res = _do_oneshot_fetch(
+                host=host, port=port, payload=payload, timeout=timeout, msg_cap=msg_cap,
+                art_norm=art_norm, meta_info=meta_info, cache_root=cache_root, log_tag="oneshot"
+            )
             if isinstance(res, str):
                 last_error = res
                 continue
