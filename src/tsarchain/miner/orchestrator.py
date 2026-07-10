@@ -12,8 +12,8 @@ from ..network.node import Network
 from ..consensus.blockchain import Blockchain
 from ..utils.bootstrap import maybe_bootstrap_snapshot
 
-from ..utils.cosmetic import interface as COL
-from ..utils.cosmetic.thread_check import get_thread_monitor, register_thread_monitoring_signal
+from .cosmetic import interface as COL
+from .cosmetic.thread_check import get_thread_monitor, register_thread_monitoring_signal
 
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.miner.orchestrator")

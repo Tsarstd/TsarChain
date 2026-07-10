@@ -186,27 +186,27 @@ class TestNonceCache:
         assert "s1" not in proto._nonce_cache
 
     def test_register_success(self, mock_cfg):
-        _nonce_register("sender1", "nonce1", int(time.time()))
+        _nonce_register("sender1", "nonce1")
         assert "nonce1" in proto._nonce_cache["sender1"]
 
     def test_register_missing_sender(self, mock_cfg):
         with pytest.raises(ValueError, match="missing sender/nonce"):
-            _nonce_register("", "nonce1", int(time.time()))
+            _nonce_register("", "nonce1")
 
     def test_register_missing_nonce(self, mock_cfg):
         with pytest.raises(ValueError, match="missing sender/nonce"):
-            _nonce_register("sender1", "", int(time.time()))
+            _nonce_register("sender1", "")
 
     def test_register_replay_rejected(self, mock_cfg):
-        _nonce_register("sender1", "nonce1", int(time.time()))
+        _nonce_register("sender1", "nonce1")
         with pytest.raises(ValueError, match="replayed nonce"):
-            _nonce_register("sender1", "nonce1", int(time.time()))
+            _nonce_register("sender1", "nonce1")
 
     def test_register_per_sender_eviction(self, mock_cfg):
         mock_cfg.NONCE_PER_SENDER_MAX = 3
         now = int(time.time())
         for i in range(5):
-            _nonce_register("s", f"n{i}", now)
+            _nonce_register("s", f"n{i}")
         assert len(proto._nonce_cache["s"]) <= 3
 
 

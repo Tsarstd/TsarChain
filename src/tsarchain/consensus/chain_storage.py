@@ -39,7 +39,6 @@ class StorageMixin:
         txs = getattr(block, "transactions", []) or []
         tx_count = len(txs)
         size_b = estimate_block_size_bytes(block)
-        cw = getattr(block, "chainwork", None)
         cw = int(chainwork_so_far) + int(self._work_from_bits(getattr(block, "bits", CFG.MAX_BITS)))
         target_val = None
         difficulty_val = None
@@ -50,7 +49,7 @@ class StorageMixin:
             "schema_version": int(CFG.DATA_SCHEMA_VERSION),
             "tx_count": tx_count,
             "size_bytes": int(size_b),
-            "chainwork": None if cw is None else int(cw),
+            "chainwork": int(cw),
             "target": target_val,
             "difficulty": difficulty_val,
         }
@@ -403,109 +402,114 @@ class StorageMixin:
         backup_ts = None
         with self.lock:
             tip_height = len(self.chain) - 1
-            tip_hash = self.chain[-1].hash().hex() if tip_height >= 0 else None
+            if tip_height < 0:
+                self._chain_dirty_from = None
+                self._persisted_height = -1
+                return
+
+            tip_hash = self.chain[-1].hash().hex()
             chain_meta = self._build_chain_meta(tip_height, tip_hash)
             full_flush = force_full or self._persisted_height < 0
             if force_full:
                 self._chain_dirty_from = 0
                 self._persisted_height = -1
 
-            if tip_height < 0:
-                self._chain_dirty_from = None
-                self._persisted_height = -1
+            start_height = self._determine_save_start_height(tip_height, force_full, full_flush)
+            if not self._should_flush_chain(tip_height, start_height, full_flush):
                 return
 
-            start_height: Optional[int] = None
-            if self._chain_dirty_from is not None:
-                start_height = max(0, self._chain_dirty_from)
-            elif tip_height > self._persisted_height:
-                start_height = self._persisted_height + 1
-            elif force_full or self._persisted_height < 0:
-                start_height = 0
-            if full_flush:
-                start_height = 0
-
-            flush_interval = max(1, int(CFG.CHAIN_FLUSH_INTERVAL))
-            should_flush = (
-                full_flush
-                or tip_height < self._persisted_height
-                or flush_interval <= 1
-            )
-
-            if not should_flush and start_height is not None:
-                pending = tip_height - self._persisted_height if self._persisted_height >= 0 else tip_height + 1
-                if pending < flush_interval:
-                    if self._chain_dirty_from is None:
-                        self._chain_dirty_from = start_height
-                    else:
-                        self._chain_dirty_from = min(self._chain_dirty_from, start_height)
-                    return
-
             if kv_enabled():
-                if full_flush:
-                    clear_db('chain')
-                    self._persisted_height = -1
-                cw_prev = 0
-                if start_height and start_height > 0:
-                    prev_blk = self.chain[start_height - 1]
-                    cw_prev = int(getattr(prev_blk, "chainwork", 0) or 0)
-                    if cw_prev == 0:
-                        cw_prev = int(self._compute_chainwork_for_chain(self.chain[:start_height]))
-                if tip_height < self._persisted_height:
-                    self._prune_chain_store(tip_height + 1)
-                    self._persisted_height = tip_height
-                if start_height is not None and start_height <= tip_height:
-                    with batch('chain') as b:
-                        b.put(b'__meta__', json.dumps(chain_meta, separators=CFG.CANONICAL_SEP).encode('utf-8'))
-                        for height in range(start_height, tip_height + 1):
-                            key = f"h:{height:012d}".encode('utf-8')
-                            blk_dict, cw_prev = self._serialize_block_for_store(self.chain[height], cw_prev)
-                            payload = json.dumps(blk_dict, separators=CFG.CANONICAL_SEP).encode('utf-8')
-                            b.put(key, payload)
-                    self._persisted_height = tip_height
+                self._save_chain_kv(tip_height, start_height, full_flush, chain_meta)
             else:
-                if not self._chain_journal_enabled() or full_flush or start_height in (None, 0):
-                    if full_flush or start_height is not None or tip_height != self._persisted_height:
-                        ordered_blocks = []
-                        cw_prev = 0
-                        for blk in sorted(self.chain, key=lambda b: getattr(b, "height", 0)):
-                            blk_dict, cw_prev = self._serialize_block_for_store(blk, cw_prev)
-                            ordered_blocks.append(blk_dict)
-                        payload = {
-                            "schema_version": int(chain_meta.get("schema_version", 1)),
-                            "meta": chain_meta,
-                            "blocks": ordered_blocks,
-                        }
-                        AtomicJSONFile(CFG.BLOCK_FILE).save(payload)
-                        self._persisted_height = tip_height
-                        self._clear_chain_journal()
-                else:
-                    if start_height is not None and start_height <= tip_height:
-                        new_blocks = [self.chain[h] for h in range(start_height, tip_height + 1)]
-                        self._append_chain_journal(start_height, new_blocks)
-                        self._persisted_height = tip_height
-                        if self._chain_journal_size() > int(CFG.CHAIN_JOURNAL_MAX_BYTES):
-                            ordered_blocks = []
-                            cw_prev = 0
-                            for blk in sorted(self.chain, key=lambda b: getattr(b, "height", 0)):
-                                blk_dict, cw_prev = self._serialize_block_for_store(blk, cw_prev)
-                                ordered_blocks.append(blk_dict)
-                            payload = {
-                                "schema_version": int(chain_meta.get("schema_version", 1)),
-                                "meta": chain_meta,
-                                "blocks": ordered_blocks,
-                            }
-                            AtomicJSONFile(CFG.BLOCK_FILE).save(payload)
-                            self._persisted_height = tip_height
-                            self._clear_chain_journal()
+                self._save_chain_json(tip_height, start_height, full_flush, chain_meta)
 
             self._chain_dirty_from = None
-            if tip_height >= 0:
-                backup_tip = tip_height
-                backup_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
+            backup_tip = tip_height
+            backup_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
 
         if backup_tip is not None:
             self._maybe_backup_snapshot(backup_tip, tip_timestamp=backup_ts)
+
+    def _determine_save_start_height(self, tip_height: int, force_full: bool, full_flush: bool) -> Optional[int]:
+        if full_flush:
+            return 0
+        if self._chain_dirty_from is not None:
+            return max(0, self._chain_dirty_from)
+        if tip_height > self._persisted_height:
+            return self._persisted_height + 1
+        if force_full or self._persisted_height < 0:
+            return 0
+        return None
+
+    def _should_flush_chain(self, tip_height: int, start_height: Optional[int], full_flush: bool) -> bool:
+        flush_interval = max(1, int(CFG.CHAIN_FLUSH_INTERVAL))
+        should_flush = (
+            full_flush
+            or tip_height < self._persisted_height
+            or flush_interval <= 1
+        )
+        if not should_flush and start_height is not None:
+            pending = tip_height - self._persisted_height if self._persisted_height >= 0 else tip_height + 1
+            if pending < flush_interval:
+                if self._chain_dirty_from is None:
+                    self._chain_dirty_from = start_height
+                else:
+                    self._chain_dirty_from = min(self._chain_dirty_from, start_height)
+                return False
+        return True
+
+    def _save_chain_kv(self, tip_height: int, start_height: Optional[int], full_flush: bool, chain_meta: dict):
+        if full_flush:
+            clear_db('chain')
+            self._persisted_height = -1
+            
+        cw_prev = 0
+        if start_height and start_height > 0:
+            prev_blk = self.chain[start_height - 1]
+            cw_prev = int(getattr(prev_blk, "chainwork", 0) or 0)
+            if cw_prev == 0:
+                cw_prev = int(self._compute_chainwork_for_chain(self.chain[:start_height]))
+                
+        if tip_height < self._persisted_height:
+            self._prune_chain_store(tip_height + 1)
+            self._persisted_height = tip_height
+            
+        if start_height is not None and start_height <= tip_height:
+            with batch('chain') as b:
+                b.put(b'__meta__', json.dumps(chain_meta, separators=CFG.CANONICAL_SEP).encode('utf-8'))
+                for height in range(start_height, tip_height + 1):
+                    key = f"h:{height:012d}".encode('utf-8')
+                    blk_dict, cw_prev = self._serialize_block_for_store(self.chain[height], cw_prev)
+                    payload = json.dumps(blk_dict, separators=CFG.CANONICAL_SEP).encode('utf-8')
+                    b.put(key, payload)
+            self._persisted_height = tip_height
+
+    def _save_chain_json(self, tip_height: int, start_height: Optional[int], full_flush: bool, chain_meta: dict):
+        if not self._chain_journal_enabled() or full_flush or start_height in (None, 0):
+            if full_flush or start_height is not None or tip_height != self._persisted_height:
+                self._save_chain_json_full(tip_height, chain_meta)
+        else:
+            if start_height is not None and start_height <= tip_height:
+                new_blocks = [self.chain[h] for h in range(start_height, tip_height + 1)]
+                self._append_chain_journal(start_height, new_blocks)
+                self._persisted_height = tip_height
+                if self._chain_journal_size() > int(CFG.CHAIN_JOURNAL_MAX_BYTES):
+                    self._save_chain_json_full(tip_height, chain_meta)
+
+    def _save_chain_json_full(self, tip_height: int, chain_meta: dict):
+        ordered_blocks = []
+        cw_prev = 0
+        for blk in sorted(self.chain, key=lambda b: getattr(b, "height", 0)):
+            blk_dict, cw_prev = self._serialize_block_for_store(blk, cw_prev)
+            ordered_blocks.append(blk_dict)
+        payload = {
+            "schema_version": int(chain_meta.get("schema_version", 1)),
+            "meta": chain_meta,
+            "blocks": ordered_blocks,
+        }
+        AtomicJSONFile(CFG.BLOCK_FILE).save(payload)
+        self._persisted_height = tip_height
+        self._clear_chain_journal()
 
     def load_chain(self):
         if self.in_memory:
@@ -513,16 +517,7 @@ class StorageMixin:
         meta = {}
         data_list = []
         if kv_enabled():
-            # Collect and sort by height key, plus optional meta
-            items = list(iter_prefix('chain', b''))
-            blocks: list[tuple[bytes, bytes]] = []
-            for k, v in items:
-                if k == b'__meta__':
-                    meta = json.loads(v.decode('utf-8')) or {}
-                if k.startswith(b'h:'):
-                    blocks.append((k, v))
-            blocks.sort(key=lambda kv: kv[0])
-            data_list = [json.loads(v.decode('utf-8')) for _, v in blocks]
+            meta, data_list = self._fetch_kv_chain_data()
             
         if not isinstance(data_list, list):
             data_list = []
@@ -530,24 +525,7 @@ class StorageMixin:
         if not data_list:
             return
         chain = [Block.from_dict(d) for d in data_list]
-        if not chain:
-            return
-        if chain[0].height != 0 or chain[0].prev_block_hash != CFG.ZERO_HASH:
-            prev_hex = chain[0].prev_block_hash.hex()  # type: ignore[attr-defined]
-            log.error(
-                "[load_chain] Invalid on-disk genesis header fields (height=%s prev=%s); resetting chain store",
-                chain[0].height,
-                prev_hex,
-            )
-            self._reset_chain_store()
-            return
-        if GENESIS_HASH is not None and chain[0].hash() != GENESIS_HASH:
-            log.error(
-                "[load_chain] Invalid genesis for this network. Expected %s, got %s; resetting chain store",
-                GENESIS_HASH.hex(),
-                chain[0].hash().hex(),
-            )
-            self._reset_chain_store()
+        if not chain or not self._validate_loaded_chain(chain):
             return
 
         self.chain = chain
@@ -557,20 +535,56 @@ class StorageMixin:
         self.supply_in_tsar = self.total_supply / CFG.TSAR if self.total_supply else 0
         self._persisted_height = len(self.chain) - 1
         self._chain_dirty_from = None
-        # Align last backup marker to nearest interval to avoid drift across restarts
+        
         interval = int(CFG.BLOCK_BACKUP_SNAPSHOT)
         if interval > 0 and self._persisted_height >= 0:
             self._snapshot_last_backup_height = (self._persisted_height // interval) * interval
         else:
             self._snapshot_last_backup_height = self._persisted_height
+            
         if not self.in_memory:
             self._ensure_utxodb()
-            self._utxo_last_flush_height = self.height
+            self._utxo_last_flush_height = getattr(self, "height", len(self.chain) - 1)
             self._utxo_dirty = False
             tip_ts = None
             if self.chain:
                 tip_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
-            annotate_local_snapshot_meta(height=self.height, tip_timestamp=tip_ts)
+            annotate_local_snapshot_meta(height=getattr(self, "height", len(self.chain) - 1), tip_timestamp=tip_ts)
+
+    def _fetch_kv_chain_data(self) -> tuple[dict, list]:
+        meta = {}
+        items = list(iter_prefix('chain', b''))
+        blocks: list[tuple[bytes, bytes]] = []
+        for k, v in items:
+            if k == b'__meta__':
+                meta = json.loads(v.decode('utf-8')) or {}
+            elif k.startswith(b'h:'):
+                blocks.append((k, v))
+        blocks.sort(key=lambda kv: kv[0])
+        data_list = [json.loads(v.decode('utf-8')) for _, v in blocks]
+        return meta, data_list
+
+    def _validate_loaded_chain(self, chain: list) -> bool:
+        if chain[0].height != 0 or chain[0].prev_block_hash != CFG.ZERO_HASH:
+            prev_hex = chain[0].prev_block_hash.hex()
+            log.error(
+                "[load_chain] Invalid on-disk genesis header fields (height=%s prev=%s); resetting chain store",
+                chain[0].height,
+                prev_hex,
+            )
+            self._reset_chain_store()
+            return False
+            
+        if GENESIS_HASH is not None and chain[0].hash() != GENESIS_HASH:
+            log.error(
+                "[load_chain] Invalid genesis for this network. Expected %s, got %s; resetting chain store",
+                GENESIS_HASH.hex(),
+                chain[0].hash().hex(),
+            )
+            self._reset_chain_store()
+            return False
+            
+        return True
 
 
 # =============================================================================
@@ -581,8 +595,10 @@ class StorageMixin:
             return {}
         data: dict = {}
         if kv_enabled():
-            items = dict((k.decode("utf-8"), v.decode("utf-8"))
-                for k, v in iter_prefix("state", b"k:"))
+            items = {
+                k.decode("utf-8"): v.decode("utf-8")
+                for k, v in iter_prefix("state", b"k:")
+            }
 
             snap_raw = items.get("k:snapshot")
             if snap_raw:
@@ -654,12 +670,90 @@ class StorageMixin:
             return dict(cache["data"])
 
         chain = self.chain or []
+        chain_stats = self._compute_chain_stats(chain)
+        tx_stats = self._compute_transaction_and_miner_stats(chain)
+        mempool_stats = self._compute_mempool_stats()
+        supply_stats = self._compute_utxo_supply_stats(utxo, tip_height)
+        graffiti_stats = self._compute_graffiti_stats(utxo)
+
+        emitted_subsidy = self.calculate_total_supply()
+        cur_epoch = 0 if tip_height < 0 else int(tip_height // int(CFG.BLOCKS_PER_HALVING))
+        next_halving_height = int((cur_epoch + 1) * int(CFG.BLOCKS_PER_HALVING))
+        blocks_to_halving = None if tip_height < 0 else max(0, next_halving_height - (tip_height + 1))
+        current_block_subsidy = self._scheduled_reward(max(0, tip_height))
+
+        genesis_block = chain[0] if chain else None
+        tip_block = chain[-1] if chain else None
+        tip_hash = tip_block.hash().hex() if tip_block else None
+        tip_timestamp = int(getattr(tip_block, "timestamp", 0) or 0) if tip_block else None
+        genesis_dict = genesis_block.to_dict() if genesis_block else {}
+        tip_dict = tip_block.to_dict() if tip_block else {}
+
+        snapshot = {
+            "schema_version": int(CFG.DATA_SCHEMA_VERSION),
+            "last_updated": dt.datetime.now().astimezone().isoformat(),
+            "identity": {
+                "network_id": CFG.DEFAULT_NET_ID,
+                "address_prefix": CFG.ADDRESS_PREFIX,
+                "network_magic_hex": CFG.NETWORK_MAGIC.hex(),
+                "pow_algo": CFG.POW_ALGO,
+            },
+            "chain": {
+                "total_blocks": chain_stats["total_blocks"],
+                "tip_height": tip_height,
+                "genesis_hash": genesis_dict.get("hash"),
+                "genesis_message": (((genesis_dict.get("transactions") or [{}])[0]) or {}).get("block_id"),
+                "tip_hash": tip_hash or tip_dict.get("hash"),
+                "tip_timestamp": tip_timestamp or tip_dict.get("timestamp"),
+                "tip_bits": chain_stats["tip_bits"],
+                "tip_target_hex": (None if chain_stats["tip_target"] is None else hex(chain_stats["tip_target"])),
+                "tip_difficulty": chain_stats["tip_difficulty"],
+                "tip_chainwork": chain_stats["tip_chainwork"],
+                "median_time_past": chain_stats["median_time_past_val"],
+                "max_bits": int(CFG.MAX_BITS),
+                "target_block_time_sec": int(CFG.TARGET_BLOCK_TIME),
+                "total_block_size_bytes": int(chain_stats["total_block_size_bytes"]),
+                "avg_block_time_sec_window": None if chain_stats["avg_block_time_sec"] is None else round(float(chain_stats["avg_block_time_sec"]), 3),
+                "est_network_hashrate_hps_window": chain_stats["est_hashrate_hps"],
+            },
+            "supply": {
+                "max_supply": int(CFG.MAX_SUPPLY),
+                "emitted_subsidy": int(emitted_subsidy),
+                "circulating_estimate": int(supply_stats["circulating_estimate"]),
+                "immature_coinbase": int(supply_stats["immature_coinbase"]),
+                "utxo_total_value": int(supply_stats["utxo_total_value"]),
+                "coinbase_maturity": int(CFG.COINBASE_MATURITY),
+                "current_block_subsidy": int(current_block_subsidy),
+                "current_epoch": int(cur_epoch),
+                "next_halving_height": int(next_halving_height),
+                "blocks_to_halving": None if blocks_to_halving is None else int(blocks_to_halving),
+            },
+            "transactions": {
+                "total_txs": int(tx_stats["total_txs"]),
+                "total_non_coinbase_txs": int(tx_stats["total_non_coinbase_txs"]),
+                "total_fees_paid": int(tx_stats["total_fees_paid"]),
+                "mempool_txs": int(mempool_stats["mempool_count"]),
+                "mempool_vbytes_estimate": mempool_stats["mempool_vbytes_est"],
+                "mempool_bytes_estimate": mempool_stats["mempool_bytes_est"],
+                "mempool_max_bytes": int(CFG.MEMPOOL_MAX_SIZE),
+            },
+            "utxo": {
+                "utxo_set_size": int(supply_stats["utxo_set_size"]),
+            },
+            "graffiti": graffiti_stats,
+            "miners_snapshot": {
+                "top_miners": [(miner, count) for miner, count in tx_stats["miner_counter"].most_common() if miner]
+            },
+        }
+
+        self._state_snapshot_cache = {"token": token, "data": dict(snapshot)}
+        return snapshot
+
+    def _compute_chain_stats(self, chain: list) -> dict:
         total_blocks = len(chain)
         tip_block = chain[-1] if chain else None
-        genesis_block = chain[0] if chain else None
         total_block_size_bytes = sum(estimate_block_size_bytes(b) for b in chain)
 
-        tip_chainwork = None
         cw = getattr(tip_block, "chainwork", None)
         if cw is None:
             cw = self._compute_chainwork_for_chain(chain)
@@ -690,6 +784,19 @@ class StorageMixin:
                 if tip_difficulty:
                     est_hashrate_hps = int(tip_difficulty / max(1, avg_block_time_sec))
 
+        return {
+            "total_blocks": total_blocks,
+            "total_block_size_bytes": total_block_size_bytes,
+            "tip_chainwork": tip_chainwork,
+            "median_time_past_val": median_time_past_val,
+            "tip_bits": tip_bits,
+            "tip_target": tip_target,
+            "tip_difficulty": tip_difficulty,
+            "avg_block_time_sec": avg_block_time_sec,
+            "est_hashrate_hps": est_hashrate_hps,
+        }
+
+    def _compute_transaction_and_miner_stats(self, chain: list) -> dict:
         total_txs = 0
         total_non_coinbase_txs = 0
         total_fees_paid = 0
@@ -713,7 +820,14 @@ class StorageMixin:
                 miner_addr = getattr(outputs[0], "address", None)
             if miner_addr:
                 miner_counter[str(miner_addr)] += 1
+        return {
+            "total_txs": total_txs,
+            "total_non_coinbase_txs": total_non_coinbase_txs,
+            "total_fees_paid": total_fees_paid,
+            "miner_counter": miner_counter,
+        }
 
+    def _compute_mempool_stats(self) -> dict:
         mempool_count = 0
         mempool_vbytes_est = None
         mempool_bytes_est = None
@@ -723,7 +837,13 @@ class StorageMixin:
             mempool_count = int(stats.get("count", 0))
             mempool_vbytes_est = int(stats.get("virtual_size", 0))
             mempool_bytes_est = int(stats.get("virtual_size", 0))
+        return {
+            "mempool_count": mempool_count,
+            "mempool_vbytes_est": mempool_vbytes_est,
+            "mempool_bytes_est": mempool_bytes_est,
+        }
 
+    def _compute_utxo_supply_stats(self, utxo, tip_height: int) -> dict:
         utxo_set_size = 0
         circulating_estimate = 0
         immature_coinbase = 0
@@ -750,15 +870,20 @@ class StorageMixin:
             born = int(entry.get("block_height", entry.get("height", 0)) if isinstance(entry, dict) else getattr(entry, "block_height", getattr(entry, "height", 0)) or 0)
             if is_cb:
                 conf = max(0, (tip_height - born) + 1)
-                # Coinbase boleh dianggap beredar hanya setelah melewati jumlah blok maturity penuh
                 if conf > maturity:
                     circulating_estimate += amount
                 else:
                     immature_coinbase += amount
             else:
                 circulating_estimate += amount
+        return {
+            "utxo_set_size": utxo_set_size,
+            "circulating_estimate": circulating_estimate,
+            "immature_coinbase": immature_coinbase,
+            "utxo_total_value": utxo_total_value,
+        }
 
-        data_g = {}
+    def _compute_graffiti_stats(self, utxo) -> dict:
         graffiti_posts = 0
         total_comments = 0
         total_graffiti_storage = 0
@@ -769,6 +894,8 @@ class StorageMixin:
         data_g = getattr(reg, "data", {}) or {}
         posts_data = data_g.get("posts") or {}
         graffiti_posts = len(posts_data)
+        
+        total_pool_balances = 0
         for post in posts_data.values():
             if not isinstance(post, dict):
                 continue
@@ -777,7 +904,11 @@ class StorageMixin:
                 stats = post.get("stats") or {}
                 size_val = stats.get("size") or {}
             total_graffiti_storage += int(size_val or 0)
+            stats = post.get("stats") or {}
+            total_pool_balances += int(stats.get("pool_balance", 0) or 0)
+            
         total_comments = sum(len(v or []) for v in (data_g.get("comments") or {}).values())
+        
         mem = getattr(self, "mempool", None)
         if mem:
             for tx in mem.get_all_txs():
@@ -786,88 +917,14 @@ class StorageMixin:
                     meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
                     if meta and str(meta.get("event", "")).upper() == "POST":
                         graffiti_on_mempool += 1
-
-        emitted_subsidy = self.calculate_total_supply()
-        cur_epoch = 0 if tip_height < 0 else int(tip_height // int(CFG.BLOCKS_PER_HALVING))
-        next_halving_height = int((cur_epoch + 1) * int(CFG.BLOCKS_PER_HALVING))
-        blocks_to_halving = None if tip_height < 0 else max(0, next_halving_height - (tip_height + 1))
-        current_block_subsidy = self._scheduled_reward(max(0, tip_height))
-
-        tip_hash = tip_block.hash().hex() if tip_block else None
-        tip_timestamp = int(getattr(tip_block, "timestamp", 0) or 0) if tip_block else None
-        genesis_dict = genesis_block.to_dict() if genesis_block else {}
-        tip_dict = tip_block.to_dict() if tip_block else {}
+                        
         total_payouts = sum(len(v or []) for v in (data_g.get("payouts") or {}).values())
-        total_pool_balances = 0
-        for post in (data_g.get("posts") or {}).values():
-            if not isinstance(post, dict):
-                continue
-            stats = post.get("stats") or {}
-            total_pool_balances += int(stats.get("pool_balance", 0) or 0)
 
-        snapshot = {
-            "schema_version": int(CFG.DATA_SCHEMA_VERSION),
-            "last_updated": dt.datetime.now().astimezone().isoformat(),
-            "identity": {
-                "network_id": CFG.DEFAULT_NET_ID,
-                "address_prefix": CFG.ADDRESS_PREFIX,
-                "network_magic_hex": CFG.NETWORK_MAGIC.hex(),
-                "pow_algo": CFG.POW_ALGO,
-            },
-            "chain": {
-                "total_blocks": total_blocks,
-                "tip_height": tip_height,
-                "genesis_hash": genesis_dict.get("hash"),
-                "genesis_message": (((genesis_dict.get("transactions") or [{}])[0]) or {}).get("block_id"),
-                "tip_hash": tip_hash or tip_dict.get("hash"),
-                "tip_timestamp": tip_timestamp or tip_dict.get("timestamp"),
-                "tip_bits": tip_bits,
-                "tip_target_hex": (None if tip_target is None else hex(tip_target)),
-                "tip_difficulty": tip_difficulty,
-                "tip_chainwork": tip_chainwork,
-                "median_time_past": median_time_past_val,
-                "max_bits": int(CFG.MAX_BITS),
-                "target_block_time_sec": int(CFG.TARGET_BLOCK_TIME),
-                "total_block_size_bytes": int(total_block_size_bytes),
-                "avg_block_time_sec_window": None if avg_block_time_sec is None else round(float(avg_block_time_sec), 3),
-                "est_network_hashrate_hps_window": est_hashrate_hps,
-            },
-            "supply": {
-                "max_supply": int(CFG.MAX_SUPPLY),
-                "emitted_subsidy": int(emitted_subsidy),
-                "circulating_estimate": int(circulating_estimate),
-                "immature_coinbase": int(immature_coinbase),
-                "utxo_total_value": int(utxo_total_value),
-                "coinbase_maturity": int(CFG.COINBASE_MATURITY),
-                "current_block_subsidy": int(current_block_subsidy),
-                "current_epoch": int(cur_epoch),
-                "next_halving_height": int(next_halving_height),
-                "blocks_to_halving": None if blocks_to_halving is None else int(blocks_to_halving),
-            },
-            "transactions": {
-                "total_txs": int(total_txs),
-                "total_non_coinbase_txs": int(total_non_coinbase_txs),
-                "total_fees_paid": int(total_fees_paid),
-                "mempool_txs": int(mempool_count),
-                "mempool_vbytes_estimate": mempool_vbytes_est,
-                "mempool_bytes_estimate": mempool_bytes_est,
-                "mempool_max_bytes": int(CFG.MEMPOOL_MAX_SIZE),
-            },
-            "utxo": {
-                "utxo_set_size": int(utxo_set_size),
-            },
-            "graffiti": {
-                "posts": int(graffiti_posts),
-                "comments": int(total_comments),
-                "graffiti_on_mempool": int(graffiti_on_mempool),
-                "payouts": int(total_payouts),
-                "pool_balances": int(total_pool_balances),
-                "total_graffiti_storage": int(total_graffiti_storage),
-            },
-            "miners_snapshot": {
-                "top_miners": [(miner, count) for miner, count in miner_counter.most_common() if miner]
-            },
+        return {
+            "posts": int(graffiti_posts),
+            "comments": int(total_comments),
+            "graffiti_on_mempool": int(graffiti_on_mempool),
+            "payouts": int(total_payouts),
+            "pool_balances": int(total_pool_balances),
+            "total_graffiti_storage": int(total_graffiti_storage),
         }
-
-        self._state_snapshot_cache = {"token": token, "data": dict(snapshot)}
-        return snapshot

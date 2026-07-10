@@ -386,7 +386,7 @@ def is_p2wpkh_script(script_bytes: bytes) -> bool:
 
 # ========== Compute ==========
 
-def util_compute_txid(tx, include_txid: bool = False):
+def util_compute_txid(tx):
     return hash256(serialize_tx(tx, include_witness=False))
     
 def util_compute_wtxid(tx) -> bytes:
@@ -693,7 +693,7 @@ def strip_sighash_flag(sig_with_type: bytes) -> Tuple[bytes, int]:
 
 def is_signature_canonical_low_s(der_sig: bytes) -> bool:
     try:
-        r, s = der_parse_sig_strict(der_sig)
+        _, s = der_parse_sig_strict(der_sig)
         return is_low_s(s)
     except DerSigError:
         return False

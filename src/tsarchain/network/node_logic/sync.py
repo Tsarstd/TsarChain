@@ -292,7 +292,6 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
 
         if resp.get("type") == "BLOCKS":
             blocks = resp.get("blocks") or []
-            applied_in_chunk = 0
             for block_obj in blocks:
                 h = int(block_obj.get("height", -1))
                 bh = str(block_obj.get("hash") or "")
@@ -310,7 +309,6 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
                 applied = _apply_block_from_sync(self, block_obj, peer)
                 if applied:
                     total_applied += 1
-                    applied_in_chunk += 1
                 else:
                     blk_hash = block_obj.get("hash")
                     label = str(blk_hash or "unknown")

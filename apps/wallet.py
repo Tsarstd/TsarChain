@@ -750,50 +750,6 @@ class KremlinWalletGUI(WalletsMixin):
 
         if hasattr(self, "chat_tab"):
             self.chat_tab.reload_addresses()
-
-    def _chat_toggle_online(self) -> None:
-        addr = (self.chat_from_var.get() or "").strip().lower()
-        if not addr:
-            self._toast("Input Target Address First!.", kind="warn")
-            return
-
-        if not self._chat_online:
-            priv, err = self.chat_mgr.try_unlock(addr)
-            if err:
-                msg = None
-                if "Wallet file not found" in err:
-                    msg = "Keystore not present. Create or import a wallet first."
-                elif "Keystore empty" in err:
-                    msg = "Keystore is empty. Create or import a wallet first."
-                elif "Account locked" in err or "Too many failed attempts" in err:
-                    msg = err
-                elif "Invalid password" in err:
-                    msg = "Password salah atau file keystore korup."
-                else:
-                    msg = f"Gagal unlock: {err}"
-                self._toast(msg, kind="error")
-                return
-
-            def _on(resp):
-                if resp and resp.get("type") == "CHAT_REGISTERED":
-                    self._chat_set_online_ui(True)
-                    self._toast("Online •", kind="info")
-                    self._chat_schedule_next(800)
-                else:
-                    self._toast(f"Failed Register: {resp}", kind="error")
-
-            self.chat_mgr.register(addr, _on)
-            return
-
-        if not messagebox.askyesno("Go Offline", "Are you sure you want to go offline?"):
-            return
-        a = addr.strip().lower()
-        self.chat_mgr.priv_cache.pop(a, None)
-        if getattr(self, "_chat_poll_job", None):
-            self.root.after_cancel(self._chat_poll_job)
-        self._chat_poll_job = None
-        self._chat_set_online_ui(False)
-        self._toast("Offline.", kind="info")
         
         # ---------------- Contact Management ----------------
     def _get_keystore_password(self) -> Optional[str]:
@@ -806,12 +762,6 @@ class KremlinWalletGUI(WalletsMixin):
         self._ks_pwd_cache = (pwd, time.time() + self._ks_pwd_ttl_sec)
         return pwd
 
-    def _contacts_reload(self, show_toast: bool = False) -> None:
-        self.contacts = self.contact_mgr.load()  # dict addr->alias
-        self._refresh_contacts_ui()
-        if show_toast:
-            self._toast(f"Loaded {len(self.contacts)} contact(s).", kind="info")
-
     def _refresh_contacts_ui(self) -> None:
         pairs = self.contact_mgr.pairs()   # List[(label, addr)]
         items = [label for (label, _addr) in pairs]
@@ -820,25 +770,6 @@ class KremlinWalletGUI(WalletsMixin):
             combo = getattr(self, name, None)
             if combo is not None:
                 combo["values"] = items
-
-        # ---------------- Contacts for SEND tab ----------------
-    def _sync_send_recipient_from_combo(self) -> None:
-        raw = (self.send_to_combo.get() or "").strip()
-        if not raw:
-            return
-        rlc = raw.lower()
-        if rlc.startswith("tsar1"):
-            self.send_to_var.set(rlc)
-            return
-        for label, addr in getattr(self, "_contact_pairs", []):
-            if raw == label:
-                self.send_to_var.set(addr)
-                return
-
-    def _get_send_to_addr(self) -> str:
-        self._sync_send_recipient_from_combo()
-        v = (self.send_to_var.get() or "").strip().lower()
-        return v if v.startswith("tsar1") else ""
 
     # ---------------- History Frame ----------------
     def _build_history_frame(self) -> None:
@@ -1216,14 +1147,6 @@ class KremlinWalletGUI(WalletsMixin):
         self.root.update_idletasks()
 
     # ---------------- Helper UX ----------------
-    def info(self, msg: str):
-        self._toast(msg, kind="info")
-        
-    def warn(self, msg: str):
-        self._toast(msg, kind="warn")
-        
-    def err(self,  msg: str):
-        self._toast(msg, kind="error")
         
     def _open_log_viewer(self):
         log_file = "logging/wallet.log"

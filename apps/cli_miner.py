@@ -43,8 +43,8 @@ from tsarchain.network.node import Network
 from tsarchain.core.coinbase import CoinbaseTx
 from tsarchain.consensus.blockchain import Blockchain
 
-from tsarchain.utils.cosmetic import interface as COL
-from tsarchain.utils.cosmetic.tui import MinerTUI, create_tui_logger
+from tsarchain.miner.cosmetic import interface as COL
+from tsarchain.miner.cosmetic.tui import MinerTUI, create_tui_logger
 
 from tsarchain.utils.tsar_logging import setup_logging, get_ctx_logger
 log = get_ctx_logger("apps.cli_miner")

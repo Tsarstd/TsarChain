@@ -291,36 +291,55 @@ def payout_tx():
     }
 
 def rpc_receipt():
-    start = time.perf_counter()
     output_dir = "data/web/receipts"
     receipt_gen = build_receipt.PaymentReceiptGenerator(output_dir)
+    
+    benchmarks = {}
+    start_total = time.perf_counter()
         
+    t0 = time.perf_counter()
     tx_common = common_tx()
-    result = receipt_gen.generate_receipt_base64(tx_common)
+    receipt_gen.generate_receipt_base64(tx_common)
+    benchmarks['TX Common'] = round((time.perf_counter() - t0) * 1000.0, 3)
     
+    t0 = time.perf_counter()
     tx_mempool = mempool_tx()
-    result = receipt_gen.generate_receipt_base64(tx_mempool)
+    receipt_gen.generate_receipt_base64(tx_mempool)
+    benchmarks['TX Mempool'] = round((time.perf_counter() - t0) * 1000.0, 3)
     
+    t0 = time.perf_counter()
     tx_comment = comment_tx()
-    result = receipt_gen.generate_receipt_base64(tx_comment)
+    receipt_gen.generate_receipt_base64(tx_comment)
+    benchmarks['TX Comment'] = round((time.perf_counter() - t0) * 1000.0, 3)
     
+    t0 = time.perf_counter()
     tx_post = post_tx()
-    result = receipt_gen.generate_receipt_base64(tx_post)
+    receipt_gen.generate_receipt_base64(tx_post)
+    benchmarks['TX Post'] = round((time.perf_counter() - t0) * 1000.0, 3)
     
+    t0 = time.perf_counter()
     tx_payout = payout_tx()
-    result = receipt_gen.generate_receipt_base64(tx_payout)
+    receipt_gen.generate_receipt_base64(tx_payout)
+    benchmarks['TX Payouts'] = round((time.perf_counter() - t0) * 1000.0, 3)
     
+    t0 = time.perf_counter()
     tx_coinbase = coinbase_tx()
-    result = receipt_gen.generate_receipt_base64(tx_coinbase)
+    receipt_gen.generate_receipt_base64(tx_coinbase)
+    benchmarks['TX Coinbase'] = round((time.perf_counter() - t0) * 1000.0, 3)
     
+    t0 = time.perf_counter()
     tx_coinbase_bonus = coinbase_tx_bonus()
-    result = receipt_gen.generate_receipt_base64(tx_coinbase_bonus)
+    receipt_gen.generate_receipt_base64(tx_coinbase_bonus)
+    benchmarks['TX Coinbase Bonus'] = round((time.perf_counter() - t0) * 1000.0, 3)
     
-    end = time.perf_counter()
-    result = round((end - start) * 1000.0, 3)
-    print("[generated] bench :", result)
+    total_time = round((time.perf_counter() - start_total) * 1000.0, 3)
+    
+    print("\nBenchmarks Results :")
+    for name, bench_time in benchmarks.items():
+        print(f"- {name} : {bench_time}ms")
+    print(f"With Total Benchmarks = {total_time}ms")
             
-    return result
+    return total_time
 
 if __name__ == "__main__":
     test_dir = rpc_receipt()

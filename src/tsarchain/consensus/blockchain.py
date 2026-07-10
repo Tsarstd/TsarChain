@@ -172,7 +172,6 @@ class Blockchain(
                     self._hash_cache.popitem(last=False)
             except Exception:
                 log.exception("get_block_hash.self.lock")
-                pass
             return h_hex
 
     def _start_persist_worker(self) -> None:

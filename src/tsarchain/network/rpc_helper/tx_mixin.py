@@ -40,7 +40,7 @@ class TxMixin:
         if change >= CFG.DUST_THRESHOLD_SAT:
             outs.append(TxOut(change, from_spk))
         tx = Tx(version=1, inputs=ins, outputs=outs, locktime=0, is_coinbase=False)
-        self._check_tx_limits(tx, ctx="create_single")
+        self._check_tx_limits(tx)
 
         input_meta = [{
             "txid": u["txid"],
@@ -68,10 +68,49 @@ class TxMixin:
         self.broadcast.utxodb._load()
         
         utxos_map = self.broadcast.utxodb.get(from_addr) or {}
-        tip_height = self.broadcast.blockchain.height
-        utxos_list = self._build_utxos_list(utxos_map, tip_height)
+        utxos_list = self._build_utxos_list(utxos_map, self.broadcast.blockchain.height)
         
-        fixed_outs: list[tuple[int, Script]] = []
+        fixed_outs, total_target = self._parse_outputs(outputs)
+
+        preselected, pre_acc = [], 0
+        utxo_by_key = {f"{u['txid']}:{u['index']}": u for u in utxos_list}
+        if force_inputs:
+            preselected, pre_acc = self._process_forced_inputs(force_inputs, utxos_list, utxo_by_key, from_addr)
+
+        if not utxos_list and not preselected:
+            raise ValueError("no spendable utxos")
+            
+        forced_keys = set(force_inputs or [])
+        candidates = sorted([u for u in utxos_list if f"{u['txid']}:{u['index']}" not in forced_keys], key=lambda x: x["amount"])
+        selected = list(preselected)
+        
+        change, fee_est = self._accumulate_utxos_multi(candidates, selected, pre_acc, total_target, fixed_outs, fee_rate)
+
+        ins  = [TxIn(bytes.fromhex(u["txid"]), u["index"], amount=int(u["amount"])) for u in selected]
+        non_opret, opret_outs = [], []
+        for amt, spk in fixed_outs:
+            is_opret = (isinstance(spk, Script) and getattr(spk, "cmds", None) and spk.cmds and spk.cmds[0] == OP_RETURN)
+            (opret_outs if is_opret else non_opret).append(TxOut(amt, spk))
+            
+        outs = non_opret
+        if change >= CFG.DUST_THRESHOLD_SAT:
+            outs.append(TxOut(change, self._addr_to_spk(from_addr)))
+        outs.extend(opret_outs)
+
+        tx = Tx(version=1, inputs=ins, outputs=outs, locktime=0, is_coinbase=False)
+        self._check_tx_limits(tx)
+
+        return {
+            "tx": tx.to_dict(),
+            "inputs": [{"txid": u["txid"], "index": u["index"], "amount": int(u["amount"]), "script_pubkey": u["scriptPubKey"].hex()} for u in selected],
+            "fee": fee_est,
+            "change": change,
+            "from": from_addr,
+            "outputs": [{"amount": int(amt), "script_pubkey": spk.serialize().hex()} for (amt, spk) in fixed_outs]
+        }
+
+    def _parse_outputs(self, outputs: list) -> tuple[list[tuple[int, Script]], int]:
+        fixed_outs = []
         total_target = 0
         for item in outputs:
             if not isinstance(item, dict):
@@ -89,31 +128,35 @@ class TxMixin:
             self._guard_graffiti_output(spk)
             fixed_outs.append((amt, spk))
             total_target += max(0, amt)
+        return fixed_outs, total_target
 
+    def _process_forced_inputs(self, force_inputs: list[str], utxos_list: list, utxo_by_key: dict, from_addr: str) -> tuple[list, int]:
         preselected = []
         pre_acc = 0
-        forced_keys = set(force_inputs or [])
-        utxo_by_key = {f"{u['txid']}:{u['index']}": u for u in utxos_list}
+        forced_keys = set(force_inputs)
+        
         for key in forced_keys:
-            u = utxo_by_key.get(key)
-            if u:
+            if u := utxo_by_key.get(key):
                 preselected.append(u)
                 pre_acc += int(u["amount"])
                 
-        if force_inputs:
-            missing = [k for k in forced_keys if k not in utxo_by_key]
-            if missing:
-                # Global UTXO map stores entries as {"tx_out": TxOut, "is_coinbase": bool, "block_height": int}
-                global_utxos = getattr(self.broadcast.utxodb, "utxos", {})
-                for key in list(missing):
-                    txid_hex, idx_str = key.split(":")
-                    entry = global_utxos.get(key)
-                    if not entry:
-                        continue
+        missing = [k for k in forced_keys if k not in utxo_by_key]
+        if missing:
+            global_utxos = getattr(self.broadcast.utxodb, "utxos", {})
+            for key in list(missing):
+                txid_hex, idx_str = key.split(":")
+                if entry := global_utxos.get(key):
                     tx_out = entry.get("tx_out")
                     amt = int(getattr(tx_out, "amount", 0))
                     spk = getattr(tx_out, "script_pubkey", None)
-                    spk_bytes = spk.serialize() if hasattr(spk, "serialize") else (spk if isinstance(spk, (bytes, bytearray)) else b"")
+                    
+                    if hasattr(spk, "serialize"):
+                        spk_bytes = spk.serialize()
+                    elif isinstance(spk, (bytes, bytearray)):
+                        spk_bytes = spk
+                    else:
+                        spk_bytes = b""
+                        
                     is_cb = bool(entry.get("is_coinbase", False))
                     born  = int(entry.get("block_height", 0))
                     u = {
@@ -130,102 +173,61 @@ class TxMixin:
                     pre_acc += amt
                     missing.remove(key)
                     
-            if missing:
-                locks = {}
-                sender_spk = self._addr_to_spk(from_addr)
-                sender_spk_bytes = sender_spk.serialize()
-                for key in list(missing):
-                    meta = locks.get(key)
-                    if not isinstance(meta, dict):
-                        continue
-                    if str(meta.get("owner", "")).strip().lower() != str(from_addr).strip().lower():
-                        continue
-                    amt = int(meta.get("amount", 0))
-                    if amt <= 0 or not sender_spk_bytes:
-                        continue
-                    txid_hex, idx_str = key.split(":")
-                    u = {
-                        "txid": txid_hex,
-                        "index": int(idx_str),
-                        "amount": amt,
-                        "scriptPubKey": sender_spk_bytes,
-                        "height": 0,
-                        "is_coinbase": False,
-                    }
-                    utxos_list.append(u)
-                    utxo_by_key[key] = u
-                    preselected.append(u)
-                    pre_acc += amt
-                    missing.remove(key)
-            if any(k not in utxo_by_key for k in forced_keys):
-                raise ValueError("forced_input_missing")
+        if missing:
+            locks = {}
+            sender_spk = self._addr_to_spk(from_addr)
+            sender_spk_bytes = sender_spk.serialize()
+            for key in list(missing):
+                meta = locks.get(key)
+                if not isinstance(meta, dict) or str(meta.get("owner", "")).strip().lower() != str(from_addr).strip().lower():
+                    continue
+                amt = int(meta.get("amount", 0))
+                if amt <= 0 or not sender_spk_bytes:
+                    continue
+                txid_hex, idx_str = key.split(":")
+                u = {
+                    "txid": txid_hex,
+                    "index": int(idx_str),
+                    "amount": amt,
+                    "scriptPubKey": sender_spk_bytes,
+                    "height": 0,
+                    "is_coinbase": False,
+                }
+                utxos_list.append(u)
+                utxo_by_key[key] = u
+                preselected.append(u)
+                pre_acc += amt
+                missing.remove(key)
+                
+        if any(k not in utxo_by_key for k in forced_keys):
+            raise ValueError("forced_input_missing")
+            
+        return preselected, pre_acc
 
-        if not utxos_list and not preselected:
-            raise ValueError("no spendable utxos")
-        candidates = [u for u in utxos_list if f"{u['txid']}:{u['index']}" not in forced_keys]
-        candidates.sort(key=lambda x: x["amount"])
-
-        selected = list(preselected)
-        acc = pre_acc
-        need = total_target
+    def _accumulate_utxos_multi(self, candidates: list, selected: list, acc: int, total_target: int, fixed_outs: list, fee_rate: int) -> tuple[int, int]:
         change = 0
         fee_est = 0
         def _est_fee(n_in: int, n_out: int) -> int:
-            return fee_rate * self._est_tx_size(n_in, n_out, True)
+            return fee_rate * self._est_tx_size(n_in, n_out)
 
-        # Greedy accumulate
         while True:
             fee_est = _est_fee(len(selected), len(fixed_outs) + 1)
-            if acc >= need + fee_est:
-                change = acc - need - fee_est
+            if acc >= total_target + fee_est:
+                change = acc - total_target - fee_est
                 if change < CFG.DUST_THRESHOLD_SAT:
                     fee_est2 = _est_fee(len(selected), len(fixed_outs))
-                    if acc >= need + fee_est2:
+                    if acc >= total_target + fee_est2:
                         change = 0
                         fee_est = fee_est2
-                    else:
-                        pass
-                if acc >= need + fee_est:
+                if acc >= total_target + fee_est:
                     break
 
             if not candidates:
-                raise ValueError(f"insufficient funds: have={acc}, need={need + fee_est}")
+                raise ValueError(f"insufficient funds: have={acc}, need={total_target + fee_est}")
             selected.append(candidates.pop(0))
             acc += int(selected[-1]["amount"])
-
-        from_spk = self._addr_to_spk(from_addr)
-        ins  = [TxIn(bytes.fromhex(u["txid"]), u["index"], amount=int(u["amount"])) for u in selected]
-        non_opret, opret_outs = [], []
-        for amt, spk in fixed_outs:
-            is_opret = (isinstance(spk, Script) and getattr(spk, "cmds", None) and spk.cmds and spk.cmds[0] == OP_RETURN)
-            (opret_outs if is_opret else non_opret).append(TxOut(amt, spk))
-        outs = non_opret
-        if change >= CFG.DUST_THRESHOLD_SAT:
-            outs.append(TxOut(change, from_spk))
-        outs.extend(opret_outs)
-
-        tx = Tx(version=1, inputs=ins, outputs=outs, locktime=0, is_coinbase=False)
-        self._check_tx_limits(tx, ctx="create_multi")
-        input_meta = [{
-            "txid": u["txid"],
-            "index": u["index"],
-            "amount": int(u["amount"]),
-            "script_pubkey": u["scriptPubKey"].hex(),
-        } for u in selected]
-
-        return {
-            "tx": tx.to_dict(),
-            "inputs": input_meta,
-            "fee": fee_est,
-            "change": change,
-            "from": from_addr,
-            "outputs": [
-                {
-                    "amount": int(amt),
-                    "script_pubkey": spk.serialize().hex(),
-                } for (amt, spk) in fixed_outs
-            ]
-        }
+            
+        return change, fee_est
 
     def _guard_graffiti_output(self, spk: Script) -> None:
         """
@@ -281,7 +283,7 @@ class TxMixin:
             raise ValueError("decode bech32 failed")
         return Script([0, bytes(decoded)])
 
-    def _est_tx_size(self, n_inputs, n_outputs, segwit=True):
+    def _est_tx_size(self, n_inputs, n_outputs):
         return CFG.TX_BASE_VBYTES + n_inputs * CFG.SEGWIT_INPUT_VBYTES + n_outputs * CFG.SEGWIT_OUTPUT_VBYTES
     
     def _build_utxos_list(self, utxos_map, tip_height):
@@ -311,8 +313,8 @@ class TxMixin:
             })
         return utxos_list
 
-    def _check_tx_limits(self, tx_obj: Tx, ctx: str = "rpc_create"):
-        weight, vsize, base_size, total_size = compute_tx_weight_vsize(tx_obj)
+    def _check_tx_limits(self, tx_obj: Tx):
+        weight, vsize, _, _ = compute_tx_weight_vsize(tx_obj)
         vin = len(getattr(tx_obj, "inputs", []) or [])
         vout = len(getattr(tx_obj, "outputs", []) or [])
 
@@ -355,13 +357,13 @@ class TxMixin:
         for c in candidates:
             selected.append(c)
             acc += c["amount"]
-            est_size = self._est_tx_size(len(selected), n_outputs, True)
+            est_size = self._est_tx_size(len(selected), n_outputs)
             est_fee  = fee_rate * est_size
             if acc >= target_amount_sat + est_fee:
                 change = acc - target_amount_sat - est_fee
                 if change < CFG.DUST_THRESHOLD_SAT:
                     n_outputs = 1
-                    est_fee  = fee_rate * self._est_tx_size(len(selected), n_outputs, True)
+                    est_fee  = fee_rate * self._est_tx_size(len(selected), n_outputs)
                     if acc < target_amount_sat + est_fee:
                         continue
                     change = 0

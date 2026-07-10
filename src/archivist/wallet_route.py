@@ -213,127 +213,100 @@ def _handle_stor_get_by_art(server, msg: Dict[str, Any]) -> Optional[Dict[str, A
         meta = (server.index.get("files") or {}).get(gid)
 
     found = bool(meta)
-    msg_cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
-    data_cap = int(msg_cap * 3 // 4)
     resp = {"type": "STOR_GET_BY_ART", "found": found, "graffiti_id": gid, "meta": meta}
+    
     include_data = bool(msg.get("include_data"))
-    if include_data and meta:
-        # max_bytes here is a *per-response* cap (raw bytes), not total file size.
-        max_bytes = int(msg.get("max_bytes", 0) or 0)
-        if max_bytes <= 0:
-            max_bytes = int(CFG.GRAFFITI_MAX_SIZE_BYTES)
-        max_bytes = max(32 * 1024, min(max_bytes, int(CFG.GRAFFITI_MAX_SIZE_BYTES), data_cap))
-
-        # Optional chunk controls. If not provided, we keep the old behavior (full blob or error if too large).
-        chunk_mode = ("offset" in msg) or ("length" in msg)
-        try:
-            offset = int(msg.get("offset", 0) or 0)
-        except Exception:
-            offset = 0
-        try:
-            req_len = int(msg.get("length", 0) or 0)
-        except Exception:
-            req_len = 0
-
-        if offset < 0:
-            offset = 0
-
-        total_size = int(meta.get("size_bytes", 0) or 0)
-
-        # When not in chunk_mode, enforce that the whole file fits in one response (legacy behavior).
-        if (not chunk_mode) and total_size > 0 and total_size > max_bytes:
-            resp["status"] = "error"
-            resp["reason"] = "file_too_large"
-            log.warning(
-                "[STOR_GET_BY_ART] file_too_large art=%s size=%s limit=%s",
-                (art_id[:16] if art_id else "-"),
-                total_size,
-                max_bytes,
-            )
-            return resp
-
-        if total_size > 0 and offset >= total_size:
-            resp.update(
-                {
-                    "status": "ok",
-                    "offset": int(offset),
-                    "length": 0,
-                    "total_size": int(total_size),
-                    "eof": True,
-                    "data_b64": "",
-                }
-            )
-            return resp
-
-        # Decide how many bytes to read this response.
-        if req_len <= 0:
-            req_len = int(max_bytes)
-        read_len = int(max(0, min(int(req_len), int(max_bytes))))
-        if total_size > 0:
-            read_len = int(min(read_len, int(total_size) - int(offset)))
-
-        data_bytes = None
-        if server.use_kv:
-            data_bytes = _read_kv_chunk(server, gid, offset, read_len)
-            if data_bytes is None:
-                resp["status"] = "error"
-                resp["reason"] = "file_missing"
-                log.warning("[STOR_GET_BY_ART] file_missing art=%s gid=%s", (art_id[:16] if art_id else "-"), gid)
-                return resp
-
-            out_len = len(data_bytes)
-            eof = bool(total_size > 0 and (int(offset) + out_len) >= int(total_size))
-            resp.update(
-                {
-                    "data_b64": base64.b64encode(data_bytes).decode("ascii"),
-                    "status": "ok",
-                    "offset": int(offset),
-                    "length": int(out_len),
-                    "total_size": int(total_size),
-                    "eof": eof,
-                }
-            )
-            return resp
-
-        # filesystem mode
-        path = meta.get("path")
-        if path and os.path.isfile(path):
-            try:
-                chunk, total_size = _read_fs_chunk(path, offset, read_len, total_size)
-                out_len = len(chunk)
-                eof = bool(total_size > 0 and (int(offset) + out_len) >= int(total_size))
-                resp.update(
-                    {
-                        "data_b64": base64.b64encode(chunk).decode("ascii"),
-                        "status": "ok",
-                        "offset": int(offset),
-                        "length": int(out_len),
-                        "total_size": int(total_size),
-                        "eof": eof,
-                    }
-                )
-                return resp
-            except Exception:
-                resp["status"] = "error"
-                resp["reason"] = "file_missing"
-                log.warning(
-                    "[STOR_GET_BY_ART] file_missing art=%s gid=%s path=%s",
-                    (art_id[:16] if art_id else "-"),
-                    gid,
-                    path,
-                )
-                return resp
-
-        resp["status"] = "error"
-        resp["reason"] = "file_missing"
-        log.warning(
-            "[STOR_GET_BY_ART] file_missing art=%s gid=%s path=%s",
-            (art_id[:16] if art_id else "-"),
-            gid,
-            path if "path" in locals() else None,
-        )
+    if not include_data or not meta:
         return resp
         
+    return _process_data_retrieval(server, msg, art_id, gid, meta, resp)
+
+def _process_data_retrieval(server, msg: Dict[str, Any], art_id: str, gid: str, meta: Dict[str, Any], resp: Dict[str, Any]) -> Dict[str, Any]:
+    msg_cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
+    data_cap = int(msg_cap * 3 // 4)
+    
+    max_bytes = int(msg.get("max_bytes", 0) or 0)
+    if max_bytes <= 0:
+        max_bytes = int(CFG.GRAFFITI_MAX_SIZE_BYTES)
+    max_bytes = max(32 * 1024, min(max_bytes, int(CFG.GRAFFITI_MAX_SIZE_BYTES), data_cap))
+
+    chunk_mode = ("offset" in msg) or ("length" in msg)
+    try:
+        offset = int(msg.get("offset", 0) or 0)
+    except Exception:
+        offset = 0
+    try:
+        req_len = int(msg.get("length", 0) or 0)
+    except Exception:
+        req_len = 0
+
+    if offset < 0:
+        offset = 0
+
+    total_size = int(meta.get("size_bytes", 0) or 0)
+
+    if (not chunk_mode) and total_size > 0 and total_size > max_bytes:
+        resp["status"] = "error"
+        resp["reason"] = "file_too_large"
+        log.warning("[STOR_GET_BY_ART] file_too_large art=%s size=%s limit=%s", (art_id[:16] if art_id else "-"), total_size, max_bytes)
+        return resp
+
+    if total_size > 0 and offset >= total_size:
+        resp.update({"status": "ok", "offset": int(offset), "length": 0, "total_size": int(total_size), "eof": True, "data_b64": ""})
+        return resp
+
+    if req_len <= 0:
+        req_len = int(max_bytes)
+    read_len = int(max(0, min(int(req_len), int(max_bytes))))
+    if total_size > 0:
+        read_len = int(min(read_len, int(total_size) - int(offset)))
+
+    if server.use_kv:
+        return _fetch_kv_data(server, gid, art_id, offset, read_len, total_size, resp)
+    return _fetch_fs_data(meta, gid, art_id, offset, read_len, total_size, resp)
+
+def _fetch_kv_data(server, gid: str, art_id: str, offset: int, read_len: int, total_size: int, resp: Dict[str, Any]) -> Dict[str, Any]:
+    data_bytes = _read_kv_chunk(server, gid, offset, read_len)
+    if data_bytes is None:
+        resp["status"] = "error"
+        resp["reason"] = "file_missing"
+        log.warning("[STOR_GET_BY_ART] file_missing art=%s gid=%s", (art_id[:16] if art_id else "-"), gid)
+        return resp
+
+    out_len = len(data_bytes)
+    eof = bool(total_size > 0 and (int(offset) + out_len) >= int(total_size))
+    resp.update({
+        "data_b64": base64.b64encode(data_bytes).decode("ascii"),
+        "status": "ok",
+        "offset": int(offset),
+        "length": int(out_len),
+        "total_size": int(total_size),
+        "eof": eof,
+    })
+    return resp
+
+def _fetch_fs_data(meta: Dict[str, Any], gid: str, art_id: str, offset: int, read_len: int, total_size: int, resp: Dict[str, Any]) -> Dict[str, Any]:
+    path = meta.get("path")
+    if path and os.path.isfile(path):
+        try:
+            chunk, total_size_out = _read_fs_chunk(path, offset, read_len, total_size)
+            out_len = len(chunk)
+            eof = bool(total_size_out > 0 and (int(offset) + out_len) >= int(total_size_out))
+            resp.update({
+                "data_b64": base64.b64encode(chunk).decode("ascii"),
+                "status": "ok",
+                "offset": int(offset),
+                "length": int(out_len),
+                "total_size": int(total_size_out),
+                "eof": eof,
+            })
+            return resp
+        except Exception:
+            pass
+            
+    resp["status"] = "error"
+    resp["reason"] = "file_missing"
+    log.warning("[STOR_GET_BY_ART] file_missing art=%s gid=%s path=%s", (art_id[:16] if art_id else "-"), gid, path if "path" in locals() else None)
     return resp
 
 # =============================================================================

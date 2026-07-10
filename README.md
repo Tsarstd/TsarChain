@@ -327,6 +327,7 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     ├── src/
     │   │
     │   ├── archivist/
+    │   │   ├── archivist_orchestrator.py        # Storage Node CLI/Main logic
     │   │   ├── connect.py                       # P2P network logic ( send & receive )
     │   │   ├── database_archivist.py            # database logic
     │   │   ├── node_route.py                    # node RPC route
@@ -400,6 +401,14 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     │   │   │   ├── types.py                     # Normalize prevout set
     │   │   │   └── validation.py                # Mempool core valodation logic
     │   │   │
+    │   │   ├── miner/
+    │   │   │   ├── cosmetic
+    │   │   │   │   ├── interface.py             # colorama CLI module
+    │   │   │   │   ├── thread_check.py          # thread monitoring
+    │   │   │   │   └── tui.py                   # TUI for CLI
+    │   │   │   │
+    │   │   │   └── orchestrator.py              # miner/node CLI logic
+    │   │   │
     │   │   ├── network/
     │   │   │   ├── cast/
     │   │   │   │   ├── chain_utils.py           # validate incoming chain logic
@@ -462,26 +471,23 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     │   │   │   └── utxo.py                            # UTXO initialize
     │   │   │
     │   │   └── utils/
-    │   │       ├── cosmetic
-    │   │       │   ├── interface.py                   # colorama CLI module
-    │   │       │   ├── thread_check.py                # thread monitoring
-    │   │       │   └── tui.py                         # TUI for CLI
-    │   │       │
+    │   │       ├── benchmarks.py                      # Benchmark decorator for method functions
     │   │       ├── bootstrap.py                       # auto backup / snapshot logic
     │   │       ├── config.py                          # ALL project Configuration
     │   │       ├── helpers.py                         # script helpers
     │   │       └── tsar_logging.py                    # logging module
     │   │
-    │   └── web/                    # TsarChain Explorer Website
+    │   └── web/
     │       ├── Backend/            # ALL Backend Website Module
     │       └── Fronted/            # ALL Frontend Website Module
     │
     ├── tools/                      # LMDB database tools & Snapshot maintenance
     │
     ├── tsarcore_native/
-    │        └── src/                    # ALL Native Module (Rust + PyO3)
+    │        ├── src/               # ALL Native Module (Rust + PyO3)
+    │        └── tests/             # Unit Test For Rust
     │
-    └── tests/                      # All Unit testing
+    └── tests/                      # All Python Unit testing
 
   ```
   </details>

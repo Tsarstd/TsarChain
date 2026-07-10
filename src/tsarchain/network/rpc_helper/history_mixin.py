@@ -48,8 +48,6 @@ class HistoryMixin:
                 b = b""
         return b == b"\x00" * 32
 
-
-
     def _txout_to_spk_hex(self, txout) -> str | None:
         spk = getattr(txout, "script_pubkey", None)
         if spk is None:
@@ -68,33 +66,32 @@ class HistoryMixin:
             return None
         return spkhex_to_address(spk_hex)
 
-    def _normalize_spk_hex(self, addr: str) -> str | None:
-        def _is_hex(s: str) -> bool:
-            try:
-                bytes.fromhex(s)
-                return True
-            except Exception:
-                return False
+    def _is_valid_hex(self, s: str) -> bool:
+        try:
+            bytes.fromhex(s)
+            return True
+        except Exception:
+            return False
 
+    def _normalize_bech32_addr(self, addr: str) -> str | None:
+        try:
+            spk = self._addr_to_spk(addr)
+            return spk.serialize().hex()
+        except Exception:
+            return None
+
+    def _normalize_spk_hex(self, addr: str) -> str | None:
         addr = (addr or "").strip().lower()
         if not addr:
             return None
         if addr.startswith(CFG.ADDRESS_PREFIX + "1"):
-            try:
-                spk = self._addr_to_spk(addr)
-                return spk.serialize().hex()
-            except Exception:
-                return None
-        if addr.startswith("0014") and len(addr) == 44:
-            return addr if _is_hex(addr) else None
-        if addr.startswith("0020") and len(addr) == 68:
-            return addr if _is_hex(addr) else None
-        if addr.startswith("00") and len(addr) in (42, 66):
-            if not _is_hex(addr):
-                return None
-            if len(addr) == 42:
-                return "0014" + addr[2:]
-            return "0020" + addr[2:]
+            return self._normalize_bech32_addr(addr)
+        if addr.startswith("0014") and len(addr) == 44 and self._is_valid_hex(addr):
+            return addr
+        if addr.startswith("0020") and len(addr) == 68 and self._is_valid_hex(addr):
+            return addr
+        if addr.startswith("00") and len(addr) in (42, 66) and self._is_valid_hex(addr):
+            return "0014" + addr[2:] if len(addr) == 42 else "0020" + addr[2:]
         return None
 
     def _build_outpoint_map(self, chain, mem=None):
@@ -138,161 +135,151 @@ class HistoryMixin:
 
         return (None, None, None, 0, 0, chain, mem, tip_height)
 
-    def _get_tx_history(self, address: str, limit: int = 50, offset: int = 0, direction: str | None = None, status: str | None = None) -> dict:
-        start = time.perf_counter()
-        
+    def _validate_history_params(self, address: str, limit: int, offset: int) -> tuple[str, str | None, dict | None]:
         if not isinstance(address, str):
-            return {"items": [], "total": 0, "limit": limit, "offset": offset}
-
+            return "", None, {"items": [], "total": 0, "limit": limit, "offset": offset}
         addr = (address or "").strip().lower()
         if not addr:
-            return {"items": [], "total": 0, "limit": limit, "offset": offset}
+            return "", None, {"items": [], "total": 0, "limit": limit, "offset": offset}
         max_addr_len = int(CFG.MAX_UTXO_ADDR_LEN)
         if len(addr) > max_addr_len:
-            return {"items": [], "total": 0, "limit": limit, "offset": offset, "error": "address too long"}
-
+            return "", None, {"items": [], "total": 0, "limit": limit, "offset": offset, "error": "address too long"}
         target_spk_hex = self._normalize_spk_hex(addr)
         if not target_spk_hex:
-            return {"items": [], "total": 0, "limit": limit, "offset": offset, "error": "invalid address"}
+            return "", None, {"items": [], "total": 0, "limit": limit, "offset": offset, "error": "invalid address"}
+        return addr, target_spk_hex, None
 
+    def _slice_items(self, items: list[dict], limit: int, offset: int, direction: str | None, status: str | None) -> dict:
+        filtered = items
+        if direction in ("in", "out"):
+            filtered = [it for it in filtered if it["direction"] == direction]
+        if status in ("confirmed", "unconfirmed"):
+            filtered = [it for it in filtered if it["status"] == status]
+            
+        optimized_items = []
+        for item in filtered:
+            optimized = dict(item)
+            if optimized["direction"] == "in":
+                optimized.pop("to", None)
+            elif optimized["direction"] == "out":
+                optimized.pop("from", None)
+            optimized_items.append(optimized)
+            
+        total = len(optimized_items)
+        start_idx = max(0, int(offset))
+        end_idx   = max(start_idx, int(start_idx + max(0, int(limit))))
+        return {"items": optimized_items[start_idx:end_idx], "total": total, "limit": int(limit), "offset": int(offset)}
+
+    def _setup_tx_history_cache(self):
         cache = getattr(self, "_tx_history_cache", None)
         cache_lock = getattr(self, "_tx_history_cache_lock", None)
         if cache is None or cache_lock is None:
             cache = self._tx_history_cache = collections.OrderedDict()
             cache_lock = self._tx_history_cache_lock = threading.RLock()
+        return cache, cache_lock
 
+    def _get_history_from_cache(self, target_spk_hex, tip_height, tip_hash, mem_seq):
+        cache, cache_lock = self._setup_tx_history_cache()
         cache_ttl = 10.0
-        max_cache = max(16, int(CFG.MAX_HISTORY_LIMIT))
-        max_cache_items = max(200, int(CFG.MAX_HISTORY_LIMIT) * 10)
-
-        mempool = getattr(self.broadcast, "mempool", None)
-        mem_seq = getattr(mempool, "change_seq", 0)
-
-        with self.broadcast.lock:
-            chain_ref = self.broadcast.blockchain.chain
-            tip_height = int(self.broadcast.blockchain.height)
-            tip_hash = self._bhash_hex(chain_ref[-1]) if chain_ref else ""
-
-        def _slice_items(items: list[dict]) -> dict:
-            filtered = items
-            if direction in ("in", "out"):
-                filtered = [it for it in filtered if it["direction"] == direction]
-            if status in ("confirmed", "unconfirmed"):
-                filtered = [it for it in filtered if it["status"] == status]
-            
-            optimized_items = []
-            for item in filtered:
-                optimized = dict(item)
-                if optimized["direction"] == "in":
-                    optimized.pop("to", None)
-                elif optimized["direction"] == "out":
-                    optimized.pop("from", None)
-                optimized_items.append(optimized)
-            
-            total = len(optimized_items)
-            start_idx = max(0, int(offset))
-            end_idx   = max(start_idx, int(start_idx + max(0, int(limit))))
-            return {"items": optimized_items[start_idx:end_idx], "total": total, "limit": int(limit), "offset": int(offset)}
-
         now = time.time()
         with cache_lock:
             entry = cache.get(target_spk_hex)
             if entry:
                 if (now - entry.get("ts", 0)) <= cache_ttl and entry.get("tip_height") == tip_height and entry.get("tip_hash") == tip_hash and entry.get("mem_seq") == mem_seq:
                     cache.move_to_end(target_spk_hex)
-                    return _slice_items(entry.get("items") or [])
+                    return entry.get("items") or []
                 cache.pop(target_spk_hex, None)
+        return None
 
-        with self.broadcast.lock:
-            chain = list(self.broadcast.blockchain.chain)
-            tip_height = int(self.broadcast.blockchain.height)
-            mem = self.broadcast.mempool.get_all_txs()
+    def _save_history_to_cache(self, target_spk_hex, items, tip_height, tip_hash, mem_seq):
+        max_cache_items = max(200, int(CFG.MAX_HISTORY_LIMIT) * 10)
+        max_cache = max(16, int(CFG.MAX_HISTORY_LIMIT))
+        if len(items) > max_cache_items:
+            return
+        cache, cache_lock = self._setup_tx_history_cache()
+        now = time.time()
+        with cache_lock:
+            cache[target_spk_hex] = {
+                "ts": now,
+                "tip_height": tip_height,
+                "tip_hash": tip_hash,
+                "mem_seq": mem_seq,
+                "items": items,
+            }
+            cache.move_to_end(target_spk_hex)
+            while len(cache) > max_cache:
+                cache.popitem(last=False)
 
-        tip_hash = self._bhash_hex(chain[-1]) if chain else ""
-        mem_seq = getattr(mempool, "change_seq", mem_seq)
+    def _extract_tx_history_item(self, tx, where, h_or_none, timestamp, target_spk_hex, addr, opmap_chain, opmap_mem, tip_height):
+        txid = tx.txid.hex() if getattr(tx, "txid", None) else ""
+        is_cb = self._is_coinbase_tx(tx)
+        conf = 0
+        height = None
+        if where == "chain":
+            height = int(h_or_none or 0)
+            conf = max(0, tip_height - height + 1)
 
-        opmap_chain, opmap_mem = self._build_outpoint_map(chain, mem)
-        items = []
-
-        def _append_item(tx, where, h_or_none, timestamp):
-            txid = tx.txid.hex() if getattr(tx, "txid", None) else ""
-            is_cb = self._is_coinbase_tx(tx)
-            conf = 0
-            height = None
-            if where == "chain":
-                height = int(h_or_none or 0)
-                conf = max(0, tip_height - height + 1)
-
-            received_to_addr = 0
-            main_recipient_spk, max_rec_amt = None, -1
-            for o in getattr(tx, "outputs", []) or []:
-                amt = int(getattr(o, "amount", 0))
-                spk_hex = self._txout_to_spk_hex(o) or ""
-                if spk_hex == target_spk_hex:
-                    received_to_addr += amt
-                else:
-                    if amt > max_rec_amt:
-                        max_rec_amt = amt
-                        main_recipient_spk = spk_hex
-
-            spent_from_addr = 0
-            sources = set()
-            for tin in getattr(tx, "inputs", []) or []:
-                key = self._txin_prevkey(tin)
-                if where == "mempool":
-                    amt_spk = opmap_mem.get(key) or opmap_chain.get(key)
-                else:
-                    amt_spk = opmap_chain.get(key)
-                if not amt_spk:
-                    continue
-                amt_prev, spk_prev = amt_spk
-                if spk_prev == target_spk_hex:
-                    spent_from_addr += int(amt_prev)
-                elif spk_prev:
-                    sources.add(spk_prev)
-
-            if spent_from_addr > 0:
-                net_amt = spent_from_addr - received_to_addr
-                if net_amt < 0:
-                    net_amt = 0
-                dirn = "out"
-                frm = addr
-                to = spkhex_to_address(main_recipient_spk) if main_recipient_spk else None
-                if to == addr:
-                    to = None
-            elif received_to_addr > 0:
-                dirn = "in"
-                net_amt = received_to_addr
-                frm = "coinbase"
-                if not is_cb and sources:
-                    src_spk = next(iter(sources))
-                    frm = spkhex_to_address(src_spk)
-                to  = addr
+        received_to_addr = 0
+        main_recipient_spk, max_rec_amt = None, -1
+        for o in getattr(tx, "outputs", []) or []:
+            amt = int(getattr(o, "amount", 0))
+            spk_hex = self._txout_to_spk_hex(o) or ""
+            if spk_hex == target_spk_hex:
+                received_to_addr += amt
             else:
-                return
+                if amt > max_rec_amt:
+                    max_rec_amt = amt
+                    main_recipient_spk = spk_hex
 
-            st = "unconfirmed" if where == "mempool" else "confirmed"
-            items.append({
-                "txid": txid,
-                "direction": dirn,
-                "amount": int(net_amt),
-                "status": st,
-                "confirmations": conf,
-                "height": height,
-                "from": frm,
-                "to": to,
-                "timestamp": timestamp,
-            })
+        spent_from_addr = 0
+        sources = set()
+        for tin in getattr(tx, "inputs", []) or []:
+            key = self._txin_prevkey(tin)
+            amt_spk = opmap_chain.get(key)
+            if where == "mempool":
+                amt_spk = opmap_mem.get(key) or amt_spk
+            if not amt_spk:
+                continue
+            amt_prev, spk_prev = amt_spk
+            if spk_prev == target_spk_hex:
+                spent_from_addr += int(amt_prev)
+            elif spk_prev:
+                sources.add(spk_prev)
 
-        for tx in mem:
-            _append_item(tx, "mempool", None, int(time.time()))
+        if spent_from_addr > 0:
+            net_amt = spent_from_addr - received_to_addr
+            if net_amt < 0:
+                net_amt = 0
+            dirn = "out"
+            frm = addr
+            to = spkhex_to_address(main_recipient_spk) if main_recipient_spk else None
+            if to == addr:
+                to = None
+        elif received_to_addr > 0:
+            dirn = "in"
+            net_amt = received_to_addr
+            frm = "coinbase"
+            if not is_cb and sources:
+                src_spk = next(iter(sources))
+                frm = spkhex_to_address(src_spk)
+            to = addr
+        else:
+            return None
 
-        for b in chain:
-            h = int(getattr(b, "height", 0))
-            block_timestamp = int(getattr(b, "timestamp", 0))
-            for tx in getattr(b, "transactions", []) or []:
-                _append_item(tx, "chain", h, block_timestamp)
-                
+        st = "unconfirmed" if where == "mempool" else "confirmed"
+        return {
+            "txid": txid,
+            "direction": dirn,
+            "amount": int(net_amt),
+            "status": st,
+            "confirmations": conf,
+            "height": height,
+            "from": frm,
+            "to": to,
+            "timestamp": timestamp,
+        }
+
+    def _deduplicate_and_sort_history_items(self, items: list[dict]) -> list[dict]:
         by_id = {}
         for it in items:
             tid = it.get("txid")
@@ -306,32 +293,59 @@ class HistoryMixin:
             rank_new  = (it.get("status") == "confirmed", int(it.get("height") or -1))
             if rank_new > rank_prev:
                 by_id[tid] = it
-        items = list(by_id.values())
-
+                
+        unique_items = list(by_id.values())
+        
         def _key(it):
             st = 0 if it["status"] == "unconfirmed" else 1
             h  = it["height"] if it["height"] is not None else -1
             return (st, -h)
-        items.sort(key=_key)
+            
+        unique_items.sort(key=_key)
+        return unique_items
 
-        # cache
-        if len(items) <= max_cache_items:
-            now = time.time()
-            with cache_lock:
-                cache[target_spk_hex] = {
-                    "ts": now,
-                    "tip_height": tip_height,
-                    "tip_hash": tip_hash,
-                    "mem_seq": mem_seq,
-                    "items": items,
-                }
-                cache.move_to_end(target_spk_hex)
-                while len(cache) > max_cache:
-                    cache.popitem(last=False)
-                    
-        end = time.perf_counter()
-        result = round((end - start) * 1000.0, 3)
-        if result > 25.0:
-            log.warning("[_get_tx_history] Benchmark : %.3f ms", result)
+    def _get_tx_history(self, address: str, limit: int = 50, offset: int = 0, direction: str | None = None, status: str | None = None) -> dict:
+        addr, target_spk_hex, err_result = self._validate_history_params(address, limit, offset)
+        if err_result:
+            return err_result
+
+        mempool = getattr(self.broadcast, "mempool", None)
+        mem_seq = getattr(mempool, "change_seq", 0)
+
+        with self.broadcast.lock:
+            chain_ref = self.broadcast.blockchain.chain
+            tip_height = int(self.broadcast.blockchain.height)
+            tip_hash = self._bhash_hex(chain_ref[-1]) if chain_ref else ""
+
+        cached_items = self._get_history_from_cache(target_spk_hex, tip_height, tip_hash, mem_seq)
+        if cached_items is not None:
+            return self._slice_items(cached_items, limit, offset, direction, status)
+
+        with self.broadcast.lock:
+            chain = list(self.broadcast.blockchain.chain)
+            tip_height = int(self.broadcast.blockchain.height)
+            mem = self.broadcast.mempool.get_all_txs()
+
+        tip_hash = self._bhash_hex(chain[-1]) if chain else ""
+        mem_seq = getattr(mempool, "change_seq", mem_seq)
+
+        opmap_chain, opmap_mem = self._build_outpoint_map(chain, mem)
+        items = []
+
+        for tx in mem:
+            item = self._extract_tx_history_item(tx, "mempool", None, int(time.time()), target_spk_hex, addr, opmap_chain, opmap_mem, tip_height)
+            if item:
+                items.append(item)
+
+        for b in chain:
+            h = int(getattr(b, "height", 0))
+            block_timestamp = int(getattr(b, "timestamp", 0))
+            for tx in getattr(b, "transactions", []) or []:
+                item = self._extract_tx_history_item(tx, "chain", h, block_timestamp, target_spk_hex, addr, opmap_chain, opmap_mem, tip_height)
+                if item:
+                    items.append(item)
+
+        items = self._deduplicate_and_sort_history_items(items)
+        self._save_history_to_cache(target_spk_hex, items, tip_height, tip_hash, mem_seq)
         
-        return _slice_items(items)
+        return self._slice_items(items, limit, offset, direction, status)

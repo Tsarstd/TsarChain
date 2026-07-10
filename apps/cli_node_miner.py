@@ -36,10 +36,10 @@ from datetime import datetime
 
 # ---------------- Local Project ----------------
 from tsarchain.utils import config as CFG
-from tsarchain.utils.cosmetic import interface as COL
+from tsarchain.miner.cosmetic import interface as COL
+from tsarchain.miner.cosmetic.thread_check import get_thread_monitor
+from tsarchain.miner.cosmetic.tui import MinerTUI, create_tui_logger
 from tsarchain.miner.orchestrator import NodeRunner, SimpleMiner, set_clog_func
-from tsarchain.utils.cosmetic.tui import MinerTUI, create_tui_logger
-from tsarchain.utils.cosmetic.thread_check import get_thread_monitor
 
 from tsarchain.utils.tsar_logging import setup_logging, get_ctx_logger
 log = get_ctx_logger("apps.cli_node_miner")

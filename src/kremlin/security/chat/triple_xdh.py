@@ -212,29 +212,34 @@ class ChatManager:
     def lookup_pub(self, addr: str, cb: Callable[[Optional[str]], None]) -> None:
         a = COM.canon(addr)
         if a in self.pub_cache:
-            cb(self.pub_cache[a]); return
+            cb(self.pub_cache[a])
+            return
+        
+        self.rpc_send({"type": "CHAT_LOOKUP_PUB", "address": a}, lambda resp: self._handle_lookup_response(a, resp, cb))
 
-        def _on(resp: Optional[Dict[str, Any]]):
-            pub = None
-            last_seen = None
-            if resp and resp.get("type") in ("CHAT_PUBKEY", "CHAT_PUB"):
-                pub = resp.get("pubkey") or resp.get("chat_pub")
-                ts_val = resp.get("last_seen")
-                if isinstance(ts_val, (int, float)):
-                    last_seen = int(ts_val)
-                    self.presence_ts[a] = last_seen
-                    if callable(self.on_partner_presence):
-                        try:
-                            self.on_partner_presence(a, last_seen)
-                        except Exception:
-                            log.exception("Unhandled exception")
-            if pub:
-                old = self.pub_cache.get(a)
-                self.pub_cache[a] = pub
-                if old and old != pub and callable(self.on_partner_key_changed):
-                    self.on_partner_key_changed(a, old, pub)
-            cb(pub)
-        self.rpc_send({"type": "CHAT_LOOKUP_PUB", "address": a}, _on)
+    def _handle_lookup_response(self, addr: str, resp: Optional[Dict[str, Any]], cb: Callable[[Optional[str]], None]) -> None:
+        pub = None
+        if resp and resp.get("type") in ("CHAT_PUBKEY", "CHAT_PUB"):
+            pub = resp.get("pubkey") or resp.get("chat_pub")
+            self._update_presence_from_lookup(addr, resp)
+            
+        if pub:
+            old = self.pub_cache.get(addr)
+            self.pub_cache[addr] = pub
+            if old and old != pub and callable(self.on_partner_key_changed):
+                self.on_partner_key_changed(addr, old, pub)
+        cb(pub)
+
+    def _update_presence_from_lookup(self, addr: str, resp: Dict[str, Any]) -> None:
+        ts_val = resp.get("last_seen")
+        if isinstance(ts_val, (int, float)):
+            last_seen = int(ts_val)
+            self.presence_ts[addr] = last_seen
+            if callable(self.on_partner_presence):
+                try:
+                    self.on_partner_presence(addr, last_seen)
+                except Exception:
+                    log.exception("Unhandled exception")
 
     def expected_pub_or_lookup(self, addr: str) -> Optional[str]:
         a = COM.canon(addr)
@@ -250,75 +255,91 @@ class ChatManager:
         me = COM.canon(me_addr)
         peer = COM.canon(peer_addr)
         if self._get_session(me, peer):
-            cb(None); return
+            cb(None)
+            return
 
         self._ensure_prekey_inventory(me)
         my_sk_hex, my_pk_hex = self._get_chat_dh(me)   # identity (IK)
 
         def _on_bundle(resp: Optional[Dict[str, Any]]):
-            if not resp or resp.get("type") != "CHAT_PREKEY_BUNDLE":
-                cb("no_bundle"); return
-
-            b = resp.get("bundle") or {}
-            rik = (b.get("ik") or "").lower()          # receiver identity
-            spk = (b.get("spk") or "").lower()         # signed prekey
-            opk = (b.get("opk") or "").lower()         # optional one-time
-            spend_pub = (b.get("spend_pub") or "").lower()
-            sig_hex = (b.get("sig") or "").lower()
-
-            if not spend_pub:
-                log.warning("[ensure_session] bundle missing spend_pub for %s", peer)
-                cb("bundle_missing_spend_pub"); return
-
-            if len(spend_pub) != 66 or any(c not in "0123456789abcdef" for c in spend_pub):
-                log.warning("[ensure_session] spend_pub invalid format for %s", peer)
-                cb("bundle_invalid_spend_pub"); return
-
-            if not sig_hex:
-                log.warning("[ensure_session] bundle missing SPK signature for %s", peer)
-                cb("bundle_missing_spk_sig"); return
-
-            try:
-                vk = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(spend_pub))
-                payload = CFG.CHAT_SPK + bytes.fromhex(spk) + b"|" + bytes.fromhex(spend_pub)
-                vk.verify(bytes.fromhex(sig_hex), payload, ec.ECDSA(hashes.SHA256()))
-            except Exception as e:
-                log.warning("[ensure_session] SPK signature verify failed for %s: %s", peer, e)
-                cb("bundle_spk_verify_failed"); return
-
-            # 2) X3DH derive
-            eph = x25519.X25519PrivateKey.generate()
-            iks = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_sk_hex))
-            ikr = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(rik))
-            spkr= x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(spk))
-            dh1 = iks.exchange(spkr)              # iks × spkr
-            dh2 = eph.exchange(ikr)               # EPh × ikr
-            dh3 = eph.exchange(spkr)              # EPh × spkr
-            secret = dh1 + dh2 + dh3
-
-            if opk:
-                opkr = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(opk))
-                secret += iks.exchange(opkr)      # optional iks x opkr
-
-            rk = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:x3dh:v1").derive(secret)
-            sess = RatchetSession.init_as_initiator(
-                root_key=rk,
-                my_identity=my_pk_hex,
-                their_identity=rik,
-                my_ratchet_priv=eph,
-                their_ratchet_pub_hex=spk,
-                my_static_hex=my_pk_hex,
-            )
-
-            key = self._session_key(me, peer)
-            self._sessions[key] = sess
-            self._persist_session(me, peer, sess)
-
-            if opk:
-                self._pending_used_opk[key] = opk
-            cb(None)
+            self._process_prekey_bundle(resp, me, peer, my_sk_hex, my_pk_hex, cb)
 
         self.rpc_send({"type":"CHAT_GET_PREKEY","address": peer}, _on_bundle)
+
+    def _process_prekey_bundle(self, resp: Optional[Dict[str, Any]], me: str, peer: str, my_sk_hex: str, my_pk_hex: str, cb: Callable[[Optional[str]],None]) -> None:
+        if not resp or resp.get("type") != "CHAT_PREKEY_BUNDLE":
+            cb("no_bundle")
+            return
+
+        b = resp.get("bundle") or {}
+        err = self._validate_prekey_bundle(peer, b)
+        if err:
+            cb(err)
+            return
+
+        self._derive_x3dh_session(me, peer, b, my_sk_hex, my_pk_hex)
+        cb(None)
+
+    def _validate_prekey_bundle(self, peer: str, b: Dict[str, Any]) -> Optional[str]:
+        spend_pub = (b.get("spend_pub") or "").lower()
+        sig_hex = (b.get("sig") or "").lower()
+        spk = (b.get("spk") or "").lower()
+
+        if not spend_pub:
+            log.warning("[ensure_session] bundle missing spend_pub for %s", peer)
+            return "bundle_missing_spend_pub"
+
+        if len(spend_pub) != 66 or any(c not in "0123456789abcdef" for c in spend_pub):
+            log.warning("[ensure_session] spend_pub invalid format for %s", peer)
+            return "bundle_invalid_spend_pub"
+
+        if not sig_hex:
+            log.warning("[ensure_session] bundle missing SPK signature for %s", peer)
+            return "bundle_missing_spk_sig"
+
+        try:
+            vk = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(spend_pub))
+            payload = CFG.CHAT_SPK + bytes.fromhex(spk) + b"|" + bytes.fromhex(spend_pub)
+            vk.verify(bytes.fromhex(sig_hex), payload, ec.ECDSA(hashes.SHA256()))
+        except Exception as e:
+            log.warning("[ensure_session] SPK signature verify failed for %s: %s", peer, e)
+            return "bundle_spk_verify_failed"
+        return None
+
+    def _derive_x3dh_session(self, me: str, peer: str, b: Dict[str, Any], my_sk_hex: str, my_pk_hex: str) -> None:
+        rik = (b.get("ik") or "").lower()
+        spk = (b.get("spk") or "").lower()
+        opk = (b.get("opk") or "").lower()
+
+        eph = x25519.X25519PrivateKey.generate()
+        iks = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_sk_hex))
+        ikr = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(rik))
+        spkr= x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(spk))
+        dh1 = iks.exchange(spkr)
+        dh2 = eph.exchange(ikr)
+        dh3 = eph.exchange(spkr)
+        secret = dh1 + dh2 + dh3
+
+        if opk:
+            opkr = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(opk))
+            secret += iks.exchange(opkr)
+
+        rk = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:x3dh:v1").derive(secret)
+        sess = RatchetSession.init_as_initiator(
+            root_key=rk,
+            my_identity=my_pk_hex,
+            their_identity=rik,
+            my_ratchet_priv=eph,
+            their_ratchet_pub_hex=spk,
+            my_static_hex=my_pk_hex,
+        )
+
+        key = self._session_key(me, peer)
+        self._sessions[key] = sess
+        self._persist_session(me, peer, sess)
+
+        if opk:
+            self._pending_used_opk[key] = opk
 
     # ----------------------------------------------------------------------
     # Registration & Publishing
@@ -328,27 +349,25 @@ class ChatManager:
         addr = COM.canon(address)
         priv_hex = self.get_priv_for_chat(addr)
         if not priv_hex:
-            on_done({"error": "unlock_failed"}); return
+            on_done({"error": "unlock_failed"})
+            return
 
         spend_pub = COM.pub_hex_from_priv(COM.ec_priv_from_hex(priv_hex))
         _, chat_pk_hex = self._get_chat_dh(addr)
         ts_now = int(time.time())
-        reg_bytes = b"|".join([
-            b"CHAT_REG",
-            addr.encode(),
-            bytes.fromhex(spend_pub),
-            bytes.fromhex(chat_pk_hex),
-            str(ts_now).encode()
-        ])
+        
+        payload = self._build_register_payload(addr, priv_hex, spend_pub, chat_pk_hex, ts_now)
+        
+        def _on(resp: Optional[Dict[str, Any]]):
+            self._handle_register_response(addr, resp, chat_pk_hex, on_done)
+            
+        self.rpc_send(payload, _on)
+
+    def _build_register_payload(self, addr: str, priv_hex: str, spend_pub: str, chat_pk_hex: str, ts_now: int) -> Dict[str, Any]:
+        reg_bytes = b"|".join([b"CHAT_REG", addr.encode(), bytes.fromhex(spend_pub), bytes.fromhex(chat_pk_hex), str(ts_now).encode()])
         reg_sig = COM.sign(priv_hex, reg_bytes).lower()
 
-        pres_bytes = b"|".join([
-            b"CHAT_PRESENCE",
-            addr.encode(),
-            bytes.fromhex(chat_pk_hex),
-            bytes.fromhex(spend_pub),
-            str(ts_now).encode()
-        ])
+        pres_bytes = b"|".join([b"CHAT_PRESENCE", addr.encode(), bytes.fromhex(chat_pk_hex), bytes.fromhex(spend_pub), str(ts_now).encode()])
         presence_sig = COM.sign(priv_hex, pres_bytes).lower()
 
         bundle = {}
@@ -359,38 +378,9 @@ class ChatManager:
             payload_spk = CFG.CHAT_SPK + bytes.fromhex(spk_hex) + b"|" + bytes.fromhex(spend_pub)
             bundle["sig"] = COM.sign(priv_hex, payload_spk)
 
-        def _on(resp: Optional[Dict[str, Any]]):
-            if not resp:
-                on_done(resp)
-                return
-
-            if resp.get("error"):
-                err = str(resp.get("error"))
-                rtype = resp.get("type")
-                if err == "bad reg_sig":
-                    log.warning("[register] reg_sig refuse for %s ", addr)
-                elif err == "rate_limited":
-                    log.warning("[register] rate limited for %s (type=%s)", addr, rtype)
-                else:
-                    log.warning("[register] failed for %s error=%s type=%s", addr, err, rtype)
-                on_done(resp)
-                return
-
-            if resp.get("type") == "CHAT_REGISTERED":
-                self.pub_cache[addr] = chat_pk_hex
-                setattr(self, "_registered_addrs", getattr(self, "_registered_addrs", set()))
-                self._registered_addrs.add(addr)
-                self.publish_prekeys(addr, on_done=lambda _r: None)
-            on_done(resp)
-
         payload = {
-            "type": "CHAT_REGISTER",
-            "address": addr,
-            "spend_pub": spend_pub,
-            "chat_pub": chat_pk_hex,
-            "ts": ts_now,
-            "reg_sig": reg_sig,
-            "presence_sig": presence_sig,
+            "type": "CHAT_REGISTER", "address": addr, "spend_pub": spend_pub,
+            "chat_pub": chat_pk_hex, "ts": ts_now, "reg_sig": reg_sig, "presence_sig": presence_sig,
         }
         if bundle:
             if bundle.get("spk") and bundle.get("sig"):
@@ -398,8 +388,31 @@ class ChatManager:
                 payload["sig"] = (bundle.get("sig") or "").lower()
             if bundle.get("opk"):
                 payload["opk"] = (bundle.get("opk") or "").lower()
+        return payload
 
-        self.rpc_send(payload, _on)
+    def _handle_register_response(self, addr: str, resp: Optional[Dict[str, Any]], chat_pk_hex: str, on_done: Callable[[Optional[Dict[str, Any]]], None]) -> None:
+        if not resp:
+            on_done(resp)
+            return
+
+        if resp.get("error"):
+            err = str(resp.get("error"))
+            rtype = resp.get("type")
+            if err == "bad reg_sig":
+                log.warning("[register] reg_sig refuse for %s ", addr)
+            elif err == "rate_limited":
+                log.warning("[register] rate limited for %s (type=%s)", addr, rtype)
+            else:
+                log.warning("[register] failed for %s error=%s type=%s", addr, err, rtype)
+            on_done(resp)
+            return
+
+        if resp.get("type") == "CHAT_REGISTERED":
+            self.pub_cache[addr] = chat_pk_hex
+            setattr(self, "_registered_addrs", getattr(self, "_registered_addrs", set()))
+            self._registered_addrs.add(addr)
+            self.publish_prekeys(addr, on_done=lambda _r: None)
+        on_done(resp)
 
     def _ensure_registered(self, addr: str, cb: Callable[[Optional[str]], None]) -> None:
         regset = getattr(self, "_registered_addrs", set())
@@ -583,7 +596,7 @@ class ChatManager:
         me = COM.canon(address)
         priv_hex = self.get_priv_for_chat(me)
         if not priv_hex:
-            if on_done: on_done({"error": "unlock_failed"}); return
+            if on_done: on_done({"error": "unlock_failed"})
             return
 
         self._ensure_prekey_inventory(me)
@@ -591,114 +604,123 @@ class ChatManager:
         pull_sig = COM.sign(priv_hex, b"|".join([b"CHAT_PULL", me.encode(), str(ts_now).encode()]))
 
         def _on(resp):
-            if resp and resp.get("type") == "CHAT_NONE" and str(resp.get("error")) == "not_registered":
-                log.info("[poll] %s belum terdaftar, mencoba auto-register", me)
-                return self._ensure_registered(me, lambda err: (
-                    self.rpc_send({"type": "CHAT_PULL","address": me,"n": int(n),
-                                   "ts": ts_now, "pull_sig": pull_sig}, _on) if not err else (on_done and on_done({"error":"register_failed"}))
-            ))
-
-            try:
-                if not resp or resp.get("type") not in ("CHAT_ITEMS", "CHAT_NONE"):
-                    on_items([])
-                    if on_done: on_done(resp)
-                    return
-
-                items = resp.get("items") or []
-                out = []
-                my_sk_hex, _ = self._get_chat_dh(me)
-                for it in items:
-                    if (it.get("type") != "CHAT_ITEM"):
-                        if (it.get("type") == "CHAT_RCPT"):
-                            out.append({
-                                "type": "rcpt",
-                                "rcpt": it.get("rcpt"),
-                                "msg_id": it.get("msg_id"),
-                                "from": it.get("from"),
-                                "to": it.get("to"),
-                                "ts": it.get("ts"),
-                            })
-                        continue
-
-                    frm = (it.get("from") or "").lower()
-                    from_pub = (it.get("from_pub") or "").lower()
-                    from_static = (it.get("from_static") or "").lower()
-                    used_opk = (it.get("used_opk") or "").lower()
-                    mid = int(it.get("msg_id") or 0)
-                    ts = int(it.get("ts") or 0)
-                    enc = it.get("enc") or {}
-                    pn_val = int(it.get("ratchet_pn") or 0)
-                    n_val = int(it.get("ratchet_n") or 0)
-
-                    header = {
-                        "eph_pub": from_pub,
-                        "static_pub": from_static,
-                        "pn": pn_val,
-                        "n": n_val,
-                    }
-
-                    sess = self._get_session(me, frm)
-                    if not sess:
-                        provider_me = self._pwd_provider_for(me)
-                        pkinfo = COM.get_local_prekeys_for_recv(me, provider_me)
-                        spk_sk = (pkinfo.get("spk_sk") or "")
-                        if not spk_sk:
-                            raise ValueError("missing_spk_sk")
-                        exp_static = self.expected_pub_or_lookup(frm)
-                        if exp_static and exp_static != from_static:
-                            log.warning("[poll] static pub mismatch for %s expected=%s got=%s", frm, exp_static, from_static)
-                            if callable(self.on_partner_key_changed):
-                                try:
-                                    self.on_partner_key_changed(frm, exp_static, from_static)
-                                except Exception:
-                                    log.exception("partner key error")
-                            continue
-
-                        ikr = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_sk_hex))
-                        spks = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(spk_sk))
-                        iks_pub = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(from_static))
-                        eph_pub = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(from_pub))
-                        dh1 = spks.exchange(iks_pub)
-                        dh2 = ikr.exchange(eph_pub)
-                        dh3 = spks.exchange(eph_pub)
-                        secret = dh1 + dh2 + dh3
-                        if used_opk:
-                            opk_sk = COM.consume_opk_priv(me, used_opk, provider_me)
-                            if opk_sk:
-                                opks = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(opk_sk))
-                                secret += opks.exchange(iks_pub)
-                        rk = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:x3dh:v1").derive(secret)
-                        _, my_pk_hex = self._get_chat_dh(me)
-                        sess = RatchetSession.init_as_responder(
-                            root_key=rk,
-                            my_identity=my_pk_hex,
-                            their_identity=from_static,
-                            their_first_eph=from_pub,
-                            my_ratchet_priv=spks,
-                            my_static_hex=my_pk_hex,
-                        )
-                        key = self._session_key(me, frm)
-                        self._sessions[key] = sess
-                        self._persist_session(me, frm, sess)
-
-                    msg_text = None
-                    if sess:
-                        pt = sess.decrypt(enc, frm, me, mid, ts, header)
-                        if pt is not None:
-                            msg_text = COM.unpack(pt)
-                        self._persist_session(me, frm, sess)
-
-                    if msg_text is not None:
-                        out.append({"type": "chat", "from": frm, "text": msg_text, "msg_id": mid, "ts": ts, "to": me})
-                    else:
-                        log.debug("[poll] decrypt failed for %s mid=%s", frm, mid)
-
-                on_items(out)
-
-            finally:
-                if on_done: on_done(resp)
+            self._handle_poll_response(resp, me, n, ts_now, pull_sig, _on, on_items, on_done)
 
         self.rpc_send({"type": "CHAT_PULL", "address": me, "n": int(n), "ts": ts_now, "pull_sig": pull_sig}, _on)
+
+    def _handle_poll_response(self, resp, me, n, ts_now, pull_sig, _on, on_items, on_done) -> None:
+        if resp and resp.get("type") == "CHAT_NONE" and str(resp.get("error")) == "not_registered":
+            log.info("[poll] %s belum terdaftar, mencoba auto-register", me)
+            return self._ensure_registered(me, lambda err: (
+                self.rpc_send({"type": "CHAT_PULL","address": me,"n": int(n),
+                               "ts": ts_now, "pull_sig": pull_sig}, _on) if not err else (on_done and on_done({"error":"register_failed"}))
+            ))
+
+        try:
+            if not resp or resp.get("type") not in ("CHAT_ITEMS", "CHAT_NONE"):
+                on_items([])
+                return
+            items = resp.get("items") or []
+            out = self._process_chat_items(me, items)
+            on_items(out)
+        finally:
+            if on_done: on_done(resp)
+
+    def _process_chat_items(self, me: str, items: list) -> list:
+        out = []
+        my_sk_hex, _ = self._get_chat_dh(me)
+        for it in items:
+            if it.get("type") != "CHAT_ITEM":
+                if it.get("type") == "CHAT_RCPT":
+                    out.append({
+                        "type": "rcpt", "rcpt": it.get("rcpt"), "msg_id": it.get("msg_id"),
+                        "from": it.get("from"), "to": it.get("to"), "ts": it.get("ts"),
+                    })
+                continue
+
+            frm = (it.get("from") or "").lower()
+            mid = int(it.get("msg_id") or 0)
+            ts = int(it.get("ts") or 0)
+            enc = it.get("enc") or {}
+            
+            header = {
+                "eph_pub": (it.get("from_pub") or "").lower(),
+                "static_pub": (it.get("from_static") or "").lower(),
+                "pn": int(it.get("ratchet_pn") or 0),
+                "n": int(it.get("ratchet_n") or 0),
+            }
+
+            sess = self._get_session(me, frm)
+            if not sess:
+                sess = self._init_responder_session(me, frm, my_sk_hex, header, (it.get("used_opk") or "").lower())
+                if not sess:
+                    continue
+
+            msg_text = self._decrypt_chat_message(me, frm, sess, enc, mid, ts, header)
+            if msg_text is not None:
+                out.append({"type": "chat", "from": frm, "text": msg_text, "msg_id": mid, "ts": ts, "to": me})
+            else:
+                log.debug("[poll] decrypt failed for %s mid=%s", frm, mid)
+
+        return out
+
+    def _init_responder_session(self, me: str, frm: str, my_sk_hex: str, header: dict, used_opk: str):
+        provider_me = self._pwd_provider_for(me)
+        pkinfo = COM.get_local_prekeys_for_recv(me, provider_me)
+        spk_sk = (pkinfo.get("spk_sk") or "")
+        if not spk_sk:
+            raise ValueError("missing_spk_sk")
+        
+        from_static = header["static_pub"]
+        from_pub = header["eph_pub"]
+
+        exp_static = self.expected_pub_or_lookup(frm)
+        if exp_static and exp_static != from_static:
+            log.warning("[poll] static pub mismatch for %s expected=%s got=%s", frm, exp_static, from_static)
+            if callable(self.on_partner_key_changed):
+                try:
+                    self.on_partner_key_changed(frm, exp_static, from_static)
+                except Exception:
+                    log.exception("partner key error")
+            return None
+
+        ikr = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_sk_hex))
+        spks = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(spk_sk))
+        iks_pub = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(from_static))
+        eph_pub = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(from_pub))
+        dh1 = spks.exchange(iks_pub)
+        dh2 = ikr.exchange(eph_pub)
+        dh3 = spks.exchange(eph_pub)
+        secret = dh1 + dh2 + dh3
+
+        if used_opk:
+            opk_sk = COM.consume_opk_priv(me, used_opk, provider_me)
+            if opk_sk:
+                opks = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(opk_sk))
+                secret += opks.exchange(iks_pub)
+
+        rk = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:x3dh:v1").derive(secret)
+        _, my_pk_hex = self._get_chat_dh(me)
+        sess = RatchetSession.init_as_responder(
+            root_key=rk,
+            my_identity=my_pk_hex,
+            their_identity=from_static,
+            their_first_eph=from_pub,
+            my_ratchet_priv=spks,
+            my_static_hex=my_pk_hex,
+        )
+        key = self._session_key(me, frm)
+        self._sessions[key] = sess
+        self._persist_session(me, frm, sess)
+        return sess
+
+    def _decrypt_chat_message(self, me: str, frm: str, sess, enc, mid, ts, header):
+        pt = sess.decrypt(enc, frm, me, mid, ts, header)
+        if pt is not None:
+            msg_text = COM.unpack(pt)
+            self._persist_session(me, frm, sess)
+            return msg_text
+        return None
 
     # ----------------------------------------------------------------------
     # Chat DH Cache

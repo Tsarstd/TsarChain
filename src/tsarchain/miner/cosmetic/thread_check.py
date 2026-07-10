@@ -7,14 +7,17 @@ Thread Monitoring Module for TsarChain
 Real-time monitoring of active threads with TUI support
 """
 
-import threading
-import signal
-import time
 import sys
-from typing import Dict, List, Optional
-from dataclasses import dataclass
+import time
+import signal
+import threading
+
 from enum import Enum
+from dataclasses import dataclass
 from collections import defaultdict
+from typing import Dict, List, Optional
+
+from tsarchain.miner.cosmetic import interface as COL
 
 @dataclass
 class ThreadInfo:
@@ -182,8 +185,6 @@ class ThreadMonitor:
     
     def print_thread_report(self, detailed: bool = False) -> None:
         """Print a report of current threads"""
-        from tsarchain.utils.cosmetic import interface as COL
-        
         threads = self.get_all_threads()
         counts = self.get_thread_counts()
         

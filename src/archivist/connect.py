@@ -125,47 +125,48 @@ def _scan_nodes(start: int = CFG.PORT_START, end: int = CFG.PORT_END, manual_nod
 
     found: List[Tuple[str,int]] = []
     for ip, port in uniq:
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(CFG.CONNECT_TIMEOUT_SCAN)
-                s.connect((ip, port))
-
-                ping_env = build_envelope(
-                    {"type": "PING"},
-                    ctx,
-                    extra={"pubkey": pub_hex}
-                )
-
-                chan = SecureChannel(
-                    s, role="client",
-                    node_id=node_id, node_pub=pub_hex, node_priv=priv_hex,
-                    get_pinned=lambda nid: _STOR_PEER_KEYS.get(nid),
-                    set_pinned=lambda nid, pk: (_STOR_PEER_KEYS.__setitem__(nid, pk), _save_stor_peer_keys())[-1]
-                )
-                chan.handshake()
-                chan.send(json.dumps(ping_env).encode("utf-8"))
-
-                raw = chan.recv(CFG.CONNECT_TIMEOUT_SCAN)
-                if not raw:
-                    continue
-
-                outer = json.loads(raw.decode("utf-8"))
-                if is_envelope(outer):
-                    inner = verify_and_unwrap(outer, lambda nid: None)
-                    if isinstance(inner, dict) and inner.get("type") == "PONG":
-                        found.append((ip, port))
-                        continue
-                else:
-                    if (not CFG.ENVELOPE_REQUIRED) and isinstance(outer, dict) and outer.get("type") == "PONG":
-                        found.append((ip, port))
-                        continue
-
-        except Exception as e:
-            log.debug("Scan node %s:%s gagal: %s", ip, port, e)
-            continue
+        if _ping_node(ip, port, node_id, pub_hex, priv_hex, ctx):
+            found.append((ip, port))
 
     log.info("_scan_nodes: ditemukan %d storage node", len(found))
     return found
+
+def _ping_node(ip: str, port: int, node_id: str, pub_hex: str, priv_hex: str, ctx: dict) -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(CFG.CONNECT_TIMEOUT_SCAN)
+            s.connect((ip, port))
+
+            ping_env = build_envelope(
+                {"type": "PING"},
+                ctx,
+                extra={"pubkey": pub_hex}
+            )
+
+            chan = SecureChannel(
+                s, role="client",
+                node_id=node_id, node_pub=pub_hex, node_priv=priv_hex,
+                get_pinned=lambda nid: _STOR_PEER_KEYS.get(nid),
+                set_pinned=lambda nid, pk: (_STOR_PEER_KEYS.__setitem__(nid, pk), _save_stor_peer_keys())[-1]
+            )
+            chan.handshake()
+            chan.send(json.dumps(ping_env).encode("utf-8"))
+
+            raw = chan.recv(CFG.CONNECT_TIMEOUT_SCAN)
+            if not raw:
+                return False
+
+            outer = json.loads(raw.decode("utf-8"))
+            if is_envelope(outer):
+                inner = verify_and_unwrap(outer, lambda nid: None)
+                if isinstance(inner, dict) and inner.get("type") == "PONG":
+                    return True
+            else:
+                if (not CFG.ENVELOPE_REQUIRED) and isinstance(outer, dict) and outer.get("type") == "PONG":
+                    return True
+    except Exception as e:
+        log.debug("Scan node %s:%s gagal: %s", ip, port, e)
+    return False
 
 
 _STOR_PEER_KEYS = _load_stor_peer_keys()

@@ -3,7 +3,12 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
 
-import psutil, platform, shutil, platform, shutil, subprocess, sys, os
+import sys
+import psutil
+import shutil
+import platform
+import subprocess
+
 from colorama import init
 
 def print_banner():
@@ -166,11 +171,6 @@ def print_system_snapshot(cores_hint: int | None = None):
 
         phys = psutil.cpu_count(logical=False) or 0
         logi = psutil.cpu_count(logical=True) or 0
-        try:
-            la = os.getloadavg()  # Unix
-            la_str = f"{la[0]:.2f} {la[1]:.2f} {la[2]:.2f}"
-        except Exception:
-            la_str = "n/a"
 
         print(f"{BOLD}{TXT_HEADER}{BG_HEADER}                      Your Sovereign                     {RESET}")
         print(f"{BOLD}{TXT_HEADER}{BG_HEADER}                      Specifications                     {RESET}")
@@ -191,12 +191,12 @@ def print_system_snapshot(cores_hint: int | None = None):
         print(f"{BOLD}{TXT_INFO}{BG_WHITE}  Disk     {RESET}{BOLD}{TXT_INFO}{BG_GREY} {_human_bytes(du.free)} free of {_human_bytes(du.total)}                     {RESET}")
         print(f"{BOLD}{TXT_INFO}{BG_GREY}  OS       {RESET}{BOLD}{TXT_INFO}{BG_WHITE} {uname.system} {uname.release} ({uname.machine})                           {RESET}")
         print(f"{BOLD}{TXT_INFO}{BG_WHITE}  Python   {RESET}{BOLD}{TXT_INFO}{BG_GREY} {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}                                       {RESET}")
-        print(f" " * 57)
+        print(" " * 57)
     except Exception as e:
         print(f"[snapshot] failed: {e}")
 
 def get_user_input():
-    print(f" ")
+    print(" ")
     print(f"{BOLD}{TXT_HEADER}{BG_HEADER}                Your Sovereignty              {RESET}")
     print(f"{BOLD}{TXT_HEADER}{BG_HEADER}                    Identity                  {RESET}")
 
@@ -217,7 +217,7 @@ def get_user_input():
             print(f"{BG_WHITE} Example: tsar1qyourwalletaddresshere {RESET}")
 
     # Input CPU cores
-    print(f" ")
+    print(" ")
     print(f"{BOLD}{TXT_HEADER}{BG_HEADER}       Input Your CPU Power      {RESET}")
     print(f"{BOLD}{BG_HEADER}                                 {RESET}")
     

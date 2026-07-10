@@ -124,38 +124,49 @@ class StorageServer:
             raw = recv_message(conn, timeout=float(CFG.HANDSHAKE_TIMEOUT), max_len=CFG.GRAFFITI_MAX_MSG_BYTES)
             if not raw:
                 return
-            outer = json.loads(raw.decode("utf-8"))
-            identity = None
-            if is_envelope(outer):
-                msg = verify_and_unwrap(outer, lambda nid: None)
-                identity = str(outer.get("from") or "").strip().lower() or None
-            else:
-                msg = outer if isinstance(outer, dict) else {}
-            wallet_ident = str(msg.get("wallet_addr") or msg.get("creator_addr") or "").strip().lower()
-            node_ident = str(msg.get("node_id") or "").strip().lower()
-            identity = wallet_ident or identity or node_ident or None
-            mtype = str(msg.get("type", "")).strip().upper() if isinstance(msg, dict) else ""
-            pow_obj = msg.get("pow") if isinstance(msg, dict) else None
+                
+            msg, mtype, identity, pow_obj = self._parse_incoming_message(raw)
+            
             decision = self.guard.allow(ip, mtype, identity=identity, pow_obj=pow_obj)
-            if not decision.get("ok"):
-                reason = str(decision.get("error", "forbidden"))
-                drop = bool(decision.get("drop"))
-                log.warning("[stor_guard] deny ip=%s type=%s reason=%s drop=%s", ip, mtype or "-", reason, drop)
-                if drop:
-                    return
-                resp_obj = {
-                    "type": mtype or "UNKNOWN",
-                    "status": "error",
-                    "reason": reason,
-                }
-                if "retry_after" in decision:
-                    resp_obj["retry_after"] = decision.get("retry_after")
-                if decision.get("pow_challenge"):
-                    resp_obj["pow_challenge"] = decision["pow_challenge"]
-                self._respond(conn, resp_obj)
+            if not self._enforce_guard(conn, ip, mtype, decision):
                 return
 
             resp = self._handle(msg)
             self._respond(conn, resp)
         finally:
             conn.close()
+
+    def _parse_incoming_message(self, raw: bytes):
+        outer = json.loads(raw.decode("utf-8"))
+        identity = None
+        if is_envelope(outer):
+            msg = verify_and_unwrap(outer, lambda nid: None)
+            identity = str(outer.get("from") or "").strip().lower() or None
+        else:
+            msg = outer if isinstance(outer, dict) else {}
+        wallet_ident = str(msg.get("wallet_addr") or msg.get("creator_addr") or "").strip().lower()
+        node_ident = str(msg.get("node_id") or "").strip().lower()
+        identity = wallet_ident or identity or node_ident or None
+        mtype = str(msg.get("type", "")).strip().upper() if isinstance(msg, dict) else ""
+        pow_obj = msg.get("pow") if isinstance(msg, dict) else None
+        return msg, mtype, identity, pow_obj
+
+    def _enforce_guard(self, conn, ip: str, mtype: str, decision: dict) -> bool:
+        if decision.get("ok"):
+            return True
+        reason = str(decision.get("error", "forbidden"))
+        drop = bool(decision.get("drop"))
+        log.warning("[stor_guard] deny ip=%s type=%s reason=%s drop=%s", ip, mtype or "-", reason, drop)
+        if drop:
+            return False
+        resp_obj = {
+            "type": mtype or "UNKNOWN",
+            "status": "error",
+            "reason": reason,
+        }
+        if "retry_after" in decision:
+            resp_obj["retry_after"] = decision.get("retry_after")
+        if decision.get("pow_challenge"):
+            resp_obj["pow_challenge"] = decision["pow_challenge"]
+        self._respond(conn, resp_obj)
+        return False

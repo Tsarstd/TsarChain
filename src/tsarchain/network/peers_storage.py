@@ -72,8 +72,8 @@ def _store_record(name: str, data: Dict) -> None:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
-        except (IOError, OSError) as e:
-            log.error(f"Failed to write JSON fallback for {name}: {e}")
+        except (IOError, OSError):
+            log.exception("Failed to write JSON fallback")
 
 
 # ======== SAVE & LOAD KEYS ==============

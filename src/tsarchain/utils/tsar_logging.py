@@ -30,13 +30,24 @@ if __name__ == "__main__":
 
 from __future__ import annotations
 
-import os, sys, logging, threading, queue, re, json, time, hashlib, platform, zipfile
+import os
+import re
+import sys
+import json
+import time
+import queue
+import hashlib
+import logging
+import zipfile
+import platform
+import threading
 import tkinter as tk
+
+from pathlib import Path
+from typing import Optional
 from collections import deque
 from tkinter import ttk, filedialog, messagebox
-from pathlib import Path
 from logging.handlers import RotatingFileHandler
-from typing import Optional
 
 from tsarchain.utils import config as CFG
 
@@ -822,28 +833,20 @@ class TsarLogViewer:
 # 4) Convenience APIs
 # =========================
 
-def start_log_gui(
-    log_file: Optional[str] = None,
-    attach_to_root: bool = True,
-    title: Optional[str] = None,) -> None:
+def start_log_gui(title: Optional[str] = None,) -> None:
     
     if tk is None:
         raise RuntimeError("Tkinter is not available in this environment.")
     root = tk.Tk()
     if title:
         root.title(title)
-    log_path = log_file
-    viewer = TsarLogViewer(root, queue_=queue.Queue(), log_file=log_path, attach_to_root=attach_to_root)
     root.mainloop()
 
-def launch_gui_in_thread(log_file: Optional[str] = None, attach_to_root: bool = True) -> threading.Thread:
+def launch_gui_in_thread() -> threading.Thread:
     def gui_wrapper():
         root = tk.Tk()
         root.title("Tsar Logging — Minimal GUI")
-        
-        log_queue = queue.Queue()
-        filter_queue = queue.Queue()
-        viewer = TsarLogViewer(root, queue_=log_queue, log_file=log_file, attach_to_root=attach_to_root, filter_queue=filter_queue)
+
         root.mainloop()
     
     t = threading.Thread(target=gui_wrapper, daemon=True)
@@ -941,4 +944,4 @@ if __name__ == "__main__":
     except Exception:
         pass
 
-    start_log_gui(log_file=args["file"], attach_to_root=bool(args["attach"]))
+    start_log_gui()

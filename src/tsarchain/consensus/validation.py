@@ -203,7 +203,15 @@ class ValidationMixin:
 
         spend_height = int(getattr(block, "height", 0))
 
-        # Guardrail: ensure each tx serializes and is not absurdly large
+        if not self._validate_tx_guardrails(txs, spend_height):
+            return False
+
+        if not self._validate_graffiti_rules(txs, cb, store):
+            return False
+
+        return self._validate_transactions_payload(block, txs, spend_height, cb, store)
+
+    def _validate_tx_guardrails(self, txs, block_height: int) -> bool:
         for tx in txs:
             raw_full = self._serialize_tx_cached(tx, include_witness=True)
             if raw_full is None:
@@ -216,9 +224,9 @@ class ValidationMixin:
                 weight, vsize, _base_size, _total_size = H.compute_tx_weight_vsize(tx)
             except Exception:
                 log.exception(
-                    "[validate_block] weight_calc_failed txid=%s height=%s",
+                    "[_validate_tx_guardrails] weight_calc_failed txid=%s height=%s",
                     getattr(tx, "txid", None),
-                    getattr(block, "height", None),
+                    block_height,
                 )
                 self._last_block_validation_error = "tx_weight_calc_failed"
                 return False
@@ -249,27 +257,29 @@ class ValidationMixin:
                     getattr(tx_out, "script_pubkey", None)
                 ):
                     return False
-
-        if not self._validate_graffiti_rules(txs, cb, store):
-            return False
-
-        return self._validate_transactions_payload(block, txs, spend_height, cb, store)
+        return True
 
     def _validate_graffiti_rules(self, txs, cb, store) -> bool:
-        # Graffiti rule: maximum one POST per block; if there is a POST, the block_id must match its art_id.
-        graffiti_posts = 0
-        first_art_id = None
         reg = getattr(store, "_graffiti_registry", None)
         if reg is None:
             reg = GraffitiRegistry()
+            
+        if not self._validate_graffiti_posts(txs, cb):
+            return False
+            
+        if not self._validate_graffiti_payouts(txs, reg):
+            return False
+            
+        return True
 
+    def _validate_graffiti_posts(self, txs, cb) -> bool:
+        graffiti_posts = 0
+        first_art_id = None
         for tx in txs[1:]:  # skip coinbase
             for tx_out in getattr(tx, "outputs", []):
                 spk = getattr(tx_out, "script_pubkey", None)
                 meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
-                if not meta:
-                    continue
-                if str(meta.get("event", "")).upper() != "POST":
+                if not meta or str(meta.get("event", "")).upper() != "POST":
                     continue
                 graffiti_posts += 1
                 if not first_art_id:
@@ -291,8 +301,9 @@ class ValidationMixin:
             if not cb_block_id or cb_block_id.strip().lower() != first_art_id:
                 self._last_block_validation_error = "block_id_mismatch_graffiti"
                 return False
+        return True
 
-        # Graffiti payout validation
+    def _validate_graffiti_payouts(self, txs, reg) -> bool:
         for tx in txs[1:]:
             paymap: dict[str, int] = {}
             for out in getattr(tx, "outputs", []):
@@ -300,71 +311,111 @@ class ValidationMixin:
                 if not addr:
                     continue
                 amt = int(getattr(out, "amount", 0))
-                if amt <= 0:
-                    continue
-                paymap[addr.strip().lower()] = paymap.get(addr.strip().lower(), 0) + amt
+                if amt > 0:
+                    paymap[addr.strip().lower()] = paymap.get(addr.strip().lower(), 0) + amt
 
             for out in getattr(tx, "outputs", []):
                 spk = getattr(out, "script_pubkey", None)
                 meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
                 if not meta or str(meta.get("event", "")).upper() != "PAYOUT":
                     continue
-                art_id = str(meta.get("art_id") or "").strip().lower()
-                if not art_id:
-                    self._last_block_validation_error = "payout_bad_art_id"
+                if not self._validate_single_payout(meta, paymap, reg):
                     return False
-                post = reg.get_post(art_id) if reg else None
-                if not post:
-                    self._last_block_validation_error = "payout_unknown_art"
-                    return False
-                stats = post.get("stats") or {}
-                pool_balance = int(stats.get("pool_balance", 0))
-                last_epoch = int(stats.get("last_paid_epoch", -1))
-                epoch = int(meta.get("epoch", -1))
+        return True
 
-                if epoch >= 0 and epoch <= last_epoch:
-                    self._last_block_validation_error = "payout_epoch_rewind"
-                    return False
+    def _validate_single_payout(self, meta: dict, paymap: dict[str, int], reg) -> bool:
+        art_id = str(meta.get("art_id") or "").strip().lower()
+        if not art_id:
+            self._last_block_validation_error = "payout_bad_art_id"
+            return False
+        post = reg.get_post(art_id) if reg else None
+        if not post:
+            self._last_block_validation_error = "payout_unknown_art"
+            return False
+        
+        stats = post.get("stats") or {}
+        pool_balance = int(stats.get("pool_balance", 0))
+        last_epoch = int(stats.get("last_paid_epoch", -1))
+        epoch = int(meta.get("epoch", -1))
 
-                if epoch >= 0:
-                    latest_proof = reg.get_latest_proof_epoch(art_id)
-                    if latest_proof < epoch:
-                        proof_epoch = int(meta.get("proof_epoch", -1))
-                        if proof_epoch is None or proof_epoch < 0:
-                            proof_height = int(
-                                meta.get("proof_height", meta.get("height", -1))
-                            )
-                            if proof_height >= 0:
-                                proof_epoch = GRAFFITI.compute_proof_epoch(proof_height)
-                        if proof_epoch is None or proof_epoch < epoch:
-                            self._last_block_validation_error = "payout_missing_proof"
-                            return False
+        if epoch >= 0 and epoch <= last_epoch:
+            self._last_block_validation_error = "payout_epoch_rewind"
+            return False
 
-                recs = meta.get("recipients") or []
-                if not isinstance(recs, list) or not recs:
-                    self._last_block_validation_error = "payout_no_recipients"
-                    return False
-                total_req = 0
-                for rec in recs:
-                    addr = (
-                        str(rec.get("addr") or rec.get("address") or "").strip().lower()
-                    )
-                    amt_req = int(rec.get("amount", 0))
-                    if not addr or amt_req <= 0:
-                        self._last_block_validation_error = "payout_bad_recipient"
-                        return False
-                    total_req += amt_req
-                    paid = paymap.get(addr, 0)
-                    if paid < amt_req:
-                        self._last_block_validation_error = "payout_shortfall"
-                        return False
-                if total_req > pool_balance:
-                    self._last_block_validation_error = "payout_exceeds_pool"
-                    return False
+        if epoch >= 0 and not self._validate_payout_proof(meta, epoch, art_id, reg):
+            return False
 
+        recs = meta.get("recipients") or []
+        if not isinstance(recs, list) or not recs:
+            self._last_block_validation_error = "payout_no_recipients"
+            return False
+            
+        total_req = 0
+        for rec in recs:
+            addr = str(rec.get("addr") or rec.get("address") or "").strip().lower()
+            amt_req = int(rec.get("amount", 0))
+            if not addr or amt_req <= 0:
+                self._last_block_validation_error = "payout_bad_recipient"
+                return False
+            total_req += amt_req
+            if paymap.get(addr, 0) < amt_req:
+                self._last_block_validation_error = "payout_shortfall"
+                return False
+                
+        if total_req > pool_balance:
+            self._last_block_validation_error = "payout_exceeds_pool"
+            return False
+            
+        return True
+
+    def _validate_payout_proof(self, meta: dict, epoch: int, art_id: str, reg) -> bool:
+        latest_proof = reg.get_latest_proof_epoch(art_id)
+        if latest_proof < epoch:
+            proof_epoch = int(meta.get("proof_epoch", -1))
+            if proof_epoch < 0:
+                proof_height = int(meta.get("proof_height", meta.get("height", -1)))
+                if proof_height >= 0:
+                    proof_epoch = GRAFFITI.compute_proof_epoch(proof_height)
+            if proof_epoch is None or proof_epoch < epoch:
+                self._last_block_validation_error = "payout_missing_proof"
+                return False
         return True
 
     def _validate_transactions_payload(self, block, txs, spend_height, cb, store) -> bool:
+        snapshot = self._prepare_tx_snapshot(txs, store)
+        if snapshot is None:
+            return False
+
+        opts = {
+            "coinbase_maturity": int(CFG.COINBASE_MATURITY),
+            "max_sigops_per_tx": int(CFG.MAX_SIGOPS_PER_TX),
+            "max_sigops_per_block": int(CFG.MAX_SIGOPS_PER_BLOCK),
+            "max_tx_vsize": int(CFG.MAX_TX_VSIZE),
+            "min_tx_vsize": int(CFG.MIN_TX_VSIZE),
+            "max_tx_weight": int(CFG.MAX_TX_WEIGHT),
+            "min_tx_weight": int(CFG.MIN_TX_WEIGHT),
+            "max_tx_inputs": int(CFG.MAX_TX_INPUTS),
+            "max_tx_outputs": int(CFG.MAX_TX_OUTPUTS),
+            "enforce_low_s": True,
+        }
+
+        payload_txs, payload_utxo = self._build_block_payload_compact(txs, snapshot) or (None, None)
+        if payload_txs is not None and payload_utxo is not None:
+            ok, reason, fees = H.native_validate_block_txs_compact(
+                payload_txs, payload_utxo, spend_height, opts
+            )
+        else:
+            ok, reason, fees = H.native_validate_block_txs(
+                block.to_dict(), snapshot, spend_height, opts
+            )
+
+        if not ok:
+            self._last_block_validation_error = reason or "native_validation_failed"
+            return False
+
+        return self._verify_block_fees_and_rewards(block, txs, cb, fees)
+
+    def _prepare_tx_snapshot(self, txs, store) -> dict | None:
         store_lookup = getattr(store, "lookup_entry", None)
         utxo_view = None
         if not callable(store_lookup):
@@ -388,72 +439,32 @@ class ValidationMixin:
 
             for tx_input in getattr(tx, "inputs", []):
                 prev_txid_hex = self._txid_hex(
-                    getattr(tx_input, "txid", None)
-                    or getattr(tx_input, "prev_tx", None)
+                    getattr(tx_input, "txid", None) or getattr(tx_input, "prev_tx", None)
                 )
                 if prev_txid_hex is None:
                     self._last_block_validation_error = "tx_input_missing_prev_txid"
-                    return False
-                prev_index = int(
-                    getattr(tx_input, "vout", getattr(tx_input, "prev_index", 0))
-                )
+                    return None
+                prev_index = int(getattr(tx_input, "vout", getattr(tx_input, "prev_index", 0)))
                 if prev_txid_hex.lower() in processed_txids:
                     continue
                 snap_key = f"{prev_txid_hex.lower()}:{prev_index}"
                 if snap_key in snapshot:
                     continue
-                entry = self._resolve_prevout(
-                    store_lookup, utxo_view, prev_txid_hex.lower(), prev_index
-                )
+                entry = self._resolve_prevout(store_lookup, utxo_view, prev_txid_hex.lower(), prev_index)
                 if entry is None:
-                    self._last_block_validation_error = (
-                        f"prevout_missing {prev_txid_hex}:{prev_index}"
-                    )
-                    return False
+                    self._last_block_validation_error = f"prevout_missing {prev_txid_hex}:{prev_index}"
+                    return None
                 normalized = self._normalize_snapshot_entry(entry, snap_key)
                 if normalized is None:
                     self._last_block_validation_error = "native_snapshot_invalid_entry"
-                    return False
+                    return None
                 snapshot[snap_key] = normalized
 
             if txid_lower:
                 processed_txids.add(txid_lower)
+        return snapshot
 
-        opts = {
-            "coinbase_maturity": int(CFG.COINBASE_MATURITY),
-            "max_sigops_per_tx": int(CFG.MAX_SIGOPS_PER_TX),
-            "max_sigops_per_block": int(CFG.MAX_SIGOPS_PER_BLOCK),
-            "max_tx_vsize": int(CFG.MAX_TX_VSIZE),
-            "min_tx_vsize": int(CFG.MIN_TX_VSIZE),
-            "max_tx_weight": int(CFG.MAX_TX_WEIGHT),
-            "min_tx_weight": int(CFG.MIN_TX_WEIGHT),
-            "max_tx_inputs": int(CFG.MAX_TX_INPUTS),
-            "max_tx_outputs": int(CFG.MAX_TX_OUTPUTS),
-            "enforce_low_s": True,
-        }
-
-        payload_txs, payload_utxo = self._build_block_payload_compact(
-            txs, snapshot
-        ) or (None, None)
-        if payload_txs is not None and payload_utxo is not None:
-            ok, reason, fees = H.native_validate_block_txs_compact(
-                payload_txs,
-                payload_utxo,
-                spend_height,
-                opts,
-            )
-        else:
-            ok, reason, fees = H.native_validate_block_txs(
-                block.to_dict(),
-                snapshot,
-                spend_height,
-                opts,
-            )
-
-        if not ok:
-            self._last_block_validation_error = reason or "native_validation_failed"
-            return False
-
+    def _verify_block_fees_and_rewards(self, block, txs, cb, fees) -> bool:
         fees_list = []
         if isinstance(fees, (list, tuple)):
             if len(fees) != max(len(txs) - 1, 0):
@@ -474,9 +485,7 @@ class ValidationMixin:
 
         actual_cb = sum(int(o.amount) for o in getattr(cb, "outputs", []))
         if actual_cb != expected_cb:
-            self._last_block_validation_error = (
-                f"coinbase_amount_mismatch expected={expected_cb} actual={actual_cb}"
-            )
+            self._last_block_validation_error = f"coinbase_amount_mismatch expected={expected_cb} actual={actual_cb}"
             return False
 
         return True
@@ -500,49 +509,40 @@ class ValidationMixin:
     def _estimate_block_size(self, block: Block) -> Optional[int]:
         size = 80  # header
         for tx in block.transactions or []:
-            cached = getattr(tx, "_cached_raw_tx_w", None)
-            if isinstance(cached, (bytes, bytearray)):
-                size += len(cached)
-                continue
-            if hasattr(tx, "serialize") and callable(getattr(tx, "serialize", None)):
-                try:
-                    raw = tx.serialize()
-                    size += len(
-                        raw
-                        if isinstance(raw, (bytes, bytearray))
-                        else bytes.fromhex(raw)
-                    )
-                    continue
-                except Exception:
-                    log.debug(
-                        "[_estimate_block_size] tx.serialize failed", exc_info=True
-                    )
-            if hasattr(tx, "raw") and isinstance(
-                getattr(tx, "raw"), (bytes, bytearray)
-            ):
-                size += len(tx.raw)
-                continue
-            if hasattr(tx, "size_bytes"):
-                v = tx.size_bytes
-                if callable(v):
-                    size += int(v())
-                else:
-                    size += int(v)
-                continue
-            return None
+            tx_size = self._estimate_tx_size(tx)
+            if tx_size is None:
+                return None
+            size += tx_size
         return int(size)
+
+    def _estimate_tx_size(self, tx) -> Optional[int]:
+        cached = getattr(tx, "_cached_raw_tx_w", None)
+        if isinstance(cached, (bytes, bytearray)):
+            return len(cached)
+        
+        if hasattr(tx, "serialize") and callable(getattr(tx, "serialize", None)):
+            try:
+                raw = tx.serialize()
+                return len(raw if isinstance(raw, (bytes, bytearray)) else bytes.fromhex(raw))
+            except Exception:
+                log.debug("[_estimate_block_size] tx.serialize failed", exc_info=True)
+                
+        if hasattr(tx, "raw") and isinstance(getattr(tx, "raw"), (bytes, bytearray)):
+            return len(tx.raw)
+            
+        if hasattr(tx, "size_bytes"):
+            v = tx.size_bytes
+            return int(v()) if callable(v) else int(v)
+            
+        return None
 
     def _count_block_sigops(self, block: Block) -> Optional[int]:
         total = 0
         for tx in block.transactions or []:
-            if hasattr(tx, "sigops_count") and callable(
-                getattr(tx, "sigops_count", None)
-            ):
+            if hasattr(tx, "sigops_count") and callable(getattr(tx, "sigops_count", None)):
                 total += int(tx.sigops_count())
                 continue
-            if hasattr(tx, "count_sigops") and callable(
-                getattr(tx, "count_sigops", None)
-            ):
+            if hasattr(tx, "count_sigops") and callable(getattr(tx, "count_sigops", None)):
                 total += int(tx.count_sigops())
                 continue
             return None
@@ -560,9 +560,7 @@ class ValidationMixin:
         if self.chain and block.prev_block_hash != self.chain[-1].hash():
             self._last_block_validation_error = "prev_hash_mismatch"
             return False
-        if not self.chain and (
-            block.height != 0 or block.prev_block_hash != CFG.ZERO_HASH
-        ):
+        if not self.chain and (block.height != 0 or block.prev_block_hash != CFG.ZERO_HASH):
             self._last_block_validation_error = "bad_genesis_prevhash"
             return False
         if not self.chain and block.height == 0 and GENESIS_HASH is not None:
@@ -585,6 +583,17 @@ class ValidationMixin:
             self._last_block_validation_error = "difficulty_invalid"
             return False
         return True
+
+    def _check_known_invalid(self, block_hash_hex: str) -> bool:
+        invalid_set = getattr(self, "_known_invalid_blocks", None)
+        if isinstance(invalid_set, set) and block_hash_hex in invalid_set:
+            return True
+        return False
+
+    def _mark_invalid(self, block_hash_hex: str):
+        if not hasattr(self, "_known_invalid_blocks"):
+            self._known_invalid_blocks = set()
+        self._known_invalid_blocks.add(block_hash_hex)
 
     def _ensure_unique_txids(self, block: Block) -> bool:
         seen_txids = set()
@@ -638,16 +647,7 @@ class ValidationMixin:
         return None
 
     def _validate_graffiti_output(self, spk_obj) -> bool:
-        raw = None
-        if hasattr(spk_obj, "serialize"):
-            raw = spk_obj.serialize()
-        elif isinstance(spk_obj, (bytes, bytearray)):
-            raw = bytes(spk_obj)
-        elif isinstance(spk_obj, str):
-            try:
-                raw = bytes.fromhex(spk_obj)
-            except ValueError:
-                return True
+        raw = self._extract_raw_spk(spk_obj)
         if not raw:
             return True
         data = H.last_pushdata(raw)
@@ -660,31 +660,52 @@ class ValidationMixin:
         if not meta:
             self._last_block_validation_error = "graffiti_payload_invalid"
             return False
+            
         event = str(meta.get("event", "")).upper()
         if event == "POST":
-            size_val = int(meta.get("size", 0))
-            if size_val <= 0:
-                self._last_block_validation_error = "graffiti_size_invalid"
-                return False
-            if size_val > int(CFG.GRAFFITI_MAX_SIZE_BYTES):
-                self._last_block_validation_error = "graffiti_size_exceeds_limit"
-                return False
+            return self._validate_graffiti_post_event(meta)
         elif event == "COMMENT":
-            comment_len = int(meta.get("comment_len", 0))
-            if comment_len <= 0:
-                self._last_block_validation_error = "graffiti_comment_empty"
-                return False
-            if comment_len > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
-                self._last_block_validation_error = "graffiti_comment_too_large"
-                return False
-            amount = int(meta.get("amount", 0))
-            if amount < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
-                self._last_block_validation_error = "graffiti_comment_fee_too_low"
-                return False
-            tip = int(meta.get("tip", 0))
-            if tip < 0:
-                self._last_block_validation_error = "graffiti_comment_tip_negative"
-                return False
+            return self._validate_graffiti_comment_event(meta)
+        return True
+
+    def _extract_raw_spk(self, spk_obj) -> bytes | None:
+        if hasattr(spk_obj, "serialize"):
+            return spk_obj.serialize()
+        if isinstance(spk_obj, (bytes, bytearray)):
+            return bytes(spk_obj)
+        if isinstance(spk_obj, str):
+            try:
+                return bytes.fromhex(spk_obj)
+            except ValueError:
+                return None
+        return None
+
+    def _validate_graffiti_post_event(self, meta) -> bool:
+        size_val = int(meta.get("size", 0))
+        if size_val <= 0:
+            self._last_block_validation_error = "graffiti_size_invalid"
+            return False
+        if size_val > int(CFG.GRAFFITI_MAX_SIZE_BYTES):
+            self._last_block_validation_error = "graffiti_size_exceeds_limit"
+            return False
+        return True
+
+    def _validate_graffiti_comment_event(self, meta) -> bool:
+        comment_len = int(meta.get("comment_len", 0))
+        if comment_len <= 0:
+            self._last_block_validation_error = "graffiti_comment_empty"
+            return False
+        if comment_len > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
+            self._last_block_validation_error = "graffiti_comment_too_large"
+            return False
+        amount = int(meta.get("amount", 0))
+        if amount < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
+            self._last_block_validation_error = "graffiti_comment_fee_too_low"
+            return False
+        tip = int(meta.get("tip", 0))
+        if tip < 0:
+            self._last_block_validation_error = "graffiti_comment_tip_negative"
+            return False
         return True
 
     def _spk_to_address(self, spk_obj) -> str | None:
@@ -737,6 +758,14 @@ class ValidationMixin:
     def _legacy_lookup(self, snapshot_map, prev_txid_hex: str, prev_index: int):
         if not isinstance(snapshot_map, dict):
             return None
+            
+        entry = self._lookup_direct_keys(snapshot_map, prev_txid_hex, prev_index)
+        if entry is not None:
+            return entry
+            
+        return self._lookup_iteration(snapshot_map, prev_txid_hex, prev_index)
+
+    def _lookup_direct_keys(self, snapshot_map, prev_txid_hex: str, prev_index: int):
         key = f"{prev_txid_hex}:{int(prev_index)}"
         entry = snapshot_map.get(key) or snapshot_map.get(key.lower())
         if entry is not None:
@@ -744,35 +773,41 @@ class ValidationMixin:
         entry = snapshot_map.get(key.encode("utf-8"))
         if entry is not None:
             return entry
-        bucket = snapshot_map.get(prev_txid_hex) or snapshot_map.get(
-            prev_txid_hex.lower()
-        )
+            
+        bucket = snapshot_map.get(prev_txid_hex) or snapshot_map.get(prev_txid_hex.lower())
         if isinstance(bucket, dict) and int(prev_index) in bucket:
             return bucket[int(prev_index)]
+            
         tuple_key = (prev_txid_hex, int(prev_index))
         if tuple_key in snapshot_map:
             return snapshot_map[tuple_key]
-        tuple_b = (bytes.fromhex(prev_txid_hex), int(prev_index))
-        if tuple_b and tuple_b in snapshot_map:
-            return snapshot_map[tuple_b]
-        lookup_key_ci = key.lower()
-        if len(snapshot_map) <= 2048:
-            for candidate_key, candidate_value in snapshot_map.items():
-                if (
-                    isinstance(candidate_key, str)
-                    and candidate_key.lower() == lookup_key_ci
-                ):
+            
+        try:
+            tuple_b = (bytes.fromhex(prev_txid_hex), int(prev_index))
+            if tuple_b in snapshot_map:
+                return snapshot_map[tuple_b]
+        except Exception:
+            pass
+            
+        return None
+
+    def _lookup_iteration(self, snapshot_map, prev_txid_hex: str, prev_index: int):
+        if len(snapshot_map) > 2048:
+            return None
+            
+        lookup_key_ci = f"{prev_txid_hex}:{int(prev_index)}".lower()
+        for candidate_key, candidate_value in snapshot_map.items():
+            if isinstance(candidate_key, str) and candidate_key.lower() == lookup_key_ci:
+                return candidate_value
+                
+            if isinstance(candidate_key, tuple) and len(candidate_key) == 2:
+                txid_part, vout_part = candidate_key
+                if int(vout_part) != int(prev_index):
+                    continue
+                txid_cmp = txid_part.hex().lower() if isinstance(txid_part, (bytes, bytearray)) else str(txid_part).lower()
+                if txid_cmp == prev_txid_hex.lower():
                     return candidate_value
-                if isinstance(candidate_key, tuple) and len(candidate_key) == 2:
-                    txid_part, vout_part = candidate_key
-                    if int(vout_part) != int(prev_index):
-                        continue
-                    if isinstance(txid_part, (bytes, bytearray)):
-                        txid_cmp = txid_part.hex().lower()
-                    else:
-                        txid_cmp = str(txid_part).lower()
-                    if txid_cmp == prev_txid_hex.lower():
-                        return snapshot_map[candidate_key]
+                    
         return None
 
     def _resolve_prevout(self, store_lookup, utxo_view, prev_txid_hex: str, prev_index: int):

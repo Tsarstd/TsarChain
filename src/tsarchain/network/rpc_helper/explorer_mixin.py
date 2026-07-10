@@ -17,33 +17,26 @@ from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.user_rpc_helper.explorer_mixin")
 
 class ExplorerMixin:
-    @benchmark(label="GET_TX_DETAIL", threshold_ms=15.0)
-    def _get_tx_detail(self, txid_hex: str, src_tag: str | None = None) -> dict:
-        where, tx, height, timestamp, conf, chain, _, _ = self._find_tx_and_meta(txid_hex)
-        if tx is None:
-            return {"error": "tx not found", "txid": txid_hex}
-
-        opmap = self._build_outpoint_map(chain)
+    def _build_tx_inputs(self, tx, opmap: dict) -> tuple[list, int]:
         vin = []
         total_in = 0
-        is_coinbase = self._is_coinbase_tx(tx)
+        for tin in (getattr(tx, "inputs", []) or []):
+            key = self._txin_prevkey(tin)
+            amt, spk_hex = opmap.get(key, (None, None))
+            if amt is not None:
+                total_in += int(amt)
+            prev_txid = key.split(":")[0]
+            prev_index = int(key.split(":")[1]) if ":" in key else 0
+            addr_prev = spkhex_to_address(spk_hex) if spk_hex else None
+            vin.append({
+                "prev_txid": prev_txid,
+                "prev_index": prev_index,
+                "amount": None if amt is None else int(amt),
+                "address": addr_prev
+            })
+        return vin, total_in
 
-        if not is_coinbase:
-            for tin in (getattr(tx, "inputs", []) or []):
-                key = self._txin_prevkey(tin)
-                amt, spk_hex = opmap.get(key, (None, None))
-                if amt is not None:
-                    total_in += int(amt)
-                prev_txid = key.split(":")[0]
-                prev_index = int(key.split(":")[1]) if ":" in key else 0
-                addr_prev = spkhex_to_address(spk_hex) if spk_hex else None
-                vin.append({
-                    "prev_txid": prev_txid,
-                    "prev_index": prev_index,
-                    "amount": None if amt is None else int(amt),
-                    "address": addr_prev
-                })
-
+    def _build_tx_outputs(self, tx) -> tuple[list, int]:
         vout = []
         total_out = 0
         for n, o in enumerate(getattr(tx, "outputs", []) or []):
@@ -55,15 +48,8 @@ class ExplorerMixin:
                 meta = GRAFF.parse_from_script(spk)
                 if meta:
                     ev = str(meta.get("event", "")).upper()
-                    if ev == "POST":
-                        event_info = "POST"
-                    elif ev == "COMMENT":
-                        event_info = "COMMENT"
-                    elif ev == "PAYOUT":
-                        recipients = meta.get("recipients")
-                        if not isinstance(recipients, list):
-                            recipients = []
-                        event_info = "PAYOUT"
+                    if ev in ("POST", "COMMENT", "PAYOUT"):
+                        event_info = ev
             
             vout.append({
                 "index": n,
@@ -71,48 +57,46 @@ class ExplorerMixin:
                 "address": self._txout_to_address(o),
                 "event": event_info
             })
+        return vout, total_out
+
+    def _calculate_block_bonus(self, height: int, chain: list, opmap: dict) -> int | None:
+        block = next((b for b in chain if int(getattr(b, "height", 0)) == height), None)
+        if not block:
+            return None
+            
+        total_block_fee = 0
+        for tx_in_block in getattr(block, "transactions", []) or []:
+            if self._is_coinbase_tx(tx_in_block):
+                continue
+                
+            tx_total_in = sum(int(opmap.get(self._txin_prevkey(tin), (0, None))[0] or 0)
+                              for tin in getattr(tx_in_block, "inputs", []) or [])
+            tx_total_out = sum(int(getattr(o, "amount", 0))
+                               for o in getattr(tx_in_block, "outputs", []) or [])
+            
+            tx_fee = tx_total_in - tx_total_out
+            if tx_fee > 0:
+                total_block_fee += tx_fee
+                
+        return total_block_fee
+
+    @benchmark(label="GET_TX_DETAIL", threshold_ms=15.0)
+    def _get_tx_detail(self, txid_hex: str, src_tag: str | None = None) -> dict:
+        where, tx, height, timestamp, conf, chain, _, _ = self._find_tx_and_meta(txid_hex)
+        if tx is None:
+            return {"error": "tx not found", "txid": txid_hex}
+
+        opmap = self._build_outpoint_map(chain)
+        is_coinbase = self._is_coinbase_tx(tx)
+
+        vin, total_in = ([], 0) if is_coinbase else self._build_tx_inputs(tx, opmap)
+        vout, total_out = self._build_tx_outputs(tx)
 
         fee = None
         if not is_coinbase and vin and total_in >= total_out:
             fee = total_in - total_out
             
-        # ===== BONUS CALCULATED =====
-        # 'bonus' is an additional mining reward from transaction fees
-        bonus = None
-        if where == "chain":  # Only for confirmed transactions
-            block = None
-            for b in chain:
-                if int(getattr(b, "height", 0)) == height:
-                    block = b
-                    break
-            
-            if block:
-                total_block_fee = 0
-                for tx_in_block in getattr(block, "transactions", []) or []:
-                    if self._is_coinbase_tx(tx_in_block):
-                        continue
-
-                    tx_total_in = 0
-                    tx_total_out = 0
-                    
-                    # Inputs
-                    for tin_block in getattr(tx_in_block, "inputs", []) or []:
-                        key = self._txin_prevkey(tin_block)
-                        amt, _ = opmap.get(key, (0, None))
-                        tx_total_in += int(amt) if amt is not None else 0
-                    
-                    # Outputs
-                    for o_block in getattr(tx_in_block, "outputs", []) or []:
-                        tx_total_out += int(getattr(o_block, "amount", 0))
-                    
-                    # Fee = total input - total output
-                    tx_fee = tx_total_in - tx_total_out
-                    if tx_fee > 0:
-                        total_block_fee += tx_fee
-                
-                bonus = total_block_fee
-                
-        # ===== END BONUS =====
+        bonus = self._calculate_block_bonus(height, chain, opmap) if where == "chain" else None
             
         return {
             "type": "TX_DETAIL",
@@ -241,57 +225,29 @@ class ExplorerMixin:
         
         return {"txid": txid, "vin": [{} for _ in range(n_in)], "vout": vout_list}
 
-    def _serialize_block(self, b) -> dict:
-        def _to_hex(x):
-            if isinstance(x, (bytes, bytearray)):
-                return x.hex()
-            if isinstance(x, str):
-                return x
-            return None
+    def _to_hex_helper(self, x):
+        if isinstance(x, (bytes, bytearray)):
+            return x.hex()
+        if isinstance(x, str):
+            return x
+        return None
 
-        # block
-        height = getattr(b, "height")
-        prev_hash = self._prevhash_hex(b)
-        timestamp = getattr(b, "timestamp")
-        version = getattr(b, "version")
-        block_id = self._extract_block_id_from_block(b)
-        
-        # Nonce
-        nonce = getattr(b, "nonce")
-
-        # Merkle root
-        mroot = getattr(b, "merkle_root")
-        mroot_hex = _to_hex(mroot)
-        
-        # Bits
-        bits = getattr(b, "bits")
-        
-        # Chainwork & Difficulty
-        chainwork = getattr(b, "chainwork", None)
-        diff = getattr(b, "difficulty", None)
-
-        # Size estimation
-        size_bytes = estimate_block_size_bytes(b)
-        
-        # Transactions processing
-        txs = []
-        graffiti_posts, graffiti_comments, graffiti_payouts = [], [], []
+    def _process_block_txs(self, b) -> tuple[list, list, list, list]:
+        txs, posts, comments, payouts = [], [], [], []
         
         for tx in getattr(b, "transactions", []) or []:
             txs.append(self._serialize_tx_basic(tx))
-            txid_hex = _to_hex(getattr(tx, "txid"))
+            txid_hex = self._to_hex_helper(getattr(tx, "txid"))
             
             for tx_out in getattr(tx, "outputs", []) or []:
                 if not (spk := getattr(tx_out, "script_pubkey", None)):
                     continue
-                
-                meta = GRAFF.parse_from_script(spk) 
-                if not meta:
+                if not (meta := GRAFF.parse_from_script(spk)):
                     continue
                     
                 ev = str(meta.get("event", "")).upper()
                 if ev == "POST":
-                    graffiti_posts.append({
+                    posts.append({
                         "txid": txid_hex,
                         "sha256": meta.get("sha256"),
                         "size": meta.get("size"),
@@ -299,7 +255,7 @@ class ExplorerMixin:
                         "creator": meta.get("creator"),
                     })
                 elif ev == "COMMENT":
-                    graffiti_comments.append({
+                    comments.append({
                         "txid": txid_hex,
                         "art_id": meta.get("art_id"),
                         "comment_len": meta.get("comment_len"),
@@ -307,40 +263,45 @@ class ExplorerMixin:
                     })
                 elif ev == "PAYOUT":
                     recipients = meta.get("recipients", [])
-                    graffiti_payouts.append({
+                    payouts.append({
                         "txid": txid_hex,
                         "art_id": meta.get("art_id"),
                         "epoch": meta.get("epoch"),
                         "recipients": recipients if isinstance(recipients, list) else [],
                     })
+        return txs, posts, comments, payouts
 
-        # Graffiti in mempool count
-        graffiti_on_mempool = 0
-        if (mem := getattr(self, "mempool", None)):
+    def _get_mempool_graffiti_count(self) -> int:
+        count = 0
+        if mem := getattr(self, "mempool", None):
             for tx in mem.get_all_txs():
                 if any(GRAFF.parse_from_script(getattr(tx_out, "script_pubkey", None)) 
-                    for tx_out in getattr(tx, "outputs", []) or []):
-                    graffiti_on_mempool += 1
+                       for tx_out in getattr(tx, "outputs", []) or []):
+                    count += 1
+        return count
+
+    def _serialize_block(self, b) -> dict:
+        txs, graffiti_posts, graffiti_comments, graffiti_payouts = self._process_block_txs(b)
 
         return {
             "type": "BLOCK",
-            "block_id": block_id,
+            "block_id": self._extract_block_id_from_block(b),
             "hash": self._bhash_hex(b),
-            "prev_hash": prev_hash,
-            "height": height,
-            "time": timestamp,
-            "nonce": nonce,
-            "difficulty": diff,
-            "version": version,
-            "bits": bits,
-            "chainwork": chainwork,
-            "size_bytes": size_bytes,
-            "merkle_root": mroot_hex,
+            "prev_hash": self._prevhash_hex(b),
+            "height": getattr(b, "height"),
+            "time": getattr(b, "timestamp"),
+            "nonce": getattr(b, "nonce"),
+            "difficulty": getattr(b, "difficulty", None),
+            "version": getattr(b, "version"),
+            "bits": getattr(b, "bits"),
+            "chainwork": getattr(b, "chainwork", None),
+            "size_bytes": estimate_block_size_bytes(b),
+            "merkle_root": self._to_hex_helper(getattr(b, "merkle_root")),
             "tx": txs,
             "tx_count": len(txs),
             "graffiti": graffiti_posts,
             "comments": graffiti_comments,
             "payouts": graffiti_payouts,
             "payout_count": len(graffiti_payouts),
-            "graffiti_on_mempool": graffiti_on_mempool,
+            "graffiti_on_mempool": self._get_mempool_graffiti_count(),
         }

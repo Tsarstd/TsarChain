@@ -7,14 +7,15 @@ from __future__ import annotations
 
 import sys
 import time
+import queue
+import shutil
 import psutil
 import threading
-import shutil
-import queue
+
 from typing import Callable, Optional
 
-from ..cosmetic import interface as COL
-from ..cosmetic.thread_check import get_thread_monitor
+from . import interface as COL
+from .thread_check import get_thread_monitor
 
 
 def _human_bytes(n: float) -> str:
@@ -183,7 +184,7 @@ class MinerTUI:
                 )
                 
             parts.append(f"Uptime {uptime_str}")
-            line = (f" | ").join(parts)
+            line = (" | ").join(parts)
             try:
                 width = shutil.get_terminal_size((120, 20)).columns
             except Exception:

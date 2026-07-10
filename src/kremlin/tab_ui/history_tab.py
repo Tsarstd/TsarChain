@@ -102,7 +102,7 @@ class HistoryTab(tk.Frame):
 
         self._build_ui()
 
-    # ------------------------------------------------------------------- UI
+    # ---------------------------------- UI ---------------------------------
     def _build_ui(self) -> None:
         top = tk.Frame(self, bg=self.app.bg)
         top.pack(fill=tk.X, padx=12, pady=8)

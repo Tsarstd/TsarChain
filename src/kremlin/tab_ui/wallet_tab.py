@@ -295,8 +295,8 @@ class WalletController:
 class WalletsMixin:
     
     def _build_wallets_frame(self) -> None:
-        if not hasattr(self, "wallet_controller"):
-            self.wallet_controller = WalletController(self)
+        
+        self.wallet_controller = WalletController(self)
         f = tk.Frame(self.main, bg=self.bg)
         self.frames["wallets"] = f
 

@@ -60,7 +60,6 @@ BOOTSTRAP_MINER_ALLOW = {
     "HELLO", "GET_FULL_SYNC", "FULL_SYNC", "GET_HEADERS"
 }
 
-
 def process_message(
     self: "Network",
     message: dict[str, Any],
@@ -77,63 +76,10 @@ def process_message(
         return {"error": "missing or invalid 'type'"}
     mtype = mtype.strip().upper()
 
-    # ----------------------------------------------------------------------------------
-    # GUARDIANS: role-based gate + limits
-    # ----------------------------------------------------------------------------------
-
-    def _sanitize_rpc_source(val: Any) -> str | None:
-        if val is None:
-            return None
-        txt = str(val).strip().lower()
-        if not txt:
-            return None
-        allowed = "abcdefghijklmnopqrstuvwxyz0123456789._-"
-        cleaned = "".join([c for c in txt if c in allowed])
-        if not cleaned:
-            return None
-        if len(cleaned) > 32:
-            cleaned = cleaned[:32]
-        return cleaned
-
-    def _is_storage_node_id(node_id: str | None) -> bool:
-        if not node_id:
-            return False
-        try:
-            peers = getattr(self, "storage_peers", None) or {}
-        except Exception:
-            return False
-        for meta in peers.values():
-            if isinstance(meta, dict) and meta.get("node_id") == node_id:
-                return True
-        return False
-
-    def _is_miner_sender() -> bool:
-        if not src_node_id:
-            return False
-        pinned = self.peer_pubkeys.get(src_node_id)
-        if not pinned:
-            return False
-        if src_pubkey and pinned != src_pubkey:
-            log.warning("[miner_auth] pinned mismatch for %s from %s", src_node_id[:12], addr)
-            return False
-        return True
-
-    def _identify_rpc_role(mtype: str) -> tuple[str, str]:
-        for role, allowed in ROLE_RPC_MAP.items():
-            if mtype in allowed:
-                category = f"{role}-AUTHORIZED" if (role == "MINER" and _is_miner_sender()) else role
-                return role, category
-        return "UNKNOWN", "UNKNOWN"
-
-    def _client_ip() -> str:
-        if isinstance(addr, tuple) and addr:
-            return addr[0]
-        return "0.0.0.0"
-
-    role, category = _identify_rpc_role(mtype)
+    role, category = _identify_rpc_role(mtype, self, src_node_id, src_pubkey, addr)
     raw_source = message.get("rpc_source") or message.get("source") or message.get("client")
     rpc_source = _sanitize_rpc_source(raw_source)
-    if not rpc_source and _is_storage_node_id(src_node_id):
+    if not rpc_source and _is_storage_node_id(self, src_node_id):
         rpc_source = "storage_node"
     if not rpc_source:
         if role == "MINER":
@@ -145,23 +91,21 @@ def process_message(
     message["rpc_source"] = rpc_source
 
     if role == "UNKNOWN":
-        ip = _client_ip()
+        ip = _client_ip(addr)
         ban_ip(ip, (CFG.BAN_MALICIOUS_RPC))
         log.warning("[process_message] unknown RPC %s from %s (temp-ban)", mtype, addr)
         return {"error": "unknown type", "drop": True}
 
-    if (role == "MINER") and (mtype not in BOOTSTRAP_MINER_ALLOW) and (not _is_miner_sender()):
-        ip = _client_ip()
+    if (role == "MINER") and (mtype not in BOOTSTRAP_MINER_ALLOW) and (not _is_miner_sender(self, src_node_id, src_pubkey, addr)):
+        ip = _client_ip(addr)
         ban_ip(ip, (CFG.BAN_MALICIOUS_RPC))
         log.warning("[process_message] rejecting unauthorized miner: RPC %s from %s category %s (temp-ban)", mtype, addr, category)
         return {"error": "forbidden: miners-only endpoint", "drop": True}
 
     if role == "MINER":
-        #log.debug("[process_message] %s response: msg: %s category: %s", role, mtype, category)
         return handle_miner_rpc(self, message, addr, mtype, src_node_id=src_node_id, src_pubkey=src_pubkey)
     
     if role == "STORAGE":
-        #log.debug("[process_message] %s response: msg: %s", role, mtype)
         return handle_storage_rpc(self, message, addr, mtype, src_node_id=src_node_id, src_pubkey=src_pubkey)
 
     dispatch_result = handle_user_rpc(
@@ -169,8 +113,8 @@ def process_message(
         message,
         addr,
         mtype,
-        client_ip=_client_ip,
-        is_miner_sender=_is_miner_sender,
+        client_ip=lambda: _client_ip(addr),
+        is_miner_sender=lambda: _is_miner_sender(self, src_node_id, src_pubkey, addr),
         overlay_realtime_mempool_stats=_overlay_realtime_mempool_stats,
         choose_relay_route=_choose_relay_route,
         relay_chain=_relay_chain,
@@ -178,13 +122,87 @@ def process_message(
     )
 
     if dispatch_result is not None:
-        #log.debug("[process_message] %s response: msg: %s", role, mtype)
         return dispatch_result
     
     return {"error": "Unknown message type"}
 
-
 # -------- HELPERS ----------
+
+def _sanitize_rpc_source(val: Any) -> str | None:
+    if val is None:
+        return None
+    txt = str(val).strip().lower()
+    if not txt:
+        return None
+    allowed = "abcdefghijklmnopqrstuvwxyz0123456789._-"
+    cleaned = "".join([c for c in txt if c in allowed])
+    if not cleaned:
+        return None
+    if len(cleaned) > 32:
+        cleaned = cleaned[:32]
+    return cleaned
+
+def _is_storage_node_id(network, node_id: str | None) -> bool:
+    if not node_id:
+        return False
+    try:
+        peers = getattr(network, "storage_peers", None) or {}
+    except Exception:
+        return False
+    for meta in peers.values():
+        if isinstance(meta, dict) and meta.get("node_id") == node_id:
+            return True
+    return False
+
+def _is_miner_sender(network, src_node_id, src_pubkey, addr) -> bool:
+    if not src_node_id:
+        return False
+    pinned = network.peer_pubkeys.get(src_node_id)
+    if not pinned:
+        return False
+    if src_pubkey and pinned != src_pubkey:
+        log.warning("[miner_auth] pinned mismatch for %s from %s", src_node_id[:12], addr)
+        return False
+    return True
+
+def _identify_rpc_role(mtype: str, network, src_node_id, src_pubkey, addr) -> tuple[str, str]:
+    for role, allowed in ROLE_RPC_MAP.items():
+        if mtype in allowed:
+            category = f"{role}-AUTHORIZED" if (role == "MINER" and _is_miner_sender(network, src_node_id, src_pubkey, addr)) else role
+            return role, category
+    return "UNKNOWN", "UNKNOWN"
+
+def _client_ip(addr) -> str:
+    if isinstance(addr, tuple) and addr:
+        return addr[0]
+    return "0.0.0.0"
+
+def _inject_mempool_basic_stats(tx_section: dict, pool) -> None:
+    tx_count = None
+    store = getattr(pool, "_pool", None)
+    if isinstance(store, dict):
+        tx_count = len(store)
+    else:
+        txs = pool.get_all_txs() or []
+        tx_count = len(txs)
+    tx_section["mempool_txs"] = int(tx_count)
+
+    size_est = getattr(pool, "current_size", None)
+    if size_est is not None:
+        tx_section["mempool_vbytes_estimate"] = int(size_est)
+
+def _inject_mempool_graffiti_stats(snapshot: dict, pool) -> None:
+    graff_section = snapshot.setdefault("graffiti", {})
+    if isinstance(graff_section, dict):
+        on_mem = 0
+        for tx in pool.get_all_txs():
+            for tx_out in getattr(tx, "outputs", []) or []:
+                spk = getattr(tx_out, "script_pubkey", None)
+                meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+                if meta and str(meta.get("event", "")).upper() == "POST":
+                    on_mem += 1
+        graff_section["graffiti_on_mempool"] = int(on_mem)
+
 def _overlay_realtime_mempool_stats(snapshot: dict, network: "Network") -> None:
     """Inject live mempool stats into the snapshot returned to clients."""
     if not isinstance(snapshot, dict):
@@ -199,31 +217,8 @@ def _overlay_realtime_mempool_stats(snapshot: dict, network: "Network") -> None:
     if pool is None:
         return
 
-    tx_count = None
-    store = getattr(pool, "_pool", None)
-    if isinstance(store, dict):
-        tx_count = len(store)
-    else:
-        txs = pool.get_all_txs() or []
-        tx_count = len(txs)
-
-    tx_section["mempool_txs"] = int(tx_count)
-
-    size_est = getattr(pool, "current_size", None)
-    if size_est is not None:
-        tx_section["mempool_vbytes_estimate"] = int(size_est)
-
-    # Update live graffiti_on_mempool to avoid stale cache when mempool changes
-    graff_section = snapshot.setdefault("graffiti", {})
-    if isinstance(graff_section, dict):
-        on_mem = 0
-        for tx in pool.get_all_txs():
-            for tx_out in getattr(tx, "outputs", []) or []:
-                spk = getattr(tx_out, "script_pubkey", None)
-                meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
-                if meta and str(meta.get("event", "")).upper() == "POST":
-                    on_mem += 1
-        graff_section["graffiti_on_mempool"] = int(on_mem)
+    _inject_mempool_basic_stats(tx_section, pool)
+    _inject_mempool_graffiti_stats(snapshot, pool)
 
 def _choose_relay_route(self, hops: int = 2) -> list[tuple]:
     with self.lock:

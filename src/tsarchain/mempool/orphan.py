@@ -15,10 +15,9 @@ class OrphanPoolMixin:
     def _queue_orphan(self, tx_obj: Tx, missing_key: str) -> None:
         tx_dict = tx_obj.to_dict(include_txid=True)
         txid_hex = tx_dict.get("txid")
-        if not txid_hex:
-            if getattr(tx_obj, "txid", None):
-                txid_hex = tx_obj.txid.hex()
-                tx_dict["txid"] = txid_hex
+        if not txid_hex and getattr(tx_obj, "txid", None):
+            txid_hex = tx_obj.txid.hex()
+            tx_dict["txid"] = txid_hex
         if not txid_hex:
             return
         key = txid_hex.lower()
@@ -38,10 +37,7 @@ class OrphanPoolMixin:
                 added += 1
             else:
                 reason = self.last_error_reason or ""
-                if reason.startswith("prevout_missing "):
-                    missing = reason.split(" ", 1)[1].strip()
-                    self._queue_orphan(tx_obj, missing)
-                elif reason.startswith("orphan_waiting "):
+                if reason.startswith(("prevout_missing ", "orphan_waiting ")):
                     missing = reason.split(" ", 1)[1].strip()
                     self._queue_orphan(tx_obj, missing)
         return added

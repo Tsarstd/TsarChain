@@ -4,5 +4,5 @@ omit =
     src/kremlin/tab_ui/*
     src/kremlin/theme.py
     src/kremlin/ui_utils.py
-    src/tsarchain/utils/cosmetic/*
+    src/tsarchain/miner/cosmetic/*
     apps/wallet.py

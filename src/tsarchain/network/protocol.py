@@ -57,12 +57,15 @@ def _nonce_total_entries() -> int:
 
 def _nonce_prune_expired_locked(now_ts: int):
     ttl = CFG.REPLAY_WINDOW_SEC
-    for sender, rec in list(_nonce_cache.items()):
-        for k, t in list(rec.items()):
-            if now_ts - int(t or 0) > ttl:
-                rec.pop(k, None)
+    empty_senders = []
+    for sender, rec in _nonce_cache.items():
+        expired_keys = [k for k, t in rec.items() if now_ts - int(t or 0) > ttl]
+        for k in expired_keys:
+            rec.pop(k, None)
         if not rec:
-            _nonce_cache.pop(sender, None)
+            empty_senders.append(sender)
+    for sender in empty_senders:
+        _nonce_cache.pop(sender, None)
 
 def _nonce_prune_global_if_needed_locked():
     total = _nonce_total_entries()
@@ -88,7 +91,7 @@ def _nonce_prune_global_if_needed_locked():
             to_evict -= 1
         i += 1
 
-def _nonce_register(sender: str, nonce: str, ts_val: int) -> None:
+def _nonce_register(sender: str, nonce: str) -> None:
     if not sender or not nonce:
         raise ValueError("missing sender/nonce")
     now = int(time.time())
@@ -290,7 +293,7 @@ def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
     if not verify_signature(pub, to_sign, envelope.get("sig", "")):
         raise ValueError("bad signature")
     # Anti-replay within REPLAY_WINDOW_SEC using per-sender nonce cache
-    _nonce_register(node_id, str(envelope.get("nonce")), int(ts_val))
+    _nonce_register(node_id, str(envelope.get("nonce")))
     return inner
 
 # =========================================================

@@ -17,29 +17,44 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.consensus.difficulty')
 
 class DifficultyMixin:
+    def _ts(self, b) -> int:
+        t = getattr(b, "timestamp", 0)
+        return int(t) if isinstance(t, (int, float)) else 0
+
     def _expected_bits_on_prefix(self, prefix: "List[Block]", next_height: int) -> int:
-        T = int(CFG.TARGET_BLOCK_TIME)
+        t = int(CFG.TARGET_BLOCK_TIME)
         if next_height <= 0 or not prefix:
             return int(CFG.MAX_BITS)
         if len(prefix) < 2:
             return int(getattr(prefix[-1], "bits", CFG.MAX_BITS))
 
-        N = min(int(CFG.LWMA_WINDOW), len(prefix))
-        window = prefix[-N:]
-        k = (N * (N - 1)) // 2
+        n = min(int(CFG.LWMA_WINDOW), len(prefix))
+        next_target = self._calculate_lwma_target(prefix, n, t)
+        max_target  = bits_to_target(int(CFG.MAX_BITS))
+        
+        if next_target > max_target:
+            next_target = max_target
+
+            if CFG.ENABLE_DIFF_CLAMP:
+                next_target = self._apply_diff_clamp(prefix, next_target, max_target)
+
+            if CFG.ENABLE_EDA:
+                next_target = self._apply_eda(prefix, next_target, max_target, t)
+
+        return int(target_to_bits(next_target))
+
+    def _calculate_lwma_target(self, prefix: "List[Block]", n: int, t: int) -> int:
+        window = prefix[-n:]
+        k = (n * (n - 1)) // 2
         sum_wst = 0
         sum_diff = 0
 
-        def _ts(b) -> int:
-            t = getattr(b, "timestamp", 0)
-            return int(t) if isinstance(t, (int, float)) else 0
-
-        prev_ts = _ts(window[0])
-        for i in range(1, N):
+        prev_ts = self._ts(window[0])
+        for i in range(1, n):
             b = window[i]
-            st = _ts(b) - prev_ts
-            if st < -6 * T: st = -6 * T
-            if st >  6 * T: st =  6 * T
+            st = self._ts(b) - prev_ts
+            if st < -6 * t: st = -6 * t
+            if st >  6 * t: st =  6 * t
             if st < 1:      st = 1
             sum_wst += i * st
 
@@ -48,53 +63,50 @@ class DifficultyMixin:
             diff = max(1, int(target_to_difficulty(tgt)))
             sum_diff += diff
 
-            prev_ts = _ts(b)
+            prev_ts = self._ts(b)
 
-        avg_diff = max(1, sum_diff // (N - 1))
+        avg_diff = max(1, sum_diff // (n - 1))
         lwma_st  = max(1, sum_wst // k)
-        next_diff = max(1, (avg_diff * T) // lwma_st)
+        next_diff = max(1, (avg_diff * t) // lwma_st)
 
-        next_target = difficulty_to_target(next_diff)
-        max_target  = bits_to_target(int(CFG.MAX_BITS))
+        return difficulty_to_target(next_diff)
+
+    def _apply_diff_clamp(self, prefix: "List[Block]", next_target: int, max_target: int) -> int:
+        prev_bits   = int(getattr(prefix[-1], "bits", CFG.MAX_BITS))
+        prev_target = bits_to_target(prev_bits)
+        prev_target = prev_target or 1
+        factor = Fraction(next_target, prev_target)
+        clamp_up = Fraction(str(CFG.DIFF_CLAMP_MAX_UP))
+        clamp_down = Fraction(str(CFG.DIFF_CLAMP_MAX_DOWN))
+        if factor > clamp_up:
+            next_target = int(Fraction(prev_target) * clamp_up)
+        elif factor < clamp_down:
+            next_target = int(Fraction(prev_target) * clamp_down)
         if next_target > max_target:
             next_target = max_target
+        return next_target
 
-            if CFG.ENABLE_DIFF_CLAMP:
-                prev_bits   = int(getattr(prefix[-1], "bits", CFG.MAX_BITS))
-                prev_target = bits_to_target(prev_bits)
-                prev_target = prev_target or 1
-                factor = Fraction(next_target, prev_target)
-                clamp_up = Fraction(str(CFG.DIFF_CLAMP_MAX_UP))
-                clamp_down = Fraction(str(CFG.DIFF_CLAMP_MAX_DOWN))
-                if factor > clamp_up:
-                    next_target = int(Fraction(prev_target) * clamp_up)
-                elif factor < clamp_down:
-                    next_target = int(Fraction(prev_target) * clamp_down)
-                if next_target > max_target:
-                    next_target = max_target
-
-            if CFG.ENABLE_EDA:
-                T = int(CFG.TARGET_BLOCK_TIME)
-                M = min(int(CFG.EDA_WINDOW), len(prefix))
-                if M >= 2:
-                    times = [_ts(b) for b in prefix[-M:]]
-                    intervals = []
-                    for i in range(1, len(times)):
-                        dt = times[i] - times[i-1]
-                        if dt < 1: dt = 1
-                        intervals.append(dt)
-                    if intervals:
-                        total_dt = sum(intervals)
-                        count_dt = len(intervals)
-                        trigger = Fraction(str(CFG.EDA_TRIGGER_RATIO))
-                        lhs = Fraction(total_dt, count_dt)
-                        rhs = trigger * T
-                        if lhs > rhs:
-                            prev_bits_val = int(getattr(prefix[-1], "bits", CFG.MAX_BITS))
-                            eased_target = Fraction(bits_to_target(prev_bits_val)) * Fraction(str(CFG.EDA_EASE_MULTIPLIER))
-                            next_target = min(int(eased_target), int(max_target))
-
-        return int(target_to_bits(next_target))
+    def _apply_eda(self, prefix: "List[Block]", next_target: int, max_target: int, t: int) -> int:
+        M = min(int(CFG.EDA_WINDOW), len(prefix))
+        if M < 2:
+            return next_target
+        times = [self._ts(b) for b in prefix[-M:]]
+        intervals = []
+        for i in range(1, len(times)):
+            dt = times[i] - times[i-1]
+            if dt < 1: dt = 1
+            intervals.append(dt)
+        if intervals:
+            total_dt = sum(intervals)
+            count_dt = len(intervals)
+            trigger = Fraction(str(CFG.EDA_TRIGGER_RATIO))
+            lhs = Fraction(total_dt, count_dt)
+            rhs = trigger * t
+            if lhs > rhs:
+                prev_bits_val = int(getattr(prefix[-1], "bits", CFG.MAX_BITS))
+                eased_target = Fraction(bits_to_target(prev_bits_val)) * Fraction(str(CFG.EDA_EASE_MULTIPLIER))
+                next_target = min(int(eased_target), int(max_target))
+        return next_target
 
     def calculate_expected_bits(self, next_height: int) -> int:
         if next_height <= 0:

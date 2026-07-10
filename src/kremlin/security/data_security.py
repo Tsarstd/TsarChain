@@ -151,7 +151,7 @@ def _app_secret_provider(_prompt: str = "") -> str:
     return _get_app_secret_password()
 
 def _secure_load(namespace: str, key: str, path: Optional[Path], password_provider, prompt: str) -> Tuple[Optional[Dict], bool]:
-    obj, migrated = _secure_backend_read(namespace, key, path)
+    obj, _ = _secure_backend_read(namespace, key, path)
     if obj is None:
         return None, False
     if "enc" in obj:
@@ -195,7 +195,6 @@ def load_chat_state(default: Optional[Dict] = None) -> Dict:
             _secure_store("chat_state", "default", path_obj, data, _app_secret_provider, "Migrate chat state")
         except Exception:
             log.exception("Failed to migrate (re‑save) chat state to %s after successful load", path_obj)
-            pass
     return {
         "blocked": list(dict.fromkeys(data.get("blocked", []) or [])),
         "pubcache": data.get("pubcache") or {},

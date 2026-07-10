@@ -75,7 +75,7 @@ def _handle_connection(self, conn, addr):
             ip = peer[0]
             self._inbound_ips[ip] = self._inbound_ips.get(ip, 0) + 1
             self.peer_scores.setdefault(peer, CFG.PEER_SCORE_START // 2)
-            raw_first, first = sniff_first_json_frame(conn, timeout=float(CFG.HANDSHAKE_TIMEOUT), peer_ip=ip, on_misbehave=ban_ip)
+            _, first = sniff_first_json_frame(conn, timeout=float(CFG.HANDSHAKE_TIMEOUT), peer_ip=ip, on_misbehave=ban_ip)
 
         node_hint = None
         pow_proof = None

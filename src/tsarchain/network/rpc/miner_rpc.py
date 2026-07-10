@@ -3,61 +3,11 @@
 # Part of TsarChain - see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
 
-import time
 from typing import TYPE_CHECKING, Any, Optional
 
 from ..node_logic import handlers
 from ...utils import config as CFG
 from ...utils.benchmarks import benchmark
-
-@benchmark(label="miner_new_block", threshold_ms=500.0)
-def _handle_miner_new_block(self, message, addr, ip):
-    rl_key = f"miner:new_block:{ip}"
-    if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_NEWBLOCK_RL_IP_BURST, CFG.MINER_NEWBLOCK_RL_WINDOW_S, CFG.MINER_NEWBLOCK_RL_IP_BURST, backoff_key=rl_key):
-        self._backoff(rl_key, CFG.MINER_NEWBLOCK_RL_BACKOFF_S)
-        return {"error": "rate_limited"}
-
-    self.broadcast.receive_block(message, addr, self.peers)
-    return {"status": "ok"}
-
-@benchmark(label="miner_get_block_hash", threshold_ms=15.0)
-def _handle_miner_get_block_hash(self, message, ip):
-    rl_key = f"miner:get_block_hash:{ip}"
-    if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_INFO_RL_IP_BURST, CFG.MINER_INFO_RL_WINDOW_S, CFG.MINER_INFO_RL_IP_BURST, backoff_key=rl_key):
-        self._backoff(rl_key, CFG.MINER_INFO_RL_BACKOFF_S)
-        return {"error": "rate_limited"}
-
-    h = int(message.get("height"))
-    return self._handle_get_block_hash(h)
-
-@benchmark(label="miner_get_info", threshold_ms=15.0)
-def _handle_miner_get_info(self, ip):
-    rl_key = f"miner:get_info:{ip}"
-    if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_INFO_RL_IP_BURST, CFG.MINER_INFO_RL_WINDOW_S, CFG.MINER_INFO_RL_IP_BURST, backoff_key=rl_key):
-        self._backoff(rl_key, CFG.MINER_INFO_RL_BACKOFF_S)
-        return {"error": "rate_limited"}
-
-    info = {
-        "type": "INFO",
-        "height": self.broadcast.blockchain.height,
-        "blocks": len(self.broadcast.blockchain.chain),
-        "mempool": len(self.broadcast.mempool.get_all_txs()),
-        "utxos": len(self.broadcast.utxodb.utxos),
-    }
-    with self.lock:
-        peers_sane = [(ip_addr,p) for (ip_addr,p) in self.peers if isinstance(p,int) and p>0]
-    info["peers"] = len(peers_sane)
-    return info
-
-@benchmark(label="miner_mempool", threshold_ms=15.0)
-def _handle_miner_mempool(self, message, ip):
-    rl_key = f"miner:mempool:{ip}"
-    if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_MEMPOOL_RL_IP_BURST, CFG.MINER_MEMPOOL_RL_WINDOW_S, CFG.MINER_MEMPOOL_RL_IP_BURST, backoff_key=rl_key):
-        self._backoff(rl_key, CFG.MINER_MEMPOOL_RL_BACKOFF_S)
-        return {"error": "rate_limited"}
-
-    self.broadcast.receive_mempool(message)
-    return {"status": "mempool received"}
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
@@ -155,3 +105,53 @@ def handle_miner_rpc(
     if mtype == "MEMPOOL":
         return _handle_miner_mempool(self, message, ip)
     return None
+
+
+@benchmark(label="miner_new_block", threshold_ms=500.0)
+def _handle_miner_new_block(self, message, addr, ip):
+    rl_key = f"miner:new_block:{ip}"
+    if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_NEWBLOCK_RL_IP_BURST, CFG.MINER_NEWBLOCK_RL_WINDOW_S, CFG.MINER_NEWBLOCK_RL_IP_BURST, backoff_key=rl_key):
+        self._backoff(rl_key, CFG.MINER_NEWBLOCK_RL_BACKOFF_S)
+        return {"error": "rate_limited"}
+
+    self.broadcast.receive_block(message, addr, self.peers)
+    return {"status": "ok"}
+
+@benchmark(label="miner_get_block_hash", threshold_ms=15.0)
+def _handle_miner_get_block_hash(self, message, ip):
+    rl_key = f"miner:get_block_hash:{ip}"
+    if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_INFO_RL_IP_BURST, CFG.MINER_INFO_RL_WINDOW_S, CFG.MINER_INFO_RL_IP_BURST, backoff_key=rl_key):
+        self._backoff(rl_key, CFG.MINER_INFO_RL_BACKOFF_S)
+        return {"error": "rate_limited"}
+
+    h = int(message.get("height"))
+    return self._handle_get_block_hash(h)
+
+@benchmark(label="miner_get_info", threshold_ms=15.0)
+def _handle_miner_get_info(self, ip):
+    rl_key = f"miner:get_info:{ip}"
+    if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_INFO_RL_IP_BURST, CFG.MINER_INFO_RL_WINDOW_S, CFG.MINER_INFO_RL_IP_BURST, backoff_key=rl_key):
+        self._backoff(rl_key, CFG.MINER_INFO_RL_BACKOFF_S)
+        return {"error": "rate_limited"}
+
+    info = {
+        "type": "INFO",
+        "height": self.broadcast.blockchain.height,
+        "blocks": len(self.broadcast.blockchain.chain),
+        "mempool": len(self.broadcast.mempool.get_all_txs()),
+        "utxos": len(self.broadcast.utxodb.utxos),
+    }
+    with self.lock:
+        peers_sane = [(ip_addr,p) for (ip_addr,p) in self.peers if isinstance(p,int) and p>0]
+    info["peers"] = len(peers_sane)
+    return info
+
+@benchmark(label="miner_mempool", threshold_ms=15.0)
+def _handle_miner_mempool(self, message, ip):
+    rl_key = f"miner:mempool:{ip}"
+    if not self._tb_allow(self.rl_ip, rl_key, CFG.MINER_MEMPOOL_RL_IP_BURST, CFG.MINER_MEMPOOL_RL_WINDOW_S, CFG.MINER_MEMPOOL_RL_IP_BURST, backoff_key=rl_key):
+        self._backoff(rl_key, CFG.MINER_MEMPOOL_RL_BACKOFF_S)
+        return {"error": "rate_limited"}
+
+    self.broadcast.receive_mempool(message)
+    return {"status": "mempool received"}

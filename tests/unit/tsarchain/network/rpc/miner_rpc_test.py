@@ -101,13 +101,6 @@ def test_new_block(network, mock_config):
     res3 = handle_miner_rpc(network, {"block": 1}, ("127.0.0.1", 1234), "NEW_BLOCK")
     assert res3 == {"error": "rate_limited"}
     network._backoff.assert_called_once()
-    
-    # Benchmark
-    network._tb_allow.return_value = True
-    mock_config.DEBUG_BENCHMARKS = True
-    with patch("tsarchain.network.rpc.miner_rpc.time.perf_counter", side_effect=[1.0, 2.0]):
-        res4 = handle_miner_rpc(network, {"block": 1}, ("127.0.0.1", 1234), "NEW_BLOCK")
-        assert res4 == {"status": "ok"}
 
 
 def test_get_block_hash(network, mock_config):
@@ -119,19 +112,6 @@ def test_get_block_hash(network, mock_config):
     network._tb_allow.return_value = False
     res2 = handle_miner_rpc(network, {"height": 10}, ("127.0.0.1", 1234), "GET_BLOCK_HASH")
     assert res2 == {"error": "rate_limited"}
-    
-    # Benchmark with dict resp
-    network._tb_allow.return_value = True
-    mock_config.DEBUG_BENCHMARKS = True
-    with patch("tsarchain.network.rpc.miner_rpc.time.perf_counter", side_effect=[1.0, 2.0]):
-        res3 = handle_miner_rpc(network, {"height": 10}, ("127.0.0.1", 1234), "GET_BLOCK_HASH")
-        assert res3 == {"hash": "abc", "cache_hit": True}
-
-    # Benchmark with non-dict resp
-    network._handle_get_block_hash.return_value = "not_a_dict"
-    with patch("tsarchain.network.rpc.miner_rpc.time.perf_counter", side_effect=[1.0, 2.0]):
-        res4 = handle_miner_rpc(network, {"height": 10}, ("127.0.0.1", 1234), "GET_BLOCK_HASH")
-        assert res4 == "not_a_dict"
 
 
 def test_get_info(network, mock_config):
@@ -147,13 +127,6 @@ def test_get_info(network, mock_config):
     network._tb_allow.return_value = False
     res2 = handle_miner_rpc(network, {}, ("127.0.0.1", 1234), "GET_INFO")
     assert res2 == {"error": "rate_limited"}
-    
-    # Benchmark
-    network._tb_allow.return_value = True
-    mock_config.DEBUG_BENCHMARKS = True
-    with patch("tsarchain.network.rpc.miner_rpc.time.perf_counter", side_effect=[1.0, 2.0]):
-        res3 = handle_miner_rpc(network, {}, ("127.0.0.1", 1234), "GET_INFO")
-        assert res3["type"] == "INFO"
 
 
 @patch("tsarchain.network.rpc.miner_rpc.handlers.handle_get_full_sync")
@@ -249,10 +222,3 @@ def test_mempool(network, mock_config):
     network._tb_allow.return_value = False
     res2 = handle_miner_rpc(network, {}, ("127.0.0.1", 1234), "MEMPOOL")
     assert res2 == {"error": "rate_limited"}
-    
-    # Benchmark
-    network._tb_allow.return_value = True
-    mock_config.DEBUG_BENCHMARKS = True
-    with patch("tsarchain.network.rpc.miner_rpc.time.perf_counter", side_effect=[1.0, 2.0]):
-        res3 = handle_miner_rpc(network, {}, ("127.0.0.1", 1234), "MEMPOOL")
-        assert res3 == {"status": "mempool received"}
