@@ -272,7 +272,7 @@ class ValidationMixin:
             
         return True
 
-    def _validate_graffiti_posts(self, txs, cb) -> bool:
+    def _validate_graffiti_posts(self, txs, cb) -> bool: # NOSONAR
         graffiti_posts = 0
         first_art_id = None
         for tx in txs[1:]:  # skip coinbase
@@ -415,7 +415,7 @@ class ValidationMixin:
 
         return self._verify_block_fees_and_rewards(block, txs, cb, fees)
 
-    def _prepare_tx_snapshot(self, txs, store) -> dict | None:
+    def _prepare_tx_snapshot(self, txs, store) -> dict | None: # NOSONAR
         store_lookup = getattr(store, "lookup_entry", None)
         utxo_view = None
         if not callable(store_lookup):
@@ -536,18 +536,6 @@ class ValidationMixin:
             
         return None
 
-    def _count_block_sigops(self, block: Block) -> Optional[int]:
-        total = 0
-        for tx in block.transactions or []:
-            if hasattr(tx, "sigops_count") and callable(getattr(tx, "sigops_count", None)):
-                total += int(tx.sigops_count())
-                continue
-            if hasattr(tx, "count_sigops") and callable(getattr(tx, "count_sigops", None)):
-                total += int(tx.count_sigops())
-                continue
-            return None
-        return total
-
     def _chain_state_token_locked(self):
         tip_hash = self.chain[-1].hash() if self.chain else None
         return (self.height, tip_hash)
@@ -583,17 +571,6 @@ class ValidationMixin:
             self._last_block_validation_error = "difficulty_invalid"
             return False
         return True
-
-    def _check_known_invalid(self, block_hash_hex: str) -> bool:
-        invalid_set = getattr(self, "_known_invalid_blocks", None)
-        if isinstance(invalid_set, set) and block_hash_hex in invalid_set:
-            return True
-        return False
-
-    def _mark_invalid(self, block_hash_hex: str):
-        if not hasattr(self, "_known_invalid_blocks"):
-            self._known_invalid_blocks = set()
-        self._known_invalid_blocks.add(block_hash_hex)
 
     def _ensure_unique_txids(self, block: Block) -> bool:
         seen_txids = set()
@@ -912,3 +889,4 @@ class ValidationMixin:
             self._last_block_validation_error = "sigops_per_block_exceeded"
             return False
         return True
+

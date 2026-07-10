@@ -4,7 +4,14 @@
 # Refs: BIP143; BIP141; BIP173; CompactSize; Merkle; libsecp256k1; LowS-Policy; Signal-X3DH
 
 from __future__ import annotations
-import hashlib, json, secrets, string, unicodedata, os
+
+import os
+import json
+import string
+import secrets
+import hashlib
+import unicodedata
+
 from bech32 import bech32_decode, bech32_encode, convertbits
 from typing import Tuple, Optional
 from ecdsa import VerifyingKey
@@ -40,26 +47,27 @@ except ImportError as exc:
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.utils(helpers)")
+log = get_ctx_logger("tsarchain.utils.helpers")
 
 SIGHASH_ALL = 1
 
 # opcode constants
 OP_0 = 0x00
+OP_RETURN = 0x6a
 OP_PUSHDATA1 = 0x4c
 OP_PUSHDATA2 = 0x4d
 OP_PUSHDATA4 = 0x4e
+
 OP_1 = 0x51
 OP_16 = 0x60
-OP_CHECKSIG = 0xAC
-OP_CHECKSIGVERIFY = 0xAD
-OP_CHECKMULTISIG = 0xAE
-OP_CHECKMULTISIGVERIFY = 0xAF
 OP_DUP = 0x76
-OP_HASH160 = 0xA9
 OP_EQUAL = 0x87
+OP_HASH160 = 0xA9
+OP_CHECKSIG = 0xAC
 OP_EQUALVERIFY = 0x88
-OP_RETURN = 0x6a
+OP_CHECKMULTISIG = 0xAE
+OP_CHECKSIGVERIFY = 0xAD
+OP_CHECKMULTISIGVERIFY = 0xAF
 
 # ======== SIGNATURE VERIFY HELPERS ========
 SECP256K1_P = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F

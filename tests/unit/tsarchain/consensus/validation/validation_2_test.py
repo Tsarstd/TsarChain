@@ -581,49 +581,6 @@ class TestValidationMixin:
         assert instance._estimate_block_size(block) is None
 
     # -------------------------------------------------------------------------
-    # _count_block_sigops
-    # -------------------------------------------------------------------------
-    def test_count_block_sigops_with_sigops_count_method(self):
-        class Dummy(ValidationMixin):
-            def __init__(self):
-                pass
-        instance = Dummy()
-        block = Mock()
-        tx1 = Mock()
-        tx1.sigops_count = Mock(return_value=5)
-        tx2 = Mock()
-        tx2.sigops_count = Mock(return_value=3)
-        block.transactions = [tx1, tx2]
-        assert instance._count_block_sigops(block) == 8
-        tx1.sigops_count.assert_called_once()
-        tx2.sigops_count.assert_called_once()
-
-    def test_count_block_sigops_with_count_sigops_method(self):
-        class Dummy(ValidationMixin):
-            def __init__(self):
-                pass
-        instance = Dummy()
-        block = Mock()
-        # Create mocks with only the 'count_sigops' attribute; no 'sigops_count'.
-        tx1 = Mock(spec_set=['count_sigops'])
-        tx1.count_sigops = Mock(return_value=7)
-        tx2 = Mock(spec_set=['count_sigops'])
-        tx2.count_sigops = Mock(return_value=2)
-        block.transactions = [tx1, tx2]
-        assert instance._count_block_sigops(block) == 9
-
-    def test_count_block_sigops_fallback_none(self):
-        class Dummy(ValidationMixin):
-            def __init__(self):
-                pass
-        instance = Dummy()
-        block = Mock()
-        # No 'sigops_count' nor 'count_sigops' -> fallback returns None.
-        tx = Mock(spec_set=[])
-        block.transactions = [tx]
-        assert instance._count_block_sigops(block) is None
-
-    # -------------------------------------------------------------------------
     # _chain_state_token_locked
     # -------------------------------------------------------------------------
     def test_chain_state_token_locked(self):
