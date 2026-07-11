@@ -33,52 +33,9 @@ class ValidationMixin:
     _pow_epoch_warmed: set[int] = set()
 
     # =============================================================================
-    # 0. WARMING UP
-    # =============================================================================
-
-    def _warm_pow_context(self, height: int):  # pre-warm for next epoch
-        if CFG.POW_ALGO != "randomx":
-            return
-        epoch_blocks = max(1, int(CFG.RANDOMX_KEY_EPOCH_BLOCKS))
-        if epoch_blocks <= 0:
-            return
-        # pre-warm next epoch key near boundary
-        next_epoch = (height // epoch_blocks) + 1
-        with self._pow_warm_lock:
-            if self._pow_warm_next_epoch == next_epoch:
-                return
-            self._pow_warm_next_epoch = next_epoch
-
-        def _worker():
-            key = H.pow_key_for_height(next_epoch * epoch_blocks)
-            # dummy header to prime dataset
-            dummy_hdr = b"\x00" * 80
-            H.pow_hash_verify_light(dummy_hdr, key_hint=key)
-            log.debug("[pow_warm] warmed epoch=%s", next_epoch)
-
-        t = threading.Thread(target=_worker, name="pow-warm", daemon=True)
-        t.start()
-
-    def _ensure_warm(self, height: int):  # ensure epoch
-        if CFG.POW_ALGO != "randomx":
-            return
-        epoch_blocks = max(1, int(CFG.RANDOMX_KEY_EPOCH_BLOCKS))
-        if epoch_blocks <= 0:
-            return
-        epoch = max(0, int(height) // epoch_blocks)
-        with self._pow_warm_lock:
-            if epoch in self.__class__._pow_epoch_warmed:
-                return
-            self.__class__._pow_epoch_warmed.add(epoch)
-
-        key = H.pow_key_for_height(epoch * epoch_blocks)
-        dummy_hdr = b"\x00" * 80
-        H.pow_hash_verify_light(dummy_hdr, key_hint=key)
-        log.debug("[pow_warm] ensured epoch=%s ready", epoch)
-
-    # =============================================================================
     # 1. VALIDATION PROCESSING
     # =============================================================================
+
     @benchmark(label="validate_block", threshold_ms=200.0)
     def validate_block(self, block: Block) -> bool:
         try:
@@ -100,7 +57,7 @@ class ValidationMixin:
             # 3. Main Block Validation Set
             validation_steps = [
                 (self._validate_pow, "pow_invalid"),
-                (self._compute_txids_for_block, None),
+                (self.compute_txids_for_block, None),
                 (self._validate_merkle, "merkle_mismatch"),
                 (self._ensure_unique_txids, "duplicate_or_missing_txid"),
                 (self._check_block_limits, "block_limits_exceeded"),
@@ -119,11 +76,8 @@ class ValidationMixin:
                 
                 store = self._ensure_utxodb() or UTXODB()
                 has_lookup = callable(getattr(store, "lookup_entry", None))
-                
-                # The ternary operator replaces nested 'if' statements for the initialization of utxo_view.
                 utxo_view = getattr(store, "utxos", None) if not has_lookup else None
                 utxo_view = store.load_utxo_set() if (not has_lookup and utxo_view is None) else utxo_view
-                
                 state_token = self._chain_state_token_locked()
 
             # 5. Additional Validation Related to Store/UTXO
@@ -147,7 +101,8 @@ class ValidationMixin:
             log.exception("[validate_block] Unexpected error during block validation")
             return False
 
-    def _compute_txids_for_block(self, block: Block) -> bool:
+
+    def compute_txids_for_block(self, block: Block) -> bool:
         txs = getattr(block, "transactions", []) or []
         for tx in txs:
             raw_no_witness = self._serialize_tx_cached(tx, include_witness=False)
@@ -172,20 +127,68 @@ class ValidationMixin:
             setattr(tx, "txid", txid_bytes)
             setattr(tx, "txid_hex", txid_bytes.hex())
         return True
+    
+    # =============================================================================
+    # 2. INTERNAL METHOD
+    # =============================================================================
+    
+    def _warm_pow_context(self, height: int):  # pre-warm for next epoch
+        if CFG.POW_ALGO != "randomx":
+            return
+        epoch_blocks = max(1, int(CFG.RANDOMX_KEY_EPOCH_BLOCKS))
+        if epoch_blocks <= 0:
+            return
+        # pre-warm next epoch key near boundary
+        next_epoch = (height // epoch_blocks) + 1
+        with self._pow_warm_lock:
+            if self._pow_warm_next_epoch == next_epoch:
+                return
+            self._pow_warm_next_epoch = next_epoch
 
-    def _validate_pow(self, block: Block) -> bool:
+        def _worker():
+            key = H.pow_key_for_height(next_epoch * epoch_blocks)
+            # dummy header to prime dataset
+            dummy_hdr = b"\x00" * 80
+            H.pow_hash_verify_light(dummy_hdr, key_hint=key)
+            log.debug("[pow_warm] warmed epoch=%s", next_epoch)
+
+        t = threading.Thread(target=_worker, name="pow-warm", daemon=True)
+        t.start()
+
+
+    def _ensure_warm(self, height: int):  # ensure epoch
+        if CFG.POW_ALGO != "randomx":
+            return
+        epoch_blocks = max(1, int(CFG.RANDOMX_KEY_EPOCH_BLOCKS))
+        if epoch_blocks <= 0:
+            return
+        epoch = max(0, int(height) // epoch_blocks)
+        with self._pow_warm_lock:
+            if epoch in self.__class__._pow_epoch_warmed:
+                return
+            self.__class__._pow_epoch_warmed.add(epoch)
+
+        key = H.pow_key_for_height(epoch * epoch_blocks)
+        dummy_hdr = b"\x00" * 80
+        H.pow_hash_verify_light(dummy_hdr, key_hint=key)
+        log.debug("[pow_warm] ensured epoch=%s ready", epoch)
+
+
+    def _validate_pow(self, block: Block) -> bool: 
         header_hash = block.hash()
         target = bits_to_target(block.bits)
         return int.from_bytes(header_hash, "big") <= int(target)
 
-    def _validate_merkle(self, block: Block) -> bool:
+
+    def _validate_merkle(self, block: Block) -> bool: 
         computed = merkle_root(block.transactions)
         header_mr = getattr(block, "merkle_root", None)
         if isinstance(header_mr, str):
             header_mr = bytes.fromhex(header_mr)
         return computed == header_mr
 
-    def _validate_transactions(self, block: Block, utxo_store: UTXODB | None = None) -> bool:
+
+    def _validate_transactions(self, block: Block, utxo_store: UTXODB | None = None) -> bool: 
         store = utxo_store or self._ensure_utxodb() or UTXODB()
         self._last_block_validation_error = "validation_failed"
         txs = getattr(block, "transactions", [])
@@ -211,7 +214,8 @@ class ValidationMixin:
 
         return self._validate_transactions_payload(block, txs, spend_height, cb, store)
 
-    def _validate_tx_guardrails(self, txs, block_height: int) -> bool:
+
+    def _validate_tx_guardrails(self, txs, block_height: int) -> bool: 
         for tx in txs:
             raw_full = self._serialize_tx_cached(tx, include_witness=True)
             if raw_full is None:
@@ -259,7 +263,8 @@ class ValidationMixin:
                     return False
         return True
 
-    def _validate_graffiti_rules(self, txs, cb, store) -> bool:
+
+    def _validate_graffiti_rules(self, txs, cb, store) -> bool: 
         reg = getattr(store, "_graffiti_registry", None)
         if reg is None:
             reg = GraffitiRegistry()
@@ -272,7 +277,8 @@ class ValidationMixin:
             
         return True
 
-    def _validate_graffiti_posts(self, txs, cb) -> bool: # NOSONAR
+
+    def _validate_graffiti_posts(self, txs, cb) -> bool: 
         graffiti_posts = 0
         first_art_id = None
         for tx in txs[1:]:  # skip coinbase
@@ -303,7 +309,8 @@ class ValidationMixin:
                 return False
         return True
 
-    def _validate_graffiti_payouts(self, txs, reg) -> bool:
+
+    def _validate_graffiti_payouts(self, txs, reg) -> bool: 
         for tx in txs[1:]:
             paymap: dict[str, int] = {}
             for out in getattr(tx, "outputs", []):
@@ -323,7 +330,8 @@ class ValidationMixin:
                     return False
         return True
 
-    def _validate_single_payout(self, meta: dict, paymap: dict[str, int], reg) -> bool:
+
+    def _validate_single_payout(self, meta: dict, paymap: dict[str, int], reg) -> bool: 
         art_id = str(meta.get("art_id") or "").strip().lower()
         if not art_id:
             self._last_block_validation_error = "payout_bad_art_id"
@@ -368,7 +376,8 @@ class ValidationMixin:
             
         return True
 
-    def _validate_payout_proof(self, meta: dict, epoch: int, art_id: str, reg) -> bool:
+
+    def _validate_payout_proof(self, meta: dict, epoch: int, art_id: str, reg) -> bool: 
         latest_proof = reg.get_latest_proof_epoch(art_id)
         if latest_proof < epoch:
             proof_epoch = int(meta.get("proof_epoch", -1))
@@ -381,7 +390,8 @@ class ValidationMixin:
                 return False
         return True
 
-    def _validate_transactions_payload(self, block, txs, spend_height, cb, store) -> bool:
+
+    def _validate_transactions_payload(self, block, txs, spend_height, cb, store) -> bool: 
         snapshot = self._prepare_tx_snapshot(txs, store)
         if snapshot is None:
             return False
@@ -415,7 +425,8 @@ class ValidationMixin:
 
         return self._verify_block_fees_and_rewards(block, txs, cb, fees)
 
-    def _prepare_tx_snapshot(self, txs, store) -> dict | None: # NOSONAR
+
+    def _prepare_tx_snapshot(self, txs, store) -> dict | None: 
         store_lookup = getattr(store, "lookup_entry", None)
         utxo_view = None
         if not callable(store_lookup):
@@ -464,7 +475,8 @@ class ValidationMixin:
                 processed_txids.add(txid_lower)
         return snapshot
 
-    def _verify_block_fees_and_rewards(self, block, txs, cb, fees) -> bool:
+
+    def _verify_block_fees_and_rewards(self, block, txs, cb, fees) -> bool: 
         fees_list = []
         if isinstance(fees, (list, tuple)):
             if len(fees) != max(len(txs) - 1, 0):
@@ -490,10 +502,8 @@ class ValidationMixin:
 
         return True
 
-    # =============================================================================
-    # 2. HELPER
-    # =============================================================================
-    def _serialize_tx_cached(self, tx, *, include_witness: bool) -> bytes | None:
+
+    def _serialize_tx_cached(self, tx, *, include_witness: bool) -> bytes | None: 
         """
         Cache the result of serialize_tx to avoid repeated hashing/serialization
         in the validation hot path.
@@ -506,7 +516,8 @@ class ValidationMixin:
         setattr(tx, attr, raw)
         return raw
 
-    def _estimate_block_size(self, block: Block) -> Optional[int]:
+
+    def _estimate_block_size(self, block: Block) -> Optional[int]: 
         size = 80  # header
         for tx in block.transactions or []:
             tx_size = self._estimate_tx_size(tx)
@@ -515,7 +526,8 @@ class ValidationMixin:
             size += tx_size
         return int(size)
 
-    def _estimate_tx_size(self, tx) -> Optional[int]:
+
+    def _estimate_tx_size(self, tx) -> Optional[int]: 
         cached = getattr(tx, "_cached_raw_tx_w", None)
         if isinstance(cached, (bytes, bytearray)):
             return len(cached)
@@ -536,11 +548,13 @@ class ValidationMixin:
             
         return None
 
-    def _chain_state_token_locked(self):
+
+    def _chain_state_token_locked(self): 
         tip_hash = self.chain[-1].hash() if self.chain else None
         return (self.height, tip_hash)
 
-    def _validate_chain_context_locked(self, block: Block) -> bool:
+
+    def _validate_chain_context_locked(self, block: Block) -> bool: 
         expected_height = self.height + 1 if self.chain else 0
         if block.height != expected_height:
             self._last_block_validation_error = "height_mismatch"
@@ -572,7 +586,8 @@ class ValidationMixin:
             return False
         return True
 
-    def _ensure_unique_txids(self, block: Block) -> bool:
+
+    def _ensure_unique_txids(self, block: Block) -> bool: 
         seen_txids = set()
         for tx in block.transactions or []:
             if hasattr(tx, "compute_txid") and (getattr(tx, "txid", None) is None):
@@ -589,7 +604,8 @@ class ValidationMixin:
             seen_txids.add(txid_b)
         return True
 
-    def _check_block_limits(self, block: Block) -> bool:
+
+    def _check_block_limits(self, block: Block) -> bool: 
         txs_ex_coinbase = max(0, (len(block.transactions) or 0) - 1)
         if txs_ex_coinbase > CFG.MAX_TXS_PER_BLOCK:
             self._last_block_validation_error = "too_many_txs"
@@ -600,7 +616,8 @@ class ValidationMixin:
             return False
         return True
 
-    def _entry_script_bytes(self, entry) -> bytes | None:
+
+    def _entry_script_bytes(self, entry) -> bytes | None: 
         candidate = entry
         if isinstance(candidate, dict):
             tx_out = candidate.get("tx_out") or candidate
@@ -623,7 +640,8 @@ class ValidationMixin:
             return bytes.fromhex(spk)
         return None
 
-    def _validate_graffiti_output(self, spk_obj) -> bool:
+
+    def _validate_graffiti_output(self, spk_obj) -> bool: 
         raw = self._extract_raw_spk(spk_obj)
         if not raw:
             return True
@@ -645,7 +663,8 @@ class ValidationMixin:
             return self._validate_graffiti_comment_event(meta)
         return True
 
-    def _extract_raw_spk(self, spk_obj) -> bytes | None:
+
+    def _extract_raw_spk(self, spk_obj) -> bytes | None: 
         if hasattr(spk_obj, "serialize"):
             return spk_obj.serialize()
         if isinstance(spk_obj, (bytes, bytearray)):
@@ -657,7 +676,8 @@ class ValidationMixin:
                 return None
         return None
 
-    def _validate_graffiti_post_event(self, meta) -> bool:
+
+    def _validate_graffiti_post_event(self, meta) -> bool: 
         size_val = int(meta.get("size", 0))
         if size_val <= 0:
             self._last_block_validation_error = "graffiti_size_invalid"
@@ -667,7 +687,8 @@ class ValidationMixin:
             return False
         return True
 
-    def _validate_graffiti_comment_event(self, meta) -> bool:
+
+    def _validate_graffiti_comment_event(self, meta) -> bool: 
         comment_len = int(meta.get("comment_len", 0))
         if comment_len <= 0:
             self._last_block_validation_error = "graffiti_comment_empty"
@@ -685,7 +706,8 @@ class ValidationMixin:
             return False
         return True
 
-    def _spk_to_address(self, spk_obj) -> str | None:
+
+    def _spk_to_address(self, spk_obj) -> str | None: 
         if hasattr(spk_obj, "serialize"):
             spk_bytes = spk_obj.serialize()
         elif isinstance(spk_obj, (bytes, bytearray)):
@@ -707,7 +729,8 @@ class ValidationMixin:
             return bech32_encode(CFG.ADDRESS_PREFIX, data)
         return None
 
-    def _script_to_bytes(self, spk_obj):
+
+    def _script_to_bytes(self, spk_obj): 
         if spk_obj is None:
             return None
         if isinstance(spk_obj, dict):
@@ -725,14 +748,16 @@ class ValidationMixin:
             return bytes(spk_obj.to_bytes())
         return None
 
-    def _txid_hex(self, value):
+
+    def _txid_hex(self, value): 
         if value is None:
             return None
         if isinstance(value, (bytes, bytearray)):
             return value.hex()
         return str(value)
 
-    def _legacy_lookup(self, snapshot_map, prev_txid_hex: str, prev_index: int):
+
+    def _legacy_lookup(self, snapshot_map, prev_txid_hex: str, prev_index: int): 
         if not isinstance(snapshot_map, dict):
             return None
             
@@ -742,7 +767,8 @@ class ValidationMixin:
             
         return self._lookup_iteration(snapshot_map, prev_txid_hex, prev_index)
 
-    def _lookup_direct_keys(self, snapshot_map, prev_txid_hex: str, prev_index: int):
+
+    def _lookup_direct_keys(self, snapshot_map, prev_txid_hex: str, prev_index: int): 
         key = f"{prev_txid_hex}:{int(prev_index)}"
         entry = snapshot_map.get(key) or snapshot_map.get(key.lower())
         if entry is not None:
@@ -768,7 +794,8 @@ class ValidationMixin:
             
         return None
 
-    def _lookup_iteration(self, snapshot_map, prev_txid_hex: str, prev_index: int):
+
+    def _lookup_iteration(self, snapshot_map, prev_txid_hex: str, prev_index: int): 
         if len(snapshot_map) > 2048:
             return None
             
@@ -787,12 +814,14 @@ class ValidationMixin:
                     
         return None
 
-    def _resolve_prevout(self, store_lookup, utxo_view, prev_txid_hex: str, prev_index: int):
+
+    def _resolve_prevout(self, store_lookup, utxo_view, prev_txid_hex: str, prev_index: int): 
         if callable(store_lookup):
             return store_lookup(prev_txid_hex, prev_index)
         return self._legacy_lookup(utxo_view, prev_txid_hex, prev_index)
 
-    def _normalize_snapshot_entry(self, entry, key_desc: str):
+
+    def _normalize_snapshot_entry(self, entry, key_desc: str): 
         candidate = entry
         if isinstance(candidate, dict):
             tx_out = candidate.get("tx_out") or candidate
@@ -826,7 +855,8 @@ class ValidationMixin:
             "block_height": born,
         }
 
-    def _build_block_payload_compact(self, tx_list, snapshot_dict):
+
+    def _build_block_payload_compact(self, tx_list, snapshot_dict): 
         tx_payloads = []
         for tx in tx_list:
             compact = H.tx_to_compact_tuple(tx)
@@ -853,7 +883,8 @@ class ValidationMixin:
             )
         return tx_payloads, utxo_items
 
-    def _utxo_lookup(self, lookup_fn, utxo_view, txid_b: bytes, vout_i: int):
+
+    def _utxo_lookup(self, lookup_fn, utxo_view, txid_b: bytes, vout_i: int): 
         entry = None
         if callable(lookup_fn):
             entry = lookup_fn(txid_b.hex(), int(vout_i))
@@ -864,7 +895,8 @@ class ValidationMixin:
             return None
         return self._entry_script_bytes(entry)
 
-    def _check_sigops_budget(self, block: Block, store: UTXODB, utxo_view) -> bool:
+
+    def _check_sigops_budget(self, block: Block, store: UTXODB, utxo_view) -> bool: 
         lookup_fn = getattr(store, "lookup_entry", None)
 
         total_sigops = 0
@@ -889,4 +921,3 @@ class ValidationMixin:
             self._last_block_validation_error = "sigops_per_block_exceeded"
             return False
         return True
-

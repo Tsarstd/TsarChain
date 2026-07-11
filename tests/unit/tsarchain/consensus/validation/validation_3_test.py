@@ -52,7 +52,7 @@ def test_compute_txids_for_block():
     
     with patch("tsarchain.consensus.validation.H") as mock_H:
         mock_H.hash256.return_value = b"txidbytes"
-        assert c._compute_txids_for_block(b) is True
+        assert c.compute_txids_for_block(b) is True
         assert tx.txid == b"txidbytes"
 
 def test_compute_txids_for_block_serialize_fail():
@@ -60,7 +60,7 @@ def test_compute_txids_for_block_serialize_fail():
     c._serialize_tx_cached = Mock(return_value=None)
     tx = CovP1DummyTx()
     b = CovP1DummyBlock(transactions=[tx])
-    assert c._compute_txids_for_block(b) is False
+    assert c.compute_txids_for_block(b) is False
     assert c._last_block_validation_error == "tx_serialize_failed"
 
 def test_compute_txids_for_block_mismatch():
@@ -70,7 +70,7 @@ def test_compute_txids_for_block_mismatch():
     b = CovP1DummyBlock(transactions=[tx])
     with patch("tsarchain.consensus.validation.H") as mock_H:
         mock_H.hash256.return_value = b"txidbytes"
-        assert c._compute_txids_for_block(b) is False
+        assert c.compute_txids_for_block(b) is False
         assert c._last_block_validation_error == "txid_mismatch"
 
 def test_compute_txids_for_block_mismatch_str():
@@ -80,7 +80,7 @@ def test_compute_txids_for_block_mismatch_str():
     b = CovP1DummyBlock(transactions=[tx])
     with patch("tsarchain.consensus.validation.H") as mock_H:
         mock_H.hash256.return_value = b"bb"*32
-        assert c._compute_txids_for_block(b) is False
+        assert c.compute_txids_for_block(b) is False
         assert c._last_block_validation_error == "txid_mismatch"
 
 # --- _validate_pow ---
@@ -757,7 +757,7 @@ class CovP5DummyConsensus(ValidationMixin):
 
 def setup_validate_block_mock_p5(c):
     c._validate_pow = Mock(return_value=True)
-    c._compute_txids_for_block = Mock(return_value=True)
+    c.compute_txids_for_block = Mock(return_value=True)
     c._validate_merkle = Mock(return_value=True)
     c._ensure_unique_txids = Mock(return_value=True)
     c._check_block_limits = Mock(return_value=True)
@@ -909,7 +909,7 @@ class CovP6DummyConsensus(ValidationMixin):
 
 def setup_validate_block_mock_p6(c):
     c._validate_pow = Mock(return_value=True)
-    c._compute_txids_for_block = Mock(return_value=True)
+    c.compute_txids_for_block = Mock(return_value=True)
     c._validate_merkle = Mock(return_value=True)
     c._ensure_unique_txids = Mock(return_value=True)
     c._check_block_limits = Mock(return_value=True)

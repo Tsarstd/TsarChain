@@ -371,9 +371,9 @@ class ChainOpsMixin:
             return False, 0
         if not self._pow_ok(g):
             return False, 0
-        if hasattr(self, "_compute_txids_for_block"):
+        if hasattr(self, "compute_txids_for_block"):
             try:
-                if not self._compute_txids_for_block(g):
+                if not self.compute_txids_for_block(g):
                     return False, 0
             except Exception:
                 log.exception("[_validate_complete_chain] Error computing txids for genesis")
@@ -428,8 +428,8 @@ class ChainOpsMixin:
 
             if not self._pow_ok(cur):
                 return False
-            if hasattr(self, "_compute_txids_for_block"):
-                if not self._compute_txids_for_block(cur):
+            if hasattr(self, "compute_txids_for_block"):
+                if not self.compute_txids_for_block(cur):
                     return False
             if not self._merkle_ok(cur):
                 return False

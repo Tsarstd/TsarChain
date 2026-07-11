@@ -111,7 +111,7 @@ class TestValidationMixin:
                 self._check_block_limits = Mock(return_value=True)
                 self._validate_pow = Mock(return_value=True)
                 self._serialize_tx_cached = Mock(return_value=b"serialized")
-                self._compute_txids_for_block = Mock(return_value=True)
+                self.compute_txids_for_block = Mock(return_value=True)
         return DummyConsensus()
 
     # -------------------------------------------------------------------
@@ -235,7 +235,7 @@ class TestValidationMixin:
         block.merkle_root = b"merkle"
         block.timestamp = 123
         block.hash = Mock(return_value=b"hash")
-        instance._compute_txids_for_block.return_value = False
+        instance.compute_txids_for_block.return_value = False
         instance._last_block_validation_error = "tx_serialize_failed"  # pre‑set
         result = instance.validate_block(block)
         assert result is False
