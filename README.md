@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/branding/TsarChain Logo.png" width="720" alt="TsarChain — The Voice Sovereignty Monetary System">
+  <img src="assets/branding/Graffiti-Protocol.png" width="720" alt="TsarChain — The Voice Sovereignty Monetary System">
 </p>
 
 <p align="center">
@@ -14,11 +14,11 @@
   <img alt="Network" src="https://img.shields.io/badge/Network-Devnet-yellow">
 </p>
 
-# Layer 1 Blockchain - for digital preservation and voice sovereignty
+# A distributed system that treats art and testimonials as primary transactions, rather than mere footnotes.
 
 *A proof‑of‑work, UTXO‑based chain for digital preservation — durable, verifiable, and community‑owned.*
 
-TsarChain focuses on **Voice Sovereignty**: preserving *cultural archives*, *art*, and *testimonies* so that *digital traces* don't disappear. Its decentralized architecture keeps evidence **verifiable** and **publicly auditable**, providing creative communities and cultural researchers with a durable **preservation platform**.
+Graffiti Protocol focuses on **Voice Sovereignty**: preserving *cultural archives*, *art*, and *testimonies* so that *digital traces* don't disappear. Its decentralized architecture keeps evidence **verifiable** and **publicly auditable**, providing creative communities and cultural researchers with a durable **preservation platform**.
 
 
 ---
@@ -151,7 +151,7 @@ TsarChain focuses on **Voice Sovereignty**: preserving *cultural archives*, *art
   - P2P Networking Protocol
   - Chain Validation
   - Some Native Rust for acceleration module for TsarChain
-- **Graffiti (MVP)**
+- **Graffiti Protocol (MVP)**
   - Graffiti upload Mechanism in Graffiti Tab `Kremlin`
   - Put a Comment and Giving a tip to graffiti creator
   - Anchoring Graffiti File Hash to Block Id
