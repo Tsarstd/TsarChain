@@ -5,18 +5,19 @@
 
 from __future__ import annotations
 
+import os
+import sys
 import csv
 import json
-import os
 import subprocess
-import sys
 import tkinter as tk
-from typing import Any, Dict, List, Optional, Sequence, TYPE_CHECKING
 from tkinter import filedialog, messagebox, ttk
+from typing import Any, Dict, List, Optional, Sequence, TYPE_CHECKING
 
-from ..services.tx_history import HistoryService
 from .wallet_tab import sat_to_tsar
 from tsarchain.utils import config as CFG
+from ..services.tx_history import HistoryService
+from kremlin.ui_utils import enable_treeview_hover, insert_treeview_chunked
 
 from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.history_tab")
@@ -219,7 +220,7 @@ class HistoryTab(tk.Frame):
                 self._hist_menu.grab_release()
 
         tree.bind("<Button-3>", _hist_ctx_menu)
-        self.app._tv_enable_hover(tree)
+        enable_treeview_hover(self.app, tree)
 
     def _build_footer(self) -> None:
         bottom = tk.Frame(self, bg=self.app.bg)
@@ -426,7 +427,7 @@ class HistoryTab(tk.Frame):
             tag = ("CONF",) if status_txt == "confirmed" else ("UNCONF",)
             rows.append(((txid, owner, to_addr, sat_to_tsar(amt), status_txt, conf, h, direction_txt), tag))
 
-        self.app._tv_insert_chunked(self.history_tree, rows)
+        insert_treeview_chunked(self.app, self.history_tree, rows)
 
     def refresh_history(self) -> None:
         addr = self.history_addr_var.get()
@@ -447,7 +448,7 @@ class HistoryTab(tk.Frame):
         
         self._render_from_cache()
         widgets = [w for w in (self.hist_refresh_btn, self.hist_prev_btn, self.hist_next_btn) if w]
-        if not self.app._busy_start("history_list", widgets):
+        if not self.app.busy_manager.start("history_list", widgets):
             return
 
         def _on_hist(resp: Optional[Dict[str, Any]]) -> None:
@@ -469,7 +470,7 @@ class HistoryTab(tk.Frame):
             try:
                 _on_hist(resp)
             finally:
-                self.app._busy_end("history_list")
+                self.app.busy_manager.end("history_list")
 
         try:
             self.service.fetch_history(
@@ -483,7 +484,7 @@ class HistoryTab(tk.Frame):
             )
         except Exception as exc:
             log.exception("Unhandled exception")
-            self.app._busy_end("history_list")
+            self.app.busy_manager.end("history_list")
             messagebox.showerror("Error", str(exc))
 
     # ---------------------------------------------------------- Misc helpers

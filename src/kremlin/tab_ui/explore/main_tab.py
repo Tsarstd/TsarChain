@@ -22,7 +22,7 @@ from tsarchain.utils import config as CFG
 from ...theme import ExplorerTheme, get_theme
 
 from tsarchain.utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.wallet.tab_ui.explorer_tab")
+log = get_ctx_logger("tsarchain.wallet.tab_ui.explorer.main_tab")
 
 MONO     = ("Consolas", 10)
 HINT_TEXT = "search with : (block height/txid/hash/address)"
@@ -311,7 +311,6 @@ class ExplorePanel(tk.Frame):
     def navigate_to_art(self, art_id: str):
         if not art_id:
             return
-        log.debug("explorer: navigate_to_art %s", art_id)
         self._enter_compact()
         self.search_var.set(art_id)
         self._open_graffiti(art_id)

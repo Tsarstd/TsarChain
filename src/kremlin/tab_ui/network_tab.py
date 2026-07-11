@@ -200,7 +200,7 @@ class NetworkTab(tk.Frame):
         finally:
             self._net_text_disable()
 
-        if not self.app._busy_start("netinfo", []):
+        if not self.app.busy_manager.start("netinfo", []):
             return
 
         pending = {"n": 2}
@@ -212,7 +212,7 @@ class NetworkTab(tk.Frame):
                 try:
                     self._render_network_snapshot(store.get("snap"), int(store.get("peers", 0)))
                 finally:
-                    self.app._busy_end("netinfo")
+                    self.app.busy_manager.end("netinfo")
 
         def on_info(resp: Optional[Dict[str, Any]]) -> None:
             try:

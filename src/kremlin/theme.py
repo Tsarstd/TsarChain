@@ -13,8 +13,10 @@ inside widgets.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import tkinter.ttk as ttk
+
 from typing import Dict, Tuple
+from dataclasses import dataclass
 
 
 # ---------------------------------------------------------------------------
@@ -380,6 +382,28 @@ def get_theme(mode: str = "dark") -> ThemeSet:
     )
 
 
+def install_ttk_styles(root, theme_set) -> ttk.Style:
+    palette = theme_set.palette
+    bg = palette.bg
+    fg = palette.fg
+    panel = palette.panel_bg
+    accent = palette.accent
+    muted = palette.muted
+    border = palette.border
+    style = ttk.Style(root)
+    style.theme_use("clam")
+    
+    style.configure("Tsar.TFrame", background=bg)
+    style.configure("Tsar.TLabelframe", background=bg, foreground=fg)
+    style.configure("Tsar.TLabelframe.Label", background=bg, foreground=fg)
+    style.configure("Tsar.TLabel", background=bg, foreground=fg)
+    style.configure("Muted.TLabel", background=bg, foreground=muted)
+    style.configure("Accent.TLabel", background=bg, foreground=accent)
+    style.configure("Tsar.TButton", background=panel, foreground=fg, padding=6, bordercolor=border)
+    style.map("Tsar.TButton", background=[("active", lighten(panel, 0.08)), ("pressed", lighten(panel, 0.12))])
+    style.configure("Tsar.Vertical.TScrollbar", background=panel, troughcolor=bg)
+    return style
+
 __all__ = [
     "Palette",
     "ChatTheme",
@@ -392,4 +416,5 @@ __all__ = [
     "get_theme",
     "lighten",
     "darken",
+    "install_ttk_styles",
 ]

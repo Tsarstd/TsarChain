@@ -1,8 +1,9 @@
 [run]
 omit = 
+    apps/wallet.py
     src/web/Fronted/*
     src/kremlin/tab_ui/*
     src/kremlin/theme.py
     src/kremlin/ui_utils.py
+    src/kremlin/ui_state.py
     src/tsarchain/miner/cosmetic/*
-    apps/wallet.py

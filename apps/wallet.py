@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import os
-import re
 import sys
 import time
 import json
@@ -19,39 +18,44 @@ import tkinter.font as tkfont
 from tkinter import messagebox, simpledialog, ttk
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-# ---------------- Local Project (Wallet Only) ----------------
-from kremlin.tab_ui.wallet_tab import WalletsMixin, load_registry
-from kremlin.tab_ui.graffiti_tab import GraffitiTab
+# ---------------- UI MODULE ----------------
+from kremlin.tab_ui.dev_tab import DevTab
 from kremlin.tab_ui.chat_tab import ChatTab
 from kremlin.tab_ui.send_tab import SendTab
-from kremlin.tab_ui.explore.main_tab import ExplorePanel
 from kremlin.tab_ui.network_tab import NetworkTab
 from kremlin.tab_ui.history_tab import HistoryTab
-from kremlin.tab_ui.dev_tab import DevTab
+from kremlin.tab_ui.graffiti_tab import GraffitiTab
+from kremlin.tab_ui.app_sidebar import SidebarNavigator
+from kremlin.tab_ui.explore.main_tab import ExplorePanel
+from kremlin.tab_ui.wallet_tab import WalletsMixin, load_registry
+from kremlin.tab_ui.lockscreen import should_show_password_lock, show_password_lockscreen
 
+# ---------------- Security ----------------
 from kremlin.security.chat.triple_xdh import ChatManager
-from kremlin.security.data_security import list_addresses_in_keystore, create_keypair, WALLET_FILE
+from kremlin.security.data_security import list_addresses_in_keystore, create_keypair
 
+# ---------------- Services ----------------
 from kremlin.services.rpc_kremlin import NodeClient
-from kremlin.services.contact_management import ContactManager
 from kremlin.services.send_service import SendService
 from kremlin.services.tx_history import HistoryService
-from kremlin.services.graffiti_service import fetch_graffiti_file
+from kremlin.services.contact_management import ContactManager
+from kremlin.services.explorer_providers import get_explorer_providers
 
-from kremlin.theme import get_theme, lighten
-from kremlin.ui_utils import center_window
+# ---------------- UI Utility ----------------
+from kremlin.ui_utils import show_toast
+from kremlin.ui_state import BusyManager
+from kremlin.theme import get_theme, install_ttk_styles
 
 # ---------------- Local Project (With Node) ----------------
 import tsarcore_native as native
-from tsarchain.storage.kv import kv_enabled, iter_prefix, batch
 from tsarchain.utils import config as CFG
+from tsarchain.storage.kv import kv_enabled, iter_prefix, batch
 
 # ---------------- Logger ----------------
 from tsarchain.utils.tsar_logging import setup_logging, open_log_toplevel, get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.gui")
 
 # ---------------- Constants & Paths ----------------
-
 manual_bootstrap: Optional[Tuple[str, int]] = None
 os.makedirs(os.path.dirname(CFG.USER_KEY_PATH), exist_ok=True)
 
@@ -100,98 +104,6 @@ def _save_peer_keys(d: dict) -> None:
 
 WALLET_PEER_KEYS = _load_peer_keys()
 
-# ---------------- Utils: Amount formatting ----------------
-def sat_to_tsar(amount_satoshi: Optional[int]) -> str:
-    if amount_satoshi is None:
-        amount_satoshi = 0
-    tsar = amount_satoshi / CFG.TSAR
-    s = f"{tsar:.8f}".rstrip("0").rstrip(".")
-    return f"{s} TSAR"
-
-
-# ---------------- Password Lock Screen ----------------
-class PasswordLockscreen(tk.Toplevel):
-
-    def __init__(self, root: tk.Tk):
-        super().__init__(root)
-        self.result: Optional[str] = None
-        self.configure(bg="#121212")
-        self.geometry("1070x700")
-        self.title("Unlock Wallet")
-        self.resizable(False, False)
-
-        lbl = tk.Label(
-            self,
-            text="Enter the keystore password to open the wallet.",
-            bg="#121212",
-            fg="#ff5e00",
-            font=("Consolas", 16, "bold"),
-        )
-        lbl.pack(pady=(40, 12))
-
-        self.entry = tk.Entry(self, font=("Consolas", 14), width=32, bg="#0f0f0f", fg="#ff5e00", show="*")
-        self.entry.pack(pady=12)
-        self.entry.bind("<Return>", self.on_unlock)
-
-        self.error_var = tk.StringVar(value="")
-        tk.Label(
-            self,
-            textvariable=self.error_var,
-            bg="#121212",
-            fg="#ff5e00",
-            font=("Consolas", 11),
-        ).pack(pady=(0, 18))
-
-        btn_frame = tk.Frame(self, bg="#121212")
-        btn_frame.pack(pady=10)
-
-        tk.Button(
-            btn_frame,
-            text="Unlock",
-            font=("Consolas", 12),
-            bg="#ff5e00",
-            fg="#fff",
-            command=self.on_unlock,
-        ).pack(side=tk.LEFT, padx=10)
-        
-        tk.Button(
-            btn_frame,
-            text="Exit",
-            font=("Consolas", 12),
-            bg="#444",
-            fg="#fff",
-            command=self.on_cancel,
-        ).pack(side=tk.LEFT, padx=10)
-
-        center_window(self, root)
-        self.entry.focus_set()
-
-    def on_unlock(self, _event=None) -> None:
-        pwd = self.entry.get().strip()
-        if not pwd:
-            self.error_var.set("Password is required.")
-            return
-        _ = list_addresses_in_keystore(pwd)
-
-        self.result = pwd
-        self.destroy()
-
-    def on_cancel(self) -> None:
-        self.result = None
-        self.destroy()
-        
-
-def should_show_password_lock() -> bool:
-    if load_registry():
-        return True
-    return os.path.exists(WALLET_FILE) and os.path.getsize(WALLET_FILE) > 0
-
-def show_password_lockscreen(root: tk.Tk) -> Optional[str]:
-    lock = PasswordLockscreen(root)
-    root.wait_window(lock)
-    return lock.result
-
-
 # ---------------- Main GUI ----------------
 class KremlinWalletGUI(WalletsMixin):
     def __init__(self, root: tk.Tk, initial_keystore_password: Optional[str] = None):
@@ -199,11 +111,15 @@ class KremlinWalletGUI(WalletsMixin):
 
         # 0) Theme & styles
         self.current_theme = getattr(self, "current_theme", "dark")
-        self._set_theme(self.current_theme)
+        self.theme_set = get_theme(self.current_theme)
+        self._set_theme_vars(self.theme_set)
 
-        self._install_styles()
+        self._style = install_ttk_styles(self.root, self.theme_set)
         self._bind_shortcuts()
-        self._busy_setup()
+        self.busy_manager = BusyManager(self.root, toast_cb=lambda m, ms=1800, kind="info": show_toast(self, m, ms=ms, kind=kind))
+        self._balance_countdown_job = None
+        self._balance_next_sec = 0
+        self._toasts = []
 
         root.title("Kremlin")
         root.geometry("1070x700")
@@ -259,37 +175,7 @@ class KremlinWalletGUI(WalletsMixin):
 
         # 5) Build layout dasar
         self.wallets: List[str] = load_registry()
-        self._build_layout()
-
-        # 6) Contact manager (does not need RPC)
-        self.contact_mgr = ContactManager(
-            self.root,
-            get_password_cb=self._get_keystore_password,
-            toast_cb=lambda m: self._toast(m, kind="info"),
-            theme=self.theme_set.contacts,
-        )
-        
-        self.chat_tab = ChatTab(
-            root=self.root,
-            chat_mgr=self.chat_mgr,
-            rpc_send=self.rpc.send,
-            theme=self.theme_set.chat,
-            toast_cb=lambda m, kind="info": self._toast(m, kind),
-            get_wallets_cb=lambda: list(self.wallets or []),
-            contact_mgr=self.contact_mgr,
-        )
-        
-        self.send_tab = SendTab(
-            self.root,
-            rpc_send=self.rpc_send,
-            ask_password=lambda addr: self._ask_password("Unlock Address", f"Enter password for\n{addr}:"),
-            toast=lambda m, kind="info": self._toast(m, kind),
-            addresses_provider=lambda: list(self.wallets or []),
-            contact_manager=getattr(self, "contact_mgr", None),
-            busy_request=getattr(self, "_request_locked", None),
-            theme=self.theme_set.send,
-            on_sent=lambda addr_from: self._handle_balance_refresh_request(addresses=[addr_from], immediate=True),
-        )
+        self._init_core_ui()
 
         # 7) Build frames/tab
         self._build_wallets_frame()
@@ -309,11 +195,7 @@ class KremlinWalletGUI(WalletsMixin):
     # ---------------- Theme / Layout ----------------
         
     # -------------- Theme palette & styles --------------
-    def _set_theme(self, mode: str | None = None) -> None:
-        if mode is not None:
-            self.current_theme = mode.lower()
-        theme_set = get_theme(getattr(self, "current_theme", "dark"))
-        self.theme_set = theme_set
+    def _set_theme_vars(self, theme_set) -> None:
         palette = theme_set.palette
         self.bg = palette.bg
         self.panel_bg = palette.panel_bg
@@ -327,42 +209,58 @@ class KremlinWalletGUI(WalletsMixin):
         self.sidebar_active = theme_set.wallet.sidebar_active
         self.root.configure(bg=self.bg)
 
-    def _install_styles(self) -> None:
-        bg = getattr(self, "bg", "#0f1115")
-        fg = getattr(self, "fg", "#f2f5f7")
-        panel = getattr(self, "panel_bg", "#161a1f")
-        accent = getattr(self, "accent", "#ff6b00")
-        muted = getattr(self, "muted", "#a9b1ba")
-        border = getattr(self, "border_color", "#2a2f36")
-        style = ttk.Style(self.root)
-        style.theme_use("clam")
+    def _set_theme(self, mode: str | None = None) -> None:
+        if mode is not None:
+            self.current_theme = mode.lower()
+        self.theme_set = get_theme(getattr(self, "current_theme", "dark"))
+        self._set_theme_vars(self.theme_set)
+
+
+    def _init_core_ui(self) -> None:
+        self._build_layout()
         
-        style.configure("Tsar.TFrame", background=bg)
-        style.configure("Tsar.TLabelframe", background=bg, foreground=fg)
-        style.configure("Tsar.TLabelframe.Label", background=bg, foreground=fg)
-        style.configure("Tsar.TLabel", background=bg, foreground=fg)
-        style.configure("Muted.TLabel", background=bg, foreground=muted)
-        style.configure("Accent.TLabel", background=bg, foreground=accent)
-        style.configure("Tsar.TButton", background=panel, foreground=fg, padding=6, bordercolor=border)
-        style.map("Tsar.TButton", background=[("active", lighten(panel, 0.08)), ("pressed", lighten(panel, 0.12))])
-        style.configure("Tsar.Vertical.TScrollbar", background=panel, troughcolor=bg)
+        self.contact_mgr = ContactManager(
+            self.root,
+            get_password_cb=self._get_keystore_password,
+            toast_cb=lambda m, ms=1800, kind='info': show_toast(self, m, ms=ms, kind=kind),
+            theme=self.theme_set.contacts,
+        )
         
-        self._style = style
+        self.chat_tab = ChatTab(
+            root=self.root,
+            chat_mgr=self.chat_mgr,
+            rpc_send=self.rpc.send,
+            theme=self.theme_set.chat,
+            toast_cb=lambda m, ms=1800, kind='info': show_toast(self, m, ms=ms, kind=kind),
+            get_wallets_cb=lambda: list(self.wallets or []),
+            contact_mgr=self.contact_mgr,
+        )
+        
+        self.send_tab = SendTab(
+            self.root,
+            rpc_send=self.rpc_send,
+            ask_password=lambda addr: self._ask_password("Unlock Address", f"Enter password for\\n{addr}:"),
+            toast=lambda m, ms=1800, kind='info': show_toast(self, m, ms=ms, kind=kind),
+            addresses_provider=lambda: list(self.wallets or []),
+            contact_manager=getattr(self, "contact_mgr", None),
+            busy_request=getattr(self, "_request_locked", None),
+            theme=self.theme_set.send,
+            on_sent=lambda addr_from: self._handle_balance_refresh_request(addresses=[addr_from], immediate=True),
+        )
 
     def toggle_theme(self) -> None:
+        self._hide_all_frames()
+        self.frames.clear()
+
         self.current_theme = "light" if self.current_theme == "dark" else "dark"
-        self._set_theme(self.current_theme)
-        self._install_styles()
-        self.contact_mgr.apply_theme(self.theme_set.contacts)
-        self.chat_tab.set_palette(self.theme_set.chat)
-        self.send_tab.update_theme(self.theme_set.send)
-        if hasattr(self, "graffiti_tab"):
-            self.graffiti_tab.apply_theme(self.theme_set.graffiti)
+        self.theme_set = get_theme(self.current_theme)
+        self._set_theme_vars(self.theme_set)
+        self._style = install_ttk_styles(self.root, self.theme_set)
             
         for widget in self.root.winfo_children():
             widget.destroy()
             
-        self._build_layout()
+        self._init_core_ui()
         self._build_wallets_frame()
         self._build_send_frame()
         self._build_network_frame()
@@ -442,176 +340,46 @@ class KremlinWalletGUI(WalletsMixin):
 
     def _refresh_sidebar_styles(self) -> None:
         active_fg = self.bg if self.current_theme == "dark" else self.fg
-        for tab, btn in getattr(self, "_sidebar_buttons", {}).items():
-            if not btn or not btn.winfo_exists():
-                continue
-            if tab == getattr(self, "_active_tab", ""):
-                btn.configure(
-                    bg=self.sidebar_active,
-                    fg=active_fg,
-                    activebackground=self.sidebar_active,
-                    activeforeground=active_fg,
-                )
-            else:
-                btn.configure(
-                    bg=self.sidebar_bg,
-                    fg=self.fg,
-                    activebackground=self.sidebar_active,
-                    activeforeground=active_fg,
-                )
-
-    def _create_sidebar_button(self, text: str, tab: str, on_click) -> tk.Button:
-        active_fg = self.bg if self.current_theme == "dark" else self.fg
-        btn = tk.Button(
-            self.sidebar,
-            text=text,
-            command=lambda: (on_click(), self._activate_tab(tab)),
-            bg=self.sidebar_bg,
-            fg=self.fg,
-            font=("Segoe UI", 10, "bold"),
-            bd=0,
-            relief=tk.FLAT,
-            padx=8,
-            pady=8,
-            highlightthickness=0,
-            cursor="hand2",
-            activebackground=self.sidebar_active,
-            activeforeground=active_fg,
-        )
-
-        def _hover_in(_e):
-            if tab != getattr(self, "_active_tab", ""):
-                btn.configure(bg=self.sidebar_active, fg=active_fg)
-
-        def _hover_out(_e):
-            if tab != getattr(self, "_active_tab", ""):
-                btn.configure(bg=self.sidebar_bg, fg=self.fg)
-
-        btn.bind("<Enter>", _hover_in)
-        btn.bind("<Leave>", _hover_out)
-
-        if not hasattr(self, "_sidebar_buttons"):
-            self._sidebar_buttons = {}
-        self._sidebar_buttons[tab] = btn
-        btn.pack(pady=(12, 6))
-        return btn
+        if hasattr(self, "navigator"):
+            self.navigator.refresh_styles(getattr(self, "_active_tab", ""), self.sidebar_bg, self.sidebar_active, self.fg, active_fg)
 
     @staticmethod
     def _widget_exists(widget) -> bool:
         return bool(widget) and widget.winfo_exists()
 
     def _build_layout(self) -> None:
-        self.sidebar = tk.Frame(self.root, bg=self.sidebar_bg, width=100)
-        self.sidebar.pack(side=tk.LEFT, fill=tk.Y)
+        self.sidebar_frame = tk.Frame(self.root, bg=self.sidebar_bg, width=100)
+        self.sidebar_frame.pack(side=tk.LEFT, fill=tk.Y)
         self.main = tk.Frame(self.root, bg=self.bg)
         self.main.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        tk.Label(self.sidebar, text="Kremlin", bg=self.sidebar_bg, fg=self.accent,
-                 font=("Segoe UI", 17, "bold")).pack(pady=(12, 6))
+        self.navigator = SidebarNavigator(
+            self.root, self.sidebar_frame, self,
+            self.sidebar_bg, self.sidebar_active, self.fg, self.bg if self.current_theme == "dark" else self.fg, self.accent
+        )
 
-        self._sidebar_buttons = {}
-        self._create_sidebar_button("Wallets",  "wallets",  self.show_wallets_frame)
-        self._create_sidebar_button("Send",     "send",     self.show_send_frame)
-        self._create_sidebar_button("History",  "history",  self.show_history_frame)
-        self._create_sidebar_button("Chat",     "chat",     self.show_chat_frame)
-        self._create_sidebar_button("Graffiti",  "graffiti",  self.show_graffiti_frame)
-        self._create_sidebar_button("Explorer", "explorer", self.show_explorer_frame)
-        self._create_sidebar_button("Network",  "network",  self.show_network_frame)
-        self._create_sidebar_button("Dev",      "dev",      self.show_dev_frame)
+        self.navigator.add_button("Wallets",  "wallets",  self.show_wallets_frame)
+        self.navigator.add_button("Send",     "send",     self.show_send_frame)
+        self.navigator.add_button("History",  "history",  self.show_history_frame)
+        self.navigator.add_button("Chat",     "chat",     self.show_chat_frame)
+        self.navigator.add_button("Graffiti", "graffiti", self.show_graffiti_frame)
+        self.navigator.add_button("Explorer", "explorer", self.show_explorer_frame)
+        self.navigator.add_button("Network",  "network",  self.show_network_frame)
+        self.navigator.add_button("Dev",      "dev",      self.show_dev_frame)
 
-        active_fg = self.bg if self.current_theme == "dark" else self.fg
-        tk.Button(
-            self.sidebar,
-            text="Switch Theme",
-            command=self.toggle_theme,
-            bg=self.sidebar_bg,
-            fg=self.fg,
-            bd=0,
-            relief=tk.FLAT,
-            padx=8,
-            pady=8,
-            highlightthickness=0,
-            cursor="hand2",
-            activebackground=self.sidebar_active,
-            activeforeground=active_fg,
-        ).pack(side=tk.BOTTOM, pady=10)
+        self.navigator.add_theme_toggle(self.toggle_theme)
 
         palette = getattr(self.theme_set, "palette", None)
         offline_color = palette.danger if palette else "#d41c1c"
-        self.conn_status = tk.Label(self.sidebar, text="Offline", bg=self.sidebar_bg,
-                                    fg=offline_color, font=("Segoe UI", 9, "bold"))
-        self.conn_status.pack(side=tk.BOTTOM, pady=(0, 12))
+        self.conn_status = self.navigator.add_connection_status(offline_color)
 
         self.frames: Dict[str, tk.Frame] = {}
 
+        if getattr(self, "_conn_online", False):
+            self._set_conn_status(True)
+
         
-        # ---------------- UX: Toast (non-blocking) ----------------
-    def _toast(self, text: str, ms: int = 1800, kind: str = "info") -> None:
-        if isinstance(ms, str):
-            kind = ms
-            ms = 1800
-        ms = int(ms)
-        if not hasattr(self, "_toasts"):
-            self._toasts = []
-        self.root.update_idletasks()
-        tw = tk.Toplevel(self.root)
-        tw.withdraw()
-        tw.overrideredirect(True)
-        tw.attributes("-topmost", True)
-        tw.attributes("-alpha", 0.96)
-
-        palette = getattr(self, "theme_set", None).palette if hasattr(self, "theme_set") else None
-        warn_color = palette.warning if palette else "#f5a524"
-        error_color = palette.danger if palette else "#f1633f"
-        info_color = self.accent
-        border = {"info": info_color, "warn": warn_color, "error": error_color}.get(kind, info_color)
-        bg = self.panel_bg
-        w, h = 320, 52
-        rx = self.root.winfo_rootx(); ry = self.root.winfo_rooty()
-        rw = self.root.winfo_width();  rh = self.root.winfo_height()
-        y_offset = len(self._toasts) * (h + 6)
-        x = rx + rw - (w + 18)
-        y = ry + rh - (h + 18) - y_offset
-        tw.geometry(f"{w}x{h}+{x}+{y}")
-
-        wrapper = tk.Frame(tw, bg=border, bd=0, highlightthickness=0)
-        wrapper.pack(fill="both", expand=True)
-        inner = tk.Frame(wrapper, bg=bg, bd=0, highlightthickness=0)
-        inner.pack(fill="both", expand=True, padx=1, pady=1)
-
-        lbl = tk.Label(inner, text=text, bg=bg, fg=self.fg, font=("Consolas", 10), anchor="w", justify="left")
-        lbl.pack(fill="both", expand=True, padx=12, pady=10)
-
-        self._toasts.append(tw)
-        tw.deiconify()
-
-        def _close():
-            tw.destroy()
-            self._toasts.remove(tw)
-
-        tw.after(ms, _close)
-
-    def _busy_msg_for_key(self, key: str) -> str:
-        if key.startswith("bal:") or key == "wallet_balances":
-            return "Taking balance..."
-        return {
-            "send": "Sending transactions...",
-            "netinfo": "Loading network info..",
-            "history_list": "Loading transaction history...",
-            "explorer_search": "Searching in Explorer...",
-        }.get(key, "Processing...")
-
-    def _busy_wait_msg(self, key: str) -> str:
-        if key.startswith("bal:") or key == "wallet_balances":
-            return "balance is still being processed .. please wait..Bro"
-        return {
-            "send": "Transaction is still being sent...",
-            "netinfo": "Network info retrieval is still in progress...",
-            "history_list": "History is still loading...",
-            "explorer_search": "Search is still in progress...",
-        }.get(key, "Still processing ... please wait...Bro")
-
-    # ---------------- Connection status (UI + heartbeat) ----------------
+        # ---------------- Connection status (UI + heartbeat) ----------------
     def _set_conn_status(self, ok: bool) -> None:
         prev = getattr(self, "_conn_online", False)
         self._conn_online = bool(ok)
@@ -794,153 +562,8 @@ class KremlinWalletGUI(WalletsMixin):
         # Panel Explore baru
         self.explore_panel = ExplorePanel(f, app=self, theme=self.theme_set.explorer)
         self.explore_panel.pack(fill=tk.BOTH, expand=True)
+        self.explore_panel.set_provider(**get_explorer_providers(self.rpc))
 
-        # ---------- helper RPC ----------
-        def _rpc(payload: dict):
-            return self.rpc.send(payload)
-
-        # ---------- Providers utk panel ----------
-        def _prov_get_info():
-            r = _rpc({"type": "GET_NETWORK_INFO"})
-            if not isinstance(r, dict):
-                return {}
-            # normalize so the panel can render the overview
-            tip = r.get("tip") or r.get("tip_hash")
-            return {
-                "network": r.get("net_id") or r.get("network_id") or "tsar-devnet-1",
-                "height": r.get("height") or r.get("tip_height"),
-                "difficulty": r.get("difficulty") or r.get("target") or r.get("tip_target"),
-                "hashrate": r.get("hashrate") or r.get("network_hashrate"),
-                "genesis": r.get("genesis_hash") or r.get("genesis"),
-                "tip": tip,
-            }
-
-        def _prov_get_block(x):
-            s = str(x).strip()
-            if re.fullmatch(r"\d+", s):
-                h = int(s)
-                blk = _rpc({"type": "GET_BLOCK", "height": h})
-                if isinstance(blk, dict) and blk and not blk.get("error"):
-                    blk.setdefault("height", h)
-                return blk
-
-            if re.fullmatch(r"[0-9a-fA-F]{64}", s):
-                r = _rpc({"type": "GET_BLOCK", "hash": s})
-                if isinstance(r, dict) and r and not r.get("error"):
-                    r.setdefault("hash", s)
-                    return r
-            return {"error": "not_found"}
-
-        def _prov_get_tx(txid: str):
-            r = _rpc({"type": "GET_TX_DETAIL", "txid": str(txid).lower()})
-            if not isinstance(r, dict) or r.get("error"):
-                for pay in ({"type": "GET_TX", "txid": str(txid).lower()},
-                            {"type": "GET_TRANSACTION", "txid": str(txid).lower()},
-                            {"type": "TX_GET", "txid": str(txid).lower()}):
-                    rr = _rpc(pay)
-                    if isinstance(rr, dict) and not rr.get("error"):
-                        r = rr
-                        break
-                else:
-                    return {"error": "not_found"}
-
-            t = r.get("tx") or r.get("transaction") or r
-            if not isinstance(t, dict):
-                return {"error": "tx_bad_shape"}
-
-            if "txid" not in t:
-                t["txid"] = t.get("id") or t.get("hash") or str(txid).lower()
-            if "inputs" not in t and "vin" in t:
-                t["inputs"] = t.get("vin") or []
-            if "outputs" not in t and "vout" in t:
-                t["outputs"] = t.get("vout") or []
-
-            if "is_coinbase" not in t:
-                vin = t.get("inputs") or []
-                if vin and isinstance(vin, list):
-                    prev = (vin[0].get("txid") or vin[0].get("prev_txid") or "")
-                    t["is_coinbase"] = (prev == "0"*64) or bool(vin[0].get("coinbase"))
-            return t
-
-        def _prov_get_address(addr: str):
-            bals = _rpc({"type": "GET_BALANCES", "addresses": [addr]})
-            utx  = _rpc({"type": "GET_UTXOS",    "address": addr})
-            his  = _rpc({"type": "GET_TX_HISTORY","address": addr})
-
-            res = {"address": addr, "spendable": 0, "immature": 0, "pending": 0, "utxos": [], "history": []}
-
-            def _pick_entry(d):
-                if not isinstance(d, dict):
-                    return None
-
-                if any(k in d for k in ("spendable","confirmed","pending","immature")):
-                    return d
-                for key in ("balances","items","map"):
-                    m = d.get(key)
-                    if isinstance(m, dict):
-                        return m.get(addr) or next(iter(m.values()), {})
-                if isinstance(d.get("balance"), dict):
-                    return d["balance"]
-                return None
-
-            be = _pick_entry(bals) or {}
-            if isinstance(be, dict):
-                res["spendable"] = int(be.get("spendable") or be.get("confirmed") or be.get("balance_spendable") or 0)
-                res["immature"]  = int(be.get("immature")  or be.get("balance_immature")  or 0)
-                res["pending"]   = int(be.get("pending")   or be.get("unconfirmed") or be.get("balance_pending") or 0)
-
-            utxo_list = []
-            if isinstance(utx, dict):
-                raw = utx.get("utxos") or utx.get("items") or []
-                if isinstance(raw, dict):
-                    for k, v in raw.items():
-                        txid, idx = k.rsplit(":", 1); idx = int(idx)
-                        utxo_list.append({
-                            "txid": txid,
-                            "index": idx,
-                            "amount": v.get("amount") or v.get("value") or 0,
-                            "height": v.get("block_height") or v.get("height"),
-                            "confirmations": v.get("confirmations"),
-                        })
-                elif isinstance(raw, list):
-                    utxo_list = raw
-            elif isinstance(utx, list):
-                utxo_list = utx
-            res["utxos"] = utxo_list
-
-            if isinstance(his, list):
-                res["history"] = his
-            elif isinstance(his, dict):
-                res["history"] = his.get("history") or his.get("items") or []
-
-            if (res["spendable"] == 0 and res["pending"] == 0 and res["immature"] == 0) and res["utxos"]:
-                res["spendable"] = int(sum(int(u.get("amount") or 0) for u in res["utxos"]))
-            return res
-
-        def _prov_get_mempool():
-            return _rpc({"type": "GET_MEMPOOL"})
-
-        def _prov_get_graffiti(art_id: str):
-            return _rpc({"type": "GRAFFITI_GET_ART", "art_id": art_id})
-
-        def _prov_get_graffiti_comments(art_id: str):
-            return _rpc({"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id})
-
-        def _prov_fetch_graffiti_file(post: dict | None, art_id: str):
-            aid = art_id or (post or {}).get("art_id") or ""
-            storer_addr = (post or {}).get("storer") or (post or {}).get("storage")
-            return fetch_graffiti_file(_rpc, aid, storer_addr=storer_addr)
-
-        self.explore_panel.set_provider(
-            get_info=_prov_get_info,
-            get_block=_prov_get_block,
-            get_tx=_prov_get_tx,
-            get_address=_prov_get_address,
-            get_mempool=_prov_get_mempool,
-            get_graffiti=_prov_get_graffiti,
-            get_graffiti_comments=_prov_get_graffiti_comments,
-            fetch_graffiti_file=_prov_fetch_graffiti_file,
-        )
 
     # ---------------- Graffiti Frame ----------------
     
@@ -1088,101 +711,11 @@ class KremlinWalletGUI(WalletsMixin):
         self._hide_all_frames()
         self.frames["dev"].pack(fill=tk.BOTH, expand=True)
 
-    # ---------------- UX: Request Guard / Busy Manager ----------------
-    def _busy_setup(self) -> None:
-        self._busy_keys: set[str] = set()
-        self._busy_widgets: dict[str, list[tk.Widget]] = {}
-        self._busy_timers: dict[str, str | int] = {}
-        self._toasts = []
-        self._balance_countdown_job = None
-        self._balance_next_sec = 0
-
-    def _set_enabled(self, w: tk.Widget, enabled: bool) -> None:
-        if not hasattr(w, "_prev_state"):
-            setattr(w, "_prev_state", w.cget("state"))
-
-        if enabled:
-            prev = getattr(w, "_prev_state", None)
-            if prev is None:
-                w["state"] = "normal"
-            else:
-                w["state"] = prev
-        else:
-            w["state"] = "disabled"
-
-    def _busy_start(self, key: str, widgets: Sequence[tk.Widget] = ()) -> bool:
-        if key in self._busy_keys:
-            self._toast(self._busy_wait_msg(key), ms=1500, kind="info")
-            return False
-
-        self._busy_keys.add(key)
-        wl = [w for w in (widgets or []) if w]
-        self._busy_widgets[key] = wl
-        for w in wl:
-            self._set_enabled(w, False)
-        self.root.config(cursor="watch")
-        self._toast(self._busy_msg_for_key(key), ms=1200, kind="info")
-        self.root.update_idletasks()
-
-        # safety timer: auto-unlock after 15s
-        if key in self._busy_timers:
-            self.root.after_cancel(self._busy_timers[key])
-        self._busy_timers[key] = self.root.after(15000, lambda k=key: self._busy_end(k))
-
-        return True
-
-    def _busy_end(self, key: str) -> None:
-        tid = self._busy_timers.pop(key, None)
-        if tid:
-            self.root.after_cancel(tid)
-
-        if key not in self._busy_keys:
-            return
-        for w in self._busy_widgets.get(key, []):
-            self._set_enabled(w, True)
-        self._busy_widgets.pop(key, None)
-        self._busy_keys.remove(key)
-        if not self._busy_keys:
-            self.root.config(cursor="")
-        self.root.update_idletasks()
-
     # ---------------- Helper UX ----------------
         
     def _open_log_viewer(self):
         log_file = "logging/wallet.log"
         open_log_toplevel(self.root, log_file=log_file, attach_to_root=False)
-
-    # --- Treeview hover helper ---
-    def _tv_enable_hover(self, tree: "ttk.Treeview", hover_bg: str | None = None) -> None:
-        if hover_bg is None:
-            bg = (getattr(self, "bg", "#0f1115") or "").lower()
-            hover_bg = "#1e2630" if int(bg.replace("#", "")[:2], 16) < 0x88 else "#e9eef7"
-
-        tree.tag_configure("HOVER", background=hover_bg)
-        state = {"last": None}
-
-        def _apply_hover(iid: str | None):
-            if state["last"]:
-                old_tags = set(tree.item(state["last"], "tags") or ())
-                if "HOVER" in old_tags:
-                    old_tags.remove("HOVER")
-                    tree.item(state["last"], tags=tuple(old_tags))
-            state["last"] = iid
-            if iid:
-                tags = set(tree.item(iid, "tags") or ())
-                tags.add("HOVER")
-                tree.item(iid, tags=tuple(tags))
-
-        def on_motion(e):
-            iid = tree.identify_row(e.y)
-            if iid != state["last"]:
-                _apply_hover(iid)
-
-        def on_leave(_e):
-            _apply_hover(None)
-
-        tree.bind("<Motion>", on_motion, add="+")
-        tree.bind("<Leave>", on_leave, add="+")
 
     def _tv_insert_chunked(self, tv: ttk.Treeview, rows: list[tuple[tuple, tuple]], start: int = 0, chunk: int = int(os.getenv("TSAR_TV_CHUNK", "200")),) -> None:
         end = min(start + chunk, len(rows))

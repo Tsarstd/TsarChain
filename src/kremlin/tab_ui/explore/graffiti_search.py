@@ -8,19 +8,19 @@ from __future__ import annotations
 import os
 import fitz
 import threading
+import tkinter as tk
 
 from glob import glob
 from io import BytesIO
 from decimal import Decimal
 from typing import Any, Callable, Dict, Optional, TYPE_CHECKING
 
-import tkinter as tk
-from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
+from tkinter import ttk, messagebox
 
 from ...services.media import TkVLCPlayer
-from ...services.graffiti_service import build_comment_plan
 from tsarchain.utils import config as CFG
+from ...services.graffiti_service import build_comment_plan
 
 from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.explore.graffiti_search")

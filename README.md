@@ -346,6 +346,7 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     │   │   │
     │   │   ├── services/
     │   │   │   ├── contact_management.py        # Contacts Management
+    │   │   │   ├── explorer_providers.py        # Explorer API Providers
     │   │   │   ├── graffiti_service.py          # Post, Upload & Comment graffiti service logic
     │   │   │   ├── media.py                     # VLC media player
     │   │   │   ├── rpc_kremlin.py               # RPC API logic
@@ -360,15 +361,18 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     │   │   │   │   ├── main_tab.py              # Main Tab UI Explore
     │   │   │   │   └── txid_search.py           # Txid result UI explore
     │   │   │   │
+    │   │   │   ├── app_sidebar.py               # Sidebar Tab Logic
     │   │   │   ├── chat_tab.py                  # Chat Tab UI Module
     │   │   │   ├── dev_tab.py                   # Dev Tab UI Module
     │   │   │   ├── graffiti_tab.py              # Graffiti Tab UI Module
     │   │   │   ├── history_tab.py               # History Tab UI Module
+    │   │   │   ├── lockscreen.py                # Lockscreen Module
     │   │   │   ├── network_tab.py               # Network Info Tab UI Module
     │   │   │   ├── send_tab.py                  # Send Tx Tab UI Module
     │   │   │   └── wallet_tab.py                # Wallet Management Tab UI Module
     │   │   │
     │   │   ├── theme.py                         # Light & Dark Theme Module
+    │   │   ├── ui_state.py                      # Busy Manager
     │   │   └── ui_utils.py                      # UI helpers
     │   │ 
     │   ├── tsarchain/

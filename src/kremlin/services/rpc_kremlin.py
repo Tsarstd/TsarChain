@@ -5,14 +5,19 @@
 
 from __future__ import annotations
 
-import json, socket, threading, time, logging, secrets
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+import time
+import json
+import socket
+import secrets
+import logging
+import threading
 import tkinter as tk
 
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+
 # ---------------- Local Project (With Node) ----------------
-from tsarchain.network.protocol import send_message, recv_message, build_envelope, verify_and_unwrap, is_envelope, SecureChannel
 from tsarchain.utils import config as CFG
-from tsarchain.utils.benchmarks import benchmark
+from tsarchain.network.protocol import send_message, recv_message, build_envelope, verify_and_unwrap, is_envelope, SecureChannel
 
 # ---------------- Logger ----------------
 from tsarchain.utils.tsar_logging import get_ctx_logger
@@ -245,7 +250,6 @@ class NodeClient:
                 self.dir.mark_good(peer)
                 return outer
 
-    @benchmark(label="send", threshold_ms=10.0)
     def send(self, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         req = secrets.token_hex(6)
         peers = self.dir.get() or self.scan()
