@@ -70,9 +70,12 @@ class GuardMixin:
         with self._nonce_guard_lock:
             bucket = self._nonce_guard_table.setdefault(bucket_key, {})
             # prune expired
-            for n, t in list(bucket.items()):
+            keys_to_remove = []
+            for n, t in bucket.items():
                 if now - t > window:
-                    bucket.pop(n, None)
+                    keys_to_remove.append(n)
+            for n in keys_to_remove:
+                bucket.pop(n, None)
             if nonce in bucket:
                 log.warning("[nonce_guard] replay scope=%s sender=%s nonce=%s",
                             scope, sender_key, nonce[:16])

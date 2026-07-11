@@ -19,7 +19,7 @@ from .graffiti_search import GraffitiSearch
 
 # ---------------- Local Project (With Node) ----------------
 from tsarchain.utils import config as CFG
-from ...theme import ExplorerTheme, get_theme
+from ...theme import ExplorerTheme, get_theme, FONT
 
 from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.explorer.main_tab")
@@ -113,7 +113,7 @@ class ExplorePanel(tk.Frame):
             text="♜Kremlin♜",
             bg=self.bg,
             fg=self.accent,
-            font=("Segoe UI", 65, "bold"),
+            font=(FONT, 65, "bold"),
         )
         self.brand.pack(side="top", pady=(10, 0))
 
@@ -249,7 +249,7 @@ class ExplorePanel(tk.Frame):
         self.text.configure(cursor="arrow")
         self.text.bind("<Configure>", lambda _e=None: self._recenter_windows())
 
-        self.text.tag_configure("title", font=("Segoe UI", 12, "bold"))
+        self.text.tag_configure("title", font=(FONT, 12, "bold"))
         self.text.tag_configure("mono", font=MONO)
         self.text.tag_configure("muted", foreground=self.muted)
         self.text.tag_configure("key", foreground=self.muted)
@@ -392,7 +392,7 @@ class ExplorePanel(tk.Frame):
 
     # ---------- rendering helpers ----------
     def _cleanup_media_players(self):
-        for player in list(self._media_players):
+        for player in self._media_players:
             player.dispose()
         self._media_players.clear()
 
@@ -440,7 +440,7 @@ class ExplorePanel(tk.Frame):
         if text_w <= 0 and hasattr(self, "card"):
             self.card.update_idletasks()
             text_w = self.card.winfo_width()
-        for widget, target in list(self._center_windows):
+        for widget, target in self._center_windows:
             if not widget.winfo_exists():
                 continue
             try:
@@ -590,7 +590,7 @@ class ExplorePanel(tk.Frame):
         self.header.pack(padx=16, pady=(0, 0))
         self._hero_bottom_spacer.pack(fill="both", expand=True)
         # besar-kan font + tata search vertikal
-        self.brand.config(font=("Segoe UI", 65, "bold"))
+        self.brand.config(font=(FONT, 65, "bold"))
         self.tagline.config(font=("Consolas", 14, "italic"))
         self._layout_search(hero=True)
         self._footer_toggle(True)
@@ -606,7 +606,7 @@ class ExplorePanel(tk.Frame):
             
         self.header.pack_forget()
         self.header.pack(fill="x", padx=16, pady=(8, 0))
-        self.brand.config(font=("Segoe UI", 39, "bold"))
+        self.brand.config(font=(FONT, 39, "bold"))
         self.tagline.config(font=("Consolas", 8, "italic"))
         self._layout_search(hero=False)
         self._footer_toggle(False)

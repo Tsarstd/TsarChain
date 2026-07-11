@@ -514,7 +514,7 @@ class PaymentReceiptGenerator:
                                 recipient_groups[addr] = []
                             recipient_groups[addr].append(out)
                     
-                    for addr, outs in list(recipient_groups.items()):
+                    for addr, outs in recipient_groups.items():
                         y_position = self._draw_table_row(draw, y_position, 
                                                         f"- {self._truncate_text(addr, 64)}", 
                                                         self._format_tsar_amount(reward), 
@@ -537,7 +537,7 @@ class PaymentReceiptGenerator:
                                 recipient_groups[addr] = []
                             recipient_groups[addr].append(out)
                         
-                        for addr, outs in list(recipient_groups.items()):
+                        for addr, outs in recipient_groups.items():
                             total_addr = sum(o.get('amount', 0) for o in outs)
                             formatted_addr = generated_receipt.pool_address(addr)
                             y_position = self._draw_pool_label(

@@ -8,12 +8,13 @@ from __future__ import annotations
 import re
 import inspect
 import tkinter as tk
-from typing import Callable, Dict, Any, Optional, Sequence, List
+
 from tkinter import ttk, messagebox as mb
+from typing import Callable, Dict, Any, Optional, Sequence, List
 
 # ---------------- Local Project (Wallet Only) ----------------
+from ..theme import SendTheme, FONT
 from ..services.send_service import SendService
-from ..theme import SendTheme
 
 # ---------------- Local Project (With Node) ----------------
 from tsarchain.utils import config as CFG
@@ -246,7 +247,7 @@ class SendTab:
         head = tk.Frame(card, bg=p["card"]) 
         head.grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 6))
         tk.Label(head, text="♜Payment Gate♜", bg=p["card"], fg=p["accent"],
-                 font=("Segoe UI", 36, "bold")).pack(anchor="center")
+                 font=(FONT, 36, "bold")).pack(anchor="center")
         tk.Label(head, text="Follow 3 quick steps to send", bg=p["card"], fg=p["muted"],
                  font=("Consolas", 13, "italic")).pack(anchor="center")
 
@@ -413,9 +414,9 @@ class SendTab:
         p = self.palette
         row = tk.Frame(parent, bg=p["card"]) 
         row.pack(fill="x", pady=(0, 4))
-        badge = tk.Label(row, text=str(n), bg=p["accent"], fg="#fff", width=2, font=("Segoe UI", 10, "bold"))
+        badge = tk.Label(row, text=str(n), bg=p["accent"], fg="#fff", width=2, font=(FONT, 10, "bold"))
         badge.pack(side="left")
-        tk.Label(row, text=title, bg=p["card"], fg=p["fg"], font=("Segoe UI", 11, "bold")).pack(side="left", padx=8)
+        tk.Label(row, text=title, bg=p["card"], fg=p["fg"], font=(FONT, 11, "bold")).pack(side="left", padx=8)
 
     def _build_summary(self, grid_parent: tk.Misc) -> None:
         p = self.palette
@@ -426,7 +427,7 @@ class SendTab:
                         highlightbackground=p["border"], highlightcolor=p["border"]) 
         card.pack(anchor="ne")
 
-        tk.Label(card, text="Summary", bg=p["card"], fg=p["fg"], font=("Segoe UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 6))
+        tk.Label(card, text="Summary", bg=p["card"], fg=p["fg"], font=(FONT, 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 6))
 
         self._kv_row(card, 1, "Estimated size", self.vbytes_var)
         self._kv_row(card, 2, "Fee (sat)", self.fee_sat_var)
@@ -447,7 +448,7 @@ class SendTab:
         inner = tk.Frame(border, bg=p["card"]) 
         inner.pack(fill="both", expand=True)
 
-        tk.Label(inner, text="Activity", bg=p["card"], fg=p["fg"], font=("Segoe UI", 10, "bold"))\
+        tk.Label(inner, text="Activity", bg=p["card"], fg=p["fg"], font=(FONT, 10, "bold"))\
             .pack(anchor="w", padx=10, pady=(8, 0))
 
         self.log_text = tk.Text(inner, bg=p["card"], fg=p["fg"], insertbackground=p["fg"], relief="flat",

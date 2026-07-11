@@ -431,7 +431,7 @@ class TsarLogViewer:
             "TRACE": "Trace", "DEBUG": "Debug", "INFO": "Info",
             "WARNING": "Warning", "ERROR": "Error", "CRITICAL": "Critical",
         }
-        for msg, level_up, module in list(self._buf):
+        for msg, level_up, module in self._buf.copy():
             if self._category_match(module):
                 self._append("All", msg, tag=level_up)
                 self._append(mapping.get(level_up, "Info"), msg, tag=level_up)
@@ -570,7 +570,7 @@ class TsarLogViewer:
         p = Path(self.tail_path)
         root = logging.getLogger()
         target_handlers = []
-        for h in list(root.handlers):
+        for h in root.handlers[:]:
             try:
                 from logging.handlers import RotatingFileHandler
                 if isinstance(h, RotatingFileHandler):
@@ -874,7 +874,7 @@ def export_log_bundle(path: str = "tsar_logs_bundle.zip") -> Path:
             pass
 
     root = logging.getLogger()
-    for h in list(root.handlers):
+    for h in root.handlers[:]:
         try:
             try:
                 h.flush()

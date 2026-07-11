@@ -2,6 +2,7 @@
 # Copyright (c) 2026 Tsar Studio
 
 import tkinter as tk
+from ..theme import FONT
 
 class SidebarNavigator:
     def __init__(self, root: tk.Tk, sidebar_frame: tk.Frame, app_instance, bg: str, active_bg: str, fg: str, active_fg: str, accent: str):
@@ -17,7 +18,7 @@ class SidebarNavigator:
         
         # Build Title
         tk.Label(self.sidebar, text="Kremlin", bg=self.bg, fg=self.accent,
-                 font=("Segoe UI", 17, "bold")).pack(pady=(12, 6))
+                 font=(FONT, 17, "bold")).pack(pady=(12, 6))
 
     def add_button(self, text: str, tab_id: str, on_click) -> tk.Button:
         btn = tk.Button(
@@ -26,7 +27,7 @@ class SidebarNavigator:
             command=lambda: (on_click(), self.app._activate_tab(tab_id)),
             bg=self.bg,
             fg=self.fg,
-            font=("Segoe UI", 10, "bold"),
+            font=(FONT, 10, "bold"),
             bd=0,
             relief=tk.FLAT,
             padx=8,
@@ -71,7 +72,7 @@ class SidebarNavigator:
         
     def add_connection_status(self, initial_color: str) -> tk.Label:
         self.conn_status = tk.Label(self.sidebar, text="Offline", bg=self.bg,
-                                    fg=initial_color, font=("Segoe UI", 9, "bold"))
+                                    fg=initial_color, font=(FONT, 9, "bold"))
         self.conn_status.pack(side=tk.BOTTOM, pady=(0, 12))
         return self.conn_status
 

@@ -7,11 +7,15 @@ import os
 import json
 import time
 import tkinter as tk
-from tkinter import messagebox, scrolledtext, Toplevel, filedialog, simpledialog, ttk
-from typing import Any, Callable, Dict, List, Optional, Sequence
+
 from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional, Sequence
+from tkinter import messagebox, scrolledtext, Toplevel, filedialog, simpledialog, ttk
 
 # ---------------- Local Project (Wallet Only) ----------------
+from ..theme import FONT
+from ..ui_utils import center_window
+from ..services.tx_history import HistoryService
 from ..security.data_security import (
     Wallet,
     Security,
@@ -24,8 +28,6 @@ from ..security.data_security import (
     save_wallet_registry,
     WALLET_FILE,
 )
-from ..ui_utils import center_window
-from ..services.tx_history import HistoryService
 
 # ---------------- Local Project (With Node) ----------------
 from tsarchain.utils import config as CFG
@@ -75,9 +77,9 @@ class CreateWalletDialog(tk.Toplevel):
         # Header
         hdr = tk.Frame(self, bg=theme["bg"]); hdr.pack(fill=tk.X, padx=20, pady=(18, 8))
         tk.Label(hdr, text="Create a new wallet", bg=theme["bg"], fg=theme["fg"],
-                font=("Segoe UI", 16, "bold"), justify="center").pack(anchor="center")
+                font=(FONT, 16, "bold"), justify="center").pack(anchor="center")
         tk.Label(hdr, text="Choose a strong master password to encrypt your keystore.",
-                bg=theme["bg"], fg=theme["muted"], font=("Segoe UI", 10), justify="center").pack(anchor="center", pady=(4,0))
+                bg=theme["bg"], fg=theme["muted"], font=(FONT, 10), justify="center").pack(anchor="center", pady=(4,0))
 
         # Body: single centered card (without the "Password requirements" panel)
         body = tk.Frame(self, bg=theme["bg"]); body.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
@@ -119,18 +121,18 @@ class CreateWalletDialog(tk.Toplevel):
         tip_box = tk.Frame(center, bg=theme["bg"])
         tip_box.pack(fill=tk.X, pady=(4, 10))
         tk.Label(tip_box, bg=theme["bg"], fg=theme["fg"],
-                font=("Segoe UI", 9, "bold"), anchor="w", justify="left").pack(anchor="w")
+                font=(FONT, 9, "bold"), anchor="w", justify="left").pack(anchor="w")
         tk.Label(
             tip_box,
             text="- at least 8 characters\n- contain at least one uppercase letter\n- contain at least one lowercase letter\n- contain at least one digit\n- at least one special character",
-            bg=theme["bg"], fg=theme["muted"], font=("Segoe UI", 9),
+            bg=theme["bg"], fg=theme["muted"], font=(FONT, 9),
             anchor="w", justify="left"
         ).pack(anchor="w", padx=(12, 0))
 
         # Footer
         footer = tk.Frame(self, bg=theme["bg"]); footer.pack(fill=tk.X, padx=20, pady=16)
         self.btn_create = tk.Button(footer, text="Create", state=tk.DISABLED,
-                                    bg=theme["accent"], fg="#000", font=("Segoe UI", 10, "bold"),
+                                    bg=theme["accent"], fg="#000", font=(FONT, 10, "bold"),
                                     command=self._on_create)
         self.btn_create.pack(side=tk.RIGHT)
         tk.Button(footer, text="Cancel", bg=theme["panel_bg"], fg=theme["fg"], command=self.destroy)\
@@ -311,7 +313,7 @@ class WalletsMixin:
 
         tk.Label(
             center, text="♜Kremlin♜", bg=self.bg, fg=self.accent,
-            font=("Segoe UI", 65, "bold")
+            font=(FONT, 65, "bold")
         ).pack(pady=(36, 8))
 
         tk.Label(
@@ -974,9 +976,9 @@ class WalletsMixin:
         wrap = tk.Frame(dlg, bg=theme["bg"]); wrap.pack(fill="both", expand=True, padx=18, pady=16)
 
         # header
-        tk.Label(wrap, text="Mnemonic Words (BIP39)", font=("Segoe UI", 12, "bold"),
+        tk.Label(wrap, text="Mnemonic Words (BIP39)", font=(FONT, 12, "bold"),
                 bg=theme["bg"], fg=theme["fg"], justify="center").pack(anchor="center")
-        tk.Label(wrap, text="No passphrase", font=("Segoe UI", 9, "italic"),
+        tk.Label(wrap, text="No passphrase", font=(FONT, 9, "italic"),
                 bg=theme["bg"], fg=theme["muted"]).pack(anchor="center", pady=(0,10))
 
         grid = tk.Frame(wrap, bg=theme["bg"]); grid.pack(pady=(6, 10))
@@ -1034,7 +1036,7 @@ class WalletsMixin:
                 log.exception("[import_by_mnemonic] Failed to import wallet from mnemonic")
                 messagebox.showerror("Failed to import wallet from mnemonic")
 
-        tk.Button(btns, text="Import Wallet", command=_do_import, bg=self.accent, fg="#000", font=("Segoe UI", 10, "bold")).pack(side="right")
+        tk.Button(btns, text="Import Wallet", command=_do_import, bg=self.accent, fg="#000", font=(FONT, 10, "bold")).pack(side="right")
         tk.Button(btns, text="Cancel", command=dlg.destroy, bg=theme["panel_bg"], fg=theme["fg"]).pack(side="right", padx=(0,8))
 
         center_window(dlg, self.root)
@@ -1251,7 +1253,7 @@ class WalletsMixin:
         d.title(title); d.configure(bg=self.bg); d.resizable(False, False)
         d.attributes("-topmost", True); d.after(150, lambda: d.attributes("-topmost", False))
 
-        tk.Label(d, text=prompt, bg=self.bg, fg=self.fg, font=("Segoe UI", 10)).pack(padx=16, pady=(14,6))
+        tk.Label(d, text=prompt, bg=self.bg, fg=self.fg, font=(FONT, 10)).pack(padx=16, pady=(14,6))
         row = tk.Frame(d, bg=self.bg); row.pack(padx=16, pady=(0,12))
         var = tk.StringVar()
         ent = tk.Entry(row, textvariable=var, width=44, show="*", bg=self.panel_bg, fg=self.fg, insertbackground=self.fg, relief="flat")
@@ -1283,7 +1285,7 @@ class WalletsMixin:
     def _ask_text(self, title: str, prompt: str, *, multiline=False, secret_toggle=False, placeholder:str="") -> str | None:
         d = tk.Toplevel(self.root)
         d.title(title); d.configure(bg=self.bg); d.resizable(False, False)
-        tk.Label(d, text=prompt, bg=self.bg, fg=self.fg, font=("Segoe UI", 10)).pack(padx=16, pady=(14,6))
+        tk.Label(d, text=prompt, bg=self.bg, fg=self.fg, font=(FONT, 10)).pack(padx=16, pady=(14,6))
 
         wrap = tk.Frame(d, bg=self.bg); wrap.pack(padx=16, pady=(0,12))
         if multiline:

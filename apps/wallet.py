@@ -44,7 +44,7 @@ from kremlin.services.explorer_providers import get_explorer_providers
 # ---------------- UI Utility ----------------
 from kremlin.ui_utils import show_toast
 from kremlin.ui_state import BusyManager
-from kremlin.theme import get_theme, install_ttk_styles
+from kremlin.theme import get_theme, install_ttk_styles, FONT
 
 # ---------------- Local Project (With Node) ----------------
 import tsarcore_native as native
@@ -151,9 +151,9 @@ class KremlinWalletGUI(WalletsMixin):
         self._read_sent       = self.chat_mgr.read_sent
 
         self.chat_textsize_var     = tk.StringVar(value="Medium")
-        self.font_chat_body        = tkfont.Font(family="Segoe UI", size=13)
-        self.font_chat_meta_peer   = tkfont.Font(family="Segoe UI", size=10)
-        self.font_chat_meta_me     = tkfont.Font(family="Segoe UI", size=10, weight="bold")
+        self.font_chat_body        = tkfont.Font(family=FONT, size=13)
+        self.font_chat_meta_peer   = tkfont.Font(family=FONT, size=10)
+        self.font_chat_meta_me     = tkfont.Font(family=FONT, size=10, weight="bold")
         self._msg_meta_map = {}
         self._chat_key_ttl_sec = 15 * 60
         self.chat_blocked = set()
@@ -293,7 +293,7 @@ class KremlinWalletGUI(WalletsMixin):
 
         self._lock_title = tk.Label(
             card, text="🔒 Locked", bg=self.panel_bg, fg=self.accent,
-            font=("Segoe UI", 18, "bold"))
+            font=(FONT, 18, "bold"))
         self._lock_title.pack(pady=(0, 6))
 
         self._lock_sub = tk.Label(
@@ -642,10 +642,10 @@ class KremlinWalletGUI(WalletsMixin):
             self._build_send_frame()
         fr = self.frames["send"]
         if (not getattr(fr, "winfo_children") or len(fr.winfo_children()) == 0):
-            for w in list(fr.winfo_children()):
+            for w in fr.winfo_children():
                 w.destroy()
             self.send_tab.build(fr)
-            for w in list(fr.winfo_children()):
+            for w in fr.winfo_children():
                 w.destroy()
             tk.Label(
                 fr, text=f"Send tab failed to render: {e}",

@@ -18,6 +18,7 @@ from typing import Any, Callable, Dict, Optional, TYPE_CHECKING
 from PIL import Image, ImageTk
 from tkinter import ttk, messagebox
 
+from ...theme import FONT
 from ...services.media import TkVLCPlayer
 from tsarchain.utils import config as CFG
 from ...services.graffiti_service import build_comment_plan
@@ -163,7 +164,7 @@ class GraffitiSearch:
             p._bind_copyable(lbl, lambda t=text: t)
             return lbl
 
-        _lbl(f"Graffiti #Block {block_h}", fg=p.fg, font=("Segoe UI", 12, "bold"))
+        _lbl(f"Graffiti #Block {block_h}", fg=p.fg, font=(FONT, 12, "bold"))
         _lbl(f"{mime} | {_fmt_size_h(size)}", fg=p.fg, font=("Consolas", 10))
         _lbl("--------------", fg=p.fg)
         _lbl(f"Art ID | {art_id}", fg=p.fg, font=("Consolas", 10))
@@ -324,7 +325,7 @@ class GraffitiSearch:
         # comments section
         comments_wrap = tk.Frame(container, bg=p.card_bg)
         comments_wrap.pack(anchor="center", pady=(10, 6))
-        tk.Label(comments_wrap, text=f"Comments ({len(comments)})", bg=p.card_bg, fg=p.fg, font=("Segoe UI", 11, "bold")).pack(anchor="center")
+        tk.Label(comments_wrap, text=f"Comments ({len(comments)})", bg=p.card_bg, fg=p.fg, font=(FONT, 11, "bold")).pack(anchor="center")
         comments_inner = tk.Frame(comments_wrap, bg=p.card_bg)
         comments_inner.pack(anchor="center")
 
@@ -392,7 +393,7 @@ class GraffitiSearch:
         frame = tk.Frame(outer, bg=p.card_bg, bd=1, highlightthickness=1, highlightbackground=p.border)
         frame.pack(anchor="center", padx=6, fill="x")
 
-        tk.Label(frame, text="Write a Comment", bg=p.card_bg, fg=p.fg, font=("Segoe UI", 11, "bold")).pack(anchor="center", padx=10, pady=(8, 2))
+        tk.Label(frame, text="Write a Comment", bg=p.card_bg, fg=p.fg, font=(FONT, 11, "bold")).pack(anchor="center", padx=10, pady=(8, 2))
         p._comment_text_widget = tk.Text(frame, width=90, height=3, wrap="word", bg=p.card_bg, fg=p.fg, insertbackground=p.fg, relief="flat")
         p._comment_text_widget.pack(fill="x", padx=10, pady=(0, 6))
         info_text = f"Comment fee: {self.comment_base_tsar_str()} TSAR"

@@ -5,15 +5,16 @@
 
 import tkinter as tk
 import time, hashlib
-from typing import Optional
-from tkinter import ttk, messagebox
-from tkinter import font as tkfont
-from datetime import datetime
 
+from typing import Optional
+from datetime import datetime
+from tkinter import font as tkfont
+from tkinter import ttk, messagebox
+
+from ..theme import ChatTheme, FONT
 from tsarchain.utils import config as CFG
 from ..security.chat.triple_xdh import ChatManager
 from ..security.data_security import load_chat_state, save_chat_state
-from ..theme import ChatTheme
 
 from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.chat_tab")
@@ -156,11 +157,11 @@ class ChatTab:
         self.frame = None
         
         # fonts (safe defaults)
-        self.font_chat_meta_peer = tkfont.Font(family="Segoe UI", size=10)
-        self.font_chat_meta_me = tkfont.Font(family="Segoe UI", size=10, weight="bold")
-        self.chat_font = tkfont.Font(family="Segoe UI", size=11)
+        self.font_chat_meta_peer = tkfont.Font(family=FONT, size=10)
+        self.font_chat_meta_me = tkfont.Font(family=FONT, size=10, weight="bold")
+        self.chat_font = tkfont.Font(family=FONT, size=11)
         self.chat_font_mono = tkfont.Font(family="Consolas", size=11)
-        self.chat_font_body = tkfont.Font(family="Segoe UI", size=12)
+        self.chat_font_body = tkfont.Font(family=FONT, size=12)
         self._chat_key_ttl_sec = getattr(self, "_chat_key_ttl_sec", 15 * 60)
 
         self.chat_mgr.password_prompt_cb = self._pwd_prompt_cb
@@ -278,7 +279,7 @@ class ChatTab:
 
         # badge online/offline + context
         self.chat_offline_badge = tk.Label(
-            body, text="● Offline", bg=self.bg, fg=self._status_offline_fg, font=("Segoe UI", 9, "bold")
+            body, text="● Offline", bg=self.bg, fg=self._status_offline_fg, font=(FONT, 9, "bold")
         )
         self.chat_offline_badge.pack(anchor="e", padx=2, pady=(2, 0))
 
@@ -302,7 +303,7 @@ class ChatTab:
         self.typing_var = tk.StringVar(value="")
         self.typing_lbl = tk.Label(
             entryfrm, textvariable=self.typing_var, bg=self.bg, fg=self.muted,
-            font=("Segoe UI", 9, "italic")
+            font=(FONT, 9, "italic")
         )
         self.typing_lbl.pack(side=tk.RIGHT, padx=6)
 
@@ -324,7 +325,7 @@ class ChatTab:
 
         self.chat_send_btn = tk.Button(
             entryfrm, text="Send", command=self._chat_send,
-            bg=self.accent, fg=self._accent_fg, font=("Segoe UI", 10, "bold"),
+            bg=self.accent, fg=self._accent_fg, font=(FONT, 10, "bold"),
             state=tk.DISABLED
         )
         self.chat_send_btn.pack(side=tk.LEFT, padx=(8, 0))
@@ -337,7 +338,7 @@ class ChatTab:
 
         header = tk.Frame(self.chat_hero, bg=self.bg)
         self._brand_lbl = tk.Label(header, text="♜Kremlin Chat♜", bg=self.bg, fg=self.accent,
-                                   font=("Segoe UI", 65, "bold"))
+                                   font=(FONT, 65, "bold"))
         self._brand_lbl.pack(side="top", pady=(10, 0))
         self._tagline_lbl = tk.Label(
             header,
@@ -352,7 +353,7 @@ class ChatTab:
         form = tk.Frame(self.chat_hero, bg=self.bg)
         
         # address
-        tk.Label(form, text="Choose your address:", bg=self.bg, fg=self.fg, font=("Segoe UI", 12, "bold"))\
+        tk.Label(form, text="Choose your address:", bg=self.bg, fg=self.fg, font=(FONT, 12, "bold"))\
             .pack(anchor="w", pady=(0, 6))
         self.chat_hero_addr_var = tk.StringVar(value=(wallets[0] if wallets else ""))
         self.chat_hero_addr_combo = ttk.Combobox(
@@ -361,7 +362,7 @@ class ChatTab:
         self.chat_hero_addr_combo.pack(fill="x")
         
         # password
-        tk.Label(form, text="Wallet password:", bg=self.bg, fg=self.fg, font=("Segoe UI", 12, "bold"))\
+        tk.Label(form, text="Wallet password:", bg=self.bg, fg=self.fg, font=(FONT, 12, "bold"))\
             .pack(anchor="w", pady=(14, 6))
         self.chat_hero_pwd_var = tk.StringVar(value="")
         self.chat_hero_pwd_entry = tk.Entry(
@@ -410,7 +411,7 @@ class ChatTab:
             command=self._chat_login_from_hero,
             bg=self.accent,
             fg=self._accent_fg,
-            font=("Segoe UI", 11, "bold"),
+            font=(FONT, 11, "bold"),
         ).pack(pady=(12, 0))
 
         self._hero_top_spacer.pack(fill="both", expand=True)
@@ -560,7 +561,7 @@ class ChatTab:
 
     def _init_chat_tags_and_fonts(self):
         # --- Font setup (fallback aman) ---
-        base_family = "Segoe UI"
+        base_family = FONT
         mono_family = "Consolas"
         self.chat_font_size = getattr(self, "chat_font_size", 11)
 
@@ -663,7 +664,7 @@ class ChatTab:
         self._chat_poll_job = None
         self.chat_hero.place(relx=0.5, rely=0.5, anchor="center", relwidth=1, relheight=1)
         self.chat_offline_badge.config(text="● Offline", fg=self._status_offline_fg)
-        self._brand_lbl.config(font=("Segoe UI", 65, "bold"))
+        self._brand_lbl.config(font=(FONT, 65, "bold"))
         self._tagline_lbl.config(font=("Consolas", 14, "italic"))
         self._hero_visible = True
 
@@ -675,7 +676,7 @@ class ChatTab:
         self.chat_logout_btn.pack(side=tk.LEFT, padx=(6, 0))
         self._update_chat_context()
         
-        self._brand_lbl.config(font=("Segoe UI", 39, "bold"))
+        self._brand_lbl.config(font=(FONT, 39, "bold"))
         self._tagline_lbl.config(font=("Consolas", 8, "italic"))
         self._hero_visible = False
 
@@ -1246,12 +1247,12 @@ class ChatTab:
     def _update_peer_presence_label(self) -> None:
         addr = (self.chat_to_var.get() or "").strip().lower()
         if not addr:
-            self.peer_status_var.set("Contact: unknown")
+            self.peer_status_var.set("Contact: No Address")
             return
         ts_map = getattr(self.chat_mgr, "presence_ts", {}) or {}
         last_seen = ts_map.get(addr)
         if last_seen is None:
-            self.peer_status_var.set("Contact: unknown")
+            self.peer_status_var.set("Contact: Offline")
             return
         now = int(time.time())
         delta = now - int(last_seen)

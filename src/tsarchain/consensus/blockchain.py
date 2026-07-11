@@ -117,9 +117,7 @@ class Blockchain(
             self.total_supply = 0
             self._rebuild_hash_cache()
             
-        if kv_enabled:
-            return
-        else:
+        if not kv_enabled:
             os.makedirs(os.path.dirname(CFG.CHAIN_JOURNAL_FILE), exist_ok=True)
             
 

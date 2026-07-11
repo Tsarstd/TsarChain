@@ -124,14 +124,21 @@ class ChatMixin:
         if now - self.chat_gc_last < 30:
             return
         with self.chat_lock:
-            for addr, dq in list(self.chat_mailbox.items()):
+            empty_mailboxes = []
+            for addr, dq in self.chat_mailbox.items():
                 changed = False
                 while dq and dq[0][0] <= now:
                     dq.popleft(); self.chat_global_count -= 1; changed = True
                 if not dq and changed:
-                    self.chat_mailbox.pop(addr, None)
+                    empty_mailboxes.append(addr)
+            for addr in empty_mailboxes:
+                self.chat_mailbox.pop(addr, None)
+
             # bersihkan backoff kadaluarsa
-            for k, until in list(self.backoff_until.items()):
+            expired_backoffs = []
+            for k, until in self.backoff_until.items():
                 if until <= now:
-                    self.backoff_until.pop(k, None)
+                    expired_backoffs.append(k)
+            for k in expired_backoffs:
+                self.backoff_until.pop(k, None)
         self.chat_gc_last = now

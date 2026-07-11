@@ -226,11 +226,11 @@ def ensure_signed_prekey(addr: str, password_provider=None) -> dict:
         return record
 
     if not callable(password_provider):
-        raise ValueError("password required")
+        raise ValueError("password required for callable provider")
 
     pwd = password_provider(addr)
     if not pwd:
-        raise ValueError("password required")
+        raise ValueError("no password in provider")
     sp_priv = get_priv_for_address(addr, pwd)
     sp_pub = WALL.pubkey_from_privhex(sp_priv)
     spk_sk, spk_pk = chat_dh_gen_keypair()
@@ -254,7 +254,7 @@ def ensure_signed_prekey(addr: str, password_provider=None) -> dict:
 
 def add_one_time_prekeys(addr: str, n: int, password_provider=None) -> dict:
     if not callable(password_provider):
-        raise ValueError("password required")
+        raise ValueError("password required for add_one_time_prekeys")
     record = ensure_signed_prekey(addr, password_provider)
     record.setdefault("opk_list", [])
     record.setdefault("opk_pairs", [])
@@ -282,7 +282,7 @@ def rotate_signed_prekey(addr: str, password_provider=None) -> dict:
         raise ValueError("password provider required for SPK rotation")
     pwd = password_provider(addr)
     if not pwd:
-        raise ValueError("password required")
+        raise ValueError("password required for rotate_signed_prekey")
     sp_priv = get_priv_for_address(addr, pwd)
     sp_pub  = WALL.pubkey_from_privhex(sp_priv)
     spk_sk, spk_pk = chat_dh_gen_keypair()

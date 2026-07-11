@@ -23,6 +23,8 @@ from dataclasses import dataclass
 # Colour utilities
 # ---------------------------------------------------------------------------
 
+FONT = "Segoe UI"
+
 def _hex_to_rgb(value: str) -> Tuple[int, int, int]:
     value = value.strip().lstrip("#")
     if len(value) == 3:
