@@ -5,26 +5,24 @@
 
 from __future__ import annotations
 
-import threading
 import time
+import threading
 from collections import OrderedDict
 from typing import Dict, Optional
 
 from ..core.tx import Tx
-from ..storage.db import BaseDatabase
-from ..storage.utxo import UTXODB
 from ..utils import config as CFG
+from ..storage.utxo import UTXODB
+from ..storage.db import BaseDatabase
 
-from .storage import MempoolStorageMixin
-from .policy import MempoolPolicyMixin
-from .validation import TxMempoolValidator
-from .orphan import OrphanPoolMixin
 from .types import PrevoutRef
+from .orphan import OrphanPoolMixin
+from .policy import MempoolPolicyMixin
+from .storage import MempoolStorageMixin
+from .validation import TxMempoolValidator
 
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.mempool.pool")
-
-__all__ = ["TxPool", "TxPoolDB"]
 
 
 class TxPool(
@@ -77,7 +75,3 @@ class TxPool(
 
     def __del__(self):
         self.flush(force=False)
-
-# Backwards compatibility
-TxPoolDB = TxPool
-

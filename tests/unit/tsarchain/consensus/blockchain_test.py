@@ -35,9 +35,9 @@ def mock_utxo():
 
 @pytest.fixture
 def mock_mempool():
-    """Mock TxPoolDB from mempool.pool."""
-    with patch('tsarchain.mempool.pool.TxPoolDB') as MockTxPoolDB:
-        yield MockTxPoolDB
+    """Mock TxPool from mempool.pool."""
+    with patch('tsarchain.mempool.pool.TxPool') as MockTxPool:
+        yield MockTxPool
 
 
 @pytest.fixture

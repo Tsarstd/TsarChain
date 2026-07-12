@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/branding/Graffiti-Protocol.png" width="720" alt="TsarChain — The Voice Sovereignty Monetary System">
+  <img src="assets/branding/Graffiti-Protocol.png" width="720">
 </p>
 
 <p align="center">

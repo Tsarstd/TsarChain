@@ -25,7 +25,7 @@ from .genesis import GENESIS_HASH, GenesisMixin
 from ..core.block import Block
 from ..utils import config as CFG
 from ..storage.utxo import UTXODB
-from ..mempool.pool import TxPoolDB
+from ..mempool.pool import TxPool
 from ..storage.kv import kv_enabled, iter_prefix
 
 # ---------------- Logger ----------------
@@ -72,7 +72,7 @@ class Blockchain(
         self._snapshot_last_backup_height: int = -1
         self._state_snapshot_cache: dict | None = None
         self._last_block_validation_error: str | None = None
-        self._mempool: TxPoolDB | None = None
+        self._mempool: TxPool | None = None
         self._mining_cooloff_until: float = 0.0
         
         self._persist_queue: queue.Queue[bool | None] | None = None
@@ -311,10 +311,10 @@ class Blockchain(
         self._maybe_flush_utxo(force=True)
         self.save_state()
 
-    def attach_mempool(self, pool: TxPoolDB) -> None:
+    def attach_mempool(self, pool: TxPool) -> None:
         self._mempool = pool
 
-    def get_mempool(self) -> TxPoolDB | None:
+    def get_mempool(self) -> TxPool | None:
         return self._mempool
 
     @property

@@ -13,7 +13,7 @@ from multiprocessing.synchronize import Event as MpEvent
 from ..core.block import Block
 from ..utils import config as CFG
 from ..storage.utxo import UTXODB
-from ..mempool.pool import TxPoolDB
+from ..mempool.pool import TxPool
 from ..core.coinbase import CoinbaseTx
 from ..contracts import graffiti as GRAFFITI
 
@@ -94,15 +94,15 @@ class MiningMixin:
             return max(0, CFG.MAX_SUPPLY - self.total_supply)
         return reward
 
-    def _ensure_mempool(self) -> TxPoolDB:
+    def _ensure_mempool(self) -> TxPool:
         pool = getattr(self, "get_mempool", lambda: None)()
         if pool is None:
-            pool = TxPoolDB(utxo_store=self._ensure_utxodb())
+            pool = TxPool(utxo_store=self._ensure_utxodb())
             if hasattr(self, "attach_mempool"):
                 self.attach_mempool(pool)
         return pool
 
-    def _fetch_sorted_mempool_txs(self, pool: TxPoolDB) -> list:
+    def _fetch_sorted_mempool_txs(self, pool: TxPool) -> list:
         txs_raw = pool.get_all_txs()
         
         graff_posts = [tx for tx in txs_raw if self._is_graffiti_post(tx)]
@@ -113,7 +113,7 @@ class MiningMixin:
 
         return graff_posts + other_txs
 
-    def _build_candidate_block(self, miner_address: str, height: int, reward: int, last_block: Block | None, pool: TxPoolDB, txs_from_mempool: list) -> Block:
+    def _build_candidate_block(self, miner_address: str, height: int, reward: int, last_block: Block | None, pool: TxPool, txs_from_mempool: list) -> Block:
         store = self._ensure_utxodb() or UTXODB()
         current_utxos = getattr(store, "utxos", store.load_utxo_set())
         temp_utxos = current_utxos.copy() if isinstance(current_utxos, dict) else dict(current_utxos)

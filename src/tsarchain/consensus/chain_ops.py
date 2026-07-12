@@ -12,7 +12,7 @@ from typing import List, TYPE_CHECKING
 from ..core.block import Block
 from ..utils import config as CFG
 from .genesis import GENESIS_HASH
-from ..mempool.pool import TxPoolDB
+from ..mempool.pool import TxPool
 from ..utils.helpers import bits_to_target, merkle_root
 
 if TYPE_CHECKING:
@@ -245,7 +245,7 @@ class ChainOpsMixin:
         if hasattr(self, "get_mempool"):
             pool = self.get_mempool()
         if pool is None:
-            pool = TxPoolDB(utxo_store=self._ensure_utxodb())
+            pool = TxPool(utxo_store=self._ensure_utxodb())
             owned_pool = True
 
         seen: set[str] = set()

@@ -11,19 +11,21 @@ from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple, Set
 
 # ---------------- Local Project ----------------
-from .node_logic import sync
-from .node_logic import peers
-from .node_logic import server_node
-from .node_logic import discovery
-from .node_logic import chat_state
-from .node_logic import rpc_client
-from .node_logic import storage_registry
 
 from .rpc_helper.tx_mixin import TxMixin
 from .rpc_helper.chat_mixin import ChatMixin
 from .rpc_helper.guard_mixin import GuardMixin
 from .rpc_helper.history_mixin import HistoryMixin
 from .rpc_helper.explorer_mixin import ExplorerMixin
+
+from .node_logic import (
+    discovery,
+    chat_state,
+    rpc_client,
+    sync, peers,
+    server_node,
+    storage_registry
+)
 
 from ..core.block import Block
 from .broadcast import Broadcast

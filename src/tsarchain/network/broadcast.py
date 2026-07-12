@@ -15,7 +15,7 @@ from .cast.mempool_sync import MempoolSyncMixin
 
 from ..storage.utxo import UTXODB
 from ..utils import config as CFG
-from ..mempool.pool import TxPoolDB
+from ..mempool.pool import TxPool
 from .dandelion_pp import DandelionPP
 from ..consensus.blockchain import Blockchain
 
@@ -43,7 +43,7 @@ class Broadcast(
 
         self._utxo_shared = shared_utxo is not None
         self.utxodb = shared_utxo or UTXODB()
-        self.mempool = TxPoolDB(utxo_store=self.utxodb, inherit_state=True)
+        self.mempool = TxPool(utxo_store=self.utxodb, inherit_state=True)
         self.state = {}
         self.seen_blocks: Set[str] = set()
         self.seen_txs: Set[str] = set()

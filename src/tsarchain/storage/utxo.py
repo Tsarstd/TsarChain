@@ -5,9 +5,10 @@
 
 import threading
 
-from ..contracts.graffiti_registry import GraffitiRegistry
-from ..utils import config as CFG
 from .db import BaseDatabase
+from ..utils import config as CFG
+from ..contracts.graffiti_registry import GraffitiRegistry
+
 from .utxo_logic.balances import UTXOBalanceMixin
 from .utxo_logic.database import UTXODatabaseMixin
 from .utxo_logic.graff_utxo import UTXOGraffitiMixin

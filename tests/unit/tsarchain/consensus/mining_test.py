@@ -7,7 +7,7 @@ import pytest
 from unittest.mock import Mock, patch
 
 from tsarchain.consensus.mining import MiningMixin
-from tsarchain.mempool.pool import TxPoolDB
+from tsarchain.mempool.pool import TxPool
 from tsarchain.storage.utxo import UTXODB
 
 
@@ -33,13 +33,13 @@ def mining_node():
             self.add_block = Mock(return_value=True)
             self.get_last_block = Mock(return_value=None)  # will be set per test
             self._ensure_utxodb = Mock(return_value=self._utxodb)
-            self.get_mempool = Mock(return_value=Mock(spec=TxPoolDB))
+            self.get_mempool = Mock(return_value=Mock(spec=TxPool))
             self.attach_mempool = Mock()
             self._reload_chain_from_kv = Mock(return_value=False)
             self._last_block_validation_error = None
 
             # Setup mempool mock
-            self._mempool = Mock(spec=TxPoolDB)
+            self._mempool = Mock(spec=TxPool)
             self._mempool.get_all_txs.return_value = []
             self._mempool.validate_transaction.return_value = True
             self.get_mempool.return_value = self._mempool
@@ -311,7 +311,7 @@ def test_mine_block_no_mempool(mining_node):
     mining_node.chain[0].height = 0
     mining_node.get_last_block.return_value = mining_node.chain[0]
     delattr(mining_node, 'get_mempool')
-    with patch('tsarchain.consensus.mining.TxPoolDB') as mock_txpool, \
+    with patch('tsarchain.consensus.mining.TxPool') as mock_txpool, \
         patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
         patch('tsarchain.consensus.mining.CoinbaseTx'):
 
