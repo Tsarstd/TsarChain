@@ -2,11 +2,11 @@
 # Copyright (c) 2025 Tsar Studio
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
-from tsarchain.network.cast.utxo_local import UTXOLocalMixin
+from tsarchain.network.cast.utxo_local import UTXOLocalHandler
 
-class DummySync(UTXOLocalMixin):
+class DummySync(UTXOLocalHandler):
     def __init__(self):
         self._utxo_shared = False
         self._utxo_last_flush_height = -1

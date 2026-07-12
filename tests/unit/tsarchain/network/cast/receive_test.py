@@ -5,9 +5,9 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from tsarchain.network.cast.receive import ReceiveMixin
+from tsarchain.network.cast.receive import ReceiveHandler
 
-class DummyNode(ReceiveMixin):
+class DummyNode(ReceiveHandler):
     def __init__(self):
         self.lock = MagicMock()
         self.blockchain = MagicMock()
@@ -54,32 +54,32 @@ def test_log_block_reject(dummy_node):
         assert args[6] == {"foo": "bar"}
 
 def test_native_script_hex():
-    assert ReceiveMixin._native_script_hex(None) is None
-    assert ReceiveMixin._native_script_hex(b"\x00\x01") == "0001"
-    assert ReceiveMixin._native_script_hex("ABCDEF") == "abcdef"
+    assert ReceiveHandler._native_script_hex(None) is None
+    assert ReceiveHandler._native_script_hex(b"\x00\x01") == "0001"
+    assert ReceiveHandler._native_script_hex("ABCDEF") == "abcdef"
     
     mock_obj = MagicMock()
     mock_obj.serialize.return_value = b"\xaa\xbb"
-    assert ReceiveMixin._native_script_hex(mock_obj) == "aabb"
+    assert ReceiveHandler._native_script_hex(mock_obj) == "aabb"
     
     mock_wrapper = MagicMock()
     del mock_wrapper.serialize
     mock_wrapper.script_pubkey = "112233"
-    assert ReceiveMixin._native_script_hex(mock_wrapper) == "112233"
+    assert ReceiveHandler._native_script_hex(mock_wrapper) == "112233"
 
 def test_native_script_bytes():
-    assert ReceiveMixin._native_script_bytes(None) is None
-    assert ReceiveMixin._native_script_bytes(b"\x00\x01") == b"\x00\x01"
-    assert ReceiveMixin._native_script_bytes("abcdef") == b"\xab\xcd\xef"
+    assert ReceiveHandler._native_script_bytes(None) is None
+    assert ReceiveHandler._native_script_bytes(b"\x00\x01") == b"\x00\x01"
+    assert ReceiveHandler._native_script_bytes("abcdef") == b"\xab\xcd\xef"
     
     mock_obj = MagicMock()
     mock_obj.serialize.return_value = b"\xaa\xbb"
-    assert ReceiveMixin._native_script_bytes(mock_obj) == b"\xaa\xbb"
+    assert ReceiveHandler._native_script_bytes(mock_obj) == b"\xaa\xbb"
     
     mock_wrapper = MagicMock()
     del mock_wrapper.serialize
     mock_wrapper.script_pubkey = "112233"
-    assert ReceiveMixin._native_script_bytes(mock_wrapper) == b"\x11\x22\x33"
+    assert ReceiveHandler._native_script_bytes(mock_wrapper) == b"\x11\x22\x33"
 
 def test_normalize_native_prevout(dummy_node):
     entry_dict = {
@@ -289,7 +289,7 @@ def test_receive_mempool(dummy_node):
 def test_native_script_hex_exception():
     mock_obj = MagicMock()
     mock_obj.serialize.side_effect = Exception("Test Error")
-    assert ReceiveMixin._native_script_hex(mock_obj) is None
+    assert ReceiveHandler._native_script_hex(mock_obj) is None
 
 def test_build_native_prevout_snapshot_no_lookup(dummy_node):
     del dummy_node.utxodb.lookup_entry
@@ -361,7 +361,7 @@ def test_receive_block_validation_fails_prevout(mock_block_class, dummy_node):
     dummy_node.blockchain.get_last_block.return_value.height = 9
     dummy_node.blockchain.get_last_block.return_value.hash.return_value = "prevhash"
     
-    dummy_node._native_precheck_block = MagicMock(return_value=True)
+    patch('tsarchain.network.cast.receive.ReceiveHandler._native_precheck_block', return_value=True).start()
     dummy_node.blockchain.validate_block.return_value = False
     dummy_node.blockchain._last_block_validation_error = "prevout_missing: xyz"
     
@@ -384,7 +384,7 @@ def test_receive_block_add_block_exception_swap_tip(mock_block_class, dummy_node
     dummy_node.blockchain.get_last_block.return_value.hash.return_value = "parent_hash"
     dummy_node.blockchain.chain = [parent_block, MagicMock()]
     
-    dummy_node._native_precheck_block = MagicMock(return_value=True)
+    patch('tsarchain.network.cast.receive.ReceiveHandler._native_precheck_block', return_value=True).start()
     dummy_node.blockchain.validate_block.return_value = True
     dummy_node.blockchain.add_block.side_effect = Exception("db_error")
     dummy_node.blockchain.swap_tip_if_better.return_value = MagicMock(transactions=[])

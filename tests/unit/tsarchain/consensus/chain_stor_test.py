@@ -13,18 +13,21 @@ from tsarchain.core.tx import Tx
 from tsarchain.core.block import Block
 from tsarchain.utils import config as CFG
 from tsarchain.storage.utxo import UTXODB
-from tsarchain.consensus.chain_storage import StorageMixin
+from tsarchain.consensus.chain_storage import ChainStorage
 from tsarchain.contracts.graffiti_registry import GraffitiRegistry
 
 
 # ----------------------------------------------------------------------
 # Dummy class to test StorageMixin
 # ----------------------------------------------------------------------
-class TestChainStorage(StorageMixin):
+class TestChainStorage:
     """Concrete class for testing StorageMixin."""
     __test__ = False
 
+    
     def __init__(self, in_memory=False):
+        self.chain_storage = ChainStorage(self)
+
         self.in_memory = in_memory
         self.chain = []
         self.lock = threading.Lock()
@@ -41,7 +44,31 @@ class TestChainStorage(StorageMixin):
         self._snapshot_backup_active = False
         self._snapshot_backup_lock = threading.Lock()
 
+    
+    def _build_block_meta(self, block, cw_prev=0): return self.chain_storage._build_block_meta(block, cw_prev)
+    def _serialize_block_for_store(self, block, prev_cw=0): return self.chain_storage._serialize_block_for_store(block, prev_cw)
+    def _mark_chain_dirty(self, height=0): return self.chain_storage._mark_chain_dirty(height)
+    def _prune_chain_store(self, start_height): return self.chain_storage._prune_chain_store(start_height)
+    def _reset_chain_store(self): return self.chain_storage._reset_chain_store()
+    def _backup_snapshot_enabled(self): return self.chain_storage._backup_snapshot_enabled()
+    def _write_snapshot_manifest(self, target_dir, meta, height): return self.chain_storage._write_snapshot_manifest(target_dir, meta, height)
+    def _maybe_backup_snapshot(self, tip_height, tip_timestamp=None): return self.chain_storage._maybe_backup_snapshot(tip_height, tip_timestamp=tip_timestamp)
+    def _copy_snapshot_env(self, target_dir): return self.chain_storage._copy_snapshot_env(target_dir)
+    def _hash_file(self, path): return self.chain_storage._hash_file(path)
+    def _chain_journal_enabled(self): return self.chain_storage._chain_journal_enabled()
+    def _chain_journal_size(self): return self.chain_storage._chain_journal_size()
+    def _clear_chain_journal(self): return self.chain_storage._clear_chain_journal()
+    def _append_chain_journal(self, start_height, blocks): return self.chain_storage._append_chain_journal(start_height, blocks)
+    def _apply_chain_journal(self, chain_data): return self.chain_storage._apply_chain_journal(chain_data)
+    def save_chain(self, force_full=False): return self.chain_storage.save_chain(force_full=force_full)
+    def load_chain(self): return self.chain_storage.load_chain()
+    def _read_snapshot_state(self): return self.chain_storage._read_snapshot_state()
+    def load_state(self): return self.chain_storage.load_state()
+    def save_state(self): return self.chain_storage.save_state()
+    def _compute_state_snapshot(self): return self.chain_storage._compute_state_snapshot()
+
     def _ensure_utxodb(self):
+
         if self._utxo_db is None:
             self._utxo_db = UTXODB()
         return self._utxo_db
@@ -260,8 +287,8 @@ def test_maybe_backup_snapshot(storage, monkeypatch):
     monkeypatch.setattr('threading.Thread', FakeThread)
 
     # Mock _copy_snapshot_env, _hash_file, annotate_local_snapshot_meta
-    storage._copy_snapshot_env = Mock()
-    storage._hash_file = Mock(return_value="abc123")
+    storage.chain_storage._copy_snapshot_env = Mock()
+    storage.chain_storage._hash_file = Mock(return_value="abc123")
     annotate_mock = Mock(return_value={"height": 5, "size": 200, "sha256": "abc123"})
     monkeypatch.setattr('tsarchain.consensus.chain_storage.annotate_local_snapshot_meta', annotate_mock)
 
@@ -276,16 +303,16 @@ def test_maybe_backup_snapshot(storage, monkeypatch):
     storage._maybe_backup_snapshot(5)
     # It will spawn thread, but we run synchronously
     assert storage._snapshot_last_backup_height == 5
-    storage._copy_snapshot_env.assert_called_once()
+    storage.chain_storage._copy_snapshot_env.assert_called_once()
 
     # Second call: interval not reached
-    storage._copy_snapshot_env.reset_mock()
+    storage.chain_storage._copy_snapshot_env.reset_mock()
     storage._maybe_backup_snapshot(14)
-    storage._copy_snapshot_env.assert_not_called()
+    storage.chain_storage._copy_snapshot_env.assert_not_called()
 
     # Third call: interval reached
     storage._maybe_backup_snapshot(15)
-    storage._copy_snapshot_env.assert_called_once()
+    storage.chain_storage._copy_snapshot_env.assert_called_once()
 
 
 def test_copy_snapshot_env(storage, monkeypatch, tmp_path):
@@ -308,11 +335,11 @@ def test_hash_file(tmp_path):
     file_path = tmp_path / "test.bin"
     with open(file_path, "wb") as f:
         f.write(b"hello world")
-    hash_val = StorageMixin._hash_file(str(file_path))
+    hash_val = ChainStorage._hash_file(str(file_path))
     assert hash_val == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"  # sha256 of "hello world"
 
     # Non-existent file
-    hash_val = StorageMixin._hash_file("nonexistent")
+    hash_val = ChainStorage._hash_file("nonexistent")
     assert hash_val is None
 
 
@@ -428,15 +455,15 @@ def test_save_chain_with_kv(storage, monkeypatch):
     block1.transactions = []
 
     monkeypatch.setattr('tsarchain.consensus.chain_storage.estimate_block_size_bytes', Mock(return_value=100))
-    storage._build_block_meta = Mock(return_value={"chainwork": 100})
-    storage._serialize_block_for_store = Mock(return_value=({"height": 0}, 100))
+    storage.chain_storage._build_block_meta = Mock(return_value={"chainwork": 100})
+    storage.chain_storage._serialize_block_for_store = Mock(return_value=({"height": 0}, 100))
 
     storage.chain = [block1]
     storage._persisted_height = -1
     storage._chain_dirty_from = None
 
     # Save
-    with patch.object(storage, '_maybe_backup_snapshot') as backup_mock:
+    with patch.object(storage.chain_storage, '_maybe_backup_snapshot') as backup_mock:
         storage.save_chain(force_full=True)
         # Should call clear_db, batch put
         clear_db_mock.assert_called_once_with('chain')
@@ -479,7 +506,7 @@ def test_save_chain_without_kv_journal(storage, monkeypatch, tmp_path):
     storage._chain_dirty_from = None
 
     # Mock _serialize_block_for_store to return dummy
-    storage._serialize_block_for_store = Mock(return_value=({"height": 0}, 0))
+    storage.chain_storage._serialize_block_for_store = Mock(return_value=({"height": 0}, 0))
     storage._chain_journal_enabled = Mock(return_value=False)
 
     # First save: force_full -> write full blocks.json
@@ -510,7 +537,7 @@ def test_save_chain_without_kv_journal(storage, monkeypatch, tmp_path):
     storage._persisted_height = 1
     storage._chain_dirty_from = None
     storage._mark_chain_dirty(2)  # dirty from 2
-    storage._chain_journal_enabled = TestChainStorage._chain_journal_enabled.__get__(storage)
+    storage._chain_journal_enabled = MagicMock(side_effect=storage.chain_storage._chain_journal_enabled)
 
     # Save again: should append to journal, not full flush
     with patch('tsarchain.consensus.chain_storage.AtomicJSONFile') as mock_json:
@@ -645,14 +672,14 @@ def test_load_chain_invalid_genesis(storage, monkeypatch):
     monkeypatch.setattr('tsarchain.consensus.chain_storage.CFG.ZERO_HASH', bytes.fromhex(ZERO_HASH_HEX))
 
     # Mock reset_chain_store
-    storage._reset_chain_store = Mock()
+    storage.chain_storage._reset_chain_store = Mock()
 
     # Bypass journal
     storage._apply_chain_journal = lambda data: data
 
     storage.load_chain()
     # Should log error and reset
-    storage._reset_chain_store.assert_called_once()
+    storage.chain_storage._reset_chain_store.assert_called_once()
 
 
 def test_load_chain_wrong_genesis_hash(storage, monkeypatch):
@@ -676,9 +703,9 @@ def test_load_chain_wrong_genesis_hash(storage, monkeypatch):
     monkeypatch.setattr('tsarchain.consensus.chain_storage.GENESIS_HASH', bytes.fromhex("11"*32))
     monkeypatch.setattr('tsarchain.consensus.chain_storage.CFG.ZERO_HASH', bytes.fromhex("00"*32))
 
-    storage._reset_chain_store = Mock()
+    storage.chain_storage._reset_chain_store = Mock()
     storage.load_chain()
-    storage._reset_chain_store.assert_called_once()
+    storage.chain_storage._reset_chain_store.assert_called_once()
 
 
 # ----------------------------------------------------------------------
@@ -712,7 +739,7 @@ def test_read_snapshot_state_nonkv(storage, monkeypatch, tmp_path):
 
 
 def test_load_state(storage):
-    storage._read_snapshot_state = Mock(return_value={"total_supply": 300, "total_blocks": 30})
+    storage.chain_storage._read_snapshot_state = Mock(return_value={"total_supply": 300, "total_blocks": 30})
     storage.load_state()
     assert storage.total_supply == 300
     assert storage.total_blocks == 30
@@ -721,7 +748,9 @@ def test_load_state(storage):
 
 def test_save_state(storage, monkeypatch):
     # Provide a chain of 5 dummy blocks so that len(chain) == 5
-    storage.chain = [Mock() for _ in range(5)]
+    mock_blk = Mock()
+    mock_blk.transactions = []
+    storage.chain = [mock_blk for _ in range(5)]
     # Mock calculate_total_supply to return 500
     storage.calculate_total_supply = Mock(return_value=500)
 
@@ -731,7 +760,7 @@ def test_save_state(storage, monkeypatch):
     storage.total_supply = 500
     storage.supply_in_tsar = 0.0005
 
-    storage._compute_state_snapshot = Mock(return_value={"schema_version": 1, "last_updated": "now"})
+    storage.chain_storage._compute_state_snapshot = Mock(return_value={"schema_version": 1, "last_updated": "now"})
 
     # KV enabled
     monkeypatch.setattr('tsarchain.consensus.chain_storage.kv_enabled', lambda: True)
@@ -892,7 +921,7 @@ def test_save_chain_prune_when_tip_lower(storage, monkeypatch):
         batch_mock.__exit__ = Mock(return_value=False)
         batch_mock.put = Mock()
         with patch('tsarchain.consensus.chain_storage.batch', return_value=batch_mock):
-            with patch.object(storage, '_prune_chain_store') as prune_mock:
+            with patch.object(storage.chain_storage, '_prune_chain_store') as prune_mock:
                 storage.save_chain(force_full=False)
 
                 # Verify pruning was called with tip_height + 1 (0+1)

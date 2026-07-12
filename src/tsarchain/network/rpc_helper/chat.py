@@ -11,16 +11,17 @@ import collections
 
 # ---------------- Local Project ----------------
 from ...utils import config as CFG
+from .base import NetworkHandlerProxy
 from ..protocol import send_message, recv_message,build_envelope, SecureChannel
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network.rpc_helper.chat_mixin")
+log = get_ctx_logger("tsarchain.network.rpc_helper.chat")
 
 
 # ------------------------------ P2P Chat ------------------------------
 
-class ChatMixin:
+class ChatHandler(NetworkHandlerProxy):
     def _send_to_peer(self, peer: tuple[str,int], payload: dict) -> None:
         if not isinstance(peer, tuple) or len(peer) != 2:
             raise ValueError("bad peer")

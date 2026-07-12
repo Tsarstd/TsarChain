@@ -25,8 +25,14 @@ from ..contracts.graffiti_registry import GraffitiRegistry
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.consensus.validation")
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .blockchain import Blockchain
 
-class ValidationMixin:
+class BlockValidator:
+    def __init__(self, blockchain: "Blockchain"):
+        self.blockchain = blockchain
+
     _pow_light_warmed = False
     _pow_warm_next_epoch: int | None = None
     _pow_warm_lock = threading.Lock()
@@ -41,7 +47,7 @@ class ValidationMixin:
         try:
             # 1. Check Field Completeness
             if not all([block.height is not None, block.prev_block_hash, block.transactions]):
-                self._last_block_validation_error = "block_missing_fields"
+                self.blockchain._last_block_validation_error = "block_missing_fields"
                 return False
 
             # 2. Warm-up POW
@@ -65,16 +71,16 @@ class ValidationMixin:
 
             for validate_func, err_msg in validation_steps:
                 if not validate_func(block):
-                    self._last_block_validation_error = err_msg or self._last_block_validation_error
+                    self.blockchain._last_block_validation_error = err_msg or self.blockchain._last_block_validation_error
                     return False
 
             # 4. State & Chain Context Validation
-            with self.lock:
+            with self.blockchain.lock:
                 if not self._validate_chain_context_locked(block):
-                    self._last_block_validation_error = "chain_context_invalid"
+                    self.blockchain._last_block_validation_error = "chain_context_invalid"
                     return False
                 
-                store = self._ensure_utxodb() or UTXODB()
+                store = self.blockchain._ensure_utxodb() or UTXODB()
                 has_lookup = callable(getattr(store, "lookup_entry", None))
                 utxo_view = getattr(store, "utxos", None) if not has_lookup else None
                 utxo_view = store.load_utxo_set() if (not has_lookup and utxo_view is None) else utxo_view
@@ -82,22 +88,22 @@ class ValidationMixin:
 
             # 5. Additional Validation Related to Store/UTXO
             if not self._check_sigops_budget(block, store, utxo_view):
-                self._last_block_validation_error = "sigops_limit_exceeded"
+                self.blockchain._last_block_validation_error = "sigops_limit_exceeded"
                 return False
 
             if block.height > 0 and not self._validate_transactions(block, store):
                 return False
 
             # 6. Finalization
-            with self.lock:
+            with self.blockchain.lock:
                 if state_token != self._chain_state_token_locked():
-                    self._last_block_validation_error = "chain_state_changed_during_validation"
+                    self.blockchain._last_block_validation_error = "chain_state_changed_during_validation"
                     return False
-                self._last_block_validation_error = None
+                self.blockchain._last_block_validation_error = None
             return True
 
         except Exception:
-            self._last_block_validation_error = "unexpected_validation_error"
+            self.blockchain._last_block_validation_error = "unexpected_validation_error"
             log.exception("[validate_block] Unexpected error during block validation")
             return False
 
@@ -107,7 +113,7 @@ class ValidationMixin:
         for tx in txs:
             raw_no_witness = self._serialize_tx_cached(tx, include_witness=False)
             if raw_no_witness is None:
-                self._last_block_validation_error = "tx_serialize_failed"
+                self.blockchain._last_block_validation_error = "tx_serialize_failed"
                 return False
             txid_bytes = H.hash256(raw_no_witness)
             existing = getattr(tx, "txid", None)
@@ -119,7 +125,7 @@ class ValidationMixin:
                 existing_bytes = bytes.fromhex(existing)
 
             if existing_bytes is not None and existing_bytes != txid_bytes:
-                self._last_block_validation_error = "txid_mismatch"
+                self.blockchain._last_block_validation_error = "txid_mismatch"
                 return False
 
             setattr(tx, "_cached_txid_bytes", txid_bytes)
@@ -189,19 +195,19 @@ class ValidationMixin:
 
 
     def _validate_transactions(self, block: Block, utxo_store: UTXODB | None = None) -> bool: 
-        store = utxo_store or self._ensure_utxodb() or UTXODB()
-        self._last_block_validation_error = "validation_failed"
+        store = utxo_store or self.blockchain._ensure_utxodb() or UTXODB()
+        self.blockchain._last_block_validation_error = "validation_failed"
         txs = getattr(block, "transactions", [])
         if not txs:
-            self._last_block_validation_error = "empty_block_transactions"
+            self.blockchain._last_block_validation_error = "empty_block_transactions"
             return False
 
         cb = txs[0]
         if not getattr(cb, "is_coinbase", False):
-            self._last_block_validation_error = "missing_coinbase"
+            self.blockchain._last_block_validation_error = "missing_coinbase"
             return False
         if any(getattr(t, "is_coinbase", False) for t in txs[1:]):
-            self._last_block_validation_error = "duplicate_coinbase"
+            self.blockchain._last_block_validation_error = "duplicate_coinbase"
             return False
 
         spend_height = int(getattr(block, "height", 0))
@@ -219,10 +225,10 @@ class ValidationMixin:
         for tx in txs:
             raw_full = self._serialize_tx_cached(tx, include_witness=True)
             if raw_full is None:
-                self._last_block_validation_error = "tx_serialize_failed"
+                self.blockchain._last_block_validation_error = "tx_serialize_failed"
                 return False
             if len(raw_full) > int(CFG.MAX_BLOCK_BYTES):
-                self._last_block_validation_error = "tx_too_large"
+                self.blockchain._last_block_validation_error = "tx_too_large"
                 return False
             try:
                 weight, vsize, _base_size, _total_size = H.compute_tx_weight_vsize(tx)
@@ -232,28 +238,28 @@ class ValidationMixin:
                     getattr(tx, "txid", None),
                     block_height,
                 )
-                self._last_block_validation_error = "tx_weight_calc_failed"
+                self.blockchain._last_block_validation_error = "tx_weight_calc_failed"
                 return False
 
             vin = len(getattr(tx, "inputs", []))
             vout = len(getattr(tx, "outputs", []))
             if vsize > int(CFG.MAX_TX_VSIZE):
-                self._last_block_validation_error = "tx_vsize_exceeds_limit"
+                self.blockchain._last_block_validation_error = "tx_vsize_exceeds_limit"
                 return False
             if vsize < int(CFG.MIN_TX_VSIZE):
-                self._last_block_validation_error = "tx_vsize_below_min"
+                self.blockchain._last_block_validation_error = "tx_vsize_below_min"
                 return False
             if weight > int(CFG.MAX_TX_WEIGHT):
-                self._last_block_validation_error = "tx_weight_exceeds_limit"
+                self.blockchain._last_block_validation_error = "tx_weight_exceeds_limit"
                 return False
             if weight < int(CFG.MIN_TX_WEIGHT):
-                self._last_block_validation_error = "tx_weight_below_min"
+                self.blockchain._last_block_validation_error = "tx_weight_below_min"
                 return False
             if vin > int(CFG.MAX_TX_INPUTS):
-                self._last_block_validation_error = "tx_inputs_exceed_limit"
+                self.blockchain._last_block_validation_error = "tx_inputs_exceed_limit"
                 return False
             if vout > int(CFG.MAX_TX_OUTPUTS):
-                self._last_block_validation_error = "tx_outputs_exceed_limit"
+                self.blockchain._last_block_validation_error = "tx_outputs_exceed_limit"
                 return False
 
             for tx_out in getattr(tx, "outputs", []):
@@ -297,7 +303,7 @@ class ValidationMixin:
                     first_art_id = (art_id or "").strip().lower() if art_id else None
 
         if graffiti_posts > 1:
-            self._last_block_validation_error = "too_many_graffiti_posts"
+            self.blockchain._last_block_validation_error = "too_many_graffiti_posts"
             return False
 
         cb_block_id = getattr(cb, "block_id", None)
@@ -305,7 +311,7 @@ class ValidationMixin:
             cb_block_id = cb_block_id.strip().lower()
         if graffiti_posts == 1 and first_art_id:
             if not cb_block_id or cb_block_id.strip().lower() != first_art_id:
-                self._last_block_validation_error = "block_id_mismatch_graffiti"
+                self.blockchain._last_block_validation_error = "block_id_mismatch_graffiti"
                 return False
         return True
 
@@ -334,11 +340,11 @@ class ValidationMixin:
     def _validate_single_payout(self, meta: dict, paymap: dict[str, int], reg) -> bool: 
         art_id = str(meta.get("art_id") or "").strip().lower()
         if not art_id:
-            self._last_block_validation_error = "payout_bad_art_id"
+            self.blockchain._last_block_validation_error = "payout_bad_art_id"
             return False
         post = reg.get_post(art_id) if reg else None
         if not post:
-            self._last_block_validation_error = "payout_unknown_art"
+            self.blockchain._last_block_validation_error = "payout_unknown_art"
             return False
         
         stats = post.get("stats") or {}
@@ -347,7 +353,7 @@ class ValidationMixin:
         epoch = int(meta.get("epoch", -1))
 
         if epoch >= 0 and epoch <= last_epoch:
-            self._last_block_validation_error = "payout_epoch_rewind"
+            self.blockchain._last_block_validation_error = "payout_epoch_rewind"
             return False
 
         if epoch >= 0 and not self._validate_payout_proof(meta, epoch, art_id, reg):
@@ -355,7 +361,7 @@ class ValidationMixin:
 
         recs = meta.get("recipients") or []
         if not isinstance(recs, list) or not recs:
-            self._last_block_validation_error = "payout_no_recipients"
+            self.blockchain._last_block_validation_error = "payout_no_recipients"
             return False
             
         total_req = 0
@@ -363,15 +369,15 @@ class ValidationMixin:
             addr = str(rec.get("addr") or rec.get("address") or "").strip().lower()
             amt_req = int(rec.get("amount", 0))
             if not addr or amt_req <= 0:
-                self._last_block_validation_error = "payout_bad_recipient"
+                self.blockchain._last_block_validation_error = "payout_bad_recipient"
                 return False
             total_req += amt_req
             if paymap.get(addr, 0) < amt_req:
-                self._last_block_validation_error = "payout_shortfall"
+                self.blockchain._last_block_validation_error = "payout_shortfall"
                 return False
                 
         if total_req > pool_balance:
-            self._last_block_validation_error = "payout_exceeds_pool"
+            self.blockchain._last_block_validation_error = "payout_exceeds_pool"
             return False
             
         return True
@@ -386,7 +392,7 @@ class ValidationMixin:
                 if proof_height >= 0:
                     proof_epoch = GRAFFITI.compute_proof_epoch(proof_height)
             if proof_epoch is None or proof_epoch < epoch:
-                self._last_block_validation_error = "payout_missing_proof"
+                self.blockchain._last_block_validation_error = "payout_missing_proof"
                 return False
         return True
 
@@ -420,7 +426,7 @@ class ValidationMixin:
             )
 
         if not ok:
-            self._last_block_validation_error = reason or "native_validation_failed"
+            self.blockchain._last_block_validation_error = reason or "native_validation_failed"
             return False
 
         return self._verify_block_fees_and_rewards(block, txs, cb, fees)
@@ -453,7 +459,7 @@ class ValidationMixin:
                     getattr(tx_input, "txid", None) or getattr(tx_input, "prev_tx", None)
                 )
                 if prev_txid_hex is None:
-                    self._last_block_validation_error = "tx_input_missing_prev_txid"
+                    self.blockchain._last_block_validation_error = "tx_input_missing_prev_txid"
                     return None
                 prev_index = int(getattr(tx_input, "vout", getattr(tx_input, "prev_index", 0)))
                 if prev_txid_hex.lower() in processed_txids:
@@ -463,11 +469,11 @@ class ValidationMixin:
                     continue
                 entry = self._resolve_prevout(store_lookup, utxo_view, prev_txid_hex.lower(), prev_index)
                 if entry is None:
-                    self._last_block_validation_error = f"prevout_missing {prev_txid_hex}:{prev_index}"
+                    self.blockchain._last_block_validation_error = f"prevout_missing {prev_txid_hex}:{prev_index}"
                     return None
                 normalized = self._normalize_snapshot_entry(entry, snap_key)
                 if normalized is None:
-                    self._last_block_validation_error = "native_snapshot_invalid_entry"
+                    self.blockchain._last_block_validation_error = "native_snapshot_invalid_entry"
                     return None
                 snapshot[snap_key] = normalized
 
@@ -480,7 +486,7 @@ class ValidationMixin:
         fees_list = []
         if isinstance(fees, (list, tuple)):
             if len(fees) != max(len(txs) - 1, 0):
-                self._last_block_validation_error = "fee_mismatch"
+                self.blockchain._last_block_validation_error = "fee_mismatch"
                 return False
             for tx_obj, fee_val in zip(txs[1:], fees):
                 fee_int = int(fee_val)
@@ -489,15 +495,15 @@ class ValidationMixin:
         else:
             fees_list = [int(getattr(t, "fee", 0)) for t in txs[1:]]
 
-        minted_before = self._cumulative_supply_until(block.height)
-        base = self._scheduled_reward(block.height)
+        minted_before = self.blockchain._cumulative_supply_until(block.height)
+        base = self.blockchain._scheduled_reward(block.height)
         reward = min(max(0, base), max(0, CFG.MAX_SUPPLY - minted_before))
         total_fee = sum(fees_list)
         expected_cb = reward + total_fee
 
         actual_cb = sum(int(o.amount) for o in getattr(cb, "outputs", []))
         if actual_cb != expected_cb:
-            self._last_block_validation_error = f"coinbase_amount_mismatch expected={expected_cb} actual={actual_cb}"
+            self.blockchain._last_block_validation_error = f"coinbase_amount_mismatch expected={expected_cb} actual={actual_cb}"
             return False
 
         return True
@@ -550,39 +556,39 @@ class ValidationMixin:
 
 
     def _chain_state_token_locked(self): 
-        tip_hash = self.chain[-1].hash() if self.chain else None
-        return (self.height, tip_hash)
+        tip_hash = self.blockchain.chain[-1].hash() if self.blockchain.chain else None
+        return (self.blockchain.height, tip_hash)
 
 
     def _validate_chain_context_locked(self, block: Block) -> bool: 
-        expected_height = self.height + 1 if self.chain else 0
+        expected_height = self.blockchain.height + 1 if self.blockchain.chain else 0
         if block.height != expected_height:
-            self._last_block_validation_error = "height_mismatch"
+            self.blockchain._last_block_validation_error = "height_mismatch"
             return False
-        if self.chain and block.prev_block_hash != self.chain[-1].hash():
-            self._last_block_validation_error = "prev_hash_mismatch"
+        if self.blockchain.chain and block.prev_block_hash != self.blockchain.chain[-1].hash():
+            self.blockchain._last_block_validation_error = "prev_hash_mismatch"
             return False
-        if not self.chain and (block.height != 0 or block.prev_block_hash != CFG.ZERO_HASH):
-            self._last_block_validation_error = "bad_genesis_prevhash"
+        if not self.blockchain.chain and (block.height != 0 or block.prev_block_hash != CFG.ZERO_HASH):
+            self.blockchain._last_block_validation_error = "bad_genesis_prevhash"
             return False
-        if not self.chain and block.height == 0 and GENESIS_HASH is not None:
+        if not self.blockchain.chain and block.height == 0 and GENESIS_HASH is not None:
             if block.hash() != GENESIS_HASH:
-                self._last_block_validation_error = "genesis_hash_mismatch"
+                self.blockchain._last_block_validation_error = "genesis_hash_mismatch"
                 return False
-        mtp = self.median_time_past(CFG.MTP_WINDOWS)
+        mtp = self.blockchain.median_time_past(CFG.MTP_WINDOWS)
         if block.timestamp < mtp:
-            self._last_block_validation_error = "timestamp_too_old"
+            self.blockchain._last_block_validation_error = "timestamp_too_old"
             return False
         if block.timestamp > int(time.time()) + CFG.FUTURE_DRIFT:
-            self._last_block_validation_error = "timestamp_in_future"
+            self.blockchain._last_block_validation_error = "timestamp_in_future"
             return False
-        if self.chain:
-            parent_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
+        if self.blockchain.chain:
+            parent_ts = int(getattr(self.blockchain.chain[-1], "timestamp", 0) or 0)
             if block.timestamp + int(CFG.TARGET_BLOCK_TIME) < parent_ts:
-                self._last_block_validation_error = "timestamp_backwards"
+                self.blockchain._last_block_validation_error = "timestamp_backwards"
                 return False
-        if not self._validate_difficulty(block):
-            self._last_block_validation_error = "difficulty_invalid"
+        if not self.blockchain._validate_difficulty(block):
+            self.blockchain._last_block_validation_error = "difficulty_invalid"
             return False
         return True
 
@@ -596,10 +602,10 @@ class ValidationMixin:
             if not isinstance(txid_b, (bytes, bytearray)):
                 txid_b = bytes.fromhex(txid_b) if isinstance(txid_b, str) else None
             if txid_b is None:
-                self._last_block_validation_error = "txid_missing"
+                self.blockchain._last_block_validation_error = "txid_missing"
                 return False
             if txid_b in seen_txids:
-                self._last_block_validation_error = "txid_duplicate"
+                self.blockchain._last_block_validation_error = "txid_duplicate"
                 return False
             seen_txids.add(txid_b)
         return True
@@ -608,11 +614,11 @@ class ValidationMixin:
     def _check_block_limits(self, block: Block) -> bool: 
         txs_ex_coinbase = max(0, (len(block.transactions) or 0) - 1)
         if txs_ex_coinbase > CFG.MAX_TXS_PER_BLOCK:
-            self._last_block_validation_error = "too_many_txs"
+            self.blockchain._last_block_validation_error = "too_many_txs"
             return False
         est_size = self._estimate_block_size(block)
         if est_size is not None and est_size > CFG.MAX_BLOCK_BYTES:
-            self._last_block_validation_error = "block_size_exceeded"
+            self.blockchain._last_block_validation_error = "block_size_exceeded"
             return False
         return True
 
@@ -649,11 +655,11 @@ class ValidationMixin:
         if not data or not data.startswith(CFG.GRAFFITI_MAGIC):
             return True
         if len(data) > int(CFG.MAX_GRAFFITI_OPRET):
-            self._last_block_validation_error = "graffiti_opreturn_too_large"
+            self.blockchain._last_block_validation_error = "graffiti_opreturn_too_large"
             return False
         meta = GRAFFITI.parse_payload(data)
         if not meta:
-            self._last_block_validation_error = "graffiti_payload_invalid"
+            self.blockchain._last_block_validation_error = "graffiti_payload_invalid"
             return False
             
         event = str(meta.get("event", "")).upper()
@@ -680,10 +686,10 @@ class ValidationMixin:
     def _validate_graffiti_post_event(self, meta) -> bool: 
         size_val = int(meta.get("size", 0))
         if size_val <= 0:
-            self._last_block_validation_error = "graffiti_size_invalid"
+            self.blockchain._last_block_validation_error = "graffiti_size_invalid"
             return False
         if size_val > int(CFG.GRAFFITI_MAX_SIZE_BYTES):
-            self._last_block_validation_error = "graffiti_size_exceeds_limit"
+            self.blockchain._last_block_validation_error = "graffiti_size_exceeds_limit"
             return False
         return True
 
@@ -691,18 +697,18 @@ class ValidationMixin:
     def _validate_graffiti_comment_event(self, meta) -> bool: 
         comment_len = int(meta.get("comment_len", 0))
         if comment_len <= 0:
-            self._last_block_validation_error = "graffiti_comment_empty"
+            self.blockchain._last_block_validation_error = "graffiti_comment_empty"
             return False
         if comment_len > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
-            self._last_block_validation_error = "graffiti_comment_too_large"
+            self.blockchain._last_block_validation_error = "graffiti_comment_too_large"
             return False
         amount = int(meta.get("amount", 0))
         if amount < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
-            self._last_block_validation_error = "graffiti_comment_fee_too_low"
+            self.blockchain._last_block_validation_error = "graffiti_comment_fee_too_low"
             return False
         tip = int(meta.get("tip", 0))
         if tip < 0:
-            self._last_block_validation_error = "graffiti_comment_tip_negative"
+            self.blockchain._last_block_validation_error = "graffiti_comment_tip_negative"
             return False
         return True
 
@@ -914,10 +920,10 @@ class ValidationMixin:
             else:
                 so = len(getattr(tx, "inputs", []))
             if so > int(CFG.MAX_SIGOPS_PER_TX):
-                self._last_block_validation_error = "sigops_per_tx_exceeded"
+                self.blockchain._last_block_validation_error = "sigops_per_tx_exceeded"
                 return False
             total_sigops += so
         if total_sigops > int(CFG.MAX_SIGOPS_PER_BLOCK):
-            self._last_block_validation_error = "sigops_per_block_exceeded"
+            self.blockchain._last_block_validation_error = "sigops_per_block_exceeded"
             return False
         return True

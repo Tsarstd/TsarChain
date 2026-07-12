@@ -6,15 +6,17 @@ from bech32 import convertbits, bech32_decode
 
 # ---------------- Local Project ----------------
 from ...utils import config as CFG
+from .base import NetworkHandlerProxy
 from ...core.tx import Tx, TxIn, TxOut
 from ...contracts import graffiti as GRAFF
 from ...utils.helpers import Script, OP_RETURN, last_pushdata, compute_tx_weight_vsize
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network.rpc_helper.tx_mixin")
+log = get_ctx_logger("tsarchain.network.rpc_helper.tx")
 
-class TxMixin:
+
+class TxHandler(NetworkHandlerProxy):
     def _create_template_tx(self, from_addr, to_addr, amount, fee_rate):
         if not isinstance(from_addr, str) or not isinstance(to_addr, str):
             raise ValueError("from/to address must be string")

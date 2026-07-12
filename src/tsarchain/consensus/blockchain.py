@@ -7,20 +7,23 @@ from __future__ import annotations
 
 import os
 import json
-import threading
 import queue
+import threading
+import multiprocessing as mp
+
 from typing import List, Optional
 from collections import OrderedDict
+from multiprocessing.synchronize import Event as MpEvent
 
 # ---------------- MIXIN ----------------
-from .mining import MiningMixin
-from .rewards import RewardMixin
-from .chain_ops import ChainOpsMixin
-from .utxo_validate import UTXOMixin
-from .difficulty import DifficultyMixin
-from .chain_storage import StorageMixin
-from .validation import ValidationMixin
-from .genesis import GENESIS_HASH, GenesisMixin
+from .mining import MiningManager
+from .rewards import RewardCalculator
+from .validation import BlockValidator
+from .chain_ops import ChainOperations
+from .chain_storage import ChainStorage
+from .utxo_validate import UTXOValidator
+from .difficulty import DifficultyManager
+from .genesis import GENESIS_HASH, GenesisManager
 
 from ..core.block import Block
 from ..utils import config as CFG
@@ -34,18 +37,7 @@ log = get_ctx_logger("tsarchain.consensus.blockchain")
 
 __all__ = ["Blockchain"]
 
-
-class Blockchain(
-    GenesisMixin,
-    RewardMixin,
-    DifficultyMixin,
-    UTXOMixin,
-    StorageMixin,
-    ValidationMixin,
-    ChainOpsMixin,
-    MiningMixin
-    ):
-    
+class Blockchain():
     def __init__(self, miner_address: str | None = None, in_memory: bool = False, use_cores: int | None = None,):
         self.in_memory = in_memory
         self.chain: List[Block] = []
@@ -54,6 +46,15 @@ class Blockchain(
         self._hash_cache: OrderedDict[int, str] = OrderedDict()
         self.supply_in_tsar = 0
         self._chain_meta: dict | None = None
+        
+        self.genesis_manager = GenesisManager(self)
+        self.reward_calculator = RewardCalculator(self)
+        self.difficulty_manager = DifficultyManager(self)
+        self.mining_manager = MiningManager(self)
+        self.utxo_validator = UTXOValidator(self)
+        self.chain_ops = ChainOperations(self)
+        self.chain_storage = ChainStorage(self)
+        self.validator = BlockValidator(self)
         
         self.miner_address = miner_address
         self.use_cores = use_cores
@@ -338,3 +339,137 @@ class Blockchain(
 
     def shutdown(self) -> None:
         self._stop_persist_worker()
+
+
+    # ---------------- Proxy Methods for Genesis ----------------
+    def has_genesis(self) -> bool:
+        return self.genesis_manager.has_genesis()
+
+    def _persist_empty_state_if_needed(self):
+        return self.genesis_manager._persist_empty_state_if_needed()
+
+    def _enforce_genesis_lock(self):
+        return self.genesis_manager._enforce_genesis_lock()
+
+    def _create_genesis_with_lock(self, miner_address: str, use_cores: int | None):
+        return self.genesis_manager._create_genesis_with_lock(miner_address, use_cores)
+
+    def ensure_genesis(self, miner_address: str, use_cores: int | None = None) -> bool:
+        return self.genesis_manager.ensure_genesis(miner_address, use_cores)
+
+    def create_genesis_block(self, miner_address, use_cores: int | None = None):
+        return self.genesis_manager.create_genesis_block(miner_address, use_cores)
+
+
+    # ---------------- Proxy Methods for Rewards ----------------
+    def _scheduled_reward(self, height: int) -> int:
+        return self.reward_calculator._scheduled_reward(height)
+
+    def _cumulative_supply_until(self, height: int) -> int:
+        return self.reward_calculator._cumulative_supply_until(height)
+
+    def get_block_reward(self, height: int) -> int:
+        return self.reward_calculator.get_block_reward(height)
+
+    def calculate_total_supply(self) -> int:
+        return self.reward_calculator.calculate_total_supply()
+
+
+    # ---------------- Proxy Methods for Difficulty ----------------
+    def calculate_expected_bits(self, next_height: int) -> int:
+        return self.difficulty_manager.calculate_expected_bits(next_height)
+
+    def _validate_difficulty(self, block: Block) -> bool:
+        return self.difficulty_manager._validate_difficulty(block)
+
+    def _work_from_bits(self, bits: int) -> int:
+        return self.difficulty_manager._work_from_bits(bits)
+
+    def _compute_chainwork_for_chain(self, chain: List[Block]) -> int:
+        return self.difficulty_manager._compute_chainwork_for_chain(chain)
+
+    def _common_ancestor_height(self, other_chain_blocks: List[Block]) -> int:
+        return self.difficulty_manager._common_ancestor_height(other_chain_blocks)
+
+    def median_time_past(self, k: int = CFG.MTP_WINDOWS) -> int:
+        return self.difficulty_manager.median_time_past(k)
+
+
+    # ---------------- Proxy Methods for Mining ----------------
+    def mine_block(
+        self,
+        miner_address: str,
+        use_cores: int | None = None,
+        cancel_event: MpEvent | None = None,
+        pow_backend: str = "auto",
+        progress_queue: mp.Queue | None = None,
+    ) -> Block | None:
+        return self.mining_manager.mine_block(
+            miner_address,
+            use_cores=use_cores,
+            cancel_event=cancel_event,
+            pow_backend=pow_backend,
+            progress_queue=progress_queue,
+        )
+
+
+    # ---------------- Proxy Methods for UTXO ----------------
+    def _ensure_utxodb(self) -> Optional[UTXODB]:
+        return self.utxo_validator._ensure_utxodb()
+
+    def get_utxo_store(self) -> Optional[UTXODB]:
+        return self.utxo_validator.get_utxo_store()
+
+    def _mark_utxo_dirty(self) -> None:
+        return self.utxo_validator._mark_utxo_dirty()
+
+    def _maybe_flush_utxo(self, *, force: bool = False) -> None:
+        return self.utxo_validator._maybe_flush_utxo(force=force)
+
+    def _sync_utxo_store(self, *, force: bool = False) -> None:
+        return self.utxo_validator._sync_utxo_store(force=force)
+
+
+    # ---------------- Proxy Methods for Chain Ops ----------------
+    def replace_with(self, other_chain: "Blockchain"):
+        return self.chain_ops.replace_with(other_chain)
+
+    def add_block(self, block: Block):
+        return self.chain_ops.add_block(block)
+
+    def swap_tip_if_better(self, block: Block):
+        return self.chain_ops.swap_tip_if_better(block)
+
+    def _has_pending_blocks(self) -> bool:
+        return self.chain_ops._has_pending_blocks()
+
+    def _is_chain_consistent(self) -> bool:
+        return self.chain_ops._is_chain_consistent()
+
+    def _validate_complete_chain(self, chain: List[Block]) -> bool:
+        return self.chain_ops._validate_complete_chain(chain)
+
+
+    # ---------------- Proxy Methods for Chain Storage ----------------
+    def load_chain(self):
+        return self.chain_storage.load_chain()
+
+    def save_chain(self, *, force_full: bool = False):
+        return self.chain_storage.save_chain(force_full=force_full)
+
+    def load_state(self):
+        return self.chain_storage.load_state()
+
+    def save_state(self):
+        return self.chain_storage.save_state()
+
+    def _mark_chain_dirty(self, height: int = 0):
+        return self.chain_storage._mark_chain_dirty(height)
+
+
+    # ---------------- Proxy Methods for Block Validation ----------------
+    def validate_block(self, block: "Block") -> bool:
+        return self.validator.validate_block(block)
+
+    def compute_txids_for_block(self, block: "Block") -> bool:
+        return self.validator.compute_txids_for_block(block)

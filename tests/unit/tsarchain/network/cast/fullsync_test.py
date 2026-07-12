@@ -5,10 +5,10 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from tsarchain.network.cast.fullsync import FullSyncMixin
-from tsarchain.network.cast.chain_utils import ChainUtilsMixin
+from tsarchain.network.cast.fullsync import FullSyncHandler
+from tsarchain.network.cast.chain_utils import ChainUtilsHandler
 
-class DummySync(FullSyncMixin, ChainUtilsMixin):
+class DummySync(FullSyncHandler, ChainUtilsHandler):
     def __init__(self):
         self.blockchain = MagicMock()
         self.mempool = MagicMock()

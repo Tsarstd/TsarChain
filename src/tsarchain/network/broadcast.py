@@ -3,15 +3,17 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
 
+from __future__ import annotations
+
 import threading
 from typing import Dict, Optional, Set, Tuple, TYPE_CHECKING
 
-from .cast.gossip import GossipMixin
-from .cast.receive import ReceiveMixin
-from .cast.fullsync import FullSyncMixin
-from .cast.utxo_local import UTXOLocalMixin
-from .cast.chain_utils import ChainUtilsMixin
-from .cast.mempool_sync import MempoolSyncMixin
+from .cast.gossip import GossipHandler
+from .cast.receive import ReceiveHandler
+from .cast.fullsync import FullSyncHandler
+from .cast.utxo_local import UTXOLocalHandler
+from .cast.chain_utils import ChainUtilsHandler
+from .cast.mempool_sync import MempoolSyncHandler
 
 from ..storage.utxo import UTXODB
 from ..utils import config as CFG
@@ -26,17 +28,18 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.broadcast")
 
 
-class Broadcast(
-    GossipMixin,
-    ReceiveMixin,
-    FullSyncMixin,
-    MempoolSyncMixin,
-    UTXOLocalMixin,
-    ChainUtilsMixin,
-):
+class Broadcast:
     def __init__(self, blockchain=None, utxodb=None):
+        self.gossip = GossipHandler(self)
+        self.receive = ReceiveHandler(self)
+        self.full_sync = FullSyncHandler(self)
+        self.mempool_sync = MempoolSyncHandler(self)
+        self.utxo_local = UTXOLocalHandler(self)
+        self.chain_utils = ChainUtilsHandler(self)
+
         self.lock = threading.RLock()
         self.blockchain = blockchain or Blockchain()
+        
         shared_utxo = utxodb
         if shared_utxo is None and hasattr(self.blockchain, "get_utxo_store"):
             shared_utxo = self.blockchain.get_utxo_store()
@@ -81,7 +84,19 @@ class Broadcast(
             self.seen_txs.clear()
         if hasattr(self.blockchain, "shutdown"):
             self.blockchain.shutdown()
-        log.info("[shutdown] Shutdown complete")
+        log.info("[shutdown] Broadcast Shutdown complete")
+
+    def __getattr__(self, name):
+        if self.__dict__.get('_in_getattr', False):
+            raise AttributeError(name)
+        self._in_getattr = True
+        try:
+            for handler in [self.gossip, self.receive, self.full_sync, self.mempool_sync, self.utxo_local, self.chain_utils]:
+                if hasattr(handler, name):
+                    return getattr(handler, name)
+        finally:
+            self._in_getattr = False
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
 
 __all__ = ["Broadcast"]

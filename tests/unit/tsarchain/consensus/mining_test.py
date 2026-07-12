@@ -6,17 +6,17 @@ import time
 import pytest
 from unittest.mock import Mock, patch
 
-from tsarchain.consensus.mining import MiningMixin
+from tsarchain.consensus.mining import MiningManager
 from tsarchain.mempool.pool import TxPool
 from tsarchain.storage.utxo import UTXODB
 
 
+
 @pytest.fixture
 def mining_node():
-    class MockNode(MiningMixin):
+    class MockBlockchain:
         def __init__(self):
-            # Chain state
-            self.chain = []                     # will be set per test
+            self.chain = []
             self.total_supply = 0
             self._utxodb = Mock(spec=UTXODB)
             self._utxodb.utxos = {}
@@ -24,29 +24,30 @@ def mining_node():
             self._utxodb.apply_tx_to_utxoset = Mock()
             self._mining_cooloff_until = 0.0
 
-            # Mocks for methods called by mine_block
             self._has_pending_blocks = Mock(return_value=False)
             self._is_chain_consistent = Mock(return_value=True)
             self.get_block_reward = Mock(return_value=100)
             self.calculate_expected_bits = Mock(return_value=0x1f00ffff)
             self.validate_block = Mock(return_value=True)
             self.add_block = Mock(return_value=True)
-            self.get_last_block = Mock(return_value=None)  # will be set per test
+            self.get_last_block = Mock(return_value=None)
             self._ensure_utxodb = Mock(return_value=self._utxodb)
             self.get_mempool = Mock(return_value=Mock(spec=TxPool))
             self.attach_mempool = Mock()
             self._reload_chain_from_kv = Mock(return_value=False)
             self._last_block_validation_error = None
 
-            # Setup mempool mock
-            self._mempool = Mock(spec=TxPool)
-            self._mempool.get_all_txs.return_value = []
-            self._mempool.validate_transaction.return_value = True
-            self.get_mempool.return_value = self._mempool
+    blockchain = MockBlockchain()
+    blockchain._mempool = Mock(spec=TxPool)
+    blockchain._mempool.get_all_txs.return_value = []
+    blockchain._mempool.validate_transaction.return_value = True
+    blockchain.get_mempool.return_value = blockchain._mempool
 
-    return MockNode()
-
-
+    manager = MiningManager(blockchain)
+    # the tests expect manager to have _mempool accessible. Since we changed tests to manager, 
+    # we can just attach it to manager or manager.blockchain
+    manager._mempool = blockchain._mempool 
+    return manager
 # ------------------- Tests for _select_graffiti_art_id -------------------
 
 def test_select_graffiti_art_id_found(mining_node):
@@ -117,11 +118,11 @@ def test_mine_block_success(mining_node):
     prev_block = Mock()
     prev_block.hash.return_value = b'prev_hash'
     prev_block.height = 0
-    mining_node.chain = [prev_block]
-    mining_node.total_supply = 1000
+    mining_node.blockchain.chain = [prev_block]
+    mining_node.blockchain.total_supply = 1000
 
     # Mock get_last_block to return prev_block (so tip check passes)
-    mining_node.get_last_block.return_value = prev_block
+    mining_node.blockchain.get_last_block.return_value = prev_block
 
     # Mempool returns a few valid transactions
     tx1 = Mock()
@@ -168,8 +169,8 @@ def test_mine_block_success(mining_node):
         mock_block_instance.mine.assert_called_once_with(
             use_cores=2, stop_event=None, pow_backend='auto', progress_queue=None
         )
-        mining_node.validate_block.assert_called_once_with(mock_block_instance)
-        mining_node.add_block.assert_called_once_with(mock_block_instance)
+        mining_node.blockchain.validate_block.assert_called_once_with(mock_block_instance)
+        mining_node.blockchain.add_block.assert_called_once_with(mock_block_instance)
         # Coinbase constructed with correct args
         mock_coinbase_cls.assert_called_once_with(
             to_address='miner_address', reward=100 + 30, height=1
@@ -180,8 +181,8 @@ def test_mine_block_fail_chain_empty_and_no_genesis(mining_node):
     """
     Scenario: chain is empty and ALLOW_AUTO_GENESIS is False -> mine_block returns None.
     """
-    mining_node.chain = []  # empty
-    mining_node.total_supply = 0
+    mining_node.blockchain.chain = []  # empty
+    mining_node.blockchain.total_supply = 0
 
     with patch('tsarchain.consensus.mining.CFG.ALLOW_AUTO_GENESIS', False), \
          patch('tsarchain.consensus.mining.log') as mock_log:
@@ -198,8 +199,8 @@ def test_mine_block_fail_pending_blocks(mining_node):
     """
     Scenario: _has_pending_blocks returns True -> skip mining.
     """
-    mining_node.chain = [Mock()]  # non-empty
-    mining_node._has_pending_blocks.return_value = True
+    mining_node.blockchain.chain = [Mock()]  # non-empty
+    mining_node.blockchain._has_pending_blocks.return_value = True
 
     with patch('tsarchain.consensus.mining.log') as mock_log:
         result = mining_node.mine_block('miner_address')
@@ -214,9 +215,9 @@ def test_mine_block_fail_chain_inconsistent(mining_node):
     """
     Scenario: _is_chain_consistent returns False -> skip mining.
     """
-    mining_node.chain = [Mock()]
-    mining_node._has_pending_blocks.return_value = False
-    mining_node._is_chain_consistent.return_value = False
+    mining_node.blockchain.chain = [Mock()]
+    mining_node.blockchain._has_pending_blocks.return_value = False
+    mining_node.blockchain._is_chain_consistent.return_value = False
 
     with patch('tsarchain.consensus.mining.log') as mock_log:
         result = mining_node.mine_block('miner_address')
@@ -234,9 +235,9 @@ def test_mine_block_with_graffiti_post_anchoring(mining_node):
     prev_block = Mock()
     prev_block.hash.return_value = b'prev_hash'
     prev_block.height = 0
-    mining_node.chain = [prev_block]
-    mining_node.total_supply = 1000
-    mining_node.get_last_block.return_value = prev_block
+    mining_node.blockchain.chain = [prev_block]
+    mining_node.blockchain.total_supply = 1000
+    mining_node.blockchain.get_last_block.return_value = prev_block
 
     # Create a tx that is a Graffiti POST
     post_tx = Mock()
@@ -283,18 +284,18 @@ def test_mine_block_with_graffiti_post_anchoring(mining_node):
 
 
 def test_mine_block_reload_chain(mining_node):
-    mining_node.chain = []
-    mining_node._reload_chain_from_kv.return_value = True
+    mining_node.blockchain.chain = []
+    mining_node.blockchain._reload_chain_from_kv.return_value = True
     with patch('tsarchain.consensus.mining.CFG.ALLOW_AUTO_GENESIS', False):
         res = mining_node.mine_block('miner_address')
         assert res is None
 
 def test_mine_block_reward_exceeds_supply(mining_node):
-    mining_node.chain = [Mock()]
-    mining_node.chain[0].hash.return_value = b'prev_hash'
-    mining_node.chain[0].height = 0
-    mining_node.get_last_block.return_value = mining_node.chain[0]
-    mining_node.total_supply = 20999990
+    mining_node.blockchain.chain = [Mock()]
+    mining_node.blockchain.chain[0].hash.return_value = b'prev_hash'
+    mining_node.blockchain.chain[0].height = 0
+    mining_node.blockchain.get_last_block.return_value = mining_node.blockchain.chain[0]
+    mining_node.blockchain.total_supply = 20999990
     with patch('tsarchain.consensus.mining.CFG.MAX_SUPPLY', 21000000), \
         patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
         patch('tsarchain.consensus.mining.CoinbaseTx') as mock_cb:
@@ -306,11 +307,11 @@ def test_mine_block_reward_exceeds_supply(mining_node):
         assert kwargs['reward'] == 10
 
 def test_mine_block_no_mempool(mining_node):
-    mining_node.chain = [Mock()]
-    mining_node.chain[0].hash.return_value = b'prev_hash'
-    mining_node.chain[0].height = 0
-    mining_node.get_last_block.return_value = mining_node.chain[0]
-    delattr(mining_node, 'get_mempool')
+    mining_node.blockchain.chain = [Mock()]
+    mining_node.blockchain.chain[0].hash.return_value = b'prev_hash'
+    mining_node.blockchain.chain[0].height = 0
+    mining_node.blockchain.get_last_block.return_value = mining_node.blockchain.chain[0]
+    delattr(mining_node.blockchain, 'get_mempool')
     with patch('tsarchain.consensus.mining.TxPool') as mock_txpool, \
         patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
         patch('tsarchain.consensus.mining.CoinbaseTx'):
@@ -320,13 +321,13 @@ def test_mine_block_no_mempool(mining_node):
         mock_block_cls.return_value.height = 1
         mining_node.mine_block('miner_address')
         mock_txpool.assert_called_once()
-        mining_node.attach_mempool.assert_called_once()
+        mining_node.blockchain.attach_mempool.assert_called_once()
 
 def test_mine_block_double_spend_in_block(mining_node):
-    mining_node.chain = [Mock()]
-    mining_node.chain[0].hash.return_value = b'prev_hash'
-    mining_node.chain[0].height = 0
-    mining_node.get_last_block.return_value = mining_node.chain[0]
+    mining_node.blockchain.chain = [Mock()]
+    mining_node.blockchain.chain[0].hash.return_value = b'prev_hash'
+    mining_node.blockchain.chain[0].height = 0
+    mining_node.blockchain.get_last_block.return_value = mining_node.blockchain.chain[0]
     
     tx1 = Mock()
     tx1.txid = b'tx1'
@@ -357,10 +358,10 @@ def test_mine_block_double_spend_in_block(mining_node):
         assert block_txs[1] == tx1
 
 def test_mine_block_validate_transaction_fails(mining_node):
-    mining_node.chain = [Mock()]
-    mining_node.chain[0].hash.return_value = b'prev_hash'
-    mining_node.chain[0].height = 0
-    mining_node.get_last_block.return_value = mining_node.chain[0]
+    mining_node.blockchain.chain = [Mock()]
+    mining_node.blockchain.chain[0].hash.return_value = b'prev_hash'
+    mining_node.blockchain.chain[0].height = 0
+    mining_node.blockchain.get_last_block.return_value = mining_node.blockchain.chain[0]
     
     tx = Mock()
     tx.txid = b'tx_fail'
@@ -384,10 +385,10 @@ def test_mine_block_validate_transaction_fails(mining_node):
         assert len(block_txs) == 1
 
 def test_mine_block_multiple_graffiti_posts(mining_node):
-    mining_node.chain = [Mock()]
-    mining_node.chain[0].hash.return_value = b'prev_hash'
-    mining_node.chain[0].height = 0
-    mining_node.get_last_block.return_value = mining_node.chain[0]
+    mining_node.blockchain.chain = [Mock()]
+    mining_node.blockchain.chain[0].hash.return_value = b'prev_hash'
+    mining_node.blockchain.chain[0].height = 0
+    mining_node.blockchain.get_last_block.return_value = mining_node.blockchain.chain[0]
     
     post1 = Mock()
     post1.txid = b'post1'
@@ -423,10 +424,10 @@ def test_mine_block_multiple_graffiti_posts(mining_node):
         assert block_txs[1] == post1
 
 def test_mine_block_mine_fails(mining_node):
-    mining_node.chain = [Mock()]
-    mining_node.chain[0].hash.return_value = b'prev_hash'
-    mining_node.chain[0].height = 0
-    mining_node.get_last_block.return_value = mining_node.chain[0]
+    mining_node.blockchain.chain = [Mock()]
+    mining_node.blockchain.chain[0].hash.return_value = b'prev_hash'
+    mining_node.blockchain.chain[0].height = 0
+    mining_node.blockchain.get_last_block.return_value = mining_node.blockchain.chain[0]
     with patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
         patch('tsarchain.consensus.mining.CoinbaseTx'):
 
@@ -435,10 +436,10 @@ def test_mine_block_mine_fails(mining_node):
         assert res is None
 
 def test_mine_block_stale_candidate(mining_node):
-    mining_node.chain = [Mock()]
-    mining_node.chain[0].hash.return_value = b'prev_hash'
-    mining_node.chain[0].height = 0
-    mining_node.get_last_block.return_value = Mock(hash=lambda: b'different_hash', height=10)
+    mining_node.blockchain.chain = [Mock()]
+    mining_node.blockchain.chain[0].hash.return_value = b'prev_hash'
+    mining_node.blockchain.chain[0].height = 0
+    mining_node.blockchain.get_last_block.return_value = Mock(hash=lambda: b'different_hash', height=10)
     with patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
         patch('tsarchain.consensus.mining.CoinbaseTx'):
 
@@ -449,11 +450,11 @@ def test_mine_block_stale_candidate(mining_node):
         assert res is None
 
 def test_mine_block_cooloff(mining_node):
-    mining_node.chain = [Mock()]
-    mining_node.chain[0].hash.return_value = b'prev_hash'
-    mining_node.chain[0].height = 0
-    mining_node.get_last_block.return_value = mining_node.chain[0]
-    mining_node._mining_cooloff_until = time.time() + 0.1
+    mining_node.blockchain.chain = [Mock()]
+    mining_node.blockchain.chain[0].hash.return_value = b'prev_hash'
+    mining_node.blockchain.chain[0].height = 0
+    mining_node.blockchain.get_last_block.return_value = mining_node.blockchain.chain[0]
+    mining_node.blockchain._mining_cooloff_until = time.time() + 0.1
     with patch('tsarchain.consensus.mining.CFG.MINING_COOLDOWN_AFTER_BLOCK', 1.0), \
         patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
         patch('tsarchain.consensus.mining.time.sleep') as mock_sleep, \
@@ -467,11 +468,11 @@ def test_mine_block_cooloff(mining_node):
         mock_sleep.assert_called_once()
 
 def test_mine_block_validate_block_fails(mining_node):
-    mining_node.chain = [Mock()]
-    mining_node.chain[0].hash.return_value = b'prev_hash'
-    mining_node.chain[0].height = 0
-    mining_node.get_last_block.return_value = mining_node.chain[0]
-    mining_node.validate_block.return_value = False
+    mining_node.blockchain.chain = [Mock()]
+    mining_node.blockchain.chain[0].hash.return_value = b'prev_hash'
+    mining_node.blockchain.chain[0].height = 0
+    mining_node.blockchain.get_last_block.return_value = mining_node.blockchain.chain[0]
+    mining_node.blockchain.validate_block.return_value = False
     with patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
         patch('tsarchain.consensus.mining.CoinbaseTx'):
 
@@ -483,11 +484,11 @@ def test_mine_block_validate_block_fails(mining_node):
         assert res is None
 
 def test_mine_block_add_block_fails(mining_node):
-    mining_node.chain = [Mock()]
-    mining_node.chain[0].hash.return_value = b'prev_hash'
-    mining_node.chain[0].height = 0
-    mining_node.get_last_block.return_value = mining_node.chain[0]
-    mining_node.add_block.return_value = False
+    mining_node.blockchain.chain = [Mock()]
+    mining_node.blockchain.chain[0].hash.return_value = b'prev_hash'
+    mining_node.blockchain.chain[0].height = 0
+    mining_node.blockchain.get_last_block.return_value = mining_node.blockchain.chain[0]
+    mining_node.blockchain.add_block.return_value = False
     with patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
         patch('tsarchain.consensus.mining.CoinbaseTx'):
 

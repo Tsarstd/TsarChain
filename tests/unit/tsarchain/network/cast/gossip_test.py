@@ -6,10 +6,10 @@ import time
 import pytest
 from unittest.mock import MagicMock, patch
 
-from tsarchain.network.cast.gossip import GossipMixin
+from tsarchain.network.cast.gossip import GossipHandler
 import tsarchain.utils.config as CFG
 
-class DummyNode(GossipMixin):
+class DummyNode(GossipHandler):
     def __init__(self):
         self.node_id = "test_node_id"
         self.pubkey = b"pubkey"
@@ -122,21 +122,21 @@ def test_broadcast_block(mock_block_class, dummy_node):
     
     peers = {("127.0.0.1", 8333)}
     
-    dummy_node._broadcast = MagicMock(return_value=1)
+    mock_broadcast = patch('tsarchain.network.cast.gossip.GossipHandler._broadcast', return_value=1).start()
     
     # 1. New block
     assert dummy_node.broadcast_block(mock_block, peers) == 1
     assert "blockhash" in dummy_node.seen_blocks
-    dummy_node._broadcast.assert_called_once()
+    mock_broadcast.assert_called_once()
     
     # 2. Seen block, not forced
-    dummy_node._broadcast.reset_mock()
+    mock_broadcast.reset_mock()
     assert dummy_node.broadcast_block(mock_block, peers) == 0
-    dummy_node._broadcast.assert_not_called()
+    mock_broadcast.assert_not_called()
     
     # 3. Seen block, forced
     assert dummy_node.broadcast_block(mock_block, peers, force=True) == 1
-    dummy_node._broadcast.assert_called_once()
+    mock_broadcast.assert_called_once()
 
 @patch("tsarchain.network.cast.gossip.Tx")
 def test_broadcast_tx_no_dandelion(mock_tx_class, dummy_node):
@@ -145,17 +145,17 @@ def test_broadcast_tx_no_dandelion(mock_tx_class, dummy_node):
     mock_tx.to_dict.return_value = {"tx_data": "data"}
     
     peers = {("127.0.0.1", 8333)}
-    dummy_node._broadcast = MagicMock(return_value=1)
+    mock_broadcast = patch('tsarchain.network.cast.gossip.GossipHandler._broadcast', return_value=1).start()
     
     # No dandelion handling
     assert dummy_node.broadcast_tx(mock_tx, peers) == 1
     assert "txhash" in dummy_node.seen_txs
-    dummy_node._broadcast.assert_called_once()
+    mock_broadcast.assert_called_once()
     
     # Seen tx
-    dummy_node._broadcast.reset_mock()
+    mock_broadcast.reset_mock()
     assert dummy_node.broadcast_tx(mock_tx, peers) == 0
-    dummy_node._broadcast.assert_not_called()
+    mock_broadcast.assert_not_called()
 
 @patch("tsarchain.network.cast.gossip.Tx")
 def test_broadcast_tx_with_dandelion(mock_tx_class, dummy_node):
@@ -166,16 +166,16 @@ def test_broadcast_tx_with_dandelion(mock_tx_class, dummy_node):
     
     dummy_node.dandelion = MagicMock()
     dummy_node.dandelion.handle_outbound.return_value = True
-    dummy_node._broadcast = MagicMock()
+    mock_broadcast = patch('tsarchain.network.cast.gossip.GossipHandler._broadcast', ).start()
     
     # Dandelion handles it
     assert dummy_node.broadcast_tx(mock_tx, peers) == 1
     dummy_node.dandelion.handle_outbound.assert_called_once_with(mock_tx, "txhash", peers)
-    dummy_node._broadcast.assert_not_called()
+    mock_broadcast.assert_not_called()
     
     # Dandelion returns False, fallback to fluff
     dummy_node.dandelion.handle_outbound.return_value = False
     dummy_node._broadcast.return_value = 1
     assert dummy_node.broadcast_tx(mock_tx, peers) == 1
-    dummy_node._broadcast.assert_called_once()
+    mock_broadcast.assert_called_once()
     assert "txhash" in dummy_node.seen_txs

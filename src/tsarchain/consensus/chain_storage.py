@@ -13,25 +13,30 @@ import hashlib
 import threading
 import datetime as dt
 
-from typing import Optional
 from collections import Counter
+from typing import Optional, TYPE_CHECKING
 
 from ..core.block import Block
-from ..core.tx import Tx
+from .genesis import GENESIS_HASH
 from ..storage.utxo import UTXODB
-from ..storage.kv import kv_enabled, batch, iter_prefix, clear_db, delete, _ensure_env
-from ..storage.db import AtomicJSONFile
 from ..utils import config as CFG
-from ..utils.bootstrap import annotate_local_snapshot_meta
-from ..utils.helpers import bits_to_target, target_to_difficulty, estimate_block_size_bytes
+from ..storage.db import AtomicJSONFile
 from ..contracts import graffiti as GRAFFITI
 from ..contracts.graffiti_registry import GraffitiRegistry
-from .genesis import GENESIS_HASH
+from ..utils.bootstrap import annotate_local_snapshot_meta
+from ..storage.kv import kv_enabled, batch, iter_prefix, clear_db, delete, _ensure_env
+from ..utils.helpers import bits_to_target, target_to_difficulty, estimate_block_size_bytes
 
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.consensus.chain_storage')
 
-class StorageMixin:
+
+if TYPE_CHECKING:
+    from .blockchain import Blockchain
+
+class ChainStorage:
+    def __init__(self, blockchain: "Blockchain"):
+        self.blockchain = blockchain
 # =============================================================================
 # 1. HELPER
 # =============================================================================
@@ -39,7 +44,7 @@ class StorageMixin:
         txs = getattr(block, "transactions", []) or []
         tx_count = len(txs)
         size_b = estimate_block_size_bytes(block)
-        cw = int(chainwork_so_far) + int(self._work_from_bits(getattr(block, "bits", CFG.MAX_BITS)))
+        cw = int(chainwork_so_far) + int(self.blockchain._work_from_bits(getattr(block, "bits", CFG.MAX_BITS)))
         target_val = None
         difficulty_val = None
         tgt = bits_to_target(int(getattr(block, "bits", CFG.MAX_BITS)))
@@ -126,13 +131,13 @@ class StorageMixin:
     def _mark_chain_dirty(self, height: int = 0) -> None:
         if height < 0:
             height = 0
-        if self._chain_dirty_from is None:
-            self._chain_dirty_from = height
+        if self.blockchain._chain_dirty_from is None:
+            self.blockchain._chain_dirty_from = height
         else:
-            self._chain_dirty_from = min(self._chain_dirty_from, height)
+            self.blockchain._chain_dirty_from = min(self.blockchain._chain_dirty_from, height)
 
     def _prune_chain_store(self, start_height: int) -> None:
-        if self.in_memory or not kv_enabled():
+        if self.blockchain.in_memory or not kv_enabled():
             return
         if start_height < 0:
             start_height = 0
@@ -146,7 +151,7 @@ class StorageMixin:
             delete('chain', key)
 
     def _reset_chain_store(self) -> None:
-        if self.in_memory:
+        if self.blockchain.in_memory:
             return
         if kv_enabled():
             clear_db('chain')
@@ -158,16 +163,16 @@ class StorageMixin:
         journal_path = CFG.CHAIN_JOURNAL_FILE
         if journal_path and os.path.exists(journal_path):
             os.remove(journal_path)
-        self._persisted_height = -1
-        self._chain_dirty_from = None
-        self._snapshot_last_backup_height = -1
+        self.blockchain._persisted_height = -1
+        self.blockchain._chain_dirty_from = None
+        self.blockchain._snapshot_last_backup_height = -1
 
 
 # =============================================================================
 # 2. SNAPSHOTS BACKUP (FOR FAST SYNC)
 # =============================================================================
     def _backup_snapshot_enabled(self) -> bool:
-        if self.in_memory:
+        if self.blockchain.in_memory:
             return False
         return bool(CFG.BACKUP_SNAPSHOT)
 
@@ -203,7 +208,7 @@ class StorageMixin:
         if interval <= 0:
             return
 
-        last = getattr(self, "_snapshot_last_backup_height", -1)
+        last = getattr(self.blockchain, "_snapshot_last_backup_height", -1)
         if last >= 0 and (tip_height - last) < interval:
             return
 
@@ -211,15 +216,15 @@ class StorageMixin:
         if not target_dir:
             return
 
-        lock = getattr(self, "_snapshot_backup_lock", None)
+        lock = getattr(self.blockchain, "_snapshot_backup_lock", None)
         if lock is None:
             lock = threading.Lock()
-            self._snapshot_backup_lock = lock
+            self.blockchain._snapshot_backup_lock = lock
 
         with lock:
-            if getattr(self, "_snapshot_backup_active", False):
+            if getattr(self.blockchain, "_snapshot_backup_active", False):
                 return
-            self._snapshot_backup_active = True
+            self.blockchain._snapshot_backup_active = True
 
         threading.Thread(
             target=self._run_backup,
@@ -238,8 +243,8 @@ class StorageMixin:
 
             # 2) tip timestamp
             tip_ts = ts_hint
-            if tip_ts is None and self.chain:
-                tip_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
+            if tip_ts is None and self.blockchain.chain:
+                tip_ts = int(getattr(self.blockchain.chain[-1], "timestamp", 0) or 0)
 
             # 3) meta baseline from DB live
             meta = annotate_local_snapshot_meta(height=height, tip_timestamp=tip_ts)
@@ -265,13 +270,13 @@ class StorageMixin:
                 # 5) generate snapshot.manifest.json from overridden meta
                 self._write_snapshot_manifest(backup_dir, meta, height)
 
-            self._snapshot_last_backup_height = height
+            self.blockchain._snapshot_last_backup_height = height
             log.info("[backup_snapshot] Snapshot updated at height %s to %s", height, target_dir)
         except Exception:
             log.exception("[backup_snapshot] Unexpected error during snapshot backup:")
         finally:
-            with self._snapshot_backup_lock:
-                self._snapshot_backup_active = False
+            with self.blockchain._snapshot_backup_lock:
+                self.blockchain._snapshot_backup_active = False
 
 
     def _copy_snapshot_env(self, target_dir: str) -> None:
@@ -321,7 +326,7 @@ class StorageMixin:
 # 3. JOURNAL (.json)        NOTE: journal is Python-only fallback for non-LMDB mode; not performance-critical, no plan to port to Rust for now.
 # =============================================================================
     def _chain_journal_enabled(self) -> bool:
-        return (not self.in_memory) and (not kv_enabled())
+        return (not self.blockchain.in_memory) and (not kv_enabled())
 
     def _chain_journal_size(self) -> int:
         path = CFG.CHAIN_JOURNAL_FILE
@@ -396,23 +401,23 @@ class StorageMixin:
     def save_chain(self, *, force_full: bool = False):
         if CFG.CHAIN_FORCE_FULL_FLUSH:
             force_full = True
-        if self.in_memory:
+        if self.blockchain.in_memory:
             return
         backup_tip = None
         backup_ts = None
-        with self.lock:
-            tip_height = len(self.chain) - 1
+        with self.blockchain.lock:
+            tip_height = len(self.blockchain.chain) - 1
             if tip_height < 0:
-                self._chain_dirty_from = None
-                self._persisted_height = -1
+                self.blockchain._chain_dirty_from = None
+                self.blockchain._persisted_height = -1
                 return
 
-            tip_hash = self.chain[-1].hash().hex()
+            tip_hash = self.blockchain.chain[-1].hash().hex()
             chain_meta = self._build_chain_meta(tip_height, tip_hash)
-            full_flush = force_full or self._persisted_height < 0
+            full_flush = force_full or self.blockchain._persisted_height < 0
             if force_full:
-                self._chain_dirty_from = 0
-                self._persisted_height = -1
+                self.blockchain._chain_dirty_from = 0
+                self.blockchain._persisted_height = -1
 
             start_height = self._determine_save_start_height(tip_height, force_full, full_flush)
             if not self._should_flush_chain(tip_height, start_height, full_flush):
@@ -423,9 +428,9 @@ class StorageMixin:
             else:
                 self._save_chain_json(tip_height, start_height, full_flush, chain_meta)
 
-            self._chain_dirty_from = None
+            self.blockchain._chain_dirty_from = None
             backup_tip = tip_height
-            backup_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
+            backup_ts = int(getattr(self.blockchain.chain[-1], "timestamp", 0) or 0)
 
         if backup_tip is not None:
             self._maybe_backup_snapshot(backup_tip, tip_timestamp=backup_ts)
@@ -433,11 +438,11 @@ class StorageMixin:
     def _determine_save_start_height(self, tip_height: int, force_full: bool, full_flush: bool) -> Optional[int]:
         if full_flush:
             return 0
-        if self._chain_dirty_from is not None:
-            return max(0, self._chain_dirty_from)
-        if tip_height > self._persisted_height:
-            return self._persisted_height + 1
-        if force_full or self._persisted_height < 0:
+        if self.blockchain._chain_dirty_from is not None:
+            return max(0, self.blockchain._chain_dirty_from)
+        if tip_height > self.blockchain._persisted_height:
+            return self.blockchain._persisted_height + 1
+        if force_full or self.blockchain._persisted_height < 0:
             return 0
         return None
 
@@ -445,61 +450,61 @@ class StorageMixin:
         flush_interval = max(1, int(CFG.CHAIN_FLUSH_INTERVAL))
         should_flush = (
             full_flush
-            or tip_height < self._persisted_height
+            or tip_height < self.blockchain._persisted_height
             or flush_interval <= 1
         )
         if not should_flush and start_height is not None:
-            pending = tip_height - self._persisted_height if self._persisted_height >= 0 else tip_height + 1
+            pending = tip_height - self.blockchain._persisted_height if self.blockchain._persisted_height >= 0 else tip_height + 1
             if pending < flush_interval:
-                if self._chain_dirty_from is None:
-                    self._chain_dirty_from = start_height
+                if self.blockchain._chain_dirty_from is None:
+                    self.blockchain._chain_dirty_from = start_height
                 else:
-                    self._chain_dirty_from = min(self._chain_dirty_from, start_height)
+                    self.blockchain._chain_dirty_from = min(self.blockchain._chain_dirty_from, start_height)
                 return False
         return True
 
     def _save_chain_kv(self, tip_height: int, start_height: Optional[int], full_flush: bool, chain_meta: dict):
         if full_flush:
             clear_db('chain')
-            self._persisted_height = -1
+            self.blockchain._persisted_height = -1
             
         cw_prev = 0
         if start_height and start_height > 0:
-            prev_blk = self.chain[start_height - 1]
+            prev_blk = self.blockchain.chain[start_height - 1]
             cw_prev = int(getattr(prev_blk, "chainwork", 0) or 0)
             if cw_prev == 0:
-                cw_prev = int(self._compute_chainwork_for_chain(self.chain[:start_height]))
+                cw_prev = int(self.blockchain._compute_chainwork_for_chain(self.blockchain.chain[:start_height]))
                 
-        if tip_height < self._persisted_height:
+        if tip_height < self.blockchain._persisted_height:
             self._prune_chain_store(tip_height + 1)
-            self._persisted_height = tip_height
+            self.blockchain._persisted_height = tip_height
             
         if start_height is not None and start_height <= tip_height:
             with batch('chain') as b:
                 b.put(b'__meta__', json.dumps(chain_meta, separators=CFG.CANONICAL_SEP).encode('utf-8'))
                 for height in range(start_height, tip_height + 1):
                     key = f"h:{height:012d}".encode('utf-8')
-                    blk_dict, cw_prev = self._serialize_block_for_store(self.chain[height], cw_prev)
+                    blk_dict, cw_prev = self._serialize_block_for_store(self.blockchain.chain[height], cw_prev)
                     payload = json.dumps(blk_dict, separators=CFG.CANONICAL_SEP).encode('utf-8')
                     b.put(key, payload)
-            self._persisted_height = tip_height
+            self.blockchain._persisted_height = tip_height
 
     def _save_chain_json(self, tip_height: int, start_height: Optional[int], full_flush: bool, chain_meta: dict):
         if not self._chain_journal_enabled() or full_flush or start_height in (None, 0):
-            if full_flush or start_height is not None or tip_height != self._persisted_height:
+            if full_flush or start_height is not None or tip_height != self.blockchain._persisted_height:
                 self._save_chain_json_full(tip_height, chain_meta)
         else:
             if start_height is not None and start_height <= tip_height:
-                new_blocks = [self.chain[h] for h in range(start_height, tip_height + 1)]
+                new_blocks = [self.blockchain.chain[h] for h in range(start_height, tip_height + 1)]
                 self._append_chain_journal(start_height, new_blocks)
-                self._persisted_height = tip_height
+                self.blockchain._persisted_height = tip_height
                 if self._chain_journal_size() > int(CFG.CHAIN_JOURNAL_MAX_BYTES):
                     self._save_chain_json_full(tip_height, chain_meta)
 
     def _save_chain_json_full(self, tip_height: int, chain_meta: dict):
         ordered_blocks = []
         cw_prev = 0
-        for blk in sorted(self.chain, key=lambda b: getattr(b, "height", 0)):
+        for blk in sorted(self.blockchain.chain, key=lambda b: getattr(b, "height", 0)):
             blk_dict, cw_prev = self._serialize_block_for_store(blk, cw_prev)
             ordered_blocks.append(blk_dict)
         payload = {
@@ -508,11 +513,11 @@ class StorageMixin:
             "blocks": ordered_blocks,
         }
         AtomicJSONFile(CFG.BLOCK_FILE).save(payload)
-        self._persisted_height = tip_height
+        self.blockchain._persisted_height = tip_height
         self._clear_chain_journal()
 
     def load_chain(self):
-        if self.in_memory:
+        if self.blockchain.in_memory:
             return
         meta = {}
         data_list = []
@@ -528,28 +533,28 @@ class StorageMixin:
         if not chain or not self._validate_loaded_chain(chain):
             return
 
-        self.chain = chain
-        self._chain_meta = meta or {}
-        self.total_blocks = len(self.chain)
-        self.total_supply = self.calculate_total_supply()
-        self.supply_in_tsar = self.total_supply / CFG.TSAR if self.total_supply else 0
-        self._persisted_height = len(self.chain) - 1
-        self._chain_dirty_from = None
+        self.blockchain.chain = chain
+        self.blockchain._chain_meta = meta or {}
+        self.blockchain.total_blocks = len(self.blockchain.chain)
+        self.blockchain.total_supply = self.blockchain.calculate_total_supply()
+        self.blockchain.supply_in_tsar = self.blockchain.total_supply / CFG.TSAR if self.blockchain.total_supply else 0
+        self.blockchain._persisted_height = len(self.blockchain.chain) - 1
+        self.blockchain._chain_dirty_from = None
         
         interval = int(CFG.BLOCK_BACKUP_SNAPSHOT)
-        if interval > 0 and self._persisted_height >= 0:
-            self._snapshot_last_backup_height = (self._persisted_height // interval) * interval
+        if interval > 0 and self.blockchain._persisted_height >= 0:
+            self.blockchain._snapshot_last_backup_height = (self.blockchain._persisted_height // interval) * interval
         else:
-            self._snapshot_last_backup_height = self._persisted_height
+            self.blockchain._snapshot_last_backup_height = self.blockchain._persisted_height
             
-        if not self.in_memory:
-            self._ensure_utxodb()
-            self._utxo_last_flush_height = getattr(self, "height", len(self.chain) - 1)
-            self._utxo_dirty = False
+        if not self.blockchain.in_memory:
+            self.blockchain._ensure_utxodb()
+            self.blockchain._utxo_last_flush_height = getattr(self.blockchain, "height", len(self.blockchain.chain) - 1)
+            self.blockchain._utxo_dirty = False
             tip_ts = None
-            if self.chain:
-                tip_ts = int(getattr(self.chain[-1], "timestamp", 0) or 0)
-            annotate_local_snapshot_meta(height=getattr(self, "height", len(self.chain) - 1), tip_timestamp=tip_ts)
+            if self.blockchain.chain:
+                tip_ts = int(getattr(self.blockchain.chain[-1], "timestamp", 0) or 0)
+            annotate_local_snapshot_meta(height=getattr(self.blockchain, "height", len(self.blockchain.chain) - 1), tip_timestamp=tip_ts)
 
     def _fetch_kv_chain_data(self) -> tuple[dict, list]:
         meta = {}
@@ -591,7 +596,7 @@ class StorageMixin:
 # 5. STATE I/O & COMPUTE
 # =============================================================================
     def _read_snapshot_state(self) -> dict:
-        if self.in_memory:
+        if self.blockchain.in_memory:
             return {}
         data: dict = {}
         if kv_enabled():
@@ -615,24 +620,24 @@ class StorageMixin:
         return data
 
     def load_state(self):
-        if self.in_memory:
+        if self.blockchain.in_memory:
             return
         data = self._read_snapshot_state()
-        self.total_supply = int(data.get("total_supply", 0) or 0)
-        self.total_blocks = int(data.get("total_blocks", 0) or 0)
-        self.supply_in_tsar = self.total_supply / CFG.TSAR if self.total_supply else 0
+        self.blockchain.total_supply = int(data.get("total_supply", 0) or 0)
+        self.blockchain.total_blocks = int(data.get("total_blocks", 0) or 0)
+        self.blockchain.supply_in_tsar = self.blockchain.total_supply / CFG.TSAR if self.blockchain.total_supply else 0
 
     def save_state(self):
-        if self.in_memory:
+        if self.blockchain.in_memory:
             return
         # Compute based on in-memory chain; avoid JSON IO when KV enabled
-        blocks_count = len(self.chain)
-        self.total_blocks = blocks_count
-        self.total_supply = self.calculate_total_supply()
-        self.supply_in_tsar = self.total_supply / CFG.TSAR if self.total_supply else 0
+        blocks_count = len(self.blockchain.chain)
+        self.blockchain.total_blocks = blocks_count
+        self.blockchain.total_supply = self.blockchain.calculate_total_supply()
+        self.blockchain.supply_in_tsar = self.blockchain.total_supply / CFG.TSAR if self.blockchain.total_supply else 0
         data = self._compute_state_snapshot()
-        data["total_supply"] = int(self.total_supply)
-        data["total_blocks"] = int(self.total_blocks)
+        data["total_supply"] = int(self.blockchain.total_supply)
+        data["total_blocks"] = int(self.blockchain.total_blocks)
 
         # Normalize schema version from config
         data["schema_version"] = int(CFG.DATA_SCHEMA_VERSION)
@@ -640,8 +645,8 @@ class StorageMixin:
         ordered = {
             "schema_version": data.get("schema_version"),
             "last_updated": data.get("last_updated"),
-            "total_blocks": data.get("total_blocks", self.total_blocks),
-            "total_supply": data.get("total_supply", self.total_supply),
+            "total_blocks": data.get("total_blocks", self.blockchain.total_blocks),
+            "total_supply": data.get("total_supply", self.blockchain.total_supply),
             "identity": data.get("identity", {}),
             "chain": data.get("chain", {}),
             "supply": data.get("supply", {}),
@@ -654,33 +659,33 @@ class StorageMixin:
         # Save to LMDB
         if kv_enabled():
             with batch('state') as b:
-                b.put(b'k:total_supply', str(int(self.total_supply)).encode('utf-8'))
-                b.put(b'k:total_blocks', str(int(self.total_blocks)).encode('utf-8'))
+                b.put(b'k:total_supply', str(int(self.blockchain.total_supply)).encode('utf-8'))
+                b.put(b'k:total_blocks', str(int(self.blockchain.total_blocks)).encode('utf-8'))
                 b.put(b'k:snapshot', json.dumps(ordered, separators=CFG.CANONICAL_SEP).encode('utf-8'))
         else:
             AtomicJSONFile(CFG.STATE_FILE, keep_backups=3).save(ordered)
 
     def _compute_state_snapshot(self) -> dict:
-        tip_height = self.height
-        utxo = self._ensure_utxodb() or UTXODB()
+        tip_height = self.blockchain.height
+        utxo = self.blockchain._ensure_utxodb() or UTXODB()
         utxo_version = getattr(utxo, "version", 0)
-        cache = getattr(self, "_state_snapshot_cache", None)
+        cache = getattr(self.blockchain, "_state_snapshot_cache", None)
         token = (tip_height, utxo_version)
         if cache and cache.get("token") == token and cache.get("data"):
             return dict(cache["data"])
 
-        chain = self.chain or []
+        chain = self.blockchain.chain or []
         chain_stats = self._compute_chain_stats(chain)
         tx_stats = self._compute_transaction_and_miner_stats(chain)
         mempool_stats = self._compute_mempool_stats()
         supply_stats = self._compute_utxo_supply_stats(utxo, tip_height)
         graffiti_stats = self._compute_graffiti_stats(utxo)
 
-        emitted_subsidy = self.calculate_total_supply()
+        emitted_subsidy = self.blockchain.calculate_total_supply()
         cur_epoch = 0 if tip_height < 0 else int(tip_height // int(CFG.BLOCKS_PER_HALVING))
         next_halving_height = int((cur_epoch + 1) * int(CFG.BLOCKS_PER_HALVING))
         blocks_to_halving = None if tip_height < 0 else max(0, next_halving_height - (tip_height + 1))
-        current_block_subsidy = self._scheduled_reward(max(0, tip_height))
+        current_block_subsidy = self.blockchain._scheduled_reward(max(0, tip_height))
 
         genesis_block = chain[0] if chain else None
         tip_block = chain[-1] if chain else None
@@ -746,7 +751,7 @@ class StorageMixin:
             },
         }
 
-        self._state_snapshot_cache = {"token": token, "data": dict(snapshot)}
+        self.blockchain._state_snapshot_cache = {"token": token, "data": dict(snapshot)}
         return snapshot
 
     def _compute_chain_stats(self, chain: list) -> dict:
@@ -756,9 +761,9 @@ class StorageMixin:
 
         cw = getattr(tip_block, "chainwork", None)
         if cw is None:
-            cw = self._compute_chainwork_for_chain(chain)
+            cw = self.blockchain._compute_chainwork_for_chain(chain)
         tip_chainwork = int(cw)
-        median_time_past_val = int(self.median_time_past())
+        median_time_past_val = int(self.blockchain.median_time_past())
 
         tip_bits = int(getattr(tip_block, "bits", 0)) if tip_block else None
         tip_target = None
@@ -812,7 +817,7 @@ class StorageMixin:
             cb_amt = 0
             if outputs:
                 cb_amt = int(getattr(outputs[0], "amount", 0) or 0)
-            base = self._scheduled_reward(int(getattr(blk, "height", 0) or 0))
+            base = self.blockchain._scheduled_reward(int(getattr(blk, "height", 0) or 0))
             fee = max(0, cb_amt - base)
             total_fees_paid += fee
             miner_addr = getattr(coinbase, "to_address", None)
@@ -831,7 +836,7 @@ class StorageMixin:
         mempool_count = 0
         mempool_vbytes_est = None
         mempool_bytes_est = None
-        pool = getattr(self, "get_mempool", lambda: None)()
+        pool = getattr(self.blockchain, "get_mempool", lambda: None)()
         if pool:
             stats = pool.stats()
             mempool_count = int(stats.get("count", 0))
@@ -909,7 +914,7 @@ class StorageMixin:
             
         total_comments = sum(len(v or []) for v in (data_g.get("comments") or {}).values())
         
-        mem = getattr(self, "mempool", None)
+        mem = getattr(self.blockchain, "mempool", None)
         if mem:
             for tx in mem.get_all_txs():
                 for tx_out in getattr(tx, "outputs", []) or []:

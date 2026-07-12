@@ -4,7 +4,9 @@
 # Refs: see REFERENCES.md
 
 from __future__ import annotations
+
 import re
+from typing import TYPE_CHECKING
 
 # ---------------- Local Project ----------------
 from ..core.block import Block
@@ -14,6 +16,11 @@ from ..utils import config as CFG
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.consensus.genesis')
+
+
+if TYPE_CHECKING:
+    from .blockchain import Blockchain
+
 
 def _resolve_genesis_hash():
     cfg_hex = CFG.GENESIS_HASH_HEX
@@ -31,19 +38,24 @@ def _resolve_genesis_hash():
 
     return None
 
+
 GENESIS_HASH = _resolve_genesis_hash()
 
-class GenesisMixin:
+
+class GenesisManager:
+    def __init__(self, blockchain: "Blockchain"):
+        self.blockchain = blockchain
+
     def has_genesis(self) -> bool:
-        return bool(self.chain)
+        return bool(self.blockchain.chain)
 
     def _persist_empty_state_if_needed(self):
-        self.save_state()
+        self.blockchain.save_state()
 
     def _enforce_genesis_lock(self):
-        if GENESIS_HASH is None or not self.chain:
+        if GENESIS_HASH is None or not self.blockchain.chain:
             return
-        g = self.chain[0]
+        g = self.blockchain.chain[0]
         if getattr(g, "height", None) != 0:
             raise ValueError("[Blockchain] Genesis must have height=0")
         if getattr(g, "prev_block_hash", None) != CFG.ZERO_HASH:
@@ -59,15 +71,15 @@ class GenesisMixin:
     def _create_genesis_with_lock(self, miner_address: str, use_cores: int | None):
         self.create_genesis_block(miner_address, use_cores=use_cores)
         if GENESIS_HASH is not None:
-            g_hash = self.chain[0].hash()
+            g_hash = self.blockchain.chain[0].hash()
             if g_hash != GENESIS_HASH:
                 raise ValueError("[Blockchain] Created genesis does not match TSAR_GENESIS_HASH; aborting")
-        if not self.in_memory:
-            self.save_chain()
-            self.save_state()
+        if not self.blockchain.in_memory:
+            self.blockchain.save_chain()
+            self.blockchain.save_state()
 
     def ensure_genesis(self, miner_address: str, use_cores: int | None = None) -> bool:
-        if self.chain:
+        if self.blockchain.chain:
             return False
         if not CFG.ALLOW_AUTO_GENESIS:
             log.info("[ensure_genesis] Auto-genesis disabled; waiting for peer sync")
@@ -77,30 +89,30 @@ class GenesisMixin:
 
     def create_genesis_block(self, miner_address, use_cores: int | None = None):
         height = 0
-        reward = self.get_block_reward(height)
+        reward = self.blockchain.get_block_reward(height)
         block_id = CFG.GENESIS_BLOCK_ID_DEFAULT
         coinbase = CoinbaseTx(to_address=miner_address, reward=reward, block_id=block_id, height=height,)
         coinbase.compute_txid()
         genesis = Block(height=0, prev_block_hash=CFG.ZERO_HASH, transactions=[coinbase])
         genesis.bits = CFG.INITIAL_BITS
         genesis.mine(use_cores=use_cores)
-        if not self.validate_block(genesis):
+        if not self.blockchain.validate_block(genesis):
             raise ValueError("[Blockchain] Genesis block validation failed")
 
-        self.chain.append(genesis)
+        self.blockchain.chain.append(genesis)
         if GENESIS_HASH is not None and genesis.hash() != GENESIS_HASH:
             raise ValueError("[Genesis] Newly created genesis does not match TSAR_GENESIS_HASH")
-        if not self.in_memory:
-            self._mark_chain_dirty(genesis.height)
-            self.save_chain(force_full=True)
-            store = self._ensure_utxodb()
+        if not self.blockchain.in_memory:
+            self.blockchain._mark_chain_dirty(genesis.height)
+            self.blockchain.save_chain(force_full=True)
+            store = self.blockchain._ensure_utxodb()
             if store is not None:
                 store.update(genesis.transactions, block_height=0, autosave=False)
-                self._mark_utxo_dirty()
-                self._maybe_flush_utxo(force=True)
-            self.save_state()
+                self.blockchain._mark_utxo_dirty()
+                self.blockchain._maybe_flush_utxo(force=True)
+            self.blockchain.save_state()
 
         else:
-            self.total_supply = self.calculate_total_supply()
+            self.blockchain.total_supply = self.blockchain.calculate_total_supply()
         log.info("genesis block cerated: %s", genesis)
         return genesis

@@ -7,12 +7,14 @@ import threading
 from typing import Union
 
 from ...utils import config as CFG
+from .base import NetworkHandlerProxy
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network.rpc_helper.guard_mixin")
+log = get_ctx_logger("tsarchain.network.rpc_helper.guard")
 
-class GuardMixin:
+
+class GuardHandler(NetworkHandlerProxy):
     _init_lock = threading.RLock()
 
     def _tb_now(self):
@@ -46,7 +48,7 @@ class GuardMixin:
             hasattr(self, "_nonce_guard_table") and self._nonce_guard_table is not None):
             return
 
-        with GuardMixin._init_lock:
+        with GuardHandler._init_lock:
             if not hasattr(self, "_nonce_guard_lock") or self._nonce_guard_lock is None:
                 self._nonce_guard_lock = threading.RLock()
             if not hasattr(self, "_nonce_guard_table") or self._nonce_guard_table is None:

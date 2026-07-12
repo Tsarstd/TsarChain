@@ -4,7 +4,7 @@
 
 import pytest
 from unittest.mock import Mock, patch
-from tsarchain.consensus.genesis import _resolve_genesis_hash, GenesisMixin
+from tsarchain.consensus.genesis import _resolve_genesis_hash, GenesisManager
 
 # -------------------- Fixtures for Config and Logging --------------------
 
@@ -71,7 +71,7 @@ def test_resolve_genesis_hash_invalid_chars(monkeypatch):
 
 # -------------------- Dummy Blockchain class for mixin testing --------------------
 
-class DummyBlockchain(GenesisMixin):
+class DummyBlockchain:
     """Minimal implementation of the required interface for testing."""
     def __init__(self, chain=None, in_memory=True):
         self.chain = chain if chain is not None else []
@@ -81,6 +81,25 @@ class DummyBlockchain(GenesisMixin):
         self._state_saved = False
         self._chain_dirty = False
         self._utxo_dirty = False
+        self.genesis_manager = GenesisManager(self)
+
+    def has_genesis(self) -> bool:
+        return self.genesis_manager.has_genesis()
+
+    def _persist_empty_state_if_needed(self):
+        return self.genesis_manager._persist_empty_state_if_needed()
+
+    def _enforce_genesis_lock(self):
+        return self.genesis_manager._enforce_genesis_lock()
+
+    def _create_genesis_with_lock(self, miner_address: str, use_cores: int | None=None):
+        return self.genesis_manager._create_genesis_with_lock(miner_address, use_cores)
+
+    def ensure_genesis(self, miner_address: str, use_cores: int | None = None) -> bool:
+        return self.genesis_manager.ensure_genesis(miner_address, use_cores)
+
+    def create_genesis_block(self, miner_address, use_cores: int | None = None):
+        return self.genesis_manager.create_genesis_block(miner_address, use_cores)
 
     def save_state(self):
         self._state_saved = True
@@ -110,7 +129,7 @@ class DummyBlockchain(GenesisMixin):
         return 0
 
 
-# -------------------- Tests for GenesisMixin methods --------------------
+# -------------------- Tests for GenesisManager methods --------------------
 
 def test_has_genesis_false():
     """has_genesis returns False when chain is empty."""
@@ -201,12 +220,12 @@ def test_create_genesis_with_lock_success(monkeypatch):
     monkeypatch.setattr("tsarchain.consensus.genesis.GENESIS_HASH", expected)
 
     bc = DummyBlockchain(in_memory=False)
-    # Override create_genesis_block to set chain and hash
-    def fake_create_genesis(self, miner, use_cores):
+    # Override create_genesis_block on genesis_manager
+    def fake_create_genesis(self_manager, miner, use_cores):
         block = Mock()
         block.hash = Mock(return_value=expected)
-        self.chain.append(block)
-    bc.create_genesis_block = fake_create_genesis.__get__(bc, DummyBlockchain)
+        self_manager.blockchain.chain.append(block)
+    bc.genesis_manager.create_genesis_block = fake_create_genesis.__get__(bc.genesis_manager)
 
     bc._create_genesis_with_lock("miner", use_cores=4)
 
@@ -224,11 +243,11 @@ def test_create_genesis_with_lock_hash_mismatch(monkeypatch):
 
     bc = DummyBlockchain()
     # Override create_genesis_block to produce a different hash
-    def fake_create_genesis(self, miner, use_cores):
+    def fake_create_genesis(self_manager, miner, use_cores):
         block = Mock()
         block.hash = Mock(return_value=b"b" * 32)
-        self.chain.append(block)
-    bc.create_genesis_block = fake_create_genesis.__get__(bc, DummyBlockchain)
+        self_manager.blockchain.chain.append(block)
+    bc.genesis_manager.create_genesis_block = fake_create_genesis.__get__(bc.genesis_manager)
 
     with pytest.raises(ValueError, match="does not match TSAR_GENESIS_HASH"):
         bc._create_genesis_with_lock("miner", use_cores=4)
@@ -240,11 +259,11 @@ def test_create_genesis_with_lock_in_memory(monkeypatch):
     monkeypatch.setattr("tsarchain.consensus.genesis.GENESIS_HASH", expected)
 
     bc = DummyBlockchain(in_memory=True)
-    def fake_create_genesis(self, miner, use_cores):
+    def fake_create_genesis(self_manager, miner, use_cores):
         block = Mock()
         block.hash = Mock(return_value=expected)
-        self.chain.append(block)
-    bc.create_genesis_block = fake_create_genesis.__get__(bc, DummyBlockchain)
+        self_manager.blockchain.chain.append(block)
+    bc.genesis_manager.create_genesis_block = fake_create_genesis.__get__(bc.genesis_manager)
 
     bc._create_genesis_with_lock("miner", use_cores=4)
     # save_chain and save_state should not be called
@@ -263,7 +282,7 @@ def test_ensure_genesis_auto_disabled(monkeypatch):
     """If ALLOW_AUTO_GENESIS is False, returns False."""
     monkeypatch.setattr("tsarchain.consensus.genesis.CFG.ALLOW_AUTO_GENESIS", False)
     bc = DummyBlockchain(chain=[])
-    with patch.object(bc, "_create_genesis_with_lock") as mock_create:
+    with patch.object(bc.genesis_manager, "_create_genesis_with_lock") as mock_create:
         result = bc.ensure_genesis("miner")
         assert result is False
         mock_create.assert_not_called()
@@ -273,7 +292,7 @@ def test_ensure_genesis_success(monkeypatch):
     """If chain empty and auto allowed, create genesis and return True."""
     monkeypatch.setattr("tsarchain.consensus.genesis.CFG.ALLOW_AUTO_GENESIS", True)
     bc = DummyBlockchain(chain=[])
-    with patch.object(bc, "_create_genesis_with_lock") as mock_create:
+    with patch.object(bc.genesis_manager, "_create_genesis_with_lock") as mock_create:
         result = bc.ensure_genesis("miner", use_cores=2)
         assert result is True
         mock_create.assert_called_once_with("miner", 2)

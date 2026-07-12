@@ -7,20 +7,22 @@ import time
 import json
 import socket
 import threading
+
 from collections import OrderedDict
 from typing import Any, Dict, Optional, Set, Tuple
 
-from ...core.block import Block
 from ...core.tx import Tx
-from ..protocol import SecureChannel, send_message
+from ...core.block import Block
 from ...utils import config as CFG
-
+from .base import BroadcastHandlerProxy
+from ..protocol import SecureChannel, send_message
 
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.cast.gossip")
 
 
-class GossipMixin:
+class GossipHandler(BroadcastHandlerProxy):
+    
     def _send(self, peer: Tuple[str, int], message: Dict[str, Any]) -> bool:
         port_start, port_end = int(CFG.PORT_START), int(CFG.PORT_END)
         if not (port_start <= int(peer[1]) <= port_end):
@@ -207,4 +209,4 @@ class GossipMixin:
         return self._broadcast(peers, msg, exclude)
 
 
-__all__ = ["GossipMixin"]
+__all__ = ["GossipHandler"]

@@ -10,7 +10,19 @@ Testing edge cases, error handling and txid computation coverage for validation.
 from types import SimpleNamespace
 from unittest.mock import Mock, patch, MagicMock
 
-from tsarchain.consensus.validation import ValidationMixin
+from tsarchain.consensus.validation import BlockValidator
+
+class ValidationProxy:
+    def __getattr__(self, name):
+        if hasattr(self, 'validator') and hasattr(self.validator, name):
+            return getattr(self.validator, name)
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+
+    def __setattr__(self, name, value):
+        if name != 'validator' and hasattr(self, 'validator') and hasattr(self.validator, name):
+            setattr(self.validator, name, value)
+        else:
+            super().__setattr__(name, value)
 
 """
 unit test for validation.py
@@ -24,6 +36,7 @@ unit test for validation.py
 # --- Tests from validation_coverage_test.py ---
 class CovP1DummyBlock:
     def __init__(self, **kwargs):
+        self.validator = BlockValidator(self)
         for k, v in kwargs.items():
             setattr(self, k, v)
     def hash(self):
@@ -33,14 +46,16 @@ class CovP1DummyBlock:
 
 class CovP1DummyTx:
     def __init__(self, **kwargs):
+        self.validator = BlockValidator(self)
         self.inputs = []
         self.outputs = []
         self.is_coinbase = False
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-class CovP1DummyConsensus(ValidationMixin):
+class CovP1DummyConsensus(ValidationProxy):
     def __init__(self):
+        self.validator = BlockValidator(self)
         self._last_block_validation_error = None
 
 # --- _compute_txids_for_block ---
@@ -194,9 +209,9 @@ def test_validate_tx_inputs_outputs(mocker):
 
 # --- legacy lookup ---
 def test_legacy_lookup():
-    from tsarchain.consensus.validation import ValidationMixin
+    from tsarchain.consensus.validation import BlockValidator
     import threading
-    class C(ValidationMixin):
+    class C(ValidationProxy):
         def __init__(self): self.lock = threading.Lock()
     c = C()
     
@@ -215,6 +230,7 @@ def test_legacy_lookup():
 # --- Tests from validation_coverage_part2_test.py ---
 class CovP2DummyBlock:
     def __init__(self, **kwargs):
+        self.validator = BlockValidator(self)
         for k, v in kwargs.items():
             setattr(self, k, v)
     def hash(self):
@@ -222,6 +238,7 @@ class CovP2DummyBlock:
 
 class CovP2DummyTx:
     def __init__(self, **kwargs):
+        self.validator = BlockValidator(self)
         self.inputs = []
         self.outputs = []
         self.is_coinbase = False
@@ -232,8 +249,9 @@ class CovP2DummyTx:
         self.txid = b"computed"
         self.txid_hex = "computed"
 
-class CovP2DummyConsensus(ValidationMixin):
+class CovP2DummyConsensus(ValidationProxy):
     def __init__(self):
+        self.validator = BlockValidator(self)
         self._last_block_validation_error = None
         self.lock = Mock()
     def _ensure_utxodb(self):
@@ -389,6 +407,7 @@ def test_native_snapshot_invalid_entry(mocker):
 # --- Tests from validation_coverage_part3_test.py ---
 class CovP3DummyTx:
     def __init__(self, **kwargs):
+        self.validator = BlockValidator(self)
         self.inputs = []
         self.outputs = []
         self.is_coinbase = False
@@ -397,11 +416,13 @@ class CovP3DummyTx:
 
 class CovP3DummyBlock:
     def __init__(self, **kwargs):
+        self.validator = BlockValidator(self)
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-class CovP3DummyConsensus(ValidationMixin):
+class CovP3DummyConsensus(ValidationProxy):
     def __init__(self):
+        self.validator = BlockValidator(self)
         self._last_block_validation_error = None
         self.lock = Mock()
     def _entry_script_bytes(self, entry):
@@ -524,8 +545,9 @@ def test_check_sigops_budget():
 
 
 # --- Tests from validation_coverage_part4_test.py ---
-class CovP4DummyConsensus(ValidationMixin):
+class CovP4DummyConsensus(ValidationProxy):
     def __init__(self):
+        self.validator = BlockValidator(self)
         self._last_block_validation_error = None
         self.lock = Mock()
     def _entry_script_bytes(self, entry):
@@ -538,6 +560,7 @@ class CovP4DummyConsensus(ValidationMixin):
 
 class CovP4DummyTx:
     def __init__(self, **kwargs):
+        self.validator = BlockValidator(self)
         self.inputs = []
         self.outputs = []
         self.is_coinbase = False
@@ -549,6 +572,7 @@ class CovP4DummyTx:
 
 class CovP4DummyBlock:
     def __init__(self, **kwargs):
+        self.validator = BlockValidator(self)
         self.height = 1
         for k, v in kwargs.items():
             setattr(self, k, v)
@@ -626,6 +650,7 @@ def test_normalize_snapshot_objects():
             store = Mock()
             class CandidateObj:
                 def __init__(self):
+                    self.validator = BlockValidator(self)
                     self.amount = 10
                     self.script_pubkey = b"s"
                     self.is_coinbase = False
@@ -637,6 +662,7 @@ def test_normalize_snapshot_objects():
             
             class CandidateObjNoTxOut:
                 def __init__(self):
+                    self.validator = BlockValidator(self)
                     self.amount = 10
                     self.script_pubkey = b"s"
                     self.is_coinbase = False
@@ -721,6 +747,7 @@ def test_build_payload_bytes_key():
 # --- Tests from validation_coverage_part5_test.py ---
 class CovP5DummyTx:
     def __init__(self, **kwargs):
+        self.validator = BlockValidator(self)
         self.inputs = []
         self.outputs = []
         self.is_coinbase = False
@@ -734,6 +761,7 @@ class CovP5DummyTx:
 
 class CovP5DummyBlock:
     def __init__(self, **kwargs):
+        self.validator = BlockValidator(self)
         self.height = 1
         self.transactions = []
         for k, v in kwargs.items():
@@ -743,8 +771,9 @@ class CovP5DummyBlock:
     def header(self):
         return b"header"
 
-class CovP5DummyConsensus(ValidationMixin):
+class CovP5DummyConsensus(ValidationProxy):
     def __init__(self):
+        self.validator = BlockValidator(self)
         self._last_block_validation_error = None
         self.lock = MagicMock()
     def _entry_script_bytes(self, entry):
@@ -841,7 +870,7 @@ def test_native_validation_branches():
                 assert res is True, f"Failed with: {c._last_block_validation_error}"
             
             # test fallback to native_validate_block_txs
-            with patch.object(c, "_validate_transactions") as mock_val:
+            with patch.object(c.validator, "_validate_transactions") as mock_val:
                 pass
 
 def test_check_sigops_budget_lookup():
@@ -876,6 +905,7 @@ def test_check_sigops_budget_lookup():
 # --- Tests from validation_coverage_part6_test.py ---
 class CovP6DummyTx:
     def __init__(self, **kwargs):
+        self.validator = BlockValidator(self)
         self.inputs = []
         self.outputs = []
         self.is_coinbase = False
@@ -890,6 +920,7 @@ class CovP6DummyTx:
 
 class CovP6DummyBlock:
     def __init__(self, **kwargs):
+        self.validator = BlockValidator(self)
         self.height = 1
         self.transactions = []
         for k, v in kwargs.items():
@@ -897,8 +928,9 @@ class CovP6DummyBlock:
     def to_dict(self):
         return {}
 
-class CovP6DummyConsensus(ValidationMixin):
+class CovP6DummyConsensus(ValidationProxy):
     def __init__(self):
+        self.validator = BlockValidator(self)
         self._last_block_validation_error = None
         self.lock = Mock()
     def _entry_script_bytes(self, entry):
@@ -1030,6 +1062,7 @@ def test_normalize_snapshot_entry_object():
     
     class UtxoObj:
         def __init__(self):
+            self.validator = BlockValidator(self)
             self.amount = 42
             self.script_pubkey = b"script"
             self.is_coinbase = True

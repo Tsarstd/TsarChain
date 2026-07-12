@@ -5,14 +5,15 @@
 import collections
 import threading
 import pytest
-from unittest.mock import Mock, patch, ANY
+from unittest.mock import MagicMock, Mock, patch, ANY
 
-from tsarchain.network.rpc_helper.chat_mixin import ChatMixin
+from tsarchain.network.rpc_helper.chat import ChatHandler
 from tsarchain.utils import config as CFG
 
 # ---------------------- Dummy class to host the mixin ----------------------
-class DummyNode(ChatMixin):
+class DummyNode(ChatHandler):
     def __init__(self):
+        super().__init__(self)
         self.node_ctx = {}
         self.pubkey = "test_pubkey"
         self.privkey = "test_privkey"
@@ -34,14 +35,14 @@ class DummyNode(ChatMixin):
 # ---------------------- Fixtures ----------------------
 @pytest.fixture
 def node():
-    """Return a DummyNode instance with ChatMixin."""
+    """Return a DummyNode instance with ChatHandler."""
     return DummyNode()
 
 
 @pytest.fixture
 def mock_config(monkeypatch):
     """Mock all config flags and constants used."""
-    monkeypatch.setattr("tsarchain.network.rpc_helper.chat_mixin.CFG", Mock(
+    monkeypatch.setattr("tsarchain.network.rpc_helper.chat.CFG", Mock(
         ENFORCE_HELLO_PUBKEY=False,
         ENVELOPE_REQUIRED=False,
         P2P_ENC_REQUIRED=False,
@@ -56,7 +57,7 @@ def mock_time(monkeypatch):
     """Mock time.time to return controllable values."""
     mock_time = Mock()
     mock_time.return_value = 1000.0
-    monkeypatch.setattr("tsarchain.network.rpc_helper.chat_mixin.time.time", mock_time)
+    monkeypatch.setattr("tsarchain.network.rpc_helper.chat.time.time", mock_time)
     return mock_time
 
 
@@ -66,19 +67,19 @@ class TestSendToPeer:
 
     def test_send_to_peer_valid_no_encryption(self, node, monkeypatch):
         """Test _send_to_peer when encryption is not required."""
-        monkeypatch.setattr("tsarchain.network.rpc_helper.chat_mixin.CFG.P2P_ENC_REQUIRED", False)
+        monkeypatch.setattr("tsarchain.network.rpc_helper.chat.CFG.P2P_ENC_REQUIRED", False)
 
         mock_socket_instance = Mock()
         with patch('socket.socket') as mock_socket_class:
             mock_socket_class.return_value.__enter__.return_value = mock_socket_instance
 
             mock_build = Mock(return_value={"test": "env"})
-            monkeypatch.setattr("tsarchain.network.rpc_helper.chat_mixin.build_envelope", mock_build)
+            monkeypatch.setattr("tsarchain.network.rpc_helper.chat.build_envelope", mock_build)
 
             mock_send = Mock()
             mock_recv = Mock(return_value=b"ok")
-            monkeypatch.setattr("tsarchain.network.rpc_helper.chat_mixin.send_message", mock_send)
-            monkeypatch.setattr("tsarchain.network.rpc_helper.chat_mixin.recv_message", mock_recv)
+            monkeypatch.setattr("tsarchain.network.rpc_helper.chat.send_message", mock_send)
+            monkeypatch.setattr("tsarchain.network.rpc_helper.chat.recv_message", mock_recv)
 
             payload = {"type": "TEST"}
             node._send_to_peer(("192.168.1.1", 8000), payload)
@@ -90,7 +91,7 @@ class TestSendToPeer:
 
     def test_send_to_peer_valid_with_encryption(self, node, monkeypatch):
         """Test _send_to_peer when encryption is required."""
-        monkeypatch.setattr("tsarchain.network.rpc_helper.chat_mixin.CFG.P2P_ENC_REQUIRED", True)
+        monkeypatch.setattr("tsarchain.network.rpc_helper.chat.CFG.P2P_ENC_REQUIRED", True)
 
         mock_socket_instance = Mock()
         with patch('socket.socket') as mock_socket_class:
@@ -100,10 +101,10 @@ class TestSendToPeer:
             mock_chan.handshake = Mock()
             mock_chan.send = Mock()
             mock_chan.recv = Mock(return_value=b"ok")
-            monkeypatch.setattr("tsarchain.network.rpc_helper.chat_mixin.SecureChannel", Mock(return_value=mock_chan))
+            monkeypatch.setattr("tsarchain.network.rpc_helper.chat.SecureChannel", Mock(return_value=mock_chan))
 
             mock_build = Mock(return_value={"test": "env"})
-            monkeypatch.setattr("tsarchain.network.rpc_helper.chat_mixin.build_envelope", mock_build)
+            monkeypatch.setattr("tsarchain.network.rpc_helper.chat.build_envelope", mock_build)
 
             payload = {"type": "TEST"}
             node._send_to_peer(("192.168.1.1", 8000), payload)
@@ -123,20 +124,20 @@ class TestSendToPeer:
 
     def test_send_to_peer_enforce_hello_pubkey(self, node, monkeypatch):
         """Test that env gets pubkey when ENFORCE_HELLO_PUBKEY is True."""
-        monkeypatch.setattr("tsarchain.network.rpc_helper.chat_mixin.CFG.ENFORCE_HELLO_PUBKEY", True)
-        monkeypatch.setattr("tsarchain.network.rpc_helper.chat_mixin.CFG.P2P_ENC_REQUIRED", False)
+        monkeypatch.setattr("tsarchain.network.rpc_helper.chat.CFG.ENFORCE_HELLO_PUBKEY", True)
+        monkeypatch.setattr("tsarchain.network.rpc_helper.chat.CFG.P2P_ENC_REQUIRED", False)
 
         mock_socket_instance = Mock()
         with patch('socket.socket') as mock_socket_class:
             mock_socket_class.return_value.__enter__.return_value = mock_socket_instance
 
             mock_build = Mock(return_value={"test": "env"})
-            monkeypatch.setattr("tsarchain.network.rpc_helper.chat_mixin.build_envelope", mock_build)
+            monkeypatch.setattr("tsarchain.network.rpc_helper.chat.build_envelope", mock_build)
 
             mock_send = Mock()
             mock_recv = Mock(return_value=b"ok")
-            monkeypatch.setattr("tsarchain.network.rpc_helper.chat_mixin.send_message", mock_send)
-            monkeypatch.setattr("tsarchain.network.rpc_helper.chat_mixin.recv_message", mock_recv)
+            monkeypatch.setattr("tsarchain.network.rpc_helper.chat.send_message", mock_send)
+            monkeypatch.setattr("tsarchain.network.rpc_helper.chat.recv_message", mock_recv)
 
             node._send_to_peer(("192.168.1.1", 8000), {"type": "TEST"})
 
@@ -168,7 +169,7 @@ class TestRelayPresence:
     def test_relay_presence_async(self, node, monkeypatch):
         """_relay_presence_async should start a daemon thread."""
         mock_thread = Mock()
-        monkeypatch.setattr("tsarchain.network.rpc_helper.chat_mixin.threading.Thread", mock_thread)
+        monkeypatch.setattr("tsarchain.network.rpc_helper.chat.threading.Thread", mock_thread)
 
         node._relay_presence_async({"hops": 0}, exclude="some")
         mock_thread.assert_called_once_with(target=node._relay_presence, args=({"hops": 0}, "some"), daemon=True)

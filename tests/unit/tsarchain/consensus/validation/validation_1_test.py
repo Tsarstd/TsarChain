@@ -17,7 +17,19 @@ from unittest.mock import Mock
 
 from tsarchain.utils import config as CFG
 from tsarchain.contracts import graffiti as GRAFFITI
-from tsarchain.consensus.validation import ValidationMixin
+from tsarchain.consensus.validation import BlockValidator
+
+class ValidationProxy:
+    def __getattr__(self, name):
+        if hasattr(self, 'validator') and hasattr(self.validator, name):
+            return getattr(self.validator, name)
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+
+    def __setattr__(self, name, value):
+        if name != 'validator' and hasattr(self, 'validator') and hasattr(self.validator, name):
+            setattr(self.validator, name, value)
+        else:
+            super().__setattr__(name, value)
 
 """
 unit test for validation.py
@@ -28,12 +40,14 @@ unit test for validation.py
 # =============================================================================
 class DummyTxOut:
     def __init__(self, amount, script_pubkey):
+        self.validator = BlockValidator(self)
         self.amount = amount
         self.script_pubkey = script_pubkey
 
 
 class DummyTxIn:
     def __init__(self, txid, vout):
+        self.validator = BlockValidator(self)
         self.txid = txid
         self.vout = vout
 
@@ -63,8 +77,9 @@ class DummyBlock:
         self._cached_hash = None
 
 
-class _TestChain(ValidationMixin):
+class _TestChain(ValidationProxy):
     def __init__(self):
+        self.validator = BlockValidator(self)
         self.chain = []
         self.height = -1
         self.lock = threading.Lock()

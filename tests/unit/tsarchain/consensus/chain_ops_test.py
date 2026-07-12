@@ -6,7 +6,7 @@ import time
 import pytest
 import threading
 from unittest.mock import MagicMock
-from tsarchain.consensus.chain_ops import ChainOpsMixin
+from tsarchain.consensus.chain_ops import ChainOperations
 
 """
 ChainOpsMixin Unit Tests.
@@ -27,9 +27,12 @@ Tested Scenarios:
 """
 
 
-class DummyBlockchain(ChainOpsMixin):
+class DummyBlockchain:
+    
     def __init__(self, in_memory=True):
+        self.chain_ops = ChainOperations(self)
         self.lock = threading.RLock()
+
         self.chain = []
         self.in_memory = in_memory
         self.total_supply = 0
@@ -63,7 +66,27 @@ class DummyBlockchain(ChainOpsMixin):
     def _validate_complete_chain(self, chain):
         raise NotImplementedError("Harus di-mock di test")
 
+    
+    def replace_with(self, other_chain):
+        return self.chain_ops.replace_with(other_chain)
+
+    def add_block(self, block):
+        return self.chain_ops.add_block(block)
+
+    def swap_tip_if_better(self, block):
+        return self.chain_ops.swap_tip_if_better(block)
+
+    def _has_pending_blocks(self):
+        return self.chain_ops._has_pending_blocks()
+
+    def _is_chain_consistent(self):
+        return self.chain_ops._is_chain_consistent()
+
+    def _validate_complete_chain(self, chain):
+        return self.chain_ops._validate_complete_chain(chain)
+
     def _compute_chainwork_for_chain(self, chain):
+
         raise NotImplementedError("Harus di-mock di test")
     
     def _common_ancestor_height(self, other_chain):
@@ -97,7 +120,7 @@ def test_replace_with_success_higher_work(mocker, dummy_chain):
     
     # Local Chain Setup (work = 100)
     dummy_chain.chain = [MagicMock(), MagicMock()]  # genesis + block1
-    mocker.patch.object(dummy_chain, '_validate_complete_chain', return_value=True)
+    mocker.patch.object(dummy_chain.chain_ops, '_validate_complete_chain', return_value=True)
     mocker.patch.object(dummy_chain, '_compute_chainwork_for_chain', side_effect=[200, 100])  # their=200, our=100
     
     # Make Fake other_chain
@@ -119,7 +142,7 @@ def test_replace_with_fail_invalid_chain(mocker, dummy_chain):
     """SCENARIO 2: Candidate chain is invalid -> MUST RAISE ValueError"""
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', False)
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_REORG_LIMIT', False)
-    mocker.patch.object(dummy_chain, '_validate_complete_chain', return_value=False)
+    mocker.patch.object(dummy_chain.chain_ops, '_validate_complete_chain', return_value=False)
     other = DummyBlockchain()
     other.chain = [MagicMock()]
     
@@ -133,7 +156,7 @@ def test_replace_with_fail_lower_work(mocker, dummy_chain):
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_REORG_LIMIT', False)
     
     dummy_chain.chain = [MagicMock(), MagicMock()]
-    mocker.patch.object(dummy_chain, '_validate_complete_chain', return_value=True)
+    mocker.patch.object(dummy_chain.chain_ops, '_validate_complete_chain', return_value=True)
     mocker.patch.object(dummy_chain, '_compute_chainwork_for_chain', side_effect=[100, 200]) # their=100, our=200
     
     other = DummyBlockchain()
@@ -154,7 +177,7 @@ def test_replace_with_fail_equal_work_shorter_height(mocker, dummy_chain):
     other = DummyBlockchain()
     other.chain = [MagicMock() for _ in range(4)]
     
-    mocker.patch.object(dummy_chain, '_validate_complete_chain', return_value=True)
+    mocker.patch.object(dummy_chain.chain_ops, '_validate_complete_chain', return_value=True)
     mocker.patch.object(dummy_chain, '_compute_chainwork_for_chain', return_value=100)  # same work
     
     with pytest.raises(ValueError, match="candidate height < local at equal work"):
@@ -177,7 +200,7 @@ def test_replace_with_fail_equal_work_equal_height_hash_tie(mocker, dummy_chain)
     other = DummyBlockchain()
     other.chain = [MagicMock(), cand_tip]  # height 1
     
-    mocker.patch.object(dummy_chain, '_validate_complete_chain', return_value=True)
+    mocker.patch.object(dummy_chain.chain_ops, '_validate_complete_chain', return_value=True)
     mocker.patch.object(dummy_chain, '_compute_chainwork_for_chain', return_value=100)  # same work
     
     with pytest.raises(ValueError, match="without deterministic tie-break"):
@@ -194,7 +217,7 @@ def test_replace_with_fail_deep_reorg(mocker, dummy_chain):
     other = DummyBlockchain()
     other.chain = [MagicMock() for _ in range(10)]
     
-    mocker.patch.object(dummy_chain, '_validate_complete_chain', return_value=True)
+    mocker.patch.object(dummy_chain.chain_ops, '_validate_complete_chain', return_value=True)
     # Mock a common ancestor so that the fork occurs at height 5, that means the reorg depth is (10 - 1) - 5 = 4.
     mocker.patch.object(dummy_chain, '_common_ancestor_height', return_value=5)
     
@@ -250,7 +273,12 @@ class ExtendedDummyBlockchain(DummyBlockchain):
     def _expected_bits_on_prefix(self, prefix, height):
         return 0x1d00ffff  # placeholder
 
+    
+    def _validate_complete_chain(self, chain):
+        return self.chain_ops._validate_complete_chain(chain)
+
     def _scheduled_reward(self, height):
+
         # Stub: return 50 * 10^8
         return 50_0000_0000
 
@@ -273,7 +301,27 @@ class ExtendedDummyBlockchain(DummyBlockchain):
     def _validate_complete_chain(self, chain):
         return True
 
+    
+    def replace_with(self, other_chain):
+        return self.chain_ops.replace_with(other_chain)
+
+    def add_block(self, block):
+        return self.chain_ops.add_block(block)
+
+    def swap_tip_if_better(self, block):
+        return self.chain_ops.swap_tip_if_better(block)
+
+    def _has_pending_blocks(self):
+        return self.chain_ops._has_pending_blocks()
+
+    def _is_chain_consistent(self):
+        return self.chain_ops._is_chain_consistent()
+
+    def _validate_complete_chain(self, chain):
+        return self.chain_ops._validate_complete_chain(chain)
+
     def _compute_chainwork_for_chain(self, chain):
+
         return len(chain)
 
 
@@ -373,7 +421,7 @@ def test_swap_tip_if_better_success_higher_work(mocker):
     bc.total_blocks = 2
 
     candidate = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"candidate")
-    bc._validate_complete_chain = MagicMock(return_value=True)
+    bc.chain_ops._validate_complete_chain = MagicMock(return_value=True)
     bc._compute_chainwork_for_chain = MagicMock(side_effect=[5, 10])  # local=5, candidate=10
 
     old_tip = bc.swap_tip_if_better(candidate)
@@ -389,7 +437,7 @@ def test_swap_tip_if_better_fail_lower_work(mocker):
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     block1 = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block1")
     bc.chain = [block0, block1]
-    bc._validate_complete_chain = MagicMock(return_value=True)
+    bc.chain_ops._validate_complete_chain = MagicMock(return_value=True)
     # local=5, candidate=3 -> candidate has lower work
     bc._compute_chainwork_for_chain = MagicMock(side_effect=[5, 3])
 
@@ -425,7 +473,7 @@ def test_swap_tip_if_better_fail_invalid_candidate_chain(mocker):
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     block1 = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block1")
     bc.chain = [block0, block1]
-    bc._validate_complete_chain = MagicMock(return_value=False)
+    bc.chain_ops._validate_complete_chain = MagicMock(return_value=False)
     candidate = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"candidate")
     result = bc.swap_tip_if_better(candidate)
     assert result is None
@@ -437,7 +485,7 @@ def test_swap_tip_if_better_equal_work_hash_tie_win(mocker):
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     block1 = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block1")  # hash = b"block1"
     bc.chain = [block0, block1]
-    bc._validate_complete_chain = MagicMock(return_value=True)
+    bc.chain_ops._validate_complete_chain = MagicMock(return_value=True)
     # Work sama
     bc._compute_chainwork_for_chain = MagicMock(return_value=5)  # sama
     candidate = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block0")  # hash smaller than b"block1"
@@ -452,7 +500,7 @@ def test_swap_tip_if_better_equal_work_hash_tie_lose(mocker):
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     block1 = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block1")
     bc.chain = [block0, block1]
-    bc._validate_complete_chain = MagicMock(return_value=True)
+    bc.chain_ops._validate_complete_chain = MagicMock(return_value=True)
     bc._compute_chainwork_for_chain = MagicMock(return_value=5)
     candidate = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block2")  # more big hash
     result = bc.swap_tip_if_better(candidate)
@@ -493,7 +541,7 @@ def test_prune_mempool_confirmed_basic(mocker):
     pool_mock.flush = MagicMock()
     bc.mempool = pool_mock
 
-    bc._prune_mempool_confirmed(block)
+    bc.chain_ops._prune_mempool_confirmed(block)
 
     pool_mock.remove_many.assert_called_once()
     called_args = pool_mock.remove_many.call_args[0][0]
@@ -516,7 +564,7 @@ def test_prune_mempool_confirmed_no_txs(mocker):
     bc = ExtendedDummyBlockchain(in_memory=True)
     pool_mock = MagicMock()
     bc.mempool = pool_mock
-    bc._prune_mempool_confirmed(block)
+    bc.chain_ops._prune_mempool_confirmed(block)
     pool_mock.remove_many.assert_not_called()
     pool_mock.drop_conflicts.assert_not_called()
     pool_mock.prune_stale_entries.assert_not_called()
@@ -533,7 +581,7 @@ def test_is_chain_consistent_valid(mocker):
     genesis = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"genesis")
     block1 = create_mock_block(height=1, prev_hash=b"genesis", hash_val=b"block1")
     bc.chain = [genesis, block1]
-    assert bc._is_chain_consistent() is True
+    assert bc.chain_ops._is_chain_consistent() is True
 
 
 def test_is_chain_consistent_invalid_height(mocker):
@@ -542,7 +590,7 @@ def test_is_chain_consistent_invalid_height(mocker):
     genesis = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"genesis")
     block1 = create_mock_block(height=2, prev_hash=b"genesis", hash_val=b"block1")  # should be 1
     bc.chain = [genesis, block1]
-    assert bc._is_chain_consistent() is False
+    assert bc.chain_ops._is_chain_consistent() is False
 
 
 def test_is_chain_consistent_invalid_prev_hash(mocker):
@@ -551,28 +599,36 @@ def test_is_chain_consistent_invalid_prev_hash(mocker):
     genesis = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"genesis")
     block1 = create_mock_block(height=1, prev_hash=b"wrong", hash_val=b"block1")
     bc.chain = [genesis, block1]
-    assert bc._is_chain_consistent() is False
+    assert bc.chain_ops._is_chain_consistent() is False
 
 
 def test_is_chain_consistent_empty(mocker):
     """Empty chain is considered consistent."""
     bc = DummyBlockchain()
     bc.chain = []
-    assert bc._is_chain_consistent() is True
+    assert bc.chain_ops._is_chain_consistent() is True
 
 
 # ============================================================
 # HELPER CLASS FOR _validate_complete_chain TESTS
 # ============================================================
 
-class ValidatorBlockchain(ChainOpsMixin):
+class ValidatorBlockchain:
     """Minimal mixin that does NOT override _validate_complete_chain."""
+    
     def __init__(self):
+        self.chain_ops = ChainOperations(self)
         self.lock = threading.RLock()
+
         self.chain = []
         self.in_memory = True
 
+    
+    def _validate_complete_chain(self, chain):
+        return self.chain_ops._validate_complete_chain(chain)
+
     def _scheduled_reward(self, height):
+
         return 50_0000_0000  # 50 coins
 
     def _expected_bits_on_prefix(self, prefix, height):
@@ -584,7 +640,27 @@ class ValidatorBlockchain(ChainOpsMixin):
     def _work_from_bits(self, bits):
         return 1
 
+    
+    def replace_with(self, other_chain):
+        return self.chain_ops.replace_with(other_chain)
+
+    def add_block(self, block):
+        return self.chain_ops.add_block(block)
+
+    def swap_tip_if_better(self, block):
+        return self.chain_ops.swap_tip_if_better(block)
+
+    def _has_pending_blocks(self):
+        return self.chain_ops._has_pending_blocks()
+
+    def _is_chain_consistent(self):
+        return self.chain_ops._is_chain_consistent()
+
+    def _validate_complete_chain(self, chain):
+        return self.chain_ops._validate_complete_chain(chain)
+
     def _compute_chainwork_for_chain(self, chain):
+
         return len(chain)
 
 
@@ -625,7 +701,7 @@ def test_validate_complete_chain_valid(mocker):
     block1.timestamp = int(time.time())
 
     chain = [genesis, block1]
-    assert bc._validate_complete_chain(chain) is True
+    assert bc.chain_ops._validate_complete_chain(chain) is True
 
 
 def test_validate_complete_chain_invalid_genesis_prev_hash(mocker):
@@ -648,7 +724,7 @@ def test_validate_complete_chain_invalid_genesis_prev_hash(mocker):
     genesis.timestamp = int(time.time())
 
     chain = [genesis]
-    assert bc._validate_complete_chain(chain) is False
+    assert bc.chain_ops._validate_complete_chain(chain) is False
 
 
 def test_validate_complete_chain_invalid_coinbase_amount(mocker):
@@ -671,7 +747,7 @@ def test_validate_complete_chain_invalid_coinbase_amount(mocker):
     genesis.timestamp = int(time.time())
 
     chain = [genesis]
-    assert bc._validate_complete_chain(chain) is False
+    assert bc.chain_ops._validate_complete_chain(chain) is False
 
 
 def test_validate_complete_chain_invalid_pow(mocker):
@@ -696,7 +772,7 @@ def test_validate_complete_chain_invalid_pow(mocker):
     genesis.timestamp = int(time.time())
 
     chain = [genesis]
-    assert bc._validate_complete_chain(chain) is False
+    assert bc.chain_ops._validate_complete_chain(chain) is False
     
 # ============================================================
 # TESTS FOR PERSISTENCE MODE (in_memory=False)
@@ -711,7 +787,7 @@ def test_replace_with_persistent_mode(mocker):
     bc.chain = [MagicMock(), MagicMock()]  # local chain
 
     # Mock dependencies
-    mocker.patch.object(bc, '_validate_complete_chain', return_value=True)
+    mocker.patch.object(bc.chain_ops, '_validate_complete_chain', return_value=True)
     mocker.patch.object(bc, '_compute_chainwork_for_chain', side_effect=[200, 100])  # higher work
 
     # Mock UTXO store
@@ -774,7 +850,7 @@ def test_swap_tip_if_better_persistent_mode(mocker):
     bc.total_blocks = 2
 
     # Mock validation and work
-    bc._validate_complete_chain = MagicMock(return_value=True)
+    bc.chain_ops._validate_complete_chain = MagicMock(return_value=True)
     bc._compute_chainwork_for_chain = MagicMock(side_effect=[5, 10])  # candidate better
 
     # Mock UTXO store

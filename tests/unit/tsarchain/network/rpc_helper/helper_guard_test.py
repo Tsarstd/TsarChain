@@ -7,23 +7,23 @@ import threading
 import pytest
 from unittest.mock import Mock, patch
 
-from tsarchain.network.rpc_helper.guard_mixin import GuardMixin
+from tsarchain.network.rpc_helper.guard import GuardHandler
 
 @pytest.fixture(autouse=True)
 def mock_config(monkeypatch):
     class MockConfig:
         NONCE_PER_SENDER_MAX = 3
-    monkeypatch.setattr('tsarchain.network.rpc_helper.guard_mixin.CFG', MockConfig())
+    monkeypatch.setattr('tsarchain.network.rpc_helper.guard.CFG', MockConfig())
 
 @pytest.fixture(autouse=True)
 def mock_logger(monkeypatch):
     mock_log = Mock()
-    monkeypatch.setattr('tsarchain.network.rpc_helper.guard_mixin.log', mock_log)
+    monkeypatch.setattr('tsarchain.network.rpc_helper.guard.log', mock_log)
     return mock_log
 
 @pytest.fixture
 def guard():
-    obj = GuardMixin()
+    obj = GuardHandler(network=type('Dummy', (), {})())
     obj.backoff_until = {}
     obj._nonce_guard_table = {}
     obj._nonce_guard_lock = threading.RLock()

@@ -7,7 +7,7 @@ from typing import List
 from unittest.mock import Mock, patch
 
 from tsarchain.core.block import Block
-from tsarchain.consensus.difficulty import DifficultyMixin
+from tsarchain.consensus.difficulty import DifficultyManager
 
 
 # --- Helper untuk membuat block dummy ---
@@ -21,16 +21,15 @@ def make_block(height: int, bits: int, timestamp: int, hash_val: bytes = b"dummy
 
 
 # --- Kelas turunan untuk menguji mixin ---
-class TestDifficultyMixin(DifficultyMixin):
-    __test__ = False
+class DummyBlockchain:
     def __init__(self, chain: List[Block] = None):
         self.chain = chain or []
 
 
 # --- Fixture untuk instance mixin ---
 @pytest.fixture
-def mixin():
-    return TestDifficultyMixin()
+def manager():
+    return DifficultyManager(DummyBlockchain())
 
 
 # --- Fixture untuk patch global CFG dan helpers ---
@@ -96,35 +95,35 @@ def patch_config_and_helpers():
 
 # ========================== TEST _expected_bits_on_prefix ==========================
 
-def test_expected_bits_on_prefix_empty_or_zero_height(mixin, patch_config_and_helpers):
+def test_expected_bits_on_prefix_empty_or_zero_height(manager, patch_config_and_helpers):
     mock_cfg, _, _, _, _ = patch_config_and_helpers
     # next_height <= 0
-    assert mixin._expected_bits_on_prefix([], 0) == int(mock_cfg.MAX_BITS)
-    assert mixin._expected_bits_on_prefix([], -5) == int(mock_cfg.MAX_BITS)
+    assert manager._expected_bits_on_prefix([], 0) == int(mock_cfg.MAX_BITS)
+    assert manager._expected_bits_on_prefix([], -5) == int(mock_cfg.MAX_BITS)
 
     block = make_block(0, 0x1F9FFFFF, 1000)
-    result = mixin._expected_bits_on_prefix([block], 1)
+    result = manager._expected_bits_on_prefix([block], 1)
     assert result == block.bits
 
     block_no_bits = make_block(0, 0, 1000)  # buat block biasa
     del block_no_bits.bits                  # hapus atribut bits
-    result = mixin._expected_bits_on_prefix([block_no_bits], 1)
+    result = manager._expected_bits_on_prefix([block_no_bits], 1)
     assert result == int(mock_cfg.MAX_BITS)
 
 
-def test_expected_bits_on_prefix_normal(mixin, patch_config_and_helpers):
+def test_expected_bits_on_prefix_normal(manager, patch_config_and_helpers):
     mock_cfg, mock_bits_to_target, _, mock_target_to_difficulty, mock_difficulty_to_target = patch_config_and_helpers
     mock_cfg.LWMA_WINDOW = 3
     b0 = make_block(0, 0x1F9FFFFF, 0)
     b1 = make_block(1, 0x1F9FFFFF, 68)
     b2 = make_block(2, 0x1F9FFFFF, 136)
     prefix = [b0, b1, b2]
-    result = mixin._expected_bits_on_prefix(prefix, 3)
+    result = manager._expected_bits_on_prefix(prefix, 3)
     assert isinstance(result, int)
     assert result > 0
 
 
-def test_expected_bits_on_prefix_with_clamp(mixin, patch_config_and_helpers):
+def test_expected_bits_on_prefix_with_clamp(manager, patch_config_and_helpers):
     mock_cfg, _, _, _, _ = patch_config_and_helpers
     mock_cfg.LWMA_WINDOW = 2
     mock_cfg.ENABLE_DIFF_CLAMP = True
@@ -138,12 +137,12 @@ def test_expected_bits_on_prefix_with_clamp(mixin, patch_config_and_helpers):
             else:
                 return 1000
         mock_t2d.side_effect = t2d_side_effect
-        result = mixin._expected_bits_on_prefix(prefix, 2)
+        result = manager._expected_bits_on_prefix(prefix, 2)
         assert isinstance(result, int)
         assert result > 0
 
 
-def test_expected_bits_on_prefix_with_eda(mixin, patch_config_and_helpers):
+def test_expected_bits_on_prefix_with_eda(manager, patch_config_and_helpers):
     mock_cfg, _, _, _, _ = patch_config_and_helpers
     mock_cfg.LWMA_WINDOW = 5
     mock_cfg.ENABLE_EDA = True
@@ -156,66 +155,66 @@ def test_expected_bits_on_prefix_with_eda(mixin, patch_config_and_helpers):
     prefix = [b0, b1, b2]
     with patch("tsarchain.consensus.difficulty.target_to_difficulty") as mock_t2d:
         mock_t2d.return_value = 1
-        result = mixin._expected_bits_on_prefix(prefix, 3)
+        result = manager._expected_bits_on_prefix(prefix, 3)
         # EDA akan aktif dan hasilnya max_bits
         assert result == int(mock_cfg.MAX_BITS)
 
 
 # ========================== TEST calculate_expected_bits ==========================
 
-def test_calculate_expected_bits(mixin, patch_config_and_helpers):
+def test_calculate_expected_bits(manager, patch_config_and_helpers):
     mock_cfg, _, _, _, _ = patch_config_and_helpers
-    assert mixin.calculate_expected_bits(0) == int(mock_cfg.MAX_BITS)
-    assert mixin.calculate_expected_bits(-1) == int(mock_cfg.MAX_BITS)
-    assert mixin.calculate_expected_bits(5) == int(mock_cfg.MAX_BITS)
+    assert manager.calculate_expected_bits(0) == int(mock_cfg.MAX_BITS)
+    assert manager.calculate_expected_bits(-1) == int(mock_cfg.MAX_BITS)
+    assert manager.calculate_expected_bits(5) == int(mock_cfg.MAX_BITS)
 
     block = make_block(0, 0x1F9FFFFF, 0)
-    mixin.chain = [block]
-    result = mixin.calculate_expected_bits(1)
+    manager.blockchain.chain = [block]
+    result = manager.calculate_expected_bits(1)
     assert result == block.bits
 
 
 # ========================== TEST _validate_difficulty ==========================
 
-def test_validate_difficulty(mixin):
+def test_validate_difficulty(manager):
     block0 = make_block(0, 0x123456, 100)
-    assert mixin._validate_difficulty(block0) is True
+    assert manager._validate_difficulty(block0) is True
 
     block1 = make_block(1, 0x1F9FFFFF, 200)
-    with patch.object(mixin, 'calculate_expected_bits', return_value=0x1F9FFFFF):
-        assert mixin._validate_difficulty(block1) is True
+    with patch.object(manager, 'calculate_expected_bits', return_value=0x1F9FFFFF):
+        assert manager._validate_difficulty(block1) is True
 
     block2 = make_block(2, 0x123456, 300)
-    with patch.object(mixin, 'calculate_expected_bits', return_value=0x1F9FFFFF):
-        assert mixin._validate_difficulty(block2) is False
+    with patch.object(manager, 'calculate_expected_bits', return_value=0x1F9FFFFF):
+        assert manager._validate_difficulty(block2) is False
 
 
 # ========================== TEST _work_from_bits ==========================
 
-def test_work_from_bits(mixin):
+def test_work_from_bits(manager):
     bits = 0x1F9FFFFF
-    work = mixin._work_from_bits(bits)
+    work = manager._work_from_bits(bits)
     assert work > 0
 
     bits_zero = 0
-    work_zero = mixin._work_from_bits(bits_zero)
+    work_zero = manager._work_from_bits(bits_zero)
     assert work_zero == 0
 
     # bits yang menghasilkan target negatif (tidak mungkin) -> return 0
     with patch("tsarchain.consensus.difficulty.bits_to_target", return_value=-1):
-        work_neg = mixin._work_from_bits(0x1F9FFFFF)
+        work_neg = manager._work_from_bits(0x1F9FFFFF)
         assert work_neg == 0
 
 
 # ========================== TEST _compute_chainwork_for_chain ==========================
 
-def test_compute_chainwork_for_chain(mixin):
+def test_compute_chainwork_for_chain(manager):
     b0 = make_block(0, 0x1F9FFFFF, 0)
     b1 = make_block(1, 0x1F9FFFFF, 68)
     b2 = make_block(2, 0x1F9FFFFF, 136)
     chain = [b0, b1, b2]
-    with patch.object(mixin, '_work_from_bits', side_effect=[10, 20, 30]) as mock_work:
-        total_work = mixin._compute_chainwork_for_chain(chain)
+    with patch.object(manager, '_work_from_bits', side_effect=[10, 20, 30]) as mock_work:
+        total_work = manager._compute_chainwork_for_chain(chain)
         assert total_work == 60
         assert chain[0].chainwork == 10
         assert chain[1].chainwork == 30
@@ -224,21 +223,21 @@ def test_compute_chainwork_for_chain(mixin):
 
 # ========================== TEST _common_ancestor_height ==========================
 
-def test_common_ancestor_height(mixin):
+def test_common_ancestor_height(manager):
     b0 = make_block(0, 0, 0, hash_val=b"hash0")
     b1 = make_block(1, 0, 0, hash_val=b"hash1")
     b2 = make_block(2, 0, 0, hash_val=b"hash2")
     b0.hash = Mock(return_value=b"hash0")
     b1.hash = Mock(return_value=b"hash1")
     b2.hash = Mock(return_value=b"hash2")
-    mixin.chain = [b0, b1, b2]
+    manager.blockchain.chain = [b0, b1, b2]
 
     # Chain lain dengan ancestor di height 1
     b0_other = make_block(0, 0, 0, hash_val=b"hash0")
     b1_other = make_block(1, 0, 0, hash_val=b"hash1")
     b2_other = make_block(2, 0, 0, hash_val=b"hash_other2")
     other_chain = [b0_other, b1_other, b2_other]
-    ancestor = mixin._common_ancestor_height(other_chain)
+    ancestor = manager._common_ancestor_height(other_chain)
     assert ancestor == 1
 
     # Tidak ada common ancestor
@@ -246,44 +245,44 @@ def test_common_ancestor_height(mixin):
         make_block(0, 0, 0, hash_val=b"no0"),
         make_block(1, 0, 0, hash_val=b"no1"),
     ]
-    ancestor = mixin._common_ancestor_height(other_chain_no_common)
+    ancestor = manager._common_ancestor_height(other_chain_no_common)
     assert ancestor == -1
 
     # Chain kosong
-    mixin.chain = []
-    ancestor = mixin._common_ancestor_height(other_chain)
+    manager.blockchain.chain = []
+    ancestor = manager._common_ancestor_height(other_chain)
     assert ancestor == -1
 
     # other_chain kosong
-    mixin.chain = [b0, b1, b2]
-    ancestor = mixin._common_ancestor_height([])
+    manager.blockchain.chain = [b0, b1, b2]
+    ancestor = manager._common_ancestor_height([])
     assert ancestor == -1
 
 
 # ========================== TEST median_time_past ==========================
 
-def test_median_time_past(mixin, patch_config_and_helpers):
+def test_median_time_past(manager, patch_config_and_helpers):
     mock_cfg, _, _, _, _ = patch_config_and_helpers
     mock_cfg.MTP_WINDOWS = 3
 
     # Chain kosong
-    mixin.chain = []
-    assert mixin.median_time_past(k=3) == 0
+    manager.blockchain.chain = []
+    assert manager.median_time_past(k=3) == 0
 
     b0 = make_block(0, 0, 100)
-    mixin.chain = [b0]
-    assert mixin.median_time_past(k=3) == 100
+    manager.blockchain.chain = [b0]
+    assert manager.median_time_past(k=3) == 100
 
     b1 = make_block(1, 0, 200)
-    mixin.chain = [b0, b1]
-    assert mixin.median_time_past(k=3) == 200
+    manager.blockchain.chain = [b0, b1]
+    assert manager.median_time_past(k=3) == 200
 
     b2 = make_block(2, 0, 150)
-    mixin.chain = [b0, b1, b2]
-    assert mixin.median_time_past(k=3) == 150
+    manager.blockchain.chain = [b0, b1, b2]
+    assert manager.median_time_past(k=3) == 150
 
     for i in range(3, 10):
-        mixin.chain.append(make_block(i, 0, 100 + i * 10))
+        manager.blockchain.chain.append(make_block(i, 0, 100 + i * 10))
 
-    assert mixin.median_time_past(k=3) == 180
-    assert mixin.median_time_past(k=4) == 180
+    assert manager.median_time_past(k=3) == 180
+    assert manager.median_time_past(k=4) == 180

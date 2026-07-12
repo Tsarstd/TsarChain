@@ -12,8 +12,19 @@ import pytest
 import threading
 
 from unittest.mock import Mock, patch
+from tsarchain.consensus.validation import BlockValidator
 
-from tsarchain.consensus.validation import ValidationMixin
+class ValidationProxy:
+    def __getattr__(self, name):
+        if hasattr(self, 'validator') and hasattr(self.validator, name):
+            return getattr(self.validator, name)
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+
+    def __setattr__(self, name, value):
+        if name != 'validator' and hasattr(self, 'validator') and hasattr(self.validator, name):
+            setattr(self.validator, name, value)
+        else:
+            super().__setattr__(name, value)
 
 """
 unit test for validation.py
@@ -92,8 +103,9 @@ class TestValidationMixin:
 
     # Helper to create a concrete instance of the mixin with required attributes
     def create_instance(self):
-        class DummyConsensus(ValidationMixin):
+        class DummyConsensus(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self.lock = threading.Lock()
                 self.chain = []
                 self.height = -1
@@ -131,25 +143,25 @@ class TestValidationMixin:
         mock_cfg.POW_ALGO = "randomx"
         mock_cfg.RANDOMX_KEY_EPOCH_BLOCKS = 100
         instance = self.create_instance()
-        instance.__class__._pow_epoch_warmed = set([0])
+        instance.validator.__class__._pow_epoch_warmed = set([0])
         with patch("tsarchain.consensus.validation.H") as mock_H:
             instance._ensure_warm(50)
             mock_H.pow_hash_verify_light.assert_not_called()
-        instance.__class__._pow_epoch_warmed = set()
+        instance.validator.__class__._pow_epoch_warmed = set()
 
     @patch("tsarchain.consensus.validation.CFG")
     def test_ensure_warm_calls_pow_hash(self, mock_cfg):
         mock_cfg.POW_ALGO = "randomx"
         mock_cfg.RANDOMX_KEY_EPOCH_BLOCKS = 100
         instance = self.create_instance()
-        instance.__class__._pow_epoch_warmed = set()
+        instance.validator.__class__._pow_epoch_warmed = set()
         with patch("tsarchain.consensus.validation.H") as mock_H:
             mock_H.pow_key_for_height = Mock(return_value=b"key")
             mock_H.pow_hash_verify_light = Mock()
             instance._ensure_warm(150)
             mock_H.pow_hash_verify_light.assert_called_once_with(b"\x00"*80, key_hint=b"key")
-            assert 1 in instance.__class__._pow_epoch_warmed
-        instance.__class__._pow_epoch_warmed = set()
+            assert 1 in instance.validator.__class__._pow_epoch_warmed
+        instance.validator.__class__._pow_epoch_warmed = set()
 
     # -------------------------------------------------------------------
     # Tests for _warm_pow_context
@@ -475,8 +487,9 @@ class TestValidationMixin:
     @patch("tsarchain.consensus.validation.H")
     def test_serialize_tx_cached_cache_hit(self, mock_H):
         # Buat instance dengan metode asli (tidak di-override)
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self.lock = threading.Lock()
         instance = Dummy()
         tx = Mock()
@@ -488,8 +501,9 @@ class TestValidationMixin:
 
     @patch("tsarchain.consensus.validation.H")
     def test_serialize_tx_cached_cache_miss(self, mock_H):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self.lock = threading.Lock()
         instance = Dummy()
         tx = Mock()
@@ -504,8 +518,9 @@ class TestValidationMixin:
     # _estimate_block_size
     # -------------------------------------------------------------------------
     def test_estimate_block_size_with_cached_txs(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 pass
         instance = Dummy()
         block = Mock()
@@ -520,8 +535,9 @@ class TestValidationMixin:
         assert instance._estimate_block_size(block) == 80 + 30 + 15
 
     def test_estimate_block_size_with_serialize_method(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 pass
         instance = Dummy()
         block = Mock()
@@ -532,8 +548,9 @@ class TestValidationMixin:
         tx.serialize.assert_called_once()
 
     def test_estimate_block_size_with_raw_attribute(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 pass
         instance = Dummy()
         block = Mock()
@@ -543,8 +560,9 @@ class TestValidationMixin:
         assert instance._estimate_block_size(block) == 80 + 11
 
     def test_estimate_block_size_with_size_bytes_callable(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 pass
         instance = Dummy()
         block = Mock()
@@ -559,8 +577,9 @@ class TestValidationMixin:
         assert instance._estimate_block_size(block) == 80 + 42
 
     def test_estimate_block_size_with_size_bytes_int(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 pass
         instance = Dummy()
         block = Mock()
@@ -570,8 +589,9 @@ class TestValidationMixin:
         assert instance._estimate_block_size(block) == 80 + 100
 
     def test_estimate_block_size_fallback_none(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 pass
         instance = Dummy()
         block = Mock()
@@ -584,8 +604,9 @@ class TestValidationMixin:
     # _chain_state_token_locked
     # -------------------------------------------------------------------------
     def test_chain_state_token_locked(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self.height = 100
                 self.chain = []
         instance = Dummy()
@@ -597,8 +618,9 @@ class TestValidationMixin:
         assert token == (100, b"tip_hash")
 
     def test_chain_state_token_locked_empty_chain(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self.height = 0
                 self.chain = []
         instance = Dummy()
@@ -614,8 +636,9 @@ class TestValidationMixin:
         mock_cfg.ZERO_HASH = b"\x00"*32
         mock_cfg.FUTURE_DRIFT = 600
         mock_cfg.TARGET_BLOCK_TIME = 68
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self.lock = threading.Lock()
                 self.chain = [Mock()]
                 self.height = 5
@@ -638,8 +661,9 @@ class TestValidationMixin:
         mock_cfg.ZERO_HASH = b"\x00"*32
         mock_cfg.FUTURE_DRIFT = 600
         mock_cfg.TARGET_BLOCK_TIME = 68
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self.lock = threading.Lock()
                 self.chain = [Mock()]
                 self.height = 5
@@ -662,8 +686,9 @@ class TestValidationMixin:
         mock_cfg.ZERO_HASH = b"\x00"*32
         mock_cfg.FUTURE_DRIFT = 600
         mock_cfg.TARGET_BLOCK_TIME = 68
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self.lock = threading.Lock()
                 self.chain = []  # genesis
                 self.height = -1
@@ -685,8 +710,9 @@ class TestValidationMixin:
         mock_cfg.ZERO_HASH = b"\x00"*32
         mock_cfg.FUTURE_DRIFT = 600
         mock_cfg.TARGET_BLOCK_TIME = 68
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self.lock = threading.Lock()
                 self.chain = []
                 self.height = -1
@@ -708,8 +734,9 @@ class TestValidationMixin:
         mock_cfg.ZERO_HASH = b"\x00"*32
         mock_cfg.FUTURE_DRIFT = 600
         mock_cfg.TARGET_BLOCK_TIME = 68
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self.lock = threading.Lock()
                 self.chain = [Mock()]
                 self.height = 5
@@ -734,8 +761,9 @@ class TestValidationMixin:
         mock_cfg.FUTURE_DRIFT = 600
         mock_cfg.TARGET_BLOCK_TIME = 68
         mock_time.time.return_value = 1000
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self.lock = threading.Lock()
                 self.chain = [Mock()]
                 self.height = 5
@@ -758,8 +786,9 @@ class TestValidationMixin:
         mock_cfg.ZERO_HASH = b"\x00"*32
         mock_cfg.FUTURE_DRIFT = 600
         mock_cfg.TARGET_BLOCK_TIME = 68
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self.lock = threading.Lock()
                 self.chain = [Mock()]
                 self.height = 5
@@ -782,8 +811,9 @@ class TestValidationMixin:
         mock_cfg.ZERO_HASH = b"\x00"*32
         mock_cfg.FUTURE_DRIFT = 600
         mock_cfg.TARGET_BLOCK_TIME = 68
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self.lock = threading.Lock()
                 self.chain = [Mock()]
                 self.height = 5
@@ -806,8 +836,9 @@ class TestValidationMixin:
         mock_cfg.ZERO_HASH = b"\x00"*32
         mock_cfg.FUTURE_DRIFT = 600
         mock_cfg.TARGET_BLOCK_TIME = 68
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self.lock = threading.Lock()
                 self.chain = [Mock()]
                 self.height = 5
@@ -828,8 +859,9 @@ class TestValidationMixin:
     # _ensure_unique_txids
     # -------------------------------------------------------------------------
     def test_ensure_unique_txids_success(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self._last_block_validation_error = None
         instance = Dummy()
         tx1 = Mock()
@@ -842,8 +874,9 @@ class TestValidationMixin:
         assert instance._last_block_validation_error is None
 
     def test_ensure_unique_txids_duplicate(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self._last_block_validation_error = None
         instance = Dummy()
         tx1 = Mock()
@@ -856,8 +889,9 @@ class TestValidationMixin:
         assert instance._last_block_validation_error == "txid_duplicate"
 
     def test_ensure_unique_txids_missing_txid(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self._last_block_validation_error = None
         instance = Dummy()
         tx = Mock()
@@ -868,8 +902,9 @@ class TestValidationMixin:
         assert instance._last_block_validation_error == "txid_missing"
 
     def test_ensure_unique_txids_compute_if_needed(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self._last_block_validation_error = None
         instance = Dummy()
         tx = Mock()
@@ -889,8 +924,9 @@ class TestValidationMixin:
     def test_check_block_limits_too_many_txs(self, mock_cfg):
         mock_cfg.MAX_TXS_PER_BLOCK = 10
         mock_cfg.MAX_BLOCK_BYTES = 1000000
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self._last_block_validation_error = None
                 self._estimate_block_size = Mock(return_value=100)
         instance = Dummy()
@@ -904,8 +940,9 @@ class TestValidationMixin:
     def test_check_block_limits_size_exceeded(self, mock_cfg):
         mock_cfg.MAX_TXS_PER_BLOCK = 100
         mock_cfg.MAX_BLOCK_BYTES = 100
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self._last_block_validation_error = None
                 self._estimate_block_size = Mock(return_value=150)
         instance = Dummy()
@@ -918,8 +955,9 @@ class TestValidationMixin:
     def test_check_block_limits_success(self, mock_cfg):
         mock_cfg.MAX_TXS_PER_BLOCK = 100
         mock_cfg.MAX_BLOCK_BYTES = 1000
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self._last_block_validation_error = None
                 self._estimate_block_size = Mock(return_value=100)
         instance = Dummy()
@@ -931,24 +969,27 @@ class TestValidationMixin:
     # _entry_script_bytes
     # -------------------------------------------------------------------------
     def test_entry_script_bytes_dict_with_tx_out(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 pass
         instance = Dummy()
         entry = {"tx_out": {"script_pubkey": b"script"}}
         assert instance._entry_script_bytes(entry) == b"script"
 
     def test_entry_script_bytes_dict_direct(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 pass
         instance = Dummy()
         entry = {"script_pubkey": b"script"}
         assert instance._entry_script_bytes(entry) == b"script"
 
     def test_entry_script_bytes_object_with_script_pubkey(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 pass
         instance = Dummy()
         obj = Mock()
@@ -957,8 +998,9 @@ class TestValidationMixin:
         assert instance._entry_script_bytes(entry) == b"script"
 
     def test_entry_script_bytes_object_script_pubkey_serialize(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 pass
         instance = Dummy()
         spk = Mock()
@@ -970,16 +1012,18 @@ class TestValidationMixin:
         spk.serialize.assert_called_once()
 
     def test_entry_script_bytes_string_hex(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 pass
         instance = Dummy()
         entry = {"script_pubkey": "deadbeef"}
         assert instance._entry_script_bytes(entry) == bytes.fromhex("deadbeef")
 
     def test_entry_script_bytes_none(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 pass
         instance = Dummy()
         entry = {}
@@ -992,8 +1036,9 @@ class TestValidationMixin:
     def test_check_sigops_budget_per_tx_exceeded(self, mock_cfg):
         mock_cfg.MAX_SIGOPS_PER_TX = 5
         mock_cfg.MAX_SIGOPS_PER_BLOCK = 100
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self._last_block_validation_error = None
                 self._entry_script_bytes = Mock(return_value=b"script")
         instance = Dummy()
@@ -1012,8 +1057,9 @@ class TestValidationMixin:
     def test_check_sigops_budget_total_exceeded(self, mock_cfg):
         mock_cfg.MAX_SIGOPS_PER_TX = 10
         mock_cfg.MAX_SIGOPS_PER_BLOCK = 5
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self._last_block_validation_error = None
                 self._entry_script_bytes = Mock(return_value=b"script")
         instance = Dummy()
@@ -1035,8 +1081,9 @@ class TestValidationMixin:
     def test_check_sigops_budget_success(self, mock_cfg):
         mock_cfg.MAX_SIGOPS_PER_TX = 10
         mock_cfg.MAX_SIGOPS_PER_BLOCK = 100
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self._last_block_validation_error = None
                 self._entry_script_bytes = Mock(return_value=b"script")
         instance = Dummy()
@@ -1053,8 +1100,9 @@ class TestValidationMixin:
         assert instance._check_sigops_budget(block, store, utxo_view) is True
 
     def test_check_sigops_budget_uses_fallback_if_no_sigops_count(self):
-        class Dummy(ValidationMixin):
+        class Dummy(ValidationProxy):
             def __init__(self):
+                self.validator = BlockValidator(self)
                 self._last_block_validation_error = None
                 self._entry_script_bytes = Mock(return_value=b"script")
         instance = Dummy()

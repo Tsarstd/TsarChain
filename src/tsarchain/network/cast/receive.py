@@ -6,19 +6,21 @@
 import time
 from typing import Any, Dict, Set, Tuple
 
-from ...consensus.blockchain import Blockchain
-from ...core.block import Block
 from ...core.tx import Tx
+from ...core.block import Block
 from ...storage.utxo import UTXODB
 from ...utils import config as CFG
+from .base import BroadcastHandlerProxy
 from ...utils.benchmarks import benchmark
+from ...consensus.blockchain import Blockchain
 from ...utils.helpers import native_validate_block_txs, native_validate_block_txs_compact
 
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.cast.receive")
 
 
-class ReceiveMixin:
+class ReceiveHandler(BroadcastHandlerProxy):
+    
     def _log_block_reject(self, *, stage: str, block_id: str | None, height: int | None, peer: str | None = None, reason: str | None = None, extra: dict | None = None) -> None:
         rid = (block_id or "unknown")[:16]
         src = peer or "-"
@@ -57,7 +59,7 @@ class ReceiveMixin:
             return candidate.lower()
         script_attr = getattr(candidate, "script_pubkey", None)
         if script_attr is not None:
-            return ReceiveMixin._native_script_hex(script_attr)
+            return ReceiveHandler._native_script_hex(script_attr)
         return None
 
     @staticmethod
@@ -72,7 +74,7 @@ class ReceiveMixin:
             return bytes.fromhex(candidate)
         script_attr = getattr(candidate, "script_pubkey", None)
         if script_attr is not None:
-            return ReceiveMixin._native_script_bytes(script_attr)
+            return ReceiveHandler._native_script_bytes(script_attr)
         return None
 
     def _normalize_native_prevout(self, entry, key_desc: str):
@@ -551,4 +553,4 @@ class ReceiveMixin:
             log.exception("[receive_mempool] Error updating mempool")
 
 
-__all__ = ["ReceiveMixin"]
+__all__ = ["ReceiveHandler"]

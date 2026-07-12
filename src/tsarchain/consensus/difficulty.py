@@ -4,8 +4,9 @@
 # Refs: see REFERENCES.md
 
 from __future__ import annotations
-from typing import List
+
 from fractions import Fraction
+from typing import List, TYPE_CHECKING
 
 # ---------------- Local Project ----------------
 from ..core.block import Block
@@ -16,7 +17,15 @@ from ..utils.helpers import bits_to_target, target_to_bits, target_to_difficulty
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.consensus.difficulty')
 
-class DifficultyMixin:
+
+if TYPE_CHECKING:
+    from .blockchain import Blockchain
+
+
+class DifficultyManager:
+    def __init__(self, blockchain: "Blockchain"):
+        self.blockchain = blockchain
+
     def _ts(self, b) -> int:
         t = getattr(b, "timestamp", 0)
         return int(t) if isinstance(t, (int, float)) else 0
@@ -111,7 +120,7 @@ class DifficultyMixin:
     def calculate_expected_bits(self, next_height: int) -> int:
         if next_height <= 0:
             return int(CFG.MAX_BITS)
-        prefix = self.chain[:next_height]
+        prefix = self.blockchain.chain[:next_height]
         return self._expected_bits_on_prefix(prefix, next_height)
 
     def _validate_difficulty(self, block: Block) -> bool:
@@ -137,9 +146,9 @@ class DifficultyMixin:
         return cw
 
     def _common_ancestor_height(self, other_chain_blocks: List[Block]) -> int:
-        if not self.chain or not other_chain_blocks:
+        if not self.blockchain.chain or not other_chain_blocks:
             return -1
-        index = { self.chain[i].hash(): i for i in range(len(self.chain)) }
+        index = { self.blockchain.chain[i].hash(): i for i in range(len(self.blockchain.chain)) }
         for j in range(len(other_chain_blocks)-1, -1, -1):
             h = other_chain_blocks[j].hash()
             if h in index:
@@ -147,7 +156,7 @@ class DifficultyMixin:
         return -1
 
     def median_time_past(self, k: int = CFG.MTP_WINDOWS) -> int:
-        if not self.chain:
+        if not self.blockchain.chain:
             return 0
 
         def _to_int_ts(v):
@@ -155,6 +164,6 @@ class DifficultyMixin:
                 return int(v)
             return 0
 
-        window = self.chain[-k:] if len(self.chain) >= k else self.chain
+        window = self.blockchain.chain[-k:] if len(self.blockchain.chain) >= k else self.blockchain.chain
         times = sorted(_to_int_ts(getattr(b, "timestamp", 0)) for b in window)
         return times[len(times) // 2]

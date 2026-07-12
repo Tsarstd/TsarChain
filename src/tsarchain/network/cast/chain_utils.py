@@ -6,13 +6,14 @@
 from typing import Any, Dict
 
 from ...utils import config as CFG
-
+from .base import BroadcastHandlerProxy
 
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.cast.chain_utils")
 
 
-class ChainUtilsMixin:
+class ChainUtilsHandler(BroadcastHandlerProxy):
+    
     @staticmethod
     def _parse_bits(bits):
         if bits is None:
@@ -70,4 +71,4 @@ class ChainUtilsMixin:
         return True
 
 
-__all__ = ["ChainUtilsMixin"]
+__all__ = ["ChainUtilsHandler"]

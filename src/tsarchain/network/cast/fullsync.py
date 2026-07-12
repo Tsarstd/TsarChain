@@ -3,20 +3,22 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
 
-import time, secrets
+import time
+import secrets
 from typing import Any, Dict, Tuple
 
-from ...consensus.blockchain import Blockchain
 from ...core.tx import Tx
-from ...utils import config as CFG
 from ...utils import helpers as H
-
+from ...utils import config as CFG
+from .base import BroadcastHandlerProxy
+from ...consensus.blockchain import Blockchain
 
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.cast.fullsync")
 
 
-class FullSyncMixin:
+class FullSyncHandler(BroadcastHandlerProxy):
+    
     def _snapshot_components(self):
         snapshot_start = time.time()
         chain_lock = getattr(self.blockchain, "lock", None)
@@ -169,4 +171,4 @@ class FullSyncMixin:
             return False
 
 
-__all__ = ["FullSyncMixin"]
+__all__ = ["FullSyncHandler"]

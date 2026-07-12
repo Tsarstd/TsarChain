@@ -8,7 +8,7 @@ import threading
 import collections
 from unittest.mock import Mock, patch
 
-from tsarchain.network.rpc_helper.explorer_mixin import ExplorerMixin
+from tsarchain.network.rpc_helper.explorer import ExplorerHandler
 
 
 # ----------------------------------------------------------------------
@@ -17,8 +17,8 @@ from tsarchain.network.rpc_helper.explorer_mixin import ExplorerMixin
 
 @pytest.fixture
 def mixin():
-    """Return an instance of ExplorerMixin with mocked dependencies."""
-    m = ExplorerMixin()
+    """Return an instance of ExplorerHandler with mocked dependencies."""
+    m = ExplorerHandler(network=type('Dummy', (), {})())
     # Provide minimal attributes expected by methods
     m.broadcast = Mock()
     m.mempool = Mock()
@@ -30,7 +30,7 @@ def mixin():
     m._find_tx_and_meta = Mock(return_value=(None, None, None, None, None, None, None, None))
     m._is_coinbase_tx = Mock(return_value=False)
     m._txin_prevkey = Mock(return_value="txid:0")
-    patcher = patch('tsarchain.network.rpc_helper.explorer_mixin.spkhex_to_address', return_value="address")
+    patcher = patch('tsarchain.network.rpc_helper.explorer.spkhex_to_address', return_value="address")
     m._spkhex_to_address = patcher.start()
     m._txout_to_address = Mock(return_value="address")
     yield m
@@ -121,7 +121,7 @@ def test_extract_block_id_from_block_coinbase_first(mixin):
     cb.inputs = [Mock()]
     cb.inputs[0].script_sig = Mock()
     cb.inputs[0].script_sig.serialize = Mock(return_value=b'\x04\x01\x02\x03')
-    with patch('tsarchain.network.rpc_helper.explorer_mixin.last_pushdata') as mock_last_pushdata:
+    with patch('tsarchain.network.rpc_helper.explorer.last_pushdata') as mock_last_pushdata:
         mock_last_pushdata.return_value = b'block_id_123'
         block = Mock()
         block.transactions = [cb]
@@ -138,7 +138,7 @@ def test_extract_block_id_from_block_coinbase_not_first(mixin):
     cb.inputs[0].script_sig.serialize = Mock(return_value=b'\x04\x01\x02\x03')
     block = Mock()
     block.transactions = [tx1, cb]
-    with patch('tsarchain.network.rpc_helper.explorer_mixin.last_pushdata') as mock_last_pushdata:
+    with patch('tsarchain.network.rpc_helper.explorer.last_pushdata') as mock_last_pushdata:
         mock_last_pushdata.return_value = b'block_id_456'
         assert mixin._extract_block_id_from_block(block) == 'block_id_456'
 
@@ -169,7 +169,7 @@ def test_extract_block_id_from_block_script_sig_as_bytes(mixin):
     cb.inputs[0].script_sig = b'\x04\x01\x02\x03'
     block = Mock()
     block.transactions = [cb]
-    with patch('tsarchain.network.rpc_helper.explorer_mixin.last_pushdata') as mock_last_pushdata:
+    with patch('tsarchain.network.rpc_helper.explorer.last_pushdata') as mock_last_pushdata:
         mock_last_pushdata.return_value = b'block_id_789'
         assert mixin._extract_block_id_from_block(block) == 'block_id_789'
 
@@ -182,7 +182,7 @@ def test_extract_block_id_from_block_last_pushdata_fail(mixin):
     cb.inputs[0].script_sig.serialize = Mock(return_value=b'\x04\x01\x02\x03')
     block = Mock()
     block.transactions = [cb]
-    with patch('tsarchain.network.rpc_helper.explorer_mixin.last_pushdata') as mock_last_pushdata:
+    with patch('tsarchain.network.rpc_helper.explorer.last_pushdata') as mock_last_pushdata:
         mock_last_pushdata.return_value = None
         assert mixin._extract_block_id_from_block(block) is None
 
@@ -238,7 +238,7 @@ def test_handle_get_block_hash_broadcast_exception(mixin):
 
 def test_handle_get_block_hash_cache_eviction(mixin):
     mixin.broadcast.blockchain.get_block_hash.side_effect = lambda h: f"hash{h}"
-    with patch('tsarchain.network.rpc_helper.explorer_mixin.CFG') as mock_cfg:
+    with patch('tsarchain.network.rpc_helper.explorer.CFG') as mock_cfg:
         mock_cfg.HASH_CACHE_MAX = 2
         mixin._handle_get_block_hash(1)
         mixin._handle_get_block_hash(2)
@@ -249,7 +249,7 @@ def test_handle_get_block_hash_cache_eviction(mixin):
 
 
 def test_handle_get_block_hash_benchmark(mixin):
-    with patch('tsarchain.network.rpc_helper.explorer_mixin.CFG') as mock_cfg:
+    with patch('tsarchain.network.rpc_helper.explorer.CFG') as mock_cfg:
         mock_cfg.DEBUG_BENCHMARKS = True
         mock_cfg.HASH_CACHE_MAX = 100
         mixin.broadcast.blockchain.get_block_hash.return_value = "hash"
@@ -336,8 +336,8 @@ def test_serialize_block_basic(mixin):
     mem_tx2.outputs = [Mock(script_pubkey=b'plain')]
     mixin.mempool.get_all_txs.return_value = [mem_tx1, mem_tx2]
 
-    with patch('tsarchain.network.rpc_helper.explorer_mixin.estimate_block_size_bytes') as mock_est_size, \
-         patch('tsarchain.network.rpc_helper.explorer_mixin.GRAFF') as mock_graff, \
+    with patch('tsarchain.network.rpc_helper.explorer.estimate_block_size_bytes') as mock_est_size, \
+         patch('tsarchain.network.rpc_helper.explorer.GRAFF') as mock_graff, \
          patch.object(mixin, '_bhash_hex', return_value='blockhash'), \
          patch.object(mixin, '_prevhash_hex', return_value='prevhash'), \
          patch.object(mixin, '_extract_block_id_from_block', return_value='blockid'), \
@@ -408,8 +408,8 @@ def test_serialize_block_with_comments_and_payouts(mixin):
 
     mixin.mempool.get_all_txs.return_value = []
 
-    with patch('tsarchain.network.rpc_helper.explorer_mixin.estimate_block_size_bytes') as mock_est_size, \
-         patch('tsarchain.network.rpc_helper.explorer_mixin.GRAFF') as mock_graff, \
+    with patch('tsarchain.network.rpc_helper.explorer.estimate_block_size_bytes') as mock_est_size, \
+         patch('tsarchain.network.rpc_helper.explorer.GRAFF') as mock_graff, \
          patch.object(mixin, '_bhash_hex', return_value='h'), \
          patch.object(mixin, '_prevhash_hex', return_value='p'), \
          patch.object(mixin, '_extract_block_id_from_block', return_value='bid'), \
@@ -445,8 +445,8 @@ def test_serialize_block_no_graffiti(mixin):
     block.transactions = [Mock(txid=b'tx', inputs=[], outputs=[Mock(script_pubkey=b'plain')])]
     mixin.mempool.get_all_txs.return_value = []
 
-    with patch('tsarchain.network.rpc_helper.explorer_mixin.estimate_block_size_bytes') as mock_est_size, \
-         patch('tsarchain.network.rpc_helper.explorer_mixin.GRAFF') as mock_graff, \
+    with patch('tsarchain.network.rpc_helper.explorer.estimate_block_size_bytes') as mock_est_size, \
+         patch('tsarchain.network.rpc_helper.explorer.GRAFF') as mock_graff, \
          patch.object(mixin, '_bhash_hex', return_value=''), \
          patch.object(mixin, '_prevhash_hex', return_value=''), \
          patch.object(mixin, '_extract_block_id_from_block', return_value=None), \
@@ -487,7 +487,7 @@ def test_get_tx_detail_coinbase(mixin):
     mixin._is_coinbase_tx.return_value = True
     mixin._build_outpoint_map.return_value = {}
     mixin._txout_to_address.return_value = "miner_addr"
-    with patch('tsarchain.network.rpc_helper.explorer_mixin.GRAFF') as mock_graff:
+    with patch('tsarchain.network.rpc_helper.explorer.GRAFF') as mock_graff:
         mock_graff.parse_from_script.return_value = None
         result = mixin._get_tx_detail("txid")
         assert result["type"] == "TX_DETAIL"
@@ -544,7 +544,7 @@ def test_get_tx_detail_non_coinbase_confirmed_with_bonus(mixin):
     mixin._spkhex_to_address.return_value = "addr_input"
     mixin._txout_to_address.return_value = "addr_output"
 
-    with patch('tsarchain.network.rpc_helper.explorer_mixin.GRAFF') as mock_graff:
+    with patch('tsarchain.network.rpc_helper.explorer.GRAFF') as mock_graff:
         mock_graff.parse_from_script.return_value = None
         result = mixin._get_tx_detail("txid")
 
@@ -575,7 +575,7 @@ def test_get_tx_detail_unconfirmed(mixin):
     mixin._txin_prevkey.return_value = "prev:0"
     mixin._spkhex_to_address.return_value = "addr"
     mixin._txout_to_address.return_value = "addr2"
-    with patch('tsarchain.network.rpc_helper.explorer_mixin.GRAFF') as mock_graff:
+    with patch('tsarchain.network.rpc_helper.explorer.GRAFF') as mock_graff:
         mock_graff.parse_from_script.return_value = None
         result = mixin._get_tx_detail("txid")
         assert result["status"] == "unconfirmed"
@@ -596,7 +596,7 @@ def test_get_tx_detail_no_fee_if_input_less_than_output(mixin):
     mixin._txin_prevkey.return_value = "prev:0"
     mixin._spkhex_to_address.return_value = "addr"
     mixin._txout_to_address.return_value = "addr2"
-    with patch('tsarchain.network.rpc_helper.explorer_mixin.GRAFF') as mock_graff:
+    with patch('tsarchain.network.rpc_helper.explorer.GRAFF') as mock_graff:
         mock_graff.parse_from_script.return_value = None
         result = mixin._get_tx_detail("txid")
         assert result["fee"] is None

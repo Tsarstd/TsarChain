@@ -3,16 +3,17 @@
 # Part of TsarChain - see LICENSE and TRADEMARKS.md
 
 import pytest
+from unittest.mock import MagicMock
 
 from tsarchain.utils import config as CFG
-from tsarchain.network.cast.chain_utils import ChainUtilsMixin
+from tsarchain.network.cast.chain_utils import ChainUtilsHandler
 
-class DummyCaster(ChainUtilsMixin):
+class DummyCaster(ChainUtilsHandler):
     pass
 
 @pytest.fixture
 def caster():
-    return DummyCaster()
+    return DummyCaster(MagicMock())
 
 def test_parse_bits(caster):
     assert caster._parse_bits(None) is None

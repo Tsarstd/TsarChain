@@ -8,14 +8,15 @@ import collections
 
 
 from ...utils import config as CFG
+from .base import NetworkHandlerProxy
 from ...utils.helpers import spkhex_to_address
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network.rpc_helper.history_mixin")
+log = get_ctx_logger("tsarchain.network.rpc_helper.history")
 
 
-class HistoryMixin:
+class HistoryHandler(NetworkHandlerProxy):
     def _txin_prevkey(self, tin) -> str:
         txid = getattr(tin, "txid", None)
         if isinstance(txid, (bytes, bytearray)):

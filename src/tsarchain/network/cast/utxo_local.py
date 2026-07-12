@@ -6,11 +6,14 @@
 import time
 from typing import Optional
 
+from .base import BroadcastHandlerProxy
+
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.cast.utxo_local")
 
 
-class UTXOLocalMixin:
+class UTXOLocalHandler(BroadcastHandlerProxy):
+    
     def _maybe_flush_local_utxo(self, height: Optional[int], *, force: bool = False) -> None:
         if self._utxo_shared:
             return
@@ -45,6 +48,7 @@ class UTXOLocalMixin:
         )
 
     def _clean_mempool_after_chain_replace(self):
+        print("INSIDE METHOD!")
         current_mempool = self.mempool.get_all_txs()
         new_mempool = []
         in_chain = set()
@@ -57,6 +61,8 @@ class UTXOLocalMixin:
                 new_mempool.append(tx)
 
         if hasattr(self.mempool, "save_pool"):
+            print(f"hasattr: {hasattr(self.mempool, 'save_pool')}, new_mempool: {new_mempool}")
+
             self.mempool.save_pool(new_mempool)
         else:
             self.mempool.clear()
@@ -65,4 +71,4 @@ class UTXOLocalMixin:
             self.mempool.flush()
 
 
-__all__ = ["UTXOLocalMixin"]
+__all__ = ["UTXOLocalHandler"]

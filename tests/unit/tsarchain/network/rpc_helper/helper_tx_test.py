@@ -1,3 +1,4 @@
+from unittest.mock import Mock
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain - see LICENSE and TRADEMARKS.md
@@ -10,7 +11,7 @@ from tsarchain.utils import config as CFG
 from tsarchain.core.tx import Tx, TxIn, TxOut
 from tsarchain.contracts import graffiti as GRAFF
 from tsarchain.utils.helpers import Script, OP_RETURN
-from tsarchain.network.rpc_helper.tx_mixin import TxMixin
+from tsarchain.network.rpc_helper.tx import TxHandler
 
 
 @pytest.fixture
@@ -36,11 +37,11 @@ def mock_config(monkeypatch):
 
 @pytest.fixture
 def mixin(mock_config):
-    """Create a TxMixin instance with mocked broadcast and subcomponents."""
-    mixin = TxMixin()
-    mixin.broadcast = MagicMock()
-    mixin.broadcast.utxodb = MagicMock()
-    mixin.broadcast.blockchain = MagicMock()
+    """Create a TxHandler instance with mocked broadcast and subcomponents."""
+    mixin = TxHandler(network=type('Dummy', (), {})())
+    mixin.broadcast = Mock()
+    mixin.broadcast.utxodb = Mock()
+    mixin.broadcast.blockchain = Mock()
     mixin.broadcast.blockchain.height = 100
     return mixin
 

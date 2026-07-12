@@ -5,9 +5,9 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from tsarchain.network.cast.mempool_sync import MempoolSyncMixin
+from tsarchain.network.cast.mempool_sync import MempoolSyncHandler
 
-class DummySync(MempoolSyncMixin):
+class DummySync(MempoolSyncHandler):
     def __init__(self):
         self.mempool = MagicMock()
         self._last_mempool_push = {}

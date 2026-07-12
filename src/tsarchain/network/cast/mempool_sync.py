@@ -5,15 +5,18 @@
 
 import json
 import time
+
 from typing import Tuple
 
 from ...utils import config as CFG
+from .base import BroadcastHandlerProxy
 from ...utils.tsar_logging import get_ctx_logger
 
 log = get_ctx_logger("tsarchain.network.cast.fullsync")
 
 
-class MempoolSyncMixin:
+class MempoolSyncHandler(BroadcastHandlerProxy):
+    
     def _mempool_chunks(self, max_bytes: int) -> list[list[dict]]:
         txs = self.mempool.get_all_txs() or []
         chunks, cur = [], []
@@ -78,4 +81,4 @@ class MempoolSyncMixin:
         return sent
 
 
-__all__ = ["MempoolSyncMixin"]
+__all__ = ["MempoolSyncHandler"]

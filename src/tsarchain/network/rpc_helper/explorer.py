@@ -8,15 +8,17 @@ import collections
 
 # ---------------- Local Project ----------------
 from ...utils import config as CFG
+from .base import NetworkHandlerProxy
 from ...contracts import graffiti as GRAFF
 from ...utils.benchmarks import benchmark
 from ...utils.helpers import last_pushdata, estimate_block_size_bytes, spkhex_to_address
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network.user_rpc_helper.explorer_mixin")
+log = get_ctx_logger("tsarchain.network.user_rpc_helper.explorer")
 
-class ExplorerMixin:
+
+class ExplorerHandler(NetworkHandlerProxy):
     def _build_tx_inputs(self, tx, opmap: dict) -> tuple[list, int]:
         vin = []
         total_in = 0

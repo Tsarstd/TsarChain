@@ -21,7 +21,14 @@ from ..contracts import graffiti as GRAFFITI
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.consensus.mining')
 
-class MiningMixin:
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .blockchain import Blockchain
+
+class MiningManager:
+    def __init__(self, blockchain: "Blockchain"):
+        self.blockchain = blockchain
+
 
     def mine_block(
         self,
@@ -35,8 +42,8 @@ class MiningMixin:
         if not self._validate_chain_state():
             return None
 
-        height = len(self.chain)
-        last_block = self.chain[-1] if self.chain else None
+        height = len(self.blockchain.chain)
+        last_block = self.blockchain.chain[-1] if self.blockchain.chain else None
         reward = self._calculate_reward(height)
         pool = self._ensure_mempool()
 
@@ -70,36 +77,36 @@ class MiningMixin:
         return new_block
 
     def _validate_chain_state(self) -> bool:
-        if not self.chain:
-            if getattr(self, "_reload_chain_from_kv", lambda: False)():
+        if not self.blockchain.chain:
+            if getattr(self.blockchain, "_reload_chain_from_kv", lambda: False)():
                 log.debug("[mine_block] chain reloaded from LMDB; continuing mining")
                 
-        if not self.chain and not CFG.ALLOW_AUTO_GENESIS:
+        if not self.blockchain.chain and not CFG.ALLOW_AUTO_GENESIS:
             log.warning("[mine_block] refusing to mine genesis; sync from peers first.")
             return False
 
-        if self._has_pending_blocks():
+        if self.blockchain._has_pending_blocks():
             log.warning("[mine_block] pending blocks detected; skipping mining")
             return False
 
-        if not self._is_chain_consistent():
+        if not self.blockchain._is_chain_consistent():
             log.warning("[mine_block] chain inconsistency detected; syncing first")
             return False
 
         return True
 
     def _calculate_reward(self, height: int) -> int:
-        reward = self.get_block_reward(height)
-        if self.total_supply + reward > CFG.MAX_SUPPLY:
-            return max(0, CFG.MAX_SUPPLY - self.total_supply)
+        reward = self.blockchain.get_block_reward(height)
+        if self.blockchain.total_supply + reward > CFG.MAX_SUPPLY:
+            return max(0, CFG.MAX_SUPPLY - self.blockchain.total_supply)
         return reward
 
     def _ensure_mempool(self) -> TxPool:
-        pool = getattr(self, "get_mempool", lambda: None)()
+        pool = getattr(self.blockchain, "get_mempool", lambda: None)()
         if pool is None:
-            pool = TxPool(utxo_store=self._ensure_utxodb())
-            if hasattr(self, "attach_mempool"):
-                self.attach_mempool(pool)
+            pool = TxPool(utxo_store=self.blockchain._ensure_utxodb())
+            if hasattr(self.blockchain, "attach_mempool"):
+                self.blockchain.attach_mempool(pool)
         return pool
 
     def _fetch_sorted_mempool_txs(self, pool: TxPool) -> list:
@@ -114,7 +121,7 @@ class MiningMixin:
         return graff_posts + other_txs
 
     def _build_candidate_block(self, miner_address: str, height: int, reward: int, last_block: Block | None, pool: TxPool, txs_from_mempool: list) -> Block:
-        store = self._ensure_utxodb() or UTXODB()
+        store = self.blockchain._ensure_utxodb() or UTXODB()
         current_utxos = getattr(store, "utxos", store.load_utxo_set())
         temp_utxos = current_utxos.copy() if isinstance(current_utxos, dict) else dict(current_utxos)
 
@@ -146,7 +153,7 @@ class MiningMixin:
             if is_graff_post:
                 graffiti_post_seen = True
             
-            self._utxodb.apply_tx_to_utxoset(tx, temp_utxos)
+            self.blockchain._utxodb.apply_tx_to_utxoset(tx, temp_utxos)
 
         total_fee = sum(self._fee(tx) for tx in valid_txs)
         coinbase_value = reward + total_fee
@@ -164,12 +171,12 @@ class MiningMixin:
         new_block = Block(height, prev_hash, [coinbase] + valid_txs)
 
         if height > 0:
-            new_block.bits = self.calculate_expected_bits(height)
+            new_block.bits = self.blockchain.calculate_expected_bits(height)
             
         return new_block
 
     def _is_stale_block(self, new_block: Block) -> bool:
-        latest = self.get_last_block()
+        latest = self.blockchain.get_last_block()
         if not latest:
             return False
             
@@ -194,7 +201,7 @@ class MiningMixin:
     def _apply_mining_cooloff(self):
         cooloff = float(CFG.MINING_COOLDOWN_AFTER_BLOCK)
         if cooloff > 0:
-            remain = float(getattr(self, "_mining_cooloff_until", 0.0)) - time.time()
+            remain = float(getattr(self.blockchain, "_mining_cooloff_until", 0.0)) - time.time()
             if remain > 0:
                 time.sleep(min(remain, cooloff))
 
@@ -203,8 +210,8 @@ class MiningMixin:
         blk_hash = new_block.hash()
         blk_hex = blk_hash.hex() if hasattr(blk_hash, "hex") else blk_hash
         
-        if not self.validate_block(new_block):
-            reason = getattr(self, "_last_block_validation_error", None) or "unknown"
+        if not self.blockchain.validate_block(new_block):
+            reason = getattr(self.blockchain, "_last_block_validation_error", None) or "unknown"
             prev_hash = getattr(new_block, "prev_block_hash", None)
             prev_hex = prev_hash.hex() if hasattr(prev_hash, "hex") else prev_hash
             
@@ -217,8 +224,8 @@ class MiningMixin:
             )
             return False
         
-        if not self.add_block(new_block):
-            reason = getattr(self, "_last_block_validation_error", None) or "unknown"
+        if not self.blockchain.add_block(new_block):
+            reason = getattr(self.blockchain, "_last_block_validation_error", None) or "unknown"
             log.warning(
                 "[block_reject] stage=add_block source=local_miner height=%s hash=%s reason=%s",
                 height,

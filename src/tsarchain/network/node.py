@@ -12,11 +12,11 @@ from typing import Any, Dict, List, Optional, Tuple, Set
 
 # ---------------- Local Project ----------------
 
-from .rpc_helper.tx_mixin import TxMixin
-from .rpc_helper.chat_mixin import ChatMixin
-from .rpc_helper.guard_mixin import GuardMixin
-from .rpc_helper.history_mixin import HistoryMixin
-from .rpc_helper.explorer_mixin import ExplorerMixin
+from .rpc_helper.tx import TxHandler
+from .rpc_helper.chat import ChatHandler
+from .rpc_helper.guard import GuardHandler
+from .rpc_helper.history import HistoryHandler
+from .rpc_helper.explorer import ExplorerHandler
 
 from .node_logic import (
     discovery,
@@ -39,13 +39,35 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.node")
 
 
-class Network (
-    ChatMixin,
-    HistoryMixin,
-    ExplorerMixin,
-    TxMixin,
-    GuardMixin,
-    ):
+class NetworkProxy:
+    def __getattr__(self, name):
+        if self.__dict__.get('_in_getattr', False):
+            raise AttributeError(name)
+        self._in_getattr = True
+        try:
+            if '_handlers' not in self.__dict__:
+                self.chat_handler = ChatHandler(self)
+                self.history_handler = HistoryHandler(self)
+                self.explorer_handler = ExplorerHandler(self)
+                self.tx_handler = TxHandler(self)
+                self.guard_handler = GuardHandler(self)
+                
+                self.__dict__['_handlers'] = [
+                    self.chat_handler,
+                    self.history_handler,
+                    self.explorer_handler,
+                    self.tx_handler,
+                    self.guard_handler,
+                ]
+            
+            for handler in self._handlers:
+                if hasattr(handler, name):
+                    return getattr(handler, name)
+        finally:
+            self._in_getattr = False
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+
+class Network(NetworkProxy):
     
     active_ports = set()
     _instance_lock = threading.Lock()

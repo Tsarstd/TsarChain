@@ -11,7 +11,14 @@ from ..utils import config as CFG
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.consensus.rewards')
 
-class RewardMixin:
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .blockchain import Blockchain
+
+class RewardCalculator:
+    def __init__(self, blockchain: "Blockchain"):
+        self.blockchain = blockchain
+
     def _scheduled_reward(self, height: int) -> int:
         if height < 0:
             return 0
@@ -43,5 +50,5 @@ class RewardMixin:
         return min(base, remaining)
 
     def calculate_total_supply(self) -> int:
-        tip_height = len(self.chain)
+        tip_height = len(self.blockchain.chain)
         return self._cumulative_supply_until(tip_height)
