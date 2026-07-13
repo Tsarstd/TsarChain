@@ -207,7 +207,7 @@ class GossipHandler(BroadcastHandlerProxy):
             try:
                 sock.close()
             except Exception:
-                log.exception("_cleanup")
+                log.exception("[_cleanup_socket]")
 
 
     def _handle_send_failure(self, peer: Tuple[str, int], entry: Optional[Dict[str, Any]], sock: Optional[socket.socket]):

@@ -29,13 +29,13 @@ def test_mempool_chunks(sync):
     tx2 = MagicMock(to_dict=lambda: {"txid": "T2"})
     sync.mempool.get_all_txs.return_value = [tx1, tx2]
     
-    chunks = sync._mempool_chunks(max_bytes=1000000)
+    chunks = sync._mempool_chunks()
     assert len(chunks) == 1
     assert len(chunks[0]) == 2
     
     # Test artificial small max bytes
     with patch("tsarchain.network.cast.mempool_sync.CFG.MAX_MSG", 1):
-        chunks = sync._mempool_chunks(max_bytes=1)
+        chunks = sync._mempool_chunks()
         # Even with max_msg=1, hard_cap has a max(1024, MAX_MSG) fallback!
         # So it will be 1024. If 1024 is still larger than the JSON size, it will fit in 1 chunk.
         assert len(chunks) == 1

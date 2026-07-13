@@ -12,7 +12,7 @@ from ...utils import config as CFG
 from .base import BroadcastHandlerProxy
 from ...utils.tsar_logging import get_ctx_logger
 
-log = get_ctx_logger("tsarchain.network.cast.fullsync")
+log = get_ctx_logger("tsarchain.network.cast.mempool_sync")
 
 
 class MempoolSyncHandler(BroadcastHandlerProxy):
@@ -40,8 +40,7 @@ class MempoolSyncHandler(BroadcastHandlerProxy):
                 return 0
 
         sent = 0
-        hard_cap = max(1024, CFG.MAX_MSG) - len(CFG.NETWORK_MAGIC)
-        for chunk in self._mempool_chunks(hard_cap):
+        for chunk in self._mempool_chunks():
             if not chunk:
                 continue
             ok = self.start_gossip(
@@ -65,7 +64,7 @@ class MempoolSyncHandler(BroadcastHandlerProxy):
 # =============================================================================
 
 
-    def _mempool_chunks(self, max_bytes: int) -> list[list[dict]]:
+    def _mempool_chunks(self) -> list[list[dict]]:
         txs = self.mempool.get_all_txs() or []
         chunks, cur = [], []
         base = {"type": "MEMPOOL", "data": []}

@@ -34,9 +34,11 @@ MINER_RPC_TYPES = {
         "MEMPOOL", "GET_HEADERS", "GET_BLOCKS", "GET_BLOCK_HASH"
 }
 
+
 STORAGE_RPC_TYPES = {
     "GRAFFITI_PROOF_SUBMIT", "GRAFFITI_BUILD_PAYOUT"
 }
+
 
 USER_RPC_TYPES = {
         "PING", "GET_BALANCES", "CREATE_TX", "GET_TX_HISTORY", "GET_TX_DETAIL", "NEW_TX", 
@@ -51,15 +53,18 @@ USER_RPC_TYPES = {
         "GET_MEMPOOL"
 }
 
+
 ROLE_RPC_MAP = {
     "MINER": MINER_RPC_TYPES,
     "STORAGE": STORAGE_RPC_TYPES,
     "USER": USER_RPC_TYPES
 }
 
+
 BOOTSTRAP_MINER_ALLOW = {
     "HELLO", "GET_FULL_SYNC", "FULL_SYNC", "GET_HEADERS"
 }
+
 
 def process_message(
     self: "Network",
@@ -127,7 +132,11 @@ def process_message(
     
     return {"error": "Unknown message type"}
 
-# -------- HELPERS ----------
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
 
 def _sanitize_rpc_source(val: Any) -> str | None:
     if val is None:
@@ -143,6 +152,7 @@ def _sanitize_rpc_source(val: Any) -> str | None:
         cleaned = cleaned[:32]
     return cleaned
 
+
 def _is_storage_node_id(network, node_id: str | None) -> bool:
     if not node_id:
         return False
@@ -155,6 +165,7 @@ def _is_storage_node_id(network, node_id: str | None) -> bool:
             return True
     return False
 
+
 def _is_miner_sender(network, src_node_id, src_pubkey, addr) -> bool:
     if not src_node_id:
         return False
@@ -166,6 +177,7 @@ def _is_miner_sender(network, src_node_id, src_pubkey, addr) -> bool:
         return False
     return True
 
+
 def _identify_rpc_role(mtype: str, network, src_node_id, src_pubkey, addr) -> tuple[str, str]:
     for role, allowed in ROLE_RPC_MAP.items():
         if mtype in allowed:
@@ -173,10 +185,12 @@ def _identify_rpc_role(mtype: str, network, src_node_id, src_pubkey, addr) -> tu
             return role, category
     return "UNKNOWN", "UNKNOWN"
 
+
 def _client_ip(addr) -> str:
     if isinstance(addr, tuple) and addr:
         return addr[0]
     return "0.0.0.0"
+
 
 def _inject_mempool_basic_stats(tx_section: dict, pool) -> None:
     tx_count = None
@@ -192,6 +206,7 @@ def _inject_mempool_basic_stats(tx_section: dict, pool) -> None:
     if size_est is not None:
         tx_section["mempool_vbytes_estimate"] = int(size_est)
 
+
 def _inject_mempool_graffiti_stats(snapshot: dict, pool) -> None:
     graff_section = snapshot.setdefault("graffiti", {})
     if isinstance(graff_section, dict):
@@ -203,6 +218,7 @@ def _inject_mempool_graffiti_stats(snapshot: dict, pool) -> None:
                 if meta and str(meta.get("event", "")).upper() == "POST":
                     on_mem += 1
         graff_section["graffiti_on_mempool"] = int(on_mem)
+
 
 def _overlay_realtime_mempool_stats(snapshot: dict, network: "Network") -> None:
     """Inject live mempool stats into the snapshot returned to clients."""
@@ -221,11 +237,13 @@ def _overlay_realtime_mempool_stats(snapshot: dict, network: "Network") -> None:
     _inject_mempool_basic_stats(tx_section, pool)
     _inject_mempool_graffiti_stats(snapshot, pool)
 
+
 def _choose_relay_route(self, hops: int = 2) -> list[tuple]:
     with self.lock:
         pool = list(self.peers)
     _secure_random.shuffle(pool)
     return pool[:max(1, hops)]
+
 
 def _relay_chain(self, route: list[tuple], inner: dict, src_addr=None):
     if not route:
@@ -233,6 +251,7 @@ def _relay_chain(self, route: list[tuple], inner: dict, src_addr=None):
     first = route[0]
     payload = {"type":"CHAT_RELAY","route": route[1:], "inner": inner}
     self._send_chat_relay(first, payload)
+
 
 def _send_chat_relay(self, peer: tuple, payload: dict):
     try:

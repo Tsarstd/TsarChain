@@ -272,7 +272,7 @@ class WalletController:
             raise ValueError("Unable to read keystore")
         old = set(current_wallets or [])
         new = set(keystore_addrs)
-        return list(new - old), list(old - new), sorted(list(new))
+        return list(new - old), list(old - new), sorted((new))
 
     def delete_wallet_data(self, pwd: str, existing_wallets: list[str]) -> tuple[list[str], int]:
         list_addresses_in_keystore(pwd) # verify password
@@ -1274,8 +1274,7 @@ class WalletsMixin:
         try:
             ent.focus_set()
         except Exception:
-            log.exception("[_ask_password] cannot focus entry")
-            pass
+            log.exception("[_ask_password] cannot focus entry")        
         ent.bind("<Return>", lambda _e: ok())
         d.bind("<Return>", lambda _e: ok())
         center_window(d, self.root)
@@ -1320,7 +1319,6 @@ class WalletsMixin:
             (ent or txt).focus_set()
         except Exception:
             log.exception("[_ask_text] cannot focus input")
-            pass
         if not multiline:
             (ent or txt).bind("<Return>", lambda _e: ok())
             d.bind("<Return>", lambda _e: ok())

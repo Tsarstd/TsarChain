@@ -81,7 +81,7 @@ def _handle_connection(self, conn, addr):
             node_hint = str(first.get("from") or first.get("node_id") or "").strip().lower() or None
             pow_proof = first.get("pow")
         if not allow_handshake(ip, time.time(), node_id=node_hint, pow_proof=pow_proof):
-            log.warning("[handle_connection] handshake denied ip=%s node=%s", ip, (node_hint or "-"))
+            log.warning("[_handle_connection] handshake denied ip=%s node=%s", ip, (node_hint or "-"))
             return
 
         if isinstance(first, dict) and first.get("type") == "P2P_HS1":
@@ -90,7 +90,7 @@ def _handle_connection(self, conn, addr):
             _process_legacy_rpc(self, conn, addr, ip, first)
 
     except Exception:
-        log.exception("[handle_connection] Connection handler error from %s", addr)
+        log.exception("[_handle_connection] Connection handler error from %s", addr)
     finally:
         _teardown_connection(self, conn, peer, ip)
 
@@ -124,7 +124,7 @@ def _process_p2p_channel(self, conn, addr, ip, first): #NOSONAR
         chan.hs_server_from_obj(first)
     except Exception:
         ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
-        log.warning("[handle_connection] bad P2P handshake from %s (temp-ban)", addr, exc_info=True)
+        log.warning("[_process_p2p_channel] bad P2P handshake from %s (temp-ban)", addr, exc_info=True)
         return
     
     send_fn = lambda b: chan.send(b)
@@ -148,7 +148,7 @@ def _process_p2p_channel(self, conn, addr, ip, first): #NOSONAR
                 msg = verify_and_unwrap(outer, lambda nid: self.peer_pubkeys.get(nid))
             except Exception:
                 ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
-                log.warning("[handle_connection] envelope verify fail from %s (temp-ban)", addr, exc_info=True)
+                log.warning("[_process_p2p_channel] envelope verify fail from %s (temp-ban)", addr, exc_info=True)
                 break
             
             src_nid = outer.get("from")
@@ -156,11 +156,11 @@ def _process_p2p_channel(self, conn, addr, ip, first): #NOSONAR
             if isinstance(src_nid, str) and isinstance(src_pub, str):
                 self.peer_pubkeys[src_nid] = src_pub
                 if getattr(chan, "peer_node_pub", None) and src_pub != chan.peer_node_pub:
-                    log.warning("[handle_connection] Peer pubkey mismatch from %s", addr)
+                    log.warning("[_process_p2p_channel] Peer pubkey mismatch from %s", addr)
                     continue
                 
         elif CFG.ENVELOPE_REQUIRED:
-            log.warning("[handle_connection] rejecting legacy P2P from %s", addr)
+            log.warning("[_process_p2p_channel] rejecting legacy P2P from %s", addr)
             continue
 
         response = process_message(self, msg, addr, src_node_id=src_nid, src_pubkey=src_pub)
@@ -189,7 +189,7 @@ def _process_legacy_rpc(self, conn, addr, ip, first):
             msg = verify_and_unwrap(first, lambda nid: self.peer_pubkeys.get(nid))
         except Exception:
             ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
-            log.warning("[handle_connection] envelope verify fail (unencrypted) from %s (temp-ban)", addr, exc_info=True)
+            log.warning("[_process_legacy_rpc] envelope verify fail (unencrypted) from %s (temp-ban)", addr, exc_info=True)
             return
         
         src_nid = first.get("from")
@@ -198,7 +198,7 @@ def _process_legacy_rpc(self, conn, addr, ip, first):
             self.peer_pubkeys[src_nid] = src_pub
             
     elif CFG.ENVELOPE_REQUIRED:
-        log.warning(f"[handle_connection] rejecting legacy RPC from {addr}")
+        log.warning(f"[_process_legacy_rpc] rejecting legacy RPC from {addr}")
         return
 
     response = process_message(self, msg, addr, src_node_id=src_nid, src_pubkey=src_pub)

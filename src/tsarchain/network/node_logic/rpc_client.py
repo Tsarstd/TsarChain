@@ -239,11 +239,6 @@ def request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> bo
     return False
 
 
-# =============================================================================
-# INTERNAL METHOD
-# =============================================================================
-
-
 def prefetch_rpc_connections(self):
     """
     Dial bootstrap/persistent peers once at startup to warm up handshake+channel.
@@ -287,9 +282,14 @@ def prefetch_peer_channel(self, peer: Tuple[str, int]):
         prefetched.add(norm)
         log.debug("[prefetch_peer_channel] warmed channel to %s", norm)
     except Exception:
-        log.exception("error_prefetch_peer_channel")
+        log.exception("[prefetch_peer_channel]")
         sock.close()
         return
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
 
 
 def _rpc_cleanup(entry):

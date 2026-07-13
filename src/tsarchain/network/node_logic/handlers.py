@@ -179,11 +179,6 @@ def handle_get_block_at(self, height: int, _: str | None = None) -> dict: #get b
     b = chain[height]
     d = self._serialize_block(b)
     d["type"] = "BLOCK"
-            
-    serialized = json.dumps(d, separators=CFG.CANONICAL_SEP).encode("utf-8")
-    size_bytes = len(serialized)
-    log.debug("GET_BLOCK 'height' response size: %d bytes (%.2f KB)", size_bytes, size_bytes / 1024.0)
-    
     return d
 
 
@@ -197,12 +192,8 @@ def handle_get_block_by_hash(self, hx: str, _: str | None = None) -> dict:
         if self._bhash_hex(b).lower() == hx:
             d = self._serialize_block(b)
             d["type"] = "BLOCK"
-                    
-            serialized = json.dumps(d, separators=CFG.CANONICAL_SEP).encode("utf-8")
-            size_bytes = len(serialized)
-            log.debug("GET_BLOCK 'hash' response size: %d bytes (%.2f KB)", size_bytes, size_bytes / 1024.0)
-            
             return d
+
     return {"type": "BLOCK", "error": "not_found"}
 
 
@@ -230,7 +221,7 @@ def _process_storage_hello(self, message, peer_ip, peer_port, src_node_id, src_p
             if (meta or {}).get("node_id") == src_node_id:
                 pinned_pk = (meta or {}).get("pubkey")
                 if pinned_pk and pinned_pk != src_pubkey:
-                    log.warning("[hello] storage pubkey change rejected nid=%s", src_node_id[:12])
+                    log.warning("[_process_storage_hello] storage pubkey change rejected nid=%s", src_node_id[:12])
                     return {"error": "storage_pubkey_pinned"}
     meta = {
         "addr": (message.get("address") or "").strip().lower(),

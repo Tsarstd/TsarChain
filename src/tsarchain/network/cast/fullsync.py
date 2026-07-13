@@ -33,7 +33,7 @@ class FullSyncHandler(BroadcastHandlerProxy):
             "nonce": secrets.token_hex(16),
         }
         log.info(
-            "[broadcast.build_full_sync_payload] totals blocks=%d utxos=%d mempool=%d assembled in %.2fs",
+            "[build_full_sync_payload] totals blocks=%d utxos=%d mempool=%d assembled in %.2fs",
             len(chain_data),
             len(utxo_dict),
             len(mempool_data),
@@ -63,7 +63,7 @@ class FullSyncHandler(BroadcastHandlerProxy):
                 replace_start = time.time()
                 self.blockchain.replace_with(new_chain)
                 log.info(
-                    "[full-sync-recv] chain replace applied in %.2fs (blocks=%d)",
+                    "[receive_full_sync] chain replace applied in %.2fs (blocks=%d)",
                     time.time() - replace_start,
                     len(incoming),
                 )
@@ -71,7 +71,7 @@ class FullSyncHandler(BroadcastHandlerProxy):
                 utxo_start = time.time()
                 self.rebuild_utxo_from_chain_locked()
                 log.info(
-                    "[full-sync-recv] utxo/mempool rebuild finished in %.2fs",
+                    "[receive_full_sync] utxo/mempool rebuild finished in %.2fs",
                     time.time() - utxo_start,
                 )
                 
@@ -79,7 +79,7 @@ class FullSyncHandler(BroadcastHandlerProxy):
                 self.last_sync_time = time.time()
 
             log.info(
-                "[full-sync-recv] Applied snapshot (blocks=%d, height=%s, mempool_added=%d)",
+                "[receive_full_sync] Applied snapshot (blocks=%d, height=%s, mempool_added=%d)",
                 len(incoming),
                 self.blockchain.height,
                 added,
@@ -125,7 +125,7 @@ class FullSyncHandler(BroadcastHandlerProxy):
             
         duration = time.time() - snapshot_start
         log.info(
-            "[broadcast.snapshot] chain=%d utxos=%d mempool=%d in %.2fs",
+            "[_snapshot_components] chain=%d utxos=%d mempool=%d in %.2fs",
             len(chain_data),
             len(utxo_dict),
             len(mempool_data),
@@ -164,7 +164,7 @@ class FullSyncHandler(BroadcastHandlerProxy):
             if self.mempool.add_valid_tx(tx):
                 added += 1
         if added:
-            log.info("[receive_full_sync] Mempool updated: %s new transactions", added)
+            log.info("[_apply_mempool_from_sync] Mempool updated: %s new transactions", added)
             self.mempool.flush()
         return added
 

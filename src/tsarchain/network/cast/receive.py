@@ -35,7 +35,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
             if isinstance(blk_hash_field, str) and len(blk_hash_field) >= 64:
                 block_id = blk_hash_field
             else:
-                log.exception("fallback_blck_hash")
+                log.exception("[receive_block]")
                 block_id = block.hash().hex()
 
             origin_port = message.get("port")
@@ -252,13 +252,12 @@ class ReceiveHandler(BroadcastHandlerProxy):
                     opts,
                 )
         except Exception:
-            log.exception("[_native_precheck_block] unexpected error")
-            log.debug("[native-precheck] validator failed; falling back", exc_info=True)
+            log.exception("[_native_precheck_block] validator failed; falling back")
             return True
 
         if not ok:
             blk_label = block.hash().hex()[:12]
-            log.warning("[native-precheck] block %s rejected (%s)", blk_label, reason or "unknown")
+            log.warning("[_native_precheck_block] block %s rejected (%s)", blk_label, reason or "unknown")
             return False
 
         if isinstance(fees, (list, tuple)):
@@ -449,7 +448,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
                         old_tip = alt
                         ok = True
         except Exception:
-            log.warning("[receive_block] swap_tip_if_better failed", exc_info=True)
+            log.warning("[_resolve_add_block_failure] swap_tip_if_better failed", exc_info=True)
 
         if not ok:
             reason_str = getattr(self.blockchain, "_last_block_validation_error", None)
@@ -463,7 +462,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
                         self.network._full_sync_last_request[peer_key] = time.time()
                         self.network.request_full_sync(peer_key, force=True)
                 except Exception:
-                    log.warning("[receive_block] full_sync_on_mismatch failed", exc_info=True)
+                    log.warning("[_resolve_add_block_failure] full_sync_on_mismatch failed", exc_info=True)
             self._log_block_reject(
                 stage="add_block",
                 block_id=block_id,
@@ -493,7 +492,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
         if extra:
             msg.update(extra)
         log.warning(
-            "[block_reject] stage=%s height=%s hash=%s peer=%s reason=%s extra=%s",
+            "[_log_block_reject] stage=%s height=%s hash=%s peer=%s reason=%s extra=%s",
             msg["stage"],
             msg["height"],
             msg["hash"],

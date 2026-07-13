@@ -189,7 +189,7 @@ def _sync_peer(self, peer: Tuple[str, int]) -> bool:
     if headers_resp.get("type") == "SYNC_REJECT":
         retry = float(headers_resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
         self._full_sync_backoff[peer] = now + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
-        log.info("[sync_peer] %s rejected header request (retry in %.1fs)", peer, min(retry, CFG.FULL_SYNC_BACKOFF_MAX))
+        log.info("[_sync_peer] %s rejected header request (retry in %.1fs)", peer, min(retry, CFG.FULL_SYNC_BACKOFF_MAX))
         return False
 
     headers = headers_resp.get("headers") or []
@@ -296,7 +296,7 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
         resp = self.rpc_request(peer, payload, timeout=max(15.0, CFG.SYNC_TIMEOUT))
         if not resp:
             log.info(
-                "[download_blocks] %s no response for chunk %d/%d (heights %s-%s)",
+                "[_download_blocks] %s no response for chunk %d/%d (heights %s-%s)",
                 peer,
                 (idx // batch_size) + 1,
                 total_chunks,
@@ -317,13 +317,13 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
             retry = float(resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
             self._full_sync_backoff[peer] = time.time() + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
             log.info(
-                "[download_blocks] %s asked to retry later (retry %.1fs)",
+                "[_download_blocks] %s asked to retry later (retry %.1fs)",
                 peer,
                 min(retry, CFG.FULL_SYNC_BACKOFF_MAX),
             )
             break
         else:
-            log.info("[download_blocks] %s returned unexpected type=%s", peer, resp.get("type"))
+            log.info("[_download_blocks] %s returned unexpected type=%s", peer, resp.get("type"))
             break
 
     elapsed = time.time() - start_time
@@ -351,7 +351,7 @@ def _process_downloaded_blocks(self, peer, blocks, triggered_fullsync, start_tim
         else:
             blk_hash = block_obj.get("hash")
             label = str(blk_hash or "unknown")
-            log.warning("[download_blocks] Block %s rejected during sync from %s", label[:12], peer)
+            log.warning("[_process_downloaded_blocks] Block %s rejected during sync from %s", label[:12], peer)
             if not triggered_fullsync:
                 self.request_full_sync(peer, force=True)
                 triggered_fullsync = True

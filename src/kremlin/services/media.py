@@ -63,7 +63,7 @@ class VLCPlayerService:
                 self._player.set_nsobject(win_id)
             else:
                 self._player.set_xwindow(win_id)
-        except Exception as exc:
+        except Exception:
             log.exception("Unhandled exception in attach_window")
             raise
 
