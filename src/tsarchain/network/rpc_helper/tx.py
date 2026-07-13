@@ -17,7 +17,7 @@ log = get_ctx_logger("tsarchain.network.rpc_helper.tx")
 
 
 class TxHandler(NetworkHandlerProxy):
-    def _create_template_tx(self, from_addr, to_addr, amount, fee_rate):
+    def create_template_tx(self, from_addr, to_addr, amount, fee_rate):
         if not isinstance(from_addr, str) or not isinstance(to_addr, str):
             raise ValueError("from/to address must be string")
 
@@ -32,8 +32,8 @@ class TxHandler(NetworkHandlerProxy):
         if not utxos_list:
             raise ValueError("no spendable utxos")
 
-        from_spk = self._addr_to_spk(from_addr)
-        to_spk   = self._addr_to_spk(to_addr)
+        from_spk = self.addr_to_spk(from_addr)
+        to_spk   = self.addr_to_spk(to_addr)
 
         selected, fee, change = self._select_utxos_for(utxos_list, amt_sat, fee_rate)
 
@@ -60,7 +60,8 @@ class TxHandler(NetworkHandlerProxy):
             "amount_sat": amt_sat
         }
 
-    def _create_template_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, force_inputs: list[str] | None = None):
+
+    def create_template_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, force_inputs: list[str] | None = None):
         if not isinstance(from_addr, str):
             raise ValueError("from must be string")
         if not isinstance(outputs, list) or not outputs:
@@ -96,7 +97,7 @@ class TxHandler(NetworkHandlerProxy):
             
         outs = non_opret
         if change >= CFG.DUST_THRESHOLD_SAT:
-            outs.append(TxOut(change, self._addr_to_spk(from_addr)))
+            outs.append(TxOut(change, self.addr_to_spk(from_addr)))
         outs.extend(opret_outs)
 
         tx = Tx(version=1, inputs=ins, outputs=outs, locktime=0, is_coinbase=False)
@@ -111,6 +112,113 @@ class TxHandler(NetworkHandlerProxy):
             "outputs": [{"amount": int(amt), "script_pubkey": spk.serialize().hex()} for (amt, spk) in fixed_outs]
         }
 
+
+    def addr_to_spk(self, addr: str) -> Script:
+        addr = (addr or "").strip()
+        hrp, data = bech32_decode(addr)
+        if data is None:
+            raise ValueError("invalid bech32 address")
+        if (hrp or "").lower() != CFG.ADDRESS_PREFIX:
+            raise ValueError(f"Address HRP must be {CFG.ADDRESS_PREFIX}, got '{hrp}'")
+        decoded = convertbits(data[1:], 5, 8, False)
+        if decoded is None:
+            raise ValueError("decode bech32 failed")
+        return Script([0, bytes(decoded)])
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
+    def _build_utxos_list(self, utxos_map, tip_height):
+        utxos_list = []
+        for k, v in (utxos_map.items() if isinstance(utxos_map, dict) else []):
+            txid_hex, idx_str = k.split(":")
+            is_cb = bool(v.get("is_coinbase", False))
+            born  = int(v.get("block_height", 0))
+            if is_cb:
+                confirmations = max(0, (int(tip_height) - born) + 1)
+                if confirmations < CFG.COINBASE_MATURITY:
+                    continue
+            spk_val = v.get("script_pubkey")
+            if isinstance(spk_val, bytes):
+                spk_bytes = spk_val
+            elif isinstance(spk_val, str):
+                spk_bytes = bytes.fromhex(spk_val)
+            else:
+                spk_bytes = b""
+            utxos_list.append({
+                "txid": txid_hex,
+                "index": int(idx_str),
+                "amount": int(v.get("amount", 0)),
+                "scriptPubKey": spk_bytes,
+                "height": born,
+                "is_coinbase": is_cb,
+            })
+        return utxos_list
+
+
+    def _select_utxos_for(self, utxos: list[dict], target_amount_sat: int, fee_rate: int):
+        utxos_dict = {}
+        for u in utxos:
+            k = f"{u['txid']}:{u['index']}"
+            utxos_dict[k] = {
+                "amount": int(u.get("amount", 0)),
+                "script_pubkey": u.get("scriptPubKey", b"").hex(),
+            }
+
+        candidates = []
+        for key, v in utxos_dict.items():
+            txid_hex, idx = key.split(":")
+            candidates.append({
+                "txid": txid_hex,
+                "index": int(idx),
+                "amount": int(v["amount"]),
+                "scriptPubKey": bytes.fromhex(v["script_pubkey"])
+            })
+        candidates.sort(key=lambda x: x["amount"])
+
+        selected, acc = [], 0
+        n_outputs = 2
+        est_fee = 0
+        for c in candidates:
+            selected.append(c)
+            acc += c["amount"]
+            est_size = self._est_tx_size(len(selected), n_outputs)
+            est_fee  = fee_rate * est_size
+            if acc >= target_amount_sat + est_fee:
+                change = acc - target_amount_sat - est_fee
+                if change < CFG.DUST_THRESHOLD_SAT:
+                    n_outputs = 1
+                    est_fee  = fee_rate * self._est_tx_size(len(selected), n_outputs)
+                    if acc < target_amount_sat + est_fee:
+                        continue
+                    change = 0
+                return selected, est_fee, change
+
+        raise ValueError(f"insufficient funds: have={acc}, need={target_amount_sat + est_fee}")
+
+
+    def _check_tx_limits(self, tx_obj: Tx):
+        weight, vsize, _, _ = compute_tx_weight_vsize(tx_obj)
+        vin = len(getattr(tx_obj, "inputs", []) or [])
+        vout = len(getattr(tx_obj, "outputs", []) or [])
+
+        if vsize > int(CFG.MAX_TX_VSIZE):
+            raise ValueError("tx_vsize_exceeds_limit")
+        if vsize < int(CFG.MIN_TX_VSIZE):
+            raise ValueError("tx_vsize_below_min")
+        if weight > int(CFG.MAX_TX_WEIGHT):
+            raise ValueError("tx_weight_exceeds_limit")
+        if weight < int(CFG.MIN_TX_WEIGHT):
+            raise ValueError("tx_weight_below_min")
+        if vin > int(CFG.MAX_TX_INPUTS):
+            raise ValueError("tx_inputs_exceed_limit")
+        if vout > int(CFG.MAX_TX_OUTPUTS):
+            raise ValueError("tx_outputs_exceed_limit")
+
+
     def _parse_outputs(self, outputs: list) -> tuple[list[tuple[int, Script]], int]:
         fixed_outs = []
         total_target = 0
@@ -124,13 +232,57 @@ class TxHandler(NetworkHandlerProxy):
                 data = bytes.fromhex(item["opret_hex"])
                 spk = Script([OP_RETURN, data])
             elif "address" in item:
-                spk = self._addr_to_spk(str(item["address"]))
+                spk = self.addr_to_spk(str(item["address"]))
             else:
                 raise ValueError("output item must have spk_hex/opret_hex/address")
             self._guard_graffiti_output(spk)
             fixed_outs.append((amt, spk))
             total_target += max(0, amt)
         return fixed_outs, total_target
+
+
+    def _guard_graffiti_output(self, spk: Script) -> None:
+        """
+        Validate graffiti OP_RETURN payload against node-side limits.
+        Only triggers when payload starts with GRAFFITI_MAGIC.
+        """
+        try:
+            raw = spk.serialize()
+        except Exception:
+            return
+        data = last_pushdata(raw)
+        if not data:
+            return
+        if not data.startswith(CFG.GRAFFITI_MAGIC):
+            return
+        if len(data) > int(CFG.MAX_GRAFFITI_OPRET):
+            raise ValueError("graffiti_opreturn_too_large")
+
+        meta = GRAFF.parse_payload(data)
+        if not meta:
+            raise ValueError("graffiti_payload_invalid")
+
+        event = str(meta.get("event", "")).upper()
+        if event == "POST":
+            size_val = int(meta.get("size", 0))
+            if size_val <= 0:
+                raise ValueError("graffiti_size_invalid")
+            if size_val > int(CFG.GRAFFITI_MAX_SIZE_BYTES):
+                raise ValueError("graffiti_size_exceeds_limit")
+            
+        elif event == "COMMENT":
+            comment_len = int(meta.get("comment_len", 0))
+            if comment_len <= 0:
+                raise ValueError("graffiti_comment_empty")
+            if comment_len > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
+                raise ValueError("graffiti_comment_too_large")
+            amount = int(meta.get("amount", 0))
+            if amount < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
+                raise ValueError("graffiti_comment_fee_too_low")
+            tip = int(meta.get("tip", 0))
+            if tip < 0:
+                raise ValueError("graffiti_comment_tip_negative")
+
 
     def _process_forced_inputs(self, force_inputs: list[str], utxos_list: list, utxo_by_key: dict, from_addr: str) -> tuple[list, int]:
         preselected = []
@@ -177,7 +329,7 @@ class TxHandler(NetworkHandlerProxy):
                     
         if missing:
             locks = {}
-            sender_spk = self._addr_to_spk(from_addr)
+            sender_spk = self.addr_to_spk(from_addr)
             sender_spk_bytes = sender_spk.serialize()
             for key in list(missing):
                 meta = locks.get(key)
@@ -206,6 +358,7 @@ class TxHandler(NetworkHandlerProxy):
             
         return preselected, pre_acc
 
+
     def _accumulate_utxos_multi(self, candidates: list, selected: list, acc: int, total_target: int, fixed_outs: list, fee_rate: int) -> tuple[int, int]:
         change = 0
         fee_est = 0
@@ -231,147 +384,10 @@ class TxHandler(NetworkHandlerProxy):
             
         return change, fee_est
 
-    def _guard_graffiti_output(self, spk: Script) -> None:
-        """
-        Validate graffiti OP_RETURN payload against node-side limits.
-        Only triggers when payload starts with GRAFFITI_MAGIC.
-        """
-        try:
-            raw = spk.serialize()
-        except Exception:
-            return
-        data = last_pushdata(raw)
-        if not data:
-            return
-        if not data.startswith(CFG.GRAFFITI_MAGIC):
-            return
-        if len(data) > int(CFG.MAX_GRAFFITI_OPRET):
-            raise ValueError("graffiti_opreturn_too_large")
-
-        meta = GRAFF.parse_payload(data)
-        if not meta:
-            raise ValueError("graffiti_payload_invalid")
-
-        event = str(meta.get("event", "")).upper()
-        if event == "POST":
-            size_val = int(meta.get("size", 0))
-            if size_val <= 0:
-                raise ValueError("graffiti_size_invalid")
-            if size_val > int(CFG.GRAFFITI_MAX_SIZE_BYTES):
-                raise ValueError("graffiti_size_exceeds_limit")
-            
-        elif event == "COMMENT":
-            comment_len = int(meta.get("comment_len", 0))
-            if comment_len <= 0:
-                raise ValueError("graffiti_comment_empty")
-            if comment_len > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
-                raise ValueError("graffiti_comment_too_large")
-            amount = int(meta.get("amount", 0))
-            if amount < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
-                raise ValueError("graffiti_comment_fee_too_low")
-            tip = int(meta.get("tip", 0))
-            if tip < 0:
-                raise ValueError("graffiti_comment_tip_negative")
-
-    def _addr_to_spk(self, addr: str) -> Script:
-        addr = (addr or "").strip()
-        hrp, data = bech32_decode(addr)
-        if data is None:
-            raise ValueError("invalid bech32 address")
-        if (hrp or "").lower() != CFG.ADDRESS_PREFIX:
-            raise ValueError(f"Address HRP must be {CFG.ADDRESS_PREFIX}, got '{hrp}'")
-        decoded = convertbits(data[1:], 5, 8, False)
-        if decoded is None:
-            raise ValueError("decode bech32 failed")
-        return Script([0, bytes(decoded)])
 
     def _est_tx_size(self, n_inputs, n_outputs):
         return CFG.TX_BASE_VBYTES + n_inputs * CFG.SEGWIT_INPUT_VBYTES + n_outputs * CFG.SEGWIT_OUTPUT_VBYTES
-    
-    def _build_utxos_list(self, utxos_map, tip_height):
-        utxos_list = []
-        for k, v in (utxos_map.items() if isinstance(utxos_map, dict) else []):
-            txid_hex, idx_str = k.split(":")
-            is_cb = bool(v.get("is_coinbase", False))
-            born  = int(v.get("block_height", 0))
-            if is_cb:
-                confirmations = max(0, (int(tip_height) - born) + 1)
-                if confirmations < CFG.COINBASE_MATURITY:
-                    continue
-            spk_val = v.get("script_pubkey")
-            if isinstance(spk_val, bytes):
-                spk_bytes = spk_val
-            elif isinstance(spk_val, str):
-                spk_bytes = bytes.fromhex(spk_val)
-            else:
-                spk_bytes = b""
-            utxos_list.append({
-                "txid": txid_hex,
-                "index": int(idx_str),
-                "amount": int(v.get("amount", 0)),
-                "scriptPubKey": spk_bytes,
-                "height": born,
-                "is_coinbase": is_cb,
-            })
-        return utxos_list
 
-    def _check_tx_limits(self, tx_obj: Tx):
-        weight, vsize, _, _ = compute_tx_weight_vsize(tx_obj)
-        vin = len(getattr(tx_obj, "inputs", []) or [])
-        vout = len(getattr(tx_obj, "outputs", []) or [])
-
-        if vsize > int(CFG.MAX_TX_VSIZE):
-            raise ValueError("tx_vsize_exceeds_limit")
-        if vsize < int(CFG.MIN_TX_VSIZE):
-            raise ValueError("tx_vsize_below_min")
-        if weight > int(CFG.MAX_TX_WEIGHT):
-            raise ValueError("tx_weight_exceeds_limit")
-        if weight < int(CFG.MIN_TX_WEIGHT):
-            raise ValueError("tx_weight_below_min")
-        if vin > int(CFG.MAX_TX_INPUTS):
-            raise ValueError("tx_inputs_exceed_limit")
-        if vout > int(CFG.MAX_TX_OUTPUTS):
-            raise ValueError("tx_outputs_exceed_limit")
-
-    def _select_utxos_for(self, utxos: list[dict], target_amount_sat: int, fee_rate: int):
-        utxos_dict = {}
-        for u in utxos:
-            k = f"{u['txid']}:{u['index']}"
-            utxos_dict[k] = {
-                "amount": int(u.get("amount", 0)),
-                "script_pubkey": u.get("scriptPubKey", b"").hex(),
-            }
-
-        candidates = []
-        for key, v in utxos_dict.items():
-            txid_hex, idx = key.split(":")
-            candidates.append({
-                "txid": txid_hex,
-                "index": int(idx),
-                "amount": int(v["amount"]),
-                "scriptPubKey": bytes.fromhex(v["script_pubkey"])
-            })
-        candidates.sort(key=lambda x: x["amount"])
-
-        selected, acc = [], 0
-        n_outputs = 2
-        est_fee = 0
-        for c in candidates:
-            selected.append(c)
-            acc += c["amount"]
-            est_size = self._est_tx_size(len(selected), n_outputs)
-            est_fee  = fee_rate * est_size
-            if acc >= target_amount_sat + est_fee:
-                change = acc - target_amount_sat - est_fee
-                if change < CFG.DUST_THRESHOLD_SAT:
-                    n_outputs = 1
-                    est_fee  = fee_rate * self._est_tx_size(len(selected), n_outputs)
-                    if acc < target_amount_sat + est_fee:
-                        continue
-                    change = 0
-                return selected, est_fee, change
-
-        raise ValueError(f"insufficient funds: have={acc}, need={target_amount_sat + est_fee}")
 
     def _deserialize_spk_hex(self, spk_hex: str) -> Script:
         b = bytes.fromhex((spk_hex or "").strip())

@@ -169,7 +169,7 @@ def handle_full_sync(self, message, addr):
 
 
 @benchmark(label="handle_get_block_at", threshold_ms=15.0)
-def handle_get_block_at(self, height: int, _: str | None = None) -> dict: #get block by heigt
+def handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict: #get block by heigt
         
     with self.broadcast.lock:
         chain = list(self.broadcast.blockchain.chain)
@@ -177,20 +177,20 @@ def handle_get_block_at(self, height: int, _: str | None = None) -> dict: #get b
         return {"type": "BLOCK", "error": "height_out_of_range"}
 
     b = chain[height]
-    d = self._serialize_block(b)
+    d = self.serialize_block(b)
     d["type"] = "BLOCK"
     return d
 
 
 @benchmark(label="handle_get_block_by_hash", threshold_ms=15.0)
-def handle_get_block_by_hash(self, hx: str, _: str | None = None) -> dict:
+def handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict:
         
     hx = (hx or "").strip().lower()
     with self.broadcast.lock:
         chain = list(self.broadcast.blockchain.chain)
     for b in chain:
-        if self._bhash_hex(b).lower() == hx:
-            d = self._serialize_block(b)
+        if self.bhash_hex(b).lower() == hx:
+            d = self.serialize_block(b)
             d["type"] = "BLOCK"
             return d
 

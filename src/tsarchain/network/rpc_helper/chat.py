@@ -22,7 +22,7 @@ log = get_ctx_logger("tsarchain.network.rpc_helper.chat")
 # ------------------------------ P2P Chat ------------------------------
 
 class ChatHandler(NetworkHandlerProxy):
-    def _send_to_peer(self, peer: tuple[str,int], payload: dict) -> None:
+    def send_to_peer(self, peer: tuple[str,int], payload: dict) -> None:
         if not isinstance(peer, tuple) or len(peer) != 2:
             raise ValueError("bad peer")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -45,18 +45,12 @@ class ChatHandler(NetworkHandlerProxy):
                 send_message(s, raw)
                 _ = recv_message(s, timeout=1)
 
-    def _relay_presence(self, pres: dict, exclude=None) -> None:
-        hops = int(pres.get("hops", 0))
-        if hops >= 2:
-            return
-        pres2 = dict(pres); pres2["hops"] = hops + 1
-        msg = {"type": "CHAT_PRESENCE", **pres2}
-        self.broadcast.send_gossip(self.peers, msg, exclude=exclude)
 
-    def _relay_presence_async(self, pres: dict, exclude=None) -> None:
+    def relay_presence_async(self, pres: dict, exclude=None) -> None:
         threading.Thread(target=self._relay_presence, args=(pres, exclude), daemon=True).start()
 
-    def _mailbox_put(self, addr, item, ttl_s, per_addr_max, global_max):
+
+    def mailbox_put(self, addr, item, ttl_s, per_addr_max, global_max):
         now = time.time()
         exp = now + ttl_s
         with self.chat_lock:
@@ -72,19 +66,9 @@ class ChatHandler(NetworkHandlerProxy):
             dq.append((exp, item))
             self.chat_global_count += 1
             return True
-        
-    def _enqueue_rcpt(self, to_addr, kind, mid, frm, to, ts):
-        item = {
-            "type": "CHAT_RCPT",
-            "rcpt": kind,
-            "msg_id": mid,
-            "from": frm,
-            "to": to,
-            "ts": int(ts),
-        }
-        self._mailbox_put(to_addr, item, CFG.CHAT_TTL_S, CFG.CHAT_MAILBOX_MAX, CFG.CHAT_GLOBAL_QUEUE_MAX)
 
-    def _mailbox_pull(self, addr, nmax):
+
+    def mailbox_pull(self, addr, nmax):
         now = time.time()
         out = []
         with self.chat_lock:
@@ -101,26 +85,20 @@ class ChatHandler(NetworkHandlerProxy):
                     out.append(it)
         return out
 
-    def _dedup_mid(self, from_addr, msg_id):
-        if msg_id is None: 
-            return False
-        rec = self.chat_seen_mid.get(from_addr)
-        if rec is None:
-            dq = collections.deque(maxlen=self.chat_seen_max)
-            st = set()
-            self.chat_seen_mid[from_addr] = (dq, st)
-        else:
-            dq, st = rec
-        if msg_id in st:
-            return True
-        # tambah
-        dq, st = self.chat_seen_mid[from_addr]
-        if len(dq) == dq.maxlen:
-            old = dq.popleft(); st.discard(old)
-        dq.append(msg_id); st.add(msg_id)
-        return False
 
-    def _gc_mailboxes(self):
+    def enqueue_rcpt(self, to_addr, kind, mid, frm, to, ts):
+        item = {
+            "type": "CHAT_RCPT",
+            "rcpt": kind,
+            "msg_id": mid,
+            "from": frm,
+            "to": to,
+            "ts": int(ts),
+        }
+        self.mailbox_put(to_addr, item, CFG.CHAT_TTL_S, CFG.CHAT_MAILBOX_MAX, CFG.CHAT_GLOBAL_QUEUE_MAX)
+
+
+    def gc_mailboxes(self):
         now = time.time()
         if now - self.chat_gc_last < 30:
             return
@@ -143,3 +121,37 @@ class ChatHandler(NetworkHandlerProxy):
             for k in expired_backoffs:
                 self.backoff_until.pop(k, None)
         self.chat_gc_last = now
+
+
+    def dedup_mid(self, from_addr, msg_id):
+        if msg_id is None: 
+            return False
+        rec = self.chat_seen_mid.get(from_addr)
+        if rec is None:
+            dq = collections.deque(maxlen=self.chat_seen_max)
+            st = set()
+            self.chat_seen_mid[from_addr] = (dq, st)
+        else:
+            dq, st = rec
+        if msg_id in st:
+            return True
+        # tambah
+        dq, st = self.chat_seen_mid[from_addr]
+        if len(dq) == dq.maxlen:
+            old = dq.popleft(); st.discard(old)
+        dq.append(msg_id); st.add(msg_id)
+        return False
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
+    def _relay_presence(self, pres: dict, exclude=None) -> None:
+        hops = int(pres.get("hops", 0))
+        if hops >= 2:
+            return
+        pres2 = dict(pres); pres2["hops"] = hops + 1
+        msg = {"type": "CHAT_PRESENCE", **pres2}
+        self.broadcast.send_gossip(self.peers, msg, exclude=exclude)

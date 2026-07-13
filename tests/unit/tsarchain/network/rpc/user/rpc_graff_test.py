@@ -16,8 +16,6 @@ def mock_self():
     self_obj.rl_ip = {}
     # broadcast.utxodb._graffiti_registry akan di-set di setiap test
     self_obj.broadcast = MagicMock()
-    # _tb_allow dan _backoff hanya dipanggil jika allow_rpc_with_pow tidak di-mock,
-    # tapi kita akan mock CM.allow_rpc_with_pow sehingga tidak perlu diimplementasikan.
     return self_obj
 
 

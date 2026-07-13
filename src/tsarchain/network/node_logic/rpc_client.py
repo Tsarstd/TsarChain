@@ -213,7 +213,7 @@ def request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> bo
     ts_val = int(resp.get("ts", 0))
     nonce_val = str(resp.get("nonce") or "")
     sender_key = f"{norm[0]}:{norm[1]}"
-    if not (ts_val and nonce_val and self._nonce_guard("full_sync_resp", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
+    if not (ts_val and nonce_val and self.nonce_guard("full_sync_resp", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
         log.warning("[request_full_sync] replay guard reject from %s", norm)
         return False
     

@@ -57,10 +57,10 @@ class MockNode:
     def reward_peer(self, peer):
         pass
 
-    def _serialize_block(self, b):
+    def serialize_block(self, b):
         return b.to_dict()
 
-    def _bhash_hex(self, b):
+    def bhash_hex(self, b):
         return b.hash().hex()
 
 

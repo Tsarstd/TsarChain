@@ -68,6 +68,7 @@ def new_tx(self, message, pow_obj, base_identity, addr, *, client_ip, **kwargs):
         reason = getattr(self.broadcast.mempool, 'last_error_reason', None)
         return {"status": "error", "reason": (reason or "invalid tx")}
 
+
 @benchmark(label="CREATE_TX", threshold_ms=15.0)
 def create_tx(self, message, pow_obj, base_identity, addr, mtype, *,
                      client_ip, is_miner_sender, **kwargs):
@@ -93,11 +94,12 @@ def create_tx(self, message, pow_obj, base_identity, addr, mtype, *,
     fee_rate = int(message.get("fee_rate", CFG.DEFAULT_FEE_RATE_SATVB))
     fee_rate = max(CFG.MIN_FEE_RATE_SATVB, min(fee_rate, CFG.MAX_FEE_RATE_SATVB))
     try:
-        tpl = self._create_template_tx(from_addr, to_addr, amount, fee_rate)
+        tpl = self.create_template_tx(from_addr, to_addr, amount, fee_rate)
     except Exception as exc:
         return {"error": str(exc) or "create_tx_failed"}
     
     return {"type": "TX_TEMPLATE", "data": tpl}
+
 
 @benchmark(label="CREATE_TX_MULTI", threshold_ms=15.0)
 def create_tx_multi(self, message, pow_obj, base_identity, addr, mtype, *,
@@ -126,7 +128,7 @@ def create_tx_multi(self, message, pow_obj, base_identity, addr, mtype, *,
         return {"error": "missing from/outputs"}
     
     try:
-        tpl = self._create_template_tx_multi(from_addr, outputs, fee_rate, force_inputs)
+        tpl = self.create_template_tx_multi(from_addr, outputs, fee_rate, force_inputs)
     except Exception as exc:
         return {"error": str(exc) or "create_tx_multi_failed"}
     

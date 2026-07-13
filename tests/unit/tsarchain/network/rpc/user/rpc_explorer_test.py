@@ -121,13 +121,13 @@ def mock_self(mock_summarize_block):
     self.lock = MagicMock()
 
     # internal methods
-    self._build_outpoint_map = MagicMock(return_value=({}, {}))
+    self.build_outpoint_map = MagicMock(return_value=({}, {}))
     patcher = patch('tsarchain.network.rpc.user_rpc.category.explorer.spkhex_to_address', return_value="ts1address")
     self._spkhex_to_address = patcher.start()
-    self._txout_to_address = MagicMock(return_value="ts1address")
-    self._txin_prevkey = MagicMock(return_value="prev_outpoint_key")
-    self._get_tx_history = MagicMock(return_value={"items": [], "total": 0})
-    self._get_tx_detail = MagicMock(return_value={"txid": "abc123", "detail": "..."})
+    self.txout_to_address = MagicMock(return_value="ts1address")
+    self.txin_prevkey = MagicMock(return_value="prev_outpoint_key")
+    self.process_history_lookup = MagicMock(return_value={"items": [], "total": 0})
+    self.process_tx_lookup = MagicMock(return_value={"txid": "abc123", "detail": "..."})
     self.normalize_peer = MagicMock(return_value=("1.2.3.4", 8333))
     self._read_snapshot_state = MagicMock(return_value={"height": 100, "difficulty": 1.0})
 
@@ -168,19 +168,19 @@ class TestGetBalances:
         mock_self.broadcast.mempool.get_all_txs.return_value = [mock_tx]
 
         # Map outpoint untuk input (spent) dan output (tidak perlu untuk output karena diambil langsung)
-        mock_self._build_outpoint_map.return_value = (
+        mock_self.build_outpoint_map.return_value = (
             {},
             {"prevkey": (50, "spk_hex")}
         )
-        mock_self._txin_prevkey.return_value = "prevkey"
+        mock_self.txin_prevkey.return_value = "prevkey"
         mock_self._spkhex_to_address.return_value = "ts1spender"
-        mock_self._txout_to_address.return_value = "ts1spender"
+        mock_self.txout_to_address.return_value = "ts1spender"
 
         msg = {"addresses": ["ts1spender"]}
         result = get_balances(mock_self, msg, None, None, client_ip="1.2.3.4")
 
         # Pastikan method-method internal dipanggil
-        assert mock_self._txout_to_address.call_count > 0
+        assert mock_self.txout_to_address.call_count > 0
         assert mock_self._spkhex_to_address.call_count > 0
 
         items = result["items"]
@@ -199,7 +199,7 @@ class TestGetBalances:
 class TestGetNetworkInfo:
     def test_success(self, mock_self, mock_pow_allow):
         msg = {}
-        mock_self.broadcast.blockchain._read_snapshot_state.return_value = {
+        mock_self.broadcast.blockchain.chain_storage._read_snapshot_state.return_value = {
             "height": 200,
             "difficulty": 2.5,
         }
@@ -378,7 +378,7 @@ class TestGetTxHistory:
         assert result == {"error": "missing address"}
 
     def test_success(self, mock_self, mock_pow_allow):
-        mock_self._get_tx_history.return_value = {"items": [{"txid": "abc"}], "total": 1}
+        mock_self.process_history_lookup.return_value = {"items": [{"txid": "abc"}], "total": 1}
         msg = {"address": "ts1addr", "limit": 10, "offset": 0}
         result = get_tx_history(mock_self, msg, None, None, client_ip="1.2.3.4")
         assert result["type"] == "TX_HISTORY"
@@ -391,8 +391,8 @@ class TestGetTxHistory:
         mock_config.MAX_HISTORY_LIMIT = 50
         msg = {"address": "ts1addr", "limit": 100}
         result = get_tx_history(mock_self, msg, None, None, client_ip="1.2.3.4")
-        # _get_tx_history should be called with limit=50
-        mock_self._get_tx_history.assert_called_with(
+        # get_tx_history should be called with limit=50
+        mock_self.process_history_lookup.assert_called_with(
             "ts1addr", limit=50, offset=0,
             direction=None, status=None
         )
@@ -411,10 +411,10 @@ class TestGetTxDetail:
         assert result == {"error": "missing txid"}
 
     def test_success(self, mock_self, mock_pow_allow):
-        mock_self._get_tx_detail.return_value = {"txid": "abc", "detail": "foo"}
+        mock_self.process_tx_lookup.return_value = {"txid": "abc", "detail": "foo"}
         msg = {"txid": "abc"}
         result = get_tx_detail(mock_self, msg, None, None, client_ip="1.2.3.4")
-        mock_self._get_tx_detail.assert_called_with("abc", None)
+        mock_self.process_tx_lookup.assert_called_with("abc", None)
         assert result == {"txid": "abc", "detail": "foo"}
 
     def test_pow_failure(self, mock_self):

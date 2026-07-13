@@ -29,10 +29,11 @@ class DandelionPP:
         self._fluffed: Set[str] = set()
         self._timers: Dict[str, threading.Timer] = {}
 
-    # ------------ Public entrypoints ------------
+
     def enabled(self, peers_count: int) -> bool:
         min_peers = int(CFG.MIN_PEERS_FOR_DANDELION)
         return bool(CFG.ENABLE_DANDELION_PP) and peers_count >= max(0, min_peers)
+
 
     def handle_outbound(self, tx, tx_id: str, peers: Set[Tuple[str, int]], exclude=None) -> bool:
         """
@@ -57,6 +58,7 @@ class DandelionPP:
             return True
         self._schedule_fluff(tx, tx_id, peers)
         return True
+
 
     def handle_inbound_stem(
         self,
@@ -84,8 +86,9 @@ class DandelionPP:
             self.fluff(tx, tx_id, peers)
 
         self._schedule_fluff(tx, tx_id, peers)
-        log.debug("[DandelionPP] inbound stem processed for %s", tx_id[:16])
+        log.debug("[handle_inbound_stem] inbound stem processed for %s", tx_id[:16])
         return True
+
 
     def fluff(self, tx, tx_id: str, peers: Set[Tuple[str, int]]):
         with self.lock:
@@ -97,14 +100,20 @@ class DandelionPP:
                 timer.cancel()
         return self.host.broadcast_tx_fluff(tx, tx_id, peers)
 
-    # ------------ Internals ------------
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
     def _mark_stem(self, tx_id: str) -> bool:
         with self.lock:
             if tx_id in self._fluffed or tx_id in self._stem_seen:
                 return False
             self._stem_seen.add(tx_id)
-            log.debug("[DandelionPP] marked stem for %s", tx_id[:16])
+            log.debug("[_mark_stem] marked stem for %s", tx_id[:16])
             return True
+
 
     def _pick_peer(self, peers: Set[Tuple[str, int]], exclude: Optional[Tuple[str, int]]) -> Optional[Tuple[str, int]]:
         candidates = [p for p in peers if p and p != exclude]
@@ -112,11 +121,13 @@ class DandelionPP:
             return None
         return _secure_random.choice(candidates)
 
+
     def _send_stem(self, peer: Tuple[str, int], payload: dict, tx_id: str) -> bool:
         msg = {"type": "NEW_TX", "data": payload, "phase": "stem"}
         ok = self.host._send(peer, msg)
-        log.debug("[DandelionPP] stem send to %s for %s returned %s", peer, tx_id[:16], ok)
+        log.debug("[_send_stem] stem send to %s for %s returned %s", peer, tx_id[:16], ok)
         return bool(ok)
+
 
     def _schedule_fluff(self, tx, tx_id: str, peers: Set[Tuple[str, int]]) -> None:
         # Avoid multiple timers per tx
@@ -136,14 +147,16 @@ class DandelionPP:
             if tx_id in self._fluffed:
                 return
             self._timers[tx_id] = timer
-        log.debug("[DandelionPP] scheduled fluff in %.2f seconds for %s", delay, tx_id[:16])
+        log.debug("[_schedule_fluff] scheduled fluff in %.2f seconds for %s", delay, tx_id[:16])
         timer.start()
+
 
     def _compute_fluff_delay(self) -> float:
         # Keep deterministic-ish but jittered delay to reduce timing leaks
         base = max(CFG.MIN_FLUFF_DELAY_S, min(CFG.MAX_FLUFF_DELAY_S, float(CFG.SYNC_TIMEOUT or 2)))
         jitter = _secure_random.uniform(0.25, 0.75) * base
-        log.debug("[DandelionPP] computed fluff delay: %.2f seconds", base + jitter)
+        log.debug("[_compute_fluff_delay] computed fluff delay: %.2f seconds", base + jitter)
         return max(0.5, min(CFG.MAX_FLUFF_DELAY_S, base + jitter))
+
 
 __all__ = ["DandelionPP"]

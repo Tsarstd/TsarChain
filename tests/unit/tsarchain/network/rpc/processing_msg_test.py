@@ -233,12 +233,12 @@ def test_relay_chain(network):
 
 
 def test_send_chat_relay(network):
-    network._send_to_peer = MagicMock()
+    network.send_to_peer = MagicMock()
     res = _send_chat_relay(network, ("1.1.1.1", 1), {"test": 1})
     assert res == {"status": "ok"}
-    network._send_to_peer.assert_called_once_with(("1.1.1.1", 1), {"test": 1})
+    network.send_to_peer.assert_called_once_with(("1.1.1.1", 1), {"test": 1})
     
     # Exception
-    network._send_to_peer.side_effect = Exception("error")
+    network.send_to_peer.side_effect = Exception("error")
     res2 = _send_chat_relay(network, ("1.1.1.1", 1), {"test": 1})
     assert res2 == {"status": "error"}

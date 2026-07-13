@@ -135,12 +135,12 @@ def server(mock_config, mock_common, mock_bech32, mock_hash160, mock_time, mock_
     server.peers = {}
 
     # Methods
-    server._relay_presence_async = Mock()
-    server._dedup_mid = Mock(return_value=False)
-    server._mailbox_put = Mock(return_value=True)
-    server._mailbox_pull = Mock(return_value=[])
-    server._enqueue_rcpt = Mock()
-    server._gc_mailboxes = Mock()
+    server.relay_presence_async = Mock()
+    server.dedup_mid = Mock(return_value=False)
+    server.mailbox_put = Mock(return_value=True)
+    server.mailbox_pull = Mock(return_value=[])
+    server.enqueue_rcpt = Mock()
+    server.gc_mailboxes = Mock()
 
     # For chat_relay, we need send_chat_relay function mock
     # We'll patch it inside test
@@ -215,7 +215,7 @@ class TestChatRegister:
         assert len(server.chat_presence_seen) == 1
         assert server.chat_prekeys[addr]["ik"] == chat_pub
         assert "ts" in server.chat_prekeys[addr]
-        server._relay_presence_async.assert_called_once()
+        server.relay_presence_async.assert_called_once()
         # Verify signature calls
         mock_common.verify_chat_signatures.assert_called_once()
         # Rate limit calls
@@ -383,7 +383,7 @@ class TestChatPresence:
         assert server.chat_spend_pub[addr] == spend_pk
         assert len(server.chat_presence_seen) == 1
         assert server.chat_prekeys[addr]["ik"] == pubhex
-        server._relay_presence_async.assert_called_once()
+        server.relay_presence_async.assert_called_once()
 
     def test_stale_ts(self, server, mock_time):
         mock_time.time.return_value = 1000
@@ -613,8 +613,8 @@ class TestChatSend:
             relay_chain=Mock()
         )
         assert result == {"type": "CHAT_ACK", "status": "queued"}
-        server._mailbox_put.assert_called_once()
-        server._enqueue_rcpt.assert_called_once()
+        server.mailbox_put.assert_called_once()
+        server.enqueue_rcpt.assert_called_once()
 
     def test_missing_fields(self, server):
         message = {"from": "a"}
@@ -707,7 +707,7 @@ class TestChatSend:
         frm = make_valid_address()
         server.chat_presence_pub[frm] = "f"*64
         server.chat_spend_pub[frm] = make_valid_spend_pub()
-        server._dedup_mid.return_value = True  # duplicate
+        server.dedup_mid.return_value = True  # duplicate
         message = {
             "from": frm,
             "to": make_valid_address(),
@@ -739,7 +739,7 @@ class TestChatRead:
         }
         result = chat_read(server, message, {}, "id", client_ip="ip")
         assert result == {"type": "CHAT_READ_OK"}
-        server._enqueue_rcpt.assert_called_once_with(sender, "read", 456, sender, reader, int(mock_time.time.return_value))
+        server.enqueue_rcpt.assert_called_once_with(sender, "read", 456, sender, reader, int(mock_time.time.return_value))
 
     def test_bad_fields(self, server):
         message = {"sender": "a"}
@@ -774,7 +774,7 @@ class TestChatPull:
     def test_success(self, server, mock_time):
         me = make_valid_address()
         server.chat_spend_pub[me] = make_valid_spend_pub()
-        server._mailbox_pull.return_value = [{"msg": "hello"}]
+        server.mailbox_pull.return_value = [{"msg": "hello"}]
         message = {
             "address": me,
             "n": 5,
@@ -783,8 +783,8 @@ class TestChatPull:
         }
         result = chat_pull(server, message, client_ip="ip")
         assert result == {"type": "CHAT_ITEMS", "items": [{"msg": "hello"}]}
-        server._mailbox_pull.assert_called_once_with(me, 5)
-        server._gc_mailboxes.assert_called_once()
+        server.mailbox_pull.assert_called_once_with(me, 5)
+        server.gc_mailboxes.assert_called_once()
 
     def test_bad_address(self, server):
         result = chat_pull(server, {"address": ""}, client_ip="ip")
@@ -846,7 +846,7 @@ class TestChatRelay:
         message = {"route": [], "inner": inner}
         result = chat_relay(server, message, {}, "id", client_ip="ip", send_chat_relay=Mock())
         assert result == {"type": "CHAT_RELAY_ACK", "status": "queued"}
-        server._mailbox_put.assert_called_once()
+        server.mailbox_put.assert_called_once()
 
     def test_forward_hop(self, server):
         # Route with hops
@@ -860,7 +860,7 @@ class TestChatRelay:
         assert result is None or result == {"ok": True}  # send_chat_relay returns whatever
         send_chat_relay.assert_called_once()
         # mailbox not called
-        server._mailbox_put.assert_not_called()
+        server.mailbox_put.assert_not_called()
 
     def test_unknown_hop(self, server):
         server.peers = {}

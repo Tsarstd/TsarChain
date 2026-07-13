@@ -51,7 +51,7 @@ def mock_config():
 def network():
     net = MagicMock()
     net.rl_ip = {}
-    net._tb_allow.return_value = True
+    net.tb_node_allow.return_value = True
     net._nonce_guard.return_value = True
     
     # Broadcast mocks
@@ -68,7 +68,7 @@ def network():
     net.peers = [("127.0.0.1", 8333), ("192.168.1.1", 0), ("10.0.0.1", -1), ("1.1.1.1", "bad")]
     
     # Get Block Hash Mock
-    net._handle_get_block_hash.return_value = {"hash": "abc", "cache_hit": True}
+    net.handle_get_block_hash.return_value = {"hash": "abc", "cache_hit": True}
     
     return net
 
@@ -97,19 +97,19 @@ def test_new_block(network, mock_config):
     assert res2 == {"status": "ok"}
     
     # Rate limited
-    network._tb_allow.return_value = False
+    network.tb_node_allow.return_value = False
     res3 = handle_miner_rpc(network, {"block": 1}, ("127.0.0.1", 1234), "NEW_BLOCK")
     assert res3 == {"error": "rate_limited"}
-    network._backoff.assert_called_once()
+    network.backoff_node.assert_called_once()
 
 
 def test_get_block_hash(network, mock_config):
     res = handle_miner_rpc(network, {"height": 10}, ("127.0.0.1", 1234), "GET_BLOCK_HASH")
     assert res == {"hash": "abc", "cache_hit": True}
-    network._handle_get_block_hash.assert_called_once_with(10)
+    network.handle_get_block_hash.assert_called_once_with(10)
     
     # Rate limited
-    network._tb_allow.return_value = False
+    network.tb_node_allow.return_value = False
     res2 = handle_miner_rpc(network, {"height": 10}, ("127.0.0.1", 1234), "GET_BLOCK_HASH")
     assert res2 == {"error": "rate_limited"}
 
@@ -124,7 +124,7 @@ def test_get_info(network, mock_config):
     assert res["peers"] == 1
     
     # Rate limited
-    network._tb_allow.return_value = False
+    network.tb_node_allow.return_value = False
     res2 = handle_miner_rpc(network, {}, ("127.0.0.1", 1234), "GET_INFO")
     assert res2 == {"error": "rate_limited"}
 
@@ -148,13 +148,13 @@ def test_get_full_sync(mock_handler, network, mock_config):
     assert res3 == {"type": "SYNC_REDIRECT", "reason": "replay_guard"}
     
     # Nonce guard failed
-    network._nonce_guard.return_value = False
+    network.nonce_guard.return_value = False
     res4 = handle_miner_rpc(network, msg, ("127.0.0.1", 1234), "GET_FULL_SYNC")
     assert res4 == {"type": "SYNC_REDIRECT", "reason": "replay_guard"}
-    network._nonce_guard.return_value = True
+    network.nonce_guard.return_value = True
     
     # Rate limited
-    network._tb_allow.return_value = False
+    network.tb_node_allow.return_value = False
     res5 = handle_miner_rpc(network, msg, ("127.0.0.1", 1234), "GET_FULL_SYNC")
     assert res5 == {"error": "rate_limited"}
 
@@ -166,7 +166,7 @@ def test_get_headers(mock_handler, network):
     assert res == {"ok": True}
     
     # Rate limited
-    network._tb_allow.return_value = False
+    network.tb_node_allow.return_value = False
     res2 = handle_miner_rpc(network, {}, ("127.0.0.1", 1234), "GET_HEADERS")
     assert res2 == {"error": "rate_limited"}
 
@@ -178,7 +178,7 @@ def test_get_blocks(mock_handler, network):
     assert res == {"ok": True}
     
     # Rate limited
-    network._tb_allow.return_value = False
+    network.tb_node_allow.return_value = False
     res2 = handle_miner_rpc(network, {}, ("127.0.0.1", 1234), "GET_BLOCKS")
     assert res2 == {"error": "rate_limited"}
 
@@ -202,13 +202,13 @@ def test_full_sync(mock_handler, network, mock_config):
     assert res3 == {"error": "replay_guard"}
     
     # Nonce guard failed
-    network._nonce_guard.return_value = False
+    network.nonce_guard.return_value = False
     res4 = handle_miner_rpc(network, msg, ("127.0.0.1", 1234), "FULL_SYNC")
     assert res4 == {"error": "replay_guard"}
-    network._nonce_guard.return_value = True
+    network.nonce_guard.return_value = True
     
     # Rate limited
-    network._tb_allow.return_value = False
+    network.tb_node_allow.return_value = False
     res5 = handle_miner_rpc(network, msg, ("127.0.0.1", 1234), "FULL_SYNC")
     assert res5 == {"error": "rate_limited"}
 
@@ -219,6 +219,6 @@ def test_mempool(network, mock_config):
     network.broadcast.receive_mempool.assert_called_once_with({})
     
     # Rate limited
-    network._tb_allow.return_value = False
+    network.tb_node_allow.return_value = False
     res2 = handle_miner_rpc(network, {}, ("127.0.0.1", 1234), "MEMPOOL")
     assert res2 == {"error": "rate_limited"}

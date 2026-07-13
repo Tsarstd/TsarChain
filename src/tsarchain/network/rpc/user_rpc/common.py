@@ -19,6 +19,7 @@ log = get_ctx_logger("tsarchain.network.rpc.user_rpc.common")
 if TYPE_CHECKING:
     from ...node import Network
 
+
 def verify_chat_signatures(tasks: list[tuple[str, str, bytes, str]]) -> dict[str, bool]:
     """
     tasks: [(label, pub_hex, payload_bytes, sig_hex), ...]
@@ -47,6 +48,7 @@ def verify_chat_signatures(tasks: list[tuple[str, str, bytes, str]]) -> dict[str
         verdict[label] = bool(ok)
     return verdict
 
+
 def identity_from_msg(message: dict[str, Any] | None) -> str | None:
     if not isinstance(message, dict):
         return None
@@ -71,6 +73,7 @@ def identity_from_msg(message: dict[str, Any] | None) -> str | None:
         if ident:
             return ident
     return None
+
 
 def summarize_block(self: "Network", b: Any) -> dict:
     height     = getattr(b, "height")
@@ -104,7 +107,7 @@ def summarize_block(self: "Network", b: Any) -> dict:
 
     return {
         "height": height,
-        "hash": self._bhash_hex(b),
+        "hash": self.bhash_hex(b),
         "block_id": block_id,
         "timestamp": ts,
         "tx_count": tx_count,
@@ -113,6 +116,7 @@ def summarize_block(self: "Network", b: Any) -> dict:
         "graffiti_payouts": graffiti_payouts,
         "graffiti_count": graffiti_posts + graffiti_comments + graffiti_payouts,
     }
+
 
 def allow_rpc_with_pow(
     self,
@@ -148,7 +152,7 @@ def allow_rpc_with_pow(
 
     allowed = True
     for k in keys:
-        if not self._tb_allow(table, k, burst, window_s, burst, backoff_key=k):
+        if not self.tb_node_allow(table, k, burst, window_s, burst, backoff_key=k):
             allowed = False
     if allowed:
         return True, None
@@ -156,7 +160,7 @@ def allow_rpc_with_pow(
     if backoff_s:
         for k in keys:
             try:
-                self._backoff(k, backoff_s)
+                self.backoff_node(k, backoff_s)
             except Exception:
                 pass
     challenge = issue_pow(scope, ident, difficulty, CFG.POW_TOKEN_TTL_S)
@@ -165,7 +169,12 @@ def allow_rpc_with_pow(
         "retry_after": max(1, backoff_s or 1),
         "pow_challenge": challenge,
     }
-    
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
 
 def _norm_identity(val: Any) -> str | None:
     if val is None:
@@ -174,6 +183,7 @@ def _norm_identity(val: Any) -> str | None:
         val = val[0]
     s = str(val or "").strip().lower()
     return s or None
+
 
 def _subnet_key(ip: str) -> str | None:
     try:

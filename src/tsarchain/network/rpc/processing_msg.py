@@ -74,19 +74,21 @@ def process_message(
     src_node_id: Optional[str] = None,
     src_pubkey: Optional[str] = None,
 ) -> dict | None:
+    
     if not isinstance(message, dict):
         return {"error": "invalid message: expected JSON object"}
 
     mtype = message.get("type")
     if not isinstance(mtype, str):
         return {"error": "missing or invalid 'type'"}
+    
     mtype = mtype.strip().upper()
-
     role, category = _identify_rpc_role(mtype, self, src_node_id, src_pubkey, addr)
     raw_source = message.get("rpc_source") or message.get("source") or message.get("client")
     rpc_source = _sanitize_rpc_source(raw_source)
     if not rpc_source and _is_storage_node_id(self, src_node_id):
         rpc_source = "storage_node"
+
     if not rpc_source:
         if role == "MINER":
             rpc_source = "miner"
@@ -94,8 +96,8 @@ def process_message(
             rpc_source = "storage"
         else:
             rpc_source = "user"
-    message["rpc_source"] = rpc_source
 
+    message["rpc_source"] = rpc_source
     if role == "UNKNOWN":
         ip = _client_ip(addr)
         ban_ip(ip, (CFG.BAN_MALICIOUS_RPC))
@@ -255,7 +257,7 @@ def _relay_chain(self, route: list[tuple], inner: dict, src_addr=None):
 
 def _send_chat_relay(self, peer: tuple, payload: dict):
     try:
-        self._send_to_peer(peer, payload)
+        self.send_to_peer(peer, payload)
         return {"status":"ok"}
     except Exception:
         log.exception("[_send_chat_relay] send error to %s", peer)

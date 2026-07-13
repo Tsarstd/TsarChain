@@ -36,6 +36,7 @@ def ping(self, message, pow_obj, base_identity, addr, mtype, *,
     
     return {"type": "PONG"}
 
+
 @benchmark(label="GET_PEERS", threshold_ms=15.0)
 def get_peers(self, message, pow_obj, base_identity, addr, mtype, *,
                      client_ip, is_miner_sender, **kwargs):
@@ -59,6 +60,7 @@ def get_peers(self, message, pow_obj, base_identity, addr, mtype, *,
     if not is_miner_sender():
         return {"type": "PEERS", "peers": []}
     return {"type": "PEERS", "peers": list(self.peers)}
+
 
 @benchmark(label="STOR_LIST", threshold_ms=15.0)
 def stor_list(self, message, pow_obj, base_identity, *,

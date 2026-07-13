@@ -46,7 +46,7 @@ def mock_graffiti():
 def network():
     net = MagicMock()
     net.rl_ip = {}
-    net._tb_allow.return_value = True
+    net.tb_node_allow.return_value = True
     net._nonce_guard.return_value = True
     
     net.broadcast.blockchain.height = 1000
@@ -71,7 +71,7 @@ def network():
     return net
 
 def test_rate_limit(network):
-    network._tb_allow.return_value = False
+    network.tb_node_allow.return_value = False
     res = handle_storage_rpc(network, {}, ("127.0.0.1", 1234), "ANY")
     assert res == {"error": "rate_limited"}
 
@@ -120,10 +120,10 @@ def test_proof_submit_basic(network, mock_config):
     mock_config.DEBUG_BENCHMARKS = False
         
     # Replay guard fail
-    network._nonce_guard.return_value = False
+    network.nonce_guard.return_value = False
     res = handle_storage_rpc(network, msg, ("127.0.0.1", 1234), "GRAFFITI_PROOF_SUBMIT", src_node_id="nid1", src_pubkey="pk1")
     assert res == {"error": "replay_guard"}
-    network._nonce_guard.return_value = True
+    network.nonce_guard.return_value = True
 
 def test_proof_submit_bad_fields(network, mock_graffiti):
     msg_base = {"port": 1234, "ts": 123, "nonce": "abc", "storer": "storer_addr"}
@@ -379,7 +379,7 @@ def test_payout_epoch_logic(network, mock_graffiti):
 
 def test_payout_replay_guard(network):
     msg = {"port": 1234, "ts": 123, "nonce": "abc", "art_id": "art1", "recipients": [{"addr": "storer_addr", "amount": 100}]}
-    network._nonce_guard.return_value = False
+    network.nonce_guard.return_value = False
     res = handle_storage_rpc(network, msg, ("127.0.0.1", 1234), "GRAFFITI_BUILD_PAYOUT", src_node_id="nid1", src_pubkey="pk1")
     assert res == {"error": "replay_guard"}
 

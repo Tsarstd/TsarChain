@@ -26,15 +26,15 @@ def mock_node():
     node.peers = []
 
     # Template creation methods
-    node._create_template_tx = MagicMock(return_value={"tx": "template"})
-    node._create_template_tx_multi = MagicMock(return_value={"tx": "multi_template"})
+    node.create_template_tx = MagicMock(return_value={"tx": "template"})
+    node.create_template_tx_multi = MagicMock(return_value={"tx": "multi_template"})
 
     # Rate limiting methods (they may be called)
     def tb_allow(table, key, burst, window, limit, backoff_key=None):
         # For tests, we assume allowed by default unless we override
         return True
-    node._tb_allow = MagicMock(side_effect=tb_allow)
-    node._backoff = MagicMock()
+    node.tb_node_allow = MagicMock(side_effect=tb_allow)
+    node.backoff = MagicMock()
 
     # Other methods used in common.allow_rpc_with_pow? Not needed as we mock that function.
     return node
@@ -51,10 +51,7 @@ def patch_allow_rpc_with_pow():
 def patch_config(monkeypatch):
     """Set config values relevant for tests."""
     monkeypatch.setattr('tsarchain.network.rpc.user_rpc.category.transactions.CFG', MagicMock())
-    # We'll directly set attributes on the mock, or use monkeypatch to set individual values.
-    # But easier: patch the CFG module itself.
     import tsarchain.network.rpc.user_rpc.category.transactions as module
-    # We'll just set some defaults. In test functions we can override.
     module.CFG.DEBUG_BENCHMARKS = False
     module.CFG.ENABLE_DANDELION_PP = False
     module.CFG.TX_SUBMIT_RL_IP_BURST = 10
@@ -193,12 +190,12 @@ def test_create_tx_success(mock_node, patch_allow_rpc_with_pow, patch_config):
     addr = "some_addr"
     client_ip = "1.2.3.4"
 
-    mock_node._create_template_tx.return_value = {"template": "created"}
+    mock_node.create_template_tx.return_value = {"template": "created"}
 
     result = create_tx(mock_node, message, pow_obj, base_identity, addr, "mtype", client_ip=client_ip, is_miner_sender=False)
 
     assert result == {"type": "TX_TEMPLATE", "data": {"template": "created"}}
-    mock_node._create_template_tx.assert_called_once_with("alice", "bob", 1000, 50)
+    mock_node.create_template_tx.assert_called_once_with("alice", "bob", 1000, 50)
     patch_allow_rpc_with_pow.assert_called_once_with(
         mock_node,
         scope="rpc:tx",
@@ -226,11 +223,11 @@ def test_create_tx_pow_fails(mock_node, patch_allow_rpc_with_pow, patch_config):
     result = create_tx(mock_node, message, pow_obj, base_identity, addr, "mtype", client_ip=client_ip, is_miner_sender=False)
 
     assert result == {"error": "pow_required"}
-    mock_node._create_template_tx.assert_not_called()
+    mock_node.create_template_tx.assert_not_called()
 
 def test_create_tx_template_exception(mock_node, patch_allow_rpc_with_pow, patch_config):
-    """Test create_tx when _create_template_tx raises exception."""
-    mock_node._create_template_tx.side_effect = ValueError("invalid address")
+    """Test create_tx when create_template_tx raises exception."""
+    mock_node.create_template_tx.side_effect = ValueError("invalid address")
 
     message = {"from": "alice", "to": "bob", "amount": 1000}
     pow_obj = {"nonce": 123}
@@ -256,17 +253,17 @@ def test_create_tx_fee_rate_clamping(mock_node, patch_allow_rpc_with_pow, patch_
     addr = "some_addr"
     client_ip = "1.2.3.4"
 
-    mock_node._create_template_tx.return_value = {"template": "created"}
+    mock_node.create_template_tx.return_value = {"template": "created"}
 
     create_tx(mock_node, message, pow_obj, base_identity, addr, "mtype", client_ip=client_ip, is_miner_sender=False)
 
     # Should be clamped to MIN_FEE_RATE_SATVB (34)
-    mock_node._create_template_tx.assert_called_once_with("alice", "bob", 1000, 34)
+    mock_node.create_template_tx.assert_called_once_with("alice", "bob", 1000, 34)
 
     # Test above max
     message["fee_rate"] = 20000
     create_tx(mock_node, message, pow_obj, base_identity, addr, "mtype", client_ip=client_ip, is_miner_sender=False)
-    mock_node._create_template_tx.assert_called_with("alice", "bob", 1000, 10000)
+    mock_node.create_template_tx.assert_called_with("alice", "bob", 1000, 10000)
 
 def test_create_tx_multi_success(mock_node, patch_allow_rpc_with_pow, patch_config):
     """Test create_tx_multi returns template successfully."""
@@ -281,12 +278,12 @@ def test_create_tx_multi_success(mock_node, patch_allow_rpc_with_pow, patch_conf
     addr = "some_addr"
     client_ip = "1.2.3.4"
 
-    mock_node._create_template_tx_multi.return_value = {"multi": "template"}
+    mock_node.create_template_tx_multi.return_value = {"multi": "template"}
 
     result = create_tx_multi(mock_node, message, pow_obj, base_identity, addr, "mtype", client_ip=client_ip, is_miner_sender=False)
 
     assert result == {"type": "TX_TEMPLATE", "data": {"multi": "template"}}
-    mock_node._create_template_tx_multi.assert_called_once_with("alice", [{"to": "bob", "amount": 100}], 50, ["input1"])
+    mock_node.create_template_tx_multi.assert_called_once_with("alice", [{"to": "bob", "amount": 100}], 50, ["input1"])
     patch_allow_rpc_with_pow.assert_called_once()
 
 def test_create_tx_multi_missing_params(mock_node, patch_allow_rpc_with_pow, patch_config):
@@ -307,8 +304,8 @@ def test_create_tx_multi_missing_params(mock_node, patch_allow_rpc_with_pow, pat
     assert result == {"error": "missing from/outputs"}
 
 def test_create_tx_multi_template_exception(mock_node, patch_allow_rpc_with_pow, patch_config):
-    """Test create_tx_multi when _create_template_tx_multi raises exception."""
-    mock_node._create_template_tx_multi.side_effect = RuntimeError("insufficient funds")
+    """Test create_tx_multi when create_template_tx_multi raises exception."""
+    mock_node.create_template_tx_multi.side_effect = RuntimeError("insufficient funds")
 
     message = {"from": "alice", "outputs": [{"to": "bob", "amount": 100}]}
     pow_obj = {"nonce": 123}
@@ -333,7 +330,7 @@ def test_create_tx_multi_pow_fails(mock_node, patch_allow_rpc_with_pow, patch_co
     result = create_tx_multi(mock_node, message, pow_obj, base_identity, addr, "mtype", client_ip=client_ip, is_miner_sender=False)
 
     assert result == {"error": "pow_required"}
-    mock_node._create_template_tx_multi.assert_not_called()
+    mock_node.create_template_tx_multi.assert_not_called()
 
 # Additional test: new_tx with sender_addr from data dict if from_addr not present
 def test_new_tx_sender_from_data(mock_node, patch_allow_rpc_with_pow, patch_config):

@@ -17,10 +17,8 @@ log = get_ctx_logger("tsarchain.network.rpc_helper.guard")
 class GuardHandler(NetworkHandlerProxy):
     _init_lock = threading.RLock()
 
-    def _tb_now(self):
-        return time.time()
 
-    def _tb_allow(self, table, key, rate_per_window, window_s, burst, backoff_key=None):
+    def tb_node_allow(self, table, key, rate_per_window, window_s, burst, backoff_key=None):
         now = self._tb_now()
         if not hasattr(self, "backoff_until"):
             self.backoff_until = {}
@@ -31,30 +29,21 @@ class GuardHandler(NetworkHandlerProxy):
             tokens = min(burst, tokens + refill)
         # backoff?
         if backoff_key and self.backoff_until.get(backoff_key, 0) > now:
-            log.warning("[ratelimit] backoff active key=%s until=%.3f now=%.3f", backoff_key, self.backoff_until.get(backoff_key, 0), now)
+            log.warning("[tb_node_allow] backoff active key=%s until=%.3f now=%.3f", backoff_key, self.backoff_until.get(backoff_key, 0), now)
             return False
         if tokens >= 1.0:
             table[key] = (tokens - 1.0, now)
             return True
-        log.warning("[ratelimit] denied key=%s rate=%s/%ss burst=%s", backoff_key or key, rate_per_window, window_s, burst)
+        log.warning("[tb_node_allow] denied key=%s rate=%s/%ss burst=%s", backoff_key or key, rate_per_window, window_s, burst)
         return False
 
-    def _backoff(self, key, secs):
+
+    def backoff_node(self, key, secs):
         self.backoff_until[key] = max(self._tb_now() + secs, self.backoff_until.get(key, 0))
-        log.warning("[ratelimit] backoff set key=%s for %.2fs", key, secs)
+        log.warning("[backoff_node] backoff set key=%s for %.2fs", key, secs)
 
-    def _ensure_nonce_guard_initialized(self):
-        if (hasattr(self, "_nonce_guard_lock") and self._nonce_guard_lock is not None and
-            hasattr(self, "_nonce_guard_table") and self._nonce_guard_table is not None):
-            return
 
-        with GuardHandler._init_lock:
-            if not hasattr(self, "_nonce_guard_lock") or self._nonce_guard_lock is None:
-                self._nonce_guard_lock = threading.RLock()
-            if not hasattr(self, "_nonce_guard_table") or self._nonce_guard_table is None:
-                self._nonce_guard_table = {}
-
-    def _nonce_guard(self, scope: str, sender_key: str, nonce: str, ts: Union[int, float], window: int) -> bool:
+    def nonce_guard(self, scope: str, sender_key: str, nonce: str, ts: Union[int, float], window: int) -> bool:
         
         if not (scope and sender_key and nonce and isinstance(ts, (int, float))):
             return False
@@ -88,3 +77,24 @@ class GuardHandler(NetworkHandlerProxy):
                 for n, _t in sorted(bucket.items(), key=lambda it: it[1])[:len(bucket) - max_entries]:
                     bucket.pop(n, None)
         return True
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
+    def _tb_now(self):
+        return time.time()
+
+
+    def _ensure_nonce_guard_initialized(self):
+        if (hasattr(self, "_nonce_guard_lock") and self._nonce_guard_lock is not None and
+            hasattr(self, "_nonce_guard_table") and self._nonce_guard_table is not None):
+            return
+
+        with GuardHandler._init_lock:
+            if not hasattr(self, "_nonce_guard_lock") or self._nonce_guard_lock is None:
+                self._nonce_guard_lock = threading.RLock()
+            if not hasattr(self, "_nonce_guard_table") or self._nonce_guard_table is None:
+                self._nonce_guard_table = {}

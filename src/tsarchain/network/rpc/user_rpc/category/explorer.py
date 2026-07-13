@@ -15,6 +15,7 @@ from .....utils.helpers import spkhex_to_address
 from .....utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.rpc.user_rpc.category.explorer")
 
+
 @benchmark(label="GET_BALANCES", threshold_ms=5.0)
 def get_balances(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
@@ -62,7 +63,7 @@ def get_balances(self, message, pow_obj, base_identity, *,
         mem = self.broadcast.mempool.get_all_txs()
     self.broadcast.utxodb._load()
 
-    opmap_chain, opmap_mem = self._build_outpoint_map(chain, mem)
+    opmap_chain, opmap_mem = self.build_outpoint_map(chain, mem)
     pending_out_map: dict[str, int] = {}
     incoming_map: dict[str, int] = {}
     for tx in mem or []:
@@ -70,7 +71,7 @@ def get_balances(self, message, pow_obj, base_identity, *,
         recv_local: dict[str, int] = {}
 
         for tin in getattr(tx, "inputs", []) or []:
-            key = self._txin_prevkey(tin)
+            key = self.txin_prevkey(tin)
             amt_spk = opmap_mem.get(key) or opmap_chain.get(key)
             if not amt_spk:
                 continue
@@ -83,7 +84,7 @@ def get_balances(self, message, pow_obj, base_identity, *,
             amt = int(getattr(o, "amount", 0) or 0)
             if amt <= 0:
                 continue
-            addr_o = self._txout_to_address(o)
+            addr_o = self.txout_to_address(o)
             if addr_o:
                 recv_local[addr_o] = recv_local.get(addr_o, 0) + amt
 
@@ -120,12 +121,8 @@ def get_balances(self, message, pow_obj, base_identity, *,
         }
     
     response_dict = {"type": "BALANCES", "height": tip_height, "items": items}
-    
-    serialized = json.dumps(response_dict, separators=CFG.CANONICAL_SEP).encode("utf-8")
-    size_bytes = len(serialized)
-    log.debug("GET_BALANCES response size: %d bytes (%.2f KB)", size_bytes, size_bytes / 1024.0)
-        
     return response_dict
+
 
 @benchmark(label="GET_NETWORK_INFO", threshold_ms=15.0)
 def get_network_info(self, message, pow_obj, base_identity, *,
@@ -147,7 +144,7 @@ def get_network_info(self, message, pow_obj, base_identity, *,
     if not ok:
         return pow_resp
     
-    snap = self.broadcast.blockchain._read_snapshot_state()
+    snap = self.broadcast.blockchain.chain_storage._read_snapshot_state()
     overlay_realtime_mempool_stats(snap, self)
     with self.lock:
         peers_sane = [(ip,p) for (ip,p) in self.peers if isinstance(p,int) and p>0]
@@ -158,13 +155,9 @@ def get_network_info(self, message, pow_obj, base_identity, *,
     else:
         snap["peers"] = {"count": len(peers_sane)}
         
-    response_dict = {"type": "NETWORK_INFO", "data": snap}
-    
-    serialized = json.dumps(response_dict, separators=CFG.CANONICAL_SEP).encode("utf-8")
-    size_bytes = len(serialized)
-    log.debug("GET_NETWORK_INFO response size: %d bytes (%.2f KB)", size_bytes, size_bytes / 1024.0)
-        
+    response_dict = {"type": "NETWORK_INFO", "data": snap}   
     return response_dict
+
 
 def get_block(self, message, pow_obj, base_identity,*,
                      client_ip, **kwargs):
@@ -191,6 +184,7 @@ def get_block(self, message, pow_obj, base_identity,*,
     if not hx:
         return {"type": "BLOCK", "error": "missing_height_or_hash"}
     return handlers.handle_get_block_by_hash(self, hx, src_tag=src_tag)
+
 
 @benchmark(label="GET_BLOCK_RANGE", threshold_ms=15.0)
 def get_block_range(self, message, pow_obj, base_identity, *,
@@ -278,12 +272,9 @@ def get_block_range(self, message, pow_obj, base_identity, *,
         "next_height": h,
         "has_more": has_more,
     }
-    
-    serialized = json.dumps(response_dict, separators=CFG.CANONICAL_SEP).encode("utf-8")
-    size_bytes = len(serialized)
-    log.debug("GET_BLOCK_RANGE response size: %d bytes (%.2f KB)", size_bytes, size_bytes / 1024.0)
 
     return response_dict
+
 
 @benchmark(label="GET_MEMPOOL", threshold_ms=35.0)
 def get_mempool(self, message, pow_obj, base_identity, addr, *,
@@ -399,6 +390,7 @@ def get_mempool(self, message, pow_obj, base_identity, addr, *,
         
     return {"type": "MEMPOOL", "mode": "txids", "txs": hexes}
 
+
 @benchmark(label="GET_TX_HISTORY", threshold_ms=35.0)
 def get_tx_history(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
@@ -427,17 +419,14 @@ def get_tx_history(self, message, pow_obj, base_identity, *,
         limit = CFG.MAX_HISTORY_LIMIT
     with self.broadcast.lock:
         tip_height = int(self.broadcast.blockchain.height)
-    history = self._get_tx_history(addr_str, limit=limit, offset=offset,
+    history = self.process_history_lookup(addr_str, limit=limit, offset=offset,
                                 direction=message.get("direction"),
                                 status=message.get("status"))
     history["height"] = tip_height
             
     response_dict = {"type": "TX_HISTORY", "address": addr_str, **history}
-    serialized = json.dumps(response_dict, separators=CFG.CANONICAL_SEP).encode("utf-8")
-    size_bytes = len(serialized)
-    log.debug("GET_TX_HISTORY response size: %d bytes (%.2f KB)", size_bytes, size_bytes / 1024.0)
-    
     return response_dict
+
 
 def get_tx_detail(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs): 
@@ -461,7 +450,8 @@ def get_tx_detail(self, message, pow_obj, base_identity, *,
     if not ok:
         return pow_resp
         
-    return self._get_tx_detail(txid_hex, message.get("rpc_source"))
+    return self.process_tx_lookup(txid_hex, message.get("rpc_source"))
+
 
 @benchmark(label="GET_TOTAL_UTXO", threshold_ms=10.0)
 def get_total_utxo(self, message, pow_obj, base_identity, *,
@@ -491,5 +481,4 @@ def get_total_utxo(self, message, pow_obj, base_identity, *,
         return {"error": "address too long"}
     
     count = self.broadcast.utxodb.count_utxos(address)
-        
     return {"type": "UTXOS_COUNT", "count": count}

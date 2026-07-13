@@ -3,17 +3,18 @@
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: see REFERENCES.md
 
-import multiprocessing as mp
 import time
+import multiprocessing as mp
+
 from typing import List, Optional
 from multiprocessing.synchronize import Event as MpEvent
 
 
 # ---------------- Local Project ----------------
-from ..utils.helpers import int_to_little_endian, merkle_root, pow_hash_verify_light, bits_to_target, pow_key_for_height, native_randomx_mine
-from ..core.coinbase import CoinbaseTx
 from ..core.tx import Tx
 from ..utils import config as CFG
+from ..core.coinbase import CoinbaseTx
+from ..utils.helpers import int_to_little_endian, merkle_root, pow_hash_verify_light, bits_to_target, pow_key_for_height, native_randomx_mine
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
@@ -101,11 +102,7 @@ class Block:
         for tx_data in data["transactions"]:
             tx_type = tx_data.get("type")
             if tx_type == "Coinbase" or tx_data.get("is_coinbase"):
-                try:
-                    tx_obj = CoinbaseTx.from_dict(tx_data)
-                except Exception:
-                    tx_obj = Tx.from_dict(tx_data)
-                    log.exception("[Block.from_dict] Failed to parse CoinbaseTx, fallback to Tx")
+                tx_obj = CoinbaseTx.from_dict(tx_data)
             else:
                 tx_obj = Tx.from_dict(tx_data)
             tx_list.append(tx_obj)
@@ -142,7 +139,6 @@ class Block:
                 obj._cached_hash_prev = obj.prev_block_hash
         except Exception:
             log.exception("cache_hash_skiped")
-            pass
 
         meta = data.get("_meta")
         if isinstance(meta, dict):
@@ -195,9 +191,6 @@ class Block:
         self._cached_hash_prev = self.prev_block_hash
         return h
 
-    def is_valid(self, target: int):
-        hnum = int.from_bytes(self.hash(), 'big')
-        return hnum < target
 
     def mine(self, use_cores: int = None, stop_event: Optional[MpEvent] = None, pow_backend: str = "auto", progress_queue: Optional[mp.Queue] = None):
         self.nonce = 0

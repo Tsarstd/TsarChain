@@ -45,7 +45,7 @@ def test_log_block_reject(dummy_node):
         )
         assert mock_log.warning.called
         args, kwargs = mock_log.warning.call_args
-        assert "[block_reject] stage=%s" in args[0]
+        assert "[_log_block_reject] stage=%s" in args[0]
         assert args[1] == "test_stage"
         assert args[2] == 100
         assert args[3] == "1234567890abcdef"

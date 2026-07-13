@@ -63,7 +63,7 @@ class MockNode:
     def penalize_peer(self, peer, amount):
         pass
 
-    def _nonce_guard(self, *args):
+    def nonce_guard(self, *args):
         return True
 
     def rpc_request(self, peer, payload, timeout=None):
@@ -401,7 +401,7 @@ def test_request_full_sync_replay_guard_failure(mock_cfg, mock_node):
     mock_cfg.SYNC_TIMEOUT = 10.0
     peer = ("127.0.0.1", 8333)
     mock_node.rpc_request = MagicMock(return_value={"type": "FULL_SYNC", "ts": 123, "nonce": "abc"})
-    mock_node._nonce_guard = MagicMock(return_value=False)
+    mock_node.nonce_guard = MagicMock(return_value=False)
     assert request_full_sync(mock_node, peer, force=True) is False
 
 @patch("tsarchain.network.node_logic.rpc_client.socket.socket")

@@ -88,7 +88,7 @@ def test_verify_chat_signatures(mock_batch_verify):
 
 def test_summarize_block():
     mock_network = Mock()
-    mock_network._bhash_hex.return_value = "block_hash_123"
+    mock_network.bhash_hex.return_value = "block_hash_123"
     
     mock_block = Mock()
     mock_block.height = 100
@@ -149,7 +149,7 @@ def test_summarize_block():
 @patch("tsarchain.network.rpc.user_rpc.common.issue_pow")
 def test_allow_rpc_with_pow(mock_issue_pow, mock_verify_pow):
     mock_network = Mock()
-    mock_network._tb_allow.return_value = True
+    mock_network.tb_node_allow.return_value = True
     
     # 1. pow_obj provided and valid
     mock_verify_pow.return_value = True
@@ -188,7 +188,7 @@ def test_allow_rpc_with_pow(mock_issue_pow, mock_verify_pow):
     assert err is None
     
     # 3. pow_obj invalid/None, token bucket denies, issue new pow
-    mock_network._tb_allow.return_value = False
+    mock_network.tb_node_allow.return_value = False
     mock_issue_pow.return_value = "pow_chal"
     
     allowed, err = allow_rpc_with_pow(
@@ -209,9 +209,9 @@ def test_allow_rpc_with_pow(mock_issue_pow, mock_verify_pow):
     assert err["pow_challenge"] == "pow_chal"
     assert err["retry_after"] == 10
     
-    # 4. _backoff throws Exception (should be caught and passed)
-    mock_network._tb_allow.return_value = False
-    mock_network._backoff.side_effect = Exception("backoff error")
+    # 4. backoff throws Exception (should be caught and passed)
+    mock_network.tb_node_allow.return_value = False
+    mock_network.backoff.side_effect = Exception("backoff error")
     allowed, err = allow_rpc_with_pow(
         mock_network,
         scope="test_scope",
@@ -229,7 +229,7 @@ def test_allow_rpc_with_pow(mock_issue_pow, mock_verify_pow):
     
     # 5. verify_pow throws Exception (should be caught and passed, and proceed to tb_allow)
     mock_verify_pow.side_effect = Exception("pow error")
-    mock_network._tb_allow.return_value = True
+    mock_network.tb_node_allow.return_value = True
     allowed, err = allow_rpc_with_pow(
         mock_network,
         scope="test_scope",
@@ -246,7 +246,7 @@ def test_allow_rpc_with_pow(mock_issue_pow, mock_verify_pow):
     assert allowed is True
     
     # 6. empty ip and identity
-    mock_network._tb_allow.return_value = True
+    mock_network.tb_node_allow.return_value = True
     allowed, err = allow_rpc_with_pow(
         mock_network,
         scope="test_scope",
@@ -263,7 +263,7 @@ def test_allow_rpc_with_pow(mock_issue_pow, mock_verify_pow):
     assert allowed is True
 
     # 7. No backoff_s, denied by bucket
-    mock_network._tb_allow.return_value = False
+    mock_network.tb_node_allow.return_value = False
     allowed, err = allow_rpc_with_pow(
         mock_network,
         scope="test_scope",

@@ -51,8 +51,8 @@ def mock_network():
         },
     }
     net.lock = threading.Lock()
-    net._tb_allow = MagicMock(return_value=True)
-    net._backoff = MagicMock()
+    net.tb_node_allow = MagicMock(return_value=True)
+    net.backoff = MagicMock()
     return net
 
 

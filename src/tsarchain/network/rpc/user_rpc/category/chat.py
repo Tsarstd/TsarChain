@@ -146,9 +146,10 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
         self.chat_prekeys[addr_s] = b
 
     pres = {"pid": pid, "address": addr_s, "pubkey": chat_pub, "spend_pub": spend_pk, "presence_sig": presence_sig, "ts": int(now), "hops": 0}
-    self._relay_presence_async(pres, exclude=addr)
+    self.relay_presence_async(pres, exclude=addr)
     
     return {"type": "CHAT_REGISTERED", "address": addr_s, "pubkey": chat_pub}
+
 
 @benchmark(label="CHAT_LOOKUP_PUB", threshold_ms=15.0)
 def chat_lookup_pub(self, message, pow_obj, base_identity, *,
@@ -195,6 +196,7 @@ def chat_lookup_pub(self, message, pow_obj, base_identity, *,
         last_seen = int(ts_field)
 
     return {"type": "CHAT_PUBKEY", "address": addr_s, "pubkey": pubhex, "found": bool(pubhex), "last_seen": last_seen}
+
 
 @benchmark(label="CHAT_PRESENCE", threshold_ms=15.0)
 def chat_presence(self, message, pow_obj, base_identity, addr, *,
@@ -277,11 +279,13 @@ def chat_presence(self, message, pow_obj, base_identity, addr, *,
         self.chat_prekeys[addr_s] = b
 
     message["hops"] = hops + 1
-    self._relay_presence_async(message, exclude=addr)
+    self.relay_presence_async(message, exclude=addr)
     
     return {"type": "CHAT_PRESENCE_OK"}
 
+
 # ====== PREKEY BUNDLE ======
+
 
 @benchmark(label="CHAT_PUBLISH_PREKEYS", threshold_ms=15.0)
 def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
@@ -328,6 +332,7 @@ def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
 
     return {"type":"CHAT_PUBLISH_PREKEYS"}
 
+
 @benchmark(label="CHAT_GET_PREKEY", threshold_ms=15.0)
 def chat_get_prekey(self, message, *,
                     client_ip, is_miner_sender, **kwargs):
@@ -346,7 +351,9 @@ def chat_get_prekey(self, message, *,
     
     return {"type":"CHAT_PREKEY_BUNDLE","bundle":{"ik": b["ik"], "spk": b["spk"], "sig": b["sig"], "opk": opk, "spend_pub": sp}}
 
+
 # ====== END OF PREKEY BUNDLE ======
+
 
 @benchmark(label="CHAT_SEND", threshold_ms=15.0)
 def chat_send(self, message, pow_obj, base_identity, *,
@@ -402,7 +409,7 @@ def chat_send(self, message, pow_obj, base_identity, *,
     if abs(now - ts) > CFG.CHAT_TS_DRIFT_S:
         return {"type": "CHAT_ACK", "status": "rejected", "reason": "ts_drift"}
 
-    if self._dedup_mid(frm, mid):
+    if self.dedup_mid(frm, mid):
         return {"type": "CHAT_ACK", "status": "duplicate"}
 
     # ---- Encrypted only ----
@@ -473,7 +480,7 @@ def chat_send(self, message, pow_obj, base_identity, *,
             relay_chain(self, route, inner)
             return {"type": "CHAT_ACK", "status": "relayed", "hops": len(route)}
 
-    ok = self._mailbox_put(to, {
+    ok = self.mailbox_put(to, {
         "type": "CHAT_ITEM",
         "from": frm,
         "to": to,
@@ -489,9 +496,10 @@ def chat_send(self, message, pow_obj, base_identity, *,
 
     if not ok:
         return {"type": "CHAT_ACK", "status": "mailbox_full"}
-    self._enqueue_rcpt(frm, "delivered", mid, frm, to, ts)
+    self.enqueue_rcpt(frm, "delivered", mid, frm, to, ts)
     
     return {"type": "CHAT_ACK", "status": "queued"}
+
 
 @benchmark(label="CHAT_READ", threshold_ms=15.0)
 def chat_read(self, message, pow_obj, base_identity, *,
@@ -536,9 +544,10 @@ def chat_read(self, message, pow_obj, base_identity, *,
     if not read_check.get("read"):
         return {"error": "bad_sig"}
 
-    self._enqueue_rcpt(sender, "read", mid, sender, reader, int(time.time()))
+    self.enqueue_rcpt(sender, "read", mid, sender, reader, int(time.time()))
     
     return {"type": "CHAT_READ_OK"}
+
 
 @benchmark(label="CHAT_PULL", threshold_ms=15.0)
 def chat_pull(self, message, *,
@@ -568,10 +577,11 @@ def chat_pull(self, message, *,
     if not pull_check.get("pull"):
         return {"type": "CHAT_NONE", "items": [], "error": "bad_sig"}
 
-    items = self._mailbox_pull(me, n)
-    self._gc_mailboxes()
+    items = self.mailbox_pull(me, n)
+    self.gc_mailboxes()
     
     return {"type": "CHAT_ITEMS", "items": items}
+
 
 @benchmark(label="CHAT_RELAY", threshold_ms=15.0)
 def chat_relay(self, message, pow_obj, base_identity, *,
@@ -634,7 +644,7 @@ def chat_relay(self, message, pow_obj, base_identity, *,
     if (inner or {}).get("type") == "CHAT_SEND_INNER":
         to  = (inner.get("to") or "").strip().lower()
         msg = inner.get("msg") or {}
-        ok = self._mailbox_put(to, {
+        ok = self.mailbox_put(to, {
             "type": "CHAT_ITEM",
             "from": msg.get("from"),
             "to": to,
@@ -650,4 +660,3 @@ def chat_relay(self, message, pow_obj, base_identity, *,
         
         return {"type": "CHAT_RELAY_ACK", "status": ("queued" if ok else "rejected")}
     return {"error": "bad_inner"}
-

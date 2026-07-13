@@ -63,12 +63,113 @@ def handle_storage_rpc(
     return None
 
 
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
+def _check_storage_rate_limit(self, ip):
+    rl_key = f"storage_rpc:{ip}"
+    if not self.tb_node_allow(self.rl_ip, rl_key, CFG.STORAGE_RPC_RL_IP_BURST, CFG.STORAGE_RPC_RL_WINDOW_S, CFG.STORAGE_RPC_RL_IP_BURST, backoff_key=rl_key):
+        self.backoff_node(rl_key, CFG.STORAGE_RPC_RL_BACKOFF_S)
+        return {"error": "rate_limited"}
+    return None
+
+
+def _resolve_storage_sender_meta(_, peers, ip, peer_port, src_node_id, src_pubkey):
+    best_meta = None
+    best_score = -1
+    for (peer_ip, peer_port_known), meta in peers.items():
+        pinned_nid = (meta or {}).get("node_id")
+        pinned_pk = (meta or {}).get("pubkey")
+        if pinned_nid and pinned_nid != src_node_id:
+            continue
+
+        if pinned_pk and not src_pubkey:
+            continue
+
+        if pinned_pk and src_pubkey and pinned_pk != src_pubkey:
+            log.warning("[storage_auth] pubkey mismatch nid=%s ip=%s", pinned_nid or "-", ip)
+            continue
+
+        if peer_ip != ip:
+            continue
+
+        score = -1
+        if peer_port_known > 0 and peer_port > 0:
+            if peer_port_known != peer_port:
+                continue
+            score = 2
+
+        elif peer_port_known == 0 or peer_port == 0:
+            score = 1
+
+        if score > best_score:
+            best_meta = meta
+            best_score = score
+
+    return best_meta
+
+
+@benchmark(label="GRAFFITI_PROOF_SUBMIT", threshold_ms=15.0)
+def _handle_storage_proof_submit(self, message, storer_addr, ip, src_node_id):
+    ts_val = int(message.get("ts", 0))
+    nonce_val = str(message.get("nonce") or "")
+    sender_key = src_node_id or ip
+    if not (ts_val and nonce_val and self.nonce_guard("storage_proof", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
+        return {"error": "replay_guard"}
+
+    err, basic_fields = _validate_proof_basic_fields(message, storer_addr)
+    if err: return err
+    art_id, epoch, offset, length, proof_hash, storer, height, seed = basic_fields
+
+    reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
+    if not reg:
+        return {"error": "registry_unavailable"}
+    post = reg.get_post(art_id)
+    if not post:
+        return {"error": "unknown_art_id"}
+    size = int(post.get("size") or 0)
+    if size <= 0 or (offset + length) > size:
+        return {"error": "out_of_range", "size": size}
+
+    err, merkle_meta = _validate_merkle_meta(post)
+    if err: return err
+    mroot, mchunk, mcount = merkle_meta
+
+    challenge = _validate_proof_challenge(self, epoch, height, art_id, size, mroot, mchunk, offset, length, seed)
+    if "error" in challenge:
+        return challenge
+
+    err = _verify_proof_merkle_chunk(message, length, proof_hash, mroot, mchunk, mcount, offset)
+    if err: return err
+
+    existing = reg.get_proof(art_id, storer, epoch) if hasattr(reg, "get_proof") else None
+    if existing:
+        existing_hash = str(existing.get("hash") or "").strip().lower()
+        if existing_hash and existing_hash != proof_hash:
+            log.error("[GRAFFITI_PROOF_SUBMIT] proof conflict: proof_hash=%s existing_hash=%s", proof_hash, existing_hash)
+            return {"error": "proof_conflict"}
+    
+    reg.record_proof(
+        art_id=art_id,
+        storer=storer,
+        epoch=epoch,
+        offset=offset,
+        length=length,
+        proof_hash=proof_hash,
+        height=height,
+        seed=str(challenge.get("seed", "")),
+    )
+    return {"status": "ok", "art_id": art_id, "epoch": epoch}
+
+
 @benchmark(label="GRAFFITI_BUILD_PAYOUT", threshold_ms=15.0)
 def _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id):
     ts_val = int(message.get("ts", 0))
     nonce_val = str(message.get("nonce") or "")
     sender_key = src_node_id or ip
-    if not (ts_val and nonce_val and self._nonce_guard("storage_payout", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
+    if not (ts_val and nonce_val and self.nonce_guard("storage_payout", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
         return {"error": "replay_guard"}
         
     art_id_raw = str(message.get("art_id") or "").strip()
@@ -128,59 +229,6 @@ def _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id):
             return {"error": "broadcast_failed"}
         
     return {"status": "ok", "tx": tx_obj.to_dict(include_txid=True)}
-
-
-@benchmark(label="GRAFFITI_PROOF_SUBMIT", threshold_ms=15.0)
-def _handle_storage_proof_submit(self, message, storer_addr, ip, src_node_id):
-    ts_val = int(message.get("ts", 0))
-    nonce_val = str(message.get("nonce") or "")
-    sender_key = src_node_id or ip
-    if not (ts_val and nonce_val and self._nonce_guard("storage_proof", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
-        return {"error": "replay_guard"}
-
-    err, basic_fields = _validate_proof_basic_fields(message, storer_addr)
-    if err: return err
-    art_id, epoch, offset, length, proof_hash, storer, height, seed = basic_fields
-
-    reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
-    if not reg:
-        return {"error": "registry_unavailable"}
-    post = reg.get_post(art_id)
-    if not post:
-        return {"error": "unknown_art_id"}
-    size = int(post.get("size") or 0)
-    if size <= 0 or (offset + length) > size:
-        return {"error": "out_of_range", "size": size}
-
-    err, merkle_meta = _validate_merkle_meta(post)
-    if err: return err
-    mroot, mchunk, mcount = merkle_meta
-
-    challenge = _validate_proof_challenge(self, epoch, height, art_id, size, mroot, mchunk, offset, length, seed)
-    if "error" in challenge:
-        return challenge
-
-    err = _verify_proof_merkle_chunk(message, length, proof_hash, mroot, mchunk, mcount, offset)
-    if err: return err
-
-    existing = reg.get_proof(art_id, storer, epoch) if hasattr(reg, "get_proof") else None
-    if existing:
-        existing_hash = str(existing.get("hash") or "").strip().lower()
-        if existing_hash and existing_hash != proof_hash:
-            log.error("[GRAFFITI_PROOF_SUBMIT] proof conflict: proof_hash=%s existing_hash=%s", proof_hash, existing_hash)
-            return {"error": "proof_conflict"}
-    
-    reg.record_proof(
-        art_id=art_id,
-        storer=storer,
-        epoch=epoch,
-        offset=offset,
-        length=length,
-        proof_hash=proof_hash,
-        height=height,
-        seed=str(challenge.get("seed", "")),
-    )
-    return {"status": "ok", "art_id": art_id, "epoch": epoch}
 
 
 def _proof_epoch_window(self) -> tuple[int, int, int]:
@@ -342,47 +390,4 @@ def _check_payout_cooldown(self, art_id, storer_addr):
                     "retry_after": int(cooldown - (now - last_ts)),
                 }
             guard[guard_key] = now
-    return None
-
-
-def _resolve_storage_sender_meta(self, peers, ip, peer_port, src_node_id, src_pubkey):
-    best_meta = None
-    best_score = -1
-    for (peer_ip, peer_port_known), meta in peers.items():
-        pinned_nid = (meta or {}).get("node_id")
-        pinned_pk = (meta or {}).get("pubkey")
-        if pinned_nid and pinned_nid != src_node_id:
-            continue
-
-        if pinned_pk and not src_pubkey:
-            continue
-
-        if pinned_pk and src_pubkey and pinned_pk != src_pubkey:
-            log.warning("[storage_auth] pubkey mismatch nid=%s ip=%s", pinned_nid or "-", ip)
-            continue
-
-        if peer_ip != ip:
-            continue
-
-        score = -1
-        if peer_port_known > 0 and peer_port > 0:
-            if peer_port_known != peer_port:
-                continue
-            score = 2
-
-        elif peer_port_known == 0 or peer_port == 0:
-            score = 1
-
-        if score > best_score:
-            best_meta = meta
-            best_score = score
-
-    return best_meta
-
-
-def _check_storage_rate_limit(self, ip):
-    rl_key = f"storage_rpc:{ip}"
-    if not self._tb_allow(self.rl_ip, rl_key, CFG.STORAGE_RPC_RL_IP_BURST, CFG.STORAGE_RPC_RL_WINDOW_S, CFG.STORAGE_RPC_RL_IP_BURST, backoff_key=rl_key):
-        self._backoff(rl_key, CFG.STORAGE_RPC_RL_BACKOFF_S)
-        return {"error": "rate_limited"}
     return None

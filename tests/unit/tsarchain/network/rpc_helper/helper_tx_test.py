@@ -53,7 +53,7 @@ def make_bech32_addr(program_bytes):
 
 
 def make_spk_from_addr(addr):
-    """Helper to get script pubkey from address using the same logic as _addr_to_spk."""
+    """Helper to get script pubkey from address using the same logic as addr_to_spk."""
     hrp, data = bech32.bech32_decode(addr)
     if data is None:
         raise ValueError("invalid bech32")
@@ -61,17 +61,17 @@ def make_spk_from_addr(addr):
     return Script([0, bytes(decoded)])
 
 
-# ---------- Tests for _addr_to_spk ----------
+# ---------- Tests for addr_to_spk ----------
 def test_addr_to_spk_valid(mixin):
     prog = bytes.fromhex("aabbccddeeff" * 4)  # 20 bytes
     addr = make_bech32_addr(prog)
-    spk = mixin._addr_to_spk(addr)
+    spk = mixin.addr_to_spk(addr)
     assert spk.cmds == [0, prog]
 
 
 def test_addr_to_spk_invalid_bech32(mixin):
     with pytest.raises(ValueError, match="invalid bech32 address"):
-        mixin._addr_to_spk("invalid")
+        mixin.addr_to_spk("invalid")
 
 
 def test_addr_to_spk_wrong_hrp(mixin):
@@ -80,13 +80,13 @@ def test_addr_to_spk_wrong_hrp(mixin):
     data = [0] + list(bech32.convertbits(prog, 8, 5, True))
     addr = bech32.bech32_encode("wrong", data)
     with pytest.raises(ValueError, match="Address HRP must be tsar"):
-        mixin._addr_to_spk(addr)
+        mixin.addr_to_spk(addr)
 
 
 def test_addr_to_spk_decode_fails(mixin):
     addr = "tsar1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
     with pytest.raises(ValueError, match="invalid bech32 address"):
-        mixin._addr_to_spk(addr)
+        mixin.addr_to_spk(addr)
 
 
 # ---------- Tests for _est_tx_size ----------
@@ -271,7 +271,7 @@ def test_guard_graffiti_output_invalid_payload(mixin):
         mixin._guard_graffiti_output(spk)
 
 
-# ---------- Tests for _create_template_tx ----------
+# ---------- Tests for create_template_tx ----------
 def test_create_template_tx_success(mixin):
     from_addr = make_bech32_addr(b"a"*20)
     to_addr = make_bech32_addr(b"b"*20)
@@ -291,7 +291,7 @@ def test_create_template_tx_success(mixin):
     fee = 1000
     change = 0
     with patch.object(mixin, "_select_utxos_for", return_value=(selected_utxos, fee, change)):
-        result = mixin._create_template_tx(from_addr, to_addr, amount, fee_rate)
+        result = mixin.create_template_tx(from_addr, to_addr, amount, fee_rate)
 
     assert result["from"] == from_addr
     assert result["to"] == to_addr
@@ -323,7 +323,7 @@ def test_create_template_tx_with_change(mixin):
     fee = 2000
     change = 1000  # > dust
     with patch.object(mixin, "_select_utxos_for", return_value=(selected_utxos, fee, change)):
-        result = mixin._create_template_tx(from_addr, to_addr, amount, fee_rate)
+        result = mixin.create_template_tx(from_addr, to_addr, amount, fee_rate)
 
     assert result["change"] == change
     tx_dict = result["tx"]
@@ -344,7 +344,7 @@ def test_create_template_tx_coinbase_maturity(mixin):
     mixin.broadcast.blockchain.height = 101  # confirmations = 101-100+1=2, less than 3
 
     with pytest.raises(ValueError, match="no spendable utxos"):
-        mixin._create_template_tx(from_addr, to_addr, amount, fee_rate)
+        mixin.create_template_tx(from_addr, to_addr, amount, fee_rate)
 
 
 def test_create_template_tx_no_utxos(mixin):
@@ -352,10 +352,10 @@ def test_create_template_tx_no_utxos(mixin):
     to_addr = make_bech32_addr(b"b"*20)
     mixin.broadcast.utxodb.get.return_value = {}
     with pytest.raises(ValueError, match="no spendable utxos"):
-        mixin._create_template_tx(from_addr, to_addr, 1.0, 34)
+        mixin.create_template_tx(from_addr, to_addr, 1.0, 34)
 
 
-# ---------- Tests for _create_template_tx_multi ----------
+# ---------- Tests for create_template_tx_multi ----------
 def test_create_template_tx_multi_simple(mixin):
     from_addr = make_bech32_addr(b"a"*20)
     outputs = [
@@ -369,7 +369,7 @@ def test_create_template_tx_multi_simple(mixin):
         "a"*64 + ":0": {"amount": 9000, "script_pubkey": "deadbeef", "block_height": 50, "is_coinbase": False},
     }
     mixin.broadcast.utxodb.get.return_value = utxos_map
-    result = mixin._create_template_tx_multi(from_addr, outputs, fee_rate)
+    result = mixin.create_template_tx_multi(from_addr, outputs, fee_rate)
 
     assert result["from"] == from_addr
     assert "tx" in result
@@ -413,7 +413,7 @@ def test_create_template_tx_multi_with_opret(mixin):
         "a"*64 + ":0": {"amount": 7600, "script_pubkey": "deadbeef", "block_height": 50, "is_coinbase": False},
     }
     mixin.broadcast.utxodb.get.return_value = utxos_map
-    result = mixin._create_template_tx_multi(from_addr, outputs, fee_rate)
+    result = mixin.create_template_tx_multi(from_addr, outputs, fee_rate)
     
     tx_dict = result["tx"]
     last_out = tx_dict["outputs"][-1]
@@ -450,7 +450,7 @@ def test_build_utxos_list(mixin):
     assert result_empty2 == []
 
 
-# ---------- Tests for _create_template_tx_multi with force_inputs ----------
+# ---------- Tests for create_template_tx_multi with force_inputs ----------
 def test_create_template_tx_multi_force_inputs(mixin):
     """Test force_inputs handling: valid, global UTXO fallback, and missing error."""
     from_addr = make_bech32_addr(b"a"*20)
@@ -476,20 +476,20 @@ def test_create_template_tx_multi_force_inputs(mixin):
     mixin.broadcast.utxodb.utxos = global_utxos
 
     force_inputs = [f"{txid1}:0", f"{txid2}:1"]
-    result = mixin._create_template_tx_multi(from_addr, outputs, fee_rate, force_inputs=force_inputs)
+    result = mixin.create_template_tx_multi(from_addr, outputs, fee_rate, force_inputs=force_inputs)
     input_txids = {inp["txid"] for inp in result["inputs"]}
     assert input_txids == {txid1, txid2}
     assert len(result["inputs"]) == 2
 
     force_inputs = [f"{txid1}:0", f"{txid3}:2"]
-    result = mixin._create_template_tx_multi(from_addr, outputs, fee_rate, force_inputs=force_inputs)
+    result = mixin.create_template_tx_multi(from_addr, outputs, fee_rate, force_inputs=force_inputs)
     input_txids = {inp["txid"] for inp in result["inputs"]}
     assert {txid1, txid3}.issubset(input_txids)   # tidak memeriksa panjang
 
     txid5 = "e" * 64
     force_inputs = [f"{txid1}:0", f"{txid5}:4"]
     with pytest.raises(ValueError, match="forced_input_missing"):
-        mixin._create_template_tx_multi(from_addr, outputs, fee_rate, force_inputs=force_inputs)
+        mixin.create_template_tx_multi(from_addr, outputs, fee_rate, force_inputs=force_inputs)
 
 
 # ---------- Tests for _guard_graffiti_output COMMENT edge cases ----------

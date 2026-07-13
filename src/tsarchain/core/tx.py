@@ -43,7 +43,6 @@ class Tx:
                 self.compute_txid()
             except Exception:
                 log.exception("auto_compute_err")
-                pass
             
     # -------- Fee helpers ----------
 

@@ -150,19 +150,6 @@ def test_block_from_dict_edge_cases():
         assert b.chainwork == "0002"
         assert b.difficulty == 2.0
 
-def test_block_from_dict_fallback_coinbase():
-    d = {
-        "height": 1,
-        "prev_block_hash": b"prev",
-        "merkle_root": b"mr",
-        "transactions": [{"type": "Coinbase", "txid": "00"*32}],
-    }
-    with patch("tsarchain.core.block.CoinbaseTx.from_dict", side_effect=Exception("parse error")), \
-         patch("tsarchain.core.block.Tx.from_dict") as mock_tx:
-        mock_tx.return_value = "fallback_tx"
-        b = Block.from_dict(d)
-        assert b.transactions == ["fallback_tx"]
-
 def test_block_deserialize_block():
     with patch("tsarchain.core.block.Block.from_dict") as mock_from:
         mock_from.return_value = "block"
@@ -207,13 +194,6 @@ def test_block_hash(mock_key, mock_pow, monkeypatch):
     h4 = b.hash()
     assert h4 == b"hash_fallback"
     mock_pow.assert_called_with(b.header(), height=1)
-
-@patch("tsarchain.core.block.Block.hash")
-def test_block_is_valid(mock_hash):
-    b = Block(1, b"prev", [])
-    mock_hash.return_value = (10).to_bytes(32, "big")
-    assert b.is_valid(11) is True
-    assert b.is_valid(10) is False
 
 @patch("tsarchain.core.block.mp.cpu_count")
 @patch("tsarchain.core.block.bits_to_target")
