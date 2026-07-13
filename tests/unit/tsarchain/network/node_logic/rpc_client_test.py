@@ -4,21 +4,20 @@
 
 import json
 import time
+import pytest
 import threading
+
 from collections import OrderedDict
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from tsarchain.network.node_logic.rpc_client import (
     rpc_request,
     request_mempool_inline,
     request_mempool_snapshot,
     request_full_sync,
-    _prefetch_rpc_connections,
-    _prefetch_peer_channel,
+    prefetch_rpc_connections,
+    prefetch_peer_channel,
 )
-from tsarchain.core.tx import Tx
 
 
 class MockNode:
@@ -267,7 +266,7 @@ def test_request_full_sync_no_response(mock_cfg, mock_node):
 
 
 # ---------------------------------------------------------
-# _prefetch_rpc_connections & _prefetch_peer_channel tests
+# prefetch_rpc_connections & prefetch_peer_channel tests
 # ---------------------------------------------------------
 @patch("tsarchain.network.node_logic.rpc_client.socket.socket")
 @patch("tsarchain.network.node_logic.rpc_client.SecureChannel")
@@ -275,7 +274,7 @@ def test_prefetch_rpc_connections(mock_channel, mock_socket, mock_node):
     mock_sock_inst = MagicMock()
     mock_socket.return_value = mock_sock_inst
     
-    _prefetch_rpc_connections(mock_node)
+    prefetch_rpc_connections(mock_node)
     
     peer = ("127.0.0.1", 8333)
     assert peer in mock_node._rpc_conn_cache
@@ -290,7 +289,7 @@ def test_prefetch_peer_channel(mock_channel, mock_socket, mock_node):
     mock_socket.return_value = mock_sock_inst
     
     peer = ("192.168.1.1", 8333)
-    _prefetch_peer_channel(mock_node, peer)
+    prefetch_peer_channel(mock_node, peer)
     
     assert peer in mock_node._rpc_conn_cache
     assert peer in mock_node._rpc_prefetched
@@ -411,6 +410,6 @@ def test_prefetch_rpc_connections_exception(mock_socket, mock_node):
     mock_sock_inst.connect.side_effect = Exception("conn error")
     mock_socket.return_value = mock_sock_inst
     
-    _prefetch_rpc_connections(mock_node)
+    prefetch_rpc_connections(mock_node)
     assert len(mock_node._rpc_prefetched) == 0
 

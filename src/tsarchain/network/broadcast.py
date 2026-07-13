@@ -46,6 +46,7 @@ class Broadcast:
 
         self._utxo_shared = shared_utxo is not None
         self.utxodb = shared_utxo or UTXODB()
+        
         self.mempool = TxPool(utxo_store=self.utxodb, inherit_state=True)
         self.state = {}
         self.seen_blocks: Set[str] = set()

@@ -415,6 +415,7 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     │   │   │
     │   │   ├── network/
     │   │   │   ├── cast/
+    │   │   │   │   ├── base.py                  # Proxy Handler
     │   │   │   │   ├── chain_utils.py           # validate incoming chain logic
     │   │   │   │   ├── fullsync.py              # full sync logic
     │   │   │   │   ├── gossip.py                # gossip block
@@ -450,11 +451,12 @@ Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node
     │   │   │   │   └── storage_rpc.py                 # storage RPC api gateway
     │   │   │   │
     │   │   │   ├── rpc_helper/
-    |   │   │   │   ├── chat_mixin.py                  # Helper for chat rpc
-    |   │   │   │   ├── explorer_mixin.py              # Explorer helper 'block,tx details, etc'
-    |   │   │   │   ├── guard_mixin.py                 # Guar tb_allow rpc
-    |   │   │   │   ├── history_mixin.py               # History tx helper rpc
-    |   │   │   │   └── tx_mixin.py                    # All Transaction model helper (regular, post, comment, payouts)
+    |   │   │   │   ├── base.py                        # Proxy Handler
+    |   │   │   │   ├── chat.py                        # Helper for chat rpc
+    |   │   │   │   ├── explorer.py                    # Explorer helper 'block,tx details, etc'
+    |   │   │   │   ├── guard.py                       # Guar tb_allow rpc
+    |   │   │   │   ├── history.py                     # History tx helper rpc
+    |   │   │   │   └── tx.py                          # All Transaction model helper (regular, post, comment, payouts)
     |   │   │   │
     │   │   │   ├── broadcast.py                       # Broadcast initialize
     │   │   │   ├── dandelion_pp.py                    # minimal dandelion ++ modul

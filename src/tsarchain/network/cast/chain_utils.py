@@ -13,7 +13,42 @@ log = get_ctx_logger("tsarchain.network.cast.chain_utils")
 
 
 class ChainUtilsHandler(BroadcastHandlerProxy):
-    
+    def calc_chainwork_from_list(self, chain_list) -> int:
+        total = 0
+        last_bits = None
+        for i, b in enumerate(chain_list):
+            raw = b.get("bits") if isinstance(b, dict) else getattr(b, "bits", None)
+            bits = self._parse_bits(raw)
+            if bits is None:
+                bits = CFG.INITIAL_BITS if i == 0 or last_bits is None else last_bits
+            if bits > CFG.MAX_BITS:
+                bits = CFG.MAX_BITS
+            total += self._work_from_bits(bits)
+            last_bits = bits
+        return total
+
+
+    def validate_incoming_chain(self, message: Dict[str, Any]) -> bool:
+        chain_data = message.get("data", [])
+        if not chain_data:
+            return False
+
+        if chain_data[0].get("height") != 0:
+            return False
+
+        for i in range(1, len(chain_data)):
+            if chain_data[i].get("height") != chain_data[i - 1].get("height") + 1:
+                return False
+            if chain_data[i].get("prev_block_hash") != chain_data[i - 1].get("hash"):
+                return False
+        return True
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
     @staticmethod
     def _parse_bits(bits):
         if bits is None:
@@ -40,35 +75,6 @@ class ChainUtilsHandler(BroadcastHandlerProxy):
         if target <= 0:
             return 0
         return (1 << 256) // (target + 1)
-
-    def _calc_chainwork_from_list(self, chain_list) -> int:
-        total = 0
-        last_bits = None
-        for i, b in enumerate(chain_list):
-            raw = b.get("bits") if isinstance(b, dict) else getattr(b, "bits", None)
-            bits = self._parse_bits(raw)
-            if bits is None:
-                bits = CFG.INITIAL_BITS if i == 0 or last_bits is None else last_bits
-            if bits > CFG.MAX_BITS:
-                bits = CFG.MAX_BITS
-            total += self._work_from_bits(bits)
-            last_bits = bits
-        return total
-
-    def _validate_incoming_chain(self, message: Dict[str, Any]) -> bool:
-        chain_data = message.get("data", [])
-        if not chain_data:
-            return False
-
-        if chain_data[0].get("height") != 0:
-            return False
-
-        for i in range(1, len(chain_data)):
-            if chain_data[i].get("height") != chain_data[i - 1].get("height") + 1:
-                return False
-            if chain_data[i].get("prev_block_hash") != chain_data[i - 1].get("hash"):
-                return False
-        return True
 
 
 __all__ = ["ChainUtilsHandler"]

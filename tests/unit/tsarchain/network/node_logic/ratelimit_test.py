@@ -11,9 +11,9 @@ from tsarchain.network.node_logic.ratelimit import (
     _rl_prune,
     _hit,
     _would_allow,
-    is_banned,
+    _is_banned,
     ban_ip,
-    ban_peer,
+    _ban_peer,
     allow_handshake,
     _handshake_hits_ip,
     _handshake_hits_id,
@@ -60,22 +60,22 @@ def test_would_allow():
     assert _would_allow(table, "key", 1.0, 2, 20.0) is True
 
 def test_is_banned():
-    assert is_banned("127.0.0.1") is False
+    assert _is_banned("127.0.0.1") is False
     
     _temp_ban_ip["192.168.1.10"] = 20.0
-    assert is_banned("192.168.1.10", 15.0) is True
-    assert is_banned("192.168.1.10", 25.0) is False
+    assert _is_banned("192.168.1.10", 15.0) is True
+    assert _is_banned("192.168.1.10", 25.0) is False
     
     _temp_ban_id["node1"] = 20.0
-    assert is_banned("192.168.1.11", 15.0, node_id="node1") is True
-    assert is_banned("192.168.1.11", 25.0, node_id="node1") is False
+    assert _is_banned("192.168.1.11", 15.0, node_id="node1") is True
+    assert _is_banned("192.168.1.11", 25.0, node_id="node1") is False
 
 def test_ban_peer():
-    ban_peer("127.0.0.1", 10.0)
+    _ban_peer("127.0.0.1", 10.0)
     assert "127.0.0.1" not in _temp_ban_ip
     
     with patch("tsarchain.network.node_logic.ratelimit.time.time", return_value=10.0):
-        ban_peer("192.168.1.10", 15.0, node_id="node1")
+        _ban_peer("192.168.1.10", 15.0, node_id="node1")
     assert _temp_ban_ip["192.168.1.10"] == 25.0
     assert _temp_ban_id["node1"] == 25.0
     

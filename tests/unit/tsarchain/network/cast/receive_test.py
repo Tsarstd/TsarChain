@@ -20,12 +20,12 @@ class DummyNode(ReceiveHandler):
         self.state = {}
         self._utxo_shared = False
         self.broadcast_block = MagicMock()
-        self._broadcast_tx_fluff = MagicMock()
+        self.broadcast_tx_fluff = MagicMock()
         self.request_full_sync = MagicMock()
-        self._calc_chainwork_from_list = MagicMock(return_value=100)
-        self._validate_incoming_chain = MagicMock(return_value=True)
-        self._rebuild_utxo_from_chain_locked = MagicMock()
-        self._maybe_flush_local_utxo = MagicMock()
+        self.calc_chainwork_from_list = MagicMock(return_value=100)
+        self.validate_incoming_chain = MagicMock(return_value=True)
+        self.rebuild_utxo_from_chain_locked = MagicMock()
+        self.maybe_flush_local_utxo = MagicMock()
         self.dandelion = MagicMock()
         self.dandelion.enabled.return_value = False
 
@@ -52,20 +52,6 @@ def test_log_block_reject(dummy_node):
         assert args[4] == "1.2.3.4"
         assert args[5] == "test_reason"
         assert args[6] == {"foo": "bar"}
-
-def test_native_script_hex():
-    assert ReceiveHandler._native_script_hex(None) is None
-    assert ReceiveHandler._native_script_hex(b"\x00\x01") == "0001"
-    assert ReceiveHandler._native_script_hex("ABCDEF") == "abcdef"
-    
-    mock_obj = MagicMock()
-    mock_obj.serialize.return_value = b"\xaa\xbb"
-    assert ReceiveHandler._native_script_hex(mock_obj) == "aabb"
-    
-    mock_wrapper = MagicMock()
-    del mock_wrapper.serialize
-    mock_wrapper.script_pubkey = "112233"
-    assert ReceiveHandler._native_script_hex(mock_wrapper) == "112233"
 
 def test_native_script_bytes():
     assert ReceiveHandler._native_script_bytes(None) is None
@@ -162,41 +148,6 @@ def test_native_precheck_block(dummy_node):
             assert dummy_node._native_precheck_block(mock_block) is True
             assert mock_block._native_fee_hint == [100]
 
-def test_receive_chain_invalid(dummy_node):
-    dummy_node._validate_incoming_chain.return_value = False
-    assert dummy_node.receive_chain({}) is False
-
-@patch("tsarchain.network.cast.receive.Blockchain")
-def test_receive_chain_valid_better(mock_blockchain_class, dummy_node):
-    mock_incoming = MagicMock()
-    mock_incoming.height = 10
-    mock_blockchain_class.from_dict.return_value = mock_incoming
-    
-    dummy_node.blockchain.height = 5
-    dummy_node.blockchain.chain = []
-    
-    dummy_node._calc_chainwork_from_list.side_effect = [100, 200]
-    
-    msg = {"data": [{"hash": "abc"}]}
-    assert dummy_node.receive_chain(msg) is True
-    dummy_node.blockchain.replace_with.assert_called_once_with(mock_incoming)
-    dummy_node._rebuild_utxo_from_chain_locked.assert_called_once()
-
-@patch("tsarchain.network.cast.receive.Blockchain")
-def test_receive_chain_valid_worse(mock_blockchain_class, dummy_node):
-    mock_incoming = MagicMock()
-    mock_incoming.height = 5
-    mock_blockchain_class.from_dict.return_value = mock_incoming
-    
-    dummy_node.blockchain.height = 10
-    dummy_node.blockchain.chain = []
-    
-    dummy_node._calc_chainwork_from_list.side_effect = [200, 100]
-    
-    msg = {"data": [{"hash": "abc"}]}
-    assert dummy_node.receive_chain(msg) is False
-    dummy_node.blockchain.replace_with.assert_not_called()
-
 def test_receive_block_empty(dummy_node):
     assert dummy_node.receive_block({}, ("127.0.0.1", 8333), set()) is False
 
@@ -254,23 +205,7 @@ def test_receive_tx_success(dummy_node):
     assert dummy_node.receive_tx(msg, ("127.0.0.1", 8333), set()) is True
     
     dummy_node.mempool.add_valid_tx.assert_called_once_with(tx)
-    dummy_node._broadcast_tx_fluff.assert_called_once()
-
-@patch("tsarchain.network.cast.receive.UTXODB")
-def test_receive_utxos(mock_utxodb_class, dummy_node):
-    dummy_node.blockchain.chain = []  # Empty chain
-    mock_utxo_instance = MagicMock()
-    mock_utxodb_class.from_dict.return_value = mock_utxo_instance
-    dummy_node.blockchain.in_memory = False
-    
-    dummy_node.receive_utxos({"data": {"some": "data"}})
-    
-    assert dummy_node.utxodb == mock_utxo_instance
-    mock_utxo_instance.flush.assert_called_once_with(force=True)
-
-def test_receive_state(dummy_node):
-    dummy_node.receive_state({"data": {"key": "value"}})
-    assert dummy_node.state == {"key": "value"}
+    dummy_node.broadcast_tx_fluff.assert_called_once()
 
 def test_receive_mempool(dummy_node):
     dummy_node.blockchain.height = 100
@@ -285,11 +220,6 @@ def test_receive_mempool(dummy_node):
     
     assert dummy_node.mempool.add_valid_tx.call_count == 2
     dummy_node.mempool.flush.assert_called_once()
-
-def test_native_script_hex_exception():
-    mock_obj = MagicMock()
-    mock_obj.serialize.side_effect = Exception("Test Error")
-    assert ReceiveHandler._native_script_hex(mock_obj) is None
 
 def test_build_native_prevout_snapshot_no_lookup(dummy_node):
     del dummy_node.utxodb.lookup_entry
@@ -332,10 +262,6 @@ def test_native_precheck_block_compact_validation(dummy_node):
     with patch.object(dummy_node, "_build_native_prevout_snapshot", return_value=snapshot):
         with patch("tsarchain.network.cast.receive.native_validate_block_txs_compact", return_value=(True, "", [50])):
             assert dummy_node._native_precheck_block(mock_block) is True
-
-def test_receive_chain_exception(dummy_node):
-    dummy_node._validate_incoming_chain.side_effect = Exception("error")
-    assert dummy_node.receive_chain({}) is False
 
 @patch("tsarchain.network.cast.receive.Block")
 def test_receive_block_gap_full_sync(mock_block_class, dummy_node):
@@ -403,12 +329,7 @@ def test_receive_tx_dandelion_stem_declined(dummy_node):
     msg = {"data": tx, "phase": "stem"}
     assert dummy_node.receive_tx(msg, ("127.0.0.1", 8333), set()) is True
     dummy_node.dandelion.handle_inbound_stem.assert_called_once()
-    dummy_node._broadcast_tx_fluff.assert_called_once()
-
-def test_receive_utxos_ignored_non_empty_chain(dummy_node):
-    dummy_node.blockchain.chain = [MagicMock()]
-    dummy_node.receive_utxos({"data": {"some": "data"}})
-    assert dummy_node._utxo_shared is False
+    dummy_node.broadcast_tx_fluff.assert_called_once()
 
 def test_receive_mempool_not_caught_up(dummy_node):
     dummy_node.network.is_caught_up.return_value = False

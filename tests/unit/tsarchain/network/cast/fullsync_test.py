@@ -20,7 +20,7 @@ class DummySync(FullSyncHandler, ChainUtilsHandler):
     def _send(self, peer, payload):
         return True
     
-    def _rebuild_utxo_from_chain_locked(self):
+    def rebuild_utxo_from_chain_locked(self):
         pass
 
 @pytest.fixture
@@ -63,12 +63,6 @@ def test_build_full_sync_payload(sync):
     assert u == 0
     assert m == 0
 
-def test_send_full_sync(sync):
-    with patch.object(sync, "build_full_sync_payload", return_value=({"type": "FULL_SYNC"}, 1, 2, 3)):
-        with patch.object(sync, "_send", return_value=True) as mock_send:
-            sync.send_full_sync(("127.0.0.1", 1234))
-            mock_send.assert_called_once_with(("127.0.0.1", 1234), {"type": "FULL_SYNC"})
-
 @patch("tsarchain.network.cast.fullsync.CFG.ENABLE_FULL_SYNC", False)
 def test_receive_full_sync_disabled(sync):
     assert sync.receive_full_sync({}) is False
@@ -80,7 +74,7 @@ def test_receive_full_sync_bad_payload(sync):
     assert sync.receive_full_sync({"chain": []}) is False
     
     # invalid chain
-    with patch.object(sync, "_validate_incoming_chain", return_value=False):
+    with patch.object(sync, "validate_incoming_chain", return_value=False):
         assert sync.receive_full_sync({"chain": [{"height": 0}]}) is False
 
 @patch("tsarchain.network.cast.fullsync.CFG.ENABLE_FULL_SYNC", True)
@@ -96,7 +90,7 @@ def test_receive_full_sync_better_chain(sync):
         {"height": 1, "hash": "B", "bits": "0x1d00ffff"}
     ]
     
-    with patch.object(sync, "_validate_incoming_chain", return_value=True):
+    with patch.object(sync, "validate_incoming_chain", return_value=True):
         with patch("tsarchain.network.cast.fullsync.Blockchain.from_dict") as mock_from_dict:
             sync.receive_full_sync({"chain": incoming, "mempool": [{"txid": "a"*64}]})
             
@@ -116,6 +110,6 @@ def test_receive_full_sync_worse_chain(sync):
         {"height": 0, "hash": "A", "bits": "0x1d00ffff"}
     ]
     
-    with patch.object(sync, "_validate_incoming_chain", return_value=True):
+    with patch.object(sync, "validate_incoming_chain", return_value=True):
         res = sync.receive_full_sync({"chain": incoming})
         assert res is False

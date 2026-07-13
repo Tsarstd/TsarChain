@@ -2,13 +2,13 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain - see LICENSE and TRADEMARKS.md
 
-import collections
-import threading
 import pytest
-from unittest.mock import MagicMock, Mock, patch, ANY
+import threading
+import collections
+from unittest.mock import Mock, patch, ANY
 
-from tsarchain.network.rpc_helper.chat import ChatHandler
 from tsarchain.utils import config as CFG
+from tsarchain.network.rpc_helper.chat import ChatHandler
 
 # ---------------------- Dummy class to host the mixin ----------------------
 class DummyNode(ChatHandler):
@@ -20,7 +20,7 @@ class DummyNode(ChatHandler):
         self.node_id = "test_node"
         self.peers = [("127.0.0.1", 9000)]
         self.broadcast = Mock()
-        self.broadcast._broadcast = Mock()
+        self.broadcast.send_gossip = Mock()
         self.chat_lock = threading.Lock()
         self.chat_mailbox = {}
         self.chat_global_count = 0
@@ -150,21 +150,21 @@ class TestRelayPresence:
         """If hops >= 2, function returns without broadcasting."""
         pres = {"hops": 2}
         node._relay_presence(pres, exclude=None)
-        node.broadcast._broadcast.assert_not_called()
+        node.broadcast.send_gossip.assert_not_called()
 
     def test_relay_presence_hops_lt_2(self, node):
         """If hops < 2, relay increments and broadcasts."""
         pres = {"hops": 0, "data": "hello"}
         node._relay_presence(pres, exclude="exclude_peer")
         expected = {"type": "CHAT_PRESENCE", "hops": 1, "data": "hello"}
-        node.broadcast._broadcast.assert_called_once_with(node.peers, expected, exclude="exclude_peer")
+        node.broadcast.send_gossip.assert_called_once_with(node.peers, expected, exclude="exclude_peer")
 
     def test_relay_presence_no_hops(self, node):
         """If hops not present, treat as 0."""
         pres = {"data": "hello"}
         node._relay_presence(pres)
         expected = {"type": "CHAT_PRESENCE", "hops": 1, "data": "hello"}
-        node.broadcast._broadcast.assert_called_once_with(node.peers, expected, exclude=None)
+        node.broadcast.send_gossip.assert_called_once_with(node.peers, expected, exclude=None)
 
     def test_relay_presence_async(self, node, monkeypatch):
         """_relay_presence_async should start a daemon thread."""

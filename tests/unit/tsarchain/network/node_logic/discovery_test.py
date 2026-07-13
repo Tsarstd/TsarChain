@@ -173,7 +173,7 @@ def test_attempt_hello_exception(mock_cfg, mock_socket, mock_node):
 # _discover_peers tests
 # ---------------------------------------------------------
 @patch("tsarchain.network.node_logic.discovery._attempt_hello")
-@patch("tsarchain.network.node_logic.discovery.rpc_client._prefetch_peer_channel")
+@patch("tsarchain.network.node_logic.discovery.rpc_client.prefetch_peer_channel")
 @patch("tsarchain.network.node_logic.discovery.CFG")
 def test_discover_peers(mock_cfg, mock_prefetch, mock_attempt, mock_node):
     mock_cfg.MAX_OUTBOUND_PEERS = 2

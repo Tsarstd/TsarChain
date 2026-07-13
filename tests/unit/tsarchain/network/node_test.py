@@ -41,7 +41,7 @@ def mock_deps():
          patch("tsarchain.network.node.storage_registry.init_storage_registry") as m_stor, \
          patch("tsarchain.network.node.chat_state.init_chat_state") as m_chat, \
          patch("tsarchain.network.node.threading.Thread") as m_thread, \
-         patch("tsarchain.network.node.rpc_client._prefetch_rpc_connections") as m_prefetch:
+         patch("tsarchain.network.node.rpc_client.prefetch_rpc_connections") as m_prefetch:
          
         m_keys.return_value = ("nid1", "00" * 33, "00" * 32)
         m_load_peer.return_value = {"nid1": "00" * 33}

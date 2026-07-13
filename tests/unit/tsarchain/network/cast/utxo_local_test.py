@@ -22,32 +22,32 @@ def sync():
 def test_maybe_flush_local_utxo(sync):
     # Shared -> skips
     sync._utxo_shared = True
-    sync._maybe_flush_local_utxo(100)
+    sync.maybe_flush_local_utxo(100)
     assert sync.utxodb.flush.call_count == 0
     
     # Not shared, forced
     sync._utxo_shared = False
     sync.utxodb.flush.return_value = True
-    sync._maybe_flush_local_utxo(100, force=True)
+    sync.maybe_flush_local_utxo(100, force=True)
     assert sync.utxodb.flush.call_count == 1
     assert sync._utxo_last_flush_height == 100
     
     # Height None -> skips
-    sync._maybe_flush_local_utxo(None)
+    sync.maybe_flush_local_utxo(None)
     assert sync.utxodb.flush.call_count == 1 # unchanged
     
     # Not forced, interval hit (110 - 100 == 10)
-    sync._maybe_flush_local_utxo(110)
+    sync.maybe_flush_local_utxo(110)
     assert sync.utxodb.flush.call_count == 2
     assert sync._utxo_last_flush_height == 110
     
     # Interval not hit
-    sync._maybe_flush_local_utxo(115)
+    sync.maybe_flush_local_utxo(115)
     assert sync.utxodb.flush.call_count == 2 # unchanged
 
 def test_rebuild_utxo_from_chain_locked(sync):
     sync._utxo_shared = True
-    sync._rebuild_utxo_from_chain_locked()
+    sync.rebuild_utxo_from_chain_locked()
     assert sync.utxodb.rebuild_from_chain.call_count == 0
     
     sync._utxo_shared = False
@@ -55,7 +55,7 @@ def test_rebuild_utxo_from_chain_locked(sync):
     sync.blockchain.height = 5
     sync._clean_mempool_after_chain_replace = MagicMock()
     
-    sync._rebuild_utxo_from_chain_locked()
+    sync.rebuild_utxo_from_chain_locked()
     
     sync.utxodb.rebuild_from_chain.assert_called_once_with(["block1"])
     assert sync.utxodb.flush.call_count == 1

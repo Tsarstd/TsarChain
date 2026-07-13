@@ -7,12 +7,13 @@ import random
 from typing import TYPE_CHECKING, Any, Optional
 
 # ---------------- Local Project ----------------
+from ...utils import config as CFG
+from ..node_logic.ratelimit import ban_ip
+from ...contracts import graffiti as GRAFFITI
+
 from .miner_rpc import handle_miner_rpc
 from .storage_rpc import handle_storage_rpc
 from .user_rpc.dispatcher import handle_user_rpc
-from ...contracts import graffiti as GRAFFITI
-from ...utils import config as CFG
-from ..node_logic.ratelimit import ban_ip
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger

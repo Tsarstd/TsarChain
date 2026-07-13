@@ -22,7 +22,7 @@ _secure_random = secrets.SystemRandom()
 
 class DandelionPP:
     def __init__(self, host) -> None:
-        # host is Broadcast; relies on host._send and host._broadcast_tx_fluff
+        # host is Broadcast; relies on host._send and host.broadcast_tx_fluff
         self.host = host
         self.lock = threading.RLock()
         self._stem_seen: Set[str] = set()
@@ -95,7 +95,7 @@ class DandelionPP:
             timer = self._timers.pop(tx_id, None)
             if timer:
                 timer.cancel()
-        return self.host._broadcast_tx_fluff(tx, tx_id, peers)
+        return self.host.broadcast_tx_fluff(tx, tx_id, peers)
 
     # ------------ Internals ------------
     def _mark_stem(self, tx_id: str) -> bool:

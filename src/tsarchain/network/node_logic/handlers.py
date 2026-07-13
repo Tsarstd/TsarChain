@@ -24,79 +24,32 @@ def handle_hello(self, message, addr, *, src_node_id: str | None = None, src_pub
     peer_tuple = (peer_ip, peer_port) if peer_ip and isinstance(peer_port, int) and peer_port > 0 else None
 
     role = str(message.get("role", "")).strip().upper()
-    now = time.time()
     advertised_height = int(message.get("height", -1))
-
     is_storage = role == "NODE_STORAGE"
+
     if is_storage:
-        if not (src_node_id and src_pubkey):
-            return {"error": "storage_auth_required"}
-        
-        payout_addr = (message.get("address") or "").strip().lower()
-        if not payout_addr:
-            return {"error": "storage_address_required"}
-        
-        try:
-            decode_address(payout_addr)
-        except Exception:
-            return {"error": "storage_address_invalid"}
-        
-        # enforce pin consistency
-        with self.lock:
-            for _peer, meta in (getattr(self, "storage_peers", {}) or {}).items():
-                if (meta or {}).get("node_id") == src_node_id:
-                    pinned_pk = (meta or {}).get("pubkey")
-                    if pinned_pk and pinned_pk != src_pubkey:
-                        log.warning("[hello] storage pubkey change rejected nid=%s", src_node_id[:12])
-                        return {"error": "storage_pubkey_pinned"}
-        meta = {
-            "addr": (message.get("address") or "").strip().lower(),
-            "url": (message.get("url") or "").strip(),
-            "ip": peer_ip,
-            "port": int(peer_port or 0),
-            "last_seen": int(now),
-            "alive": True,
-            "trusted": bool(message.get("trusted", False)),
-            "node_id": src_node_id,
-            "pubkey": src_pubkey,
-        }
-        register_storage_peer(self, peer_ip, meta)
+        err = _process_storage_hello(self, message, peer_ip, peer_port, src_node_id, src_pubkey)
+        if err:
+            return err
 
     incoming_peers = message.get("peers") or []
-    normalized_incoming = []
-    for entry in incoming_peers:
-        if isinstance(entry, dict):
-            ip = str(entry.get("ip") or entry.get("host") or "").strip()
-            port = int(entry.get("port", 0))
-            if not ip or port <= 0:
-                continue
-            if self._is_local_address(ip) and port == self.port:
-                continue
-            normalized_incoming.append((ip, port))
+    normalized_incoming = _process_incoming_peers(self, incoming_peers)
 
     with self.lock:
-        if (not is_storage) and peer_tuple and not (self._is_local_address(peer_tuple[0]) and peer_tuple[1] == self.port):
-            self.peers.add(peer_tuple)
-            self.peer_scores.setdefault(peer_tuple, CFG.PEER_SCORE_START)
-            if advertised_height >= 0:
-                self._peer_best_height[peer_tuple] = advertised_height
-
         if not is_storage:
-            for cand in normalized_incoming:
-                if cand == peer_tuple:
-                    continue
-                self.peers.add(cand)
-                self.peer_scores.setdefault(cand, CFG.PEER_SCORE_START // 2)
+            _update_peers_from_hello(self, peer_tuple, advertised_height, normalized_incoming)
 
         sane_peers = [{"ip": ip, "port": port} for ip, port in self.peers if isinstance(port, int) and port > 0]
         height = int(self.broadcast.blockchain.height)
-        peer_port = int(message.get("port", -1))
-        if (not is_storage) and isinstance(addr, tuple) and peer_port > 0:
-            dst = (addr[0], peer_port)
+        peer_port_msg = int(message.get("port", -1))
+        
+        if (not is_storage) and isinstance(addr, tuple) and peer_port_msg > 0:
+            dst = (addr[0], peer_port_msg)
             self.broadcast.send_mempool_to_peer(dst)
 
     if (not is_storage) and peer_tuple:
         self.reward_peer(peer_tuple)
+        
     return {
         "type": "HELLO_RESPONSE",
         "port": self.port,
@@ -106,7 +59,7 @@ def handle_hello(self, message, addr, *, src_node_id: str | None = None, src_pub
 
 
 @benchmark(label="handle_get_headers", threshold_ms=15.0)
-def handle_get_headers(self, message, addr):
+def handle_get_headers(self, message, _):
     
     locator = message.get("locator") or []
     limit = int(message.get("limit", CFG.HEADERS_BATCH_MAX))
@@ -153,7 +106,7 @@ def handle_get_headers(self, message, addr):
 
 
 @benchmark(label="handle_get_blocks", threshold_ms=15.0)
-def handle_get_blocks(self, message, addr):
+def handle_get_blocks(self, message, _):
         
     heights = message.get("heights") or []
     if not isinstance(heights, list):
@@ -173,7 +126,7 @@ def handle_get_blocks(self, message, addr):
 
 
 @benchmark(label="handle_get_full_sync", threshold_ms=15.0)
-def handle_get_full_sync(self, message, addr):
+def handle_get_full_sync(self, _, addr):
     
     ip = addr[0] if isinstance(addr, tuple) and len(addr) > 0 else "unknown"
     now = time.time()
@@ -214,8 +167,9 @@ def handle_full_sync(self, message, addr):
     self.broadcast.receive_full_sync(payload)
     return {"status": "ok"}
 
+
 @benchmark(label="handle_get_block_at", threshold_ms=15.0)
-def handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict: #get block by heigt
+def handle_get_block_at(self, height: int, _: str | None = None) -> dict: #get block by heigt
         
     with self.broadcast.lock:
         chain = list(self.broadcast.blockchain.chain)
@@ -232,8 +186,9 @@ def handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict: 
     
     return d
 
+
 @benchmark(label="handle_get_block_by_hash", threshold_ms=15.0)
-def handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict:
+def handle_get_block_by_hash(self, hx: str, _: str | None = None) -> dict:
         
     hx = (hx or "").strip().lower()
     with self.broadcast.lock:
@@ -249,3 +204,72 @@ def handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict:
             
             return d
     return {"type": "BLOCK", "error": "not_found"}
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
+def _process_storage_hello(self, message, peer_ip, peer_port, src_node_id, src_pubkey):
+    if not (src_node_id and src_pubkey):
+        return {"error": "storage_auth_required"}
+    
+    payout_addr = (message.get("address") or "").strip().lower()
+    if not payout_addr:
+        return {"error": "storage_address_required"}
+    
+    try:
+        decode_address(payout_addr)
+    except Exception:
+        return {"error": "storage_address_invalid"}
+    
+    # enforce pin consistency
+    with self.lock:
+        for _peer, meta in (getattr(self, "storage_peers", {}) or {}).items():
+            if (meta or {}).get("node_id") == src_node_id:
+                pinned_pk = (meta or {}).get("pubkey")
+                if pinned_pk and pinned_pk != src_pubkey:
+                    log.warning("[hello] storage pubkey change rejected nid=%s", src_node_id[:12])
+                    return {"error": "storage_pubkey_pinned"}
+    meta = {
+        "addr": (message.get("address") or "").strip().lower(),
+        "url": (message.get("url") or "").strip(),
+        "ip": peer_ip,
+        "port": int(peer_port or 0),
+        "last_seen": int(time.time()),
+        "alive": True,
+        "trusted": bool(message.get("trusted", False)),
+        "node_id": src_node_id,
+        "pubkey": src_pubkey,
+    }
+    register_storage_peer(self, peer_ip, meta)
+    return None
+
+
+def _process_incoming_peers(self, incoming_peers):
+    normalized_incoming = []
+    for entry in incoming_peers:
+        if isinstance(entry, dict):
+            ip = str(entry.get("ip") or entry.get("host") or "").strip()
+            port = int(entry.get("port", 0))
+            if not ip or port <= 0:
+                continue
+            if self._is_local_address(ip) and port == self.port:
+                continue
+            normalized_incoming.append((ip, port))
+    return normalized_incoming
+
+
+def _update_peers_from_hello(self, peer_tuple, advertised_height, normalized_incoming):
+    if peer_tuple and not (self._is_local_address(peer_tuple[0]) and peer_tuple[1] == self.port):
+        self.peers.add(peer_tuple)
+        self.peer_scores.setdefault(peer_tuple, CFG.PEER_SCORE_START)
+        if advertised_height >= 0:
+            self._peer_best_height[peer_tuple] = advertised_height
+
+    for cand in normalized_incoming:
+        if cand == peer_tuple:
+            continue
+        self.peers.add(cand)
+        self.peer_scores.setdefault(cand, CFG.PEER_SCORE_START // 2)

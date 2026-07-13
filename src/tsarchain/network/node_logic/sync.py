@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
-import random
 import time
+import random
 from typing import Any, Dict, List, Optional, Tuple
 
 from ...utils import config as CFG
@@ -15,6 +15,7 @@ from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.node_logic.sync")
 
 _secure_random = random.SystemRandom()
+
 
 def sync_loop(self):
     while not self._stop.is_set():
@@ -38,24 +39,13 @@ def sync_with_peers(self):
     Run a single round of sync: select outbound peers (plus high-ranking candidates),
     call sync_peer for headers/blocks, then pull an inline/snapshot or full sync mempool if needed.
     """
-    with self.lock:
-        selected = [p for p in self.outbound_peers if p in self.peers]
-        if len(selected) < CFG.MAX_OUTBOUND_PEERS:
-            extras = sorted(
-                (p for p in self.peers if p not in selected),
-                key=lambda p: self.peer_scores.get(p, 0),
-                reverse=True,
-            )
-            for peer in extras:
-                if len(selected) >= CFG.MAX_OUTBOUND_PEERS:
-                    break
-                selected.append(peer)
+    selected = _select_sync_peers(self)
     if not selected:
         return
 
     now = time.time()
     if (len(selected) != getattr(self, "_last_sync_count", -1)) or (
-        now - self._last_sync_log > float(CFG.SYNC_INFO_MIN_INTERVAL)
+        now - getattr(self, "_last_sync_log", 0.0) > float(CFG.SYNC_INFO_MIN_INTERVAL)
     ):
         self._last_sync_count = len(selected)
         self._last_sync_log = now
@@ -68,34 +58,8 @@ def sync_with_peers(self):
         try:
             synced = _sync_peer(self, norm)
             allow_mempool = self.is_caught_up(freshness=20.0, height_slack=0)
-            pending_mempool_pull = bool(getattr(self, "_pending_mempool_pull", False))
-            inline_status: Optional[bool] = None
-            if allow_mempool:
-                if pending_mempool_pull:
-                    pulled = self.request_mempool_inline(norm, force=True)
-                    if pulled is False or pulled is None:
-                        pulled = self.request_mempool_snapshot(norm, force=True)
-                    if pulled:
-                        self._pending_mempool_pull = False
-                        
-                inline_status = self.request_mempool_inline(norm)
-                if inline_status is False:
-                    retry_inline = self.request_mempool_inline(norm, force=True)
-                    if retry_inline is True:
-                        inline_status = True
-                    elif retry_inline is not None:
-                        inline_status = retry_inline
-
-            if not synced:
-                if CFG.ENABLE_FULL_SYNC:
-                    self.request_full_sync(norm)
-                elif allow_mempool and inline_status is False:
-                    if norm not in self._snapshot_unreachable:
-                        self.request_mempool_snapshot(norm)
-                        
-            elif allow_mempool and inline_status is False:
-                if norm not in self._snapshot_unreachable:
-                    self.request_mempool_snapshot(norm)
+            inline_status = _process_mempool_sync(self, norm, allow_mempool)
+            _handle_sync_fallback(self, norm, synced, allow_mempool, inline_status)
         except Exception:
             log.exception("[sync_with_peers] Error syncing with peer %s", norm)
             self.penalize_peer(norm, CFG.PEER_SCORE_FAILURE_PENALTY * 2)
@@ -150,9 +114,60 @@ def get_best_peer_height(self) -> int:
     return max(candidates) if candidates else -1
 
 
-# ----------------------------------------------------------------------
+# =============================================================================
 # INTERNAL METHOD
-# ----------------------------------------------------------------------
+# =============================================================================
+
+
+def _select_sync_peers(self):
+    with self.lock:
+        selected = [p for p in self.outbound_peers if p in self.peers]
+        if len(selected) < CFG.MAX_OUTBOUND_PEERS:
+            extras = sorted(
+                (p for p in self.peers if p not in selected),
+                key=lambda p: self.peer_scores.get(p, 0),
+                reverse=True,
+            )
+            for peer in extras:
+                if len(selected) >= CFG.MAX_OUTBOUND_PEERS:
+                    break
+                selected.append(peer)
+    return selected
+
+
+def _process_mempool_sync(self, norm, allow_mempool):
+    if not allow_mempool:
+        return None
+    pending_mempool_pull = bool(getattr(self, "_pending_mempool_pull", False))
+    if pending_mempool_pull:
+        pulled = self.request_mempool_inline(norm, force=True)
+        if pulled is False or pulled is None:
+            pulled = self.request_mempool_snapshot(norm, force=True)
+        if pulled:
+            self._pending_mempool_pull = False
+            
+    inline_status = self.request_mempool_inline(norm)
+    if inline_status is False:
+        retry_inline = self.request_mempool_inline(norm, force=True)
+        if retry_inline is True:
+            inline_status = True
+        elif retry_inline is not None:
+            inline_status = retry_inline
+    return inline_status
+
+
+def _handle_sync_fallback(self, norm, synced, allow_mempool, inline_status):
+    if not synced:
+        if CFG.ENABLE_FULL_SYNC:
+            self.request_full_sync(norm)
+        elif allow_mempool and inline_status is False:
+            if norm not in self._snapshot_unreachable:
+                self.request_mempool_snapshot(norm)
+                
+    elif allow_mempool and inline_status is False:
+        if norm not in self._snapshot_unreachable:
+            self.request_mempool_snapshot(norm)
+
 
 def _sync_peer(self, peer: Tuple[str, int]) -> bool:
     """
@@ -292,31 +307,11 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
 
         if resp.get("type") == "BLOCKS":
             blocks = resp.get("blocks") or []
-            for block_obj in blocks:
-                h = int(block_obj.get("height", -1))
-                bh = str(block_obj.get("hash") or "")
-                local_chain = self.broadcast.blockchain.chain
-                if 0 <= h < len(local_chain):
-                    local_hash = local_chain[h].hash().hex()
-                    if local_hash == bh:
-                        continue
-                    # already have a different block at this height -> prefer full sync once
-                    if not triggered_fullsync:
-                        self.request_full_sync(peer, force=True)
-                        triggered_fullsync = True
-                    return total_applied, time.time() - start_time
-                    
-                applied = _apply_block_from_sync(self, block_obj, peer)
-                if applied:
-                    total_applied += 1
-                else:
-                    blk_hash = block_obj.get("hash")
-                    label = str(blk_hash or "unknown")
-                    log.warning("[download_blocks] Block %s rejected during sync from %s", label[:12], peer)
-                    if not triggered_fullsync:
-                        self.request_full_sync(peer, force=True)
-                        triggered_fullsync = True
-                    return total_applied, time.time() - start_time
+            total_applied, elapsed, stop, triggered_fullsync = _process_downloaded_blocks(
+                self, peer, blocks, triggered_fullsync, start_time, total_applied
+            )
+            if stop:
+                return total_applied, elapsed
 
         elif resp.get("type") == "SYNC_REJECT":
             retry = float(resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
@@ -333,6 +328,35 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
 
     elapsed = time.time() - start_time
     return total_applied, elapsed
+
+
+def _process_downloaded_blocks(self, peer, blocks, triggered_fullsync, start_time, total_applied):
+    for block_obj in blocks:
+        h = int(block_obj.get("height", -1))
+        bh = str(block_obj.get("hash") or "")
+        local_chain = self.broadcast.blockchain.chain
+        if 0 <= h < len(local_chain):
+            local_hash = local_chain[h].hash().hex()
+            if local_hash == bh:
+                continue
+            # already have a different block at this height -> prefer full sync once
+            if not triggered_fullsync:
+                self.request_full_sync(peer, force=True)
+                triggered_fullsync = True
+            return total_applied, time.time() - start_time, True, triggered_fullsync
+            
+        applied = _apply_block_from_sync(self, block_obj, peer)
+        if applied:
+            total_applied += 1
+        else:
+            blk_hash = block_obj.get("hash")
+            label = str(blk_hash or "unknown")
+            log.warning("[download_blocks] Block %s rejected during sync from %s", label[:12], peer)
+            if not triggered_fullsync:
+                self.request_full_sync(peer, force=True)
+                triggered_fullsync = True
+            return total_applied, time.time() - start_time, True, triggered_fullsync
+    return total_applied, 0.0, False, triggered_fullsync
 
 
 def _apply_block_from_sync(self, block_obj: Dict[str, Any], peer: Tuple[str, int]) -> bool:

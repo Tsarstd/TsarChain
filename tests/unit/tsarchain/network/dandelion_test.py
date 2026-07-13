@@ -27,7 +27,7 @@ class _HostStub:
         self.send_calls.append((peer, msg))
         return self.send_ok
 
-    def _broadcast_tx_fluff(self, tx, tx_id: str, peers: set, exclude=None):
+    def broadcast_tx_fluff(self, tx, tx_id: str, peers: set, exclude=None):
         self.fluff_calls.append((tx_id, peers))
         return len(peers)
 

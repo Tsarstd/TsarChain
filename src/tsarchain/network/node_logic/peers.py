@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, Set, Tuple, TYPE_CHECKING
 from ...utils import config as CFG
+from typing import Any, Optional, Set, Tuple, TYPE_CHECKING
 
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.node_logic.peers")
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from ...core.block import Block
 
 
-def normalize_peer(self, peer: Any) -> Optional[Tuple[str, int]]:
+def normalize_peer(_, peer: Any) -> Optional[Tuple[str, int]]:
     if not peer:
         return None
     if isinstance(peer, tuple) and len(peer) == 2:
@@ -53,14 +53,18 @@ def reward_peer(self, peer: Any, amount: int = CFG.PEER_SCORE_REWARD) -> None:
         if len(self.outbound_peers) < CFG.MAX_OUTBOUND_PEERS or norm in self.outbound_peers:
             self.outbound_peers.add(norm)
 
+
 def publish_block(self, block: "Block", exclude: Optional[Tuple[str, int]] = None, force: bool = True) -> int:
-    Block = None
-    if Block is not None and not isinstance(block, Block):
-        raise TypeError("block must be a Block instance")
     peers = _collect_broadcast_peers(self)
     if not peers:
         return 0
     return self.broadcast.broadcast_block(block, peers, exclude=exclude, force=force)
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
 
 def _collect_broadcast_peers(self) -> Set[Tuple[str, int]]:
     with self.lock:

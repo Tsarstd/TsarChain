@@ -51,7 +51,7 @@ def test_calc_chainwork_from_list(caster):
         {"bits": "0x1d00ffff"},
         {"bits": "0x1d00ffff"},
     ]
-    total = caster._calc_chainwork_from_list(chain)
+    total = caster.calc_chainwork_from_list(chain)
     single_work = caster._work_from_bits(0x1d00ffff)
     assert total == single_work * 2
     
@@ -61,7 +61,7 @@ def test_calc_chainwork_from_list(caster):
         {"bits": CFG.MAX_BITS + 1}, # Capped to MAX_BITS
         {} # Uses previous (MAX_BITS)
     ]
-    total2 = caster._calc_chainwork_from_list(chain2)
+    total2 = caster.calc_chainwork_from_list(chain2)
     assert total2 > 0
     
     # Using objects
@@ -69,20 +69,20 @@ def test_calc_chainwork_from_list(caster):
         def __init__(self, bits):
             self.bits = bits
     chain3 = [DummyBlock(0x1d00ffff)]
-    assert caster._calc_chainwork_from_list(chain3) == single_work
+    assert caster.calc_chainwork_from_list(chain3) == single_work
 
 def test_validate_incoming_chain(caster):
     # Empty
-    assert caster._validate_incoming_chain({"data": []}) is False
+    assert caster.validate_incoming_chain({"data": []}) is False
     
     # Invalid block 0 height
-    assert caster._validate_incoming_chain({"data": [{"height": 1}]}) is False
+    assert caster.validate_incoming_chain({"data": [{"height": 1}]}) is False
     
     # Valid single block
-    assert caster._validate_incoming_chain({"data": [{"height": 0, "hash": "A"}]}) is True
+    assert caster.validate_incoming_chain({"data": [{"height": 0, "hash": "A"}]}) is True
     
     # Valid multiple blocks
-    assert caster._validate_incoming_chain({
+    assert caster.validate_incoming_chain({
         "data": [
             {"height": 0, "hash": "A"},
             {"height": 1, "prev_block_hash": "A", "hash": "B"},
@@ -91,7 +91,7 @@ def test_validate_incoming_chain(caster):
     }) is True
     
     # Invalid sequence height
-    assert caster._validate_incoming_chain({
+    assert caster.validate_incoming_chain({
         "data": [
             {"height": 0, "hash": "A"},
             {"height": 2, "prev_block_hash": "A", "hash": "B"}
@@ -99,7 +99,7 @@ def test_validate_incoming_chain(caster):
     }) is False
     
     # Invalid prev hash
-    assert caster._validate_incoming_chain({
+    assert caster.validate_incoming_chain({
         "data": [
             {"height": 0, "hash": "A"},
             {"height": 1, "prev_block_hash": "X", "hash": "B"}

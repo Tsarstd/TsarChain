@@ -5,12 +5,14 @@
 
 from __future__ import annotations
 
+import time
 import json
 import socket
 import threading
-import time
 
 from ...utils import config as CFG
+from .ratelimit import allow_handshake, ban_ip
+from ..rpc.processing_msg import process_message
 from ..protocol import (
     SecureChannel,
     build_envelope,
@@ -19,11 +21,9 @@ from ..protocol import (
     sniff_first_json_frame,
     verify_and_unwrap,
 )
-from ..rpc.processing_msg import process_message
-from .ratelimit import allow_handshake, ban_ip
 
 from ...utils.tsar_logging import get_ctx_logger
-log = get_ctx_logger("tsarchain.network.node_logic.server")
+log = get_ctx_logger("tsarchain.network.node_logic.server_node")
 
 
 def start_server(self):
@@ -64,18 +64,16 @@ def start_server(self):
                 continue
 
 
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
 def _handle_connection(self, conn, addr):
     peer = (addr[0], int(addr[1]) if len(addr) > 1 else 0)
+    ip = peer[0]
     try:
-        conn.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
-        conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
-        conn.settimeout(float(CFG.HANDSHAKE_TIMEOUT))
-        with self.lock:
-            self.inbound_peers.add(peer)
-            ip = peer[0]
-            self._inbound_ips[ip] = self._inbound_ips.get(ip, 0) + 1
-            self.peer_scores.setdefault(peer, CFG.PEER_SCORE_START // 2)
-            _, first = sniff_first_json_frame(conn, timeout=float(CFG.HANDSHAKE_TIMEOUT), peer_ip=ip, on_misbehave=ban_ip)
+        first = _setup_connection(self, conn, peer, ip)
 
         node_hint = None
         pow_proof = None
@@ -87,116 +85,138 @@ def _handle_connection(self, conn, addr):
             return
 
         if isinstance(first, dict) and first.get("type") == "P2P_HS1":
-            chan = SecureChannel(
-                conn,
-                role="server",
-                node_id=self.node_id,
-                node_pub=self.pubkey,
-                node_priv=self.privkey,
-                get_pinned=self.get_pinned,
-                set_pinned=self.set_pinned,
-                peer_ip=ip,
-                on_misbehave=ban_ip,
-            )
+            _process_p2p_channel(self, conn, addr, ip, first)
+        else:
+            _process_legacy_rpc(self, conn, addr, ip, first)
 
-            try:
-                chan.hs_server_from_obj(first)
-            except Exception:
-                ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
-                log.warning("[handle_connection] bad P2P handshake from %s (temp-ban)", addr, exc_info=True)
-                return
-            
-            send_fn = lambda b: chan.send(b)
-            recv_fn = lambda t: chan.recv(t)
-            now = time.time()
-            if now - getattr(self, "_last_p2p_log", 0.0) > 5.0:
-                self._last_p2p_log = now
-            conn.settimeout(None)
+    except Exception:
+        log.exception("[handle_connection] Connection handler error from %s", addr)
+    finally:
+        _teardown_connection(self, conn, peer, ip)
 
-            while True:
-                payload = recv_fn(10.0)
-                if not payload:
-                    break
-                
-                outer = json.loads(payload.decode("utf-8"))
-                msg = outer
-                src_nid = None
-                src_pub = None
-                if is_envelope(outer):
-                    try:
-                        msg = verify_and_unwrap(outer, lambda nid: self.peer_pubkeys.get(nid))
-                    except Exception:
-                        ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
-                        log.warning("[handle_connection] envelope verify fail from %s (temp-ban)", addr, exc_info=True)
-                        break
-                    
-                    src_nid = outer.get("from")
-                    src_pub = outer.get("pubkey")
-                    if isinstance(src_nid, str) and isinstance(src_pub, str):
-                        self.peer_pubkeys[src_nid] = src_pub
-                        if getattr(chan, "peer_node_pub", None) and src_pub != chan.peer_node_pub:
-                            log.warning("[handle_connection] Peer pubkey mismatch from %s", addr)
-                            continue
-                        
-                elif CFG.ENVELOPE_REQUIRED:
-                    log.warning("[handle_connection] rejecting legacy P2P from %s", addr)
-                    continue
 
-                response = process_message(self, msg, addr, src_node_id=src_nid, src_pubkey=src_pub)
-                if response is not None:
-                    drop = bool(response.pop("drop", False)) if isinstance(response, dict) else False
-                    env = build_envelope(response, self.node_ctx, extra={"pubkey": self.pubkey})
-                    send_fn(json.dumps(env).encode("utf-8"))
-                    if drop:
-                        break
-            return
+def _setup_connection(self, conn, peer, ip):
+    conn.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
+    conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
+    conn.settimeout(float(CFG.HANDSHAKE_TIMEOUT))
+    with self.lock:
+        self.inbound_peers.add(peer)
+        self._inbound_ips[ip] = self._inbound_ips.get(ip, 0) + 1
+        self.peer_scores.setdefault(peer, CFG.PEER_SCORE_START // 2)
+        _, first = sniff_first_json_frame(conn, timeout=float(CFG.HANDSHAKE_TIMEOUT), peer_ip=ip, on_misbehave=ban_ip)
+    return first
 
-        if not isinstance(first, dict):
-            ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
-            return
 
-        if CFG.P2P_ENC_REQUIRED:
-            ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
-            return
+def _process_p2p_channel(self, conn, addr, ip, first): #NOSONAR
+    chan = SecureChannel(
+        conn,
+        role="server",
+        node_id=self.node_id,
+        node_pub=self.pubkey,
+        node_priv=self.privkey,
+        get_pinned=self.get_pinned,
+        set_pinned=self.set_pinned,
+        peer_ip=ip,
+        on_misbehave=ban_ip,
+    )
 
-        msg = first
+    try:
+        chan.hs_server_from_obj(first)
+    except Exception:
+        ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
+        log.warning("[handle_connection] bad P2P handshake from %s (temp-ban)", addr, exc_info=True)
+        return
+    
+    send_fn = lambda b: chan.send(b)
+    recv_fn = lambda t: chan.recv(t)
+    now = time.time()
+    if now - getattr(self, "_last_p2p_log", 0.0) > 5.0:
+        self._last_p2p_log = now
+    conn.settimeout(None)
+
+    while True:
+        payload = recv_fn(10.0)
+        if not payload:
+            break
+        
+        outer = json.loads(payload.decode("utf-8"))
+        msg = outer
         src_nid = None
         src_pub = None
-        if is_envelope(first):
+        if is_envelope(outer):
             try:
-                msg = verify_and_unwrap(first, lambda nid: self.peer_pubkeys.get(nid))
+                msg = verify_and_unwrap(outer, lambda nid: self.peer_pubkeys.get(nid))
             except Exception:
                 ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
-                log.warning("[handle_connection] envelope verify fail (unencrypted) from %s (temp-ban)", addr, exc_info=True)
-                return
+                log.warning("[handle_connection] envelope verify fail from %s (temp-ban)", addr, exc_info=True)
+                break
             
-            src_nid = first.get("from")
-            src_pub = first.get("pubkey")
+            src_nid = outer.get("from")
+            src_pub = outer.get("pubkey")
             if isinstance(src_nid, str) and isinstance(src_pub, str):
                 self.peer_pubkeys[src_nid] = src_pub
+                if getattr(chan, "peer_node_pub", None) and src_pub != chan.peer_node_pub:
+                    log.warning("[handle_connection] Peer pubkey mismatch from %s", addr)
+                    continue
                 
         elif CFG.ENVELOPE_REQUIRED:
-            log.warning(f"[handle_connection] rejecting legacy RPC from {addr}")
-            return
+            log.warning("[handle_connection] rejecting legacy P2P from %s", addr)
+            continue
 
         response = process_message(self, msg, addr, src_node_id=src_nid, src_pubkey=src_pub)
         if response is not None:
             drop = bool(response.pop("drop", False)) if isinstance(response, dict) else False
             env = build_envelope(response, self.node_ctx, extra={"pubkey": self.pubkey})
-            send_message(conn, json.dumps(env).encode("utf-8"))
+            send_fn(json.dumps(env).encode("utf-8"))
             if drop:
-                return
+                break
 
-    except Exception:
-        log.exception("[handle_connection] Connection handler error from %s", addr)
-    finally:
-        with self.lock:
-            self.inbound_peers.discard(peer)
-            ip = peer[0]
-            if ip in self._inbound_ips:
-                remaining = self._inbound_ips.get(ip, 1) - 1
-                if remaining > 0:
-                    self._inbound_ips[ip] = remaining
-                else:
-                    self._inbound_ips.pop(ip, None)
-        conn.close()
+
+def _process_legacy_rpc(self, conn, addr, ip, first):
+    if not isinstance(first, dict):
+        ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
+        return
+
+    if CFG.P2P_ENC_REQUIRED:
+        ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
+        return
+
+    msg = first
+    src_nid = None
+    src_pub = None
+    if is_envelope(first):
+        try:
+            msg = verify_and_unwrap(first, lambda nid: self.peer_pubkeys.get(nid))
+        except Exception:
+            ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
+            log.warning("[handle_connection] envelope verify fail (unencrypted) from %s (temp-ban)", addr, exc_info=True)
+            return
+        
+        src_nid = first.get("from")
+        src_pub = first.get("pubkey")
+        if isinstance(src_nid, str) and isinstance(src_pub, str):
+            self.peer_pubkeys[src_nid] = src_pub
+            
+    elif CFG.ENVELOPE_REQUIRED:
+        log.warning(f"[handle_connection] rejecting legacy RPC from {addr}")
+        return
+
+    response = process_message(self, msg, addr, src_node_id=src_nid, src_pubkey=src_pub)
+    if response is not None:
+        drop = bool(response.pop("drop", False)) if isinstance(response, dict) else False
+        env = build_envelope(response, self.node_ctx, extra={"pubkey": self.pubkey})
+        send_message(conn, json.dumps(env).encode("utf-8"))
+        if drop:
+            return
+
+
+def _teardown_connection(self, conn, peer, ip):
+    with self.lock:
+        self.inbound_peers.discard(peer)
+        if ip in self._inbound_ips:
+            remaining = self._inbound_ips.get(ip, 1) - 1
+            if remaining > 0:
+                self._inbound_ips[ip] = remaining
+            else:
+                self._inbound_ips.pop(ip, None)
+    conn.close()

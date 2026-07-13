@@ -51,7 +51,7 @@ class ChatHandler(NetworkHandlerProxy):
             return
         pres2 = dict(pres); pres2["hops"] = hops + 1
         msg = {"type": "CHAT_PRESENCE", **pres2}
-        self.broadcast._broadcast(self.peers, msg, exclude=exclude)
+        self.broadcast.send_gossip(self.peers, msg, exclude=exclude)
 
     def _relay_presence_async(self, pres: dict, exclude=None) -> None:
         threading.Thread(target=self._relay_presence, args=(pres, exclude), daemon=True).start()

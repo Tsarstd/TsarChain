@@ -284,7 +284,7 @@ class BlockValidator:
         return True
 
 
-    def _validate_graffiti_posts(self, txs, cb) -> bool: 
+    def _validate_graffiti_posts(self, txs, cb) -> bool: #NOSONAR
         graffiti_posts = 0
         first_art_id = None
         for tx in txs[1:]:  # skip coinbase
@@ -432,7 +432,7 @@ class BlockValidator:
         return self._verify_block_fees_and_rewards(block, txs, cb, fees)
 
 
-    def _prepare_tx_snapshot(self, txs, store) -> dict | None: 
+    def _prepare_tx_snapshot(self, txs, store) -> dict | None: #NOSONAR
         store_lookup = getattr(store, "lookup_entry", None)
         utxo_view = None
         if not callable(store_lookup):

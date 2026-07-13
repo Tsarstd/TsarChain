@@ -16,27 +16,6 @@ log = get_ctx_logger("tsarchain.network.cast.fullsync")
 
 
 class MempoolSyncHandler(BroadcastHandlerProxy):
-    
-    def _mempool_chunks(self, max_bytes: int) -> list[list[dict]]:
-        txs = self.mempool.get_all_txs() or []
-        chunks, cur = [], []
-        base = {"type": "MEMPOOL", "data": []}
-        for tx in txs:
-            d = tx.to_dict() if hasattr(tx, "to_dict") else tx
-
-            test = dict(base)
-            test["data"] = cur + [d]
-            enc = json.dumps(self._encode(test), separators=CFG.CANONICAL_SEP).encode("utf-8")
-
-            hard_cap = max(1024, CFG.MAX_MSG) - len(CFG.NETWORK_MAGIC)
-            if len(enc) > hard_cap and cur:
-                chunks.append(cur)
-                cur = [d]
-            else:
-                cur.append(d)
-        if cur:
-            chunks.append(cur)
-        return chunks
 
     def send_mempool_to_peer(
         self,
@@ -65,7 +44,7 @@ class MempoolSyncHandler(BroadcastHandlerProxy):
         for chunk in self._mempool_chunks(hard_cap):
             if not chunk:
                 continue
-            ok = self._send(
+            ok = self.start_gossip(
                 peer,
                 {
                     "type": "MEMPOOL",
@@ -79,6 +58,33 @@ class MempoolSyncHandler(BroadcastHandlerProxy):
         if current_seq is not None and sent >= 0:
             self._last_mempool_seq[peer] = current_seq
         return sent
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
+    def _mempool_chunks(self, max_bytes: int) -> list[list[dict]]:
+        txs = self.mempool.get_all_txs() or []
+        chunks, cur = [], []
+        base = {"type": "MEMPOOL", "data": []}
+        for tx in txs:
+            d = tx.to_dict() if hasattr(tx, "to_dict") else tx
+
+            test = dict(base)
+            test["data"] = cur + [d]
+            enc = json.dumps(self._encode(test), separators=CFG.CANONICAL_SEP).encode("utf-8")
+
+            hard_cap = max(1024, CFG.MAX_MSG) - len(CFG.NETWORK_MAGIC)
+            if len(enc) > hard_cap and cur:
+                chunks.append(cur)
+                cur = [d]
+            else:
+                cur.append(d)
+        if cur:
+            chunks.append(cur)
+        return chunks
 
 
 __all__ = ["MempoolSyncHandler"]

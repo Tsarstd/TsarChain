@@ -1,4 +1,4 @@
-﻿# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 # Refs: Merkle; Signal-X3DH
@@ -163,7 +163,7 @@ class Network(NetworkProxy):
         self.sync_thread = threading.Thread(target=sync.sync_loop, args=(self,), daemon=True)
         self._threads = [self.server_thread, self.discovery_thread, self.sync_thread]
         try:
-            rpc_client._prefetch_rpc_connections(self)
+            rpc_client.prefetch_rpc_connections(self)
         except Exception:
             log.debug("[__init__] rpc prefetch skipped", exc_info=True)
 

@@ -17,7 +17,7 @@ class DummySync(MempoolSyncHandler):
     def _encode(self, msg):
         return msg
         
-    def _send(self, peer, payload):
+    def start_gossip(self, peer, payload):
         return True
 
 @pytest.fixture

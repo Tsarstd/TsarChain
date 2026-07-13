@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, Optional
 from ...utils import config as CFG
 from ...utils.benchmarks import benchmark
 from ...contracts import graffiti as GRAFFITI
-from ...utils.helpers import spkhex_to_address
 
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.rpc.storage_rpc")
@@ -36,7 +35,6 @@ def handle_storage_rpc(
 ) -> dict | None:
     
     ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
-    
     err = _check_storage_rate_limit(self, ip)
     if err: return err
 
@@ -61,7 +59,9 @@ def handle_storage_rpc(
         return _handle_storage_proof_submit(self, message, storer_addr, ip, src_node_id)
     elif mtype == "GRAFFITI_BUILD_PAYOUT":
         return _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id)
+
     return None
+
 
 @benchmark(label="GRAFFITI_BUILD_PAYOUT", threshold_ms=15.0)
 def _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id):
@@ -129,6 +129,7 @@ def _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id):
         
     return {"status": "ok", "tx": tx_obj.to_dict(include_txid=True)}
 
+
 @benchmark(label="GRAFFITI_PROOF_SUBMIT", threshold_ms=15.0)
 def _handle_storage_proof_submit(self, message, storer_addr, ip, src_node_id):
     ts_val = int(message.get("ts", 0))
@@ -181,11 +182,13 @@ def _handle_storage_proof_submit(self, message, storer_addr, ip, src_node_id):
     )
     return {"status": "ok", "art_id": art_id, "epoch": epoch}
 
+
 def _proof_epoch_window(self) -> tuple[int, int, int]:
     tip_height = int(getattr(getattr(self.broadcast, "blockchain", None), "height", 0) or 0)
     tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
     drift = int(CFG.GRAFFITI_PROOF_EPOCH_DRIFT)
     return tip_epoch, max(0, tip_epoch - drift), tip_epoch + drift
+
 
 def _validate_proof_basic_fields(message, storer_addr):
     art_id_raw = str(message.get("art_id") or "").strip()
@@ -208,6 +211,7 @@ def _validate_proof_basic_fields(message, storer_addr):
         
     return None, (art_id, epoch, offset, length, proof_hash, storer, height, seed)
 
+
 def _validate_merkle_meta(post):
     mroot = post.get("mroot") or post.get("merkle_root")
     mchunk = post.get("mchunk") or post.get("merkle_chunk")
@@ -225,6 +229,7 @@ def _validate_merkle_meta(post):
         if not GRAFFITI._is_valid_sha256_hex(str(mroot)):
             return {"error": "merkle_root_invalid"}, None
     return None, (mroot, mchunk, mcount)
+
 
 def _validate_proof_challenge(self, epoch, height, art_id, size, mroot, mchunk, offset, length, seed):
     if height < 0:
@@ -246,6 +251,7 @@ def _validate_proof_challenge(self, epoch, height, art_id, size, mroot, mchunk, 
     if seed and seed != challenge.get("seed"):
         return {"error": "seed_mismatch"}
     return challenge
+
 
 def _verify_proof_merkle_chunk(message, length, proof_hash, mroot, mchunk, mcount, offset):
     if not mroot:
@@ -275,6 +281,7 @@ def _verify_proof_merkle_chunk(message, length, proof_hash, mroot, mchunk, mcoun
         return {"error": "merkle_path_invalid"}
     return None
 
+
 def _parse_payout_recipients(message, storer_addr):
     recipients = message.get("recipients") or []
     if isinstance(recipients, dict):
@@ -298,6 +305,7 @@ def _parse_payout_recipients(message, storer_addr):
         
     return None, [{"addr": rec_addr, "amount": rec_amt}]
 
+
 def _validate_payout_epoch(epoch, tip_epoch, proof_entry):
     if epoch >= 0:
         if epoch > tip_epoch:
@@ -315,6 +323,7 @@ def _validate_payout_epoch(epoch, tip_epoch, proof_entry):
         if not proof_entry:
             return {"error": "missing_proof"}, None
     return None, epoch
+
 
 def _check_payout_cooldown(self, art_id, storer_addr):
     cooldown = int(CFG.ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC)
@@ -334,6 +343,7 @@ def _check_payout_cooldown(self, art_id, storer_addr):
                 }
             guard[guard_key] = now
     return None
+
 
 def _resolve_storage_sender_meta(self, peers, ip, peer_port, src_node_id, src_pubkey):
     best_meta = None
@@ -368,6 +378,7 @@ def _resolve_storage_sender_meta(self, peers, ip, peer_port, src_node_id, src_pu
             best_score = score
 
     return best_meta
+
 
 def _check_storage_rate_limit(self, ip):
     rl_key = f"storage_rpc:{ip}"
