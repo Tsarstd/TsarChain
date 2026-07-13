@@ -18,6 +18,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 
 from tsarchain.utils import config as CFG
+from tsarchain.utils.benchmarks import benchmark
 from tsarchain.network.pow_token import solve_pow
 from tsarchain.network.protocol import send_message, recv_message
 from tsarchain.contracts.graffiti import (
@@ -184,6 +185,7 @@ def _read_cached_graffiti_file(art_id: str, cache_root: str) -> Optional[Dict[st
         return None
     return {"status": "ok", "bytes": data_bytes, "meta": meta, "cache_path": cache_path}
 
+@benchmark(label="read_graffiti_file_info", threshold_ms=2.0)
 def read_graffiti_file_info(path: str) -> Dict[str, Any]:
     """
     Read local file and return basic info (size, mime, sha256) while validating graffiti boundaries.

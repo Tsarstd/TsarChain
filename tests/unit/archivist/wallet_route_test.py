@@ -152,20 +152,20 @@ def test_stor_get_by_art_no_data(server):
 
 def test_stor_get_by_art_with_data_kv(server):
     server.use_kv = True
-    del server.db.get_final_range
-    del server.db.get_final_bytes_range
-    server.index["art_map"]["art1"] = "gid1"
-    server.index["files"]["gid1"] = {"size_bytes": 100, "paid": True}
+    server.index["art_map"]["art2"] = "gid2"
+    server.index["files"]["gid2"] = {"size_bytes": 100, "paid": True}
     
-    server.db.get_final_bytes.return_value = b"x" * 100
+    # Mock the new method
+    server.db.get_final_bytes_range = MagicMock(return_value=b"y" * 5)
     
-    res = handle_wallet_rpc(server, {"type": "STOR_GET_BY_ART", "art_id": "art1", "include_data": True, "offset": 10, "length": 5})
+    res = handle_wallet_rpc(server, {"type": "STOR_GET_BY_ART", "art_id": "art2", "include_data": True, "offset": 10, "length": 5})
     assert res["status"] == "ok"
     assert res["offset"] == 10
     assert res["length"] == 5
     
     decoded = base64.b64decode(res["data_b64"])
-    assert decoded == b"x" * 5
+    assert decoded == b"y" * 5
+    server.db.get_final_bytes_range.assert_called_with("gid2", 10, 5)
 
 def test_stor_get_by_art_with_data_fs(server, tmp_path):
     file_path = tmp_path / "gid1.bin"

@@ -353,11 +353,6 @@ def test_merkle_root_for_file(mock_native):
     assert root == VALID_SHA256
     assert count == 10
 
-@patch('tsarchain.contracts.graffiti._native_graff_merkle_path_for_bytes')
-def test_merkle_path_for_bytes(mock_native):
-    mock_native.return_value = [{"hash": VALID_SHA256, "pos": "L"}]
-    path = graffiti.merkle_path_for_bytes(b"data", 1024, 0)
-    assert len(path) == 1
 
 @patch('tsarchain.contracts.graffiti._native_graff_merkle_path_for_file')
 def test_merkle_path_for_file(mock_native):

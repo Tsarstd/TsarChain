@@ -2,7 +2,12 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 
-import os, base64, hashlib, time, math
+import os
+import time
+import math
+import base64
+import hashlib
+
 from typing import Any, Dict, Optional
 
 from tsarchain.utils import config as CFG
@@ -94,7 +99,7 @@ def _handle_stor_init(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "chunk_size": chunk,
     }
 
-@benchmark(label="STOR_PUT", threshold_ms=100.0)
+@benchmark(label="STOR_PUT", threshold_ms=60.0)
 def _handle_stor_put(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     aid = str(msg.get("graffiti_id", "")).strip()
     b64 = str(msg.get("data", ""))
@@ -125,7 +130,7 @@ def _handle_stor_put(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "of": int(meta.get("size_bytes", 0)),
     }
 
-@benchmark(label="STOR_COMMIT", threshold_ms=250.0)
+@benchmark(label="STOR_COMMIT", threshold_ms=120.0)
 def _handle_stor_commit(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     aid = str(msg.get("graffiti_id", "")).strip()
     req_receipt = str(msg.get("receipt_id", "")).strip()
@@ -196,7 +201,7 @@ def _handle_stor_commit(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]
     except Exception as e:
         return {"type": "STOR_ACK", "status": "rejected", "reason": str(e)}
 
-@benchmark(label="STOR_GET_BY_ART", threshold_ms=15.0)
+@benchmark(label="STOR_GET_BY_ART", threshold_ms=75.0)
 def _handle_stor_get_by_art(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     # Public fetch by art_id (or direct graffiti_id). Supports optional chunked reads via offset/length.
     art_id = str(msg.get("art_id", "")).strip().lower()
@@ -367,13 +372,8 @@ def _verify_file_hash(tmp_path: str, expected_size: int, expected_sha256: str) -
     return True, "", actual_size
 
 def _read_kv_chunk(server, gid, offset, read_len):
-    get_range = getattr(server.db, "get_final_range", None) or getattr(server.db, "get_final_bytes_range", None)
     try:
-        if callable(get_range):
-            return get_range(gid, int(offset), int(read_len))
-        blob = server.db.get_final_bytes(gid) if gid else None
-        if blob is not None:
-            return blob[int(offset) : int(offset) + int(read_len)]
+        return server.db.get_final_bytes_range(gid, int(offset), int(read_len))
     except Exception:
         pass
     return None

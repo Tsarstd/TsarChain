@@ -72,7 +72,7 @@ fn build_root(mut leaves: Vec<[u8; 32]>) -> [u8; 32] {
     leaves[0]
 }
 
-fn build_path(leaves: Vec<[u8; 32]>, index: usize) -> Result<Vec<(char, [u8; 32])>, PyErr> {
+pub(crate) fn build_path_internal(leaves: Vec<[u8; 32]>, index: usize) -> Result<Vec<(char, [u8; 32])>, PyErr> {
     if leaves.is_empty() {
         return Err(PyErr::new::<exceptions::PyValueError, _>(
             "empty_merkle_leaves",
@@ -104,7 +104,7 @@ fn build_path(leaves: Vec<[u8; 32]>, index: usize) -> Result<Vec<(char, [u8; 32]
     Ok(path)
 }
 
-fn leaves_from_bytes(data: &[u8], chunk_size: usize) -> Result<Vec<[u8; 32]>, PyErr> {
+pub(crate) fn leaves_from_bytes_internal(data: &[u8], chunk_size: usize) -> Result<Vec<[u8; 32]>, PyErr> {
     if chunk_size == 0 {
         return Err(PyErr::new::<exceptions::PyValueError, _>(
             "bad_merkle_chunk",
@@ -155,7 +155,7 @@ fn leaves_from_reader(reader: &mut dyn Read, chunk_size: usize) -> Result<Vec<[u
     Ok(leaves)
 }
 
-fn path_to_pylist<'py>(py: Python<'py>, path: Vec<(char, [u8; 32])>) -> PyResult<Bound<'py, PyList>> {
+pub(crate) fn path_to_pylist<'py>(py: Python<'py>, path: Vec<(char, [u8; 32])>) -> PyResult<Bound<'py, PyList>> {
     let out = PyList::empty(py);
     for (side, hash) in path {
         let dict = PyDict::new(py);
@@ -190,30 +190,7 @@ pub fn graff_merkle_root_for_file<'py>(
     Ok((PyBytes::new(py, &root), count))
 }
 
-#[pyfunction]
-pub fn graff_merkle_path_for_bytes<'py>(
-    py: Python<'py>,
-    data: &[u8],
-    chunk_size: usize,
-    index: usize,
-) -> PyResult<Bound<'py, PyList>> {
-    let leaves = match leaves_from_bytes(data, chunk_size) {
-        Ok(v) => v,
-        Err(e) => {
-            log_warning(&format!("graff_merkle_path_for_bytes error={}", e));
-            return Err(e);
-        }
-    };
-    let path = match build_path(leaves, index) {
-        Ok(v) => v,
-        Err(e) => {
-            log_warning(&format!("graff_merkle_path_for_bytes error={}", e));
-            return Err(e);
-        }
-    };
-    let out = path_to_pylist(py, path)?;
-    Ok(out)
-}
+
 
 #[pyfunction]
 pub fn graff_merkle_path_for_file<'py>(
@@ -235,7 +212,7 @@ pub fn graff_merkle_path_for_file<'py>(
             return Err(e);
         }
     };
-    let path = match build_path(leaves, index) {
+    let path = match build_path_internal(leaves, index) {
         Ok(v) => v,
         Err(e) => {
             log_warning(&format!("graff_merkle_path_for_file error={}", e));

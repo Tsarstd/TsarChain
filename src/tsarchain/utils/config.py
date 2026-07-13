@@ -257,7 +257,7 @@ GENESIS_REWARD_AMOUNT = 2_500_000 * TSAR  # allocation granted when genesis rewa
 # ---- BASE DIFFICULTY ----
 INITIAL_BITS      = 0x1F9FFFFF  # starting difficulty bits assigned to block zero
 MAX_BITS          = 0x1F9FFFFF  # cap for easiest allowed difficulty
-TARGET_BLOCK_TIME = 46  # block time rate
+TARGET_BLOCK_TIME = 37  # block time rate
 LWMA_WINDOW       = 75  # block count considered by LWMA difficulty algo
 FUTURE_DRIFT      = 600  # max seconds a block timestamp may lead wall clock
 MTP_WINDOWS       = 11  # number of blocks in median time past calculation

@@ -60,7 +60,7 @@ def test_stor_paid_fs_mode(server, tmp_path):
 
 def test_stor_paid_kv_mode(server):
     server.use_kv = True
-    server.db.get_final_bytes.return_value = None
+    server.db.get_final_bytes_range.return_value = None
     server.db.pop_incoming.return_value = b"hello"
     
     server.index["files"]["gid1"] = {"size_bytes": 5}
@@ -99,16 +99,15 @@ def test_stor_gc_kv(server):
 
 @patch("archivist.node_route.GRAFFITI.calc_proof_challenge")
 @patch("archivist.node_route.GRAFFITI.hash_proof_chunk")
-@patch("archivist.node_route.GRAFFITI.merkle_path_for_bytes")
-def test_stor_proof_run_kv(mock_merkle, mock_hash, mock_chal, server):
+def test_stor_proof_run_kv(mock_hash, mock_chal, server):
     server.use_kv = True
     server.index["files"]["gid1"] = {"size_bytes": 5, "art_id": "art1"}
     
     mock_chal.return_value = {"offset": 0, "length": 5, "epoch": 1, "seed": "abc"}
     mock_hash.return_value = "hash123"
-    mock_merkle.return_value = ["hashA", "hashB"]
     
-    server.db.get_final_bytes.return_value = b"hello"
+    server.db.get_final_bytes_range.return_value = b"hello"
+    server.db.get_final_merkle_path.return_value = ["hashA", "hashB"]
     
     res = handle_node_rpc(server, {"type": "STOR_PROOF_RUN", "graffiti_id": "gid1", "tip_height": 100})
     assert res["status"] == "ok"

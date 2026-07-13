@@ -5,6 +5,7 @@
 import os
 import time
 import base64
+
 from typing import Any, Dict, Optional
 
 from tsarchain.utils import config as CFG
@@ -48,7 +49,7 @@ def _handle_stor_index(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 def _finalize_storage(server, aid: str, meta: dict) -> tuple[bool, Optional[str]]:
     if server.use_kv:
-        already_final = server.db.get_final_bytes(aid) is not None
+        already_final = server.db.get_final_bytes_range(aid, 0, 1) is not None
         if not already_final:
             data = server.db.pop_incoming(aid)
             if data is None:
@@ -67,7 +68,7 @@ def _finalize_storage(server, aid: str, meta: dict) -> tuple[bool, Optional[str]
             meta["state"] = "stored"
     return True, None
 
-@benchmark(label="STOR_PAID", threshold_ms=2000.0)
+@benchmark(label="STOR_PAID", threshold_ms=500.0)
 def _handle_stor_paid(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     aid = str(msg.get("graffiti_id", "")).strip()
     txid = str(msg.get("txid", "")).strip()
@@ -98,7 +99,7 @@ def _handle_stor_paid(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "confirmed_at_height": meta.get("confirmed_at_height", 0),
     }
 
-@benchmark(label="STOR_GC", threshold_ms=35.0)
+@benchmark(label="STOR_GC", threshold_ms=15.0)
 def _handle_stor_gc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     tip_h = int(msg.get("tip_height", 0) or 0)
     expire_after = max(0, int(CFG.GRAFFITI_EXPIRE_AFTER_BLOCKS))
@@ -115,7 +116,7 @@ def _handle_stor_gc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         
     return {"type": "STOR_GC", "status": "ok", "expired": expired}
 
-@benchmark(label="STOR_PROOF_RUN", threshold_ms=500.0)
+@benchmark(label="STOR_PROOF_RUN", threshold_ms=75.0)
 def _handle_stor_proof_run(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     aid = str(msg.get("graffiti_id", "")).strip()
     art_id = str(msg.get("art_id", "")).strip().lower()
@@ -219,12 +220,13 @@ def _remove_expired_files(server, files: dict, remove_keys: list[str]) -> int:
 
 def _get_chunk_and_merkle(server, aid: str, meta: dict, offset: int, length: int, merkle_chunk: int, chunk_index: int):
     if server.use_kv:
-        data_bytes = server.db.get_final_bytes(aid)
-        if data_bytes is None:
+        chunk = server.db.get_final_bytes_range(aid, offset, length)
+        if chunk is None:
             raise FileNotFoundError("file_missing")
-        chunk = data_bytes[offset : offset + length]
-        merkle_path = GRAFFITI.merkle_path_for_bytes(data_bytes, merkle_chunk, chunk_index)
-        log.debug("use merkle_path_for_bytes")
+        merkle_path = server.db.get_final_merkle_path(aid, merkle_chunk, chunk_index)
+        if merkle_path is None:
+            raise FileNotFoundError("file_missing")
+        log.debug("use merkle_path_for_kv")
     else:
         path = meta.get("path")
         if not path or not os.path.isfile(path):

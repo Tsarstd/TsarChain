@@ -209,69 +209,54 @@ impl LmdbBackend {
 
     fn put(&self, db_name: &str, key: &[u8], val: &[u8]) -> PyResult<()> {
         let db = self.open_db(db_name)?;
-        let mut txn = self
-            .env
-            .begin_rw_txn()
-            .map_err(|e| map_err("lmdb begin_rw_txn", e))?;
-        match txn.put(db, &key, &val, WriteFlags::empty()) {
-            Ok(_) => txn.commit().map_err(|e| map_err("lmdb commit", e)),
-            Err(lmdb::Error::MapFull) => {
-                log_warning(&format!(
-                    "[lmdb] map full on put db={} key_len={} val_len={}, trying grow_to_max",
-                    db_name,
-                    key.len(),
-                    val.len()
-                ));
-                drop(txn);
-                self.grow_to_max()?;
-                let mut retry_txn = self
-                    .env
-                    .begin_rw_txn()
-                    .map_err(|e| map_err("lmdb begin_rw_txn", e))?;
-                retry_txn
-                    .put(db, &key, &val, WriteFlags::empty())
-                    .map_err(|e| map_err("lmdb put retry", e))?;
-                retry_txn.commit().map_err(|e| map_err("lmdb commit", e))
+        loop {
+            let mut txn = self
+                .env
+                .begin_rw_txn()
+                .map_err(|e| map_err("lmdb begin_rw_txn", e))?;
+            match txn.put(db, &key, &val, WriteFlags::empty()) {
+                Ok(_) => {
+                    return txn.commit().map_err(|e| map_err("lmdb commit", e));
+                }
+                Err(lmdb::Error::MapFull) => {
+                    log_warning(&format!(
+                        "[lmdb] map full on put db={} key_len={} val_len={}, trying grow_to_max",
+                        db_name,
+                        key.len(),
+                        val.len()
+                    ));
+                    drop(txn);
+                    self.grow_to_max()?;
+                }
+                Err(e) => return Err(map_err("lmdb put", e)),
             }
-            Err(e) => Err(map_err("lmdb put", e)),
         }
     }
 
     fn delete(&self, db_name: &str, key: &[u8]) -> PyResult<bool> {
         let db = self.open_db(db_name)?;
-        let mut txn = self
-            .env
-            .begin_rw_txn()
-            .map_err(|e| map_err("lmdb begin_rw_txn", e))?;
-        match txn.del(db, &key, None) {
-            Ok(_) => {
-                txn.commit().map_err(|e| map_err("lmdb commit", e))?;
-                Ok(true)
+        loop {
+            let mut txn = self
+                .env
+                .begin_rw_txn()
+                .map_err(|e| map_err("lmdb begin_rw_txn", e))?;
+            match txn.del(db, &key, None) {
+                Ok(_) => {
+                    txn.commit().map_err(|e| map_err("lmdb commit", e))?;
+                    return Ok(true);
+                }
+                Err(lmdb::Error::NotFound) => return Ok(false),
+                Err(lmdb::Error::MapFull) => {
+                    log_warning(&format!(
+                        "[lmdb] map full on delete db={} key_len={}, trying grow_to_max",
+                        db_name,
+                        key.len()
+                    ));
+                    drop(txn);
+                    self.grow_to_max()?;
+                }
+                Err(e) => return Err(map_err("lmdb delete", e)),
             }
-            Err(lmdb::Error::NotFound) => Ok(false),
-            Err(lmdb::Error::MapFull) => {
-                log_warning(&format!(
-                    "[lmdb] map full on delete db={} key_len={}, trying grow_to_max",
-                    db_name,
-                    key.len()
-                ));
-                drop(txn);
-                self.grow_to_max()?;
-                let mut retry = self
-                    .env
-                    .begin_rw_txn()
-                    .map_err(|e| map_err("lmdb begin_rw_txn", e))?;
-                let result = retry
-                    .del(db, &key, None)
-                    .map(|_| true)
-                    .or_else(|err| match err {
-                        lmdb::Error::NotFound => Ok(false),
-                        other => Err(map_err("lmdb delete", other)),
-                    })?;
-                retry.commit().map_err(|e| map_err("lmdb commit", e))?;
-                Ok(result)
-            }
-            Err(e) => Err(map_err("lmdb delete", e)),
         }
     }
 
@@ -287,6 +272,26 @@ impl LmdbBackend {
             Err(e) => return Err(map_err("lmdb get", e)),
         };
         Ok(out)
+    }
+
+    fn get_bytes_range(&self, db_name: &str, key: &[u8], offset: usize, length: usize) -> PyResult<Option<Vec<u8>>> {
+        let db = self.open_db(db_name)?;
+        let txn = self
+            .env
+            .begin_ro_txn()
+            .map_err(|e| map_err("lmdb begin_ro_txn", e))?;
+        match txn.get(db, &key) {
+            Ok(bytes) => {
+                if offset >= bytes.len() {
+                    Ok(Some(Vec::new()))
+                } else {
+                    let end = std::cmp::min(offset.saturating_add(length), bytes.len());
+                    Ok(Some(bytes[offset..end].to_vec()))
+                }
+            },
+            Err(lmdb::Error::NotFound) => Ok(None),
+            Err(e) => Err(map_err("lmdb get", e)),
+        }
     }
 
     fn iter_prefix(&self, db_name: &str, prefix: &[u8]) -> PyResult<Vec<(Vec<u8>, Vec<u8>)>> {
@@ -359,54 +364,36 @@ impl LmdbBackend {
             return Ok(());
         }
         let db = self.open_db(db_name)?;
-        let mut txn = self
-            .env
-            .begin_rw_txn()
-            .map_err(|e| map_err("lmdb begin_rw_txn", e))?;
-        let mut map_full = false;
-        for (k, maybe_v) in ops.iter() {
-            let res = match maybe_v {
-                Some(v) => txn.put(db, &k, &v, WriteFlags::empty()),
-                None => match txn.del(db, &k, None) {
-                    Ok(_) => Ok(()),
-                    Err(lmdb::Error::NotFound) => Ok(()),
-                    Err(e) => Err(e),
-                },
-            };
-            match res {
-                Ok(_) => {}
-                Err(lmdb::Error::MapFull) => {
-                    map_full = true;
-                    break;
-                }
-                Err(e) => return Err(map_err("lmdb put_batch", e)),
-            }
-        }
-        if map_full {
-            drop(txn);
-            self.grow_to_max()?;
-            let db_retry = self.open_db(db_name)?;
-            let mut txn2 = self
+        loop {
+            let mut txn = self
                 .env
                 .begin_rw_txn()
                 .map_err(|e| map_err("lmdb begin_rw_txn", e))?;
-            for (k, maybe_v) in ops {
+            let mut map_full = false;
+            for (k, maybe_v) in ops.iter() {
                 let res = match maybe_v {
-                    Some(v) => txn2.put(db_retry, &k, &v, WriteFlags::empty()),
-                    None => match txn2.del(db_retry, &k, None) {
+                    Some(v) => txn.put(db, &k, &v, WriteFlags::empty()),
+                    None => match txn.del(db, &k, None) {
                         Ok(_) => Ok(()),
                         Err(lmdb::Error::NotFound) => Ok(()),
                         Err(e) => Err(e),
                     },
                 };
-                res.map_err(|e| map_err("lmdb put_batch retry", e))?;
+                match res {
+                    Ok(_) => {}
+                    Err(lmdb::Error::MapFull) => {
+                        map_full = true;
+                        break;
+                    }
+                    Err(e) => return Err(map_err("lmdb put_batch", e)),
+                }
             }
-            txn2
-                .commit()
-                .map_err(|e| map_err("lmdb commit batch", e))
-        } else {
-            txn.commit()
-                .map_err(|e| map_err("lmdb commit batch", e))
+            if map_full {
+                drop(txn);
+                self.grow_to_max()?;
+            } else {
+                return txn.commit().map_err(|e| map_err("lmdb commit batch", e));
+            }
         }
     }
 
@@ -567,6 +554,21 @@ impl JsonBackend {
             }
         }
         Ok(None)
+    }
+
+    fn get_bytes_range(&self, db: &str, key: &[u8], offset: usize, length: usize) -> PyResult<Option<Vec<u8>>> {
+        let full_opt = self.get(db, key)?;
+        match full_opt {
+            Some(v) => {
+                if offset >= v.len() {
+                    Ok(Some(Vec::new()))
+                } else {
+                    let end = std::cmp::min(offset.saturating_add(length), v.len());
+                    Ok(Some(v[offset..end].to_vec()))
+                }
+            }
+            None => Ok(None),
+        }
     }
 
     fn put_bytes(&self, db: &str, key: &[u8], val: &[u8]) -> PyResult<()> {
@@ -761,6 +763,64 @@ impl NativeStorage {
             Backend::Json(b) => b.get(db, key)?,
         };
         Ok(res.map(|v| PyBytes::new(py, &v)))
+    }
+
+    /// Retrieve a slice of bytes from the database. 
+    /// This optimization is specifically intended for chunked downloads of large graffiti files,
+    /// avoiding full allocations. It is not generally used for small blockchain or UTXO payloads.
+    pub fn get_bytes_range<'py>(
+        &self,
+        py: Python<'py>,
+        db: &str,
+        key: &[u8],
+        offset: usize,
+        length: usize,
+    ) -> PyResult<Option<Bound<'py, PyBytes>>> {
+        let res = match &self.backend {
+            Backend::Lmdb(b) => b.get_bytes_range(db, key, offset, length)?,
+            Backend::Json(b) => b.get_bytes_range(db, key, offset, length)?,
+        };
+        Ok(res.map(|v| PyBytes::new(py, &v)))
+    }
+
+    /// Retrieve a merkle path for a specific chunk index directly from the database memory mapping.
+    /// This optimization is specifically intended for graffiti files to avoid full allocations in STOR_PROOF_RUN.
+    pub fn get_merkle_path<'py>(
+        &self,
+        py: Python<'py>,
+        db: &str,
+        key: &[u8],
+        chunk_size: usize,
+        index: usize,
+    ) -> PyResult<Option<Bound<'py, PyList>>> {
+        match &self.backend {
+            Backend::Lmdb(b) => {
+                let db_handle = b.open_db(db)?;
+                let txn = b.env.begin_ro_txn().map_err(|e| map_err("lmdb ro_txn", e))?;
+                match txn.get(db_handle, &key) {
+                    Ok(bytes) => {
+                        let leaves = crate::graff_merkle::leaves_from_bytes_internal(bytes, chunk_size)?;
+                        let path = crate::graff_merkle::build_path_internal(leaves, index)?;
+                        let out = crate::graff_merkle::path_to_pylist(py, path)?;
+                        Ok(Some(out))
+                    },
+                    Err(lmdb::Error::NotFound) => Ok(None),
+                    Err(e) => Err(map_err("lmdb get", e)),
+                }
+            },
+            Backend::Json(b) => {
+                let bytes_opt = b.get(db, key)?;
+                match bytes_opt {
+                    Some(bytes) => {
+                        let leaves = crate::graff_merkle::leaves_from_bytes_internal(&bytes, chunk_size)?;
+                        let path = crate::graff_merkle::build_path_internal(leaves, index)?;
+                        let out = crate::graff_merkle::path_to_pylist(py, path)?;
+                        Ok(Some(out))
+                    },
+                    None => Ok(None),
+                }
+            }
+        }
     }
 
     pub fn get_json<'py>(&self, py: Python<'py>, db: &str, key: &[u8]) -> PyResult<Option<Py<PyAny>>>{

@@ -204,14 +204,25 @@ class ArchivistDatabase:
         self.put_final(gid, data)
         return True
 
-    def get_final_bytes(self, gid: str) -> Optional[bytes]:
+
+    def get_final_bytes_range(self, gid: str, offset: int, length: int) -> Optional[bytes]:
         if not self.use_kv:
             raise RuntimeError("kv_disabled")
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
         key = f"blob:{gid}".encode("utf-8")
-        data = self._kv_final.get_bytes("final", key)
+        data = self._kv_final.get_bytes_range("final", key, offset, length)
         return bytes(data) if data is not None else None
+
+
+    def get_final_merkle_path(self, gid: str, chunk_size: int, index: int) -> Optional[list]:
+        if not self.use_kv:
+            raise RuntimeError("kv_disabled")
+        if not self.enable_blobs:
+            raise RuntimeError("blobs_disabled")
+        key = f"blob:{gid}".encode("utf-8")
+        return self._kv_final.get_merkle_path("final", key, chunk_size, index)
+
 
     def delete_blob(self, gid: str, *, incoming: bool = False, final: bool = False) -> None:
         if not self.enable_blobs:

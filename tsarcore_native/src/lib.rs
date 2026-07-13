@@ -976,7 +976,6 @@ pub fn tsarcore_native(_py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(randomx_pow_hash, m)?)?;
 
     m.add_function(wrap_pyfunction!(graff_merkle::graff_merkle_root_for_file, m)?)?;
-    m.add_function(wrap_pyfunction!(graff_merkle::graff_merkle_path_for_bytes, m)?)?;
     m.add_function(wrap_pyfunction!(graff_merkle::graff_merkle_path_for_file, m)?)?;
     m.add_function(wrap_pyfunction!(graff_merkle::graff_merkle_verify, m)?)?;
     

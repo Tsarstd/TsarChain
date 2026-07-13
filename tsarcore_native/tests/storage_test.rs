@@ -59,6 +59,10 @@ fn test_json_backend() {
         let fetched = storage.get_bytes(py, db, key).unwrap().unwrap();
         assert_eq!(fetched.as_bytes(), val);
 
+        // get_bytes_range
+        let fetched_range = storage.get_bytes_range(py, db, key, 1, 3).unwrap().unwrap();
+        assert_eq!(fetched_range.as_bytes(), b"y_v"); // b"my_val"[1..4]
+
         // put_json & get_json
         let json_key = b"my_json";
         let json_text = r#"{"foo": "bar"}"#;
@@ -120,6 +124,10 @@ fn test_lmdb_backend() {
         storage.put_bytes(db, key, val).unwrap();
         let fetched = storage.get_bytes(py, db, key).unwrap().unwrap();
         assert_eq!(fetched.as_bytes(), val);
+
+        // get_bytes_range
+        let fetched_range = storage.get_bytes_range(py, db, key, 1, 3).unwrap().unwrap();
+        assert_eq!(fetched_range.as_bytes(), b"y_v"); // b"my_val"[1..4]
 
         // put_json & get_json
         let json_key = b"my_json";
@@ -189,21 +197,55 @@ fn test_lmdb_map_full_growth() {
     Python::attach(|_py| {
         // Init LMDB with VERY small max size so it hits MapFull instantly on big inserts
         let init_size = 1024 * 1024; // 1MB
-        let max_size = 4 * 1024 * 1024; // 4MB
+        let max_size = 16 * 1024 * 1024; // 16MB
         let storage = open_storage("lmdb", path_str, Some(init_size), Some(max_size), false).unwrap();
         
-        // Put a massive chunk of bytes to trigger map full & growth
         let db = "grow_db";
-        let large_val = vec![0u8; 800 * 1024]; // 800 KB
+        let medium_val = vec![0u8; 800 * 1024]; // 800 KB
+        let huge_val = vec![0u8; 3 * 1024 * 1024]; // 3 MB
         
-        storage.put_bytes(db, b"huge1", &large_val).unwrap();
-        // This second one should definitely push it past 1MB and trigger grow_to_max
-        storage.put_bytes(db, b"huge2", &large_val).unwrap();
+        // Fits in 1MB
+        storage.put_bytes(db, b"med1", &medium_val).unwrap();
+        
+        // Needs 3MB + 800KB = 3.8MB.
+        // Current map is 1MB. 
+        // 1st retry: grow_to_max gives 2MB (too small).
+        // 2nd retry: grow_to_max gives 4MB (fits!).
+        // The loop logic should handle this successfully.
+        storage.put_bytes(db, b"huge1", &huge_val).unwrap();
         
         // Similarly for put_batch
         let mut batch = Vec::new();
-        batch.push((b"huge3".to_vec(), Some(large_val.clone())));
-        batch.push((b"huge4".to_vec(), Some(large_val.clone())));
+        batch.push((b"huge2".to_vec(), Some(huge_val.clone())));
+        batch.push((b"huge3".to_vec(), Some(huge_val.clone()))); // total 6 MB in batch
         storage.put_batch(db, batch).unwrap();
+    });
+}
+
+#[test]
+fn test_lmdb_merkle_path() {
+    init_python();
+    let dir = tempdir().unwrap();
+    let path_str = dir.path().to_str().unwrap();
+
+    Python::attach(|py| {
+        let storage = open_storage("lmdb", path_str, Some(1024 * 1024), Some(4 * 1024 * 1024), false).unwrap();
+        
+        let db = "testdb_merkle";
+        let key = b"my_key";
+        let content = b"0123456789"; // 10 bytes
+        
+        storage.put_bytes(db, key, content).unwrap();
+
+        let chunk_size = 2;
+        let index = 2; // getting chunk index 2 ("45")
+        
+        let path_list = storage.get_merkle_path(py, db, key, chunk_size, index).unwrap().unwrap();
+        assert_eq!(path_list.len(), 3);
+        
+        let item = path_list.get_item(0).unwrap();
+        let dict = item.cast::<pyo3::types::PyDict>().unwrap();
+        let side = dict.get_item("side").unwrap().unwrap().extract::<String>().unwrap();
+        assert!(side == "L" || side == "R");
     });
 }

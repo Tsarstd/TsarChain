@@ -76,8 +76,6 @@ def test_blobs_disabled(tmp_path):
     with pytest.raises(RuntimeError, match="blobs_disabled"):
         db.promote_incoming("gid")
     with pytest.raises(RuntimeError, match="blobs_disabled"):
-        db.get_final_bytes("gid")
-    with pytest.raises(RuntimeError, match="blobs_disabled"):
         db.delete_blob("gid", incoming=True, final=True)
 
 @patch("archivist.database_archivist._native_open_storage")
@@ -102,10 +100,11 @@ def test_kv_operations(mock_kv_enabled, mock_native, tmp_path):
     assert promoted is True
     assert mock_store_final.put_bytes.called
     
-    # Test get_final
-    mock_store_final.get_bytes.return_value = b"final_data"
-    res = db.get_final_bytes("gid2")
-    assert res == b"final_data"
+    # Test get_final_bytes_range
+    mock_store_final.get_bytes_range.return_value = b"nal"
+    res_range = db.get_final_bytes_range("gid2", 2, 3)
+    assert res_range == b"nal"
+    mock_store_final.get_bytes_range.assert_called_with("final", b"blob:gid2", 2, 3)
     
     # Test delete
     db.delete_blob("gid2", final=True)

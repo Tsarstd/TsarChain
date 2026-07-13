@@ -214,7 +214,6 @@ def hash_proof_chunk(chunk: bytes) -> str:
 try:
     from tsarcore_native import (
         graff_merkle_root_for_file as _native_graff_merkle_root_for_file, #wallet
-        graff_merkle_path_for_bytes as _native_graff_merkle_path_for_bytes, #storage node
         graff_merkle_path_for_file as _native_graff_merkle_path_for_file, #storage node
         graff_merkle_verify as _native_graff_merkle_verify, #node
     )
@@ -225,10 +224,7 @@ def merkle_root_for_file(path: str, chunk_size: int) -> tuple[str, int]: #wallet
     root, count = _native_graff_merkle_root_for_file(path, int(chunk_size))
     return bytes(root).hex(), int(count)
 
-def merkle_path_for_bytes(data: bytes, chunk_size: int, index: int) -> list[dict[str, str]]: #storage node
-    return list(_native_graff_merkle_path_for_bytes(data, int(chunk_size), int(index)))
-
-def merkle_path_for_file(path: str, chunk_size: int, index: int) -> list[dict[str, str]]: #storage node
+def merkle_path_for_file(path: str, chunk_size: int, index: int) -> list[dict[str, str]]: #storage node (json)
     return list(_native_graff_merkle_path_for_file(path, int(chunk_size), int(index)))
 
 def verify_merkle_path(root_hex: str, leaf_hash_hex: str, path: list[dict[str, str]]) -> bool: #node
@@ -876,7 +872,6 @@ __all__ = [
     "calc_proof_challenge",
     "hash_proof_chunk",
     "merkle_root_for_file",
-    "merkle_path_for_bytes",
     "merkle_path_for_file",
     "verify_merkle_path",
     "validate_graffiti_file",

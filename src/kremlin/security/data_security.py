@@ -622,7 +622,7 @@ class Security:
 
 class Wallet:
     @staticmethod
-    @benchmark(label="sign_prepared_tx", threshold_ms=5.0)
+    @benchmark(label="sign_prepared_tx", threshold_ms=15.0)
     def sign_prepared_tx(unsigned_tx_dict, inputs_meta, privkey_hex):
         tx = Tx.from_dict(unsigned_tx_dict)
         if len(tx.inputs) != len(inputs_meta):
