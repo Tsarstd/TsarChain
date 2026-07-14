@@ -19,9 +19,9 @@ export const formatHashForDisplay = (hash, maxCharsPerLine = 32) => {
 };
 
 export const getMaxCharsPerLine = () => {
-  if (typeof window === 'undefined') return 32;
+  if (globalThis.window === undefined) return 32;
   
-  const width = window.innerWidth;
+  const width = globalThis.window.innerWidth;
   if (width <= 320) return 24;
   if (width <= 360) return 28;
   if (width <= 480) return 32;
@@ -110,7 +110,7 @@ export const timeAgo = (sec) => {
   for (const interval of intervals) {
     const count = Math.floor(diff / interval.seconds);
     if (count >= 1) {
-      return `${count} ${interval.label}${count !== 1 ? 's' : ''} Ago`;
+      return `${count} ${interval.label}${count === 1 ? '' : 's'} Ago`;
     }
   }
   
@@ -126,33 +126,39 @@ export const fmtHashrate = (hps) => {
   return `${v.toFixed(0)} H/s`;
 };
 
+const toBigInt = (val) => {
+  if (typeof val === "bigint") {
+    return val;
+  }
+  if (typeof val === "number") {
+    if (!Number.isFinite(val) || !Number.isInteger(val)) {
+      throw new TypeError("Not an integer");
+    }
+    return BigInt(val);
+  }
+  const s = String(val).trim();
+  if (!/^-?\d+$/.test(s)) {
+    throw new Error("Not a valid integer string");
+  }
+  return BigInt(s);
+};
+
 export const fmtChainwork = (val) => {
   if (val === null || val === undefined || val === "") {
     return "-";
   }
 
   try {
-    let n;
-
-    if (typeof val === "bigint") {
-      n = val;
-    } else if (typeof val === "number") {
-      if (!Number.isFinite(val) || !Number.isInteger(val))
-        throw new Error("Not an integer");
-      n = BigInt(val);
-    } else {
-      const s = String(val).trim();
-      if (!/^-?\d+$/.test(s)) throw new Error("Not a valid integer string");
-      n = BigInt(s);
-    }
-
-    const hexstr = n < 0n ? (-n).toString(16) : n.toString(16);
-    const prefixed = (n < 0n ? "-0x" : "0x") + hexstr;
+    const n = toBigInt(val);
+    const isNegative = n < 0n;
+    const hexstr = isNegative ? (-n).toString(16) : n.toString(16);
+    const prefix = isNegative ? "-0x" : "0x";
+    const prefixed = prefix + hexstr;
 
     const short =
       hexstr.length <= 14
         ? prefixed
-        : (n < 0n ? "-0x" : "0x") +
+        : prefix +
           hexstr.slice(0, 6) +
           "..." +
           hexstr.slice(-6);
@@ -160,7 +166,7 @@ export const fmtChainwork = (val) => {
     const human = n.toLocaleString("en-US");
 
     return `${short} (${human})`;
-  } catch (e) {
+  } catch {
     const s = String(val);
     return s.length <= 14 ? s : `${s.slice(0, 6)}...${s.slice(-6)}`;
   }

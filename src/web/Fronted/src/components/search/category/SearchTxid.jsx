@@ -15,10 +15,91 @@ import {
 import { getVoutLabel, getAddressType } from "../SearchUX";
 
 
+const TxidGridCell = ({ cell, isHighlightedCell }) => {
+  const isLastRow = cell.row === 3;
+  
+  if (isLastRow) {
+    return (
+      <div className="txid-cell">
+        <div className={`txid-single-char-container ${isHighlightedCell ? 'highlighted' : ''}`}>
+          <span className="txid-single-char">
+            {cell.value}
+          </span>
+        </div>
+      </div>
+    );
+  }
+  
+  const chars = Array.from(cell.value).map((char, i) => ({
+    id: `char-${cell.id}-${i}`,
+    val: char
+  }));
+
+  return (
+    <div className="txid-cell">
+      <div className={`txid-chunk-container ${isHighlightedCell ? 'highlighted' : ''}`}>
+        <div className="txid-chunk-grid">
+          {chars.map((c) => (
+            <div key={c.id} className="txid-chunk-char">
+              {c.val}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+TxidGridCell.propTypes = {
+  cell: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    value: PropTypes.string.isRequired,
+    row: PropTypes.number.isRequired,
+    col: PropTypes.number.isRequired,
+  }).isRequired,
+  isHighlightedCell: PropTypes.bool.isRequired,
+};
+
+const TxidGridRow = ({ row, highlightPositions }) => {
+  const isHighlighted = (rowIdx, colIdx) => {
+    return highlightPositions.some(pos => pos[0] === rowIdx && pos[1] === colIdx);
+  };
+
+  return (
+    <div className="txid-row">
+      {row.cells.map((cell) => (
+        <TxidGridCell
+          key={cell.id}
+          cell={cell}
+          isHighlightedCell={isHighlighted(cell.row, cell.col)}
+        />
+      ))}
+    </div>
+  );
+};
+
+TxidGridRow.propTypes = {
+  row: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    cells: PropTypes.array.isRequired,
+  }).isRequired,
+  highlightPositions: PropTypes.array.isRequired,
+};
+
 const ResultTx = ({ data, onSearchClick }) => {
   const { renderClickableHash } = useRenderHelpers();
   const [isGeneratingReceipt, setIsGeneratingReceipt] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
+
+  const blockDisplay = useMemo(() => {
+    if (!data?.block_height && data?.block_height !== 0) {
+      return "0";
+    }
+    if (data?.block_height === "-") {
+      return "Genesis (0)";
+    }
+    return data?.block_height;
+  }, [data?.block_height]);
 
   const downloadReceiptDirect = async () => {
     if (!data?.txid) return;
@@ -50,7 +131,7 @@ const ResultTx = ({ data, onSearchClick }) => {
     if (!data?.inputs) return [];
     
     const groups = {};
-    data.inputs.forEach((inp) => {
+    data.inputs.forEach((inp, inpIdx) => {
       const address = inp.address || 'Unknown';
       if (!groups[address]) {
         groups[address] = {
@@ -60,6 +141,7 @@ const ResultTx = ({ data, onSearchClick }) => {
         };
       }
       groups[address].utxos.push({
+        key: `utxo-${inp.txid || 'coinbase'}-${inpIdx}`,
         txid: inp.txid,
         amount: inp.amount,
         isCoinbase: inp.is_coinbase
@@ -97,12 +179,19 @@ const ResultTx = ({ data, onSearchClick }) => {
       const groupKey = isOP_RETURN ? 'OP_RETURN' : address;
       
       if (!groups[groupKey]) {
-        const addressType = !isOP_RETURN 
-          ? getAddressType(address)
-          : { 
+        const addressType = isOP_RETURN 
+          ? { 
               type: "opreturn", 
               label: "Graffiti"
-            };
+            }
+          : getAddressType(address);
+        
+        let roleLabel = "Recipient";
+        if (isOP_RETURN) {
+          roleLabel = "Script";
+        } else if (isChange) {
+          roleLabel = "Change";
+        }
         
         groups[groupKey] = {
           address: groupKey,
@@ -111,7 +200,8 @@ const ResultTx = ({ data, onSearchClick }) => {
           isOP_RETURN,
           hasEvent: false,
           eventType: null,
-          outputs: []
+          outputs: [],
+          roleLabel
         };
       }
       
@@ -149,20 +239,44 @@ const ResultTx = ({ data, onSearchClick }) => {
   }, [groupedOutputs, data?.inputs]);
 
   const splitTxidGrid = (txid) => {
-    if (!txid || txid.length !== 64) return [];
-    const chunks = [];
-    for (let i = 0; i < 60; i += 5) {
-      chunks.push(txid.substring(i, i + 5));
-    }
-    const lastFourChars = txid.substring(60).split('');
-    chunks.push(...lastFourChars);
+    if (txid?.length !== 64) return [];
     
-    return [
-      chunks.slice(0, 4),    // Line 1: chunks 0-3 (5 character)
-      chunks.slice(4, 8),    // Line 2: chunks 4-7 (5 character)
-      chunks.slice(8, 12),   // Line 3: chunks 8-11 (5 character)
-      chunks.slice(12, 16)   // Line 4: chunks 12-15 (1 character each)
-    ];
+    const grid = [];
+    // Row 0, 1, 2
+    for (let r = 0; r < 3; r++) {
+      const row = [];
+      for (let c = 0; c < 4; c++) {
+        const i = (r * 4 + c) * 5;
+        row.push({
+          id: `cell-${r}-${c}`,
+          value: txid.substring(i, i + 5),
+          row: r,
+          col: c
+        });
+      }
+      grid.push({
+        id: `row-${r}`,
+        cells: row
+      });
+    }
+    
+    // Row 3 (last 4 characters)
+    const lastRow = [];
+    const lastFour = txid.substring(60).split('');
+    lastFour.forEach((char, c) => {
+      lastRow.push({
+        id: `cell-3-${c}`,
+        value: char,
+        row: 3,
+        col: c
+      });
+    });
+    grid.push({
+      id: `row-3`,
+      cells: lastRow
+    });
+    
+    return grid;
   };
 
   const highlightPositions = [
@@ -173,51 +287,18 @@ const ResultTx = ({ data, onSearchClick }) => {
   ];
 
   const renderTxidGrid = (txid) => {
-    if (!txid) return "-";
+    if (!txid) return <span>-</span>;
     
     const grid = splitTxidGrid(txid);
     
-    const isHighlighted = (row, col) => {
-      return highlightPositions.some(pos => pos[0] === row && pos[1] === col);
-    };
-
     return (
       <div className="txid-container">
-        {grid.map((row, rowIndex) => (
-          <div key={rowIndex} className="txid-row">
-            {row.map((chunk, colIndex) => {
-              const isLastRow = rowIndex === 3;
-              const isHighlightedCell = isHighlighted(rowIndex, colIndex);
-              
-              if (isLastRow) {
-                // Last 4 Char
-                return (
-                  <div key={colIndex} className="txid-cell">
-                    <div className={`txid-single-char-container ${isHighlightedCell ? 'highlighted' : ''}`}>
-                      <span className="txid-single-char">
-                        {chunk}
-                      </span>
-                    </div>
-                  </div>
-                );
-              }
-              
-              // Baris 1-3: chunk 5 karakter
-              return (
-                <div key={colIndex} className="txid-cell">
-                  <div className={`txid-chunk-container ${isHighlightedCell ? 'highlighted' : ''}`}>
-                    <div className="txid-chunk-grid">
-                      {chunk.split('').map((char, charIndex) => (
-                        <div key={charIndex} className="txid-chunk-char">
-                          {char}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        {grid.map((row) => (
+          <TxidGridRow
+            key={row.id}
+            row={row}
+            highlightPositions={highlightPositions}
+          />
         ))}
       </div>
     );
@@ -283,11 +364,7 @@ const ResultTx = ({ data, onSearchClick }) => {
           </div>
           <div className="stat">
             <span className="info-label">Block</span>
-            <span className="value">
-              {!data?.block_height && data?.block_height !== 0 ? "0" : 
-              data?.block_height === "-" ? "Genesis (0)" :
-              data?.block_height}
-            </span>
+            <span className="value">{blockDisplay}</span>
           </div>
           <div className="stat">
             <span className="info-label">Timestamp</span>
@@ -321,8 +398,8 @@ const ResultTx = ({ data, onSearchClick }) => {
         </div>
         
         <div className="list">
-          {groupedInputs.map((group, groupIdx) => (
-            <div className="tx-item" key={groupIdx}>
+          {groupedInputs.map((group) => (
+            <div className="tx-item" key={group.address}>
               
               {/* Sender Row */}
               <div className="stat">
@@ -370,10 +447,10 @@ const ResultTx = ({ data, onSearchClick }) => {
               {/* UTXOs List */}
               <div className="stat">
                 <span className="info-label" style={{ marginBottom: '4px' }}>
-                  Used {group.utxos.length} UTXO{group.utxos.length !== 1 ? '`s' : ''}
+                  Used {group.utxos.length} UTXO{group.utxos.length === 1 ? '' : '`s'}
                 </span>
-                {group.utxos.map((utxo, idx) => (
-                  <div key={idx} className="tx-items">
+                {group.utxos.map((utxo) => (
+                  <div key={utxo.key} className="tx-items">
                     <div style={{ 
                       display: 'flex', 
                       justifyContent: 'space-between',
@@ -419,21 +496,19 @@ const ResultTx = ({ data, onSearchClick }) => {
         <div style={{ display: 'flex' }}>
           <div className="stat">
             <span className="outputs-label">
-              {data?.outputs?.length || 0} Outputs • {recipientCount} Recipient{recipientCount !== 1 ? 's' : ''}
+              {data?.outputs?.length || 0} Outputs • {recipientCount} Recipient{recipientCount === 1 ? '' : 's'}
             </span>
           </div>
         </div>
         
         <div className="list">
-          {groupedOutputs.map((group, groupIdx) => (
-            <div className="tx-item" key={groupIdx}>
+          {groupedOutputs.map((group) => (
+            <div className="tx-item" key={group.address}>
 
               {/* Recipient Row */}
               <div className="stat">
                 <span className="info-label">
-                  {group.isOP_RETURN ? "Script" : 
-                  group.isChange ? "Change" : 
-                  "Recipient"}
+                  {group.roleLabel}
                 </span>
                 <div style={{ 
                   display: 'flex', 
@@ -449,15 +524,15 @@ const ResultTx = ({ data, onSearchClick }) => {
                     minWidth: '150px',
                     textOverflow: 'ellipsis'
                   }}>
-                    {!group.isOP_RETURN ? (
+                    {group.isOP_RETURN ? (
+                      <span className="value muted">OP_RETURN</span>
+                    ) : (
                       renderClickableHash(
                         group.address,
                         onSearchClick,
                         group.address,
                         fmtAddress(group.address) || "-"
                       )
-                    ) : (
-                      <span className="value muted">OP_RETURN</span>
                     )}
                   </div>
                   {group.addressType && (
@@ -489,8 +564,8 @@ const ResultTx = ({ data, onSearchClick }) => {
               {/* Outputs List */}
               <div className="stat">
                 <div className="tx-items">
-                  {group.outputs.map((output, idx) => (
-                    <div key={idx} style={{ 
+                  {group.outputs.map((output) => (
+                    <div key={output.vout} style={{ 
                       display: 'flex', 
                       justifyContent: 'space-between',
                       alignItems: 'center',

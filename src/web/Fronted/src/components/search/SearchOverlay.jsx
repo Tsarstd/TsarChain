@@ -5,7 +5,7 @@ import { IoClose } from "react-icons/io5";
 const SearchOverlay = ({ open, status, kind, result, message, onSearchClick, onClose }) => {
   if (!open) return null;
   return (
-    <div className="search-overlay" role="dialog" aria-modal="true">
+    <dialog className="search-overlay" open>
       <div className="search-overlay__panel">
         <div className="search-overlay__header">
           <button className="btn-ghost" type="button" onClick={onClose}>
@@ -20,7 +20,7 @@ const SearchOverlay = ({ open, status, kind, result, message, onSearchClick, onC
           onSearchClick={onSearchClick}
         />
       </div>
-    </div>
+    </dialog>
   );
 };
 

@@ -64,9 +64,9 @@ const GraffitiCard = ({ item, onSelect, active, isGenesis }) => {
         )}
       </div>
 
-      {!isGenesis ? (
+      {isGenesis ? null : (
         <div className="lane-card__creator">{creator}</div>
-      ) : null}
+      )}
 
       <div className="lane-card__grid">
         <div className="stat">
@@ -178,7 +178,7 @@ const Graffiti = ({onSearchClick}) => {
         if (graffitiData) {
           // Tambahkan ke state jika belum ada
           setItems(prev => {
-            const exists = prev.find(item => item.art_id === targetId);
+            const exists = prev.some(item => item.art_id === targetId);
             if (exists) return prev;
             return [...prev, graffitiData];
           });
@@ -242,7 +242,7 @@ const Graffiti = ({onSearchClick}) => {
   };
 
   // Handle Enter key untuk input navigasi
-  const handleKeyPress = (e) => {
+  const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
       handleNavigateToGraffiti();
     }
@@ -257,7 +257,7 @@ const Graffiti = ({onSearchClick}) => {
   }, [hasMore, loading, loadMore, scrollerRef]);
 
   const genesisId = !hasMore && items.length
-    ? items[items.length - 1]?.art_id
+    ? items.at(-1)?.art_id
     : null;
 
   return (
@@ -284,7 +284,7 @@ const Graffiti = ({onSearchClick}) => {
                 placeholder="Graffiti ID or Block Height"
                 value={navInput}
                 onChange={(e) => setNavInput(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyDown}
               />
               <button 
                 className="nav-button nav-button--go"
@@ -297,10 +297,9 @@ const Graffiti = ({onSearchClick}) => {
           </div>
         </div>
         <div className="lane">
-          <div
+          <section
             className={`lane-scroll ${isDragging ? "lane-scroll--dragging" : ""}`}
             ref={scrollerRef}
-            role="region"
             aria-label="Graffiti list"
             tabIndex={-1}
             onScroll={handleScroll}
@@ -316,7 +315,7 @@ const Graffiti = ({onSearchClick}) => {
                 onSearchClick={handleSearchClickLocal}
               />
             ))}
-          </div>
+          </section>
         </div>
         {loading && <div className="result-empty">Load More...</div>}
         {!hasMore && items.length > 0 && <div className="result-empty">*All Graffiti was Achieved</div>}

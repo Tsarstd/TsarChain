@@ -188,7 +188,8 @@
 }
 
 .navbar__search-btn {
-  background: linear-gradient(135deg, #e05f32, #c2410c);
+  background-color: #a13204;
+  background-image: linear-gradient(135deg, #cc4e21, #a13204);
   border: none;
   border-radius: 8px;
   color: white;
@@ -204,7 +205,8 @@
 }
 
 .navbar__search-btn:hover {
-  background: linear-gradient(135deg, #f97316, #e05f32);
+  background-color: #b03c13;
+  background-image: linear-gradient(135deg, #cc4e21, #b03c13);
   transform: translateY(-1px);
   box-shadow: 0 4px 15px rgba(224, 95, 50, 0.3);
 }

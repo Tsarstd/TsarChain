@@ -34,7 +34,7 @@ const App = () => {
     const searchParams = new URLSearchParams(location.search);
     const searchQuery = searchParams.get('search');
     
-    if (searchQuery && searchQuery.trim()) {
+    if (searchQuery?.trim()) {
       setQuery(searchQuery);
       setSearchOpen(true);
       runSearch(searchQuery);
@@ -63,8 +63,8 @@ const App = () => {
     setQuery(value);
     setSearchOpen(true);
     runSearch(value);
-    const newUrl = `${window.location.pathname}?search=${encodeURIComponent(value)}`;
-    window.history.pushState({}, '', newUrl);
+    const newUrl = `${globalThis.location.pathname}?search=${encodeURIComponent(value)}`;
+    globalThis.history.pushState({}, '', newUrl);
   }, [runSearch]);
 
   const handleSearch = useCallback(() => {

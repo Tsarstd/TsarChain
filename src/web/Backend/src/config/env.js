@@ -1,4 +1,4 @@
-const path = require("path");
+const path = require("node:path");
 const dotenv = require("dotenv");
 
 // Load .env if present

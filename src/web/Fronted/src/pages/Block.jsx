@@ -322,7 +322,7 @@ const Home = ({ onSearchClick }) => {
   useEffect(() => {
     const cached = getCachedState();
     
-    if (cached && cached.blocks && cached.blocks.length > 0) {
+    if (cached?.blocks?.length > 0) {
       setBlocks(cached.blocks);
       setNextHeight(cached.nextHeight);
       setHasMore(cached.hasMore);
@@ -500,14 +500,14 @@ const Home = ({ onSearchClick }) => {
     }
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
       handleNavigateToBlock();
     }
   };
 
   const handleSelect = async (item) => {
-    if (!item || item.height === undefined) return;
+    if (item?.height === undefined) return;
     
     const cacheKey = `block_detail_${item.height}`;
     const cachedDetail = localStorage.getItem(cacheKey);
@@ -579,7 +579,7 @@ const Home = ({ onSearchClick }) => {
                 placeholder="Block height"
                 value={navInput}
                 onChange={(e) => setNavInput(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyDown}
                 min="0"
               />
               <button 
@@ -593,10 +593,9 @@ const Home = ({ onSearchClick }) => {
           </div>
         </div>
         <div className="lane">
-          <div
+          <section
             className={`lane-scroll ${isDragging ? "lane-scroll--dragging" : ""}`}
             ref={scrollerRef}
-            role="region"
             aria-label="Block list"
             tabIndex={-1}
             onScroll={handleScroll}
@@ -612,7 +611,7 @@ const Home = ({ onSearchClick }) => {
                 onSearchClick={handleSearchClickLocal}
               />
             ))}
-          </div>
+          </section>
         </div>
         {message && <div className="result-empty">{message}</div>}
       </section>

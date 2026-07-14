@@ -19,7 +19,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 const ResultGraffiti = ({ data, onSearchClick }) => {
   const mime = String(data?.mime || "").toLowerCase();
   const isVideo = mime.includes("video") || mime.includes("mp4");
-  const isPdf = mime.includes("pdf") || (data?.preview_url && data.preview_url.toLowerCase().endsWith('.pdf'));
+  const isPdf = mime.includes("pdf") || data?.preview_url?.toLowerCase().endsWith('.pdf');
   const { renderHash, renderClickableHash } = useRenderHelpers();
   const [showDetails, setShowDetails] = useState(false);
   const [numPages, setNumPages] = useState(null);
@@ -35,88 +35,99 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
   const goToPrevPage = () => setPageNumber(pageNumber - 1);
   const goToNextPage = () => setPageNumber(pageNumber + 1);
 
+  // Render media preview
+  const renderMediaPreview = () => {
+    if (!data?.preview_url) {
+      return <div className="muted">Preview is not available</div>;
+    }
+
+    if (isVideo) {
+      return (
+        <video
+          className="media-preview"
+          controls
+          preload="metadata"
+          src={data.preview_url}
+        >
+          <track
+            kind="captions"
+            src={data?.captions_url || ''}
+            label="Captions"
+            default={!!data?.captions_url}
+          />
+        </video>
+      );
+    }
+
+    if (isPdf) {
+      return (
+        <div className="pdf-preview-container">
+          <div className="pdf-document-wrapper">
+            <Document
+              file={data.preview_url}
+              onLoadSuccess={onDocumentLoadSuccess}
+              loading={
+                <div className="pdf-loading">
+                  Loading PDF preview...
+                </div>
+              }
+              error={
+                <div className="pdf-error muted">
+                  PDF preview could not be loaded.{' '}
+                  <a href={data.preview_url} target="_blank" rel="noopener noreferrer">
+                    Open PDF directly
+                  </a>
+                </div>
+              }
+              className="pdf-document"
+            >
+              <Page 
+                pageNumber={pageNumber} 
+                className="pdf-page"
+                width={700}
+                renderTextLayer={false}
+                renderAnnotationLayer={false}
+              />
+            </Document>
+          </div>
+
+          <div className="pdf-controls">
+            <button 
+              onClick={goToPrevPage}
+              disabled={pageNumber <= 1}
+              className="pdf-nav-button"
+            >
+              <GrPrevious />
+            </button>
+            <span className="pdf-page-info">
+              {pageNumber} of {numPages || '--'}
+            </span>
+            <button 
+              onClick={goToNextPage}
+              disabled={pageNumber >= (numPages || 1)}
+              className="pdf-nav-button"
+            >
+              <GrNext />
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <img
+        className="media-preview"
+        src={data.preview_url}
+        alt="Graffiti preview"
+        loading="lazy"
+      />
+    );
+  };
+
   return (
       <>
       {/* Media Preview */}
-      {data?.preview_url ? (
-        isVideo ? (
-          <video
-            className="media-preview"
-            controls
-            preload="metadata"
-            src={data.preview_url}
-          >
-            <track
-              kind="captions"
-              src={data?.captions_url || ''}
-              label="Captions"
-              default={!!data?.captions_url}
-            />
-          </video>
-        ) : isPdf ? (
-          <div className="pdf-preview-container">
-            
-            <div className="pdf-document-wrapper">
-              <Document
-                file={data.preview_url}
-                onLoadSuccess={onDocumentLoadSuccess}
-                loading={
-                  <div className="pdf-loading">
-                    Loading PDF preview...
-                  </div>
-                }
-                error={
-                  <div className="pdf-error muted">
-                    PDF preview could not be loaded.{' '}
-                    <a href={data.preview_url} target="_blank" rel="noopener noreferrer">
-                      Open PDF directly
-                    </a>
-                  </div>
-                }
-                className="pdf-document"
-              >
-                <Page 
-                  pageNumber={pageNumber} 
-                  className="pdf-page"
-                  width={700}
-                  renderTextLayer={false}
-                  renderAnnotationLayer={false}
-                />
-              </Document>
-            </div>
-
-            <div className="pdf-controls">
-              <button 
-                onClick={goToPrevPage}
-                disabled={pageNumber <= 1}
-                className="pdf-nav-button"
-              >
-              <GrPrevious />
-              </button>
-              <span className="pdf-page-info">
-              {pageNumber} of {numPages || '--'}
-              </span>
-              <button 
-                onClick={goToNextPage}
-                disabled={pageNumber >= (numPages || 1)}
-                className="pdf-nav-button"
-              >
-              <GrNext />
-              </button>
-            </div>
-
-          </div>
-        ) : (
-          <img
-            className="media-preview"
-            src={data.preview_url}
-            alt="Graffiti preview"
-            loading="lazy"
-          />
-        )
-      ) : (
-        <div className="muted">Preview is not available</div>
-      )}
+      {renderMediaPreview()}
       <div className="divider" />
       {/* END OF Media Preview */}
 
@@ -288,8 +299,8 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
         <div className="stat" style={{ marginBottom: '10px' }}>
           <span className="value">Comments : {data?.comments?.length || 0}</span>
         </div>
-        {(data?.comments || []).slice(0, 6).map((c, idx) => (
-          <div className="comment-item" key={idx}>
+        {(data?.comments || []).slice(0, 6).map((c) => (
+          <div className="comment-item" key={c.txid || `${c.commenter}-${c.ts}`}>
             <div className="muted">{fmtTimestamp(c.ts)}</div>
             <div className="value">
             <ClickableValue value={c.commenter || "-"} onSearchClick={onSearchClick} className="value muted">

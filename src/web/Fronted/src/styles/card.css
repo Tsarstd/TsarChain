@@ -582,9 +582,7 @@
   letter-spacing: 1px;
   animation: genesis-glow 2s ease-in-out infinite alternate;
   margin-top: 4px;
-  background: linear-gradient(135deg, 
-    rgba(255, 215, 0, 0.1) 0%, 
-    rgba(218, 165, 32, 0.05) 100%);
+  background: #201804;
   border-radius: 100px;
   padding: 2px 8px;
 }

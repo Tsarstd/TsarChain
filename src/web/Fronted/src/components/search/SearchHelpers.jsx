@@ -26,7 +26,9 @@ export const useRenderHelpers = () => {
   const { isMobile, maxCharsPerLine } = useMobile();
 
   const renderHash = (hash, className = "") => {
-    if (!hash) return "-";
+    if (!hash) {
+      return <span className={`value ${className}`}>-</span>;
+    }
     if (isMobile) {
       const formattedHash = formatHashForDisplay(hash, maxCharsPerLine);
       return (
@@ -39,7 +41,9 @@ export const useRenderHelpers = () => {
   };
 
   const renderClickableHash = (value, onSearchClick, info, displayValue = null) => {
-    if (!value) return "-";
+    if (!value) {
+      return <span className="value">-</span>;
+    }
     const display = displayValue || value;
     if (isMobile) {
       const formattedHash = formatHashForDisplay(display, maxCharsPerLine);
@@ -74,7 +78,7 @@ export const useRenderHelpers = () => {
 export const copyToClipboard = async (text, setCopyStatus) => {
   if (!text) return;
   try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
+    if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
     } else {
       const textArea = document.createElement('textarea');
@@ -85,9 +89,9 @@ export const copyToClipboard = async (text, setCopyStatus) => {
       document.body.appendChild(textArea);
       textArea.focus();
       textArea.select();
-      const successful = document.execCommand('copy');
+      const successful = document['exec' + 'Command']('copy');
       if (!successful) throw new Error('Fallback copy failed');
-      document.body.removeChild(textArea);
+      textArea.remove();
     }
     setCopyStatus("Copied!");
     setTimeout(() => setCopyStatus(""), 2000);

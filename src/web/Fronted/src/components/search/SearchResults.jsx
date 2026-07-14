@@ -5,41 +5,39 @@ import { ResultTx } from "./category/SearchTxid";
 import { ResultAddress } from "./category/SeacrhAddress";
 import { ResultGraffiti } from "./category/SearchGraffiti";
 
-export const ClickableValue = ({ value, onSearchClick, className = "", info, children }) => {
+export const ClickableValue = ({ value, onSearchClick, className = "", info, style, children }) => {
   const displayValue = children || value;
 
   if (!value || value === "-" || !onSearchClick) {
-    return <span className={className}>{displayValue}</span>;
+    return <span className={className} style={style}>{displayValue}</span>;
   }
 
   const finalClassName = `value muted ${className}`.trim();
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      onSearchClick(value);
-    }
-  };
-
   return (
-    <span
+    <button
       className={finalClassName}
-      role="button"
-      tabIndex={0}
+      type="button"
       style={{
         cursor: "pointer",
         color: "#5e9de6ff",
         transition: "color 0.2s",
         alignSelf: "baseline",
+        background: "none",
+        border: "none",
+        padding: 0,
+        font: "inherit",
+        textAlign: "inherit",
+        display: "inline",
+        ...style
       }}
       onClick={() => onSearchClick(value)}
-      onKeyDown={handleKeyDown}
       data-tooltip={info}
-      onMouseEnter={(e) => e.target.style.color = "#4d7fb7ff"}
-      onMouseLeave={(e) => e.target.style.color = "#5e9de6ff"}
+      onMouseEnter={(e) => e.currentTarget.style.color = "#4d7fb7ff"}
+      onMouseLeave={(e) => e.currentTarget.style.color = "#5e9de6ff"}
     >
       {displayValue}
-    </span>
+    </button>
   );
 };
 
@@ -48,6 +46,7 @@ ClickableValue.propTypes = {
   onSearchClick: PropTypes.func,
   className: PropTypes.string,
   info: PropTypes.string,
+  style: PropTypes.object,
   children: PropTypes.node,
 };
 

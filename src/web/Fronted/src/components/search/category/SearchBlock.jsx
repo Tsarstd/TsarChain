@@ -17,11 +17,12 @@ const ResultBlock = ({ data, onSearchClick }) => {
   const { renderHash, renderClickableHash } = useRenderHelpers();
   const { isMobile, maxCharsPerLine } = useMobile();
 
-  const payouts = Array.isArray(data?.payouts)
-    ? data.payouts
-    : Array.isArray(data?._meta?.payouts)
-      ? data._meta.payouts
-      : [];
+  let payouts = [];
+  if (Array.isArray(data?.payouts)) {
+    payouts = data.payouts;
+  } else if (Array.isArray(data?._meta?.payouts)) {
+    payouts = data._meta.payouts;
+  }
   const payoutCount =
     data?.payout_count ?? data?._meta?.payout_count ?? payouts.length ?? 0;
 
@@ -118,8 +119,8 @@ const ResultBlock = ({ data, onSearchClick }) => {
             </span>
           </div>
           <div className="tx-item">
-            {(data?.graffiti || []).map((g, idx) => (
-              <div className="stat" key={`graf-${idx}`}>
+            {(data?.graffiti || []).map((g) => (
+              <div className="stat" key={g.txid || g.creator}>
                 <div className="grid">
                   <div className="stat">
                     <div className="info-label">Creator</div>
@@ -210,7 +211,7 @@ const ResultBlock = ({ data, onSearchClick }) => {
           </div>
           <div className="tx-item">
             {(data?.comments || []).map((c) => (
-                <div className="stat">
+                <div className="stat" key={c.txid}>
                   <div className="grid">
                       <div className="stat">
                         <div className="info-label">Citizen</div>
@@ -288,7 +289,7 @@ const ResultBlock = ({ data, onSearchClick }) => {
                   </div>
                   <div className="list">
                     {(payout?.recipients || []).map((rcpt) => (
-                      <div className="stat">
+                      <div className="stat" key={rcpt?.addr}>
                         {renderClickableHash(
                           rcpt?.addr,
                           onSearchClick,

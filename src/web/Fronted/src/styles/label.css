@@ -278,17 +278,17 @@
 }
 
 .event-post {
-  background: linear-gradient(135deg, #e26b38 0%, #9a5425e3 100%);
+  background: linear-gradient(135deg, #b84a14 0%, #7e3e18e3 100%);
   color: white;
 }
 
 .event-comment {
-  background: linear-gradient(135deg, #26a350 0%, #1f5d36b7 100%);
+  background: linear-gradient(135deg, #1b7a37 0%, #114c22b7 100%);
   color: white;
 }
 
 .event-payout {
-  background: linear-gradient(135deg, #45a3e2 0%, #2d5587dd 100%);
+  background: linear-gradient(135deg, #1b74ad 0%, #154573dd 100%);
   color: white;
 }
 
@@ -302,7 +302,7 @@
 }
 
 .tx-height {
-  background: rgba(83, 207, 42, 0.3);
+  background: #194d13;
   padding: 3px 6px;
   color: #ffffff;
   position: relative;
@@ -410,11 +410,11 @@
 
 .vout-1 { 
   background: linear-gradient(135deg, #7aaf73 0%, #659B5E 100%);
-  color: white; 
+  color: rgb(30, 30, 30); 
 }
 
 .vout-2 { 
-  background: linear-gradient(135deg, #678954 0%, #556F44 100%);
+  background: linear-gradient(135deg, #4d6d3c 0%, #3e5830 100%);
   color: white; 
 }
 
@@ -431,7 +431,7 @@
 
 /* STATUS & DIRECTION BADGE */
 .status-badge, .direction-badge {
-  background: rgba(29, 161, 40, 0.894);
+  background: #157a20;
   padding: 3px 6px;
   color: #ffffff;
   position: relative;

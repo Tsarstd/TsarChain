@@ -334,10 +334,10 @@
 .table-header {
   display: grid;
   grid-template-columns: 80px 1fr 150px;
-  background: rgba(249, 167, 90, 0.1);
+  background: #1b140f;
   padding: 16px 20px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
+  color: #ffffff;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);

@@ -76,6 +76,33 @@ const inferMediaType = (meta, filePath) => {
   return "application/octet-stream";
 };
 
+const findCachedFile = (artId) => {
+  if (fs.existsSync(cacheDir)) {
+    for (const ext of [".jpg", ".jpeg", ".mp4", ".bin"]) {
+      const candidate = path.join(cacheDir, `${artId}${ext}`);
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  }
+  return null;
+};
+
+const parseRangeHeader = (rangeHeader, size) => {
+  if (!rangeHeader) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+  if (!match) {
+    return { invalid: true };
+  }
+  const start = match[1] ? Number(match[1]) : 0;
+  let end = match[2] ? Number(match[2]) : size - 1;
+  if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= size) {
+    return { invalid: true };
+  }
+  end = Math.min(end, size - 1);
+  return { start, end };
+};
+
 router.get("/receipt", async (req, res, next) => {
   try {
     const txid = req.query.txid;
@@ -170,16 +197,7 @@ router.get("/graffiti/:artId/media", graffitiMediaLimiter, async (req, res, next
   try {
     cleanupGraffitiCache();
     const artId = req.params.artId;
-    let filePath = null;
-    if (fs.existsSync(cacheDir)) {
-      for (const ext of [".jpg", ".jpeg", ".mp4", ".bin"]) {
-        const candidate = path.join(cacheDir, `${artId}${ext}`);
-        if (fs.existsSync(candidate)) {
-          filePath = candidate;
-          break;
-        }
-      }
-    }
+    let filePath = findCachedFile(artId);
     let info = null;
     if (!filePath) {
       info = await svc.getGraffitiMediaInfo(artId);
@@ -199,26 +217,17 @@ router.get("/graffiti/:artId/media", graffitiMediaLimiter, async (req, res, next
     res.setHeader("Cache-Control", "public, max-age=300");
     res.setHeader("Accept-Ranges", "bytes");
 
-    const range = req.headers.range;
+    const range = parseRangeHeader(req.headers.range, size);
     if (range) {
-      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
-      if (!match) {
+      if (range.invalid) {
         res.status(416);
         res.setHeader("Content-Range", `bytes */${size}`);
         return res.end();
       }
-      let start = match[1] ? Number(match[1]) : 0;
-      let end = match[2] ? Number(match[2]) : size - 1;
-      if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= size) {
-        res.status(416);
-        res.setHeader("Content-Range", `bytes */${size}`);
-        return res.end();
-      }
-      end = Math.min(end, size - 1);
       res.status(206);
-      res.setHeader("Content-Range", `bytes ${start}-${end}/${size}`);
-      res.setHeader("Content-Length", String(end - start + 1));
-      const stream = fs.createReadStream(filePath, { start, end });
+      res.setHeader("Content-Range", `bytes ${range.start}-${range.end}/${size}`);
+      res.setHeader("Content-Length", String(range.end - range.start + 1));
+      const stream = fs.createReadStream(filePath, { start: range.start, end: range.end });
       stream.on("error", next);
       return stream.pipe(res);
     }

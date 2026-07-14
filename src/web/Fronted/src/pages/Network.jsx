@@ -174,7 +174,7 @@ const Network = ({onSearchClick}) => {
           <div className="error-message">{message || "Network info tidak tersedia."}</div>
           <button 
             className="retry-button"
-            onClick={() => window.location.reload()}
+            onClick={() => globalThis.location.reload()}
           >
             Retry
           </button>
@@ -192,7 +192,19 @@ const Network = ({onSearchClick}) => {
   const miners = view.miners_snapshot || {};
 
   // Status indikator untuk network health
-  const networkHealth = peersCount > 10 ? "healthy" : peersCount > 5 ? "warning" : "critical ";
+  let networkHealth = "critical ";
+  if (peersCount > 10) {
+    networkHealth = "healthy";
+  } else if (peersCount > 5) {
+    networkHealth = "warning";
+  }
+
+  let statusText = "< 5 Miners";
+  if (networkHealth === "healthy") {
+    statusText = "Operational";
+  } else if (networkHealth === "warning") {
+    statusText = "Degraded";
+  }
 
   return (
     <main className="page-network">
@@ -206,8 +218,7 @@ const Network = ({onSearchClick}) => {
             <div className={`status-indicator ${networkHealth}`}>
               <div className="status-dot"></div>
               <span className="status-text">
-                {networkHealth === "healthy" ? "Operational" : 
-                 networkHealth === "warning" ? "Degraded" : "< 5 Miners"}
+                {statusText}
               </span>
             </div>
             <div className="last-update">
