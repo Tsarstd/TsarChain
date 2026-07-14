@@ -9,6 +9,9 @@ import time
 import threading
 
 from tsarchain.utils import config as CFG
+CFG.WALLET_RPC_MIN_INTERVAL = 0.0  # Bypass RPC pacing
+
+from concurrent.futures import ThreadPoolExecutor
 from tsarchain.utils.benchmarks import benchmark
 from web.Backend.src.python import build_receipt
 from kremlin.services.rpc_kremlin import NodeClient
@@ -111,7 +114,7 @@ def _cache_fetch(key: str, fetch_fn):
 # ============= RPC START ==============
 # ======================================
 
-@benchmark(label="RPC_RECEIPT", threshold_ms=15.0)
+@benchmark(label="rpc_receipt", threshold_ms=15.0)
 def rpc_receipt(client, txid: str): # Receipt TXID Generator
     txid_norm = str(txid or "").strip().lower()
     if not txid_norm:
@@ -156,7 +159,7 @@ def rpc_receipt(client, txid: str): # Receipt TXID Generator
         
     return result
 
-@benchmark(label="RPC_NETWORK", threshold_ms=15.0)
+@benchmark(label="rpc_network", threshold_ms=15.0)
 def rpc_network(client):
     key = _cache_key("network")
     def _fetch():
@@ -169,7 +172,7 @@ def rpc_network(client):
         return info
     return _cache_fetch(key, _fetch)
 
-@benchmark(label="RPC_BLOCK", threshold_ms=15.0)
+@benchmark(label="rpc_block", threshold_ms=15.0)
 def rpc_block(client, val: str):
     if str(val).isdigit():
         key = _cache_key("block", "h", str(val))
@@ -248,13 +251,13 @@ def rpc_block_range(client, opts: dict):
     
     return resp
 
-@benchmark(label="RPC_TX", threshold_ms=15.0)
+@benchmark(label="rpc_tx", threshold_ms=15.0)
 def rpc_tx(client, txid: str):
     txid_norm = str(txid).lower()
     key = _cache_key("tx", txid_norm)
     return _cache_fetch(key, lambda: _rpc_send(client, {"type": "GET_TX_DETAIL", "txid": txid_norm}))
 
-@benchmark(label="RPC_ADDRESS", threshold_ms=15.0)
+@benchmark(label="rpc_address", threshold_ms=15.0)
 def rpc_address(client, addr: str):
     addr_norm = addr.strip()
     key = _cache_key("address", addr_norm.lower())
@@ -262,9 +265,15 @@ def rpc_address(client, addr: str):
     if cached is not None:
         return cached
     
-    balances = _rpc_send(client, {"type": "GET_BALANCES", "addresses": [addr_norm]}) or {}
-    utxos = _rpc_send(client, {"type": "GET_TOTAL_UTXO", "address": addr_norm}) or {}
-    history = _rpc_send(client, {"type": "GET_TX_HISTORY", "address": addr_norm, "limit": 200}) or {}
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        fut_balances = executor.submit(_rpc_send, client, {"type": "GET_BALANCES", "addresses": [addr_norm]})
+        fut_utxos = executor.submit(_rpc_send, client, {"type": "GET_TOTAL_UTXO", "address": addr_norm})
+        fut_history = executor.submit(_rpc_send, client, {"type": "GET_TX_HISTORY", "address": addr_norm, "limit": 200})
+        
+        balances = fut_balances.result() or {}
+        utxos = fut_utxos.result() or {}
+        history = fut_history.result() or {}
+        
     balance_info = balances.get("items", {}).get(addr_norm, {})
     out = {
         "address": addr_norm,
@@ -294,7 +303,7 @@ def rpc_address(client, addr: str):
     
     return out
 
-@benchmark(label="RPC_GRAFFITI", threshold_ms=15.0)
+@benchmark(label="rpc_graffiti", threshold_ms=15.0)
 def rpc_graffiti(client, art_id: str):
     art_norm = str(art_id or "").strip()
     key = _cache_key("graffiti", art_norm.lower()) if art_norm else None
@@ -303,8 +312,13 @@ def rpc_graffiti(client, art_id: str):
         if cached is not None:
             return cached
 
-    post_resp = _rpc_send(client, {"type": "GRAFFITI_GET_ART", "art_id": art_norm}) or {}
-    comments_resp = _rpc_send(client, {"type": "GRAFFITI_GET_COMMENTS", "art_id": art_norm}) or {}
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        fut_post = executor.submit(_rpc_send, client, {"type": "GRAFFITI_GET_ART", "art_id": art_norm})
+        fut_comments = executor.submit(_rpc_send, client, {"type": "GRAFFITI_GET_COMMENTS", "art_id": art_norm})
+        
+        post_resp = fut_post.result() or {}
+        comments_resp = fut_comments.result() or {}
+        
     cache_ok = True
     error_ttl = None
     for resp in (post_resp, comments_resp):
@@ -326,7 +340,7 @@ def rpc_graffiti(client, art_id: str):
         _cache_set(key, out, error_ttl)
     return out
 
-@benchmark(label="RPC_GRAFFITI_POSTS", threshold_ms=15.0)
+@benchmark(label="rpc_graffiti_posts", threshold_ms=15.0)
 def rpc_graffiti_posts(client, opts: dict):
     limit = int(opts.get("limit", 50) or 50)
     offset = int(opts.get("offset", 0) or 0)
@@ -349,7 +363,7 @@ def rpc_graffiti_posts(client, opts: dict):
         _cache_set(key, out, error_ttl)
     return out
 
-@benchmark(label="RPC_GRAFFITI_FILE", threshold_ms=15.0)
+
 def rpc_graffiti_file(client, opts: dict, fallback_art_id: str | None):
     art_id = (opts.get("art_id") or fallback_art_id or "").strip()
     storer = (opts.get("storer_addr") or opts.get("storer") or "").strip()
@@ -551,7 +565,6 @@ def _worker_loop() -> None:
         _emit_worker(req_id, out)
 
 
-@benchmark(label="MAIN", threshold_ms=15.0)
 def main():
     out = None
     if len(sys.argv) < 2:

@@ -13,6 +13,7 @@ import threading
 from typing import Any, Callable, Dict, Optional
 
 from tsarchain.utils import config as CFG
+from tsarchain.utils.benchmarks import benchmark
 from tsarcore_native import open_storage as _native_open_storage
 from kremlin.services.graffiti_service import _pick_endpoint, _send_storage_request
 
@@ -545,6 +546,15 @@ def _get_cached_graffiti_file(art_id: str, cache_dir: Optional[str]) -> Optional
         return None
     if entry.get("status") != "ok":
         return {"status": "error", "reason": entry.get("reason") or "not_found"}
+    
+    # Check if the cache file already exists on disk with correct size
+    cache_path = entry.get("cache_path")
+    expected_size = entry.get("size")
+    if cache_path and expected_size is not None:
+        if os.path.isfile(cache_path) and os.path.getsize(cache_path) == expected_size:
+            log.info("[webdb] ok(cache_disk_hit) art=%s path=%s", art_id[:16], cache_path)
+            return {"status": "ok", "meta": entry.get("meta") or {}, "cache_path": cache_path}
+            
     data_raw = store.get_bytes(WEB_MEDIA_DB, _media_data_key(art_id))
     if data_raw is None:
         return None
@@ -617,7 +627,7 @@ def _do_oneshot_fetch(
     log.info("[webdb] ok(%s) art=%s host=%s bytes=%s cache=%s", log_tag, art_norm[:16], host, len(raw), True)
     return {"status": "ok", "meta": meta_out, "cache_path": cache_path}
 
-
+@benchmark(label="fetch_graffiti_file", threshold_ms=15.0)
 def fetch_graffiti_file(
     rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
     art_id: str,
@@ -869,5 +879,4 @@ __all__ = [
     "read_receipt_file",
     "is_receipt_fresh",
     "get_receipt_file"
-    
 ]

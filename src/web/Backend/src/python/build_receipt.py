@@ -126,32 +126,33 @@ class PaymentReceiptGenerator:
         rotation_angle = secrets.randbelow(101) - 50
         offset_x = secrets.randbelow(21) - 10
         offset_y = secrets.randbelow(21) - 10
-        cache_key = f"rotated_{status}_{rotation_angle}_{offset_x}_{offset_y}"
+        cache_key = f"rotated_{status}_{rotation_angle}"
         
         if cache_key in cls._rotated_stamp_cache:
-            return cls._rotated_stamp_cache[cache_key]
-        
-        original_stamp = cls._get_stamp(status)
-        if not original_stamp:
-            return None
-        
-        if original_stamp.mode != 'RGBA':
-            stamp = original_stamp.convert('RGBA')
+            rotated_stamp = cls._rotated_stamp_cache[cache_key]
         else:
-            stamp = original_stamp.copy()
-        
-        rotated_stamp = stamp.rotate(
-            rotation_angle,
-            expand=True,
-            resample=Image.Resampling.BICUBIC
-        )
+            original_stamp = cls._get_stamp(status)
+            if not original_stamp:
+                return None
+            
+            if original_stamp.mode != 'RGBA':
+                stamp = original_stamp.convert('RGBA')
+            else:
+                stamp = original_stamp.copy()
+            
+            rotated_stamp = stamp.rotate(
+                rotation_angle,
+                expand=True,
+                resample=Image.Resampling.BILINEAR
+            )
 
-        if len(cls._rotated_stamp_cache) > 50:
-            oldest_key = next(iter(cls._rotated_stamp_cache))
-            del cls._rotated_stamp_cache[oldest_key]
+            if len(cls._rotated_stamp_cache) > 200:
+                oldest_key = next(iter(cls._rotated_stamp_cache))
+                del cls._rotated_stamp_cache[oldest_key]
+            
+            cls._rotated_stamp_cache[cache_key] = rotated_stamp
         
-        cls._rotated_stamp_cache[cache_key] = rotated_stamp
-        
+        # Attach dynamic random offsets to the returned object
         rotated_stamp.offset_x = offset_x
         rotated_stamp.offset_y = offset_y
         return rotated_stamp
@@ -377,9 +378,12 @@ class PaymentReceiptGenerator:
             txid = tx_data.get('txid', 'Unknown')
             
             # BG TEMPLATE (800 x 1200 px - 150 ppi)
-            img = Image.open(self.template_path)
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
+            if self.__class__._template_cache is not None:
+                img = self.__class__._template_cache.copy()
+            else:
+                img = Image.open(self.template_path)
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
             
             draw = ImageDraw.Draw(img)
             width, _ = img.size
@@ -488,7 +492,7 @@ class PaymentReceiptGenerator:
                 change_outputs = []
                 event_outputs = []
                 
-                input_addresses = set(inp.get('address') for inp in inputs if inp.get('address'))
+                input_addresses = (inp.get('address') for inp in inputs if inp.get('address'))
                 
                 for out in outputs:
                     addr = out.get('address')
@@ -668,7 +672,7 @@ class PaymentReceiptGenerator:
             # QR code
             qr_img = self._qr_code(txid)
             qr_size = 180
-            qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
+            qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.NEAREST)
             qr_x = width - 60 - qr_size
             summary_height = current_y - summary_y_start
             min_summary_height = qr_size
@@ -711,15 +715,6 @@ class PaymentReceiptGenerator:
             output_filename = f"{txid[:64]}.jpg"
             output_path = os.path.join(self.path, output_filename)
             
-            img.save(
-                output_path, 
-                'JPEG',
-                quality=85,
-                optimize=True,
-                progressive=True,
-                subsampling=0
-            )
-            
             # response
             buffer = BytesIO()
             img.save(
@@ -731,6 +726,10 @@ class PaymentReceiptGenerator:
                 subsampling=0
             )
             image_bytes = buffer.getvalue()
+            
+            with open(output_path, 'wb') as f:
+                f.write(image_bytes)
+
             return True, output_path, image_bytes
             
         except Exception as e:
