@@ -5,10 +5,10 @@
 
 from __future__ import annotations
 
+import time
 import hmac
 import hashlib
 import secrets
-import time
 from typing import Dict, Optional
 
 # ---------------- Logger ----------------
@@ -16,18 +16,6 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.pow_token")
 
 _SECRET = secrets.token_bytes(32)
-
-
-def _leading_zero_bits(digest: bytes) -> int:
-    total = 0
-    for b in digest:
-        if b == 0:
-            total += 8
-            continue
-        total += 8 - b.bit_length()
-        break
-    log.debug("[_leading_zero_bits] total: %s", total)
-    return total
 
 
 def issue_pow(scope: str, identity: str, difficulty: int, ttl_s: float) -> Dict[str, object]:
@@ -108,6 +96,23 @@ def solve_pow(pow_obj: dict, *, identity: str, max_iters: int = 1_000_000) -> Op
         attempt += 1
     log.debug("[solve_pow] attempt: %s", attempt)
     return None
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
+def _leading_zero_bits(digest: bytes) -> int:
+    total = 0
+    for b in digest:
+        if b == 0:
+            total += 8
+            continue
+        total += 8 - b.bit_length()
+        break
+    log.debug("[_leading_zero_bits] total: %s", total)
+    return total
 
 
 __all__ = ("issue_pow", "verify_pow", "solve_pow")

@@ -16,6 +16,34 @@ log = get_ctx_logger("tsarchain.network.peers_storage")
 
 KEYS_DB_NAME = "node_secrets"
 
+
+def save_node_key(path: str, record: Dict) -> None:
+    data = dict(record)
+    data.setdefault("updated", int(time.time()))
+    _store_record(path, data)
+
+
+def load_node_key(path: str) -> Optional[Dict]:
+    return _load_record(path)
+
+
+def save_peer_keys(keys: Dict[str, str]) -> None:
+    serialised = {str(k): str(v) for k, v in keys.items()}
+    _store_record("peer_keys", serialised)
+
+
+def load_peer_keys() -> Dict[str, str]:
+    rec = _load_record("peer_keys")
+    if isinstance(rec, dict):
+        return {str(k): str(v) for k, v in rec.items()}
+    return {}
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
 def _load_record(name: str) -> Optional[Dict]:
     if kv_enabled():
         raw = get(KEYS_DB_NAME, name.encode("utf-8"))
@@ -74,24 +102,3 @@ def _store_record(name: str, data: Dict) -> None:
                 json.dump(data, f, indent=2)
         except (IOError, OSError):
             log.exception("Failed to write JSON fallback")
-
-
-# ======== SAVE & LOAD KEYS ==============
-
-def load_node_key(path: str) -> Optional[Dict]:
-    return _load_record(path)
-
-def save_node_key(path: str, record: Dict) -> None:
-    data = dict(record)
-    data.setdefault("updated", int(time.time()))
-    _store_record(path, data)
-
-def load_peer_keys() -> Dict[str, str]:
-    rec = _load_record("peer_keys")
-    if isinstance(rec, dict):
-        return {str(k): str(v) for k, v in rec.items()}
-    return {}
-
-def save_peer_keys(keys: Dict[str, str]) -> None:
-    serialised = {str(k): str(v) for k, v in keys.items()}
-    _store_record("peer_keys", serialised)

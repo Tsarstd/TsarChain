@@ -23,13 +23,13 @@ from tsarchain.network.protocol import (
     _nonce_register,
     send_message,
     recv_message,
-    recv_exact,
+    _recv_exact,
     sniff_first_json_frame,
     load_or_create_keypair_at,
-    canonical_dumps,
-    gen_nonce,
-    sign_message_hex,
-    verify_signature,
+    _canonical_dumps,
+    _gen_nonce,
+    _sign_message_hex,
+    _verify_signature,
     is_envelope,
     build_envelope,
     verify_and_unwrap,
@@ -263,14 +263,14 @@ class TestRecvExact:
     def test_recv_exact_success(self, mock_cfg):
         sock = MagicMock()
         sock.recv.side_effect = [b"hel", b"lo"]
-        result = recv_exact(sock, 5)
+        result = _recv_exact(sock, 5)
         assert result == b"hello"
 
     def test_recv_exact_connection_closed(self, mock_cfg):
         sock = MagicMock()
         sock.recv.return_value = b""
         with pytest.raises(ConnectionError, match="Connection closed"):
-            recv_exact(sock, 5)
+            _recv_exact(sock, 5)
 
 
 class TestRecvMessage:
@@ -483,22 +483,22 @@ class TestCanonicalDumps:
 
     def test_deterministic(self, mock_cfg):
         obj = {"b": 2, "a": 1}
-        result = canonical_dumps(obj)
+        result = _canonical_dumps(obj)
         assert result == b'{"a":1,"b":2}'
 
     def test_utf8(self, mock_cfg):
-        result = canonical_dumps({"k": "日本語"})
+        result = _canonical_dumps({"k": "日本語"})
         assert "日本語" in result.decode("utf-8")
 
 
 class TestGenNonce:
 
     def test_length(self):
-        n = gen_nonce(16)
+        n = _gen_nonce(16)
         assert len(n) == 32  # hex
 
     def test_unique(self):
-        assert gen_nonce() != gen_nonce()
+        assert _gen_nonce() != _gen_nonce()
 
 
 class TestSignAndVerify:
@@ -506,14 +506,14 @@ class TestSignAndVerify:
     def test_roundtrip(self, keypair):
         nid, pub, priv = keypair
         payload = b"test message"
-        sig = sign_message_hex(priv, payload)
-        assert verify_signature(pub, payload, sig) is True
+        sig = _sign_message_hex(priv, payload)
+        assert _verify_signature(pub, payload, sig) is True
 
     def test_bad_sig(self, keypair):
         nid, pub, priv = keypair
         payload = b"test message"
         with pytest.raises(Exception):
-            verify_signature(pub, payload, "00" * 64)
+            _verify_signature(pub, payload, "00" * 64)
 
 
 class TestIsEnvelope:

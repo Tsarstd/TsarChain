@@ -27,64 +27,6 @@ if TYPE_CHECKING:
 class ChainOperations:
     def __init__(self, blockchain: "Blockchain"):
         self.blockchain = blockchain
-    
-    def replace_with(self, other_chain: "Blockchain"):
-        with self.blockchain.lock:
-            self._validate_replacement_chain(other_chain)
-            self._commit_chain_replacement(other_chain)
-
-    def _validate_replacement_chain(self, other_chain: "Blockchain"):
-        if not self._validate_complete_chain(other_chain.chain):
-            raise ValueError("Cannot replace with invalid chain")
-
-        if CFG.ENABLE_CHAINWORK_RULE:
-            their_cw = self.blockchain._compute_chainwork_for_chain(other_chain.chain)
-            our_cw   = self.blockchain._compute_chainwork_for_chain(self.blockchain.chain)
-            if their_cw < our_cw:
-                raise ValueError("Reject: candidate chainwork < local")
-            if their_cw == our_cw:
-                their_h = len(other_chain.chain) - 1
-                our_h = len(self.blockchain.chain) - 1
-                if their_h < our_h:
-                    raise ValueError("Reject: candidate height < local at equal work")
-                if their_h == our_h:
-                    try:
-                        their_hash = other_chain.chain[-1].hash()
-                        our_hash = self.blockchain.chain[-1].hash()
-                        if their_hash >= our_hash:
-                            raise ValueError("Reject: candidate tie-break loses (hash)")
-                    except Exception:
-                        raise ValueError("Reject: candidate chainwork tie without deterministic tie-break")
-
-        if CFG.ENABLE_REORG_LIMIT and self.blockchain.chain and other_chain.chain:
-            fork_h = self.blockchain._common_ancestor_height(other_chain.chain)
-            if fork_h >= 0:
-                local_reorg_depth = (len(self.blockchain.chain) - 1) - fork_h
-                if local_reorg_depth > CFG.REORG_LIMIT:
-                    raise ValueError(f"Reject deep reorg: {local_reorg_depth} > {CFG.REORG_LIMIT}")
-
-    def _commit_chain_replacement(self, other_chain: "Blockchain"):
-        self.blockchain.chain = list(other_chain.chain)
-        self.blockchain.total_supply = other_chain.total_supply
-        self.blockchain.total_blocks = len(self.blockchain.chain)
-        try:
-            if hasattr(self.blockchain, "_rebuild_hash_cache"):
-                self.blockchain._rebuild_hash_cache()
-        except Exception:
-            log.debug("[replace_with] hash cache rebuild failed", exc_info=True)
-
-        if not self.blockchain.in_memory:
-            self.blockchain._mark_chain_dirty(0)
-            self.blockchain.save_chain(force_full=True)
-            store = self.blockchain._ensure_utxodb()
-            if store is not None:
-                store.rebuild_from_chain(self.blockchain.chain)
-                self.blockchain._utxo_dirty = False
-                self.blockchain._utxo_last_flush_height = self.blockchain.height
-                self.blockchain._utxo_synced = True
-            self.blockchain.save_state()
-        else:
-            self.blockchain.total_supply = self.blockchain.calculate_total_supply()
 
 
     def add_block(self, block: Block):
@@ -96,6 +38,25 @@ class ChainOperations:
         if self.blockchain.in_memory:
             self.blockchain._ensure_utxodb()
         return True
+
+
+    def replace_with(self, other_chain: "Blockchain"):
+        with self.blockchain.lock:
+            self._validate_replacement_chain(other_chain)
+            self._commit_chain_replacement(other_chain)
+
+
+    def swap_tip_if_better(self, block: Block):
+        with self.blockchain.lock:
+            if not self._is_valid_tip_candidate(block):
+                return None
+            return self._commit_tip_swap(block)
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
 
     def _add_genesis_block(self, block: Block):
         if getattr(block, "height", 0) != 0:
@@ -127,6 +88,7 @@ class ChainOperations:
             self.blockchain._mark_chain_dirty(block.height)
         else:
             self.blockchain.total_supply = self.blockchain.calculate_total_supply()
+
 
     def _add_subsequent_block(self, block: Block):
         last_block = self.blockchain.get_last_block()
@@ -163,11 +125,61 @@ class ChainOperations:
         else:
             self.blockchain.total_supply = self.blockchain.calculate_total_supply()
 
-    def swap_tip_if_better(self, block: Block):
-        with self.blockchain.lock:
-            if not self._is_valid_tip_candidate(block):
-                return None
-            return self._commit_tip_swap(block)
+
+    def _validate_replacement_chain(self, other_chain: "Blockchain"):
+        if not self._validate_complete_chain(other_chain.chain):
+            raise ValueError("Cannot replace with invalid chain")
+
+        if CFG.ENABLE_CHAINWORK_RULE:
+            their_cw = self.blockchain._compute_chainwork_for_chain(other_chain.chain)
+            our_cw   = self.blockchain._compute_chainwork_for_chain(self.blockchain.chain)
+            if their_cw < our_cw:
+                raise ValueError("Reject: candidate chainwork < local")
+            if their_cw == our_cw:
+                their_h = len(other_chain.chain) - 1
+                our_h = len(self.blockchain.chain) - 1
+                if their_h < our_h:
+                    raise ValueError("Reject: candidate height < local at equal work")
+                if their_h == our_h:
+                    try:
+                        their_hash = other_chain.chain[-1].hash()
+                        our_hash = self.blockchain.chain[-1].hash()
+                        if their_hash >= our_hash:
+                            raise ValueError("Reject: candidate tie-break loses (hash)")
+                    except Exception:
+                        raise ValueError("Reject: candidate chainwork tie without deterministic tie-break")
+
+        if CFG.ENABLE_REORG_LIMIT and self.blockchain.chain and other_chain.chain:
+            fork_h = self.blockchain._common_ancestor_height(other_chain.chain)
+            if fork_h >= 0:
+                local_reorg_depth = (len(self.blockchain.chain) - 1) - fork_h
+                if local_reorg_depth > CFG.REORG_LIMIT:
+                    raise ValueError(f"Reject deep reorg: {local_reorg_depth} > {CFG.REORG_LIMIT}")
+
+
+    def _commit_chain_replacement(self, other_chain: "Blockchain"):
+        self.blockchain.chain = list(other_chain.chain)
+        self.blockchain.total_supply = other_chain.total_supply
+        self.blockchain.total_blocks = len(self.blockchain.chain)
+        try:
+            if hasattr(self.blockchain, "_rebuild_hash_cache"):
+                self.blockchain._rebuild_hash_cache()
+        except Exception:
+            log.debug("[replace_with] hash cache rebuild failed", exc_info=True)
+
+        if not self.blockchain.in_memory:
+            self.blockchain._mark_chain_dirty(0)
+            self.blockchain.save_chain(force_full=True)
+            store = self.blockchain._ensure_utxodb()
+            if store is not None:
+                store.rebuild_from_chain(self.blockchain.chain)
+                self.blockchain._utxo_dirty = False
+                self.blockchain._utxo_last_flush_height = self.blockchain.height
+                self.blockchain._utxo_synced = True
+            self.blockchain.save_state()
+        else:
+            self.blockchain.total_supply = self.blockchain.calculate_total_supply()
+
 
     def _is_valid_tip_candidate(self, block: Block) -> bool:
         if len(self.blockchain.chain) < 2:
@@ -203,6 +215,7 @@ class ChainOperations:
 
         return True
 
+
     def _commit_tip_swap(self, block: Block) -> Block:
         old_tip = self.blockchain.chain[-1]
         parent = self.blockchain.chain[-2]
@@ -234,6 +247,7 @@ class ChainOperations:
 
         self._prune_mempool_confirmed(block)
         return old_tip
+
 
     def _prune_mempool_confirmed(self, block: Block) -> None:
         txs = getattr(block, "transactions", []) or []
@@ -272,6 +286,7 @@ class ChainOperations:
 
         if owned_pool:
             pool.flush(force=True)
+
 
     def _extract_spent_prevouts_and_txids(self, txs: list) -> tuple[set, list]:
         spent_prevouts: set[tuple[str, int]] = set()
@@ -312,9 +327,11 @@ class ChainOperations:
 
         return spent_prevouts, txids
 
+
     def _has_pending_blocks(self) -> bool:
         with self.blockchain.lock:
             return bool(self.blockchain.pending_blocks)
+
 
     def _is_chain_consistent(self) -> bool:
         with self.blockchain.lock:
@@ -344,6 +361,7 @@ class ChainOperations:
             ok = all(consistency_checks.values())
             return ok
 
+
     def _validate_complete_chain(self, chain: List[Block]) -> bool:
         if not isinstance(chain, list) or not chain:
             return False
@@ -355,10 +373,12 @@ class ChainOperations:
 
         return self._validate_subsequent_blocks(chain, cumulative_supply)
 
+
     def _pow_ok(self, b: Block) -> bool:
         header_hash = b.hash()
         tgt = bits_to_target(int(getattr(b, "bits")))
         return int.from_bytes(header_hash, "big") <= int(tgt)
+
 
     def _merkle_ok(self, b: Block) -> bool:
         comp = merkle_root(getattr(b, "transactions", []) or [])
@@ -366,6 +386,7 @@ class ChainOperations:
         if isinstance(mr, str):
             mr = bytes.fromhex(mr)
         return comp == mr
+
 
     def _validate_genesis_block(self, g: Block) -> tuple[bool, int]:
         cumulative_supply = 0
@@ -398,6 +419,7 @@ class ChainOperations:
         cumulative_supply += reward
         return True, cumulative_supply
 
+
     def _validate_block_timestamp(self, chain_prefix: List[Block], cur: Block) -> bool:
         now_ts = int(time.time())
         cur_ts = int(getattr(cur, "timestamp", 0) or 0)
@@ -411,6 +433,7 @@ class ChainOperations:
             if cur_ts < int(mtp):
                 return False
         return True
+
 
     def _validate_subsequent_blocks(self, chain: List[Block], cumulative_supply: int) -> bool:
         for i in range(1, len(chain)):

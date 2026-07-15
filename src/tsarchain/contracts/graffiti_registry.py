@@ -8,12 +8,13 @@ import time
 import json
 from typing import Any, Dict
 
+from ..utils import config as CFG
 from ..storage.db import AtomicJSONFile
 from ..storage.kv import kv_enabled, iter_prefix, batch
-from ..utils import config as CFG
 
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.contracts.graffiti_registry')
+
 
 class GraffitiRegistry:
     def __init__(self) -> None:
@@ -29,22 +30,6 @@ class GraffitiRegistry:
         self.data = self._load(default)
         self.data.setdefault("proofs", {})
 
-    def _load(self, default: dict) -> dict:
-        if self._kv:
-            data = {"posts": {}, "comments": {}, "payouts": {}, "proofs": {}}
-            for k, v in iter_prefix("graffiti", b"data:"):
-                if k.decode("utf-8") == "data:data":
-                    data = json.loads(v.decode("utf-8"))
-                    break
-            return data or dict(default)
-        return self.store.load(default=default)
-
-    def _flush(self) -> None:
-        if self._kv:
-            with batch("graffiti") as b:
-                b.put(b"data:data", json.dumps(self.data, separators=CFG.CANONICAL_SEP).encode("utf-8"))
-        else:
-            self.store.save(self.data)
 
     def record_post(self, art_id: str, meta: Dict[str, Any], txid: str, block_height: int, pool_addr: str, amount_paid: int, *, block_hash: str | None = None) -> None:
         posts = self.data.setdefault("posts", {})
@@ -68,8 +53,10 @@ class GraffitiRegistry:
         posts[art_id] = entry
         self._flush()
 
+
     def get_post(self, art_id: str) -> Dict[str, Any] | None:
         return (self.data.get("posts") or {}).get(art_id)
+
 
     def record_comment(self, art_id: str, meta: Dict[str, Any], txid: str,
                        block_height: int, creator_paid: int, storage_paid: int) -> None:
@@ -98,6 +85,7 @@ class GraffitiRegistry:
             stats["pool_balance"] = int(stats.get("pool_balance", 0)) + int(storage_paid)
             stats["comments"] = int(stats.get("comments", 0)) + 1
         self._flush()
+
 
     def record_payout(self, art_id: str, recipients: Dict[str, int], txid: str, block_height: int, epoch: int | None = None, pool_balance: int | None = None) -> None:
         posts = self.data.setdefault("posts", {})
@@ -129,6 +117,7 @@ class GraffitiRegistry:
         })
         self._flush()
 
+
     def set_pool_balance(self, art_id: str, pool_balance: int) -> None:
         posts = self.data.setdefault("posts", {})
         post = posts.get(art_id)
@@ -137,6 +126,7 @@ class GraffitiRegistry:
         stats = post.setdefault("stats", {})
         stats["pool_balance"] = max(0, int(pool_balance))
         self._flush()
+
 
     def record_proof(self, art_id: str, storer: str, epoch: int, offset: int, length: int,
                      proof_hash: str, height: int = 0, seed: str = "") -> None:
@@ -168,6 +158,7 @@ class GraffitiRegistry:
         self.data["proofs"][art_id] = art_proofs
         self._flush()
 
+
     def get_proof(self, art_id: str, storer: str, epoch: int) -> Dict[str, Any] | None:
         art_id = (art_id or "").strip().lower()
         storer = (storer or "").strip().lower()
@@ -178,6 +169,7 @@ class GraffitiRegistry:
             if item.get("storer") == storer and int(item.get("epoch", -1)) == int(epoch):
                 return dict(item)
         return None
+
 
     def get_latest_proof(self, art_id: str, storer: str | None = None) -> Dict[str, Any] | None:
         art_id = (art_id or "").strip().lower()
@@ -191,11 +183,13 @@ class GraffitiRegistry:
         filtered.sort(key=lambda r: (int(r.get("epoch", -1)), int(r.get("ts", 0))), reverse=True)
         return filtered[0]
 
+
     def get_latest_proof_epoch(self, art_id: str, storer: str | None = None) -> int:
         proof = self.get_latest_proof(art_id, storer)
         if not proof:
             return -1
         return int(proof.get("epoch", -1))
+
 
     def list_payouts(self, art_id: str, limit: int = 100) -> list[Dict[str, Any]]:
         art_id = (art_id or "").strip().lower()
@@ -205,6 +199,7 @@ class GraffitiRegistry:
         if isinstance(limit, int) and limit > 0:
             return items[:limit]
         return items
+
 
     def list_posts(self, limit: int = 50, offset: int = 0) -> list[Dict[str, Any]]:
         posts = self.data.get("posts") or {}
@@ -221,6 +216,7 @@ class GraffitiRegistry:
             return items[off:off + limit]
         return items[off:]
 
+
     def list_comments(self, art_id: str, limit: int = 50) -> list[Dict[str, Any]]:
         art_id = (art_id or "").strip().lower()
         if not art_id:
@@ -231,6 +227,30 @@ class GraffitiRegistry:
         if isinstance(limit, int) and limit > 0:
             return items[:limit]
         return items
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
+    def _load(self, default: dict) -> dict:
+        if self._kv:
+            data = {"posts": {}, "comments": {}, "payouts": {}, "proofs": {}}
+            for k, v in iter_prefix("graffiti", b"data:"):
+                if k.decode("utf-8") == "data:data":
+                    data = json.loads(v.decode("utf-8"))
+                    break
+            return data or dict(default)
+        return self.store.load(default=default)
+
+
+    def _flush(self) -> None:
+        if self._kv:
+            with batch("graffiti") as b:
+                b.put(b"data:data", json.dumps(self.data, separators=CFG.CANONICAL_SEP).encode("utf-8"))
+        else:
+            self.store.save(self.data)
 
 
 __all__ = ["GraffitiRegistry"]

@@ -27,7 +27,7 @@ from tsarchain.contracts.graffiti import (
     derive_pool_address_p2wsh,
     hash_pool_redeem_script,
     _pool_spk_bytes,
-    find_pool_utxos,
+    _find_pool_utxos,
     build_payout_tx,
     build_metadata,
     build_comment_metadata,
@@ -225,7 +225,7 @@ def test_find_pool_utxos():
         f"{tx2}:1": {"tx_out": {"script_pubkey": "other", "amount": 2000}},
         f"{tx3}:0": {"tx_out": {"script_pubkey": spk_hex, "amount": 500}},
     })
-    utxos = find_pool_utxos(db, VALID_ART_ID)
+    utxos = _find_pool_utxos(db, VALID_ART_ID)
     assert len(utxos) == 2
     # Should be sorted by amount
     assert utxos[0]["amount"] == 500
@@ -394,7 +394,7 @@ def test_find_pool_utxos_fallback():
         f"tx5:0": {"tx_out": {"script_pubkey": spk_hex, "amount": 999}},
     })
     # If get returns None, it falls back
-    utxos = find_pool_utxos(db, VALID_ART_ID)
+    utxos = _find_pool_utxos(db, VALID_ART_ID)
     assert len(utxos) == 1
     assert utxos[0]["amount"] == 999
     

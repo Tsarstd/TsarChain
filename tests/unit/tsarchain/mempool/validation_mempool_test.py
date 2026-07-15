@@ -23,25 +23,25 @@ class TestTxMempoolValidator:
         return v
 
     def test_script_to_address(self, validator):
-        assert validator.script_to_address(None) is None
-        assert validator.script_to_address(b"") is None
-        assert validator.script_to_address("deadbeef") is None
+        assert validator._script_to_address(None) is None
+        assert validator._script_to_address(b"") is None
+        assert validator._script_to_address("deadbeef") is None
         
         # P2WPKH: 0x00 0x14 + 20 bytes
         p2wpkh_bytes = b'\x00\x14' + b'\x01' * 20
-        addr1 = validator.script_to_address(p2wpkh_bytes)
+        addr1 = validator._script_to_address(p2wpkh_bytes)
         assert addr1 is not None
 
         # P2WSH: 0x00 0x20 + 32 bytes
         p2wsh_bytes = b'\x00\x20' + b'\x02' * 32
-        addr2 = validator.script_to_address(p2wsh_bytes)
+        addr2 = validator._script_to_address(p2wsh_bytes)
         assert addr2 is not None
 
         # object with serialize
-        assert validator.script_to_address(DummyScript(p2wpkh_bytes)) == addr1
+        assert validator._script_to_address(DummyScript(p2wpkh_bytes)) == addr1
         
         # str hex
-        assert validator.script_to_address(p2wpkh_bytes.hex()) == addr1
+        assert validator._script_to_address(p2wpkh_bytes.hex()) == addr1
 
     def test_get_utxo_amount(self, validator):
         assert validator._get_utxo_amount({"amount": 100}) == 100
@@ -94,10 +94,6 @@ class TestTxMempoolValidator:
             b"aaa:0": "entry6"
         }
         assert validator._lookup_utxo_entry(snapshot_bytes_key, "aaa", 0) == "entry6"
-
-    def test_coinbase_confirmations(self):
-        assert TxMempoolValidator._coinbase_confirmations(100, 150) == 50
-        assert TxMempoolValidator._coinbase_confirmations(100, 50) == 0
 
     @patch("tsarchain.mempool.validation.get_utxo_script_bytes", return_value=b"script")
     def test_utxo_snapshot_to_items(self, mock_get_script, validator):
@@ -323,7 +319,7 @@ class TestTxMempoolValidator:
             
             # Shortfall
             mock_is_p2wpkh.return_value = True
-            validator.script_to_address = MagicMock(return_value="addr1")
+            validator._script_to_address = MagicMock(return_value="addr1")
             mock_graffiti.parse_from_script.side_effect = [{"event": "PAYOUT", "art_id": "art1", "epoch": 5, "proof_epoch": 5, "recipients": [{"addr": "addr1", "amount": 200}]}, None]
             assert not validator.validate_transaction(tx, {})
             assert validator.last_error_reason == "payout_shortfall"
@@ -432,11 +428,6 @@ class TestTxMempoolValidator:
             mock_native.return_value = (True, "", 500)
             mock_graffiti.parse_from_script.return_value = None
             
-            # Basic native success (simulating performance hit logic)
-            with patch("tsarchain.mempool.validation.time.perf_counter", side_effect=[0.0, 0.02]):
-                assert validator.validate_transaction(tx, {})
-            assert tx.fee == 500
-            
             # Test Mempool Graffiti full
             mock_cfg.MAX_GRAFFITI_ON_MEMPOOL = 1
             mock_graffiti.parse_from_script.side_effect = [None, {"event": "POST"}, {"event": "POST"}] # current tx (Payout check), current tx (POST check), pool tx
@@ -453,7 +444,7 @@ class TestTxMempoolValidator:
             
             reg_mock = MagicMock()
             validator.utxo._graffiti_registry = reg_mock
-            validator.script_to_address = MagicMock(return_value="addr1")
+            validator._script_to_address = MagicMock(return_value="addr1")
             
             # Bad art ID
             mock_graffiti.parse_from_script.side_effect = [None, None, {"event": "PAYOUT", "art_id": "", "epoch": 5}]

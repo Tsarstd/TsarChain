@@ -33,135 +33,6 @@ MIME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+/_-]{0,63}$")  # konservatif
 _MIME_ALLOWED = tuple(m.lower() for m in CFG.GRAFFITI_ALLOWED_MIME)
 _EXT_ALLOWED = tuple(e.lower() for e in CFG.GRAFFITI_ALLOWED_EXT)
 
-def _is_valid_sha256_hex(x: str) -> bool:
-    return bool(HEX64_RE.fullmatch(x.strip().lower()))
-
-def _is_valid_mime(x: str) -> bool:
-    if not isinstance(x, str):
-        return False
-    x = x.strip()
-    if not x:
-        return False
-    if len(x) > 64:
-        return False
-    return bool(MIME_RE.fullmatch(x))
-
-def _is_valid_tsar_address(addr: str) -> bool:
-    hrp, data = bech32_decode(addr)
-    if hrp is None or hrp != CFG.ADDRESS_PREFIX:
-        return False
-    prog = bytes(convertbits(data[1:], 5, 8, False))
-    return len(prog) in (20, 32)
-
-def _is_valid_art_id(art_id: str) -> bool:
-    if not isinstance(art_id, str):
-        return False
-    return bool(ART_ID_RE.fullmatch(art_id.strip().lower()))
-
-def _strip_art_prefix(art_id: str) -> str:
-    aid = (art_id or "").strip().lower()
-    if aid.startswith(CFG.ART_ID_PREFIX):
-        return aid[CFG.ART_ID_PREFIX_LEN:]
-    return aid
-
-def _decorate_art_id(base_hex: str) -> str:
-    base = (base_hex or "").strip().lower()
-    if not HEX64_RE.fullmatch(base):
-        raise ValueError("bad_art_id_hash")
-    return CFG.ART_ID_PREFIX + base[:CFG.ART_ID_BODY_LEN]
-
-def _normalize_art_id(art_id: str, *, prefer_prefix: bool = True) -> str:
-    """
-    Accept legacy 64-hex art_id or new prefixed form.
-    If prefer_prefix=True and legacy is provided, return prefixed variant; otherwise preserve legacy.
-    """
-    if not isinstance(art_id, str):
-        raise ValueError("bad_art_id")
-    aid = art_id.strip().lower()
-    if aid.startswith(CFG.ART_ID_PREFIX):
-        body = aid[CFG.ART_ID_PREFIX_LEN:]
-        if len(body) != CFG.ART_ID_BODY_LEN or not re.fullmatch(r"[0-9a-f]+", body):
-            raise ValueError("bad_art_id")
-        return aid
-    if HEX64_RE.fullmatch(aid):
-        return _decorate_art_id(aid) if prefer_prefix else aid
-    raise ValueError("bad_art_id")
-
-
-def validate_graffiti_file(size_bytes: int, mime: str | None = None, filename: str | None = None) -> str:
-    """
-    Validasi ukuran & tipe file graffiti sesuai kebijakan.
-    Mengembalikan MIME ternormalisasi (lowercase) jika valid, atau raise ValueError jika melanggar.
-    """
-    try:
-        size_int = int(size_bytes)
-    except Exception:
-        log.exception("[validate_graffiti_file] unexpected error")
-        raise ValueError("bad_size_bytes") from None
-    if size_int <= 0:
-        raise ValueError("bad_size_bytes")
-    if size_int > CFG.GRAFFITI_MAX_SIZE_BYTES:
-        raise ValueError("graffiti_too_large")
-
-    mime_norm = (mime or "").strip().lower()
-    if not mime_norm and filename:
-        guess, _ = mimetypes.guess_type(filename)
-        mime_norm = (guess or "").strip().lower()
-
-    ext = ""
-    if filename:
-        ext = os.path.splitext(filename)[1].lstrip(".").lower()
-    log.info("mime=%s", mime_norm)
-    if mime_norm and _is_valid_mime(mime_norm):
-        if _MIME_ALLOWED and mime_norm not in _MIME_ALLOWED:
-            raise ValueError("mime_not_allowed")
-    elif ext:
-        if _EXT_ALLOWED and ext not in _EXT_ALLOWED:
-            raise ValueError("mime_not_allowed")
-        if not mime_norm:
-            if ext in ("jpg", "jpeg"):
-                mime_norm = "image"
-            elif ext in ("mp4", "mkv"):
-                mime_norm = "video"
-    else:
-        raise ValueError("mime_not_allowed")
-
-    if not mime_norm:
-        raise ValueError("mime_not_allowed")
-    return mime_norm
-
-def _encode_comment(comment_text: str) -> str:
-    if not isinstance(comment_text, str):
-        raise ValueError("comment_text must be str")
-    data = comment_text.encode("utf-8")
-    if not data:
-        raise ValueError("empty_comment")
-    if len(data) > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
-        raise ValueError("comment_too_large")
-    return data.hex()
-
-def _compact_json(obj: Dict[str, Any]) -> bytes:
-    return json.dumps(obj, separators=CFG.CANONICAL_SEP, ensure_ascii=True).encode('ascii')
-
-def _guard_payload_size(data: bytes) -> None:
-    limit = CFG.MAX_GRAFFITI_OPRET
-    if len(data) > limit:
-        raise ValueError(f"graffiti_opreturn_too_large: {len(data)} > {limit}")
-
-
-def _pool_redeem_script(art_id: str) -> bytes:
-    """
-    Deterministic redeem script for storage pool payouts (P2WSH).
-    Script: <push art_digest> OP_EQUAL
-    Witness must push matching art_digest to spend.
-    """
-    art_raw = _strip_art_prefix(_normalize_art_id(art_id, prefer_prefix=False))
-    art_bytes = bytes.fromhex(art_raw)
-    if len(art_bytes) > 75:
-        art_bytes = hashlib.sha256(art_bytes).digest()
-    push_len = len(art_bytes)
-    return bytes([push_len]) + art_bytes + b"\x87"  # OP_EQUAL
-
 
 def compute_proof_epoch(height: int) -> int:
     h = int(height)
@@ -208,29 +79,6 @@ def hash_proof_chunk(chunk: bytes) -> str:
         raise ValueError("empty_chunk")
     return hashlib.sha256(bytes(chunk)).hexdigest()
 
-# -----------------------------
-# MERKLE (native)
-# -----------------------------
-try:
-    from tsarcore_native import (
-        graff_merkle_root_for_file as _native_graff_merkle_root_for_file, #wallet
-        graff_merkle_path_for_file as _native_graff_merkle_path_for_file, #storage node
-        graff_merkle_verify as _native_graff_merkle_verify, #node
-    )
-except ImportError as exc:
-    raise ImportError("tsarcore_native is required for graffiti merkle") from exc
-
-def merkle_root_for_file(path: str, chunk_size: int) -> tuple[str, int]: #wallet
-    root, count = _native_graff_merkle_root_for_file(path, int(chunk_size))
-    return bytes(root).hex(), int(count)
-
-def merkle_path_for_file(path: str, chunk_size: int, index: int) -> list[dict[str, str]]: #storage node (json)
-    return list(_native_graff_merkle_path_for_file(path, int(chunk_size), int(index)))
-
-def verify_merkle_path(root_hex: str, leaf_hash_hex: str, path: list[dict[str, str]]) -> bool: #node
-    return bool(_native_graff_merkle_verify(root_hex, leaf_hash_hex, path or []))
-
-# ---- END OF MERKLE ----
 
 def derive_pool_address_p2wpkh(art_id_hex: str) -> str:
     """
@@ -261,55 +109,47 @@ def hash_pool_redeem_script(art_id_hex: str) -> str:
     return hashlib.sha256(_pool_redeem_script(art_id_hex)).hexdigest()
 
 
-def _pool_spk_bytes(art_id_hex: str) -> bytes:
-    redeem = _pool_redeem_script(art_id_hex)
-    prog = hashlib.sha256(redeem).digest()
-    return Script([0, prog]).serialize()
-
-
-def find_pool_utxos(utxo_db, art_id: str) -> list[dict]:
+def validate_graffiti_file(size_bytes: int, mime: str | None = None, filename: str | None = None) -> str:
     """
-    Cari UTXO yang script_pubkey-nya sesuai pool P2WSH untuk art_id.
-    utxo_db: instance UTXODB (punya .utxos dict).
+    Validasi ukuran & tipe file graffiti sesuai kebijakan.
+    Mengembalikan MIME ternormalisasi (lowercase) jika valid, atau raise ValueError jika melanggar.
     """
-    spk_hex = _pool_spk_bytes(art_id).hex()
-    out: list[dict] = []
-    # Coba via index get() jika tersedia
-    bucket = utxo_db.get(spk_hex) or {}
-    if isinstance(bucket, dict):
-        for key, entry in bucket.items():
-            txid_hex, idx_str = key.split(":")
-            amt = int(entry.get("amount", entry.get("tx_out", {}).get("amount", 0)))
-            out.append({
-                "txid": txid_hex,
-                "vout": int(idx_str),
-                "amount": amt,
-                "script_pubkey": spk_hex,
-            })
+    try:
+        size_int = int(size_bytes)
+    except Exception:
+        log.exception("[validate_graffiti_file] unexpected error")
+        raise ValueError("bad_size_bytes") from None
+    if size_int <= 0:
+        raise ValueError("bad_size_bytes")
+    if size_int > CFG.GRAFFITI_MAX_SIZE_BYTES:
+        raise ValueError("graffiti_too_large")
 
-    # Fallback: scan utxo_db.utxos in-memory
-    for key, entry in getattr(utxo_db, "utxos", {}).items():
-        tx_out = entry.get("tx_out") if isinstance(entry, dict) else None
-        if not isinstance(tx_out, dict):
-            continue
-        spk = tx_out.get("script_pubkey")
-        if spk and str(spk).lower() == spk_hex:
-            amt = int(tx_out.get("amount", 0))
-            txid_hex, idx_str = key.split(":")
-            out.append({
-                "txid": txid_hex,
-                "vout": int(idx_str),
-                "amount": amt,
-                "script_pubkey": spk_hex,
-            })
-    # dedup by outpoint
-    uniq = {}
-    for item in out:
-        k = f"{item.get('txid')}:{item.get('vout')}"
-        uniq[k] = item
-    out = list(uniq.values())
-    out.sort(key=lambda r: r.get("amount", 0))
-    return out
+    mime_norm = (mime or "").strip().lower()
+    if not mime_norm and filename:
+        guess, _ = mimetypes.guess_type(filename)
+        mime_norm = (guess or "").strip().lower()
+
+    ext = ""
+    if filename:
+        ext = os.path.splitext(filename)[1].lstrip(".").lower()
+    log.info("mime=%s", mime_norm)
+    if mime_norm and _is_valid_mime(mime_norm):
+        if _MIME_ALLOWED and mime_norm not in _MIME_ALLOWED:
+            raise ValueError("mime_not_allowed")
+    elif ext:
+        if _EXT_ALLOWED and ext not in _EXT_ALLOWED:
+            raise ValueError("mime_not_allowed")
+        if not mime_norm:
+            if ext in ("jpg", "jpeg"):
+                mime_norm = "image"
+            elif ext in ("mp4", "mkv"):
+                mime_norm = "video"
+    else:
+        raise ValueError("mime_not_allowed")
+
+    if not mime_norm:
+        raise ValueError("mime_not_allowed")
+    return mime_norm
 
 
 def build_payout_tx(
@@ -332,20 +172,10 @@ def build_payout_tx(
     rate = int(fee_rate if fee_rate is not None else CFG.DEFAULT_FEE_RATE_SATVB)
     utxo_db._load()
 
-    rec_list: list[dict[str, Any]] = []
-    if isinstance(recipients, dict):
-        recipients = [{"addr": a, "amount": v} for a, v in recipients.items()]
-    if not isinstance(recipients, list) or not recipients:
-        raise ValueError("recipients_empty")
-    for item in recipients:
-        addr = str(item.get("addr") or item.get("address") or "").strip().lower()
-        amt = int(item.get("amount", 0))
-        if not _is_valid_tsar_address(addr) or amt <= 0:
-            raise ValueError("bad_recipient")
-        rec_list.append({"addr": addr, "amount": amt})
+    rec_list = _validate_and_format_recipients(recipients)
 
     total_needed = sum(r["amount"] for r in rec_list)
-    utxos = find_pool_utxos(utxo_db, art_norm)
+    utxos = _find_pool_utxos(utxo_db, art_norm)
     if not utxos:
         raise ValueError("no_pool_utxo")
 
@@ -398,69 +228,29 @@ def build_payout_tx(
     utxos_sorted = sorted(utxos, key=lambda u: u.get("amount", 0), reverse=True)
 
     if is_max_claim:
-        selected_utxos = list(utxos_sorted)
-        total_in = total_available
-        for _ in range(2):
-            fee_est = _estimate_fee(selected_utxos, False, rec_list)
-            payout_amt = total_in - fee_est
-            if payout_amt <= 0:
-                raise ValueError("insufficient_pool")
-            if payout_amt == rec_list[0]["amount"]:
-                break
-            rec_list[0]["amount"] = payout_amt
-        outs: list[TxOut] = [TxOut(int(rec_list[0]["amount"]), Script.p2wpkh_script(rec_list[0]["addr"]))]
-        outs.append(_build_opret(rec_list))
-        tx_final = Tx(version=1, inputs=_build_inputs(selected_utxos), outputs=outs, locktime=0, auto_compute_txid=True)
-        tx_final.fee = total_in - sum(int(getattr(o, "amount", 0) or 0) for o in outs)
-        return tx_final
+        return _payout_max_claim(
+            utxos_sorted, total_available, rec_list, _estimate_fee, _build_inputs, _build_opret
+        )
 
-    selected_utxos: list[dict[str, Any]] = []
-    acc = 0
-    fee_final = None
-    change_amt = 0
-    for utxo in utxos_sorted:
-        selected_utxos.append(utxo)
-        acc += int(utxo.get("amount", 0))
-        fee_with_change = _estimate_fee(selected_utxos, True, rec_list)
-        change = acc - total_needed - fee_with_change
-        if change >= dust:
-            fee_final = fee_with_change
-            change_amt = change
-            break
-        fee_no_change = _estimate_fee(selected_utxos, False, rec_list)
-        change = acc - total_needed - fee_no_change
-        if change >= 0:
-            fee_final = fee_no_change
-            change_amt = 0
-            break
-
-    if fee_final is None:
-        raise ValueError("insufficient_pool")
-
-    outs: list[TxOut] = []
-    if change_amt >= dust:
-        outs.append(TxOut(int(change_amt), pool_spk))
-    for rec in rec_list:
-        outs.append(TxOut(int(rec["amount"]), Script.p2wpkh_script(rec["addr"])))
-    outs.append(_build_opret(rec_list))
-
-    tx_final = Tx(version=1, inputs=_build_inputs(selected_utxos), outputs=outs, locktime=0, auto_compute_txid=True)
-    tx_final.fee = acc - sum(int(getattr(o, "amount", 0) or 0) for o in outs)
-    return tx_final
+    return _payout_select_utxos(
+        utxos_sorted, total_needed, dust, rec_list, pool_spk, _estimate_fee, _build_inputs, _build_opret
+    )
 
 
-# -----------------------------
-# Public API
-# -----------------------------
-
-def build_metadata(sha256_hex: str, size_bytes: int, mime: str,
-                   storer_addr: str, receipt_id: str,
-                   creator_addr: str,
-                   ts: Optional[int] = None, height: Optional[int] = None,
-                   merkle_root: Optional[str] = None,
-                   merkle_chunk_bytes: Optional[int] = None,
-                   merkle_chunks: Optional[int] = None,
-                   extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def build_metadata(
+    sha256_hex: str,
+    size_bytes: int,
+    mime: str,
+    storer_addr: str,
+    receipt_id: str,
+    creator_addr: str,
+    ts: Optional[int] = None,
+    height: Optional[int] = None,
+    merkle_root: Optional[str] = None,
+    merkle_chunk_bytes: Optional[int] = None,
+    merkle_chunks: Optional[int] = None,
+    extra: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     
     if not _is_valid_sha256_hex(sha256_hex):
         raise ValueError("bad_sha256_hex")
@@ -486,19 +276,7 @@ def build_metadata(sha256_hex: str, size_bytes: int, mime: str,
     }
     meta["creator"] = creator_addr.strip().lower()
     if merkle_root or merkle_chunk_bytes or merkle_chunks:
-        mroot = str(merkle_root or "").strip().lower()
-        if not _is_valid_sha256_hex(mroot):
-            raise ValueError("bad_merkle_root")
-        mchunk = int(merkle_chunk_bytes or 0)
-        mcount = int(merkle_chunks or 0)
-        if mchunk <= 0 or mcount <= 0:
-            raise ValueError("bad_merkle_meta")
-        expect = int(math.ceil(int(size_bytes) / float(mchunk)))
-        if expect != mcount:
-            raise ValueError("merkle_count_mismatch")
-        meta["mroot"] = mroot
-        meta["mchunk"] = mchunk
-        meta["mcount"] = mcount
+        meta.update(_validate_and_build_merkle_meta(size_bytes, merkle_root, merkle_chunk_bytes, merkle_chunks))
     # Anchor opsional
     if ts is None:
         ts = int(time.time())
@@ -506,15 +284,9 @@ def build_metadata(sha256_hex: str, size_bytes: int, mime: str,
     if height is not None:
         meta["height"] = int(height)
 
-    # Extra kecil (dibatasi agar payload tetap kecil)
-    if extra:
-        for k, v in extra.items():
-            if k in meta:
-                continue
-            if isinstance(v, (str, bytes)) and len(str(v)) > 128:
-                continue
-            meta[k] = v
+    _process_extra_meta(meta, extra)
     return meta
+
 
 def build_comment_metadata(
     art_id: str,
@@ -525,7 +297,7 @@ def build_comment_metadata(
     tip_sats: int = 0,
     ts: Optional[int] = None,
     extra: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+) -> Dict[str, Any]:
     
     art_id_norm = _normalize_art_id(art_id, prefer_prefix=False)
     if not _is_valid_tsar_address(creator_addr):
@@ -564,6 +336,7 @@ def build_comment_metadata(
                 continue
             meta[k] = v
     return meta
+
 
 def build_payout_metadata(
     art_id: str,
@@ -613,6 +386,7 @@ def build_payout_metadata(
             meta[k] = v
     return meta
 
+
 def calc_comment_split(base_amount: int, tip: int = 0) -> Dict[str, int]:
     amt = int(base_amount)
     if amt < 0:
@@ -634,6 +408,7 @@ def calc_comment_split(base_amount: int, tip: int = 0) -> Dict[str, int]:
         "tip": tip_amt,
     }
 
+
 def encode_payload(meta: Dict[str, Any]) -> bytes:
     if not isinstance(meta, dict):
         raise ValueError("meta_must_be_dict")
@@ -641,12 +416,15 @@ def encode_payload(meta: Dict[str, Any]) -> bytes:
     _guard_payload_size(payload)
     return payload
 
+
 def build_script(meta: Dict[str, Any]) -> Script:
     payload = encode_payload(meta)
     return Script([OP_RETURN, payload])
 
+
 def build_opret_hex(meta: Dict[str, Any]) -> str:
     return encode_payload(meta).hex()
+
 
 def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
     try:
@@ -664,122 +442,19 @@ def parse_payload(data: bytes) -> Optional[Dict[str, Any]]:
         
         event = str(obj.get("event", "POST")).strip().upper()
         if event == "POST":
-            if not _is_valid_sha256_hex(obj.get("sha256", "")):
-                return None
-            if not isinstance(obj.get("size"), int) or obj["size"] < 0:
-                return None
-            if not _is_valid_mime(obj.get("mime", "")):
-                return None
-            if not _is_valid_tsar_address(obj.get("storer", "")):
-                return None
-            receipt = obj.get("receipt", "")
-            if not isinstance(receipt, str) or not receipt.strip():
-                return None
-            creator_addr = obj.get("creator")
-            if creator_addr and not _is_valid_tsar_address(creator_addr):
-                return None
-            art_id = obj.get("art_id")
-            if art_id and not _is_valid_art_id(art_id):
-                return None
-            if creator_addr:
-                base_hash = compute_art_id(obj.get("sha256", ""), creator_addr, decorate=False)
-                decorated = _decorate_art_id(base_hash)
-                if art_id is None:
-                    obj["art_id"] = decorated
-                else:
-                    aid_norm = art_id.strip().lower()
-                    if aid_norm not in (decorated, base_hash):
-                        return None
-                    obj["art_id"] = decorated if aid_norm == decorated else aid_norm
-            mroot = obj.get("mroot") or obj.get("merkle_root")
-            mchunk = obj.get("mchunk") or obj.get("merkle_chunk")
-            mcount = obj.get("mcount") or obj.get("merkle_count")
-            if mroot or mchunk or mcount:
-                if not (mroot and mchunk and mcount):
-                    return None
-                if not _is_valid_sha256_hex(str(mroot)):
-                    return None
-                try:
-                    mchunk_i = int(mchunk)
-                    mcount_i = int(mcount)
-                except Exception:
-                    return None
-                if mchunk_i <= 0 or mcount_i <= 0:
-                    return None
-                expect = int(math.ceil(int(obj.get("size", 0)) / float(mchunk_i)))
-                if expect != mcount_i:
-                    return None
-                obj["mroot"] = str(mroot).strip().lower()
-                obj["mchunk"] = mchunk_i
-                obj["mcount"] = mcount_i
-                    
+            parsed = _parse_post_payload(obj)
         elif event == "COMMENT":
-            art_id = obj.get("art_id", "")
-            obj["art_id"] = _normalize_art_id(art_id, prefer_prefix=False)
-            comment_hex = obj.get("comment", "")
-            if not isinstance(comment_hex, str):
-                return None
-            comment_bytes = bytes.fromhex(comment_hex)
-            if not comment_bytes or len(comment_bytes) > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
-                return None
-            amount = int(obj.get("amount", 0))
-            if amount < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
-                return None
-            tip = int(obj.get("tip", 0))
-            if tip < 0:
-                return None
-            creator_addr = obj.get("creator")
-            if not _is_valid_tsar_address(creator_addr or ""):
-                return None
-            commenter = obj.get("commenter")
-            if commenter and not _is_valid_tsar_address(commenter):
-                return None
-            obj["comment_len"] = len(comment_bytes)
-            obj["comment_hex"] = comment_hex
-            
+            parsed = _parse_comment_payload(obj)
         elif event == "PAYOUT":
-            art_id = obj.get("art_id", "")
-            obj["art_id"] = _normalize_art_id(art_id, prefer_prefix=False)
-            epoch = int(obj.get("epoch", -1))
-            if epoch < 0:
-                return None
-            recipients = obj.get("recipients") or []
-            if not isinstance(recipients, list) or not recipients:
-                return None
-            parsed_rec: list[dict[str, Any]] = []
-            for item in recipients:
-                if not isinstance(item, dict):
-                    return None
-                addr = str(item.get("addr") or item.get("address") or "").strip().lower()
-                amt = int(item.get("amount", 0))
-                if amt <= 0 or not _is_valid_tsar_address(addr):
-                    return None
-                parsed_rec.append({"addr": addr, "amount": amt})
-            obj["recipients"] = parsed_rec
-            # optional proof hints
-            for k in ("offset", "length", "hash", "seed", "height", "epoch", "storer"):
-                plain_key = k
-                pref_key = f"proof_{k}"
-                use_key = pref_key if pref_key in obj else plain_key
-                if use_key in obj:
-                    val = obj[use_key]
-                    if k in ("offset", "length", "height"):
-                        obj[pref_key] = int(val)
-                    elif k == "hash":
-                        if not isinstance(val, str) or len(val) != 64:
-                            return None
-                        obj[pref_key] = val
-                    elif k == "storer":
-                        sval = str(val).strip().lower()
-                        if not sval:
-                            return None
-                        obj[pref_key] = sval
-                    else:
-                        obj[pref_key] = str(val)
+            parsed = _parse_payout_payload(obj)
         else:
             return None
-        obj["event"] = event
-        return obj
+            
+        if parsed is None:
+            return None
+            
+        parsed["event"] = event
+        return parsed
     except Exception:
         log.exception("[parse_payload] unexpected error")
         return None
@@ -842,20 +517,459 @@ def compute_art_id(sha256_hex: str, creator_addr: str, block_hash: str | None = 
         return base_hex
     return _decorate_art_id(base_hex)
 
+
 def derive_pool_address(art_id_hex: str) -> str:
     return derive_pool_address_p2wsh(art_id_hex)
+
 
 def calc_upload_fee_sats(size_bytes: int) -> int:
     billable = max(int(size_bytes), int(CFG.GRAFFITI_MIN_BILLABLE_SIZE))
     chunks = max(1, math.ceil(billable / float(CFG.GRAFFITI_MIN_BILLABLE_SIZE)))
     return int(chunks * float(CFG.GRAFFITI_UPLOAD_FEE_PER_CHUNK))
 
+
+# -----------------------------
+# MERKLE (native)
+# -----------------------------
+try:
+    from tsarcore_native import (
+        graff_merkle_root_for_file as _native_graff_merkle_root_for_file, #wallet
+        graff_merkle_path_for_file as _native_graff_merkle_path_for_file, #storage node
+        graff_merkle_verify as _native_graff_merkle_verify, #node
+    )
+except ImportError as exc:
+    raise ImportError("tsarcore_native is required for graffiti merkle") from exc
+
+def merkle_root_for_file(path: str, chunk_size: int) -> tuple[str, int]: #wallet
+    root, count = _native_graff_merkle_root_for_file(path, int(chunk_size))
+    return bytes(root).hex(), int(count)
+
+def merkle_path_for_file(path: str, chunk_size: int, index: int) -> list[dict[str, str]]: #storage node (json)
+    return list(_native_graff_merkle_path_for_file(path, int(chunk_size), int(index)))
+
+def verify_merkle_path(root_hex: str, leaf_hash_hex: str, path: list[dict[str, str]]) -> bool: #node
+    return bool(_native_graff_merkle_verify(root_hex, leaf_hash_hex, path or []))
+
+# ---- END OF MERKLE ----
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
+def _validate_and_format_recipients(recipients: list[dict[str, Any]] | dict[str, int]) -> list[dict[str, Any]]:
+    if isinstance(recipients, dict):
+        recipients = [{"addr": a, "amount": v} for a, v in recipients.items()]
+    if not isinstance(recipients, list) or not recipients:
+        raise ValueError("recipients_empty")
+    rec_list: list[dict[str, Any]] = []
+    for item in recipients:
+        addr = str(item.get("addr") or item.get("address") or "").strip().lower()
+        amt = int(item.get("amount", 0))
+        if not _is_valid_tsar_address(addr) or amt <= 0:
+            raise ValueError("bad_recipient")
+        rec_list.append({"addr": addr, "amount": amt})
+    return rec_list
+
+
+def _payout_max_claim(
+    selected_utxos: list[dict[str, Any]],
+    total_in: int,
+    rec_list: list[dict[str, Any]],
+    _estimate_fee,
+    _build_inputs,
+    _build_opret,
+    ) -> Tx:
+
+    selected_utxos_copy = list(selected_utxos)
+    for _ in range(2):
+        fee_est = _estimate_fee(selected_utxos_copy, False, rec_list)
+        payout_amt = total_in - fee_est
+        if payout_amt <= 0:
+            raise ValueError("insufficient_pool")
+        if payout_amt == rec_list[0]["amount"]:
+            break
+        rec_list[0]["amount"] = payout_amt
+    outs: list[TxOut] = [TxOut(int(rec_list[0]["amount"]), Script.p2wpkh_script(rec_list[0]["addr"]))]
+    outs.append(_build_opret(rec_list))
+    tx_final = Tx(version=1, inputs=_build_inputs(selected_utxos_copy), outputs=outs, locktime=0, auto_compute_txid=True)
+    tx_final.fee = total_in - sum(int(getattr(o, "amount", 0) or 0) for o in outs)
+    return tx_final
+
+
+def _payout_select_utxos(
+    utxos_sorted: list[dict[str, Any]],
+    total_needed: int,
+    dust: int,
+    rec_list: list[dict[str, Any]],
+    pool_spk,
+    _estimate_fee,
+    _build_inputs,
+    _build_opret,
+) -> Tx:
+    selected_utxos: list[dict[str, Any]] = []
+    acc = 0
+    fee_final = None
+    change_amt = 0
+    for utxo in utxos_sorted:
+        selected_utxos.append(utxo)
+        acc += int(utxo.get("amount", 0))
+        fee_with_change = _estimate_fee(selected_utxos, True, rec_list)
+        change = acc - total_needed - fee_with_change
+        if change >= dust:
+            fee_final = fee_with_change
+            change_amt = change
+            break
+        fee_no_change = _estimate_fee(selected_utxos, False, rec_list)
+        change = acc - total_needed - fee_no_change
+        if change >= 0:
+            fee_final = fee_no_change
+            change_amt = 0
+            break
+
+    if fee_final is None:
+        raise ValueError("insufficient_pool")
+
+    outs: list[TxOut] = []
+    if change_amt >= dust:
+        outs.append(TxOut(int(change_amt), pool_spk))
+    for rec in rec_list:
+        outs.append(TxOut(int(rec["amount"]), Script.p2wpkh_script(rec["addr"])))
+    outs.append(_build_opret(rec_list))
+
+    tx_final = Tx(version=1, inputs=_build_inputs(selected_utxos), outputs=outs, locktime=0, auto_compute_txid=True)
+    tx_final.fee = acc - sum(int(getattr(o, "amount", 0) or 0) for o in outs)
+    return tx_final
+
+
+def _validate_and_build_merkle_meta(
+    size_bytes: int,
+    merkle_root: Optional[str],
+    merkle_chunk_bytes: Optional[int],
+    merkle_chunks: Optional[int],
+) -> dict[str, Any]:
+    mroot = str(merkle_root or "").strip().lower()
+    if not _is_valid_sha256_hex(mroot):
+        raise ValueError("bad_merkle_root")
+    mchunk = int(merkle_chunk_bytes or 0)
+    mcount = int(merkle_chunks or 0)
+    if mchunk <= 0 or mcount <= 0:
+        raise ValueError("bad_merkle_meta")
+    expect = int(math.ceil(int(size_bytes) / float(mchunk)))
+    if expect != mcount:
+        raise ValueError("merkle_count_mismatch")
+    return {
+        "mroot": mroot,
+        "mchunk": mchunk,
+        "mcount": mcount,
+    }
+
+
+def _process_extra_meta(meta: dict[str, Any], extra: Optional[dict[str, Any]]) -> None:
+    if not extra:
+        return
+    for k, v in extra.items():
+        if k in meta:
+            continue
+        if isinstance(v, (str, bytes)) and len(str(v)) > 128:
+            continue
+        meta[k] = v
+
+
+def _parse_post_merkle(obj: dict[str, Any]) -> bool:
+    mroot = obj.get("mroot") or obj.get("merkle_root")
+    mchunk = obj.get("mchunk") or obj.get("merkle_chunk")
+    mcount = obj.get("mcount") or obj.get("merkle_count")
+    if mroot or mchunk or mcount:
+        if not (mroot and mchunk and mcount):
+            return False
+        if not _is_valid_sha256_hex(str(mroot)):
+            return False
+        try:
+            mchunk_i = int(mchunk)
+            mcount_i = int(mcount)
+        except Exception:
+            return False
+        if mchunk_i <= 0 or mcount_i <= 0:
+            return False
+        expect = int(math.ceil(int(obj.get("size", 0)) / float(mchunk_i)))
+        if expect != mcount_i:
+            return False
+        obj["mroot"] = str(mroot).strip().lower()
+        obj["mchunk"] = mchunk_i
+        obj["mcount"] = mcount_i
+    return True
+
+
+def _parse_post_payload(obj: dict[str, Any]) -> Optional[dict[str, Any]]:
+    if not _is_valid_sha256_hex(obj.get("sha256", "")):
+        return None
+    if not isinstance(obj.get("size"), int) or obj["size"] < 0:
+        return None
+    if not _is_valid_mime(obj.get("mime", "")):
+        return None
+    if not _is_valid_tsar_address(obj.get("storer", "")):
+        return None
+    receipt = obj.get("receipt", "")
+    if not isinstance(receipt, str) or not receipt.strip():
+        return None
+    creator_addr = obj.get("creator")
+    if creator_addr and not _is_valid_tsar_address(creator_addr):
+        return None
+    art_id = obj.get("art_id")
+    if art_id and not _is_valid_art_id(art_id):
+        return None
+    if creator_addr:
+        base_hash = compute_art_id(obj.get("sha256", ""), creator_addr, decorate=False)
+        decorated = _decorate_art_id(base_hash)
+        if art_id is None:
+            obj["art_id"] = decorated
+        else:
+            aid_norm = art_id.strip().lower()
+            if aid_norm not in (decorated, base_hash):
+                return None
+            obj["art_id"] = decorated if aid_norm == decorated else aid_norm
+    if not _parse_post_merkle(obj):
+        return None
+    return obj
+
+
+def _parse_comment_payload(obj: dict[str, Any]) -> Optional[dict[str, Any]]:
+    art_id = obj.get("art_id", "")
+    obj["art_id"] = _normalize_art_id(art_id, prefer_prefix=False)
+    comment_hex = obj.get("comment", "")
+    if not isinstance(comment_hex, str):
+        return None
+    comment_bytes = bytes.fromhex(comment_hex)
+    if not comment_bytes or len(comment_bytes) > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
+        return None
+    amount = int(obj.get("amount", 0))
+    if amount < int(CFG.GRAFFITI_COMMENT_MIN_FEE):
+        return None
+    tip = int(obj.get("tip", 0))
+    if tip < 0:
+        return None
+    creator_addr = obj.get("creator")
+    if not _is_valid_tsar_address(creator_addr or ""):
+        return None
+    commenter = obj.get("commenter")
+    if commenter and not _is_valid_tsar_address(commenter):
+        return None
+    obj["comment_len"] = len(comment_bytes)
+    obj["comment_hex"] = comment_hex
+    return obj
+
+
+def _parse_payout_recipients(recipients: list[Any]) -> Optional[list[dict[str, Any]]]:
+    if not isinstance(recipients, list) or not recipients:
+        return None
+    parsed_rec: list[dict[str, Any]] = []
+    for item in recipients:
+        if not isinstance(item, dict):
+            return None
+        addr = str(item.get("addr") or item.get("address") or "").strip().lower()
+        amt = int(item.get("amount", 0))
+        if amt <= 0 or not _is_valid_tsar_address(addr):
+            return None
+        parsed_rec.append({"addr": addr, "amount": amt})
+    return parsed_rec
+
+
+def _parse_payout_proof_hints(obj: dict[str, Any]) -> bool:
+    for k in ("offset", "length", "hash", "seed", "height", "epoch", "storer"):
+        plain_key = k
+        pref_key = f"proof_{k}"
+        use_key = pref_key if pref_key in obj else plain_key
+        if use_key in obj:
+            val = obj[use_key]
+            if k in ("offset", "length", "height"):
+                obj[pref_key] = int(val)
+            elif k == "hash":
+                if not isinstance(val, str) or len(val) != 64:
+                    return False
+                obj[pref_key] = val
+            elif k == "storer":
+                sval = str(val).strip().lower()
+                if not sval:
+                    return False
+                obj[pref_key] = sval
+            else:
+                obj[pref_key] = str(val)
+    return True
+
+
+def _parse_payout_payload(obj: dict[str, Any]) -> Optional[dict[str, Any]]:
+    art_id = obj.get("art_id", "")
+    obj["art_id"] = _normalize_art_id(art_id, prefer_prefix=False)
+    epoch = int(obj.get("epoch", -1))
+    if epoch < 0:
+        return None
+    
+    parsed_rec = _parse_payout_recipients(obj.get("recipients") or [])
+    if parsed_rec is None:
+        return None
+    obj["recipients"] = parsed_rec
+
+    if not _parse_payout_proof_hints(obj):
+        return None
+    
+    return obj
+
+
+def _is_valid_sha256_hex(x: str) -> bool:
+    return bool(HEX64_RE.fullmatch(x.strip().lower()))
+
+
+def _is_valid_mime(x: str) -> bool:
+    if not isinstance(x, str):
+        return False
+    x = x.strip()
+    if not x:
+        return False
+    if len(x) > 64:
+        return False
+    return bool(MIME_RE.fullmatch(x))
+
+
+def _is_valid_tsar_address(addr: str) -> bool:
+    hrp, data = bech32_decode(addr)
+    if hrp is None or hrp != CFG.ADDRESS_PREFIX:
+        return False
+    prog = bytes(convertbits(data[1:], 5, 8, False))
+    return len(prog) in (20, 32)
+
+
+def _is_valid_art_id(art_id: str) -> bool:
+    if not isinstance(art_id, str):
+        return False
+    return bool(ART_ID_RE.fullmatch(art_id.strip().lower()))
+
+
+def _strip_art_prefix(art_id: str) -> str:
+    aid = (art_id or "").strip().lower()
+    if aid.startswith(CFG.ART_ID_PREFIX):
+        return aid[CFG.ART_ID_PREFIX_LEN:]
+    return aid
+
+
+def _decorate_art_id(base_hex: str) -> str:
+    base = (base_hex or "").strip().lower()
+    if not HEX64_RE.fullmatch(base):
+        raise ValueError("bad_art_id_hash")
+    return CFG.ART_ID_PREFIX + base[:CFG.ART_ID_BODY_LEN]
+
+
+def _normalize_art_id(art_id: str, *, prefer_prefix: bool = True) -> str:
+    """
+    Accept legacy 64-hex art_id or new prefixed form.
+    If prefer_prefix=True and legacy is provided, return prefixed variant; otherwise preserve legacy.
+    """
+    if not isinstance(art_id, str):
+        raise ValueError("bad_art_id")
+    aid = art_id.strip().lower()
+    if aid.startswith(CFG.ART_ID_PREFIX):
+        body = aid[CFG.ART_ID_PREFIX_LEN:]
+        if len(body) != CFG.ART_ID_BODY_LEN or not re.fullmatch(r"[0-9a-f]+", body):
+            raise ValueError("bad_art_id")
+        return aid
+    if HEX64_RE.fullmatch(aid):
+        return _decorate_art_id(aid) if prefer_prefix else aid
+    raise ValueError("bad_art_id")
+
+
+def _encode_comment(comment_text: str) -> str:
+    if not isinstance(comment_text, str):
+        raise ValueError("comment_text must be str")
+    data = comment_text.encode("utf-8")
+    if not data:
+        raise ValueError("empty_comment")
+    if len(data) > int(CFG.GRAFFITI_COMMENT_MAX_BYTES):
+        raise ValueError("comment_too_large")
+    return data.hex()
+
+
+def _compact_json(obj: Dict[str, Any]) -> bytes:
+    return json.dumps(obj, separators=CFG.CANONICAL_SEP, ensure_ascii=True).encode('ascii')
+
+
+def _guard_payload_size(data: bytes) -> None:
+    limit = CFG.MAX_GRAFFITI_OPRET
+    if len(data) > limit:
+        raise ValueError(f"graffiti_opreturn_too_large: {len(data)} > {limit}")
+
+
+def _pool_redeem_script(art_id: str) -> bytes:
+    """
+    Deterministic redeem script for storage pool payouts (P2WSH).
+    Script: <push art_digest> OP_EQUAL
+    Witness must push matching art_digest to spend.
+    """
+    art_raw = _strip_art_prefix(_normalize_art_id(art_id, prefer_prefix=False))
+    art_bytes = bytes.fromhex(art_raw)
+    if len(art_bytes) > 75:
+        art_bytes = hashlib.sha256(art_bytes).digest()
+    push_len = len(art_bytes)
+    return bytes([push_len]) + art_bytes + b"\x87"  # OP_EQUAL
+
+
+def _pool_spk_bytes(art_id_hex: str) -> bytes:
+    redeem = _pool_redeem_script(art_id_hex)
+    prog = hashlib.sha256(redeem).digest()
+    return Script([0, prog]).serialize()
+
+
+def _find_pool_utxos(utxo_db, art_id: str) -> list[dict]:
+    """
+    Cari UTXO yang script_pubkey-nya sesuai pool P2WSH untuk art_id.
+    utxo_db: instance UTXODB (punya .utxos dict).
+    """
+    spk_hex = _pool_spk_bytes(art_id).hex()
+    out: list[dict] = []
+    # Coba via index get() jika tersedia
+    bucket = utxo_db.get(spk_hex) or {}
+    if isinstance(bucket, dict):
+        for key, entry in bucket.items():
+            txid_hex, idx_str = key.split(":")
+            amt = int(entry.get("amount", entry.get("tx_out", {}).get("amount", 0)))
+            out.append({
+                "txid": txid_hex,
+                "vout": int(idx_str),
+                "amount": amt,
+                "script_pubkey": spk_hex,
+            })
+
+    # Fallback: scan utxo_db.utxos in-memory
+    for key, entry in getattr(utxo_db, "utxos", {}).items():
+        tx_out = entry.get("tx_out") if isinstance(entry, dict) else None
+        if not isinstance(tx_out, dict):
+            continue
+        spk = tx_out.get("script_pubkey")
+        if spk and str(spk).lower() == spk_hex:
+            amt = int(tx_out.get("amount", 0))
+            txid_hex, idx_str = key.split(":")
+            out.append({
+                "txid": txid_hex,
+                "vout": int(idx_str),
+                "amount": amt,
+                "script_pubkey": spk_hex,
+            })
+    # dedup by outpoint
+    uniq = {}
+    for item in out:
+        k = f"{item.get('txid')}:{item.get('vout')}"
+        uniq[k] = item
+    out = list(uniq.values())
+    out.sort(key=lambda r: r.get("amount", 0))
+    return out
+
+
 __all__ = [
     "build_metadata",
     "build_comment_metadata",
     "build_payout_metadata",
     "build_payout_tx",
-    "find_pool_utxos",
+    "_find_pool_utxos",
     "encode_payload",
     "build_script",
     "build_opret_hex",

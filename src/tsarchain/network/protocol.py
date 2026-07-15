@@ -25,16 +25,176 @@ from .peers_storage import load_node_key, save_node_key
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.protocol")
 
+
 _SEND_DISCONNECT_LAST = 0.0
 _SEND_DISCONNECT_COUNT = 0
 _SEND_DISCONNECT_WINDOW = 5.0  # seconds to throttle repeated disconnect logs
-
 
 # -----------------------------
 # DISCONECT SPAM FILTER LOGGING
 # -----------------------------
 WIN_DISCONNECT = {10053, 10054, 10058, 10060}  # WSAECONNABORTED, WSAECONNRESET, WSAESHUTDOWN, WSAETIMEDOUT
 POSIX_DISCONNECT = {errno.ECONNRESET, errno.EPIPE, errno.ECONNABORTED, errno.ETIMEDOUT}
+
+# ----------------------------------
+# NONCE CACHE for ANTI-REPLAY GUARD
+# ----------------------------------
+_nonce_lock = threading.RLock()
+_nonce_cache: dict[str, dict[str, int]] = {}
+
+
+def send_message(sock: socket.socket, payload: bytes, *, max_len: int | None = None):
+    cap = int(max_len) if max_len is not None else int(CFG.MAX_MSG)
+    if len(payload) + len(CFG.NETWORK_MAGIC) > cap:
+        raise ValueError("Message too large")
+    
+    body = CFG.NETWORK_MAGIC + payload
+    n = len(body)
+    hdr = struct.pack(">I", n)
+    try:
+        sock.sendall(hdr + body)
+    except Exception as e:
+        if _is_disconnect_exc(e):
+            global _SEND_DISCONNECT_LAST, _SEND_DISCONNECT_COUNT
+            _SEND_DISCONNECT_COUNT += 1
+            now = time.time()
+            if now - _SEND_DISCONNECT_LAST >= _SEND_DISCONNECT_WINDOW:
+                log.debug("[send_message] peer closed during send (%s) count=%d", getattr(e, "winerror", getattr(e, "errno", e)), _SEND_DISCONNECT_COUNT)
+                _SEND_DISCONNECT_LAST = now
+                _SEND_DISCONNECT_COUNT = 0
+            return
+        raise
+
+
+def recv_message(sock, timeout: float | None = None, max_len: int | None = None, *, peer_ip: str | None = None, ban_on_bad: bool = False, on_misbehave=None):
+    cap = int(max_len) if max_len is not None else int(CFG.MAX_MSG)
+    if timeout is not None:
+        sock.settimeout(timeout)
+    try:
+        hdr = _recv_exact(sock, 4)
+        n = struct.unpack(">I", hdr)[0]
+        if n <= 0 or n > cap:
+            if ban_on_bad and peer_ip and callable(on_misbehave):
+                on_misbehave(peer_ip, CFG.BAN_MALICIOUS_RPC)
+                log.warning("[recv_message] oversize/invalid frame from %s (len=%s) temp-ban", peer_ip, n)
+            return None
+        body = _recv_exact(sock, n)
+        if not body.startswith(CFG.NETWORK_MAGIC):
+            if ban_on_bad and peer_ip and callable(on_misbehave):
+                on_misbehave(peer_ip, CFG.BAN_MALICIOUS_RPC)
+                log.warning("[recv_message] bad magic from %s (temp-ban)", peer_ip)
+            return None
+        return body[len(CFG.NETWORK_MAGIC):]
+    except Exception as e:
+        if _is_disconnect_exc(e):
+            return None
+        return None
+
+
+def sniff_first_json_frame(sock: socket.socket, timeout: float = 2.0, *, peer_ip: str | None = None, on_misbehave=None) -> tuple[bytes | None, dict | None]:
+    raw = recv_message(sock, timeout=timeout, max_len=CFG.MAX_HANDSHAKE_BYTES, peer_ip=peer_ip, ban_on_bad=True, on_misbehave=on_misbehave)
+    if not raw:
+        return None, None
+    return raw, json.loads(raw.decode("utf-8"))
+
+
+def load_or_create_keypair_at(path: str) -> tuple[str, str, str]:
+    node_key_norm = os.path.normpath(CFG.NODE_KEY_PATH)
+        
+    if node_key_norm:
+        record = load_node_key(path)
+        if record and record.get("id") and record.get("pubkey") and record.get("privkey"):
+            return record["id"], record["pubkey"], record["privkey"]
+
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            obj = json.load(f)
+        if node_key_norm:
+            save_node_key(path, obj)
+        return obj["id"], obj["pubkey"], obj["privkey"]
+
+    sk = SigningKey.generate()
+    vk = sk.verify_key
+    priv_hex = sk.encode(encoder=HexEncoder).decode()
+    pub_hex  = vk.encode(encoder=HexEncoder).decode()
+    node_id  = hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()
+    payload = {"id": node_id, "pubkey": pub_hex, "privkey": priv_hex, "created": int(time.time())}
+    if node_key_norm:
+        save_node_key(path, payload)
+    else:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        os.chmod(path, 0o600)
+    return node_id, pub_hex, priv_hex
+
+
+def is_envelope(obj: dict) -> bool:
+    return isinstance(obj, dict) and \
+           "net_id" in obj and "from" in obj and "msg" in obj and \
+           "sig" in obj and "ts" in obj and "nonce" in obj
+
+
+def build_envelope(inner_msg: dict, node_ctx: dict, extra: dict | None = None) -> dict:        
+    ts_now = int(time.time())
+    nonce = _gen_nonce(16)
+    outer = {
+        "net_id": node_ctx["net_id"],
+        "ts": ts_now,
+        "nonce": nonce,
+        "from": node_ctx["node_id"],
+        "msg": inner_msg
+    }
+    if extra:
+        outer.update(extra)
+    to_sign = _canonical_dumps({"msg": inner_msg, "ts": ts_now, "nonce": nonce, "from": node_ctx["node_id"]})
+    outer["sig"] = _sign_message_hex(node_ctx["privkey"], to_sign)    
+    return outer
+
+
+def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict: 
+    net_id = envelope.get("net_id")
+    if net_id != CFG.DEFAULT_NET_ID:
+        raise ValueError("wrong network id")
+    ts_val = envelope.get("ts")
+    if not isinstance(ts_val, int) or abs(int(time.time()) - ts_val) > CFG.REPLAY_WINDOW_SEC:
+        raise ValueError("timestamp window violation")
+    if not envelope.get("nonce"):
+        raise ValueError("missing nonce")
+
+    envelope.pop("hmac", None)
+    node_id = envelope.get("from")
+    if not node_id:
+        raise ValueError("missing node_id")
+    inner = envelope.get("msg")
+    if not isinstance(inner, dict):
+        raise ValueError("missing msg")
+    to_sign = _canonical_dumps({"msg": inner, "ts": ts_val, "nonce": envelope["nonce"], "from": node_id})
+    pub = None
+    if callable(get_pubkey_by_nodeid):
+        pub = get_pubkey_by_nodeid(node_id)
+    if not pub:
+        pub = envelope.get("pubkey")
+        if not pub:
+            raise ValueError("unknown peer pubkey and not provided")
+    # Enforce binding: node_id must equal sha256(pubkey)
+    derived = hashlib.sha256(bytes.fromhex(pub)).hexdigest()
+    if derived != node_id:
+        raise ValueError("node_id/pubkey mismatch")
+    if not _verify_signature(pub, to_sign, envelope.get("sig", "")):
+        raise ValueError("bad signature")
+    # Anti-replay within REPLAY_WINDOW_SEC using per-sender nonce cache
+    _nonce_register(node_id, str(envelope.get("nonce")))
+    return inner
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
+def _nonce_total_entries() -> int:
+    return sum(len(rec) for rec in _nonce_cache.values())
+
 
 def _is_disconnect_exc(e: BaseException) -> bool:
     if isinstance(e, (ConnectionError, ConnectionResetError, ConnectionAbortedError, TimeoutError, socket.timeout, BrokenPipeError)):
@@ -45,15 +205,6 @@ def _is_disconnect_exc(e: BaseException) -> bool:
         return (code in POSIX_DISCONNECT) or (w in WIN_DISCONNECT)
     return False
 
-
-# ----------------------------------
-# NONCE CACHE for ANTI-REPLAY GUARD
-# ----------------------------------
-_nonce_lock = threading.RLock()
-_nonce_cache: dict[str, dict[str, int]] = {}
-
-def _nonce_total_entries() -> int:
-    return sum(len(rec) for rec in _nonce_cache.values())
 
 def _nonce_prune_expired_locked(now_ts: int):
     ttl = CFG.REPLAY_WINDOW_SEC
@@ -66,6 +217,7 @@ def _nonce_prune_expired_locked(now_ts: int):
             empty_senders.append(sender)
     for sender in empty_senders:
         _nonce_cache.pop(sender, None)
+
 
 def _nonce_prune_global_if_needed_locked():
     total = _nonce_total_entries()
@@ -90,6 +242,7 @@ def _nonce_prune_global_if_needed_locked():
                 _nonce_cache.pop(s, None)
             to_evict -= 1
         i += 1
+
 
 def _nonce_register(sender: str, nonce: str) -> None:
     if not sender or not nonce:
@@ -122,57 +275,7 @@ def _nonce_register(sender: str, nonce: str) -> None:
         _nonce_prune_global_if_needed_locked()
 
 
-
-# -----------------------------
-# SEND & RECEIVE MESSAGE
-# -----------------------------
-def send_message(sock: socket.socket, payload: bytes, *, max_len: int | None = None):
-    cap = int(max_len) if max_len is not None else int(CFG.MAX_MSG)
-    if len(payload) + len(CFG.NETWORK_MAGIC) > cap:
-        raise ValueError("Message too large")
-    
-    body = CFG.NETWORK_MAGIC + payload
-    n = len(body)
-    hdr = struct.pack(">I", n)
-    try:
-        sock.sendall(hdr + body)
-    except Exception as e:
-        if _is_disconnect_exc(e):
-            global _SEND_DISCONNECT_LAST, _SEND_DISCONNECT_COUNT
-            _SEND_DISCONNECT_COUNT += 1
-            now = time.time()
-            if now - _SEND_DISCONNECT_LAST >= _SEND_DISCONNECT_WINDOW:
-                log.debug("[send_message] peer closed during send (%s) count=%d", getattr(e, "winerror", getattr(e, "errno", e)), _SEND_DISCONNECT_COUNT)
-                _SEND_DISCONNECT_LAST = now
-                _SEND_DISCONNECT_COUNT = 0
-            return
-        raise
-
-def recv_message(sock, timeout: float | None = None, max_len: int | None = None, *, peer_ip: str | None = None, ban_on_bad: bool = False, on_misbehave=None):
-    cap = int(max_len) if max_len is not None else int(CFG.MAX_MSG)
-    if timeout is not None:
-        sock.settimeout(timeout)
-    try:
-        hdr = recv_exact(sock, 4)
-        n = struct.unpack(">I", hdr)[0]
-        if n <= 0 or n > cap:
-            if ban_on_bad and peer_ip and callable(on_misbehave):
-                on_misbehave(peer_ip, CFG.BAN_MALICIOUS_RPC)
-                log.warning("[recv_message] oversize/invalid frame from %s (len=%s) temp-ban", peer_ip, n)
-            return None
-        body = recv_exact(sock, n)
-        if not body.startswith(CFG.NETWORK_MAGIC):
-            if ban_on_bad and peer_ip and callable(on_misbehave):
-                on_misbehave(peer_ip, CFG.BAN_MALICIOUS_RPC)
-                log.warning("[recv_message] bad magic from %s (temp-ban)", peer_ip)
-            return None
-        return body[len(CFG.NETWORK_MAGIC):]
-    except Exception as e:
-        if _is_disconnect_exc(e):
-            return None
-        return None
-
-def recv_exact(sock: socket.socket, n: int) -> bytes:
+def _recv_exact(sock: socket.socket, n: int) -> bytes:
     buf = b""
     while len(buf) < n:
         part = sock.recv(min(n - len(buf), int(CFG.BUFFER_SIZE)))
@@ -181,129 +284,44 @@ def recv_exact(sock: socket.socket, n: int) -> bytes:
         buf += part
     return buf
 
-def sniff_first_json_frame(sock: socket.socket, timeout: float = 2.0, *, peer_ip: str | None = None, on_misbehave=None) -> tuple[bytes | None, dict | None]:
-    raw = recv_message(sock, timeout=timeout, max_len=CFG.MAX_HANDSHAKE_BYTES, peer_ip=peer_ip, ban_on_bad=True, on_misbehave=on_misbehave)
-    if not raw:
-        return None, None
-    return raw, json.loads(raw.decode("utf-8"))
 
-
-
-# -----------------------------
-# KEYPAIR HELPER
-# -----------------------------
-def load_or_create_keypair_at(path: str) -> tuple[str, str, str]:
-    node_key_norm = os.path.normpath(CFG.NODE_KEY_PATH)
-        
-    if node_key_norm:
-        record = load_node_key(path)
-        if record and record.get("id") and record.get("pubkey") and record.get("privkey"):
-            return record["id"], record["pubkey"], record["privkey"]
-
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            obj = json.load(f)
-        if node_key_norm:
-            save_node_key(path, obj)
-        return obj["id"], obj["pubkey"], obj["privkey"]
-
-    sk = SigningKey.generate()
-    vk = sk.verify_key
-    priv_hex = sk.encode(encoder=HexEncoder).decode()
-    pub_hex  = vk.encode(encoder=HexEncoder).decode()
-    node_id  = hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()
-    payload = {"id": node_id, "pubkey": pub_hex, "privkey": priv_hex, "created": int(time.time())}
-    if node_key_norm:
-        save_node_key(path, payload)
-    else:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-        os.chmod(path, 0o600)
-    return node_id, pub_hex, priv_hex
-
-
-# -----------------------------
-# ENVELOPE & SIGNATURE
-# -----------------------------
-def canonical_dumps(obj) -> bytes:
+def _canonical_dumps(obj) -> bytes:
     return json.dumps(obj, separators=CFG.CANONICAL_SEP, sort_keys=True, ensure_ascii=False).encode('utf-8')
 
-def gen_nonce(nbytes: int = 16) -> str:
+
+def _gen_nonce(nbytes: int = 16) -> str:
     return secrets.token_hex(nbytes)
 
-def sign_message_hex(privkey_hex: str, payload: bytes) -> str:
+
+def _sign_message_hex(privkey_hex: str, payload: bytes) -> str:
     sk = SigningKey(bytes.fromhex(privkey_hex))
     sig = sk.sign(payload).signature.hex()
     return sig
 
-def verify_signature(pubkey_hex: str, payload: bytes, sig_hex: str) -> bool:
+
+def _verify_signature(pubkey_hex: str, payload: bytes, sig_hex: str) -> bool:
     VerifyKey(bytes.fromhex(pubkey_hex)).verify(payload, bytes.fromhex(sig_hex))
     return True
 
-def is_envelope(obj: dict) -> bool:
-    return isinstance(obj, dict) and \
-           "net_id" in obj and "from" in obj and "msg" in obj and \
-           "sig" in obj and "ts" in obj and "nonce" in obj
-
-def build_envelope(inner_msg: dict, node_ctx: dict, extra: dict | None = None) -> dict:        
-    ts_now = int(time.time())
-    nonce = gen_nonce(16)
-    outer = {
-        "net_id": node_ctx["net_id"],
-        "ts": ts_now,
-        "nonce": nonce,
-        "from": node_ctx["node_id"],
-        "msg": inner_msg
-    }
-    if extra:
-        outer.update(extra)
-    to_sign = canonical_dumps({"msg": inner_msg, "ts": ts_now, "nonce": nonce, "from": node_ctx["node_id"]})
-    outer["sig"] = sign_message_hex(node_ctx["privkey"], to_sign)    
-    return outer
-
-def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict: 
-    net_id = envelope.get("net_id")
-    if net_id != CFG.DEFAULT_NET_ID:
-        raise ValueError("wrong network id")
-    ts_val = envelope.get("ts")
-    if not isinstance(ts_val, int) or abs(int(time.time()) - ts_val) > CFG.REPLAY_WINDOW_SEC:
-        raise ValueError("timestamp window violation")
-    if not envelope.get("nonce"):
-        raise ValueError("missing nonce")
-
-    envelope.pop("hmac", None)
-    node_id = envelope.get("from")
-    if not node_id:
-        raise ValueError("missing node_id")
-    inner = envelope.get("msg")
-    if not isinstance(inner, dict):
-        raise ValueError("missing msg")
-    to_sign = canonical_dumps({"msg": inner, "ts": ts_val, "nonce": envelope["nonce"], "from": node_id})
-    pub = None
-    if callable(get_pubkey_by_nodeid):
-        pub = get_pubkey_by_nodeid(node_id)
-    if not pub:
-        pub = envelope.get("pubkey")
-        if not pub:
-            raise ValueError("unknown peer pubkey and not provided")
-    # Enforce binding: node_id must equal sha256(pubkey)
-    derived = hashlib.sha256(bytes.fromhex(pub)).hexdigest()
-    if derived != node_id:
-        raise ValueError("node_id/pubkey mismatch")
-    if not verify_signature(pub, to_sign, envelope.get("sig", "")):
-        raise ValueError("bad signature")
-    # Anti-replay within REPLAY_WINDOW_SEC using per-sender nonce cache
-    _nonce_register(node_id, str(envelope.get("nonce")))
-    return inner
 
 # =========================================================
 # ==== [BEGIN: P2P SecureChannel X25519->HKDF->AESGCM] ====
 # =========================================================
 
 class SecureChannel:
-    def __init__(self, sock: socket.socket, role: str, node_id: str | None = None, node_pub: str | None = None, node_priv: str | None = None, get_pinned=None, set_pinned=None, peer_ip: str | None = None, on_misbehave=None):
+    def __init__(self,
+        sock: socket.socket,
+        role: str,
+        node_id: str | None = None,
+        node_pub: str | None = None,
+        node_priv: str | None = None,
+        get_pinned=None,
+        set_pinned=None,
+        peer_ip: str | None = None,
+        on_misbehave=None
+    ):
+
         assert role in ("client", "server")
-        
         self.sock = sock
         self.role = role
         self.node_id  = node_id
@@ -329,11 +347,54 @@ class SecureChannel:
             rekey_every_msg=int(CFG.P2P_REKEY_EVERY_MSG),
         )
 
+
     def handshake(self):  
         if self.role == "client":
             self._hs_client_auth()
         else:
             self._hs_server_auth()
+
+
+    def hs_server_from_obj(self, hs1_obj: dict):
+        if hs1_obj.get("type") != "P2P_HS1" or hs1_obj.get("net") != CFG.DEFAULT_NET_ID:
+            raise ValueError("bad P2P handshake (HS1)")
+        peer_hint = str(hs1_obj.get("node_id") or "")
+        pinned = self.get_pinned(peer_hint) if peer_hint else None
+        hs2, peer_node_id, peer_node_pub = self.native.server_accept_hs1(hs1_obj, pinned)
+        self.peer_node_id = peer_node_id
+        self.peer_node_pub = peer_node_pub
+        if not pinned:
+            self.set_pinned(peer_node_id, peer_node_pub)
+        send_message(self.sock, json.dumps(hs2).encode("utf-8"))
+
+
+    def send(self, pt: bytes):
+        seq, ct = self.native.encrypt(pt)
+        frame = {"type": "P2P_DATA", "seq": int(seq), "ct": bytes(ct).hex()}
+        send_message(self.sock, json.dumps(frame).encode("utf-8"))
+
+
+    def recv(self, timeout: float):
+        raw = recv_message(self.sock, timeout=timeout)
+        if not raw:
+            return None
+        obj = json.loads(raw.decode("utf-8"))
+        if obj.get("type") != "P2P_DATA":
+            raise ValueError("expecting P2P_DATA")
+        seq = obj.get("seq")
+        if not isinstance(seq, int):
+            raise ValueError("missing seq")
+        ct_hex = obj.get("ct")
+        if not isinstance(ct_hex, str):
+            raise ValueError("missing ct")
+        pt = self.native.decrypt(seq, bytes.fromhex(ct_hex))
+        return bytes(pt)
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
 
     def _hs_client_auth(self):
         hs1 = self.native.client_build_hs1()
@@ -354,6 +415,7 @@ class SecureChannel:
         if not pinned:
             self.set_pinned(peer_node_id, peer_node_pub)
 
+
     def _hs_server_auth(self):
         raw = recv_message(self.sock, timeout=float(CFG.HANDSHAKE_TIMEOUT), max_len=CFG.MAX_HANDSHAKE_BYTES, peer_ip=self.peer_ip, ban_on_bad=True, on_misbehave=self.on_misbehave)
         if not raw:
@@ -371,36 +433,3 @@ class SecureChannel:
         if not pinned:
             self.set_pinned(peer_node_id, peer_node_pub)
         send_message(self.sock, json.dumps(hs2).encode("utf-8"))
-
-    def hs_server_from_obj(self, hs1_obj: dict):
-        if hs1_obj.get("type") != "P2P_HS1" or hs1_obj.get("net") != CFG.DEFAULT_NET_ID:
-            raise ValueError("bad P2P handshake (HS1)")
-        peer_hint = str(hs1_obj.get("node_id") or "")
-        pinned = self.get_pinned(peer_hint) if peer_hint else None
-        hs2, peer_node_id, peer_node_pub = self.native.server_accept_hs1(hs1_obj, pinned)
-        self.peer_node_id = peer_node_id
-        self.peer_node_pub = peer_node_pub
-        if not pinned:
-            self.set_pinned(peer_node_id, peer_node_pub)
-        send_message(self.sock, json.dumps(hs2).encode("utf-8"))
-
-    def send(self, pt: bytes):
-        seq, ct = self.native.encrypt(pt)
-        frame = {"type": "P2P_DATA", "seq": int(seq), "ct": bytes(ct).hex()}
-        send_message(self.sock, json.dumps(frame).encode("utf-8"))
-
-    def recv(self, timeout: float):
-        raw = recv_message(self.sock, timeout=timeout)
-        if not raw:
-            return None
-        obj = json.loads(raw.decode("utf-8"))
-        if obj.get("type") != "P2P_DATA":
-            raise ValueError("expecting P2P_DATA")
-        seq = obj.get("seq")
-        if not isinstance(seq, int):
-            raise ValueError("missing seq")
-        ct_hex = obj.get("ct")
-        if not isinstance(ct_hex, str):
-            raise ValueError("missing ct")
-        pt = self.native.decrypt(seq, bytes.fromhex(ct_hex))
-        return bytes(pt)

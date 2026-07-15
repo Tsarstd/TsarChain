@@ -10,8 +10,8 @@ import heapq
 from collections import OrderedDict
 
 from ..core.tx import Tx
-from ..storage.kv import kv_enabled, iter_prefix, batch, clear_db
 from ..utils import config as CFG
+from ..storage.kv import kv_enabled, iter_prefix, batch, clear_db
 from ..utils.helpers import _estimate_tx_size_bytes
 
 from ..utils.tsar_logging import get_ctx_logger

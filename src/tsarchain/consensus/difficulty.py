@@ -26,9 +26,32 @@ class DifficultyManager:
     def __init__(self, blockchain: "Blockchain"):
         self.blockchain = blockchain
 
+
+    def calculate_expected_bits(self, next_height: int) -> int:
+        if next_height <= 0:
+            return int(CFG.MAX_BITS)
+        prefix = self.blockchain.chain[:next_height]
+        return self._expected_bits_on_prefix(prefix, next_height)
+
+
+    def median_time_past(self, k: int = CFG.MTP_WINDOWS) -> int:
+        if not self.blockchain.chain:
+            return 0
+
+        def _to_int_ts(v):
+            if isinstance(v, (int, float)):
+                return int(v)
+            return 0
+
+        window = self.blockchain.chain[-k:] if len(self.blockchain.chain) >= k else self.blockchain.chain
+        times = sorted(_to_int_ts(getattr(b, "timestamp", 0)) for b in window)
+        return times[len(times) // 2]
+
+
     def _ts(self, b) -> int:
         t = getattr(b, "timestamp", 0)
         return int(t) if isinstance(t, (int, float)) else 0
+
 
     def _expected_bits_on_prefix(self, prefix: "List[Block]", next_height: int) -> int:
         t = int(CFG.TARGET_BLOCK_TIME)
@@ -51,6 +74,7 @@ class DifficultyManager:
                 next_target = self._apply_eda(prefix, next_target, max_target, t)
 
         return int(target_to_bits(next_target))
+
 
     def _calculate_lwma_target(self, prefix: "List[Block]", n: int, t: int) -> int:
         window = prefix[-n:]
@@ -80,6 +104,7 @@ class DifficultyManager:
 
         return difficulty_to_target(next_diff)
 
+
     def _apply_diff_clamp(self, prefix: "List[Block]", next_target: int, max_target: int) -> int:
         prev_bits   = int(getattr(prefix[-1], "bits", CFG.MAX_BITS))
         prev_target = bits_to_target(prev_bits)
@@ -94,6 +119,7 @@ class DifficultyManager:
         if next_target > max_target:
             next_target = max_target
         return next_target
+
 
     def _apply_eda(self, prefix: "List[Block]", next_target: int, max_target: int, t: int) -> int:
         M = min(int(CFG.EDA_WINDOW), len(prefix))
@@ -117,11 +143,6 @@ class DifficultyManager:
                 next_target = min(int(eased_target), int(max_target))
         return next_target
 
-    def calculate_expected_bits(self, next_height: int) -> int:
-        if next_height <= 0:
-            return int(CFG.MAX_BITS)
-        prefix = self.blockchain.chain[:next_height]
-        return self._expected_bits_on_prefix(prefix, next_height)
 
     def _validate_difficulty(self, block: Block) -> bool:
         if block.height == 0:
@@ -131,11 +152,13 @@ class DifficultyManager:
             return False
         return True
 
+
     def _work_from_bits(self, bits: int) -> int:
         target = int(bits_to_target(bits))
         if target <= 0:
             return 0
         return (1 << 256) // (target + 1)
+
 
     def _compute_chainwork_for_chain(self, chain: List[Block]) -> int:
         cw = 0
@@ -144,6 +167,7 @@ class DifficultyManager:
             cw += w
             setattr(b, 'chainwork', cw)
         return cw
+
 
     def _common_ancestor_height(self, other_chain_blocks: List[Block]) -> int:
         if not self.blockchain.chain or not other_chain_blocks:
@@ -154,16 +178,3 @@ class DifficultyManager:
             if h in index:
                 return index[h]
         return -1
-
-    def median_time_past(self, k: int = CFG.MTP_WINDOWS) -> int:
-        if not self.blockchain.chain:
-            return 0
-
-        def _to_int_ts(v):
-            if isinstance(v, (int, float)):
-                return int(v)
-            return 0
-
-        window = self.blockchain.chain[-k:] if len(self.blockchain.chain) >= k else self.blockchain.chain
-        times = sorted(_to_int_ts(getattr(b, "timestamp", 0)) for b in window)
-        return times[len(times) // 2]

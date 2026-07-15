@@ -37,9 +37,273 @@ if TYPE_CHECKING:
 class ChainStorage:
     def __init__(self, blockchain: "Blockchain"):
         self.blockchain = blockchain
+
+
+    def save_chain(self, *, force_full: bool = False):
+        if CFG.CHAIN_FORCE_FULL_FLUSH:
+            force_full = True
+        if self.blockchain.in_memory:
+            return
+        backup_tip = None
+        backup_ts = None
+        with self.blockchain.lock:
+            tip_height = len(self.blockchain.chain) - 1
+            if tip_height < 0:
+                self.blockchain._chain_dirty_from = None
+                self.blockchain._persisted_height = -1
+                return
+
+            tip_hash = self.blockchain.chain[-1].hash().hex()
+            chain_meta = self._build_chain_meta(tip_height, tip_hash)
+            full_flush = force_full or self.blockchain._persisted_height < 0
+            if force_full:
+                self.blockchain._chain_dirty_from = 0
+                self.blockchain._persisted_height = -1
+
+            start_height = self._determine_save_start_height(tip_height, force_full, full_flush)
+            if not self._should_flush_chain(tip_height, start_height, full_flush):
+                return
+
+            if kv_enabled():
+                self._save_chain_kv(tip_height, start_height, full_flush, chain_meta)
+            else:
+                self._save_chain_json(tip_height, start_height, full_flush, chain_meta)
+
+            self.blockchain._chain_dirty_from = None
+            backup_tip = tip_height
+            backup_ts = int(getattr(self.blockchain.chain[-1], "timestamp", 0) or 0)
+
+        if backup_tip is not None:
+            self._maybe_backup_snapshot(backup_tip, tip_timestamp=backup_ts)
+
+
+    def load_chain(self):
+        if self.blockchain.in_memory:
+            return
+        meta = {}
+        data_list = []
+        if kv_enabled():
+            meta, data_list = self._fetch_kv_chain_data()
+            
+        if not isinstance(data_list, list):
+            data_list = []
+        data_list = self._apply_chain_journal(data_list)
+        if not data_list:
+            return
+        chain = [Block.from_dict(d) for d in data_list]
+        if not chain or not self._validate_loaded_chain(chain):
+            return
+
+        self.blockchain.chain = chain
+        self.blockchain._chain_meta = meta or {}
+        self.blockchain.total_blocks = len(self.blockchain.chain)
+        self.blockchain.total_supply = self.blockchain.calculate_total_supply()
+        self.blockchain.supply_in_tsar = self.blockchain.total_supply / CFG.TSAR if self.blockchain.total_supply else 0
+        self.blockchain._persisted_height = len(self.blockchain.chain) - 1
+        self.blockchain._chain_dirty_from = None
+        
+        interval = int(CFG.BLOCK_BACKUP_SNAPSHOT)
+        if interval > 0 and self.blockchain._persisted_height >= 0:
+            self.blockchain._snapshot_last_backup_height = (self.blockchain._persisted_height // interval) * interval
+        else:
+            self.blockchain._snapshot_last_backup_height = self.blockchain._persisted_height
+            
+        if not self.blockchain.in_memory:
+            self.blockchain._ensure_utxodb()
+            self.blockchain._utxo_last_flush_height = getattr(self.blockchain, "height", len(self.blockchain.chain) - 1)
+            self.blockchain._utxo_dirty = False
+            tip_ts = None
+            if self.blockchain.chain:
+                tip_ts = int(getattr(self.blockchain.chain[-1], "timestamp", 0) or 0)
+            annotate_local_snapshot_meta(height=getattr(self.blockchain, "height", len(self.blockchain.chain) - 1), tip_timestamp=tip_ts)
+
+
+    def save_state(self):
+        if self.blockchain.in_memory:
+            return
+        # Compute based on in-memory chain; avoid JSON IO when KV enabled
+        blocks_count = len(self.blockchain.chain)
+        self.blockchain.total_blocks = blocks_count
+        self.blockchain.total_supply = self.blockchain.calculate_total_supply()
+        self.blockchain.supply_in_tsar = self.blockchain.total_supply / CFG.TSAR if self.blockchain.total_supply else 0
+        data = self._compute_state_snapshot()
+        data["total_supply"] = int(self.blockchain.total_supply)
+        data["total_blocks"] = int(self.blockchain.total_blocks)
+
+        # Normalize schema version from config
+        data["schema_version"] = int(CFG.DATA_SCHEMA_VERSION)
+
+        ordered = {
+            "schema_version": data.get("schema_version"),
+            "last_updated": data.get("last_updated"),
+            "total_blocks": data.get("total_blocks", self.blockchain.total_blocks),
+            "total_supply": data.get("total_supply", self.blockchain.total_supply),
+            "identity": data.get("identity", {}),
+            "chain": data.get("chain", {}),
+            "supply": data.get("supply", {}),
+            "transactions": data.get("transactions", {}),
+            "utxo": data.get("utxo", {}),
+            "graffiti": data.get("graffiti", {}),
+            "miners_snapshot": data.get("miners_snapshot", {}),
+        }
+
+        # Save to LMDB
+        if kv_enabled():
+            with batch('state') as b:
+                b.put(b'k:total_supply', str(int(self.blockchain.total_supply)).encode('utf-8'))
+                b.put(b'k:total_blocks', str(int(self.blockchain.total_blocks)).encode('utf-8'))
+                b.put(b'k:snapshot', json.dumps(ordered, separators=CFG.CANONICAL_SEP).encode('utf-8'))
+        else:
+            AtomicJSONFile(CFG.STATE_FILE, keep_backups=3).save(ordered)
+
+
+    def load_state(self):
+        if self.blockchain.in_memory:
+            return
+        data = self._read_snapshot_state()
+        self.blockchain.total_supply = int(data.get("total_supply", 0) or 0)
+        self.blockchain.total_blocks = int(data.get("total_blocks", 0) or 0)
+        self.blockchain.supply_in_tsar = self.blockchain.total_supply / CFG.TSAR if self.blockchain.total_supply else 0
+
+
 # =============================================================================
-# 1. HELPER
+# INTERNAL METHOD
 # =============================================================================
+
+
+    def _build_chain_meta(self, tip_height: int, tip_hash: str | None = None) -> dict:
+        return {
+            "schema_version": int(CFG.DATA_SCHEMA_VERSION),
+            "generated_at": int(time.time()),
+            "tip_height": int(tip_height),
+            "tip_hash": tip_hash,
+            "network_id": CFG.DEFAULT_NET_ID,
+            "pow_algo": CFG.POW_ALGO,
+            "max_bits": int(CFG.MAX_BITS),
+            "target_block_time_sec": int(CFG.TARGET_BLOCK_TIME),
+            "blocks": int(tip_height + 1 if tip_height >= 0 else 0),
+        }
+
+
+    def _determine_save_start_height(self, tip_height: int, force_full: bool, full_flush: bool) -> Optional[int]:
+        if full_flush:
+            return 0
+        if self.blockchain._chain_dirty_from is not None:
+            return max(0, self.blockchain._chain_dirty_from)
+        if tip_height > self.blockchain._persisted_height:
+            return self.blockchain._persisted_height + 1
+        if force_full or self.blockchain._persisted_height < 0:
+            return 0
+        return None
+
+
+    def _should_flush_chain(self, tip_height: int, start_height: Optional[int], full_flush: bool) -> bool:
+        flush_interval = max(1, int(CFG.CHAIN_FLUSH_INTERVAL))
+        should_flush = (
+            full_flush
+            or tip_height < self.blockchain._persisted_height
+            or flush_interval <= 1
+        )
+        if not should_flush and start_height is not None:
+            pending = tip_height - self.blockchain._persisted_height if self.blockchain._persisted_height >= 0 else tip_height + 1
+            if pending < flush_interval:
+                if self.blockchain._chain_dirty_from is None:
+                    self.blockchain._chain_dirty_from = start_height
+                else:
+                    self.blockchain._chain_dirty_from = min(self.blockchain._chain_dirty_from, start_height)
+                return False
+        return True
+
+
+    def _save_chain_kv(self, tip_height: int, start_height: Optional[int], full_flush: bool, chain_meta: dict):
+        if full_flush:
+            clear_db('chain')
+            self.blockchain._persisted_height = -1
+            
+        cw_prev = 0
+        if start_height and start_height > 0:
+            prev_blk = self.blockchain.chain[start_height - 1]
+            cw_prev = int(getattr(prev_blk, "chainwork", 0) or 0)
+            if cw_prev == 0:
+                cw_prev = int(self.blockchain._compute_chainwork_for_chain(self.blockchain.chain[:start_height]))
+                
+        if tip_height < self.blockchain._persisted_height:
+            self._prune_chain_store(tip_height + 1)
+            self.blockchain._persisted_height = tip_height
+            
+        if start_height is not None and start_height <= tip_height:
+            with batch('chain') as b:
+                b.put(b'__meta__', json.dumps(chain_meta, separators=CFG.CANONICAL_SEP).encode('utf-8'))
+                for height in range(start_height, tip_height + 1):
+                    key = f"h:{height:012d}".encode('utf-8')
+                    blk_dict, cw_prev = self._serialize_block_for_store(self.blockchain.chain[height], cw_prev)
+                    payload = json.dumps(blk_dict, separators=CFG.CANONICAL_SEP).encode('utf-8')
+                    b.put(key, payload)
+            self.blockchain._persisted_height = tip_height
+
+
+    def _save_chain_json(self, tip_height: int, start_height: Optional[int], full_flush: bool, chain_meta: dict):
+        if not self._chain_journal_enabled() or full_flush or start_height in (None, 0):
+            if full_flush or start_height is not None or tip_height != self.blockchain._persisted_height:
+                self._save_chain_json_full(tip_height, chain_meta)
+        else:
+            if start_height is not None and start_height <= tip_height:
+                new_blocks = [self.blockchain.chain[h] for h in range(start_height, tip_height + 1)]
+                self._append_chain_journal(start_height, new_blocks)
+                self.blockchain._persisted_height = tip_height
+                if self._chain_journal_size() > int(CFG.CHAIN_JOURNAL_MAX_BYTES):
+                    self._save_chain_json_full(tip_height, chain_meta)
+
+
+    def _maybe_backup_snapshot(self, tip_height: int, *, tip_timestamp: int | None = None) -> None:
+        if tip_height < 0 or not kv_enabled():
+            return
+        if not self._backup_snapshot_enabled():
+            return
+
+        interval = int(CFG.BLOCK_BACKUP_SNAPSHOT or 0)
+        if interval <= 0:
+            return
+
+        last = getattr(self.blockchain, "_snapshot_last_backup_height", -1)
+        if last >= 0 and (tip_height - last) < interval:
+            return
+
+        target_dir = CFG.SNAPSHOT_BACKUP_DIR
+        if not target_dir:
+            return
+
+        lock = getattr(self.blockchain, "_snapshot_backup_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self.blockchain._snapshot_backup_lock = lock
+
+        with lock:
+            if getattr(self.blockchain, "_snapshot_backup_active", False):
+                return
+            self.blockchain._snapshot_backup_active = True
+
+        threading.Thread(
+            target=self._run_backup,
+            args=(target_dir, tip_height, tip_timestamp),
+            name="tsarchain.snapshot_backup",
+            daemon=True,
+        ).start()
+
+
+    def _serialize_block_for_store(self, block: Block, prev_chainwork: int = 0) -> tuple[dict, int]:
+        blk_dict = block.to_dict()
+        meta = self._build_block_meta(block, chainwork_so_far=prev_chainwork)
+        graff_posts, graff_comments, graff_payouts = self._extract_graffiti_events(block)
+        meta["graffiti_post_count"] = len(graff_posts)
+        meta["comment_count"] = len(graff_comments)
+        meta["payout_count"] = len(graff_payouts)
+        blk_dict["_meta"] = meta
+        cw = meta.get("chainwork", prev_chainwork)
+        cw_int = int(cw) if cw is not None else int(prev_chainwork)
+        return blk_dict, cw_int
+
+
     def _build_block_meta(self, block: Block, chainwork_so_far: int = 0) -> dict:
         txs = getattr(block, "transactions", []) or []
         tx_count = len(txs)
@@ -60,18 +324,6 @@ class ChainStorage:
         }
         return meta
 
-    def _build_chain_meta(self, tip_height: int, tip_hash: str | None = None) -> dict:
-        return {
-            "schema_version": int(CFG.DATA_SCHEMA_VERSION),
-            "generated_at": int(time.time()),
-            "tip_height": int(tip_height),
-            "tip_hash": tip_hash,
-            "network_id": CFG.DEFAULT_NET_ID,
-            "pow_algo": CFG.POW_ALGO,
-            "max_bits": int(CFG.MAX_BITS),
-            "target_block_time_sec": int(CFG.TARGET_BLOCK_TIME),
-            "blocks": int(tip_height + 1 if tip_height >= 0 else 0),
-        }
 
     def _extract_graffiti_events(self, block: Block) -> tuple[list[dict], list[dict], list[dict]]:
         posts: list[dict] = []
@@ -116,17 +368,6 @@ class ChainStorage:
                     })
         return posts, comments, payouts
 
-    def _serialize_block_for_store(self, block: Block, prev_chainwork: int = 0) -> tuple[dict, int]:
-        blk_dict = block.to_dict()
-        meta = self._build_block_meta(block, chainwork_so_far=prev_chainwork)
-        graff_posts, graff_comments, graff_payouts = self._extract_graffiti_events(block)
-        meta["graffiti_post_count"] = len(graff_posts)
-        meta["comment_count"] = len(graff_comments)
-        meta["payout_count"] = len(graff_payouts)
-        blk_dict["_meta"] = meta
-        cw = meta.get("chainwork", prev_chainwork)
-        cw_int = int(cw) if cw is not None else int(prev_chainwork)
-        return blk_dict, cw_int
 
     def _mark_chain_dirty(self, height: int = 0) -> None:
         if height < 0:
@@ -135,6 +376,7 @@ class ChainStorage:
             self.blockchain._chain_dirty_from = height
         else:
             self.blockchain._chain_dirty_from = min(self.blockchain._chain_dirty_from, height)
+
 
     def _prune_chain_store(self, start_height: int) -> None:
         if self.blockchain.in_memory or not kv_enabled():
@@ -149,6 +391,7 @@ class ChainStorage:
                 keys_to_remove.append(key)
         for key in keys_to_remove:
             delete('chain', key)
+
 
     def _reset_chain_store(self) -> None:
         if self.blockchain.in_memory:
@@ -168,13 +411,11 @@ class ChainStorage:
         self.blockchain._snapshot_last_backup_height = -1
 
 
-# =============================================================================
-# 2. SNAPSHOTS BACKUP (FOR FAST SYNC)
-# =============================================================================
     def _backup_snapshot_enabled(self) -> bool:
         if self.blockchain.in_memory:
             return False
         return bool(CFG.BACKUP_SNAPSHOT)
+
 
     def _write_snapshot_manifest(self, target_dir: str, meta: dict, height: int) -> None:
         data_path = os.path.join(target_dir)
@@ -198,41 +439,6 @@ class ChainStorage:
             json.dump(manifest, fh, indent=2, sort_keys=True)
 
 
-    def _maybe_backup_snapshot(self, tip_height: int, *, tip_timestamp: int | None = None) -> None:
-        if tip_height < 0 or not kv_enabled():
-            return
-        if not self._backup_snapshot_enabled():
-            return
-
-        interval = int(CFG.BLOCK_BACKUP_SNAPSHOT or 0)
-        if interval <= 0:
-            return
-
-        last = getattr(self.blockchain, "_snapshot_last_backup_height", -1)
-        if last >= 0 and (tip_height - last) < interval:
-            return
-
-        target_dir = CFG.SNAPSHOT_BACKUP_DIR
-        if not target_dir:
-            return
-
-        lock = getattr(self.blockchain, "_snapshot_backup_lock", None)
-        if lock is None:
-            lock = threading.Lock()
-            self.blockchain._snapshot_backup_lock = lock
-
-        with lock:
-            if getattr(self.blockchain, "_snapshot_backup_active", False):
-                return
-            self.blockchain._snapshot_backup_active = True
-
-        threading.Thread(
-            target=self._run_backup,
-            args=(target_dir, tip_height, tip_timestamp),
-            name="tsarchain.snapshot_backup",
-            daemon=True,
-        ).start()
-        
     def _run_backup(self, target_dir: str, height: int, ts_hint: int | None):
         try:
             # 1) copy LMDB env -> data/snapshot/
@@ -322,185 +528,6 @@ class ChainStorage:
             return None
 
 
-# =============================================================================
-# 3. JOURNAL (.json)        NOTE: journal is Python-only fallback for non-LMDB mode; not performance-critical, no plan to port to Rust for now.
-# =============================================================================
-    def _chain_journal_enabled(self) -> bool:
-        return (not self.blockchain.in_memory) and (not kv_enabled())
-
-    def _chain_journal_size(self) -> int:
-        path = CFG.CHAIN_JOURNAL_FILE
-        if path and os.path.exists(path):
-            try:
-                return os.path.getsize(path)
-            except Exception:
-                log.exception("[_chain_journal_size] Failed getting size for %s", path)
-                return 0
-        return 0
-
-    def _clear_chain_journal(self) -> None:
-        path = CFG.CHAIN_JOURNAL_FILE
-        if not path or not os.path.exists(path):
-            return
-        os.remove(path)
-
-    def _append_chain_journal(self, start_height: int, blocks: list[Block]) -> None:
-        if not self._chain_journal_enabled() or not blocks:
-            return
-        path = CFG.CHAIN_JOURNAL_FILE
-        if not path:
-            return
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "a", encoding="utf-8") as fh:
-            for offset, block in enumerate(blocks):
-                entry = {
-                    "height": int(start_height + offset),
-                    "block": block.to_dict(),
-                }
-                fh.write(json.dumps(entry, separators=CFG.CANONICAL_SEP) + "\n")
-
-    def _apply_chain_journal(self, chain_data: list[dict]) -> list[dict]:
-        path = CFG.CHAIN_JOURNAL_FILE
-        if not path or not os.path.exists(path):
-            return chain_data or []
-        result = list(chain_data or [])
-        with open(path, "r", encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    rec = json.loads(line)
-                except Exception:
-                    log.exception("[_apply_chain_journal] Failed parsing journal line")
-                    continue
-                height = rec.get("height")
-                block_dict = rec.get("block")
-                if block_dict is None:
-                    continue
-                try:
-                    height = int(height)
-                except Exception:
-                    log.exception("[_apply_chain_journal] Failed parsing journal height")
-                    continue
-                if height < 0:
-                    continue
-                if height < len(result):
-                    result[height] = block_dict
-                elif height == len(result):
-                    result.append(block_dict)
-                else:
-                    # journal gap; skip to avoid corrupting chain
-                    continue
-        return result
-
-
-# =============================================================================
-# 4. SAVE & LOAD CHAIN
-# =============================================================================
-    def save_chain(self, *, force_full: bool = False):
-        if CFG.CHAIN_FORCE_FULL_FLUSH:
-            force_full = True
-        if self.blockchain.in_memory:
-            return
-        backup_tip = None
-        backup_ts = None
-        with self.blockchain.lock:
-            tip_height = len(self.blockchain.chain) - 1
-            if tip_height < 0:
-                self.blockchain._chain_dirty_from = None
-                self.blockchain._persisted_height = -1
-                return
-
-            tip_hash = self.blockchain.chain[-1].hash().hex()
-            chain_meta = self._build_chain_meta(tip_height, tip_hash)
-            full_flush = force_full or self.blockchain._persisted_height < 0
-            if force_full:
-                self.blockchain._chain_dirty_from = 0
-                self.blockchain._persisted_height = -1
-
-            start_height = self._determine_save_start_height(tip_height, force_full, full_flush)
-            if not self._should_flush_chain(tip_height, start_height, full_flush):
-                return
-
-            if kv_enabled():
-                self._save_chain_kv(tip_height, start_height, full_flush, chain_meta)
-            else:
-                self._save_chain_json(tip_height, start_height, full_flush, chain_meta)
-
-            self.blockchain._chain_dirty_from = None
-            backup_tip = tip_height
-            backup_ts = int(getattr(self.blockchain.chain[-1], "timestamp", 0) or 0)
-
-        if backup_tip is not None:
-            self._maybe_backup_snapshot(backup_tip, tip_timestamp=backup_ts)
-
-    def _determine_save_start_height(self, tip_height: int, force_full: bool, full_flush: bool) -> Optional[int]:
-        if full_flush:
-            return 0
-        if self.blockchain._chain_dirty_from is not None:
-            return max(0, self.blockchain._chain_dirty_from)
-        if tip_height > self.blockchain._persisted_height:
-            return self.blockchain._persisted_height + 1
-        if force_full or self.blockchain._persisted_height < 0:
-            return 0
-        return None
-
-    def _should_flush_chain(self, tip_height: int, start_height: Optional[int], full_flush: bool) -> bool:
-        flush_interval = max(1, int(CFG.CHAIN_FLUSH_INTERVAL))
-        should_flush = (
-            full_flush
-            or tip_height < self.blockchain._persisted_height
-            or flush_interval <= 1
-        )
-        if not should_flush and start_height is not None:
-            pending = tip_height - self.blockchain._persisted_height if self.blockchain._persisted_height >= 0 else tip_height + 1
-            if pending < flush_interval:
-                if self.blockchain._chain_dirty_from is None:
-                    self.blockchain._chain_dirty_from = start_height
-                else:
-                    self.blockchain._chain_dirty_from = min(self.blockchain._chain_dirty_from, start_height)
-                return False
-        return True
-
-    def _save_chain_kv(self, tip_height: int, start_height: Optional[int], full_flush: bool, chain_meta: dict):
-        if full_flush:
-            clear_db('chain')
-            self.blockchain._persisted_height = -1
-            
-        cw_prev = 0
-        if start_height and start_height > 0:
-            prev_blk = self.blockchain.chain[start_height - 1]
-            cw_prev = int(getattr(prev_blk, "chainwork", 0) or 0)
-            if cw_prev == 0:
-                cw_prev = int(self.blockchain._compute_chainwork_for_chain(self.blockchain.chain[:start_height]))
-                
-        if tip_height < self.blockchain._persisted_height:
-            self._prune_chain_store(tip_height + 1)
-            self.blockchain._persisted_height = tip_height
-            
-        if start_height is not None and start_height <= tip_height:
-            with batch('chain') as b:
-                b.put(b'__meta__', json.dumps(chain_meta, separators=CFG.CANONICAL_SEP).encode('utf-8'))
-                for height in range(start_height, tip_height + 1):
-                    key = f"h:{height:012d}".encode('utf-8')
-                    blk_dict, cw_prev = self._serialize_block_for_store(self.blockchain.chain[height], cw_prev)
-                    payload = json.dumps(blk_dict, separators=CFG.CANONICAL_SEP).encode('utf-8')
-                    b.put(key, payload)
-            self.blockchain._persisted_height = tip_height
-
-    def _save_chain_json(self, tip_height: int, start_height: Optional[int], full_flush: bool, chain_meta: dict):
-        if not self._chain_journal_enabled() or full_flush or start_height in (None, 0):
-            if full_flush or start_height is not None or tip_height != self.blockchain._persisted_height:
-                self._save_chain_json_full(tip_height, chain_meta)
-        else:
-            if start_height is not None and start_height <= tip_height:
-                new_blocks = [self.blockchain.chain[h] for h in range(start_height, tip_height + 1)]
-                self._append_chain_journal(start_height, new_blocks)
-                self.blockchain._persisted_height = tip_height
-                if self._chain_journal_size() > int(CFG.CHAIN_JOURNAL_MAX_BYTES):
-                    self._save_chain_json_full(tip_height, chain_meta)
-
     def _save_chain_json_full(self, tip_height: int, chain_meta: dict):
         ordered_blocks = []
         cw_prev = 0
@@ -516,45 +543,6 @@ class ChainStorage:
         self.blockchain._persisted_height = tip_height
         self._clear_chain_journal()
 
-    def load_chain(self):
-        if self.blockchain.in_memory:
-            return
-        meta = {}
-        data_list = []
-        if kv_enabled():
-            meta, data_list = self._fetch_kv_chain_data()
-            
-        if not isinstance(data_list, list):
-            data_list = []
-        data_list = self._apply_chain_journal(data_list)
-        if not data_list:
-            return
-        chain = [Block.from_dict(d) for d in data_list]
-        if not chain or not self._validate_loaded_chain(chain):
-            return
-
-        self.blockchain.chain = chain
-        self.blockchain._chain_meta = meta or {}
-        self.blockchain.total_blocks = len(self.blockchain.chain)
-        self.blockchain.total_supply = self.blockchain.calculate_total_supply()
-        self.blockchain.supply_in_tsar = self.blockchain.total_supply / CFG.TSAR if self.blockchain.total_supply else 0
-        self.blockchain._persisted_height = len(self.blockchain.chain) - 1
-        self.blockchain._chain_dirty_from = None
-        
-        interval = int(CFG.BLOCK_BACKUP_SNAPSHOT)
-        if interval > 0 and self.blockchain._persisted_height >= 0:
-            self.blockchain._snapshot_last_backup_height = (self.blockchain._persisted_height // interval) * interval
-        else:
-            self.blockchain._snapshot_last_backup_height = self.blockchain._persisted_height
-            
-        if not self.blockchain.in_memory:
-            self.blockchain._ensure_utxodb()
-            self.blockchain._utxo_last_flush_height = getattr(self.blockchain, "height", len(self.blockchain.chain) - 1)
-            self.blockchain._utxo_dirty = False
-            tip_ts = None
-            if self.blockchain.chain:
-                tip_ts = int(getattr(self.blockchain.chain[-1], "timestamp", 0) or 0)
-            annotate_local_snapshot_meta(height=getattr(self.blockchain, "height", len(self.blockchain.chain) - 1), tip_timestamp=tip_ts)
 
     def _fetch_kv_chain_data(self) -> tuple[dict, list]:
         meta = {}
@@ -568,6 +556,7 @@ class ChainStorage:
         blocks.sort(key=lambda kv: kv[0])
         data_list = [json.loads(v.decode('utf-8')) for _, v in blocks]
         return meta, data_list
+
 
     def _validate_loaded_chain(self, chain: list) -> bool:
         if chain[0].height != 0 or chain[0].prev_block_hash != CFG.ZERO_HASH:
@@ -592,9 +581,6 @@ class ChainStorage:
         return True
 
 
-# =============================================================================
-# 5. STATE I/O & COMPUTE
-# =============================================================================
     def _read_snapshot_state(self) -> dict:
         if self.blockchain.in_memory:
             return {}
@@ -619,51 +605,6 @@ class ChainStorage:
             data = {}
         return data
 
-    def load_state(self):
-        if self.blockchain.in_memory:
-            return
-        data = self._read_snapshot_state()
-        self.blockchain.total_supply = int(data.get("total_supply", 0) or 0)
-        self.blockchain.total_blocks = int(data.get("total_blocks", 0) or 0)
-        self.blockchain.supply_in_tsar = self.blockchain.total_supply / CFG.TSAR if self.blockchain.total_supply else 0
-
-    def save_state(self):
-        if self.blockchain.in_memory:
-            return
-        # Compute based on in-memory chain; avoid JSON IO when KV enabled
-        blocks_count = len(self.blockchain.chain)
-        self.blockchain.total_blocks = blocks_count
-        self.blockchain.total_supply = self.blockchain.calculate_total_supply()
-        self.blockchain.supply_in_tsar = self.blockchain.total_supply / CFG.TSAR if self.blockchain.total_supply else 0
-        data = self._compute_state_snapshot()
-        data["total_supply"] = int(self.blockchain.total_supply)
-        data["total_blocks"] = int(self.blockchain.total_blocks)
-
-        # Normalize schema version from config
-        data["schema_version"] = int(CFG.DATA_SCHEMA_VERSION)
-
-        ordered = {
-            "schema_version": data.get("schema_version"),
-            "last_updated": data.get("last_updated"),
-            "total_blocks": data.get("total_blocks", self.blockchain.total_blocks),
-            "total_supply": data.get("total_supply", self.blockchain.total_supply),
-            "identity": data.get("identity", {}),
-            "chain": data.get("chain", {}),
-            "supply": data.get("supply", {}),
-            "transactions": data.get("transactions", {}),
-            "utxo": data.get("utxo", {}),
-            "graffiti": data.get("graffiti", {}),
-            "miners_snapshot": data.get("miners_snapshot", {}),
-        }
-
-        # Save to LMDB
-        if kv_enabled():
-            with batch('state') as b:
-                b.put(b'k:total_supply', str(int(self.blockchain.total_supply)).encode('utf-8'))
-                b.put(b'k:total_blocks', str(int(self.blockchain.total_blocks)).encode('utf-8'))
-                b.put(b'k:snapshot', json.dumps(ordered, separators=CFG.CANONICAL_SEP).encode('utf-8'))
-        else:
-            AtomicJSONFile(CFG.STATE_FILE, keep_backups=3).save(ordered)
 
     def _compute_state_snapshot(self) -> dict:
         tip_height = self.blockchain.height
@@ -754,6 +695,7 @@ class ChainStorage:
         self.blockchain._state_snapshot_cache = {"token": token, "data": dict(snapshot)}
         return snapshot
 
+
     def _compute_chain_stats(self, chain: list) -> dict:
         total_blocks = len(chain)
         tip_block = chain[-1] if chain else None
@@ -801,6 +743,7 @@ class ChainStorage:
             "est_hashrate_hps": est_hashrate_hps,
         }
 
+
     def _compute_transaction_and_miner_stats(self, chain: list) -> dict:
         total_txs = 0
         total_non_coinbase_txs = 0
@@ -832,6 +775,7 @@ class ChainStorage:
             "miner_counter": miner_counter,
         }
 
+
     def _compute_mempool_stats(self) -> dict:
         mempool_count = 0
         mempool_vbytes_est = None
@@ -847,6 +791,7 @@ class ChainStorage:
             "mempool_vbytes_est": mempool_vbytes_est,
             "mempool_bytes_est": mempool_bytes_est,
         }
+
 
     def _compute_utxo_supply_stats(self, utxo, tip_height: int) -> dict:
         utxo_set_size = 0
@@ -887,6 +832,7 @@ class ChainStorage:
             "immature_coinbase": immature_coinbase,
             "utxo_total_value": utxo_total_value,
         }
+
 
     def _compute_graffiti_stats(self, utxo) -> dict:
         graffiti_posts = 0
@@ -933,3 +879,82 @@ class ChainStorage:
             "pool_balances": int(total_pool_balances),
             "total_graffiti_storage": int(total_graffiti_storage),
         }
+
+
+# =============================================================================
+# JOURNAL (.json)        NOTE: journal is Python-only fallback for non-LMDB mode; not performance-critical, no plan to port to Rust for now.
+# =============================================================================
+
+
+    def _chain_journal_enabled(self) -> bool:
+        return (not self.blockchain.in_memory) and (not kv_enabled())
+
+
+    def _chain_journal_size(self) -> int:
+        path = CFG.CHAIN_JOURNAL_FILE
+        if path and os.path.exists(path):
+            try:
+                return os.path.getsize(path)
+            except Exception:
+                log.exception("[_chain_journal_size] Failed getting size for %s", path)
+                return 0
+        return 0
+
+
+    def _clear_chain_journal(self) -> None:
+        path = CFG.CHAIN_JOURNAL_FILE
+        if not path or not os.path.exists(path):
+            return
+        os.remove(path)
+
+
+    def _append_chain_journal(self, start_height: int, blocks: list[Block]) -> None:
+        if not self._chain_journal_enabled() or not blocks:
+            return
+        path = CFG.CHAIN_JOURNAL_FILE
+        if not path:
+            return
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            for offset, block in enumerate(blocks):
+                entry = {
+                    "height": int(start_height + offset),
+                    "block": block.to_dict(),
+                }
+                fh.write(json.dumps(entry, separators=CFG.CANONICAL_SEP) + "\n")
+
+
+    def _apply_chain_journal(self, chain_data: list[dict]) -> list[dict]:
+        path = CFG.CHAIN_JOURNAL_FILE
+        if not path or not os.path.exists(path):
+            return chain_data or []
+        result = list(chain_data or [])
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    log.exception("[_apply_chain_journal] Failed parsing journal line")
+                    continue
+                height = rec.get("height")
+                block_dict = rec.get("block")
+                if block_dict is None:
+                    continue
+                try:
+                    height = int(height)
+                except Exception:
+                    log.exception("[_apply_chain_journal] Failed parsing journal height")
+                    continue
+                if height < 0:
+                    continue
+                if height < len(result):
+                    result[height] = block_dict
+                elif height == len(result):
+                    result.append(block_dict)
+                else:
+                    # journal gap; skip to avoid corrupting chain
+                    continue
+        return result
