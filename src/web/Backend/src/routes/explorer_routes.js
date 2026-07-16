@@ -1,10 +1,13 @@
 const fs = require("node:fs");
+const fsPromises = require("node:fs/promises");
 const path = require("node:path");
 const router = require("express").Router();
 const { ExplorerService } = require("../services/explorerService");
 const { getConfig } = require("../config/env");
 const { createRateLimiter } = require("../utils/rateLimit");
-const { guessKind } = require("../utils/searchKind");
+const { guessKind, isHex64 } = require("../utils/searchKind");
+
+const isArtId = (s) => /^graf[0-9a-fA-F]{60}$/.test(s || "");
 
 const cfg = getConfig();
 const svc = new ExplorerService({ nodeHost: cfg.nodeHost, nodePort: cfg.nodePort });
@@ -17,23 +20,27 @@ let lastGraffitiCacheSweep = 0;
 const searchLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 20 });
 const graffitiMediaLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 40 });
 
-const touchFile = (filePath) => {
+const touchFile = async (filePath) => {
   try {
     const now = new Date();
-    fs.utimesSync(filePath, now, now);
+    await fsPromises.utimes(filePath, now, now);
   } catch (err) {
     console.warn("Failed to touch file:", err);
   }
 };
 
-const cleanupGraffitiCache = () => {
+const cleanupGraffitiCache = async () => {
   const now = Date.now();
   if (now - lastGraffitiCacheSweep < GRAFFITI_CACHE_SWEEP_MS) return;
   lastGraffitiCacheSweep = now;
-  if (!fs.existsSync(cacheDir)) return;
+  try {
+    await fsPromises.access(cacheDir);
+  } catch {
+    return;
+  }
   let entries;
   try {
-    entries = fs.readdirSync(cacheDir);
+    entries = await fsPromises.readdir(cacheDir);
   } catch (err) {
     console.warn("Failed to read cache directory:", err);
     return;
@@ -42,7 +49,7 @@ const cleanupGraffitiCache = () => {
     const fullPath = path.join(cacheDir, entry);
     let stat;
     try {
-      stat = fs.statSync(fullPath);
+      stat = await fsPromises.stat(fullPath);
     } catch (err) {
       console.warn("Failed to stat file:", err);
       continue;
@@ -50,7 +57,7 @@ const cleanupGraffitiCache = () => {
     if (!stat.isFile()) continue;
     if (now - stat.mtimeMs > GRAFFITI_CACHE_TTL_MS) {
       try {
-        fs.unlinkSync(fullPath);
+        await fsPromises.unlink(fullPath);
       } catch (err) {
         console.warn("Failed to unlink file:", err);
       }
@@ -76,13 +83,19 @@ const inferMediaType = (meta, filePath) => {
   return "application/octet-stream";
 };
 
-const findCachedFile = (artId) => {
-  if (fs.existsSync(cacheDir)) {
-    for (const ext of [".jpg", ".jpeg", ".mp4", ".bin"]) {
-      const candidate = path.join(cacheDir, `${artId}${ext}`);
-      if (fs.existsSync(candidate)) {
-        return candidate;
-      }
+const findCachedFile = async (artId) => {
+  try {
+    await fsPromises.access(cacheDir);
+  } catch {
+    return null;
+  }
+  for (const ext of [".jpg", ".jpeg", ".mp4", ".bin"]) {
+    const candidate = path.join(cacheDir, `${artId}${ext}`);
+    try {
+      await fsPromises.access(candidate);
+      return candidate;
+    } catch {
+      // file not found, continue
     }
   }
   return null;
@@ -108,6 +121,9 @@ router.get("/receipt", async (req, res, next) => {
     const txid = req.query.txid;
     if (!txid) {
       return res.status(400).json({ error: "missing_txid" });
+    }
+    if (!isHex64(txid)) {
+      return res.status(400).json({ error: "invalid_txid" });
     }
 
     const data = await svc.getReceipt(txid);
@@ -156,7 +172,12 @@ router.get("/blocks", async (req, res, next) => {
 
 router.get("/block/:id", async (req, res, next) => {
   try {
-    const data = await svc.getBlock(req.params.id);
+    const id = req.params.id;
+    const isHeight = /^\d{1,7}$/.test(id);
+    if (!isHeight && !isHex64(id)) {
+      return res.status(400).json({ error: "invalid_block_id" });
+    }
+    const data = await svc.getBlock(id);
     res.json({ status: "ok", data });
   } catch (err) {
     next(err);
@@ -165,7 +186,11 @@ router.get("/block/:id", async (req, res, next) => {
 
 router.get("/tx/:id", async (req, res, next) => {
   try {
-    const data = await svc.getTx(req.params.id);
+    const id = req.params.id;
+    if (!isHex64(id)) {
+      return res.status(400).json({ error: "invalid_txid" });
+    }
+    const data = await svc.getTx(id);
     res.json({ status: "ok", data });
   } catch (err) {
     next(err);
@@ -174,7 +199,11 @@ router.get("/tx/:id", async (req, res, next) => {
 
 router.get("/address/:addr", async (req, res, next) => {
   try {
-    const data = await svc.getAddress(req.params.addr);
+    const addr = req.params.addr;
+    if (!/^tsar[0-9a-zA-Z]{16,}$/.test(addr)) {
+      return res.status(400).json({ error: "invalid_address" });
+    }
+    const data = await svc.getAddress(addr);
     res.json({ status: "ok", data });
   } catch (err) {
     next(err);
@@ -183,7 +212,11 @@ router.get("/address/:addr", async (req, res, next) => {
 
 router.get("/graffiti/:artId", async (req, res, next) => {
   try {
-    const data = await svc.getGraffiti(req.params.artId);
+    const artId = req.params.artId;
+    if (!isArtId(artId)) {
+      return res.status(400).json({ error: "invalid_art_id" });
+    }
+    const data = await svc.getGraffiti(artId);
     if (!data) {
       return res.status(404).json({ error: "not_found" });
     }
@@ -195,9 +228,12 @@ router.get("/graffiti/:artId", async (req, res, next) => {
 
 router.get("/graffiti/:artId/media", graffitiMediaLimiter, async (req, res, next) => {
   try {
-    cleanupGraffitiCache();
+    cleanupGraffitiCache().catch((err) => console.warn("Cache cleanup error:", err));
     const artId = req.params.artId;
-    let filePath = findCachedFile(artId);
+    if (!isArtId(artId)) {
+      return res.status(400).json({ error: "invalid_art_id" });
+    }
+    let filePath = await findCachedFile(artId);
     let info = null;
     if (!filePath) {
       info = await svc.getGraffitiMediaInfo(artId);
@@ -206,11 +242,19 @@ router.get("/graffiti/:artId/media", graffitiMediaLimiter, async (req, res, next
       }
       filePath = resolveCachePath(info.cache_path);
     }
-    if (!filePath || !fs.existsSync(filePath)) {
+    
+    if (!filePath) {
       return res.status(404).json({ error: "media_not_found" });
     }
-    touchFile(filePath);
-    const stat = fs.statSync(filePath);
+    
+    try {
+      await fsPromises.access(filePath);
+    } catch {
+      return res.status(404).json({ error: "media_not_found" });
+    }
+
+    touchFile(filePath).catch((err) => console.warn("Touch file error:", err));
+    const stat = await fsPromises.stat(filePath);
     const size = stat.size;
     const type = inferMediaType(info?.meta, filePath);
     res.setHeader("Content-Type", type);

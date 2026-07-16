@@ -78,11 +78,12 @@ def _json_loads(raw: bytes) -> Optional[dict]:
 
 def get_receipt_file(txid: str) -> str:
     txid_norm = str(txid or "").strip().lower()
-    if not txid_norm:
+    txid_safe = os.path.basename(txid_norm).replace("..", "").replace("/", "").replace("\\", "")
+    if not txid_safe:
         return ""
     output_dir = "data/web/receipts"
     os.makedirs(output_dir, exist_ok=True)
-    return os.path.join(output_dir, f"{txid_norm[:64]}.jpg")
+    return os.path.join(output_dir, f"{txid_safe[:64]}.jpg")
 
 def is_receipt_fresh(file_path: str, max_age_seconds: int) -> bool:
     if not os.path.exists(file_path):
@@ -269,7 +270,6 @@ def get_block_from_storage(height: int) -> Optional[dict]:
             return _json_loads(bytes(raw))
     except Exception:
         log.exception("get_block_from_storage, fail")
-        pass
     
     return None
 
@@ -355,13 +355,15 @@ def set_prefetch_last_height(height: int) -> None:
     except Exception:
         log.warning("[webdb] Failed to save prefetch last height")
 
-def prefetch_blocks(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]) -> None:
+def prefetch_blocks(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]) -> bool:
     store = _open_store()
     if store is None:
         log.warning("[webdb] No storage available for prefetch")
-        return
+        return False
     
-    last_stored = get_last_stored_height()
+    last_stored = get_prefetch_last_height()
+    if last_stored == -1:
+        last_stored = get_last_stored_height()
     
     try:
         network_info = rpc_call({"type": "GET_NETWORK_INFO"}) or {}
@@ -371,17 +373,19 @@ def prefetch_blocks(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]
             tip_height = range_resp.get("tip_height")
     except Exception as exc:
         log.warning("[webdb] Failed to get tip height: %s", exc)
-        return
+        return False
     
     if tip_height is None or tip_height <= last_stored:
-        return
+        return False
     
     blocks_to_fetch = min(tip_height - last_stored, BLOCK_RANGE_LIMIT)
     if blocks_to_fetch <= 0:
-        return
+        return False
     
     log.info("[webdb] Prefetching %d blocks from height %d to %d", 
              blocks_to_fetch, last_stored + 1, tip_height)
+    
+    has_more = (tip_height - last_stored) > blocks_to_fetch
     
     try:
         start_height = last_stored + 1
@@ -393,12 +397,12 @@ def prefetch_blocks(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]
         
         if isinstance(resp, dict) and resp.get("error"):
             log.warning("[webdb] Prefetch failed: %s", resp.get("error"))
-            return
+            return False
         
         items = resp.get("items") or []
         if not items:
             log.info("[webdb] No new blocks to prefetch (empty response)")
-            return
+            return False
         
         new_items = []
         for item in items:
@@ -417,15 +421,22 @@ def prefetch_blocks(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]
             log.info("[webdb] Prefetched %d new blocks (height %d to %d)", 
                     len(new_items), new_items[0].get("height", 0), 
                     new_items[-1].get("height", 0))
-        else:
-            log.info("[webdb] All blocks already exist in storage")
             
-        if new_items:
             highest_new = max(item.get("height", 0) for item in new_items)
             set_prefetch_last_height(highest_new)
+        else:
+            log.info("[webdb] All blocks already exist in storage")
+            # If all blocks already exist, update the prefetch height to the maximum height in items
+            # to make progress and prevent scanning the same range in the next iterations
+            valid_heights = [item.get("height") for item in items if item.get("height") is not None]
+            if valid_heights:
+                set_prefetch_last_height(max(valid_heights))
+            
+        return has_more
             
     except Exception as exc:
         log.warning("[webdb] Prefetch exception: %s", exc)
+        return False
 
 # ==================== BLOCK RANGE PREFETCH SEND ====================
 
@@ -441,9 +452,15 @@ def start_prefetch_thread(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str
     def prefetch_worker():
         while _prefetch_running:
             try:
-                prefetch_blocks(rpc_call)
+                has_more = prefetch_blocks(rpc_call)
             except Exception as exc:
                 log.warning("[webdb] Prefetch worker exception: %s", exc)
+                has_more = False
+            
+            if has_more and _prefetch_running:
+                # Sleep briefly to prevent high CPU utilization during rapid catch-up
+                time.sleep(0.1)
+                continue
             
             for _ in range(PREFETCH_INTERVAL * 10):
                 if not _prefetch_running:
@@ -641,6 +658,7 @@ def fetch_graffiti_file(
 ) -> Dict[str, Any]:
     
     art_norm = (art_id or "").strip().lower()
+    art_norm = os.path.basename(art_norm).replace("..", "").replace("/", "").replace("\\", "")
     if not art_norm:
         return {"status": "error", "reason": "missing_art_id"}
 

@@ -123,19 +123,30 @@ def rpc_receipt(client, txid: str): # Receipt TXID Generator
     file_path = webdb.get_receipt_file(txid_norm)
     cache_key = _cache_key("receipt", txid_norm)
     cached = _cache_get(cache_key, refresh_ttl=True)
+
     if cached is not None:
         if webdb.is_receipt_fresh(file_path, max_age_seconds=RECEIPT_TTL):
             # File exists and is fresh (< 30 seconds)
-            result = webdb.read_receipt_file(file_path, txid_norm)
-            if result is not None:
-                return result
-            else:
-                if os.path.exists(file_path):
+            try:
+                result = webdb.read_receipt_file(file_path, txid_norm)
+                if result is not None:
+                    return result
+            except FileNotFoundError:
+                # File was deleted by the cleanup thread between the check and read
+                pass
+            
+            if os.path.exists(file_path):
+                try:
                     os.remove(file_path)
+                except Exception:
+                    pass
         else:
             # File is stale (> 30 seconds), clean it up
             if os.path.exists(file_path):
-                os.remove(file_path)
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
 
     tx_data = rpc_tx(client, txid_norm)
     if isinstance(tx_data, dict) and tx_data.get("error"):
@@ -159,6 +170,7 @@ def rpc_receipt(client, txid: str): # Receipt TXID Generator
         
     return result
 
+
 @benchmark(label="rpc_network", threshold_ms=15.0)
 def rpc_network(client):
     key = _cache_key("network")
@@ -171,6 +183,7 @@ def rpc_network(client):
             return info.get("data") or info
         return info
     return _cache_fetch(key, _fetch)
+
 
 @benchmark(label="rpc_block", threshold_ms=15.0)
 def rpc_block(client, val: str):
@@ -191,6 +204,7 @@ def rpc_block(client, val: str):
         return resp
     webdb.cache_set(key, resp, ttl_sec=0)
     return resp
+
 
 def rpc_block_range(client, opts: dict):
     global _prefetch_started
@@ -251,11 +265,13 @@ def rpc_block_range(client, opts: dict):
     
     return resp
 
+
 @benchmark(label="rpc_tx", threshold_ms=15.0)
 def rpc_tx(client, txid: str):
     txid_norm = str(txid).lower()
     key = _cache_key("tx", txid_norm)
     return _cache_fetch(key, lambda: _rpc_send(client, {"type": "GET_TX_DETAIL", "txid": txid_norm}))
+
 
 @benchmark(label="rpc_address", threshold_ms=15.0)
 def rpc_address(client, addr: str):
@@ -303,6 +319,7 @@ def rpc_address(client, addr: str):
     
     return out
 
+
 @benchmark(label="rpc_graffiti", threshold_ms=15.0)
 def rpc_graffiti(client, art_id: str):
     art_norm = str(art_id or "").strip()
@@ -339,6 +356,7 @@ def rpc_graffiti(client, art_id: str):
     if key and cache_ok:
         _cache_set(key, out, error_ttl)
     return out
+
 
 @benchmark(label="rpc_graffiti_posts", threshold_ms=15.0)
 def rpc_graffiti_posts(client, opts: dict):

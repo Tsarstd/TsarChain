@@ -13,6 +13,7 @@ const explorerRouter = require("./src/routes/explorer_routes");
 const healthRouter = require("./src/routes/health");
 
 const app = express();
+app.set('trust proxy', true);
 app.disable('x-powered-by');
 
 const cfg = getConfig();

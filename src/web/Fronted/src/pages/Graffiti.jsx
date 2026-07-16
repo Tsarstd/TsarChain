@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
 import PropTypes from "prop-types";
-import { useNavigate } from "react-router-dom";
-import { fetchGraffitiDetail, fetchGraffitiList } from "../api/explorer";
-import { fmtBytes } from "../utils/format";
 import { useDragScroll } from "./Block";
+import { fmtBytes } from "../utils/format";
+import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useState, memo } from "react";
 import { ResultGraffiti } from "../components/search/SearchResults";
+import { fetchGraffitiDetail, fetchGraffitiList } from "../api/explorer";
 
 const PAGE_SIZE = 20;
 const SCROLL_THRESHOLD = 80;
 
-const GraffitiCard = ({ item, onSelect, active, isGenesis }) => {
+const GraffitiCard = memo(({ item, onSelect, active, isGenesis }) => {
   const comments = item?.stats?.comments ?? item?.comments?.length ?? 0;
   const mime = item?.mime;
   const creator = item?.creator;
@@ -82,7 +82,7 @@ const GraffitiCard = ({ item, onSelect, active, isGenesis }) => {
       <div className="lane-card__id wrap">{item?.art_id || "-"}</div>
     </button>
   );
-};
+});
 
 const Graffiti = ({onSearchClick}) => {
   const navigate = useNavigate();
@@ -325,7 +325,7 @@ const Graffiti = ({onSearchClick}) => {
       <section className="section">
         {detailStatus === "error" && (
           <div className="result-empty">
-            {setMessage || "Failed to load graffiti details."}
+            {message || "Failed to load graffiti details."}
           </div>
         )}
         {detailStatus === "done" && detail ? <ResultGraffiti data={detail} onSearchClick={handleSearchClickLocal} /> : null}

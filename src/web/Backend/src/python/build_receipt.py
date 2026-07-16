@@ -492,7 +492,7 @@ class PaymentReceiptGenerator:
                 change_outputs = []
                 event_outputs = []
                 
-                input_addresses = (inp.get('address') for inp in inputs if inp.get('address'))
+                input_addresses = {inp.get('address') for inp in inputs if inp.get('address')}
                 
                 for out in outputs:
                     addr = out.get('address')

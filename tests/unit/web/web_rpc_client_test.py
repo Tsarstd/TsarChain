@@ -235,3 +235,18 @@ def test_exception_handling():
                 args, _ = mock_emit.call_args
                 assert args[0]["error"] == "rpc_exception"
 
+def test_rpc_receipt_race_condition(mock_client):
+    with patch("web.Backend.src.python.web_rpc_client._cache_get", return_value={"txid": "t1"}):
+        with patch("web.Backend.src.python.web_rpc_client.webdb.is_receipt_fresh", return_value=True):
+            with patch("web.Backend.src.python.web_rpc_client.webdb.read_receipt_file", side_effect=FileNotFoundError()):
+                with patch("web.Backend.src.python.web_rpc_client.rpc_tx", return_value={"txid": "t1"}) as mock_tx:
+                    with patch("web.Backend.src.python.build_receipt.PaymentReceiptGenerator") as mock_gen:
+                        mock_inst = MagicMock()
+                        mock_inst.generate_receipt_base64.return_value = {"status": "success", "regenerated": True}
+                        mock_gen.return_value = mock_inst
+                        
+                        res = rpc.rpc_receipt(mock_client, "t1")
+                        assert res["status"] == "success"
+                        assert res.get("regenerated") is True
+                        mock_tx.assert_called_once()
+

@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import time
 import threading
+
 from typing import Optional
+from typing import TYPE_CHECKING
 from bech32 import bech32_encode, convertbits
 
 # ---------------- Local Project ----------------
@@ -25,7 +27,6 @@ from ..contracts.graffiti_registry import GraffitiRegistry
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.consensus.validation")
 
-from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .blockchain import Blockchain
 

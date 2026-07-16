@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE and TRADEMARKS.md
 
+import os
 import time
 import pytest
 import base64
@@ -293,3 +294,38 @@ def test_block_storage_edge_cases(mock_store):
     assert webdb.get_last_stored_height() == 0
     mock_store.iter_prefix.side_effect = Exception("err")
     assert webdb.get_last_stored_height() == -1
+
+def test_path_traversal_sanitization():
+    # Test receipt file name sanitization
+    safe_path1 = webdb.get_receipt_file("../../../secret_file")
+    assert ".." not in safe_path1
+    assert "/" not in os.path.basename(safe_path1)
+    assert "\\" not in os.path.basename(safe_path1)
+    
+    safe_path2 = webdb.get_receipt_file("subdir/txid_hash")
+    assert "subdir" not in safe_path2
+    
+    # Test empty sanitization results
+    assert webdb.get_receipt_file("../..") == ""
+    
+    # Test fetch_graffiti_file sanitization
+    res = webdb.fetch_graffiti_file(lambda p: None, "../../..")
+    assert res["status"] == "error"
+    assert res["reason"] == "missing_art_id"
+
+def test_prefetch_blocks_has_more(mock_store):
+    mock_store.get_bytes.return_value = b"100"
+    rpc_call = MagicMock(return_value={
+        "height": 500,
+        "items": [{"height": h} for h in range(101, 301)]
+    })
+    has_more = webdb.prefetch_blocks(rpc_call)
+    assert has_more is True
+    
+    mock_store.get_bytes.return_value = b"100"
+    rpc_call_no_more = MagicMock(return_value={
+        "height": 250,
+        "items": [{"height": h} for h in range(101, 251)]
+    })
+    has_more_no = webdb.prefetch_blocks(rpc_call_no_more)
+    assert has_more_no is False

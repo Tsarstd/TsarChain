@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { useNavigate } from "react-router-dom";
-import { fetchBlockRange, fetchByKind } from "../api/explorer";
 import { fmtDateLong, timeAgo } from "../utils/format";
+import { fetchBlockRange, fetchByKind } from "../api/explorer";
 import { ResultBlock } from "../components/search/SearchResults";
+import { useCallback, useEffect, useRef, useState, memo } from "react";
 
 const PAGE_SIZE = 200;
 const SCROLL_THRESHOLD = 800;
 const CACHE_KEY = 'block_range_cache';
 const CACHE_EXPIRE_MS = 15 * 60 * 1000;
 
-const BlockCard = ({ item, onSelect, active, isGenesis }) => {
+const BlockCard = memo(({ item, onSelect, active, isGenesis }) => {
   const graffitiPosts = Number(item?.graffiti_posts || 0);
   const graffitiComments = Number(item?.graffiti_comments || 0);
   const blockId = item?.block_id;
@@ -66,7 +66,7 @@ const BlockCard = ({ item, onSelect, active, isGenesis }) => {
       <div className="lane-card__id wrap">{item?.hash || "-"}</div>
     </button>
   );
-};
+});
 
 // ============ Custom Hook for Drag Scroll ============
 export const useDragScroll = () => {

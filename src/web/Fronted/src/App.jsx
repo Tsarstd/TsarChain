@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect } from "react";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import Navbar from "./components/navbar/nav_bar";
 import Footer from "./components/footer/footer";
@@ -23,6 +23,7 @@ import "./styles/address.css";
 
 const App = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState("unknown");
   const [result, setResult] = useState(null);
@@ -63,9 +64,9 @@ const App = () => {
     setQuery(value);
     setSearchOpen(true);
     runSearch(value);
-    const newUrl = `${globalThis.location.pathname}?search=${encodeURIComponent(value)}`;
-    globalThis.history.pushState({}, '', newUrl);
-  }, [runSearch]);
+    const newUrl = `${location.pathname}?search=${encodeURIComponent(value)}`;
+    navigate(newUrl, { replace: true });
+  }, [runSearch, location.pathname, navigate]);
 
   const handleSearch = useCallback(() => {
     const q = query.trim();
