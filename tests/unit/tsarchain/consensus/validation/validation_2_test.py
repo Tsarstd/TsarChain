@@ -110,11 +110,11 @@ class TestValidationMixin:
                 self.chain = []
                 self.height = -1
                 self._last_block_validation_error = None
-                self._cumulative_supply_until = Mock(return_value=0)
-                self._scheduled_reward = Mock(return_value=50)
+                self.cumulative_supply_until = Mock(return_value=0)
+                self.scheduled_reward = Mock(return_value=50)
                 self._validate_difficulty = Mock(return_value=True)
                 self.median_time_past = Mock(return_value=0)
-                self._ensure_utxodb = Mock(return_value=None)
+                self.ensure_utxodb = Mock(return_value=None)
                 self._chain_state_token_locked = Mock(return_value=(0, b"token"))
                 self._validate_chain_context_locked = Mock(return_value=True)
                 self._check_sigops_budget = Mock(return_value=True)
@@ -426,7 +426,7 @@ class TestValidationMixin:
         instance = self.create_instance()
         block = Mock()
         block.transactions = []
-        instance._ensure_utxodb = Mock(return_value=None)
+        instance.ensure_utxodb = Mock(return_value=None)
         result = instance._validate_transactions(block)
         assert result is False
         assert instance._last_block_validation_error == "empty_block_transactions"
@@ -439,7 +439,7 @@ class TestValidationMixin:
         tx.is_coinbase = False
         block = Mock()
         block.transactions = [tx]
-        instance._ensure_utxodb = Mock(return_value=None)
+        instance.ensure_utxodb = Mock(return_value=None)
         result = instance._validate_transactions(block)
         assert result is False
         assert instance._last_block_validation_error == "missing_coinbase"
@@ -454,7 +454,7 @@ class TestValidationMixin:
         cb2.is_coinbase = True
         block = Mock()
         block.transactions = [cb, cb2]
-        instance._ensure_utxodb = Mock(return_value=None)
+        instance.ensure_utxodb = Mock(return_value=None)
         result = instance._validate_transactions(block)
         assert result is False
         assert instance._last_block_validation_error == "duplicate_coinbase"
@@ -471,7 +471,7 @@ class TestValidationMixin:
         block = Mock()
         block.transactions = [cb, tx]
         block.height = 1
-        instance._ensure_utxodb = Mock(return_value=None)
+        instance.ensure_utxodb = Mock(return_value=None)
         instance._serialize_tx_cached = Mock(return_value=None)
         result = instance._validate_transactions(block)
         assert result is False

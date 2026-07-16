@@ -105,29 +105,29 @@ class TestRewardMixin:
     """Tests for the RewardMixin reward calculation logic."""
 
     def test_scheduled_reward_negative_height(self, mock_config, monkeypatch):
-        """_scheduled_reward returns 0 for negative height."""
+        """scheduled_reward returns 0 for negative height."""
         monkeypatch.setattr("tsarchain.consensus.rewards.CFG", mock_config)
 
         class MockBC: pass
         obj = RewardCalculator(MockBC())
-        assert obj._scheduled_reward(-1) == 0
-        assert obj._scheduled_reward(-10) == 0
+        assert obj.scheduled_reward(-1) == 0
+        assert obj.scheduled_reward(-10) == 0
 
     def test_scheduled_reward_genesis(self, mock_config, monkeypatch):
-        """_scheduled_reward at height 0 returns genesis amount if enabled."""
+        """scheduled_reward at height 0 returns genesis amount if enabled."""
         monkeypatch.setattr("tsarchain.consensus.rewards.CFG", mock_config)
         class MockBC: pass
         obj = RewardCalculator(MockBC())
         expected = mock_config.GENESIS_REWARD_AMOUNT
-        assert obj._scheduled_reward(0) == expected
+        assert obj.scheduled_reward(0) == expected
 
         # Disable genesis reward
         mock_config.GENESIS_REWARD = False
         expected = mock_config.INITIAL_REWARD
-        assert obj._scheduled_reward(0) == expected
+        assert obj.scheduled_reward(0) == expected
 
-    def test_scheduled_reward_halving(self, mock_config, monkeypatch):
-        """_scheduled_reward computes halving correctly."""
+    def testscheduled_reward_halving(self, mock_config, monkeypatch):
+        """scheduled_reward computes halving correctly."""
         monkeypatch.setattr("tsarchain.consensus.rewards.CFG", mock_config)
         class MockBC: pass
         obj = RewardCalculator(MockBC())
@@ -137,56 +137,56 @@ class TestRewardMixin:
         # Height exactly at halving interval
         h = halving
         expected = initial // 2
-        assert obj._scheduled_reward(h) == expected
+        assert obj.scheduled_reward(h) == expected
 
         # Height before halving
         h = halving - 1
         expected = initial // (2 ** (0))  # halving count 0
-        assert obj._scheduled_reward(h) == initial
+        assert obj.scheduled_reward(h) == initial
 
         # After two halvings
         h = 2 * halving
         expected = initial // 4
-        assert obj._scheduled_reward(h) == expected
+        assert obj.scheduled_reward(h) == expected
 
         # After many halvings (reward becomes 0 due to integer division)
         h = 10 * halving
         expected = initial // (2 ** 10)
-        assert obj._scheduled_reward(h) == expected
+        assert obj.scheduled_reward(h) == expected
 
     def test_cumulative_supply_until_zero(self, mock_config, monkeypatch):
-        """_cumulative_supply_until returns 0 for height <=0."""
+        """cumulative_supply_until returns 0 for height <=0."""
         monkeypatch.setattr("tsarchain.consensus.rewards.CFG", mock_config)
         class MockBC: pass
         obj = RewardCalculator(MockBC())
-        assert obj._cumulative_supply_until(0) == 0
-        assert obj._cumulative_supply_until(-5) == 0
+        assert obj.cumulative_supply_until(0) == 0
+        assert obj.cumulative_supply_until(-5) == 0
 
     def test_cumulative_supply_basic(self, mock_config, monkeypatch):
-        """_cumulative_supply_until sums rewards correctly without hitting cap."""
+        """cumulative_supply_until sums rewards correctly without hitting cap."""
         monkeypatch.setattr("tsarchain.consensus.rewards.CFG", mock_config)
         class MockBC: pass
         obj = RewardCalculator(MockBC())
-        obj._scheduled_reward = lambda h: 10
-        assert obj._cumulative_supply_until(3) == 30
+        obj.scheduled_reward = lambda h: 10
+        assert obj.cumulative_supply_until(3) == 30
 
     def test_cumulative_supply_cap(self, mock_config, monkeypatch):
-        """_cumulative_supply_until caps at MAX_SUPPLY."""
+        """cumulative_supply_until caps at MAX_SUPPLY."""
         monkeypatch.setattr("tsarchain.consensus.rewards.CFG", mock_config)
         class MockBC: pass
         obj = RewardCalculator(MockBC())
-        obj._scheduled_reward = lambda h: 100
+        obj.scheduled_reward = lambda h: 100
         mock_config.MAX_SUPPLY = 250
         # height 5 would give 500 but cap at 250
-        assert obj._cumulative_supply_until(5) == 250
+        assert obj.cumulative_supply_until(5) == 250
 
     def test_get_block_reward(self, mock_config, monkeypatch):
         """get_block_reward returns min(base, remaining)."""
         monkeypatch.setattr("tsarchain.consensus.rewards.CFG", mock_config)
         class MockBC: pass
         obj = RewardCalculator(MockBC())
-        obj._scheduled_reward = lambda h: 100
-        obj._cumulative_supply_until = lambda h: 50 if h == 10 else (950 if h == 20 else 0)
+        obj.scheduled_reward = lambda h: 100
+        obj.cumulative_supply_until = lambda h: 50 if h == 10 else (950 if h == 20 else 0)
         # At height 10, remaining = max_supply - 50. Let's set max supply 1000
         mock_config.MAX_SUPPLY = 1000
         # base=100, remaining=1000-50=950 -> min=100
@@ -208,7 +208,7 @@ class TestRewardMixin:
         class MockBC: pass
         bc = MockBC()
         obj = RewardCalculator(bc)
-        obj._cumulative_supply_until = lambda h: h * 100
+        obj.cumulative_supply_until = lambda h: h * 100
         bc.chain = [1, 2, 3]
         assert obj.calculate_total_supply() == 300  # 3*100
 
@@ -224,7 +224,7 @@ class TestUTXOValidator:
     """Tests for UTXOMixin UTXO store management."""
 
     def test_ensure_utxodb_in_memory_creates_store(self, mock_config, mock_utxodb_class, mock_logger, monkeypatch):
-        """_ensure_utxodb creates in-memory UTXODB and rebuilds if needed."""
+        """ensure_utxodb creates in-memory UTXODB and rebuilds if needed."""
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.CFG", mock_config)
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.UTXODB", mock_utxodb_class)
 
@@ -241,7 +241,7 @@ class TestUTXOValidator:
         bc = MockBC()
         obj = UTXOValidator(bc)
 
-        store = obj._ensure_utxodb()
+        store = obj.ensure_utxodb()
         assert store is not None
         assert isinstance(store, mock_utxodb_class)
         # It should have called rebuild_from_chain because tip mismatch (-1 != height)
@@ -251,13 +251,13 @@ class TestUTXOValidator:
         assert obj.blockchain._in_memory_utxo_tip == 2
 
         # Second call: tip matches, no rebuild
-        store2 = obj._ensure_utxodb()
+        store2 = obj.ensure_utxodb()
         assert store2 is store
         # No new rebuild
         assert len(store.rebuild_calls) == 1
 
     def test_ensure_utxodb_persistent_creates_and_syncs(self, mock_config, mock_utxodb_class, mock_logger, monkeypatch):
-        """_ensure_utxodb persistent creates UTXODB and syncs if not synced."""
+        """ensure_utxodb persistent creates UTXODB and syncs if not synced."""
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.CFG", mock_config)
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.UTXODB", mock_utxodb_class)
 
@@ -281,13 +281,13 @@ class TestUTXOValidator:
             obj.sync_calls.append(force)
             bc._utxo_synced = True
         obj._sync_utxo_store = mock_sync
-        store = obj._ensure_utxodb()
+        store = obj.ensure_utxodb()
         assert obj.blockchain._utxodb is not None
         assert isinstance(obj.blockchain._utxodb, mock_utxodb_class)
         assert obj.sync_calls == [True]
         assert obj.blockchain._utxo_synced is True
 
-        store2 = obj._ensure_utxodb()
+        store2 = obj.ensure_utxodb()
         assert store2 is store
         assert len(obj.sync_calls) == 1
 
@@ -372,8 +372,8 @@ class TestUTXOValidator:
         assert obj.blockchain._utxo_dirty is False
         assert obj.blockchain._utxo_last_flush_height == 2
 
-    def test_maybe_flush_utxo_in_memory_does_nothing(self, mock_config, mock_utxodb_class, mock_logger, monkeypatch):
-        """In-memory mode: _maybe_flush_utxo does nothing."""
+    def testmaybe_flush_utxo_in_memory_does_nothing(self, mock_config, mock_utxodb_class, mock_logger, monkeypatch):
+        """In-memory mode: maybe_flush_utxo does nothing."""
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.CFG", mock_config)
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.UTXODB", mock_utxodb_class)
 
@@ -393,11 +393,11 @@ class TestUTXOValidator:
         bc = MockBC()
         obj = UTXOValidator(bc)
         # Ensure no store created
-        obj._maybe_flush_utxo()
+        obj.maybe_flush_utxo()
         # Nothing should happen
         assert obj.blockchain._utxodb is None
 
-    def test_maybe_flush_utxo_not_dirty_skip(self, mock_config, mock_utxodb_class, mock_logger, monkeypatch):
+    def testmaybe_flush_utxo_not_dirty_skip(self, mock_config, mock_utxodb_class, mock_logger, monkeypatch):
         """If not dirty, skip flush."""
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.CFG", mock_config)
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.UTXODB", mock_utxodb_class)
@@ -418,10 +418,10 @@ class TestUTXOValidator:
         bc = MockBC()
         obj = UTXOValidator(bc)
         with patch.object(obj.blockchain._utxodb, 'flush') as mock_flush:
-            obj._maybe_flush_utxo()
+            obj.maybe_flush_utxo()
             mock_flush.assert_not_called()
 
-    def test_maybe_flush_utxo_flush_interval_not_reached(self, mock_config, mock_utxodb_class, mock_logger, monkeypatch):
+    def testmaybe_flush_utxo_flush_interval_not_reached(self, mock_config, mock_utxodb_class, mock_logger, monkeypatch):
         """Skip flush if interval not reached."""
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.CFG", mock_config)
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.UTXODB", mock_utxodb_class)
@@ -442,10 +442,10 @@ class TestUTXOValidator:
         bc = MockBC()
         obj = UTXOValidator(bc)
         with patch.object(obj.blockchain._utxodb, 'flush') as mock_flush:
-            obj._maybe_flush_utxo()
+            obj.maybe_flush_utxo()
             mock_flush.assert_not_called()
 
-    def test_maybe_flush_utxo_flush_interval_reached(self, mock_config, mock_utxodb_class, mock_logger, monkeypatch):
+    def testmaybe_flush_utxo_flush_interval_reached(self, mock_config, mock_utxodb_class, mock_logger, monkeypatch):
         """Flush when interval reached and dirty."""
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.CFG", mock_config)
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.UTXODB", mock_utxodb_class)
@@ -466,12 +466,12 @@ class TestUTXOValidator:
         bc = MockBC()
         obj = UTXOValidator(bc)
         with patch.object(obj.blockchain._utxodb, 'flush') as mock_flush:
-            obj._maybe_flush_utxo()
+            obj.maybe_flush_utxo()
             mock_flush.assert_called_once_with()  # flush() no force
             assert obj.blockchain._utxo_dirty is False
             assert obj.blockchain._utxo_last_flush_height == 15
 
-    def test_maybe_flush_utxo_force_true(self, mock_config, mock_utxodb_class, mock_logger, monkeypatch):
+    def testmaybe_flush_utxo_force_true(self, mock_config, mock_utxodb_class, mock_logger, monkeypatch):
         """force=True triggers flush regardless of dirty and interval."""
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.CFG", mock_config)
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.UTXODB", mock_utxodb_class)
@@ -492,12 +492,12 @@ class TestUTXOValidator:
         bc = MockBC()
         obj = UTXOValidator(bc)
         with patch.object(obj.blockchain._utxodb, 'flush') as mock_flush:
-            obj._maybe_flush_utxo(force=True)
+            obj.maybe_flush_utxo(force=True)
             mock_flush.assert_called_once_with(force=True)
             assert obj.blockchain._utxo_dirty is False  # remains False
             assert obj.blockchain._utxo_last_flush_height == 5
 
-    def test_maybe_flush_utxo_genesis_lock_skip(self, mock_config, mock_utxodb_class, mock_logger, monkeypatch):
+    def testmaybe_flush_utxo_genesis_lock_skip(self, mock_config, mock_utxodb_class, mock_logger, monkeypatch):
         """When chain empty and genesis lock active, skip flush."""
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.CFG", mock_config)
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.UTXODB", mock_utxodb_class)
@@ -520,19 +520,19 @@ class TestUTXOValidator:
         bc = MockBC()
         obj = UTXOValidator(bc)
         with patch.object(obj.blockchain._utxodb, 'flush') as mock_flush:
-            obj._maybe_flush_utxo()  # not force
+            obj.maybe_flush_utxo()  # not force
             mock_flush.assert_not_called()
             # _utxo_dirty remains True (no flush)
             assert obj.blockchain._utxo_dirty is True
             
         with patch.object(obj.blockchain._utxodb, 'flush') as mock_flush:
-            obj._maybe_flush_utxo(force=True)
+            obj.maybe_flush_utxo(force=True)
             mock_flush.assert_called_once_with(force=True)
             assert obj.blockchain._utxo_dirty is False
             assert obj.blockchain._utxo_last_flush_height == 0
 
     def test_mark_utxo_dirty(self, mock_config, monkeypatch):
-        """_mark_utxo_dirty sets dirty flag if not in_memory."""
+        """mark_utxo_dirty sets dirty flag if not in_memory."""
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.CFG", mock_config)
         from tsarchain.consensus.utxo_validate import UTXOValidator
 
@@ -543,36 +543,11 @@ class TestUTXOValidator:
 
         bc = MockBC()
         obj = UTXOValidator(bc)
-        obj._mark_utxo_dirty()
+        obj.mark_utxo_dirty()
         assert obj.blockchain._utxo_dirty is True
 
         # In memory: no effect
         obj.blockchain.in_memory = True
         obj.blockchain._utxo_dirty = False
-        obj._mark_utxo_dirty()
+        obj.mark_utxo_dirty()
         assert obj.blockchain._utxo_dirty is False
-
-    def test_get_utxo_store(self, mock_config, mock_utxodb_class, mock_logger, monkeypatch):
-        """get_utxo_store returns the store from _ensure_utxodb."""
-        monkeypatch.setattr("tsarchain.consensus.utxo_validate.CFG", mock_config)
-        monkeypatch.setattr("tsarchain.consensus.utxo_validate.UTXODB", mock_utxodb_class)
-
-        from tsarchain.consensus.utxo_validate import UTXOValidator
-
-        class MockBC:
-            def __init__(self):
-                self.in_memory = False
-                self.chain = [b'block1']
-                self.height = 1
-                self._utxodb = None
-                self._utxo_dirty = False
-                self._utxo_last_flush_height = -1
-                self._utxo_synced = False
-                self._utxo_flush_interval = 10
-
-        bc = MockBC()
-        obj = UTXOValidator(bc)
-        store = obj.get_utxo_store()
-        assert store is not None
-        assert obj.blockchain._utxodb is store
-        assert obj.blockchain._utxo_synced is True

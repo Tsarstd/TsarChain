@@ -23,9 +23,7 @@ from ..utils.helpers import Script, OP_RETURN, hash160, compute_tx_weight_vsize
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.contracts.graffiti")
 
-# -----------------------------
-# Internal helpers / validation
-# -----------------------------
+
 
 HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 ART_ID_RE = re.compile(rf"^({CFG.ART_ID_PREFIX}[0-9a-f]{{{CFG.ART_ID_BODY_LEN}}}|[0-9a-f]{{64}})$")

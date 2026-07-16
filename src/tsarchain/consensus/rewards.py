@@ -19,19 +19,21 @@ class RewardCalculator:
     def __init__(self, blockchain: "Blockchain"):
         self.blockchain = blockchain
 
-    def _scheduled_reward(self, height: int) -> int:
+
+    def scheduled_reward(self, height: int) -> int:
         if height < 0:
             return 0
         if height == 0 and CFG.GENESIS_REWARD:
             return int(CFG.GENESIS_REWARD_AMOUNT)
         return int(CFG.INITIAL_REWARD) // (2 ** (int(max(0, height)) // int(CFG.BLOCKS_PER_HALVING)))
 
-    def _cumulative_supply_until(self, height: int) -> int:
+
+    def cumulative_supply_until(self, height: int) -> int:
         total = 0
         if height <= 0:
             return 0
         for h in range(height):
-            base = self._scheduled_reward(h)
+            base = self.scheduled_reward(h)
             if base <= 0:
                 break
             if total + base > CFG.MAX_SUPPLY:
@@ -41,14 +43,16 @@ class RewardCalculator:
                 return CFG.MAX_SUPPLY
         return total
 
+
     def get_block_reward(self, height: int) -> int:
-        base = self._scheduled_reward(height)
+        base = self.scheduled_reward(height)
         if base <= 0:
             return 0
-        minted_before = self._cumulative_supply_until(height)
+        minted_before = self.cumulative_supply_until(height)
         remaining = max(0, CFG.MAX_SUPPLY - minted_before)
         return min(base, remaining)
 
+
     def calculate_total_supply(self) -> int:
         tip_height = len(self.blockchain.chain)
-        return self._cumulative_supply_until(tip_height)
+        return self.cumulative_supply_until(tip_height)

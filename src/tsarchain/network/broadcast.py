@@ -41,8 +41,8 @@ class Broadcast:
         self.blockchain = blockchain or Blockchain()
         
         shared_utxo = utxodb
-        if shared_utxo is None and hasattr(self.blockchain, "get_utxo_store"):
-            shared_utxo = self.blockchain.get_utxo_store()
+        if shared_utxo is None and hasattr(self.blockchain, "ensure_utxodb"):
+            shared_utxo = self.blockchain.ensure_utxodb()
 
         self._utxo_shared = shared_utxo is not None
         self.utxodb = shared_utxo or UTXODB()

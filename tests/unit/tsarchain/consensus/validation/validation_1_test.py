@@ -85,13 +85,13 @@ class _TestChain(ValidationProxy):
         self.lock = threading.Lock()
         self._last_block_validation_error = None
 
-    def _ensure_utxodb(self):
+    def ensure_utxodb(self):
         pass
 
-    def _cumulative_supply_until(self, height):
+    def cumulative_supply_until(self, height):
         pass
 
-    def _scheduled_reward(self, height):
+    def scheduled_reward(self, height):
         pass
 
 
@@ -157,9 +157,9 @@ def validation_chain(mocker):
     mock_utxo_instance.load_utxo_set.return_value = {}
 
     chain = _TestChain()
-    chain._ensure_utxodb = Mock(return_value=mock_utxo_instance)
-    chain._cumulative_supply_until = Mock(return_value=0)
-    chain._scheduled_reward = Mock(return_value=50_000_000)  # 50 coin
+    chain.ensure_utxodb = Mock(return_value=mock_utxo_instance)
+    chain.cumulative_supply_until = Mock(return_value=0)
+    chain.scheduled_reward = Mock(return_value=50_000_000)  # 50 coin
 
     chain._mock_H = mock_H
     chain._mock_graffiti = mock_graffiti

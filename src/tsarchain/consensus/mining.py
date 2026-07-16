@@ -76,24 +76,31 @@ class MiningManager:
         
         return new_block
 
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
     def _validate_chain_state(self) -> bool:
         if not self.blockchain.chain:
             if getattr(self.blockchain, "_reload_chain_from_kv", lambda: False)():
-                log.debug("[mine_block] chain reloaded from LMDB; continuing mining")
+                log.debug("[_validate_chain_state] chain reloaded from LMDB; continuing mining")
                 
         if not self.blockchain.chain and not CFG.ALLOW_AUTO_GENESIS:
-            log.warning("[mine_block] refusing to mine genesis; sync from peers first.")
+            log.warning("[_validate_chain_state] refusing to mine genesis; sync from peers first.")
             return False
 
         if self.blockchain._has_pending_blocks():
-            log.warning("[mine_block] pending blocks detected; skipping mining")
+            log.warning("[_validate_chain_state] pending blocks detected; skipping mining")
             return False
 
         if not self.blockchain._is_chain_consistent():
-            log.warning("[mine_block] chain inconsistency detected; syncing first")
+            log.warning("[_validate_chain_state] chain inconsistency detected; syncing first")
             return False
 
         return True
+
 
     def _calculate_reward(self, height: int) -> int:
         reward = self.blockchain.get_block_reward(height)
@@ -101,13 +108,15 @@ class MiningManager:
             return max(0, CFG.MAX_SUPPLY - self.blockchain.total_supply)
         return reward
 
+
     def _ensure_mempool(self) -> TxPool:
         pool = getattr(self.blockchain, "get_mempool", lambda: None)()
         if pool is None:
-            pool = TxPool(utxo_store=self.blockchain._ensure_utxodb())
+            pool = TxPool(utxo_store=self.blockchain.ensure_utxodb())
             if hasattr(self.blockchain, "attach_mempool"):
                 self.blockchain.attach_mempool(pool)
         return pool
+
 
     def _fetch_sorted_mempool_txs(self, pool: TxPool) -> list:
         txs_raw = pool.get_all_txs()
@@ -120,8 +129,9 @@ class MiningManager:
 
         return graff_posts + other_txs
 
+
     def _build_candidate_block(self, miner_address: str, height: int, reward: int, last_block: Block | None, pool: TxPool, txs_from_mempool: list) -> Block:
-        store = self.blockchain._ensure_utxodb() or UTXODB()
+        store = self.blockchain.ensure_utxodb() or UTXODB()
         current_utxos = getattr(store, "utxos", store.load_utxo_set())
         temp_utxos = current_utxos.copy() if isinstance(current_utxos, dict) else dict(current_utxos)
 
@@ -137,13 +147,13 @@ class MiningManager:
                 reason = getattr(pool, "last_error_reason", None)
                 if reason:
                     txid_hex = getattr(tx, "txid", b"").hex() if hasattr(getattr(tx, "txid", b""), "hex") else str(getattr(tx, "txid", ""))
-                    log.warning("[mine_block] tx %s rejected: %s", txid_hex[:12], reason)
+                    log.warning("[_build_candidate_block] tx %s rejected: %s", txid_hex[:12], reason)
                 continue
 
             is_graff_post = self._is_graffiti_post(tx)
             if is_graff_post and graffiti_post_seen:
                 txid_hex = getattr(tx, "txid", b"").hex() if hasattr(getattr(tx, "txid", b""), "hex") else str(getattr(tx, "txid", ""))
-                log.info("[mine_block] skip extra Graffiti POST tx=%s (quota per block = 1)", txid_hex[:12])
+                log.info("[_build_candidate_block] skip extra Graffiti POST tx=%s (quota per block = 1)", txid_hex[:12])
                 continue
 
             for txin in tx.inputs:
@@ -162,7 +172,7 @@ class MiningManager:
         coinbase_kwargs = {"to_address": miner_address, "reward": coinbase_value, "height": height}
         if graffiti_art_id:
             coinbase_kwargs["block_id"] = graffiti_art_id
-            log.info("[mine_block] Anchoring block_id to graffiti art_id %s", graffiti_art_id[:32])
+            log.info("[_build_candidate_block] Anchoring block_id to graffiti art_id %s", graffiti_art_id[:32])
 
         coinbase = CoinbaseTx(**coinbase_kwargs)
         coinbase.compute_txid()
@@ -174,6 +184,7 @@ class MiningManager:
             new_block.bits = self.blockchain.calculate_expected_bits(height)
             
         return new_block
+
 
     def _is_stale_block(self, new_block: Block) -> bool:
         latest = self.blockchain.get_last_block()
@@ -191,12 +202,13 @@ class MiningManager:
             new_prev_hex = new_prev_hash.hex() if hasattr(new_prev_hash, "hex") else new_prev_hash
             latest_hex = latest_hash.hex() if hasattr(latest_hash, "hex") else latest_hash
             log.warning(
-                "[mine_block] discard stale candidate height=%s prev=%s latest=%s",
+                "[_is_stale_block] discard stale candidate height=%s prev=%s latest=%s",
                 new_height,
                 new_prev_hex,
                 latest_hex,
             )
         return is_stale
+
 
     def _apply_mining_cooloff(self):
         cooloff = float(CFG.MINING_COOLDOWN_AFTER_BLOCK)
@@ -204,6 +216,7 @@ class MiningManager:
             remain = float(getattr(self.blockchain, "_mining_cooloff_until", 0.0)) - time.time()
             if remain > 0:
                 time.sleep(min(remain, cooloff))
+
 
     def _validate_and_add_block(self, new_block: Block) -> bool:
         height = getattr(new_block, "height", 0)
@@ -236,6 +249,7 @@ class MiningManager:
             
         return True
 
+
     def _select_graffiti_art_id(self, txs) -> str | None:
         """
         Inspect candidate transactions for a Graffiti POST event and return its art_id.
@@ -261,9 +275,10 @@ class MiningManager:
                 if art_id:
                     txid = getattr(tx, "txid", None)
                     txid_hex = txid.hex() if hasattr(txid, "hex") else str(txid)
-                    log.debug("[mine_block] Graffiti POST found tx=%s art_id=%s", (txid_hex or "")[:12], art_id[:24])
+                    log.debug("[_select_graffiti_art_id] Graffiti POST found tx=%s art_id=%s", (txid_hex or "")[:12], art_id[:24])
                     return art_id
         return None
+    
     
     def _is_graffiti_post(self, tx_obj) -> bool:
         for tx_out in getattr(tx_obj, "outputs", None) or []:
@@ -274,8 +289,10 @@ class MiningManager:
                     return True
         return False
 
+
     def _received_at(self, tx_obj) -> float:
         return float(getattr(tx_obj, "_received_at", 0) or 0)
+
 
     def _fee(self, tx_obj) -> int:
         return int(getattr(tx_obj, "fee", 0) or 0)

@@ -80,7 +80,7 @@ class BlockValidator:
                     self.blockchain._last_block_validation_error = "chain_context_invalid"
                     return False
                 
-                store = self.blockchain._ensure_utxodb() or UTXODB()
+                store = self.blockchain.ensure_utxodb() or UTXODB()
                 has_lookup = callable(getattr(store, "lookup_entry", None))
                 utxo_view = getattr(store, "utxos", None) if not has_lookup else None
                 utxo_view = store.load_utxo_set() if (not has_lookup and utxo_view is None) else utxo_view
@@ -133,11 +133,13 @@ class BlockValidator:
             setattr(tx, "txid", txid_bytes)
             setattr(tx, "txid_hex", txid_bytes.hex())
         return True
-    
+
+
     # =============================================================================
-    # 2. INTERNAL METHOD
+    # INTERNAL METHOD
     # =============================================================================
-    
+
+
     def _warm_pow_context(self, height: int):  # pre-warm for next epoch
         if CFG.POW_ALGO != "randomx":
             return
@@ -195,7 +197,7 @@ class BlockValidator:
 
 
     def _validate_transactions(self, block: Block, utxo_store: UTXODB | None = None) -> bool: 
-        store = utxo_store or self.blockchain._ensure_utxodb() or UTXODB()
+        store = utxo_store or self.blockchain.ensure_utxodb() or UTXODB()
         self.blockchain._last_block_validation_error = "validation_failed"
         txs = getattr(block, "transactions", [])
         if not txs:
@@ -495,8 +497,8 @@ class BlockValidator:
         else:
             fees_list = [int(getattr(t, "fee", 0)) for t in txs[1:]]
 
-        minted_before = self.blockchain._cumulative_supply_until(block.height)
-        base = self.blockchain._scheduled_reward(block.height)
+        minted_before = self.blockchain.cumulative_supply_until(block.height)
+        base = self.blockchain.scheduled_reward(block.height)
         reward = min(max(0, base), max(0, CFG.MAX_SUPPLY - minted_before))
         total_fee = sum(fees_list)
         expected_cb = reward + total_fee

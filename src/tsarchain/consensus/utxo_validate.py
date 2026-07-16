@@ -23,7 +23,8 @@ class UTXOValidator:
     def __init__(self, blockchain: "Blockchain"):
         self.blockchain = blockchain
 
-    def _ensure_utxodb(self) -> Optional[UTXODB]:
+
+    def ensure_utxodb(self) -> Optional[UTXODB]:
         if self.blockchain.in_memory:
             mem_store = getattr(self.blockchain, "_in_memory_utxodb", None)
             tip_state = getattr(self.blockchain, "_in_memory_utxo_tip", -1)
@@ -51,18 +52,17 @@ class UTXOValidator:
             self._sync_utxo_store(force=True)
         return self.blockchain._utxodb
 
-    def get_utxo_store(self) -> Optional[UTXODB]:
-        return self._ensure_utxodb()
 
-    def _mark_utxo_dirty(self) -> None:
+    def mark_utxo_dirty(self) -> None:
         if self.blockchain.in_memory:
             return
         self.blockchain._utxo_dirty = True
 
-    def _maybe_flush_utxo(self, *, force: bool = False) -> None:
+
+    def maybe_flush_utxo(self, *, force: bool = False) -> None:
         if self.blockchain.in_memory:
             return
-        store = self._ensure_utxodb()
+        store = self.ensure_utxodb()
         if store is None:
             return
         # Saat genesis lock dan chain kosong, hindari flush paksa yang bisa mengosongkan DB yang sudah ada
@@ -80,6 +80,12 @@ class UTXOValidator:
         if did_flush:
             self.blockchain._utxo_dirty = False
             self.blockchain._utxo_last_flush_height = current_height
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
 
     def _sync_utxo_store(self, *, force: bool = False) -> None:
         if self.blockchain.in_memory or self.blockchain._utxodb is None:

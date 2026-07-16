@@ -97,7 +97,7 @@ class Blockchain():
                 self._cold_reload_attempted = True
                 self._reload_chain_from_kv()
             if self.chain:
-                self._enforce_genesis_lock()
+                self.genesis_manager._enforce_genesis_lock()
                 self._rebuild_hash_cache()
                 return
             if GENESIS_HASH is not None and not CFG.ALLOW_AUTO_GENESIS:
@@ -105,13 +105,13 @@ class Blockchain():
                 return
             if CFG.ALLOW_AUTO_GENESIS:
                 log.info("[__init__] Auto-genesis enabled (use_cores=%s)", self.use_cores)
-                self._create_genesis_with_lock(self.miner_address or "", self.use_cores)
+                self.genesis_manager.create_genesis_with_lock(self.miner_address or "", self.use_cores)
             else:
                 log.info("[__init__] Auto-genesis disabled; node will wait for peers to sync")
                 self.chain = []
                 self.total_blocks = 0
                 self.total_supply = 0
-                self._persist_empty_state_if_needed()
+                self.genesis_manager._persist_empty_state_if_needed()
         else:
             self.chain = []
             self.total_blocks = 0
@@ -230,7 +230,7 @@ class Blockchain():
             self.supply_in_tsar = self.total_supply / CFG.TSAR if self.total_supply else 0
             self._persisted_height = len(self.chain) - 1
             self._chain_dirty_from = None
-            # UTXO akan disinkronkan ulang saat _ensure_utxodb dipanggil
+            # UTXO akan disinkronkan ulang saat ensure_utxodb dipanggil
             self._utxo_last_flush_height = self.height
             self._utxo_dirty = False
             self._utxo_synced = False
@@ -260,7 +260,7 @@ class Blockchain():
                 self._persist_pending = False
             try:
                 self.save_chain(force_full=opts["force_full"])
-                self._maybe_flush_utxo(force=opts["flush_force"])
+                self.maybe_flush_utxo(force=opts["flush_force"])
                 if opts["save_state"]:
                     self.save_state()
             except Exception:
@@ -274,7 +274,7 @@ class Blockchain():
             return
         if wait or self._persist_queue is None:
             self.save_chain(force_full=force_full)
-            self._maybe_flush_utxo(force=flush_force)
+            self.maybe_flush_utxo(force=flush_force)
             if save_state:
                 self.save_state()
             return
@@ -309,7 +309,7 @@ class Blockchain():
             return
         # Final synchronous persistence to ensure no data loss
         self.save_chain(force_full=True)
-        self._maybe_flush_utxo(force=True)
+        self.maybe_flush_utxo(force=True)
         self.save_state()
 
     def attach_mempool(self, pool: TxPool) -> None:
@@ -342,31 +342,15 @@ class Blockchain():
 
 
     # ---------------- Proxy Methods for Genesis ----------------
-    def has_genesis(self) -> bool:
-        return self.genesis_manager.has_genesis()
-
-    def _persist_empty_state_if_needed(self):
-        return self.genesis_manager._persist_empty_state_if_needed()
-
-    def _enforce_genesis_lock(self):
-        return self.genesis_manager._enforce_genesis_lock()
-
-    def _create_genesis_with_lock(self, miner_address: str, use_cores: int | None):
-        return self.genesis_manager._create_genesis_with_lock(miner_address, use_cores)
-
     def ensure_genesis(self, miner_address: str, use_cores: int | None = None) -> bool:
         return self.genesis_manager.ensure_genesis(miner_address, use_cores)
 
-    def create_genesis_block(self, miner_address, use_cores: int | None = None):
-        return self.genesis_manager.create_genesis_block(miner_address, use_cores)
-
-
     # ---------------- Proxy Methods for Rewards ----------------
-    def _scheduled_reward(self, height: int) -> int:
-        return self.reward_calculator._scheduled_reward(height)
+    def scheduled_reward(self, height: int) -> int:
+        return self.reward_calculator.scheduled_reward(height)
 
-    def _cumulative_supply_until(self, height: int) -> int:
-        return self.reward_calculator._cumulative_supply_until(height)
+    def cumulative_supply_until(self, height: int) -> int:
+        return self.reward_calculator.cumulative_supply_until(height)
 
     def get_block_reward(self, height: int) -> int:
         return self.reward_calculator.get_block_reward(height)
@@ -414,20 +398,14 @@ class Blockchain():
 
 
     # ---------------- Proxy Methods for UTXO ----------------
-    def _ensure_utxodb(self) -> Optional[UTXODB]:
-        return self.utxo_validator._ensure_utxodb()
+    def ensure_utxodb(self) -> Optional[UTXODB]:
+        return self.utxo_validator.ensure_utxodb()
 
-    def get_utxo_store(self) -> Optional[UTXODB]:
-        return self.utxo_validator.get_utxo_store()
+    def mark_utxo_dirty(self) -> None:
+        return self.utxo_validator.mark_utxo_dirty()
 
-    def _mark_utxo_dirty(self) -> None:
-        return self.utxo_validator._mark_utxo_dirty()
-
-    def _maybe_flush_utxo(self, *, force: bool = False) -> None:
-        return self.utxo_validator._maybe_flush_utxo(force=force)
-
-    def _sync_utxo_store(self, *, force: bool = False) -> None:
-        return self.utxo_validator._sync_utxo_store(force=force)
+    def maybe_flush_utxo(self, *, force: bool = False) -> None:
+        return self.utxo_validator.maybe_flush_utxo(force=force)
 
 
     # ---------------- Proxy Methods for Chain Ops ----------------

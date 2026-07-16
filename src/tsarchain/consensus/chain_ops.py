@@ -36,7 +36,7 @@ class ChainOperations:
             self._add_subsequent_block(block)
             
         if self.blockchain.in_memory:
-            self.blockchain._ensure_utxodb()
+            self.blockchain.ensure_utxodb()
         return True
 
 
@@ -75,11 +75,11 @@ class ChainOperations:
             log.debug("[add_block] cache genesis hash failed", exc_info=True)
 
         if not self.blockchain.in_memory:
-            store = self.blockchain._ensure_utxodb()
+            store = self.blockchain.ensure_utxodb()
             if store is not None:
                 blk_hash = block.hash().hex()
                 store.update(block.transactions, block_height=0, block_hash=blk_hash, autosave=False)
-                self.blockchain._mark_utxo_dirty()
+                self.blockchain.mark_utxo_dirty()
                 self.blockchain._utxo_synced = True
                 self.blockchain._schedule_persist(force_full=True, flush_force=True, save_state=True)
 
@@ -113,11 +113,11 @@ class ChainOperations:
             log.debug("[add_block] cache tip hash failed", exc_info=True)
 
         if not self.blockchain.in_memory:
-            store = self.blockchain._ensure_utxodb()
+            store = self.blockchain.ensure_utxodb()
             if store is not None:
                 blk_hash = block.hash().hex()
                 store.update(block.transactions, block_height=block.height, block_hash=blk_hash, autosave=False)
-                self.blockchain._mark_utxo_dirty()
+                self.blockchain.mark_utxo_dirty()
 
         self._prune_mempool_confirmed(block)
         if not self.blockchain.in_memory:
@@ -170,7 +170,7 @@ class ChainOperations:
         if not self.blockchain.in_memory:
             self.blockchain._mark_chain_dirty(0)
             self.blockchain.save_chain(force_full=True)
-            store = self.blockchain._ensure_utxodb()
+            store = self.blockchain.ensure_utxodb()
             if store is not None:
                 store.rebuild_from_chain(self.blockchain.chain)
                 self.blockchain._utxo_dirty = False
@@ -236,7 +236,7 @@ class ChainOperations:
         if not self.blockchain.in_memory:
             self.blockchain._mark_chain_dirty(block.height)
             self.blockchain.save_chain()
-            store = self.blockchain._ensure_utxodb()
+            store = self.blockchain.ensure_utxodb()
             if store is not None:
                 store.rebuild_from_chain(self.blockchain.chain)
                 self.blockchain._utxo_dirty = False
@@ -263,7 +263,7 @@ class ChainOperations:
         if hasattr(self.blockchain, "get_mempool"):
             pool = self.blockchain.get_mempool()
         if pool is None:
-            pool = TxPool(utxo_store=self.blockchain._ensure_utxodb())
+            pool = TxPool(utxo_store=self.blockchain.ensure_utxodb())
             owned_pool = True
 
         seen: set[str] = set()
@@ -406,7 +406,7 @@ class ChainOperations:
         if not self._merkle_ok(g):
             return False, 0
 
-        base_reward = self.blockchain._scheduled_reward(0)
+        base_reward = self.blockchain.scheduled_reward(0)
         reward = min(base_reward, max(0, CFG.MAX_SUPPLY - cumulative_supply))
         fees = 0
         cb = getattr(g, "transactions", [None])[0]
@@ -466,7 +466,7 @@ class ChainOperations:
                 return False
 
             fees = sum(int(getattr(t, "fee", 0)) for t in txs[1:])
-            base_reward = self.blockchain._scheduled_reward(int(getattr(cur, "height", 0)))
+            base_reward = self.blockchain.scheduled_reward(int(getattr(cur, "height", 0)))
             reward = min(base_reward, max(0, CFG.MAX_SUPPLY - cumulative_supply))
             actual_cb = sum(int(o.amount) for o in getattr(txs[0], "outputs", []) or [])
             expected_cb = reward + fees

@@ -182,7 +182,7 @@ def test_reload_chain_from_kv(mock_block_module, mock_kv, mock_config):
 
     with patch.object(Blockchain, 'load_chain', autospec=True) as mock_load, \
          patch.object(Blockchain, 'load_state', autospec=True) as mock_state, \
-         patch.object(Blockchain, '_persist_empty_state_if_needed', autospec=True):
+         patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed', autospec=True):
              
         mock_load.return_value = None  # tidak mengisi chain
         bc = Blockchain(in_memory=False)
@@ -247,7 +247,7 @@ def test_start_persist_worker(mock_config):
          patch('queue.Queue') as mock_queue, \
          patch.object(Blockchain, 'load_chain', autospec=True) as mock_load, \
          patch.object(Blockchain, 'load_state', autospec=True) as mock_state, \
-         patch.object(Blockchain, '_persist_empty_state_if_needed', autospec=True) as mock_empty:
+         patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed', autospec=True) as mock_empty:
         thread_instance = Mock()
         mock_thread.return_value = thread_instance
         queue_instance = Mock()
@@ -267,13 +267,13 @@ def test_schedule_persist(mock_config):
          patch('queue.Queue') as mock_queue, \
          patch.object(Blockchain, 'load_chain', autospec=True), \
          patch.object(Blockchain, 'load_state', autospec=True), \
-         patch.object(Blockchain, '_persist_empty_state_if_needed', autospec=True):
+         patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed', autospec=True):
         queue_instance = Mock()
         mock_queue.return_value = queue_instance
         bc = Blockchain(in_memory=False)
 
         with patch.object(bc, 'save_chain') as mock_save_chain, \
-             patch.object(bc, '_maybe_flush_utxo') as mock_flush, \
+             patch.object(bc, 'maybe_flush_utxo') as mock_flush, \
              patch.object(bc, 'save_state') as mock_save_state:
 
             # Synchronous (wait=True)
@@ -301,7 +301,7 @@ def test_stop_persist_worker(mock_config):
          patch('queue.Queue') as mock_queue, \
          patch.object(Blockchain, 'load_chain', autospec=True), \
          patch.object(Blockchain, 'load_state', autospec=True), \
-         patch.object(Blockchain, '_persist_empty_state_if_needed', autospec=True):
+         patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed', autospec=True):
         queue_instance = Mock()
         mock_queue.return_value = queue_instance
         thread_instance = Mock()
@@ -313,7 +313,7 @@ def test_stop_persist_worker(mock_config):
         bc._persist_stop = Mock()
 
         with patch.object(bc, 'save_chain') as mock_save_chain, \
-             patch.object(bc, '_maybe_flush_utxo') as mock_flush, \
+             patch.object(bc, 'maybe_flush_utxo') as mock_flush, \
              patch.object(bc, 'save_state') as mock_save_state:
 
             bc._stop_persist_worker()
@@ -336,9 +336,9 @@ def test_init_not_in_memory_auto_genesis_disabled(mock_config):
 
     with patch.object(Blockchain, 'load_chain', autospec=True) as mock_load_chain, \
         patch.object(Blockchain, 'load_state', autospec=True) as mock_load_state, \
-        patch.object(Blockchain, '_persist_empty_state_if_needed', autospec=True) as mock_persist_empty, \
+        patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed', autospec=True) as mock_persist_empty, \
         patch.object(Blockchain, '_start_persist_worker', autospec=True) as mock_start_worker, \
-        patch.object(Blockchain, '_enforce_genesis_lock', autospec=True) as mock_enforce:
+        patch('tsarchain.consensus.blockchain.GenesisManager._enforce_genesis_lock', autospec=True) as mock_enforce:
 
         mock_load_chain.return_value = None  # no chain loaded
         bc = Blockchain(in_memory=False)
@@ -358,7 +358,7 @@ def test_init_not_in_memory_chain_exists(mock_config):
     with patch.object(Blockchain, 'load_chain', autospec=True) as mock_load_chain, \
         patch.object(Blockchain, 'load_state', autospec=True) as mock_load_state, \
         patch.object(Blockchain, '_start_persist_worker', autospec=True) as mock_start_worker, \
-        patch.object(Blockchain, '_enforce_genesis_lock', autospec=True) as mock_enforce, \
+        patch('tsarchain.consensus.blockchain.GenesisManager._enforce_genesis_lock', autospec=True) as mock_enforce, \
         patch.object(Blockchain, '_rebuild_hash_cache', autospec=True) as mock_rebuild, \
         patch('tsarchain.consensus.genesis.GENESIS_HASH', None):
 

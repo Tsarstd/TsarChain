@@ -31,7 +31,7 @@ def mining_node():
             self.validate_block = Mock(return_value=True)
             self.add_block = Mock(return_value=True)
             self.get_last_block = Mock(return_value=None)
-            self._ensure_utxodb = Mock(return_value=self._utxodb)
+            self.ensure_utxodb = Mock(return_value=self._utxodb)
             self.get_mempool = Mock(return_value=Mock(spec=TxPool))
             self.attach_mempool = Mock()
             self._reload_chain_from_kv = Mock(return_value=False)
@@ -207,7 +207,7 @@ def test_mine_block_fail_pending_blocks(mining_node):
 
         assert result is None
         mock_log.warning.assert_called_once_with(
-            "[mine_block] pending blocks detected; skipping mining"
+            "[_validate_chain_state] pending blocks detected; skipping mining"
         )
 
 
@@ -224,7 +224,7 @@ def test_mine_block_fail_chain_inconsistent(mining_node):
 
         assert result is None
         mock_log.warning.assert_called_once_with(
-            "[mine_block] chain inconsistency detected; syncing first"
+            "[_validate_chain_state] chain inconsistency detected; syncing first"
         )
 
 

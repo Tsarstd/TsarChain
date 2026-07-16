@@ -127,7 +127,7 @@ def test_validate_merkle():
 # --- tx limits ---
 def setup_tx_limits_test_p1(mocker, cb_only=False):
     c = CovP1DummyConsensus()
-    c._ensure_utxodb = Mock(return_value=None)
+    c.ensure_utxodb = Mock(return_value=None)
     cb = CovP1DummyTx(is_coinbase=True)
     txs = [cb] if cb_only else [cb, CovP1DummyTx()]
     b = CovP1DummyBlock(transactions=txs, height=1)
@@ -254,12 +254,12 @@ class CovP2DummyConsensus(ValidationProxy):
         self.validator = BlockValidator(self)
         self._last_block_validation_error = None
         self.lock = Mock()
-    def _ensure_utxodb(self):
+    def ensure_utxodb(self):
         return None
 
 def setup_tx_limits_test_p2(mocker, cb_only=False):
     c = CovP2DummyConsensus()
-    c._ensure_utxodb = Mock(return_value=None)
+    c.ensure_utxodb = Mock(return_value=None)
     cb = CovP2DummyTx(is_coinbase=True)
     txs = [cb] if cb_only else [cb, CovP2DummyTx()]
     b = CovP2DummyBlock(transactions=txs, height=1)
@@ -315,8 +315,8 @@ def test_validate_graffiti_various_spk(mocker):
         mock_H.tx_to_compact_tuple.return_value = None
         
         # need to return True at the end
-        c._cumulative_supply_until = Mock(return_value=0)
-        c._scheduled_reward = Mock(return_value=10)
+        c.cumulative_supply_until = Mock(return_value=0)
+        c.scheduled_reward = Mock(return_value=10)
         b.transactions[0].outputs = [Mock(amount=20)] # expected cb = reward + fee = 10 + 10 = 20
         
         with patch("tsarchain.consensus.validation.GRAFFITI") as mock_graf:
@@ -328,7 +328,7 @@ def test_validate_graffiti_various_spk(mocker):
                 
             b.transactions[1].inputs = [Mock(txid=b"prev", vout=0)]
             mock_utxo = Mock()
-            c._ensure_utxodb.return_value = mock_utxo
+            c.ensure_utxodb.return_value = mock_utxo
             mock_utxo.lookup_entry.return_value = {"amount": 10, "script_pubkey": b"s", "is_coinbase": False, "block_height": 0}
             
             assert c._validate_transactions(b) is True
@@ -396,7 +396,7 @@ def test_native_snapshot_invalid_entry(mocker):
             
         b.transactions[1].inputs = [Mock(txid=b"prev", vout=0)]
         mock_utxo = Mock()
-        c._ensure_utxodb.return_value = mock_utxo
+        c.ensure_utxodb.return_value = mock_utxo
         # missing script_pubkey will trigger native_snapshot_invalid_entry
         mock_utxo.lookup_entry.return_value = {"amount": 10, "is_coinbase": False, "block_height": 0}
         
@@ -432,7 +432,7 @@ class CovP3DummyConsensus(ValidationProxy):
 
 def test_legacy_lookup():
     c = CovP3DummyConsensus()
-    c._ensure_utxodb = Mock(return_value=None)
+    c.ensure_utxodb = Mock(return_value=None)
     
     cb = CovP3DummyTx(is_coinbase=True, txid=b"cb", txid_hex="cb")
     tx1 = CovP3DummyTx(is_coinbase=False, txid=b"tx1", txid_hex="tx1")
@@ -459,8 +459,8 @@ def test_legacy_lookup():
             mock_H.native_validate_block_txs_compact.return_value = (True, None, [10])
             mock_H.tx_to_compact_tuple.return_value = None
             
-            c._cumulative_supply_until = Mock(return_value=0)
-            c._scheduled_reward = Mock(return_value=0)
+            c.cumulative_supply_until = Mock(return_value=0)
+            c.scheduled_reward = Mock(return_value=0)
             c._serialize_tx_cached = Mock(return_value=b"x")
             
             # Create a mock store with utxos dict instead of lookup_entry
@@ -554,9 +554,9 @@ class CovP4DummyConsensus(ValidationProxy):
         if isinstance(entry, dict):
             return entry.get("script_pubkey")
         return getattr(entry, "script_pubkey", None)
-    def _cumulative_supply_until(self, h): return 0
-    def _scheduled_reward(self, h): return 10
-    def _ensure_utxodb(self): return None
+    def cumulative_supply_until(self, h): return 0
+    def scheduled_reward(self, h): return 10
+    def ensure_utxodb(self): return None
 
 class CovP4DummyTx:
     def __init__(self, **kwargs):
@@ -579,7 +579,7 @@ class CovP4DummyBlock:
 
 def test_legacy_lookup_fallback():
     c = CovP4DummyConsensus()
-    c._ensure_utxodb = Mock(return_value=None)
+    c.ensure_utxodb = Mock(return_value=None)
     
     cb = CovP4DummyTx(is_coinbase=True, txid=b"cb", txid_hex="cb")
     tx1 = CovP4DummyTx(is_coinbase=False, txid=b"tx1", txid_hex="tx1")
@@ -780,9 +780,9 @@ class CovP5DummyConsensus(ValidationProxy):
         if isinstance(entry, dict):
             return entry.get("script_pubkey")
         return getattr(entry, "script_pubkey", None)
-    def _cumulative_supply_until(self, h): return 0
-    def _scheduled_reward(self, h): return 10
-    def _ensure_utxodb(self): return None
+    def cumulative_supply_until(self, h): return 0
+    def scheduled_reward(self, h): return 10
+    def ensure_utxodb(self): return None
 
 def setup_validate_block_mock_p5(c):
     c._validate_pow = Mock(return_value=True)
@@ -802,7 +802,7 @@ def test_pow_ms_warning(mocker):
     setup_validate_block_mock_p5(c)
     
     store = Mock()
-    c._ensure_utxodb = Mock(return_value=store)
+    c.ensure_utxodb = Mock(return_value=store)
     store.lookup_entry = None
     store.utxos = None
     store.load_utxo_set = Mock(return_value={})
@@ -935,9 +935,9 @@ class CovP6DummyConsensus(ValidationProxy):
         self.lock = Mock()
     def _entry_script_bytes(self, entry):
         return entry.get("script_pubkey")
-    def _cumulative_supply_until(self, h): return 0
-    def _scheduled_reward(self, h): return 10
-    def _ensure_utxodb(self): return None
+    def cumulative_supply_until(self, h): return 0
+    def scheduled_reward(self, h): return 10
+    def ensure_utxodb(self): return None
 
 def setup_validate_block_mock_p6(c):
     c._validate_pow = Mock(return_value=True)

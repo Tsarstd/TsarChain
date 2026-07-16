@@ -67,7 +67,7 @@ class TestChainStorage:
     def save_state(self): return self.chain_storage.save_state()
     def _compute_state_snapshot(self): return self.chain_storage._compute_state_snapshot()
 
-    def _ensure_utxodb(self):
+    def ensure_utxodb(self):
 
         if self._utxo_db is None:
             self._utxo_db = UTXODB()
@@ -93,7 +93,7 @@ class TestChainStorage:
     def _compute_chainwork_for_chain(self, chain):
         return 0
 
-    def _scheduled_reward(self, height):
+    def scheduled_reward(self, height):
         # mock implementation: return 50_000_000_000 (50 TSAR) as constant
         return 50_000_000_000
 
@@ -631,8 +631,8 @@ def test_load_chain_with_kv(storage, monkeypatch):
     # Bypass journal – it is a fallback and not needed for this test
     storage._apply_chain_journal = lambda data: data  # no-op
 
-    # Also need to patch _ensure_utxodb and annotate
-    storage._ensure_utxodb = Mock()
+    # Also need to patch ensure_utxodb and annotate
+    storage.ensure_utxodb = Mock()
     annotate_mock = Mock()
     monkeypatch.setattr('tsarchain.consensus.chain_storage.annotate_local_snapshot_meta', annotate_mock)
 
@@ -835,14 +835,14 @@ def test_compute_state_snapshot(storage, monkeypatch):
     }
     utxo._graffiti_registry = registry
 
-    storage._ensure_utxodb = Mock(return_value=utxo)
+    storage.ensure_utxodb = Mock(return_value=utxo)
 
     # Mock helpers
     mock_estimate = Mock(return_value=200)
     monkeypatch.setattr('tsarchain.consensus.chain_storage.estimate_block_size_bytes', mock_estimate)
     storage._compute_chainwork_for_chain = Mock(return_value=100)
     storage.median_time_past = Mock(return_value=1500)
-    storage._scheduled_reward = Mock(return_value=50_000_000_000)
+    storage.scheduled_reward = Mock(return_value=50_000_000_000)
     storage.get_mempool = Mock(return_value=None)
 
     # Mock bits_to_target and target_to_difficulty

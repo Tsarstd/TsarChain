@@ -24,8 +24,8 @@ def test_broadcast_init_with_mocks(mock_dandelion, mock_txpool, mock_utxodb_clas
 @patch('tsarchain.network.broadcast.TxPool')
 @patch('tsarchain.network.broadcast.DandelionPP')
 def test_broadcast_init_default(mock_dandelion, mock_txpool, mock_utxodb_class, mock_blockchain_class):
-    # If get_utxo_store exists, it will be used instead of creating a new UTXODB
-    mock_blockchain_class.return_value.get_utxo_store.return_value = None
+    # If ensure_utxodb exists, it will be used instead of creating a new UTXODB
+    mock_blockchain_class.return_value.ensure_utxodb.return_value = None
     
     broadcast = Broadcast()
     

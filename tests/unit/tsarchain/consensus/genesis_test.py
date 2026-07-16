@@ -83,23 +83,20 @@ class DummyBlockchain:
         self._utxo_dirty = False
         self.genesis_manager = GenesisManager(self)
 
-    def has_genesis(self) -> bool:
-        return self.genesis_manager.has_genesis()
-
     def _persist_empty_state_if_needed(self):
         return self.genesis_manager._persist_empty_state_if_needed()
 
     def _enforce_genesis_lock(self):
         return self.genesis_manager._enforce_genesis_lock()
 
-    def _create_genesis_with_lock(self, miner_address: str, use_cores: int | None=None):
-        return self.genesis_manager._create_genesis_with_lock(miner_address, use_cores)
+    def create_genesis_with_lock(self, miner_address: str, use_cores: int | None=None):
+        return self.genesis_manager.create_genesis_with_lock(miner_address, use_cores)
 
     def ensure_genesis(self, miner_address: str, use_cores: int | None = None) -> bool:
         return self.genesis_manager.ensure_genesis(miner_address, use_cores)
 
     def create_genesis_block(self, miner_address, use_cores: int | None = None):
-        return self.genesis_manager.create_genesis_block(miner_address, use_cores)
+        return self.genesis_manager._create_genesis_block(miner_address, use_cores)
 
     def save_state(self):
         self._state_saved = True
@@ -116,13 +113,13 @@ class DummyBlockchain:
     def _mark_chain_dirty(self, height):
         self._chain_dirty = True
 
-    def _ensure_utxodb(self):
+    def ensure_utxodb(self):
         return Mock()  # return a mock store
 
-    def _mark_utxo_dirty(self):
+    def mark_utxo_dirty(self):
         self._utxo_dirty = True
 
-    def _maybe_flush_utxo(self, force=False):
+    def maybe_flush_utxo(self, force=False):
         pass
 
     def calculate_total_supply(self):
@@ -130,18 +127,6 @@ class DummyBlockchain:
 
 
 # -------------------- Tests for GenesisManager methods --------------------
-
-def test_has_genesis_false():
-    """has_genesis returns False when chain is empty."""
-    bc = DummyBlockchain(chain=[])
-    assert bc.has_genesis() is False
-
-
-def test_has_genesis_true():
-    """has_genesis returns True when chain has at least one block."""
-    bc = DummyBlockchain(chain=[Mock()])
-    assert bc.has_genesis() is True
-
 
 def test_persist_empty_state_if_needed():
     """_persist_empty_state_if_needed calls save_state."""
@@ -214,20 +199,20 @@ def test_enforce_genesis_lock_success(monkeypatch):
 
 
 def test_create_genesis_with_lock_success(monkeypatch):
-    """_create_genesis_with_lock calls create_genesis_block and saves if needed."""
+    """create_genesis_with_lock calls _create_genesis_block and saves if needed."""
     # Set GENESIS_HASH to match created block's hash
     expected = b"a" * 32
     monkeypatch.setattr("tsarchain.consensus.genesis.GENESIS_HASH", expected)
 
     bc = DummyBlockchain(in_memory=False)
-    # Override create_genesis_block on genesis_manager
+    # Override _create_genesis_block on genesis_manager
     def fake_create_genesis(self_manager, miner, use_cores):
         block = Mock()
         block.hash = Mock(return_value=expected)
         self_manager.blockchain.chain.append(block)
-    bc.genesis_manager.create_genesis_block = fake_create_genesis.__get__(bc.genesis_manager)
+    bc.genesis_manager._create_genesis_block = fake_create_genesis.__get__(bc.genesis_manager)
 
-    bc._create_genesis_with_lock("miner", use_cores=4)
+    bc.create_genesis_with_lock("miner", use_cores=4)
 
     # Check that save_chain and save_state were called
     assert bc._saved is True
@@ -242,15 +227,15 @@ def test_create_genesis_with_lock_hash_mismatch(monkeypatch):
     monkeypatch.setattr("tsarchain.consensus.genesis.GENESIS_HASH", expected)
 
     bc = DummyBlockchain()
-    # Override create_genesis_block to produce a different hash
+    # Override _create_genesis_block to produce a different hash
     def fake_create_genesis(self_manager, miner, use_cores):
         block = Mock()
         block.hash = Mock(return_value=b"b" * 32)
         self_manager.blockchain.chain.append(block)
-    bc.genesis_manager.create_genesis_block = fake_create_genesis.__get__(bc.genesis_manager)
+    bc.genesis_manager._create_genesis_block = fake_create_genesis.__get__(bc.genesis_manager)
 
     with pytest.raises(ValueError, match="does not match TSAR_GENESIS_HASH"):
-        bc._create_genesis_with_lock("miner", use_cores=4)
+        bc.create_genesis_with_lock("miner", use_cores=4)
 
 
 def test_create_genesis_with_lock_in_memory(monkeypatch):
@@ -263,9 +248,9 @@ def test_create_genesis_with_lock_in_memory(monkeypatch):
         block = Mock()
         block.hash = Mock(return_value=expected)
         self_manager.blockchain.chain.append(block)
-    bc.genesis_manager.create_genesis_block = fake_create_genesis.__get__(bc.genesis_manager)
+    bc.genesis_manager._create_genesis_block = fake_create_genesis.__get__(bc.genesis_manager)
 
-    bc._create_genesis_with_lock("miner", use_cores=4)
+    bc.create_genesis_with_lock("miner", use_cores=4)
     # save_chain and save_state should not be called
     assert bc._saved is False
     assert bc._state_saved is False
@@ -282,7 +267,7 @@ def test_ensure_genesis_auto_disabled(monkeypatch):
     """If ALLOW_AUTO_GENESIS is False, returns False."""
     monkeypatch.setattr("tsarchain.consensus.genesis.CFG.ALLOW_AUTO_GENESIS", False)
     bc = DummyBlockchain(chain=[])
-    with patch.object(bc.genesis_manager, "_create_genesis_with_lock") as mock_create:
+    with patch.object(bc.genesis_manager, "create_genesis_with_lock") as mock_create:
         result = bc.ensure_genesis("miner")
         assert result is False
         mock_create.assert_not_called()
@@ -292,7 +277,7 @@ def test_ensure_genesis_success(monkeypatch):
     """If chain empty and auto allowed, create genesis and return True."""
     monkeypatch.setattr("tsarchain.consensus.genesis.CFG.ALLOW_AUTO_GENESIS", True)
     bc = DummyBlockchain(chain=[])
-    with patch.object(bc.genesis_manager, "_create_genesis_with_lock") as mock_create:
+    with patch.object(bc.genesis_manager, "create_genesis_with_lock") as mock_create:
         result = bc.ensure_genesis("miner", use_cores=2)
         assert result is True
         mock_create.assert_called_once_with("miner", 2)
@@ -322,9 +307,9 @@ def test_create_genesis_block_success(mock_coinbase_cls, mock_block_cls, monkeyp
 
     # Mock store update and flush
     mock_store = Mock()
-    bc._ensure_utxodb = Mock(return_value=mock_store)
+    bc.ensure_utxodb = Mock(return_value=mock_store)
 
-    result = bc.create_genesis_block("miner_address", use_cores=4)
+    result = bc._create_genesis_block("miner_address", use_cores=4)
 
     # Assertions
     mock_coinbase_cls.assert_called_once_with(
@@ -351,15 +336,15 @@ def test_create_genesis_block_success(mock_coinbase_cls, mock_block_cls, monkeyp
         mock_block.transactions, block_height=0, autosave=False
     )
     assert bc._utxo_dirty is True
-    # _maybe_flush_utxo is called via _maybe_flush_utxo(force=True) - we can't easily check call count,
+    # maybe_flush_utxo is called via maybe_flush_utxo(force=True) - we can't easily check call count,
     # but we can mock it and assert call.
-    # We'll mock _maybe_flush_utxo to be sure.
-    bc._maybe_flush_utxo = Mock()
+    # We'll mock maybe_flush_utxo to be sure.
+    bc.maybe_flush_utxo = Mock()
     # Need to call again with our mock? Actually the method is called inside, so we should set before.
-    # But our _maybe_flush_utxo is already a mock? We'll set it after creation? Better to patch.
+    # But our maybe_flush_utxo is already a mock? We'll set it after creation? Better to patch.
     # Let's patch it.
-    with patch.object(bc, "_maybe_flush_utxo") as mock_flush:
-        # But we already called create_genesis_block once above, so we need to recreate.
+    with patch.object(bc, "maybe_flush_utxo") as mock_flush:
+        # But we already called _create_genesis_block once above, so we need to recreate.
         # To keep test clean, we can redefine inside a fresh test.
         # Since this is a single test, we'll just do it properly.
         pass
@@ -378,7 +363,7 @@ def test_create_genesis_block_validation_fails():
         block.hash.return_value = b"a" * 32
         mock_block_cls.return_value = block
         with pytest.raises(ValueError, match="Genesis block validation failed"):
-            bc.create_genesis_block("miner")
+            bc._create_genesis_block("miner")
 
 
 def test_create_genesis_block_hash_mismatch(monkeypatch):
@@ -391,7 +376,7 @@ def test_create_genesis_block_hash_mismatch(monkeypatch):
         block.hash.return_value = b"b" * 32  # different
         mock_block_cls.return_value = block
         with pytest.raises(ValueError, match="does not match TSAR_GENESIS_HASH"):
-            bc.create_genesis_block("miner")
+            bc._create_genesis_block("miner")
 
 
 def test_create_genesis_block_in_memory(monkeypatch):
@@ -404,7 +389,7 @@ def test_create_genesis_block_in_memory(monkeypatch):
         block = Mock()
         block.hash.return_value = b"a" * 32
         mock_block_cls.return_value = block
-        bc.create_genesis_block("miner")
+        bc._create_genesis_block("miner")
         assert len(bc.chain) == 1
         assert bc.total_supply == 100
         # save methods not called

@@ -55,7 +55,7 @@ class DummyBlockchain:
     def save_state(self):
         self.save_state_called = True
 
-    def _ensure_utxodb(self):
+    def ensure_utxodb(self):
         mock_store = MagicMock()
         mock_store.rebuild_from_chain = MagicMock()
         return mock_store
@@ -257,10 +257,10 @@ class ExtendedDummyBlockchain(DummyBlockchain):
         if save_state:
             self.save_state_calls += 1
 
-    def _mark_utxo_dirty(self):
+    def mark_utxo_dirty(self):
         self._utxo_dirty = True
 
-    def _ensure_utxodb(self):
+    def ensure_utxodb(self):
         # Return mock UTXO store
         store = MagicMock()
         store.update = MagicMock()
@@ -277,7 +277,7 @@ class ExtendedDummyBlockchain(DummyBlockchain):
     def _validate_complete_chain(self, chain):
         return self.chain_ops._validate_complete_chain(chain)
 
-    def _scheduled_reward(self, height):
+    def scheduled_reward(self, height):
 
         # Stub: return 50 * 10^8
         return 50_0000_0000
@@ -350,7 +350,7 @@ def test_add_block_genesis_success(mocker):
 
     bc = ExtendedDummyBlockchain(in_memory=True)
     genesis = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"genesis")
-    bc._ensure_utxodb = MagicMock(return_value=MagicMock())
+    bc.ensure_utxodb = MagicMock(return_value=MagicMock())
 
     result = bc.add_block(genesis)
     assert result is True
@@ -380,8 +380,8 @@ def test_add_block_non_genesis_success(mocker):
     bc.add_block(block0)
 
     block1 = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block1")
-    # mock _ensure_utxodb
-    bc._ensure_utxodb = MagicMock(return_value=MagicMock())
+    # mock ensure_utxodb
+    bc.ensure_utxodb = MagicMock(return_value=MagicMock())
     result = bc.add_block(block1)
     assert result is True
     assert len(bc.chain) == 2
@@ -627,7 +627,7 @@ class ValidatorBlockchain:
     def _validate_complete_chain(self, chain):
         return self.chain_ops._validate_complete_chain(chain)
 
-    def _scheduled_reward(self, height):
+    def scheduled_reward(self, height):
 
         return 50_0000_0000  # 50 coins
 
@@ -793,7 +793,7 @@ def test_replace_with_persistent_mode(mocker):
     # Mock UTXO store
     mock_store = MagicMock()
     mock_store.rebuild_from_chain = MagicMock()
-    bc._ensure_utxodb = MagicMock(return_value=mock_store)
+    bc.ensure_utxodb = MagicMock(return_value=mock_store)
 
     other = DummyBlockchain()
     other.chain = [MagicMock(), MagicMock(), MagicMock()]
@@ -825,7 +825,7 @@ def test_add_block_persistent_mode(mocker):
     # Mock UTXO store
     mock_store = MagicMock()
     mock_store.update = MagicMock()
-    bc._ensure_utxodb = MagicMock(return_value=mock_store)
+    bc.ensure_utxodb = MagicMock(return_value=mock_store)
 
     genesis = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"genesis")
     bc.add_block(genesis)
@@ -856,7 +856,7 @@ def test_swap_tip_if_better_persistent_mode(mocker):
     # Mock UTXO store
     mock_store = MagicMock()
     mock_store.rebuild_from_chain = MagicMock()
-    bc._ensure_utxodb = MagicMock(return_value=mock_store)
+    bc.ensure_utxodb = MagicMock(return_value=mock_store)
 
     candidate = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"candidate")
     old_tip = bc.swap_tip_if_better(candidate)

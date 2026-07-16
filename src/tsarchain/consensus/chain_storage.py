@@ -109,7 +109,7 @@ class ChainStorage:
             self.blockchain._snapshot_last_backup_height = self.blockchain._persisted_height
             
         if not self.blockchain.in_memory:
-            self.blockchain._ensure_utxodb()
+            self.blockchain.ensure_utxodb()
             self.blockchain._utxo_last_flush_height = getattr(self.blockchain, "height", len(self.blockchain.chain) - 1)
             self.blockchain._utxo_dirty = False
             tip_ts = None
@@ -608,7 +608,7 @@ class ChainStorage:
 
     def _compute_state_snapshot(self) -> dict:
         tip_height = self.blockchain.height
-        utxo = self.blockchain._ensure_utxodb() or UTXODB()
+        utxo = self.blockchain.ensure_utxodb() or UTXODB()
         utxo_version = getattr(utxo, "version", 0)
         cache = getattr(self.blockchain, "_state_snapshot_cache", None)
         token = (tip_height, utxo_version)
@@ -626,7 +626,7 @@ class ChainStorage:
         cur_epoch = 0 if tip_height < 0 else int(tip_height // int(CFG.BLOCKS_PER_HALVING))
         next_halving_height = int((cur_epoch + 1) * int(CFG.BLOCKS_PER_HALVING))
         blocks_to_halving = None if tip_height < 0 else max(0, next_halving_height - (tip_height + 1))
-        current_block_subsidy = self.blockchain._scheduled_reward(max(0, tip_height))
+        current_block_subsidy = self.blockchain.scheduled_reward(max(0, tip_height))
 
         genesis_block = chain[0] if chain else None
         tip_block = chain[-1] if chain else None
@@ -760,7 +760,7 @@ class ChainStorage:
             cb_amt = 0
             if outputs:
                 cb_amt = int(getattr(outputs[0], "amount", 0) or 0)
-            base = self.blockchain._scheduled_reward(int(getattr(blk, "height", 0) or 0))
+            base = self.blockchain.scheduled_reward(int(getattr(blk, "height", 0) or 0))
             fee = max(0, cb_amt - base)
             total_fees_paid += fee
             miner_addr = getattr(coinbase, "to_address", None)

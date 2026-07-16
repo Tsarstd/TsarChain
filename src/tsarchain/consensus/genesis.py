@@ -46,11 +46,31 @@ class GenesisManager:
     def __init__(self, blockchain: "Blockchain"):
         self.blockchain = blockchain
 
-    def has_genesis(self) -> bool:
-        return bool(self.blockchain.chain)
+
+    def create_genesis_with_lock(self, miner_address: str, use_cores: int | None):
+        self._create_genesis_block(miner_address, use_cores=use_cores)
+        if GENESIS_HASH is not None:
+            g_hash = self.blockchain.chain[0].hash()
+            if g_hash != GENESIS_HASH:
+                raise ValueError("[Blockchain] Created genesis does not match TSAR_GENESIS_HASH; aborting")
+        if not self.blockchain.in_memory:
+            self.blockchain.save_chain()
+            self.blockchain.save_state()
+
+
+    def ensure_genesis(self, miner_address: str, use_cores: int | None = None) -> bool:
+        if self.blockchain.chain:
+            return False
+        if not CFG.ALLOW_AUTO_GENESIS:
+            log.info("[ensure_genesis] Auto-genesis disabled; waiting for peer sync")
+            return False
+        self.create_genesis_with_lock(miner_address, use_cores)
+        return True
+
 
     def _persist_empty_state_if_needed(self):
         self.blockchain.save_state()
+
 
     def _enforce_genesis_lock(self):
         if GENESIS_HASH is None or not self.blockchain.chain:
@@ -68,26 +88,8 @@ class GenesisManager:
             raise ValueError("[Blockchain] Genesis mismatch vs TSAR_GENESIS_HASH. "
                              "Wipe local data or unset the lock to continue.")
 
-    def _create_genesis_with_lock(self, miner_address: str, use_cores: int | None):
-        self.create_genesis_block(miner_address, use_cores=use_cores)
-        if GENESIS_HASH is not None:
-            g_hash = self.blockchain.chain[0].hash()
-            if g_hash != GENESIS_HASH:
-                raise ValueError("[Blockchain] Created genesis does not match TSAR_GENESIS_HASH; aborting")
-        if not self.blockchain.in_memory:
-            self.blockchain.save_chain()
-            self.blockchain.save_state()
 
-    def ensure_genesis(self, miner_address: str, use_cores: int | None = None) -> bool:
-        if self.blockchain.chain:
-            return False
-        if not CFG.ALLOW_AUTO_GENESIS:
-            log.info("[ensure_genesis] Auto-genesis disabled; waiting for peer sync")
-            return False
-        self._create_genesis_with_lock(miner_address, use_cores)
-        return True
-
-    def create_genesis_block(self, miner_address, use_cores: int | None = None):
+    def _create_genesis_block(self, miner_address, use_cores: int | None = None):
         height = 0
         reward = self.blockchain.get_block_reward(height)
         block_id = CFG.GENESIS_BLOCK_ID_DEFAULT
@@ -105,11 +107,11 @@ class GenesisManager:
         if not self.blockchain.in_memory:
             self.blockchain._mark_chain_dirty(genesis.height)
             self.blockchain.save_chain(force_full=True)
-            store = self.blockchain._ensure_utxodb()
+            store = self.blockchain.ensure_utxodb()
             if store is not None:
                 store.update(genesis.transactions, block_height=0, autosave=False)
-                self.blockchain._mark_utxo_dirty()
-                self.blockchain._maybe_flush_utxo(force=True)
+                self.blockchain.mark_utxo_dirty()
+                self.blockchain.maybe_flush_utxo(force=True)
             self.blockchain.save_state()
 
         else:
