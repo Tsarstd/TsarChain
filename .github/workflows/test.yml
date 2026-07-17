@@ -1,0 +1,38 @@
+name: Unit Tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test-python:
+    name: Test Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb
+          python -m pip install --upgrade pip maturin
+          pip install ./tsarcore_native
+          pip install -r requirements.txt
+          pip install pytest pytest-mock
+
+      - name: Run Python unit tests
+        run: |
+         xvfb-run -a env PYTHONPATH=src pytest
+
+      - name: Run Rust tests
+        working-directory: ./tsarcore_native
+        run: cargo test

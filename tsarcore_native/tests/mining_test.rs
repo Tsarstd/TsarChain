@@ -158,6 +158,10 @@ class MockEvent:
 
 #[test]
 fn test_mining_full_mem() {
+    if std::env::var("CI").is_ok() {
+        // Skip on GitHub Actions (debug mode full_mem takes minutes)
+        return;
+    }
     init_python();
     Python::attach(|py| {
         let prefix = PyBytes::new(py, &[3u8; 76]);

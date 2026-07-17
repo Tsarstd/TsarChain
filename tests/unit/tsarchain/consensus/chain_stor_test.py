@@ -267,12 +267,12 @@ def test_write_snapshot_manifest(storage, tmp_path):
     assert data["height"] == 100
 
 
-def test_maybe_backup_snapshot(storage, monkeypatch):
+def test_maybe_backup_snapshot(storage, monkeypatch, tmp_path):
     # Setup conditions
     storage.in_memory = False
     CFG.BACKUP_SNAPSHOT = True
     CFG.BLOCK_BACKUP_SNAPSHOT = 10
-    CFG.SNAPSHOT_BACKUP_DIR = "/tmp/backup"
+    CFG.SNAPSHOT_BACKUP_DIR = str(tmp_path / "backup")
 
     # Mock kv_enabled
     monkeypatch.setattr('tsarchain.consensus.chain_storage.kv_enabled', lambda: True)
@@ -287,13 +287,14 @@ def test_maybe_backup_snapshot(storage, monkeypatch):
     monkeypatch.setattr('threading.Thread', FakeThread)
 
     # Mock _copy_snapshot_env, _hash_file, annotate_local_snapshot_meta
-    storage.chain_storage._copy_snapshot_env = Mock()
+    def fake_copy(target):
+        os.makedirs(target, exist_ok=True)
+        with open(os.path.join(target, "data.mdb"), "w") as f:
+            f.write("dummy")
+    storage.chain_storage._copy_snapshot_env = Mock(side_effect=fake_copy)
     storage.chain_storage._hash_file = Mock(return_value="abc123")
     annotate_mock = Mock(return_value={"height": 5, "size": 200, "sha256": "abc123"})
     monkeypatch.setattr('tsarchain.consensus.chain_storage.annotate_local_snapshot_meta', annotate_mock)
-
-    # Mock os.path.exists
-    monkeypatch.setattr('os.path.exists', lambda p: True)
 
     # Set chain with tip
     storage.chain = [Mock(timestamp=1000)]

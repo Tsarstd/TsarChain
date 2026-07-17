@@ -5,9 +5,6 @@
 
 //! == Install ==
 //! cd tsarcore_native
-//! maturin develop --release
-
-//! -- (Optional)
 //! maturin develop --release --features parallel
 
 //! == Uninstall ==

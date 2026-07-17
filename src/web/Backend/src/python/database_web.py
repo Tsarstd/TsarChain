@@ -542,11 +542,11 @@ def _guess_media_ext(meta: dict, art_id: str) -> str:
     return ext or ".bin"
 
 def _write_cache_file(cache_root: str, art_id: str, meta: dict, data: bytes) -> str:
-    os.makedirs(cache_root, exist_ok=True)
     ext = _guess_media_ext(meta, art_id)
     log.info("mime=%s", ext)
     cache_path = os.path.join(cache_root, f"{art_id}{ext}")
     try:
+        os.makedirs(cache_root, exist_ok=True)
         if not os.path.exists(cache_path) or os.path.getsize(cache_path) != len(data):
             with open(cache_path, "wb") as fh:
                 fh.write(data)

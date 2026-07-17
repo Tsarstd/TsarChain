@@ -147,9 +147,10 @@ def test_wallet_create_from_mnemonic(mock_add):
     addr = data_security.Wallet.create_from_mnemonic(mnemo, "StrongPass123!")
     assert addr == "tsar1test"
 
+@patch("kremlin.security.data_security.Security.log_security_event")
 @patch("kremlin.security.data_security.load_keystore")
 @patch("os.path.exists", return_value=True)
-def test_wallet_unlock(mock_exists, mock_load):
+def test_wallet_unlock(mock_exists, mock_load, mock_log):
     priv = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
     enc = data_security.encrypt_privkey(priv, "StrongPass123!")
     

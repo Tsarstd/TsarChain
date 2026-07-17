@@ -41,7 +41,6 @@ sonar-project.properties
 htmlcov/
 
 /tsarcore_native/target/
-tsarcore_native/Cargo.lock
 tsarcore_native/cobertura.xml
 
 .DS_Store
