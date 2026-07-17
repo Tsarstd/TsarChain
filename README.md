@@ -193,38 +193,40 @@ Platforms curate history; networks preserve it. TsarChain treats each message, a
 
 ## 🚀 Getting Started
 
-#### Requirements:
-- Python ≥ 3.11, Git
-- Rust toolchain for native acceleration
-- CMake 4.x+
+Graffiti Protocol provides a fully automated single-command setup script that installs all prerequisites (Rust, CMake, Node.js, Python), prepares the virtual environment, installs web & Python dependencies, and builds the Rust Native Extension.
 
-#### 1. Setup
-```bash
-python -m venv .venv
-# Windows: .venv\Scripts\activate
-source .venv/bin/activate
-pip install -r requirements.txt
+#### 1. Run Setup Script
+
+**For Windows (PowerShell):**
+Run PowerShell (preferably as Administrator for `winget`) and execute:
+```powershell
+.\setup.ps1
 ```
 
-#### 2. Build Native Extension
-- TsarChain `tsarcore_native` (RandomX, hashing, and some heavy routines) is built with Rust + CMake.  
-- You need **CMake 4.x+** installed on your system before running `maturin develop`.
-  ```bash
-  # After Instaling CMake
-  pip install maturin
-  cd tsarcore_native
-  maturin develop --release --features parallel
+**For Linux / macOS (Bash):**
+Open your terminal and execute:
+```bash
+chmod +x setup.sh
+./setup.sh
+```
 
-  # -- Run Test --
-  python benchmarks/native_test.py
-  ```
-  > ⚠️ If there are any installation problems or issues, read the complete instructions and troubleshooting steps at: [`INSTALL_NATIVE.md`](INSTALL_NATIVE.md)
+#### 2. Activate Virtual Environment
+After the setup is complete, you **MUST** activate the virtual environment before running any application or test:
+```bash
+# Windows
+.\.venv\Scripts\activate
 
-- TsarChain always loads the Rust extension; ensure `tsarcore_native` is installed in the active environment. **see more detailed information about tsarcore_native* [`here`](tsarcore_native/README.md)
+# Linux / macOS
+source .venv/bin/activate
+```
+
+> ⚠️ If there are any installation problems or issues regarding the Rust native extension, read the complete instructions and troubleshooting steps at: [`INSTALL_NATIVE.md`](INSTALL_NATIVE.md). For detailed information about `tsarcore_native`, see [`here`](tsarcore_native/README.md).
 
 ---
 
 ## 🏃🏻‍♂️ Quickstart
+
+Make sure your virtual environment is activated, then run any of the applications below:
 
 **Run a Miner/Node**
 ```bash

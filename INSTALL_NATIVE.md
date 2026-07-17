@@ -18,7 +18,7 @@ been removed to avoid divergence, so keeping the native library installed is man
 
 ## 1) Prerequisites
 
-- **Python** 3.8–3.12 (recommended to use a virtual environment)
+- **Python** 3.10–3.12
 - **Rust toolchain (stable)** via [`rustup`](https://rustup.rs/)
 - **maturin** (`pip install maturin`)
 - **cmake** 4.2.0+ (RandomX vendored sources are compiled during the build)
