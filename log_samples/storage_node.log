@@ -1,0 +1,17 @@
+2025-12-16 05:21:58 [TRACE] - tsarchain: Logging configured: level=TRACE file=data\logging\tsarchain.log format=plain console=False rotate=5000000 backup=3
+2025-12-16 05:21:58 [INFO] - apps.archivist: Launching Tsar Storage GUI
+2025-12-16 05:22:05 [INFO] - tsarchain.native: [open_storage] backend=lmdb path=data/storage/index_db map_size_init=104857600 map_size_max=68719476736
+2025-12-16 05:22:05 [INFO] - tsarchain.native: [open_storage] backend=lmdb path=data/storage/incoming_db map_size_init=104857600 map_size_max=68719476736
+2025-12-16 05:22:05 [INFO] - tsarchain.native: [open_storage] backend=lmdb path=data/storage/final_db map_size_init=104857600 map_size_max=68719476736
+2025-12-16 05:22:05 [DEBUG] - tsarchain.contracts.storage_node.connect: [RPC.connect] handshake result True to 127.0.0.1:38169
+2025-12-16 05:22:05 [INFO] - tsarchain.contracts.storage_node.connect: [RPC.connect] storage handshake ok to 127.0.0.1:38169 listen_port=39200
+2025-12-16 05:22:05 [INFO] - apps.archivist: Connected to node 127.0.0.1:38169
+2025-12-16 05:23:36 [DEBUG] - tsarchain.contracts.storage_node.wallet_route: Received STOR_INIT
+2025-12-16 05:23:36 [INFO] - tsarchain.contracts.storage_node.wallet_route: [STOR_INIT] aid=b332b5d04b42f1dc size=6588704 art_id=graf56222a903a7c state=receiving
+2025-12-16 05:23:38 [DEBUG] - tsarchain.contracts.storage_node.wallet_route: Received STOR_COMMIT
+2025-12-16 05:23:38 [INFO] - tsarchain.contracts.storage_node.wallet_route: [STOR_COMMIT] aid=b332b5d04b42f1dc size=6588704 -> pending_confirm
+2025-12-16 05:24:59 [INFO] - tsarchain.contracts.storage_node.node_route: [STOR_PAID] aid=b332b5d04b42f1dc h=11 expire=0
+2025-12-16 05:25:05 [INFO] - tsarchain.contracts.storage_node.node_route: [STOR_PROOF_RUN] aid=b332b5d04b42f1dc epoch=0 offset=3148516 len=76800
+2025-12-16 05:25:08 [DEBUG] - tsarchain.contracts.storage_node.wallet_route: size_art: 8650752
+2025-12-16 05:26:30 [DEBUG] - tsarchain.contracts.storage_node.wallet_route: size_art: 8650752
+2025-12-16 05:27:05 [INFO] - tsarchain.contracts.storage_node.node_route: [STOR_PROOF_RUN] aid=b332b5d04b42f1dc epoch=1 offset=5602777 len=76800

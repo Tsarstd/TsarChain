@@ -1,0 +1,371 @@
+2025-12-16 05:19:37 [TRACE] - tsarchain: Logging configured: level=TRACE file=data\logging\tsarchain.log format=plain console=False rotate=5000000 backup=3
+2025-12-16 05:19:39 [INFO] - tsarchain.native: [open_storage] backend=lmdb path=data/tsarchain_db map_size_init=4194304 map_size_max=68719476736
+2025-12-16 05:19:39 [DEBUG] - tsarchain.storage.kv: [kv] using native storage backend (lmdb)
+2025-12-16 05:19:39 [INFO] - tsarchain.network.node_logic.server: [start_server] Listening on port 38169...
+2025-12-16 05:20:06 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 0.650 ms
+2025-12-16 05:20:21 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_INFO] Benchmark : 0.022 ms
+2025-12-16 05:20:21 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 0.011 ms
+2025-12-16 05:20:21 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.017 ms cache_hit=False height=6
+2025-12-16 05:20:21 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 0.102 ms cache_hit=False
+2025-12-16 05:20:21 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.023 ms
+2025-12-16 05:20:21 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_BLOCKS] Benchmark : 0.074 ms
+2025-12-16 05:20:24 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 0.616 ms
+2025-12-16 05:20:27 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.012 ms cache_hit=False height=6
+2025-12-16 05:20:27 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 0.163 ms cache_hit=False
+2025-12-16 05:20:27 [DEBUG] - tsarchain.network.node_logic.rpc_client: [rpc_conn] cache_hit=False peer=('127.0.0.1', 38170) new_conn=True
+2025-12-16 05:20:27 [DEBUG] - tsarchain.network.node_logic.rpc_client: [_prefetch_peer_channel] warmed channel to ('127.0.0.1', 38170)
+2025-12-16 05:20:27 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.015 ms
+2025-12-16 05:20:29 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.005 ms cache_hit=True height=6
+2025-12-16 05:20:29 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 0.171 ms cache_hit=True
+2025-12-16 05:20:29 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.012 ms
+2025-12-16 05:20:29 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.002 ms cache_hit=True height=6
+2025-12-16 05:20:29 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 0.079 ms cache_hit=True
+2025-12-16 05:20:29 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.007 ms
+2025-12-16 05:20:34 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.016 ms
+2025-12-16 05:20:38 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 0.500 ms
+2025-12-16 05:20:39 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 0.666 ms
+2025-12-16 05:20:39 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 0.442 ms
+2025-12-16 05:20:41 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 0.444 ms
+2025-12-16 05:20:46 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 0.014 ms
+2025-12-16 05:20:50 [DEBUG] - tsarchain.network.client_helper: [tx_limits] ctx=create_single vsize=277 weight=1108 base=277 total=277 vin=5 vout=2
+2025-12-16 05:20:50 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 0.580 ms
+2025-12-16 05:20:50 [DEBUG] - tsarchain.mempool.validation: [validate_transaction] Benchmark : 0.571 ms
+2025-12-16 05:20:50 [DEBUG] - tsarchain.network.rpc.user_rpc: [NEW_TX] Benchmark : 7.410 ms
+2025-12-16 05:20:51 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 1.067 ms
+2025-12-16 05:20:52 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 0.597 ms
+2025-12-16 05:20:54 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.013 ms
+2025-12-16 05:20:55 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 0.747 ms
+2025-12-16 05:20:59 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.010 ms cache_hit=False height=6
+2025-12-16 05:21:02 [DEBUG] - tsarchain.consensus.validation: [pow_warm] warmed epoch=1
+2025-12-16 05:21:02 [DEBUG] - tsarchain.consensus.validation: [pow_warm] ensured epoch=0 ready
+2025-12-16 05:21:02 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 2902.646 ms cache_hit=False
+2025-12-16 05:21:02 [DEBUG] - tsarchain.consensus.validation: [validate_block] pow_ms=5806.748 height=7 hash_cached=True
+2025-12-16 05:21:02 [INFO] - tsarchain.network.node_logic.sync: [_download_blocks.chunk] requesting 1 blocks (7-7) from ('127.0.0.1', 38170)
+2025-12-16 05:21:02 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark precheck=0.051 ms validate=5807.415 ms height=7
+2025-12-16 05:21:02 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark height=7 total=5811.186 ms deser=0.117 ms lock=0.004 ms pre=0.051 ms val=5807.415 ms add=3.323 ms mempool=0.004 ms utxo=None ms broadcast=0.026 ms
+2025-12-16 05:21:02 [WARNING] - tsarchain.network.cast.receive: [receive_block] slow total=5811.186 ms height=7 deser=0.117 lock=0.004 pre=0.051 val=5807.415 add=3.323 mempool=0.004 utxo=None bcast=0.026
+2025-12-16 05:21:02 [DEBUG] - tsarchain.network.rpc.miner_rpc: [NEW_BLOCK] Benchmark_total : 5815.067 ms
+2025-12-16 05:21:02 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.009 ms
+2025-12-16 05:21:07 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.014 ms
+2025-12-16 05:21:07 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 0.391 ms
+2025-12-16 05:21:12 [DEBUG] - tsarchain.network.node_logic.rpc_client: [_request_mempool_inline] added=0 total=1 from ('127.0.0.1', 38170)
+2025-12-16 05:21:15 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.095 ms
+2025-12-16 05:21:15 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.069 ms
+2025-12-16 05:21:25 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 0.762 ms
+2025-12-16 05:21:27 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.013 ms
+2025-12-16 05:21:28 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 1.320 ms
+2025-12-16 05:21:36 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.060 ms
+2025-12-16 05:21:47 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.012 ms
+2025-12-16 05:21:50 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 1.437 ms
+2025-12-16 05:21:55 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 0.816 ms
+2025-12-16 05:21:57 [DEBUG] - tsarchain.network.node_logic.rpc_client: [_request_mempool_inline] added=0 total=1 from ('127.0.0.1', 38170)
+2025-12-16 05:21:57 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.079 ms
+2025-12-16 05:22:05 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.108 ms
+2025-12-16 05:22:05 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.019 ms
+2025-12-16 05:22:05 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.016 ms
+2025-12-16 05:22:07 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.012 ms
+2025-12-16 05:22:09 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.076 ms
+2025-12-16 05:22:09 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.012 ms
+2025-12-16 05:22:11 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 13.071 ms
+2025-12-16 05:22:19 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.062 ms
+2025-12-16 05:22:19 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.080 ms
+2025-12-16 05:22:19 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.010 ms
+2025-12-16 05:22:25 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 0.776 ms
+2025-12-16 05:22:27 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.012 ms
+2025-12-16 05:22:29 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.072 ms
+2025-12-16 05:22:29 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.012 ms
+2025-12-16 05:22:32 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 22.293 ms
+2025-12-16 05:22:39 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.085 ms
+2025-12-16 05:22:39 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.010 ms
+2025-12-16 05:22:40 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.077 ms
+2025-12-16 05:22:47 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.012 ms
+2025-12-16 05:22:49 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.071 ms
+2025-12-16 05:22:49 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.011 ms
+2025-12-16 05:22:54 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 1.362 ms
+2025-12-16 05:22:56 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 0.765 ms
+2025-12-16 05:22:59 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.071 ms
+2025-12-16 05:22:59 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.010 ms
+2025-12-16 05:23:01 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.065 ms
+2025-12-16 05:23:02 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.009 ms cache_hit=False height=7
+2025-12-16 05:23:02 [DEBUG] - tsarchain.consensus.validation: [validate_block] pow_ms=18.084 height=8 hash_cached=True
+2025-12-16 05:23:02 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 0.282 ms cache_hit=False
+2025-12-16 05:23:02 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark precheck=0.033 ms validate=18.661 ms height=8
+2025-12-16 05:23:02 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark height=8 total=22.372 ms deser=0.12 ms lock=0.006 ms pre=0.033 ms val=18.661 ms add=3.302 ms mempool=0.003 ms utxo=None ms broadcast=0.025 ms
+2025-12-16 05:23:02 [DEBUG] - tsarchain.network.rpc.miner_rpc: [NEW_BLOCK] Benchmark_total : 24.600 ms
+2025-12-16 05:23:02 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.009 ms
+2025-12-16 05:23:05 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.015 ms
+2025-12-16 05:23:07 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.015 ms
+2025-12-16 05:23:09 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.075 ms
+2025-12-16 05:23:09 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.010 ms
+2025-12-16 05:23:10 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.010 ms cache_hit=False height=7
+2025-12-16 05:23:10 [DEBUG] - tsarchain.consensus.validation: [validate_block] pow_ms=19.069 height=9 hash_cached=True
+2025-12-16 05:23:10 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 0.258 ms cache_hit=False
+2025-12-16 05:23:10 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark precheck=0.481 ms validate=20.17 ms height=9
+2025-12-16 05:23:10 [DEBUG] - tsarchain.consensus.chain_ops: [_prune_mempool_confirmed] Removed 1 confirmed txs from mempool
+2025-12-16 05:23:10 [DEBUG] - tsarchain.network.cast.receive: [receive_block] 1 mempool tx already absent when pruning confirmed set
+2025-12-16 05:23:10 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark height=9 total=35.127 ms deser=0.177 ms lock=0.002 ms pre=0.481 ms val=20.17 ms add=10.104 ms mempool=3.967 ms utxo=None ms broadcast=0.036 ms
+2025-12-16 05:23:10 [DEBUG] - tsarchain.network.rpc.miner_rpc: [NEW_BLOCK] Benchmark_total : 35.267 ms
+2025-12-16 05:23:10 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.010 ms
+2025-12-16 05:23:15 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 0.008 ms
+2025-12-16 05:23:15 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.018 ms
+2025-12-16 05:23:19 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.064 ms
+2025-12-16 05:23:19 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.013 ms
+2025-12-16 05:23:26 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 1.021 ms
+2025-12-16 05:23:27 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.012 ms
+2025-12-16 05:23:29 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.077 ms
+2025-12-16 05:23:29 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.012 ms
+2025-12-16 05:23:32 [DEBUG] - tsarchain.network.rpc.user_rpc: [STOR_LIST] Benchmark : 0.017 ms
+2025-12-16 05:23:32 [DEBUG] - tsarchain.network.client_helper: Graffiti Post Ok: size=6588704 limit=10485760
+2025-12-16 05:23:32 [DEBUG] - tsarchain.network.client_helper: [tx_limits] ctx=create_multi vsize=575 weight=2300 base=575 total=575 vin=1 vout=3
+2025-12-16 05:23:32 [DEBUG] - tsarchain.network.rpc.user_rpc: [CREATE_TX_MULTI] Benchmark : 0.782 ms
+2025-12-16 05:23:35 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.014 ms
+2025-12-16 05:23:35 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 0.007 ms
+2025-12-16 05:23:36 [DEBUG] - tsarchain.mempool.validation: [validate_transaction] Benchmark : 0.545 ms
+2025-12-16 05:23:36 [DEBUG] - tsarchain.network.rpc.user_rpc: [NEW_TX] Benchmark : 7.513 ms
+2025-12-16 05:23:36 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 0.399 ms
+2025-12-16 05:23:39 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.255 ms
+2025-12-16 05:23:39 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.013 ms
+2025-12-16 05:23:44 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.054 ms
+2025-12-16 05:23:44 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.041 ms
+2025-12-16 05:23:49 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.242 ms
+2025-12-16 05:23:49 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.010 ms
+2025-12-16 05:23:55 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.014 ms
+2025-12-16 05:23:56 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 0.929 ms
+2025-12-16 05:23:58 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 1.369 ms
+2025-12-16 05:23:59 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.255 ms
+2025-12-16 05:23:59 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.011 ms
+2025-12-16 05:24:05 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.012 ms
+2025-12-16 05:24:05 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.056 ms
+2025-12-16 05:24:09 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.238 ms
+2025-12-16 05:24:09 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.011 ms
+2025-12-16 05:24:10 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.243 ms
+2025-12-16 05:24:13 [DEBUG] - tsarchain.consensus.validation: [validate_block] pow_ms=20.128 height=10 hash_cached=True
+2025-12-16 05:24:13 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark precheck=0.033 ms validate=20.709 ms height=10
+2025-12-16 05:24:13 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark height=10 total=24.53 ms deser=0.166 ms lock=0.003 ms pre=0.033 ms val=20.709 ms add=3.43 ms mempool=0.003 ms utxo=None ms broadcast=0.022 ms
+2025-12-16 05:24:13 [DEBUG] - tsarchain.network.rpc.miner_rpc: [NEW_BLOCK] Benchmark_total : 31.859 ms
+2025-12-16 05:24:13 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.006 ms cache_hit=False height=9
+2025-12-16 05:24:13 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 0.086 ms cache_hit=False
+2025-12-16 05:24:13 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.016 ms
+2025-12-16 05:24:15 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_BLOCK] 'height' Benchmark : 0.129 ms
+2025-12-16 05:24:18 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.014 ms
+2025-12-16 05:24:19 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.237 ms
+2025-12-16 05:24:19 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.015 ms
+2025-12-16 05:24:19 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 21.861 ms
+2025-12-16 05:24:20 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_BLOCK] 'hash' Benchmark : 0.103 ms
+2025-12-16 05:24:26 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 0.975 ms
+2025-12-16 05:24:27 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.064 ms
+2025-12-16 05:24:29 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.235 ms
+2025-12-16 05:24:29 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.011 ms
+2025-12-16 05:24:38 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.017 ms
+2025-12-16 05:24:39 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.239 ms
+2025-12-16 05:24:39 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.009 ms
+2025-12-16 05:24:40 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 1.291 ms
+2025-12-16 05:24:47 [DEBUG] - tsarchain.network.node_logic.rpc_client: [_request_mempool_inline] added=0 total=1 from ('127.0.0.1', 38170)
+2025-12-16 05:24:48 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.058 ms
+2025-12-16 05:24:49 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.242 ms
+2025-12-16 05:24:49 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.010 ms
+2025-12-16 05:24:54 [DEBUG] - tsarchain.consensus.validation: [validate_block] pow_ms=19.187 height=11 hash_cached=True
+2025-12-16 05:24:54 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark precheck=0.118 ms validate=20.593 ms height=11
+2025-12-16 05:24:54 [DEBUG] - tsarchain.consensus.chain_ops: [_prune_mempool_confirmed] Removed 1 confirmed txs from mempool
+2025-12-16 05:24:54 [DEBUG] - tsarchain.network.cast.receive: [receive_block] 1 mempool tx already absent when pruning confirmed set
+2025-12-16 05:24:54 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark height=11 total=42.021 ms deser=0.14 ms lock=0.002 ms pre=0.118 ms val=20.593 ms add=16.629 ms mempool=4.36 ms utxo=None ms broadcast=0.031 ms
+2025-12-16 05:24:54 [DEBUG] - tsarchain.network.rpc.miner_rpc: [NEW_BLOCK] Benchmark_total : 45.817 ms
+2025-12-16 05:24:54 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.008 ms cache_hit=False height=10
+2025-12-16 05:24:54 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 0.109 ms cache_hit=False
+2025-12-16 05:24:54 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.015 ms
+2025-12-16 05:24:57 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 1.241 ms
+2025-12-16 05:24:59 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.026 ms
+2025-12-16 05:24:59 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.061 ms
+2025-12-16 05:24:59 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.017 ms
+2025-12-16 05:25:01 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 0.007 ms
+2025-12-16 05:25:02 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.013 ms cache_hit=False height=10
+2025-12-16 05:25:02 [DEBUG] - tsarchain.consensus.validation: [validate_block] pow_ms=21.286 height=12 hash_cached=True
+2025-12-16 05:25:02 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 0.309 ms cache_hit=False
+2025-12-16 05:25:02 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark precheck=0.033 ms validate=21.853 ms height=12
+2025-12-16 05:25:02 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark height=12 total=25.671 ms deser=0.156 ms lock=0.003 ms pre=0.033 ms val=21.853 ms add=3.326 ms mempool=0.003 ms utxo=None ms broadcast=0.029 ms
+2025-12-16 05:25:02 [DEBUG] - tsarchain.network.rpc.miner_rpc: [NEW_BLOCK] Benchmark_total : 30.063 ms
+2025-12-16 05:25:02 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.028 ms
+2025-12-16 05:25:03 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.019 ms
+2025-12-16 05:25:03 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_COMMENTS] Benchmark : 0.018 ms
+2025-12-16 05:25:04 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_PAYOUTS] Benchmark : 0.018 ms
+2025-12-16 05:25:04 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_COMMENTS] Benchmark : 0.017 ms
+2025-12-16 05:25:04 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_PAYOUTS] Benchmark : 0.023 ms
+2025-12-16 05:25:05 [DEBUG] - tsarchain.network.rpc.storage_rpc: [GRAFFITI_PROOF_SUBMIT] Benchmark : 3.204 ms
+2025-12-16 05:25:05 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.013 ms
+2025-12-16 05:25:07 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_ART] Benchmark : 0.029 ms
+2025-12-16 05:25:07 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.017 ms
+2025-12-16 05:25:07 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_COMMENTS] Benchmark : 0.012 ms
+2025-12-16 05:25:08 [DEBUG] - tsarchain.network.rpc.user_rpc: [STOR_LIST] Benchmark : 0.016 ms
+2025-12-16 05:25:09 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.077 ms
+2025-12-16 05:25:09 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.014 ms
+2025-12-16 05:25:19 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.062 ms
+2025-12-16 05:25:19 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.012 ms
+2025-12-16 05:25:23 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 0.011 ms
+2025-12-16 05:25:26 [DEBUG] - tsarchain.network.client_helper: Graffiti Comment Ok: len=21 amount=100000000 tip=200000000
+2025-12-16 05:25:26 [DEBUG] - tsarchain.network.client_helper: [tx_limits] ctx=create_multi vsize=499 weight=1996 base=499 total=499 vin=1 vout=4
+2025-12-16 05:25:26 [DEBUG] - tsarchain.network.rpc.user_rpc: [CREATE_TX_MULTI] Benchmark : 1.012 ms
+2025-12-16 05:25:27 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 1.588 ms
+2025-12-16 05:25:27 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.017 ms
+2025-12-16 05:25:29 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.061 ms
+2025-12-16 05:25:29 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.014 ms
+2025-12-16 05:25:31 [DEBUG] - tsarchain.mempool.validation: [validate_transaction] Benchmark : 0.464 ms
+2025-12-16 05:25:31 [DEBUG] - tsarchain.network.rpc.user_rpc: [NEW_TX] Benchmark : 7.515 ms
+2025-12-16 05:25:31 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_COMMENTS] Benchmark : 0.013 ms
+2025-12-16 05:25:36 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.009 ms cache_hit=False height=12
+2025-12-16 05:25:36 [DEBUG] - tsarchain.consensus.validation: [validate_block] pow_ms=18.73 height=13 hash_cached=True
+2025-12-16 05:25:36 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 0.254 ms cache_hit=False
+2025-12-16 05:25:36 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark precheck=0.023 ms validate=19.161 ms height=13
+2025-12-16 05:25:36 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark height=13 total=22.778 ms deser=0.116 ms lock=0.001 ms pre=0.023 ms val=19.161 ms add=3.258 ms mempool=0.002 ms utxo=None ms broadcast=0.023 ms
+2025-12-16 05:25:36 [DEBUG] - tsarchain.network.rpc.miner_rpc: [NEW_BLOCK] Benchmark_total : 26.810 ms
+2025-12-16 05:25:36 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.016 ms
+2025-12-16 05:25:39 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.195 ms
+2025-12-16 05:25:39 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.013 ms
+2025-12-16 05:25:41 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.018 ms
+2025-12-16 05:25:44 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 0.450 ms
+2025-12-16 05:25:49 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.217 ms
+2025-12-16 05:25:49 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.011 ms
+2025-12-16 05:25:52 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.077 ms
+2025-12-16 05:25:52 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.051 ms
+2025-12-16 05:25:57 [DEBUG] - tsarchain.consensus.validation: [validate_block] pow_ms=18.368 height=14 hash_cached=True
+2025-12-16 05:25:57 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark precheck=0.035 ms validate=18.979 ms height=14
+2025-12-16 05:25:57 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark height=14 total=22.705 ms deser=0.176 ms lock=0.003 ms pre=0.035 ms val=18.979 ms add=3.285 ms mempool=0.003 ms utxo=None ms broadcast=0.021 ms
+2025-12-16 05:25:57 [DEBUG] - tsarchain.network.rpc.miner_rpc: [NEW_BLOCK] Benchmark_total : 26.694 ms
+2025-12-16 05:25:57 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.007 ms cache_hit=False height=13
+2025-12-16 05:25:57 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 0.089 ms cache_hit=False
+2025-12-16 05:25:57 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.015 ms
+2025-12-16 05:25:57 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 1.316 ms
+2025-12-16 05:25:59 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.211 ms
+2025-12-16 05:25:59 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.015 ms
+2025-12-16 05:26:02 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.020 ms
+2025-12-16 05:26:04 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.009 ms cache_hit=False height=13
+2025-12-16 05:26:04 [DEBUG] - tsarchain.consensus.validation: [validate_block] pow_ms=19.046 height=15 hash_cached=True
+2025-12-16 05:26:04 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 0.263 ms cache_hit=False
+2025-12-16 05:26:04 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark precheck=0.123 ms validate=20.146 ms height=15
+2025-12-16 05:26:04 [DEBUG] - tsarchain.consensus.chain_ops: [_prune_mempool_confirmed] Removed 1 confirmed txs from mempool
+2025-12-16 05:26:04 [DEBUG] - tsarchain.network.cast.receive: [receive_block] 1 mempool tx already absent when pruning confirmed set
+2025-12-16 05:26:04 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark height=15 total=40.956 ms deser=0.139 ms lock=0.002 ms pre=0.123 ms val=20.146 ms add=16.102 ms mempool=4.201 ms utxo=None ms broadcast=0.035 ms
+2025-12-16 05:26:04 [DEBUG] - tsarchain.network.rpc.miner_rpc: [NEW_BLOCK] Benchmark_total : 44.245 ms
+2025-12-16 05:26:04 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.013 ms
+2025-12-16 05:26:04 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 0.012 ms
+2025-12-16 05:26:05 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.016 ms
+2025-12-16 05:26:05 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 0.010 ms
+2025-12-16 05:26:09 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.064 ms
+2025-12-16 05:26:09 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.013 ms
+2025-12-16 05:26:09 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.020 ms
+2025-12-16 05:26:19 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.066 ms
+2025-12-16 05:26:19 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.014 ms
+2025-12-16 05:26:26 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 0.014 ms
+2025-12-16 05:26:27 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 1.239 ms
+2025-12-16 05:26:29 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.085 ms
+2025-12-16 05:26:29 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.014 ms
+2025-12-16 05:26:29 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.018 ms
+2025-12-16 05:26:29 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_ART] Benchmark : 0.031 ms
+2025-12-16 05:26:30 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_COMMENTS] Benchmark : 0.016 ms
+2025-12-16 05:26:30 [DEBUG] - tsarchain.network.rpc.user_rpc: [STOR_LIST] Benchmark : 0.012 ms
+2025-12-16 05:26:39 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.066 ms
+2025-12-16 05:26:39 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.013 ms
+2025-12-16 05:26:46 [INFO] - tsarchain.contracts.graffiti: OP_RETURN data: 506 bytes, with limit 506 bytes
+2025-12-16 05:26:46 [INFO] - tsarchain.mempool.validation: [mempool] payout accepted art=graf56222a903a7c fee=1225
+2025-12-16 05:26:46 [DEBUG] - tsarchain.network.rpc.storage_rpc: [GRAFFITI_BUILD_PAYOUT] Benchmark : 8.154 ms
+2025-12-16 05:26:46 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.238 ms
+2025-12-16 05:26:46 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.015 ms
+2025-12-16 05:26:48 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 0.369 ms
+2025-12-16 05:26:49 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.167 ms
+2025-12-16 05:26:49 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.015 ms
+2025-12-16 05:26:49 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.021 ms
+2025-12-16 05:26:55 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.054 ms
+2025-12-16 05:26:55 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.037 ms
+2025-12-16 05:26:58 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 1.415 ms
+2025-12-16 05:26:59 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.200 ms
+2025-12-16 05:26:59 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.014 ms
+2025-12-16 05:27:05 [DEBUG] - tsarchain.network.rpc.storage_rpc: [GRAFFITI_PROOF_SUBMIT] Benchmark : 0.849 ms
+2025-12-16 05:27:05 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.013 ms
+2025-12-16 05:27:09 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 1.391 ms
+2025-12-16 05:27:09 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.157 ms
+2025-12-16 05:27:09 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.012 ms
+2025-12-16 05:27:09 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.019 ms
+2025-12-16 05:27:17 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.071 ms
+2025-12-16 05:27:19 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.252 ms
+2025-12-16 05:27:19 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.014 ms
+2025-12-16 05:27:28 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 1.423 ms
+2025-12-16 05:27:28 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.191 ms
+2025-12-16 05:27:29 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.158 ms
+2025-12-16 05:27:29 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.011 ms
+2025-12-16 05:27:29 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.018 ms
+2025-12-16 05:27:30 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 1.464 ms
+2025-12-16 05:27:36 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.008 ms cache_hit=False height=15
+2025-12-16 05:27:36 [DEBUG] - tsarchain.consensus.validation: [validate_block] pow_ms=18.515 height=16 hash_cached=True
+2025-12-16 05:27:36 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 0.278 ms cache_hit=False
+2025-12-16 05:27:36 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark precheck=0.027 ms validate=19.012 ms height=16
+2025-12-16 05:27:36 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark height=16 total=22.903 ms deser=0.166 ms lock=0.001 ms pre=0.027 ms val=19.012 ms add=3.371 ms mempool=0.003 ms utxo=None ms broadcast=0.022 ms
+2025-12-16 05:27:36 [DEBUG] - tsarchain.network.rpc.miner_rpc: [NEW_BLOCK] Benchmark_total : 27.032 ms
+2025-12-16 05:27:36 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.018 ms
+2025-12-16 05:27:37 [DEBUG] - tsarchain.network.node_logic.rpc_client: [_request_mempool_inline] added=0 total=1 from ('127.0.0.1', 38170)
+2025-12-16 05:27:38 [DEBUG] - tsarchain.network.rpc.miner_rpc: [MEMPOOL] Benchmark : 0.075 ms
+2025-12-16 05:27:39 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.168 ms
+2025-12-16 05:27:39 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.013 ms
+2025-12-16 05:27:41 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.019 ms
+2025-12-16 05:27:42 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 1.555 ms
+2025-12-16 05:27:43 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_UTXOS] Benchmark : 0.078 ms
+2025-12-16 05:27:43 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_TX_HISTORY] Benchmark : 2.815 ms
+2025-12-16 05:27:49 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.167 ms
+2025-12-16 05:27:49 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.014 ms
+2025-12-16 05:27:52 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 1.507 ms
+2025-12-16 05:27:52 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.008 ms cache_hit=False height=16
+2025-12-16 05:27:52 [DEBUG] - tsarchain.consensus.validation: [validate_block] pow_ms=18.231 height=17 hash_cached=True
+2025-12-16 05:27:52 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 0.273 ms cache_hit=False
+2025-12-16 05:27:52 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark precheck=0.05 ms validate=19.083 ms height=17
+2025-12-16 05:27:52 [DEBUG] - tsarchain.consensus.chain_ops: [_prune_mempool_confirmed] Removed 1 confirmed txs from mempool
+2025-12-16 05:27:52 [DEBUG] - tsarchain.network.cast.receive: [receive_block] 1 mempool tx already absent when pruning confirmed set
+2025-12-16 05:27:52 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark height=17 total=39.577 ms deser=0.137 ms lock=0.002 ms pre=0.05 ms val=19.083 ms add=15.988 ms mempool=4.069 ms utxo=None ms broadcast=0.032 ms
+2025-12-16 05:27:52 [DEBUG] - tsarchain.network.rpc.miner_rpc: [NEW_BLOCK] Benchmark_total : 39.699 ms
+2025-12-16 05:27:52 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.012 ms
+2025-12-16 05:27:57 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.004 ms cache_hit=True height=16
+2025-12-16 05:27:57 [DEBUG] - tsarchain.consensus.validation: [validate_block] pow_ms=18.825 height=18 hash_cached=True
+2025-12-16 05:27:57 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 0.249 ms cache_hit=True
+2025-12-16 05:27:57 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark precheck=0.024 ms validate=19.267 ms height=18
+2025-12-16 05:27:57 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark height=18 total=22.844 ms deser=0.127 ms lock=0.002 ms pre=0.024 ms val=19.267 ms add=3.21 ms mempool=0.002 ms utxo=None ms broadcast=0.028 ms
+2025-12-16 05:27:57 [DEBUG] - tsarchain.network.rpc.miner_rpc: [NEW_BLOCK] Benchmark_total : 26.960 ms
+2025-12-16 05:27:57 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.019 ms
+2025-12-16 05:27:58 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 1.491 ms
+2025-12-16 05:27:59 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.060 ms
+2025-12-16 05:27:59 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.014 ms
+2025-12-16 05:28:02 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.022 ms
+2025-12-16 05:28:05 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.014 ms
+2025-12-16 05:28:09 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.060 ms
+2025-12-16 05:28:09 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.012 ms
+2025-12-16 05:28:11 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.007 ms cache_hit=False height=18
+2025-12-16 05:28:11 [DEBUG] - tsarchain.consensus.validation: [validate_block] pow_ms=17.718 height=19 hash_cached=True
+2025-12-16 05:28:11 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 0.218 ms cache_hit=False
+2025-12-16 05:28:11 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark precheck=0.026 ms validate=18.13 ms height=19
+2025-12-16 05:28:11 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark height=19 total=21.924 ms deser=0.16 ms lock=0.002 ms pre=0.026 ms val=18.13 ms add=3.35 ms mempool=0.003 ms utxo=None ms broadcast=0.021 ms
+2025-12-16 05:28:11 [DEBUG] - tsarchain.network.rpc.miner_rpc: [NEW_BLOCK] Benchmark_total : 26.284 ms
+2025-12-16 05:28:11 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.017 ms
+2025-12-16 05:28:13 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 0.009 ms
+2025-12-16 05:28:14 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 1.851 ms
+2025-12-16 05:28:14 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_UTXOS] Benchmark : 0.089 ms
+2025-12-16 05:28:14 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_TX_HISTORY] Benchmark : 3.255 ms
+2025-12-16 05:28:16 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.023 ms
+2025-12-16 05:28:19 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.060 ms
+2025-12-16 05:28:19 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.013 ms
+2025-12-16 05:28:21 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_TX_DETAIL] Benchmark : 0.008 ms
+2025-12-16 05:28:23 [DEBUG] - tsarchain.network.client_helper: [_handle_get_block_hash] Benchmark : 0.010 ms cache_hit=False height=19
+2025-12-16 05:28:23 [DEBUG] - tsarchain.consensus.validation: [validate_block] pow_ms=19.143 height=20 hash_cached=True
+2025-12-16 05:28:23 [DEBUG] - tsarchain.network.rpc.miner_rpc: [GET_BLOCK_HASH] Benchmark : 0.267 ms cache_hit=False
+2025-12-16 05:28:23 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark precheck=0.033 ms validate=19.538 ms height=20
+2025-12-16 05:28:23 [DEBUG] - tsarchain.network.cast.receive: [receive_block] Benchmark height=20 total=23.339 ms deser=0.173 ms lock=0.002 ms pre=0.033 ms val=19.538 ms add=3.371 ms mempool=0.003 ms utxo=None ms broadcast=0.023 ms
+2025-12-16 05:28:23 [DEBUG] - tsarchain.network.rpc.miner_rpc: [NEW_BLOCK] Benchmark_total : 27.843 ms
+2025-12-16 05:28:23 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.014 ms
+2025-12-16 05:28:26 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 1.453 ms
+2025-12-16 05:28:26 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_UTXOS] Benchmark : 0.096 ms
+2025-12-16 05:28:27 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_TX_HISTORY] Benchmark : 3.195 ms
+2025-12-16 05:28:28 [DEBUG] - tsarchain.network.node_logic.handlers: [GET_HEADERS] Benchmark : 0.024 ms
+2025-12-16 05:28:28 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_BALANCES] Benchmark : 1.530 ms
+2025-12-16 05:28:29 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_NETWORK_INFO] Benchmark : 0.087 ms
+2025-12-16 05:28:29 [DEBUG] - tsarchain.network.rpc.user_rpc: [GRAFFITI_GET_POSTS] Benchmark : 0.022 ms
+2025-12-16 05:28:34 [DEBUG] - tsarchain.network.rpc.user_rpc: [GET_MEMPOOL] snapshot mode Benchmark : 0.014 ms
+2025-12-16 05:28:42 [INFO] - apps.cli_node_miner: Ctrl+C received - stopping node-only runner.
+2025-12-16 05:28:45 [INFO] - tsarchain.consensus.blockchain: [persist_worker] stopped
+2025-12-16 05:28:45 [INFO] - tsarchain.network.broadcast: [shutdown] Shutdown complete
+2025-12-16 05:28:45 [INFO] - tsarchain.network.node: [shutdown] Node at port 38169 stopped
+2025-12-16 05:28:45 [INFO] - apps.cli_node_miner: Node-only runner stopped (cleanup complete).

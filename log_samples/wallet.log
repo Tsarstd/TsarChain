@@ -1,0 +1,8 @@
+2025-12-16 05:19:48 [TRACE] - tsarchain: Logging configured: level=TRACE file=data\logging\tsarchain.log format=plain console=False rotate=5000000 backup=3
+2025-12-16 05:20:50 [DEBUG] - tsarchain.wallet.data_security: [sign_prepared_tx] Benchmark : 7.830 ms
+2025-12-16 05:23:32 [INFO] - tsarchain.contracts.graffiti: OP_RETURN data: 435 bytes, with limit 506 bytes
+2025-12-16 05:23:36 [DEBUG] - tsarchain.wallet.data_security: [sign_prepared_tx] Benchmark : 0.605 ms
+2025-12-16 05:25:08 [INFO] - tsarchain.wallet.graffiti_service: [fetch] ok art=graf56222a903a7c host=127.0.0.1 size=6588704 cache=True
+2025-12-16 05:25:26 [INFO] - tsarchain.contracts.graffiti: OP_RETURN data: 328 bytes, with limit 506 bytes
+2025-12-16 05:25:31 [DEBUG] - tsarchain.wallet.data_security: [sign_prepared_tx] Benchmark : 0.612 ms
+2025-12-16 05:26:31 [INFO] - tsarchain.wallet.graffiti_service: [fetch] ok art=graf56222a903a7c host=127.0.0.1 size=6588704 cache=True

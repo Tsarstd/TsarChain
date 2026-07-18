@@ -42,12 +42,12 @@ Graffiti Protocol focuses on **Voice Sovereignty**: preserving *cultural archive
   - [Example of a Graffiti Activity Data Structure](#2--example-of-a-graffiti-activity-data-structure)
   - [Example of a State Data Structure](#3--example-of-a-state-data-structure)
 - [Security Notes](#-security-notes)
-- [Contributing](#-contributing)
-  - [Development Support](#development-support)
 - [Roadmap](#️-roadmap)
+- [Performance Evidence](#-performance-evidence)
 - [Documentation](#-documentation)
   - [Grungepaper](#grungepaper)
   - [Graffiti Protocol](#graffiti-protocol)
+  - [API & Architecture](#api--architecture)
   - [Rust](#rust)
   - [Trademarks & References](#trademarks--references)
 - [License](#-license)
@@ -302,7 +302,7 @@ EDA_EASE_MULTIPLIER     = 2.0
 - **Stateless CLI Miner (`apps/cli_miner.py`)** keeps chain data in-memory, pulls the latest tip + a small header window from trusted seeds to derive difficulty, mines empty blocks (coinbase only), and rechecks tip height/hash before broadcasting to avoid duplicating a moved tip. No mempool, no snapshots/DB.
 - **Full Node CLI Miner (`apps/cli_node_miner.py`)** persists the entire blockchain, handles snapshot bootstrap, wallet gateway traffic, and can run `--node-only` for infra roles.
 
-Use the GUI for monitoring log, `cli_miner.py` for raw hash power, and `cli_node_miner.py` when you need full-node responsibilities.
+`cli_miner.py` for raw hash power, and `cli_node_miner.py` when you need full-node responsibilities.
 
 ---
 
@@ -1388,34 +1388,23 @@ The default storage model in this project is `.mdb` LMDB.
 
 ---
 
-## 🫂 Contributing
-
-Pull requests are welcome. Please start with small, well‑scoped changes (docs, tests, logging), then propose larger work via issues. Be respectful: the mission is **Voice Sovereignty**.
-> I've provided a logging tool. For easier debugging, you can check [`src/tsarchain/utils/tsar_logging.py`](src/tsarchain/utils/tsar_logging.py)
-
-- #### Development Support
-  > If you want to accelerate development of TsarChain,
-  infrastructure, testing, and documentation require fuel.
-  <details>
-    <summary>Supporting address</summary>
-
-    ```json
-    BTC : bc1qr2shk3fp80g7xjkg65q6cmvdgsdgmy953esfs6
-    ```
-  > Donations are voluntary, anonymous, and respected.
-  No promises. No expectations. No manipulation.
-  Funds go straight into development — not hype.
-  </details>
-
-
----
-
 ## 🗺️ Roadmap
 
 - Graffiti & Storage Node incentives
 - Exploring & View Graffiti art in Kremlin Wallet
 - Mobile app 'Graffiti'
 - The Voice Sovereignty
+
+---
+
+## 📊 Performance Evidence
+
+Graffiti Protocol is built to be fast, responsive, and robust. We have provided raw execution logs and analysis demonstrating our benchmarks, including:
+- **Sub-millisecond** RPC queries and transaction signing
+- **~20ms** block validations (after initial RandomX warmup)
+- Native storage integration proofs
+
+👉 **[View Performance Evidence](log_samples/PERFORMANCE.md)**
 
 ---
 
@@ -1428,6 +1417,10 @@ Pull requests are welcome. Please start with small, well‑scoped changes (docs,
 ##### Graffiti Protocol
 - [`Graffiti Protocol - Draft v0.1 (EN)`](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(EN).pdf) | [*Download*](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(EN).pdf?raw=true)
 - [`Graffiti Protocol - Draft v0.1 (ID)`](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(ID).pdf) | [*Download*](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(ID).pdf?raw=true)
+
+##### API & Architecture
+- [`API.md`](docs/API.md)
+- [`ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
 ##### Rust
 - [`README.md`](tsarcore_native/README.md) [`INSTALL_NATIVE.md`](INSTALL_NATIVE.md)
