@@ -315,7 +315,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
             entry = lookup(prev_txid_lower, prev_index)
             if entry is None:
                 return False
-            normalized = self._normalize_native_prevout(entry, snap_key)
+            normalized = self._normalize_native_prevout(entry)
             if normalized is None:
                 return False
             amount_int, script_bytes, is_cb, born = normalized
@@ -330,7 +330,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
         return True
 
 
-    def _normalize_native_prevout(self, entry, key_desc: str):
+    def _normalize_native_prevout(self, entry):
         candidate = entry
         if isinstance(candidate, dict):
             tx_out = candidate.get("tx_out") or candidate

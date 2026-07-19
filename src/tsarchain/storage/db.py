@@ -96,8 +96,22 @@ class AtomicJSONFile:
         default_keep = 3
         default_ivl  = 900
 
-        self.keep_backups = max(0, int(keep_backups if keep_backups is not None else (int(env_keep) if env_keep else default_keep)))
-        self.backup_interval_sec = max(0, int(backup_interval_sec if backup_interval_sec is not None else (int(env_ivl) if env_ivl else default_ivl)))
+        if keep_backups is not None:
+            keep_val = keep_backups
+        elif env_keep:
+            keep_val = int(env_keep)
+        else:
+            keep_val = default_keep
+        self.keep_backups = max(0, int(keep_val))
+
+        if backup_interval_sec is not None:
+            ivl_val = backup_interval_sec
+        elif env_ivl:
+            ivl_val = int(env_ivl)
+        else:
+            ivl_val = default_ivl
+        self.backup_interval_sec = max(0, int(ivl_val))
+
         self.dedup_backups = (str(env_ded).strip().lower() in {"1","true","yes","on"}) if env_ded is not None else bool(dedup_backups)
 
         self.checksum = checksum

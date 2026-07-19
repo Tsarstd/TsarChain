@@ -66,30 +66,9 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
     sig_reg  = (message.get("sig") or "").strip().lower()
     opk_reg  = (message.get("opk") or "").strip().lower()
 
-    if not addr_s or not chat_pub or not spend_pk or not reg_sig or not ts_val or not presence_sig:
-        return {"error": "missing fields"}
-
-    if not addr_s.startswith(CFG.ADDRESS_PREFIX):
-        return {"error": "bad address format"}
-
-    if not (len(chat_pub) == 64 and all(c in "0123456789abcdef" for c in chat_pub)):
-        return {"error": "bad chat_pub"}
-
-    if not (len(spend_pk) == 66 and all(c in "0123456789abcdef" for c in spend_pk)):
-        return {"error": "bad spend_pub"}
-
-    # Anti replay time window (±5 minutes)
-    if abs(time.time() - ts_val) > 300:
-        return {"error": "stale ts"}
-    hrp, data = bech32_decode(addr_s)
-    if hrp != CFG.ADDRESS_PREFIX or not data:
-        return {"error": "bad address hrp"}
-    witver = data[0]
-    prog   = bytes(convertbits(data[1:], 5, 8, False))
-    if witver != 0 or len(prog) != 20:
-        return {"error": "address not p2wpkh"}
-    if hash160(bytes.fromhex(spend_pk)) != prog:
-        return {"error": "register proof mismatch"}
+    err = _validate_register_fields_and_address(addr_s, chat_pub, spend_pk, reg_sig, ts_val, presence_sig)
+    if err:
+        return err
     
     pres_bytes = b"|".join([
         b"CHAT_PRESENCE",
@@ -116,16 +95,9 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
         log.debug("[process_message] CHAT_REGISTER bad reg_sig from %s", addr)
         return {"error": "bad reg_sig"}
 
-    spk_valid = False
-    if spk_reg and sig_reg:
-        if not (len(spk_reg) == 64 and all(c in "0123456789abcdef" for c in spk_reg)):
-            return {"error": "bad_spk"}
-        
-        payload = CFG.CHAT_SPK + bytes.fromhex(spk_reg) + b"|" + bytes.fromhex(spend_pk)
-        sig_ok = CM.verify_chat_signatures([("spk", spend_pk, payload, sig_reg)])
-        spk_valid = bool(sig_ok.get("spk"))
-        if not spk_valid:
-            return {"error": "bad_spk_sig"}
+    spk_valid, spk_err = _validate_spk_registration(spend_pk, spk_reg, sig_reg)
+    if spk_err:
+        return spk_err
 
     now = time.time()
     pid = secrets.token_hex(16)
@@ -208,28 +180,9 @@ def chat_presence(self, message, pow_obj, base_identity, addr, *,
     hops   = int(message.get("hops") or 0)
     ts_val = int(message.get("ts")   or 0)
 
-    # signature presence verification
-    if not (pubhex and spend_pk and presence_sig):
-        return {"error": "presence_missing_fields"}
-    if abs(time.time() - ts_val) > CFG.PRESENCE_TTL_S:
-        return {"error": "presence_stale"}
-    if not (len(pubhex) == 64 and all(c in "0123456789abcdef" for c in pubhex)):
-        return {"error": "presence_bad_pub"}
-    if not (len(spend_pk) == 66 and all(c in "0123456789abcdef" for c in spend_pk)):
-        return {"error": "presence_bad_spend_pub"}
-    hrp, data = bech32_decode(addr_s)
-    if hrp != CFG.ADDRESS_PREFIX or not data:
-        return {"error": "presence_bad_hrp"}
-    prog = bytes(convertbits(data[1:], 5, 8, False))
-    if len(prog) != 20:
-        return {"error": "presence_bad_prog"}
-    if hash160(bytes.fromhex(spend_pk)) != prog:
-        return {"error": "presence_addr_mismatch"}
-    
-    pres_bytes = b"|".join([b"CHAT_PRESENCE", addr_s.encode(), bytes.fromhex(pubhex), bytes.fromhex(spend_pk), str(ts_val).encode()])
-    sig_ok = CM.verify_chat_signatures([("presence", spend_pk, pres_bytes, presence_sig)])
-    if not sig_ok.get("presence"):
-        return {"error": "presence_bad_sig"}
+    err = _validate_presence_signature_and_fields(addr_s, pubhex, spend_pk, presence_sig, ts_val)
+    if err:
+        return err
 
     if hops >= CFG.PRESENCE_MAX_HOPS:
         log.debug("[process_message] CHAT_PRESENCE max hops from %s", addr)
@@ -366,9 +319,10 @@ def chat_send(self, message, pow_obj, base_identity, *,
     chat_sig = (message.get("chat_sig") or "").strip().lower()
     ratchet_pn = int(message.get("ratchet_pn") or 0)
     ratchet_n = int(message.get("ratchet_n") or 0)
-    max_idx = CFG.CHAT_RATCHET_INDEX_MAX
-    if not (0 <= ratchet_pn <= max_idx and 0 <= ratchet_n <= max_idx):
-        return {"type": "CHAT_ACK", "status": "rejected", "reason": "ratchet_index_out_of_range"}
+
+    err = _validate_send_fields(frm, to, enc, mid, ts, ratchet_pn, ratchet_n)
+    if err:
+        return err
 
     ok, pow_resp = CM.allow_rpc_with_pow(
         self,
@@ -402,13 +356,6 @@ def chat_send(self, message, pow_obj, base_identity, *,
     if not ok:
         return {"type": "CHAT_ACK", **(pow_resp or {})}
 
-    if not (frm and to and enc and (mid is not None) and ts):
-        return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_fields"}
-
-    now = int(time.time())
-    if abs(now - ts) > CFG.CHAT_TS_DRIFT_S:
-        return {"type": "CHAT_ACK", "status": "rejected", "reason": "ts_drift"}
-
     if self.dedup_mid(frm, mid):
         return {"type": "CHAT_ACK", "status": "duplicate"}
 
@@ -417,24 +364,10 @@ def chat_send(self, message, pow_obj, base_identity, *,
     ct_hex    = str((enc or {}).get("ct")    or "")
     fp_hex    = (message.get("from_pub")    or "").strip().lower()     # eph X25519
     fs_hex = (message.get("from_static") or "").strip().lower()
-    exp = self.chat_presence_pub.get(frm)
 
-    if not exp:
-        return {"type": "CHAT_ACK", "status": "rejected", "reason": "no_presence"}
-    if fs_hex != exp:
-        return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}
-
-    if not (len(ct_hex) // 2 <= CFG.CHAT_MAX_CT_BYTES):
-        return {"type": "CHAT_ACK", "status": "rejected", "reason": "too_large"}
-
-    if not (len(nonce_hex) == 24 and all(c in "0123456789abcdef" for c in nonce_hex)):
-        return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_nonce"}
-
-    if not (len(fp_hex) == 64 and all(c in "0123456789abcdef" for c in fp_hex)):
-        return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_pub"}
-
-    if not (len(fs_hex) == 64 and all(c in "0123456789abcdef" for c in fs_hex)):
-        return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}
+    enc_err = _validate_send_encryption(self, frm, ct_hex, nonce_hex, fp_hex, fs_hex)
+    if enc_err:
+        return enc_err
 
     # routing authenticity signature verification (without decryption)
     if not chat_sig:
@@ -604,39 +537,15 @@ def chat_relay(self, message, pow_obj, base_identity, *,
 
     # payload: {"route": [peer1, peer2, ...], "inner": {...}}
     route_raw = list(message.get("route") or [])
-    route: list[tuple] = []
-    for hop in route_raw:
-        if isinstance(hop, (list, tuple)) and len(hop) >= 2:
-            try:
-                hop_norm = (str(hop[0]), int(hop[1]))
-            except Exception:
-                return {"error": "bad_route_entry"}
-            if hop_norm not in self.peers:
-                log.warning("[CHAT_RELAY] unknown hop=%s from=%s", hop_norm, client_ip)
-                return {"error": "unknown_hop"}
-            route.append(hop_norm)
-        else:
-            return {"error": "bad_route_entry"}
-    if len(route) > CFG.CHAT_RELAY_MAX_HOPS:
-        return {"error": "route_too_long"}
+    route, err = _validate_relay_route(self, route_raw, client_ip)
+    if err:
+        return err
+
     inner = message.get("inner") or {}
-    allowed_inner_types = {"CHAT_SEND_INNER"}
-    if not isinstance(inner, dict) or inner.get("type") not in allowed_inner_types:
-        return {"error": "bad_inner_type"}
-    if inner.get("type") == "CHAT_SEND_INNER":
-        msg_obj = inner.get("msg")
-        if not isinstance(msg_obj, dict) or not inner.get("to"):
-            return {"error": "bad_inner"}
-        allowed_msg_keys = {"from", "msg_id", "ts", "from_static", "from_pub", "enc", "used_opk", "ratchet_pn", "ratchet_n"}
-        for k in msg_obj.keys():
-            if k not in allowed_msg_keys:
-                return {"error": "bad_inner_field"}
-    try:
-        inner_size = len(json.dumps(inner, separators=CFG.CANONICAL_SEP).encode("utf-8"))
-    except Exception:
-        inner_size = CFG.CHAT_RELAY_MAX_INNER_BYTES + 1
-    if inner_size > CFG.CHAT_RELAY_MAX_INNER_BYTES:
-        return {"error": "payload_too_large"}
+    inner_err = _validate_relay_inner(inner)
+    if inner_err:
+        return inner_err
+
     if route:
         nxt = route.pop(0)
         return send_chat_relay(self, nxt, {"type": "CHAT_RELAY", "route": route, "inner": inner})
@@ -660,3 +569,144 @@ def chat_relay(self, message, pow_obj, base_identity, *,
         
         return {"type": "CHAT_RELAY_ACK", "status": ("queued" if ok else "rejected")}
     return {"error": "bad_inner"}
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
+def _validate_send_fields(frm, to, enc, mid, ts, ratchet_pn, ratchet_n) -> dict | None:
+    max_idx = CFG.CHAT_RATCHET_INDEX_MAX
+    if not (0 <= ratchet_pn <= max_idx and 0 <= ratchet_n <= max_idx):
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "ratchet_index_out_of_range"}
+    if not (frm and to and enc and (mid is not None) and ts):
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_fields"}
+    now = int(time.time())
+    if abs(now - ts) > CFG.CHAT_TS_DRIFT_S:
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "ts_drift"}
+    return None
+
+
+def _validate_send_encryption(self, frm, ct_hex, nonce_hex, fp_hex, fs_hex) -> dict | None:
+    exp = self.chat_presence_pub.get(frm)
+    if not exp:
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "no_presence"}
+    if fs_hex != exp:
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}
+    if len(ct_hex) // 2 > CFG.CHAT_MAX_CT_BYTES:
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "too_large"}
+    if not (len(nonce_hex) == 24 and all(c in "0123456789abcdef" for c in nonce_hex)):
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_nonce"}
+    if not (len(fp_hex) == 64 and all(c in "0123456789abcdef" for c in fp_hex)):
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_pub"}
+    if not (len(fs_hex) == 64 and all(c in "0123456789abcdef" for c in fs_hex)):
+        return {"type": "CHAT_ACK", "status": "rejected", "reason": "bad_from_static"}
+    return None
+
+
+def _validate_presence_signature_and_fields(addr_s, pubhex, spend_pk, presence_sig, ts_val) -> dict | None:
+    if not (pubhex and spend_pk and presence_sig):
+        return {"error": "presence_missing_fields"}
+    if abs(time.time() - ts_val) > CFG.PRESENCE_TTL_S:
+        return {"error": "presence_stale"}
+    if not (len(pubhex) == 64 and all(c in "0123456789abcdef" for c in pubhex)):
+        return {"error": "presence_bad_pub"}
+    if not (len(spend_pk) == 66 and all(c in "0123456789abcdef" for c in spend_pk)):
+        return {"error": "presence_bad_spend_pub"}
+    hrp, data = bech32_decode(addr_s)
+    if hrp != CFG.ADDRESS_PREFIX or not data:
+        return {"error": "presence_bad_hrp"}
+    prog = bytes(convertbits(data[1:], 5, 8, False))
+    if len(prog) != 20:
+        return {"error": "presence_bad_prog"}
+    if hash160(bytes.fromhex(spend_pk)) != prog:
+        return {"error": "presence_addr_mismatch"}
+    
+    pres_bytes = b"|".join([b"CHAT_PRESENCE", addr_s.encode(), bytes.fromhex(pubhex), bytes.fromhex(spend_pk), str(ts_val).encode()])
+    sig_ok = CM.verify_chat_signatures([("presence", spend_pk, pres_bytes, presence_sig)])
+    if not sig_ok.get("presence"):
+        return {"error": "presence_bad_sig"}
+    return None
+
+
+def _validate_register_fields_and_address(addr_s, chat_pub, spend_pk, reg_sig, ts_val, presence_sig) -> dict | None:
+    if not addr_s or not chat_pub or not spend_pk or not reg_sig or not ts_val or not presence_sig:
+        return {"error": "missing fields"}
+
+    if not addr_s.startswith(CFG.ADDRESS_PREFIX):
+        return {"error": "bad address format"}
+
+    if not (len(chat_pub) == 64 and all(c in "0123456789abcdef" for c in chat_pub)):
+        return {"error": "bad chat_pub"}
+
+    if not (len(spend_pk) == 66 and all(c in "0123456789abcdef" for c in spend_pk)):
+        return {"error": "bad spend_pub"}
+
+    # Anti replay time window (±5 minutes)
+    if abs(time.time() - ts_val) > 300:
+        return {"error": "stale ts"}
+    hrp, data = bech32_decode(addr_s)
+    if hrp != CFG.ADDRESS_PREFIX or not data:
+        return {"error": "bad address hrp"}
+    witver = data[0]
+    prog   = bytes(convertbits(data[1:], 5, 8, False))
+    if witver != 0 or len(prog) != 20:
+        return {"error": "address not p2wpkh"}
+    if hash160(bytes.fromhex(spend_pk)) != prog:
+        return {"error": "register proof mismatch"}
+    return None
+
+
+def _validate_spk_registration(spend_pk, spk_reg, sig_reg) -> tuple[bool, dict | None]:
+    if not spk_reg or not sig_reg:
+        return False, None
+    if not (len(spk_reg) == 64 and all(c in "0123456789abcdef" for c in spk_reg)):
+        return False, {"error": "bad_spk"}
+    
+    payload = CFG.CHAT_SPK + bytes.fromhex(spk_reg) + b"|" + bytes.fromhex(spend_pk)
+    sig_ok = CM.verify_chat_signatures([("spk", spend_pk, payload, sig_reg)])
+    spk_valid = bool(sig_ok.get("spk"))
+    if not spk_valid:
+        return False, {"error": "bad_spk_sig"}
+    return True, None
+
+
+def _validate_relay_route(self, route_raw, client_ip) -> tuple[list[tuple], dict | None]:
+    route = []
+    for hop in route_raw:
+        if isinstance(hop, (list, tuple)) and len(hop) >= 2:
+            try:
+                hop_norm = (str(hop[0]), int(hop[1]))
+            except Exception:
+                return [], {"error": "bad_route_entry"}
+            if hop_norm not in self.peers:
+                log.warning("[CHAT_RELAY] unknown hop=%s from=%s", hop_norm, client_ip)
+                return [], {"error": "unknown_hop"}
+            route.append(hop_norm)
+        else:
+            return [], {"error": "bad_route_entry"}
+    if len(route) > CFG.CHAT_RELAY_MAX_HOPS:
+        return [], {"error": "route_too_long"}
+    return route, None
+
+
+def _validate_relay_inner(inner) -> dict | None:
+    allowed_inner_types = {"CHAT_SEND_INNER"}
+    if not isinstance(inner, dict) or inner.get("type") not in allowed_inner_types:
+        return {"error": "bad_inner_type"}
+    if inner.get("type") == "CHAT_SEND_INNER":
+        msg_obj = inner.get("msg")
+        if not isinstance(msg_obj, dict) or not inner.get("to"):
+            return {"error": "bad_inner"}
+        allowed_msg_keys = {"from", "msg_id", "ts", "from_static", "from_pub", "enc", "used_opk", "ratchet_pn", "ratchet_n"}
+        for k in msg_obj.keys():
+            if k not in allowed_msg_keys:
+                return {"error": "bad_inner_field"}
+    try:
+        inner_size = len(json.dumps(inner, separators=CFG.CANONICAL_SEP).encode("utf-8"))
+    except Exception:
+        inner_size = CFG.CHAT_RELAY_MAX_INNER_BYTES + 1
+    if inner_size > CFG.CHAT_RELAY_MAX_INNER_BYTES:
+        return {"error": "payload_too_large"}
+    return None

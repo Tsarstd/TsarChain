@@ -62,6 +62,9 @@ logging.Logger.trace = _trace
 # --- Module filter helpers ---
 MODULES = ("consensus", "contracts", "core", "mempool", "network", "storage", "utils", "wallet", "native")
 
+TITLE = "Tsar Logging — Minimal GUI"
+ZIP_BUNDLE = "tsar_logs_bundle.zip"
+
 def _module_from_logger_name(name: str | None) -> str | None:
     if not name:
         return None
@@ -186,81 +189,6 @@ class ContextAdapter(logging.LoggerAdapter):
             self.log(TRACE, msg, *args, **kwargs)
 
 
-def get_ctx_logger(name: str = "tsarchain", **ctx) -> ContextAdapter:
-    return ContextAdapter(get_logger(name), ctx)
-
-def setup_logging(
-    log_file: str | os.PathLike | None = None,
-    level: int | str | None = None,
-    to_console: bool | None = None,
-    rotate_max_bytes: int | None = None,
-    backup_count: int | None = None,
-    force: bool = False,
-    fmt: str = _DEFAULT_FMT,
-    datefmt: str = _DEFAULT_DATEFMT,) -> logging.Logger:
-
-    if level is None:
-        level = CFG.LOG_LEVEL
-
-    # Get preference from CFG when argument is None
-    if to_console is None:
-        to_console = bool(CFG.LOG_TO_CONSOLE)
-    if rotate_max_bytes is None:
-        rotate_max_bytes = int(CFG.LOG_ROTATE_MAX_BYTES)
-    if backup_count is None:
-        backup_count = int(CFG.LOG_BACKUP_COUNT)
-    enable_redact = bool(CFG.FILTER_REDAX)
-
-    log_path = Path(log_file)
-    if log_path.parent and not log_path.parent.exists():
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-
-    handlers: list[logging.Handler] = []
-    as_json = str(CFG.LOG_FORMAT).lower() == "json"
-    rate_seconds_console = float(CFG.LOG_RATE_LIMIT_SECONDS)
-    rate_seconds_file    = float(CFG.LOG_FILE_RATE_LIMIT_SECONDS)
-
-    # --- File handler ---
-    fh = RotatingFileHandler(
-        log_path, maxBytes=int(rotate_max_bytes), backupCount=int(backup_count),
-        encoding="utf-8", delay=True
-    )
-    file_fmt = JsonFormatter() if as_json else SafeFormatter(fmt, datefmt)
-    fh.setFormatter(file_fmt)
-    if enable_redact:
-        fh.addFilter(RedactFilter())
-    if rate_seconds_file > 0.0:
-        fh.addFilter(RateLimitFilter(rate_seconds_file))
-    handlers.append(fh)
-
-    # --- Console handler (optional) ---
-    if to_console:
-        console_fmt = JsonFormatter() if as_json else SafeFormatter(fmt, datefmt)
-        sh = logging.StreamHandler()
-        sh.setFormatter(console_fmt)
-        if enable_redact:
-            sh.addFilter(RedactFilter())
-        if rate_seconds_console > 0.0:
-            sh.addFilter(RateLimitFilter(rate_seconds_console))
-        handlers.append(sh)
-
-    # Level
-    lvl = level
-    if isinstance(lvl, str):
-        try:
-            lvl = logging._nameToLevel.get(lvl.upper(), lvl)
-        except Exception:
-            pass
-
-    logging.basicConfig(level=lvl, handlers=handlers, force=force)
-    return logging.getLogger("tsarchain")
-
-
-def get_logger(name: Optional[str] = None) -> logging.Logger:
-    base = "tsarchain" if not name else name
-    return logging.getLogger(base)
-
-
 # =========================
 # 2) Tkinter GUI Handler
 # =========================
@@ -298,7 +226,7 @@ class TsarLogViewer:
                 log_file: Optional[str] = None, attach_to_root: bool = True,
                 filter_queue: "queue.Queue[str] | None" = None):
         self.master = master
-        self.master.title("Tsar Logging — Minimal GUI")
+        self.master.title(TITLE)
         self.master.geometry("980x560")
         self.queue: "queue.Queue[logging.LogRecord]" = queue_ or queue.Queue()
         self.filter_queue = filter_queue
@@ -566,11 +494,9 @@ class TsarLogViewer:
                 return "break"
         text.bind("<Key>", _block_printable, add="+")
 
-    def _truncate_log_files(self, delete_backups: bool = True) -> None:
-        p = Path(self.tail_path)
-        root = logging.getLogger()
+    def _get_target_handlers(self, p: Path) -> list:
         target_handlers = []
-        for h in root.handlers[:]:
+        for h in logging.getLogger().handlers[:]:
             try:
                 from logging.handlers import RotatingFileHandler
                 if isinstance(h, RotatingFileHandler):
@@ -579,24 +505,40 @@ class TsarLogViewer:
                         target_handlers.append(h)
             except Exception:
                 pass
+        return target_handlers
+
+    def _truncate_handler(self, h) -> None:
+        h.acquire()
+        try:
+            stream = getattr(h, "stream", None)
+            if stream:
+                stream.seek(0)
+                stream.truncate(0)
+                stream.flush()
+            else:
+                open(h.baseFilename, "w", encoding=getattr(h, "encoding", "utf-8")).close()
+        finally:
+            h.release()
+
+    def _delete_backup_files(self, p: Path) -> None:
+        for n in range(1, 100):
+            bp = p.with_name(p.name + f".{n}")
+            if not bp.exists():
+                break
+            try:
+                bp.unlink()
+            except Exception:
+                pass
+
+    def _truncate_log_files(self, delete_backups: bool = True) -> None:
+        p = Path(self.tail_path)
+        target_handlers = self._get_target_handlers(p)
 
         if target_handlers:
             for h in target_handlers:
-                h.acquire()
-                try:
-                    stream = getattr(h, "stream", None)
-                    if stream:
-                        stream.seek(0)
-                        stream.truncate(0)
-                        stream.flush()
-                    else:
-                        with open(h.baseFilename, "w", encoding=getattr(h, "encoding", "utf-8")):
-                            pass
-                finally:
-                    h.release()
+                self._truncate_handler(h)
         else:
-            with open(p, "w", encoding="utf-8"):
-                pass
+            open(p, "w", encoding="utf-8").close()
 
         self._tail_last_size = 0
         if self._tail_fp:
@@ -607,15 +549,7 @@ class TsarLogViewer:
                 pass
 
         if delete_backups:
-            base = p
-            for n in range(1, 100):
-                bp = base.with_name(base.name + f".{n}")
-                if not bp.exists():
-                    break
-                try:
-                    bp.unlink()
-                except Exception:
-                    pass
+            self._delete_backup_files(p)
 
     def open_log_folder(self):
         try:
@@ -643,7 +577,7 @@ class TsarLogViewer:
             
     def export_logs(self):
         if filedialog:
-            default = Path.home() / "tsar_logs_bundle.zip"
+            default = Path.home() / ZIP_BUNDLE
             out_path = filedialog.asksaveasfilename(
                 title="Save Log Bundle",
                 initialfile=default.name,
@@ -653,7 +587,7 @@ class TsarLogViewer:
             if not out_path:
                 return
         else:
-            out_path = str(Path.cwd() / "tsar_logs_bundle.zip")
+            out_path = str(Path.cwd() / ZIP_BUNDLE)
 
         threading.Thread(
             target=self._export_worker, args=(out_path,), daemon=True
@@ -663,12 +597,12 @@ class TsarLogViewer:
         try:
             out = export_log_bundle(path=out_path)
             self.master.after(0, lambda: (
-                messagebox and messagebox.showinfo("Export Logs", f"Saved:\n{out}"),
+                messagebox and messagebox.showinfo("Export", f"Saved:\n{out}"),
                 self._set_status(f"Exported bundle → {out}")
             ))
         except Exception as e:
             self.master.after(0, lambda: (
-                messagebox and messagebox.showerror("Export Logs", f"Failed: {e}"),
+                messagebox and messagebox.showerror("Export", f"Failed: {e}"),
                 self._set_status(f"Export failed: {e}")
             ))
 
@@ -833,6 +767,83 @@ class TsarLogViewer:
 # 4) Convenience APIs
 # =========================
 
+
+def get_ctx_logger(name: str = "tsarchain", **ctx) -> ContextAdapter:
+    return ContextAdapter(get_logger(name), ctx)
+
+
+def setup_logging(
+    log_file: str | os.PathLike | None = None,
+    level: int | str | None = None,
+    to_console: bool | None = None,
+    rotate_max_bytes: int | None = None,
+    backup_count: int | None = None,
+    force: bool = False,
+    fmt: str = _DEFAULT_FMT,
+    datefmt: str = _DEFAULT_DATEFMT,) -> logging.Logger:
+
+    if level is None:
+        level = CFG.LOG_LEVEL
+
+    # Get preference from CFG when argument is None
+    if to_console is None:
+        to_console = bool(CFG.LOG_TO_CONSOLE)
+    if rotate_max_bytes is None:
+        rotate_max_bytes = int(CFG.LOG_ROTATE_MAX_BYTES)
+    if backup_count is None:
+        backup_count = int(CFG.LOG_BACKUP_COUNT)
+    enable_redact = bool(CFG.FILTER_REDAX)
+
+    log_path = Path(log_file)
+    if log_path.parent and not log_path.parent.exists():
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    handlers: list[logging.Handler] = []
+    as_json = str(CFG.LOG_FORMAT).lower() == "json"
+    rate_seconds_console = float(CFG.LOG_RATE_LIMIT_SECONDS)
+    rate_seconds_file    = float(CFG.LOG_FILE_RATE_LIMIT_SECONDS)
+
+    # --- File handler ---
+    fh = RotatingFileHandler(
+        log_path, maxBytes=int(rotate_max_bytes), backupCount=int(backup_count),
+        encoding="utf-8", delay=True
+    )
+    file_fmt = JsonFormatter() if as_json else SafeFormatter(fmt, datefmt)
+    fh.setFormatter(file_fmt)
+    if enable_redact:
+        fh.addFilter(RedactFilter())
+    if rate_seconds_file > 0.0:
+        fh.addFilter(RateLimitFilter(rate_seconds_file))
+    handlers.append(fh)
+
+    # --- Console handler (optional) ---
+    if to_console:
+        console_fmt = JsonFormatter() if as_json else SafeFormatter(fmt, datefmt)
+        sh = logging.StreamHandler()
+        sh.setFormatter(console_fmt)
+        if enable_redact:
+            sh.addFilter(RedactFilter())
+        if rate_seconds_console > 0.0:
+            sh.addFilter(RateLimitFilter(rate_seconds_console))
+        handlers.append(sh)
+
+    # Level
+    lvl = level
+    if isinstance(lvl, str):
+        try:
+            lvl = logging._nameToLevel.get(lvl.upper(), lvl)
+        except Exception:
+            pass
+
+    logging.basicConfig(level=lvl, handlers=handlers, force=force)
+    return logging.getLogger("tsarchain")
+
+
+def get_logger(name: Optional[str] = None) -> logging.Logger:
+    base = "tsarchain" if not name else name
+    return logging.getLogger(base)
+
+
 def start_log_gui(title: Optional[str] = None,) -> None:
     
     if tk is None:
@@ -842,10 +853,11 @@ def start_log_gui(title: Optional[str] = None,) -> None:
         root.title(title)
     root.mainloop()
 
+
 def launch_gui_in_thread() -> threading.Thread:
     def gui_wrapper():
         root = tk.Tk()
-        root.title("Tsar Logging — Minimal GUI")
+        root.title(TITLE)
 
         root.mainloop()
     
@@ -853,14 +865,16 @@ def launch_gui_in_thread() -> threading.Thread:
     t.start()
     return t
 
+
 def open_log_toplevel(master, log_file: Optional[str] = None, attach_to_root: bool = False):
     win = tk.Toplevel(master)
-    win.title("Tsar Logging — Minimal GUI")
+    win.title(TITLE)
     log_path = log_file
     TsarLogViewer(win, queue_=queue.Queue(), log_file=log_path, attach_to_root=attach_to_root)
     return win
 
-def export_log_bundle(path: str = "tsar_logs_bundle.zip") -> Path:
+
+def export_log_bundle(path: str = ZIP_BUNDLE) -> Path:
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
 

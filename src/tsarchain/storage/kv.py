@@ -3,12 +3,12 @@
 # Part of TsarChain — see LICENSE
 # Refs: see REFERENCES.md
 
+import threading
 from contextlib import contextmanager
 from typing import Iterator, Tuple, Optional
-import threading
 
-from tsarcore_native import open_storage as _native_open_storage
 from ..utils import config as CFG
+from tsarcore_native import open_storage as _native_open_storage
 
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.storage.kv')
@@ -89,25 +89,6 @@ def iter_prefix(name: str, prefix: bytes) -> Iterator[Tuple[bytes, bytes]]:
             if len(chunk) < CFG.KV_ITER_CHUNK:
                 break
     return _generator()
-
-
-class WriteBatch:
-    def __init__(self, env, db):
-        self.env = env; self.db = db
-        self.txn = None
-
-    def __enter__(self):
-        self.txn = self.env.begin(db=self.db, write=True)
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        if self.txn is None:
-            return
-        if exc_type:
-            self.txn.abort()
-        else:
-            self.txn.commit()
-        self.txn = None
 
 
 @contextmanager

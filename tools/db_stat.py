@@ -521,7 +521,7 @@ def run_tool(args) -> int:
             f"({health['usage_percent']:.1f}% used)",
             color=None,
         )
-        clog(f"\n---------------------", RED)
+        clog("\n---------------------", RED)
 
         # chain height via count
         n_chain = _count(env, 'chain')

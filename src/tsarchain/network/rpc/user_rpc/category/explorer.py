@@ -23,11 +23,10 @@ def get_balances(self, message, pow_obj, base_identity, *,
     addrs_raw = message.get("addresses") or []
     if not addrs_raw and message.get("address"):
         addrs_raw = [message["address"]]
-    if not isinstance(addrs_raw, list) or not addrs_raw:
-        return {"error": "missing addresses"}
-    if len(addrs_raw) > CFG.MAX_ADDRS_PER_REQ:
-        return {"error": "too many addresses (max %d)" % CFG.MAX_ADDRS_PER_REQ}
     
+    addrs, err = _validate_balances_request(addrs_raw)
+    if err:
+        return err
 
     ok, pow_resp = CM.allow_rpc_with_pow(
         self,
@@ -45,18 +44,6 @@ def get_balances(self, message, pow_obj, base_identity, *,
     if not ok:
         return pow_resp
 
-    norm = []
-    for a in addrs_raw:
-        if not a:
-            continue
-        a = str(a).strip()
-        if a.lower().startswith(CFG.ADDRESS_PREFIX):
-            a = a.lower()
-        if len(a) > CFG.MAX_UTXO_ADDR_LEN:
-            return {"error": "address too long"}
-        norm.append(a)
-
-    addrs = list(dict.fromkeys(norm))
     with self.broadcast.lock:
         chain = list(self.broadcast.blockchain.chain)
         tip_height = int(self.broadcast.blockchain.height)
@@ -64,43 +51,7 @@ def get_balances(self, message, pow_obj, base_identity, *,
     self.broadcast.utxodb._load()
 
     opmap_chain, opmap_mem = self.build_outpoint_map(chain, mem)
-    pending_out_map: dict[str, int] = {}
-    incoming_map: dict[str, int] = {}
-    for tx in mem or []:
-        spent_local: dict[str, int] = {}
-        recv_local: dict[str, int] = {}
-
-        for tin in getattr(tx, "inputs", []) or []:
-            key = self.txin_prevkey(tin)
-            amt_spk = opmap_mem.get(key) or opmap_chain.get(key)
-            if not amt_spk:
-                continue
-            amt, spk_hex = amt_spk
-            owner = spkhex_to_address(spk_hex) if spk_hex else None
-            if owner and amt:
-                spent_local[owner] = spent_local.get(owner, 0) + int(amt)
-
-        for o in getattr(tx, "outputs", []) or []:
-            amt = int(getattr(o, "amount", 0) or 0)
-            if amt <= 0:
-                continue
-            addr_o = self.txout_to_address(o)
-            if addr_o:
-                recv_local[addr_o] = recv_local.get(addr_o, 0) + amt
-
-        # Treat change outputs (addr appears on both sides) as neutral.
-        for addr, spent_amt in list(spent_local.items()):
-            change_amt = min(spent_amt, recv_local.get(addr, 0))
-            if change_amt > 0:
-                spent_local[addr] = spent_amt - change_amt
-                recv_local[addr] = recv_local.get(addr, 0) - change_amt
-
-        for addr, spent_amt in spent_local.items():
-            if spent_amt > 0:
-                pending_out_map[addr] = pending_out_map.get(addr, 0) + spent_amt
-        for addr, recv_amt in recv_local.items():
-            if recv_amt > 0:
-                incoming_map[addr] = incoming_map.get(addr, 0) + recv_amt
+    pending_out_map, incoming_map = _calculate_mempool_balances(self, mem, opmap_mem, opmap_chain)
 
     items = {}
     for addr_str in addrs:
@@ -299,28 +250,7 @@ def get_mempool(self, message, pow_obj, base_identity, addr, *,
             return pow_resp
         
     if mode == "snapshot":
-        
-        if not is_miner_sender():
-            return {"error": "forbidden: miners-only endpoint"}
-        peer_port = int(message.get("port", 0))
-        target = None
-        if isinstance(addr, tuple):
-            if peer_port > 0:
-                target = self.normalize_peer((addr[0], peer_port))
-            if not target:
-                # fall back to known peers with same IP
-                with self.lock:
-                    for candidate in self.peers:
-                        if candidate[0] == addr[0]:
-                            target = candidate
-                            break
-        if not target:
-            return {"error": "missing_peer_port"}
-        min_iv = message.get("min_interval")
-        force = bool(message.get("force"))
-        pushed = self.broadcast.send_mempool_to_peer(target, min_interval_s=min_iv, force=force)
-            
-        return {"type": "MEMPOOL_SYNC", "count": int(pushed)}
+        return _get_mempool_snapshot(self, message, addr, is_miner_sender)
 
     if mode in ("inline", "inline_full"):
         ok, pow_resp = CM.allow_rpc_with_pow(
@@ -339,45 +269,8 @@ def get_mempool(self, message, pow_obj, base_identity, addr, *,
         if not ok:
             return pow_resp
         all_txs = self.broadcast.mempool.get_all_txs() or []
-        inline: list[dict] = []
-        total = len(all_txs)
-        hard_cap = max(1024, CFG.MAX_MSG) - len(CFG.NETWORK_MAGIC)
-        limit = CFG.MEMPOOL_INLINE_MAX_TX
-        base = {"type": "MEMPOOL", "mode": "inline_full", "total": total, "txs": []}
+        return _get_mempool_inline(all_txs)
 
-        for tx in all_txs:
-            if len(inline) >= limit:
-                break
-            if hasattr(tx, "to_dict"):
-                tx_dict = tx.to_dict(include_txid=True)
-            elif isinstance(tx, dict):
-                tx_dict = dict(tx)
-            else:
-                continue
-
-            if not tx_dict.get("txid") and getattr(tx, "txid", None):
-                txid_attr = getattr(tx, "txid")
-                tx_dict["txid"] = txid_attr.hex() if isinstance(txid_attr, (bytes, bytearray)) else str(txid_attr)
-
-            candidate = dict(base)
-            candidate["txs"] = inline + [tx_dict]
-            enc = json.dumps(candidate, separators=CFG.CANONICAL_SEP).encode("utf-8")
-
-            if hard_cap > 0 and enc and len(enc) > hard_cap:
-                if inline:
-                    break
-                # Single tx too large, skip it
-                continue
-
-            inline.append(tx_dict)
-
-        return {
-            "type": "MEMPOOL",
-            "mode": "inline_full",
-            "total": total,
-            "count": len(inline),
-            "txs": inline,
-        }
     # --- fallback: mode txids (default) ---
     txs = self.broadcast.mempool.get_all_txs()
     hexes = []
@@ -482,3 +375,133 @@ def get_total_utxo(self, message, pow_obj, base_identity, *,
     
     count = self.broadcast.utxodb.count_utxos(address)
     return {"type": "UTXOS_COUNT", "count": count}
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
+def _validate_balances_request(addrs_raw) -> tuple[list[str], dict | None]:
+    if not isinstance(addrs_raw, list) or not addrs_raw:
+        return [], {"error": "missing addresses"}
+    if len(addrs_raw) > CFG.MAX_ADDRS_PER_REQ:
+        return [], {"error": "too many addresses (max %d)" % CFG.MAX_ADDRS_PER_REQ}
+    norm = []
+    for a in addrs_raw:
+        if not a:
+            continue
+        a = str(a).strip()
+        if a.lower().startswith(CFG.ADDRESS_PREFIX):
+            a = a.lower()
+        if len(a) > CFG.MAX_UTXO_ADDR_LEN:
+            return [], {"error": "address too long"}
+        norm.append(a)
+    return list(dict.fromkeys(norm)), None
+
+
+def _calculate_mempool_balances(self, mem, opmap_mem, opmap_chain) -> tuple[dict[str, int], dict[str, int]]:
+    pending_out_map: dict[str, int] = {}
+    incoming_map: dict[str, int] = {}
+    for tx in mem or []:
+        spent_local: dict[str, int] = {}
+        recv_local: dict[str, int] = {}
+
+        for tin in getattr(tx, "inputs", []) or []:
+            key = self.txin_prevkey(tin)
+            amt_spk = opmap_mem.get(key) or opmap_chain.get(key)
+            if not amt_spk:
+                continue
+            amt, spk_hex = amt_spk
+            owner = spkhex_to_address(spk_hex) if spk_hex else None
+            if owner and amt:
+                spent_local[owner] = spent_local.get(owner, 0) + int(amt)
+
+        for o in getattr(tx, "outputs", []) or []:
+            amt = int(getattr(o, "amount", 0) or 0)
+            if amt <= 0:
+                continue
+            addr_o = self.txout_to_address(o)
+            if addr_o:
+                recv_local[addr_o] = recv_local.get(addr_o, 0) + amt
+
+        # Treat change outputs (addr appears on both sides) as neutral.
+        for addr, spent_amt in list(spent_local.items()):
+            change_amt = min(spent_amt, recv_local.get(addr, 0))
+            if change_amt > 0:
+                spent_local[addr] = spent_amt - change_amt
+                recv_local[addr] = recv_local.get(addr, 0) - change_amt
+
+        for addr, spent_amt in spent_local.items():
+            if spent_amt > 0:
+                pending_out_map[addr] = pending_out_map.get(addr, 0) + spent_amt
+        for addr, recv_amt in recv_local.items():
+            if recv_amt > 0:
+                incoming_map[addr] = incoming_map.get(addr, 0) + recv_amt
+    return pending_out_map, incoming_map
+
+
+def _get_mempool_snapshot(self, message, addr, is_miner_sender) -> dict:
+    if not is_miner_sender():
+        return {"error": "forbidden: miners-only endpoint"}
+    peer_port = int(message.get("port", 0))
+    target = None
+    if isinstance(addr, tuple):
+        if peer_port > 0:
+            target = self.normalize_peer((addr[0], peer_port))
+        if not target:
+            # fall back to known peers with same IP
+            with self.lock:
+                for candidate in self.peers:
+                    if candidate[0] == addr[0]:
+                        target = candidate
+                        break
+    if not target:
+        return {"error": "missing_peer_port"}
+    min_iv = message.get("min_interval")
+    force = bool(message.get("force"))
+    pushed = self.broadcast.send_mempool_to_peer(target, min_interval_s=min_iv, force=force)
+        
+    return {"type": "MEMPOOL_SYNC", "count": int(pushed)}
+
+
+def _get_mempool_inline(all_txs) -> dict:
+    inline: list[dict] = []
+    total = len(all_txs)
+    hard_cap = max(1024, CFG.MAX_MSG) - len(CFG.NETWORK_MAGIC)
+    limit = CFG.MEMPOOL_INLINE_MAX_TX
+    base = {"type": "MEMPOOL", "mode": "inline_full", "total": total, "txs": []}
+
+    for tx in all_txs:
+        if len(inline) >= limit:
+            break
+        if hasattr(tx, "to_dict"):
+            tx_dict = tx.to_dict(include_txid=True)
+        elif isinstance(tx, dict):
+            tx_dict = dict(tx)
+        else:
+            continue
+
+        if not tx_dict.get("txid") and getattr(tx, "txid", None):
+            txid_attr = getattr(tx, "txid")
+            tx_dict["txid"] = txid_attr.hex() if isinstance(txid_attr, (bytes, bytearray)) else str(txid_attr)
+
+        candidate = dict(base)
+        candidate["txs"] = inline + [tx_dict]
+        enc = json.dumps(candidate, separators=CFG.CANONICAL_SEP).encode("utf-8")
+
+        if hard_cap > 0 and enc and len(enc) > hard_cap:
+            if inline:
+                break
+            # Single tx too large, skip it
+            continue
+
+        inline.append(tx_dict)
+
+    return {
+        "type": "MEMPOOL",
+        "mode": "inline_full",
+        "total": total,
+        "count": len(inline),
+        "txs": inline,
+    }

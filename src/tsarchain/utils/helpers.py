@@ -74,9 +74,11 @@ SECP256K1_P = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
 SECP256K1_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 HALF_N = SECP256K1_N // 2
 
+
 # -----------------------------
 # RANDOMX MINING ALGO
 # -----------------------------
+
 
 def _resolve_randomx_root() -> bytes:
     raw = (CFG.RANDOMX_STATIC_KEY or "").strip()
@@ -89,7 +91,9 @@ def _resolve_randomx_root() -> bytes:
         return bytes.fromhex(lowered)
     return raw.encode("utf-8")
 
+
 _RANDOMX_ROOT = _resolve_randomx_root()
+
 
 def _pow_epoch(height: int | None) -> int:
     if height is None:
@@ -99,13 +103,16 @@ def _pow_epoch(height: int | None) -> int:
         h = 0
     return h // CFG.RANDOMX_KEY_EPOCH_BLOCKS
 
+
 def randomx_key_for_height(height: int | None = None) -> bytes:
     epoch = _pow_epoch(height)
     payload = _RANDOMX_ROOT + CFG.RANDOMX_KEY_SALT + epoch.to_bytes(8, "big", signed=False)
     return hashlib.sha256(payload).digest()
 
+
 def pow_key_for_height(height: int | None = None) -> bytes:
     return randomx_key_for_height(height) if CFG.POW_ALGO == "randomx" else b""
+
 
 def _randomx_hash_core(data: bytes, seed_bytes: bytes, *, full_mem: bool) -> bytes:
     cache_cap = max(1, int(CFG.RANDOMX_CACHE_MAX))
@@ -119,7 +126,8 @@ def _randomx_hash_core(data: bytes, seed_bytes: bytes, *, full_mem: bool) -> byt
         bool(CFG.RANDOMX_SECURE_JIT),
         cache_cap if cache_cap > 0 else 1,
     )
-    
+
+
 def _resolve_rx_full_mem(full_mem_override: bool | None) -> bool:
     """
     Resolution order:
@@ -136,6 +144,7 @@ def _resolve_rx_full_mem(full_mem_override: bool | None) -> bool:
         return False
     return bool(CFG.RANDOMX_FULL_MEM)
 
+
 def pow_hash_miner(header: bytes, *, height: int | None = None, key_hint: bytes | None = None, full_mem_override: bool | None = None) -> bytes:
     """Hash for MINING. Can be full-mem according to override/CFG."""
     data = to_bytes(header)
@@ -144,6 +153,7 @@ def pow_hash_miner(header: bytes, *, height: int | None = None, key_hint: bytes 
     seed = key_hint if key_hint is not None else randomx_key_for_height(height)
     fm = _resolve_rx_full_mem(full_mem_override)
     return _randomx_hash_core(data, bytes(seed), full_mem=fm)
+
 
 def pow_hash_verify_light(header: bytes, *, height: int | None = None, key_hint: bytes | None = None) -> bytes:
     """Hash for VERIFICATION. Always LIGHT (no 2 GB dataset)."""
@@ -158,6 +168,7 @@ def pow_hash_verify_light(header: bytes, *, height: int | None = None, key_hint:
 # SIGOPS UTIL
 # -----------------------------
 
+
 def to_bytes(x) -> bytes:
     if isinstance(x, Script):
         return x.serialize()
@@ -166,6 +177,7 @@ def to_bytes(x) -> bytes:
     if isinstance(x, str):
         return bytes.fromhex(x)
     return b""
+
 
 def read_push(script: bytes, i: int):
     if i >= len(script):
@@ -187,6 +199,7 @@ def read_push(script: bytes, i: int):
     data = script[i:i+ln]; i += ln
     return (None, data), i
 
+
 def parse_ops(script: bytes):
     ops = []
     i = 0
@@ -201,11 +214,14 @@ def parse_ops(script: bytes):
             ops.append((b, None)); i += 1
     return ops
 
+
 def is_p2wpkh(spk: bytes) -> bool:
     return len(spk) == 22 and spk[0] == 0x00 and spk[1] == 0x14
 
+
 def is_p2wsh(spk: bytes) -> bool:
     return len(spk) == 34 and spk[0] == 0x00 and spk[1] == 0x20
+
 
 def last_pushdata(script_sig: bytes) -> bytes | None:
     ops = parse_ops(script_sig)
@@ -219,8 +235,10 @@ def last_pushdata(script_sig: bytes) -> bytes | None:
 # ENDIANNESS
 # -----------------------------
 
+
 def int_to_little_endian(n: int, length: int) -> bytes:
     return n.to_bytes(length, 'little')
+
 
 def little_endian_to_int(b: bytes) -> int:
     return int.from_bytes(b, 'little')
@@ -230,21 +248,27 @@ def little_endian_to_int(b: bytes) -> int:
 # HASHING
 # -----------------------------
 
+
 def sha256(b: bytes) -> bytes:
     return hashlib.sha256(b).digest()
+
 
 def hash160(b: bytes) -> bytes:
     return bytes(_native_hash160(bytes(b)))
 
+
 def double_sha256(data: bytes) -> bytes:
     return bytes(_native_hash256(bytes(data)))
+
 
 def hash256(data: bytes) -> bytes:
     return bytes(_native_hash256(bytes(data)))
 
+
 # -----------------------------
 # VARINT ENCODING (Bitcoin-style)
 # -----------------------------
+
 
 def encode_varint(i: int) -> bytes:
     if i < 0xfd:
@@ -256,12 +280,15 @@ def encode_varint(i: int) -> bytes:
     else:
         return b'\xff' + i.to_bytes(8, 'little')
 
+
 def serialize_bytes_with_len(b: bytes) -> bytes:
     return encode_varint(len(b)) + b
+
 
 # -----------------------------
 # DECODE SIG
 # -----------------------------
+
 
 def decode_address(address: str) -> bytes:
     hrp, data = bech32_decode(address)
@@ -277,6 +304,7 @@ def decode_address(address: str) -> bytes:
         raise ValueError(f"Invalid witness program length: {len(decoded)} (expected 20 or 32)")
     return bytes(decoded)
 
+
 def spkhex_to_address(spk_hex: str) -> str | None:
     if isinstance(spk_hex, bytes):
         spk_hex = spk_hex.hex()
@@ -291,6 +319,7 @@ def spkhex_to_address(spk_hex: str) -> str | None:
         return bech32_encode(CFG.ADDRESS_PREFIX, data)
     return None
 
+
 def decode_der_sig(signature: bytes):
     if signature[0] != 0x30:
         raise ValueError("Invalid DER encoding")
@@ -303,6 +332,7 @@ def decode_der_sig(signature: bytes):
 
 # --- Compact bits <-> target (kanonik & unsigned) ---
 
+
 def bits_to_target(bits: int) -> int:
     exp  = (bits >> 24) & 0xff
     mant = bits & 0x007fffff
@@ -310,6 +340,7 @@ def bits_to_target(bits: int) -> int:
         return mant << (8 * (exp - 3))
     else:
         return mant >> (8 * (3 - exp))
+
 
 def target_to_bits(target: int) -> int:
     if target <= 0:
@@ -327,11 +358,14 @@ def target_to_bits(target: int) -> int:
     mant &= 0x007fffff
     return (exp << 24) | mant
 
+
 DIFFICULTY_CONST = (1 << 256) 
+
 
 def target_to_difficulty(target: int) -> int:
     t = max(1, int(target))
     return DIFFICULTY_CONST // t
+
 
 def difficulty_to_target(diff: int) -> int:
     d = max(1, int(diff))
@@ -343,6 +377,7 @@ def difficulty_to_target(diff: int) -> int:
 def serialize_tx(tx, include_witness: bool = True) -> bytes:
     compact = tx_to_compact_tuple(tx)
     return serialize_tx_compact(compact, include_witness)
+
 
 def serialize_tx_for_txid(tx) -> bytes:
     return serialize_tx(tx, include_witness=False)
@@ -361,6 +396,7 @@ def compute_tx_weight_vsize(tx) -> tuple[int, int, int, int]:
     vsize = (weight + 3) // 4
     return weight, vsize, base_size, total_size
 
+
 def _estimate_tx_size_bytes(tx) -> int:
     size = 0
     for txin in getattr(tx, "inputs", []) or []:
@@ -376,6 +412,7 @@ def _estimate_tx_size_bytes(tx) -> int:
     size = max(size, len(tx.to_dict(include_txid=True)))
     return int(size)
 
+
 def estimate_block_size_bytes(block) -> int:
     txs = getattr(block, "transactions", []) or []
     total = 80  # header bytes
@@ -387,21 +424,27 @@ def estimate_block_size_bytes(block) -> int:
     total = max(total, len(json.dumps(block.to_dict())))
     return int(total)
 
+
 # ========== Convenience: detect p2wpkh from scriptPubKey ==========
+
 
 def is_p2wpkh_script(script_bytes: bytes) -> bool:
     return isinstance(script_bytes, (bytes, bytearray)) and len(script_bytes) == 22 and script_bytes[0] == 0x00 and script_bytes[1] == 0x14
 
+
 # ========== Compute ==========
+
 
 def util_compute_txid(tx):
     return hash256(serialize_tx(tx, include_witness=False))
-    
+
+
 def util_compute_wtxid(tx) -> bytes:
     return hash256(serialize_tx(tx, include_witness=True))
 
 
 # ====== Block Id (Voice Sovereignty flavored) ======
+
 
 def _ascii_slug(s: str, maxlen: int = 32) -> str:
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
@@ -412,6 +455,7 @@ def _ascii_slug(s: str, maxlen: int = 32) -> str:
     if not s:
         s = "unnamed"
     return s[:maxlen] if maxlen else s
+
 
 def block_id_generator(length: int = 9, with_year: bool = True) -> str:
     chars = string.ascii_letters + string.digits
@@ -439,6 +483,7 @@ class Script:
     def __init__(self, cmds: list = None):
         self.cmds = list(cmds) if cmds else []
 
+
     @staticmethod
     def _encode_pushdata(b: bytes) -> bytes:
         n = len(b)
@@ -450,6 +495,7 @@ class Script:
             return b'\x4d' + n.to_bytes(2, 'little') + b 
         else:
             return b'\x4e' + n.to_bytes(4, 'little') + b 
+
 
     @classmethod
     def _read_push_or_opcode(cls, first: int, data: bytes, i: int):
@@ -496,6 +542,7 @@ class Script:
 
         return first, i
     
+    
     @staticmethod
     def build_opreturn_script(data: bytes, max_bytes: int) -> str:
         if len(data) > max_bytes:
@@ -512,6 +559,7 @@ class Script:
             raise ValueError("opreturn_exceeds_520_bytes")
         return b.hex()
 
+
     def serialize(self) -> bytes:
         out = bytearray()
         for cmd in self.cmds:
@@ -522,6 +570,7 @@ class Script:
             else:
                 raise TypeError(f"Unsupported script cmd type: {type(cmd)}")
         return bytes(out)
+
 
     @classmethod
     def deserialize(cls, data: bytes) -> 'Script':
@@ -535,9 +584,11 @@ class Script:
             cmds.append(item)
         return cls(cmds)
 
+
     @classmethod
     def parse(cls, raw_bytes: bytes) -> 'Script':
         return cls.deserialize(raw_bytes)
+
 
     def to_dict(self):
         cmds_serializable = []
@@ -549,6 +600,7 @@ class Script:
             else:
                 cmds_serializable.append(cmd)
         return {'cmds': cmds_serializable}
+
 
     @classmethod
     def from_dict(cls, data: dict) -> 'Script':
@@ -574,8 +626,10 @@ class Script:
 class DerSigError(ValueError):
     pass
 
+
 def _int_from_bytes(b: bytes) -> int:
     return int.from_bytes(b, "big", signed=False)
+
 
 def _int_to_bytes(i: int) -> bytes:
     if i < 0:
@@ -585,8 +639,10 @@ def _int_to_bytes(i: int) -> bytes:
     length = (i.bit_length() + 7) // 8
     return i.to_bytes(length, "big")
 
+
 def is_low_s(s: int) -> bool:
     return 1 <= s <= HALF_N
+
 
 def canonicalize_rs(r: int, s: int) -> Tuple[int, int]:
     if not (1 <= r < SECP256K1_N) or not (1 <= s < SECP256K1_N):
@@ -594,6 +650,7 @@ def canonicalize_rs(r: int, s: int) -> Tuple[int, int]:
     if s > HALF_N:
         s = SECP256K1_N - s
     return r, s
+
 
 def der_encode_sig_strict(r: int, s: int) -> bytes:
     def enc_int(x: int) -> bytes:
@@ -618,6 +675,7 @@ def der_encode_sig_strict(r: int, s: int) -> bytes:
     else:
         len_bytes = bytes([len(seq)])
     return b"\x30" + len_bytes + seq
+
 
 def der_parse_sig_strict(sig: bytes) -> Tuple[int, int]:
     if not isinstance(sig, (bytes, bytearray)):
@@ -693,6 +751,7 @@ def der_parse_sig_strict(sig: bytes) -> Tuple[int, int]:
 
     return r, s
 
+
 def strip_sighash_flag(sig_with_type: bytes) -> Tuple[bytes, int]:
     if len(sig_with_type) < 2:
         raise DerSigError("signature missing sighash byte")
@@ -706,6 +765,7 @@ def is_signature_canonical_low_s(der_sig: bytes) -> bool:
     except DerSigError:
         return False
 
+
 def sha256d(data: bytes) -> bytes:
     return hashlib.sha256(hashlib.sha256(data).digest()).digest()
 
@@ -714,9 +774,11 @@ def sha256d(data: bytes) -> bytes:
 # Native acceleration (Rust)
 # ===========================================================================
 
+
 def _vk_to_bytes(vk: "VerifyingKey") -> Optional[bytes]:
     raw = vk.to_string()  # 64B (X||Y)
     return b"\x04" + raw
+
 
 def count_sigops_in_script(script: bytes) -> int:
     data = to_bytes(script)
@@ -724,8 +786,10 @@ def count_sigops_in_script(script: bytes) -> int:
         return 0
     return int(_native_count_sigops(data))
 
+
 def batch_verify_der_low_s(items, enforce_low_s: bool = True, parallel: bool = True):
     return list(_native_verify_many(items, enforce_low_s, parallel))
+
 
 def bip143_sig_hash(tx, input_index: int, script_code: bytes, value: int, sighash: int = SIGHASH_ALL) -> bytes:
     tx_bytes = serialize_tx(tx, include_witness=True)
@@ -739,6 +803,7 @@ def bip143_sig_hash(tx, input_index: int, script_code: bytes, value: int, sighas
     )
     return bytes(digest32)
 
+
 def verify_der_strict_low_s(vk: "VerifyingKey", digest32: bytes, der_sig: bytes) -> bool:
     if not isinstance(digest32, (bytes, bytearray)) or len(digest32) != 32:
         raise ValueError("digest32 must be 32-byte")
@@ -747,10 +812,12 @@ def verify_der_strict_low_s(vk: "VerifyingKey", digest32: bytes, der_sig: bytes)
         raise ValueError("verifying key conversion failed")
     return bool(_native_verify_der_low_s(pub, bytes(digest32), bytes(der_sig)))
 
+
 def sign_digest_der_low_s_native(priv_hex: str, digest32: bytes) -> bytes:
     if not isinstance(digest32, (bytes, bytearray)) or len(digest32) != 32:
         raise ValueError("digest32 must be 32-byte")
     return bytes(_native_sign_der_low_s(priv_hex, bytes(digest32)))
+
 
 def merkle_root(transactions):
     txids = []
@@ -775,33 +842,43 @@ def merkle_root(transactions):
         return b"\x00" * 32
     return bytes(_native_merkle_root(txids))
 
+
 def native_validate_block_txs(block_dict: dict, utxo_snapshot: dict, spend_height: int, options: dict):
     return _native_validate_block_txs(block_dict, utxo_snapshot, int(spend_height), options)
+
 
 def native_validate_block_txs_compact(block_txs, utxo_items, spend_height: int, options: dict):
     return _native_validate_block_txs_compact(block_txs, utxo_items, int(spend_height), options)
 
+
 def native_validate_tx_p2wpkh_compact(tx_tuple, utxo_items, spend_height: int, options: dict):
     return _native_validate_tx_p2wpkh_compact(tx_tuple, utxo_items, int(spend_height), options)
 
+
 def native_utxo_build_ops_compact(block_txs, spend_height: int):
     return _native_utxo_build_ops_compact(block_txs, int(spend_height))
+
 
 # =======================
 # Codec helpers (compact native tx serializer)
 # =======================
 
+
 def serialize_tx_compact(tx_tuple, include_witness: bool = True) -> bytes:  # Not used directly
     return bytes(_native_serialize_tx_compact(tx_tuple, bool(include_witness)))
+
 
 def txid_from_compact(tx_tuple) -> bytes:
     return bytes(_native_txid_from_compact(tx_tuple))
 
+
 def wtxid_from_compact(tx_tuple) -> bytes:
     return bytes(_native_wtxid_from_compact(tx_tuple))
 
+
 def sighash_bip143_compact(tx_tuple, input_index: int, script_code: bytes, value_sat: int, sighash_type: int = SIGHASH_ALL) -> bytes:
     return bytes(_native_sighash_bip143_compact(tx_tuple, int(input_index), bytes(script_code), int(value_sat), int(sighash_type)))
+
 
 def tx_to_compact_tuple(tx) -> tuple:
     version = int(getattr(tx, "version", 1))
@@ -852,9 +929,11 @@ def tx_to_compact_tuple(tx) -> tuple:
     txid = txid_from_compact(tx_tuple)
     return (version, locktime, inputs_c, outputs_c, txid, bool(getattr(tx, "is_coinbase", False)))
 
+
 # =======================
 # Mining (RandomX)
 # =======================
+
 
 def native_randomx_mine(
     header_prefix: bytes,
@@ -891,9 +970,11 @@ def native_randomx_mine(
         stop_event,
     )
 
+
 # =======================
 # LMDB UTXO streaming helpers Native (full-sync)
 # =======================
+
 
 def kv_load_utxo_dict_native(limit: int = 1000) -> dict:   # this module is not used directly
     """

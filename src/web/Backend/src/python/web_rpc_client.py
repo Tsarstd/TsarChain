@@ -30,86 +30,6 @@ RPC_SOURCE          = "web_backend"
 
 RECEIPT_TTL         = 30
 
-def _emit(out: object) -> None:
-    try:
-        sys.stdout.write(json.dumps(out, ensure_ascii=True, default=str))
-    except Exception:
-        sys.stdout.write('{"error":"json_encode_failed"}')
-    sys.stdout.flush()
-
-def _mk_client(host: str, port: int):
-    user_id, user_pub, user_priv = load_or_create_keypair_at(CFG.USER_KEY_PATH)
-    user_ctx = {"net_id": CFG.DEFAULT_NET_ID, "node_id": user_id, "pubkey": user_pub, "privkey": user_priv}
-    return NodeClient(CFG, user_ctx=user_ctx, manual_bootstrap=(host, port))
-
-def _rpc_send(client, payload: dict):
-    if RPC_SOURCE and isinstance(payload, dict) and "rpc_source" not in payload:
-        payload = dict(payload)
-        payload["rpc_source"] = RPC_SOURCE
-    resp = client.send(payload)
-    return resp
-
-def _get_client(host: str, port: int):
-    global _prefetch_started
-    key = f"{host}:{port}"
-    with _CLIENT_LOCK:
-        client = _CLIENT_CACHE.get(key)
-        if client is None:
-            client = _mk_client(host, port)
-            _CLIENT_CACHE[key] = client
-        
-        return client
-    
-def _drop_client(host: str, port: int) -> None:
-    key = f"{host}:{port}"
-    with _CLIENT_LOCK:
-        _CLIENT_CACHE.pop(key, None)
-    
-def _payload_has_error(payload: object) -> bool:
-    return isinstance(payload, dict) and bool(payload.get("error"))
-
-# ============= CACHE HELPER START ==============
-
-def _set_cache_scope(host: str, port: int) -> None:
-    global _CACHE_SCOPE
-    _CACHE_SCOPE = f"{host}:{port}"
-
-def _cache_key(kind: str, *parts: object) -> str:
-    return webdb.make_cache_key("web", _CACHE_SCOPE, kind, *parts)
-
-def _cache_policy(payload: object) -> tuple[bool, int | None]:
-    if payload is None:
-        return False, None
-    if isinstance(payload, dict):
-        if payload.get("error"):
-            ttl = webdb.cache_ttl_for_error(payload.get("error") or payload.get("detail") or payload.get("reason"))
-            return ttl is not None, ttl
-        if payload.get("status") == "error":
-            ttl = webdb.cache_ttl_for_error(payload.get("reason"))
-            return ttl is not None, ttl
-    return True, None
-
-def _cache_get(key: str, refresh_ttl: bool = False):
-    return webdb.cache_get_json(key, refresh_ttl=refresh_ttl)
-
-def _cache_set(key: str, payload: object, ttl_sec: int | None = None) -> None:
-    if ttl_sec is None:
-        webdb.cache_set(key, payload)
-    else:
-        webdb.cache_set(key, payload, ttl_sec=ttl_sec)
-
-def _cache_fetch(key: str, fetch_fn):
-    cached = _cache_get(key)
-    if cached is not None:
-        return cached
-    payload = fetch_fn()
-    cache_ok, ttl_sec = _cache_policy(payload)
-    if cache_ok:
-        _cache_set(key, payload, ttl_sec)
-    return payload
-
-# ============= CACHE HELPER END ==============
-
 # ======================================
 # ============= RPC START ==============
 # ======================================
@@ -420,6 +340,101 @@ def rpc_graffiti_file(client, opts: dict, fallback_art_id: str | None):
 # ======================================
 # ============= RPC END ==============
 # ======================================
+
+
+def _emit(out: object) -> None:
+    try:
+        sys.stdout.write(json.dumps(out, ensure_ascii=True, default=str))
+    except Exception:
+        sys.stdout.write('{"error":"json_encode_failed"}')
+    sys.stdout.flush()
+
+
+def _mk_client(host: str, port: int):
+    user_id, user_pub, user_priv = load_or_create_keypair_at(CFG.USER_KEY_PATH)
+    user_ctx = {"net_id": CFG.DEFAULT_NET_ID, "node_id": user_id, "pubkey": user_pub, "privkey": user_priv}
+    return NodeClient(CFG, user_ctx=user_ctx, manual_bootstrap=(host, port))
+
+
+def _rpc_send(client, payload: dict):
+    if RPC_SOURCE and isinstance(payload, dict) and "rpc_source" not in payload:
+        payload = dict(payload)
+        payload["rpc_source"] = RPC_SOURCE
+    resp = client.send(payload)
+    return resp
+
+
+def _get_client(host: str, port: int):
+    global _prefetch_started
+    key = f"{host}:{port}"
+    with _CLIENT_LOCK:
+        client = _CLIENT_CACHE.get(key)
+        if client is None:
+            client = _mk_client(host, port)
+            _CLIENT_CACHE[key] = client
+        
+        return client
+
+
+def _drop_client(host: str, port: int) -> None:
+    key = f"{host}:{port}"
+    with _CLIENT_LOCK:
+        _CLIENT_CACHE.pop(key, None)
+
+
+def _payload_has_error(payload: object) -> bool:
+    return isinstance(payload, dict) and bool(payload.get("error"))
+
+
+# ============= CACHE HELPER START ==============
+
+
+def _set_cache_scope(host: str, port: int) -> None:
+    global _CACHE_SCOPE
+    _CACHE_SCOPE = f"{host}:{port}"
+
+
+def _cache_key(kind: str, *parts: object) -> str:
+    return webdb.make_cache_key("web", _CACHE_SCOPE, kind, *parts)
+
+
+def _cache_policy(payload: object) -> tuple[bool, int | None]:
+    if payload is None:
+        return False, None
+    if isinstance(payload, dict):
+        if payload.get("error"):
+            ttl = webdb.cache_ttl_for_error(payload.get("error") or payload.get("detail") or payload.get("reason"))
+            return ttl is not None, ttl
+        if payload.get("status") == "error":
+            ttl = webdb.cache_ttl_for_error(payload.get("reason"))
+            return ttl is not None, ttl
+    return True, None
+
+
+def _cache_get(key: str, refresh_ttl: bool = False):
+    return webdb.cache_get_json(key, refresh_ttl=refresh_ttl)
+
+
+def _cache_set(key: str, payload: object, ttl_sec: int | None = None) -> None:
+    if ttl_sec is None:
+        webdb.cache_set(key, payload)
+    else:
+        webdb.cache_set(key, payload, ttl_sec=ttl_sec)
+
+
+def _cache_fetch(key: str, fetch_fn):
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+    payload = fetch_fn()
+    cache_ok, ttl_sec = _cache_policy(payload)
+    if cache_ok:
+        _cache_set(key, payload, ttl_sec)
+    return payload
+
+
+# ============= CACHE HELPER END ==============
+
 
 def _parse_opts(param: str | None) -> dict:
     if not param:

@@ -51,7 +51,72 @@ class PaymentReceiptGenerator:
         self.normal_font = self.__class__._font_cache['normal_20']
         self.small_font = self.__class__._font_cache['small_15']
         self.monospace_font = self.__class__._font_cache['monospace_21']
-    
+
+
+    def generate_receipt(self, tx_data: Dict[str, Any]) -> Tuple[bool, str, Optional[bytes]]:
+        try:    
+            if not tx_data or 'txid' not in tx_data:
+                return False, "Invalid transaction data", None
+            
+            txid = tx_data.get('txid', 'Unknown')
+            
+            # BG TEMPLATE (800 x 1200 px - 150 ppi)
+            if self.__class__._template_cache is not None:
+                img = self.__class__._template_cache.copy()
+            else:
+                img = Image.open(self.template_path)
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+            
+            draw = ImageDraw.Draw(img)
+            width, _ = img.size
+            status = tx_data.get('status', 'unconfirmed')
+            
+            y_position = self._draw_header_and_txid_grid(draw, tx_data, width, txid, status)
+            
+            inputs = tx_data.get('inputs', [])
+            input_addresses = {inp.get('address') for inp in inputs if inp.get('address')}
+            
+            y_position = self._draw_inputs_section(draw, tx_data, y_position, width)
+            
+            y_position = self._draw_outputs_section(draw, tx_data, y_position, width, input_addresses)
+            
+            outputs = tx_data.get('outputs', [])
+            summary_y_start, current_y = self._draw_summary_section(draw, tx_data, y_position, inputs, outputs, input_addresses)
+            
+            output_path, image_bytes = self._draw_stickers_qr_footer(img, draw, tx_data, txid, status, summary_y_start, current_y, width)
+            
+            return True, output_path, image_bytes
+            
+        except Exception as e:
+            log.exception("Failed to generate receipt")
+            return False, f"Error: {str(e)}", None
+
+
+    def generate_receipt_base64(self, tx_data: Dict[str, Any]) -> Dict[str, Any]:
+        success, message, image_bytes = self.generate_receipt(tx_data)
+        
+        if success and image_bytes:
+            base64_image = base64.b64encode(image_bytes).decode('utf-8')
+            return {
+                "status": "success",
+                "message": "Receipt generated successfully",
+                "data_url": f"data:image/jpeg;base64,{base64_image}",
+                "filename": f"{tx_data.get('txid')[:64]}.jpg",
+                "size_bytes": len(image_bytes)
+            }
+        else:
+            return {
+                "status": "error",
+                "message": message or "Failed to generate receipt"
+            }
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
     @classmethod
     def _ensure_template_cache(cls):
         if cls._template_cache is None:
@@ -63,7 +128,8 @@ class PaymentReceiptGenerator:
                 cls._template_cache = img
             else:
                 cls._template_cache = Image.new('RGB', (800, 1200), color=(255, 255, 255))
-    
+
+
     @classmethod
     def _ensure_font_cache(cls):
         font_template = "src/web/Backend/src/template/font_template.ttf"
@@ -82,7 +148,8 @@ class PaymentReceiptGenerator:
                 except Exception as e:
                     log.warning(f"Failed to load font {font_template}: {e}")
                     cls._font_cache[key] = ImageFont.load_default()
-    
+
+
     def _ensure_tx_sticker_cache(self):
         if not self.__class__._tx_sticker_cache:
             sticker_paths = {
@@ -102,7 +169,8 @@ class PaymentReceiptGenerator:
                     self.__class__._tx_sticker_cache[tx_type] = sticker
                 else:
                     self.__class__._tx_sticker_cache[tx_type] = None
-    
+
+
     @classmethod
     def _get_stamp(cls, status: str) -> Optional[Image.Image]:
         cache_key = f"original_{status}"
@@ -120,7 +188,8 @@ class PaymentReceiptGenerator:
                 cls._stamp_cache[cache_key] = None
         
         return cls._stamp_cache.get(cache_key)
-    
+
+
     @classmethod
     def _get_rotated_stamp(cls, status: str) -> Optional[Image.Image]:
         rotation_angle = secrets.randbelow(101) - 50
@@ -156,7 +225,8 @@ class PaymentReceiptGenerator:
         rotated_stamp.offset_x = offset_x
         rotated_stamp.offset_y = offset_y
         return rotated_stamp
-    
+
+
     def _get_tx_type_sticker(self, tx_data: Dict[str, Any]) -> Optional[Image.Image]:
         # Skip for mempool/unconfirmed
         if tx_data.get('status') != 'confirmed':
@@ -167,7 +237,8 @@ class PaymentReceiptGenerator:
             return self.__class__._tx_sticker_cache[tx_type]
         
         return None
-    
+
+
     def _determine_tx_type(self, tx_data: Dict[str, Any]) -> str:
         if tx_data.get('is_coinbase', False):
             return 'coinbase'
@@ -190,9 +261,11 @@ class PaymentReceiptGenerator:
         qr_bytes = generated_receipt.generate_qr_code(qr_data)
         return Image.open(BytesIO(qr_bytes))
 
+
     def _format_tsar_amount(self, amount: Any) -> str:
         amount_str = str(amount)
         return generated_receipt.format_tsar_amount(amount_str, CFG.TSAR)
+
 
     def _draw_amount_with_style(
         self,
@@ -236,14 +309,17 @@ class PaymentReceiptGenerator:
         total_text = f"{integer_part},{decimal_part}{unit}"
         return draw.textlength(total_text, font=font) + offset
 
+
     def _format_datetime(self, timestamp: int) -> str:
         dt = datetime.fromtimestamp(timestamp)
         return dt.strftime("%B %d, %Y - %H:%M:%S")
-    
+
+
     def _truncate_text(self, text: Any, max_length: int = 64) -> str:
         text_str = str(text) if text else ""
         return generated_receipt.truncate_text(text_str, max_length)
-    
+
+
     def _draw_txid_grid(self, draw, txid, x_start, y_start):
         grid_data = generated_receipt.draw_txid_grid_data(
             txid, x_start, y_start, 18, 25, 15
@@ -252,6 +328,7 @@ class PaymentReceiptGenerator:
         for char, x, y, color in grid_data.char_positions:
             draw.text((x, y), char, font=self.monospace_font, fill=color)
         return y_start + 4 * grid_data.line_height + 15
+
 
     def _draw_table_row(self, draw, y_position, label, value, 
                             font_label, font_value, page_width=800,
@@ -281,6 +358,7 @@ class PaymentReceiptGenerator:
                 fill=row_data.line_color, width=1)
         
         return y_position + 10
+
 
     def _add_status_stamp(self, img: Image.Image, status: str) -> Image.Image:
         rotated_stamp = self.__class__._get_rotated_stamp(status)
@@ -332,7 +410,8 @@ class PaymentReceiptGenerator:
             img.paste(rotated_stamp, (pos_x, pos_y))
         
         return img
-    
+
+
     def _draw_pool_label(
         self, draw, y_position, address, formatted_address, 
         right_text, font_left, font_right, page_width, 
@@ -370,387 +449,331 @@ class PaymentReceiptGenerator:
         draw.line([(50, y_position), (page_width - 50, y_position)], fill=(195, 195, 195), width=1)
         return y_position + 10
 
-    def generate_receipt(self, tx_data: Dict[str, Any]) -> Tuple[bool, str, Optional[bytes]]:
-        try:    
-            if not tx_data or 'txid' not in tx_data:
-                return False, "Invalid transaction data", None
-            
-            txid = tx_data.get('txid', 'Unknown')
-            
-            # BG TEMPLATE (800 x 1200 px - 150 ppi)
-            if self.__class__._template_cache is not None:
-                img = self.__class__._template_cache.copy()
-            else:
-                img = Image.open(self.template_path)
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-            
-            draw = ImageDraw.Draw(img)
-            width, _ = img.size
-            
-            # ============= HEADER =============
-            title = "TRANSACTION RECEIPT"
-            title_width = draw.textlength(title, font=self.title_font)
-            draw.text(((width - title_width) // 2, 50), title, font=self.title_font, fill=(62, 62, 62))
-            
-            # Timestamp
-            timestamp = tx_data.get('timestamp', time.time())
-            if timestamp == 0:
-                timestamp_text = "This Transaction Still Pending, Please Wait ~37 Seconds"
-                status_color = (232, 114, 35)
-            else:
-                timestamp_text = self._format_datetime(timestamp)
-                status_color = (3, 95, 166)
 
-            timestamp_width = draw.textlength(timestamp_text, font=self.small_font)
-            draw.text(((width - timestamp_width) // 2, 83), timestamp_text, font=self.small_font, fill=status_color)
+    def _draw_header_and_txid_grid(self, draw, tx_data, width, txid, status) -> int:
+        title = "TRANSACTION RECEIPT"
+        title_width = draw.textlength(title, font=self.title_font)
+        draw.text(((width - title_width) // 2, 50), title, font=self.title_font, fill=(62, 62, 62))
+        
+        # Timestamp
+        timestamp = tx_data.get('timestamp', time.time())
+        if timestamp == 0:
+            timestamp_text = "This Transaction Still Pending, Please Wait ~37 Seconds"
+            status_color = (232, 114, 35)
+        else:
+            timestamp_text = self._format_datetime(timestamp)
+            status_color = (3, 95, 166)
+
+        timestamp_width = draw.textlength(timestamp_text, font=self.small_font)
+        draw.text(((width - timestamp_width) // 2, 83), timestamp_text, font=self.small_font, fill=status_color)
+        
+        #divider
+        line_text = "- " * 25
+        line_width = draw.textlength(line_text, font=self.title_font)
+        
+        draw.text(((width - line_width) // 2, 85), line_text, font=self.title_font, fill=(151, 151, 151))
+        draw.text(((width - line_width) // 2, 28), line_text, font=self.title_font, fill=(151, 151, 151))
+        
+        y_position = self._draw_txid_grid(draw, txid, 205, 118)
+        
+        if status == 'unconfirmed':
+            block_height_str = "Pending"
+            confirmations_str = "Pending"
+        else:
+            block_height = tx_data.get('height')
+            confirmations = tx_data.get('confirmations', 0)
+            block_height_str = str(block_height) if block_height is not None else "Unknown"
+            confirmations_str = str(confirmations) if confirmations is not None else "0"
+        
+        y_position = self._draw_table_row(draw, y_position, "Block Height :", 
+                                        block_height_str, 
+                                        self.small_font, self.small_font, width)
+        
+        y_position = self._draw_table_row(draw, y_position, "Confirmations :", 
+                                        confirmations_str, 
+                                        self.small_font, self.small_font, width)
+        return y_position + 20
+
+
+    def _draw_inputs_section(self, draw, tx_data, y_position, width) -> int:
+        draw.text((50, y_position), "Sender", font=self.normal_font, fill=(232, 114, 35))
+        y_position += 40
+
+        inputs = tx_data.get('inputs', [])
+        if inputs:
+            input_groups = {}
+            for inp in inputs:
+                addr = inp.get('address')
+                if addr not in input_groups:
+                    input_groups[addr] = []
+                input_groups[addr].append(inp)
             
-            #divider
-            line_text = "- " * 25
-            line_width = draw.textlength(line_text, font=self.title_font)
+            for addr, utxos in list(input_groups.items())[:3]:  # Max 3 address
+                formatted_addr = generated_receipt.pool_address(addr)
+                utxo_count = len(utxos)
+                utxo_text = f"Used {utxo_count} UTXO{'s' if utxo_count != 1 else ''}"
+                y_position = self._draw_pool_label(
+                    draw, y_position, 
+                    addr, f"- {formatted_addr}", 
+                    utxo_text, 
+                    self.small_font, self.small_font, width
+                )
             
+            total_input = sum(inp.get('amount', 0) for inp in inputs)
+            y_position = self._draw_table_row(draw, y_position, "Total Input :", 
+                                            self._format_tsar_amount(total_input), 
+                                            self.small_font, self.small_font, width, 
+                                            is_amount=True, amount_value=total_input)
             
-            draw.text(((width - line_width) // 2, 85), line_text, font=self.title_font, fill=(151, 151, 151))
-            draw.text(((width - line_width) // 2, 28), line_text, font=self.title_font, fill=(151, 151, 151))
-            
-            y_position = 120
-            
-            status = tx_data.get('status', 'unconfirmed')
-            
-            # ============= TXID GRID =============
-            y_position = self._draw_txid_grid(draw, txid, 205, 118)
-            
-            # ============= INFO =============
-            status = tx_data.get('status', 'unconfirmed')
-            if status == 'unconfirmed':
-                block_height_str = "Pending"
-                confirmations_str = "Pending"
-            else:
-                block_height = tx_data.get('height')
-                confirmations = tx_data.get('confirmations', 0)
-                block_height_str = str(block_height) if block_height is not None else "Unknown"
-                confirmations_str = str(confirmations) if confirmations is not None else "0"
-            
-            y_position = self._draw_table_row(draw, y_position, "Block Height :", 
-                                            block_height_str, 
+        else:
+            y_position = self._draw_table_row(draw, y_position, "Inputs :", 
+                                            "Coinbase Transaction (No Inputs)", 
                                             self.small_font, self.small_font, width)
-            
-            y_position = self._draw_table_row(draw, y_position, "Confirmations :", 
-                                            confirmations_str, 
-                                            self.small_font, self.small_font, width)
-            
-            y_position += 20
-            
-            # ============= INPUTS =============
-            # Sender
-            draw.text((50, y_position), "Sender", font=self.normal_font, fill=(232, 114, 35))
-            y_position += 40
+        return y_position + 20
 
-            inputs = tx_data.get('inputs', [])
-            if inputs:
-                
-                # Group address
-                input_groups = {}
-                for inp in inputs:
-                    addr = inp.get('address')
-                    if addr not in input_groups:
-                        input_groups[addr] = []
-                    input_groups[addr].append(inp)
-                
-                for addr, utxos in list(input_groups.items())[:3]:  # Max 3 address
-                    formatted_addr = generated_receipt.pool_address(addr)
-                    utxo_count = len(utxos)
-                    utxo_text = f"Used {utxo_count} UTXO{'s' if utxo_count != 1 else ''}"
-                    y_position = self._draw_pool_label(
-                        draw, y_position, 
-                        addr, f"- {formatted_addr}", 
-                        utxo_text, 
-                        self.small_font, self.small_font, width
-                    )
-                
-                total_input = sum(inp.get('amount', 0) for inp in inputs)
-                y_position = self._draw_table_row(draw, y_position, "Total Input :", 
-                                                self._format_tsar_amount(total_input), 
-                                                self.small_font, self.small_font, width, 
-                                                is_amount=True, amount_value=total_input)
-                
-            else:
-                y_position = self._draw_table_row(draw, y_position, "Inputs :", 
-                                                "Coinbase Transaction (No Inputs)", 
-                                                self.small_font, self.small_font, width)
-            
-            y_position += 20
-            
-            # ============= OUTPUTS =============
-            draw.text((50, y_position), "Recipient", font=self.normal_font, fill=(232, 114, 35))
-            y_position += 40
-            
-            outputs = tx_data.get('outputs', [])
-            if outputs:
-                # Filter change & opret
-                recipient_outputs = []
-                change_outputs = []
-                event_outputs = []
-                
-                input_addresses = {inp.get('address') for inp in inputs if inp.get('address')}
-                
-                for out in outputs:
-                    addr = out.get('address')
-                    # opret
-                    if addr is None:
-                        event_outputs.append(out)
-                    # change
-                    elif addr in input_addresses:
-                        change_outputs.append(out)
-                    else:
-                        recipient_outputs.append(out)
-                
-                # reward mining
-                if not inputs:  # Coinbase
-                    bonus = tx_data.get('bonus') or 0
-                    reward = sum(out.get('amount', 0) for out in outputs) - bonus
-                    # miner
-                    recipient_groups = {}
-                    for out in outputs:
-                        if out.get('address'):
-                            addr = out.get('address')
-                            if addr not in recipient_groups:
-                                recipient_groups[addr] = []
-                            recipient_groups[addr].append(out)
-                    
-                    for addr, outs in recipient_groups.items():
-                        y_position = self._draw_table_row(draw, y_position, 
-                                                        f"- {self._truncate_text(addr, 64)}", 
-                                                        self._format_tsar_amount(reward), 
-                                                        self.small_font, self.small_font, width,
-                                                        is_amount=True, amount_value=reward)
-                        
-                    if bonus > 0:
-                        y_position = self._draw_table_row(draw, y_position, "Bonus :", 
-                                                        self._format_tsar_amount(bonus), 
-                                                        self.small_font, self.small_font, width,
-                                                        is_amount=True, amount_value=bonus)
-                    y_position += 30
 
+    def _draw_outputs_section(self, draw, tx_data, y_position, width, input_addresses) -> int:
+        draw.text((50, y_position), "Recipient", font=self.normal_font, fill=(232, 114, 35))
+        y_position += 40
+        
+        outputs = tx_data.get('outputs', [])
+        inputs = tx_data.get('inputs', [])
+        if outputs:
+            recipient_outputs = []
+            change_outputs = []
+            event_outputs = []
+            
+            for out in outputs:
+                addr = out.get('address')
+                if addr is None:
+                    event_outputs.append(out)
+                elif addr in input_addresses:
+                    change_outputs.append(out)
                 else:
-                    if recipient_outputs:
-                        recipient_groups = {}
-                        for out in recipient_outputs:
-                            addr = out.get('address', 'Unknown')
-                            if addr not in recipient_groups:
-                                recipient_groups[addr] = []
-                            recipient_groups[addr].append(out)
-                        
-                        for addr, outs in recipient_groups.items():
-                            total_addr = sum(o.get('amount', 0) for o in outs)
-                            formatted_addr = generated_receipt.pool_address(addr)
-                            y_position = self._draw_pool_label(
-                                draw, y_position,
-                                addr, f"- {formatted_addr}",
-                                self._format_tsar_amount(total_addr),
-                                self.small_font, self.small_font, width,
-                                is_amount=True, amount_value=total_addr
-                            )
-                    else:
-                        y_position = self._draw_table_row(draw, y_position, "Recipient :", 
-                                                        "No external recipients", 
-                                                        self.small_font, self.small_font, width)
-                    
-                    
-                    fee = tx_data.get('fee') or 0
-                    y_position = self._draw_table_row(draw, y_position, "Fee ( Miner ) :", 
-                                                    self._format_tsar_amount(fee), 
-                                                    self.small_font, self.small_font, width,
-                                                    is_amount=True, amount_value=fee)
-                    # +
-                    y_position += 10
-                    end_x = width - 55
-                    line_length = 10
-
-                    draw.line([(end_x - line_length//2, y_position), 
-                            (end_x + line_length//2, y_position)], 
-                            fill=(62, 62, 62), width=2)
-
-                    draw.line([(end_x, y_position - line_length//2), 
-                            (end_x, y_position + line_length//2)], 
-                            fill=(62, 62, 62), width=2)
-                    
-                    y_position += 10
-                        
-                    total_outputs = sum(out.get('amount', 0) for out in recipient_outputs)
-                    total_spend = total_outputs + fee
-                    y_position = self._draw_table_row(draw, y_position, "Total Spend :", 
-                                                    self._format_tsar_amount(total_spend), 
-                                                    self.small_font, self.small_font, width,
-                                                    is_amount=True, amount_value=total_spend)
+                    recipient_outputs.append(out)
             
-            y_position += 30
-            
-            # ============= SUMMARY =============
-            summary_y_start = int(y_position)  # Konversi ke integer
-            draw.text((50, summary_y_start), "Summary", font=self.normal_font, fill=(232, 114, 35))
-            y_position = summary_y_start + 40
-            summary_left_x = 50
-            summary_width = 410
-
-            total_input_val = sum(inp.get('amount', 0) for inp in inputs)
-
-            if not inputs:  # coinbase
+            if not inputs:  # Coinbase
                 bonus = tx_data.get('bonus') or 0
                 reward = sum(out.get('amount', 0) for out in outputs) - bonus
-                total_recipient_val = bonus + reward
-                summary_lines = [("Mining Reward :", reward, False)]
+                recipient_groups = {}
+                for out in outputs:
+                    if out.get('address'):
+                        addr = out.get('address')
+                        if addr not in recipient_groups:
+                            recipient_groups[addr] = []
+                        recipient_groups[addr].append(out)
                 
-                if bonus > 0:
-                    summary_lines.append(("Bonus :", bonus, "plus"))
-                    summary_lines.append(("", 0, "separator"))
-                    summary_lines.append(("Total Reward :", total_recipient_val, False))
+                for addr, outs in recipient_groups.items():
+                    y_position = self._draw_table_row(draw, y_position, 
+                                                    f"- {self._truncate_text(addr, 64)}", 
+                                                    self._format_tsar_amount(reward), 
+                                                    self.small_font, self.small_font, width,
+                                                    is_amount=True, amount_value=reward)
                     
+                if bonus > 0:
+                    y_position = self._draw_table_row(draw, y_position, "Bonus :", 
+                                                    self._format_tsar_amount(bonus), 
+                                                    self.small_font, self.small_font, width,
+                                                    is_amount=True, amount_value=bonus)
+                y_position += 30
+
             else:
-                total_recipient_val = sum(out.get('amount', 0) for out in outputs 
-                                        if out.get('address') and 
-                                        out.get('address') not in input_addresses)
-                change_amount = total_input_val - total_recipient_val - fee
-                total_spend = total_recipient_val + fee
-                summary_lines = [
-                    ("Total Input :", total_input_val, False),
-                    ("Total Spend :", total_spend, "minus"),
-                    ("", 0, "separator"),
-                    ("Change :", change_amount, False)
-                ]
-
-            # summary
-            current_y = int(y_position)
-            for label, amount, sign_type in summary_lines:
-                if sign_type == "separator":
-                    line_y = current_y + 5
-                    draw.line([(summary_left_x, line_y), (summary_left_x + summary_width, line_y)], 
-                            fill=(195, 195, 195), width=1)
-                    current_y += 10
-                    continue
+                if recipient_outputs:
+                    recipient_groups = {}
+                    for out in recipient_outputs:
+                        addr = out.get('address', 'Unknown')
+                        if addr not in recipient_groups:
+                            recipient_groups[addr] = []
+                        recipient_groups[addr].append(out)
+                    
+                    for addr, outs in recipient_groups.items():
+                        total_addr = sum(o.get('amount', 0) for o in outs)
+                        formatted_addr = generated_receipt.pool_address(addr)
+                        y_position = self._draw_pool_label(
+                            draw, y_position,
+                            addr, f"- {formatted_addr}",
+                            self._format_tsar_amount(total_addr),
+                            self.small_font, self.small_font, width,
+                            is_amount=True, amount_value=total_addr
+                        )
+                else:
+                    y_position = self._draw_table_row(draw, y_position, "Recipient :", 
+                                                    "No external recipients", 
+                                                    self.small_font, self.small_font, width)
                 
-                # label
-                draw.text((summary_left_x, current_y), label, 
-                        font=self.small_font, fill=(62, 62, 62))
+                fee = tx_data.get('fee') or 0
+                y_position = self._draw_table_row(draw, y_position, "Fee ( Miner ) :", 
+                                                self._format_tsar_amount(fee), 
+                                                self.small_font, self.small_font, width,
+                                                is_amount=True, amount_value=fee)
+                y_position += 10
+                end_x = width - 55
+                line_length = 10
+
+                draw.line([(end_x - line_length//2, y_position), 
+                        (end_x + line_length//2, y_position)], 
+                        fill=(62, 62, 62), width=2)
+
+                draw.line([(end_x, y_position - line_length//2), 
+                        (end_x, y_position + line_length//2)], 
+                        fill=(62, 62, 62), width=2)
                 
-                amount_text = self._format_tsar_amount(amount)
-                amount_width = draw.textlength(amount_text, font=self.small_font)
-                
-                if sign_type == "minus":
-                    sign = "-"
-                    sign_width = draw.textlength(sign, font=self.small_font)
-                    sign_x = summary_left_x + summary_width - amount_width - sign_width - 3
-                    draw.text((sign_x, current_y), sign, 
-                            font=self.small_font, fill=(62, 62, 62))
-                elif sign_type == "plus":
-                    sign = "+"
-                    sign_width = draw.textlength(sign, font=self.small_font)
-                    sign_x = summary_left_x + summary_width - amount_width - sign_width - 3
-                    draw.text((sign_x, current_y), sign, 
-                            font=self.small_font, fill=(62, 62, 62))
-                # amount
-                amount_x = summary_left_x + summary_width - amount_width
-                self._draw_amount_with_style(draw, amount_x, current_y, 
-                                            amount, self.small_font)
-                current_y += 30
-
-            # ============= TX TYPE STICKER =============
-            if status == 'confirmed':
-                sticker = self._get_tx_type_sticker(tx_data)
-                if sticker:
-                    sticker_size = 185
-                    summary_height = current_y - summary_y_start
-                    sticker_y = summary_y_start + (summary_height - sticker_size) // 2
-                    sticker_x = summary_left_x + summary_width + 100
-                    if sticker.mode == 'RGBA':
-                        img.paste(sticker, (sticker_x, sticker_y), sticker)
-                    else:
-                        img.paste(sticker, (sticker_x, sticker_y))
-                        
-            current_y += 30
-            
-            # QR code
-            qr_img = self._qr_code(txid)
-            qr_size = 180
-            qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.NEAREST)
-            qr_x = width - 60 - qr_size
-            summary_height = current_y - summary_y_start
-            min_summary_height = qr_size
-
-            if summary_height < min_summary_height:
-                qr_y = summary_y_start + summary_height + 25
-            else:
-                qr_y = summary_y_start + (summary_height - qr_size) // 2
-
-            min_qr_y = summary_y_start + 40
-            qr_y = max(min_qr_y, int(qr_y))
-            qr_x = int(qr_x)
-            
-            if qr_img.mode == 'RGBA':
-                img.paste(qr_img, (qr_x, qr_y), qr_img)
-            else:
-                img.paste(qr_img, (qr_x, qr_y))
-
-            # footer
-            y_position = max(current_y, qr_y + qr_size) + 20
-
-            scan_text = "Scan for details"
-            scan_text_width = draw.textlength(scan_text, font=self.small_font)
-            draw.text((qr_x + (qr_size - scan_text_width) // 2, qr_y + qr_size + 10),
-                       scan_text, font=self.small_font, fill=(100, 100, 100))
-            
-            # ============= FOOTER =============
-            footer_y = int(y_position + 20)
-
-            # closing
-            footer_text = "Generated by TsarChain Explorer"
-            footer_width = draw.textlength(footer_text, font=self.small_font)
-            draw.text(((width - footer_width) // 2, footer_y + 40), footer_text,
-                     font=self.small_font, fill=(100, 100, 100))
-            
-            # ============= STATUS STAMP =============
-            img = self._add_status_stamp(img, status)
-            
-            # ============= SAVE IMAGE =============
-            output_filename = f"{txid[:64]}.jpg"
-            output_path = os.path.join(self.path, output_filename)
-            
-            # response
-            buffer = BytesIO()
-            img.save(
-                buffer, 
-                format='JPEG',
-                quality=85,
-                optimize=True,
-                progressive=True,
-                subsampling=0
-            )
-            image_bytes = buffer.getvalue()
-            
-            with open(output_path, 'wb') as f:
-                f.write(image_bytes)
-
-            return True, output_path, image_bytes
-            
-        except Exception as e:
-            log.exception(f"Failed to generate receipt: {e}", exc_info=True)
-            return False, f"Error: {str(e)}", None
-
-
-    def generate_receipt_base64(self, tx_data: Dict[str, Any]) -> Dict[str, Any]:
-        success, message, image_bytes = self.generate_receipt(tx_data)
+                y_position += 10
+                    
+                total_outputs = sum(out.get('amount', 0) for out in recipient_outputs)
+                total_spend = total_outputs + fee
+                y_position = self._draw_table_row(draw, y_position, "Total Spend :", 
+                                                self._format_tsar_amount(total_spend), 
+                                                self.small_font, self.small_font, width,
+                                                is_amount=True, amount_value=total_spend)
         
-        if success and image_bytes:
-            base64_image = base64.b64encode(image_bytes).decode('utf-8')
-            return {
-                "status": "success",
-                "message": "Receipt generated successfully",
-                "data_url": f"data:image/jpeg;base64,{base64_image}",
-                "filename": f"{tx_data.get('txid')[:64]}.jpg",
-                "size_bytes": len(image_bytes)
-            }
+        return y_position + 30
+
+
+    def _draw_summary_section(self, draw, tx_data, y_position, inputs, outputs, input_addresses) -> Tuple[int, int]:
+        summary_y_start = int(y_position)
+        draw.text((50, summary_y_start), "Summary", font=self.normal_font, fill=(232, 114, 35))
+        y_position = summary_y_start + 40
+        summary_left_x = 50
+        summary_width = 410
+
+        total_input_val = sum(inp.get('amount', 0) for inp in inputs)
+
+        if not inputs:  # coinbase
+            bonus = tx_data.get('bonus') or 0
+            reward = sum(out.get('amount', 0) for out in outputs) - bonus
+            total_recipient_val = bonus + reward
+            summary_lines = [("Mining Reward :", reward, False)]
+            
+            if bonus > 0:
+                summary_lines.append(("Bonus :", bonus, "plus"))
+                summary_lines.append(("", 0, "separator"))
+                summary_lines.append(("Total Reward :", total_recipient_val, False))
+                
         else:
-            return {
-                "status": "error",
-                "message": message or "Failed to generate receipt"
-            }
+            fee = tx_data.get('fee') or 0
+            total_recipient_val = sum(out.get('amount', 0) for out in outputs 
+                                    if out.get('address') and 
+                                    out.get('address') not in input_addresses)
+            change_amount = total_input_val - total_recipient_val - fee
+            total_spend = total_recipient_val + fee
+            summary_lines = [
+                ("Total Input :", total_input_val, False),
+                ("Total Spend :", total_spend, "minus"),
+                ("", 0, "separator"),
+                ("Change :", change_amount, False)
+            ]
+
+        current_y = int(y_position)
+        for label, amount, sign_type in summary_lines:
+            if sign_type == "separator":
+                line_y = current_y + 5
+                draw.line([(summary_left_x, line_y), (summary_left_x + summary_width, line_y)], 
+                        fill=(195, 195, 195), width=1)
+                current_y += 10
+                continue
+            
+            draw.text((summary_left_x, current_y), label, 
+                    font=self.small_font, fill=(62, 62, 62))
+            
+            amount_text = self._format_tsar_amount(amount)
+            amount_width = draw.textlength(amount_text, font=self.small_font)
+            
+            if sign_type == "minus":
+                sign = "-"
+                sign_width = draw.textlength(sign, font=self.small_font)
+                sign_x = summary_left_x + summary_width - amount_width - sign_width - 3
+                draw.text((sign_x, current_y), sign, 
+                        font=self.small_font, fill=(62, 62, 62))
+            elif sign_type == "plus":
+                sign = "+"
+                sign_width = draw.textlength(sign, font=self.small_font)
+                sign_x = summary_left_x + summary_width - amount_width - sign_width - 3
+                draw.text((sign_x, current_y), sign, 
+                        font=self.small_font, fill=(62, 62, 62))
+
+            amount_x = summary_left_x + summary_width - amount_width
+            self._draw_amount_with_style(draw, amount_x, current_y, 
+                                        amount, self.small_font)
+            current_y += 30
+
+        return summary_y_start, current_y
+
+
+    def _draw_stickers_qr_footer(self, img, draw, tx_data, txid, status, summary_y_start, current_y, width) -> Tuple[str, bytes]:
+        # ============= TX TYPE STICKER =============
+        if status == 'confirmed':
+            sticker = self._get_tx_type_sticker(tx_data)
+            if sticker:
+                sticker_size = 185
+                summary_height = current_y - summary_y_start
+                sticker_y = summary_y_start + (summary_height - sticker_size) // 2
+                sticker_x = 50 + 410 + 100
+                if sticker.mode == 'RGBA':
+                    img.paste(sticker, (sticker_x, sticker_y), sticker)
+                else:
+                    img.paste(sticker, (sticker_x, sticker_y))
+                    
+        current_y += 30
+        
+        # QR code
+        qr_img = self._qr_code(txid)
+        qr_size = 180
+        qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.NEAREST)
+        qr_x = width - 60 - qr_size
+        summary_height = current_y - summary_y_start
+        min_summary_height = qr_size
+
+        if summary_height < min_summary_height:
+            qr_y = summary_y_start + summary_height + 25
+        else:
+            qr_y = summary_y_start + (summary_height - qr_size) // 2
+
+        min_qr_y = summary_y_start + 40
+        qr_y = max(min_qr_y, int(qr_y))
+        qr_x = int(qr_x)
+        
+        if qr_img.mode == 'RGBA':
+            img.paste(qr_img, (qr_x, qr_y), qr_img)
+        else:
+            img.paste(qr_img, (qr_x, qr_y))
+
+        # footer
+        y_position = max(current_y, qr_y + qr_size) + 20
+
+        scan_text = "Scan for details"
+        scan_text_width = draw.textlength(scan_text, font=self.small_font)
+        draw.text((qr_x + (qr_size - scan_text_width) // 2, qr_y + qr_size + 10),
+                   scan_text, font=self.small_font, fill=(100, 100, 100))
+        
+        # ============= FOOTER =============
+        footer_y = int(y_position + 20)
+
+        # closing
+        footer_text = "Generated by TsarChain Explorer"
+        footer_width = draw.textlength(footer_text, font=self.small_font)
+        draw.text(((width - footer_width) // 2, footer_y + 40), footer_text,
+                 font=self.small_font, fill=(100, 100, 100))
+        
+        # ============= STATUS STAMP =============
+        img = self._add_status_stamp(img, status)
+        
+        # ============= SAVE IMAGE =============
+        output_filename = f"{txid[:64]}.jpg"
+        output_path = os.path.join(self.path, output_filename)
+        
+        buffer = BytesIO()
+        img.save(
+            buffer, 
+            format='JPEG',
+            quality=85,
+            optimize=True,
+            progressive=True,
+            subsampling=0
+        )
+        image_bytes = buffer.getvalue()
+        
+        with open(output_path, 'wb') as f:
+            f.write(image_bytes)
+            
+        return output_path, image_bytes

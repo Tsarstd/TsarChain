@@ -76,7 +76,7 @@ def test_normalize_native_prevout(dummy_node):
         "is_coinbase": True,
         "block_height": 50
     }
-    result = dummy_node._normalize_native_prevout(entry_dict, "key")
+    result = dummy_node._normalize_native_prevout(entry_dict)
     assert result == (1000, b"\xaa\xbb\xcc", True, 50)
     
     mock_entry = MagicMock()
@@ -87,11 +87,11 @@ def test_normalize_native_prevout(dummy_node):
     mock_entry.is_coinbase = False
     mock_entry.block_height = 100
     
-    result = dummy_node._normalize_native_prevout(mock_entry, "key")
+    result = dummy_node._normalize_native_prevout(mock_entry)
     assert result == (2000, b"\xdd\xee", False, 100)
     
     invalid_entry = {"amount": 10}
-    assert dummy_node._normalize_native_prevout(invalid_entry, "key") is None
+    assert dummy_node._normalize_native_prevout(invalid_entry) is None
 
 def test_build_native_prevout_snapshot(dummy_node):
     mock_block = MagicMock()
