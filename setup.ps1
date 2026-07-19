@@ -36,8 +36,7 @@ if (!(Get-Command "cmake" -ErrorAction SilentlyContinue)) {
 # 3. INSTALL PYTHON
 Print-Step "3/8: Checking/Installing Python..."
 if (!(Get-Command "python" -ErrorAction SilentlyContinue)) {
-    Write-Host "Python not found. Installing Python 3 via winget..."
-    # Python 3.12 as a stable default
+    Write-Host "Python not found. Installing Python 3.12 via winget..."
     winget install -e --id Python.Python.3.12 --accept-source-agreements --accept-package-agreements
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 } else {
@@ -54,14 +53,14 @@ if (!(Get-Command "npm" -ErrorAction SilentlyContinue)) {
 
 if (Get-Command "npm" -ErrorAction SilentlyContinue) {
     Write-Host "Installing Backend dependencies..."
-    Set-Location "src\web\Backend"
+    Push-Location "src\web\Backend"
     npm install
-    Set-Location "..\..\.."
+    Pop-Location
 
     Write-Host "Installing Frontend dependencies..."
-    Set-Location "src\web\Frontend"
+    Push-Location "src\web\Frontend"
     npm install
-    Set-Location "..\..\.."
+    Pop-Location
 } else {
     Print-Warn "npm is still not available. Please install Node.js manually. Skipping website dependencies."
 }
@@ -85,18 +84,34 @@ Print-Step "7/8: Installing Python Requirements..."
 
 # 8. BUILD NATIVE EXTENSION
 Print-Step "8/8: Building Native Extension (tsarcore_native)..."
-Set-Location "tsarcore_native"
+Push-Location "tsarcore_native"
 & "..\.venv\Scripts\maturin.exe" develop --release --features parallel
-Set-Location ".."
-$env:PYTHONPATH = "$PWD/src"
+Pop-Location
 
+# --- ACTIVATE ENVIRONMENT ---
+Print-Step "Creating helper script 'activate_env.ps1' for easy environment activation..."
+$helperScript = @"
+# Helper script to activate venv and set PYTHONPATH
+# USAGE: . .\activate_env.ps1   (dot-source it!)
+Write-Host "Activating virtual environment..." -ForegroundColor Cyan
+.\.venv\Scripts\Activate.ps1
+`$env:PYTHONPATH = "$PWD\src"
+Write-Host "Environment ready! PYTHONPATH is set to $env:PYTHONPATH" -ForegroundColor Green
+Write-Host "You are now in the virtual environment." -ForegroundColor Green
+"@
+$helperScript | Out-File -FilePath "activate_env.ps1" -Encoding utf8
+
+# --- FINAL OUTPUT ---
 Print-Step "DONE!! Setup is complete."
 Write-Host ""
 Write-Host -ForegroundColor Yellow "================================================================"
 Write-Host -ForegroundColor Green "Graffiti Protocol environment is ready!"
-Write-Host "To start running applications, benchmarks, or tests, please"
-Write-Host "activate the virtual environment first by running:"
 Write-Host ""
-Write-Host -ForegroundColor Cyan "    .\.venv\Scripts\activate"
+Write-Host "To activate the environment (with PYTHONPATH already set),"
+Write-Host "run the following command in your PowerShell terminal:"
+Write-Host ""
+Write-Host -ForegroundColor Cyan "    . .\activate_env.ps1"
+Write-Host ""
+Write-Host "After that, you can run your applications, benchmarks, or tests."
 Write-Host ""
 Write-Host -ForegroundColor Yellow "================================================================"

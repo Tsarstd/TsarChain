@@ -94,31 +94,46 @@ else
     echo "Virtual environment already exists."
 fi
 
-# Activate venv
-source .venv/bin/activate
-
 # 6. INSTALL MATURIN
 print_step "6/8: Installing Maturin..."
-pip install --upgrade pip maturin
+# Use venv's pip
+.venv/bin/pip install --upgrade pip maturin
 
 # 7. INSTALL REQUIREMENTS
 print_step "7/8: Installing Python Requirements..."
-pip install -r requirements.txt
+.venv/bin/pip install -r requirements.txt
 
 # 8. BUILD NATIVE EXTENSION
 print_step "8/8: Building Native Extension (tsarcore_native)..."
 cd tsarcore_native
-maturin develop --release --features parallel
+../.venv/bin/maturin develop --release --features parallel
 cd ..
-export PYTHONPATH="$PWD/src"
 
+# --- ACTIVATE ENVIRONMENT ---
+print_step "Creating helper script 'activate_env.sh' for easy environment activation..."
+cat > activate_env.sh << 'EOF'
+#!/usr/bin/env bash
+# Helper script to activate venv and set PYTHONPATH
+# USAGE: source activate_env.sh
+echo -e "\033[0;34mActivating virtual environment...\033[0m"
+source .venv/bin/activate
+export PYTHONPATH="$PWD/src"
+echo -e "\033[0;32mEnvironment ready! PYTHONPATH is set to $PYTHONPATH\033[0m"
+echo -e "\033[0;32mYou are now in the virtual environment.\033[0m"
+EOF
+chmod +x activate_env.sh
+
+# --- FINAL OUTPUT ---
 print_step "DONE!! Setup is complete."
 echo ""
 echo -e "${YELLOW}================================================================${NC}"
 echo -e "${GREEN}Graffiti Protocol environment is ready!${NC}"
-echo -e "To start running applications, benchmarks, or tests, please"
-echo -e "activate the virtual environment first by running:"
-echo -e ""
-echo -e "    ${BLUE}source .venv/bin/activate${NC}"
-echo -e ""
+echo ""
+echo -e "To activate the environment (with PYTHONPATH already set),"
+echo -e "run the following command in your terminal:"
+echo ""
+echo -e "    ${BLUE}source activate_env.sh${NC}"
+echo ""
+echo -e "After that, you can run your applications, benchmarks, or tests."
+echo ""
 echo -e "${YELLOW}================================================================${NC}"

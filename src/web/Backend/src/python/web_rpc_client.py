@@ -513,8 +513,8 @@ def _dispatch_rpc(op: str, param: object | None, host: str, port: int):
             _prefetch_started = True
             _prefetch_host_port = f"{host}:{port}"
             log.info("[dispatch_rpc] Started auto-prefetch thread for %s:%s", host, port)
-        except Exception as exc:
-            log.warning("[dispatch_rpc] Failed to start prefetch: %s", exc)
+        except Exception:
+            log.exception("[dispatch_rpc] Failed to start prefetch")
     
     if op == "receipt":
         return rpc_receipt(client, param_norm)
