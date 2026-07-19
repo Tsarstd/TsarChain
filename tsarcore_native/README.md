@@ -9,62 +9,41 @@ Native acceleration module for **TsarChain** with crypto, PoW, validation, and f
 - `maturin`
 - `cmake` 4.2.0-rc2 (required to build the bundled RandomX backend)
 
-## What's inside (current API)
+> Full Instalation Guide [`INSTALL_NATIVE.md`](/docs/INSTALL_NATIVE.md)
 
-- `count_sigops(script: bytes) -> int`  
-  Counts `CHECKSIG` (+1) and `CHECKMULTISIG` (+min(n or 20, 20)) including their `VERIFY` variants, mirroring TsarChain's consensus rules.
+## What's inside
 
-- `hash256(data: bytes) -> bytes32`  
-  SHA256d (double-SHA256).
+The core functionality of `tsarcore_native` is organized into the following Rust modules in `src/`:
 
-- `hash160(data: bytes) -> bytes20`  
-  RIPEMD160(SHA256(data)).
+- **[lib.rs](src/lib.rs)**: Exposes PyO3 native module bindings (`tsarcore_native`), implements core cryptographic hash functions (`hash256`, `hash160`), and orchestrates the RandomX VM cache.
+- **[generate_receipt.rs](src/generate_receipt.rs)**: Generates QR codes as PNG, formats decimals and TSAR currency strings, and exposes receipt layout drawing helpers (table rows, transaction ID grids) for website backend.
+- **[graff_merkle.rs](src/graff_merkle.rs)**: Implements the single SHA-256 Merkle tree used for chunked "Graffiti" archives, supporting path generation and client-side inclusion proof validation.
+- **[mining.rs](src/mining.rs)**: A multi-threaded RandomX PoW mining orchestrator that checks block difficulty, tracks hashrate progress, and supports cooperative mining thread cancellation.
+- **[networking.rs](src/networking.rs)**: Implements the P2P encryption handshake (`SecureChannelNative`) using X25519 static/ephemeral secrets, Ed25519 peer validation, HKDF key derivation, and sliding-window AES-256-GCM epoch key rotation.
+- **[storage.rs](src/storage.rs)**: Features a dual-backend storage wrapper (`NativeStorage`) exposing high-performance memory-mapped LMDB (with thread-safe growable boundaries) and atomic fallback JSON files.
+- **[txcodec.rs](src/txcodec.rs)**: Encodes and decodes consensus transaction byte payloads (varints, inputs, outputs, witness data) and generates BIP-143 transaction signatures and preimages.
+- **[utxo.rs](src/utxo.rs)**: Processes block transaction records to construct bulk UTXO set modifications (inserts and deletions of spent outputs), filtering out OP_RETURN data.
+- **[validation.rs](src/validation.rs)**: Enforces consensus rules over blocks and transactions, checking coinbase maturity constraints, transaction vsize/weight limits, signature verification, and input/output fees.
 
-- `merkle_root(txids: Iterable[bytes32]) -> bytes32`  
-  Double-SHA256 Merkle root over 32-byte leaves. For odd nodes, the last hash is duplicated (Bitcoin-style).
+## Unit Tests
 
-- Graffiti Merkle (single SHA-256):  
-  - `graff_merkle_root_for_file(path: str, chunk_size: int) -> (bytes32, count)`   
-  - `graff_merkle_path_for_file(path: str, chunk_size: int, index: int) -> list[{"side","hash"}]`    
-  - `graff_merkle_verify(root_hex: str, leaf_hex: str, path: list[{"side","hash"}]) -> bool`
+Integration and unit tests are located in the `tests/` directory and match the structure of the source modules. They verify correctness of the Rust implementation independently of the Python runtime:
 
-- `sighash_bip143(tx_bytes: bytes, input_index: int, script_code: bytes, value_sat: int, sighash_type: int) -> bytes32`  
-  Native **BIP143** preimage + SHA256d for **`SIGHASH_ALL`**. Other sighash types return `ValueError` so the caller can handle fallbacks if ever needed.
+- **[lib_test.rs](tests/lib_test.rs)**: Validates Python bindings interfaces, including hashing, secp256k1 sign/verify mechanisms, and basic RandomX VM hashing.
+- **[generate_receipt_test.rs](tests/generate_receipt_test.rs)**: Asserts formatting logic for receipts, QR code rendering limits, and table row drawing calculations.
+- **[graff_merkle_test.rs](tests/graff_merkle_test.rs)**: Exercises tree construction correctness, leaf verification paths, and error scenarios.
+- **[mining_test.rs](tests/mining_test.rs)**: Verifies the miner difficulty comparator, stop event cooperative cancellations, and multi-thread startup conditions.
+- **[networking_test.rs](tests/networking_test.rs)**: Tests peer key exchange handshake flows, decryption/encryption integrity, and sliding rekey thresholds.
+- **[storage_test.rs](tests/storage_test.rs)**: Validates key-value storage consistency, transaction atomicity, prefix matching, and LMDB auto-grow behavior.
+- **[txcodec_test.rs](tests/txcodec_test.rs)**: Tests transaction serialization codecs, txid/wtxid hashes, and P2WPKH transaction validation.
+- **[utxo_test.rs](tests/utxo_test.rs)**: Asserts correct computation of UTXO updates from block records and OP_RETURN exclusions.
+- **[validation_test.rs](tests/validation_test.rs)**: Asserts consensus block execution rules, coinbase uniqueness, coin age maturity limits, and block limits.
 
-- `secp_verify_der_low_s(pubkey: bytes, digest32: bytes, der_sig: bytes) -> bool`  
-  Strict DER parse + low-S enforcement (mirrors mempool policy). Accepts 33/65-byte SEC pubkeys or 64-byte raw `x||y`.
+To run the Rust tests:
 
-- `secp_verify_der_low_s_many(triples: Sequence[tuple[pubkey, digest32, der_sig]], enforce_low_s: bool = True, parallel: bool = False) -> list[bool]`  
-  Batch verify. If built with feature `parallel`, set `parallel=True` to use Rayon.
-
-- `validate_block_txs_native(block: Mapping, utxo_snapshot: Mapping, spend_height: int, opts: Mapping) -> tuple[bool, str|None, list[int]|None]`  
-  Full block-level transaction validation (sigops, coinbase rules, witness verification, fee projection, etc.). Returns `(ok, reason, fees)` where `fees` is per-non-coinbase once `ok` is `True`.
-
-- `randomx_pow_hash(header: bytes, seed: bytes, *, full_mem: bool, large_pages: bool, jit: bool, hard_aes: bool, secure_jit: bool, cache_entries: int) -> bytes32`  
-  Stateless RandomX hashing used by TsarChain PoW. The binding internally caches VMs per thread/seed to avoid rebuilding datasets on every call.
-
-- `SecureChannelNative(role, net_id, node_id, node_pub_hex, session_ttl, session_max_msg, key_bytes, nonce_bytes, node_priv_hex=None, aad_prefix=None)`  
-  Native X25519 + Ed25519 authenticated handshake + HKDF + AES-256-GCM transport for TsarChain P2P links. Provides `client_build_hs1`, `client_accept_hs2`, `server_accept_hs1`, `encrypt`, and `decrypt`, enforcing TTL/msg-count/sequence windows entirely in Rust.
-
-- `set_py_logger(callable)`  
-  Optional hook so Rust logs can piggyback on TsarChain's logger.
-
-- `json_read_file(path: str) -> str | None` and `json_write_file(path: str, data: str, pretty: bool = True)`  
-  Helpers for existing on-disk JSON snapshots; reads return `None` when missing and writes are atomic (temp-file swap) with optional pretty formatting.
-
-- `NativeStorage(backend, path, map_size_init=None, map_size_max=None, pretty_json=True)` / `open_storage(...)`  
-  Thread-safe storage facade over LMDB or atomic JSON files. Exposes `put_bytes`, `put_json`, `get_bytes`, `get_json`, `delete`, `clear_db`, `iter_prefix`, and LMDB `copy`. LMDB automatically retries after `MapFull` by growing to `map_size_max`; JSON backend pretty-prints (optional) and persists via temp-file rename for durability.
-
-- UTXO delta + apply (LMDB):  
-  - `utxo_build_ops_compact(block_txs, spend_height)` -> list of ops (delete/insert) from compact tx tuples  
-  - `NativeStorage.apply_utxo_ops(ops)` (LMDB backend) batch-apply UTXO ops in one transaction
-
-- Compact tx codec (P2WPKH-focused):  
-  - `serialize_tx_compact(tx_tuple, include_witness=True) -> bytes`  
-  - `txid_from_compact(tx_tuple) -> bytes`, `wtxid_from_compact(tx_tuple) -> bytes`  
-  - `sighash_bip143_compact(tx_tuple, input_index, script_code, value_sat, sighash_type)` (SIGHASH_ALL, no ANYONECANPAY)
-
-> Endianness note: pass **little-endian txids** to `merkle_root` if you want a Bitcoin-compatible block header merkle root.
+```bash
+cargo test
+```
 
 ## Usage (Python)
 
