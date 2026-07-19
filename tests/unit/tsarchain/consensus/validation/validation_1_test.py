@@ -5,7 +5,7 @@ Testing graffiti, tx payouts, and transaction validation logic in validation.py
 
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
-# Part of TsarChain - see LICENSE and TRADEMARKS.md
+# Part of TsarChain - see LICENSE
 
 import time
 import pytest

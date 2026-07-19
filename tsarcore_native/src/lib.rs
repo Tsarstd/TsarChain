@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 Tsar Studio
-// Part of TsarChain — see LICENSE and TRADEMARKS.md
+// Part of TsarChain — see LICENSE
 // Refs: BIP143; BIP141; CompactSize; Merkle; libsecp256k1; LowS-Policy
 
 //! == Install ==

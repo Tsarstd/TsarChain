@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
-# Part of TsarChain – see LICENSE and TRADEMARKS.md
+# Part of TsarChain – see LICENSE
 """
 RPC client for archivist <-> node (storage role) communication.
 This channel is used by archivists for handshakes, info, and STOR_* RPCs to nodes/miners.

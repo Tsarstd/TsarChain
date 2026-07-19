@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Tsar Studio
-// Part of TsarChain — see LICENSE and TRADEMARKS.md
+// Part of TsarChain — see LICENSE
 
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};

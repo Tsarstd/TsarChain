@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 Tsar Studio
-// Part of TsarChain - see LICENSE and TRADEMARKS.md
+// Part of TsarChain - see LICENSE
 // RandomX mining orchestrator (multi-threaded, P2WPKH chain)
 
 use pyo3::exceptions;

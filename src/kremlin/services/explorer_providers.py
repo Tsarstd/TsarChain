@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Tsar Studio
-# Part of TsarChain - see LICENSE and TRADEMARKS.md
+# Part of TsarChain - see LICENSE
 
 import re
 from kremlin.services.graffiti_service import fetch_graffiti_file

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Tsar Studio
-# Part of TsarChain — see LICENSE and TRADEMARKS.md
+# Part of TsarChain — see LICENSE
 # Refs: Signal-X3DH; Signal-DoubleRatchet; RFC7748-X25519; RFC5869-HKDF
 
 import pytest
