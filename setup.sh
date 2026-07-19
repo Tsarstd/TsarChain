@@ -15,6 +15,22 @@ print_warn() {
     echo -e "${YELLOW}WARNING:${NC} $1"
 }
 
+run_sudo() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    elif command -v sudo &> /dev/null; then
+        if sudo -n true 2>/dev/null; then
+            sudo "$@"
+        else
+            echo -e "${YELLOW}INFO:${NC} The following command requires root access.: $*"
+            sudo "$@"
+        fi
+    else
+        print_warn "Sudo not found and user is not root. Command '$*' it might fail."
+        "$@"
+    fi
+}
+
 # 1. INSTALL RUST (via rustup)
 print_step "1/8: Checking/Installing Rust..."
 if ! command -v cargo &> /dev/null; then
@@ -30,7 +46,7 @@ print_step "2/8: Checking/Installing CMake..."
 if ! command -v cmake &> /dev/null; then
     echo "CMake not found. Installing..."
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        sudo apt-get update && sudo apt-get install -y cmake
+        run_sudo apt-get update && run_sudo apt-get install -y cmake
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         if command -v brew &> /dev/null; then
             brew install cmake
@@ -49,7 +65,7 @@ print_step "3/8: Checking/Installing Python..."
 if ! command -v python3 &> /dev/null; then
     echo "Python3 not found. Installing..."
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        sudo apt-get update && sudo apt-get install -y python3 python3-venv python3-pip
+        run_sudo apt-get update && run_sudo apt-get install -y python3 python3-venv python3-pip
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         if command -v brew &> /dev/null; then
             brew install python
@@ -66,7 +82,7 @@ print_step "4/8: Checking/Installing Node.js & Website Dependencies..."
 if ! command -v npm &> /dev/null; then
     echo "npm not found. Installing Node.js..."
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        sudo apt-get update && sudo apt-get install -y nodejs npm
+        run_sudo apt-get update && run_sudo apt-get install -y nodejs npm
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         if command -v brew &> /dev/null; then
             brew install node
@@ -96,8 +112,24 @@ fi
 
 # 6. INSTALL MATURIN
 print_step "6/8: Installing Maturin..."
-# Use venv's pip
 .venv/bin/pip install --upgrade pip maturin
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    print_step "6.1/8: Installing patchelf for Linux rpath support..."
+    if ! command -v patchelf &> /dev/null; then
+        if command -v apt-get &> /dev/null; then
+            run_sudo apt-get update && run_sudo apt-get install -y patchelf
+        elif command -v dnf &> /dev/null; then
+            run_sudo dnf install -y patchelf
+        elif command -v brew &> /dev/null; then
+            brew install patchelf
+        else
+            print_warn "Could not install patchelf. Build will still work but may have warnings."
+            print_warn "You can install manually or via: pip install patchelf"
+        fi
+    else
+        echo "patchelf already installed."
+    fi
+fi
 
 # 7. INSTALL REQUIREMENTS
 print_step "7/8: Installing Python Requirements..."

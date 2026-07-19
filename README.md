@@ -206,14 +206,16 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-#### 2. Activate Virtual Environment
-After the setup is complete, you **MUST** activate the virtual environment before running any application or test:
+#### 2. Activate Virtual Environment & PYTHONPATH
+After the setup is complete, then run:
 ```bash
 # Windows
-.\.venv\Scripts\activate
+.\activate_env.ps1
 
 # Linux / macOS
-source .venv/bin/activate
+source activate_env.sh
+
+# for running any application or test
 ```
 
 > ⚠️ If there are any installation problems or issues regarding the Rust native extension, read the complete instructions and troubleshooting steps at: [`INSTALL_NATIVE.md`](INSTALL_NATIVE.md). For detailed information about `tsarcore_native`, see [`here`](tsarcore_native/README.md).

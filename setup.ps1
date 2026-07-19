@@ -92,14 +92,26 @@ Pop-Location
 Print-Step "Creating helper script 'activate_env.ps1' for easy environment activation..."
 $helperScript = @"
 # Helper script to activate venv and set PYTHONPATH
-# USAGE: . .\activate_env.ps1   (dot-source it!)
+# USAGE: .\activate_env.ps1
 Write-Host "Activating virtual environment..." -ForegroundColor Cyan
 .\.venv\Scripts\Activate.ps1
-`$env:PYTHONPATH = "$PWD\src"
-Write-Host "Environment ready! PYTHONPATH is set to $env:PYTHONPATH" -ForegroundColor Green
+`$env:PYTHONPATH = "`$PWD\src"
+Write-Host "Environment ready! PYTHONPATH is set to `$env:PYTHONPATH" -ForegroundColor Green
 Write-Host "You are now in the virtual environment." -ForegroundColor Green
 "@
 $helperScript | Out-File -FilePath "activate_env.ps1" -Encoding utf8
+
+# --- CHECK EXECUTION POLICY ---
+Print-Step "Checking PowerShell Execution Policy..."
+$currentPolicy = Get-ExecutionPolicy
+if ($currentPolicy -eq "Restricted") {
+    Write-Host ""
+    Print-Warn "Your PowerShell Execution Policy is set to 'Restricted'."
+    Write-Host "This will prevent you from running '.\activate_env.ps1'."
+    Write-Host "To fix this, please run PowerShell as Administrator and execute:" -ForegroundColor Yellow
+    Write-Host "    Set-ExecutionPolicy RemoteSigned" -ForegroundColor Cyan
+    Write-Host ""
+}
 
 # --- FINAL OUTPUT ---
 Print-Step "DONE!! Setup is complete."
@@ -110,7 +122,7 @@ Write-Host ""
 Write-Host "To activate the environment (with PYTHONPATH already set),"
 Write-Host "run the following command in your PowerShell terminal:"
 Write-Host ""
-Write-Host -ForegroundColor Cyan "    . .\activate_env.ps1"
+Write-Host -ForegroundColor Cyan "    .\activate_env.ps1"
 Write-Host ""
 Write-Host "After that, you can run your applications, benchmarks, or tests."
 Write-Host ""
