@@ -32,8 +32,6 @@ Graffiti Protocol focuses on **Voice Sovereignty**: preserving *cultural archive
 - [Features at a Glance](#-features-at-a-glance)
 - [Why Voice Sovereignty](#-why-voice-sovereignty)
 - [Getting Started](#-getting-started)
-  - [1.Setup](#1-setup)
-  - [2.Build Native Extension](#2-build-native-extension)
 - [Quickstart](#️-quickstart)
 - [Config Codebase (Preview)](#️-config-codebase-preview)
 - [Mining Modes](#️-mining-modes)
@@ -47,9 +45,10 @@ Graffiti Protocol focuses on **Voice Sovereignty**: preserving *cultural archive
 - [Documentation](#-documentation)
   - [Grungepaper](#grungepaper)
   - [Graffiti Protocol](#graffiti-protocol)
-  - [API & Architecture](#api--architecture)
+  - [API](#api)
+  - [Architecture](#architecture)
   - [Rust](#rust)
-  - [Trademarks & References](#trademarks--references)
+  - [References](#references)
 - [License](#-license)
 
 ---
@@ -487,7 +486,7 @@ EDA_EASE_MULTIPLIER     = 2.0
     │   │
     │   └── web/
     │       ├── Backend/            # ALL Backend Website Module
-    │       └── Fronted/            # ALL Frontend Website Module
+    │       └── Frontend/            # ALL Frontend Website Module
     │
     ├── tools/                      # LMDB database tools & Snapshot maintenance
     │
@@ -1399,12 +1398,12 @@ The default storage model in this project is `.mdb` LMDB.
 
 ## 📊 Performance Evidence
 
-Graffiti Protocol is built to be fast, responsive, and robust. We have provided raw execution logs and analysis demonstrating our benchmarks, including:
+Graffiti Protocol is built to be fast, responsive, and robust. I have provided raw execution logs and analysis demonstrating the benchmarks, including:
 - **Sub-millisecond** RPC queries and transaction signing
 - **~20ms** block validations (after initial RandomX warmup)
 - Native storage integration proofs
 
-👉 **[View Performance Evidence](log_samples/PERFORMANCE.md)**
+👉 **[View Performance Evidence](docs/PERFORMANCE.md)**
 
 ---
 
@@ -1418,15 +1417,18 @@ Graffiti Protocol is built to be fast, responsive, and robust. We have provided 
 - [`Graffiti Protocol - Draft v0.1 (EN)`](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(EN).pdf) | [*Download*](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(EN).pdf?raw=true)
 - [`Graffiti Protocol - Draft v0.1 (ID)`](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(ID).pdf) | [*Download*](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(ID).pdf?raw=true)
 
-##### API & Architecture
+##### API
 - [`API.md`](docs/API.md)
+
+##### Architecture
 - [`ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
 ##### Rust
-- [`README.md`](tsarcore_native/README.md) [`INSTALL_NATIVE.md`](INSTALL_NATIVE.md)
+- [`README.md`](tsarcore_native/README.md)
+- [`INSTALL_NATIVE.md`](docs/INSTALL_NATIVE.md)
 
-##### Trademarks & References
-- [`TRADEMARKS.md`](TRADEMARKS.md) [`REFERENCES.md`](REFERENCES.md)
+##### References
+- [`REFERENCES.md`](docs/REFERENCES.md)
 
 ---
 

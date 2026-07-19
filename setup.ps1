@@ -59,7 +59,7 @@ if (Get-Command "npm" -ErrorAction SilentlyContinue) {
     Set-Location "..\..\.."
 
     Write-Host "Installing Frontend dependencies..."
-    Set-Location "src\web\Fronted"
+    Set-Location "src\web\Frontend"
     npm install
     Set-Location "..\..\.."
 } else {
@@ -88,6 +88,7 @@ Print-Step "8/8: Building Native Extension (tsarcore_native)..."
 Set-Location "tsarcore_native"
 & "..\.venv\Scripts\maturin.exe" develop --release --features parallel
 Set-Location ".."
+$env:PYTHONPATH = "$PWD/src"
 
 Print-Step "DONE!! Setup is complete."
 Write-Host ""

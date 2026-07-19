@@ -1,11 +1,16 @@
 # Graffiti Protocol Architecture
 
+<p align="center">
+  <img src="/assets/diagrams/transactions_flow.svg" alt="Transactions Flow">
+</p>
+
+
 This document provides an in-depth technical overview of the Graffiti Protocol. The architecture relies on a hybrid design that couples lightweight on-chain UTXO execution with off-chain heavy data storage, prioritizing the permanent archiving of digital art and testimonies.
 
 ---
 
 
-## Phase 1: Consensus & Proof-of-Work (PoW) Logic
+## Consensus & Proof-of-Work (PoW) Logic
 
 At the core of the Graffiti Protocol is a bespoke consensus engine designed to enforce immutability while anchoring cultural artifacts natively into the blockchain state.
 
@@ -51,7 +56,7 @@ Once a miner successfully computes the PoW, the block is broadcasted.
 
 ---
 
-## Phase 2: UTXO Ledger State & Mempool
+## UTXO Ledger State & Mempool
 
 The ledger state of the Graffiti Protocol tracks ownership, storage balances, and digital artifact lifecycles through a highly optimized UTXO (Unspent Transaction Output) framework.
 
@@ -86,7 +91,7 @@ Before standard or Graffiti transactions can enter the mempool (`TxPool`), they 
 
 ---
 
-## Phase 3: Rust Native Extension (`tsarcore_native`)
+## Rust Native Extension (`tsarcore_native`)
 
 For performance-critical tasks, the Graffiti Protocol bypasses the performance limitations and the Global Interpreter Lock (GIL) of Python by offloading computations to a high-performance native extension compiled in Rust.
 
@@ -123,7 +128,7 @@ Archivists must cryptographically prove they hold large files. Rust accelerates 
 
 ---
 
-## Phase 4: Graffiti Protocol Logic
+## Graffiti Protocol Logic
 
 The core logic of the Graffiti Protocol governs the creation, validation, storage pool distributions, and retention auditing of all cultural archives in the system.
 

@@ -2,7 +2,7 @@
 
 This document outlines the performance benchmarks and implementation evidence of the **Graffiti Protocol**, referencing the raw logs found in this directory. 
 
-We highlight four key areas to demonstrate the efficiency and stability of the network under different loads and states:
+I'am highlight four key areas to demonstrate the efficiency and stability of the network under different loads and states:
 
 ## 1. Mining Validation Speed & RandomX Warmup (`miner.log`)
 The mining logs provide evidence of our PoW (RandomX) block validation efficiency.
@@ -41,3 +41,7 @@ The wallet handles transaction formation, security, and embedding digital artifa
 ---
 
 > Feel free to explore the `.log` files in this directory to view the raw execution data and confirm these benchmarks.
+- [`node_bootstrap.log`](/log_samples/node_bootstrap.log)
+- [`miner.log`](/log_samples/miner.log)
+- [`storage_node.log`](/log_samples/storage_node.log)
+- [`wallet.log`](/log_samples/wallet.log)

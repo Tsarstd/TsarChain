@@ -80,7 +80,7 @@ if command -v npm &> /dev/null; then
     echo "Installing Backend dependencies..."
     (cd src/web/Backend && npm install)
     echo "Installing Frontend dependencies..."
-    (cd src/web/Fronted && npm install)
+    (cd src/web/Frontend && npm install)
 else
     print_warn "npm is still not available. Skipping website dependencies."
 fi
@@ -110,6 +110,7 @@ print_step "8/8: Building Native Extension (tsarcore_native)..."
 cd tsarcore_native
 maturin develop --release --features parallel
 cd ..
+export PYTHONPATH="$PWD/src"
 
 print_step "DONE!! Setup is complete."
 echo ""
