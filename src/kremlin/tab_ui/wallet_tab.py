@@ -36,6 +36,20 @@ from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.wallet_tab")
 
 
+# Constants for UI styling & messages
+TEXT_0_TSAR = "0 TSAR"
+EVENT_RETURN = "<Return>"
+EVENT_CONFIGURE = "<Configure>"
+STYLE_DARK_FRAME = "Dark.TFrame"
+STYLE_DARK_LABEL = "Dark.TLabel"
+STYLE_MUTED_LABEL = "Muted.TLabel"
+STYLE_DARK_BUTTON = "Dark.TButton"
+TEXT_DELETE_ADDRESS = "Delete Address"
+TEXT_KEYSTORE_PWD = "Keystore Password"
+MSG_UNHANDLED_EXC = "Unhandled exception"
+STYLE_DARK_VSCROLL = "Dark.Vertical.TScrollbar"
+
+
 # ---------------- Amount formatting (local) ----------------
 def sat_to_tsar(amount_satoshi: Optional[int]) -> str:
     if amount_satoshi is None:
@@ -68,7 +82,7 @@ class CreateWalletDialog(tk.Toplevel):
         self.resizable(True, False)
         self.minsize(640, 380)
         self.bind("<Escape>", lambda _e: self.destroy())
-        self.bind("<Return>", lambda _e: (self.btn_create.invoke() if str(self.btn_create['state']) != 'disabled' else None))
+        self.bind(EVENT_RETURN, lambda _e: (self.btn_create.invoke() if str(self.btn_create['state']) != 'disabled' else None))
         self.resizable(False, False)
         self.result_password = None
         self.attributes("-topmost", True)
@@ -391,7 +405,7 @@ class WalletsMixin:
         canvas = tk.Canvas(container, bg=self.bg, highlightthickness=0)
         sbar   = tk.Scrollbar(container, orient="vertical", command=canvas.yview)
         self.wallet_list_frame = tk.Frame(canvas, bg=self.bg)
-        self.wallet_list_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        self.wallet_list_frame.bind(EVENT_CONFIGURE, lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0,0), window=self.wallet_list_frame, anchor="nw")
         canvas.configure(yscrollcommand=sbar.set)
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -425,7 +439,7 @@ class WalletsMixin:
             mm = tk.Menu(action_btn, tearoff=False)
             mm.add_command(label="See Private Key", command=lambda a=addr: self._menu_show_priv(a))
             mm.add_separator()
-            mm.add_command(label="Delete Address", command=lambda a=addr: self._menu_delete_addr(a))
+            mm.add_command(label=TEXT_DELETE_ADDRESS, command=lambda a=addr: self._menu_delete_addr(a))
             action_btn["menu"] = mm
             action_btn.pack(side=tk.RIGHT)
 
@@ -475,9 +489,9 @@ class WalletsMixin:
         tk.Button(d, text="Copy", command=copy, bg=self.accent, fg="#fff", bd=0).pack(pady=(0,12))
 
     def _menu_delete_addr(self, addr: str) -> None:
-        if not messagebox.askyesno("Delete Address", f"Delete {addr} from keystore?"):
+        if not messagebox.askyesno(TEXT_DELETE_ADDRESS, f"Delete {addr} from keystore?"):
             return
-        pwd = self._ask_password("Delete Address", "Enter the keystore password:")
+        pwd = self._ask_password(TEXT_DELETE_ADDRESS, "Enter the keystore password:")
         if not pwd:
             return
         delete_address_from_keystore(addr, pwd)
@@ -504,7 +518,7 @@ class WalletsMixin:
             tk.Label(r, text=title, bg=self.panel_bg, fg=self.muted,
                      font=("Consolas", 9)).pack(side=tk.LEFT, padx=(0, 8))
             fnt = ("Consolas", 13, "bold") if big else ("Consolas", 10, "bold")
-            lbl = tk.Label(r, text="0 TSAR", bg=self.panel_bg, fg=color, font=fnt)
+            lbl = tk.Label(r, text=TEXT_0_TSAR, bg=self.panel_bg, fg=color, font=fnt)
             lbl.pack(side=tk.LEFT)
             return lbl
 
@@ -518,7 +532,7 @@ class WalletsMixin:
         pending_row.pack(anchor="w")
         tk.Label(pending_row, text="Pending", bg=self.panel_bg, fg=self.muted,
                  font=("Consolas", 9)).pack(side=tk.LEFT, padx=(0, 8))
-        pend_lbl = tk.Label(pending_row, text="0 TSAR", bg=self.panel_bg, fg=col_pend,
+        pend_lbl = tk.Label(pending_row, text=TEXT_0_TSAR, bg=self.panel_bg, fg=col_pend,
                             font=("Consolas", 11, "bold"))
         pend_lbl.pack(side=tk.LEFT)
         pending_row.pack_forget()
@@ -527,7 +541,7 @@ class WalletsMixin:
         incoming_row.pack(anchor="w")
         tk.Label(incoming_row, text="Incoming", bg=self.panel_bg, fg=self.muted,
                  font=("Consolas", 9)).pack(side=tk.LEFT, padx=(0, 8))
-        incoming_lbl = tk.Label(incoming_row, text="0 TSAR", bg=self.panel_bg, fg=col_incoming,
+        incoming_lbl = tk.Label(incoming_row, text=TEXT_0_TSAR, bg=self.panel_bg, fg=col_incoming,
                                 font=("Consolas", 11, "bold"))
         incoming_lbl.pack(side=tk.LEFT)
         incoming_row.pack_forget()
@@ -650,7 +664,7 @@ class WalletsMixin:
         try:
             removed_labels, cleared_hist = self.wallet_controller.delete_wallet_data(pwd, existing_wallets)
         except Exception as exc:
-            log.exception("Unhandled exception")
+            log.exception(MSG_UNHANDLED_EXC)
             messagebox.showerror(
                 "Reset cancelled.",
                 f"Wrong password or keystore cannot be opened.\n\nDetails: {exc}",
@@ -781,20 +795,20 @@ class WalletsMixin:
         style.theme_use("clam")  # ttk theme that can be styled
 
         # Gaya dasar
-        style.configure("Dark.TFrame", background=DARK_BG)
+        style.configure(STYLE_DARK_FRAME, background=DARK_BG)
         style.configure("Dark.TLabelframe", background=DARK_BG, foreground=FG)
         style.configure("Dark.TLabelframe.Label", background=DARK_BG, foreground=FG)
-        style.configure("Dark.TLabel", background=DARK_BG, foreground=FG)
-        style.configure("Muted.TLabel", background=DARK_BG, foreground=MUTED)
+        style.configure(STYLE_DARK_LABEL, background=DARK_BG, foreground=FG)
+        style.configure(STYLE_MUTED_LABEL, background=DARK_BG, foreground=MUTED)
         style.configure("Accent.TLabel", background=DARK_BG, foreground=ACCENT)
 
-        style.configure("Dark.TButton", background=PANEL_BG, foreground=FG, padding=6)
-        style.map("Dark.TButton",
+        style.configure(STYLE_DARK_BUTTON, background=PANEL_BG, foreground=FG, padding=6)
+        style.map(STYLE_DARK_BUTTON,
                   background=[("active", "#ff5e00"), ("pressed", "#1b1f24")])
 
-        style.configure("Dark.Vertical.TScrollbar",
+        style.configure(STYLE_DARK_VSCROLL,
                         background=PANEL_BG, troughcolor="#0d1015")
-        style.map("Dark.Vertical.TScrollbar",
+        style.map(STYLE_DARK_VSCROLL,
                   background=[("active", "#222831")])
 
         # Tk (non-ttk) container
@@ -802,15 +816,15 @@ class WalletsMixin:
         dialog.attributes("-toolwindow", True)
         dialog.attributes("-alpha", 0.98)
 
-        main = ttk.Frame(dialog, padding=20, style="Dark.TFrame")
+        main = ttk.Frame(dialog, padding=20, style=STYLE_DARK_FRAME)
         main.pack(fill=tk.BOTH, expand=True)
-        hdr  = ttk.Frame(main, style="Dark.TFrame")
+        hdr  = ttk.Frame(main, style=STYLE_DARK_FRAME)
         hdr.pack(fill=tk.X, pady=(0, 15))
         ttk.Label(hdr, text="SECURITY MODE ACTIVE",
                   font=("Arial", 12, "bold"), style="Accent.TLabel").pack()
         ttk.Label(hdr,
                   text="Auto-clear in 2 minutes, No screenshots, Secure memory",
-                  font=("Arial", 8), style="Muted.TLabel").pack()
+                  font=("Arial", 8), style=STYLE_MUTED_LABEL).pack()
 
         # ----- Mnemonic area -----
         mbox = ttk.LabelFrame(main, text="YOUR 12-WORD RECOVERY PHRASE",
@@ -819,41 +833,41 @@ class WalletsMixin:
 
         canvas = tk.Canvas(mbox, highlightthickness=0, bg=DARK_BG)
         sbar   = ttk.Scrollbar(mbox, orient="vertical", command=canvas.yview,
-                               style="Dark.Vertical.TScrollbar")
+                               style=STYLE_DARK_VSCROLL)
         canvas.configure(yscrollcommand=sbar.set)
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         sbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        wrap = ttk.Frame(canvas, style="Dark.TFrame")
+        wrap = ttk.Frame(canvas, style=STYLE_DARK_FRAME)
         wrap_id = canvas.create_window((0, 0), window=wrap, anchor="n")
 
         def _sync_scrollregion(event=None):
             canvas.configure(scrollregion=canvas.bbox("all"))
             canvas.itemconfigure(wrap_id, width=canvas.winfo_width())
-        wrap.bind("<Configure>", _sync_scrollregion)
-        canvas.bind("<Configure>", _sync_scrollregion)
+        wrap.bind(EVENT_CONFIGURE, _sync_scrollregion)
+        canvas.bind(EVENT_CONFIGURE, _sync_scrollregion)
 
         # 3 kolom: kiri & kanan gutter (fleksibel), tengah konten
         wrap.grid_columnconfigure(0, weight=1)
         wrap.grid_columnconfigure(1, weight=0)
         wrap.grid_columnconfigure(2, weight=1)
 
-        gridf = ttk.Frame(wrap, style="Dark.TFrame")
+        gridf = ttk.Frame(wrap, style=STYLE_DARK_FRAME)
         gridf.grid(row=0, column=1, pady=5)
 
         words = mnemonic.split()
         for i, w in enumerate(words):
             r, c = divmod(i, 2)
-            cell = ttk.Frame(gridf, padding=(12, 6), style="Dark.TFrame")
+            cell = ttk.Frame(gridf, padding=(12, 6), style=STYLE_DARK_FRAME)
             cell.grid(row=r, column=c, padx=12, pady=6, sticky="w")
             ttk.Label(cell, text=f"{i + 1:2d}.", width=4, anchor="e",
-                      style="Muted.TLabel").pack(side=tk.LEFT)
+                      style=STYLE_MUTED_LABEL).pack(side=tk.LEFT)
             ttk.Label(cell, text=w, font=("Consolas", 12, "bold"),
-                      width=12, anchor="w", style="Dark.TLabel").pack(side=tk.LEFT)
+                      width=12, anchor="w", style=STYLE_DARK_LABEL).pack(side=tk.LEFT)
 
-        btns = ttk.Frame(main, style="Dark.TFrame")
+        btns = ttk.Frame(main, style=STYLE_DARK_FRAME)
         btns.pack(pady=15)
-        timer_label = ttk.Label(btns, text="Auto-clear: 2:00", font=("Consolas", 9), style="Muted.TLabel")
+        timer_label = ttk.Label(btns, text="Auto-clear: 2:00", font=("Consolas", 9), style=STYLE_MUTED_LABEL)
         timer_label.pack(pady=(0, 10))
 
         def copy_once():
@@ -866,25 +880,25 @@ class WalletsMixin:
             Security.log_security_event("MNEMONIC_COPIED", addr, "Copied to clipboard")
 
         ttk.Button(btns, text="Copy", command=copy_once,
-                   width=20, style="Dark.TButton").pack(side=tk.LEFT, padx=10)
+                   width=20, style=STYLE_DARK_BUTTON).pack(side=tk.LEFT, padx=10)
         ttk.Button(btns, text="I've Secured It",
                    command=lambda: _register_and_close(show_info=True),
-                   width=25, style="Dark.TButton").pack(side=tk.LEFT, padx=10)
+                   width=25, style=STYLE_DARK_BUTTON).pack(side=tk.LEFT, padx=10)
         ttk.Button(btns, text="Skip for now",
                    command=lambda: _register_and_close(warn=True),
-                   width=30, style="Dark.TButton").pack(side=tk.LEFT, padx=10)
+                   width=30, style=STYLE_DARK_BUTTON).pack(side=tk.LEFT, padx=10)
 
-        afr = ttk.Frame(main, style="Dark.TFrame"); afr.pack(pady=10)
+        afr = ttk.Frame(main, style=STYLE_DARK_FRAME); afr.pack(pady=10)
         ttk.Label(afr, text="Wallet Address:", font=("Arial", 9),
-                  style="Muted.TLabel").pack()
+                  style=STYLE_MUTED_LABEL).pack()
         masked = addr if len(addr) <= 16 else (addr[:8] + "..." + addr[-8:])
         lab = ttk.Label(afr, text=masked, font=("Courier", 8),
-                        style="Dark.TLabel")
+                        style=STYLE_DARK_LABEL)
         lab.pack()
         ttk.Button(afr, text="Show/Hide Address",
                    command=lambda: lab.config(
                        text=addr if lab.cget("text") == masked else masked),
-                   width=20, style="Dark.TButton").pack(pady=5)
+                   width=20, style=STYLE_DARK_BUTTON).pack(pady=5)
 
         def start_timer():
             self.security_time_remaining = 120
@@ -952,7 +966,7 @@ class WalletsMixin:
         if not path:
             return
 
-        pwd = self._ask_password("Keystore Password", "Enter password for this backup:")
+        pwd = self._ask_password(TEXT_KEYSTORE_PWD, "Enter password for this backup:")
         if not pwd:
             return
 
@@ -1201,7 +1215,7 @@ class WalletsMixin:
         try:
             self.rpc_send({"type": "GET_BALANCES", "addresses": uniq_addrs}, handle)
         except Exception:
-            log.exception("Unhandled exception")
+            log.exception(MSG_UNHANDLED_EXC)
             for addr in uniq_addrs:
                 apply(addr, zero_template())
             finalize()
@@ -1275,8 +1289,8 @@ class WalletsMixin:
             ent.focus_set()
         except Exception:
             log.exception("[_ask_password] cannot focus entry")        
-        ent.bind("<Return>", lambda _e: ok())
-        d.bind("<Return>", lambda _e: ok())
+        ent.bind(EVENT_RETURN, lambda _e: ok())
+        d.bind(EVENT_RETURN, lambda _e: ok())
         center_window(d, self.root)
         d.transient(self.root); d.grab_set(); self.root.wait_window(d)
         return out["v"]
@@ -1320,8 +1334,8 @@ class WalletsMixin:
         except Exception:
             log.exception("[_ask_text] cannot focus input")
         if not multiline:
-            (ent or txt).bind("<Return>", lambda _e: ok())
-            d.bind("<Return>", lambda _e: ok())
+            (ent or txt).bind(EVENT_RETURN, lambda _e: ok())
+            d.bind(EVENT_RETURN, lambda _e: ok())
         center_window(d, self.root)
         d.transient(self.root); d.grab_set(); self.root.wait_window(d)
         return out["v"]
@@ -1334,9 +1348,9 @@ class WalletsMixin:
         if not pwd:
             ask = getattr(self, "_ask_password", None)
             if callable(ask):
-                pwd = ask("Keystore Password", "Enter keystore password to sync addresses:")
+                pwd = ask(TEXT_KEYSTORE_PWD, "Enter keystore password to sync addresses:")
             else:
-                pwd = simpledialog.askstring("Keystore Password",
+                pwd = simpledialog.askstring(TEXT_KEYSTORE_PWD,
                                                 "Enter keystore password to sync addresses:",
                                                 show="*", parent=self.root)
         if not pwd:
@@ -1347,8 +1361,7 @@ class WalletsMixin:
             messagebox.showerror("Sync failed", "Unable to read keystore.")
             return
 
-        if removed:
-            if not messagebox.askyesno(
+        if removed and not messagebox.askyesno(
                 "Remove non-keystore addresses?",
                 "The following addresses are not present in the encrypted keystore:\n\n"
                 + "\n".join(removed[:10]) + ("\n…" if len(removed) > 10 else "")
@@ -1356,6 +1369,7 @@ class WalletsMixin:
                 icon="warning",
             ):
                 final = sorted(set(self.wallets or []) | set(final))
+                removed = []
         
 
         self.wallets = final
@@ -1395,7 +1409,7 @@ class WalletsMixin:
         ):
             return
 
-        pwd = simpledialog.askstring("Keystore Password", "Enter keystore password:", show="*", parent=self.root)
+        pwd = simpledialog.askstring(TEXT_KEYSTORE_PWD, "Enter keystore password:", show="*", parent=self.root)
         if not pwd:
             return
 
@@ -1434,7 +1448,7 @@ class WalletsMixin:
                 f.write(data)
             messagebox.showinfo("Backup complete", f"Encrypted keystore saved:\n{path}")
         except FileNotFoundError:
-            log.exception("Unhandled exception")
+            log.exception(MSG_UNHANDLED_EXC)
             messagebox.showerror("Backup failed", "Keystore file not found.")
         except Exception:
             log.exception("[backup_keystore] Failed to backup keystore")

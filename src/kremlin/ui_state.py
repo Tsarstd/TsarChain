@@ -3,7 +3,7 @@
 # Part of TsarChain - see LICENSE
 
 import tkinter as tk
-from typing import Sequence, Dict, Set, Union
+from typing import Sequence, Dict, Set
 
 class BusyManager:
     def __init__(self, root: tk.Tk, toast_cb=None):
@@ -11,7 +11,7 @@ class BusyManager:
         self.toast = toast_cb
         self._busy_keys: Set[str] = set()
         self._busy_widgets: Dict[str, list[tk.Widget]] = {}
-        self._busy_timers: Dict[str, Union[str, int]] = {}
+        self._busy_timers: Dict[str, str | int] = {}
 
     def _set_enabled(self, w: tk.Widget, enabled: bool) -> None:
         if not hasattr(w, "_prev_state"):

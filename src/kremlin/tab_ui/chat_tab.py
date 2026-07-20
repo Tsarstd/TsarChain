@@ -451,7 +451,7 @@ class ChatTab:
         if not hasattr(self, "chat_to_var"):
             self.chat_to_var = tk.StringVar(value="")
         if not hasattr(self, "selected_friend_var"):
-            self.selected_friend_var = tk.StringVar(value="(not yet selected)")
+            self.selected_friend_var = tk.StringVar(value="(not selected)")
 
         tk.Label(parent, textvariable=self.selected_friend_var, bg=self.bg, fg=self.fg)\
             .pack(side=tk.LEFT, padx=8)
@@ -514,7 +514,7 @@ class ChatTab:
         except TypeError:
             self.contact_mgr.pick_contact(title="Contacts (Chat)", on_pick=_on_pick, presence_provider=None)
         except Exception:
-            log.exception("Unhandled exception")
+            log.exception("_open_contact_picker_chat")
 
     def _apply_chat_textsize(self, size_label: str) -> None:
         label = (size_label or "medium").strip().lower()
@@ -637,17 +637,17 @@ class ChatTab:
             elif "Account locked" in err or "Too many failed attempts" in err:
                 msg = err
             elif "Invalid password" in err:
-                msg = "Password salah atau file keystore korup."
+                msg = "Incorrect password or corrupt keystore file."
             else:
-                msg = f"Gagal unlock: {err}"
+                msg = f"Unlock failed: {err}"
             self.toast(msg, kind="error")
             return False
 
         try:
             _sk, _pk = self.chat_mgr._get_chat_dh(a)
         except Exception as e:
-            log.exception("Unhandled exception")
-            self.toast(f"Unlock chat key dibatalkan/ gagal: {e}", kind="error")
+            log.exception("_prewarm_session")
+            self.toast(f"Chat unlock key cancelled/failed: {e}", kind="error")
             return False
         
         if hasattr(self.chat_mgr, "_chat_dh_cache"):
@@ -838,9 +838,8 @@ class ChatTab:
                     msg = f"Failed to unlock: {err}"
                 self.toast(msg, kind="error")
                 return
-            if prewarm:
-                if not self._prewarm_session(addr):
-                    return
+            if prewarm and not self._prewarm_session(addr):
+                return
 
             def _on(resp):
                 if resp and resp.get("type") == "CHAT_REGISTERED":

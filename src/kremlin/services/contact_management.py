@@ -376,9 +376,10 @@ class ContactManager:
             res = self._ask_contact(dlg, title="Edit Contact", alias=alias0, address=a)
             if not res: return
             new_addr, new_alias = res
-            if new_addr != a:
-                if not self.delete(a):
-                    return
+
+            if new_addr != a and not self.delete(a):
+                return
+
             if self.upsert(new_addr, new_alias):
                 self.toast("Contact updated."); _rebuild()
                 _set_sel(new_addr)

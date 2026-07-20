@@ -351,7 +351,7 @@ class HistoryTab(tk.Frame):
     def _hist_clear_cache(self) -> None:
         addr = self.history_addr_var.get()
         if not addr:
-            messagebox.showerror("Missing", "Select address first")
+            messagebox.showerror("Missing", "Select address")
             return
         if not messagebox.askyesno("Clear cache", f"Delete cached history for:\n\n{addr}\n\nLocal file only"):
             return
@@ -385,7 +385,7 @@ class HistoryTab(tk.Frame):
 
                     webbrowser.open(f"file://{path}")
         except Exception as exc:
-            log.exception("Unhandled exception")
+            log.exception("_hist_open_cache_file")
             messagebox.showerror("Open failed", str(exc))
 
     # -------------------------------------------------------------- Loading

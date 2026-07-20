@@ -4,7 +4,6 @@
 
 import time
 import threading
-from typing import Union
 
 from ...utils import config as CFG
 from .base import NetworkHandlerProxy
@@ -43,7 +42,7 @@ class GuardHandler(NetworkHandlerProxy):
         log.warning("[backoff_node] backoff set key=%s for %.2fs", key, secs)
 
 
-    def nonce_guard(self, scope: str, sender_key: str, nonce: str, ts: Union[int, float], window: int) -> bool:
+    def nonce_guard(self, scope: str, sender_key: str, nonce: str, ts: int | float, window: int) -> bool:
         
         if not (scope and sender_key and nonce and isinstance(ts, (int, float))):
             return False

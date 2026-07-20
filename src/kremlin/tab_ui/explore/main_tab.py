@@ -10,7 +10,7 @@ import tkinter as tk
 
 from datetime import datetime
 from tkinter import messagebox, scrolledtext
-from typing import Optional, Union, Dict, Any, Callable
+from typing import Optional, Dict, Any, Callable
 
 from .txid_search import TxSearch
 from .block_search import BlockSearch
@@ -26,9 +26,11 @@ log = get_ctx_logger("tsarchain.wallet.tab_ui.explorer.main_tab")
 
 MONO     = ("Consolas", 10)
 HINT_TEXT = "search with : (block height/txid/hash/address)"
+REGEX_HASH64 = r"[0-9a-fA-F]{64}"
+EVENT_RIGHT_CLICK = "<Button-3>"
 
 # ---------- small helpers ----------
-def _fmt_ts(ts: Optional[Union[int, float]]) -> str:
+def _fmt_ts(ts: int | float | None) -> str:
     if ts is None:
         return "-"
     return datetime.fromtimestamp(int(ts)).strftime("%Y-%m-%d %H:%M:%S")
@@ -51,11 +53,11 @@ def _guess_kind(q: str) -> str:
         return "address"
     if q.isdigit() and 1 <= len(q) <= 7:
         return "block_height"
-    if re.fullmatch(r"[0-9a-fA-F]{64}", q):
+    if re.fullmatch(REGEX_HASH64, q):
         return "hash64"
     return "unknown"
 
-def _fmt_tsar_amount(v: Union[int, str, float, None]) -> str:
+def _fmt_tsar_amount(v: int | str | float | None) -> str:
     if v is None:
         return "0.00000000 TSAR"
     cleaned = str(v).replace("_", "").strip()
@@ -175,7 +177,7 @@ class ExplorePanel(tk.Frame):
             self._search_menu.tk_popup(ev.x_root, ev.y_root)
             self._search_menu.grab_release()
 
-        self.search_entry.bind("<Button-3>", _popup_paste)
+        self.search_entry.bind(EVENT_RIGHT_CLICK, _popup_paste)
         self.search_btn = tk.Button(
             self.search_wrap,
             text="Search",
@@ -273,7 +275,7 @@ class ExplorePanel(tk.Frame):
             activebackground=self.border,
         )
         self.menu.add_command(label="Copy", command=self._copy_selection)
-        self.text.bind("<Button-3>", self._popup_copy)
+        self.text.bind(EVENT_RIGHT_CLICK, self._popup_copy)
         self.text.bind("<Control-c>", lambda e: (self._copy_selection(), "break"))
 
         bottom = tk.Frame(self, bg=self.bg)
@@ -303,7 +305,7 @@ class ExplorePanel(tk.Frame):
             return
         self._enter_compact()
         self.search_var.set(txid)
-        if re.fullmatch(r"[0-9a-fA-F]{64}", txid):
+        if re.fullmatch(REGEX_HASH64, txid):
             self._open_tx_or_block(txid)
         else:
             self._on_search()
@@ -386,7 +388,7 @@ class ExplorePanel(tk.Frame):
             self._copy_menu_generic.grab_release()
             return "break"
 
-        widget.bind("<Button-3>", popup)
+        widget.bind(EVENT_RIGHT_CLICK, popup)
         widget.bind("<Control-c>", lambda e: (do_copy(), "break"))
         widget.bind("<Control-C>", lambda e: (do_copy(), "break"))
 
@@ -460,11 +462,11 @@ class ExplorePanel(tk.Frame):
     def _writeln(self, s: str = "", *tags):
         self.text.insert("end", s + "\n", tags)
 
-    def _val_tag(self, v: Union[str, int, float]) -> Optional[str]:
+    def _val_tag(self, v: str | int | float) -> Optional[str]:
         s = str(v or "")
         if s.startswith("tsar"):
             return "val_addr"
-        if re.fullmatch(r"[0-9a-fA-F]{64}", s):
+        if re.fullmatch(REGEX_HASH64, s):
             return "val_hex"
         s_num = s.replace("_", "").strip()
         if re.fullmatch(r"-?\d+(?:\.\d+)?", s_num):

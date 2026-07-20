@@ -34,6 +34,17 @@ from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.tab_ui.graffiti_tab")
 
 
+# Constants for UI styling & messages
+STYLE_FRAME = "Tsar.TFrame"
+STYLE_LABELFRAME = "Tsar.TLabelframe"
+STYLE_CARD_MONO_LABEL = "Tsar.Card.Mono.TLabel"
+STYLE_BUTTON = "Tsar.TButton"
+STYLE_SEC_BUTTON = "Tsar.Secondary.TButton"
+STYLE_H_PROGRESS = "Horizontal.Tsar.TProgressbar"
+TEXT_RECEIPT_NONE = "receipt: -"
+MSG_UNHANDLED_EXC = "Unhandled exception"
+
+
 class GraffitiController:
     def __init__(self, app):
         self.app = app
@@ -297,7 +308,7 @@ class GraffitiTab(ttk.Frame):
         self.payout_status_var = StringVar(value="Payout history pending.")
 
         self._build_style()
-        self.configure(style="Tsar.TFrame")
+        self.configure()
         self._build_ui()
         self._refresh_creator_wallets()
 
@@ -308,36 +319,36 @@ class GraffitiTab(ttk.Frame):
             style.theme_use("clam")
         except tk.TclError:
             pass
-        style.configure("Tsar.TFrame", background=t.bg)
+        style.configure(STYLE_FRAME, background=t.bg)
         style.configure("Tsar.Card.TFrame", background=t.card_bg)
-        style.configure("Tsar.TLabelframe", background=t.card_bg, foreground=t.fg)
+        style.configure(STYLE_LABELFRAME, background=t.card_bg, foreground=t.fg)
         style.configure("Tsar.TLabelframe.Label", background=t.card_bg, foreground=t.fg, font=("Consolas", 11, "bold"))
         style.configure("Tsar.Header.TLabel", background=t.bg, foreground=t.accent, font=("Consolas", 14, "bold"))
         style.configure("Tsar.Card.TLabel", background=t.card_bg, foreground=t.fg)
         style.configure("Tsar.Mono.TLabel", background=t.bg, foreground=t.muted, font=("Consolas", 10))
-        style.configure("Tsar.Card.Mono.TLabel", background=t.card_bg, foreground=t.muted, font=("Consolas", 10))
-        style.configure("Tsar.TButton", padding=8, background=t.accent, foreground="#ffffff")
+        style.configure(STYLE_CARD_MONO_LABEL, background=t.card_bg, foreground=t.muted, font=("Consolas", 10))
+        style.configure(STYLE_BUTTON, padding=8, background=t.accent, foreground="#ffffff")
         style.map(
-            "Tsar.TButton",
+            STYLE_BUTTON,
             background=[("active", lighten(t.accent, 0.12)), ("disabled", t.border)],
             foreground=[("disabled", t.muted)],
         )
-        style.configure("Tsar.Secondary.TButton", padding=8, background=t.card_bg, foreground=t.fg)
-        style.map("Tsar.Secondary.TButton", background=[("active", lighten(t.card_bg, 0.08))])
+        style.configure(STYLE_SEC_BUTTON, padding=8, background=t.card_bg, foreground=t.fg)
+        style.map(STYLE_SEC_BUTTON, background=[("active", lighten(t.card_bg, 0.08))])
         style.configure("Tsar.TEntry", fieldbackground=t.card_bg, foreground=t.fg, background=t.card_bg)
         style.configure("Tsar.TCombobox", fieldbackground=t.card_bg, foreground=t.fg, background=t.card_bg)
         # Progressbar styles require explicit horizontal/vertical layouts.
         h_layout = style.layout("Horizontal.TProgressbar")
         v_layout = style.layout("Vertical.TProgressbar")
-        style.layout("Horizontal.Tsar.TProgressbar", h_layout)
+        style.layout(STYLE_H_PROGRESS, h_layout)
         style.layout("Vertical.Tsar.TProgressbar", v_layout)
-        style.configure("Horizontal.Tsar.TProgressbar", troughcolor=t.card_bg, background=t.accent)
+        style.configure(STYLE_H_PROGRESS, troughcolor=t.card_bg, background=t.accent)
         style.configure("Vertical.Tsar.TProgressbar", troughcolor=t.card_bg, background=t.accent)
         self._style = style
 
     # ---- layout utama ----
     def _build_ui(self):
-        outer = ttk.Frame(self, style="Tsar.TFrame")
+        outer = ttk.Frame(self, style=STYLE_FRAME)
         outer.pack(fill="both", expand=True)
 
         canvas = tk.Canvas(outer, bg=self.theme.bg, highlightthickness=0, bd=0)
@@ -346,7 +357,7 @@ class GraffitiTab(ttk.Frame):
         vscroll.pack(side=tk.RIGHT, fill=tk.Y)
         canvas.pack(side=tk.LEFT, fill="both", expand=True)
 
-        root = ttk.Frame(canvas, padding=12, style="Tsar.TFrame")
+        root = ttk.Frame(canvas, padding=12, style=STYLE_FRAME)
         root_id = canvas.create_window((0, 0), window=root, anchor="nw")
 
         def _sync_scrollregion(_event=None):
@@ -358,18 +369,18 @@ class GraffitiTab(ttk.Frame):
         root.bind("<Configure>", _sync_scrollregion)
         canvas.bind("<Configure>", _sync_scrollregion)
 
-        header_row = ttk.Frame(root, style="Tsar.TFrame")
+        header_row = ttk.Frame(root, style=STYLE_FRAME)
         header_row.pack(fill="x")
         ttk.Label(header_row, text="Graffiti Uploader", style="Tsar.Header.TLabel").pack(side=tk.LEFT, anchor="w")
-        ttk.Button(header_row, text="View Catalog", style="Tsar.Secondary.TButton", command=self._open_creator_catalog)\
+        ttk.Button(header_row, text="View Catalog", style=STYLE_SEC_BUTTON, command=self._open_creator_catalog)\
             .pack(side=tk.RIGHT, padx=4)
-        ttk.Label(root, text="Alur: pilih wallet -> pilih & preview file -> upload & sign.", style="Tsar.Card.Mono.TLabel")\
+        ttk.Label(root, text="Alur: pilih wallet -> pilih & preview file -> upload & sign.", style=STYLE_CARD_MONO_LABEL)\
             .pack(anchor="w", pady=(2, 8))
 
         # 1) Creator wallet
-        creator_fr = ttk.LabelFrame(root, text="1) Wallet Creator", style="Tsar.TLabelframe")
+        creator_fr = ttk.LabelFrame(root, text="1) Wallet Creator", style=STYLE_LABELFRAME)
         creator_fr.pack(fill="x", pady=(4, 6))
-        ttk.Label(creator_fr, text="Gunakan alamat ini untuk membayar POST fee:", style="Tsar.Card.Mono.TLabel")\
+        ttk.Label(creator_fr, text="Gunakan alamat ini untuk membayar POST fee:", style=STYLE_CARD_MONO_LABEL)\
             .grid(row=0, column=0, padx=8, pady=(8, 2), sticky="w")
         self.creator_cb = ttk.Combobox(
             creator_fr,
@@ -379,24 +390,24 @@ class GraffitiTab(ttk.Frame):
             style="Tsar.TCombobox",
         )
         self.creator_cb.grid(row=0, column=1, padx=6, pady=(8, 2), sticky="w")
-        ttk.Button(creator_fr, text="Refresh wallets", style="Tsar.Secondary.TButton", command=self._refresh_creator_wallets)\
+        ttk.Button(creator_fr, text="Refresh wallets", style=STYLE_SEC_BUTTON, command=self._refresh_creator_wallets)\
             .grid(row=0, column=2, padx=6, pady=(8, 2), sticky="e")
 
         # 2) File + Preview
-        file_fr = ttk.LabelFrame(root, text="2) Media & Preview", style="Tsar.TLabelframe")
+        file_fr = ttk.LabelFrame(root, text="2) Media & Preview", style=STYLE_LABELFRAME)
         file_fr.pack(fill="both", expand=True, pady=(6, 6))
         file_fr.columnconfigure(0, weight=1)
         file_fr.columnconfigure(1, weight=0)
 
         self.file_var = StringVar(value="(belum ada file)")
-        ttk.Label(file_fr, textvariable=self.file_var, style="Tsar.Card.Mono.TLabel").grid(row=0, column=0, padx=8, pady=(8, 2), sticky="w")
-        ttk.Button(file_fr, text="Pilih File...", style="Tsar.TButton", command=self.pick_file)\
+        ttk.Label(file_fr, textvariable=self.file_var, style=STYLE_CARD_MONO_LABEL).grid(row=0, column=0, padx=8, pady=(8, 2), sticky="w")
+        ttk.Button(file_fr, text="Pilih File...", style=STYLE_BUTTON, command=self.pick_file)\
             .grid(row=0, column=1, padx=8, pady=(8, 2), sticky="e")
 
         self.meta_var = StringVar(value="size: -, mime: -, sha256: -")
-        ttk.Label(file_fr, textvariable=self.meta_var, style="Tsar.Card.Mono.TLabel")\
+        ttk.Label(file_fr, textvariable=self.meta_var, style=STYLE_CARD_MONO_LABEL)\
             .grid(row=1, column=0, columnspan=2, padx=8, pady=(0, 4), sticky="w")
-        ttk.Label(file_fr, textvariable=self.cost_info_var, style="Tsar.Card.Mono.TLabel")\
+        ttk.Label(file_fr, textvariable=self.cost_info_var, style=STYLE_CARD_MONO_LABEL)\
             .grid(row=2, column=0, columnspan=2, padx=8, pady=(0, 6), sticky="w")
 
         preview_shell = ttk.Frame(file_fr, style="Tsar.Card.TFrame")
@@ -405,36 +416,36 @@ class GraffitiTab(ttk.Frame):
         preview_shell.columnconfigure(0, weight=1)
         self.preview_frame = tk.Frame(preview_shell, background=self.theme.card_bg, height=260)
         self.preview_frame.grid(row=0, column=0, sticky="nsew")
-        ttk.Label(self.preview_frame, textvariable=self.preview_status_var, style="Tsar.Card.Mono.TLabel")\
+        ttk.Label(self.preview_frame, textvariable=self.preview_status_var, style=STYLE_CARD_MONO_LABEL)\
             .pack(anchor="center", pady=8)
 
         # 3) Upload & Broadcast
-        post_fr = ttk.LabelFrame(root, text="3) Upload & Broadcast POST", style="Tsar.TLabelframe")
+        post_fr = ttk.LabelFrame(root, text="3) Upload & Broadcast POST", style=STYLE_LABELFRAME)
         post_fr.pack(fill="x", pady=(2, 4))
         self.post_info_var = StringVar(value="Pilih file, lalu upload. Password akan diminta saat sign.")
-        ttk.Label(post_fr, textvariable=self.post_info_var, style="Tsar.Card.Mono.TLabel")\
+        ttk.Label(post_fr, textvariable=self.post_info_var, style=STYLE_CARD_MONO_LABEL)\
             .grid(row=0, column=0, columnspan=3, padx=8, pady=(8, 4), sticky="w")
         self.post_send_btn = ttk.Button(
             post_fr,
             text="Upload & Broadcast POST",
-            style="Tsar.TButton",
+            style=STYLE_BUTTON,
             state="disabled",
             command=self._start_upload_and_broadcast,
         )
         self.post_send_btn.grid(row=1, column=0, padx=8, pady=(4, 8), sticky="w")
-        ttk.Label(post_fr, text="Send tab akan di-prefill untuk review manual bila perlu.", style="Tsar.Card.Mono.TLabel")\
+        ttk.Label(post_fr, text="Send tab akan di-prefill untuk review manual bila perlu.", style=STYLE_CARD_MONO_LABEL)\
             .grid(row=1, column=1, padx=8, pady=(4, 8), sticky="e")
         self.pbar = ttk.Progressbar(
             post_fr,
             mode="determinate",
             length=320,
-            style="Horizontal.Tsar.TProgressbar",
+            style=STYLE_H_PROGRESS,
             maximum=100,
             value=0,
         )
         self.pbar.grid(row=2, column=0, columnspan=3, padx=8, pady=(0, 6), sticky="we")
-        self.receipt_var = StringVar(value="receipt: -")
-        ttk.Label(post_fr, textvariable=self.receipt_var, style="Tsar.Card.Mono.TLabel")\
+        self.receipt_var = StringVar(value=TEXT_RECEIPT_NONE)
+        ttk.Label(post_fr, textvariable=self.receipt_var, style=STYLE_CARD_MONO_LABEL)\
             .grid(row=3, column=0, columnspan=3, padx=8, pady=(0, 8), sticky="w")
 
     # ---- actions ----
@@ -610,7 +621,7 @@ class GraffitiTab(ttk.Frame):
                 self._show_pdf_page(0)
                 
             except Exception as e:
-                log.exception("Unhandled exception")
+                log.exception(MSG_UNHANDLED_EXC)
                 tk.Label(
                     self.preview_frame,
                     text=f"PDF preview gagal: {str(e)}",
@@ -679,7 +690,7 @@ class GraffitiTab(ttk.Frame):
             self.preview_status_var.set(f"PDF preview (Pages {page_num + 1}/{self._pdf_total_pages})")
             
         except Exception as e:
-            log.exception("Unhandled exception")
+            log.exception(MSG_UNHANDLED_EXC)
             tk.Label(
                 self.preview_frame,
                 text=f"Failed to Preview PDF Pages: {str(e)}",
@@ -720,7 +731,7 @@ class GraffitiTab(ttk.Frame):
             tv.column(c, width=w, stretch=(c == "art_id"))
         tv.pack(fill="both", expand=True, padx=8, pady=8)
         status_var = StringVar(value="Load catalog...")
-        ttk.Label(top, textvariable=status_var, style="Tsar.Card.Mono.TLabel").pack(anchor="w", padx=8, pady=(0, 8))
+        ttk.Label(top, textvariable=status_var, style=STYLE_CARD_MONO_LABEL).pack(anchor="w", padx=8, pady=(0, 8))
         self._catalog_map_local = {}
 
         menu = tk.Menu(top, tearoff=0)
@@ -781,7 +792,7 @@ class GraffitiTab(ttk.Frame):
         try:
             self.controller.process_file(path)
         except Exception as e:
-            log.exception("Unhandled exception")
+            log.exception(MSG_UNHANDLED_EXC)
             messagebox.showerror("Graffiti", f"Failed to read file: {e}")
             return
 
@@ -804,7 +815,7 @@ class GraffitiTab(ttk.Frame):
         )
         self._render_preview()
         self._update_cost_info()
-        self.receipt_var.set("receipt: -")
+        self.receipt_var.set(TEXT_RECEIPT_NONE)
         if self.post_info_var:
             self.post_info_var.set("The file is ready. Click Upload & Broadcast when ready.")
         if self.post_send_btn:
@@ -823,14 +834,14 @@ class GraffitiTab(ttk.Frame):
         try:
             self.controller.prepare_upload(creator_addr)
         except Exception as exc:
-            log.exception("Unhandled exception")
+            log.exception(MSG_UNHANDLED_EXC)
             messagebox.showerror("Graffiti", f"Failed to compute art_id: {exc}")
             return
 
         if self.post_send_btn:
             self.post_send_btn.config(state="disabled")
         self.pbar["value"] = 0
-        self.receipt_var.set("receipt: -")
+        self.receipt_var.set(TEXT_RECEIPT_NONE)
         if self.post_info_var:
             self.post_info_var.set("Uploading blob to storage node...")
         self._begin_upload()
@@ -862,7 +873,7 @@ class GraffitiTab(ttk.Frame):
             if isinstance(extra, dict) and extra.get("reason"):
                 detail = f"{detail} ({extra.get('reason')})"
             messagebox.showerror("Graffiti", f"Upload failed: {detail}")
-            self.receipt_var.set("receipt: -")
+            self.receipt_var.set(TEXT_RECEIPT_NONE)
             if self.controller._upload_candidates:
                 if self.post_info_var:
                     self.post_info_var.set("Retrying upload on another storage node...")
@@ -884,7 +895,7 @@ class GraffitiTab(ttk.Frame):
                 else:
                     self.post_info_var.set("Upload complete.")
         except Exception as exc:
-            log.exception("Unhandled exception")
+            log.exception(MSG_UNHANDLED_EXC)
             messagebox.showerror("Graffiti", f"Prepare POST failed: {exc}")
 
     def _prepare_post_plan_preupload(self, storer_meta: Dict[str, Any], receipt_id: str, art_id: str) -> None:
@@ -907,7 +918,7 @@ class GraffitiTab(ttk.Frame):
             self.app.send_tab.set_amount(str(plan["fee_sats"]))
             self.app.send_tab.set_opret_hex(plan["opret_hex"])
         except Exception as exc:
-            log.exception("Unhandled exception")
+            log.exception(MSG_UNHANDLED_EXC)
             raise RuntimeError(f"prefill send tab failed: {exc}") from exc
 
     def _broadcast_post_tx(self, auto: bool = False, after_success=None) -> None:
@@ -955,7 +966,7 @@ class GraffitiTab(ttk.Frame):
                 on_done=on_done
             )
         except Exception as exc:
-            log.exception("Unhandled exception")
+            log.exception(MSG_UNHANDLED_EXC)
             messagebox.showerror("Graffiti", f"Broadcast failed: {exc}")
             if self.post_send_btn:
                 self.post_send_btn.config(state="normal")
@@ -1047,7 +1058,7 @@ class GraffitiTab(ttk.Frame):
                 on_done=on_done
             )
         except Exception as exc:
-            log.exception("Unhandled exception")
+            log.exception(MSG_UNHANDLED_EXC)
             messagebox.showerror("Graffiti", f"Broadcast COMMENT gagal: {exc}")
             if self.comment_send_btn:
                 self.comment_send_btn.config(state="normal")
