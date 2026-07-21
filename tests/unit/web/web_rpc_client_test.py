@@ -144,6 +144,9 @@ def test_dispatch_rpc():
         with patch("web.Backend.src.python.web_rpc_client.rpc_receipt", return_value={"status": "ok"}):
             assert rpc._dispatch_rpc("receipt", {"txid": "r"}, "127.0.0.1", 19000) == {"status": "ok"}
             
+        with patch("web.Backend.src.python.web_rpc_client.rpc_history_book", return_value={"status": "ok"}):
+            assert rpc._dispatch_rpc("history_book", {"address": "a"}, "127.0.0.1", 19000) == {"status": "ok"}
+            
         with patch("web.Backend.src.python.web_rpc_client.webdb.prefetch_blocks"):
             assert rpc._dispatch_rpc("prefetch_blocks", None, "127.0.0.1", 19000)["status"] == "ok"
             
@@ -249,4 +252,30 @@ def test_rpc_receipt_race_condition(mock_client):
                         assert res["status"] == "success"
                         assert res.get("regenerated") is True
                         mock_tx.assert_called_once()
+
+def test_rpc_history_book(mock_client):
+    with patch("web.Backend.src.python.web_rpc_client._cache_get", return_value=None):
+        with patch("web.Backend.src.python.web_rpc_client.rpc_address", return_value={"address": "tsar123", "balance": 10}):
+            with patch("web.Backend.src.python.build_history_book.HistoryBookGenerator") as mock_gen:
+                mock_inst = MagicMock()
+                mock_inst.generate_history_book_base64.return_value = {"status": "success"}
+                mock_gen.return_value = mock_inst
+                
+                res = rpc.rpc_history_book(mock_client, "tsar123")
+                assert res["status"] == "success"
+
+def test_rpc_history_book_race_condition(mock_client):
+    with patch("web.Backend.src.python.web_rpc_client._cache_get", return_value={"address": "tsar1"}):
+        with patch("web.Backend.src.python.web_rpc_client.webdb.is_history_book_fresh", return_value=True):
+            with patch("web.Backend.src.python.web_rpc_client.webdb.read_history_book_file", side_effect=FileNotFoundError()):
+                with patch("web.Backend.src.python.web_rpc_client.rpc_address", return_value={"address": "tsar1"}) as mock_addr:
+                    with patch("web.Backend.src.python.build_history_book.HistoryBookGenerator") as mock_gen:
+                        mock_inst = MagicMock()
+                        mock_inst.generate_history_book_base64.return_value = {"status": "success", "regenerated": True}
+                        mock_gen.return_value = mock_inst
+                        
+                        res = rpc.rpc_history_book(mock_client, "tsar1")
+                        assert res["status"] == "success"
+                        assert res.get("regenerated") is True
+                        mock_addr.assert_called_once()
 

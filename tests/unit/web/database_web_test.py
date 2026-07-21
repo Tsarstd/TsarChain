@@ -329,3 +329,35 @@ def test_prefetch_blocks_has_more(mock_store):
     })
     has_more_no = webdb.prefetch_blocks(rpc_call_no_more)
     assert has_more_no is False
+
+def test_history_book_cache(tmp_path):
+    with patch("web.Backend.src.python.database_web.os.path.getmtime", return_value=time.time()):
+        assert webdb.is_history_book_fresh("/does/not/exist", 100) is False
+        
+    f = tmp_path / "history_test.pdf"
+    f.write_bytes(b"pdf_data")
+    assert webdb.is_history_book_fresh(str(f), 100) is True
+    assert webdb.is_history_book_fresh(str(f), -100) is False
+    
+    res = webdb.read_history_book_file(str(f), "tsar123")
+    assert res["status"] == "success"
+    assert res["data_url"].startswith("data:application/pdf;base64,")
+
+def test_history_book_cleanup_and_timer():
+    with patch("threading.Timer") as mock_timer:
+        webdb.schedule_history_book_deletion("tsar123", 10)
+        mock_timer.assert_called_once()
+        
+    with patch("os.path.exists", return_value=True):
+        with patch("os.listdir", return_value=["history_123.pdf"]):
+            with patch("os.path.getmtime", return_value=time.time() - 100):
+                with patch("os.remove") as mock_remove:
+                    webdb.cleanup_history_book_files(50)
+                    mock_remove.assert_called()
+
+def test_history_book_path_traversal():
+    safe_path1 = webdb.get_history_book_file("../../../secret_file")
+    assert ".." not in safe_path1
+    assert "/" not in os.path.basename(safe_path1)
+    
+    assert webdb.get_history_book_file("../..") == ""

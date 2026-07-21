@@ -38,6 +38,7 @@ pub mod networking;
 pub mod validation;
 pub mod graff_merkle;
 pub mod generate_receipt;
+pub mod generate_history_book;
 
 // ---------------------
 // RandomX VM cache
@@ -1000,6 +1001,9 @@ pub fn tsarcore_native(_py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
     
     m.add_class::<generate_receipt::TableRowData>()?;
     m.add_class::<generate_receipt::TxidGridData>()?;
+
+    m.add_function(wrap_pyfunction!(generate_history_book::paginate_history, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_history_book::format_history_direction, m)?)?;
 
     Ok(())
 }

@@ -1,5 +1,5 @@
-from web.Backend.src.python import build_receipt
 import time
+from web.Backend.src.python import build_receipt
 
 def coinbase_tx():
     return {

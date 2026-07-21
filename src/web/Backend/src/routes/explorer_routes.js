@@ -137,6 +137,27 @@ router.get("/receipt", async (req, res, next) => {
   }
 });
 
+router.get("/history_book", async (req, res, next) => {
+  try {
+    const address = req.query.address;
+    if (!address) {
+      return res.status(400).json({ error: "missing_address" });
+    }
+    if (!/^tsar[0-9a-zA-Z]{16,}$/.test(address)) {
+      return res.status(400).json({ error: "invalid_address" });
+    }
+
+    const data = await svc.getHistoryBook(address);
+    if (data.status === "error") {
+      return res.status(400).json({ error: data.message });
+    }
+    
+    res.json({ status: "ok", data });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/network", async (_req, res, next) => {
   try {
     const snap = await svc.getNetwork();

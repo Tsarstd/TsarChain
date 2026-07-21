@@ -13,7 +13,7 @@ CFG.WALLET_RPC_MIN_INTERVAL = 0.0  # Bypass RPC pacing
 
 from concurrent.futures import ThreadPoolExecutor
 from tsarchain.utils.benchmarks import benchmark
-from web.Backend.src.python import build_receipt
+from web.Backend.src.python import build_receipt, build_history_book
 from kremlin.services.rpc_kremlin import NodeClient
 from web.Backend.src.python import database_web as webdb
 from tsarchain.network.protocol import load_or_create_keypair_at
@@ -87,6 +87,60 @@ def rpc_receipt(client, txid: str): # Receipt TXID Generator
         
         # Schedule file deletion after 30 seconds
         webdb.schedule_receipt_deletion(txid_norm, delay_seconds=RECEIPT_TTL)
+        
+    return result
+
+
+@benchmark(label="rpc_history_book", threshold_ms=15.0)
+def rpc_history_book(client, address: str):
+    addr_norm = str(address or "").strip().lower()
+    if not addr_norm:
+        return {"status": "error", "message": "Missing address"}
+    
+    file_path = webdb.get_history_book_file(addr_norm)
+    cache_key = _cache_key("history_book", addr_norm)
+    cached = _cache_get(cache_key, refresh_ttl=True)
+
+    if cached is not None:
+        if webdb.is_history_book_fresh(file_path, max_age_seconds=RECEIPT_TTL):
+            # File exists and is fresh (< 30 seconds)
+            try:
+                result = webdb.read_history_book_file(file_path, addr_norm)
+                if result is not None:
+                    return result
+            except FileNotFoundError:
+                # File was deleted by the cleanup thread between the check and read
+                pass
+            
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+        else:
+            # File is stale (> 30 seconds), clean it up
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+
+    tx_data = rpc_address(client, addr_norm)
+    if isinstance(tx_data, dict) and tx_data.get("error"):
+        return {"status": "error", "message": f"Failed to fetch address: {tx_data.get('error')}"}
+    
+    output_dir = "data/web/history_books"
+    hb_gen = build_history_book.HistoryBookGenerator(output_dir)
+    result = hb_gen.generate_history_book_base64(tx_data)
+    if result.get("status") == "success" and addr_norm:
+        cache_info = {
+            "address": addr_norm,
+            "file_path": file_path,
+            "generated_at": int(time.time()),
+            "scheduled_deletion": int(time.time()) + RECEIPT_TTL
+        }
+        _cache_set(cache_key, cache_info, ttl_sec=RECEIPT_TTL)
+        webdb.schedule_history_book_deletion(addr_norm, delay_seconds=RECEIPT_TTL)
         
     return result
 
@@ -518,6 +572,8 @@ def _dispatch_rpc(op: str, param: object | None, host: str, port: int):
     
     if op == "receipt":
         return rpc_receipt(client, param_norm)
+    if op == "history_book":
+        return rpc_history_book(client, param_norm)
     if op == "network":
         return rpc_network(client)
     if op == "block":
@@ -585,6 +641,7 @@ def _worker_loop() -> None:
         current_time = time.time()
         if current_time - _last_cleanup > 60:  # Every 1 minute
             webdb.cleanup_receipt_files(35)  # Clean files > 35s (5s buffer)
+            webdb.cleanup_history_book_files(35)
             _last_cleanup = current_time
         
         host, port = _parse_host_port(req.get("host"), req.get("port"))

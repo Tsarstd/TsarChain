@@ -323,15 +323,15 @@ You can look the detailed project folder tree and technical JSON schemas on arch
 - There's no **testnet** yet, no **mainnet** yet,
 - There are no promises of **riches** here.
 - There are still many **bugs to fix**. If you want to test publicly, use your own private VPS.
+- This project is the result of "vibe coding". for a hobby and to hone skills.
 
 ---
 
 ## 🗺️ Roadmap
 
-- Graffiti & Storage Node incentives
-- Exploring & View Graffiti art in Kremlin Wallet
 - Mobile app 'Graffiti'
 - The Voice Sovereignty
+- and get a job 🔥
 
 ---
 

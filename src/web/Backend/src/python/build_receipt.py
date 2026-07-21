@@ -330,12 +330,22 @@ class PaymentReceiptGenerator:
         return y_start + 4 * grid_data.line_height + 15
 
 
-    def _draw_table_row(self, draw, y_position, label, value, 
-                            font_label, font_value, page_width=800,
-                            is_amount=False, amount_value=None):
+    def _draw_table_row(
+        self,
+        draw,
+        y_position,
+        label,
+        value, 
+        font_label,
+        font_value,
+        page_width=800,
+        is_amount=False,
+        amount_value=None
+    ):
+
         row_data = generated_receipt.draw_table_row_data(
-            y_position, label, value, is_amount, 
-            str(amount_value) if amount_value else None, page_width
+        y_position, label, value, is_amount,
+        str(amount_value) if amount_value else None, page_width
         )
         
         # Draw label

@@ -135,6 +135,67 @@ def cleanup_receipt_files(max_age_seconds: int):
 
 # ============= RECEIPT CACHE END ==============
 
+# ============= HISTORY BOOK CACHE HELPER ==============
+
+def get_history_book_file(address: str) -> str:
+    addr_norm = str(address or "").strip().lower()
+    addr_safe = os.path.basename(addr_norm).replace("..", "").replace("/", "").replace("\\", "")
+    if not addr_safe:
+        return ""
+    output_dir = "data/web/history_books"
+    os.makedirs(output_dir, exist_ok=True)
+    return os.path.join(output_dir, f"history_{addr_safe[:16]}.pdf")
+
+def is_history_book_fresh(file_path: str, max_age_seconds: int) -> bool:
+    if not os.path.exists(file_path):
+        return False
+    
+    try:
+        file_age = time.time() - os.path.getmtime(file_path)
+        return file_age <= max_age_seconds
+    except Exception:
+        return False
+
+def read_history_book_file(file_path: str, address: str) -> dict:
+    with open(file_path, "rb") as f:
+        pdf_bytes = f.read()
+    
+    base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+    return {
+        "status": "success",
+        "message": "History Book generated successfully (from cache)",
+        "data_url": f"data:application/pdf;base64,{base64_pdf}",
+        "filename": f"history_{address}.pdf",
+        "size_bytes": len(pdf_bytes)
+    }
+
+def schedule_history_book_deletion(address: str, delay_seconds: int):
+    def delete_file():
+        file_path = get_history_book_file(address)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            log.debug(f"Auto-deleted history book file after {delay_seconds}s: {file_path}")
+    
+    timer = threading.Timer(delay_seconds, delete_file)
+    timer.daemon = True
+    timer.start()
+
+def cleanup_history_book_files(max_age_seconds: int):
+    output_dir = "data/web/history_books"
+    if not os.path.exists(output_dir):
+        return
+    
+    current_time = time.time()
+    for filename in os.listdir(output_dir):
+        if filename.endswith('.pdf'):
+            file_path = os.path.join(output_dir, filename)
+            file_age = current_time - os.path.getmtime(file_path)
+            if file_age > max_age_seconds:
+                os.remove(file_path)
+                log.debug(f"Cleaned up stale history book file: {filename} (age: {file_age:.1f}s)")
+
+# ============= HISTORY BOOK CACHE END ==============
+
 def _is_expired(entry: dict, now_ts: Optional[int] = None) -> bool:
     now_ts = int(now_ts or time.time())
     ts = int(entry.get("ts") or 0)

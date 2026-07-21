@@ -1,5 +1,5 @@
 import PropTypes from "prop-types";
-import { FaCopy } from "react-icons/fa";
+import { FaCopy, FaDownload } from "react-icons/fa";
 import { useState, useEffect } from "react";
 import { getStatusBadge, getDirectionBadge } from "../SearchUX";
 import { useRenderHelpers, copyToClipboard } from "../SearchHelpers";
@@ -91,6 +91,31 @@ const ResultAddress = ({ data, onSearchClick }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   const [copyStatus, setCopyStatus] = useState("");
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const handleDownloadHistory = async () => {
+    setIsDownloading(true);
+    try {
+      const response = await fetch(`/api/history_book?address=${data.address}`);
+      const resData = await response.json();
+      
+      if (resData.status === "ok" && resData.data?.data_url) {
+        const link = document.createElement("a");
+        link.href = resData.data.data_url;
+        link.download = resData.data.filename || `history_${data.address.substring(0, 16)}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } else {
+        alert(resData.data?.message || resData.error || "Failed to download history book.");
+      }
+    } catch (error) {
+      console.error("Error downloading history book:", error);
+      alert("Error downloading history book.");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   useEffect(() => {
     setCurrentPage(1);
@@ -298,6 +323,16 @@ const ResultAddress = ({ data, onSearchClick }) => {
           >
             <span><FaCopy /></span>
             {copyStatus || "Copy"}
+          </button>
+
+          <button
+            onClick={handleDownloadHistory}
+            disabled={isDownloading}
+            className={`action-button receipt-button ${isDownloading ? 'disabled' : ''}`}
+            style={{ marginLeft: '10px' }}
+          >
+            <span><FaDownload /></span>
+            {isDownloading ? "Generating..." : "Download Book"}
           </button>
         </div>
       </div>

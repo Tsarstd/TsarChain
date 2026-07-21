@@ -241,6 +241,11 @@ class ExplorerService {
     return receipt;
   }
 
+  async getHistoryBook(address) {
+    const data = await rpcCall("history_book", address, this.nodeHost, this.nodePort);
+    return data;
+  }
+
   async getNetwork() {
     const res = await rpcCall("network", null, this.nodeHost, this.nodePort);
     return res;
