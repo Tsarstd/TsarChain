@@ -25,24 +25,6 @@ class UTXOValidator:
 
 
     def ensure_utxodb(self) -> Optional[UTXODB]:
-        if self.blockchain.in_memory:
-            mem_store = getattr(self.blockchain, "_in_memory_utxodb", None)
-            tip_state = getattr(self.blockchain, "_in_memory_utxo_tip", -1)
-            if mem_store is None:
-                mem_store = UTXODB(persist=False)
-                self.blockchain._in_memory_utxodb = mem_store
-                self.blockchain._in_memory_utxo_tip = -1
-            if tip_state != self.blockchain.height:
-                # rebuild in-place (broadcast/mempool) stay valid
-                mem_store.utxos.clear()
-                mem_store._dirty = False
-                mem_store._dirty_keys.clear()
-                mem_store._removed_keys.clear()
-                mem_store._rewrite_all = False
-                mem_store.rebuild_from_chain(self.blockchain.chain)
-                self.blockchain._in_memory_utxo_tip = self.blockchain.height
-            return mem_store
-        
         if self.blockchain._utxodb is None:
             self.blockchain._utxodb = UTXODB()
             self.blockchain._utxo_dirty = False
@@ -54,14 +36,10 @@ class UTXOValidator:
 
 
     def mark_utxo_dirty(self) -> None:
-        if self.blockchain.in_memory:
-            return
         self.blockchain._utxo_dirty = True
 
 
     def maybe_flush_utxo(self, *, force: bool = False) -> None:
-        if self.blockchain.in_memory:
-            return
         store = self.ensure_utxodb()
         if store is None:
             return
@@ -88,7 +66,7 @@ class UTXOValidator:
 
 
     def _sync_utxo_store(self, *, force: bool = False) -> None:
-        if self.blockchain.in_memory or self.blockchain._utxodb is None:
+        if self.blockchain._utxodb is None:
             return
         if self.blockchain._utxo_synced and not force:
             return

@@ -181,6 +181,8 @@ class ReceiveHandler(BroadcastHandlerProxy):
 
 
     def _validate_block_before_add(self, block: Block, block_id: str, potential_fork: bool, origin: Tuple[str, int] | None, peers: Set[Tuple[str, int]], addr, origin_port) -> bool:
+        # Defer full validation to the fork resolution path; downstream logic (swap_tip_if_better/add_block)
+        # enforces all consensus rules (PoW, UTXO, sigops, etc.) against the correct parent state.
         if potential_fork:
             return True
         if not self._native_precheck_block(block):
@@ -252,8 +254,8 @@ class ReceiveHandler(BroadcastHandlerProxy):
                     opts,
                 )
         except Exception:
-            log.exception("[_native_precheck_block] validator failed; falling back")
-            return True
+            log.error("[_native_precheck_block] validator failed; falling back")
+            return False
 
         if not ok:
             blk_label = block.hash().hex()[:12]
@@ -474,8 +476,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
             if potential_fork:
                 targets = [origin] if origin else list(peers)
                 for p in targets:
-                    CFG.ENABLE_FULL_SYNC = True
-                    self.request_full_sync(p)
+                    self.request_full_sync(p, force=True)
         return ok, old_tip
 
 

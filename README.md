@@ -34,7 +34,6 @@ Graffiti Protocol focuses on **Voice Sovereignty**: preserving *cultural archive
 - [Getting Started](#-getting-started)
 - [Quickstart](#️-quickstart)
 - [Config Codebase (Preview)](#️-config-codebase-preview)
-- [Mining Modes](#️-mining-modes)
 - [Project & Data Structures](#️-project--data-structures)
 - [Security Notes](#-security-notes)
 - [Roadmap](#️-roadmap)
@@ -228,9 +227,6 @@ Make sure your virtual environment is activated, then run any of the application
 
 **Run a Miner/Node**
 ```bash
-# Stateless CLI miner (no on-disk blockchain, just hashing & receive ephemeral mempool)
-python apps/cli_miner.py
-
 # Full node + miner (keeps blockchain DB + snapshot gateway)
 python apps/cli_node_miner.py
 
@@ -295,14 +291,6 @@ EDA_EASE_MULTIPLIER     = 2.0
 
 ---
 
-## ⛏️ Mining Modes
-
-- **Stateless CLI Miner (`apps/cli_miner.py`)** keeps chain data in-memory, pulls the latest tip + a small header window from trusted seeds to derive difficulty, mines empty blocks (coinbase only), and rechecks tip height/hash before broadcasting to avoid duplicating a moved tip. No mempool, no snapshots/DB.
-- **Full Node CLI Miner (`apps/cli_node_miner.py`)** persists the entire blockchain, handles snapshot bootstrap, wallet gateway traffic, and can run `--node-only` for infra roles.
-
-`cli_miner.py` for raw hash power, and `cli_node_miner.py` when you need full-node responsibilities.
-
----
 
 ## 🏗️ Project & Data Structures
 

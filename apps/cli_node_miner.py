@@ -21,9 +21,6 @@ Safety & behavior
 - Validates headers, difficulty, timestamps, and full block rules.
 - Keeps local DB, mempool policies apply (size/fees/sanity checks).
 - Reorg-safe: cancels current work and re-mines on new best tip.
-
-Notes
-- For mining-only rigs without mempool, use `cli_miner.py`.
 """
 
 from __future__ import annotations

@@ -42,8 +42,7 @@ class ChainStorage:
     def save_chain(self, *, force_full: bool = False):
         if CFG.CHAIN_FORCE_FULL_FLUSH:
             force_full = True
-        if self.blockchain.in_memory:
-            return
+
         backup_tip = None
         backup_ts = None
         with self.blockchain.lock:
@@ -78,8 +77,6 @@ class ChainStorage:
 
 
     def load_chain(self):
-        if self.blockchain.in_memory:
-            return
         meta = {}
         data_list = []
         if kv_enabled():
@@ -108,20 +105,16 @@ class ChainStorage:
         else:
             self.blockchain._snapshot_last_backup_height = self.blockchain._persisted_height
             
-        if not self.blockchain.in_memory:
-            self.blockchain.ensure_utxodb()
-            self.blockchain._utxo_last_flush_height = getattr(self.blockchain, "height", len(self.blockchain.chain) - 1)
-            self.blockchain._utxo_dirty = False
-            tip_ts = None
-            if self.blockchain.chain:
-                tip_ts = int(getattr(self.blockchain.chain[-1], "timestamp", 0) or 0)
-            annotate_local_snapshot_meta(height=getattr(self.blockchain, "height", len(self.blockchain.chain) - 1), tip_timestamp=tip_ts)
+        self.blockchain.ensure_utxodb()
+        self.blockchain._utxo_last_flush_height = getattr(self.blockchain, "height", len(self.blockchain.chain) - 1)
+        self.blockchain._utxo_dirty = False
+        tip_ts = None
+        if self.blockchain.chain:
+            tip_ts = int(getattr(self.blockchain.chain[-1], "timestamp", 0) or 0)
+        annotate_local_snapshot_meta(height=getattr(self.blockchain, "height", len(self.blockchain.chain) - 1), tip_timestamp=tip_ts)
 
 
     def save_state(self):
-        if self.blockchain.in_memory:
-            return
-        # Compute based on in-memory chain; avoid JSON IO when KV enabled
         blocks_count = len(self.blockchain.chain)
         self.blockchain.total_blocks = blocks_count
         self.blockchain.total_supply = self.blockchain.calculate_total_supply()
@@ -158,8 +151,6 @@ class ChainStorage:
 
 
     def load_state(self):
-        if self.blockchain.in_memory:
-            return
         data = self._read_snapshot_state()
         self.blockchain.total_supply = int(data.get("total_supply", 0) or 0)
         self.blockchain.total_blocks = int(data.get("total_blocks", 0) or 0)
@@ -379,7 +370,7 @@ class ChainStorage:
 
 
     def _prune_chain_store(self, start_height: int) -> None:
-        if self.blockchain.in_memory or not kv_enabled():
+        if not kv_enabled():
             return
         if start_height < 0:
             start_height = 0
@@ -394,8 +385,6 @@ class ChainStorage:
 
 
     def _reset_chain_store(self) -> None:
-        if self.blockchain.in_memory:
-            return
         if kv_enabled():
             clear_db('chain')
         else:
@@ -412,8 +401,6 @@ class ChainStorage:
 
 
     def _backup_snapshot_enabled(self) -> bool:
-        if self.blockchain.in_memory:
-            return False
         return bool(CFG.BACKUP_SNAPSHOT)
 
 
@@ -582,8 +569,6 @@ class ChainStorage:
 
 
     def _read_snapshot_state(self) -> dict:
-        if self.blockchain.in_memory:
-            return {}
         data: dict = {}
         if kv_enabled():
             items = {
@@ -887,7 +872,7 @@ class ChainStorage:
 
 
     def _chain_journal_enabled(self) -> bool:
-        return (not self.blockchain.in_memory) and (not kv_enabled())
+        return not kv_enabled()
 
 
     def _chain_journal_size(self) -> int:

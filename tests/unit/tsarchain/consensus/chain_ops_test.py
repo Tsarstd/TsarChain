@@ -29,12 +29,11 @@ Tested Scenarios:
 
 class DummyBlockchain:
     
-    def __init__(self, in_memory=True):
+    def __init__(self):
         self.chain_ops = ChainOperations(self)
         self.lock = threading.RLock()
 
         self.chain = []
-        self.in_memory = in_memory
         self.total_supply = 0
         self.total_blocks = 0
         self.pending_blocks = []
@@ -42,6 +41,10 @@ class DummyBlockchain:
         self.save_chain_called = False
         self.mark_dirty_called = False
         self.rebuild_cache_called = False
+
+    @property
+    def height(self):
+        return len(self.chain) - 1
 
     def calculate_total_supply(self):
         return self.total_supply
@@ -99,7 +102,7 @@ class DummyBlockchain:
 # ------------------------------------------------------------
 @pytest.fixture
 def dummy_chain():
-    return DummyBlockchain(in_memory=True)
+    return DummyBlockchain()
 
 @pytest.fixture
 def mock_block():
@@ -133,9 +136,9 @@ def test_replace_with_success_higher_work(mocker, dummy_chain):
     # ASSERT: Our chain must transform into their chain.
     assert dummy_chain.chain == other.chain
     assert dummy_chain.total_blocks == len(other.chain)
-    assert dummy_chain.save_state_called is False
-    assert dummy_chain.save_chain_called is False
-    assert dummy_chain.mark_dirty_called is False
+    assert dummy_chain.save_state_called is True
+    assert dummy_chain.save_chain_called is True
+    assert dummy_chain.mark_dirty_called is True
 
 
 def test_replace_with_fail_invalid_chain(mocker, dummy_chain):
@@ -230,8 +233,8 @@ def test_replace_with_fail_deep_reorg(mocker, dummy_chain):
 
 class ExtendedDummyBlockchain(DummyBlockchain):
     """A dummy with a basic implementation for the called method."""
-    def __init__(self, in_memory=True):
-        super().__init__(in_memory)
+    def __init__(self):
+        super().__init__()
         self._utxo_dirty = False
         self._utxo_last_flush_height = -1
         self._utxo_synced = False
@@ -348,7 +351,7 @@ def test_add_block_genesis_success(mocker):
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ZERO_HASH', b"0000")
     mocker.patch('tsarchain.consensus.chain_ops.GENESIS_HASH', None)
 
-    bc = ExtendedDummyBlockchain(in_memory=True)
+    bc = ExtendedDummyBlockchain()
     genesis = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"genesis")
     bc.ensure_utxodb = MagicMock(return_value=MagicMock())
 
@@ -358,14 +361,14 @@ def test_add_block_genesis_success(mocker):
     assert bc.chain[0] == genesis
     assert bc.total_blocks == 1
     assert bc._hash_cache.get(0) == genesis.hash().hex()
-    assert bc.save_chain_calls == 0
+    assert bc.save_chain_calls == 1
 
 def test_add_block_genesis_hash_mismatch(mocker):
     """If GENESIS_HASH is set and the genesis hash does not match -> ValueError."""
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ZERO_HASH', b"0000")
     mocker.patch('tsarchain.consensus.chain_ops.GENESIS_HASH', b"expected_genesis_hash")
 
-    bc = ExtendedDummyBlockchain(in_memory=True)
+    bc = ExtendedDummyBlockchain()
     genesis = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"wrong_hash")
     with pytest.raises(ValueError, match="does not match TSAR_GENESIS_HASH"):
         bc.add_block(genesis)
@@ -375,7 +378,7 @@ def test_add_block_non_genesis_success(mocker):
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ZERO_HASH', b"0000")
     mocker.patch('tsarchain.consensus.chain_ops.GENESIS_HASH', None)
 
-    bc = ExtendedDummyBlockchain(in_memory=True)
+    bc = ExtendedDummyBlockchain()
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     bc.add_block(block0)
 
@@ -391,7 +394,7 @@ def test_add_block_non_genesis_success(mocker):
 
 def test_add_block_height_mismatch(mocker):
     """Height block does not match last_height+1 -> ValueError."""
-    bc = ExtendedDummyBlockchain(in_memory=True)
+    bc = ExtendedDummyBlockchain()
     block0 = create_mock_block(height=0, prev_hash=b"0000")
     bc.add_block(block0)
     block_wrong = create_mock_block(height=2, prev_hash=b"block0")  # should be 1
@@ -400,7 +403,7 @@ def test_add_block_height_mismatch(mocker):
 
 def test_add_block_prev_hash_mismatch(mocker):
     """prev_block_hash does not match the hash of the last block -> ValueError."""
-    bc = ExtendedDummyBlockchain(in_memory=True)
+    bc = ExtendedDummyBlockchain()
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     bc.add_block(block0)
     block_wrong = create_mock_block(height=1, prev_hash=b"wrong_prev", hash_val=b"block1")
@@ -414,7 +417,7 @@ def test_swap_tip_if_better_success_higher_work(mocker):
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', True)
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_REORG_LIMIT', False)
 
-    bc = ExtendedDummyBlockchain(in_memory=True)
+    bc = ExtendedDummyBlockchain()
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     block1 = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block1")
     bc.chain = [block0, block1]
@@ -433,7 +436,7 @@ def test_swap_tip_if_better_success_higher_work(mocker):
 def test_swap_tip_if_better_fail_lower_work(mocker):
     """Tip candidate with lower chainwork -> None."""
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', True)
-    bc = ExtendedDummyBlockchain(in_memory=True)
+    bc = ExtendedDummyBlockchain()
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     block1 = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block1")
     bc.chain = [block0, block1]
@@ -448,7 +451,7 @@ def test_swap_tip_if_better_fail_lower_work(mocker):
 
 def test_swap_tip_if_better_fail_parent_mismatch(mocker):
     """Candidate prev_block_hash does not match parent -> None."""
-    bc = ExtendedDummyBlockchain(in_memory=True)
+    bc = ExtendedDummyBlockchain()
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     block1 = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block1")
     bc.chain = [block0, block1]
@@ -458,7 +461,7 @@ def test_swap_tip_if_better_fail_parent_mismatch(mocker):
 
 def test_swap_tip_if_better_fail_height_mismatch(mocker):
     """Height candidate does not match -> None."""
-    bc = ExtendedDummyBlockchain(in_memory=True)
+    bc = ExtendedDummyBlockchain()
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     block1 = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block1")
     bc.chain = [block0, block1]
@@ -469,7 +472,7 @@ def test_swap_tip_if_better_fail_height_mismatch(mocker):
 def test_swap_tip_if_better_fail_invalid_candidate_chain(mocker):
     """Candidate chain validation fails -> None."""
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', False)
-    bc = ExtendedDummyBlockchain(in_memory=True)
+    bc = ExtendedDummyBlockchain()
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     block1 = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block1")
     bc.chain = [block0, block1]
@@ -481,7 +484,7 @@ def test_swap_tip_if_better_fail_invalid_candidate_chain(mocker):
 def test_swap_tip_if_better_equal_work_hash_tie_win(mocker):
     """Same Work: smaller candidate hash -> swap successful."""
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', True)
-    bc = ExtendedDummyBlockchain(in_memory=True)
+    bc = ExtendedDummyBlockchain()
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     block1 = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block1")  # hash = b"block1"
     bc.chain = [block0, block1]
@@ -496,7 +499,7 @@ def test_swap_tip_if_better_equal_work_hash_tie_win(mocker):
 def test_swap_tip_if_better_equal_work_hash_tie_lose(mocker):
     """Same Work: larger candidate hash -> None."""
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', True)
-    bc = ExtendedDummyBlockchain(in_memory=True)
+    bc = ExtendedDummyBlockchain()
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     block1 = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block1")
     bc.chain = [block0, block1]
@@ -533,7 +536,7 @@ def test_prune_mempool_confirmed_basic(mocker):
     block = MagicMock()
     block.transactions = [coinbase, tx1, tx2]
 
-    bc = ExtendedDummyBlockchain(in_memory=True)
+    bc = ExtendedDummyBlockchain()
     pool_mock = MagicMock()
     pool_mock.remove_many = MagicMock(return_value=2)
     pool_mock.drop_conflicts = MagicMock(return_value=1)
@@ -561,7 +564,7 @@ def test_prune_mempool_confirmed_no_txs(mocker):
     """If the block has no transactions other than the coinbase, no remove calls are made."""
     block = MagicMock()
     block.transactions = [MagicMock(is_coinbase=True)]
-    bc = ExtendedDummyBlockchain(in_memory=True)
+    bc = ExtendedDummyBlockchain()
     pool_mock = MagicMock()
     bc.mempool = pool_mock
     bc.chain_ops._prune_mempool_confirmed(block)
@@ -621,7 +624,6 @@ class ValidatorBlockchain:
         self.lock = threading.RLock()
 
         self.chain = []
-        self.in_memory = True
 
     
     def _validate_complete_chain(self, chain):
@@ -775,15 +777,15 @@ def test_validate_complete_chain_invalid_pow(mocker):
     assert bc.chain_ops._validate_complete_chain(chain) is False
     
 # ============================================================
-# TESTS FOR PERSISTENCE MODE (in_memory=False)
+# TESTS FOR PERSISTENCE MODE
 # ============================================================
 
 def test_replace_with_persistent_mode(mocker):
-    """When in_memory=False, replace_with should call save_chain, save_state, and rebuild UTXO."""
+    """replace_with should call save_chain, save_state, and rebuild UTXO."""
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', True)
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_REORG_LIMIT', False)
 
-    bc = ExtendedDummyBlockchain(in_memory=False)
+    bc = ExtendedDummyBlockchain()
     bc.chain = [MagicMock(), MagicMock()]  # local chain
 
     # Mock dependencies
@@ -813,11 +815,11 @@ def test_replace_with_persistent_mode(mocker):
 
 
 def test_add_block_persistent_mode(mocker):
-    """When in_memory=False, add_block should trigger _schedule_persist and UTXO update."""
+    """add_block should trigger _schedule_persist and UTXO update."""
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ZERO_HASH', b"0000")
     mocker.patch('tsarchain.consensus.chain_ops.GENESIS_HASH', None)
 
-    bc = ExtendedDummyBlockchain(in_memory=False)
+    bc = ExtendedDummyBlockchain()
     # Reset call counters
     bc.save_chain_calls = 0
     bc.save_state_calls = 0
@@ -839,11 +841,11 @@ def test_add_block_persistent_mode(mocker):
 
 
 def test_swap_tip_if_better_persistent_mode(mocker):
-    """When in_memory=False, swap_tip_if_better should call save_chain, save_state, and rebuild UTXO."""
+    """swap_tip_if_better should call save_chain, save_state, and rebuild UTXO."""
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', True)
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_REORG_LIMIT', False)
 
-    bc = ExtendedDummyBlockchain(in_memory=False)
+    bc = ExtendedDummyBlockchain()
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     block1 = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block1")
     bc.chain = [block0, block1]

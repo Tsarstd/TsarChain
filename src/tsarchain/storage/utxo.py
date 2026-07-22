@@ -22,7 +22,7 @@ class UTXODB(
     UTXODatabaseMixin,
     BaseDatabase,
 ):
-    def __init__(self, *, persist: bool = True):
+    def __init__(self):
         self.filepath = CFG.UTXOS_FILE
         self.utxos = {}
         self._lock = threading.RLock()
@@ -36,11 +36,7 @@ class UTXODB(
         self._key_to_spk: dict[str, str] = {}
         self._tip_cache = {"height": 0, "ts": 0.0}
         self._tip_cache_ttl = float(CFG.STATE_HEIGHT_CACHE_TTL)
-        self._persist_enabled = bool(persist)
-        if self._persist_enabled:
-            self._load()
-        else:
-            self.utxos.clear()
+        self._load()
         self._graffiti_registry = GraffitiRegistry()
 
 

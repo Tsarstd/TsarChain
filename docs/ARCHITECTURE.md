@@ -23,7 +23,6 @@ This document provides an in-depth technical overview of the Graffiti Protocol. 
     ├── apps/
     │   │
     │   ├── cli_archivist.py                     # Storage Node (Archivist CLI)
-    │   ├── cli_miner.py                         # Miner CLI (Stateless)
     │   ├── cli_node_miner.py                    # Miner CLI (Full Node)
     │   └── wallet.py                            # Wallet GUI (Kremlin Wallet) 
     │

@@ -53,9 +53,8 @@ class GenesisManager:
             g_hash = self.blockchain.chain[0].hash()
             if g_hash != GENESIS_HASH:
                 raise ValueError("[Blockchain] Created genesis does not match TSAR_GENESIS_HASH; aborting")
-        if not self.blockchain.in_memory:
-            self.blockchain.save_chain()
-            self.blockchain.save_state()
+        self.blockchain.save_chain()
+        self.blockchain.save_state()
 
 
     def ensure_genesis(self, miner_address: str, use_cores: int | None = None) -> bool:
@@ -104,17 +103,15 @@ class GenesisManager:
         self.blockchain.chain.append(genesis)
         if GENESIS_HASH is not None and genesis.hash() != GENESIS_HASH:
             raise ValueError("[Genesis] Newly created genesis does not match TSAR_GENESIS_HASH")
-        if not self.blockchain.in_memory:
-            self.blockchain._mark_chain_dirty(genesis.height)
-            self.blockchain.save_chain(force_full=True)
-            store = self.blockchain.ensure_utxodb()
-            if store is not None:
-                store.update(genesis.transactions, block_height=0, autosave=False)
-                self.blockchain.mark_utxo_dirty()
-                self.blockchain.maybe_flush_utxo(force=True)
-            self.blockchain.save_state()
+        self.blockchain._mark_chain_dirty(genesis.height)
+        self.blockchain.save_chain(force_full=True)
+        store = self.blockchain.ensure_utxodb()
 
-        else:
-            self.blockchain.total_supply = self.blockchain.calculate_total_supply()
+        if store is not None:
+            store.update(genesis.transactions, block_height=0, autosave=False)
+            self.blockchain.mark_utxo_dirty()
+            self.blockchain.maybe_flush_utxo(force=True)
+
+        self.blockchain.save_state()
         log.info("genesis block cerated: %s", genesis)
         return genesis

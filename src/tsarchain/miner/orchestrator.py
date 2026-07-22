@@ -309,7 +309,6 @@ class SimpleMiner:
         try:
             _run_snapshot_bootstrap(self.bootstrap_snapshot)
             self.blockchain = Blockchain(
-                in_memory=False,
                 use_cores=self.cores,
                 miner_address=self.address,
             )
@@ -557,7 +556,6 @@ class NodeRunner:
         try:
             _run_snapshot_bootstrap(self.bootstrap_snapshot)
             self.blockchain = Blockchain(
-                in_memory=False,
                 use_cores=None,
                 miner_address=None,
             )

@@ -34,9 +34,6 @@ class ChainOperations:
             self._add_genesis_block(block)
         else:
             self._add_subsequent_block(block)
-            
-        if self.blockchain.in_memory:
-            self.blockchain.ensure_utxodb()
         return True
 
 
@@ -74,20 +71,16 @@ class ChainOperations:
         except Exception:
             log.debug("[add_block] cache genesis hash failed", exc_info=True)
 
-        if not self.blockchain.in_memory:
-            store = self.blockchain.ensure_utxodb()
-            if store is not None:
-                blk_hash = block.hash().hex()
-                store.update(block.transactions, block_height=0, block_hash=blk_hash, autosave=False)
-                self.blockchain.mark_utxo_dirty()
-                self.blockchain._utxo_synced = True
-                self.blockchain._schedule_persist(force_full=True, flush_force=True, save_state=True)
+        store = self.blockchain.ensure_utxodb()
+        if store is not None:
+            blk_hash = block.hash().hex()
+            store.update(block.transactions, block_height=0, block_hash=blk_hash, autosave=False)
+            self.blockchain.mark_utxo_dirty()
+            self.blockchain._utxo_synced = True
+            self.blockchain._schedule_persist(force_full=True, flush_force=True, save_state=True)
 
         self._prune_mempool_confirmed(block)
-        if not self.blockchain.in_memory:
-            self.blockchain._mark_chain_dirty(block.height)
-        else:
-            self.blockchain.total_supply = self.blockchain.calculate_total_supply()
+        self.blockchain._mark_chain_dirty(block.height)
 
 
     def _add_subsequent_block(self, block: Block):
@@ -112,18 +105,14 @@ class ChainOperations:
         except Exception:
             log.debug("[add_block] cache tip hash failed", exc_info=True)
 
-        if not self.blockchain.in_memory:
-            store = self.blockchain.ensure_utxodb()
-            if store is not None:
-                blk_hash = block.hash().hex()
-                store.update(block.transactions, block_height=block.height, block_hash=blk_hash, autosave=False)
-                self.blockchain.mark_utxo_dirty()
+        store = self.blockchain.ensure_utxodb()
+        if store is not None:
+            blk_hash = block.hash().hex()
+            store.update(block.transactions, block_height=block.height, block_hash=blk_hash, autosave=False)
+            self.blockchain.mark_utxo_dirty()
 
         self._prune_mempool_confirmed(block)
-        if not self.blockchain.in_memory:
-            self.blockchain._schedule_persist()
-        else:
-            self.blockchain.total_supply = self.blockchain.calculate_total_supply()
+        self.blockchain._schedule_persist()
 
 
     def _validate_replacement_chain(self, other_chain: "Blockchain"):
@@ -167,18 +156,15 @@ class ChainOperations:
         except Exception:
             log.debug("[replace_with] hash cache rebuild failed", exc_info=True)
 
-        if not self.blockchain.in_memory:
-            self.blockchain._mark_chain_dirty(0)
-            self.blockchain.save_chain(force_full=True)
-            store = self.blockchain.ensure_utxodb()
-            if store is not None:
-                store.rebuild_from_chain(self.blockchain.chain)
-                self.blockchain._utxo_dirty = False
-                self.blockchain._utxo_last_flush_height = self.blockchain.height
-                self.blockchain._utxo_synced = True
-            self.blockchain.save_state()
-        else:
-            self.blockchain.total_supply = self.blockchain.calculate_total_supply()
+        self.blockchain._mark_chain_dirty(0)
+        self.blockchain.save_chain(force_full=True)
+        store = self.blockchain.ensure_utxodb()
+        if store is not None:
+            store.rebuild_from_chain(self.blockchain.chain)
+            self.blockchain._utxo_dirty = False
+            self.blockchain._utxo_last_flush_height = self.blockchain.height
+            self.blockchain._utxo_synced = True
+        self.blockchain.save_state()
 
 
     def _is_valid_tip_candidate(self, block: Block) -> bool:
@@ -233,17 +219,14 @@ class ChainOperations:
         except Exception:
             log.debug("[swap_tip_if_better] cache hash failed", exc_info=True)
 
-        if not self.blockchain.in_memory:
-            self.blockchain._mark_chain_dirty(block.height)
-            self.blockchain.save_chain()
-            store = self.blockchain.ensure_utxodb()
-            if store is not None:
-                store.rebuild_from_chain(self.blockchain.chain)
-                self.blockchain._utxo_dirty = False
-                self.blockchain._utxo_last_flush_height = getattr(self, "height", len(self.blockchain.chain) - 1)
-            self.blockchain.save_state()
-        else:
-            self.blockchain.total_supply = self.blockchain.calculate_total_supply()
+        self.blockchain._mark_chain_dirty(block.height)
+        self.blockchain.save_chain()
+        store = self.blockchain.ensure_utxodb()
+        if store is not None:
+            store.rebuild_from_chain(self.blockchain.chain)
+            self.blockchain._utxo_dirty = False
+            self.blockchain._utxo_last_flush_height = getattr(self, "height", len(self.blockchain.chain) - 1)
+        self.blockchain.save_state()
 
         self._prune_mempool_confirmed(block)
         return old_tip

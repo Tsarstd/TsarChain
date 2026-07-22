@@ -36,7 +36,6 @@ class MockUTXODatabase(UTXODatabaseMixin):
         self._version = 0
         self._tip_cache = {"ts": 0.0, "height": 0}
         self._tip_cache_ttl = 60.0
-        self._persist_enabled = True
         self._meta = {}
         self.saved_data = None
         

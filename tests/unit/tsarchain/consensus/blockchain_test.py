@@ -51,17 +51,22 @@ def mock_kv():
 
 
 @pytest.fixture
-def mock_config():
-    """Mock CFG from utils.config with sensible defaults."""
-    with patch('tsarchain.consensus.blockchain.CFG') as cfg:
-        cfg.ALLOW_AUTO_GENESIS = True
-        cfg.HASH_CACHE_MAX = 100
-        cfg.UTXO_FLUSH_INTERVAL = 10
-        cfg.CHAIN_JOURNAL_FILE = '/tmp/blockchain.journal'
-        cfg.TSAR = 100_000_000
-        cfg.GENESIS_HASH_HEX = ''
-        cfg.ALLOW_AUTO_GENESIS = True
-        yield cfg
+def mock_config(monkeypatch):
+    """Mock CFG attributes safely without replacing CFG with a bare MagicMock."""
+    import tsarchain.consensus.blockchain as bc_mod
+    import tsarchain.consensus.chain_storage as cs_mod
+
+    monkeypatch.setattr(bc_mod.CFG, "ALLOW_AUTO_GENESIS", False)
+    monkeypatch.setattr(bc_mod.CFG, "HASH_CACHE_MAX", 100)
+    monkeypatch.setattr(bc_mod.CFG, "UTXO_FLUSH_INTERVAL", 10)
+    monkeypatch.setattr(bc_mod.CFG, "CHAIN_JOURNAL_FILE", "/tmp/non_existent_journal.file")
+    monkeypatch.setattr(bc_mod.CFG, "BLOCK_FILE", "/tmp/non_existent_blocks.json")
+
+    monkeypatch.setattr(cs_mod.CFG, "ALLOW_AUTO_GENESIS", False)
+    monkeypatch.setattr(cs_mod.CFG, "CHAIN_JOURNAL_FILE", "/tmp/non_existent_journal.file")
+    monkeypatch.setattr(cs_mod.CFG, "BLOCK_FILE", "/tmp/non_existent_blocks.json")
+    monkeypatch.setattr(cs_mod.CFG, "BLOCK_BACKUP_SNAPSHOT", 0)
+    yield bc_mod.CFG
 
 
 @pytest.fixture
@@ -73,29 +78,33 @@ def mock_logger():
         yield logger
 
 
+
+
+
 # -----------------------------------------------------------------------------
 # Tests
 # -----------------------------------------------------------------------------
 
-def test_init_in_memory():
-    """Blockchain initialisation with in_memory=True."""
-    bc = Blockchain(in_memory=True)
-    assert bc.in_memory is True
-    assert bc.chain == []
-    assert bc.total_blocks == 0
-    assert bc.total_supply == 0
-    assert bc.height == -1
-    assert bc.get_last_block() is None
-    assert len(bc._hash_cache) == 0
+def test_init_default(mock_config):
+    """Blockchain default initialisation."""
+    with patch.object(Blockchain, 'load_chain'), patch.object(Blockchain, 'load_state'):
+        bc = Blockchain()
+        assert bc.chain == []
+        assert bc.total_blocks == 0
+        assert bc.total_supply == 0
+        assert bc.height == -1
+        assert bc.get_last_block() is None
+        assert len(bc._hash_cache) == 0
 
 
-def test_init_in_memory_with_miner_address():
-    bc = Blockchain(miner_address="tsar1abc", in_memory=True)
-    assert bc.miner_address == "tsar1abc"
+def test_init_with_miner_address(mock_config):
+    with patch.object(Blockchain, 'load_chain'), patch.object(Blockchain, 'load_state'):
+        bc = Blockchain(miner_address="tsar1abc")
+        assert bc.miner_address == "tsar1abc"
 
 
-def test_property_height():
-    bc = Blockchain(in_memory=True)
+def test_property_height(mock_config):
+    bc = Blockchain()
     block1 = Mock()
     block1.height = 0
     block2 = Mock()
@@ -104,16 +113,16 @@ def test_property_height():
     assert bc.height == 1
 
 
-def test_get_last_block():
-    bc = Blockchain(in_memory=True)
+def test_get_last_block(mock_config):
+    bc = Blockchain()
     block1 = Mock()
     block2 = Mock()
     bc.chain = [block1, block2]
     assert bc.get_last_block() is block2
 
 
-def test_rebuild_hash_cache():
-    bc = Blockchain(in_memory=True)
+def test_rebuild_hash_cache(mock_config):
+    bc = Blockchain()
     # Create blocks with deterministic hashes
     block0 = Mock()
     block0.hash.return_value = b'hash0' + b'\x00' * 28
@@ -128,8 +137,8 @@ def test_rebuild_hash_cache():
     assert bc._hash_cache[1] == (b'hash1' + b'\x00' * 28).hex()
 
 
-def test_get_block_hash_cache():
-    bc = Blockchain(in_memory=True)
+def test_get_block_hash_cache(mock_config):
+    bc = Blockchain()
     block0 = Mock()
     block0.hash.return_value = b'hash0' + b'\x00' * 28
     block0.height = 0
@@ -150,8 +159,8 @@ def test_get_block_hash_cache():
     assert bc.get_block_hash(1) == (b'hash1' + b'\x00' * 28).hex()
 
 
-def test_get_block_hash_fallback():
-    bc = Blockchain(in_memory=True)
+def test_get_block_hash_fallback(mock_config):
+    bc = Blockchain()
     block0 = Mock()
     block0.hash.return_value = b'hash0' + b'\x00' * 28
     block0.height = 0
@@ -185,26 +194,26 @@ def test_reload_chain_from_kv(mock_block_module, mock_kv, mock_config):
          patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed', autospec=True):
              
         mock_load.return_value = None  # tidak mengisi chain
-        bc = Blockchain(in_memory=False)
+        bc = Blockchain()
         assert len(bc.chain) == 1
         assert bc.total_blocks == 1
         assert bc._chain_meta == {'key': 'value'}
 
 
-def test_reload_chain_from_kv_empty(mock_kv):
+def test_reload_chain_from_kv_empty(mock_config, mock_kv):
     """Reload fails when LMDB has no block data."""
     kv_enabled, iter_prefix = mock_kv
     kv_enabled.return_value = True
     iter_prefix.return_value = []  # no data
 
-    bc = Blockchain(in_memory=True)
+    bc = Blockchain()
     result = bc._reload_chain_from_kv()
     assert result is False
     assert bc.chain == []
 
 
-def test_to_dict():
-    bc = Blockchain(in_memory=True)
+def test_to_dict(mock_config):
+    bc = Blockchain()
     block0 = Mock()
     block0.to_dict.return_value = {'height': 0}
     block1 = Mock()
@@ -214,34 +223,33 @@ def test_to_dict():
     assert result == [{'height': 0}, {'height': 1}]
 
 
-def test_from_dict(mock_block_module):
+def test_from_dict(mock_config, mock_block_module):
     data_list = [{'height': 0}, {'height': 1}]
     bc = Blockchain.from_dict(data_list)
 
     assert isinstance(bc, Blockchain)
-    assert bc.in_memory is True
     assert len(bc.chain) == 2
     assert bc.total_blocks == 2
     assert bc.total_supply == 0
     assert mock_block_module.from_dict.call_count == 2
 
 
-def test_attach_mempool():
-    bc = Blockchain(in_memory=True)
+def test_attach_mempool(mock_config):
+    bc = Blockchain()
     mock_pool = Mock()
     bc.attach_mempool(mock_pool)
     assert bc.get_mempool() is mock_pool
 
 
-def test_shutdown_in_memory():
-    bc = Blockchain(in_memory=True)
+def test_shutdown(mock_config):
+    bc = Blockchain()
     with patch.object(bc, '_stop_persist_worker') as mock_stop:
         bc.shutdown()
         mock_stop.assert_called_once()
 
 
 def test_start_persist_worker(mock_config):
-    """Worker thread is started when in_memory=False."""
+    """Worker thread is started on Blockchain init."""
     mock_config.ALLOW_AUTO_GENESIS = False
     with patch('threading.Thread') as mock_thread, \
          patch('queue.Queue') as mock_queue, \
@@ -253,7 +261,7 @@ def test_start_persist_worker(mock_config):
         queue_instance = Mock()
         mock_queue.return_value = queue_instance
 
-        bc = Blockchain(in_memory=False)
+        bc = Blockchain()
         mock_thread.assert_called_once()
         thread_instance.start.assert_called_once()
         assert bc._persist_queue is not None
@@ -270,7 +278,7 @@ def test_schedule_persist(mock_config):
          patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed', autospec=True):
         queue_instance = Mock()
         mock_queue.return_value = queue_instance
-        bc = Blockchain(in_memory=False)
+        bc = Blockchain()
 
         with patch.object(bc, 'save_chain') as mock_save_chain, \
              patch.object(bc, 'maybe_flush_utxo') as mock_flush, \
@@ -307,7 +315,7 @@ def test_stop_persist_worker(mock_config):
         thread_instance = Mock()
         mock_thread.return_value = thread_instance
 
-        bc = Blockchain(in_memory=False)
+        bc = Blockchain()
         bc._persist_thread = thread_instance
         bc._persist_queue = queue_instance
         bc._persist_stop = Mock()
@@ -330,7 +338,7 @@ def test_stop_persist_worker(mock_config):
             assert bc._persist_queue is None
 
 
-def test_init_not_in_memory_auto_genesis_disabled(mock_config):
+def test_init_auto_genesis_disabled(mock_config):
     """When ALLOW_AUTO_GENESIS=False and no chain exists, blockchain stays empty."""
     mock_config.ALLOW_AUTO_GENESIS = False
 
@@ -341,7 +349,7 @@ def test_init_not_in_memory_auto_genesis_disabled(mock_config):
         patch('tsarchain.consensus.blockchain.GenesisManager._enforce_genesis_lock', autospec=True) as mock_enforce:
 
         mock_load_chain.return_value = None  # no chain loaded
-        bc = Blockchain(in_memory=False)
+        bc = Blockchain()
         assert bc.chain == []
         assert bc.total_blocks == 0
         mock_load_chain.assert_called_once()
@@ -351,7 +359,7 @@ def test_init_not_in_memory_auto_genesis_disabled(mock_config):
         mock_enforce.assert_not_called()
 
 
-def test_init_not_in_memory_chain_exists(mock_config):
+def test_init_chain_exists(mock_config):
     """When load_chain fills the chain, genesis lock and hash cache are rebuilt."""
     mock_config.ALLOW_AUTO_GENESIS = False
 
@@ -371,7 +379,7 @@ def test_init_not_in_memory_chain_exists(mock_config):
 
         mock_load_chain.side_effect = load_chain_side_effect
 
-        bc = Blockchain(in_memory=False)
+        bc = Blockchain()
         assert len(bc.chain) == 1
         assert bc.total_blocks == 1
         mock_load_chain.assert_called_once()
@@ -383,7 +391,7 @@ def test_init_not_in_memory_chain_exists(mock_config):
 def test_hash_cache_lru(mock_config):
     """Ensure the hash cache does not exceed HASH_CACHE_MAX and implements LRU."""
     mock_config.HASH_CACHE_MAX = 2
-    bc = Blockchain(in_memory=True)
+    bc = Blockchain()
 
     # Make 3 bloks
     block0 = Mock()
@@ -406,26 +414,26 @@ def test_hash_cache_lru(mock_config):
     assert 1 in bc._hash_cache
     assert 2 in bc._hash_cache
     
-def test_reload_chain_from_kv_corrupt_json(mock_kv):
+def test_reload_chain_from_kv_corrupt_json(mock_config, mock_kv):
     """Reload fails if JSON data is invalid."""
     kv_enabled, iter_prefix = mock_kv
     kv_enabled.return_value = True
     # Data corrupt (not JSON)
     iter_prefix.return_value = [(b'h:0', b'not a json')]
 
-    bc = Blockchain(in_memory=True)
+    bc = Blockchain()
     result = bc._reload_chain_from_kv()
     assert result is False
     assert bc.chain == []
 
-def test_reload_chain_from_kv_block_from_dict_fails(mock_kv, mock_block_module):
+def test_reload_chain_from_kv_block_from_dict_fails(mock_config, mock_kv, mock_block_module):
     """Reload fails if Block.from_dict raises an exception."""
     kv_enabled, iter_prefix = mock_kv
     kv_enabled.return_value = True
     block_data = {'height': 0, 'hash': 'abc123'}
     iter_prefix.return_value = [(b'h:0', json.dumps(block_data).encode('utf-8'))]
     mock_block_module.from_dict.side_effect = Exception("Corrupt block")
-    bc = Blockchain(in_memory=True)
+    bc = Blockchain()
     result = bc._reload_chain_from_kv()
     assert result is False
     assert bc.chain == []

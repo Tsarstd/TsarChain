@@ -51,17 +51,18 @@ def test_build_full_sync_payload(sync):
     sync.mempool.get_all_txs.return_value = []
     sync.utxodb.to_dict.return_value = {}
     
-    payload, c, u, m = sync.build_full_sync_payload()
-    assert payload["type"] == "FULL_SYNC"
-    assert "chain" in payload["data"]
-    assert "utxos" in payload["data"]
-    assert "state" in payload["data"]
-    assert "mempool" in payload["data"]
-    assert "ts" in payload
-    assert "nonce" in payload
-    assert c == 0
-    assert u == 0
-    assert m == 0
+    with patch("tsarchain.network.cast.fullsync.H.kv_load_utxo_dict_native", return_value={}):
+        payload, c, u, m = sync.build_full_sync_payload()
+        assert payload["type"] == "FULL_SYNC"
+        assert "chain" in payload["data"]
+        assert "utxos" in payload["data"]
+        assert "state" in payload["data"]
+        assert "mempool" in payload["data"]
+        assert "ts" in payload
+        assert "nonce" in payload
+        assert c == 0
+        assert u == 0
+        assert m == 0
 
 @patch("tsarchain.network.cast.fullsync.CFG.ENABLE_FULL_SYNC", False)
 def test_receive_full_sync_disabled(sync):

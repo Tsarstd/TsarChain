@@ -38,8 +38,7 @@ log = get_ctx_logger("tsarchain.consensus.blockchain")
 __all__ = ["Blockchain"]
 
 class Blockchain():
-    def __init__(self, miner_address: str | None = None, in_memory: bool = False, use_cores: int | None = None,):
-        self.in_memory = in_memory
+    def __init__(self, miner_address: str | None = None, use_cores: int | None = None,):
         self.chain: List[Block] = []
         self.total_supply = 0
         self.total_blocks = 0
@@ -89,34 +88,28 @@ class Blockchain():
         self._cold_reload_attempted: bool = False
         
 
-        if not self.in_memory:
-            self._start_persist_worker()
-            self.load_chain()
-            self.load_state()
-            if not self.chain:
-                self._cold_reload_attempted = True
-                self._reload_chain_from_kv()
-            if self.chain:
-                self.genesis_manager._enforce_genesis_lock()
-                self._rebuild_hash_cache()
-                return
-            if GENESIS_HASH is not None and not CFG.ALLOW_AUTO_GENESIS:
-                log.info("[__init__] Genesis lock set; auto-genesis disabled. Waiting for peer sync.")
-                return
-            if CFG.ALLOW_AUTO_GENESIS:
-                log.info("[__init__] Auto-genesis enabled (use_cores=%s)", self.use_cores)
-                self.genesis_manager.create_genesis_with_lock(self.miner_address or "", self.use_cores)
-            else:
-                log.info("[__init__] Auto-genesis disabled; node will wait for peers to sync")
-                self.chain = []
-                self.total_blocks = 0
-                self.total_supply = 0
-                self.genesis_manager._persist_empty_state_if_needed()
+        self._start_persist_worker()
+        self.load_chain()
+        self.load_state()
+        if not self.chain:
+            self._cold_reload_attempted = True
+            self._reload_chain_from_kv()
+        if self.chain:
+            self.genesis_manager._enforce_genesis_lock()
+            self._rebuild_hash_cache()
+            return
+        if GENESIS_HASH is not None and not CFG.ALLOW_AUTO_GENESIS:
+            log.info("[__init__] Genesis lock set; auto-genesis disabled. Waiting for peer sync.")
+            return
+        if CFG.ALLOW_AUTO_GENESIS:
+            log.info("[__init__] Auto-genesis enabled (use_cores=%s)", self.use_cores)
+            self.genesis_manager.create_genesis_with_lock(self.miner_address or "", self.use_cores)
         else:
+            log.info("[__init__] Auto-genesis disabled; node will wait for peers to sync")
             self.chain = []
             self.total_blocks = 0
             self.total_supply = 0
-            self._rebuild_hash_cache()
+            self.genesis_manager._persist_empty_state_if_needed()
             
         if not kv_enabled:
             os.makedirs(os.path.dirname(CFG.CHAIN_JOURNAL_FILE), exist_ok=True)
@@ -174,7 +167,7 @@ class Blockchain():
             return h_hex
 
     def _start_persist_worker(self) -> None:
-        if self.in_memory or self._persist_thread is not None:
+        if self._persist_thread is not None:
             return
         self._persist_queue = queue.Queue()
         self._persist_stop.clear()
@@ -193,7 +186,7 @@ class Blockchain():
         self._persist_thread.start()
 
     def _reload_chain_from_kv(self) -> bool:
-        if self.in_memory or not kv_enabled():
+        if not kv_enabled():
             return False
         try:
             items = list(iter_prefix('chain', b''))
@@ -270,8 +263,6 @@ class Blockchain():
         log.info("[persist_worker] stopped")
 
     def _schedule_persist(self, *, force_full: bool = False, flush_force: bool = False, save_state: bool = True, wait: bool = False) -> None:
-        if self.in_memory:
-            return
         if wait or self._persist_queue is None:
             self.save_chain(force_full=force_full)
             self.maybe_flush_utxo(force=flush_force)
@@ -287,7 +278,7 @@ class Blockchain():
                 self._persist_queue.put(True)
 
     def _stop_persist_worker(self) -> None:
-        if self.in_memory or self._persist_thread is None or self._persist_queue is None:
+        if self._persist_thread is None or self._persist_queue is None:
             return
         self._persist_stop.set()
         worker = self._persist_thread
@@ -330,7 +321,7 @@ class Blockchain():
 
     @classmethod
     def from_dict(cls, data_list: List[dict]):
-        bc = cls(in_memory=True)
+        bc = cls()
         bc.chain = [Block.from_dict(b) for b in data_list]
         bc.total_blocks = len(bc.chain)
         bc.total_supply = 0

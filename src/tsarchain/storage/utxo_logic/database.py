@@ -208,8 +208,6 @@ class UTXODatabaseMixin:
 
 
     def _load(self, *, force: bool = False):
-        if not self._persist_enabled:
-            return
         with self._lock:
             if not force and getattr(self, "_dirty", False):
                 return
@@ -260,8 +258,6 @@ class UTXODatabaseMixin:
 
 
     def _save(self, force: bool = False):
-        if not self._persist_enabled:
-            return
         if not force and not self._dirty:
             return
         with self._lock:

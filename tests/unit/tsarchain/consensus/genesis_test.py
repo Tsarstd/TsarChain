@@ -73,9 +73,8 @@ def test_resolve_genesis_hash_invalid_chars(monkeypatch):
 
 class DummyBlockchain:
     """Minimal implementation of the required interface for testing."""
-    def __init__(self, chain=None, in_memory=True):
+    def __init__(self, chain=None):
         self.chain = chain if chain is not None else []
-        self.in_memory = in_memory
         self.total_supply = 0
         self._saved = False
         self._state_saved = False
@@ -204,7 +203,7 @@ def test_create_genesis_with_lock_success(monkeypatch):
     expected = b"a" * 32
     monkeypatch.setattr("tsarchain.consensus.genesis.GENESIS_HASH", expected)
 
-    bc = DummyBlockchain(in_memory=False)
+    bc = DummyBlockchain()
     # Override _create_genesis_block on genesis_manager
     def fake_create_genesis(self_manager, miner, use_cores):
         block = Mock()
@@ -237,22 +236,7 @@ def test_create_genesis_with_lock_hash_mismatch(monkeypatch):
         bc.create_genesis_with_lock("miner", use_cores=4)
 
 
-def test_create_genesis_with_lock_in_memory(monkeypatch):
-    """When in_memory=True, save methods are not called."""
-    expected = b"a" * 32
-    monkeypatch.setattr("tsarchain.consensus.genesis.GENESIS_HASH", expected)
 
-    bc = DummyBlockchain(in_memory=True)
-    def fake_create_genesis(self_manager, miner, use_cores):
-        block = Mock()
-        block.hash = Mock(return_value=expected)
-        self_manager.blockchain.chain.append(block)
-    bc.genesis_manager._create_genesis_block = fake_create_genesis.__get__(bc.genesis_manager)
-
-    bc.create_genesis_with_lock("miner", use_cores=4)
-    # save_chain and save_state should not be called
-    assert bc._saved is False
-    assert bc._state_saved is False
 
 
 def test_ensure_genesis_chain_not_empty():
@@ -300,7 +284,7 @@ def test_create_genesis_block_success(mock_coinbase_cls, mock_block_cls, monkeyp
     monkeypatch.setattr("tsarchain.consensus.genesis.CFG.INITIAL_BITS", 0x12345678)
     monkeypatch.setattr("tsarchain.consensus.genesis.CFG.GENESIS_BLOCK_ID_DEFAULT", "test_genesis")
 
-    bc = DummyBlockchain(in_memory=False)
+    bc = DummyBlockchain()
     # Mock validate_block to return True
     bc.validate_block = Mock(return_value=True)
 
@@ -368,20 +352,4 @@ def test_create_genesis_block_hash_mismatch(monkeypatch):
         with pytest.raises(ValueError, match="does not match TSAR_GENESIS_HASH"):
             bc.create_genesis_with_lock("miner")
 
-
-def test_create_genesis_block_in_memory(monkeypatch):
-    """When in_memory=True, no disk saves, but total_supply is updated."""
-    monkeypatch.setattr("tsarchain.consensus.genesis.GENESIS_HASH", b"a" * 32)
-    bc = DummyBlockchain(in_memory=True)
-    bc.validate_block = Mock(return_value=True)
-    bc.calculate_total_supply = Mock(return_value=100)
-    with patch("tsarchain.consensus.genesis.Block") as mock_block_cls, patch("tsarchain.consensus.genesis.CoinbaseTx"):
-        block = Mock()
-        block.hash.return_value = b"a" * 32
-        mock_block_cls.return_value = block
-        bc.create_genesis_with_lock("miner")
-        assert len(bc.chain) == 1
-        assert bc.total_supply == 100
-        # save methods not called
-        assert bc._saved is False
-        assert bc._state_saved is False
+

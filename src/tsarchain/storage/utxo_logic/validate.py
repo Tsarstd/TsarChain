@@ -224,8 +224,7 @@ class UTXOValidationMixin:
             for block in blocks or []:
                 self._rebuild_block(block)
             self._dirty = True
-            if self._persist_enabled:
-                self._save(force=True)
+            self._save(force=True)
             self._bump_version()
 
 

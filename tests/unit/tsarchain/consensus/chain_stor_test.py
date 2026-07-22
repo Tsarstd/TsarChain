@@ -25,10 +25,9 @@ class TestChainStorage:
     __test__ = False
 
     
-    def __init__(self, in_memory=False):
+    def __init__(self):
         self.chain_storage = ChainStorage(self)
 
-        self.in_memory = in_memory
         self.chain = []
         self.lock = threading.Lock()
         self._persisted_height = -1
@@ -115,12 +114,7 @@ class TestChainStorage:
 # ----------------------------------------------------------------------
 @pytest.fixture
 def storage():
-    return TestChainStorage(in_memory=False)
-
-
-@pytest.fixture
-def storage_mem():
-    return TestChainStorage(in_memory=True)
+    return TestChainStorage()
 
 
 @pytest.fixture
@@ -202,12 +196,6 @@ def test_prune_chain_store(storage, monkeypatch):
     delete_mock.assert_any_call('chain', b'h:000000000001')
     delete_mock.assert_any_call('chain', b'h:000000000002')
 
-    # If in_memory, should not prune
-    storage.in_memory = True
-    delete_mock.reset_mock()
-    storage._prune_chain_store(0)
-    delete_mock.assert_not_called()
-
 
 def test_reset_chain_store(storage, monkeypatch):
     # Mock kv_enabled, clear_db, os.remove, etc.
@@ -233,24 +221,14 @@ def test_reset_chain_store(storage, monkeypatch):
     assert storage._chain_dirty_from is None
     assert storage._snapshot_last_backup_height == -1
 
-    # in_memory: should skip
-    storage.in_memory = True
-    clear_db_mock.reset_mock()
-    remove_mock.reset_mock()
-    storage._reset_chain_store()
-    clear_db_mock.assert_not_called()
-
 
 # ----------------------------------------------------------------------
 # Snapshot backup tests
 # ----------------------------------------------------------------------
 def test_backup_snapshot_enabled(storage):
-    storage.in_memory = False
     CFG.BACKUP_SNAPSHOT = True
     assert storage._backup_snapshot_enabled() is True
     CFG.BACKUP_SNAPSHOT = False
-    assert storage._backup_snapshot_enabled() is False
-    storage.in_memory = True
     assert storage._backup_snapshot_enabled() is False
 
 
@@ -269,7 +247,6 @@ def test_write_snapshot_manifest(storage, tmp_path):
 
 def test_maybe_backup_snapshot(storage, monkeypatch, tmp_path):
     # Setup conditions
-    storage.in_memory = False
     CFG.BACKUP_SNAPSHOT = True
     CFG.BLOCK_BACKUP_SNAPSHOT = 10
     CFG.SNAPSHOT_BACKUP_DIR = str(tmp_path / "backup")
@@ -348,14 +325,11 @@ def test_hash_file(tmp_path):
 # Journal tests (fallback for non-LMDB)
 # ----------------------------------------------------------------------
 def test_chain_journal_enabled(storage):
-    storage.in_memory = False
     CFG.USE_LMDB = False  # but we need to mock kv_enabled
     with patch('tsarchain.consensus.chain_storage.kv_enabled', return_value=False):
         assert storage._chain_journal_enabled() is True
     with patch('tsarchain.consensus.chain_storage.kv_enabled', return_value=True):
         assert storage._chain_journal_enabled() is False
-    storage.in_memory = True
-    assert storage._chain_journal_enabled() is False
 
 
 def test_chain_journal_size(storage, tmp_path):
@@ -384,7 +358,6 @@ def test_append_chain_journal(storage, tmp_path):
     path = tmp_path / "journal.jsonl"
     CFG.CHAIN_JOURNAL_FILE = str(path)
     CFG.CANONICAL_SEP = (',', ':')
-    storage.in_memory = False
     with patch('tsarchain.consensus.chain_storage.kv_enabled', return_value=False):
         # Create blocks
         block1 = Mock(spec=Block)
@@ -427,10 +400,6 @@ def test_apply_chain_journal(storage, tmp_path):
 # ----------------------------------------------------------------------
 # save_chain / load_chain tests
 # ----------------------------------------------------------------------
-def test_save_chain_in_memory(storage_mem):
-    # Should do nothing
-    storage_mem.save_chain()
-
 
 def test_save_chain_with_kv(storage, monkeypatch):
     # Mock kv_enabled, batch, clear_db, etc.

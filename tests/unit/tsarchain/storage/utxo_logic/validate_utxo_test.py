@@ -12,7 +12,6 @@ class MockUTXOValidate(UTXOValidationMixin):
         self._dirty_keys = set()
         self._removed_keys = set()
         self._rewrite_all = False
-        self._persist_enabled = True
         self.save_called = 0
         self.index_called = 0
         self.drop_called = 0
