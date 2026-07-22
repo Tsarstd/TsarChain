@@ -16,6 +16,7 @@ Native acceleration module for **TsarChain** with crypto, PoW, validation, and f
 The core functionality of `tsarcore_native` is organized into the following Rust modules in `src/`:
 
 - **[lib.rs](src/lib.rs)**: Exposes PyO3 native module bindings (`tsarcore_native`), implements core cryptographic hash functions (`hash256`, `hash160`), and orchestrates the RandomX VM cache.
+- **[generate_history_book.rs](src/generate_history_book.rs)**: Provides history transactions pagination helpers, direction text formatters, and computes visual Address Grid layout data (`AddressGridData`) supporting both P2WPKH (44-character Citizen Address) and P2WSH (64-character Pool Address) for PDF History Book rendering.
 - **[generate_receipt.rs](src/generate_receipt.rs)**: Generates QR codes as PNG, formats decimals and TSAR currency strings, and exposes receipt layout drawing helpers (table rows, transaction ID grids) for website backend.
 - **[graff_merkle.rs](src/graff_merkle.rs)**: Implements the single SHA-256 Merkle tree used for chunked "Graffiti" archives, supporting path generation and client-side inclusion proof validation.
 - **[mining.rs](src/mining.rs)**: A multi-threaded RandomX PoW mining orchestrator that checks block difficulty, tracks hashrate progress, and supports cooperative mining thread cancellation.
@@ -30,6 +31,7 @@ The core functionality of `tsarcore_native` is organized into the following Rust
 Integration and unit tests are located in the `tests/` directory and match the structure of the source modules. They verify correctness of the Rust implementation independently of the Python runtime:
 
 - **[lib_test.rs](tests/lib_test.rs)**: Validates Python bindings interfaces, including hashing, secp256k1 sign/verify mechanisms, and basic RandomX VM hashing.
+- **[generate_history_book_test.rs](tests/generate_history_book_test.rs)**: Asserts direction string formatting and Address Grid chunking/highlighting logic for P2WPKH and P2WSH address types.
 - **[generate_receipt_test.rs](tests/generate_receipt_test.rs)**: Asserts formatting logic for receipts, QR code rendering limits, and table row drawing calculations.
 - **[graff_merkle_test.rs](tests/graff_merkle_test.rs)**: Exercises tree construction correctness, leaf verification paths, and error scenarios.
 - **[mining_test.rs](tests/mining_test.rs)**: Verifies the miner difficulty comparator, stop event cooperative cancellations, and multi-thread startup conditions.
@@ -109,6 +111,7 @@ store.copy("/tmp/tsar.db.backup", compact=True)  # LMDB only
 
 ## Changelog
 
+- **0.2.3** - Added `generate_history_book` module exposing history pagination, direction formatting, and `draw_address_grid_data` for rendering visual Address Grids (P2WPKH Citizen Addresses & P2WSH Pool Addresses) in the History Book PDF generator.
 - **0.2.2** - Removed `graff_merkle_path_for_bytes` and Python fallback `get_final_bytes` bindings to fully rely on memory-mapped LMDB pointers (`get_final_bytes_range` & `get_final_merkle_path`). This guarantees zero-copy scale for massive chunks and resolves out-of-memory crashes on the Graffiti Archival nodes.
 - **0.2.1** - Native graffiti Merkle (single SHA-256) bindings added for root/path/verify/leaves; Python Merkle path removed in favor of native; per-call debug/warning logs added to help trace Merkle operations.
 - **0.2.0** - Added consensus TX guardrails: vsize/weight and max inputs/outputs enforced in native validators (block + mempool P2WPKH), options expanded to carry new limits from Python, and debug logs trimmed. Aligns with TsarChain config MIN/MAX TX limits.

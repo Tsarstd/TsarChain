@@ -44,6 +44,17 @@ def mock_paginate_history(history, items_per_page):
 
 mock_tsarcore.paginate_history.side_effect = mock_paginate_history
 
+class MockAddressGridData:
+    def __init__(self):
+        self.grid = [["t", "s", "a", "r"]]
+        self.highlight_positions = [(1, 0)]
+        self.char_positions = [('t', 200, 165, (3, 95, 166))]
+        self.address_type = "P2WPKH"
+        self.label_type = "Citizen Address"
+        self.total_height = 80.0
+
+mock_tsarcore.draw_address_grid_data.return_value = MockAddressGridData()
+
 sys.modules['tsarcore_native'] = mock_tsarcore
 
 @pytest.fixture
@@ -137,3 +148,34 @@ def test_generate_history_book_exception(temp_dir):
         success, msg, data = gen.generate_history_book({'address': 'tsar123', 'history': []})
         assert success is False
         assert "Error:" in msg
+
+def test_generate_history_book_p2wsh_address(temp_dir, mock_image, mock_font, mock_draw):
+    mock_open, mock_img = mock_image
+    gen = HistoryBookGenerator(temp_dir)
+    
+    tx_data = {
+        'address': 'tsar1qhxm6436vjz952t5d8nr27w9ykc25qrt55xj3de5zt8trtfkgx0pqzq9vkp',
+        'balance': 1000,
+        'history': []
+    }
+    
+    with patch('os.path.join', return_value=os.path.join(temp_dir, 'history.pdf')):
+        success, path, pdf_bytes = gen.generate_history_book(tx_data)
+        assert success is True
+        assert pdf_bytes is not None
+
+def test_generate_history_book_p2wpkh_address(temp_dir, mock_image, mock_font, mock_draw):
+    mock_open, mock_img = mock_image
+    gen = HistoryBookGenerator(temp_dir)
+    
+    tx_data = {
+        'address': 'tsar1qakf6mle606amn7xumvz4k6yu6cz0mxq6pe5qwr',
+        'balance': 1000,
+        'history': []
+    }
+    
+    with patch('os.path.join', return_value=os.path.join(temp_dir, 'history.pdf')):
+        success, path, pdf_bytes = gen.generate_history_book(tx_data)
+        assert success is True
+        assert pdf_bytes is not None
+

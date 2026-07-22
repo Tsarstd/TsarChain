@@ -18,13 +18,15 @@ log = get_ctx_logger("tsarchain.web.build_history_book")
 
 
 class HistoryBookGenerator:
-    _template_cache = None
+    _template_cache = {}
     _font_cache = {}
 
 
     def __init__(self, output_dir: str):
         self.output_dir = output_dir
-        self.template_path = "src/web/Backend/src/template/history_book_template.jpg"
+        self.template_path = "src/web/Backend/src/template/history_book_template_body.jpg"
+        self.header_p2wpkh = "src/web/Backend/src/template/history_book_head_p2wpkh.jpg"
+        self.header_p2wsh  = "src/web/Backend/src/template/history_book_head_p2wsh.jpg"
         self.font_template = "src/web/Backend/src/template/font_template.ttf"
         
         os.makedirs(self.output_dir, exist_ok=True)
@@ -39,15 +41,24 @@ class HistoryBookGenerator:
 
     @classmethod
     def _ensure_template_cache(cls):
-        if cls._template_cache is None:
-            template_path = "src/web/Backend/src/template/history_book_template.jpg"
-            if os.path.exists(template_path):
-                img = Image.open(template_path)
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                cls._template_cache = img
-            else:
-                cls._template_cache = Image.new('RGB', (800, 1200), color=(255, 255, 255))
+        template_paths = {
+            'body': "src/web/Backend/src/template/history_book_template_body.jpg",
+            'p2wpkh': "src/web/Backend/src/template/history_book_head_p2wpkh.jpg",
+            'p2wsh': "src/web/Backend/src/template/history_book_head_p2wsh.jpg",
+        }
+        for key, path in template_paths.items():
+            if key not in cls._template_cache:
+                if os.path.exists(path):
+                    try:
+                        img = Image.open(path)
+                        if img.mode != 'RGB':
+                            img = img.convert('RGB')
+                        cls._template_cache[key] = img
+                    except Exception as e:
+                        log.warning(f"Failed to load template {path}: {e}")
+                        cls._template_cache[key] = Image.new('RGB', (800, 1200), color=(255, 255, 255))
+                else:
+                    cls._template_cache[key] = Image.new('RGB', (800, 1200), color=(255, 255, 255))
 
 
     @classmethod
@@ -69,9 +80,11 @@ class HistoryBookGenerator:
                     cls._font_cache[key] = ImageFont.load_default()
 
      
-    def _create_blank_page(self) -> Image.Image:
-        if self.__class__._template_cache is not None:
-            return self.__class__._template_cache.copy()
+    def _create_blank_page(self, page_type: str = 'body') -> Image.Image:
+        if isinstance(self.__class__._template_cache, dict) and page_type in self.__class__._template_cache:
+            return self.__class__._template_cache[page_type].copy()
+        elif isinstance(self.__class__._template_cache, dict) and 'body' in self.__class__._template_cache:
+            return self.__class__._template_cache['body'].copy()
         return Image.new('RGB', (800, 1200), color=(255, 255, 255))
 
 
@@ -131,12 +144,41 @@ class HistoryBookGenerator:
             draw.text((page_width - 50 - value_width, row_data.y_position), row_data.value, font=font_value, fill=row_data.value_color)
 
         y_position = row_data.y_position + 20
-        draw.line([(50, y_position), (page_width - 50, y_position)], fill=row_data.line_color, width=1)
+        # draw.line([(50, y_position), (page_width - 50, y_position)], fill=row_data.line_color, width=1)
         return y_position + 10
 
 
+    def _draw_address_grid(self, draw: ImageDraw.ImageDraw, address: str, x_start: int, y_start: int) -> int:
+        grid_data = native_core.draw_address_grid_data(
+            address, float(x_start), float(y_start), 18.0, 25.0, 15.0
+        )
+        
+        for char, x, y, color in grid_data.char_positions:
+            draw.text((x, y), char, font=self.monospace_font, fill=color)
+            
+        y_next = y_start + grid_data.total_height + 5.0
+        
+        if grid_data.label_type and grid_data.address_type:
+            badge_text = f"{grid_data.label_type} ({grid_data.address_type})"
+            badge_width = draw.textlength(badge_text, font=self.small_font)
+            grid_width = 4 * 5 * 18.0 + 3 * 15.0  # 405.0 px
+            badge_x = x_start + (grid_width - badge_width) / 2.0
+            draw.text((badge_x, y_next), badge_text, font=self.small_font, fill=(240, 240, 240))
+            y_next += 20.0
+            
+        return int(y_next + 10.0)
+
+
     def _draw_cover_page(self, data: Dict[str, Any], width: int) -> Image.Image:
-        img = self._create_blank_page()
+        address = data.get('address', '')
+        if len(address) == 64:
+            page_type = 'p2wsh'
+        elif len(address) == 44:
+            page_type = 'p2wpkh'
+        else:
+            page_type = 'body'
+
+        img = self._create_blank_page(page_type=page_type)
         draw = ImageDraw.Draw(img)
         
         title = "HISTORY TRANSACTIONS BOOK"
@@ -151,14 +193,11 @@ class HistoryBookGenerator:
         line_width = draw.textlength(line_text, font=self.title_font)
         draw.text(((width - line_width) // 2, 85), line_text, font=self.title_font, fill=(151, 151, 151))
         draw.text(((width - line_width) // 2, 28), line_text, font=self.title_font, fill=(151, 151, 151))
-        
-        # Address section
-        draw.text((300, 140), "Address Information", font=self.normal_font, fill=(232, 114, 35))
-        
-        y_pos = 180
+
         address = data.get('address', 'Unknown')
-        y_pos = self._draw_table_row(draw, y_pos, "Address :", address, self.small_font, self.small_font, width)
+        self._draw_address_grid(draw, address, 197, 170)
         
+        y_pos = 370
         balance = data.get('balance', 0)
         y_pos = self._draw_table_row(draw, y_pos, "Balance :", "", self.small_font, self.small_font, width, is_amount=True, amount_value=balance)
         

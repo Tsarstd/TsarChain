@@ -1004,6 +1004,8 @@ pub fn tsarcore_native(_py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
 
     m.add_function(wrap_pyfunction!(generate_history_book::paginate_history, m)?)?;
     m.add_function(wrap_pyfunction!(generate_history_book::format_history_direction, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_history_book::draw_address_grid_data, m)?)?;
+    m.add_class::<generate_history_book::AddressGridData>()?;
 
     Ok(())
 }
