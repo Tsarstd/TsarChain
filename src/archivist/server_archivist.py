@@ -38,6 +38,7 @@ class StorageServer:
         self.thread = threading.Thread(target=self._serve, daemon=True)
         self.thread.start()
 
+
     def _normalize_file_meta(self, aid: str, meta: dict) -> dict:
         if not isinstance(meta, dict):
             return {}
@@ -64,6 +65,7 @@ class StorageServer:
             self.index.setdefault("art_map", {})[art_id] = aid
         return meta
 
+
     def _load_index(self):
         os.makedirs(self.storage_dir, exist_ok=True)
         self.index = self.db.load_index()
@@ -77,9 +79,11 @@ class StorageServer:
         self.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in files.values())
         self._save_index()
 
+
     def _save_index(self):
         self.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (self.index.get("files") or {}).values())
         self.db.save_index(self.index)
+
 
     def _respond(self, conn, obj):
         cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
@@ -90,10 +94,12 @@ class StorageServer:
             raw = json.dumps(obj).encode("utf-8")
         send_message(conn, raw, max_len=cap)
 
+
     def _client_ip(self, addr) -> str:
         if isinstance(addr, tuple) and addr:
             return str(addr[0])
         return "0.0.0.0"
+
 
     def _handle(self, msg):
         resp = wallet_route.handle_wallet_rpc(self, msg)
@@ -104,6 +110,7 @@ class StorageServer:
             return resp
         return {"error":"unknown type"}
 
+
     def _serve(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -112,6 +119,7 @@ class StorageServer:
             while not self._stop:
                 conn, addr = s.accept()
                 threading.Thread(target=self._handle_conn, args=(conn, addr), daemon=True).start()
+
 
     def _handle_conn(self, conn, addr):
         ip = self._client_ip(addr)
@@ -136,6 +144,7 @@ class StorageServer:
         finally:
             conn.close()
 
+
     def _parse_incoming_message(self, raw: bytes):
         outer = json.loads(raw.decode("utf-8"))
         identity = None
@@ -150,6 +159,7 @@ class StorageServer:
         mtype = str(msg.get("type", "")).strip().upper() if isinstance(msg, dict) else ""
         pow_obj = msg.get("pow") if isinstance(msg, dict) else None
         return msg, mtype, identity, pow_obj
+
 
     def _enforce_guard(self, conn, ip: str, mtype: str, decision: dict) -> bool:
         if decision.get("ok"):

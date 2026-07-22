@@ -40,6 +40,7 @@ manual_bootstrap: Optional[Tuple[str, int]] = None
 if not kv_enabled():
     os.makedirs(os.path.dirname(CFG.ARCHIV_PEER_KEYS), exist_ok=True)
 
+
 def create_keypair(path: str) -> tuple[str, str, str]:
     load_node_key(path)
     sk = SigningKey.generate()
@@ -55,6 +56,7 @@ def create_keypair(path: str) -> tuple[str, str, str]:
             json.dump(payload, f, indent=2)
         os.chmod(path, 0o600)
     return node_id, pub_hex, priv_hex
+
 
 def _load_stor_peer_keys() -> dict:
     if kv_enabled():
@@ -131,6 +133,7 @@ def _scan_nodes(start: int = CFG.PORT_START, end: int = CFG.PORT_END, manual_nod
     log.info("_scan_nodes: ditemukan %d storage node", len(found))
     return found
 
+
 def _ping_node(ip: str, port: int, node_id: str, pub_hex: str, priv_hex: str, ctx: dict) -> bool:
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -180,6 +183,7 @@ class NodeDirectory:
         self.last_good: Optional[tuple[str,int]] = None
         self.lock = threading.Lock()
 
+
     def get_nodes(self) -> list[tuple[str,int]]:
         with self.lock:
             if self.cache and (time.time() - self.ts) < self.ttl:
@@ -193,6 +197,7 @@ class NodeDirectory:
             self.cache = nodes
             self.ts = time.time()
         return nodes
+
 
     def mark_good(self, peer: tuple[str,int]) -> None:
         with self.lock:
@@ -217,6 +222,7 @@ class RPC:
         self._default_address = bech32_encode(CFG.ADDRESS_PREFIX, data)
         self.trusted = False
 
+
     def set_address_override(self, addr: Optional[str]) -> None:
         if not addr:
             self.address = self._default_address
@@ -226,14 +232,17 @@ class RPC:
             raise ValueError("Invalid storage payout address")
         self.address = cand
 
+
     def set_trusted(self, flag: bool) -> None:
         self.trusted = bool(flag)
+
 
     def _send(self, inner: Dict[str, Any]) -> None:
         if not self.sock:
             raise RuntimeError("no socket")
         outer = build_envelope(inner, self.ctx, extra={"pubkey": self.pub})
         send_message(self.sock, json.dumps(outer).encode("utf-8"))
+
 
     def _recv(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
         if not self.sock:
@@ -245,6 +254,7 @@ class RPC:
         if is_envelope(outer):
             return verify_and_unwrap(outer, lambda nid: None)
         return outer if isinstance(outer, dict) else None
+
 
     def connect(self, ip: str, port: int, my_listen_port: int = 0) -> bool:
         with self.lock:
@@ -266,6 +276,7 @@ class RPC:
         if ok:
             log.info("[RPC.connect] storage handshake ok to %s:%s listen_port=%s", ip, port, my_listen_port)
         return ok
+
 
     def call(self, inner: Dict[str, Any], timeout: float = 5.0) -> Dict[str, Any] | None:
         with self.lock:

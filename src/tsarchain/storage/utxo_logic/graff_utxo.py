@@ -24,6 +24,7 @@ class UTXOGraffitiMixin:
             return bytes.fromhex(spk)
         return b""
 
+
     def script_to_address(self, script) -> str | None:
         """
         Attempt to turn common script types (P2WPKH) into a bech32 address.
@@ -37,6 +38,7 @@ class UTXOGraffitiMixin:
             data = [0] + list(convertbits(b[2:], 8, 5, True))
             return bech32_encode(CFG.ADDRESS_PREFIX, data)
         return None
+
 
     def _record_graffiti_event(self, tx, outputs_info: list[dict[str, Any]], block_height: int | None, block_hash: str | None = None) -> None:
         if block_height is None:
@@ -63,13 +65,14 @@ class UTXOGraffitiMixin:
         elif event == "PAYOUT":
             self._handle_graffiti_payout(meta, outputs_info, txid_hex, block_height)
 
+
     def _handle_graffiti_post(
         self,
         meta: dict[str, Any],
         outputs_info: list[dict[str, Any]],
         txid_hex: str,
         block_height: int,
-        block_hash: str | None = None,
+        block_hash: str | None = None
         ) -> None:
         
         sha_hex = str(meta.get("sha256") or "")
@@ -104,12 +107,14 @@ class UTXOGraffitiMixin:
         current_pool_balance = self.get_balance(pool_addr, mode="total")
         self._graffiti_registry.set_pool_balance(art_id, current_pool_balance)
 
+
     def _handle_graffiti_comment(
         self,
         meta: dict[str, Any],
         outputs_info: list[dict[str, Any]],
         txid_hex: str,
-        block_height: int) -> None:
+        block_height: int
+    ) -> None:
         
         art_id = str(meta.get("art_id") or "").lower()
         if not art_id:
@@ -152,13 +157,15 @@ class UTXOGraffitiMixin:
         current_pool_balance = self.get_balance(pool_addr, mode="total")
         self._graffiti_registry.set_pool_balance(art_id, current_pool_balance)
 
+
     def _handle_graffiti_payout(
         self,
         meta: dict[str, Any],
         outputs_info: list[dict[str, Any]],
         txid_hex: str,
-        block_height: int,) -> None:
-        
+        block_height: int
+    ) -> None:
+
         art_id = str(meta.get("art_id") or "").lower()
         if not art_id:
             return
@@ -251,6 +258,7 @@ class UTXOGraffitiMixin:
             epoch=epoch if epoch >= 0 else None,
             pool_balance=current_pool_balance,
         )
+
 
     @staticmethod
     def _read_opreturn_payload(script_bytes: bytes) -> bytes | None:

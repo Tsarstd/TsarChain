@@ -39,6 +39,77 @@ class HistoryBookGenerator:
         self.monospace_font = self.__class__._font_cache['monospace_21']
 
 
+    def generate_history_book(self, data: Dict[str, Any]) -> Tuple[bool, str, Optional[bytes]]:
+        try:
+            if not data or 'address' not in data:
+                return False, "Invalid history data", None
+                
+            address = data.get('address', 'Unknown')
+            width = 800
+            
+            pages = []
+            
+            # 1. Cover
+            pages.append(self._draw_cover_page(data, width))
+            
+            # 2. History pages
+            history = data.get('history', [])
+            if history:
+                paginated_history = native_core.paginate_history(history, 8)
+                for i, page_txs in enumerate(paginated_history):
+                    pages.append(self._draw_history_page(i, len(paginated_history), page_txs, width))
+            
+            # 3. Footer
+            pages.append(self._draw_footer_page(data, width))
+            
+            # Save to PDF
+            buffer = BytesIO()
+            pages[0].save(
+                buffer,
+                format='PDF',
+                resolution=300.0,
+                save_all=True,
+                append_images=pages[1:]
+            )
+            
+            pdf_bytes = buffer.getvalue()
+            output_filename = f"history_{address}.pdf"
+            output_path = os.path.join(self.output_dir, output_filename)
+            
+            with open(output_path, 'wb') as f:
+                f.write(pdf_bytes)
+                
+            return True, output_path, pdf_bytes
+            
+        except Exception as e:
+            log.exception("Failed to generate history book")
+            return False, f"Error: {str(e)}", None
+
+
+    def generate_history_book_base64(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        success, message, pdf_bytes = self.generate_history_book(data)
+        
+        if success and pdf_bytes:
+            base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+            return {
+                "status": "success",
+                "message": "History Book generated successfully",
+                "data_url": f"data:application/pdf;base64,{base64_pdf}",
+                "filename": f"history_{data.get('address')}.pdf",
+                "size_bytes": len(pdf_bytes)
+            }
+        else:
+            return {
+                "status": "error",
+                "message": message or "Failed to generate history book"
+            }
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
     @classmethod
     def _ensure_template_cache(cls):
         template_paths = {
@@ -325,69 +396,3 @@ class HistoryBookGenerator:
         draw.text(((width - draw.textlength(footer_text, font=self.small_font)) // 2, y_pos), footer_text, font=self.small_font, fill=(100, 100, 100))
         
         return img
-
-
-    def generate_history_book(self, data: Dict[str, Any]) -> Tuple[bool, str, Optional[bytes]]:
-        try:
-            if not data or 'address' not in data:
-                return False, "Invalid history data", None
-                
-            address = data.get('address', 'Unknown')
-            width = 800
-            
-            pages = []
-            
-            # 1. Cover
-            pages.append(self._draw_cover_page(data, width))
-            
-            # 2. History pages
-            history = data.get('history', [])
-            if history:
-                paginated_history = native_core.paginate_history(history, 8)
-                for i, page_txs in enumerate(paginated_history):
-                    pages.append(self._draw_history_page(i, len(paginated_history), page_txs, width))
-            
-            # 3. Footer
-            pages.append(self._draw_footer_page(data, width))
-            
-            # Save to PDF
-            buffer = BytesIO()
-            pages[0].save(
-                buffer,
-                format='PDF',
-                resolution=300.0,
-                save_all=True,
-                append_images=pages[1:]
-            )
-            
-            pdf_bytes = buffer.getvalue()
-            output_filename = f"history_{address}.pdf"
-            output_path = os.path.join(self.output_dir, output_filename)
-            
-            with open(output_path, 'wb') as f:
-                f.write(pdf_bytes)
-                
-            return True, output_path, pdf_bytes
-            
-        except Exception as e:
-            log.exception("Failed to generate history book")
-            return False, f"Error: {str(e)}", None
-
-
-    def generate_history_book_base64(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        success, message, pdf_bytes = self.generate_history_book(data)
-        
-        if success and pdf_bytes:
-            base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-            return {
-                "status": "success",
-                "message": "History Book generated successfully",
-                "data_url": f"data:application/pdf;base64,{base64_pdf}",
-                "filename": f"history_{data.get('address')}.pdf",
-                "size_bytes": len(pdf_bytes)
-            }
-        else:
-            return {
-                "status": "error",
-                "message": message or "Failed to generate history book"
-            }

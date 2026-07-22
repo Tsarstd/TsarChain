@@ -13,12 +13,15 @@ log = get_ctx_logger("tsarchain.storage.utxo_logic.validate")
 
 
 class UTXOValidationMixin:
+
+
     def _txid_hex(self, x):
         if x is None:
             return None
         if isinstance(x, (bytes, bytearray)):
             return x.hex()
         return str(x)
+
 
     def _prevout_from_txin(self, tx_input):
         prev_txid = getattr(tx_input, "txid", None)
@@ -33,6 +36,7 @@ class UTXOValidationMixin:
         if vout is not None:
             vout = int(vout)
         return prev_txid_hex, vout
+
 
     def _is_unspendable_opreturn(self, tx_out) -> bool:
         spk = getattr(tx_out, "script_pubkey", None)
@@ -49,6 +53,7 @@ class UTXOValidationMixin:
         
         return len(b) >= 1 and b[0] == 0x6A
 
+
     # ---------------------------
     # Native UTXO delta apply
     # ---------------------------
@@ -62,6 +67,7 @@ class UTXOValidationMixin:
         self._process_graffiti_for_txs(txs, block_height, block_hash)
         
         return True
+
 
     def _build_compact_block_txs(self, txs) -> list | None:
         block_txs = []
@@ -90,6 +96,7 @@ class UTXOValidationMixin:
             )
         return block_txs
 
+
     def _build_compact_inputs(self, tx) -> list | None:
         inputs_compact = []
         for txin in getattr(tx, "inputs", []) or []:
@@ -116,6 +123,7 @@ class UTXOValidationMixin:
             inputs_compact.append((bytes(prev), int(vout), int(seq), wit_vec))
         return inputs_compact
 
+
     def _build_compact_outputs(self, tx) -> list:
         outputs_compact = []
         for txout in getattr(tx, "outputs", []) or []:
@@ -131,6 +139,7 @@ class UTXOValidationMixin:
                 spk_bytes = b""
             outputs_compact.append((amt, spk_bytes))
         return outputs_compact
+
 
     def _apply_native_ops_to_state(self, ops, autosave: bool) -> None:
         with self._lock:
@@ -180,6 +189,7 @@ class UTXOValidationMixin:
                 self._save()
             self._bump_version()
 
+
     def _process_graffiti_for_txs(self, txs, block_height: int, block_hash: str | None) -> None:
         for tx in txs or []:
             outputs_info = []
@@ -204,6 +214,7 @@ class UTXOValidationMixin:
         if not ok:
             raise RuntimeError("native UTXO apply failed")
 
+
     def rebuild_from_chain(self, blocks) -> None:
         with self._lock:
             self.utxos.clear()
@@ -217,12 +228,14 @@ class UTXOValidationMixin:
                 self._save(force=True)
             self._bump_version()
 
+
     def _rebuild_block(self, block) -> None:
         txs = getattr(block, "transactions", []) or []
         height = int(getattr(block, "height", 0))
         blk_hash = block.hash().hex()
         for tx in txs:
             self._rebuild_tx(tx, height, blk_hash)
+
 
     def _rebuild_tx(self, tx, height: int, blk_hash: str) -> None:
         txid_hex = self._txid_hex(getattr(tx, "txid", None))
@@ -237,6 +250,7 @@ class UTXOValidationMixin:
             
         self._record_graffiti_event(tx, outputs_info, height, blk_hash)
 
+
     def _rebuild_spend_inputs(self, tx) -> None:
         for tx_input in getattr(tx, "inputs", []) or []:
             prev_txid_hex, vout = self._prevout_from_txin(tx_input)
@@ -245,6 +259,7 @@ class UTXOValidationMixin:
             spent_key = f"{prev_txid_hex}:{int(vout)}"
             if self.utxos.pop(spent_key, None) is not None:
                 self._drop_index_entry(spent_key)
+
 
     def _build_output_info(self, tx_out) -> dict:
         amount = int(getattr(tx_out, "amount", 0))
@@ -262,6 +277,7 @@ class UTXOValidationMixin:
         elif hasattr(tx_out, "address"):
             address = getattr(tx_out, "address")
         return {"script_bytes": script_bytes, "amount": amount, "address": address}
+
 
     def add(self, txid: str, index: int, tx_out: TxOut, is_coinbase: bool = False, block_height: int = 0, autosave: bool = True):
         if self._is_unspendable_opreturn(tx_out):
@@ -282,6 +298,7 @@ class UTXOValidationMixin:
             self._index_entry(key, tx_out)
             self._bump_version()
 
+
     def remove(self, txid, index: int, autosave: bool = True):
         key = f"{self._txid_hex(txid)}:{int(index)}"
         with self._lock:
@@ -295,11 +312,13 @@ class UTXOValidationMixin:
                 self._drop_index_entry(key)
                 self._bump_version()
 
+
     def spend_input(self, tx_input):
         prev_txid_hex, vout = self._prevout_from_txin(tx_input)
         if prev_txid_hex is None or vout is None:
             raise AttributeError("TxIn missing prevout (txid/vout)")
         self.remove(prev_txid_hex, int(vout))
+
 
     def _parse_script_bytes(self, spk) -> bytes:
         if hasattr(spk, "serialize"):
@@ -309,6 +328,7 @@ class UTXOValidationMixin:
         if isinstance(spk, str):
             return bytes.fromhex(spk)
         return b""
+
 
     def _apply_tx_remove_prevout(self, snapshot: dict, prev_txid_hex: str, vout: int) -> bool:
         key_int = int(vout)
@@ -343,6 +363,7 @@ class UTXOValidationMixin:
                     snapshot.pop(addr, None)
         return removed
 
+
     def _detect_snapshot_layout(self, snapshot: dict) -> str | None:
         for k, v in snapshot.items():
             if isinstance(k, str) and ":" in k:
@@ -354,6 +375,7 @@ class UTXOValidationMixin:
             if isinstance(v, list):
                 return "per_address_list"
         return None
+
 
     def _apply_tx_insert_output(self, snapshot: dict, layout: str | None, txid_hex: str, n: int, entry: dict, address: str | None):
         if layout is None:
@@ -377,6 +399,7 @@ class UTXOValidationMixin:
                 return
 
         snapshot[f"{txid_hex}:{int(n)}"] = entry
+
 
     def apply_tx_to_utxoset(self, tx, utxos: dict, block_height: int | None = None, block_hash: str | None = None) -> dict:
         if utxos is None:

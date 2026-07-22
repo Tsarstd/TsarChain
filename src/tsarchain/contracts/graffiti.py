@@ -336,7 +336,7 @@ def build_comment_metadata(
     return meta
 
 
-def build_payout_metadata(
+def build_payout_metadata(  # NOSONAR
     art_id: str,
     epoch: int,
     recipients: list[dict[str, Any]] | dict[str, int],

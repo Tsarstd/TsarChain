@@ -59,39 +59,6 @@ class ArchivistDatabase:
             if self.enable_blobs:
                 self._kv_final = self._open_store(CFG.ARCHIVIST_FINAL_DB_PATH)
 
-    # ---------------- KV helpers ----------------
-    def _open_store(self, path: str):
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        init_size = int(CFG.STORAGE_SIZE_INIT)
-        max_size = int(CFG.STORAGE_MAX_BYTES)
-
-        if os.path.isfile(path):
-            try:
-                existing = os.path.getsize(path)
-                if existing > init_size:
-                    init_size = existing
-            except OSError:
-                pass
-        if max_size > 0 and max_size < init_size:
-            max_size = init_size
-        return _native_open_storage(
-            "lmdb",
-            path,
-            map_size_init=int(init_size),
-            map_size_max=int(max_size),
-            pretty_json=False,
-        )
-
-    def _incoming_dir(self) -> str:
-        path = os.path.join(self.storage_dir, "incoming")
-        os.makedirs(path, exist_ok=True)
-        return path
-
-    def _incoming_part_path(self, gid: str) -> str:
-        return os.path.join(self._incoming_dir(), f"{gid}.part")
-
-    def _incoming_bin_path(self, gid: str) -> str:
-        return os.path.join(self._incoming_dir(), f"{gid}.bin")
 
     # ---------------- Index ----------------
     def load_index(self) -> Dict:
@@ -111,6 +78,7 @@ class ArchivistDatabase:
             
         bytes_used = sum(int(m.get("size_bytes", 0)) for m in files.values())
         return {"files": files, "bytes_used": bytes_used, "art_map": art_map}
+
 
     def save_index(self, index: Dict) -> None:
         if not self.enable_index:
@@ -133,6 +101,7 @@ class ArchivistDatabase:
         if ops:
             self._kv_index.put_batch("idx", ops)
 
+
     # ---------------- Blob operations (incoming filesystem, final LMDB) ----------------
     def append_incoming(self, gid: str, chunk: bytes, max_chunk: int) -> int:
         if not self.enable_blobs:
@@ -152,6 +121,7 @@ class ArchivistDatabase:
             f.write(chunk)
         return new_size
 
+
     def get_incoming_bytes(self, gid: str) -> Optional[bytes]:
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
@@ -162,6 +132,7 @@ class ArchivistDatabase:
             return None
         with open(path, "rb") as f:
             return f.read()
+
 
     def pop_incoming(self, gid: str) -> Optional[bytes]:
         if not self.enable_blobs:
@@ -182,6 +153,7 @@ class ArchivistDatabase:
             pass
         return data
 
+
     def put_final(self, gid: str, data: bytes) -> None:
         if not self.use_kv:
             raise RuntimeError("kv_disabled")
@@ -189,6 +161,7 @@ class ArchivistDatabase:
             raise RuntimeError("blobs_disabled")
         key = f"blob:{gid}".encode("utf-8")
         self._kv_final.put_bytes("final", key, bytes(data))
+
 
     def promote_incoming(self, gid: str) -> bool:
         """
@@ -240,9 +213,49 @@ class ArchivistDatabase:
             key = f"blob:{gid}".encode("utf-8")
             self._kv_final.delete("final", key)
 
+
+    # ---------------- KV helpers ----------------
+    def _open_store(self, path: str):
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        init_size = int(CFG.STORAGE_SIZE_INIT)
+        max_size = int(CFG.STORAGE_MAX_BYTES)
+
+        if os.path.isfile(path):
+            try:
+                existing = os.path.getsize(path)
+                if existing > init_size:
+                    init_size = existing
+            except OSError:
+                pass
+        if max_size > 0 and max_size < init_size:
+            max_size = init_size
+        return _native_open_storage(
+            "lmdb",
+            path,
+            map_size_init=int(init_size),
+            map_size_max=int(max_size),
+            pretty_json=False,
+        )
+
+
+    def _incoming_dir(self) -> str:
+        path = os.path.join(self.storage_dir, "incoming")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+
+    def _incoming_part_path(self, gid: str) -> str:
+        return os.path.join(self._incoming_dir(), f"{gid}.part")
+
+
+    def _incoming_bin_path(self, gid: str) -> str:
+        return os.path.join(self._incoming_dir(), f"{gid}.bin")
+
+
     # ---------------- JSON fallback ----------------
     def _idx_path(self) -> str:
         return os.path.join(self.storage_dir, "index.json")
+
 
     def _load_index_json(self) -> Dict:
         path = self._idx_path()
@@ -273,6 +286,7 @@ class ArchivistDatabase:
         data.setdefault("art_map", {})
         data["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (data.get("files") or {}).values())
         return data
+
 
     def _save_index_json(self, data: Dict) -> None:
         path = self._idx_path()

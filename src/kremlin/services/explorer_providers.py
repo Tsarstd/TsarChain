@@ -14,6 +14,7 @@ def get_explorer_providers(rpc_client):
     def _rpc(payload: dict):
         return rpc_client.send(payload)
 
+
     def _prov_get_info():
         r = _rpc({"type": "GET_NETWORK_INFO"})
         if not isinstance(r, dict):
@@ -28,6 +29,7 @@ def get_explorer_providers(rpc_client):
             "genesis": r.get("genesis_hash") or r.get("genesis"),
             "tip": tip,
         }
+
 
     def _prov_get_block(x):
         s = str(x).strip()
@@ -44,6 +46,7 @@ def get_explorer_providers(rpc_client):
                 r.setdefault("hash", s)
                 return r
         return {"error": "not_found"}
+
 
     def _prov_get_tx(txid: str):
         r = _rpc({"type": "GET_TX_DETAIL", "txid": str(txid).lower()})
@@ -75,6 +78,7 @@ def get_explorer_providers(rpc_client):
                 prev = (vin[0].get("txid") or vin[0].get("prev_txid") or "")
                 t["is_coinbase"] = (prev == "0"*64) or bool(vin[0].get("coinbase"))
         return t
+
 
     def _prov_get_address(addr: str):
         bals = _rpc({"type": "GET_BALANCES", "addresses": [addr]})
@@ -131,19 +135,24 @@ def get_explorer_providers(rpc_client):
             res["spendable"] = int(sum(int(u.get("amount") or 0) for u in res["utxos"]))
         return res
 
+
     def _prov_get_mempool():
         return _rpc({"type": "GET_MEMPOOL"})
+
 
     def _prov_get_graffiti(art_id: str):
         return _rpc({"type": "GRAFFITI_GET_ART", "art_id": art_id})
 
+
     def _prov_get_graffiti_comments(art_id: str):
         return _rpc({"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id})
+
 
     def _prov_fetch_graffiti_file(post: dict | None, art_id: str):
         aid = art_id or (post or {}).get("art_id") or ""
         storer_addr = (post or {}).get("storer") or (post or {}).get("storage")
         return fetch_graffiti_file(_rpc, aid, storer_addr=storer_addr)
+
 
     return {
         "get_info": _prov_get_info,

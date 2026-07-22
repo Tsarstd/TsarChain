@@ -65,110 +65,22 @@ class ArchivistOrchestrator:
         self._auto_payout_lock = threading.Lock()
         self._load_auto_payout_guard()
 
-    def _log(self, msg: str, error: bool = False) -> None:
-        if self.log_callback:
-            self.log_callback(msg, error)
-            
-    def _trigger_update(self) -> None:
-        if self.update_callback:
-            self.update_callback()
 
-    def _normalize_network_info(self, info_obj: Any) -> Optional[Dict[str, Any]]:
-        if not isinstance(info_obj, dict) or info_obj.get("error"):
-            return None
-        data = info_obj.get("data") if info_obj.get("type") == "NETWORK_INFO" else info_obj
-        chain = data.get("chain") if isinstance(data, dict) else {}
-        peers = data.get("peers") if isinstance(data, dict) else {}
-
-        def _as_int(val: Any) -> Optional[int]:
-            return int(val)
-
-        height = _as_int(chain.get("tip_height") if isinstance(chain, dict) else None)
-        if isinstance(data, dict) and height is None:
-            height = _as_int(data.get("height"))
-        peers_cnt = _as_int(peers.get("count") if isinstance(peers, dict) else None)
-        if isinstance(data, dict) and peers_cnt is None:
-            peers_cnt = _as_int(data.get("peers"))
-
-        if height is None and peers_cnt is None:
-            return None
-        normalized = dict(info_obj)
-        normalized["height"] = height
-        normalized["peers"] = peers_cnt
-        return normalized
-
-    # ---------- bootstrap ----------
-    def _launch_storage_server(self, fallback_start: Optional[int] = None) -> int:
-        cand_ports: list[int] = []
-        cfg_start = CFG.STORAGE_PORT_START
-        cfg_end = CFG.STORAGE_PORT_END
-        if cfg_start > 0 and cfg_end >= cfg_start:
-            cand_ports.extend(range(cfg_start, cfg_end + 1))
-        if fallback_start:
-            base = max(1024, fallback_start)
-            cand_ports.extend(range(base, base + 64))
-        if not cand_ports:
-            cand_ports.extend(range(39000, 39064))
-        tried = set()
-        for port in cand_ports:
-            if port <= 0 or port in tried:
-                continue
-            tried.add(port)
-            self._server = StorageServer("0.0.0.0", port, CFG.STORAGE_DIR)
-            return port
-        raise RuntimeError("No free port for storage server")
-
-    def _call_storage_local(self, payload: Dict[str, Any], timeout: float = 5.0) -> Optional[Dict[str, Any]]:
-        port = self.storage_port
-        if port is None:
-            return None
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(timeout)
-            s.connect(("127.0.0.1", int(port)))
-            send_message(s, json.dumps(payload).encode("utf-8"))
-            raw = recv_message(s, timeout)
-            if not raw:
-                return None
-            obj = json.loads(raw.decode("utf-8"))
-            return obj if isinstance(obj, dict) else None
-
-    def connect(self) -> bool:
-        host, miner_port = self._target_node
-        s_port = self.storage_port
-        if self._server is None or s_port is None:
-            fallback = miner_port + STORAGE_PORT_OFFSET
-            s_port = self._launch_storage_server(fallback)
-            self.storage_port = s_port
-
-        ok = self.rpc.connect(host, miner_port, my_listen_port=s_port)
-        if not ok:
-            peers = self.directory.get_nodes() or []
-            for ip, p in peers:
-                if self.rpc.connect(ip, p, my_listen_port=s_port):
-                    self.directory.mark_good((ip, p))
-                    self._target_node = (ip, p)
-                    ok = True
-                    break
-
+    def attempt_reconnect(self) -> bool:
+        target = getattr(self, "_target_node", None)
+        storage_port = self.storage_port
+        if not target or storage_port is None:
+            return False
+        
+        host, miner_port = target
+        ok = self.rpc.connect(host, miner_port, my_listen_port=storage_port)
+        
         if ok:
-            self.directory.mark_good((self._target_node[0], self._target_node[1]))
             self.connected = True
-            self._log(f"[connect] Connected to node {self._target_node[0]}:{self._target_node[1]}")
             return True
-        self._log("[connect] Failed to connect to any node", error=True)
+        
         return False
 
-    # ---------- refresh loops ----------
-    def _refresh_loop(self) -> None:
-        while not self._stop.is_set():
-            if not self.connected:
-                time.sleep(self._refresh_sec)
-                continue
-            try:
-                self.refresh_once()
-            except Exception as exc:
-                self._log(f"[refresh] error: {exc}", error=True)
-            time.sleep(self._refresh_sec)
 
     def refresh_once(self) -> None:
         if self._refresh_lock.locked():
@@ -201,6 +113,144 @@ class ArchivistOrchestrator:
             if info_ok and idx_ok:
                 self._trigger_update()
 
+
+    def connect(self) -> bool:
+        host, miner_port = self._target_node
+        s_port = self.storage_port
+        if self._server is None or s_port is None:
+            fallback = miner_port + STORAGE_PORT_OFFSET
+            s_port = self._launch_storage_server(fallback)
+            self.storage_port = s_port
+
+        ok = self.rpc.connect(host, miner_port, my_listen_port=s_port)
+        if not ok:
+            peers = self.directory.get_nodes() or []
+            for ip, p in peers:
+                if self.rpc.connect(ip, p, my_listen_port=s_port):
+                    self.directory.mark_good((ip, p))
+                    self._target_node = (ip, p)
+                    ok = True
+                    break
+
+        if ok:
+            self.directory.mark_good((self._target_node[0], self._target_node[1]))
+            self.connected = True
+            self._log(f"[connect] Connected to node {self._target_node[0]}:{self._target_node[1]}")
+            return True
+        self._log("[connect] Failed to connect to any node", error=True)
+        return False
+
+
+    # ---------- lifecycle ----------
+    def start(self) -> bool:
+        if not self.connect():
+            return False
+        # start loops
+        threading.Thread(target=self._refresh_loop, name="ArchivistRefresh", daemon=True).start()
+        threading.Thread(target=self._retention_loop, name="ArchivistRetention", daemon=True).start()
+        threading.Thread(target=self._heartbeat_loop, name="ArchivistHeartbeat", daemon=True).start()
+        return True
+
+
+    def stop(self) -> None:
+        self._stop.set()
+        self.connected = False
+        self.rpc.node = None
+        self.pending_paid.clear()
+        self.pool_data.clear()
+        self._log("Shutdown complete.")
+
+
+# =============================================================================
+# INTERNAL METHOD
+# =============================================================================
+
+
+    def _log(self, msg: str, error: bool = False) -> None:
+        if self.log_callback:
+            self.log_callback(msg, error)
+
+
+    def _trigger_update(self) -> None:
+        if self.update_callback:
+            self.update_callback()
+
+
+    def _normalize_network_info(self, info_obj: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(info_obj, dict) or info_obj.get("error"):
+            return None
+        data = info_obj.get("data") if info_obj.get("type") == "NETWORK_INFO" else info_obj
+        chain = data.get("chain") if isinstance(data, dict) else {}
+        peers = data.get("peers") if isinstance(data, dict) else {}
+
+        def _as_int(val: Any) -> Optional[int]:
+            return int(val)
+
+        height = _as_int(chain.get("tip_height") if isinstance(chain, dict) else None)
+        if isinstance(data, dict) and height is None:
+            height = _as_int(data.get("height"))
+        peers_cnt = _as_int(peers.get("count") if isinstance(peers, dict) else None)
+        if isinstance(data, dict) and peers_cnt is None:
+            peers_cnt = _as_int(data.get("peers"))
+
+        if height is None and peers_cnt is None:
+            return None
+        normalized = dict(info_obj)
+        normalized["height"] = height
+        normalized["peers"] = peers_cnt
+        return normalized
+
+
+    # ---------- bootstrap ----------
+    def _launch_storage_server(self, fallback_start: Optional[int] = None) -> int:
+        cand_ports: list[int] = []
+        cfg_start = CFG.STORAGE_PORT_START
+        cfg_end = CFG.STORAGE_PORT_END
+        if cfg_start > 0 and cfg_end >= cfg_start:
+            cand_ports.extend(range(cfg_start, cfg_end + 1))
+        if fallback_start:
+            base = max(1024, fallback_start)
+            cand_ports.extend(range(base, base + 64))
+        if not cand_ports:
+            cand_ports.extend(range(39000, 39064))
+        tried = set()
+        for port in cand_ports:
+            if port <= 0 or port in tried:
+                continue
+            tried.add(port)
+            self._server = StorageServer("0.0.0.0", port, CFG.STORAGE_DIR)
+            return port
+        raise RuntimeError("No free port for storage server")
+
+
+    def _call_storage_local(self, payload: Dict[str, Any], timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+        port = self.storage_port
+        if port is None:
+            return None
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            s.connect(("127.0.0.1", int(port)))
+            send_message(s, json.dumps(payload).encode("utf-8"))
+            raw = recv_message(s, timeout)
+            if not raw:
+                return None
+            obj = json.loads(raw.decode("utf-8"))
+            return obj if isinstance(obj, dict) else None
+
+
+    # ---------- refresh loops ----------
+    def _refresh_loop(self) -> None:
+        while not self._stop.is_set():
+            if not self.connected:
+                time.sleep(self._refresh_sec)
+                continue
+            try:
+                self.refresh_once()
+            except Exception as exc:
+                self._log(f"[refresh] error: {exc}", error=True)
+            time.sleep(self._refresh_sec)
+
+
     def _render_index(self, idx: Dict[str, Any]) -> None:
         files = idx.get("files", {}) if isinstance(idx, dict) else {}
         art_map_idx = idx.get("art_map") if isinstance(idx, dict) else None
@@ -208,6 +258,7 @@ class ArchivistOrchestrator:
             files = {}
         self._mark_pending_payouts(idx)
         self._refresh_pool_listing(files, art_map_idx)
+
 
     def _refresh_pool_listing(self, files: Dict[str, Any], art_map_idx: Optional[Dict[str, Any]] = None) -> None:
         rpc = getattr(self, "rpc", None)
@@ -221,6 +272,7 @@ class ArchivistOrchestrator:
         
         self._auto_mark_paid(posts, files_by_art)
         self._auto_payout()
+
 
     def _build_file_maps(self, files: Dict[str, Any], art_map_idx: Optional[Dict[str, Any]]) -> tuple[dict[str, dict], dict[str, dict]]:
         files_by_sha: dict[str, dict] = {}
@@ -245,6 +297,7 @@ class ArchivistOrchestrator:
                     
         return files_by_sha, files_by_art
 
+
     def _populate_pool_data(self, posts: list[dict], files_by_sha: dict[str, dict], files_by_art: dict[str, dict]) -> None:
         self.pool_data = {}
         for art in posts:
@@ -256,6 +309,7 @@ class ArchivistOrchestrator:
             
             stats = art.get("stats") or {}
             self.pool_data[aid] = {"post": art, "stats": stats, "file": file_meta["meta"]}
+
 
     def _auto_mark_paid(self, posts: list[dict], files_by_art: dict[str, dict]) -> None:
         if not posts or not files_by_art:
@@ -286,6 +340,7 @@ class ArchivistOrchestrator:
         if marked:
             threading.Thread(target=self.refresh_once, name="ArchivistRefreshAuto", daemon=True).start()
 
+
     def _load_auto_payout_guard(self) -> None:
         path = str(CFG.ARCHIVIST_AUTO_PAYOUT_GUARD_FILE)
         self._auto_payout_guard_path = path
@@ -310,6 +365,7 @@ class ArchivistOrchestrator:
             cleaned[str(art_id)] = {"epoch": epoch, "ts": ts, "status": status}
         self._auto_payout_guard = cleaned
 
+
     def _save_auto_payout_guard(self) -> None:
         if not self._auto_payout_store:
             return
@@ -317,6 +373,7 @@ class ArchivistOrchestrator:
             self._auto_payout_store.save(self._auto_payout_guard)
         except Exception as exc:
             self._log(f"[auto-payout] guard save failed: {exc}", error=True)
+
 
     def _auto_payout(self) -> None:
         if not self.connected or not self.pool_data:
@@ -330,6 +387,7 @@ class ArchivistOrchestrator:
         with self._auto_payout_lock:
             for art_id, entry in self.pool_data.items():
                 self._process_auto_payout_for_art(art_id, entry, tip_epoch, cooldown, recipient)
+
 
     def _process_auto_payout_for_art(self, art_id: str, entry: dict, tip_epoch: int, cooldown: int, recipient: str) -> None:
         stats = entry.get("stats") or {}
@@ -390,6 +448,7 @@ class ArchivistOrchestrator:
         else:
             self._log(f"[auto-payout] failed art={art_id[:64]} resp={resp}", error=True)
 
+
     # ---------- retention / heartbeat ----------
     def _retention_loop(self) -> None:
         while not self._stop.is_set():
@@ -413,6 +472,7 @@ class ArchivistOrchestrator:
                 self._log(f"[retention] error: {exc}", error=True)
             self._stop.wait(CFG.RETENTION_GC_SEC)
 
+
     def _run_retention_proofs(self, idx: Dict[str, Any], tip_height: int) -> None:
         files = idx.get("files", {}) if isinstance(idx, dict) else {}
         if not files:
@@ -420,6 +480,7 @@ class ArchivistOrchestrator:
         epoch_target = GRAFFITI.compute_proof_epoch(tip_height)
         for gid, meta in files.items():
             self._process_single_retention_proof(gid, meta, epoch_target, tip_height)
+
 
     def _process_single_retention_proof(self, gid: str, meta: dict, epoch_target: int, tip_height: int) -> None:
         if not isinstance(meta, dict):
@@ -485,6 +546,7 @@ class ArchivistOrchestrator:
         else:
             self._log(f"[proof] submit failed: {ack}")
 
+
     def _heartbeat_loop(self) -> None:
         while not self._stop.is_set():
             if not self.connected:
@@ -497,6 +559,7 @@ class ArchivistOrchestrator:
             else:
                 self._handle_rpc_drop("heartbeat")
             self._stop.wait(HEARTBEAT_SEC)
+
 
     # ---------- state helpers ----------
     def _handle_rpc_drop(self, reason: str = "") -> None:
@@ -512,20 +575,6 @@ class ArchivistOrchestrator:
         else:
             self._log("Reconnection failed. Use 'reconnect' command.")
 
-    def attempt_reconnect(self) -> bool:
-        target = getattr(self, "_target_node", None)
-        storage_port = self.storage_port
-        if not target or storage_port is None:
-            return False
-        
-        host, miner_port = target
-        ok = self.rpc.connect(host, miner_port, my_listen_port=storage_port)
-        
-        if ok:
-            self.connected = True
-            return True
-        
-        return False
 
     def _mark_pending_payouts(self, idx: Dict[str, Any]) -> None:
         files = idx.get("files", {}) if isinstance(idx, dict) else {}
@@ -544,21 +593,3 @@ class ArchivistOrchestrator:
                 self._log(f"[payout] Cleared for {aid}")
                 
         self.pending_paid = current
-
-    # ---------- lifecycle ----------
-    def start(self) -> bool:
-        if not self.connect():
-            return False
-        # start loops
-        threading.Thread(target=self._refresh_loop, name="ArchivistRefresh", daemon=True).start()
-        threading.Thread(target=self._retention_loop, name="ArchivistRetention", daemon=True).start()
-        threading.Thread(target=self._heartbeat_loop, name="ArchivistHeartbeat", daemon=True).start()
-        return True
-
-    def stop(self) -> None:
-        self._stop.set()
-        self.connected = False
-        self.rpc.node = None
-        self.pending_paid.clear()
-        self.pool_data.clear()
-        self._log("Shutdown complete.")
