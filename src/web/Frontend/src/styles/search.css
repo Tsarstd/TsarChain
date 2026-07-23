@@ -1,35 +1,39 @@
 /* Tooltip dasar */
-.value.muted {
-  cursor: pointer;
+[data-tooltip],
+.value.muted[data-tooltip] {
   position: relative;
 }
 
 /* Tooltip pada hover */
-.value.muted:hover::after {
+[data-tooltip]:hover::after {
   content: attr(data-tooltip);
   position: absolute;
-  bottom: 180%;
+  bottom: calc(100% + 7px);
   left: 50%;
   transform: translateX(-50%);
-  background: rgb(212, 212, 212);
-  color: rgb(34, 34, 34);
-  padding: 4px 8px;
-  border-radius: 8px;
-  font-size: 12px;
+  background: rgb(220, 220, 220);
+  color: rgb(25, 25, 25);
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: var(--fw-medium);
   white-space: nowrap;
   z-index: 1000;
   pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 
-.value.muted:hover::before {
+[data-tooltip]:hover::before {
   content: '';
   position: absolute;
-  bottom: 85%;
+  bottom: calc(100% + 1px);
   left: 50%;
   transform: translateX(-50%);
-  border: 7px solid transparent;
-  border-top-color: rgb(212, 212, 212);
+  border-width: 6px 6px 0 6px;
+  border-style: solid;
+  border-color: rgb(220, 220, 220) transparent transparent transparent;
   z-index: 1001;
+  pointer-events: none;
 }
 
 .value.muted.hash-multiline:hover::after {
@@ -42,7 +46,7 @@
 .btn-ghost {
   background: rgba(221, 43, 43, 0.15);
   border: 1px solid rgba(221, 43, 43, 0.3);
-  color: #ff6b6b;
+  color: #cf764d;
   padding: 6px 10px;
   border-radius: 8px;
   cursor: pointer;
@@ -133,7 +137,7 @@
   background-color: var(--accent);
   color: #d7d7d7;
   border-color: var(--accent);
-  font-weight: 600;
+  font-weight: var(--fw-light);
 }
 
 .pagination-btn:disabled {
@@ -160,7 +164,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-weight: 600;
+  font-weight: var(--fw-light);
   font-size: 12px;
   padding: 0.5rem;
   background: #1d1d1d;
@@ -171,7 +175,7 @@
 .tx-item {
   padding: 0.75rem;
   background: #242424;
-  font-weight: 200;
+  font-weight: var(--fw-light);
   font-size: 12px;
 }
 
@@ -189,7 +193,7 @@
 
 .tx-amount {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: var(--fw-light);
   color: #38b36b;
 }
 
@@ -224,7 +228,7 @@
   border-radius: 2px;
   cursor: pointer;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   transition: background-color 0.2s;
 }
 
@@ -240,7 +244,7 @@
 .pdf-page-info {
   font-size: 14px;
   color: #888888;
-  font-weight: 850;
+  font-weight: var(--fw-medium);
   min-width: 120px;
   text-align: center;
 }
@@ -309,7 +313,7 @@
   }
   
   .value.muted.hash-multiline:hover::after {
-    font-size: 11px;
+    font-size: 14px;
     padding: 3px 6px;
     bottom: 160%;
   }

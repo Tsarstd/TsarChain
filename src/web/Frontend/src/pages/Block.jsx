@@ -67,7 +67,6 @@ const BlockCard = memo(({ item, onSelect, active, isGenesis }) => {
           <span className="value">{graffitiPayout ?? 0}</span>
         </div>
       </div>
-      {/* <div className="divider-card" /> */}
       <div className="lane-card__id wrap">{item?.hash || "-"}</div>
     </button>
   );

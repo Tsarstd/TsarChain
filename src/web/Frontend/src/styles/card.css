@@ -39,7 +39,7 @@
   background: var(--card);
   color: var(--text);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: var(--fw-light);
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
@@ -85,11 +85,11 @@
 .lane-scroll {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(240px, 1fr);
+  grid-auto-columns: 270px;
   gap: 18px;
   overflow-x: auto;
   padding: 12px 70px 12px 90px;
-  align-items: stretch;
+  align-items: center;
   scrollbar-width: none;
   cursor: grab;
   width: 100%;
@@ -117,27 +117,27 @@
 
 /*height label*/
 .lane-card__graffheader {
-  font-size: 35px;
-  font-weight: 650;
+  font-size: 28px;
+  font-weight: var(--fw-bold);
   color: rgb(191, 191, 191);
   position: relative;
-  top: 10.5%;
+  line-height: 1;
 }
 
 
 .lane-card__blockheight {
-  font-size: 35px;
-  font-weight: 650;
+  font-size: 28px;
+  font-weight: var(--fw-bold);
   color: rgb(191, 191, 191);
   position: relative;
-  top: 10.5%;
+  line-height: 1;
 }
 
 /*mime type label*/
 .lane-card__mp4 {
   font-size: 10.5px;
   text-align: center;
-  font-weight: 600;
+  font-weight: var(--fw-light);
   color: var(--text);
   align-self: baseline;
   justify-self: right;
@@ -174,7 +174,7 @@
 .lane-card__pdf {
   font-size: 10.5px;
   text-align: center;
-  font-weight: 600;
+  font-weight: var(--fw-light);
   color: var(--text);
   align-self: baseline;
   justify-self: right;
@@ -211,7 +211,7 @@
 .lane-card__jpeg {
   font-size: 10.5px;
   text-align: center;
-  font-weight: 600;
+  font-weight: var(--fw-light);
   color: var(--text);
   align-self: baseline;
   justify-self: right;
@@ -248,7 +248,7 @@
 .lane-card__mkv {
   font-size: 10.5px;
   text-align: center;
-  font-weight: 600;
+  font-weight: var(--fw-light);
   color: var(--text);
   align-self: baseline;
   justify-self: right;
@@ -286,14 +286,14 @@
 .lane-card__date {
   font-size: 12px;
   text-align: left;
-  font-weight: 600;
+  font-weight: var(--fw-light);
   color: #ece7e4;
 }
 
 .lane-card__time-ago {
   font-size: 9px;
   text-align: center;
-  font-weight: 700;
+  font-weight: var(--fw-medium);
   color: var(--bg);
   align-self: baseline;
   justify-self: right;
@@ -329,25 +329,26 @@
 
 /*for hash & graffiti id*/
 .lane-card__id {
-  color: var(--muted);
-  font-size: 13px;
-  font-family: 'Monaco', 'Consolas', monospace;
-  letter-spacing: -0.02em;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: var(--fw-light);
 }
 
 .lane-card {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--card);
-  padding: 18px;
+  padding: 14px;
   text-align: left;
   color: inherit;
   cursor: pointer;
   font: inherit;
-  height: 100%;
+  aspect-ratio: 1 / 1;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  justify-content: space-between;
+  gap: 6px;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
@@ -381,21 +382,29 @@
 
 /*creator label*/
 .lane-card__creator {
-  align-self: center;
-  padding: 6px 100px;
-  border-radius: 4px;
-  top: -3.5%;
-  font-size: 9.5px;
-  font-weight: 550;
+  margin-left: -14px;
+  margin-right: -14px;
+  width: calc(100% + 28px);
+  text-align: center;
+  box-sizing: border-box;
+  padding: 4px 6px;
+  border-radius: 0;
+  font-size: 10px;
+  font-weight: var(--fw-medium);
+  letter-spacing: -0.03em;
   background: linear-gradient(145deg, rgba(92, 48, 16, 0.794), rgba(35, 21, 11, 0.682));
   color: #ffdab9;
-  border: 1px solid rgba(153, 87, 39, 0.965);
+  border-top: 1px solid rgba(153, 87, 39, 0.965);
+  border-bottom: 1px solid rgba(153, 87, 39, 0.965);
+  border-left: none;
+  border-right: none;
   backdrop-filter: blur(10px);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.655);
 
   white-space: nowrap;
   position: relative;
   overflow: hidden;
+  text-overflow: clip;
   transform: translateZ(0);
 }
 
@@ -417,37 +426,54 @@
 
 /*block_id label*/
 .lane-card__bid {
-  align-self: center;
-  padding: 6px 100px;
-  border-radius: 4px;
+  margin-left: -14px;
+  margin-right: -14px;
+  width: calc(100% + 28px);
+  text-align: center;
+  box-sizing: border-box;
+  padding: 4px 6px;
+  border-radius: 0;
   position: relative;
-  top: -3.5%;
-  font-size: 9px;
-  font-weight: 730;
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.02em;
   background: linear-gradient(135deg, rgba(36, 35, 34, 0.67), rgba(12, 11, 10, 0.768));
   color: #8d8681;
-  border: 1px solid rgba(99, 76, 58, 0.618);
+  border-top: 1px solid rgba(99, 76, 58, 0.618);
+  border-bottom: 1px solid rgba(99, 76, 58, 0.618);
+  border-left: none;
+  border-right: none;
   backdrop-filter: blur(10px);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.655);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
 }
 
 /*Graffiti Post label*/
 .lane-card__graf {
-  align-self: center;
-  padding: 6px 100px;
-  border-radius: 4px;
-  top: -3.5%;
+  margin-left: -14px;
+  margin-right: -14px;
+  width: calc(100% + 28px);
+  text-align: center;
+  box-sizing: border-box;
+  padding: 4px 6px;
+  border-radius: 0;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   background: linear-gradient(145deg, rgba(249, 116, 22, 0.955), rgba(120, 53, 5, 0.86));
   color: #ffbd83;
-  border: 1px solid rgba(198, 103, 34, 0.965);
+  border-top: 1px solid rgba(198, 103, 34, 0.965);
+  border-bottom: 1px solid rgba(198, 103, 34, 0.965);
+  border-left: none;
+  border-right: none;
   backdrop-filter: blur(10px);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.655);
 
   white-space: nowrap;
   position: relative;
   overflow: hidden;
+  text-overflow: clip;
   transform: translateZ(0);
 }
 
@@ -472,16 +498,17 @@
   background: linear-gradient(135deg, #dd6a05 0%, #211408cf 100%);
   border: 1px solid rgba(237, 182, 115, 0.618);
   border-radius: 6px;
-  padding: 18px;
+  padding: 14px;
   text-align: left;
   color: inherit;
   cursor: pointer;
   font: inherit;
-  min-height: 220px;
-  height: 100%;
+  aspect-ratio: 1 / 1;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  justify-content: space-between;
+  gap: 6px;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
@@ -572,7 +599,7 @@
   align-self: start;
   justify-self: start;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: var(--fw-medium);
   color: #FFD700;
   text-shadow: 
     0 0 10px rgba(255, 215, 0, 0.8),
@@ -657,7 +684,7 @@
   }
   
   .lane-scroll {
-    grid-auto-columns: minmax(180px, 1fr);
+    grid-auto-columns: 180px;
     gap: 8px;
     padding: 8px 10px;
     mask-image: none;
@@ -708,7 +735,7 @@
   }
   
   .lane-scroll {
-    grid-auto-columns: minmax(180px, 1fr);
+    grid-auto-columns: 180px;
     gap: 10px;
     padding: 6px 8px;
   }
@@ -741,7 +768,7 @@
 
 @media (max-width: 360px) {
   .lane-scroll {
-    grid-auto-columns: minmax(130px, 1fr);
+    grid-auto-columns: 130px;
     gap: 5px;
     padding: 5px 6px;
   }
@@ -792,7 +819,7 @@
   }
   
   .lane-scroll {
-    grid-auto-columns: minmax(120px, 1fr);
+    grid-auto-columns: 120px;
     gap: 4px;
     padding: 4px 5px;
   }
@@ -848,7 +875,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 700;
+  font-weight: var(--fw-medium);
   font-size: 14px;
   color: var(--text);
 }
@@ -873,7 +900,7 @@
   padding: 6px 14px;
   border-radius: 20px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: var(--fw-light);
   cursor: pointer;
   transition: all 0.2s ease;
   display: inline-flex;
@@ -926,7 +953,7 @@
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: var(--fw-medium);
   color: var(--text);
 }
 
@@ -984,7 +1011,7 @@
 
 .lightbox-header h3 {
   font-size: 16px;
-  font-weight: 700;
+  font-weight: var(--fw-medium);
   display: inline-flex;
   align-items: center;
   gap: 8px;

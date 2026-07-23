@@ -23,21 +23,14 @@ export const ClickableValue = ({
     return <span className={className} style={style}>{displayValue}</span>;
   }
 
-  const handleCopy = (e) => {
+  const handleCopy = async (e) => {
     e.stopPropagation();
     if (!value || value === "-") return;
     try {
       if (navigator.clipboard?.writeText) {
-        navigator.clipboard.writeText(value);
+        await navigator.clipboard.writeText(value);
       } else {
-        const textArea = document.createElement("textarea");
-        textArea.value = value;
-        textArea.style.position = "fixed";
-        textArea.style.left = "-999999px";
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand("copy");
-        textArea.remove();
+        throw new Error("Clipboard API not available");
       }
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -46,16 +39,16 @@ export const ClickableValue = ({
     }
   };
 
-  const finalClassName = `value muted ${className}`.trim();
+  const finalClassName = `value ${className}`.replace(/\bmuted\b/g, '').replace(/\s+/g, ' ').trim();
   const currentTooltip = copied ? "Copied!" : info;
   const showCopyBtn = isCopyable && value && value !== "-";
 
   return (
     <span className="clickable-value-container" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', maxWidth: '100%', ...style }}>
       {onSearchClick ? (
-        <button
+        <a
+          href={`/?search=${encodeURIComponent(value)}`}
           className={finalClassName}
-          type="button"
           style={{
             cursor: "pointer",
             color: "#5e9de6ff",
@@ -64,17 +57,27 @@ export const ClickableValue = ({
             background: "none",
             border: "none",
             padding: 0,
-            font: "inherit",
+            fontFamily: "inherit",
+            fontSize: "inherit",
+            fontWeight: "inherit",
+            lineHeight: "inherit",
             textAlign: "inherit",
             display: "inline",
+            textDecoration: "none",
           }}
-          onClick={() => onSearchClick(value)}
+          onClick={(e) => {
+            if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) {
+              return;
+            }
+            e.preventDefault();
+            onSearchClick(value);
+          }}
           data-tooltip={currentTooltip || undefined}
           onMouseEnter={(e) => (e.currentTarget.style.color = "#4d7fb7ff")}
           onMouseLeave={(e) => (e.currentTarget.style.color = "#5e9de6ff")}
         >
           {displayValue}
-        </button>
+        </a>
       ) : (
         <span
           className={finalClassName}

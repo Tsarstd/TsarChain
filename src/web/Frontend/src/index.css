@@ -2,26 +2,25 @@
   --bg: #0b0c10;
   --bg-gradient: radial-gradient(circle at 50% 0%, #151824 0%, #0b0c10 70%);
   --panel: rgba(20, 22, 32, 0.75);
-  --panel-solid: #141620;
   --card: rgba(28, 31, 46, 0.65);
-  --card-solid: #1c1f2e;
-  --card-hover: rgba(38, 42, 62, 0.85);
   --border: rgba(255, 255, 255, 0.08);
   --border-glow: rgba(224, 95, 50, 0.35);
   --accent: #e05f32;
   --accent-gradient: linear-gradient(135deg, #e05f32 0%, #ff7a45 100%);
   --accent-glow: rgba(224, 95, 50, 0.25);
   --text: #f3eeee;
-  --text-muted: #9ca3af;
-  --muted: #6b7280;
-  --success: #10b981;
-  --success-glow: rgba(16, 185, 129, 0.25);
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Roboto Mono', monospace;
+  --text-muted: #bec4ce;
+  --font-primary: 'Inter', system-ui, -apple-system, BlinkMacSystemFont;
+  --fw-light: 300;
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
 }
 
 @font-face {
-  font-family: 'Archivo';
-  src: url('./assets/fonts/Archivo-Regular.woff2') format('woff2');
+  font-family: 'Inter';
+  src: url('./assets/fonts/Inter-Regular.woff2') format('woff2');
   font-display: swap;
 }
 
@@ -43,7 +42,7 @@ body {
   background: var(--bg-gradient);
   background-attachment: fixed;
   color: var(--text);
-  font-family: 'Archivo', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;

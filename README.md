@@ -119,6 +119,16 @@ Graffiti Protocol focuses on **Voice Sovereignty**: preserving *cultural archive
     <img src="assets/screenshoot/network_tab1.png">
   </details>
 
+- ***Website Explorer***
+  <details>
+    <summary>Preview 1</summary>
+    <img src="assets/screenshoot/web_explorer1.png">
+  </details>
+  <details>
+    <summary>Preview 2</summary>
+    <img src="assets/screenshoot/web_explorer2.png">
+  </details>
+
 ---
 
 ## ⚠️ Project Status
@@ -132,6 +142,7 @@ Graffiti Protocol focuses on **Voice Sovereignty**: preserving *cultural archive
   - Contact Management
   - History Transactions
   - Mnemonic, Private Key & Backup management for wallet
+  - Post & Comment Graffiti
 - **TsarChain (Consensus)**
   - Genesis Block Generating
   - Proof-of-Work `RandomX`
@@ -146,20 +157,36 @@ Graffiti Protocol focuses on **Voice Sovereignty**: preserving *cultural archive
   - P2P Networking Protocol
   - Chain Validation
   - Some Native Rust for acceleration module for TsarChain
+- **Website Explorer**
+  - Exploring Graffiti Art
+  - Detail Transactions History
+  - Generated History Book
+  - Block Informations
+- **Archivist (Storage Node)**
+  - Receive Graffiti Art from Wallet
+  - Proof of Retention
+  - Auto Payouts based on Epoch
 - **Graffiti Protocol (MVP)**
   - Graffiti upload Mechanism in Graffiti Tab `Kremlin`
   - Put a Comment and Giving a tip to graffiti creator
   - Anchoring Graffiti File Hash to Block Id
   - Comment and tip have been successfully received by the creator
+  - Split incentive mechanism 80/10/10 from comment & tip
   - See Graffiti Activity in Explore Tab `Kremlin`
 
 #### 🚧 In Development
 - **Archivist (Storage Node)**
   - More Consensus Security
-  - Implementing resilience from rogue Archivists
+  - Implementing resilience from rogue Archivists (slashing)
+  - etc.
 - **Kremlin Wallet (Light Wallet)**
   - Some UI/UX Wallet
   - improve Graffiti feature
+  - etc.
+- **Website Explorer**
+  - More Features
+  - More UI/UX Improvement
+  - etc.
 - **TsarChain (Consensus)**
   - Validating Graffiti Activity each node
   - Some Security
@@ -177,12 +204,13 @@ Graffiti Protocol focuses on **Voice Sovereignty**: preserving *cultural archive
 - **Secure chat** — X3DH key agreement + Double Ratchet, safety numbers, and key-change alerts.
 - **Networking** — Peer discovery with bootstrap support, multi-port range, full block/tx relay.
 - **Observability** — Structured logs for node, miner, and wallet.
+- **Graffiti Protocol** — Post, Comment & Payouts implementation ready, Proof of Retention, and Split Incentive Mechanism 80/10/10
 
 ---
 
 ## 🧭 Why Voice Sovereignty?
 
-Platforms curate history; networks preserve it. TsarChain treats each message, artwork, or testimony as **expressive value** anchored in blocks and protected by open consensus — not for confrontation, but for the care of collective memory.
+Platforms curate history; networks preserve it. Graffiti Protocol treats each message, artwork, or testimony as **expressive value** anchored in blocks and protected by open consensus — not for confrontation, but for the care of collective memory.
 
 ---
 
@@ -255,8 +283,8 @@ NET_ID_DEV          = "gulag-net"
 # =============================================================================
 INITIAL_BITS       = 0x1F0FFFFF     # easier RandomX default for dev
 MAX_BITS           = 0x1F0FFFFF
-TARGET_BLOCK_TIME  = 60             # 60 Sec
-LWMA_WINDOW        = 60             # Block's
+TARGET_BLOCK_TIME  = 37             # 37 Sec
+LWMA_WINDOW        = 75             # Block's
 FUTURE_DRIFT       = 600            # 10 Minute
 MTP_WINDOWS        = 11             # Block's
 

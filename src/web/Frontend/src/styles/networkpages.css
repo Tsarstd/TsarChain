@@ -53,7 +53,7 @@
 
 .header-title h1 {
   font-size: 28px;
-  font-weight: 700;
+  font-weight: var(--fw-medium);
   margin: 0;
   letter-spacing: -0.5px;
   background: var(--accent-gradient);
@@ -122,7 +122,7 @@
 
 .status-text {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: var(--fw-light);
   letter-spacing: 0.2px;
 }
 
@@ -162,16 +162,15 @@
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  font-weight: 600;
+  font-weight: var(--fw-light);
   margin-bottom: 6px;
 }
 
 .summary-value {
   display: block;
   font-size: 24px;
-  font-weight: 700;
+  font-weight: var(--fw-medium);
   color: #ffffff;
-  font-family: var(--font-mono);
 }
 
 .summary-value.highlight {
@@ -209,7 +208,7 @@
 
 .section-title h2 {
   font-size: 20px;
-  font-weight: 700;
+  font-weight: var(--fw-medium);
   color: #ffffff;
   margin: 0;
   letter-spacing: -0.3px;
@@ -299,23 +298,22 @@
 .stat-label {
   font-size: 12px;
   color: var(--text-muted);
-  font-weight: 600;
+  font-weight: var(--fw-light);
   text-transform: uppercase;
   letter-spacing: 0.6px;
 }
 
 .stat-value {
   font-size: 22px;
-  font-weight: 700;
+  font-weight: var(--fw-medium);
   color: #f1eeee;
   margin-bottom: 6px;
   line-height: 1.25;
-  font-family: var(--font-mono);
 }
 
 .stat-subtext {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 /* Hash Display */
@@ -345,7 +343,7 @@
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  font-weight: 600;
+  font-weight: var(--fw-light);
   margin-bottom: 8px;
 }
 
@@ -353,7 +351,6 @@
   font-size: 13px;
   word-break: break-all;
   line-height: 1.45;
-  font-family: var(--font-mono);
 }
 
 /* Genesis Message */
@@ -443,7 +440,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 600;
+  font-weight: var(--fw-light);
   color: rgb(20, 20, 20);
   font-size: 14px;
 }
@@ -456,7 +453,7 @@
 
 .address-list {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: var(--fw-light);
   color: rgba(255, 255, 255, 0.6);
 }
 
@@ -468,7 +465,7 @@
 
 .block-count {
   font-size: 18px;
-  font-weight: 700;
+  font-weight: var(--fw-medium);
   color: var(--accent);
 }
 
@@ -529,7 +526,7 @@
   border: none;
   padding: 12px 32px;
   border-radius: 8px;
-  font-weight: 600;
+  font-weight: var(--fw-light);
   cursor: pointer;
   transition: all 0.3s ease;
 }

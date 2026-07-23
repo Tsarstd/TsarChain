@@ -44,7 +44,7 @@ const footerSections = [
 ];
 
 const socialLinks = [
-  { label: "GitHub", short: <IoLogoGithub />, url: "https://github.com/Tsarstd/TsarChain" },
+  { label: "GitHub", short: <IoLogoGithub />, url: "https://github.com/Tsarstd/Graffiti-Protocol" },
   { label: "Instagram", short: <FaInstagram />, url: "https://www.instagram.com/tsar.std" },
   { label: "Gumroad", short: <SiGumroad />, url: "https://tsarstudio.gumroad.com/" },
 ];

@@ -12,6 +12,21 @@ import {
 } from "../../../utils/format"
 
 
+const AddressHeaderCell = ({ val, cellKey }) => {
+  return (
+    <div key={cellKey} className="address-cell">
+      <div className="address-char-container">
+        <span className="address-char">{val}</span>
+      </div>
+    </div>
+  );
+};
+
+AddressHeaderCell.propTypes = {
+  val: PropTypes.string.isRequired,
+  cellKey: PropTypes.string.isRequired,
+};
+
 const AddressChunk = ({ cell, shouldHighlight, cellKey }) => {
   return (
     <div key={cellKey} className="address-cell">
@@ -30,59 +45,6 @@ AddressChunk.propTypes = {
   cell: PropTypes.object.isRequired,
   shouldHighlight: PropTypes.bool.isRequired,
   cellKey: PropTypes.string.isRequired,
-};
-
-
-const AddressRow = ({ row, rIdx, isP2WPKH, isP2WSH, highlightPositions }) => {
-  const isLabelRow = (isP2WPKH && rIdx === 3) || (isP2WSH && rIdx === 4);
-
-  if (isLabelRow) {
-    const labelClass = isP2WPKH ? "address-label-p2wpkh" : "address-label-p2wsh";
-    return (
-      <div className="address-row">
-        <div className="address-cell">
-          <div className={labelClass}><span className="address-label">{row.cells[0].val}</span></div>
-        </div>
-        <div className="address-cell">
-          <div className={labelClass}><span className="address-label">{row.cells[1].val}</span></div>
-        </div>
-      </div>
-    );
-  }
-
-  const isHighlighted = (r, c) => highlightPositions.some(pos => pos[0] === r && pos[1] === c);
-  const isSingleCharRow = rIdx === 0;
-
-  return (
-    <div className="address-row">
-      {row.cells.map((cell, cIdx) => {
-        if (isSingleCharRow) {
-          return (
-            <div key={cell.id} className="address-cell">
-              <div className="address-char-container"><span className="address-char">{cell.val}</span></div>
-            </div>
-          );
-        }
-        return (
-          <AddressChunk
-            key={cell.id}
-            cell={cell}
-            shouldHighlight={isHighlighted(rIdx, cIdx)}
-            cellKey={cell.id}
-          />
-        );
-      })}
-    </div>
-  );
-};
-
-
-AddressRow.propTypes = {
-  row: PropTypes.object.isRequired,
-  rIdx: PropTypes.number.isRequired,
-  isP2WPKH: PropTypes.bool.isRequired,
-  isP2WSH: PropTypes.bool.isRequired,
-  highlightPositions: PropTypes.array.isRequired,
 };
 
 
@@ -202,21 +164,17 @@ const ResultAddress = ({ data, onSearchClick }) => {
   };
 
   const splitAddressGrid = (address) => {
-    if (!address) return [];
+    if (!address) return null;
     
     const len = address.length;
-    if (len !== 44 && len !== 64) return [];
+    if (len !== 44 && len !== 64) return null;
     
-    const rows = [];
-    
-    rows.push({
-      id: "row-header",
-      cells: address.substring(0, 4).split('').map((char, charIdx) => ({
-        id: `header-char-${charIdx}`,
-        val: char
-      }))
-    });
-    
+    const headerChars = address.substring(0, 4).split('').map((char, charIdx) => ({
+      id: `header-char-${charIdx}`,
+      val: char
+    }));
+
+    const bodyRows = [];
     let rowIndex = 1;
     for (let start = 4; start < len; start += 20) {
       const cells = [];
@@ -225,6 +183,8 @@ const ResultAddress = ({ data, onSearchClick }) => {
         const chunkVal = address.substring(i, i + 5);
         cells.push({
           id: `cell-${rowIndex}-${colIndex}`,
+          rIdx: rowIndex,
+          cIdx: colIndex,
           val: chunkVal,
           chars: chunkVal.split('').map((char, charIdx) => ({
             id: `cell-char-${rowIndex}-${colIndex}-${charIdx}`,
@@ -233,45 +193,39 @@ const ResultAddress = ({ data, onSearchClick }) => {
         });
         colIndex++;
       }
-      rows.push({
+      bodyRows.push({
         id: `row-${rowIndex}`,
+        rIdx: rowIndex,
         cells
       });
       rowIndex++;
     }
     
-    if (len === 44) {
-      rows.push({
-        id: "row-label",
-        cells: [
-          { id: "label-type", val: "Citizen Address" },
-          { id: "label-name", val: "P2WPKH" }
-        ]
-      });
-    } else {
-      rows.push({
-        id: "row-label",
-        cells: [
-          { id: "label-type", val: "Pool Address" },
-          { id: "label-name", val: "P2WSH" }
-        ]
-      });
-    }
+    const isP2WPKH = len === 44;
+    const addressType = isP2WPKH ? "P2WPKH" : "P2WSH";
+    const labelType = isP2WPKH ? "Citizen Address" : "Pool Address";
+    const badgeText = `${labelType} (${addressType})`;
     
-    return rows;
+    return {
+      headerChars,
+      bodyRows,
+      isP2WPKH,
+      badgeText,
+      labelClass: isP2WPKH ? "address-label-p2wpkh" : "address-label-p2wsh"
+    };
   };
 
   const getHighlightPositions = (addressLength) => {
     if (addressLength === 44) { // P2WPKH
       return [
-        [1, 0], [1, 2], // Baris 2, kolom 0 dan 2
-        [2, 1], [2, 3]  // Baris 3, kolom 1 dan 3
+        [1, 0], [1, 2], // Row 1, col 0 and 2
+        [2, 1], [2, 3]  // Row 2, col 1 and 3
       ];
     } else if (addressLength === 64) { // P2WSH
       return [
-        [1, 0], [1, 2], // Baris 2, kolom 0 dan 2
-        [2, 1], [2, 3], // Baris 3, kolom 1 dan 3
-        [3, 0], [3, 2]  // Baris 4, kolom 0 dan 2
+        [1, 0], [1, 2], // Row 1, col 0 and 2
+        [2, 1], [2, 3], // Row 2, col 1 and 3
+        [3, 0], [3, 2]  // Row 3, col 0 and 2
       ];
     }
     return [];
@@ -280,27 +234,44 @@ const ResultAddress = ({ data, onSearchClick }) => {
   const renderAddressGrid = (address) => {
     if (!address) return <span>-</span>;
     
-    const grid = splitAddressGrid(address);
-    if (grid.length === 0) {
+    const gridData = splitAddressGrid(address);
+    if (!gridData) {
       return <span className="value wrap">{address}</span>;
     }
 
-    const isP2WPKH = address.length === 44;
-    const isP2WSH = address.length === 64;
+    const { headerChars, bodyRows, badgeText, labelClass } = gridData;
     const highlightPositions = getHighlightPositions(address.length);
+    const isHighlighted = (r, c) => highlightPositions.some(pos => pos[0] === r && pos[1] === c);
 
     return (
-      <div className="address-container">
-        {grid.map((row, rIdx) => (
-          <AddressRow
-            key={row.id}
-            row={row}
-            rIdx={rIdx}
-            isP2WPKH={isP2WPKH}
-            isP2WSH={isP2WSH}
-            highlightPositions={highlightPositions}
-          />
-        ))}
+      <div className="address-grid-wrapper">
+        <div className="address-container">
+          {/* Row 0 Header ("tsar") */}
+          <div className="address-row">
+            {headerChars.map((charObj) => (
+              <AddressHeaderCell key={charObj.id} val={charObj.val} cellKey={charObj.id} />
+            ))}
+          </div>
+          {/* Body Rows */}
+          {bodyRows.map((row) => (
+            <div key={row.id} className="address-row">
+              {row.cells.map((cell) => (
+                <AddressChunk
+                  key={cell.id}
+                  cell={cell}
+                  shouldHighlight={isHighlighted(row.rIdx, cell.cIdx)}
+                  cellKey={cell.id}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+        {/* Centered Badge Row */}
+        <div className="address-badge-row">
+          <div className={labelClass}>
+            <span className="address-label">{badgeText}</span>
+          </div>
+        </div>
       </div>
     );
   };

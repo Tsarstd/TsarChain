@@ -39,7 +39,7 @@ const ResultBlock = ({ data, onSearchClick }) => {
             <ClickableValue
               value={data.block_id}
               onSearchClick={onSearchClick}
-              className="value muted"
+              className="value"
               info="Click To See Graffiti Post"
               isCopyable={true}
             >
@@ -55,7 +55,7 @@ const ResultBlock = ({ data, onSearchClick }) => {
         <div className="grid">
           <div className="stat">
             <span className="info-label">Hash</span>
-            {renderHash(data?.hash, "wrap", true)}
+            {renderHash(data?.hash, "wrap", false)}
           </div>
           <div className="stat">
             <span className="info-label">Prev Hash</span>

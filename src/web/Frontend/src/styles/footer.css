@@ -60,21 +60,21 @@
 }
 
 .site-footer__tagline {
-  color: var(--muted);
-  font-weight: 900;
+  color: var(--text-muted);
+  font-weight: var(--fw-medium);
 }
 
 .site-footer__title {
-  color: var(--muted);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 21px;
-  font-weight: 400;
+  font-weight: var(--fw-light);
   margin-bottom: 7px;
 }
 
 .site-footer__copyright {
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 13px;
   margin-top: 12px;
 }
@@ -128,7 +128,7 @@
   align-items: center;
   justify-content: center;
   font-size: 27px;
-  font-weight: 600;
+  font-weight: var(--fw-light);
   letter-spacing: 0.08em;
   transition: border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
@@ -178,7 +178,7 @@
   
   .site-footer__title {
     font-size: 18px;
-    font-weight: 800;
+    font-weight: var(--fw-medium);
   }
 }
 

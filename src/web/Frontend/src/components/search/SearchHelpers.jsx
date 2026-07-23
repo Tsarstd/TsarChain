@@ -61,7 +61,7 @@ export const useRenderHelpers = () => {
         <ClickableValue
           value={value}
           onSearchClick={onSearchClick}
-          className="value muted hash-multiline"
+          className="value hash-multiline"
           info={info}
           isCopyable={isCopyable}
           style={{ whiteSpace: 'pre-wrap' }}
@@ -74,7 +74,7 @@ export const useRenderHelpers = () => {
       <ClickableValue
         value={value}
         onSearchClick={onSearchClick}
-        className="value muted"
+        className="value"
         info={info}
         isCopyable={isCopyable}
       >

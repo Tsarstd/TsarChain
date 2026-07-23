@@ -307,7 +307,7 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
           <div className="comment-item" key={c.txid || `${c.commenter}-${c.ts}`}>
             <div className="muted">{fmtTimestamp(c.ts)}</div>
             <div className="value">
-            <ClickableValue value={c.commenter || "-"} onSearchClick={onSearchClick} className="value muted" info={c.commenter} isCopyable={true}>
+            <ClickableValue value={c.commenter || "-"} onSearchClick={onSearchClick} className="value" info={c.commenter} isCopyable={true}>
                 {fmtAddress(c.commenter) || c.commenter || "-"}
             </ClickableValue>
             </div>
