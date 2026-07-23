@@ -24,8 +24,8 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
         }
       }
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    globalThis.addEventListener("keydown", handleKeyDown);
+    return () => globalThis.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   const handleSubmit = (event) => {
@@ -97,7 +97,7 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
                 value={query}
                 onChange={(e) => onQueryChange?.(e.target.value)}
               />
-              <kbd className="navbar__shortcut">Ctrl K</kbd>
+              <kbd className="navbar__shortcut">/</kbd>
             </div>
             <button 
               className="navbar__search-btn btn-primary" 

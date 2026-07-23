@@ -159,7 +159,7 @@ class BlockValidator:
             # dummy header to prime dataset
             dummy_hdr = b"\x00" * 80
             H.pow_hash_verify_light(dummy_hdr, key_hint=key)
-            log.debug("[pow_warm] warmed epoch=%s", next_epoch)
+            log.info("[pow_warm] warmed epoch=%s", next_epoch)
 
         t = threading.Thread(target=_worker, name="pow-warm", daemon=True)
         t.start()
@@ -180,7 +180,7 @@ class BlockValidator:
         key = H.pow_key_for_height(epoch * epoch_blocks)
         dummy_hdr = b"\x00" * 80
         H.pow_hash_verify_light(dummy_hdr, key_hint=key)
-        log.debug("[pow_warm] ensured epoch=%s ready", epoch)
+        log.info("[pow_warm] ensured epoch=%s ready", epoch)
 
 
     def _validate_pow(self, block: Block) -> bool: 
@@ -546,7 +546,7 @@ class BlockValidator:
                 raw = tx.serialize()
                 return len(raw if isinstance(raw, (bytes, bytearray)) else bytes.fromhex(raw))
             except Exception:
-                log.debug("[_estimate_block_size] tx.serialize failed", exc_info=True)
+                log.exception("[_estimate_block_size] tx.serialize failed")
                 
         if hasattr(tx, "raw") and isinstance(getattr(tx, "raw"), (bytes, bytearray)):
             return len(tx.raw)
@@ -840,7 +840,7 @@ class BlockValidator:
         if script_bytes is None and isinstance(candidate, dict):
             script_bytes = self._script_to_bytes(candidate.get("script_pubkey"))
         if script_bytes is None:
-            log.debug("[native_snapshot] entry %s missing script", key_desc)
+            log.warning("[native_snapshot] entry %s missing script", key_desc)
             return None
         if isinstance(tx_out, dict):
             amount_val = tx_out.get("amount")

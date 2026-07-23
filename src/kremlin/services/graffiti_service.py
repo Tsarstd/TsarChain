@@ -527,7 +527,6 @@ def fetch_graffiti_file(
     cache_root = cache_dir or os.path.join(CFG.WALLET_DATA_DIR, "graffiti_cache")
     cached = _read_cached_graffiti_file(art_norm, cache_root)
     if cached is not None:
-        log.debug("[fetch] cache_hit art=%s path=%s", art_norm[:16], cached.get("cache_path"))
         return cached
 
     # max_bytes = file size ceiling (NOT per-message ceiling)

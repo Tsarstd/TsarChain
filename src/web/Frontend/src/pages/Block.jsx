@@ -12,10 +12,9 @@ const CACHE_KEY = 'block_range_cache';
 const CACHE_EXPIRE_MS = 15 * 60 * 1000;
 
 const BlockCard = memo(({ item, onSelect, active, isGenesis }) => {
-  const graffitiPosts = Number(item?.graffiti_posts || 0);
   const graffitiComments = Number(item?.graffiti_comments || 0);
+  const graffitiPayout = Number(item?.graffiti_payouts || 0);
   const blockId = item?.block_id;
-  const graffitiCount = item?.graffiti_count ?? graffitiPosts + graffitiComments;
 
   const isGraffiti =
     typeof blockId === "string" &&
@@ -36,7 +35,6 @@ const BlockCard = memo(({ item, onSelect, active, isGenesis }) => {
         <div className="stat">
           <div className="lane-card__date">{fmtDateLong(item?.timestamp)}</div>
           <div className="lane-card__blockheight">{item?.height ?? "-"}</div>
-          {/* <div className="lane-card__blockheight">1569298541</div> */}
         </div>
         <div className="lane-card__time-ago">{timeAgo(item?.timestamp)}</div>
 
@@ -58,12 +56,18 @@ const BlockCard = memo(({ item, onSelect, active, isGenesis }) => {
           <span className="label">Transactions</span>
           <span className="value">{item?.tx_count ?? 0}</span>
         </div>
+      </div>
+      <div className="lane-card__grid">
         <div className="stat">
-          <span className="label">Graffiti Activity</span>
-          <span className="value">{graffitiCount ?? 0}</span>
+          <span className="label">Comments</span>
+          <span className="value">{graffitiComments ?? 0}</span>
+        </div>
+        <div className="stat">
+          <span className="label">Payouts</span>
+          <span className="value">{graffitiPayout ?? 0}</span>
         </div>
       </div>
-      <div className="divider-card" />
+      {/* <div className="divider-card" /> */}
       <div className="lane-card__id wrap">{item?.hash || "-"}</div>
     </button>
   );
@@ -105,11 +109,11 @@ export const useDragScroll = () => {
       }, 100);
     };
 
-    window.addEventListener("mousemove", handleGlobalMouseMove);
-    window.addEventListener("mouseup", handleGlobalMouseUp);
+    globalThis.addEventListener("mousemove", handleGlobalMouseMove);
+    globalThis.addEventListener("mouseup", handleGlobalMouseUp);
     return () => {
-      window.removeEventListener("mousemove", handleGlobalMouseMove);
-      window.removeEventListener("mouseup", handleGlobalMouseUp);
+      globalThis.removeEventListener("mousemove", handleGlobalMouseMove);
+      globalThis.removeEventListener("mouseup", handleGlobalMouseUp);
     };
   }, []);
 

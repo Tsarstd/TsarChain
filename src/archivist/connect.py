@@ -168,7 +168,7 @@ def _ping_node(ip: str, port: int, node_id: str, pub_hex: str, priv_hex: str, ct
                 if (not CFG.ENVELOPE_REQUIRED) and isinstance(outer, dict) and outer.get("type") == "PONG":
                     return True
     except Exception as e:
-        log.debug("Scan node %s:%s gagal: %s", ip, port, e)
+        log.warning("Scan node %s:%s failed: %s", ip, port, e)
     return False
 
 
@@ -272,7 +272,6 @@ class RPC:
         _ = self.call(hello, timeout=3.0)
         pong = self.call({"type":"PING"}, timeout=3.0)
         ok = isinstance(pong, dict) and (pong.get("type") == "PONG")
-        log.debug("[RPC.connect] handshake result %s to %s:%s", ok, ip, port)
         if ok:
             log.info("[RPC.connect] storage handshake ok to %s:%s listen_port=%s", ip, port, my_listen_port)
         return ok

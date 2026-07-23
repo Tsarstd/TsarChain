@@ -495,7 +495,7 @@ class GraffitiTab(ttk.Frame):
             try:
                 self._video_player.dispose()
             except Exception:
-                log.debug("graffiti_tab: dispose video player failed", exc_info=True)
+                log.exception("graffiti_tab: dispose video player failed")
             self._video_player = None
         
         # Tutup PDF dokumen jika ada
@@ -529,8 +529,6 @@ class GraffitiTab(ttk.Frame):
         self._clear_preview()
         path = self.controller.selected_path
         mime = (self.controller.selected_mime or "").lower()
-        log.debug("graffiti_tab: render preview path=%s mime=%s", path, mime)
-
         # Video (mp4 & mkv)
         if "video" in mime or path.lower().endswith(".mp4"):
             container = tk.Frame(self.preview_frame, bg=self.theme.card_bg)
@@ -640,7 +638,7 @@ class GraffitiTab(ttk.Frame):
             tk.Label(self.preview_frame, image=photo, bg=self.theme.card_bg).pack(pady=6)
             self.preview_status_var.set("Preview gambar.")
         except Exception:
-            log.debug("graffiti_tab: load image preview failed", exc_info=True)
+            log.exception("graffiti_tab: load image preview failed")
             tk.Label(
                 self.preview_frame,
                 text="Preview gambar gagal dimuat.",
@@ -720,7 +718,6 @@ class GraffitiTab(ttk.Frame):
             messagebox.showwarning("Graffiti", "Offline wallet or RPC is not available.")
             return
 
-        log.debug("graffiti_tab: open catalog for creator=%s", creator)
         top = tk.Toplevel(self)
         top.title(f"Catalog - {creator[:64]}")
         top.configure(bg=self.theme.bg)
@@ -746,9 +743,8 @@ class GraffitiTab(ttk.Frame):
                 top.clipboard_clear()
                 top.clipboard_append(art_id_full)
                 status_var.set("Art ID copied.")
-                log.debug("graffiti_tab: copy art_id=%s", art_id_full)
+                
             def _open():
-                log.debug("graffiti_tab: open in explorer art_id=%s", art_id_full)
                 app = getattr(self, "app", None)
                 try:
                     if app:
@@ -757,7 +753,8 @@ class GraffitiTab(ttk.Frame):
                         if panel and hasattr(panel, "navigate_to_art"):
                             panel.navigate_to_art(art_id_full)
                 except Exception:
-                    log.debug("graffiti_tab: open explorer failed", exc_info=True)
+                    log.exception("graffiti_tab: open explorer failed")
+
             menu.delete(0, tk.END)
             menu.add_command(label="Copy art id", command=_copy)
             menu.add_command(label="Open in Explorer", command=_open)
@@ -777,7 +774,6 @@ class GraffitiTab(ttk.Frame):
                     tv.insert("", tk.END, iid=aid_full, values=(aid_full, height, f"{size:,} B", comments))
                     self._catalog_map_local[aid_full] = post
                 status_var.set(f"{len(filtered)} karya ditemukan untuk {creator}.")
-                log.debug("graffiti_tab: catalog loaded items=%s creator=%s", len(filtered), creator)
             self.after(0, apply)
 
         rpc.send_async({"type": "GRAFFITI_GET_POSTS", "limit": 200}, handle)

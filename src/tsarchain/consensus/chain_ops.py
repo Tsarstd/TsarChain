@@ -69,7 +69,7 @@ class ChainOperations:
             if hasattr(self.blockchain, "_hash_cache"):
                 self.blockchain._hash_cache[int(block.height)] = block.hash().hex()
         except Exception:
-            log.debug("[add_block] cache genesis hash failed", exc_info=True)
+            log.exception("[add_block] cache genesis hash failed")
 
         store = self.blockchain.ensure_utxodb()
         if store is not None:
@@ -103,7 +103,7 @@ class ChainOperations:
             if hasattr(self.blockchain, "_hash_cache"):
                 self.blockchain._hash_cache[int(block.height)] = block.hash().hex()
         except Exception:
-            log.debug("[add_block] cache tip hash failed", exc_info=True)
+            log.exception("[add_block] cache tip hash failed")
 
         store = self.blockchain.ensure_utxodb()
         if store is not None:
@@ -154,7 +154,7 @@ class ChainOperations:
             if hasattr(self.blockchain, "_rebuild_hash_cache"):
                 self.blockchain._rebuild_hash_cache()
         except Exception:
-            log.debug("[replace_with] hash cache rebuild failed", exc_info=True)
+            log.exception("[replace_with] hash cache rebuild failed")
 
         self.blockchain._mark_chain_dirty(0)
         self.blockchain.save_chain(force_full=True)
@@ -217,7 +217,7 @@ class ChainOperations:
             if hasattr(self.blockchain, "_hash_cache"):
                 self.blockchain._hash_cache[int(block.height)] = block.hash().hex()
         except Exception:
-            log.debug("[swap_tip_if_better] cache hash failed", exc_info=True)
+            log.exception("[swap_tip_if_better] cache hash failed")
 
         self.blockchain._mark_chain_dirty(block.height)
         self.blockchain.save_chain()

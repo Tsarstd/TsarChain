@@ -133,12 +133,12 @@
 .stat {
   margin-bottom: 0.5rem;
   display: flex;
-  gap: 2px;
+  gap: 1px;
   flex-direction: column;
 }
 
 .stat .label {
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-muted);

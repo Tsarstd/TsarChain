@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 def _resolve_genesis_hash():
     cfg_hex = CFG.GENESIS_HASH_HEX
-    log.debug("genesis hash on config : %s", cfg_hex)
+    log.warning("genesis hash on config : %s", cfg_hex)
     
     if cfg_hex is None:
         return None

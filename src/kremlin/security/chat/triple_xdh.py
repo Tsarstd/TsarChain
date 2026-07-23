@@ -660,7 +660,7 @@ class ChatManager:
             if msg_text is not None:
                 out.append({"type": "chat", "from": frm, "text": msg_text, "msg_id": mid, "ts": ts, "to": me})
             else:
-                log.debug("[poll] decrypt failed for %s mid=%s", frm, mid)
+                log.warning("[poll] decrypt failed for %s mid=%s", frm, mid)
 
         return out
 

@@ -137,7 +137,7 @@ class Blockchain():
                 cache.popitem(last=False)
             self._hash_cache = cache
         except Exception:
-            log.debug("[_rebuild_hash_cache] failed", exc_info=True)
+            log.error("[_rebuild_hash_cache] failed", exc_info=True)
 
     def get_block_hash(self, height: int):
         if height < 0:
@@ -199,7 +199,7 @@ class Blockchain():
                     try:
                         meta = json.loads(v.decode('utf-8')) or {}
                     except Exception:
-                        log.debug("[reload_chain] failed to parse chain meta", exc_info=True)
+                        log.exception("[reload_chain] failed to parse chain meta")
                     continue
                 if k.startswith(b'h:'):
                     blocks.append((k, v))
@@ -296,7 +296,7 @@ class Blockchain():
         self._persist_thread = None
         self._persist_queue = None
         if (not self.chain) and GENESIS_HASH is not None and not CFG.ALLOW_AUTO_GENESIS:
-            log.debug("[_stop_persist_worker] Skip final persistence (genesis locked & chain empty)")
+            log.info("[_stop_persist_worker] Skip final persistence (genesis locked & chain empty)")
             return
         # Final synchronous persistence to ensure no data loss
         self.save_chain(force_full=True)

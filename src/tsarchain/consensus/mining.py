@@ -85,7 +85,7 @@ class MiningManager:
     def _validate_chain_state(self) -> bool:
         if not self.blockchain.chain:
             if getattr(self.blockchain, "_reload_chain_from_kv", lambda: False)():
-                log.debug("[_validate_chain_state] chain reloaded from LMDB; continuing mining")
+                log.warning("[_validate_chain_state] chain reloaded from LMDB; continuing mining")
                 
         if not self.blockchain.chain and not CFG.ALLOW_AUTO_GENESIS:
             log.warning("[_validate_chain_state] refusing to mine genesis; sync from peers first.")
@@ -275,7 +275,7 @@ class MiningManager:
                 if art_id:
                     txid = getattr(tx, "txid", None)
                     txid_hex = txid.hex() if hasattr(txid, "hex") else str(txid)
-                    log.debug("[_select_graffiti_art_id] Graffiti POST found tx=%s art_id=%s", (txid_hex or "")[:12], art_id[:24])
+                    log.info("[_select_graffiti_art_id] Graffiti POST found tx=%s art_id=%s", (txid_hex or "")[:12], art_id[:24])
                     return art_id
         return None
     

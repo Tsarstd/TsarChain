@@ -265,7 +265,7 @@ class RatchetSession:
         n = int(header.get("n", 0))
 
         if not eph_hex or not static_hex:
-            log.debug("[ratchet.decrypt] missing header pieces frm=%s mid=%s", frm, mid)
+            log.warning("[ratchet.decrypt] missing header pieces frm=%s mid=%s", frm, mid)
             return None
 
         # Try skipped message key first

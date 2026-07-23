@@ -381,7 +381,7 @@ def get_last_stored_height() -> int:
                     if height > max_height:
                         max_height = height
             except (ValueError, IndexError) as e:
-                log.debug("[webdb] Error parsing key %s: %s", key_bytes, e)
+                log.error("[webdb] Error parsing key %s: %s", key_bytes, e)
                 continue
         
         
@@ -474,8 +474,6 @@ def prefetch_blocks(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]
             existing = get_block_from_storage(height)
             if existing is None:
                 new_items.append(item)
-            else:
-                log.debug("[webdb] Block %d already exists, skipping", height)
         
         if new_items:
             save_blocks_permanent(new_items)

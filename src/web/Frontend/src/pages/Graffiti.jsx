@@ -48,13 +48,13 @@ const GraffitiCard = memo(({ item, onSelect, active, isGenesis }) => {
 
         {isMp4 ? (
           <div className="lane-card__mp4">
-            <RiFilmLine className="media-badge-icon" /> Video MP4
+            <RiFilmLine className="media-badge-icon" /> MP4
           </div>
         ) : null}
 
         {isPdf ? (
           <div className="lane-card__pdf">
-            <RiFilePdfLine className="media-badge-icon" /> Document PDF
+            <RiFilePdfLine className="media-badge-icon" /> PDF
           </div>
         ) : null}
         
@@ -66,7 +66,7 @@ const GraffitiCard = memo(({ item, onSelect, active, isGenesis }) => {
 
         {isMatroska ? (
           <div className="lane-card__mkv">
-            <RiFilmLine className="media-badge-icon" /> Video MKV
+            <RiFilmLine className="media-badge-icon" /> MKV
           </div>
         ) : null}
 
@@ -89,7 +89,6 @@ const GraffitiCard = memo(({ item, onSelect, active, isGenesis }) => {
           <span className="value">{comments}</span>
         </div>
       </div>
-      <div className="divider-card" />
       <div className="lane-card__id wrap mono-text">{item?.art_id || "-"}</div>
     </button>
   );
@@ -149,6 +148,16 @@ const Graffiti = ({ onSearchClick }) => {
       loadMore();
     }
   }, [items.length, loading, loadMore]);
+
+  // Close lightbox on Escape key
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    const handleKeyDownGlobal = (e) => {
+      if (e.key === "Escape") setLightboxOpen(false);
+    };
+    globalThis.addEventListener("keydown", handleKeyDownGlobal);
+    return () => globalThis.removeEventListener("keydown", handleKeyDownGlobal);
+  }, [lightboxOpen]);
 
   // Filter items based on active tab
   const filteredItems = useMemo(() => {
@@ -295,33 +304,33 @@ const Graffiti = ({ onSearchClick }) => {
       <section className="section">
         {/* Category Filter Tab Bar */}
         <div className="graffiti-filter-bar glass-panel">
-          <div className="filter-title">
+          <div className="graffiti-filter-title">
             <RiFilter3Line className="filter-icon" /> Filter Media:
           </div>
           <div className="graffiti-tabs">
             <button
-              className={`graffiti-tab ${filterTab === "all" ? "graffiti-tab--active" : ""}`}
+              className={`graffiti-tab-btn ${filterTab === "all" ? "active" : ""}`}
               onClick={() => setFilterTab("all")}
               type="button"
             >
               <RiLayoutGridLine /> All ({counts.all})
             </button>
             <button
-              className={`graffiti-tab ${filterTab === "image" ? "graffiti-tab--active" : ""}`}
+              className={`graffiti-tab-btn ${filterTab === "image" ? "active" : ""}`}
               onClick={() => setFilterTab("image")}
               type="button"
             >
               <RiImageLine /> Images ({counts.image})
             </button>
             <button
-              className={`graffiti-tab ${filterTab === "video" ? "graffiti-tab--active" : ""}`}
+              className={`graffiti-tab-btn ${filterTab === "video" ? "active" : ""}`}
               onClick={() => setFilterTab("video")}
               type="button"
             >
               <RiFilmLine /> Videos ({counts.video})
             </button>
             <button
-              className={`graffiti-tab ${filterTab === "pdf" ? "graffiti-tab--active" : ""}`}
+              className={`graffiti-tab-btn ${filterTab === "pdf" ? "active" : ""}`}
               onClick={() => setFilterTab("pdf")}
               type="button"
             >
@@ -426,8 +435,14 @@ const Graffiti = ({ onSearchClick }) => {
 
       {/* Fullscreen Cinema / Lightbox Modal */}
       {lightboxOpen && detail && (
-        <div className="graffiti-lightbox-overlay" onClick={() => setLightboxOpen(false)}>
-          <div className="graffiti-lightbox-content glass-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="graffiti-lightbox-overlay">
+          <button
+            type="button"
+            className="graffiti-lightbox-backdrop"
+            aria-label="Close lightbox modal"
+            onClick={() => setLightboxOpen(false)}
+          />
+          <div className="graffiti-lightbox-content glass-panel">
             <div className="lightbox-header">
               <h3>
                 <RiSparklingLine /> Inscription #{detail?.block_height ?? "-"} ({detail?.art_id})
