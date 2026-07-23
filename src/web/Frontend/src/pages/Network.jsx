@@ -3,6 +3,7 @@ import PropTypes from "prop-types";
 import { ClickableValue } from "../components/search/SearchResults";
 import { fetchNetwork } from "../api/explorer";
 import { fmtBytes, fmtHashrate, fmtNumber, fmtTimestamp, fmtTsar, fmtAddress } from "../utils/format";
+import { SkeletonNetwork } from "../components/common/SkeletonLoader";
 
 import { 
   RiGlobalLine, 
@@ -157,11 +158,8 @@ const Network = ({onSearchClick}) => {
 
   if (status === "loading") {
     return (
-      <main className="page">
-        <div className="loading-container">
-          <div className="loading-spinner"></div>
-          <div className="loading-text">Loading network information...</div>
-        </div>
+      <main className="page-network">
+        <SkeletonNetwork />
       </main>
     );
   }
@@ -262,6 +260,7 @@ const Network = ({onSearchClick}) => {
         <HashDisplay 
           hash={chain.tip_target_hex} 
           label="Current Target"
+          clickable={false}
         />
       </div>
 

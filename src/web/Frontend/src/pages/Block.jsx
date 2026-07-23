@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { fmtDateLong, timeAgo } from "../utils/format";
 import { fetchBlockRange, fetchByKind } from "../api/explorer";
 import { ResultBlock } from "../components/search/SearchResults";
+import { SkeletonCard, SkeletonSearch } from "../components/common/SkeletonLoader";
 import { useCallback, useEffect, useRef, useState, memo } from "react";
 
 const PAGE_SIZE = 200;
@@ -80,40 +81,47 @@ export const useDragScroll = () => {
     wasDrag: false,
   });
 
-  const endDrag = () => {
-    dragRef.current.isDown = false;
-    dragRef.current.wasDrag = dragRef.current.moved;
-    setIsDragging(false);
-    setTimeout(() => {
-      dragRef.current.wasDrag = false;
-    }, 0);
-  };
+  useEffect(() => {
+    const handleGlobalMouseMove = (e) => {
+      if (!dragRef.current.isDown) return;
+      const el = scrollerRef.current;
+      if (!el) return;
+
+      const walk = (e.clientX - dragRef.current.startX) * 1.15;
+      if (Math.abs(walk) > 5) {
+        dragRef.current.moved = true;
+        setIsDragging(true);
+      }
+      el.scrollLeft = dragRef.current.scrollLeft - walk;
+    };
+
+    const handleGlobalMouseUp = () => {
+      if (!dragRef.current.isDown) return;
+      dragRef.current.isDown = false;
+      dragRef.current.wasDrag = dragRef.current.moved;
+      setIsDragging(false);
+      setTimeout(() => {
+        dragRef.current.wasDrag = false;
+      }, 100);
+    };
+
+    window.addEventListener("mousemove", handleGlobalMouseMove);
+    window.addEventListener("mouseup", handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleGlobalMouseMove);
+      window.removeEventListener("mouseup", handleGlobalMouseUp);
+    };
+  }, []);
 
   const handleMouseDown = (event) => {
     if (event.button !== undefined && event.button !== 0) return;
     const el = scrollerRef.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
     dragRef.current.isDown = true;
-    dragRef.current.startX = event.clientX - rect.left;
+    dragRef.current.startX = event.clientX;
     dragRef.current.scrollLeft = el.scrollLeft;
     dragRef.current.moved = false;
     dragRef.current.wasDrag = false;
-    setIsDragging(true);
-  };
-
-  const handleMouseMove = (event) => {
-    if (!dragRef.current.isDown) return;
-    const el = scrollerRef.current;
-    if (!el) return;
-    event.preventDefault();
-    const rect = el.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const walk = x - dragRef.current.startX;
-    if (Math.abs(walk) > 6) {
-      dragRef.current.moved = true;
-    }
-    el.scrollLeft = dragRef.current.scrollLeft - walk;
   };
 
   const handleTouchStart = (event) => {
@@ -121,13 +129,11 @@ export const useDragScroll = () => {
     if (!touch) return;
     const el = scrollerRef.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
     dragRef.current.isDown = true;
-    dragRef.current.startX = touch.clientX - rect.left;
+    dragRef.current.startX = touch.clientX;
     dragRef.current.scrollLeft = el.scrollLeft;
     dragRef.current.moved = false;
     dragRef.current.wasDrag = false;
-    setIsDragging(true);
   };
 
   const handleTouchMove = (event) => {
@@ -136,19 +142,22 @@ export const useDragScroll = () => {
     if (!el) return;
     const touch = event.touches[0];
     if (!touch) return;
-    event.preventDefault();
-    const rect = el.getBoundingClientRect();
-    const x = touch.clientX - rect.left;
-    const walk = x - dragRef.current.startX;
-    if (Math.abs(walk) > 6) {
+    const walk = (touch.clientX - dragRef.current.startX) * 1.15;
+    if (Math.abs(walk) > 5) {
       dragRef.current.moved = true;
+      setIsDragging(true);
     }
     el.scrollLeft = dragRef.current.scrollLeft - walk;
   };
 
-  const handleTouchEnd = endDrag;
-  const handleMouseUp = endDrag;
-  const handleMouseLeave = endDrag;
+  const handleTouchEnd = () => {
+    dragRef.current.isDown = false;
+    dragRef.current.wasDrag = dragRef.current.moved;
+    setIsDragging(false);
+    setTimeout(() => {
+      dragRef.current.wasDrag = false;
+    }, 100);
+  };
 
   const handleKeyDown = (e) => {
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
@@ -173,9 +182,6 @@ export const useDragScroll = () => {
     isDragging,
     dragHandlers: {
       onMouseDown: handleMouseDown,
-      onMouseMove: handleMouseMove,
-      onMouseUp: handleMouseUp,
-      onMouseLeave: handleMouseLeave,
       onTouchStart: handleTouchStart,
       onTouchMove: handleTouchMove,
       onTouchEnd: handleTouchEnd,
@@ -592,33 +598,39 @@ const Home = ({ onSearchClick }) => {
             </div>
           </div>
         </div>
+
         <div className="lane">
-          <section
-            className={`lane-scroll ${isDragging ? "lane-scroll--dragging" : ""}`}
-            ref={scrollerRef}
-            aria-label="Block list"
-            tabIndex={-1}
-            onScroll={handleScroll}
-            {...dragHandlers}
-          >
-            {blocks.map((item) => (
-              <BlockCard
-                key={item.height ?? item.hash}
-                item={item}
-                active={item.height === selectedHeight}
-                isGenesis={Number(item?.height ?? -1) === 0}
-                onSelect={handleSelect}
-                onSearchClick={handleSearchClickLocal}
-              />
-            ))}
-          </section>
+          {blocks.length === 0 && loading ? (
+            <SkeletonCard count={6} />
+          ) : (
+            <section
+              className={`lane-scroll ${isDragging ? "lane-scroll--dragging" : ""}`}
+              ref={scrollerRef}
+              aria-label="Block list"
+              tabIndex={-1}
+              onScroll={handleScroll}
+              {...dragHandlers}
+            >
+              {blocks.map((item) => (
+                <BlockCard
+                  key={item.height ?? item.hash}
+                  item={item}
+                  active={item.height === selectedHeight}
+                  isGenesis={Number(item?.height ?? -1) === 0}
+                  onSelect={handleSelect}
+                  onSearchClick={handleSearchClickLocal}
+                />
+              ))}
+            </section>
+          )}
         </div>
+
         {message && <div className="result-empty">{message}</div>}
       </section>
 
       <section className="section">
         {detailStatus === "loading" && (
-          <div className="result-empty">Memuat detail block...</div>
+          <SkeletonSearch />
         )}
         {detailStatus === "error" && (
           <div className="result-empty">

@@ -40,33 +40,37 @@
 }
 
 .btn-ghost {
-  background: #dd2b2b;
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 8px 12px;
-  border-radius: 10px;
+  background: rgba(221, 43, 43, 0.15);
+  border: 1px solid rgba(221, 43, 43, 0.3);
+  color: #ff6b6b;
+  padding: 6px 10px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
 }
 
 .btn-ghost:hover {
-  background: #dd2b2b;
-  border-color: var(--primary-color);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgb(24, 24, 24);
+  background: rgba(221, 43, 43, 0.3);
+  border-color: rgba(221, 43, 43, 0.6);
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(221, 43, 43, 0.3);
 }
 
 .search-overlay {
   position: fixed;
-  top: 72px;
+  top: 70px;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(10, 11, 12, 0.689);
-  backdrop-filter: blur(10px);
-  z-index: 9;
+  background: rgba(8, 9, 14, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  z-index: 999;
   overflow: auto;
   padding: 24px 20px 40px;
   border: none;
@@ -81,17 +85,13 @@
 .search-overlay__panel {
   max-width: 1200px;
   margin: 0 auto;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.3);
+  padding: 24px;
 }
 
 .search-overlay__header {
   display: flex;
-  justify-content: right;
-  gap: 12px;
+  justify-content: flex-end;
+  align-items: center;
   margin-bottom: 16px;
 }
 

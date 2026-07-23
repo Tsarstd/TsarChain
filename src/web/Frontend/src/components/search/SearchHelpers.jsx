@@ -25,22 +25,32 @@ export const useMobile = () => {
 export const useRenderHelpers = () => {
   const { isMobile, maxCharsPerLine } = useMobile();
 
-  const renderHash = (hash, className = "") => {
+  const renderHash = (hash, className = "", isCopyable = true) => {
     if (!hash) {
       return <span className={`value ${className}`}>-</span>;
     }
-    if (isMobile) {
-      const formattedHash = formatHashForDisplay(hash, maxCharsPerLine);
+    const display = isMobile ? formatHashForDisplay(hash, maxCharsPerLine) : hash;
+    if (!isCopyable) {
       return (
-        <span className={`value hash-multiline ${className}`} style={{ whiteSpace: 'pre-wrap' }}>
-          {formattedHash}
+        <span className={`value ${className}`.trim()} style={isMobile ? { whiteSpace: 'pre-wrap' } : undefined}>
+          {display}
         </span>
       );
     }
-    return <span className={`value ${className}`}>{hash}</span>;
+    return (
+      <ClickableValue
+        value={hash}
+        className={className}
+        info={hash}
+        isCopyable={true}
+        style={isMobile ? { whiteSpace: 'pre-wrap' } : undefined}
+      >
+        {display}
+      </ClickableValue>
+    );
   };
 
-  const renderClickableHash = (value, onSearchClick, info, displayValue = null) => {
+  const renderClickableHash = (value, onSearchClick, info, displayValue = null, isCopyable = true) => {
     if (!value) {
       return <span className="value">-</span>;
     }
@@ -53,6 +63,7 @@ export const useRenderHelpers = () => {
           onSearchClick={onSearchClick}
           className="value muted hash-multiline"
           info={info}
+          isCopyable={isCopyable}
           style={{ whiteSpace: 'pre-wrap' }}
         >
           {formattedHash}
@@ -65,6 +76,7 @@ export const useRenderHelpers = () => {
         onSearchClick={onSearchClick}
         className="value muted"
         info={info}
+        isCopyable={isCopyable}
       >
         {display}
       </ClickableValue>

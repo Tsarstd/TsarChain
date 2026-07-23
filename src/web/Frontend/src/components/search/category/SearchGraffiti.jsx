@@ -201,14 +201,15 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
                 <span className="value">Block {data?.block_height ?? "-"}</span>
               </div>
               <div className="stat">
-                <span className="info-label">Block Hash</span>
-                  {renderClickableHash(
-                    data.block_hash,
-                    onSearchClick,
-                    data.block_hash,
-                    fmtHash(data.block_hash)
-                  )}
-              </div>
+              <span className="info-label">Block Hash</span>
+              {renderClickableHash(
+                data.block_hash,
+                onSearchClick,
+                data.block_hash,
+                fmtHash(data.block_hash),
+                true
+              )}
+            </div>
             </div>
             <div className="stat">
               <span className="info-label">Transaction ID</span>
@@ -216,7 +217,8 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
                   data.txid,
                   onSearchClick,
                   data.txid,
-                  fmtTxid(data.txid)
+                  fmtTxid(data.txid),
+                  true
                 )}
             </div>
           </div>
@@ -227,11 +229,11 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
             <div className="grid">
               <div className="stat">
                 <span className="info-label">SHA256 File</span>
-                {renderHash(data?.sha256, "wrap")}
+                {renderHash(data?.sha256, "wrap", false)}
               </div>
               <div className="stat">
                 <span className="info-label">Graffiti Merkle</span>
-                {renderHash(data?.mroot, "wrap")}
+                {renderHash(data?.mroot, "wrap", false)}
               </div>
             </div>
             <div className="grid">
@@ -263,7 +265,8 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
                 data.pool_address,
                 onSearchClick,
                 data.pool_address,
-                fmtAddress(data.pool_address)
+                fmtAddress(data.pool_address),
+                true
               )}
             </div>
             <div className="stat">
@@ -278,7 +281,8 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
                 data.storer,
                 onSearchClick,
                 data.storer,
-                fmtAddress(data.storer)
+                fmtAddress(data.storer),
+                true
               )}
             </div>
             <div className="stat">
@@ -303,8 +307,8 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
           <div className="comment-item" key={c.txid || `${c.commenter}-${c.ts}`}>
             <div className="muted">{fmtTimestamp(c.ts)}</div>
             <div className="value">
-            <ClickableValue value={c.commenter || "-"} onSearchClick={onSearchClick} className="value muted">
-                {c.commenter || "-"}
+            <ClickableValue value={c.commenter || "-"} onSearchClick={onSearchClick} className="value muted" info={c.commenter} isCopyable={true}>
+                {fmtAddress(c.commenter) || c.commenter || "-"}
             </ClickableValue>
             </div>
             <div className="divider" />

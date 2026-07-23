@@ -1,43 +1,105 @@
-import { useMemo } from "react";
+import { useState, useMemo } from "react";
 import PropTypes from "prop-types";
+import { FaCopy, FaCheck } from "react-icons/fa";
 import { ResultBlock } from "./category/SearchBlock";
 import { ResultTx } from "./category/SearchTxid";
 import { ResultAddress } from "./category/SeacrhAddress";
 import { ResultGraffiti } from "./category/SearchGraffiti";
+import { SkeletonSearch } from "../common/SkeletonLoader";
 
-export const ClickableValue = ({ value, onSearchClick, className = "", info, style, children }) => {
+export const ClickableValue = ({
+  value,
+  onSearchClick,
+  className = "",
+  info,
+  style,
+  isCopyable = true,
+  children
+}) => {
+  const [copied, setCopied] = useState(false);
   const displayValue = children || value;
 
-  if (!value || value === "-" || !onSearchClick) {
+  if (!value || value === "-") {
     return <span className={className} style={style}>{displayValue}</span>;
   }
 
+  const handleCopy = (e) => {
+    e.stopPropagation();
+    if (!value || value === "-") return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(value);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = value;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand("copy");
+        textArea.remove();
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Copy failed", err);
+    }
+  };
+
   const finalClassName = `value muted ${className}`.trim();
+  const currentTooltip = copied ? "Copied!" : info;
+  const showCopyBtn = isCopyable && value && value !== "-";
 
   return (
-    <button
-      className={finalClassName}
-      type="button"
-      style={{
-        cursor: "pointer",
-        color: "#5e9de6ff",
-        transition: "color 0.2s",
-        alignSelf: "baseline",
-        background: "none",
-        border: "none",
-        padding: 0,
-        font: "inherit",
-        textAlign: "inherit",
-        display: "inline",
-        ...style
-      }}
-      onClick={() => onSearchClick(value)}
-      data-tooltip={info}
-      onMouseEnter={(e) => e.currentTarget.style.color = "#4d7fb7ff"}
-      onMouseLeave={(e) => e.currentTarget.style.color = "#5e9de6ff"}
-    >
-      {displayValue}
-    </button>
+    <span className="clickable-value-container" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', maxWidth: '100%', ...style }}>
+      {onSearchClick ? (
+        <button
+          className={finalClassName}
+          type="button"
+          style={{
+            cursor: "pointer",
+            color: "#5e9de6ff",
+            transition: "color 0.2s",
+            alignSelf: "baseline",
+            background: "none",
+            border: "none",
+            padding: 0,
+            font: "inherit",
+            textAlign: "inherit",
+            display: "inline",
+          }}
+          onClick={() => onSearchClick(value)}
+          data-tooltip={currentTooltip || undefined}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "#4d7fb7ff")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "#5e9de6ff")}
+        >
+          {displayValue}
+        </button>
+      ) : (
+        <span
+          className={finalClassName}
+          data-tooltip={currentTooltip || undefined}
+        >
+          {displayValue}
+        </span>
+      )}
+
+      {showCopyBtn && (
+        <button
+          type="button"
+          className="copy-btn-inline"
+          onClick={handleCopy}
+          aria-label="Copy to clipboard"
+          data-tooltip={copied ? "Copied!" : "Copy"}
+        >
+          {copied ? (
+            <FaCheck style={{ color: "#10b981", fontSize: "11px" }} />
+          ) : (
+            <FaCopy style={{ fontSize: "11px", opacity: 0.6 }} />
+          )}
+        </button>
+      )}
+    </span>
   );
 };
 
@@ -47,13 +109,14 @@ ClickableValue.propTypes = {
   className: PropTypes.string,
   info: PropTypes.string,
   style: PropTypes.object,
+  isCopyable: PropTypes.bool,
   children: PropTypes.node,
 };
 
 const SearchResultPanel = ({ status, result, kind, message, onSearchClick }) => {
   const body = useMemo(() => {
     if (status === "loading")
-      return <div className="result-empty">Searching...</div>;
+      return <SkeletonSearch />;
     if (status === "error")
       return (
         <div className="result-empty">{message || "An error occurred, please try again.."}</div>

@@ -1,11 +1,22 @@
 :root {
-  --bg: #101010;
-  --panel: #141414;
-  --card: #1c1c1c;
+  --bg: #0b0c10;
+  --bg-gradient: radial-gradient(circle at 50% 0%, #151824 0%, #0b0c10 70%);
+  --panel: rgba(20, 22, 32, 0.75);
+  --panel-solid: #141620;
+  --card: rgba(28, 31, 46, 0.65);
+  --card-solid: #1c1f2e;
+  --card-hover: rgba(38, 42, 62, 0.85);
   --border: rgba(255, 255, 255, 0.08);
+  --border-glow: rgba(224, 95, 50, 0.35);
   --accent: #e05f32;
+  --accent-gradient: linear-gradient(135deg, #e05f32 0%, #ff7a45 100%);
+  --accent-glow: rgba(224, 95, 50, 0.25);
   --text: #f3eeee;
-  --muted: #9ca3af;
+  --text-muted: #9ca3af;
+  --muted: #6b7280;
+  --success: #10b981;
+  --success-glow: rgba(16, 185, 129, 0.25);
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Roboto Mono', monospace;
 }
 
 @font-face {
@@ -22,23 +33,52 @@
   font-weight: inherit;
 }
 
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
+}
+
 body {
   min-height: 100vh;
-  background: var(--bg);
+  background: var(--bg-gradient);
+  background-attachment: fixed;
   color: var(--text);
-  font-family: 'Archivo', sans-serif;
+  font-family: 'Archivo', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
-  font-size: auto;
-  font-weight: auto;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+  font-size: 14px;
 }
 
 a {
   text-decoration: none;
   color: inherit;
+  transition: color 0.2s ease;
+}
+
+/* Custom Web3 Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(11, 12, 16, 0.8);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(224, 95, 50, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(224, 95, 50, 0.6);
 }
 
 .app {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 @media (max-width: 768px) {
@@ -50,18 +90,5 @@ a {
 @media (max-width: 480px) {
   body {
     font-size: 12px;
-  }
-}
-
-@media (max-width: 360px) {
-  body {
-    font-size: 11px;
-  }
-}
-
-@media (max-width: 320px) {
-  body {
-    font-size: 10px;
-    line-height: 1.3;
   }
 }

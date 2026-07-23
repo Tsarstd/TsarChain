@@ -323,6 +323,16 @@ const ResultTx = ({ data, onSearchClick }) => {
         </h1>
         {/* BUTTONS CONTAINER - CENTERED */}
         <div className="action-buttons">
+
+          {/* COPY TXID BUTTON */}
+          <button
+            onClick={() => copyToClipboard(data.txid, setCopyStatus)}
+            className={`action-button copy-button`}
+          >
+            <span><FaCopy /></span>
+            {copyStatus || "Copy"}
+          </button>
+
           {/* DOWNLOAD RECEIPT BUTTON */}
           <button
             onClick={downloadReceiptDirect}
@@ -341,15 +351,7 @@ const ResultTx = ({ data, onSearchClick }) => {
               </>
             )}
           </button>
-          
-          {/* COPY TXID BUTTON */}
-          <button
-            onClick={() => copyToClipboard(data.txid, setCopyStatus)}
-            className={`action-button copy-button`}
-          >
-            <span><FaCopy /></span>
-            {copyStatus || "Copy"}
-          </button>
+
         </div>
       </div>
       
@@ -422,7 +424,8 @@ const ResultTx = ({ data, onSearchClick }) => {
                       group.address,
                       onSearchClick,
                       group.address,
-                      fmtAddress(group.address) || "-"
+                      fmtAddress(group.address) || "-",
+                      true
                     )}
                   </div>
                   
@@ -462,7 +465,8 @@ const ResultTx = ({ data, onSearchClick }) => {
                           utxo.txid ? `${utxo.txid}` : "-",
                           onSearchClick,
                           utxo.txid ? `${utxo.txid}` : "-",
-                          fmtTxid(utxo.txid ? `${utxo.txid}` : "-") || "-"
+                          fmtTxid(utxo.txid ? `${utxo.txid}` : "-") || "-",
+                          true
                         )}
                       </div>
                       <div style={{
@@ -531,7 +535,8 @@ const ResultTx = ({ data, onSearchClick }) => {
                         group.address,
                         onSearchClick,
                         group.address,
-                        fmtAddress(group.address) || "-"
+                        fmtAddress(group.address) || "-",
+                        true
                       )
                     )}
                   </div>

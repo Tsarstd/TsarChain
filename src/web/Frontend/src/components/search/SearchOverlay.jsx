@@ -1,4 +1,4 @@
-import PropTypes from "prop-types"; // ← tambahkan ini
+import PropTypes from "prop-types";
 import SearchResultPanel from "./SearchResults";
 import { IoClose } from "react-icons/io5";
 
@@ -6,9 +6,9 @@ const SearchOverlay = ({ open, status, kind, result, message, onSearchClick, onC
   if (!open) return null;
   return (
     <dialog className="search-overlay" open>
-      <div className="search-overlay__panel">
+      <div className="search-overlay__panel glass-panel">
         <div className="search-overlay__header">
-          <button className="btn-ghost" type="button" onClick={onClose}>
+          <button className="btn-ghost" type="button" onClick={onClose} aria-label="Close search overlay">
             <IoClose />
           </button>
         </div>

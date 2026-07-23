@@ -160,8 +160,11 @@ const ResultAddress = ({ data, onSearchClick }) => {
   };
 
   const renderAddressLabel = (direction, fromAddress, toAddress) => {
+    const isFromCoinbase = (fromAddress || "").toLowerCase() === "coinbase";
+    const isToCoinbase = (toAddress || "").toLowerCase() === "coinbase";
+
     if (direction === 'in') {
-      if (fromAddress === 'coinbase') {
+      if (isFromCoinbase) {
         return <span className="tx-address-label">From : Coinbase</span>;
       } else {
         return (
@@ -171,23 +174,29 @@ const ResultAddress = ({ data, onSearchClick }) => {
               fromAddress,
               onSearchClick,
               fromAddress,
-              fmtAddress(fromAddress)
+              fmtAddress(fromAddress),
+              true
             )}
           </>
         );
       }
     } else if (direction === 'out') {
-      return (
-        <>
-          <span className="tx-address-label">To : </span>
+      if (isToCoinbase) {
+        return <span className="tx-address-label">To : Coinbase</span>;
+      } else {
+        return (
+          <>
+            <span className="tx-address-label">To : </span>
             {renderClickableHash(
               toAddress,
               onSearchClick,
               toAddress,
-              fmtAddress(toAddress)
+              fmtAddress(toAddress),
+              true
             )}
-        </>
-      );
+          </>
+        );
+      }
     }
     return null;
   };

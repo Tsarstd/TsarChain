@@ -1,5 +1,6 @@
 import { useCallback, useState, useEffect } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "motion/react";
 
 import Navbar from "./components/navbar/nav_bar";
 import Footer from "./components/footer/footer";
@@ -20,6 +21,17 @@ import "./styles/nav_bar.css";
 import "./styles/label.css";
 import "./styles/txid.css";
 import "./styles/address.css";
+
+const pageVariants = {
+  initial: { opacity: 0, y: 12 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -12 }
+};
+
+const pageTransition = {
+  duration: 0.25,
+  ease: [0.25, 0.1, 0.25, 1.0]
+};
 
 const App = () => {
   const location = useLocation();
@@ -95,12 +107,53 @@ const App = () => {
       />
       
       <div className="app-main">
-        <Routes>
-          <Route path="/" element={<Block onSearchClick={handleSearchClick} />} />
-          <Route path="/graffiti" element={<Graffiti onSearchClick={handleSearchClick} />} />
-          <Route path="/network" element={<Network onSearchClick={handleSearchClick} />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <AnimatePresence mode="wait">
+          <Routes location={location} key={location.pathname}>
+            <Route
+              path="/"
+              element={
+                <motion.div
+                  variants={pageVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={pageTransition}
+                >
+                  <Block onSearchClick={handleSearchClick} />
+                </motion.div>
+              }
+            />
+            <Route
+              path="/graffiti"
+              element={
+                <motion.div
+                  variants={pageVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={pageTransition}
+                >
+                  <Graffiti onSearchClick={handleSearchClick} />
+                </motion.div>
+              }
+            />
+            <Route
+              path="/network"
+              element={
+                <motion.div
+                  variants={pageVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={pageTransition}
+                >
+                  <Network onSearchClick={handleSearchClick} />
+                </motion.div>
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </AnimatePresence>
       </div>
       <Footer />
     </div>

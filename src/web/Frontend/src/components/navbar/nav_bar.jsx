@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { NavLink } from "react-router-dom";
 import { IoSearch, IoMenu, IoClose } from "react-icons/io5";
 import PropTypes from "prop-types";
@@ -6,6 +6,27 @@ import { assets } from "../../assets/assets";
 
 const Navbar = ({ query, onQueryChange, onSearch }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const inputRef = useRef(null);
+
+  // Keyboard shortcut (Ctrl+K or Cmd+K or '/') listener
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      } else if (e.key === "/" && document.activeElement !== inputRef.current) {
+        // Pressing '/' when not typing inside an input focuses search
+        const isInput = ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName);
+        if (!isInput) {
+          e.preventDefault();
+          inputRef.current?.focus();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -67,13 +88,17 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
 
         <div className="navbar__right">
           <form className="navbar__search" onSubmit={handleSubmit}>
-            <input
-              type="text"
-              className="navbar__search-input"
-              placeholder="Search by Height / BlockHash / TxId / Address / Graffiti_Id"
-              value={query}
-              onChange={(e) => onQueryChange?.(e.target.value)}
-            />
+            <div className="navbar__search-wrapper">
+              <input
+                ref={inputRef}
+                type="text"
+                className="navbar__search-input"
+                placeholder="Search Height / BlockHash / TxId / Address / Graffiti"
+                value={query}
+                onChange={(e) => onQueryChange?.(e.target.value)}
+              />
+              <kbd className="navbar__shortcut">Ctrl K</kbd>
+            </div>
             <button 
               className="navbar__search-btn btn-primary" 
               type="submit"

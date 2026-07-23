@@ -35,17 +35,18 @@ const ResultBlock = ({ data, onSearchClick }) => {
 
         <div className="stat">
           <span className="info-label">Block ID</span>
-          {data?.block_id?.startsWith('graf') ? (
+          {data?.block_id && String(data.block_id).toLowerCase().startsWith('graf') ? (
             <ClickableValue
               value={data.block_id}
               onSearchClick={onSearchClick}
               className="value muted"
               info="Click To See Graffiti Post"
+              isCopyable={true}
             >
               {isMobile ? formatHashForDisplay((data.block_id) || "-", maxCharsPerLine) : (data.block_id) || "-"}
             </ClickableValue>
           ) : (
-            renderHash(data?.block_id || "-")
+            <span className="value">{data?.block_id || "-"}</span>
           )}
         </div>
 
@@ -54,7 +55,7 @@ const ResultBlock = ({ data, onSearchClick }) => {
         <div className="grid">
           <div className="stat">
             <span className="info-label">Hash</span>
-            {renderHash(data?.hash, "wrap")}
+            {renderHash(data?.hash, "wrap", true)}
           </div>
           <div className="stat">
             <span className="info-label">Prev Hash</span>
@@ -62,7 +63,8 @@ const ResultBlock = ({ data, onSearchClick }) => {
               data?.prev_block_hash,
               onSearchClick,
               data?.prev_block_hash,
-              fmtHash(data?.prev_block_hash) || "-"
+              fmtHash(data?.prev_block_hash) || "-",
+              true
             )}
           </div>
         </div>
@@ -102,7 +104,7 @@ const ResultBlock = ({ data, onSearchClick }) => {
         <div className="grid">
           <div className="stat">
             <span className="info-label">Merkle Root</span>
-            {renderHash(data?.merkle_root ?? "-", "wrap")}
+            {renderHash(data?.merkle_root ?? "-", "wrap", false)}
           </div>
         </div> 
 
