@@ -1,0 +1,164 @@
+/* ==========================================================================
+   ADDRESS ANALYTICS & GRAFFITI BREAKDOWN STYLES
+   ========================================================================== */
+
+.address-analytics-card {
+  margin: 1.5rem 0;
+  padding: 1.5rem;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
+  transition: all 0.3s ease;
+}
+
+.analytics-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.analytics-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.analytics-icon {
+  font-size: 1.6rem;
+  color: #38bdf8;
+  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.5));
+}
+
+.analytics-title-group h4 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.analytics-subtitle {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.persona-badges-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.persona-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: rgba(15, 23, 42, 0.8);
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.3);
+}
+
+.persona-icon {
+  display: flex;
+  align-items: center;
+}
+
+/* PROGRESS METER BAR */
+.analytics-meter-wrapper {
+  margin: 1.2rem 0;
+}
+
+.analytics-meter-bar {
+  display: flex;
+  height: 10px;
+  width: 100%;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(30, 41, 59, 0.8);
+}
+
+.meter-seg {
+  height: 100%;
+  transition: width 0.4s ease;
+}
+
+.seg-received { background: #10b981; }
+.seg-sent { background: #ef4444; }
+.seg-coinbase { background: #eab308; }
+.seg-post { background: #e66c26; }
+.seg-comment { background: #38bdf8; }
+.seg-payout { background: #a855f7; }
+
+/* 6 GRID CARDS */
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.analytics-grid-card {
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 12px 14px;
+  transition: all 0.25s ease;
+}
+
+.analytics-grid-card:hover {
+  transform: translateY(-2px);
+  background: rgba(30, 41, 59, 0.95);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.card-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.card-badge {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+
+.card-value {
+  font-size: 0.95rem;
+  font-family: monospace;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+/* CARD ICONS & ACCENTS */
+.ic-in { color: #10b981; }
+.ic-out { color: #ef4444; }
+.ic-coinbase { color: #eab308; }
+.ic-post { color: #e66c26; }
+.ic-comment { color: #38bdf8; }
+.ic-payout { color: #a855f7; }
+
+.card-received { border-left: 3px solid #10b981; }
+.card-sent { border-left: 3px solid #ef4444; }
+.card-coinbase { border-left: 3px solid #eab308; }
+.card-post { border-left: 3px solid #e66c26; }
+.card-comment { border-left: 3px solid #38bdf8; }
+.card-payout { border-left: 3px solid #a855f7; }

@@ -9,7 +9,8 @@ import {
   fmtTsar, 
   fmtTxid,
   timeAgo
-} from "../../../utils/format"
+} from "../../../utils/format";
+import { AddressAnalytics } from "./AddressAnalytics";
 
 
 const AddressHeaderCell = ({ val, cellKey }) => {
@@ -352,6 +353,10 @@ const ResultAddress = ({ data, onSearchClick }) => {
             <span className="value">{data?.total_txs || 0}</span>
           </div>
         </div>
+
+        {/* ADDRESS ANALYTICS CHART & GRAFFITI BREAKDOWN */}
+        <AddressAnalytics history={data?.history} spendable={data?.spendable} balance={data?.balance} />
+
         <div className="divider2" />
         <div className="stat">
           <span className="value">

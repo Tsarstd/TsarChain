@@ -41,11 +41,6 @@
   letter-spacing: 0.3px;
 }
 
-.utxo-header-subtitle {
-  font-size: 0.8rem;
-  color: #94a3b8;
-}
-
 .utxo-toggle-btn {
   background: rgba(30, 41, 59, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.1);

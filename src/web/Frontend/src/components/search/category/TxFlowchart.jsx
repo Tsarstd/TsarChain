@@ -106,9 +106,6 @@ export const TxFlowchart = ({ data, onSearchClick }) => {
           <RiNodeTree className="utxo-header-icon" />
           <div>
             <h4>UTXO Transaction Flowchart</h4>
-            <span className="utxo-header-subtitle">
-              Visualizing Inputs ➡️ Transaction Hub ➡️ Outputs
-            </span>
           </div>
         </div>
         <div className="utxo-header-controls">
@@ -131,7 +128,6 @@ export const TxFlowchart = ({ data, onSearchClick }) => {
             <div className="utxo-column utxo-column--inputs">
               <div className="utxo-column-header">
                 <span className="col-badge input-badge">INPUTS ({inputsList.length})</span>
-                <span className="col-total">{fmtTsar(totalIn)}</span>
               </div>
               <div className="utxo-nodes-stack">
                 {inputsList.map((item) => (
@@ -233,7 +229,7 @@ export const TxFlowchart = ({ data, onSearchClick }) => {
             <div className="utxo-column utxo-column--outputs">
               <div className="utxo-column-header">
                 <span className="col-badge output-badge">OUTPUTS ({outputsList.length})</span>
-                <span className="col-total">{fmtTsar(totalOut)}</span>
+                <span className="col-total">Total: {fmtTsar(totalOut)}</span>
               </div>
               <div className="utxo-nodes-stack">
                 {outputsList.map((item) => (

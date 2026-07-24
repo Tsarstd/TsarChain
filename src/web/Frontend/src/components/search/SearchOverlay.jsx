@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import SearchResultPanel from "./SearchResults";
-import { IoClose, IoTrashOutline, IoTimeOutline, IoFilterOutline } from "react-icons/io5";
+import { IoClose, IoTrashOutline, IoTimeOutline } from "react-icons/io5";
 
 const HISTORY_KEY = "tsar_search_history";
 
@@ -31,7 +31,7 @@ export const saveSearchHistory = (query) => {
 
 const SearchOverlay = ({ open, status, kind, result, message, onSearchClick, onClose }) => {
   const [history, setHistory] = useState([]);
-  const [activeFilter, setActiveFilter] = useState("all");
+  const [activeFilter] = useState("all");
 
   useEffect(() => {
     if (open) {
@@ -72,14 +72,6 @@ const SearchOverlay = ({ open, status, kind, result, message, onSearchClick, onC
 
   if (!open) return null;
 
-  const categories = [
-    { id: "all", label: "All Types" },
-    { id: "block", label: "Blocks" },
-    { id: "tx", label: "Transactions" },
-    { id: "address", label: "Addresses" },
-    { id: "graffiti", label: "Graffiti" },
-  ];
-
   // Filter display kind match
   const getFilteredKind = (filter, currentKind) => {
     if (filter === "all" || filter === currentKind) {
@@ -96,31 +88,12 @@ const SearchOverlay = ({ open, status, kind, result, message, onSearchClick, onC
           <div className="search-overlay__title-group">
             <h3 className="search-overlay__title">Search Explorer</h3>
             {kind && kind !== "unknown" && (
-              <span className="search-kind-badge">Detected: {kind.toUpperCase()}</span>
+              <span className="search-kind-badge">Type: {kind.toUpperCase()}</span>
             )}
           </div>
           <button className="btn-ghost" type="button" onClick={onClose} aria-label="Close search overlay" title="Close (ESC)">
             <IoClose />
           </button>
-        </div>
-
-        {/* Filter Categories Bar */}
-        <div className="search-filter-bar">
-          <div className="filter-label">
-            <IoFilterOutline /> Filter Category:
-          </div>
-          <div className="filter-tabs">
-            {categories.map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                className={`filter-tab ${activeFilter === cat.id ? "active" : ""}`}
-                onClick={() => setActiveFilter(cat.id)}
-              >
-                {cat.label}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Search History Section */}

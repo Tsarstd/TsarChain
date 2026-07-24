@@ -9,6 +9,7 @@ import collections
 
 from ...utils import config as CFG
 from .base import NetworkHandlerProxy
+from ...contracts import graffiti as GRAFF
 from ...utils.benchmarks import benchmark
 from ...utils.helpers import spkhex_to_address
 
@@ -180,6 +181,9 @@ class HistoryHandler(NetworkHandlerProxy):
 
         received_to_addr = 0
         main_recipient_spk, max_rec_amt = None, -1
+        is_graffiti = False
+        event_type = None
+
         for o in getattr(tx, "outputs", []) or []:
             amt = int(getattr(o, "amount", 0))
             spk_hex = self._txout_to_spk_hex(o) or ""
@@ -189,6 +193,18 @@ class HistoryHandler(NetworkHandlerProxy):
                 if amt > max_rec_amt:
                     max_rec_amt = amt
                     main_recipient_spk = spk_hex
+
+            spk = getattr(o, "script_pubkey", None)
+            if spk is not None and hasattr(spk, "serialize"):
+                try:
+                    meta = GRAFF.parse_from_script(spk)
+                    if meta:
+                        ev = str(meta.get("event", "")).upper()
+                        if ev in ("POST", "COMMENT", "PAYOUT"):
+                            is_graffiti = True
+                            event_type = ev
+                except Exception:
+                    log.exception("_extract_tx_history_item")
 
         spent_from_addr = 0
         sources = set()
@@ -236,6 +252,8 @@ class HistoryHandler(NetworkHandlerProxy):
             "from": frm,
             "to": to,
             "timestamp": timestamp,
+            "is_graffiti": is_graffiti,
+            "event": event_type,
         }
 
 

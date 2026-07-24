@@ -445,3 +445,24 @@ def test_process_history_lookup_deduplication(mixin):
                 item = result['items'][0]
                 assert item['status'] == 'confirmed'
                 assert item['height'] == 100
+
+
+def test_process_history_lookup_graffiti_parsing(mixin):
+    target_spk = '0014' + 'a'*40
+    mock_script = Mock()
+    mock_script.serialize.return_value = b'\x6a\x04test'
+    tx = DummyTx(txid=b'g'*32, inputs=[], outputs=[DummyTxOut(amount=10, script_pubkey=mock_script)])
+    block = DummyBlock(height=10, timestamp=100, transactions=[tx])
+    mixin.broadcast.blockchain.chain = [block]
+    mixin.broadcast.blockchain.height = 10
+    mixin.broadcast.mempool.get_all_txs.return_value = []
+
+    with patch.object(mixin, '_normalize_spk_hex', return_value=target_spk):
+        with patch.object(mixin, '_txout_to_spk_hex', return_value=target_spk):
+            with patch.object(mixin, 'build_outpoint_map', return_value=({}, {})):
+                with patch('tsarchain.network.rpc_helper.history.GRAFF.parse_from_script', return_value={'event': 'POST'}):
+                    result = mixin.process_history_lookup(target_spk)
+                    assert len(result['items']) == 1
+                    item = result['items'][0]
+                    assert item['is_graffiti'] is True
+                    assert item['event'] == 'POST'
