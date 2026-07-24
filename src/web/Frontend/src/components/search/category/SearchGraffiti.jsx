@@ -2,6 +2,8 @@ import PropTypes from "prop-types";
 import { useState } from "react";
 import { useRenderHelpers } from "../SearchHelpers";
 import { ClickableValue } from "../SearchResults";
+import { graffitiMediaUrl } from "../../../api/explorer";
+import { FaDownload } from "react-icons/fa";
 import { Document, Page, pdfjs } from 'react-pdf';
 import { 
   fmtBytes, 
@@ -140,7 +142,36 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
         margin: '0 auto 0.5rem auto'
         }}
         >
-        <div style={{ display: 'flex', justifyContent: 'right' }}>
+        <div style={{ display: 'flex', justifyContent: 'right', gap: '10px', alignItems: 'center' }}>
+          {data?.art_id && (
+            <a
+              href={graffitiMediaUrl(data.art_id)}
+              download={`${data.art_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 18px',
+                backgroundColor: '#10b981',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '500',
+                textDecoration: 'none',
+                transition: 'background-color 0.3s ease',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#059669'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#10b981'}
+              title={`Download media (${data.art_id})`}
+            >
+              <FaDownload /> Download
+            </a>
+          )}
           <button 
             onClick={() => setShowDetails(!showDetails)}
             style={{

@@ -15,16 +15,6 @@
 }
 
 /* Header */
-/* Base styles */
-.page-network {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 24px 20px;
-  min-height: 100vh;
-  color: #e4e6f1;
-}
-
-/* Header */
 .network-header {
   background: var(--panel);
   backdrop-filter: blur(14px);
@@ -57,6 +47,7 @@
   margin: 0;
   letter-spacing: -0.5px;
   background: var(--accent-gradient);
+  background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }

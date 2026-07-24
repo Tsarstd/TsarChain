@@ -3,9 +3,10 @@ import PropTypes from "prop-types";
 import { FaCopy, FaCheck } from "react-icons/fa";
 import { ResultBlock } from "./category/SearchBlock";
 import { ResultTx } from "./category/SearchTxid";
-import { ResultAddress } from "./category/SeacrhAddress";
+import { ResultAddress } from "./category/SearchAddress";
 import { ResultGraffiti } from "./category/SearchGraffiti";
 import { SkeletonSearch } from "../common/SkeletonLoader";
+import { toast } from "../common/ToastContainer";
 
 export const ClickableValue = ({
   value,
@@ -33,9 +34,11 @@ export const ClickableValue = ({
         throw new Error("Clipboard API not available");
       }
       setCopied(true);
+      toast("Copied to clipboard!", "success");
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error("Copy failed", err);
+      toast("Failed to copy", "error");
     }
   };
 

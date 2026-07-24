@@ -4,6 +4,7 @@ import { fmtDateLong, timeAgo } from "../utils/format";
 import { fetchBlockRange, fetchByKind } from "../api/explorer";
 import { ResultBlock } from "../components/search/SearchResults";
 import { SkeletonCard, SkeletonSearch } from "../components/common/SkeletonLoader";
+import { LiveIndicator } from "../components/common/LiveIndicator";
 import { useCallback, useEffect, useRef, useState, memo } from "react";
 
 const PAGE_SIZE = 200;
@@ -208,6 +209,9 @@ const Home = ({ onSearchClick }) => {
   const [navInput, setNavInput] = useState("");
   const [isNavigating, setIsNavigating] = useState(false);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const [isLive, setIsLive] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const { scrollerRef, isDragging, dragHandlers } = useDragScroll();
 
   const handleSearchClickLocal = useCallback((value) => {
@@ -317,7 +321,7 @@ const Home = ({ onSearchClick }) => {
         
         setHasMore(Boolean(more));
         setInitialLoadDone(true);
-        
+        setLastUpdated(new Date());
       } catch (err) {
         setMessage(err.message || "Gagal memuat block.");
       } finally {
@@ -327,6 +331,18 @@ const Home = ({ onSearchClick }) => {
     [hasMore, loading]
   );
 
+  const handleManualRefresh = useCallback(async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await loadBlocks(null, true);
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [loadBlocks, isRefreshing]);
 
   useEffect(() => {
     const cached = getCachedState();
@@ -343,8 +359,8 @@ const Home = ({ onSearchClick }) => {
         fetchBlockRange({ limit: 1, source: 'database' })
           .then(resp => {
             const currentTip = resp.data?.items?.[0]?.height;
+            setLastUpdated(new Date());
             if (currentTip > latestCachedHeight) {
-              // Ada block baru, load tambahan
               loadBlocks(null, true);
             }
           })
@@ -353,23 +369,32 @@ const Home = ({ onSearchClick }) => {
     } else {
       loadBlocks(null);
     }
-    
+  }, []);
+
+  useEffect(() => {
+    if (!isLive) return;
+
     const refreshInterval = setInterval(() => {
-      if (blocks.length > 0 && !loading) {
+      if (blocks.length > 0 && !loading && !isRefreshing) {
         const latestHeight = blocks[0]?.height;
+        setIsRefreshing(true);
         fetchBlockRange({ limit: 1, source: 'database' })
           .then(resp => {
             const currentTip = resp.data?.items?.[0]?.height;
+            setLastUpdated(new Date());
             if (currentTip > latestHeight) {
               loadBlocks(null, true);
             }
           })
-          .catch(console.error);
+          .catch(console.error)
+          .finally(() => {
+            setIsRefreshing(false);
+          });
       }
     }, 30000);
     
     return () => clearInterval(refreshInterval);
-  }, []);
+  }, [isLive, blocks, loading, isRefreshing, loadBlocks]);
 
 
   useEffect(() => {
@@ -565,9 +590,18 @@ const Home = ({ onSearchClick }) => {
   return (
     <main className="page">
       <section className="section">
-        <div className="section-header">
-          <div>
-            <p className="muted">
+        <div className="section-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            <LiveIndicator
+              isLive={isLive}
+              onToggleLive={() => setIsLive(prev => !prev)}
+              onRefresh={handleManualRefresh}
+              lastUpdated={lastUpdated}
+              isRefreshing={isRefreshing}
+              intervalSec={30}
+              label="LIVE BLOCK STREAM"
+            />
+            <p className="muted" style={{ margin: 0 }}>
               Swipe right to load older blocks.
             </p>
           </div>

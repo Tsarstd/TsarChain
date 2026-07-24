@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { ClickableValue } from "./SearchResults";
 import { formatHashForDisplay, getMaxCharsPerLine } from "../../utils/format";
+import { toast } from "../common/ToastContainer";
 
 // ---------- Hook untuk deteksi mobile ----------
 export const useMobile = () => {
@@ -106,6 +107,7 @@ export const copyToClipboard = async (text, setCopyStatus) => {
       textArea.remove();
     }
     setCopyStatus("Copied!");
+    toast("Copied to clipboard!", "success");
     setTimeout(() => setCopyStatus(""), 2000);
   } catch (err) {
     console.error('Failed to copy:', err);
@@ -114,6 +116,7 @@ export const copyToClipboard = async (text, setCopyStatus) => {
       setCopyStatus("Use prompt to copy");
     } catch {
       setCopyStatus("Failed!");
+      toast("Failed to copy", "error");
     }
     setTimeout(() => setCopyStatus(""), 2000);
   }

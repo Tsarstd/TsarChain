@@ -8,7 +8,8 @@ import Block from "./pages/Block";
 import Graffiti from "./pages/Graffiti";
 import Network from "./pages/Network";
 
-import SearchOverlay from "./components/search/SearchOverlay";
+import SearchOverlay, { saveSearchHistory } from "./components/search/SearchOverlay";
+import { ToastProvider } from "./components/common/ToastContainer";
 import { searchExplorer } from "./api/explorer";
 import { guessKind } from "./utils/searchKind";
 
@@ -21,6 +22,8 @@ import "./styles/nav_bar.css";
 import "./styles/label.css";
 import "./styles/txid.css";
 import "./styles/address.css";
+import "./styles/live_indicator.css";
+import "./styles/toast.css";
 
 const pageVariants = {
   initial: { opacity: 0, y: 12 },
@@ -56,6 +59,7 @@ const App = () => {
 
   const runSearch = useCallback(async (q) => {
     if (!q.trim()) return;
+    saveSearchHistory(q);
     const inferred = guessKind(q);
     setKind(inferred);
     setStatus("loading");
@@ -93,70 +97,72 @@ const App = () => {
   }, [query, runSearch]);
 
   return (
-    <div className="app">
-      <Navbar query={query} onQueryChange={setQuery} onSearch={handleSearch} />
-      
-      <SearchOverlay
-        open={searchOpen}
-        status={status}
-        kind={kind}
-        result={result}
-        message={message}
-        onSearchClick={handleSearchClick}
-        onClose={() => setSearchOpen(false)}
-      />
-      
-      <div className="app-main">
-        <AnimatePresence mode="wait">
-          <Routes location={location} key={location.pathname}>
-            <Route
-              path="/"
-              element={
-                <motion.div
-                  variants={pageVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={pageTransition}
-                >
-                  <Block onSearchClick={handleSearchClick} />
-                </motion.div>
-              }
-            />
-            <Route
-              path="/graffiti"
-              element={
-                <motion.div
-                  variants={pageVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={pageTransition}
-                >
-                  <Graffiti onSearchClick={handleSearchClick} />
-                </motion.div>
-              }
-            />
-            <Route
-              path="/network"
-              element={
-                <motion.div
-                  variants={pageVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={pageTransition}
-                >
-                  <Network onSearchClick={handleSearchClick} />
-                </motion.div>
-              }
-            />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </AnimatePresence>
+    <ToastProvider>
+      <div className="app">
+        <Navbar query={query} onQueryChange={setQuery} onSearch={handleSearch} />
+        
+        <SearchOverlay
+          open={searchOpen}
+          status={status}
+          kind={kind}
+          result={result}
+          message={message}
+          onSearchClick={handleSearchClick}
+          onClose={() => setSearchOpen(false)}
+        />
+        
+        <div className="app-main">
+          <AnimatePresence mode="wait">
+            <Routes location={location} key={location.pathname}>
+              <Route
+                path="/"
+                element={
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <Block onSearchClick={handleSearchClick} />
+                  </motion.div>
+                }
+              />
+              <Route
+                path="/graffiti"
+                element={
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <Graffiti onSearchClick={handleSearchClick} />
+                  </motion.div>
+                }
+              />
+              <Route
+                path="/network"
+                element={
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <Network onSearchClick={handleSearchClick} />
+                  </motion.div>
+                }
+              />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </AnimatePresence>
+        </div>
+        <Footer />
       </div>
-      <Footer />
-    </div>
+    </ToastProvider>
   );
 };
 

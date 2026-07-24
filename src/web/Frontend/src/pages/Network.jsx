@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import PropTypes from "prop-types";
 import { ClickableValue } from "../components/search/SearchResults";
 import { fetchNetwork } from "../api/explorer";
 import { fmtBytes, fmtHashrate, fmtNumber, fmtTimestamp, fmtTsar, fmtAddress } from "../utils/format";
 import { SkeletonNetwork } from "../components/common/SkeletonLoader";
+import { LiveIndicator } from "../components/common/LiveIndicator";
 
 import { 
   RiGlobalLine, 
@@ -128,31 +129,82 @@ HashDisplay.propTypes = {
   clickable: PropTypes.bool,
 };
 
+const SupplyProgressMeter = ({ circulating, maxSupply }) => {
+  if (!maxSupply || maxSupply <= 0) return null;
+  const circNum = Number(circulating || 0);
+  const maxNum = Number(maxSupply || 1);
+  const pct = Math.min(100, Math.max(0, (circNum / maxNum) * 100));
+
+  return (
+    <div className="supply-progress-card glass-panel" style={{ gridColumn: '1 / -1', padding: '16px', borderRadius: '12px', marginTop: '6px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#94a3b8' }}>
+          Circulating Supply Progress
+        </span>
+        <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#38bdf8' }}>
+          {pct.toFixed(2)}% Mined
+        </span>
+      </div>
+      <div style={{ height: '10px', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '5px', overflow: 'hidden' }}>
+        <div 
+          style={{ 
+            height: '100%', 
+            width: `${pct}%`, 
+            background: 'linear-gradient(90deg, #38bdf8, #10b981)',
+            borderRadius: '5px',
+            transition: 'width 0.8s ease-in-out' 
+          }} 
+        />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#64748b', marginTop: '6px' }}>
+        <span>Circulating: {fmtTsar(circulating)}</span>
+        <span>Max Cap: {fmtTsar(maxSupply)}</span>
+      </div>
+    </div>
+  );
+};
+
+SupplyProgressMeter.propTypes = {
+  circulating: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  maxSupply: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+};
+
 const Network = ({onSearchClick}) => {
   const [snap, setSnap] = useState(null);
   const [status, setStatus] = useState("loading");
   const [message, setMessage] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [isLive, setIsLive] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const loadData = useCallback((showRefreshing = false) => {
+    if (showRefreshing) setIsRefreshing(true);
+    fetchNetwork()
+      .then((resp) => {
+        setSnap(resp.data || null);
+        setStatus("done");
+        setLastUpdated(new Date());
+      })
+      .catch((err) => {
+        setMessage(err.message || "Gagal memuat data network.");
+        if (!snap) setStatus("error");
+      })
+      .finally(() => {
+        setIsRefreshing(false);
+      });
+  }, [snap]);
 
   useEffect(() => {
-    const loadData = () => {
-      fetchNetwork()
-        .then((resp) => {
-          setSnap(resp.data || null);
-          setStatus("done");
-          setLastUpdated(new Date());
-        })
-        .catch((err) => {
-          setMessage(err.message || "Gagal memuat data network.");
-          setStatus("error");
-        });
-    };
-
     loadData();
-    // Refresh otomatis setiap 60 detik
-    const interval = setInterval(loadData, 60000);
-    return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!isLive) return;
+    const interval = setInterval(() => {
+      loadData(true);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [isLive, loadData]);
 
   const view = useMemo(() => normalizeSnapshot(snap), [snap]);
 
@@ -212,15 +264,21 @@ const Network = ({onSearchClick}) => {
           <div className="header-title">
             <h1>Network Overview</h1>
           </div>
-          <div className="header-status">
+          <div className="header-status" style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            <LiveIndicator
+              isLive={isLive}
+              onToggleLive={() => setIsLive(prev => !prev)}
+              onRefresh={() => loadData(true)}
+              lastUpdated={lastUpdated}
+              isRefreshing={isRefreshing}
+              intervalSec={30}
+              label="NETWORK LIVE SYNC"
+            />
             <div className={`status-indicator ${networkHealth}`}>
               <div className="status-dot"></div>
               <span className="status-text">
                 {statusText}
               </span>
-            </div>
-            <div className="last-update">
-              Last updated: {lastUpdated ? lastUpdated.toLocaleTimeString() : "Just now"}
             </div>
           </div>
         </div>
@@ -371,6 +429,10 @@ const Network = ({onSearchClick}) => {
             label="Total Fees"
             value={fmtTsar(txs.total_fees_paid)}
             subtext="All-time fees paid"
+          />
+          <SupplyProgressMeter
+            circulating={supply.circulating_estimate}
+            maxSupply={supply.max_supply}
           />
         </InfoSection>
 

@@ -1,10 +1,14 @@
 import PropTypes from "prop-types";
+import { useId } from "react";
 
 export const SkeletonCard = ({ count = 6 }) => {
+  const baseId = useId();
+  const items = Array.from({ length: count }, (_, i) => `${baseId}-card-${i}`);
+
   return (
     <div className="skeleton-lane-container">
-      {Array.from({ length: count }).map((_, idx) => (
-        <div className="skeleton-card glass-panel" key={`sk-card-${idx}`}>
+      {items.map((id) => (
+        <div className="skeleton-card glass-panel" key={id}>
           <div className="skeleton-line skeleton-header-line" />
           <div className="skeleton-line skeleton-height-line" />
           <div className="skeleton-grid">
@@ -23,6 +27,9 @@ SkeletonCard.propTypes = {
 };
 
 export const SkeletonNetwork = () => {
+  const baseId = useId();
+  const items = Array.from({ length: 8 }, (_, i) => `${baseId}-net-${i}`);
+
   return (
     <div className="skeleton-network-container">
       {/* Header Skeleton */}
@@ -37,8 +44,8 @@ export const SkeletonNetwork = () => {
 
       {/* Grid Stat Cards Skeleton */}
       <div className="skeleton-grid-cols-4">
-        {Array.from({ length: 8 }).map((_, idx) => (
-          <div className="skeleton-stat-card glass-panel" key={`sk-net-${idx}`}>
+        {items.map((id) => (
+          <div className="skeleton-stat-card glass-panel" key={id}>
             <div className="skeleton-line skeleton-label-line" />
             <div className="skeleton-line skeleton-val-line" />
             <div className="skeleton-line skeleton-sub-line" />

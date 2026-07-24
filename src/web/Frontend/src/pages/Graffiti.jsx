@@ -4,8 +4,10 @@ import { fmtBytes } from "../utils/format";
 import { useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useState, useMemo, memo } from "react";
 import { ResultGraffiti } from "../components/search/SearchResults";
-import { fetchGraffitiDetail, fetchGraffitiList } from "../api/explorer";
+import { fetchGraffitiDetail, fetchGraffitiList, graffitiMediaUrl } from "../api/explorer";
 import { SkeletonCard, SkeletonSearch } from "../components/common/SkeletonLoader";
+import { toast } from "../components/common/ToastContainer";
+import { FaCopy, FaDownload } from "react-icons/fa";
 import { 
   RiFilmLine, 
   RiImageLine, 
@@ -109,9 +111,6 @@ const Graffiti = ({ onSearchClick }) => {
   
   // Media Filter State ('all' | 'video' | 'image' | 'pdf')
   const [filterTab, setFilterTab] = useState("all");
-  
-  // Lightbox Modal State
-  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const { scrollerRef, isDragging, dragHandlers } = useDragScroll();
 
@@ -148,16 +147,6 @@ const Graffiti = ({ onSearchClick }) => {
       loadMore();
     }
   }, [items.length, loading, loadMore]);
-
-  // Close lightbox on Escape key
-  useEffect(() => {
-    if (!lightboxOpen) return;
-    const handleKeyDownGlobal = (e) => {
-      if (e.key === "Escape") setLightboxOpen(false);
-    };
-    globalThis.addEventListener("keydown", handleKeyDownGlobal);
-    return () => globalThis.removeEventListener("keydown", handleKeyDownGlobal);
-  }, [lightboxOpen]);
 
   // Filter items based on active tab
   const filteredItems = useMemo(() => {
@@ -416,47 +405,10 @@ const Graffiti = ({ onSearchClick }) => {
         )}
         {detailStatus === "done" && detail ? (
           <div className="graffiti-detail-wrapper glass-panel">
-            <div className="graffiti-detail-toolbar">
-              <span className="detail-toolbar-title">
-                <RiSparklingLine className="toolbar-icon" /> Inscription View Mode
-              </span>
-              <button
-                className="btn-primary cinema-btn"
-                type="button"
-                onClick={() => setLightboxOpen(true)}
-              >
-                <RiFullscreenLine /> Fullscreen Lightbox
-              </button>
-            </div>
             <ResultGraffiti data={detail} onSearchClick={handleSearchClickLocal} />
           </div>
         ) : null}
       </section>
-
-      {/* Fullscreen Cinema / Lightbox Modal */}
-      {lightboxOpen && detail && (
-        <div className="graffiti-lightbox-overlay">
-          <button
-            type="button"
-            className="graffiti-lightbox-backdrop"
-            aria-label="Close lightbox modal"
-            onClick={() => setLightboxOpen(false)}
-          />
-          <div className="graffiti-lightbox-content glass-panel">
-            <div className="lightbox-header">
-              <h3>
-                <RiSparklingLine /> Inscription #{detail?.block_height ?? "-"} ({detail?.art_id})
-              </h3>
-              <button className="btn-ghost" type="button" onClick={() => setLightboxOpen(false)}>
-                <RiCloseLine />
-              </button>
-            </div>
-            <div className="lightbox-body">
-              <ResultGraffiti data={detail} onSearchClick={handleSearchClickLocal} />
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   );
 };
