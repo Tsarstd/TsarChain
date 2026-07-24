@@ -20,6 +20,7 @@ import "./styles/search.css";
 import "./styles/footer.css";
 import "./styles/nav_bar.css";
 import "./styles/label.css";
+import "./styles/tx_flowchart.css";
 import "./styles/txid.css";
 import "./styles/address.css";
 import "./styles/live_indicator.css";

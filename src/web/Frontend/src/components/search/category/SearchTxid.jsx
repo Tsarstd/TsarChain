@@ -13,6 +13,7 @@ import {
 } from "../../../utils/format"
 
 import { getVoutLabel, getAddressType } from "../SearchUX";
+import { TxFlowchart } from "./TxFlowchart";
 
 
 const TxidGridCell = ({ cell, isHighlightedCell }) => {
@@ -354,6 +355,9 @@ const ResultTx = ({ data, onSearchClick }) => {
 
         </div>
       </div>
+      
+      {/* UTXO VISUALIZER FLOWCHART */}
+      <TxFlowchart data={data} onSearchClick={onSearchClick} />
       
       <div className="divider" />
       
