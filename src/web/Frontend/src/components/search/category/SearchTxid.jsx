@@ -13,7 +13,7 @@ import {
 } from "../../../utils/format"
 
 import { getVoutLabel, getAddressType } from "../SearchUX";
-import { TxFlowchart } from "./TxFlowchart";
+import { TxFlowchart } from "../../common/TxFlowchart";
 
 
 const TxidGridCell = ({ cell, isHighlightedCell }) => {

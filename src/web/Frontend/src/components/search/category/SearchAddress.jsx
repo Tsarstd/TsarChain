@@ -10,7 +10,7 @@ import {
   fmtTxid,
   timeAgo
 } from "../../../utils/format";
-import { AddressAnalytics } from "./AddressAnalytics";
+import { AddressAnalytics } from "../../common/AddressAnalytics";
 
 
 const AddressHeaderCell = ({ val, cellKey }) => {
@@ -347,10 +347,6 @@ const ResultAddress = ({ data, onSearchClick }) => {
           <div className="stat">
             <span className="info-label">UTXO Set</span>
             <span className="value">{data?.utxo_count || 0}</span>
-          </div>
-          <div className="stat">
-            <span className="info-label">Total Transactions</span>
-            <span className="value">{data?.total_txs || 0}</span>
           </div>
         </div>
 

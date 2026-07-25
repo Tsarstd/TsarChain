@@ -276,13 +276,15 @@ button.node-address {
   display: flex;
   align-items: center;
   justify-content: center;
-  max-width: 220px;
+  max-width: 310px;
+  min-width: 260px;
 }
 
 @media (max-width: 900px) {
   .utxo-column--core {
     max-width: 100%;
     width: 100%;
+    min-width: 0;
   }
 }
 
@@ -332,10 +334,10 @@ button.node-address {
 .core-metrics {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   text-align: left;
   background: rgba(15, 23, 42, 0.6);
-  padding: 10px;
+  padding: 10px 12px;
   border-radius: 8px;
 }
 
@@ -343,16 +345,21 @@ button.node-address {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 0.75rem;
+  gap: 12px;
+  font-size: 0.76rem;
 }
 
 .metric-lbl {
   color: #94a3b8;
+  white-space: nowrap;
+  font-weight: 500;
 }
 
 .metric-val {
   font-family: monospace;
   font-weight: 700;
+  white-space: nowrap;
+  text-align: right;
 }
 
 .text-cyan {

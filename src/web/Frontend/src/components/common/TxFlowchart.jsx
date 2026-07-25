@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import { FaArrowRight, FaCoins, FaExchangeAlt, FaShieldAlt, FaExternalLinkAlt } from "react-icons/fa";
 import { RiNodeTree, RiSparklingLine } from "react-icons/ri";
-import { fmtTsar, fmtAddress } from "../../../utils/format";
+import { fmtTsar, fmtAddress } from "../../utils/format";
 
 const getOutputTagClass = (item) => {
   if (item.isChange) {
