@@ -7,9 +7,9 @@ const renderSyncMeta = (refreshing, updated, secs) => {
     return <span className="syncing-text">Syncing latest data...</span>;
   }
   if (updated) {
-    return `Updated ${secs}s ago`;
+    return <span>Updated {secs}s ago</span>;
   }
-  return "Connecting...";
+  return <span>Connecting...</span>;
 };
 
 export const LiveIndicator = ({

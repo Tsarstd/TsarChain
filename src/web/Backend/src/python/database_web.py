@@ -381,7 +381,7 @@ def get_last_stored_height() -> int:
                     if height > max_height:
                         max_height = height
             except (ValueError, IndexError) as e:
-                log.error("[webdb] Error parsing key %s: %s", key_bytes, e)
+                log.exception("[webdb] Error parsing key %s: %s", key_bytes, e)
                 continue
         
         

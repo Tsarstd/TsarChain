@@ -688,6 +688,7 @@ BlockCard.propTypes = {
   item: PropTypes.shape({
     graffiti_posts: PropTypes.number,
     graffiti_comments: PropTypes.number,
+    graffiti_payouts: PropTypes.number,
     block_id: PropTypes.string,
     graffiti_count: PropTypes.number,
     timestamp: PropTypes.number,

@@ -28,16 +28,16 @@
 }
 
 .live-status-pill.active {
-  background: rgba(16, 185, 129, 0.12);
-  color: #10b981;
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: #064e3b;
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.4);
   box-shadow: 0 0 12px rgba(16, 185, 129, 0.2);
 }
 
 .live-status-pill.paused {
-  background: rgba(148, 163, 184, 0.12);
-  color: #94a3b8;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: #1e293b;
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.3);
 }
 
 /* Pulsing Dot Animation */
@@ -126,9 +126,9 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #e2e8f0;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f1f5f9;
   padding: 4px 8px;
   border-radius: 6px;
   cursor: pointer;
@@ -138,9 +138,9 @@
 }
 
 .live-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
+  background: #0f172a;
   color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.3);
   transform: translateY(-1px);
 }
 
@@ -149,8 +149,8 @@
 }
 
 .live-btn.is-live {
-  background: rgba(56, 189, 248, 0.15);
-  border-color: rgba(56, 189, 248, 0.35);
+  background: #082f49;
+  border-color: rgba(56, 189, 248, 0.4);
   color: #38bdf8;
 }
 

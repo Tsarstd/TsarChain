@@ -54,7 +54,7 @@
 }
 
 .utxo-toggle-btn:hover {
-  background: rgba(56, 189, 248, 0.2);
+  background: #082f49;
   border-color: rgba(56, 189, 248, 0.4);
   color: #38bdf8;
 }
@@ -103,13 +103,13 @@
 }
 
 .input-badge {
-  background: rgba(56, 189, 248, 0.15);
+  background: #082f49;
   color: #38bdf8;
   border: 1px solid rgba(56, 189, 248, 0.3);
 }
 
 .output-badge {
-  background: rgba(168, 85, 247, 0.15);
+  background: #3b0764;
   color: #c084fc;
   border: 1px solid rgba(168, 85, 247, 0.3);
 }
@@ -211,7 +211,7 @@ button.node-address {
 
 .node-address.clickable:hover {
   color: #38bdf8;
-  background: rgba(56, 189, 248, 0.15);
+  background: #082f49;
 }
 
 .ext-icon {
@@ -381,13 +381,13 @@ button.node-address {
 }
 
 .status-pill.confirmed {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
+  background: #064e3b;
+  color: #34d399;
 }
 
 .status-pill.pending {
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
+  background: #451a03;
+  color: #fbbf24;
 }
 
 /* SUMMARY BAR */

@@ -44,9 +44,9 @@
 }
 
 .btn-ghost {
-  background: rgba(221, 43, 43, 0.15);
-  border: 1px solid rgba(221, 43, 43, 0.3);
-  color: #cf764d;
+  background: #451a1a;
+  border: 1px solid rgba(221, 43, 43, 0.4);
+  color: #fca5a5;
   padding: 6px 10px;
   border-radius: 8px;
   cursor: pointer;
@@ -177,6 +177,219 @@
   background: #2b2b2b;
   border-radius: 6px;
   border-left: 3px solid var(--primary);
+}
+
+/* ==========================================================================
+   Comments Section Styling
+   ========================================================================== */
+.comments-section {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.comments-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.comments-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.comments-icon {
+  color: #38bdf8;
+  font-size: 16px;
+}
+
+.comments-count-badge {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.comments-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #94a3b8;
+  text-align: center;
+  gap: 8px;
+}
+
+.comments-empty-state .empty-icon {
+  font-size: 28px;
+  color: #64748b;
+}
+
+.comments-empty-state p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.comment-card {
+  background: #1e222b;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 3px solid #38bdf8;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  transition: all 0.2s ease-in-out;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.comment-card:hover {
+  background: #232833;
+  border-color: rgba(56, 189, 248, 0.4);
+  border-left-color: #38bdf8;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.comment-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.comment-user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.comment-avatar {
+  font-size: 18px;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.comment-card:hover .comment-avatar {
+  color: #38bdf8;
+}
+
+.comment-author-link {
+  font-weight: 500;
+  font-size: 13px;
+  color: #cbd5e1;
+  word-break: break-all;
+}
+
+.comment-timestamp {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.comment-timestamp .clock-icon {
+  font-size: 10px;
+}
+
+.comment-card-body {
+  padding-left: 26px;
+}
+
+.comment-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #f1f5f9;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.comment-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 26px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.comment-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.comment-badge.amount-badge {
+  background: rgba(16, 185, 129, 0.1);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.comment-badge.tip-badge {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.comment-badge .tip-icon {
+  font-size: 11px;
+  color: #f59e0b;
+}
+
+.comments-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 0.5rem;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.comments-toggle-btn:hover {
+  background: rgba(56, 189, 248, 0.15);
+  color: #f8fafc;
+  border-color: rgba(56, 189, 248, 0.4);
 }
 
 .tx-info {
@@ -475,7 +688,7 @@
 }
 
 .search-kind-badge {
-  background: rgba(56, 189, 248, 0.12);
+  background: #082f49;
   border: 1px solid rgba(56, 189, 248, 0.3);
   color: #38bdf8;
   padding: 2px 8px;
@@ -551,7 +764,7 @@
 }
 
 .search-chip:hover {
-  background: rgba(56, 189, 248, 0.15);
+  background: #082f49;
   border-color: rgba(56, 189, 248, 0.3);
   color: #38bdf8;
   transform: translateY(-1px);
@@ -696,7 +909,7 @@
 }
 
 .zoom-btn:hover:not(:disabled) {
-  background: #0284c7;
+  background: #0369a1;
   color: #ffffff;
   border-color: #38bdf8;
   transform: scale(1.08);
@@ -811,7 +1024,7 @@
 }
 
 .pdf-tool-btn:hover:not(:disabled) {
-  background: #0284c7;
+  background: #0369a1;
   color: #ffffff;
   border-color: #38bdf8;
 }

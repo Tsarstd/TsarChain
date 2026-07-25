@@ -137,7 +137,7 @@ class Blockchain():
                 cache.popitem(last=False)
             self._hash_cache = cache
         except Exception:
-            log.error("[_rebuild_hash_cache] failed", exc_info=True)
+            log.exception("[_rebuild_hash_cache] failed")
 
     def get_block_hash(self, height: int):
         if height < 0:

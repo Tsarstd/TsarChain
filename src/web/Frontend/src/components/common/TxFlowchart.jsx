@@ -15,7 +15,6 @@ const getOutputTagClass = (item) => {
 };
 
 export const TxFlowchart = ({ data, onSearchClick }) => {
-  const [hoveredNode, setHoveredNode] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
 
   const isCoinbase = Boolean(data?.is_coinbase || data?.inputs?.[0]?.is_coinbase);
@@ -62,11 +61,12 @@ export const TxFlowchart = ({ data, onSearchClick }) => {
   }, [data?.inputs]);
 
   const outputsList = useMemo(() => {
-    if (!data?.outputs || data.outputs.length === 0) {
+    const outputs = data?.outputs;
+    if (!outputs || outputs.length === 0) {
       return [];
     }
 
-    return data.outputs.map((out, idx) => {
+    return outputs.map((out, idx) => {
       const addr = out?.address;
       const isOpReturn = !addr || addr === "OP_RETURN";
       const isChange = !isOpReturn && inputAddressSet.has(addr);
@@ -134,10 +134,8 @@ export const TxFlowchart = ({ data, onSearchClick }) => {
                   <div
                     key={item.id}
                     className={`utxo-node utxo-node--input ${
-                      hoveredNode === item.id ? "hovered" : ""
-                    } ${item.isCoinbase ? "coinbase" : ""}`}
-                    onMouseEnter={() => setHoveredNode(item.id)}
-                    onMouseLeave={() => setHoveredNode(null)}
+                      item.isCoinbase ? "coinbase" : ""
+                    }`}
                   >
                     <div className="node-top">
                       <span className="node-tag">
@@ -236,10 +234,8 @@ export const TxFlowchart = ({ data, onSearchClick }) => {
                   <div
                     key={item.id}
                     className={`utxo-node utxo-node--output ${
-                      hoveredNode === item.id ? "hovered" : ""
-                    } ${item.isOpReturn ? "opreturn" : ""} ${item.isChange ? "change" : ""}`}
-                    onMouseEnter={() => setHoveredNode(item.id)}
-                    onMouseLeave={() => setHoveredNode(null)}
+                      item.isOpReturn ? "opreturn" : ""
+                    } ${item.isChange ? "change" : ""}`}
                   >
                     <div className="node-top">
                       <span className={`node-tag ${getOutputTagClass(item)}`}>

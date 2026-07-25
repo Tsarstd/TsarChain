@@ -178,7 +178,7 @@ class NodeClient:
             
             except OSError as e:
                 if log.isEnabledFor(logging.DEBUG):
-                    log.error("[scan] os error for %s:%d: %s", ip, port, e)
+                    log.exception("[scan] os error for %s:%d: %s", ip, port, e)
                 continue
             
             except Exception:

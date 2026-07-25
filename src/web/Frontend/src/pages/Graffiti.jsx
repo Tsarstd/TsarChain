@@ -4,19 +4,15 @@ import { fmtBytes } from "../utils/format";
 import { useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useState, useMemo, memo } from "react";
 import { ResultGraffiti } from "../components/search/SearchResults";
-import { fetchGraffitiDetail, fetchGraffitiList, graffitiMediaUrl } from "../api/explorer";
+import { fetchGraffitiDetail, fetchGraffitiList } from "../api/explorer";
 import { SkeletonCard, SkeletonSearch } from "../components/common/SkeletonLoader";
-import { toast } from "../components/common/ToastContainer";
-import { FaCopy, FaDownload } from "react-icons/fa";
+
 import { 
   RiFilmLine, 
   RiImageLine, 
   RiFilePdfLine, 
   RiFilter3Line, 
-  RiSparklingLine,
-  RiLayoutGridLine,
-  RiCloseLine,
-  RiFullscreenLine
+  RiLayoutGridLine
 } from "react-icons/ri";
 
 const PAGE_SIZE = 20;

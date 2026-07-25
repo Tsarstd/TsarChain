@@ -129,6 +129,18 @@ def rpc_history_book(client, address: str):
     if isinstance(tx_data, dict) and tx_data.get("error"):
         return {"status": "error", "message": f"Failed to fetch address: {tx_data.get('error')}"}
     
+    total_txs = tx_data.get("total_txs") if isinstance(tx_data, dict) else None
+    if total_txs is None and isinstance(tx_data, dict):
+        total_txs = len(tx_data.get("history", []))
+    if total_txs is None:
+        total_txs = 0
+
+    if total_txs < 8:
+        return {
+            "status": "error",
+            "message": f"History Book requires at least 8 transactions (found {total_txs})."
+        }
+    
     output_dir = "data/web/history_books"
     hb_gen = build_history_book.HistoryBookGenerator(output_dir)
     result = hb_gen.generate_history_book_base64(tx_data)

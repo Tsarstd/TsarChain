@@ -11,7 +11,14 @@ import {
   FaExpand, 
   FaCompress, 
   FaAngleLeft, 
-  FaAngleRight 
+  FaAngleRight,
+  FaComments,
+  FaCommentDots,
+  FaUserCircle,
+  FaCoins,
+  FaClock,
+  FaChevronDown,
+  FaChevronUp
 } from "react-icons/fa";
 
 import { Document, Page, pdfjs } from 'react-pdf';
@@ -381,6 +388,7 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
   const isPdf = mime.includes("pdf") || data?.preview_url?.toLowerCase().endsWith('.pdf');
   const { renderHash, renderClickableHash } = useRenderHelpers();
   const [showDetails, setShowDetails] = useState(false);
+  const [showAllComments, setShowAllComments] = useState(false);
 
   // Percentage Loading State for Media
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -723,24 +731,97 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
 
       <div className="divider" />
 
-      <div className="list">
-        <div className="stat" style={{ marginBottom: '10px' }}>
-          <span className="value">Comments : {data?.comments?.length || 0}</span>
-        </div>
-        {(data?.comments || []).slice(0, 6).map((c) => (
-          <div className="comment-item" key={c.txid || `${c.commenter}-${c.ts}`}>
-            <div className="muted">{fmtTimestamp(c.ts)}</div>
-            <div className="value">
-            <ClickableValue value={c.commenter || "-"} onSearchClick={onSearchClick} className="value" info={c.commenter} isCopyable={true}>
-                {fmtAddress(c.commenter) || c.commenter || "-"}
-            </ClickableValue>
-            </div>
-            <div className="divider" />
-            <div className="value">{c.comment_text || c.comment || "-"}</div>
-            <div className="divider" />
-            <div className="muted">{fmtTsar(c.amount)} {c.tip ? ` - Tip ${fmtTsar(c.tip)}` : ""}</div>
+      {/* Comments Section */}
+      <div className="comments-section">
+        <div className="comments-header">
+          <div className="comments-title">
+            <FaComments className="comments-icon" />
+            <span>Comments</span>
+            <span className="comments-count-badge">{data?.comments?.length || 0}</span>
           </div>
-        ))}
+        </div>
+
+        {(!data?.comments || data.comments.length === 0) ? (
+          <div className="comments-empty-state">
+            <FaCommentDots className="empty-icon" />
+            <p>No comments on this graffiti yet.</p>
+          </div>
+        ) : (
+          <div className="comments-list">
+            {(showAllComments ? data.comments : data.comments.slice(0, 5)).map((c, index) => {
+              const commenterAddress = c.commenter || "-";
+              const commentText = c.comment_text || c.comment || "-";
+              const tipNum = Number(c.tip || 0);
+              const hasTip = !Number.isNaN(tipNum) && tipNum > 0;
+              const amountNum = Number(c.amount || 0);
+              const hasAmount = c.amount !== undefined && c.amount !== null && !Number.isNaN(amountNum) && amountNum > 0;
+
+              return (
+                <div className="comment-card" key={c.txid || `${commenterAddress}-${c.ts}-${index}`}>
+                  <div className="comment-card-header">
+                    <div className="comment-user-info">
+                      <div className="comment-avatar">
+                        <FaUserCircle />
+                      </div>
+                      <ClickableValue
+                        value={commenterAddress}
+                        onSearchClick={onSearchClick}
+                        className="comment-author-link"
+                        info={commenterAddress}
+                        isCopyable={true}
+                      >
+                        {fmtAddress(commenterAddress) || commenterAddress}
+                      </ClickableValue>
+                    </div>
+                    {c.ts && (
+                      <div className="comment-timestamp">
+                        <FaClock className="clock-icon" />
+                        <span>{fmtTimestamp(c.ts)}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="comment-card-body">
+                    <p className="comment-text">{commentText}</p>
+                  </div>
+
+                  {(hasAmount || hasTip) && (
+                    <div className="comment-card-footer">
+                      {hasAmount && (
+                        <span className="comment-badge amount-badge" title="Fee Paid">
+                          Fee: {fmtTsar(c.amount)}
+                        </span>
+                      )}
+                      {hasTip && (
+                        <span className="comment-badge tip-badge" title="Tip Amount">
+                          <FaCoins className="tip-icon" /> Tip: {fmtTsar(c.tip)}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {data.comments.length > 5 && (
+              <button
+                type="button"
+                className="comments-toggle-btn"
+                onClick={() => setShowAllComments((prev) => !prev)}
+              >
+                {showAllComments ? (
+                  <>
+                    <FaChevronUp /> Show Less
+                  </>
+                ) : (
+                  <>
+                    <FaChevronDown /> Show All Comments ({data.comments.length})
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
     </>

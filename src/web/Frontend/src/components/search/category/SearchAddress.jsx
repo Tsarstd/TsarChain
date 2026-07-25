@@ -296,26 +296,40 @@ const ResultAddress = ({ data, onSearchClick }) => {
         </h1>
         
         {/* BUTTONS CONTAINER - CENTERED */}
-        <div className="action-buttons">
-          {/* COPY ADDRESS BUTTON */}
-          <button
-            onClick={() => copyToClipboard(data.address, setCopyStatus)}
-            className={`action-button copy-button`}
-          >
-            <span><FaCopy /></span>
-            {copyStatus || "Copy"}
-          </button>
+        {(() => {
+          const totalTx = data?.total_txs ?? data?.history?.length ?? 0;
+          const isGuardBlocked = totalTx < 8;
+          let downloadTitle = "Download History Book PDF";
+          if (isGuardBlocked) {
+            downloadTitle = `A minimum of 8 transactions is required to download the History Book`;
+          } else if (isDownloading) {
+            downloadTitle = "Generating History Book...";
+          }
 
-          <button
-            onClick={handleDownloadHistory}
-            disabled={isDownloading}
-            className={`action-button receipt-button ${isDownloading ? 'disabled' : ''}`}
-            style={{ marginLeft: '10px' }}
-          >
-            <span><FaDownload /></span>
-            {isDownloading ? "Generating..." : "Download Book"}
-          </button>
-        </div>
+          return (
+            <div className="action-buttons">
+              {/* COPY ADDRESS BUTTON */}
+              <button
+                onClick={() => copyToClipboard(data.address, setCopyStatus)}
+                className={`action-button copy-button`}
+              >
+                <span><FaCopy /></span>
+                {copyStatus || "Copy"}
+              </button>
+
+              <button
+                onClick={handleDownloadHistory}
+                disabled={isDownloading || isGuardBlocked}
+                title={downloadTitle}
+                className={`action-button receipt-button ${isDownloading || isGuardBlocked ? 'disabled' : ''}`}
+                style={{ marginLeft: '10px' }}
+              >
+                <span><FaDownload /></span>
+                {isDownloading ? "Generating..." : "Download Book"}
+              </button>
+            </div>
+          );
+        })()}
       </div>
 
       <div className="divider" />
