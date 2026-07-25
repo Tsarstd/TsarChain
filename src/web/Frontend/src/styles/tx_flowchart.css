@@ -137,8 +137,7 @@
   position: relative;
 }
 
-.utxo-node:hover,
-.utxo-node.hovered {
+.utxo-node:hover {
   border-color: rgba(56, 189, 248, 0.4);
   background: rgba(30, 41, 59, 0.95);
   transform: translateY(-2px);
@@ -390,41 +389,4 @@ button.node-address {
   color: #fbbf24;
 }
 
-/* SUMMARY BAR */
-.utxo-summary-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-around;
-  margin-top: 1.5rem;
-  padding-top: 1rem;
-  border-top: 1px dashed rgba(255, 255, 255, 0.1);
-  background: rgba(15, 23, 42, 0.4);
-  border-radius: 10px;
-}
 
-@media (max-width: 600px) {
-  .utxo-summary-bar {
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-}
-
-.summary-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.sum-label {
-  font-size: 0.72rem;
-  color: #94a3b8;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.sum-val {
-  font-size: 0.95rem;
-  font-family: monospace;
-  font-weight: 700;
-  color: #f8fafc;
-}

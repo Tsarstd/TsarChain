@@ -18,25 +18,8 @@
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
 }
 
-.glow-border {
-  border: 1px solid var(--border);
-  transition: border-color 0.3s ease, box-shadow 0.3s ease;
-}
-
-.glow-border:hover {
-  border-color: var(--border-glow);
-  box-shadow: 0 0 20px var(--accent-glow);
-}
-
 .mono-text {
   letter-spacing: -0.3px;
-}
-
-.gradient-text {
-  background: var(--accent-gradient);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
 }
 
 .copy-btn-inline {
@@ -170,12 +153,6 @@
   margin: 20px 0;
 }
 
-.divider-card {
-  background: var(--border);
-  height: 1px;
-  margin: 10px 0;
-}
-
 .list {
   display: grid;
   gap: 8px;
@@ -196,24 +173,6 @@
   margin: 0 auto;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
   border: 1px solid var(--border);
-}
-
-.hash-break {
-  word-break: break-all;
-  overflow-wrap: break-word;
-  display: block;
-  line-height: 1.45;
-  font-size: 12px;
-}
-
-.hash-compact {
-  display: -webkit-box;
-  line-clamp: 2;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  word-break: break-all;
 }
 
 .hash-multiline {

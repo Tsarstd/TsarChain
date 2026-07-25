@@ -135,10 +135,10 @@ def rpc_history_book(client, address: str):
     if total_txs is None:
         total_txs = 0
 
-    if total_txs < 8:
+    if total_txs < 20:
         return {
             "status": "error",
-            "message": f"History Book requires at least 8 transactions (found {total_txs})."
+            "message": f"History Book requires at least 20 transactions (found {total_txs})."
         }
     
     output_dir = "data/web/history_books"

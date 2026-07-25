@@ -298,10 +298,10 @@ const ResultAddress = ({ data, onSearchClick }) => {
         {/* BUTTONS CONTAINER - CENTERED */}
         {(() => {
           const totalTx = data?.total_txs ?? data?.history?.length ?? 0;
-          const isGuardBlocked = totalTx < 8;
+          const isGuardBlocked = totalTx < 20;
           let downloadTitle = "Download History Book PDF";
           if (isGuardBlocked) {
-            downloadTitle = `A minimum of 8 transactions is required to download the History Book`;
+            downloadTitle = `A minimum of 20 transactions is required to download the History Book`;
           } else if (isDownloading) {
             downloadTitle = "Generating History Book...";
           }
