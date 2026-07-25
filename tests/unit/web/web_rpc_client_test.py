@@ -255,7 +255,7 @@ def test_rpc_receipt_race_condition(mock_client):
 
 def test_rpc_history_book(mock_client):
     with patch("web.Backend.src.python.web_rpc_client._cache_get", return_value=None):
-        with patch("web.Backend.src.python.web_rpc_client.rpc_address", return_value={"address": "tsar123", "balance": 10, "total_txs": 10}):
+        with patch("web.Backend.src.python.web_rpc_client.rpc_address", return_value={"address": "tsar123", "balance": 10, "total_txs": 20}):
             with patch("web.Backend.src.python.build_history_book.HistoryBookGenerator") as mock_gen:
                 mock_inst = MagicMock()
                 mock_inst.generate_history_book_base64.return_value = {"status": "success"}
@@ -268,7 +268,7 @@ def test_rpc_history_book_race_condition(mock_client):
     with patch("web.Backend.src.python.web_rpc_client._cache_get", return_value={"address": "tsar1"}):
         with patch("web.Backend.src.python.web_rpc_client.webdb.is_history_book_fresh", return_value=True):
             with patch("web.Backend.src.python.web_rpc_client.webdb.read_history_book_file", side_effect=FileNotFoundError()):
-                with patch("web.Backend.src.python.web_rpc_client.rpc_address", return_value={"address": "tsar1", "total_txs": 10}) as mock_addr:
+                with patch("web.Backend.src.python.web_rpc_client.rpc_address", return_value={"address": "tsar1", "total_txs": 20}) as mock_addr:
                     with patch("web.Backend.src.python.build_history_book.HistoryBookGenerator") as mock_gen:
                         mock_inst = MagicMock()
                         mock_inst.generate_history_book_base64.return_value = {"status": "success", "regenerated": True}
@@ -284,6 +284,6 @@ def test_rpc_history_book_insufficient_txs(mock_client):
         with patch("web.Backend.src.python.web_rpc_client.rpc_address", return_value={"address": "tsar123", "total_txs": 5, "history": []}):
             res = rpc.rpc_history_book(mock_client, "tsar123")
             assert res["status"] == "error"
-            assert "requires at least 8 transactions" in res["message"]
+            assert "requires at least 20 transactions" in res["message"]
 
 
