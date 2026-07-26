@@ -27,8 +27,6 @@ Graffiti Protocol focuses on **Voice Sovereignty**: preserving *cultural archive
 - [Demo](#️-demo)
 - [Screenshots](#️-screenshots)
 - [Project Status](#️-project-status)
-  - [Implemented](#-implemented)
-  - [In Development](#-in-development)
 - [Features at a Glance](#-features-at-a-glance)
 - [Why Voice Sovereignty](#-why-voice-sovereignty)
 - [Getting Started](#-getting-started)
@@ -39,12 +37,6 @@ Graffiti Protocol focuses on **Voice Sovereignty**: preserving *cultural archive
 - [Roadmap](#️-roadmap)
 - [Performance Evidence](#-performance-evidence)
 - [Documentation](#-documentation)
-  - [Grungepaper](#grungepaper)
-  - [Graffiti Protocol](#graffiti-protocol)
-  - [API](#api)
-  - [Architecture](#architecture)
-  - [Rust](#rust)
-  - [References](#references)
 - [License](#-license)
 
 ---
@@ -133,7 +125,7 @@ Graffiti Protocol focuses on **Voice Sovereignty**: preserving *cultural archive
 
 ## ⚠️ Project Status
 
-#### ✅ Implemented
+***✅ Implemented***
 - **Kremlin Wallet (Light Wallet)**
   - Address generation `Bech32`
   - Address prefix `tsar1`
@@ -174,7 +166,7 @@ Graffiti Protocol focuses on **Voice Sovereignty**: preserving *cultural archive
   - Split incentive mechanism 80/10/10 from comment & tip
   - See Graffiti Activity in Explore Tab `Kremlin`
 
-#### 🚧 In Development
+***🚧 In Development***
 - **Archivist (Storage Node)**
   - More Consensus Security
   - Implementing resilience from rogue Archivists (slashing)
@@ -256,10 +248,10 @@ Make sure your virtual environment is activated, then run any of the application
 **Run a Miner/Node**
 ```bash
 # 1. Network Initialization (Mines Block 0 & sets LMDB Genesis Lock - Bootstrap Node only)
-python apps/cli_node_miner.py --init-genesis --address tsar1qyouraddresshere --cores 4
+python apps/cli_node_miner.py --init-genesis
 
 # 2. Run full node + miner (normal mode)
-python apps/cli_node_miner.py --address tsar1qyouraddresshere
+python apps/cli_node_miner.py
 
 # 3. Run node-only (no mining)
 python apps/cli_node_miner.py --node-only
