@@ -87,8 +87,8 @@ class MiningManager:
             if getattr(self.blockchain, "_reload_chain_from_kv", lambda: False)():
                 log.warning("[_validate_chain_state] chain reloaded from LMDB; continuing mining")
                 
-        if not self.blockchain.chain and not CFG.ALLOW_AUTO_GENESIS:
-            log.warning("[_validate_chain_state] refusing to mine genesis; sync from peers first.")
+        if not self.blockchain.chain:
+            log.warning("[_validate_chain_state] refusing to mine on empty chain; run --init-genesis or sync from peers first.")
             return False
 
         if self.blockchain._has_pending_blocks():

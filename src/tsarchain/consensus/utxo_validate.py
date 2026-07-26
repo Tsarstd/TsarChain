@@ -44,7 +44,7 @@ class UTXOValidator:
         if store is None:
             return
         # Saat genesis lock dan chain kosong, hindari flush paksa yang bisa mengosongkan DB yang sudah ada
-        if (not self.blockchain.chain) and not force and GENESIS_HASH is not None and not CFG.ALLOW_AUTO_GENESIS:
+        if (not self.blockchain.chain) and not force:
             return
         current_height = self.blockchain.height
         if force:

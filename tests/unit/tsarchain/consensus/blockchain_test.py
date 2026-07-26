@@ -60,7 +60,6 @@ def mock_config(monkeypatch):
     import tsarchain.consensus.blockchain as bc_mod
     import tsarchain.consensus.chain_storage as cs_mod
 
-    monkeypatch.setattr(bc_mod.CFG, "ALLOW_AUTO_GENESIS", False)
     monkeypatch.setattr(bc_mod.CFG, "HASH_CACHE_MAX", 100)
     monkeypatch.setattr(bc_mod.CFG, "UTXO_FLUSH_INTERVAL", 10)
     monkeypatch.setattr(bc_mod.CFG, "CHAIN_JOURNAL_FILE", "/tmp/non_existent_journal.file")
@@ -68,7 +67,6 @@ def mock_config(monkeypatch):
     monkeypatch.setattr(bc_mod.CFG, "LMDB_DATA_FILE", "/tmp/non_existent_lmdb")
     monkeypatch.setattr(bc_mod.CFG, "KV_BACKEND", "json")
 
-    monkeypatch.setattr(cs_mod.CFG, "ALLOW_AUTO_GENESIS", False)
     monkeypatch.setattr(cs_mod.CFG, "CHAIN_JOURNAL_FILE", "/tmp/non_existent_journal.file")
     monkeypatch.setattr(cs_mod.CFG, "BLOCK_FILE", "/tmp/non_existent_blocks.json")
     monkeypatch.setattr(cs_mod.CFG, "LMDB_DATA_FILE", "/tmp/non_existent_lmdb")
@@ -183,7 +181,6 @@ def test_get_block_hash_fallback(mock_config):
 
 def test_reload_chain_from_kv(mock_block_module, mock_kv, mock_config):
     """Successfully reload chain from LMDB."""
-    mock_config.ALLOW_AUTO_GENESIS = False
     kv_enabled, iter_prefix = mock_kv
     kv_enabled.return_value = True
 
@@ -262,7 +259,6 @@ def test_shutdown(mock_config):
 
 def test_start_persist_worker(mock_config):
     """Worker thread is started on Blockchain init."""
-    mock_config.ALLOW_AUTO_GENESIS = False
     with patch('threading.Thread') as mock_thread, \
          patch('queue.Queue') as mock_queue, \
          patch.object(Blockchain, 'load_chain', autospec=True) as mock_load, \
@@ -282,7 +278,6 @@ def test_start_persist_worker(mock_config):
 
 
 def test_schedule_persist(mock_config):
-    mock_config.ALLOW_AUTO_GENESIS = False
     with patch('threading.Thread') as mock_thread, \
          patch('queue.Queue') as mock_queue, \
          patch.object(Blockchain, 'load_chain', autospec=True), \
@@ -316,7 +311,6 @@ def test_schedule_persist(mock_config):
 
 
 def test_stop_persist_worker(mock_config):
-    mock_config.ALLOW_AUTO_GENESIS = False
     with patch('threading.Thread') as mock_thread, \
          patch('queue.Queue') as mock_queue, \
          patch.object(Blockchain, 'load_chain', autospec=True), \
@@ -330,6 +324,7 @@ def test_stop_persist_worker(mock_config):
         mock_thread.return_value = thread_instance
 
         bc = Blockchain()
+        bc.chain = [Mock()]
         bc._persist_thread = thread_instance
         bc._persist_queue = queue_instance
         bc._persist_stop = Mock()
@@ -353,9 +348,7 @@ def test_stop_persist_worker(mock_config):
 
 
 def test_init_auto_genesis_disabled(mock_config, mock_kv):
-    """When ALLOW_AUTO_GENESIS=False and no chain exists, blockchain stays empty."""
-    mock_config.ALLOW_AUTO_GENESIS = False
-
+    """When no chain exists, blockchain stays empty."""
     with patch.object(Blockchain, 'load_chain', autospec=True) as mock_load_chain, \
         patch.object(Blockchain, 'load_state', autospec=True) as mock_load_state, \
         patch.object(Blockchain, '_reload_chain_from_kv', return_value=False) as mock_reload_kv, \
@@ -369,15 +362,13 @@ def test_init_auto_genesis_disabled(mock_config, mock_kv):
         assert bc.total_blocks == 0
         mock_load_chain.assert_called_once()
         mock_load_state.assert_called_once()
-        mock_persist_empty.assert_not_called()
+        mock_persist_empty.assert_called_once()
         mock_start_worker.assert_called_once()
         mock_enforce.assert_not_called()
 
 
 def test_init_chain_exists(mock_config):
     """When load_chain fills the chain, genesis lock and hash cache are rebuilt."""
-    mock_config.ALLOW_AUTO_GENESIS = False
-
     with patch.object(Blockchain, 'load_chain', autospec=True) as mock_load_chain, \
         patch.object(Blockchain, 'load_state', autospec=True) as mock_load_state, \
         patch.object(Blockchain, '_start_persist_worker', autospec=True) as mock_start_worker, \

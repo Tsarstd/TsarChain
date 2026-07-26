@@ -98,18 +98,11 @@ class Blockchain():
             self.genesis_manager._enforce_genesis_lock()
             self._rebuild_hash_cache()
             return
-        if GENESIS_HASH is not None and not CFG.ALLOW_AUTO_GENESIS:
-            log.info("[__init__] Genesis lock set; auto-genesis disabled. Waiting for peer sync.")
-            return
-        if CFG.ALLOW_AUTO_GENESIS:
-            log.info("[__init__] Auto-genesis enabled (use_cores=%s)", self.use_cores)
-            self.genesis_manager.create_genesis_with_lock(self.miner_address or "", self.use_cores)
-        else:
-            log.info("[__init__] Auto-genesis disabled; node will wait for peers to sync")
-            self.chain = []
-            self.total_blocks = 0
-            self.total_supply = 0
-            self.genesis_manager._persist_empty_state_if_needed()
+        log.info("[__init__] Chain empty; node will wait for peer sync or --init-genesis")
+        self.chain = []
+        self.total_blocks = 0
+        self.total_supply = 0
+        self.genesis_manager._persist_empty_state_if_needed()
             
         if not kv_enabled:
             os.makedirs(os.path.dirname(CFG.CHAIN_JOURNAL_FILE), exist_ok=True)
@@ -295,8 +288,8 @@ class Blockchain():
             log.warning("[persist_worker] did not stop gracefully within timeout")
         self._persist_thread = None
         self._persist_queue = None
-        if (not self.chain) and GENESIS_HASH is not None and not CFG.ALLOW_AUTO_GENESIS:
-            log.info("[_stop_persist_worker] Skip final persistence (genesis locked & chain empty)")
+        if not self.chain:
+            log.info("[_stop_persist_worker] Skip final persistence (chain empty)")
             return
         # Final synchronous persistence to ensure no data loss
         self.save_chain(force_full=True)
@@ -333,8 +326,8 @@ class Blockchain():
 
 
     # ---------------- Proxy Methods for Genesis ----------------
-    def ensure_genesis(self, miner_address: str, use_cores: int | None = None) -> bool:
-        return self.genesis_manager.ensure_genesis(miner_address, use_cores)
+    def ensure_genesis(self, miner_address: str, use_cores: int | None = None, init_genesis: bool = False) -> bool:
+        return self.genesis_manager.ensure_genesis(miner_address, use_cores=use_cores, init_genesis=init_genesis)
 
     # ---------------- Proxy Methods for Rewards ----------------
     def scheduled_reward(self, height: int) -> int:

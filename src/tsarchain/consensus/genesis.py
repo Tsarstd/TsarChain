@@ -23,10 +23,11 @@ if TYPE_CHECKING:
 
 
 def _resolve_genesis_hash():
-    cfg_hex = CFG.GENESIS_HASH_HEX
-    log.warning("genesis hash on config : %s", cfg_hex)
+    cfg_hex = getattr(CFG, "GENESIS_HASH_HEX", "")
+    if cfg_hex:
+        log.info("Genesis hash checkpoint configured: %s", cfg_hex)
     
-    if cfg_hex is None:
+    if not cfg_hex:
         return None
     
     if cfg_hex.startswith("0x"):
@@ -57,11 +58,11 @@ class GenesisManager:
         self.blockchain.save_state()
 
 
-    def ensure_genesis(self, miner_address: str, use_cores: int | None = None) -> bool:
+    def ensure_genesis(self, miner_address: str, use_cores: int | None = None, init_genesis: bool = False) -> bool:
         if self.blockchain.chain:
             return False
-        if not CFG.ALLOW_AUTO_GENESIS:
-            log.info("[ensure_genesis] Auto-genesis disabled; waiting for peer sync")
+        if not init_genesis:
+            log.info("[ensure_genesis] Auto-genesis disabled; waiting for peer sync (use --init-genesis to mine Block 0)")
             return False
         self.create_genesis_with_lock(miner_address, use_cores)
         return True
@@ -72,20 +73,21 @@ class GenesisManager:
 
 
     def _enforce_genesis_lock(self):
-        if GENESIS_HASH is None or not self.blockchain.chain:
+        if not self.blockchain.chain:
             return
         g = self.blockchain.chain[0]
         if getattr(g, "height", None) != 0:
             raise ValueError("[Blockchain] Genesis must have height=0")
         if getattr(g, "prev_block_hash", None) != CFG.ZERO_HASH:
             raise ValueError("[Blockchain] Genesis prev_block_hash must be ZERO_HASH")
-        try:
-            g_hash = g.hash() if hasattr(g, "hash") else bytes.fromhex(g.get("hash"))
-        except Exception as e:
-            raise ValueError(f"[Blockchain] Cannot read genesis hash from chain: {e}")
-        if g_hash != GENESIS_HASH:
-            raise ValueError("[Blockchain] Genesis mismatch vs TSAR_GENESIS_HASH. "
-                             "Wipe local data or unset the lock to continue.")
+        if GENESIS_HASH is not None:
+            try:
+                g_hash = g.hash() if hasattr(g, "hash") else bytes.fromhex(g.get("hash"))
+            except Exception as e:
+                raise ValueError(f"[Blockchain] Cannot read genesis hash from chain: {e}")
+            if g_hash != GENESIS_HASH:
+                raise ValueError("[Blockchain] Genesis mismatch vs TSAR_GENESIS_HASH. "
+                                 "Wipe local data or unset the lock to continue.")
 
 
     def _create_genesis_block(self, miner_address, use_cores: int | None = None):

@@ -40,6 +40,9 @@ def bg_rgb_color(r, g, b):
 ORANGE = rgb_color(242, 132, 0)
 GREY = rgb_color(245, 246, 244)
 YELLOW = rgb_color(232, 215, 59)
+GREEN = rgb_color(59, 196, 59)
+CYAN = rgb_color(0, 215, 235)
+RED = rgb_color(235, 59, 59)
 
 # Header Info
 TXT_HEADER = rgb_color(237, 237, 237)

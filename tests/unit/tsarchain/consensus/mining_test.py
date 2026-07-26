@@ -151,7 +151,6 @@ def test_mine_block_success(mining_node):
     # Coinbase will be added later; we need to mock Block constructor
     with patch('tsarchain.consensus.mining.Block', return_value=mock_block_instance) as mock_block_cls, \
          patch('tsarchain.consensus.mining.CoinbaseTx') as mock_coinbase_cls, \
-         patch('tsarchain.consensus.mining.CFG.ALLOW_AUTO_GENESIS', False), \
          patch('tsarchain.consensus.mining.CFG.MAX_SUPPLY', 21000000), \
          patch('tsarchain.consensus.mining.CFG.MINING_COOLDOWN_AFTER_BLOCK', 0), \
          patch('tsarchain.consensus.mining.CFG.ZERO_HASH', b'\x00'*32):
@@ -179,13 +178,12 @@ def test_mine_block_success(mining_node):
 
 def test_mine_block_fail_chain_empty_and_no_genesis(mining_node):
     """
-    Scenario: chain is empty and ALLOW_AUTO_GENESIS is False -> mine_block returns None.
+    Scenario: chain is empty -> mine_block returns None.
     """
     mining_node.blockchain.chain = []  # empty
     mining_node.blockchain.total_supply = 0
 
-    with patch('tsarchain.consensus.mining.CFG.ALLOW_AUTO_GENESIS', False), \
-         patch('tsarchain.consensus.mining.log') as mock_log:
+    with patch('tsarchain.consensus.mining.log') as mock_log:
 
         result = mining_node.mine_block('miner_address')
 
@@ -255,7 +253,6 @@ def test_mine_block_with_graffiti_post_anchoring(mining_node):
     with patch('tsarchain.consensus.mining.GRAFFITI.parse_from_script') as mock_parse, \
          patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
          patch('tsarchain.consensus.mining.CoinbaseTx') as mock_coinbase_cls, \
-         patch('tsarchain.consensus.mining.CFG.ALLOW_AUTO_GENESIS', False), \
          patch('tsarchain.consensus.mining.CFG.MAX_SUPPLY', 21000000), \
          patch('tsarchain.consensus.mining.CFG.MINING_COOLDOWN_AFTER_BLOCK', 0), \
          patch('tsarchain.consensus.mining.CFG.ZERO_HASH', b'\x00'*32):
@@ -286,9 +283,8 @@ def test_mine_block_with_graffiti_post_anchoring(mining_node):
 def test_mine_block_reload_chain(mining_node):
     mining_node.blockchain.chain = []
     mining_node.blockchain._reload_chain_from_kv.return_value = True
-    with patch('tsarchain.consensus.mining.CFG.ALLOW_AUTO_GENESIS', False):
-        res = mining_node.mine_block('miner_address')
-        assert res is None
+    res = mining_node.mine_block('miner_address')
+    assert res is None
 
 def test_mine_block_reward_exceeds_supply(mining_node):
     mining_node.blockchain.chain = [Mock()]

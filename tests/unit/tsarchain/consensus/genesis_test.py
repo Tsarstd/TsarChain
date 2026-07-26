@@ -15,7 +15,6 @@ def mock_config_and_logger(monkeypatch):
     mock_cfg = Mock()
     mock_cfg.GENESIS_HASH_HEX = ""
     mock_cfg.ZERO_HASH = b"\x00" * 32
-    mock_cfg.ALLOW_AUTO_GENESIS = True
     mock_cfg.INITIAL_BITS = 0x1e0ffff0
     mock_cfg.GENESIS_BLOCK_ID_DEFAULT = "genesis_block"
     monkeypatch.setattr("tsarchain.consensus.genesis.CFG", mock_cfg)
@@ -135,9 +134,12 @@ def test_persist_empty_state_if_needed():
 
 
 def test_enforce_genesis_lock_no_genesis_hash(monkeypatch):
-    """If GENESIS_HASH is None, function returns without checking."""
+    """If GENESIS_HASH is None, function verifies height=0 & prev_hash=ZERO_HASH and returns."""
     monkeypatch.setattr("tsarchain.consensus.genesis.GENESIS_HASH", None)
-    bc = DummyBlockchain(chain=[Mock()])
+    block = Mock()
+    block.height = 0
+    block.prev_block_hash = b"\x00" * 32
+    bc = DummyBlockchain(chain=[block])
     bc._enforce_genesis_lock()  # should not raise
 
 
@@ -246,22 +248,20 @@ def test_ensure_genesis_chain_not_empty():
     assert result is False
 
 
-def test_ensure_genesis_auto_disabled(monkeypatch):
-    """If ALLOW_AUTO_GENESIS is False, returns False."""
-    monkeypatch.setattr("tsarchain.consensus.genesis.CFG.ALLOW_AUTO_GENESIS", False)
+def test_ensure_genesis_init_genesis_false():
+    """If init_genesis is False, returns False."""
     bc = DummyBlockchain(chain=[])
     with patch.object(bc.genesis_manager, "create_genesis_with_lock") as mock_create:
-        result = bc.ensure_genesis("miner")
+        result = bc.genesis_manager.ensure_genesis("miner", init_genesis=False)
         assert result is False
         mock_create.assert_not_called()
 
 
-def test_ensure_genesis_success(monkeypatch):
-    """If chain empty and auto allowed, create genesis and return True."""
-    monkeypatch.setattr("tsarchain.consensus.genesis.CFG.ALLOW_AUTO_GENESIS", True)
+def test_ensure_genesis_success():
+    """If chain empty and init_genesis=True, create genesis and return True."""
     bc = DummyBlockchain(chain=[])
     with patch.object(bc.genesis_manager, "create_genesis_with_lock") as mock_create:
-        result = bc.ensure_genesis("miner", use_cores=2)
+        result = bc.genesis_manager.ensure_genesis("miner", use_cores=2, init_genesis=True)
         assert result is True
         mock_create.assert_called_once_with("miner", 2)
 

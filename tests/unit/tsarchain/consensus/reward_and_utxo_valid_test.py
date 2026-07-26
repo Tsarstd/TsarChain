@@ -34,7 +34,6 @@ def mock_config(monkeypatch):
     cfg.INITIAL_REWARD = 250 * 100_000_000               # 25 TSAR
     cfg.BLOCKS_PER_HALVING = 235_000
     cfg.MAX_SUPPLY = 252_500_000 * 100_000_000
-    cfg.ALLOW_AUTO_GENESIS = 1
     cfg.COINBASE_MATURITY = 3
     cfg.MAX_COINBASE_EXTRADATA = 95
     cfg.UTXO_FLUSH_INTERVAL = 10
@@ -432,7 +431,6 @@ class TestUTXOValidator:
         """When chain empty and genesis lock active, skip flush."""
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.CFG", mock_config)
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.UTXODB", mock_utxodb_class)
-        mock_config.ALLOW_AUTO_GENESIS = 0
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.GENESIS_HASH", b'fakehash')
 
         from tsarchain.consensus.utxo_validate import UTXOValidator

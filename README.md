@@ -255,8 +255,14 @@ Make sure your virtual environment is activated, then run any of the application
 
 **Run a Miner/Node**
 ```bash
-# Full node + miner (keeps blockchain DB + snapshot gateway)
-python apps/cli_node_miner.py
+# 1. Network Initialization (Mines Block 0 & sets LMDB Genesis Lock - Bootstrap Node only)
+python apps/cli_node_miner.py --init-genesis --address tsar1qyouraddresshere --cores 4
+
+# 2. Run full node + miner (normal mode)
+python apps/cli_node_miner.py --address tsar1qyouraddresshere
+
+# 3. Run node-only (no mining)
+python apps/cli_node_miner.py --node-only
 
 # Archivist Node ( Storage Node )
 python apps/cli_archivist.py
@@ -265,7 +271,7 @@ python apps/cli_archivist.py
 python apps/kremlin.py
 ```
 
-> **Tip:** For public devnet tests, lock `GENESIS_HASH`, keep `ALLOW_AUTO_GENESIS = 0`, enable the chain-work rule and reorg limits, and tune difficulty/LWMA for your network size.
+> **Tip:** For network deployment and multi-node setup details, refer to [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ---
 
@@ -374,6 +380,9 @@ Graffiti Protocol is built to be fast, responsive, and robust. I have provided r
 
 ##### API
 - [`API.md`](docs/API.md)
+
+##### Deployment & Network Setup
+- [`DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 
 ##### Architecture
 - [`ARCHITECTURE.md`](docs/ARCHITECTURE.md)

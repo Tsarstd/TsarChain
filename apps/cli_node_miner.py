@@ -81,6 +81,7 @@ def choose_mode() -> int:
         
 def parse_args():
     parser = argparse.ArgumentParser(description="TsarChain CLI miner / node runner")
+    parser.add_argument("--init-genesis", action="store_true", help="Mine and lock Genesis Block (Block 0) if database is empty")
     parser.add_argument("--address", help="Miner payout address (tsar1...)")
     parser.add_argument("--cores", type=int, help="CPU cores to use for mining")
     parser.add_argument("--node-only", action="store_true", help="Run node without mining")
@@ -109,6 +110,42 @@ def main():
     if args.thread_report:
         show_thread_report()
         return
+
+    if args.init_genesis:
+        clog("Checking Genesis status in LMDB database...", COL.CYAN)
+        from tsarchain.consensus.blockchain import Blockchain
+        bc = Blockchain()
+        if len(bc.chain) > 0:
+            g_hash = bc.chain[0].hash().hex()
+            clog(f"Genesis Block already exists in LMDB! Hash: {g_hash}", COL.GREEN)
+            clog("No need to run --init-genesis again.", COL.YELLOW)
+            sys.exit(0)
+
+        address = args.address
+        cores = args.cores
+        if not address or not cores:
+            input_address, input_cores = COL.get_user_input()
+            address = address or input_address
+            cores = cores or input_cores
+
+        cores = _normalize_cores(cores)
+        clog(f"Mining Genesis Block (Block 0) for address '{address}' with {cores} core(s)...", COL.CYAN)
+        success = bc.ensure_genesis(address, use_cores=cores, init_genesis=True)
+        if success and len(bc.chain) > 0:
+            g = bc.chain[0]
+            clog("================================================================", COL.YELLOW)
+            clog("Genesis Block created & locked in LMDB successfully!", COL.GREEN)
+            clog(f"Hash      : {g.hash().hex()}", COL.GREEN)
+            clog(f"Height    : {g.height}", COL.GREEN)
+            clog(f"PrevHash  : {g.prev_block_hash.hex()}", COL.GREEN)
+            clog(f"Nonce     : {g.nonce}", COL.GREEN)
+            clog(f"Timestamp : {g.timestamp}", COL.GREEN)
+            clog("================================================================", COL.YELLOW)
+            clog("Environment ready! You can now start the node or miner in normal mode.", COL.CYAN)
+            sys.exit(0)
+        else:
+            clog("Failed to create Genesis Block!", COL.RED)
+            sys.exit(1)
     
     mode_selected = None
     if not args.node_only:
