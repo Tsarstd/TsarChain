@@ -42,12 +42,16 @@ def mock_mempool():
 
 @pytest.fixture
 def mock_kv():
-    """Mock kv_enabled and iter_prefix from storage.kv."""
-    with patch('tsarchain.consensus.blockchain.kv_enabled') as kv_enabled, \
-         patch('tsarchain.consensus.blockchain.iter_prefix') as iter_prefix:
-        kv_enabled.return_value = False
-        iter_prefix.return_value = []
-        yield kv_enabled, iter_prefix
+    """Mock kv_enabled and iter_prefix from storage.kv across modules."""
+    mock_kv_enabled = Mock(return_value=False)
+    mock_iter_prefix = Mock(return_value=[])
+    with patch('tsarchain.consensus.blockchain.kv_enabled', mock_kv_enabled), \
+         patch('tsarchain.consensus.chain_storage.kv_enabled', mock_kv_enabled), \
+         patch('tsarchain.storage.kv.kv_enabled', mock_kv_enabled), \
+         patch('tsarchain.consensus.blockchain.iter_prefix', mock_iter_prefix), \
+         patch('tsarchain.consensus.chain_storage.iter_prefix', mock_iter_prefix), \
+         patch('tsarchain.storage.kv.iter_prefix', mock_iter_prefix):
+        yield mock_kv_enabled, mock_iter_prefix
 
 
 @pytest.fixture
@@ -61,10 +65,14 @@ def mock_config(monkeypatch):
     monkeypatch.setattr(bc_mod.CFG, "UTXO_FLUSH_INTERVAL", 10)
     monkeypatch.setattr(bc_mod.CFG, "CHAIN_JOURNAL_FILE", "/tmp/non_existent_journal.file")
     monkeypatch.setattr(bc_mod.CFG, "BLOCK_FILE", "/tmp/non_existent_blocks.json")
+    monkeypatch.setattr(bc_mod.CFG, "LMDB_DATA_FILE", "/tmp/non_existent_lmdb")
+    monkeypatch.setattr(bc_mod.CFG, "KV_BACKEND", "json")
 
     monkeypatch.setattr(cs_mod.CFG, "ALLOW_AUTO_GENESIS", False)
     monkeypatch.setattr(cs_mod.CFG, "CHAIN_JOURNAL_FILE", "/tmp/non_existent_journal.file")
     monkeypatch.setattr(cs_mod.CFG, "BLOCK_FILE", "/tmp/non_existent_blocks.json")
+    monkeypatch.setattr(cs_mod.CFG, "LMDB_DATA_FILE", "/tmp/non_existent_lmdb")
+    monkeypatch.setattr(cs_mod.CFG, "KV_BACKEND", "json")
     monkeypatch.setattr(cs_mod.CFG, "BLOCK_BACKUP_SNAPSHOT", 0)
     yield bc_mod.CFG
 
@@ -187,14 +195,18 @@ def test_reload_chain_from_kv(mock_block_module, mock_kv, mock_config):
 
     mock_block = Mock()
     mock_block.height = 0
+    mock_block.prev_block_hash = mock_config.ZERO_HASH
     mock_block_module.from_dict.return_value = mock_block
 
     with patch.object(Blockchain, 'load_chain', autospec=True) as mock_load, \
          patch.object(Blockchain, 'load_state', autospec=True) as mock_state, \
-         patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed', autospec=True):
-             
+         patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed', autospec=True), \
+         patch('tsarchain.consensus.blockchain.GenesisManager._enforce_genesis_lock', autospec=True):
+
         mock_load.return_value = None  # tidak mengisi chain
         bc = Blockchain()
+        res = bc._reload_chain_from_kv()
+        assert res is True
         assert len(bc.chain) == 1
         assert bc.total_blocks == 1
         assert bc._chain_meta == {'key': 'value'}
@@ -309,10 +321,12 @@ def test_stop_persist_worker(mock_config):
          patch('queue.Queue') as mock_queue, \
          patch.object(Blockchain, 'load_chain', autospec=True), \
          patch.object(Blockchain, 'load_state', autospec=True), \
-         patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed', autospec=True):
+         patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed'), \
+         patch('tsarchain.consensus.blockchain.GENESIS_HASH', None):
         queue_instance = Mock()
         mock_queue.return_value = queue_instance
         thread_instance = Mock()
+        thread_instance.is_alive.return_value = False
         mock_thread.return_value = thread_instance
 
         bc = Blockchain()
@@ -338,15 +352,16 @@ def test_stop_persist_worker(mock_config):
             assert bc._persist_queue is None
 
 
-def test_init_auto_genesis_disabled(mock_config):
+def test_init_auto_genesis_disabled(mock_config, mock_kv):
     """When ALLOW_AUTO_GENESIS=False and no chain exists, blockchain stays empty."""
     mock_config.ALLOW_AUTO_GENESIS = False
 
     with patch.object(Blockchain, 'load_chain', autospec=True) as mock_load_chain, \
         patch.object(Blockchain, 'load_state', autospec=True) as mock_load_state, \
-        patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed', autospec=True) as mock_persist_empty, \
+        patch.object(Blockchain, '_reload_chain_from_kv', return_value=False) as mock_reload_kv, \
+        patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed') as mock_persist_empty, \
         patch.object(Blockchain, '_start_persist_worker', autospec=True) as mock_start_worker, \
-        patch('tsarchain.consensus.blockchain.GenesisManager._enforce_genesis_lock', autospec=True) as mock_enforce:
+        patch('tsarchain.consensus.blockchain.GenesisManager._enforce_genesis_lock') as mock_enforce:
 
         mock_load_chain.return_value = None  # no chain loaded
         bc = Blockchain()
@@ -354,7 +369,7 @@ def test_init_auto_genesis_disabled(mock_config):
         assert bc.total_blocks == 0
         mock_load_chain.assert_called_once()
         mock_load_state.assert_called_once()
-        mock_persist_empty.assert_called_once()
+        mock_persist_empty.assert_not_called()
         mock_start_worker.assert_called_once()
         mock_enforce.assert_not_called()
 
@@ -421,19 +436,22 @@ def test_reload_chain_from_kv_corrupt_json(mock_config, mock_kv):
     # Data corrupt (not JSON)
     iter_prefix.return_value = [(b'h:0', b'not a json')]
 
-    bc = Blockchain()
-    result = bc._reload_chain_from_kv()
-    assert result is False
-    assert bc.chain == []
+    with patch.object(Blockchain, 'load_chain', autospec=True):
+        bc = Blockchain()
+        result = bc._reload_chain_from_kv()
+        assert result is False
+        assert bc.chain == []
 
 def test_reload_chain_from_kv_block_from_dict_fails(mock_config, mock_kv, mock_block_module):
     """Reload fails if Block.from_dict raises an exception."""
     kv_enabled, iter_prefix = mock_kv
     kv_enabled.return_value = True
-    block_data = {'height': 0, 'hash': 'abc123'}
+    block_data = {'height': 0, 'hash': 'abc123', 'transactions': []}
     iter_prefix.return_value = [(b'h:0', json.dumps(block_data).encode('utf-8'))]
     mock_block_module.from_dict.side_effect = Exception("Corrupt block")
-    bc = Blockchain()
-    result = bc._reload_chain_from_kv()
-    assert result is False
-    assert bc.chain == []
+
+    with patch.object(Blockchain, 'load_chain', autospec=True):
+        bc = Blockchain()
+        result = bc._reload_chain_from_kv()
+        assert result is False
+        assert bc.chain == []

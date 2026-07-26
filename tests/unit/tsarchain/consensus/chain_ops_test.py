@@ -394,6 +394,9 @@ def test_add_block_non_genesis_success(mocker):
 
 def test_add_block_height_mismatch(mocker):
     """Height block does not match last_height+1 -> ValueError."""
+    mocker.patch('tsarchain.consensus.chain_ops.CFG.ZERO_HASH', b"0000")
+    mocker.patch('tsarchain.consensus.chain_ops.GENESIS_HASH', None)
+
     bc = ExtendedDummyBlockchain()
     block0 = create_mock_block(height=0, prev_hash=b"0000")
     bc.add_block(block0)
@@ -403,6 +406,9 @@ def test_add_block_height_mismatch(mocker):
 
 def test_add_block_prev_hash_mismatch(mocker):
     """prev_block_hash does not match the hash of the last block -> ValueError."""
+    mocker.patch('tsarchain.consensus.chain_ops.CFG.ZERO_HASH', b"0000")
+    mocker.patch('tsarchain.consensus.chain_ops.GENESIS_HASH', None)
+
     bc = ExtendedDummyBlockchain()
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     bc.add_block(block0)
