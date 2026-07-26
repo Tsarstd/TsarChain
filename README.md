@@ -218,22 +218,22 @@ Platforms curate history; networks preserve it. Graffiti Protocol treats each me
 
 Graffiti Protocol provides a fully automated single-command setup script that installs all prerequisites (Rust, CMake, Node.js, Python), prepares the virtual environment, installs web & Python dependencies, and builds the Rust Native Extension.
 
-#### 1. Run Setup Script
+**1. Run Setup Script**
 
-**For Windows (PowerShell):**
+***For Windows (PowerShell):***
 Run PowerShell (preferably as Administrator for `winget`) and execute:
 ```powershell
 .\setup.ps1
 ```
 
-**For Linux / macOS (Bash):**
+***For Linux / macOS (Bash):***
 Open your terminal and execute:
 ```bash
 chmod +x setup.sh
 ./setup.sh
 ```
 
-#### 2. Activate Virtual Environment & PYTHONPATH
+**2. Activate Virtual Environment & PYTHONPATH**
 After the setup is complete, then run:
 ```bash
 # Windows
