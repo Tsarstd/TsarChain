@@ -17,8 +17,6 @@ from dataclasses import dataclass
 from collections import defaultdict
 from typing import Dict, List, Optional
 
-from tsarchain.miner.cosmetic import interface as COL
-
 @dataclass
 class ThreadInfo:
     """Information about a running thread"""
@@ -49,7 +47,7 @@ class ThreadMonitor:
         self.monitoring = False
         self._monitor_thread: Optional[threading.Thread] = None
         
-    def get_all_threads(self) -> List[ThreadInfo]:
+    def get_all_threads(self, include_stack: bool = False) -> List[ThreadInfo]:
         threads = []
         current_ident = threading.current_thread().ident
         
@@ -62,7 +60,7 @@ class ThreadMonitor:
                 alive=thread.is_alive(),
                 is_current=is_current,
                 state=self._get_thread_state(thread),
-                stack_info=self._get_stack_info(thread)
+                stack_info=self._get_stack_info(thread) if include_stack else None
             )
             threads.append(thread_info)
             
@@ -70,7 +68,7 @@ class ThreadMonitor:
     
     def get_thread_counts(self) -> Dict[str, int]:
         """Get counts of threads by type/state"""
-        threads = self.get_all_threads()
+        threads = self.get_all_threads(include_stack=False)
         counts = {
             'total': len(threads),
             'daemon': sum(1 for t in threads if t.daemon),
@@ -95,14 +93,14 @@ class ThreadMonitor:
         warnings = []
         threads = self.get_all_threads()
         
-        # Check for threads that are alive but in waiting/blocked state for too long
         now = time.time()
-        if now - self.last_update > 10:  # Only check if we have historical data
+        if now - self.last_update > 5:
             for thread in threads:
-                if thread.alive and thread.state in ['waiting', 'blocked']:
+                if thread.alive and thread.state == ThreadState.BLOCKED.value:
                     thread_key = f"{thread.name}_{thread.ident}"
-                    if len(self.threads_history.get(thread_key, [])) > 3:
-                        # Same state for multiple updates
+                    history = self.threads_history.get(thread_key, [])
+                    # Flag only if thread has been in 'blocked' state continuously for at least 5 monitoring updates
+                    if len(history) >= 5 and all(st == ThreadState.BLOCKED.value for _, st in history[-5:]):
                         warnings.append(f"Thread {thread.name} stuck in {thread.state}")
         
         return warnings
@@ -171,7 +169,7 @@ class ThreadMonitor:
                 now = time.time()
                 for thread in threads:
                     thread_key = f"{thread.name}_{thread.ident}"
-                    self.threads_history[thread_key].append(now)
+                    self.threads_history[thread_key].append((now, thread.state))
                     # Keep only last 10 entries
                     if len(self.threads_history[thread_key]) > 10:
                         self.threads_history[thread_key] = self.threads_history[thread_key][-10:]
@@ -184,34 +182,49 @@ class ThreadMonitor:
                 time.sleep(self.update_interval)
     
     def print_thread_report(self, detailed: bool = False) -> None:
-        """Print a report of current threads"""
-        threads = self.get_all_threads()
+        """Print a report of current threads using Rich formatting"""
+        from rich.console import Console
+        from rich.table import Table
+        from rich.panel import Panel
+
+        threads = self.get_all_threads(include_stack=detailed)
         counts = self.get_thread_counts()
-        
-        print(f"\n{COL.BOLD}{COL.BG_WHITE}{COL.TXT_INFO} THREAD REPORT {COL.RESET}")
-        print(f"{COL.BOLD}Total Threads: {counts['total']} | Alive: {counts['alive']} | Daemon: {counts['daemon']}{COL.RESET}")
-        print(f"{COL.DIM}{'='*60}{COL.RESET}")
-        
+        console = Console()
+
+        table = Table(title=f"Thread Health Report (Total: {counts['total']} | Alive: {counts['alive']} | Daemon: {counts['daemon']})", border_style="cyan")
+        table.add_column("#", justify="right", style="bold dim", no_wrap=True)
+        table.add_column("Thread Name", style="bold white")
+        table.add_column("ID", style="dim")
+        table.add_column("State", justify="center")
+        table.add_column("Type", justify="center")
+        if detailed:
+            table.add_column("Stack Info", style="italic grey70")
+
         for i, thread in enumerate(threads, 1):
-            status_color = COL.BG_GREEN if thread.alive else COL.BG_RED
-            daemon_mark = " [DAEMON]" if thread.daemon else ""
-            current_mark = " [CURRENT]" if thread.is_current else ""
-            
-            print(f"{COL.BOLD}{i:2d}.{COL.RESET} {thread.name[:40]:40} "
-                  f"{status_color}[{thread.state.upper():10}]{COL.RESET}"
-                  f"{COL.YELLOW}{daemon_mark}{current_mark}{COL.RESET}")
-            
-            if detailed and thread.stack_info:
-                print(f"     {COL.DIM}Stack: {thread.stack_info}{COL.RESET}")
-        
-        # Check for warnings
+            if thread.alive:
+                state_style = "[bold green]RUNNING[/bold green]" if thread.state == "running" else f"[green]{thread.state.upper()}[/green]"
+            else:
+                state_style = "[bold red]DEAD[/bold red]"
+
+            tags = []
+            if thread.daemon:
+                tags.append("[yellow]DAEMON[/yellow]")
+            if thread.is_current:
+                tags.append("[bold cyan]CURRENT[/bold cyan]")
+            type_str = " ".join(tags) if tags else "[dim]USER[/dim]"
+
+            row = [str(i), thread.name, str(thread.ident), state_style, type_str]
+            if detailed:
+                row.append(thread.stack_info or "-")
+            table.add_row(*row)
+
+        console.print(table)
+
         warnings = self.check_for_deadlocks()
         if warnings:
-            print(f"\n{COL.BOLD}{COL.BG_RED} WARNINGS {COL.RESET}")
-            for warning in warnings:
-                print(f"  {COL.RED}⚠ {warning}{COL.RESET}")
-        
-        print(f"{COL.DIM}{'='*60}{COL.RESET}\n")
+            warn_msg = "\n".join(f"[bold red]⚠ {w}[/bold red]" for w in warnings)
+            console.print(Panel(warn_msg, title="[bold red]WARNINGS[/bold red]", border_style="red"))
+
 
 _thread_monitor: Optional[ThreadMonitor] = None
 

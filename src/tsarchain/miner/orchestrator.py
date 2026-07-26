@@ -33,7 +33,7 @@ def _stamp() -> str:
     now = datetime.now()
     d = f"{now.year:04d}.{now.month:02d}.{now.day:02d}"
     t = f"{now.hour:02d}.{now.minute:02d}.{now.second:02d}"
-    return f"{COL.BOLD}{COL.GREY} {d} {COL.RESET}{COL.BOLD}{COL.GREY} {t} {COL.RESET}"
+    return f"{COL.BOLD}{COL.GREY} {d} {t} {COL.RESET}"
 
 _clog_func = None
 
@@ -129,6 +129,11 @@ class SimpleMiner:
             try:
                 self.signal_handler(signum, frame)
             finally:
+                if self.tui is not None:
+                    try:
+                        self.tui.stop()
+                    except Exception:
+                        pass
                 self.thread_monitor.print_thread_report(detailed=True)
 
         signal.signal(signal.SIGINT, _sigint_with_report)
@@ -573,7 +578,7 @@ class NodeRunner:
                     try:
                         self.network.request_sync(fast=True)
                     except Exception:
-                        log.exception("asuuuu")
+                        log.exception("Early sync attempt failed")
                     time.sleep(1.0)
             t_early = threading.Thread(target=_early_sync, daemon=True)
             t_early.start()

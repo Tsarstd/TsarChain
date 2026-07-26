@@ -299,3 +299,92 @@ def test_miner_start_mining_hash_mismatch(mock_sync, mock_start, miner, mock_blo
         miner.start_mining()
         
     assert mock_sleep.called
+
+
+def test_miner_sigint_stops_tui(miner):
+    mock_tui = MagicMock()
+    miner.tui = mock_tui
+    miner.thread_monitor = MagicMock()
+    
+    # Trigger signal handler logic
+    with patch.object(miner, "signal_handler") as mock_handler:
+        # Call the sigint handler registered on miner init
+        handler = signal.getsignal(signal.SIGINT)
+        if callable(handler):
+            handler(signal.SIGINT, None)
+            mock_tui.stop.assert_called_once()
+            mock_handler.assert_called_once()
+
+
+def test_tui_dynamic_log_buffer():
+    from tsarchain.miner.cosmetic.tui import MinerTUI
+    tui = MinerTUI(address="tsar1test", cores=1)
+    assert tui.log_lines.maxlen == 200
+    
+    for i in range(25):
+        tui.add_log(f"log line {i}")
+    assert len(tui.log_lines) == 25
+    
+    layout = tui._make_layout()
+    assert layout is not None
+
+
+def test_thread_monitor_stack_trace_option():
+    from tsarchain.miner.cosmetic.thread_check import get_thread_monitor
+    tm = get_thread_monitor()
+    threads_fast = tm.get_all_threads(include_stack=False)
+    assert len(threads_fast) > 0
+    # Fast path should not extract stack_info
+    assert all(t.stack_info is None for t in threads_fast)
+
+    threads_detailed = tm.get_all_threads(include_stack=True)
+    assert len(threads_detailed) > 0
+
+
+def test_tui_stop_terminal_cleanup():
+    from tsarchain.miner.cosmetic.tui import MinerTUI
+    tui = MinerTUI(address="tsar1test", cores=1)
+    # Stopping TUI should execute without error and restore terminal cursor
+    tui.stop()
+
+
+def test_tui_node_only_layout():
+    from tsarchain.miner.cosmetic.tui import MinerTUI
+    tui = MinerTUI(
+        address="Node Only",
+        cores=0,
+        mode="Node Only",
+        chain_height_fn=lambda: 100,
+        peer_counts_fn=lambda: (2, 3),
+        mempool_count_fn=lambda: 5,
+        node_only=True,
+    )
+    assert tui.node_only is True
+    layout = tui._make_layout()
+    assert layout is not None
+    tui.stop()
+
+
+def test_safe_mempool_count():
+    import sys, os
+    apps_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "apps"))
+    if apps_dir not in sys.path:
+        sys.path.insert(0, apps_dir)
+    from cli_node_miner import _safe_mempool_count, _count_txpool
+    
+    # 1. Test null runner
+    assert _safe_mempool_count(None) == 0
+
+    # 2. Test runner with network broadcast mempool
+    mock_runner = MagicMock()
+    mock_pool = MagicMock()
+    mock_pool._pool = {"tx1": "data", "tx2": "data"}
+    mock_runner.network.broadcast.mempool = mock_pool
+    
+    assert _safe_mempool_count(mock_runner) == 2
+
+    # 3. Test fallback to get_all_txs()
+    mock_pool_2 = MagicMock()
+    del mock_pool_2._pool
+    mock_pool_2.get_all_txs.return_value = ["tx1", "tx2", "tx3"]
+    assert _count_txpool(mock_pool_2) == 3

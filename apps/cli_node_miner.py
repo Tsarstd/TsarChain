@@ -35,11 +35,14 @@ from datetime import datetime
 from tsarchain.utils import config as CFG
 from tsarchain.miner.cosmetic import interface as COL
 from tsarchain.miner.cosmetic.thread_check import get_thread_monitor
-from tsarchain.miner.cosmetic.tui import MinerTUI, create_tui_logger
+from tsarchain.miner.cosmetic.tui import MinerTUI, create_tui_logger, _enable_windows_vt100
 from tsarchain.miner.orchestrator import NodeRunner, SimpleMiner, set_clog_func
 
 from tsarchain.utils.tsar_logging import setup_logging, get_ctx_logger
 log = get_ctx_logger("apps.cli_node_miner")
+
+tui_logger = None
+
 
 def _stamp() -> str:
     now = datetime.now()
@@ -47,50 +50,69 @@ def _stamp() -> str:
     t = f"{now.hour:02d}.{now.minute:02d}.{now.second:02d}"
     return f"{COL.BOLD}{COL.GREY} {d} {COL.RESET}{COL.BOLD}{COL.GREY} {t} {COL.RESET}"
 
+
 def clog(message: str, color: str = COL.GREY):
-    if 'tui_logger' in globals():
-        tui_logger(f"{_stamp()}{color}{message}{COL.RESET}")
+    global tui_logger
+    formatted = f"{_stamp()} : {color}{message}{COL.RESET}"
+    if tui_logger is not None:
+        tui_logger(formatted)
     else:
-        print(f"{_stamp()} : {color}{message}{COL.RESET}")
+        print(formatted)
 
-def show_thread_report():
-    monitor = get_thread_monitor()
-    monitor.print_thread_report(detailed=True)
 
-def choose_mode() -> int:
-    print(f"{COL.BOLD}{COL.TXT_HEADER}{COL.BG_HEADER}       Please Choose Mode       {COL.RESET}")
-    print(f"{COL.BOLD}{COL.TXT_INFO}{COL.BG_YELLOW} 0 {COL.RESET}{COL.BOLD}{COL.BG_ORANGE} Mining Mode {COL.RESET}  {COL.BOLD}{COL.TXT_INFO}{COL.BG_GREEN} 1 {COL.BOLD}{COL.TXT_INFO}{COL.BG_BLUE} Node Only {COL.RESET}")
-    while True:
-        try:
-            sel = input(f"{COL.BOLD}{COL.TXT_INFO}{COL.BG_WHITE} Select {COL.RESET}{COL.BOLD}{COL.TXT_INFO}{COL.BG_YELLOW} 0 {COL.RESET}{COL.BOLD}{COL.TXT_INFO}{COL.BG_GREEN} 1 {COL.RESET} ").strip()
-        except EOFError:
-            print(f"\033[1A\033[2K{COL.BOLD}{COL.DIM}{COL.TXT_INFO}{COL.BG_WHITE} You're Choosing: {COL.RESET}{COL.TXT_INFO}{COL.BG_YELLOW} 0 {COL.RESET}{COL.BOLD}{COL.BG_ORANGE} Mining Mode {COL.RESET}")
-            return 0
-        
-        if sel == "0":
-            print(f"\033[1A\033[2K{COL.BOLD}{COL.TXT_INFO}{COL.BG_GREY} ------------------------------ {COL.RESET}")
-            print(f"{COL.RESET}{COL.BOLD}{COL.BG_ORANGE}           Mining Mode          {COL.RESET}")
-            return 0
-        elif sel == "1":
-            print(f"\033[1A\033[2K{COL.BOLD}{COL.TXT_INFO}{COL.BG_GREY} ------------------------------ {COL.RESET}")
-            print(f"{COL.BOLD}{COL.TXT_INFO}{COL.BG_BLUE}            Node Only           {COL.RESET}")
-            print(" ")
-            return 1
-        else:
-            print(f"{COL.BOLD}{COL.TXT_HEADER}{COL.BG_HEADER} Invalid {COL.RESET}{COL.BOLD}{COL.TXT_INFO}{COL.BG_WHITE} Enter 0 or 1 {COL.RESET}")
-        
-def parse_args():
-    parser = argparse.ArgumentParser(description="TsarChain CLI miner / node runner")
-    parser.add_argument("--init-genesis", action="store_true", help="Mine and lock Genesis Block (Block 0) if database is empty")
-    parser.add_argument("--address", help="Miner payout address (tsar1...)")
-    parser.add_argument("--cores", type=int, help="CPU cores to use for mining")
-    parser.add_argument("--node-only", action="store_true", help="Run node without mining")
-    parser.add_argument("--timeout", type=int, default=560, help="Sync timeout in seconds (mining mode)")
-    parser.add_argument("--no-bootstrap", action="store_true", help="Skip snapshot bootstrap download")
-    parser.add_argument("--rx-full", action="store_true", help="Enable RandomX FULL MEMORY mode (+2.5GB dataset)")
-    parser.add_argument("--rx-light", action="store_true", help="Force RandomX LIGHT mode (~<2.5GB, lower RAM)")
-    parser.add_argument("--thread-report", action="store_true", help="Show thread report and exit")
-    return parser.parse_args()
+def _safe_peer_counts(net) -> tuple[int, int]:
+    if not net:
+        return 0, 0
+    try:
+        inbound = len(getattr(net, "inbound_peers", ()))
+        outbound = len(getattr(net, "outbound_peers", ()))
+        return inbound, outbound
+    except Exception:
+        return 0, 0
+
+
+def _count_txpool(pool) -> int:
+    if pool is None:
+        return 0
+    try:
+        p = getattr(pool, "_pool", None)
+        if p is not None and hasattr(p, "__len__"):
+            return len(p)
+        if hasattr(pool, "get_all_txs") and callable(pool.get_all_txs):
+            txs = pool.get_all_txs()
+            if txs is not None:
+                return len(txs)
+        if hasattr(pool, "__len__"):
+            return len(pool)
+    except Exception:
+        pass
+    return 0
+
+
+def _safe_mempool_count(runner) -> int:
+    if not runner:
+        return 0
+    try:
+        net = getattr(runner, "network", None)
+        if net:
+            bcast = getattr(net, "broadcast", None)
+            if bcast:
+                pool = getattr(bcast, "mempool", None)
+                if pool is not None:
+                    return _count_txpool(pool)
+            pool = getattr(net, "mempool", None)
+            if pool is not None:
+                return _count_txpool(pool)
+
+        bc = getattr(runner, "blockchain", None)
+        if bc:
+            pool = getattr(bc, "get_mempool", lambda: None)() or getattr(bc, "_mempool", None)
+            if pool is not None:
+                return _count_txpool(pool)
+    except Exception:
+        pass
+    return 0
+
 
 def _normalize_cores(cores: int | None) -> int | None:
     cpu_total = mp.cpu_count()
@@ -103,13 +125,62 @@ def _normalize_cores(cores: int | None) -> int | None:
         cores_int = min(cores_int, cpu_total)
     return cores_int
 
+
+def show_thread_report():
+    monitor = get_thread_monitor()
+    monitor.print_thread_report(detailed=True)
+
+
+def choose_mode() -> int:
+    from rich.console import Console
+    from rich.prompt import Prompt
+    from rich.panel import Panel
+
+    console = Console()
+    console.print(Panel("[bold yellow]Choose Execution Mode[/bold yellow]\n[bold green]0[/bold green] : Mining Mode (Full Node + Miner)\n[bold blue]1[/bold blue] : Node Only (Relay & Mempool)", border_style="cyan"))
+
+    while True:
+        try:
+            sel = Prompt.ask("[bold cyan]Select Mode[/bold cyan]", choices=["0", "1"], default="0").strip()
+        except (KeyboardInterrupt, EOFError):
+            console.print("[yellow]Using default: Mining Mode (0)[/yellow]")
+            return 0
+
+        if sel == "0":
+            console.print("[bold green]✓ Selected Mode: Mining Mode (0)[/bold green]\n")
+            return 0
+        elif sel == "1":
+            console.print("[bold blue]✓ Selected Mode: Node Only (1)[/bold blue]\n")
+            return 1
+
+        
+def parse_args():
+    parser = argparse.ArgumentParser(description="TsarChain CLI miner / node runner")
+    parser.add_argument("--init-genesis", action="store_true", help="Mine and lock Genesis Block (Block 0) if database is empty")
+    parser.add_argument("--address", help="Miner payout address (tsar1...)")
+    parser.add_argument("--cores", type=int, help="CPU cores to use for mining")
+    parser.add_argument("--node-only", action="store_true", help="Run node without mining")
+    parser.add_argument("--timeout", type=int, default=560, help="Sync timeout in seconds (mining mode)")
+    parser.add_argument("--no-bootstrap", action="store_true", help="Skip snapshot bootstrap download")
+    parser.add_argument("--rx-full", action="store_true", help="Enable RandomX FULL MEMORY mode (+2.5GB dataset)")
+    parser.add_argument("--rx-light", action="store_true", help="Force RandomX LIGHT mode (~<2.5GB, lower RAM)")
+    parser.add_argument("--thread-report", action="store_true", help="Show thread report and exit")
+    parser.add_argument("-y", "--yes", action="store_true", help="Non-interactive mode (auto-accept prompts and defaults)")
+    return parser.parse_args()
+
+
 def main():
+    global tui_logger
+    _enable_windows_vt100()
     args = parse_args()
     set_clog_func(clog)
-    
+
     if args.thread_report:
         show_thread_report()
         return
+
+    is_interactive = sys.stdin.isatty() and not args.yes
+    is_fully_configured = bool(args.address and args.cores)
 
     if args.init_genesis:
         clog("Checking Genesis status in LMDB database...", COL.CYAN)
@@ -124,6 +195,9 @@ def main():
         address = args.address
         cores = args.cores
         if not address or not cores:
+            if not is_interactive:
+                clog("Error: --address and --cores are required for --init-genesis in non-interactive mode.", COL.RED)
+                sys.exit(2)
             input_address, input_cores = COL.get_user_input()
             address = address or input_address
             cores = cores or input_cores
@@ -149,20 +223,47 @@ def main():
     
     mode_selected = None
     if not args.node_only:
-        # Interactive mode selection
-        COL.print_banner()
-        COL.print_system_snapshot(cores_hint=None)
-        mode_selected = choose_mode()
+        if is_interactive and not is_fully_configured:
+            COL.print_banner()
+            COL.print_system_snapshot(cores_hint=None)
+            mode_selected = choose_mode()
+        else:
+            mode_selected = 0  # Default to mining mode when non-interactive or fully configured via CLI
 
     if args.node_only or mode_selected == 1:
         runner = NodeRunner(bootstrap_snapshot=not args.no_bootstrap)
-        runner.start()
+        tui = MinerTUI(
+            address="Node Only",
+            cores=0,
+            mode=" Node Only",
+            randomx_mode=" Disabled",
+            hashrate_queue=None,
+            chain_height_fn=lambda: int(getattr(runner.blockchain, "height", -1))
+            if runner and runner.blockchain
+            else -1,
+            peer_counts_fn=lambda: _safe_peer_counts(getattr(runner, "network", None)),
+            mempool_count_fn=lambda: _safe_mempool_count(runner),
+            node_only=True,
+        )
+        tui.start()
+        tui_logger = create_tui_logger(tui)
+
+        try:
+            runner.start()
+        except KeyboardInterrupt:
+            clog("Interrupted by user")
+        finally:
+            tui.stop()
+            tui_logger = None
         return
 
     address = args.address
     cores = args.cores
 
     if not address or not cores:
+        if not is_interactive:
+            clog("Error: --address and --cores are required for mining in non-interactive mode.", COL.RED)
+            sys.exit(2)
         input_address, input_cores = COL.get_user_input()
         address = address or input_address
         cores = cores or input_cores
@@ -180,6 +281,8 @@ def main():
         rx_full_mem = True
     elif args.rx_light:
         rx_full_mem = False
+    elif not is_interactive or is_fully_configured:
+        rx_full_mem = False  # Default to light mode in non-interactive / automated setups
     else:
         rx_full_mem = COL.prompt_rx_full_mem()
     CFG.RANDOMX_FULL_MEM = bool(rx_full_mem)
@@ -205,16 +308,14 @@ def main():
         chain_height_fn=lambda: int(getattr(miner.blockchain, "height", -1))
         if miner and miner.blockchain
         else -1,
-        peer_counts_fn=lambda: (
-            len(getattr(miner.network, "inbound_peers", ())) if miner and miner.network else 0,
-            len(getattr(miner.network, "outbound_peers", ())) if miner and miner.network else 0,
-        ),
+        peer_counts_fn=lambda: _safe_peer_counts(getattr(miner, "network", None)),
+        mempool_count_fn=lambda: _safe_mempool_count(miner),
     )
     
     miner.tui = tui
     tui.start()
-    global tui_logger
     tui_logger = create_tui_logger(tui)
+
 
     try:
         miner.start_mining(timeout=args.timeout)
@@ -225,6 +326,7 @@ def main():
     finally:
         miner.stop()
         tui.stop()
+        tui_logger = None
 
 
 if __name__ == "__main__":

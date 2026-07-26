@@ -3,30 +3,38 @@
 # Part of TsarChain — see LICENSE
 # Refs: see REFERENCES.md
 
+import os
 import sys
 import psutil
 import shutil
 import platform
 import subprocess
 
-from colorama import init
+from tsarchain.utils import config as CFG
+from rich.panel import Panel
+from rich.align import Align
+from rich.console import Console
+
+from .tui import _enable_windows_vt100
+
+_enable_windows_vt100()
+
 
 def print_banner():
-    banner = r"""
-    ████████╗███████╗ █████╗ ██████╗    ██████╗██╗  ██╗ █████╗ ██╗███╗   ██╗
-    ╚══██╔══╝██╔════╝██╔══██╗██╔══██╗  ██╔════╝██║  ██║██╔══██╗██║████╗  ██║
-       ██║   ███████╗███████║██████╔╝  ██║     ███████║███████║██║██╔██╗ ██║
-       ██║   ╚════██║██╔══██║██╔══██╗  ██║     ██╔══██║██╔══██║██║██║╚██╗██║
-       ██║   ███████║██║  ██║██║  ██║  ╚██████╗██║  ██║██║  ██║██║██║ ╚████║
-       ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ 
-    """
-    footer = r"""
-                            Tsar Chain Mining CLI
-                       Long Live The Voice Sovereignty
-    """
-    print(f"{ORANGE}{banner}{RESET}{YELLOW}{footer}{RESET}")
+    banner_text = (
+        "[bold orange1]"
+        "████████╗███████╗ █████╗ ██████╗    ██████╗██╗  ██╗ █████╗ ██╗███╗   ██╗\n"
+        "╚══██╔══╝██╔════╝██╔══██╗██╔══██╗  ██╔════╝██║  ██║██╔══██╗██║████╗  ██║\n"
+        "   ██║   ███████╗███████║██████╔╝  ██║     ███████║███████║██║██╔██╗ ██║\n"
+        "   ██║   ╚════██║██╔══██║██╔══██╗  ██║     ██╔══██║██╔══██║██║██║╚██╗██║\n"
+        "   ██║   ███████║██║  ██║██║  ██║  ╚██████╗██║  ██║██║  ██║██║██║ ╚████║\n"
+        "   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝\n"
+        "[/bold orange1]\n"
+        "[bold yellow]TsarChain Mining CLI  •  Long Live The Voice Sovereignty[/bold yellow]"
+    )
+    console = Console()
+    console.print(Panel(Align.center(banner_text), border_style="orange1", expand=False))
 
-init()
 
 # RGB custom
 def rgb_color(r, g, b):
@@ -162,10 +170,15 @@ def _cpu_brand() -> str:
         return "Unknown CPU"
 
 def print_system_snapshot(cores_hint: int | None = None):
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+
+    console = Console()
     try:
         uname = platform.uname()
         vm = psutil.virtual_memory()
-        du = shutil.disk_usage("/")  # root fs
+        du = shutil.disk_usage("/")
         freq = None
         try:
             freq = psutil.cpu_freq()
@@ -175,105 +188,115 @@ def print_system_snapshot(cores_hint: int | None = None):
         phys = psutil.cpu_count(logical=False) or 0
         logi = psutil.cpu_count(logical=True) or 0
 
-        print(f"{BOLD}{TXT_HEADER}{BG_HEADER}                      Your Sovereign                     {RESET}")
-        print(f"{BOLD}{TXT_HEADER}{BG_HEADER}                      Specifications                     {RESET}")
-        print(f"{BOLD}{TXT_INFO}{BG_WHITE}  CPU      {RESET}{BOLD}{TXT_INFO}{BG_GREY} {_cpu_brand()}       {RESET}")
-        line_core = f"{BOLD}{TXT_INFO}{BG_GREY}  Cores    {RESET}{BOLD}{TXT_INFO}{BG_WHITE} {phys} phys / {logi} logical                          {RESET}"
+        table = Table(show_header=False, box=None, padding=(0, 1))
+        table.add_column("Key", style="bold cyan")
+        table.add_column("Value", style="bold white")
+
+        table.add_row("CPU Model", _cpu_brand())
+
+        core_info = f"{phys} physical / {logi} logical"
         if cores_hint:
-            line_core += f"  |  use {cores_hint}"
-        print(line_core)
+            core_info += f" (recommended: {cores_hint})"
+        table.add_row("CPU Cores", core_info)
+
         if freq:
             try:
                 base = f"{(freq.min or 0)/1000:.2f}"
                 cur  = f"{(freq.current or 0)/1000:.2f}"
                 mx   = f"{(freq.max or 0)/1000:.2f}"
-                print(f"{BOLD}{TXT_INFO}{BG_WHITE}  Speed    {RESET}{TXT_INFO}{BOLD}{BG_GREY} {cur} GHz (base ~{base} / boost ~{mx})          {RESET}")
+                table.add_row("CPU Speed", f"{cur} GHz (base ~{base} / boost ~{mx})")
             except Exception:
                 pass
-        print(f"{BOLD}{TXT_INFO}{BG_GREY}  RAM      {RESET}{BOLD}{TXT_INFO}{BG_WHITE} {_human_bytes(vm.total)} total, {_human_bytes(vm.available)} free                  {RESET}")
-        print(f"{BOLD}{TXT_INFO}{BG_WHITE}  Disk     {RESET}{BOLD}{TXT_INFO}{BG_GREY} {_human_bytes(du.free)} free of {_human_bytes(du.total)}                     {RESET}")
-        print(f"{BOLD}{TXT_INFO}{BG_GREY}  OS       {RESET}{BOLD}{TXT_INFO}{BG_WHITE} {uname.system} {uname.release} ({uname.machine})                           {RESET}")
-        print(f"{BOLD}{TXT_INFO}{BG_WHITE}  Python   {RESET}{BOLD}{TXT_INFO}{BG_GREY} {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}                                       {RESET}")
-        print(" " * 57)
+
+        table.add_row("RAM Memory", f"{_human_bytes(vm.total)} total, {_human_bytes(vm.available)} free")
+        table.add_row("Disk Space", f"{_human_bytes(du.free)} free of {_human_bytes(du.total)}")
+        table.add_row("OS System", f"{uname.system} {uname.release} ({uname.machine})")
+        table.add_row("Python", f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+
+        console.print(Panel(table, title="[bold gold1]Your Sovereign Hardware Specifications[/bold gold1]", border_style="cyan", expand=False))
     except Exception as e:
-        print(f"[snapshot] failed: {e}")
+        console.print(f"[bold red][snapshot] failed: {e}[/bold red]")
 
 def get_user_input():
-    print(" ")
-    print(f"{BOLD}{TXT_HEADER}{BG_HEADER}                Your Sovereignty              {RESET}")
-    print(f"{BOLD}{TXT_HEADER}{BG_HEADER}                    Identity                  {RESET}")
+    from rich.console import Console
+    from rich.prompt import Prompt
+    from rich.panel import Panel
+
+    console = Console()
+    console.print("\n[bold orange1]Sovereign Miner Setup Wizard[/bold orange1]")
 
     # Input address
     while True:
         try:
-            address = input(f"{BOLD}{TXT_INFO}{BG_GREY} Miner address {RESET}{BOLD}{TXT_INFO}{BG_WHITE} tsar1 {RESET} ").strip()
-        except EOFError:
-            print(f"\033[1A\033[2K{BOLD}{TXT_INFO}{BG_GREY}Your're Inputting: {RESET}{BOLD}{TXT_INFO}{BG_RED} tsar1... {RESET}")
-            address = "tsar1..."
-            break
+            address = Prompt.ask("[bold cyan]Enter Miner Address[/bold cyan] ([dim]must start with tsar1...[/dim])").strip()
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n[yellow]Setup cancelled by user.[/yellow]")
+            sys.exit(0)
+
         if address and address.lower().startswith("tsar1"):
-            print(f"\033[1A\033[2K{BOLD}{TXT_INFO}{BG_GREY} -------------------------------------------- {RESET}")
-            print(f"{BOLD}{TXT_HEADER}{BG_HEADER} {address} {RESET}")
+            console.print(f"[bold green]✓ Wallet Address locked:[bold green] [white]{address}[/white]")
             break
         else:
-            print(f"\033[1A\033[2K{BG_WHITE} Error: Address must start with 'tsar1...' {RESET}")
-            print(f"{BG_WHITE} Example: tsar1qyourwalletaddresshere {RESET}")
+            console.print("[bold red]Error: Address must start with 'tsar1...'[/bold red]")
+            console.print("[dim]Example: tsar1qyourwalletaddresshere[/dim]")
 
     # Input CPU cores
-    print(" ")
-    print(f"{BOLD}{TXT_HEADER}{BG_HEADER}       Input Your CPU Power      {RESET}")
-    print(f"{BOLD}{BG_HEADER}                                 {RESET}")
-    
-    total_cores = psutil.cpu_count(logical=True)
-    
+    total_cores = psutil.cpu_count(logical=True) or 1
+    console.print(f"\n[bold cyan]System detected [green]{total_cores}[/green] total CPU thread(s).[/bold cyan]")
+
     while True:
         try:
-            cores_input = input(f"{BOLD}{TXT_INFO}{BG_GREY} You Have {RESET}{BOLD}{TXT_INFO}{BG_RED} {total_cores} Power {RESET} ").strip()
-        except EOFError:
-            print(f"\033[1A\033[2K{BOLD}{TXT_INFO}{BG_GREY}     You're Using     {RESET}{BOLD}{TXT_INFO}{BG_BLUE}  {cores_input} cores  {RESET}")
-            cores = total_cores
-            break
-        
-        if not cores_input:
-            print(f"\033[1A\033[2K{BOLD}{TXT_INFO}{BG_GREY}     You're Using     {RESET}{BOLD}{TXT_INFO}{BG_BLUE}  {cores_input} cores  {RESET}")
-            cores = total_cores
-            break
-        
+            cores_input = Prompt.ask(
+                "[bold cyan]CPU cores to assign for mining[/bold cyan]",
+                default=str(total_cores)
+            ).strip()
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n[yellow]Setup cancelled by user.[/yellow]")
+            sys.exit(0)
+
         try:
             cores = int(cores_input)
             if cores <= 0:
-                print(f"\033[1A\033[2K{BG_WHITE} Security needs energy bro, and you know it {RESET}")
+                console.print("[bold red]Error: Cores must be a positive integer.[/bold red]")
                 continue
             if cores > total_cores:
-                print(f"\033[1A\033[2K{BG_WHITE} Daamn!! Who are you! Elon Musk? {RESET}")
-                print(f"{BG_WHITE} Just calm down!, enter between 1 and {total_cores - 1} {RESET}")
-                continue
-                
-            print(f"\033[1A\033[2K{BOLD}{TXT_INFO}{BG_GREY}     You're Using     {RESET}{BOLD}{TXT_INFO}{BG_BLUE}  {cores_input} cores  {RESET}")
+                console.print(f"[bold red]Warning: Selected {cores} exceeds total detected {total_cores} cores. Setting max to {total_cores}.[/bold red]")
+                cores = total_cores
+            console.print(f"[bold green]✓ Assigned Cores:[bold green] [bold white]{cores} core(s)[/bold white]")
             break
         except ValueError:
-            print(f"\033[1A\033[2K{BG_WHITE} Error: Please enter a valid number {RESET}")
+            console.print("[bold red]Error: Please enter a valid integer number.[/bold red]")
+
     return address, cores
 
 def prompt_rx_full_mem() -> bool:
-    print(" ")
-    print(f"{BOLD}{TXT_HEADER}{BG_HEADER}               RandomX Memory Perfomance Boost              {RESET}")
-    print(f"{BOLD}{TXT_HEADER}{BG_HEADER}                                                            {RESET}")
-    print(f"{BOLD}{TXT_INFO}{BG_ORANGE} FULL MEMORY {RESET}{BOLD}{TXT_INFO}{BG_YELLOW} y {RESET}{BOLD}{TXT_INFO}{BG_GREY} RAM Usage will consume 2.5GB -> 7GB        {RESET}")
-    print(f"{BOLD}{TXT_INFO}{BG_BLUE} LIGHT MODE  {RESET}{BOLD}{TXT_INFO}{BG_GREEN} N {RESET}{BOLD}{TXT_INFO}{BG_WHITE} RAM Usage will stable in 2.5GB             {RESET}")
-    while True:
-        try:
-            ans = input(f"{BOLD}{TXT_INFO}{BG_GREY} Enable FULL MEMORY ? {RESET} ").strip().lower()
-        except EOFError:
-            print(f"\033[1A\033[2K{BOLD}{TXT_INFO}{BG_GREY}Using default: LIGHT MODE (No){RESET}")
-            return False
-        
-        if ans in ("y", "yes", "1"):
-            print(f"\033[1A\033[2K{BOLD}{TXT_INFO}{DIM}{BG_GREY}     Mining Run in >>>>>     {RESET}{BOLD}{TXT_INFO}{BG_ORANGE}          FULL MEMORY          {RESET}")
-            return True
-        if ans in ("n", "no", "0", ""):
-            print(f"\033[1A\033[2K{BOLD}{TXT_INFO}{DIM}{BG_GREY}     Mining Run in >>>>>     {RESET}{BOLD}{TXT_INFO}{BG_BLUE}           LIGHT MODE          {RESET}")
-            return False
-        
-        print(f"\033[1A\033[2K{BOLD}{TXT_INFO}{BG_RED}Invalid input. Please answer y or n.{RESET}")
-        print(f"{BOLD}{TXT_INFO}{BG_WHITE} Example: y (Yes) or n (No){RESET}")
+    from rich.console import Console
+    from rich.prompt import Confirm
+    from rich.panel import Panel
+
+    console = Console()
+    console.print("\n[bold orange1]RandomX PoW Engine Configuration[/bold orange1]")
+    console.print("[bold green]FULL MEMORY Mode[/bold green] : Faster hashrate (+2.5GB RAM dataset)")
+    console.print("[bold blue]LIGHT MODE[/bold blue]        : Stable RAM usage (~2.5GB RAM dataset)")
+
+    vm = psutil.virtual_memory()
+    total_ram_gb = vm.total / (1024 ** 3)
+    avail_ram_gb = vm.available / (1024 ** 3)
+
+    if total_ram_gb < 3.5 or avail_ram_gb < 2.5:
+        console.print(f"[bold yellow]⚠️ System Memory Notice: {avail_ram_gb:.1f} GB available of {total_ram_gb:.1f} GB total.[/bold yellow]")
+        console.print("[yellow]RandomX Full Memory Mode requires ~2.5 GB dedicated free RAM. Light Mode is recommended.[/yellow]")
+
+    try:
+        enabled = Confirm.ask("[bold cyan]Enable RandomX FULL MEMORY Mode?[/bold cyan]", default=False)
+    except (KeyboardInterrupt, EOFError):
+        console.print("[yellow]Using default LIGHT MODE.[/yellow]")
+        return False
+
+    if enabled:
+        if avail_ram_gb < 2.5:
+            console.print(f"[bold red]⚠️ Warning: Low available memory ({avail_ram_gb:.1f} GB). Full Memory mode may cause system swapping or OOM crash.[/bold red]")
+        console.print("[bold green]✓ RandomX FULL MEMORY Enabled (+2.5GB RAM)[/bold green]\n")
+    else:
+        console.print("[bold blue]✓ RandomX LIGHT MODE Selected[/bold blue]\n")
+    return enabled
