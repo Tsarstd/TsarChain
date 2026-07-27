@@ -4,7 +4,7 @@
 # Refs: see REFERENCES.md
 # package init
 
-from .thread_check import (
+from tsarchain.utils.thread_check import (
     ThreadMonitor,
     ThreadInfo,
     get_thread_monitor,

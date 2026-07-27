@@ -13,15 +13,15 @@ import threading
 from collections import deque
 from typing import Callable, Optional
 
-from rich.console import Console
+from rich.text import Text
 from rich.live import Live
-from rich.layout import Layout
+from rich.align import Align
 from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
-from rich.align import Align
+from rich.layout import Layout
+from rich.console import Console
 
-from .thread_check import get_thread_monitor
+from tsarchain.utils.thread_check import get_thread_monitor
 
 
 def _enable_windows_vt100() -> None:

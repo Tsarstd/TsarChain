@@ -33,6 +33,10 @@ This document provides an in-depth technical overview of the Graffiti Protocol. 
     ├── src/
     │   │
     │   ├── archivist/
+    │   │   ├── cosmetic_archivist/
+    │   │   │   ├── interface.py                 # colorama CLI module
+    │   │   │   └── tui.py                       # TUI for CLI
+    │   │   │
     │   │   ├── archivist_orchestrator.py        # Storage Node CLI/Main logic
     │   │   ├── connect.py                       # P2P network logic ( send & receive )
     │   │   ├── database_archivist.py            # database logic
@@ -114,7 +118,6 @@ This document provides an in-depth technical overview of the Graffiti Protocol. 
     │   │   ├── miner/
     │   │   │   ├── cosmetic
     │   │   │   │   ├── interface.py             # colorama CLI module
-    │   │   │   │   ├── thread_check.py          # thread monitoring
     │   │   │   │   └── tui.py                   # TUI for CLI
     │   │   │   │
     │   │   │   └── orchestrator.py              # miner/node CLI logic
@@ -187,6 +190,7 @@ This document provides an in-depth technical overview of the Graffiti Protocol. 
     │   │       ├── bootstrap.py                       # auto backup / snapshot logic
     │   │       ├── config.py                          # ALL project Configuration
     │   │       ├── helpers.py                         # script helpers
+    │   │       ├── thread_check.py                    # thread monitoring
     │   │       └── tsar_logging.py                    # logging module
     │   │
     │   └── web/

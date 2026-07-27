@@ -7,3 +7,4 @@ omit =
     src/kremlin/ui_utils.py
     src/kremlin/ui_state.py
     src/tsarchain/miner/cosmetic/*
+    src/archivist/cosmetic_archivist/*

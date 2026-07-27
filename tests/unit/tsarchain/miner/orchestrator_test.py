@@ -330,7 +330,7 @@ def test_tui_dynamic_log_buffer():
 
 
 def test_thread_monitor_stack_trace_option():
-    from tsarchain.miner.cosmetic.thread_check import get_thread_monitor
+    from tsarchain.utils.thread_check import get_thread_monitor
     tm = get_thread_monitor()
     threads_fast = tm.get_all_threads(include_stack=False)
     assert len(threads_fast) > 0

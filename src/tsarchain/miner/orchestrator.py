@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Tsar Studio
+# Part of TsarChain — see LICENSE
+# Refs: see REFERENCES.md
+
 import re
 import time
 import errno
@@ -13,7 +18,7 @@ from ..consensus.blockchain import Blockchain
 from ..utils.bootstrap import maybe_bootstrap_snapshot
 
 from .cosmetic import interface as COL
-from .cosmetic.thread_check import get_thread_monitor, register_thread_monitoring_signal
+from tsarchain.utils.thread_check import get_thread_monitor, register_thread_monitoring_signal
 
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.miner.orchestrator")

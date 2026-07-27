@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Tsar Studio
+# Copyright (c) 2026 Tsar Studio
 # Part of TsarChain - see LICENSE
 # Refs: BIP141; BIP173
 
@@ -8,24 +8,49 @@ from __future__ import annotations
 import sys
 import argparse
 import threading
+from datetime import datetime
 import multiprocessing as mp
-from typing import Any, Dict
 
+from rich.console import Console
 from tsarchain.utils import config as CFG
 from archivist.archivist_orchestrator import ArchivistOrchestrator
+
+from archivist.cosmetic_archivist import (
+    print_banner,
+    print_system_snapshot,
+    get_user_input,
+    _enable_windows_vt100,
+    format_files_table,
+    format_pool_table,
+    ArchivistTUI,
+    create_tui_logger,
+)
+from archivist.cosmetic_archivist.interface import (
+    BOLD, GREY, GREEN, RED, CYAN, YELLOW, RESET
+)
 
 from tsarchain.utils.tsar_logging import setup_logging, get_ctx_logger
 log = get_ctx_logger("apps.cli_archivist")
 
 REFRESH_SEC = 30
+tui_logger = None
 
-def _fmt_bytes(n: Any) -> str:
-    size = float(n)
-    units = ["B", "KB", "MB", "GB", "TB", "PB"]
-    for u in units:
-        if size < 1024.0 or u == units[-1]:
-            return f"{size:.2f} {u}" if u != "B" else f"{int(size)} {u}"
-        size /= 1024.0
+
+def _stamp() -> str:
+    now = datetime.now()
+    d = f"{now.year:04d}.{now.month:02d}.{now.day:02d}"
+    t = f"{now.hour:02d}.{now.minute:02d}.{now.second:02d}"
+    return f"{BOLD}{GREY} {d} {RESET}{BOLD}{GREY} {t} {RESET}"
+
+
+def clog(message: str, color: str = GREY, error: bool = False):
+    global tui_logger
+    prefix_color = RED if error else color
+    formatted = f"{_stamp()} : {prefix_color}{message}{RESET}"
+    if tui_logger is not None:
+        tui_logger(formatted)
+    else:
+        print(formatted)
 
 
 class ArchivistCLI:
@@ -35,174 +60,195 @@ class ArchivistCLI:
         address: str,
         target_node: tuple[str, int],
         refresh_sec: int = REFRESH_SEC,
+        enable_tui: bool = True,
     ):
         self._print_lock = threading.Lock()
-        self._last_dashboard: str = ""
         self._stop = threading.Event()
+        self.enable_tui = enable_tui
+        self.target_node = target_node
+        self.address = address
+        self.refresh_sec = refresh_sec
 
         self.orchestrator = ArchivistOrchestrator(
             address=address,
             target_node=target_node,
             refresh_sec=refresh_sec,
-            log_callback=self._log,
+            log_callback=self._orchestrator_log,
             update_callback=self._trigger_dashboard_update
         )
+        self.tui: ArchivistTUI | None = None
 
-    # ---------- logging ----------
-    def _log(self, msg: str, error: bool = False) -> None:
-        with self._print_lock:
-            prefix = "[err]" if error else "[info]"
-            print(f"{prefix} {msg}")
-            sys.stdout.flush()
+    # ---------- logging & updates ----------
+    def _orchestrator_log(self, msg: str, error: bool = False) -> None:
+        clog(msg, color=RED if error else CYAN, error=error)
 
     def _trigger_dashboard_update(self) -> None:
-        self._print_dashboard()
-
-    # ---------- rendering ----------
-    def _print_dashboard(self, force: bool = False) -> None:
-        info = self.orchestrator.last_info or {}
-        idx = self.orchestrator.last_index or {}
-        files = idx.get("files") if isinstance(idx, dict) else None
-        files = files if isinstance(files, dict) else {}
-
-        used = _fmt_bytes(idx.get("bytes_used", 0))
-        file_count = len(files) if isinstance(files, dict) else 0
-        peers = info.get("peers", "-") if isinstance(info, dict) else "-"
-        tip = info.get("height") if isinstance(info, dict) else "-"
-
-        header = f"Archivist CLI | tip={tip} peers={peers} files={file_count} used={used}"
-
-        lines = [header, "-" * len(header)]
-
-        buf = "\n".join(lines)
-        if not force and buf == self._last_dashboard:
-            return
-        self._last_dashboard = buf
-        with self._print_lock:
-            print(buf)
-            sys.stdout.flush()
-
-    def _format_files_table(self, files: Dict[str, Any]) -> str:
-        headers = ["graffiti_id", "size", "paid", "expire", "state"]
-        widths = [64, 12, 6, 10, 10]
-        rows: list[list[str]] = []
-        for gid, meta in list(files.items())[:10]:
-            art_id = str(meta.get("art_id") or gid)
-            display_id = art_id[:64] if len(art_id) > 64 else art_id
-            rows.append([
-                display_id,
-                f"{int(meta.get('size_bytes', 0)):,}",
-                "yes" if meta.get("paid") else "no",
-                str(meta.get("expire_at_height", "-")),
-                str(meta.get("state", "-")),
-            ])
-        if not rows:
-            return "(no file yet)"
-        table = [" ".join(h.ljust(w) for h, w in zip(headers, widths))]
-        for r in rows:
-            table.append(" ".join(val.ljust(w) for val, w in zip(r, widths)))
-        return "\n".join(table)
-
-    def _format_pool_table(self, pool_data: Dict[str, Any]) -> str:
-        if not pool_data:
-            return "(pool not available)"
-        headers = ["art_id", "pool", "size", "creator", "comments"]
-        widths = [64, 16, 12, 64, 10]
-        table = [" ".join(h.ljust(w) for h, w in zip(headers, widths))]
-        for aid, entry in list(pool_data.items())[:64]:
-            stats = entry.get("stats") or {}
-            file_meta = entry.get("file") or {}
-            creator = (entry.get("post", {}).get("creator") or "")[:64]
-            pool_bal = float(stats.get("pool_balance", 0)) / float(CFG.TSAR)
-            size_bytes = int(file_meta.get("size_bytes", 0))
-            table.append(" ".join([
-                (aid[:64]).ljust(widths[0]),
-                f"{pool_bal:.8f}".ljust(widths[1]),
-                f"{size_bytes:,}".ljust(widths[2]),
-                creator.ljust(widths[3]),
-                str(stats.get("comments", 0)).ljust(widths[4]),
-            ]))
-        return "\n".join(table)
+        if self.tui:
+            self.tui.force_refresh()
 
     # ---------- commands ----------
+    def _print_files_table(self) -> None:
+        idx = self.orchestrator.last_index or {}
+        files = idx.get("files") if isinstance(idx, dict) else {}
+        files = files if isinstance(files, dict) else {}
+        table = format_files_table(files)
+
+        if self.tui and self.tui._live:
+            # Temporarily print table above or suspend live
+            console = Console()
+            console.print(table)
+        else:
+            Console().print(table)
+
     def _print_pool_table(self) -> None:
-        lines = self._format_pool_table(self.orchestrator.pool_data)
-        with self._print_lock:
-            print(lines if isinstance(lines, str) else "")
-            sys.stdout.flush()
+        table = format_pool_table(self.orchestrator.pool_data)
+        Console().print(table)
 
     def command_loop(self) -> None:
-        self._log("Command: status | pool | reconnect | quit")
+        if not self.enable_tui:
+            clog("Command: status | files | pool | reconnect | quit", color=YELLOW)
+
         while not self._stop.is_set():
             try:
-                cmd = input("archivist> ").strip()
+                cmd = input().strip() if self.enable_tui else input("archivist> ").strip()
             except (KeyboardInterrupt, EOFError):
-                self._log("Closing...")
+                clog("Closing Archivist node...", color=YELLOW)
                 self._stop.set()
                 break
-            
+
             if not cmd:
                 continue
-            
+
             if cmd in ("quit", "exit", "q"):
                 self._stop.set()
                 break
-            
+
             if cmd in ("status", "stats"):
-                self._print_dashboard(force=True)
+                if self.tui:
+                    self.tui.force_refresh()
+                else:
+                    info = self.orchestrator.last_info or {}
+                    idx = self.orchestrator.last_index or {}
+                    clog(f"Status: Tip={info.get('height', '-')} Peers={info.get('peers', '-')} Files={len(idx.get('files', {}))} Bytes={idx.get('bytes_used', 0)}", color=GREEN)
                 continue
-            
-            if cmd in ("pool", "list"):
+
+            if cmd in ("files", "list-files"):
+                self._print_files_table()
+                continue
+
+            if cmd in ("pool", "list", "posts"):
                 self._print_pool_table()
                 continue
-            
+
             if cmd in ("reconnect", "retry"):
+                clog("Attempting manual reconnect to target node...", color=CYAN)
                 if self.orchestrator.attempt_reconnect():
-                    self._log("Reconnected.")
+                    clog("Reconnected successfully!", color=GREEN)
                     self.orchestrator.refresh_once()
                 else:
-                    self._log("Reconnection failed.", error=True)
+                    clog("Reconnection failed.", color=RED, error=True)
                 continue
-            
-            self._log("Unknown command. Use: status | pool | reconnect | quit")
+
+            clog("Available commands: status | files | pool | reconnect | quit", color=YELLOW)
 
     # ---------- lifecycle ----------
     def start(self) -> None:
+        global tui_logger
+        _enable_windows_vt100()
+
+        if self.enable_tui:
+            self.tui = ArchivistTUI(
+                address=self.address,
+                target_node=self.target_node,
+                refresh_sec=self.refresh_sec,
+                orchestrator=self.orchestrator,
+            )
+            self.tui.start()
+            tui_logger = create_tui_logger(self.tui)
+
+        clog(f"Starting Sovereign Storage Archivist Node (address: {self.address})...", color=GREEN)
+
         if not self.orchestrator.start():
+            clog("Failed to start orchestrator connection to node!", color=RED, error=True)
+            if self.tui:
+                self.tui.stop()
+                tui_logger = None
             return
-        self._print_dashboard(force=True)
-        self.command_loop()
+
+        clog(f"Connected to node {self.target_node[0]}:{self.target_node[1]}", color=GREEN)
+
+        try:
+            self.command_loop()
+        except KeyboardInterrupt:
+            clog("Interrupted by user", color=YELLOW)
+        finally:
+            if self.tui:
+                self.tui.stop()
+                tui_logger = None
 
     def stop(self) -> None:
+        global tui_logger
         self._stop.set()
         self.orchestrator.stop()
+        if self.tui:
+            self.tui.stop()
+            tui_logger = None
+
+
+def show_thread_report() -> None:
+    monitor = get_thread_monitor()
+    monitor.print_thread_report(detailed=True)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="TsarChain Archivist CLI (headless)")
-    parser.add_argument("--address", help="Payout storage Address(tsar1...)")
-    parser.add_argument("--host", help="Target node host", default=None)
-    parser.add_argument("--port", type=int, help="Target node port", default=None)
-    parser.add_argument("--refresh", type=int, help="Interval refresh status (second)", default=REFRESH_SEC)
+    parser = argparse.ArgumentParser(description="TsarChain CLI Archivist Node")
+    parser.add_argument("--address", help="Payout storage Address (tsar1...)")
+    parser.add_argument("--host", help="Target node host IP", default=None)
+    parser.add_argument("--port", type=int, help="Target node RPC port", default=None)
+    parser.add_argument("--refresh", type=int, help="Interval refresh status in seconds", default=REFRESH_SEC)
+    parser.add_argument("--no-tui", action="store_true", help="Disable Rich TUI dashboard and run in plain console mode")
+    parser.add_argument("--thread-report", action="store_true", help="Show active thread health report and exit")
+    parser.add_argument("-y", "--yes", action="store_true", help="Non-interactive mode (use defaults and CLI args)")
     return parser.parse_args()
 
 
 def main() -> None:
+    _enable_windows_vt100()
     args = parse_args()
+
+    if args.thread_report:
+        show_thread_report()
+        return
+
+    is_interactive = sys.stdin.isatty() and not args.yes
     address = (args.address or "").strip()
-    if not address:
-        try:
-            address = input("Input payout address (tsar1...): ").strip()
-        except EOFError:
-            address = ""
+    host = args.host
+    port = args.port
+
+    if is_interactive and not address:
+        print_banner()
+        print_system_snapshot()
+        wiz_addr, wiz_host, wiz_port = get_user_input()
+        address = wiz_addr
+        host = host or wiz_host
+        port = port or wiz_port
+
     if not address or not address.lower().startswith(CFG.ADDRESS_PREFIX):
-        print("Payout address must be filled in and start with the correct prefix. (tsar1...).")
+        clog(f"Error: Payout address is required and must start with '{CFG.ADDRESS_PREFIX}...'", color=RED, error=True)
         sys.exit(2)
 
-    host = args.host or CFG.BOOTSTRAP_NODE[0]
-    port = args.port or CFG.BOOTSTRAP_NODE[1]
+    target_host = host or CFG.BOOTSTRAP_NODE[0]
+    target_port = int(port or CFG.BOOTSTRAP_NODE[1])
 
-    cli = ArchivistCLI(address=address, target_node=(host, int(port)), refresh_sec=args.refresh)
+    enable_tui = not args.no_tui
+
+    cli = ArchivistCLI(
+        address=address,
+        target_node=(target_host, target_port),
+        refresh_sec=args.refresh,
+        enable_tui=enable_tui,
+    )
+
     try:
         cli.start()
     finally:

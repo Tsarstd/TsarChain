@@ -3,16 +3,17 @@
 # Part of TsarChain — see LICENSE
 # Refs: see REFERENCES.md
 
-import os
 import sys
 import psutil
 import shutil
 import platform
 import subprocess
 
-from tsarchain.utils import config as CFG
+from rich.table import Table
 from rich.panel import Panel
 from rich.align import Align
+from rich.prompt import Prompt
+from rich.prompt import Confirm
 from rich.console import Console
 
 from .tui import _enable_windows_vt100
@@ -170,10 +171,6 @@ def _cpu_brand() -> str:
         return "Unknown CPU"
 
 def print_system_snapshot(cores_hint: int | None = None):
-    from rich.console import Console
-    from rich.table import Table
-    from rich.panel import Panel
-
     console = Console()
     try:
         uname = platform.uname()
@@ -218,10 +215,6 @@ def print_system_snapshot(cores_hint: int | None = None):
         console.print(f"[bold red][snapshot] failed: {e}[/bold red]")
 
 def get_user_input():
-    from rich.console import Console
-    from rich.prompt import Prompt
-    from rich.panel import Panel
-
     console = Console()
     console.print("\n[bold orange1]Sovereign Miner Setup Wizard[/bold orange1]")
 
@@ -270,10 +263,6 @@ def get_user_input():
     return address, cores
 
 def prompt_rx_full_mem() -> bool:
-    from rich.console import Console
-    from rich.prompt import Confirm
-    from rich.panel import Panel
-
     console = Console()
     console.print("\n[bold orange1]RandomX PoW Engine Configuration[/bold orange1]")
     console.print("[bold green]FULL MEMORY Mode[/bold green] : Faster hashrate (+2.5GB RAM dataset)")

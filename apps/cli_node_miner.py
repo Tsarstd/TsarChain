@@ -29,12 +29,16 @@ import os
 import sys
 import argparse
 import multiprocessing as mp
+
 from datetime import datetime
+from rich.panel import Panel
+from rich.prompt import Prompt
+from rich.console import Console
 
 # ---------------- Local Project ----------------
 from tsarchain.utils import config as CFG
+from tsarchain.utils.thread_check import get_thread_monitor
 from tsarchain.miner.cosmetic import interface as COL
-from tsarchain.miner.cosmetic.thread_check import get_thread_monitor
 from tsarchain.miner.cosmetic.tui import MinerTUI, create_tui_logger, _enable_windows_vt100
 from tsarchain.miner.orchestrator import NodeRunner, SimpleMiner, set_clog_func
 
@@ -132,10 +136,6 @@ def show_thread_report():
 
 
 def choose_mode() -> int:
-    from rich.console import Console
-    from rich.prompt import Prompt
-    from rich.panel import Panel
-
     console = Console()
     console.print(Panel("[bold yellow]Choose Execution Mode[/bold yellow]\n[bold green]0[/bold green] : Mining Mode (Full Node + Miner)\n[bold blue]1[/bold blue] : Node Only (Relay & Mempool)", border_style="cyan"))
 

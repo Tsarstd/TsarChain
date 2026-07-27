@@ -4,7 +4,7 @@
 
 """
 Thread Monitoring Module for TsarChain
-Real-time monitoring of active threads with TUI support
+Real-time monitoring of active threads with TUI support across node miner and archivist.
 """
 
 import sys
@@ -12,10 +12,15 @@ import time
 import signal
 import threading
 
+from rich.table import Table
+from rich.panel import Panel
+from rich.console import Console
+
 from enum import Enum
 from dataclasses import dataclass
 from collections import defaultdict
 from typing import Dict, List, Optional
+
 
 @dataclass
 class ThreadInfo:
@@ -29,6 +34,7 @@ class ThreadInfo:
     state: str = "unknown"
     stack_info: Optional[str] = None
 
+
 class ThreadState(Enum):
     """Thread states"""
     RUNNING = "running"
@@ -37,20 +43,21 @@ class ThreadState(Enum):
     BLOCKED = "blocked"
     DEAD = "dead"
 
+
 class ThreadMonitor:
     """Monitors and reports on thread activity"""
-    
+
     def __init__(self, update_interval: float = 2.0):
         self.update_interval = update_interval
-        self.threads_history: Dict[str, List[float]] = defaultdict(list)
+        self.threads_history: Dict[str, List[tuple[float, str]]] = defaultdict(list)
         self.last_update = time.time()
         self.monitoring = False
         self._monitor_thread: Optional[threading.Thread] = None
-        
+
     def get_all_threads(self, include_stack: bool = False) -> List[ThreadInfo]:
         threads = []
         current_ident = threading.current_thread().ident
-        
+
         for thread in threading.enumerate():
             is_current = thread.ident == current_ident
             thread_info = ThreadInfo(
@@ -63,9 +70,9 @@ class ThreadMonitor:
                 stack_info=self._get_stack_info(thread) if include_stack else None
             )
             threads.append(thread_info)
-            
+
         return threads
-    
+
     def get_thread_counts(self) -> Dict[str, int]:
         """Get counts of threads by type/state"""
         threads = self.get_all_threads(include_stack=False)
@@ -78,21 +85,22 @@ class ThreadMonitor:
             'network': sum(1 for t in threads if 'network' in t.name.lower() or 'peer' in t.name.lower()),
             'sync': sum(1 for t in threads if 'sync' in t.name.lower()),
             'rpc': sum(1 for t in threads if 'rpc' in t.name.lower()),
+            'archivist': sum(1 for t in threads if any(k in t.name.lower() for k in ('archivist', 'retention', 'storage', 'heartbeat'))),
         }
-        
+
         # Add states
         state_counts = defaultdict(int)
         for t in threads:
             state_counts[t.state] += 1
         counts.update(state_counts)
-        
+
         return counts
-    
+
     def check_for_deadlocks(self) -> List[str]:
         """Check for potential deadlocks (simple heuristic)"""
         warnings = []
         threads = self.get_all_threads()
-        
+
         now = time.time()
         if now - self.last_update > 5:
             for thread in threads:
@@ -102,30 +110,26 @@ class ThreadMonitor:
                     # Flag only if thread has been in 'blocked' state continuously for at least 5 monitoring updates
                     if len(history) >= 5 and all(st == ThreadState.BLOCKED.value for _, st in history[-5:]):
                         warnings.append(f"Thread {thread.name} stuck in {thread.state}")
-        
+
         return warnings
-    
+
     def _get_thread_state(self, thread: threading.Thread) -> str:
         """Get human-readable thread state"""
         try:
-            # Python 3.9+ has native_native_id attribute
-            if hasattr(thread, '_is_stopped') and thread._is_stopped:
+            if hasattr(thread, '_is_stopped') and getattr(thread, '_is_stopped', False):
                 return ThreadState.DEAD.value
-            
-            # Try to determine state from thread properties
+
             if not thread.is_alive():
                 return ThreadState.DEAD.value
-            
-            # Check if thread is in a waiting state
+
             if hasattr(thread, '_waiting'):
                 return ThreadState.WAITING.value
-            
-            # Default to running
+
             return ThreadState.RUNNING.value
-            
+
         except Exception:
             return "unknown"
-    
+
     def _get_stack_info(self, thread: threading.Thread) -> Optional[str]:
         """Get stack trace for thread (if available)"""
         try:
@@ -134,18 +138,17 @@ class ThreadMonitor:
             if frame:
                 stack = traceback.extract_stack(frame)
                 if stack:
-                    # Return just the top frame for brevity
-                    frame = stack[-1]
-                    return f"{frame.filename}:{frame.lineno} in {frame.name}"
+                    top_frame = stack[-1]
+                    return f"{top_frame.filename}:{top_frame.lineno} in {top_frame.name}"
         except (KeyError, AttributeError):
             pass
         return None
-    
+
     def start_monitoring(self) -> None:
         """Start background thread monitoring"""
         if self.monitoring:
             return
-            
+
         self.monitoring = True
         self._monitor_thread = threading.Thread(
             target=self._monitoring_loop,
@@ -153,40 +156,33 @@ class ThreadMonitor:
             daemon=True
         )
         self._monitor_thread.start()
-    
+
     def stop_monitoring(self) -> None:
         """Stop background monitoring"""
         self.monitoring = False
         if self._monitor_thread:
             self._monitor_thread.join(timeout=2.0)
-    
+
     def _monitoring_loop(self) -> None:
         """Background monitoring loop"""
         while self.monitoring:
             try:
-                # Update thread history
                 threads = self.get_all_threads()
                 now = time.time()
                 for thread in threads:
                     thread_key = f"{thread.name}_{thread.ident}"
                     self.threads_history[thread_key].append((now, thread.state))
-                    # Keep only last 10 entries
                     if len(self.threads_history[thread_key]) > 10:
                         self.threads_history[thread_key] = self.threads_history[thread_key][-10:]
-                
+
                 self.last_update = now
                 time.sleep(self.update_interval)
-                
+
             except Exception:
-                # Don't let monitoring crash the app
                 time.sleep(self.update_interval)
-    
+
     def print_thread_report(self, detailed: bool = False) -> None:
         """Print a report of current threads using Rich formatting"""
-        from rich.console import Console
-        from rich.table import Table
-        from rich.panel import Panel
-
         threads = self.get_all_threads(include_stack=detailed)
         counts = self.get_thread_counts()
         console = Console()
@@ -228,6 +224,7 @@ class ThreadMonitor:
 
 _thread_monitor: Optional[ThreadMonitor] = None
 
+
 def get_thread_monitor() -> ThreadMonitor:
     """Get or create global thread monitor instance"""
     global _thread_monitor
@@ -235,11 +232,13 @@ def get_thread_monitor() -> ThreadMonitor:
         _thread_monitor = ThreadMonitor()
     return _thread_monitor
 
+
 def start_thread_monitoring() -> ThreadMonitor:
     """Start global thread monitoring"""
     monitor = get_thread_monitor()
     monitor.start_monitoring()
     return monitor
+
 
 def stop_thread_monitoring() -> None:
     """Stop global thread monitoring"""
@@ -247,11 +246,12 @@ def stop_thread_monitoring() -> None:
     if _thread_monitor:
         _thread_monitor.stop_monitoring()
 
+
 def register_thread_monitoring_signal() -> None:
     def handle_thread_dump(signum, frame):
         monitor = get_thread_monitor()
         monitor.print_thread_report(detailed=True)
-    
+
     try:
         signal.signal(signal.SIGUSR1, handle_thread_dump)
     except (AttributeError, ValueError):
