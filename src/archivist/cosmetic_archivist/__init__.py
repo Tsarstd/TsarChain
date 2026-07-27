@@ -14,6 +14,8 @@ from .interface import (
     _enable_windows_vt100,
     format_files_table,
     format_pool_table,
+    format_threads_table,
+    format_proof_epoch_countdown,
 )
 from .tui import ArchivistTUI, create_tui_logger
 
@@ -24,6 +26,8 @@ __all__ = [
     "_enable_windows_vt100",
     "format_files_table",
     "format_pool_table",
+    "format_threads_table",
+    "format_proof_epoch_countdown",
     "ArchivistTUI",
     "create_tui_logger",
 ]

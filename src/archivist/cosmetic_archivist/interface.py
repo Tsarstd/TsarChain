@@ -17,6 +17,34 @@ from rich.console import Console
 
 from tsarchain.utils import config as CFG
 
+# RGB custom helpers
+def rgb_color(r: int, g: int, b: int) -> str:
+    return f"\033[38;2;{r};{g};{b}m"
+
+
+def bg_rgb_color(r: int, g: int, b: int) -> str:
+    return f"\033[48;2;{r};{g};{b}m"
+
+# Text colors
+ORANGE = rgb_color(242, 132, 0)
+GREY = rgb_color(245, 246, 244)
+YELLOW = rgb_color(232, 215, 59)
+GREEN = rgb_color(59, 196, 59)
+CYAN = rgb_color(0, 215, 235)
+RED = rgb_color(235, 59, 59)
+
+# Text styles
+RESET = "\033[0m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+ITALIC = "\033[3m"
+
+# Rich style constants
+STYLE_BOLD_CYAN = "bold cyan"
+STYLE_BOLD_WHITE = "bold white"
+STYLE_BOLD_MAGENTA = "bold magenta"
+TEXT_SYNCING = "Syncing..."
+
 
 def _enable_windows_vt100() -> None:
     if sys.platform == "win32":
@@ -77,35 +105,6 @@ def _enable_windows_vt100() -> None:
 
 
 _enable_windows_vt100()
-
-
-# RGB custom helpers
-def rgb_color(r: int, g: int, b: int) -> str:
-    return f"\033[38;2;{r};{g};{b}m"
-
-
-def bg_rgb_color(r: int, g: int, b: int) -> str:
-    return f"\033[48;2;{r};{g};{b}m"
-
-
-# Text colors
-ORANGE = rgb_color(242, 132, 0)
-GREY = rgb_color(245, 246, 244)
-YELLOW = rgb_color(232, 215, 59)
-GREEN = rgb_color(59, 196, 59)
-CYAN = rgb_color(0, 215, 235)
-RED = rgb_color(235, 59, 59)
-
-# Text styles
-RESET = "\033[0m"
-BOLD = "\033[1m"
-DIM = "\033[2m"
-ITALIC = "\033[3m"
-
-# Rich style constants
-STYLE_BOLD_CYAN = "bold cyan"
-STYLE_BOLD_WHITE = "bold white"
-
 
 
 def human_bytes(n: Any) -> str:
@@ -272,7 +271,7 @@ def get_user_input() -> tuple[str, str, int]:
 
 
 def format_files_table(files: Dict[str, Any]) -> Table:
-    table = Table(title="[bold cyan]Managed Local Files Index[/bold cyan]", show_header=True, header_style="bold magenta")
+    table = Table(title="[bold cyan]Managed Local Files Index[/bold cyan]", show_header=True, header_style=STYLE_BOLD_MAGENTA)
     table.add_column("Graffiti / Art ID", style=STYLE_BOLD_CYAN, width=36, overflow="ellipsis")
     table.add_column("Size", justify="right", style=STYLE_BOLD_WHITE, width=12)
     table.add_column("Paid", justify="center", style="bold green", width=8)
@@ -303,7 +302,7 @@ def format_files_table(files: Dict[str, Any]) -> Table:
 
 
 def format_pool_table(pool_data: Dict[str, Any]) -> Table:
-    table = Table(title="[bold gold1]Graffiti Storage Pool Data[/bold gold1]", show_header=True, header_style="bold magenta")
+    table = Table(title="[bold gold1]Graffiti Storage Pool Data[/bold gold1]", show_header=True, header_style=STYLE_BOLD_MAGENTA)
     table.add_column("Art ID", style=STYLE_BOLD_CYAN, width=28, overflow="ellipsis")
     table.add_column("Pool Balance", justify="right", style="bold gold1", width=14)
     table.add_column("Size", justify="right", style=STYLE_BOLD_WHITE, width=12)
@@ -331,3 +330,69 @@ def format_pool_table(pool_data: Dict[str, Any]) -> Table:
             str(stats.get("comments", 0)),
         )
     return table
+
+
+def format_proof_epoch_countdown(height: Any) -> str:
+    if height is None or str(height).strip() in ("", "-"):
+        return TEXT_SYNCING
+    try:
+        h = int(height)
+        if h < 0:
+            return TEXT_SYNCING
+    except Exception:
+        return TEXT_SYNCING
+
+    epoch_blocks = max(1, int(getattr(CFG, "GRAFFITI_PROOF_EPOCH_BLOCKS", 100)))
+    block_time_sec = max(1, int(getattr(CFG, "TARGET_BLOCK_TIME_SEC", 30)))
+    current_epoch = max(0, h // epoch_blocks)
+    next_epoch_height = (current_epoch + 1) * epoch_blocks
+    blocks_left = next_epoch_height - h
+    secs_left = blocks_left * block_time_sec
+    mins_left = secs_left // 60
+    sec_remainder = secs_left % 60
+
+    if mins_left > 0:
+        time_str = f"~{mins_left}m {sec_remainder}s"
+    else:
+        time_str = f"~{sec_remainder}s"
+
+    return f"Epoch #{current_epoch} (Next: #{next_epoch_height}, {blocks_left} blk / {time_str})"
+
+
+def format_threads_table() -> Table:
+    from tsarchain.utils.thread_check import get_thread_monitor
+    monitor = get_thread_monitor()
+    threads = monitor.get_all_threads(include_stack=True)
+    counts = monitor.get_thread_counts()
+
+    table = Table(
+        title=f"[bold cyan]Thread Health Report (Total: {counts['total']} | Alive: {counts['alive']} | Daemon: {counts['daemon']})[/bold cyan]",
+        show_header=True,
+        header_style=STYLE_BOLD_MAGENTA,
+    )
+    table.add_column("#", justify="right", style="bold dim", width=4)
+    table.add_column("Thread Name", style=STYLE_BOLD_WHITE, width=28, overflow="ellipsis")
+    table.add_column("ID", style="dim", width=10)
+    table.add_column("State", justify="center", width=12)
+    table.add_column("Type", justify="center", width=16)
+    table.add_column("Stack Info", style="italic grey70", width=40, overflow="ellipsis")
+
+    for i, thread in enumerate(threads, 1):
+        state_style = "[bold green]RUNNING[/bold green]" if thread.alive else "[bold red]DEAD[/bold red]"
+        tags = []
+        if thread.daemon:
+            tags.append("[yellow]DAEMON[/yellow]")
+        if thread.is_current:
+            tags.append("[bold cyan]CURRENT[/bold cyan]")
+        type_str = " ".join(tags) if tags else "[dim]USER[/dim]"
+
+        table.add_row(
+            str(i),
+            thread.name,
+            str(thread.ident),
+            state_style,
+            type_str,
+            thread.stack_info or "-",
+        )
+    return table
+

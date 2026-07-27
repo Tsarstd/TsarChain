@@ -29,6 +29,7 @@ from archivist.cosmetic_archivist.interface import (
     BOLD, GREY, GREEN, RED, CYAN, YELLOW, RESET
 )
 
+from tsarchain.utils.thread_check import get_thread_monitor
 from tsarchain.utils.tsar_logging import setup_logging, get_ctx_logger
 log = get_ctx_logger("apps.cli_archivist")
 
@@ -123,21 +124,34 @@ class ArchivistCLI:
                 self._stop.set()
                 break
 
-            if cmd in ("status", "stats"):
+            if cmd in ("1", "dashboard", "dash", "status", "stats"):
                 if self.tui:
-                    self.tui.force_refresh()
+                    self.tui.set_active_tab("dashboard")
                 else:
                     info = self.orchestrator.last_info or {}
                     idx = self.orchestrator.last_index or {}
                     clog(f"Status: Tip={info.get('height', '-')} Peers={info.get('peers', '-')} Files={len(idx.get('files', {}))} Bytes={idx.get('bytes_used', 0)}", color=GREEN)
                 continue
 
-            if cmd in ("files", "list-files"):
-                self._print_files_table()
+            if cmd in ("2", "files", "list-files", "index"):
+                if self.tui:
+                    self.tui.set_active_tab("files")
+                else:
+                    self._print_files_table()
                 continue
 
-            if cmd in ("pool", "list", "posts"):
-                self._print_pool_table()
+            if cmd in ("3", "pool", "list", "posts"):
+                if self.tui:
+                    self.tui.set_active_tab("pool")
+                else:
+                    self._print_pool_table()
+                continue
+
+            if cmd in ("4", "threads", "thread"):
+                if self.tui:
+                    self.tui.set_active_tab("threads")
+                else:
+                    show_thread_report()
                 continue
 
             if cmd in ("reconnect", "retry"):
@@ -149,7 +163,7 @@ class ArchivistCLI:
                     clog("Reconnection failed.", color=RED, error=True)
                 continue
 
-            clog("Available commands: status | files | pool | reconnect | quit", color=YELLOW)
+            clog("Available commands: [1] dashboard | [2] files | [3] pool | [4] threads | reconnect | quit", color=YELLOW)
 
     # ---------- lifecycle ----------
     def start(self) -> None:

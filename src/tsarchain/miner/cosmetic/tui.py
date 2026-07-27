@@ -261,9 +261,9 @@ class MinerTUI:
         # 1. Header Panel
         if self.node_only:
             header_text = Text.from_markup(
-                f"[bold cyan]TsarChain Sovereign Full Node[/bold cyan]  |  "
-                f"Role: [bold blue]Relay & Mempool Node[/bold blue]  |  "
-                f"Mining Engine: [bold grey50]Disabled[/bold grey50]"
+                "[bold cyan]TsarChain Sovereign Full Node[/bold cyan]  |  "
+                "Role: [bold blue]Relay & Mempool Node[/bold blue]  |  "
+                "Mining Engine: [bold grey50]Disabled[/bold grey50]"
             )
             border_color = "dodger_blue1"
         else:
