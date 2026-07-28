@@ -15,6 +15,8 @@ from rich.align import Align
 from rich.prompt import Prompt
 from rich.console import Console
 
+from tsarchain.utils.thread_check import get_thread_monitor
+
 from tsarchain.utils import config as CFG
 
 # RGB custom helpers
@@ -342,8 +344,8 @@ def format_proof_epoch_countdown(height: Any) -> str:
     except Exception:
         return TEXT_SYNCING
 
-    epoch_blocks = max(1, int(getattr(CFG, "GRAFFITI_PROOF_EPOCH_BLOCKS", 100)))
-    block_time_sec = max(1, int(getattr(CFG, "TARGET_BLOCK_TIME_SEC", 30)))
+    epoch_blocks = CFG.GRAFFITI_PROOF_EPOCH_BLOCKS
+    block_time_sec = CFG.TARGET_BLOCK_TIME
     current_epoch = max(0, h // epoch_blocks)
     next_epoch_height = (current_epoch + 1) * epoch_blocks
     blocks_left = next_epoch_height - h
@@ -360,7 +362,6 @@ def format_proof_epoch_countdown(height: Any) -> str:
 
 
 def format_threads_table() -> Table:
-    from tsarchain.utils.thread_check import get_thread_monitor
     monitor = get_thread_monitor()
     threads = monitor.get_all_threads(include_stack=True)
     counts = monitor.get_thread_counts()
