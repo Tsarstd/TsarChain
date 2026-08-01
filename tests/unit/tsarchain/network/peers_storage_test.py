@@ -133,3 +133,29 @@ def test_save_peer_keys():
     with patch("tsarchain.network.peers_storage._store_record") as mock_store:
         peers_storage.save_peer_keys({"peer1": "key1", "peer2": 123})
         mock_store.assert_called_once_with("peer_keys", {"peer1": "key1", "peer2": "123"})
+
+def test_resolve_key_and_path(mock_cfg):
+    key, path = peers_storage._resolve_key_and_path("node_key")
+    assert key == "node_key"
+    assert path == "node_key.json"
+
+    key, path = peers_storage._resolve_key_and_path("node_key.json")
+    assert key == "node_key"
+    assert path == "node_key.json"
+
+    key, path = peers_storage._resolve_key_and_path("custom/path.json")
+    assert key == "custom/path.json"
+    assert path == "custom/path.json"
+
+def test_load_record_kv_enabled_auto_migration(mock_kv, mock_cfg):
+    mock_enabled, mock_get, mock_put = mock_kv
+    mock_enabled.return_value = True
+    mock_get.return_value = None  # Key not in KV store yet
+    
+    mock_data = {"id": "node123", "pubkey": "abc"}
+    with patch("builtins.open", mock_open(read_data=json.dumps(mock_data))):
+        result = peers_storage._load_record("node_key.json")
+        
+    assert result == mock_data
+    mock_put.assert_called_once_with("node_secrets", b"node_key", json.dumps(mock_data, separators=(',', ':')).encode("utf-8"))
+

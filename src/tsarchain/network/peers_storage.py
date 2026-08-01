@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
-import json, time
+import os
+import time
+import json
 from typing import Dict, Optional
 
 from ..utils import config as CFG
@@ -44,61 +46,71 @@ def load_peer_keys() -> Dict[str, str]:
 # =============================================================================
 
 
-def _load_record(name: str) -> Optional[Dict]:
-    if kv_enabled():
-        raw = get(KEYS_DB_NAME, name.encode("utf-8"))
-        if raw is not None:
-            try:
-                return json.loads(raw.decode("utf-8"))
-            except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                log.warning(f"Failed to decode KV record for {name}: {e}")
-                # Fallback to JSON file
-        return
-
-    # JSON fallback / legacy migration
+def _resolve_key_and_path(name_or_path: str) -> tuple[str, Optional[str]]:
     record_paths = {
         "node_key": CFG.NODE_KEY_PATH,
         "archivist_key": CFG.ARCHIVIST_KEY_PATH,
         "peer_keys": CFG.PEER_KEYS_PATH,
     }
-    
-    path = record_paths.get(name)
+    if name_or_path in record_paths:
+        return name_or_path, record_paths[name_or_path]
+
+    for key, path in record_paths.items():
+        if path and (name_or_path == path or os.path.normpath(name_or_path) == os.path.normpath(path)):
+            return key, path
+
+    return name_or_path, name_or_path
+
+
+def _load_record(name: str) -> Optional[Dict]:
+    db_key, path = _resolve_key_and_path(name)
+
+    if kv_enabled():
+        raw = get(KEYS_DB_NAME, db_key.encode("utf-8"))
+        if raw is not None:
+            try:
+                return json.loads(raw.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                log.warning(f"Failed to decode KV record for {db_key}: {e}")
+                # Fallback to JSON file if KV decode fails
+
+    # JSON fallback / legacy migration
     if path:
         try:
             with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 # Migrate to KV if enabled
                 if kv_enabled():
-                    _store_record(name, data)
+                    payload = json.dumps(data, separators=CFG.CANONICAL_SEP).encode("utf-8")
+                    put(KEYS_DB_NAME, db_key.encode("utf-8"), payload)
                 return data
         except (FileNotFoundError, json.JSONDecodeError) as e:
-            log.info(f"No JSON file found for {name}: {e}")
+            log.warning(f"No JSON file found for {name}: {e}")
     
     return None
 
 
 def _store_record(name: str, data: Dict) -> None:
+    db_key, path = _resolve_key_and_path(name)
     payload = json.dumps(data, separators=CFG.CANONICAL_SEP).encode("utf-8")
     
     # Store in KV (primary storage)
     if kv_enabled():
-        put(KEYS_DB_NAME, name.encode("utf-8"), payload)
+        put(KEYS_DB_NAME, db_key.encode("utf-8"), payload)
     else:
         log.debug("KV storage not enabled, using JSON fallback only")
     
     # JSON fallback for backward compatibility
-    record_paths = {
-        "node_key": CFG.NODE_KEY_PATH,
-        "archivist_key": CFG.ARCHIVIST_KEY_PATH,
-        "peer_keys": CFG.PEER_KEYS_PATH,
-    }
-    
-    path = record_paths.get(name)
     if path:
         try:
-            import os
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+            parent_dir = os.path.dirname(path)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
             with open(path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
+            try:
+                os.chmod(path, 0o600)
+            except OSError:
+                pass
         except (IOError, OSError):
-            log.exception("Failed to write JSON fallback")
+            log.exception(f"Failed to write JSON fallback for {name}")
