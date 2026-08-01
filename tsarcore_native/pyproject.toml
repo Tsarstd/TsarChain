@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "tsarcore_native"
-version = "0.2.3"
+version = "0.2.4"
 requires-python = ">=3.8"
 description = "Native acceleration for TsarChain (pyo3)"
 authors = [{ name = "Tsar Studio" }]

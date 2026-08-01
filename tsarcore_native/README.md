@@ -21,7 +21,7 @@ The core functionality of `tsarcore_native` is organized into the following Rust
 - **[graff_merkle.rs](src/graff_merkle.rs)**: Implements the single SHA-256 Merkle tree used for chunked "Graffiti" archives, supporting path generation and client-side inclusion proof validation.
 - **[mining.rs](src/mining.rs)**: A multi-threaded RandomX PoW mining orchestrator that checks block difficulty, tracks hashrate progress, and supports cooperative mining thread cancellation.
 - **[networking.rs](src/networking.rs)**: Implements the P2P encryption handshake (`SecureChannelNative`) using X25519 static/ephemeral secrets, Ed25519 peer validation, HKDF key derivation, and sliding-window AES-256-GCM epoch key rotation.
-- **[storage.rs](src/storage.rs)**: Features a dual-backend storage wrapper (`NativeStorage`) exposing high-performance memory-mapped LMDB (with thread-safe growable boundaries) and atomic fallback JSON files.
+- **[storage.rs](src/storage.rs)**: Features a dual-backend storage wrapper (`NativeStorage`) exposing high-performance memory-mapped LMDB (with thread-safe growable boundaries, smart drive auto-detection for HDD/SSD/NVMe, and drive-specific flag profiling) and atomic fallback JSON files.
 - **[txcodec.rs](src/txcodec.rs)**: Encodes and decodes consensus transaction byte payloads (varints, inputs, outputs, witness data) and generates BIP-143 transaction signatures and preimages.
 - **[utxo.rs](src/utxo.rs)**: Processes block transaction records to construct bulk UTXO set modifications (inserts and deletions of spent outputs), filtering out OP_RETURN data.
 - **[validation.rs](src/validation.rs)**: Enforces consensus rules over blocks and transactions, checking coinbase maturity constraints, transaction vsize/weight limits, signature verification, and input/output fees.
@@ -89,13 +89,14 @@ digest = tc.randomx_pow_hash(
     cache_entries=1,
 )
 
-# Storage (LMDB backend; set backend="json" for atomic JSON files)
+# Storage (LMDB backend; set backend="json" for atomic JSON files, optional drive_type override)
 store = tc.open_storage(
     "lmdb",
     "/tmp/tsar.db",
     map_size_init=4 * 1024 * 1024,
     map_size_max=64 * 1024 * 1024,
     pretty_json=True,
+    drive_type=None,  # Auto-detects HDD, SSD, or NVMe
 )
 store.put_json("utxo", b"\x01", '{"height": 1, "amount": 5000}')
 assert store.get_json("utxo", b"\x01")["height"] == 1
@@ -111,6 +112,7 @@ store.copy("/tmp/tsar.db.backup", compact=True)  # LMDB only
 
 ## Changelog
 
+- **0.2.4** - Smart Storage LMDB Engine: Added native drive type auto-detection (HDD, SSD, NVMe via Windows IOCTL / Linux sysfs) and environment override (`TSAR_STORAGE_DRIVE_TYPE`). Automatically applies optimized LMDB flags (e.g. `MDB_NOSYNC`, `MDB_WRITEMAP`, `MDB_MAPASYNC`, `MDB_NORDAHEAD`) per drive profile to prevent mechanical disk seek stalls and eliminate crashes on HDD/SSD storage nodes.
 - **0.2.3** - Added `generate_history_book` module exposing history pagination, direction formatting, and `draw_address_grid_data` for rendering visual Address Grids (P2WPKH Citizen Addresses & P2WSH Pool Addresses) in the History Book PDF generator.
 - **0.2.2** - Removed `graff_merkle_path_for_bytes` and Python fallback `get_final_bytes` bindings to fully rely on memory-mapped LMDB pointers (`get_final_bytes_range` & `get_final_merkle_path`). This guarantees zero-copy scale for massive chunks and resolves out-of-memory crashes on the Graffiti Archival nodes.
 - **0.2.1** - Native graffiti Merkle (single SHA-256) bindings added for root/path/verify/leaves; Python Merkle path removed in favor of native; per-call debug/warning logs added to help trace Merkle operations.

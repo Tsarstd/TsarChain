@@ -3,6 +3,7 @@
 # Part of TsarChain — see LICENSE
 # Refs: see REFERENCES.md
 
+import os
 import threading
 from contextlib import contextmanager
 from typing import Iterator, Tuple, Optional
@@ -30,14 +31,24 @@ def _init_native_store():
     with _init_lock:
         if _native_store is not None:
             return _native_store
+        
+        drive_override = os.getenv("TSAR_STORAGE_DRIVE_TYPE")
         _native_store = _native_open_storage(
             "lmdb",
             CFG.LMDB_DATA_FILE,
             map_size_init=int(CFG.LMDB_MAP_SIZE_INIT),
             map_size_max=int(CFG.LMDB_MAP_SIZE_MAX),
             pretty_json=False,
+            drive_type=drive_override,
         )
+        dt = getattr(_native_store, "drive_type", "unknown")
+        log.info(f"Native LMDB storage initialized at '{CFG.LMDB_DATA_FILE}' [Drive Profile: {dt.upper()}]")
     return _native_store
+
+def sync(force: bool = False) -> None:
+    store = _ensure_env()
+    if store is not None and hasattr(store, "sync"):
+        store.sync(force)
 
 def _ensure_env():
     if _native_store is None and kv_enabled():

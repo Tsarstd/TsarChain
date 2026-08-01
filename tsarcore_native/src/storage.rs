@@ -120,6 +120,261 @@ pub fn json_write_file(path: &str, data: &str, pretty: bool) -> PyResult<()> {
 }
 
 // ============================
+// Smart Drive Type Detection
+// ============================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DriveType {
+    Hdd,
+    Ssd,
+    Nvme,
+}
+
+impl DriveType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DriveType::Hdd => "hdd",
+            DriveType::Ssd => "ssd",
+            DriveType::Nvme => "nvme",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_lowercase().trim() {
+            "hdd" => Some(DriveType::Hdd),
+            "ssd" => Some(DriveType::Ssd),
+            "nvme" => Some(DriveType::Nvme),
+            _ => None,
+        }
+    }
+}
+
+pub fn detect_drive_type_from_path(path: &Path) -> DriveType {
+    // 1. Check environment variable override
+    if let Ok(env_val) = std::env::var("TSAR_STORAGE_DRIVE_TYPE") {
+        if let Some(dt) = DriveType::parse(&env_val) {
+            return dt;
+        }
+    }
+
+    // 2. Perform OS-specific drive detection
+    if let Some(dt) = detect_os_drive_type(path) {
+        return dt;
+    }
+
+    // 3. Fallback to SSD profile (safe default)
+    DriveType::Ssd
+}
+
+#[cfg(target_os = "windows")]
+fn detect_os_drive_type(path: &Path) -> Option<DriveType> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    let abs_path = path.canonicalize().ok().unwrap_or_else(|| path.to_path_buf());
+    let path_str = abs_path.to_str()?;
+
+    let drive_letter = if path_str.len() >= 2 && &path_str[1..2] == ":" {
+        &path_str[0..2]
+    } else if path_str.starts_with(r"\\?\") && path_str.len() >= 6 && &path_str[5..6] == ":" {
+        &path_str[4..6]
+    } else {
+        return None;
+    };
+
+    let device_path = format!(r"\\.\{}", drive_letter);
+    let wide_path: Vec<u16> = OsStr::new(&device_path)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    unsafe {
+        let handle = ffi_win::CreateFileW(
+            wide_path.as_ptr(),
+            0,
+            ffi_win::FILE_SHARE_READ | ffi_win::FILE_SHARE_WRITE,
+            std::ptr::null_mut(),
+            ffi_win::OPEN_EXISTING,
+            0,
+            std::ptr::null_mut(),
+        );
+
+        if handle == ffi_win::INVALID_HANDLE_VALUE {
+            return None;
+        }
+
+        struct HandleGuard(ffi_win::HANDLE);
+        impl Drop for HandleGuard {
+            fn drop(&mut self) {
+                unsafe { ffi_win::CloseHandle(self.0); }
+            }
+        }
+        let _guard = HandleGuard(handle);
+
+        let mut query = ffi_win::STORAGE_PROPERTY_QUERY {
+            PropertyId: 7, // StorageDeviceSeekPenaltyProperty
+            QueryType: 0,  // PropertyStandardQuery
+            AdditionalParameters: [0; 1],
+        };
+        let mut seek_desc = ffi_win::DEVICE_SEEK_PENALTY_DESCRIPTOR {
+            Version: 0,
+            Size: 0,
+            IncurrsSeekPenalty: 0,
+        };
+        let mut bytes_returned: u32 = 0;
+
+        let res = ffi_win::DeviceIoControl(
+            handle,
+            ffi_win::IOCTL_STORAGE_QUERY_PROPERTY,
+            &mut query as *mut _ as *mut _,
+            std::mem::size_of::<ffi_win::STORAGE_PROPERTY_QUERY>() as u32,
+            &mut seek_desc as *mut _ as *mut _,
+            std::mem::size_of::<ffi_win::DEVICE_SEEK_PENALTY_DESCRIPTOR>() as u32,
+            &mut bytes_returned,
+            std::ptr::null_mut(),
+        );
+
+        if res != 0 && seek_desc.IncurrsSeekPenalty != 0 {
+            return Some(DriveType::Hdd);
+        }
+
+        let mut query_dev = ffi_win::STORAGE_PROPERTY_QUERY {
+            PropertyId: 0, // StorageDeviceProperty
+            QueryType: 0,
+            AdditionalParameters: [0; 1],
+        };
+        let mut dev_desc = ffi_win::STORAGE_DEVICE_DESCRIPTOR::default();
+        let res_dev = ffi_win::DeviceIoControl(
+            handle,
+            ffi_win::IOCTL_STORAGE_QUERY_PROPERTY,
+            &mut query_dev as *mut _ as *mut _,
+            std::mem::size_of::<ffi_win::STORAGE_PROPERTY_QUERY>() as u32,
+            &mut dev_desc as *mut _ as *mut _,
+            std::mem::size_of::<ffi_win::STORAGE_DEVICE_DESCRIPTOR>() as u32,
+            &mut bytes_returned,
+            std::ptr::null_mut(),
+        );
+
+        if res_dev != 0 && dev_desc.BusType == 17 { // BusTypeNvme = 17 (0x11)
+            return Some(DriveType::Nvme);
+        }
+
+        Some(DriveType::Ssd)
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[allow(non_snake_case, dead_code)]
+mod ffi_win {
+    pub type HANDLE = *mut std::ffi::c_void;
+    pub type BOOL = i32;
+    pub type DWORD = u32;
+
+    pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
+    pub const FILE_SHARE_READ: DWORD = 0x00000001;
+    pub const FILE_SHARE_WRITE: DWORD = 0x00000002;
+    pub const OPEN_EXISTING: DWORD = 3;
+    pub const IOCTL_STORAGE_QUERY_PROPERTY: DWORD = 0x002D1400;
+
+    #[repr(C)]
+    pub struct STORAGE_PROPERTY_QUERY {
+        pub PropertyId: i32,
+        pub QueryType: i32,
+        pub AdditionalParameters: [u8; 1],
+    }
+
+    #[repr(C)]
+    pub struct DEVICE_SEEK_PENALTY_DESCRIPTOR {
+        pub Version: u32,
+        pub Size: u32,
+        pub IncurrsSeekPenalty: u8,
+    }
+
+    #[repr(C)]
+    pub struct STORAGE_DEVICE_DESCRIPTOR {
+        pub Version: u32,
+        pub Size: u32,
+        pub DeviceType: u8,
+        pub DeviceTypeModifier: u8,
+        pub RemovableMedia: u8,
+        pub CommandQueueing: u8,
+        pub VendorIdOffset: u32,
+        pub ProductIdOffset: u32,
+        pub ProductRevisionOffset: u32,
+        pub SerialNumberOffset: u32,
+        pub BusType: i32,
+        pub RawPropertiesLength: u32,
+        pub RawDeviceProperties: [u8; 1],
+    }
+
+    impl Default for STORAGE_DEVICE_DESCRIPTOR {
+        fn default() -> Self {
+            unsafe { std::mem::zeroed() }
+        }
+    }
+
+    extern "system" {
+        pub fn CreateFileW(
+            lpFileName: *const u16,
+            dwDesiredAccess: DWORD,
+            dwShareMode: DWORD,
+            lpSecurityAttributes: *mut std::ffi::c_void,
+            dwCreationDisposition: DWORD,
+            dwFlagsAndAttributes: DWORD,
+            hTemplateFile: HANDLE,
+        ) -> HANDLE;
+
+        pub fn DeviceIoControl(
+            hDevice: HANDLE,
+            dwIoControlCode: DWORD,
+            lpInBuffer: *mut std::ffi::c_void,
+            nInBufferSize: DWORD,
+            lpOutBuffer: *mut std::ffi::c_void,
+            nOutBufferSize: DWORD,
+            lpBytesReturned: *mut DWORD,
+            lpOverlapped: *mut std::ffi::c_void,
+        ) -> BOOL;
+
+        pub fn CloseHandle(hObject: HANDLE) -> BOOL;
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn detect_os_drive_type(path: &Path) -> Option<DriveType> {
+    let canonical = path.canonicalize().ok().unwrap_or_else(|| path.to_path_buf());
+    let path_str = canonical.to_str()?;
+
+    if path_str.contains("nvme") {
+        return Some(DriveType::Nvme);
+    }
+
+    if let Ok(entries) = fs::read_dir("/sys/block") {
+        for entry in entries.flatten() {
+            let dev_name = entry.file_name();
+            let dev_str = dev_name.to_string_lossy();
+            if path_str.contains(dev_str.as_ref()) {
+                let rot_path = entry.path().join("queue/rotational");
+                if let Ok(val) = fs::read_to_string(&rot_path) {
+                    if val.trim() == "1" {
+                        return Some(DriveType::Hdd);
+                    } else if dev_str.starts_with("nvme") {
+                        return Some(DriveType::Nvme);
+                    } else {
+                        return Some(DriveType::Ssd);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+fn detect_os_drive_type(_path: &Path) -> Option<DriveType> {
+    None
+}
+
+// ============================
 // LMDB backend
 // ============================
 
@@ -127,10 +382,12 @@ pub fn json_write_file(path: &str, data: &str, pretty: bool) -> PyResult<()> {
 struct LmdbBackend {
     env: Arc<Environment>,
     map_size_max: usize,
+    #[allow(dead_code)]
+    drive_type: DriveType,
 }
 
 impl LmdbBackend {
-    fn new(path: &Path, map_size_init: usize, map_size_max: usize) -> PyResult<Self> {
+    fn new(path: &Path, map_size_init: usize, map_size_max: usize, drive_type: DriveType) -> PyResult<Self> {
         if map_size_init == 0 {
             return Err(PyValueError::new_err("map_size_init must be > 0"));
         }
@@ -142,11 +399,43 @@ impl LmdbBackend {
         let mut builder = Environment::new();
         builder.set_max_dbs(DEFAULT_MAX_DBS);
         let _ = builder.set_map_size(map_size_init);
+
+        match drive_type {
+            DriveType::Hdd => {
+                let flags = lmdb::EnvironmentFlags::NO_SYNC
+                    | lmdb::EnvironmentFlags::WRITE_MAP
+                    | lmdb::EnvironmentFlags::MAP_ASYNC
+                    | lmdb::EnvironmentFlags::NO_READAHEAD
+                    | lmdb::EnvironmentFlags::NO_MEM_INIT;
+                builder.set_flags(flags);
+                log_warning(&format!(
+                    "[lmdb] HDD profile applied for path='{}': NOSYNC | WRITEMAP | MAPASYNC | NORDAHEAD | NOMEMINIT",
+                    path.display()
+                ));
+            }
+            DriveType::Ssd => {
+                let flags = lmdb::EnvironmentFlags::NO_META_SYNC
+                    | lmdb::EnvironmentFlags::NO_MEM_INIT;
+                builder.set_flags(flags);
+                log_warning(&format!(
+                    "[lmdb] SSD profile applied for path='{}': NOMETASYNC | NOMEMINIT",
+                    path.display()
+                ));
+            }
+            DriveType::Nvme => {
+                log_warning(&format!(
+                    "[lmdb] NVME profile applied for path='{}': standard sync",
+                    path.display()
+                ));
+            }
+        }
+
         let env = builder.open(path).map_err(|e| map_err("lmdb open", e))?;
 
         Ok(Self {
             env: Arc::new(env),
             map_size_max,
+            drive_type,
         })
     }
 
@@ -676,6 +965,7 @@ pub struct NativeStorage {
     backend: Backend,
     backend_name: String,
     base_path: String,
+    detected_drive_type: String,
 }
 
 // Backend components are thread-safe (LMDB env is Send + Sync, JSON guarded by Mutex),
@@ -686,7 +976,7 @@ unsafe impl Send for NativeStorage {}
 impl NativeStorage {
     #[new]
     #[pyo3(
-        signature = (backend, path, map_size_init=None, map_size_max=None, pretty_json=true)
+        signature = (backend, path, map_size_init=None, map_size_max=None, pretty_json=true, drive_type=None)
     )]
     fn new(
         backend: &str,
@@ -694,6 +984,7 @@ impl NativeStorage {
         map_size_init: Option<usize>,
         map_size_max: Option<usize>,
         pretty_json: bool,
+        drive_type: Option<&str>,
     ) -> PyResult<Self> {
         let backend_norm = backend.to_lowercase();
         let path_buf = PathBuf::from(path);
@@ -702,16 +993,22 @@ impl NativeStorage {
             .map(|s| s.to_string())
             .unwrap_or_else(|| path.to_string());
 
+        let dt = match drive_type {
+            Some(dt_str) => DriveType::parse(dt_str).unwrap_or_else(|| detect_drive_type_from_path(&path_buf)),
+            None => detect_drive_type_from_path(&path_buf),
+        };
+
         match backend_norm.as_str() {
             "lmdb" => {
                 let init = map_size_init.unwrap_or(DEFAULT_LMDB_MAP_INIT);
                 let default_max = usize::try_from(DEFAULT_LMDB_MAP_MAX).unwrap_or(usize::MAX);
                 let max = map_size_max.unwrap_or(default_max);
-                let lmdb = LmdbBackend::new(&path_buf, init, max)?;
+                let lmdb = LmdbBackend::new(&path_buf, init, max, dt)?;
                 Ok(Self {
                     backend: Backend::Lmdb(lmdb),
                     backend_name: "lmdb".to_string(),
                     base_path,
+                    detected_drive_type: dt.as_str().to_string(),
                 })
             }
             "json" => {
@@ -720,6 +1017,7 @@ impl NativeStorage {
                     backend: Backend::Json(json),
                     backend_name: "json".to_string(),
                     base_path,
+                    detected_drive_type: dt.as_str().to_string(),
                 })
             }
             _ => Err(PyValueError::new_err(
@@ -736,6 +1034,18 @@ impl NativeStorage {
     #[getter]
     pub fn path(&self) -> String {
         self.base_path.clone()
+    }
+
+    #[getter]
+    pub fn drive_type(&self) -> String {
+        self.detected_drive_type.clone()
+    }
+
+    pub fn sync(&self, force: bool) -> PyResult<()> {
+        match &self.backend {
+            Backend::Lmdb(b) => b.env.sync(force).map_err(|e| map_err("lmdb sync", e)),
+            Backend::Json(_) => Ok(()),
+        }
     }
 
     pub fn put_bytes(&self, db: &str, key: &[u8], value: &[u8]) -> PyResult<()> {
@@ -971,13 +1281,22 @@ impl NativeStorage {
 }
 
 #[pyfunction]
-#[pyo3(signature = (backend, path, map_size_init=None, map_size_max=None, pretty_json=true))]
+#[pyo3(signature = (backend, path, map_size_init=None, map_size_max=None, pretty_json=true, drive_type=None))]
 pub fn open_storage(
     backend: &str,
     path: &str,
     map_size_init: Option<usize>,
     map_size_max: Option<usize>,
     pretty_json: bool,
+    drive_type: Option<&str>,
 ) -> PyResult<NativeStorage> {
-    NativeStorage::new(backend, path, map_size_init, map_size_max, pretty_json)
+    NativeStorage::new(backend, path, map_size_init, map_size_max, pretty_json, drive_type)
 }
+
+#[pyfunction]
+pub fn detect_drive_type(path: &str) -> PyResult<String> {
+    let p = Path::new(path);
+    let dt = detect_drive_type_from_path(p);
+    Ok(dt.as_str().to_string())
+}
+

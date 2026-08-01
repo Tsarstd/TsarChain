@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain - see LICENSE
 
+import os
 import pytest
 from unittest.mock import MagicMock, patch
 from tsarchain.storage import kv
@@ -147,3 +148,27 @@ def test_batch_enabled():
             (b"key1", b"val1"),
             (b"key2", None)
         ])
+
+def test_init_native_store_drive_type_override():
+    mock_store = MagicMock()
+    mock_store.drive_type = "hdd"
+    with patch("tsarchain.storage.kv.kv_enabled", return_value=True), \
+         patch.dict(os.environ, {"TSAR_STORAGE_DRIVE_TYPE": "hdd"}), \
+         patch("tsarchain.storage.kv._native_open_storage", return_value=mock_store) as mock_open:
+        
+        store = _init_native_store()
+        assert store is mock_store
+        mock_open.assert_called_once()
+        assert mock_open.call_args[1].get("drive_type") == "hdd"
+
+def test_sync():
+    # Test sync when disabled
+    with patch("tsarchain.storage.kv._ensure_env", return_value=None):
+        kv.sync()
+
+    # Test sync when enabled
+    mock_store = MagicMock()
+    with patch("tsarchain.storage.kv._ensure_env", return_value=mock_store):
+        kv.sync(force=True)
+        mock_store.sync.assert_called_once_with(True)
+

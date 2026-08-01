@@ -47,7 +47,7 @@ fn test_json_backend() {
     let path_str = dir.path().to_str().unwrap();
 
     Python::attach(|py| {
-        let storage = open_storage("json", path_str, None, None, true).unwrap();
+        let storage = open_storage("json", path_str, None, None, true, None).unwrap();
         assert_eq!(storage.backend(), "json");
 
         let db = "testdb";
@@ -113,7 +113,7 @@ fn test_lmdb_backend() {
 
     Python::attach(|py| {
         // Init LMDB with small max size to test growth later
-        let storage = open_storage("lmdb", path_str, Some(1024 * 1024), Some(4 * 1024 * 1024), false).unwrap();
+        let storage = open_storage("lmdb", path_str, Some(1024 * 1024), Some(4 * 1024 * 1024), false, None).unwrap();
         assert_eq!(storage.backend(), "lmdb");
 
         let db = "testdb_lmdb";
@@ -198,7 +198,7 @@ fn test_lmdb_map_full_growth() {
         // Init LMDB with VERY small max size so it hits MapFull instantly on big inserts
         let init_size = 1024 * 1024; // 1MB
         let max_size = 16 * 1024 * 1024; // 16MB
-        let storage = open_storage("lmdb", path_str, Some(init_size), Some(max_size), false).unwrap();
+        let storage = open_storage("lmdb", path_str, Some(init_size), Some(max_size), false, None).unwrap();
         
         let db = "grow_db";
         let medium_val = vec![0u8; 800 * 1024]; // 800 KB
@@ -229,7 +229,7 @@ fn test_lmdb_merkle_path() {
     let path_str = dir.path().to_str().unwrap();
 
     Python::attach(|py| {
-        let storage = open_storage("lmdb", path_str, Some(1024 * 1024), Some(4 * 1024 * 1024), false).unwrap();
+        let storage = open_storage("lmdb", path_str, Some(1024 * 1024), Some(4 * 1024 * 1024), false, None).unwrap();
         
         let db = "testdb_merkle";
         let key = b"my_key";
@@ -249,3 +249,41 @@ fn test_lmdb_merkle_path() {
         assert!(side == "L" || side == "R");
     });
 }
+
+#[test]
+fn test_drive_detection_and_profiles() {
+    init_python();
+    let dir = tempdir().unwrap();
+    let path_str = dir.path().to_str().unwrap();
+
+    // Test detect_drive_type function
+    let dt = tsarcore_native::storage::detect_drive_type(path_str).unwrap();
+    assert!(dt == "hdd" || dt == "ssd" || dt == "nvme");
+
+    Python::attach(|py| {
+        // Test explicit HDD profile
+        let storage_hdd = open_storage("lmdb", path_str, Some(1024 * 1024), Some(4 * 1024 * 1024), false, Some("hdd")).unwrap();
+        assert_eq!(storage_hdd.drive_type(), "hdd");
+        storage_hdd.put_bytes("test_db", b"key_hdd", b"val_hdd").unwrap();
+        let val_hdd = storage_hdd.get_bytes(py, "test_db", b"key_hdd").unwrap().unwrap();
+        assert_eq!(val_hdd.as_bytes(), b"val_hdd");
+        storage_hdd.sync(true).unwrap();
+
+        // Test explicit SSD profile
+        let dir_ssd = tempdir().unwrap();
+        let storage_ssd = open_storage("lmdb", dir_ssd.path().to_str().unwrap(), None, None, false, Some("ssd")).unwrap();
+        assert_eq!(storage_ssd.drive_type(), "ssd");
+        storage_ssd.put_bytes("test_db", b"key_ssd", b"val_ssd").unwrap();
+        let val_ssd = storage_ssd.get_bytes(py, "test_db", b"key_ssd").unwrap().unwrap();
+        assert_eq!(val_ssd.as_bytes(), b"val_ssd");
+
+        // Test explicit NVMe profile
+        let dir_nvme = tempdir().unwrap();
+        let storage_nvme = open_storage("lmdb", dir_nvme.path().to_str().unwrap(), None, None, false, Some("nvme")).unwrap();
+        assert_eq!(storage_nvme.drive_type(), "nvme");
+        storage_nvme.put_bytes("test_db", b"key_nvme", b"val_nvme").unwrap();
+        let val_nvme = storage_nvme.get_bytes(py, "test_db", b"key_nvme").unwrap().unwrap();
+        assert_eq!(val_nvme.as_bytes(), b"val_nvme");
+    });
+}
+

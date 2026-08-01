@@ -53,13 +53,17 @@ def _open_store():
                 _native_warned = True
             return None
         try:
+            drive_override = os.getenv("TSAR_STORAGE_DRIVE_TYPE")
             _store = _native_open_storage(
                 "lmdb",
                 (CFG.WEB_DATABASE_PATH),
                 map_size_init=int(CFG.LMDB_WEB_SIZE_INIT),
                 map_size_max=int(CFG.LMDB_WEB_SIZE_MAX),
                 pretty_json=False,
+                drive_type=drive_override,
             )
+            dt = getattr(_store, "drive_type", "unknown")
+            log.info("[webdb] Web cache LMDB initialized at '%s' [Drive Profile: %s]", CFG.WEB_DATABASE_PATH, dt.upper())
         except Exception as exc:
             log.warning("[webdb] lmdb disabled: %s", exc)
             _store = None

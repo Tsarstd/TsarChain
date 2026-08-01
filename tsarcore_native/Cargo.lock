@@ -2021,7 +2021,7 @@ dependencies = [
 
 [[package]]
 name = "tsarcore_native"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "aes-gcm",
  "ahash 0.8.12",

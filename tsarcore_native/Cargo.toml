@@ -1,6 +1,6 @@
 [package]
 name = "tsarcore_native"
-version = "0.2.3"
+version = "0.2.4"
 rust-version = "1.94.0"
 edition = "2021"
 description = "Native accel for TsarChain"

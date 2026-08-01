@@ -229,13 +229,18 @@ class ArchivistDatabase:
                 pass
         if max_size > 0 and max_size < init_size:
             max_size = init_size
-        return _native_open_storage(
+        drive_override = os.getenv("TSAR_STORAGE_DRIVE_TYPE")
+        store = _native_open_storage(
             "lmdb",
             path,
             map_size_init=int(init_size),
             map_size_max=int(max_size),
             pretty_json=False,
+            drive_type=drive_override,
         )
+        dt = getattr(store, "drive_type", "unknown")
+        log.info(f"Archivist LMDB storage initialized at '{path}' [Drive Profile: {dt.upper()}]")
+        return store
 
 
     def _incoming_dir(self) -> str:
