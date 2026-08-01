@@ -323,6 +323,7 @@ class SimpleMiner:
                 miner_address=self.address,
             )
             self.network = Network(blockchain=self.blockchain)
+            self.network.start()
             peer_count = _register_bootstrap_peers(self.network)
             clog(f"Node started with {peer_count} bootstrap peers")
             return True
@@ -574,6 +575,7 @@ class NodeRunner:
             clog(f"Local chain height: {self._last_chain_height}")
             
             self.network = Network(blockchain=self.blockchain)
+            self.network.start()
             peer_count = _register_bootstrap_peers(self.network)
             clog(f"Node online on port {self.network.port}, bootstrap peers: {peer_count}")
 

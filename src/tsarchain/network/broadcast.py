@@ -16,7 +16,6 @@ from .cast.chain_utils import ChainUtilsHandler
 from .cast.mempool_sync import MempoolSyncHandler
 
 from ..storage.utxo import UTXODB
-from ..utils import config as CFG
 from ..mempool.pool import TxPool
 from .dandelion_pp import DandelionPP
 from ..consensus.blockchain import Blockchain
@@ -68,6 +67,7 @@ class Broadcast:
         self._last_mempool_seq: Dict[Tuple[str, int], int] = {}
         self._utxo_last_flush_height = -1
         self.dandelion = DandelionPP(self)
+        self._gossip_conn_cache: Dict = {}
 
     def shutdown(self):
         if hasattr(self, "_gossip_conn_cache"):

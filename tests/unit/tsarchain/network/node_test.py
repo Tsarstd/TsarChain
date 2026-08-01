@@ -64,6 +64,7 @@ def test_network_init_success(mock_cfg, mock_socket, mock_broadcast, mock_deps):
     Network.active_ports.clear()
     
     net = Network()
+    net.start()
     
     assert net.port == 8000
     assert net.port in Network.active_ports
@@ -119,11 +120,13 @@ def test_network_init_prefetch_exception(mock_cfg, mock_socket, mock_broadcast, 
     
     # Shouldn't raise
     net = Network()
+    net.start()
     assert net.port == 8000
 
 def test_network_shutdown(mock_cfg, mock_socket, mock_broadcast, mock_deps):
     Network.active_ports.clear()
     net = Network()
+    net.start()
     
     mock_sock = MagicMock()
     net._server_sock = mock_sock

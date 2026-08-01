@@ -15,7 +15,6 @@ from .....utils.helpers import spkhex_to_address
 from .....utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.rpc.user_rpc.category.explorer")
 
-
 @benchmark(label="GET_BALANCES", threshold_ms=5.0)
 def get_balances(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs):
@@ -94,7 +93,7 @@ def get_network_info(self, message, pow_obj, base_identity, *,
     )
     if not ok:
         return pow_resp
-    
+
     snap = self.broadcast.blockchain.chain_storage._read_snapshot_state()
     overlay_realtime_mempool_stats(snap, self)
     with self.lock:

@@ -19,10 +19,11 @@ from .rpc_helper.history import HistoryHandler
 from .rpc_helper.explorer import ExplorerHandler
 
 from .node_logic import (
+    sync,
+    peers,
     discovery,
     chat_state,
     rpc_client,
-    sync, peers,
     server_node,
     storage_registry
 )
@@ -74,63 +75,83 @@ class Network(NetworkProxy):
 
     def __init__(self, blockchain=None):
         self.lock = threading.RLock()
+        self._init_port()
+        self._init_identity_and_broadcast(blockchain)
+        self._init_state_variables()
+        self._init_bootstrap_peers()
+        self._init_threads_and_services()
 
+    def _init_port(self) -> None:
         self.port = self._find_available_port()
         if self.port is None:
             raise RuntimeError("[Network] No available ports. Cannot join network.")
         with Network._instance_lock:
             Network.active_ports.add(self.port)
 
-        self.broadcast = Broadcast(blockchain=blockchain)
-        self.broadcast.port = self.port
-        self.broadcast.network = self
+    def _init_identity_and_broadcast(self, blockchain=None) -> None:
         self.node_id, self.pubkey, self.privkey = load_or_create_keypair_at(CFG.NODE_KEY_PATH)
-        
         self.node_ctx = {
             "net_id": CFG.DEFAULT_NET_ID,
             "node_id": self.node_id,
             "pubkey": self.pubkey,
             "privkey": self.privkey,
         }
-        
-        storage_registry.init_storage_registry(self)
-        self.peer_pubkeys: dict[str, str] = {}
-        self.broadcast._encode = lambda inner: build_envelope(inner, self.node_ctx, extra={"pubkey": self.pubkey})
+        self.peer_pubkeys: dict[str, str] = load_peer_keys()
         self._peer_keys_lock = getattr(self, "_peer_keys_lock", None)
         if self._peer_keys_lock is None:
             self._peer_keys_lock = threading.RLock()
-        
+
+        self.broadcast = Broadcast(blockchain=blockchain)
+        self.broadcast.port = self.port
+        self.broadcast.network = self
+        self.broadcast.node_id = self.node_id
+        self.broadcast.pubkey = self.pubkey
+        self.broadcast.privkey = self.privkey
+        self.broadcast.peer_pubkeys = self.peer_pubkeys
+        self.broadcast._encode = lambda inner: build_envelope(inner, self.node_ctx, extra={"pubkey": self.pubkey})
+
+        storage_registry.init_storage_registry(self)
+        chat_state.init_chat_state(self)
+
+    def _init_state_variables(self) -> None:
         self.peers: Set[Tuple[str, int]] = set()
         self.inbound_peers: Set[Tuple[str, int]] = set()
         self.outbound_peers: Set[Tuple[str, int]] = set()
         self.peer_scores: Dict[Tuple[str, int], int] = {}
         self._inbound_ips: Dict[str, int] = {}
-        
+
         self._peer_last_sync: Dict[Tuple[str, int], float] = {}
         self._peer_last_mempool_sync: Dict[Tuple[str, int], float] = {}
         self._peer_best_height: Dict[Tuple[str, int], int] = {}
         self._peer_last_dial: Dict[Tuple[str, int], float] = {}
-        
+
         self._full_sync_served_at: Dict[str, float] = {}
         self._full_sync_backoff: Dict[Tuple[str, int], float] = {}
         self._full_sync_last_request: Dict[Tuple[str, int], float] = {}
-        
+
         self._last_headers_locator: Dict[Tuple[str, int], List[str]] = {}
         self._snapshot_unreachable: Set[Tuple[str, int]] = set()
-        
+
         self._rpc_backoff: Dict[Tuple[str, int], float] = {}
         self._rpc_conn_cache: "OrderedDict[Tuple[str, int], dict]" = OrderedDict()
         self._rpc_conn_cache_lock = threading.RLock()
         self._rpc_prefetched: Set[Tuple[str, int]] = set()
-        
+
         self._recent_gap_requests: Dict[Tuple[str, int], float] = {}
         self._nonce_guard_table: Dict[str, Dict[str, float]] = {}
         self._nonce_guard_lock = threading.RLock()
-        
+
         self._sync_event = threading.Event()
         self._sync_fast_until = 0.0
         self.utxodb = self.broadcast.utxodb
 
+        # --- Log throttles to reduce console spam
+        self._last_p2p_log = 0.0
+        self._last_sync_log = 0.0
+        self._last_fullsync_log = 0.0
+        self._last_sync_count = -1
+
+    def _init_bootstrap_peers(self) -> None:
         configured_bootstrap = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
         bootstrap_nodes: Set[Tuple[str, int]] = set()
         for host, port in configured_bootstrap:
@@ -153,7 +174,7 @@ class Network(NetworkProxy):
         for peer in self.persistent_peers:
             self.peer_scores[peer] = CFG.PEER_SCORE_START
 
-        # --- graceful shutdown controls ---
+    def _init_threads_and_services(self) -> None:
         self._stop = threading.Event()
         self._server_sock = None
         self._threads: list[threading.Thread] = []
@@ -162,28 +183,14 @@ class Network(NetworkProxy):
         self.discovery_thread = threading.Thread(target=discovery.discover_peers_loop, args=(self,), daemon=True)
         self.sync_thread = threading.Thread(target=sync.sync_loop, args=(self,), daemon=True)
         self._threads = [self.server_thread, self.discovery_thread, self.sync_thread]
+
+    def start(self) -> None:
+        """Starts background network threads and performs initial RPC prefetching."""
         try:
             rpc_client.prefetch_rpc_connections(self)
         except Exception:
-            log.debug("[__init__] rpc prefetch skipped", exc_info=True)
+            log.debug("[start] rpc prefetch skipped", exc_info=True)
 
-        # --- Log throttles to reduce console spam
-        self._last_p2p_log = 0.0
-        self._last_sync_log = 0.0
-        self._last_fullsync_log = 0.0
-        self._last_sync_count = -1
-            
-        # ---- Persisted peer key pins (TOFU)
-        self.peer_pubkeys = load_peer_keys()
-
-        # --- inject identity into Broadcast (setelah load TOFU) ---
-        self.broadcast.node_id = self.node_id
-        self.broadcast.pubkey  = self.pubkey
-        self.broadcast.privkey = self.privkey
-        self.broadcast.peer_pubkeys = self.peer_pubkeys
-        
-        # ---- P2P Chat ----
-        chat_state.init_chat_state(self)
         self.server_thread.start()
         self.discovery_thread.start()
         self.sync_thread.start()
