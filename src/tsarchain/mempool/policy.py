@@ -112,7 +112,7 @@ class MempoolPolicyMixin:
         if current_version is not None and current_version == self._last_prune_version:
             return 0
         now = time.time()
-        if now - self._last_prune_reload_ts > max(self._auto_flush_interval, 5.0):
+        if now - self._last_prune_reload_ts > max(float(CFG.MEMPOOL_FLUSH_INTERVAL), 5.0):
             self.utxo._load()
         utxo_set = getattr(self.utxo, "utxos", {})
         tip = self.utxo._get_tip_height_from_state()

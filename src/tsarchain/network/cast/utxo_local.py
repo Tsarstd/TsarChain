@@ -7,6 +7,7 @@ import time
 from typing import Optional
 
 from .base import BroadcastHandlerProxy
+from ...utils import config as CFG
 
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.cast.utxo_local")
@@ -28,13 +29,13 @@ class UTXOLocalHandler(BroadcastHandlerProxy):
         if height is None:
             return
 
-        if self._utxo_last_flush_height < 0 or (height - self._utxo_last_flush_height) >= self._utxo_flush_interval:
+        if self._utxo_last_flush_height < 0 or (height - self._utxo_last_flush_height) >= CFG.UTXO_FLUSH_INTERVAL:
             if self.utxodb.flush():
                 self._utxo_last_flush_height = height
                 log.info(
                     "[maybe_flush_local_utxo] flushed at height=%s interval=%s",
                     height,
-                    self._utxo_flush_interval,
+                    CFG.UTXO_FLUSH_INTERVAL,
                 )
 
 

@@ -88,7 +88,6 @@ class UTXOTestClass:
         self._utxo_dirty = False
         self._utxo_last_flush_height = -1
         self._utxo_synced = False
-        self._utxo_flush_interval = 10
         # For genesis lock simulation
         self._utxo_last_flush_height = -1
 
@@ -234,7 +233,6 @@ class TestUTXOValidator:
                 self._utxo_dirty = False
                 self._utxo_last_flush_height = -1
                 self._utxo_synced = False
-                self._utxo_flush_interval = 10
 
         bc = MockBC()
         obj = UTXOValidator(bc)
@@ -269,7 +267,6 @@ class TestUTXOValidator:
                 self._utxo_synced = False
                 self._utxo_dirty = False
                 self._utxo_last_flush_height = -1
-                self._utxo_flush_interval = 10
         bc = MockBC()
         obj = UTXOValidator(bc)
         obj._sync_utxo_store()
@@ -294,7 +291,6 @@ class TestUTXOValidator:
                 self._utxo_synced = False
                 self._utxo_dirty = False
                 self._utxo_last_flush_height = -1
-                self._utxo_flush_interval = 10
         bc = MockBC()
         obj = UTXOValidator(bc)
         # Spy on flush
@@ -321,7 +317,6 @@ class TestUTXOValidator:
                 self._utxo_synced = False
                 self._utxo_dirty = False
                 self._utxo_last_flush_height = -1
-                self._utxo_flush_interval = 10
 
         bc = MockBC()
         obj = UTXOValidator(bc)
@@ -346,7 +341,6 @@ class TestUTXOValidator:
                 self._utxo_dirty = False  # not dirty
                 self._utxo_last_flush_height = -1
                 self._utxo_synced = True
-                self._utxo_flush_interval = 10
 
         bc = MockBC()
         obj = UTXOValidator(bc)
@@ -369,7 +363,6 @@ class TestUTXOValidator:
                 self._utxo_dirty = True
                 self._utxo_last_flush_height = 0  # interval=10, height=5, diff=5 <10
                 self._utxo_synced = True
-                self._utxo_flush_interval = 10
 
         bc = MockBC()
         obj = UTXOValidator(bc)
@@ -392,7 +385,6 @@ class TestUTXOValidator:
                 self._utxo_dirty = True
                 self._utxo_last_flush_height = 0  # diff=15 >=10
                 self._utxo_synced = True
-                self._utxo_flush_interval = 10
 
         bc = MockBC()
         obj = UTXOValidator(bc)
@@ -417,7 +409,6 @@ class TestUTXOValidator:
                 self._utxo_dirty = False  # not dirty but force
                 self._utxo_last_flush_height = 0
                 self._utxo_synced = True
-                self._utxo_flush_interval = 10
 
         bc = MockBC()
         obj = UTXOValidator(bc)
@@ -443,7 +434,6 @@ class TestUTXOValidator:
                 self._utxo_dirty = True
                 self._utxo_last_flush_height = -1
                 self._utxo_synced = True
-                self._utxo_flush_interval = 10
 
         bc = MockBC()
         obj = UTXOValidator(bc)

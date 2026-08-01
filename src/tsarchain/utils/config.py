@@ -88,6 +88,7 @@ import appdirs
 MODE   = "dev"  # default runtime profile, switch to "prod" for live nodes
 IS_DEV = (MODE.lower() == "dev")  # cached boolean to simplify dev/prod toggles
 
+
 # ---- APP METADATA ----
 APP_NAME        = "Kremlin"  # display name used for user data directories
 APP_AUTHOR      = "TsarStudio"  # vendor string passed into platform dir helpers
@@ -101,6 +102,7 @@ WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wal
 # Bump when changing on-disk JSON/LMDB structures (state, utxo, mempool, block cache)
 DATA_SCHEMA_VERSION = 1
 
+
 # ---- KV BACKEND ----
 KV_BACKEND         = "lmdb"  # active key-value backend implementation (lmdb & json)
 LMDB_DATA_FILE     = "data/node"  # main LMDB data file path
@@ -108,10 +110,12 @@ LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
 KV_ITER_CHUNK      = 512 # number of entries per chunk when iterating prefix scans (LMDB)
 
+
 # ---- WEB CACHE (LMDB) ----
 WEB_DATABASE_PATH  = "data/web"  # dedicated LMDB path for web cache
 LMDB_WEB_SIZE_INIT = 100 * 1024  # initial web LMDB size (100 KB)
 LMDB_WEB_SIZE_MAX  = 128 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
+
 
 # ---- SNAPSHOT SIGNING ----
 SNAPSHOT_REQUIRE_SIGNATURE = False  # demand signed snapshot manifests when True
@@ -119,8 +123,10 @@ SNAPSHOT_MANIFEST_URL      = ""  # optional URL supplying snapshot manifest
 SNAPSHOT_FILE_URL          = ""  # optional URL for snapshot binary
 SNAPSHOT_PUBKEY_HEX        = ""  # hex-encoded pubkey used to verify snapshot signature
 
+
 # ---- SNAPSHOT MODES ----
 SNAPSHOT_BOOTSTRAP_ENABLED = False  # allow nodes to bootstrap via snapshot downloads
+
 
 # ---- SNAPSHOT TRANSFER ----
 SNAPSHOT_HTTP_TIMEOUT    = 90  # HTTP timeout applied to snapshot downloads
@@ -129,6 +135,7 @@ SNAPSHOT_MIN_SIZE_BYTES  = 15 * 1024  # ignore snapshot files smaller than this
 SNAPSHOT_META_PATH       = "data/node/snapshot.meta.json"  # cached metadata file for snapshots
 SNAPSHOT_MAX_AGE_SECONDS = 12 * 3600  # maximum tolerated snapshot age (12h)
 SNAPSHOT_USER_AGENT      = "TsarChainSnapshot/1.0"  # UA string used when fetching snapshots
+
 
 # ---- SNAPSHOT BACKUP ----
 SNAPSHOT_BACKUP_DIR   = "data/snapshot"  # folder storing backup snapshots
@@ -149,19 +156,23 @@ CHAIN_JOURNAL_FILE      = os.path.join(os.path.dirname(BLOCK_FILE), "blockchain.
 CHAIN_JOURNAL_MAX_BYTES = 8 * 1024 * 1024
 STATE_HEIGHT_CACHE_TTL  = 2.0  # height for utxo validation & cache
 
+
 # ---- ARCHIVIST LMDB PATH ----
 ARCHIVIST_INDEX_DB_PATH = "data/archivist/storage/index_db"
 ARCHIVIST_FINAL_DB_PATH = "data/archivist/storage/final_db"
 ARCHIVIST_KEY_PATH      = "data/archivist/archivist_key.json" # primary node identity key storage path
+
 
 # ---- WALLET KEY FILES ----
 USER_KEY_PATH = "data_user/user_key.json"  # default user keypair location
 REGISTRY_PATH = "data_user/wallet_registry.json"  # registry of created wallets
 CHAT_STATE    = "data_user/chat_config.json"  # cached chat preferences and pointers
 
+
 # ---- CHAT KEY FILES ----
 CHAT_KEYS_DIR = "data_user/chat_keys"
 PREKEY_DIR    = "data_user/chat_prekeys"
+
 
 # ---- NODE KEYS FILES ----
 KEYS_DATA_DIR         = "data/keys"  # root folder for node-specific secrets
@@ -181,10 +192,12 @@ NETWORK_MAGIC  = b"TSARCHAIN"  # handshake magic to avoid cross-network chatter
 ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
 
+
 # ---- GENESIS SETTINGS ----
 GENESIS_HASH_HEX         = ""  # refference for Snapshot Verification Download
 GENESIS_BLOCK_ID_DEFAULT = "Every person who is born free has the same rights and dignity. (Munir Said Thalib - 2004-09-07)"  # default human-readable genesis identifier
 # ascii-only tribute list embedded within genesis metadata
+
 
 # ---- BLOCK ID LIST ----
 VOICE_SOVEREIGNTY_FIGURES = [
@@ -237,12 +250,14 @@ VOICE_SOVEREIGNTY_FIGURES = [
 # ---- UNIT CONSTANTS ----
 TSAR = 100_000_000  # atomic unit (8 decimals) equivalent to satoshis
 
+
 # ---- EMISSION SCHEDULE ----
 MAX_SUPPLY             = 252_500_000 * TSAR  # hard cap on total minted supply
 INITIAL_REWARD         = 250 * TSAR  # block subsidy at height zero
 BLOCKS_PER_HALVING     = 235_000  # interval before subsidy halves
 COINBASE_MATURITY      = 3  # required confirmations before spending coinbase
 MAX_COINBASE_EXTRADATA = 95  # soft limit for coinbase metadata bytes (based on GENESIS_BLOCK_ID_DEFAULT length)
+
 
 # ---- GENESIS BONUSES ----
 GENESIS_REWARD        = True  # well, this is actually pre-mine. use for developing purposes only
@@ -260,6 +275,7 @@ LWMA_WINDOW       = 75  # block count considered by LWMA difficulty algo
 FUTURE_DRIFT      = 600  # max seconds a block timestamp may lead wall clock
 MTP_WINDOWS       = 11  # number of blocks in median time past calculation
 
+
 # ---- PROOF OF WORK ----
 POW_ALGO                 = "randomx"
 RANDOMX_STATIC_KEY       = "tsar-dev-seed"
@@ -272,9 +288,11 @@ RANDOMX_SECURE_JIT       = True
 RANDOMX_HARD_AES         = True
 RANDOMX_CACHE_MAX        = 4      # max RandomX VM entries cached in rust binding
 
+
 # ---- CACHE LIMITS (LRU) ----
 HASH_CACHE_MAX          = 5000   # max entries hash cache (LRU)
 RPC_CONN_CACHE_MAX      = 32     # max cached RPC channels/sockets (LRU)
+
 
 # ---- BLOCK & TX LIMITS ----
 MAX_BLOCK_BYTES      = 1_200_000  # block size limit (approx 1.2 MB)
@@ -288,21 +306,25 @@ MIN_TX_WEIGHT        = 400     # minimum weight units per transaction
 MAX_TX_INPUTS        = 1_000   # hard cap on number of inputs per transaction
 MAX_TX_OUTPUTS       = 1_000   # hard cap on number of outputs per transaction
 
+
 # ---- FORK CHOICE ----
 ENABLE_CHAINWORK_RULE = True  # enforce cumulative chainwork comparison for forks
 ENABLE_REORG_LIMIT    = True  # enable reorg depth bounding
 REORG_LIMIT           = 1000  # maximum blocks allowed for automatic reorg
+
 
 # ---- DIFF CLAMP ----
 ENABLE_DIFF_CLAMP   = True  # clamp difficulty adjustments to damp volatility
 DIFF_CLAMP_MAX_UP   = 1.5  # ratio cap for upward difficulty moves
 DIFF_CLAMP_MAX_DOWN = 0.4  # ratio floor for downward difficulty moves
 
+
 # ---- EMERGENCY DIFFICULTY ----
 ENABLE_EDA          = True  # emergency difficulty adjustment switch (often off on prod)
 EDA_WINDOW          = 48  # number of blocks observed by EDA
 EDA_TRIGGER_RATIO   = 3.0  # slowdown ratio that triggers EDA easing
 EDA_EASE_MULTIPLIER = 2.0  # difficulty divisor applied when EDA fires
+
 
 # ---- MINING UTILS ----
 MINING_COOLDOWN_AFTER_BLOCK = 0.5
@@ -315,12 +337,14 @@ DEFAULT_FEE_RATE_SATVB = 34  # wallet default feerate in sat/vbyte
 MIN_FEE_RATE_SATVB     = 34  # allowed minimum feerate floor
 MAX_FEE_RATE_SATVB     = 10_000  # safety cap to avoid absurd fees
 
+
 # ---- WEIGHT ESTIMATES ----
 TX_BASE_VBYTES       = 10  # serialized tx overhead used for projections
 SEGWIT_INPUT_VBYTES  = 68  # assumed weight of a P2WPKH input
 SEGWIT_OUTPUT_VBYTES = 31  # assumed weight of a P2WPKH output
 DUST_THRESHOLD_SAT   = 294  # outputs smaller than this are treated as dust
 MAX_DECIMALS         = 8  # UI precision for wallet rendering
+
 
 # ---- MEMPOOL LIMITS ----
 MEMPOOL_MAX_SIZE        = 2 * 1024 * 1024  # maximum in-memory mempool footprint (bytes)
@@ -356,6 +380,7 @@ else:
 
 BOOTSTRAP_NODE           = BOOTSTRAP_NODES[0]  # preferred bootstrap peer entry
 
+
 # ---- SOCKET DEFAULTS ----
 BUFFER_SIZE              = 65536  # socket buffer size for P2P reads (~64 KB)
 HANDSHAKE_TIMEOUT        = 10  # seconds allowed to finish handshake
@@ -366,6 +391,7 @@ SYNC_TIMEOUT             = 15  # seconds before abandoning slow sync requests
 CONNECT_TIMEOUT          = 2  # TCP dial timeout per peer attempt
 BROADCAST_FAIL_THRESHOLD = 2  # consecutive failures before backing off broadcasting
 BROADCAST_FAIL_BACKOFF_S = 120  # seconds to wait when broadcast keeps failing
+
 
 # ---- ANTI-DOS LIMITS ----
 MAX_ADDRS_PER_REQ              = 15  # max addresses accepted per addr message
@@ -391,6 +417,7 @@ RPC_POW_DIFFICULTY_TX          = 16  # difficulty bits for TX submit / wallet-he
 RPC_POW_DIFFICULTY_READ        = 12  # difficulty bits for read-only RPC (info/history/graffiti)
 RPC_POW_DIFFICULTY_CHAT        = 14  # difficulty bits for chat presence/send/lookup
 
+
 # ---- FULL SYNC GUARD ----
 ENABLE_FULL_SYNC          = False
 FULL_SYNC_MAX_BLOCKS      = 5_000  # cap on blocks served per full-sync round
@@ -400,7 +427,13 @@ FULL_SYNC_BACKOFF_MAX     = 600  # maximum backoff delay between full sync retri
 MAX_MSG                   = 3 * 1024 * 1024  # upper bound for inbound message payloads
 MEMPOOL_SYNC_MIN_INTERVAL = 20  # seconds between mempool sync batches
 MEMPOOL_INLINE_MAX_TX     = 100  # tx count allowed inline before streaming
+
+
+# ---- FLUSH INTERVAL ----
 MEMPOOL_FLUSH_INTERVAL    = 5.0  # seconds between mempool flush to disk
+UTXO_FLUSH_INTERVAL       = 10  # block interval between UTXO set flushes
+CHAIN_FLUSH_INTERVAL      = 1  # blocks between lightweight chain persistence
+
 
 # ---- SYNC WINDOWS ----
 HEADERS_BATCH_MAX         = 4096  # number of headers requested per batch
@@ -408,9 +441,8 @@ HEADERS_LOCATOR_DEPTH     = 64  # entries kept in locator list when syncing
 HEADERS_FANOUT            = 32  # peers to fan out header requests to
 HEADERS_SYNC_MIN_INTERVAL = 1  # seconds between header sync loops
 BLOCK_DOWNLOAD_BATCH_MAX  = 2048  # concurrent block download cap
-CHAIN_FLUSH_INTERVAL      = 1  # blocks between lightweight chain persistence
 CHAIN_FORCE_FULL_FLUSH    = False  # force full persistence on every save when True
-UTXO_FLUSH_INTERVAL       = 10  # block interval between UTXO set flushes
+
 
 # ---- PEER QUOTAS ----
 MAX_OUTBOUND_PEERS         = 20  # outbound connection ceiling
@@ -434,15 +466,18 @@ P2P_SESSION_TTL_S    = 3600  # seconds before rekeying P2P session
 P2P_SESSION_MAX_MSG  = 10000  # message count before forcing new keys
 P2P_REKEY_EVERY_MSG  = 2000  # rotate AEAD keys automatically every N messages per direction
 
+
 # ---- DANDELION++ ----
 ENABLE_DANDELION_PP       = True  # enable Dandelion++ stem/fluff relay for transactions
 MIN_PEERS_FOR_DANDELION   = 5     # minimum peer count before enabling Dandelion++ path
 MIN_FLUFF_DELAY_S         = 1.5
 MAX_FLUFF_DELAY_S         = 6.0
 
+
 # ---- SYNC INFO CADENCE ----
 SYNC_INFO_MIN_INTERVAL           = 60  # seconds between sync-info gossip messages
 SYNC_INFO_MIN_INTERVAL_BOOTSTRAP = 300.0  # slower sync-info rate for bootstrap node
+
 
 # ---- REPLAY GUARDS ----
 ENVELOPE_REQUIRED    = True  # require message envelopes for replay protection
@@ -456,6 +491,7 @@ REPLAY_WINDOW_SEC    = 60  # Acceptable skew window for anti-replay stamps
 # ---- CHAT SPK ----
 CHAT_SPK              = b"TSAR-SPK|"
 
+
 # ---- CHAT PAYLOAD LIMITS ----
 CHAT_MAX_CT_BYTES     = 2 * 1024  # ciphertext size cap per chat message
 CHAT_TS_DRIFT_S       = 120  # tolerated timestamp drift for chat payloads
@@ -464,10 +500,12 @@ CHAT_MAILBOX_MAX      = 250  # messages kept per recipient mailbox
 CHAT_GLOBAL_QUEUE_MAX = 20_000  # max pending chat messages globally
 CHAT_PULL_MAX_ITEMS   = 50  # entries returned per chat pull request
 
+
 # ---- CHAT POLLING ----
 CHAT_POLL_INTERVAL_MS       = 3000  # default polling interval for chat client
 CHAT_POLL_INITIAL_MS        = 4000  # initial backoff before first poll
 CHAT_PUBLISH_MIN_INTERVAL_S = 10  # throttle between chat publish attempts
+
 
 # ---- CHAT RATE LIMITS ----
 CHAT_RL_ADDR_BURST   = 25  # per-address burst allowance for chat msgs
@@ -476,15 +514,18 @@ CHAT_RL_IP_BURST     = 50  # per-IP burst allowance for chat msgs
 CHAT_RL_IP_WINDOWS   = 10  # seconds over which per-IP burst is evaluated
 CHAT_BACKOFF_S       = 13  # seconds to wait after rate limiter trips
 
+
 # ---- PRESENCE RELAY ----
 PRESENCE_RL_ADDR_BURST   = 2  # per-address burst allowance for presence relays
 PRESENCE_RL_ADDR_WINDOWS = 10  # seconds window for presence addr limiter
 PRESENCE_MAX_HOPS        = 3  # maximum hops for relayed presence updates
 PRESENCE_TTL_S           = 3600  # lifespan of presence announcements
 
+
 # ---- ONION-LITE ROUTING ----
 CHAT_FORCE_RELAY = False  # force onion-lite multi-hop routing when true
 CHAT_NUM_HOPS    = 1  # number of relay hops used for onion-lite mode
+
 
 # ---- CHAT STORAGE ----
 CHAT_SESSION_DIR           = os.path.join("data_user", "chat_sessions")  # folder storing per-chat sessions
@@ -509,39 +550,47 @@ RPC_CONN_TTL_SEC     = 60.0  # seconds a cached channel/socket stays warm before
 RPC_PREFETCH_TIMEOUT = 1.5   # quick dial timeout for pre-connect
 MAX_HANDSHAKE_BYTES  = 16 * 1024  # cap size for initial handshake frames (HS1/HS2/envelope sniff)
 
+
 # ---- CLIENT THROTTLING ----
 NODE_CACHE_TTL          = 60    # seconds cached node metadata stays valid
 WALLET_RPC_MIN_INTERVAL = 0.45  # minimum spacing between wallet RPC calls
+
 
 # ---- PING LOOKUP THROTTLING ----
 PING_RL_IP_BURST    = 5 # ping requests allowed per IP before throttling
 PING_RL_IP_WINDOW_S = 10 # time window (seconds) evaluated by the limiter
 PING_RL_BACKOFF_S   = 30 # seconds to backoff when the limiter trips
 
+
 # ---- GET PEERS LOOKUP THROTTLING ----
 GET_PEERS_RL_IP_BURST    = 5 # get_peers requests allowed per IP before throttling
 GET_PEERS_RL_IP_WINDOW_S = 10 # time window (seconds) evaluated by the limiter
 GET_PEERS_RL_BACKOFF_S   = 30 # seconds to backoff when the limiter trips
+
 
 # ---- BALANCE LOOKUP THROTTLING ----
 BALANCE_RL_IP_BURST    = 15   # balance queries allowed per IP before throttling
 BALANCE_RL_IP_WINDOW_S = 4   # time window (seconds) evaluated by the limiter
 BALANCE_RL_BACKOFF_S   = 3   # seconds to backoff when the limiter trips
 
+
 # ---- INFO SNAPSHOT THROTTLING ----
 INFO_RL_IP_BURST    = 4   # GET_INFO / GET_NETWORK_INFO allowed per IP within window
 INFO_RL_IP_WINDOW_S = 8   # seconds evaluated by limiter
 INFO_RL_BACKOFF_S   = 5   # backoff applied when limit exceeded
+
 
 # ---- HISTORY / UTXO LOOKUP THROTTLING ----
 HISTORY_RL_IP_BURST    = 30   # GET_TX_HISTORY/DETAIL/GET_UTXOS burst allowance
 HISTORY_RL_IP_WINDOW_S = 60   # seconds window for history limiter
 HISTORY_RL_BACKOFF_S   = 3   # seconds to back off when tripped
 
+
 # ---- MEMPOOL INLINE THROTTLING ----
 MEMPOOL_INLINE_RL_BURST    = 15   # inline mempool dumps allowed before throttling
 MEMPOOL_INLINE_RL_WINDOW_S = 20  # seconds window to evaluate inline dump rate
 MEMPOOL_INLINE_RL_BACKOFF  = 10  # seconds to wait after hitting inline limiter
+
 
 # ---- CHAT REGISTER/PREKEY THROTTLING ----
 CHAT_REG_RL_IP_BURST       = 15   # chat register/prekey submissions allowed per IP
@@ -551,6 +600,7 @@ CHAT_REG_RL_ADDR_BURST     = 10   # chat register limiter per address
 CHAT_REG_RL_ADDR_WINDOW_S  = 30  # seconds window for chat register per-address limiter
 CHAT_REG_RL_ADDR_BACKOFF_S = 20  # cooldown after chat register per-address limiter trips
 
+
 # ---- CHAT LOOKUP THROTTLING ----
 CHAT_LOOKUP_RL_IP_BURST       = 20   # lookup pubkey chat per IP
 CHAT_LOOKUP_RL_IP_WINDOW_S    = 10   # jendela waktu limiter lookup pubkey
@@ -559,10 +609,12 @@ CHAT_LOOKUP_RL_ADDR_BURST     = 10   # limiter lookup pubkey per alamat
 CHAT_LOOKUP_RL_ADDR_WINDOW_S  = 10 # jendela waktu limiter per alamat
 CHAT_LOOKUP_RL_ADDR_BACKOFF_S = 8 # backoff setelah limiter per alamat kena
 
+
 # ---- USER RPC THROTTLING ----
 BLOCK_FETCH_RL_IP_BURST    = 20   # GET_BLOCK (hash/height) requests allowed per IP
 BLOCK_FETCH_RL_WINDOW_S    = 5   # seconds window for block fetch limiter
 BLOCK_FETCH_RL_BACKOFF_S   = 2   # backoff after block fetch limiter trips
+
 
 # ---- BLOCK RANGE (WEB) ----
 BLOCK_RANGE_RL_IP_BURST    = 50   # GET_BLOCK_RANGE (height) requests allowed per IP
@@ -591,6 +643,7 @@ CHAT_RELAY_RL_BACKOFF_S    = 4   # backoff when chat relay limiter trips
 CHAT_RELAY_MAX_HOPS        = 4   # maximum hops accepted in CHAT_RELAY route
 CHAT_RELAY_MAX_INNER_BYTES = 32 * 1024  # cap serialized inner payload to avoid abuse
 
+
 # ---- MINER RPC THROTTLING ----
 MINER_INFO_RL_IP_BURST     = 8   # GET_INFO / GET_BLOCK_HASH requests per IP
 MINER_INFO_RL_WINDOW_S     = 3   # seconds window for miner info limiter
@@ -616,10 +669,12 @@ MINER_MEMPOOL_RL_IP_BURST  = 6   # MEMPOOL sync requests per IP
 MINER_MEMPOOL_RL_WINDOW_S  = 10  # seconds window for mempool limiter
 MINER_MEMPOOL_RL_BACKOFF_S = 6   # backoff after mempool limiter trips
 
+
 # ---- STORAGE RPC THROTTLING ----
 STORAGE_RPC_RL_IP_BURST    = 30   # storage proof/payout submissions per IP
 STORAGE_RPC_RL_WINDOW_S    = 60  # seconds window for storage RPC limiter
 STORAGE_RPC_RL_BACKOFF_S   = 3  # backoff after storage RPC limiter trips
+
 
 # ---- STORAGE SERVER (ARCHIVIST) THROTTLING ----
 STOR_INIT_RL_IP_BURST      = 3   # STOR_INIT per IP burst
@@ -645,6 +700,7 @@ STOR_ADMIN_RL_BACKOFF_S    = 20  # backoff after admin limiter trips
 BAN_UNKNOWN_STORAGE_RPC    = 90  # temp-ban when receiving unknown STOR_* message types
 STOR_POW_DIFFICULTY        = 20  # difficulty bits for PoW challenge on storage RPC
 
+
 # =============================================================================
 # 12. SCRIPT, GRAFFITI & STORAGE POLICY
 # =============================================================================
@@ -652,13 +708,16 @@ STOR_POW_DIFFICULTY        = 20  # difficulty bits for PoW challenge on storage 
 GRAFFITI_MAGIC     = b"TSAR_GRAF1|"  # domain separator for graffiti commitments
 GRAFFITI_POOL_SALT = b"TSAR_GRAFFITI_POOL|"  # seed when deriving deterministic pool addresses
 
+
 # ---- ART ID ----
 ART_ID_PREFIX      = "graf"
 ART_ID_PREFIX_LEN  = len(ART_ID_PREFIX)
 ART_ID_BODY_LEN    = 60  # hex chars retained after adding prefix to keep 64 chars total
 
+
 # ---- OP_RETURN POLICY ----
 MAX_GRAFFITI_OPRET    = 580  # graffiti payload limit capped under script limit
+
 
 # ---- GRAFFITI ----
 GRAFFITI_MIN_BILLABLE_SIZE    = 1 * 1024 * 1024
@@ -678,12 +737,15 @@ GRAFFITI_MAX_MSG_BYTES        = 151 * 1024 * 1024  # per-message cap for graffit
 GRAFFITI_ALLOWED_MIME         = ("image/jpeg", "video/mp4", "video/x-matroska", "application/pdf")  # whitelist MIME types
 GRAFFITI_ALLOWED_EXT          = ("jpg", "jpeg", "mp4", "mkv", "pdf")  # extension fallback when MIME unavailable
 
+
 # ---- STORAGE POLICY ----
 STORAGE_UPLOAD_CHUNK          = 10 * 1024 * 1024  # chunk size used when slicing storage payloads
+
 
 # ---- CONTRACT METADATA ----
 CONTRACTS_DIR      = "data_json/node/Contracts"  # storage root for contract-like payloads
 GRAFFITI_FILE      = os.path.join(CONTRACTS_DIR, "graffiti.json")  # graffiti metadata archive path
+
 
 # ---- ARCHIVIST ----
 ARCHIV_PEER_KEYS                   = "data/archivist/data_peer/storage_peer_keys.json"
@@ -702,6 +764,7 @@ ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC = 135
 LOG_SHOW_PROCESS     = False  # include process metadata in log context when True
 LOG_PROC_PLACEHOLDER = "-"  # value used when process info is hidden
 DEBUG_BENCHMARKS     = True  # for benchmarking needs for each computing logic/process
+
 
 # ---- MODE PROFILES ----
 if IS_DEV:

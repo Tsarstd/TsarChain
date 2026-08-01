@@ -34,7 +34,6 @@ class DummyMempoolPolicy(MempoolPolicyMixin):
         self.last_error_reason = None
         self._last_prune_version = None
         self._last_prune_reload_ts = 0
-        self._auto_flush_interval = 60
         self._orphans_queued = []
         self._removed_txs = []
         

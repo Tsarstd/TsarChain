@@ -52,7 +52,7 @@ class UTXOValidator:
         else:
             if not self.blockchain._utxo_dirty:
                 return
-            if self.blockchain._utxo_last_flush_height >= 0 and (current_height - self.blockchain._utxo_last_flush_height) < self.blockchain._utxo_flush_interval:
+            if self.blockchain._utxo_last_flush_height >= 0 and (current_height - self.blockchain._utxo_last_flush_height) < CFG.UTXO_FLUSH_INTERVAL:
                 return
             did_flush = store.flush()
         if did_flush:

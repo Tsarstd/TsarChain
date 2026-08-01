@@ -10,7 +10,6 @@ class DummySync(UTXOLocalHandler):
     def __init__(self):
         self._utxo_shared = False
         self._utxo_last_flush_height = -1
-        self._utxo_flush_interval = 10
         self.utxodb = MagicMock()
         self.blockchain = MagicMock()
         self.mempool = MagicMock()

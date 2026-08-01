@@ -116,7 +116,7 @@ class MempoolStorageMixin:
         if not self._dirty:
             return
         now = time.time()
-        if (now - self._last_flush) < self._auto_flush_interval:
+        if (now - self._last_flush) < CFG.MEMPOOL_FLUSH_INTERVAL:
             return
         self.flush(force=False)
 
@@ -143,7 +143,7 @@ class MempoolStorageMixin:
             if not self._dirty and not force:
                 return False
             now = time.time()
-            if not force and (now - self._last_flush) < self._auto_flush_interval:
+            if not force and (now - self._last_flush) < CFG.MEMPOOL_FLUSH_INTERVAL:
                 return False
 
             snapshot = [self._serialize_tx(tx) for tx in self._pool.values()]

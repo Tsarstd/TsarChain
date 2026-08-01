@@ -20,7 +20,6 @@ class DummyMempool(MempoolStorageMixin):
         self._dirty = False
         self._change_seq = 0
         self._last_flush = 0
-        self._auto_flush_interval = 60
         self.filepath = "dummy.json"
         
         class MockLock:

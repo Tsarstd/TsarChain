@@ -44,7 +44,6 @@ class TxPool(
         self.filepath = filepath
         self.max_size_mb = max_size_mb
         self._lock = threading.RLock()
-        self._auto_flush_interval = max(1.0, float(CFG.MEMPOOL_FLUSH_INTERVAL))
         self._pool: "OrderedDict[str, Tx]" = OrderedDict()
         self._size_map: Dict[str, int] = {}
         self._dirty = False
