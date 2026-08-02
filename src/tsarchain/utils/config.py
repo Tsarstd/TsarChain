@@ -105,7 +105,14 @@ DATA_SCHEMA_VERSION = 1
 
 # ---- KV BACKEND ----
 KV_BACKEND         = "lmdb"  # active key-value backend implementation (lmdb & json)
-LMDB_DATA_FILE     = "data/node"  # main LMDB data file path
+LMDB_DATA_FILE     = "data/node"  # fallback LMDB data file path
+LMDB_KEYS_DIR      = "data/keys"  # LMDB environment path for node_secrets
+LMDB_CHAIN_DIR     = "data/node/chain"  # LMDB environment path for chain
+LMDB_UTXO_DIR      = "data/node/utxo"  # LMDB environment path for utxo
+LMDB_STATE_DIR     = "data/node/state"  # LMDB environment path for state
+LMDB_GRAFFITI_DIR  = "data/node/graffiti"  # LMDB environment path for graffiti
+LMDB_MEMPOOL_DIR   = "data/node/mempool"  # LMDB environment path for mempool
+
 LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
 KV_ITER_CHUNK      = 512 # number of entries per chunk when iterating prefix scans (LMDB)

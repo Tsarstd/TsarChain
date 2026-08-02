@@ -20,7 +20,6 @@ from ..core.block import Block
 from .genesis import GENESIS_HASH
 from ..storage.utxo import UTXODB
 from ..utils import config as CFG
-from ..storage.db import AtomicJSONFile
 from ..contracts import graffiti as GRAFFITI
 from ..contracts.graffiti_registry import GraffitiRegistry
 from ..utils.bootstrap import annotate_local_snapshot_meta
@@ -65,8 +64,6 @@ class ChainStorage:
 
             if kv_enabled():
                 self._save_chain_kv(tip_height, start_height, full_flush, chain_meta)
-            else:
-                self._save_chain_json(tip_height, start_height, full_flush, chain_meta)
 
             self.blockchain._chain_dirty_from = None
             backup_tip = tip_height
@@ -82,10 +79,7 @@ class ChainStorage:
         if kv_enabled():
             meta, data_list = self._fetch_kv_chain_data()
             
-        if not isinstance(data_list, list):
-            data_list = []
-        data_list = self._apply_chain_journal(data_list)
-        if not data_list:
+        if not isinstance(data_list, list) or not data_list:
             return
         chain = [Block.from_dict(d) for d in data_list]
         if not chain or not self._validate_loaded_chain(chain):
@@ -146,8 +140,6 @@ class ChainStorage:
                 b.put(b'k:total_supply', str(int(self.blockchain.total_supply)).encode('utf-8'))
                 b.put(b'k:total_blocks', str(int(self.blockchain.total_blocks)).encode('utf-8'))
                 b.put(b'k:snapshot', json.dumps(ordered, separators=CFG.CANONICAL_SEP).encode('utf-8'))
-        else:
-            AtomicJSONFile(CFG.STATE_FILE, keep_backups=3).save(ordered)
 
 
     def load_state(self):
@@ -233,17 +225,6 @@ class ChainStorage:
             self.blockchain._persisted_height = tip_height
 
 
-    def _save_chain_json(self, tip_height: int, start_height: Optional[int], full_flush: bool, chain_meta: dict):
-        if not self._chain_journal_enabled() or full_flush or start_height in (None, 0):
-            if full_flush or start_height is not None or tip_height != self.blockchain._persisted_height:
-                self._save_chain_json_full(tip_height, chain_meta)
-        else:
-            if start_height is not None and start_height <= tip_height:
-                new_blocks = [self.blockchain.chain[h] for h in range(start_height, tip_height + 1)]
-                self._append_chain_journal(start_height, new_blocks)
-                self.blockchain._persisted_height = tip_height
-                if self._chain_journal_size() > int(CFG.CHAIN_JOURNAL_MAX_BYTES):
-                    self._save_chain_json_full(tip_height, chain_meta)
 
 
     def _maybe_backup_snapshot(self, tip_height: int, *, tip_timestamp: int | None = None) -> None:
@@ -482,7 +463,7 @@ class ChainStorage:
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
-        env = _ensure_env() if kv_enabled() else None
+        env = _ensure_env("chain") if kv_enabled() else None
         if env is not None:
             os.makedirs(tmp_dir, exist_ok=True)
             env.copy(tmp_dir, compact=True)
@@ -515,20 +496,7 @@ class ChainStorage:
             return None
 
 
-    def _save_chain_json_full(self, tip_height: int, chain_meta: dict):
-        ordered_blocks = []
-        cw_prev = 0
-        for blk in sorted(self.blockchain.chain, key=lambda b: getattr(b, "height", 0)):
-            blk_dict, cw_prev = self._serialize_block_for_store(blk, cw_prev)
-            ordered_blocks.append(blk_dict)
-        payload = {
-            "schema_version": int(chain_meta.get("schema_version", 1)),
-            "meta": chain_meta,
-            "blocks": ordered_blocks,
-        }
-        AtomicJSONFile(CFG.BLOCK_FILE).save(payload)
-        self.blockchain._persisted_height = tip_height
-        self._clear_chain_journal()
+
 
 
     def _fetch_kv_chain_data(self) -> tuple[dict, list]:
@@ -583,9 +551,7 @@ class ChainStorage:
             if (not data) and items:
                 data["total_supply"] = int(items.get("k:total_supply", "0"))
                 data["total_blocks"] = int(items.get("k:total_blocks", "0"))
-        else:
-            data = AtomicJSONFile(CFG.STATE_FILE, keep_backups=3).load()
-            
+
         if not isinstance(data, dict):
             data = {}
         return data

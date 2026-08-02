@@ -129,36 +129,6 @@ def test_to_from_dict():
 
 
 @patch("tsarchain.storage.utxo_logic.database.TxOut", MockTxOut)
-@patch("tsarchain.storage.utxo_logic.database.kv_enabled", return_value=False)
-def test_load_save_json(mock_kv):
-    db = MockUTXODatabase()
-    
-    # test load_utxo_set
-    nested = db.load_utxo_set()
-    assert "tx1" in nested
-    assert nested["tx1"][0]["tx_out"]["amount"] == 10
-    
-    # test _load
-    db._load()
-    assert "tx1:0" in db.utxos
-    assert "tx2:0" in db.utxos
-    assert "tx3:0" not in db.utxos # unspendable
-    assert "tx_inv:0" not in db.utxos
-    assert "tx_inv2:0" not in db.utxos
-    assert db._meta == {"a": 1}
-    
-    # test _save
-    db._dirty = True
-    db._save()
-    assert db.saved_data is not None
-    assert db.saved_data["_meta"]["backend"] == "json"
-    assert "tx1:0" in db.saved_data
-    
-    # flush
-    assert db.flush(force=True) is True
-    assert db.flush() is False # not dirty anymore
-
-@patch("tsarchain.storage.utxo_logic.database.TxOut", MockTxOut)
 @patch("tsarchain.storage.utxo_logic.database.kv_enabled", return_value=True)
 def test_load_save_kv(mock_kv):
     db = MockUTXODatabase()
@@ -222,15 +192,3 @@ def test_bump_version():
     db._bump_version()
     assert db.version() == 11
     assert db._tip_cache["ts"] == 0.0
-
-@patch("tsarchain.storage.utxo_logic.database.kv_enabled", return_value=False)
-@patch("tsarchain.storage.utxo_logic.database.AtomicJSONFile")
-def test_get_tip_height_json(mock_atomic, mock_kv):
-    db = MockUTXODatabase()
-    mock_instance = mock_atomic.return_value
-    mock_instance.load.return_value = {"total_blocks": 5}
-    h = db._get_tip_height_from_state(use_cache=False)
-    assert h == 4
-    
-    h2 = db._get_tip_height_from_state(use_cache=True)
-    assert h2 == 4 # from cache

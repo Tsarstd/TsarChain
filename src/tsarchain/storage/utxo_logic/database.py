@@ -18,10 +18,7 @@ log = get_ctx_logger("tsarchain.storage.utxo_logic.database")
 class UTXODatabaseMixin:
 
     def load_utxo_set(self):
-        if kv_enabled():
-            return self._load_utxo_set_kv()
-        else:
-            return self._load_utxo_set_json()
+        return self._load_utxo_set_kv()
 
 
     def flush(self, force: bool = False) -> bool:
@@ -131,28 +128,6 @@ class UTXODatabaseMixin:
         return nested
 
 
-    def _load_utxo_set_json(self) -> dict:
-        data = self.load_json(self.filepath) or {}
-        nested = {}
-        for key, val in data.items():
-            if isinstance(key, str) and key.startswith("_"):
-                continue
-            try:
-                if ":" not in key:
-                    log.debug("[load_utxo_set] skip invalid json utxo key (no colon): %s", key)
-                    continue
-                parts = key.split(":")
-                if len(parts) != 2:
-                    log.debug("[load_utxo_set] skip invalid json utxo key (bad parts): %s", key)
-                    continue
-                txid, index = parts[0], parts[1]
-                index = int(index)
-                nested.setdefault(txid, {})[index] = val
-            except ValueError:
-                log.debug("[UTXODB] Format key UTXO invalid: %s", key)
-        return nested
-
-
     def _load_kv(self) -> None:
         for k, v in iter_prefix('utxo', b''):
             if k == b'__meta__':
@@ -172,41 +147,6 @@ class UTXODatabaseMixin:
                 }
 
 
-    def _load_json_backend(self) -> None:
-        data = self.load_json(self.filepath) or {}
-        if not isinstance(data, dict):
-            data = {}
-        if isinstance(data, dict):
-            meta = data.pop("_meta", None)
-            if isinstance(meta, dict):
-                self._meta = meta
-        for key, value in data.items():
-            if not isinstance(value, dict):
-                continue
-            if "tx_out" in value:
-                txo = value["tx_out"]
-                if not (isinstance(txo, dict) and "amount" in txo and "script_pubkey" in txo):
-                    continue
-                tx_out_obj = TxOut.from_dict(txo)
-
-                if self._is_unspendable_opreturn(tx_out_obj):
-                    continue
-
-                self.utxos[key] = {
-                    "tx_out": TxOut.from_dict(txo),
-                    "is_coinbase": bool(value.get("is_coinbase", False)),
-                    "block_height": int(value.get("block_height", 0)),
-                }
-            elif "amount" in value and "script_pubkey" in value:
-                self.utxos[key] = {
-                    "tx_out": TxOut.from_dict(value),
-                    "is_coinbase": False,
-                    "block_height": 0,
-                }
-            else:
-                log.debug("[UTXODB] Skip UTXO invalid (less fields): %s", key)
-
-
     def _load(self, *, force: bool = False):
         with self._lock:
             if not force and getattr(self, "_dirty", False):
@@ -217,8 +157,6 @@ class UTXODatabaseMixin:
             self._meta = {}
             if kv_enabled():
                 self._load_kv()
-            else:
-                self._load_json_backend()
             self._dirty = False
             self._dirty_keys.clear()
             self._removed_keys.clear()
@@ -242,21 +180,6 @@ class UTXODatabaseMixin:
                     b.delete(key.encode('utf-8'))
 
 
-    def _save_json_backend(self, meta: dict) -> None:
-        items_sorted = sorted(
-            self.utxos.items(),
-            key=lambda kv: (
-                int(kv[1].get("block_height", 0) if isinstance(kv[1], dict) else 0),
-                kv[0],
-            ),
-        )
-        payload = OrderedDict()
-        payload["_meta"] = meta
-        for k, v in items_sorted:
-            payload[k] = self._serialize_entry(v)
-        self.save_json(self.filepath, payload)
-
-
     def _save(self, force: bool = False):
         if not force and not self._dirty:
             return
@@ -268,8 +191,6 @@ class UTXODatabaseMixin:
             meta = self._build_meta()
             if kv_enabled():
                 self._save_kv(rewrite, target_keys, meta)
-            else:
-                self._save_json_backend(meta)
             self._dirty = False
             self._dirty_keys.clear()
             self._removed_keys.clear()
@@ -286,12 +207,6 @@ class UTXODatabaseMixin:
             items = {k.decode('utf-8'): v.decode('utf-8') for k, v in iter_prefix('state', b'k:')}
             tb = int(items.get('k:total_blocks', '0'))
             height = max(0, tb - 1)
-            self._tip_cache.update(height=height, ts=now)
-            return height
-
-        data = AtomicJSONFile(CFG.STATE_FILE).load(default={})
-        total_blocks = int(data.get("total_blocks", 0))
-        height = max(0, total_blocks - 1)
         self._tip_cache.update(height=height, ts=now)
         return height
 
@@ -317,7 +232,7 @@ class UTXODatabaseMixin:
         return {
             "schema_version": int(CFG.DATA_SCHEMA_VERSION),
             "generated_at": int(time.time()),
-            "backend": "lmdb" if kv_enabled() else "json",
+            "backend": "lmdb",
             "utxo_set_size": len(self.utxos),
             "tip_height_hint": int(height_hint),
         }

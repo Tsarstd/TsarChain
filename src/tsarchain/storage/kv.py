@@ -20,72 +20,99 @@ def kv_enabled() -> bool:
 
 
 _native_store = None
+_native_stores = {}
 _init_lock = threading.RLock()
 
-def _init_native_store():
+DB_PATH_MAP = {
+    "node_secrets": getattr(CFG, "LMDB_KEYS_DIR", "data/keys"),
+    "chain": getattr(CFG, "LMDB_CHAIN_DIR", "data/node/chain"),
+    "utxo": getattr(CFG, "LMDB_UTXO_DIR", "data/node/utxo"),
+    "state": getattr(CFG, "LMDB_STATE_DIR", "data/node/state"),
+    "graffiti": getattr(CFG, "LMDB_GRAFFITI_DIR", "data/node/graffiti"),
+    "mempool": getattr(CFG, "LMDB_MEMPOOL_DIR", "data/node/mempool"),
+}
+
+def get_db_path(name: str) -> str:
+    return DB_PATH_MAP.get(name, getattr(CFG, "LMDB_DATA_FILE", "data/node"))
+
+def _init_native_store(name: str = "chain"):
     global _native_store
-    if _native_store is not None:
-        return _native_store
     if not kv_enabled():
         return None
+    path = get_db_path(name)
+    if path in _native_stores:
+        _native_store = _native_stores[path]
+        return _native_store
     with _init_lock:
-        if _native_store is not None:
+        if path in _native_stores:
+            _native_store = _native_stores[path]
             return _native_store
         
         drive_override = os.getenv("TSAR_STORAGE_DRIVE_TYPE")
-        _native_store = _native_open_storage(
+        store = _native_open_storage(
             "lmdb",
-            CFG.LMDB_DATA_FILE,
+            path,
             map_size_init=int(CFG.LMDB_MAP_SIZE_INIT),
             map_size_max=int(CFG.LMDB_MAP_SIZE_MAX),
             pretty_json=False,
             drive_type=drive_override,
         )
-        dt = getattr(_native_store, "drive_type", "unknown")
-        log.info(f"Native LMDB storage initialized at '{CFG.LMDB_DATA_FILE}' [Drive Profile: {dt.upper()}]")
-    return _native_store
+        if store is not None:
+            _native_stores[path] = store
+            _native_store = store
+            dt = getattr(store, "drive_type", "unknown")
+            log.info(f"Native LMDB storage initialized at '{path}' for '{name}' [Drive Profile: {dt.upper()}]")
+        return store
 
 def sync(force: bool = False) -> None:
-    store = _ensure_env()
+    store = _ensure_env("chain")
     if store is not None and hasattr(store, "sync"):
         store.sync(force)
+    with _init_lock:
+        for s in list(_native_stores.values()):
+            if s is not store and hasattr(s, "sync"):
+                s.sync(force)
 
-def _ensure_env():
-    if _native_store is None and kv_enabled():
-        _init_native_store()
-    if _native_store is not None:
-        return _native_store
+def _ensure_env(name: str = "chain"):
+    if not kv_enabled():
+        return None
+    path = get_db_path(name)
+    if path in _native_stores:
+        return _native_stores[path]
+    store = _init_native_store(name)
+    if store is not None:
+        return store
     if kv_enabled():
         raise RuntimeError("Native storage required but not initialized; install/build tsarcore_native")
     return None
 
 def get(name: str, key: bytes) -> Optional[bytes]:
-    store = _ensure_env()
+    store = _ensure_env(name)
     if store is None:
         return None
     val = store.get_bytes(name, key)
     return bytes(val) if val is not None else None
 
 def put(name: str, key: bytes, val: bytes) -> None:
-    store = _ensure_env()
+    store = _ensure_env(name)
     if store is None:
         raise RuntimeError("KV not enabled")
     store.put_bytes(name, key, val)
 
 def delete(name: str, key: bytes) -> None:
-    store = _ensure_env()
+    store = _ensure_env(name)
     if store is None:
         return
     store.delete(name, key)
 
 def clear_db(name: str) -> int:
-    store = _ensure_env()
+    store = _ensure_env(name)
     if store is None:
         return 0
     return int(store.clear_db(name))
 
 def iter_prefix(name: str, prefix: bytes) -> Iterator[Tuple[bytes, bytes]]:
-    store = _ensure_env()
+    store = _ensure_env(name)
     if store is None:
         return iter(())
     def _generator():
@@ -104,7 +131,7 @@ def iter_prefix(name: str, prefix: bytes) -> Iterator[Tuple[bytes, bytes]]:
 
 @contextmanager
 def batch(name: str):
-    store = _ensure_env()
+    store = _ensure_env(name)
     if store is None:
         raise RuntimeError("KV not enabled")
 

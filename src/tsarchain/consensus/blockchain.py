@@ -103,9 +103,6 @@ class Blockchain():
         self.total_supply = 0
         self.genesis_manager._persist_empty_state_if_needed()
             
-        if not kv_enabled:
-            os.makedirs(os.path.dirname(CFG.CHAIN_JOURNAL_FILE), exist_ok=True)
-            
 
     def _rebuild_hash_cache(self):
         try:

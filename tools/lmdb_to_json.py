@@ -4,7 +4,8 @@
 
 """
 Export LMDB sub-databases to JSON with FULL STREAMING (memory-safe).
-- All sub-databases (chain, state, utxo, mempool, graffiti) exported with streaming, without loading entire DB into memory.
+- Supports dedicated environment paths for all sub-databases:
+  node_secrets, chain, state, utxo, mempool, graffiti
 """
 
 import os
@@ -13,14 +14,25 @@ import json
 import lmdb
 import base64
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 from tqdm import tqdm
 from typing import Any, Dict, List, Union
 
 # ============================
 # USER SETTINGS
 # ============================
-SUBDBS = ['chain', 'state', 'utxo', 'mempool', 'graffiti']
-PATH = "data/node"
+SUBDBS = ['node_secrets', 'chain', 'state', 'utxo', 'mempool', 'graffiti']
+SUBDB_PATHS = {
+    'node_secrets': 'data/keys',
+    'chain': 'data/node/chain',
+    'state': 'data/node/state',
+    'utxo': 'data/node/utxo',
+    'mempool': 'data/node/mempool',
+    'graffiti': 'data/node/graffiti',
+}
+LEGACY_PATH = "data/node"
 OUTPUT_DIR = "data/node/json_output"
 INDENT = 2                        # 'None' for smaller size but less readable.
 
@@ -69,7 +81,7 @@ def sort_utxo_items(items):
     return others
 
 
-def stream_write_json(filepath, cursor, show_progress=True):
+def stream_write_json(filepath, cursor):
     count = 0
     with open(filepath, 'w', encoding='utf-8') as f:
         f.write('{\n')
@@ -96,23 +108,46 @@ def stream_write_json(filepath, cursor, show_progress=True):
     return count
 
 
-def export_lmdb():
-    print(f"📁 Reading LMDB from: {PATH}")
-    if not os.path.isdir(PATH):
-        print(f"❌ LMDB directory not found: {PATH}")
-        sys.exit(1)
+def resolve_db_env_path(db_name: str) -> str | None:
+    dedicated_path = SUBDB_PATHS.get(db_name)
+    if dedicated_path and os.path.exists(dedicated_path):
+        return dedicated_path
+    if dedicated_path and not os.path.exists(LEGACY_PATH):
+        return dedicated_path
+    if os.path.isdir(LEGACY_PATH):
+        return LEGACY_PATH
+    return dedicated_path
 
-    env = lmdb.open(PATH, readonly=True, max_dbs=32, lock=False, subdir=True)
+
+def export_lmdb():
     total_entries = 0
 
     for db_name in SUBDBS:
-        try:
-            dbi = env.open_db(db_name.encode('utf-8'), create=False)
-        except lmdb.BadRslotError:
-            print(f"⚠️  Sub-database '{db_name}' not found, skip...")
+        env_path = resolve_db_env_path(db_name)
+        if not env_path:
+            print(f"⚠️  Environment directory for '{db_name}' not found, skipping...")
             continue
 
-        print(f"\n📖 Reading sub-database: {db_name}")
+        print(f"\n📁 Reading '{db_name}' from LMDB environment: {env_path}")
+        try:
+            env = lmdb.open(env_path, readonly=True, max_dbs=32, lock=False, subdir=True)
+        except Exception as e:
+            print(f"❌ Failed to open LMDB at {env_path}: {e}")
+            continue
+
+        dbi = None
+        try:
+            dbi = env.open_db(db_name.encode('utf-8'), create=False)
+        except lmdb.Error:
+            try:
+                # Fallback to default unnamed database in dedicated environment
+                dbi = env.open_db(None, create=False)
+            except lmdb.Error:
+                print(f"⚠️  Sub-database '{db_name}' not found in {env_path}, skipping...")
+                env.close()
+                continue
+
+        print(f"📖 Exporting sub-database: {db_name}")
 
         # ---------- GRAFFITI ----------
         if db_name == 'graffiti':
@@ -142,6 +177,7 @@ def export_lmdb():
                         entry_count = len(data) if isinstance(data, dict) else 0
                         print(f"   ✅ {subkey}.json written ({entry_count} entries)")
                     total_entries += 1
+                    env.close()
                     continue
                 else:
                     print("   ⚠️  Graffiti data doesn't contain expected keys, fallback to single file")
@@ -154,18 +190,20 @@ def export_lmdb():
                 json.dump(db_data, f, indent=INDENT, ensure_ascii=False, default=str)
             print(f"   ✅ {len(db_data)} entries written to {output_file} (fallback)")
             total_entries += len(db_data)
+            env.close()
             continue
 
-        # ---------- STREAMING ALL (chain, state, utxo, mempool) ----------
+        # ---------- STREAMING ALL (node_secrets, chain, state, utxo, mempool) ----------
         output_file = os.path.join(OUTPUT_DIR, f"{db_name}.json")
         with env.begin(db=dbi, write=False) as txn:
             with txn.cursor() as cursor:
-                count = stream_write_json(output_file, cursor, show_progress=True)
+                count = stream_write_json(output_file, cursor)
                 print(f"   ✅ {count} entries streamed to {output_file}")
                 total_entries += count
 
-    env.close()
-    print(f"\n🔒 LMDB closed. Total entries streamed: {total_entries}")
+        env.close()
+
+    print(f"\n🔒 All LMDB exports completed. Total entries streamed: {total_entries}")
 
     # ============================================================
     # POST-PROCESS: SORT UTXO (if enabled)

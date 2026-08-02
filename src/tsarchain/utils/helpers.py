@@ -983,7 +983,7 @@ def kv_load_utxo_dict_native(limit: int = 1000) -> dict:   # this module is not 
     """
     if not kv.kv_enabled():
         return {}
-    store = kv._ensure_env()
+    store = kv._ensure_env("utxo")
     out = {}
     start_after = None
     while True:

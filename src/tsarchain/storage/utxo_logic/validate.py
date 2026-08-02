@@ -179,7 +179,7 @@ class UTXOValidationMixin:
                 self._index_entry(key, entry.get("tx_out"))
 
             if kv_enabled():
-                store = _ensure_env()
+                store = _ensure_env("utxo")
                 store.apply_utxo_ops(ops)  # type: ignore[attr-defined]
                 self._dirty = False
                 self._dirty_keys.clear()

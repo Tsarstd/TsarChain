@@ -46,23 +46,11 @@ def test_load_record_kv_enabled_decode_error(mock_kv, mock_cfg):
     
     assert result is None
 
-def test_load_record_kv_disabled_fallback_success(mock_kv, mock_cfg):
+def test_load_record_kv_disabled_returns_none(mock_kv, mock_cfg):
     mock_enabled, mock_get, mock_put = mock_kv
     mock_enabled.return_value = False
     
-    mock_data = {"key": "fallback"}
-    with patch("builtins.open", mock_open(read_data=json.dumps(mock_data))):
-        result = peers_storage._load_record("node_key")
-        
-    assert result == mock_data
-
-def test_load_record_kv_disabled_fallback_file_not_found(mock_kv, mock_cfg):
-    mock_enabled, mock_get, mock_put = mock_kv
-    mock_enabled.return_value = False
-    
-    with patch("builtins.open", side_effect=FileNotFoundError):
-        result = peers_storage._load_record("node_key")
-        
+    result = peers_storage._load_record("node_key")
     assert result is None
 
 def test_load_record_kv_enabled_no_data(mock_kv, mock_cfg):
@@ -70,7 +58,8 @@ def test_load_record_kv_enabled_no_data(mock_kv, mock_cfg):
     mock_enabled.return_value = True
     mock_get.return_value = None
     
-    result = peers_storage._load_record("node_key")
+    with patch("os.path.exists", return_value=False):
+        result = peers_storage._load_record("node_key")
         
     assert result is None
     mock_put.assert_not_called()
@@ -80,29 +69,18 @@ def test_store_record_kv_enabled(mock_kv, mock_cfg):
     mock_enabled.return_value = True
     
     mock_data = {"key": "value"}
-    with patch("builtins.open", mock_open()) as m_open, patch("os.makedirs"):
-        peers_storage._store_record("node_key", mock_data)
+    peers_storage._store_record("node_key", mock_data)
         
     mock_put.assert_called_once()
-    m_open.assert_called_once_with("node_key.json", "w", encoding="utf-8")
 
 def test_store_record_kv_disabled(mock_kv, mock_cfg):
     mock_enabled, mock_get, mock_put = mock_kv
     mock_enabled.return_value = False
     
     mock_data = {"key": "value"}
-    with patch("builtins.open", mock_open()) as m_open, patch("os.makedirs"):
-        peers_storage._store_record("node_key", mock_data)
+    peers_storage._store_record("node_key", mock_data)
         
     mock_put.assert_not_called()
-    m_open.assert_called_once_with("node_key.json", "w", encoding="utf-8")
-
-def test_store_record_io_error(mock_kv, mock_cfg):
-    mock_enabled, mock_get, mock_put = mock_kv
-    mock_enabled.return_value = False
-    mock_data = {"key": "value"}
-    with patch("builtins.open", side_effect=IOError), patch("os.makedirs"):
-        peers_storage._store_record("node_key", mock_data)
 
 def test_load_node_key(mock_kv):
     with patch("tsarchain.network.peers_storage._load_record") as mock_load:

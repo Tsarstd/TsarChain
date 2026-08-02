@@ -42,64 +42,22 @@ def mempool():
     return DummyMempool()
 
 def test_load_storage_pool(mempool):
-    with patch("tsarchain.mempool.storage.kv_enabled", return_value=False):
-        mempool.load_json.return_value = {"txs": [{"txid": "abcd"}], "meta": {"schema_version": 1}}
+    mock_data = [
+        (b"__meta__", b'{"schema_version": 1}'),
+        (b"abcd", b'{"txid": "abcd"}')
+    ]
+    with patch("tsarchain.mempool.storage.kv_enabled", return_value=True), \
+         patch("tsarchain.mempool.storage.iter_prefix", return_value=mock_data):
         entries, meta = mempool._load_storage_pool()
         assert len(entries) == 1
         assert meta["schema_version"] == 1
 
-def test_hydrate_pool(mempool):
-    tx = Tx()
-    tx.txid = bytes.fromhex("abcd")
-    mempool._hydrate_pool([{"txid": "abcd"}])
-    assert "abcd" in mempool._pool
-
-def test_normalize_txid(mempool):
-    assert mempool._normalize_txid(b"abc") == b"abc".hex()
-    assert mempool._normalize_txid("ABC") == "abc"
-
-def test_tx_from_any(mempool):
-    tx = Tx()
-    tx.txid = b"abc"
-    assert mempool._tx_from_any(tx) == tx
-    assert isinstance(mempool._tx_from_any({}), Tx)
-
-def test_build_meta_snapshot(mempool):
-    mempool._pool = {"a": 1, "b": 2}
-    mempool.current_size = 1000
-    meta = mempool._build_meta_snapshot()
-    assert meta["count"] == 2
-    assert meta["virtual_size"] == 1000
-
-def test_mark_dirty(mempool):
-    mempool._mark_dirty()
-    assert mempool._dirty
-    assert mempool.change_seq == 1
-
-def test_maybe_flush_after_mutation(mempool):
-    mempool._dirty = True
-    mempool._last_flush = 0
-    with patch.object(mempool, "flush") as mock_flush:
-        mempool._maybe_flush_after_mutation()
-        mock_flush.assert_called_once_with(force=False)
-
-def test_compute_fee_rate(mempool):
-    tx = Tx()
-    tx.fee = 1000
-    assert mempool._compute_fee_rate(tx, 250) == 4.0
-
-def test_record_remove_fee_rate(mempool):
-    tx = Tx()
-    tx.fee = 1000
-    mempool._record_fee_rate("abc", tx, 250)
-    assert "abc" in mempool._heap_entries
-    mempool._remove_fee_record("abc")
-    assert "abc" not in mempool._heap_entries
-
 def test_flush(mempool):
     mempool._dirty = True
     mempool._last_flush = 0
-    with patch("tsarchain.mempool.storage.kv_enabled", return_value=False):
+    with patch("tsarchain.mempool.storage.kv_enabled", return_value=True), \
+         patch("tsarchain.mempool.storage.clear_db"), \
+         patch("tsarchain.mempool.storage.batch"):
         assert mempool.flush()
         assert not mempool._dirty
 

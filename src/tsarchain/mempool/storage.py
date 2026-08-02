@@ -23,24 +23,15 @@ __all__ = ["MempoolStorageMixin"]
 class MempoolStorageMixin:
     def _load_storage_pool(self) -> tuple[list, dict]:
         meta = {}
+        out = []
         if kv_enabled():
-            out = []
             for k, v in iter_prefix("mempool", b""):
                 key = k.decode("utf-8")
                 if key == "__meta__":
                     meta = json.loads(v.decode("utf-8")) or {}
                     continue
                 out.append(json.loads(v.decode("utf-8")))
-            return out, meta
-        raw = self.load_json(self.filepath) or []
-        if isinstance(raw, dict):
-            meta = raw.get("meta") or {}
-            if "schema_version" in raw and "schema_version" not in meta:
-                meta["schema_version"] = raw.get("schema_version")
-            entries = raw.get("txs") or []
-        else:
-            entries = raw
-        return entries, meta
+        return out, meta
 
     def _hydrate_pool(self, entries: list) -> None:
         for entry in entries:
@@ -154,19 +145,12 @@ class MempoolStorageMixin:
         if kv_enabled():
             clear_db("mempool")
             with batch("mempool") as b:
-                b.put(b"__meta__", json.dumps(meta, separators=CFG.CANONICAL_SEP).encode("utf-8"),)
+                b.put(b"__meta__", json.dumps(meta, separators=CFG.CANONICAL_SEP).encode("utf-8"))
                 for entry in snapshot:
                     txid = entry.get("txid")
                     if not txid:
                         continue
-                    b.put(txid.encode("utf-8"), json.dumps(entry, separators=CFG.CANONICAL_SEP).encode("utf-8"),)
-        else:
-            payload = {
-                "schema_version": meta.get("schema_version"),
-                "meta": meta,
-                "txs": snapshot,
-            }
-            self.save_json(self.filepath, payload)
+                    b.put(txid.encode("utf-8"), json.dumps(entry, separators=CFG.CANONICAL_SEP).encode("utf-8"))
         return True
 
     def save_pool(self, pool: list) -> None:

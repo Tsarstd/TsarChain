@@ -72,45 +72,27 @@ def _load_record(name: str) -> Optional[Dict]:
                 return json.loads(raw.decode("utf-8"))
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 log.warning(f"Failed to decode KV record for {db_key}: {e}")
-                # Fallback to JSON file if KV decode fails
 
-    # JSON fallback / legacy migration
+    # One-time migration from legacy JSON file if present
     if path:
         try:
             with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                # Migrate to KV if enabled
                 if kv_enabled():
                     payload = json.dumps(data, separators=CFG.CANONICAL_SEP).encode("utf-8")
                     put(KEYS_DB_NAME, db_key.encode("utf-8"), payload)
                 return data
-        except (FileNotFoundError, json.JSONDecodeError) as e:
+        except (json.JSONDecodeError, OSError) as e:
             log.warning(f"No JSON file found for {name}: {e}")
     
     return None
 
 
 def _store_record(name: str, data: Dict) -> None:
-    db_key, path = _resolve_key_and_path(name)
+    db_key, _ = _resolve_key_and_path(name)
     payload = json.dumps(data, separators=CFG.CANONICAL_SEP).encode("utf-8")
     
-    # Store in KV (primary storage)
     if kv_enabled():
         put(KEYS_DB_NAME, db_key.encode("utf-8"), payload)
     else:
-        log.debug("KV storage not enabled, using JSON fallback only")
-    
-    # JSON fallback for backward compatibility
-    if path:
-        try:
-            parent_dir = os.path.dirname(path)
-            if parent_dir:
-                os.makedirs(parent_dir, exist_ok=True)
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
-            try:
-                os.chmod(path, 0o600)
-            except OSError:
-                pass
-        except (IOError, OSError):
-            log.exception(f"Failed to write JSON fallback for {name}")
+        log.warning("KV storage not enabled; cannot store node secret record")

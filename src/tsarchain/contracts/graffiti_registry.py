@@ -9,7 +9,6 @@ import json
 from typing import Any, Dict
 
 from ..utils import config as CFG
-from ..storage.db import AtomicJSONFile
 from ..storage.kv import kv_enabled, iter_prefix, batch
 
 from ..utils.tsar_logging import get_ctx_logger
@@ -20,12 +19,8 @@ class GraffitiRegistry:
     def __init__(self) -> None:
         self._kv = kv_enabled()
         self._kv_prefix = "graffiti:"
-        if self._kv:
-            self.store = None
-            self._data_cache = None
-        else:
-            os.makedirs(os.path.dirname(CFG.GRAFFITI_FILE), exist_ok=True)
-            self.store = AtomicJSONFile(CFG.GRAFFITI_FILE, keep_backups=2, checksum=True)
+        self.store = None
+        self._data_cache = None
         default = {"posts": {}, "comments": {}, "payouts": {}, "proofs": {}}
         self.data = self._load(default)
         self.data.setdefault("proofs", {})
@@ -242,15 +237,13 @@ class GraffitiRegistry:
                     data = json.loads(v.decode("utf-8"))
                     break
             return data or dict(default)
-        return self.store.load(default=default)
+        return dict(default)
 
 
     def _flush(self) -> None:
         if self._kv:
             with batch("graffiti") as b:
                 b.put(b"data:data", json.dumps(self.data, separators=CFG.CANONICAL_SEP).encode("utf-8"))
-        else:
-            self.store.save(self.data)
 
 
 __all__ = ["GraffitiRegistry"]

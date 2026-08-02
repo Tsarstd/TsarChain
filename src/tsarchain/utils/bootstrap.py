@@ -57,7 +57,7 @@ def maybe_bootstrap_snapshot(progress_cb: ProgressCallback = None) -> SnapshotBo
         os.remove(target_dir)
     os.makedirs(target_dir, exist_ok=True)
 
-    if CFG.BACKUP_SNAPSHOT and CFG.SNAPSHOT_BACKUP_DIR:
+    if CFG.BACKUP_SNAPSHOT and CFG.SNAPSHOT_BACKUP_DIR: #TODO: harus di cek lagi
         try:
             os.makedirs(CFG.SNAPSHOT_BACKUP_DIR, exist_ok=True)
         except Exception:

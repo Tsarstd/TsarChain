@@ -14,11 +14,15 @@ from tsarchain.storage.kv import (
 
 @pytest.fixture(autouse=True)
 def reset_native_store():
-    # Reset global _native_store before and after each test
+    # Reset global _native_store and _native_stores before and after each test
     original_store = kv._native_store
+    original_stores = dict(kv._native_stores)
     kv._native_store = None
+    kv._native_stores.clear()
     yield
     kv._native_store = original_store
+    kv._native_stores.clear()
+    kv._native_stores.update(original_stores)
 
 def test_kv_enabled():
     with patch("tsarchain.storage.kv.CFG") as mock_cfg:

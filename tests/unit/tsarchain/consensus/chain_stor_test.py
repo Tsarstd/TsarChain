@@ -298,7 +298,7 @@ def test_copy_snapshot_env(storage, monkeypatch, tmp_path):
     # Mock _ensure_env and env.copy
     env_mock = Mock()
     env_mock.copy = Mock()
-    monkeypatch.setattr('tsarchain.consensus.chain_storage._ensure_env', lambda: env_mock)
+    monkeypatch.setattr('tsarchain.consensus.chain_storage._ensure_env', lambda *args, **kwargs: env_mock)
     monkeypatch.setattr('tsarchain.consensus.chain_storage.kv_enabled', lambda: True)
 
     storage._copy_snapshot_env(target)
@@ -319,82 +319,6 @@ def test_hash_file(tmp_path):
     # Non-existent file
     hash_val = ChainStorage._hash_file("nonexistent")
     assert hash_val is None
-
-
-# ----------------------------------------------------------------------
-# Journal tests (fallback for non-LMDB)
-# ----------------------------------------------------------------------
-def test_chain_journal_enabled(storage):
-    CFG.USE_LMDB = False  # but we need to mock kv_enabled
-    with patch('tsarchain.consensus.chain_storage.kv_enabled', return_value=False):
-        assert storage._chain_journal_enabled() is True
-    with patch('tsarchain.consensus.chain_storage.kv_enabled', return_value=True):
-        assert storage._chain_journal_enabled() is False
-
-
-def test_chain_journal_size(storage, tmp_path):
-    path = tmp_path / "journal.jsonl"
-    CFG.CHAIN_JOURNAL_FILE = str(path)
-    with open(path, "w") as f:
-        f.write("dummy")
-    size = storage._chain_journal_size()
-    assert size == len("dummy")
-    # Non-existent
-    os.remove(path)
-    size = storage._chain_journal_size()
-    assert size == 0
-
-
-def test_clear_chain_journal(storage, tmp_path):
-    path = tmp_path / "journal.jsonl"
-    CFG.CHAIN_JOURNAL_FILE = str(path)
-    with open(path, "w") as f:
-        f.write("dummy")
-    storage._clear_chain_journal()
-    assert not os.path.exists(path)
-
-
-def test_append_chain_journal(storage, tmp_path):
-    path = tmp_path / "journal.jsonl"
-    CFG.CHAIN_JOURNAL_FILE = str(path)
-    CFG.CANONICAL_SEP = (',', ':')
-    with patch('tsarchain.consensus.chain_storage.kv_enabled', return_value=False):
-        # Create blocks
-        block1 = Mock(spec=Block)
-        block1.to_dict = Mock(return_value={"height": 0})
-        block2 = Mock(spec=Block)
-        block2.to_dict = Mock(return_value={"height": 1})
-        blocks = [block1, block2]
-        storage._append_chain_journal(5, blocks)
-        assert os.path.exists(path)
-        with open(path) as f:
-            lines = f.readlines()
-        assert len(lines) == 2
-        data1 = json.loads(lines[0])
-        assert data1["height"] == 5
-        data2 = json.loads(lines[1])
-        assert data2["height"] == 6
-
-
-def test_apply_chain_journal(storage, tmp_path):
-    path = tmp_path / "journal.jsonl"
-    CFG.CHAIN_JOURNAL_FILE = str(path)
-    # Write some entries
-    entries = [
-        {"height": 0, "block": {"height": 0}},
-        {"height": 1, "block": {"height": 1}},
-        {"height": 3, "block": {"height": 3}},  # gap (height 2 missing)
-    ]
-    with open(path, "w") as f:
-        for e in entries:
-            f.write(json.dumps(e) + "\n")
-
-    chain_data = [{"height": 0}]  # existing block at height 0
-    result = storage._apply_chain_journal(chain_data)
-    # Should incorporate height 1, skip height 3 because gap
-    assert len(result) == 2
-    assert result[0]["height"] == 0
-    assert result[1]["height"] == 1
 
 
 # ----------------------------------------------------------------------
@@ -444,117 +368,6 @@ def test_save_chain_with_kv(storage, monkeypatch):
         # Check that __meta__ was put
         calls = batch_mock.put.call_args_list
         assert any(call[0][0] == b'__meta__' for call in calls)
-
-
-def test_save_chain_without_kv_journal(storage, monkeypatch, tmp_path):
-    # Simulate no LMDB, using journal
-    monkeypatch.setattr('tsarchain.consensus.chain_storage.kv_enabled', lambda: False)
-    CFG.CHAIN_JOURNAL_FILE = str(tmp_path / "journal.jsonl")
-    CFG.CHAIN_JOURNAL_MAX_BYTES = 1000
-    CFG.CANONICAL_SEP = (',', ':')
-    CFG.BLOCK_FILE = str(tmp_path / "blocks.json")
-
-    # Create chain with 2 blocks
-    block0 = Mock(spec=Block)
-    block0.to_dict = Mock(return_value={"height": 0})
-    block0.height = 0
-    block0.bits = 0x1d00ffff
-    block0.prev_block_hash = b'\x00'*32
-    block0.chainwork = 0
-    block0.hash = Mock(return_value=b'\x01'*32)
-    block0.transactions = []
-    block1 = Mock(spec=Block)
-    block1.to_dict = Mock(return_value={"height": 1})
-    block1.height = 1
-    block1.bits = 0x1d00ffff
-    block1.prev_block_hash = b'\x01'*32
-    block1.chainwork = 100
-    block1.hash = Mock(return_value=b'\x02'*32)
-    block1.transactions = []
-    storage.chain = [block0, block1]
-    storage._persisted_height = -1
-    storage._chain_dirty_from = None
-
-    # Mock _serialize_block_for_store to return dummy
-    storage.chain_storage._serialize_block_for_store = Mock(return_value=({"height": 0}, 0))
-    storage._chain_journal_enabled = Mock(return_value=False)
-
-    # First save: force_full -> write full blocks.json
-    with patch('tsarchain.consensus.chain_storage.AtomicJSONFile') as mock_json:
-        instance = mock_json.return_value
-        instance.save = Mock()
-        storage.save_chain(force_full=True)
-        # Pastikan AtomicJSONFile dipanggil
-        mock_json.assert_called_once_with(CFG.BLOCK_FILE)
-        instance.save.assert_called_once()
-        # Check content
-        args = instance.save.call_args[0][0]
-        assert args["meta"]["tip_height"] == 1
-        assert len(args["blocks"]) == 2
-        assert storage._persisted_height == 1
-        # Journal should be cleared
-        assert not os.path.exists(CFG.CHAIN_JOURNAL_FILE)
-
-    block2 = Mock(spec=Block)
-    block2.to_dict = Mock(return_value={"height": 2})
-    block2.height = 2
-    block2.bits = 0x1d00ffff
-    block2.prev_block_hash = b'\x02'*32
-    block2.chainwork = 200
-    block2.hash = Mock(return_value=b'\x03'*32)
-    block2.transactions = []
-    storage.chain.append(block2)
-    storage._persisted_height = 1
-    storage._chain_dirty_from = None
-    storage._mark_chain_dirty(2)  # dirty from 2
-    storage._chain_journal_enabled = MagicMock(side_effect=storage.chain_storage._chain_journal_enabled)
-
-    # Save again: should append to journal, not full flush
-    with patch('tsarchain.consensus.chain_storage.AtomicJSONFile') as mock_json:
-        instance = mock_json.return_value
-        instance.save = Mock()
-        storage.save_chain(force_full=False)
-        # Journal should have one entry
-        assert os.path.exists(CFG.CHAIN_JOURNAL_FILE)
-        with open(CFG.CHAIN_JOURNAL_FILE) as f:
-            lines = f.readlines()
-        assert len(lines) == 1
-        entry = json.loads(lines[0])
-        assert entry["height"] == 2
-        # Full save not called
-        instance.save.assert_not_called()
-        assert storage._persisted_height == 2
-
-    # Now simulate journal exceeding max bytes: add another block so that
-    # save_chain will append it and then trigger full flush because of oversized journal.
-    block3 = Mock(spec=Block)
-    block3.to_dict = Mock(return_value={"height": 3})
-    block3.height = 3
-    block3.bits = 0x1d00ffff
-    block3.prev_block_hash = b'\x03'*32
-    block3.chainwork = 300
-    block3.hash = Mock(return_value=b'\x04'*32)
-    block3.transactions = []
-    storage.chain.append(block3)
-    storage._persisted_height = 2  # still at 2
-    storage._chain_dirty_from = None
-    storage._mark_chain_dirty(3)  # dirty from 3
-
-    # Enlarge journal file so that its size exceeds CFG.CHAIN_JOURNAL_MAX_BYTES
-    with open(CFG.CHAIN_JOURNAL_FILE, "a") as f:
-        f.write("x" * 2000)  # exceed max
-
-    # Now save_chain should append block3, see journal size > max, and perform full flush
-    with patch('tsarchain.consensus.chain_storage.AtomicJSONFile') as mock_json:
-        instance = mock_json.return_value
-        instance.save = Mock()
-        storage.save_chain(force_full=False)
-        # Full flush should have been called
-        instance.save.assert_called_once()
-        # Journal file should be cleared
-        assert not os.path.exists(CFG.CHAIN_JOURNAL_FILE)
-        # Persisted height should be updated to 3
-        assert storage._persisted_height == 3
 
 
 def test_load_chain_with_kv(storage, monkeypatch):
@@ -699,13 +512,7 @@ def test_read_snapshot_state_kv(storage, monkeypatch):
     assert data["total_blocks"] == 10
 
 
-def test_read_snapshot_state_nonkv(storage, monkeypatch, tmp_path):
-    monkeypatch.setattr('tsarchain.consensus.chain_storage.kv_enabled', lambda: False)
-    CFG.STATE_FILE = str(tmp_path / "state.json")
-    with open(CFG.STATE_FILE, "w") as f:
-        json.dump({"total_supply": 200, "total_blocks": 20}, f)
-    data = storage._read_snapshot_state()
-    assert data["total_supply"] == 200
+
 
 
 def test_load_state(storage):

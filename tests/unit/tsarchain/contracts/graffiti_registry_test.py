@@ -17,27 +17,6 @@ def mock_kv():
          patch("tsarchain.contracts.graffiti_registry.batch") as m_batch:
         yield m_kv, m_iter, m_batch
 
-# Helper for testing JSON file behavior
-@pytest.fixture
-def mock_fs():
-    with patch("tsarchain.contracts.graffiti_registry.kv_enabled", return_value=False) as m_kv, \
-         patch("tsarchain.contracts.graffiti_registry.AtomicJSONFile") as m_atomic, \
-         patch("os.makedirs") as m_makedirs:
-        m_file = MagicMock()
-        m_atomic.return_value = m_file
-        # default return for load
-        m_file.load.return_value = {"posts": {}, "comments": {}, "payouts": {}, "proofs": {}}
-        yield m_kv, m_atomic, m_file, m_makedirs
-
-def test_init_fs(mock_fs):
-    _, m_atomic, m_file, m_makedirs = mock_fs
-    reg = GraffitiRegistry()
-    assert not reg._kv
-    m_makedirs.assert_called_once()
-    m_atomic.assert_called_once_with(CFG.GRAFFITI_FILE, keep_backups=2, checksum=True)
-    m_file.load.assert_called_once()
-    assert "proofs" in reg.data
-
 def test_init_kv_empty(mock_kv):
     _, m_iter, _ = mock_kv
     m_iter.return_value = []
@@ -59,13 +38,6 @@ def test_init_kv_with_other_keys(mock_kv):
     reg = GraffitiRegistry()
     assert reg.data == {"posts": {}, "comments": {}, "payouts": {}, "proofs": {}}
 
-def test_flush_fs(mock_fs):
-    _, _, m_file, _ = mock_fs
-    reg = GraffitiRegistry()
-    reg.data["posts"]["art1"] = {"meta": "data"}
-    reg._flush()
-    m_file.save.assert_called_with(reg.data)
-
 def test_flush_kv(mock_kv):
     _, _, m_batch = mock_kv
     m_b = MagicMock()
@@ -75,7 +47,7 @@ def test_flush_kv(mock_kv):
     m_batch.assert_called_once_with("graffiti")
     m_b.put.assert_called_once()
 
-def test_record_post(mock_fs):
+def test_record_post(mock_kv):
     reg = GraffitiRegistry()
     # First post
     reg.record_post("art1", {"title": "hello"}, "tx1", 100, "pool1", 1000, block_hash="hash1")
@@ -100,11 +72,11 @@ def test_record_post(mock_fs):
     assert post3["title"] == "world"
     assert post3["stats"]["pool_balance"] == 500 # 0 + 500 (since new entry is created from meta)
 
-def test_get_post_not_found(mock_fs):
+def test_get_post_not_found(mock_kv):
     reg = GraffitiRegistry()
     assert reg.get_post("art2") is None
 
-def test_record_comment(mock_fs):
+def test_record_comment(mock_kv):
     reg = GraffitiRegistry()
     reg.record_post("art1", {}, "tx_post", 100, "pool1", 1000)
     
@@ -132,14 +104,14 @@ def test_record_comment(mock_fs):
     reg.record_comment("art1", meta, "tx_comment1", 101, 100, 100)
     assert len(reg.list_comments("art1")) == 1
 
-def test_record_comment_no_post(mock_fs):
+def test_record_comment_no_post(mock_kv):
     reg = GraffitiRegistry()
     meta = {"comment": "nice", "amount": 200}
     reg.record_comment("art2", meta, "tx_comment2", 101, 100, 100)
     assert len(reg.list_comments("art2")) == 1
     assert reg.get_post("art2") is None # Post is still None
 
-def test_record_payout(mock_fs):
+def test_record_payout(mock_kv):
     reg = GraffitiRegistry()
     reg.record_post("art1", {}, "tx_post", 100, "pool1", 1000)
     
@@ -166,12 +138,12 @@ def test_record_payout(mock_fs):
     reg.record_payout("art1", {"addr1": 100}, "tx_payout2", 103, pool_balance=1000)
     assert reg.get_post("art1")["stats"]["pool_balance"] == 1000
 
-def test_record_payout_no_post(mock_fs):
+def test_record_payout_no_post(mock_kv):
     reg = GraffitiRegistry()
     reg.record_payout("art_nonexistent", {"addr1": 100}, "tx1", 100)
     assert len(reg.list_payouts("art_nonexistent")) == 0
 
-def test_set_pool_balance(mock_fs):
+def test_set_pool_balance(mock_kv):
     reg = GraffitiRegistry()
     reg.record_post("art1", {}, "tx_post", 100, "pool1", 1000)
     reg.set_pool_balance("art1", 2000)
@@ -183,7 +155,7 @@ def test_set_pool_balance(mock_fs):
     reg.set_pool_balance("art2", 2000)
     assert reg.get_post("art2") is None
 
-def test_record_proof(mock_fs):
+def test_record_proof(mock_kv):
     reg = GraffitiRegistry()
     reg.record_proof("art1", "storer1", 1, 0, 100, "hash1", height=101, seed="seed1")
     proof = reg.get_proof("art1", "storer1", 1)
@@ -211,7 +183,7 @@ def test_record_proof(mock_fs):
     reg.record_proof("", "storer1", 1, 0, 100, "hash")
     reg.record_proof("art1", "", 1, 0, 100, "hash")
 
-def test_get_proof(mock_fs):
+def test_get_proof(mock_kv):
     reg = GraffitiRegistry()
     assert reg.get_proof("art1", "storer1", 1) is None
     assert reg.get_proof("", "storer1", 1) is None
@@ -219,7 +191,7 @@ def test_get_proof(mock_fs):
     assert reg.get_proof("art1", "storer2", 1) is None
     assert reg.get_proof("art1", "storer1", 2) is None
 
-def test_get_latest_proof(mock_fs):
+def test_get_latest_proof(mock_kv):
     reg = GraffitiRegistry()
     assert reg.get_latest_proof("art1") is None
     assert reg.get_latest_proof_epoch("art1") == -1
@@ -241,7 +213,7 @@ def test_get_latest_proof(mock_fs):
     assert reg.get_latest_proof("art1", "storer3") is None
     assert reg.get_latest_proof_epoch("art1", "storer3") == -1
 
-def test_list_payouts(mock_fs):
+def test_list_payouts(mock_kv):
     reg = GraffitiRegistry()
     assert reg.list_payouts("art1") == []
     assert reg.list_payouts("") == []
@@ -258,7 +230,7 @@ def test_list_payouts(mock_fs):
     assert len(reg.list_payouts("art1", limit=1)) == 1
     assert len(reg.list_payouts("art1", limit=0)) == 2 # limit 0 is ignored
 
-def test_list_posts(mock_fs):
+def test_list_posts(mock_kv):
     reg = GraffitiRegistry()
     assert reg.list_posts() == []
     
@@ -284,7 +256,7 @@ def test_list_posts(mock_fs):
     assert len(reg.list_posts(limit=0)) == 3
     assert len(reg.list_posts(offset=-1)) == 3
 
-def test_list_comments(mock_fs):
+def test_list_comments(mock_kv):
     reg = GraffitiRegistry()
     assert reg.list_comments("art1") == []
     assert reg.list_comments("") == []
