@@ -48,24 +48,14 @@ def _handle_stor_index(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return {"type": "STOR_INDEX", "status": "ok", **server.index}
 
 def _finalize_storage(server, aid: str, meta: dict) -> tuple[bool, Optional[str]]:
-    if server.use_kv:
-        already_final = server.db.get_final_bytes_range(aid, 0, 1) is not None
-        if not already_final:
-            data = server.db.pop_incoming(aid)
-            if data is None:
-                return False, "missing_file"
-            server.db.put_final(aid, data)
-        meta["path"] = f"lmdb://final/{aid}"
-        meta["state"] = "stored"
-    else:
-        path = meta.get("path")
-        if path and os.path.isfile(path) and ("incoming" in path):
-            fin_dir = os.path.join(server.storage_dir, "final")
-            os.makedirs(fin_dir, exist_ok=True)
-            fin = os.path.join(fin_dir, os.path.basename(path).replace(".part", ".bin"))
-            os.replace(path, fin)
-            meta["path"] = fin
-            meta["state"] = "stored"
+    already_final = server.db.get_final_bytes_range(aid, 0, 1) is not None
+    if not already_final:
+        data = server.db.pop_incoming(aid)
+        if data is None:
+            return False, "missing_file"
+        server.db.put_final(aid, data)
+    meta["path"] = f"lmdb://final/{aid}"
+    meta["state"] = "stored"
     return True, None
 
 @benchmark(label="STOR_PAID", threshold_ms=500.0)
@@ -207,35 +197,20 @@ def _remove_expired_files(server, files: dict, remove_keys: list[str]) -> int:
     for gid in remove_keys:
         meta = files.pop(gid, None) or {}
         expired += 1
-        if server.use_kv:
-            server.db.delete_blob(gid, incoming=True, final=True)
-        else:
-            path = meta.get("path")
-            if path and os.path.isfile(path):
-                os.remove(path)
+        server.db.delete_blob(gid, incoming=True, final=True)
         art_id = str(meta.get("art_id", "")).strip().lower()
         if art_id and server.index.get("art_map", {}).get(art_id) == gid:
             server.index["art_map"].pop(art_id, None)
     return expired
 
 def _get_chunk_and_merkle(server, aid: str, meta: dict, offset: int, length: int, merkle_chunk: int, chunk_index: int):
-    if server.use_kv:
-        chunk = server.db.get_final_bytes_range(aid, offset, length)
-        if chunk is None:
-            raise FileNotFoundError("file_missing")
-        merkle_path = server.db.get_final_merkle_path(aid, merkle_chunk, chunk_index)
-        if merkle_path is None:
-            raise FileNotFoundError("file_missing")
-        log.debug("use merkle_path_for_kv")
-    else:
-        path = meta.get("path")
-        if not path or not os.path.isfile(path):
-            raise FileNotFoundError("file_missing")
-        with open(path, "rb") as fh:
-            fh.seek(offset)
-            chunk = fh.read(length)
-        log.debug("use merkle_path_for_file")
-        merkle_path = GRAFFITI.merkle_path_for_file(path, merkle_chunk, chunk_index)
+    chunk = server.db.get_final_bytes_range(aid, offset, length)
+    if chunk is None:
+        raise FileNotFoundError("file_missing")
+    merkle_path = server.db.get_final_merkle_path(aid, merkle_chunk, chunk_index)
+    if merkle_path is None:
+        raise FileNotFoundError("file_missing")
+    log.debug("use merkle_path_for_lmdb")
     return chunk, merkle_path
 
 

@@ -142,10 +142,9 @@ def test_validate_snapshot_chain_no_kv(mock_exists):
     assert not valid
     assert "missing" in reason.lower()
 
-@patch("tsarchain.utils.bootstrap.kv_enabled", return_value=True)
 @patch("tsarchain.utils.bootstrap.CFG")
 @patch("tsarchain.utils.bootstrap.iter_prefix")
-def test_validate_snapshot_chain_valid(mock_iter, mock_cfg, mock_kv):
+def test_validate_snapshot_chain_valid(mock_iter, mock_cfg):
     mock_cfg.LMDB_DATA_FILE = "some/dir"
     mock_cfg.ZERO_HASH.hex.return_value = "000abc"
     with patch("os.path.exists", return_value=True):
@@ -165,17 +164,7 @@ def test_validate_snapshot_chain_valid(mock_iter, mock_cfg, mock_kv):
         assert "first height 1" in reason
 
 @patch("tsarchain.utils.bootstrap.CFG")
-def test_maybe_bootstrap_snapshot_no_lmdb(mock_cfg):
-    mock_cfg.KV_BACKEND = "json"
-    res = maybe_bootstrap_snapshot()
-    assert res.status == "backend"
-    assert "JSON active, not support snapshot" in res.reason
-
-@patch("tsarchain.utils.bootstrap.kv_enabled")
-@patch("tsarchain.utils.bootstrap.CFG")
-def test_maybe_bootstrap_snapshot_disabled(mock_cfg, mock_kv):
-    mock_kv.return_value = False
-    mock_cfg.KV_BACKEND = "lmdb"
+def test_maybe_bootstrap_snapshot_disabled(mock_cfg):
     mock_cfg.SNAPSHOT_BOOTSTRAP_ENABLED = False
     mock_cfg.LMDB_DATA_FILE = "test.mdb"
     with patch("os.makedirs"):
@@ -183,12 +172,9 @@ def test_maybe_bootstrap_snapshot_disabled(mock_cfg, mock_kv):
             res = maybe_bootstrap_snapshot()
             assert res.status == "skipped"
 
-@patch("tsarchain.utils.bootstrap.kv_enabled")
 @patch("tsarchain.utils.bootstrap.CFG")
 @patch("tsarchain.utils.bootstrap._fetch_manifest")
-def test_maybe_bootstrap_snapshot_skipped_no_url(mock_fetch, mock_cfg, mock_kv):
-    mock_kv.return_value = False
-    mock_cfg.KV_BACKEND = "lmdb"
+def test_maybe_bootstrap_snapshot_skipped_no_url(mock_fetch, mock_cfg):
     mock_cfg.SNAPSHOT_BOOTSTRAP_ENABLED = True
     mock_cfg.SNAPSHOT_REQUIRE_SIGNATURE = False
     mock_cfg.LMDB_DATA_FILE = "test.mdb"
@@ -200,13 +186,10 @@ def test_maybe_bootstrap_snapshot_skipped_no_url(mock_fetch, mock_cfg, mock_kv):
             assert res.status == "skipped"
             assert res.reason == "no_snapshot_url"
 
-@patch("tsarchain.utils.bootstrap.kv_enabled")
 @patch("tsarchain.utils.bootstrap.CFG")
 @patch("tsarchain.utils.bootstrap._fetch_manifest")
 @patch("tsarchain.utils.bootstrap.urllib.request.urlopen")
-def test_maybe_bootstrap_snapshot_success(mock_urlopen, mock_fetch, mock_cfg, mock_kv):
-    mock_kv.return_value = False
-    mock_cfg.KV_BACKEND = "lmdb"
+def test_maybe_bootstrap_snapshot_success(mock_urlopen, mock_fetch, mock_cfg):
     mock_cfg.SNAPSHOT_BOOTSTRAP_ENABLED = True
     mock_cfg.SNAPSHOT_REQUIRE_SIGNATURE = False
     mock_cfg.LMDB_DATA_FILE = "test.mdb"
@@ -230,12 +213,9 @@ def test_maybe_bootstrap_snapshot_success(mock_urlopen, mock_fetch, mock_cfg, mo
         assert res.height == 10
         assert res.bytes_written == 100
         
-@patch("tsarchain.utils.bootstrap.kv_enabled")
 @patch("tsarchain.utils.bootstrap.CFG")
 @patch("tsarchain.utils.bootstrap._fetch_manifest")
-def test_maybe_bootstrap_snapshot_failed_validation(mock_fetch, mock_cfg, mock_kv):
-    mock_kv.return_value = False
-    mock_cfg.KV_BACKEND = "lmdb"
+def test_maybe_bootstrap_snapshot_failed_validation(mock_fetch, mock_cfg):
     mock_cfg.SNAPSHOT_BOOTSTRAP_ENABLED = True
     mock_cfg.SNAPSHOT_REQUIRE_SIGNATURE = True
     mock_cfg.LMDB_DATA_FILE = "test.mdb"

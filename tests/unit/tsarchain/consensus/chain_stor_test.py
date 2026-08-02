@@ -54,11 +54,6 @@ class TestChainStorage:
     def _maybe_backup_snapshot(self, tip_height, tip_timestamp=None): return self.chain_storage._maybe_backup_snapshot(tip_height, tip_timestamp=tip_timestamp)
     def _copy_snapshot_env(self, target_dir): return self.chain_storage._copy_snapshot_env(target_dir)
     def _hash_file(self, path): return self.chain_storage._hash_file(path)
-    def _chain_journal_enabled(self): return self.chain_storage._chain_journal_enabled()
-    def _chain_journal_size(self): return self.chain_storage._chain_journal_size()
-    def _clear_chain_journal(self): return self.chain_storage._clear_chain_journal()
-    def _append_chain_journal(self, start_height, blocks): return self.chain_storage._append_chain_journal(start_height, blocks)
-    def _apply_chain_journal(self, chain_data): return self.chain_storage._apply_chain_journal(chain_data)
     def save_chain(self, force_full=False): return self.chain_storage.save_chain(force_full=force_full)
     def load_chain(self): return self.chain_storage.load_chain()
     def _read_snapshot_state(self): return self.chain_storage._read_snapshot_state()
@@ -180,8 +175,7 @@ def test_mark_chain_dirty(storage):
 
 
 def test_prune_chain_store(storage, monkeypatch):
-    # Mock kv_enabled and iter_prefix
-    monkeypatch.setattr('tsarchain.consensus.chain_storage.kv_enabled', lambda: True)
+    # Mock iter_prefix
     monkeypatch.setattr('tsarchain.consensus.chain_storage.iter_prefix', lambda db, prefix: [
         (b'h:000000000000', b'data1'),
         (b'h:000000000001', b'data2'),
@@ -198,8 +192,7 @@ def test_prune_chain_store(storage, monkeypatch):
 
 
 def test_reset_chain_store(storage, monkeypatch):
-    # Mock kv_enabled, clear_db, os.remove, etc.
-    monkeypatch.setattr('tsarchain.consensus.chain_storage.kv_enabled', lambda: True)
+    # Mock clear_db, os.remove, etc.
     clear_db_mock = Mock()
     monkeypatch.setattr('tsarchain.consensus.chain_storage.clear_db', clear_db_mock)
 
@@ -251,9 +244,6 @@ def test_maybe_backup_snapshot(storage, monkeypatch, tmp_path):
     CFG.BLOCK_BACKUP_SNAPSHOT = 10
     CFG.SNAPSHOT_BACKUP_DIR = str(tmp_path / "backup")
 
-    # Mock kv_enabled
-    monkeypatch.setattr('tsarchain.consensus.chain_storage.kv_enabled', lambda: True)
-
     # ---- perbaikan mock threading ----
     class FakeThread:
         def __init__(self, target, args, name, daemon):
@@ -299,7 +289,6 @@ def test_copy_snapshot_env(storage, monkeypatch, tmp_path):
     env_mock = Mock()
     env_mock.copy = Mock()
     monkeypatch.setattr('tsarchain.consensus.chain_storage._ensure_env', lambda *args, **kwargs: env_mock)
-    monkeypatch.setattr('tsarchain.consensus.chain_storage.kv_enabled', lambda: True)
 
     storage._copy_snapshot_env(target)
     # Should create tmp dir and copy
@@ -326,8 +315,7 @@ def test_hash_file(tmp_path):
 # ----------------------------------------------------------------------
 
 def test_save_chain_with_kv(storage, monkeypatch):
-    # Mock kv_enabled, batch, clear_db, etc.
-    monkeypatch.setattr('tsarchain.consensus.chain_storage.kv_enabled', lambda: True)
+    # Mock batch, clear_db, etc.
     clear_db_mock = Mock()
     monkeypatch.setattr('tsarchain.consensus.chain_storage.clear_db', clear_db_mock)
 
@@ -371,9 +359,6 @@ def test_save_chain_with_kv(storage, monkeypatch):
 
 
 def test_load_chain_with_kv(storage, monkeypatch):
-    # Mock kv_enabled and iter_prefix to return blocks
-    monkeypatch.setattr('tsarchain.consensus.chain_storage.kv_enabled', lambda: True)
-
     # Provide proper hex strings (64 characters)
     ZERO_HASH_HEX = "0" * 64
     GENESIS_HASH_HEX = "1" * 64
@@ -411,9 +396,6 @@ def test_load_chain_with_kv(storage, monkeypatch):
     # Mock calculate_total_supply etc.
     storage.calculate_total_supply = Mock(return_value=1000)
 
-    # Bypass journal – it is a fallback and not needed for this test
-    storage._apply_chain_journal = lambda data: data  # no-op
-
     # Also need to patch ensure_utxodb and annotate
     storage.ensure_utxodb = Mock()
     annotate_mock = Mock()
@@ -430,9 +412,6 @@ def test_load_chain_with_kv(storage, monkeypatch):
 
 
 def test_load_chain_invalid_genesis(storage, monkeypatch):
-    # Mock kv_enabled to return a block with wrong genesis height
-    monkeypatch.setattr('tsarchain.consensus.chain_storage.kv_enabled', lambda: True)
-
     ZERO_HASH_HEX = "0" * 64
 
     # This block has height 1, which is invalid for genesis (should be 0)
@@ -457,9 +436,6 @@ def test_load_chain_invalid_genesis(storage, monkeypatch):
     # Mock reset_chain_store
     storage.chain_storage._reset_chain_store = Mock()
 
-    # Bypass journal
-    storage._apply_chain_journal = lambda data: data
-
     storage.load_chain()
     # Should log error and reset
     storage.chain_storage._reset_chain_store.assert_called_once()
@@ -467,7 +443,6 @@ def test_load_chain_invalid_genesis(storage, monkeypatch):
 
 def test_load_chain_wrong_genesis_hash(storage, monkeypatch):
     # Simulate correct height but wrong hash
-    monkeypatch.setattr('tsarchain.consensus.chain_storage.kv_enabled', lambda: True)
     def mock_iter_prefix(db, prefix):
         if prefix == b'':
             return [
@@ -495,7 +470,6 @@ def test_load_chain_wrong_genesis_hash(storage, monkeypatch):
 # State I/O tests
 # ----------------------------------------------------------------------
 def test_read_snapshot_state_kv(storage, monkeypatch):
-    monkeypatch.setattr('tsarchain.consensus.chain_storage.kv_enabled', lambda: True)
     # Mock iter_prefix to return state items
     def mock_iter_prefix(db, prefix):
         if prefix == b'k:':
@@ -539,8 +513,6 @@ def test_save_state(storage, monkeypatch):
 
     storage.chain_storage._compute_state_snapshot = Mock(return_value={"schema_version": 1, "last_updated": "now"})
 
-    # KV enabled
-    monkeypatch.setattr('tsarchain.consensus.chain_storage.kv_enabled', lambda: True)
     batch_mock = Mock()
     batch_mock.__enter__ = Mock(return_value=batch_mock)
     batch_mock.__exit__ = Mock(return_value=False)
@@ -662,10 +634,9 @@ def test_save_chain_no_dirty(storage, monkeypatch):
     storage.chain = [mock_block]
     storage._persisted_height = 0
     storage._chain_dirty_from = None
-    with patch('tsarchain.consensus.chain_storage.kv_enabled', return_value=True):
-        with patch('tsarchain.consensus.chain_storage.batch') as mock_batch:
-            storage.save_chain(force_full=False)
-            mock_batch.assert_not_called()
+    with patch('tsarchain.consensus.chain_storage.batch') as mock_batch:
+        storage.save_chain(force_full=False)
+        mock_batch.assert_not_called()
 
 
 def test_save_chain_interval_not_reached(storage, monkeypatch):
@@ -674,12 +645,11 @@ def test_save_chain_interval_not_reached(storage, monkeypatch):
     storage._persisted_height = 0
     storage._chain_dirty_from = 1
     CFG.CHAIN_FLUSH_INTERVAL = 5
-    with patch('tsarchain.consensus.chain_storage.kv_enabled', return_value=True):
-        with patch('tsarchain.consensus.chain_storage.batch') as mock_batch:
-            storage.save_chain(force_full=False)
-            mock_batch.assert_not_called()
-            # but should mark dirty_from
-            assert storage._chain_dirty_from == 1
+    with patch('tsarchain.consensus.chain_storage.batch') as mock_batch:
+        storage.save_chain(force_full=False)
+        mock_batch.assert_not_called()
+        # but should mark dirty_from
+        assert storage._chain_dirty_from == 1
 
 
 def test_save_chain_prune_when_tip_lower(storage, monkeypatch):
@@ -691,22 +661,21 @@ def test_save_chain_prune_when_tip_lower(storage, monkeypatch):
     storage._persisted_height = 5
     storage._chain_dirty_from = None
 
-    with patch('tsarchain.consensus.chain_storage.kv_enabled', return_value=True):
-        # Mock batch context manager so that if code tries to use it, it won't fail
-        batch_mock = Mock()
-        batch_mock.__enter__ = Mock(return_value=batch_mock)
-        batch_mock.__exit__ = Mock(return_value=False)
-        batch_mock.put = Mock()
-        with patch('tsarchain.consensus.chain_storage.batch', return_value=batch_mock):
-            with patch.object(storage.chain_storage, '_prune_chain_store') as prune_mock:
-                storage.save_chain(force_full=False)
+    # Mock batch context manager so that if code tries to use it, it won't fail
+    batch_mock = Mock()
+    batch_mock.__enter__ = Mock(return_value=batch_mock)
+    batch_mock.__exit__ = Mock(return_value=False)
+    batch_mock.put = Mock()
+    with patch('tsarchain.consensus.chain_storage.batch', return_value=batch_mock):
+        with patch.object(storage.chain_storage, '_prune_chain_store') as prune_mock:
+            storage.save_chain(force_full=False)
 
-                # Verify pruning was called with tip_height + 1 (0+1)
-                prune_mock.assert_called_once_with(1)
-                # Persisted height should be updated to tip_height (0)
-                assert storage._persisted_height == 0
-                # No batch.put should be called because no blocks are being saved
-                batch_mock.put.assert_not_called()
+            # Verify pruning was called with tip_height + 1 (0+1)
+            prune_mock.assert_called_once_with(1)
+            # Persisted height should be updated to tip_height (0)
+            assert storage._persisted_height == 0
+            # No batch.put should be called because no blocks are being saved
+            batch_mock.put.assert_not_called()
 
 
 # ----------------------------------------------------------------------

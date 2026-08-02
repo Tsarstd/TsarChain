@@ -46,8 +46,7 @@ def test_load_storage_pool(mempool):
         (b"__meta__", b'{"schema_version": 1}'),
         (b"abcd", b'{"txid": "abcd"}')
     ]
-    with patch("tsarchain.storage.kv.kv_enabled", return_value=True), \
-         patch("tsarchain.mempool.storage.iter_prefix", return_value=mock_data):
+    with patch("tsarchain.mempool.storage.iter_prefix", return_value=mock_data):
         entries, meta = mempool._load_storage_pool()
         assert len(entries) == 1
         assert meta["schema_version"] == 1
@@ -55,8 +54,7 @@ def test_load_storage_pool(mempool):
 def test_flush(mempool):
     mempool._dirty = True
     mempool._last_flush = 0
-    with patch("tsarchain.storage.kv.kv_enabled", return_value=True), \
-         patch("tsarchain.mempool.storage.clear_db"), \
+    with patch("tsarchain.mempool.storage.clear_db"), \
          patch("tsarchain.mempool.storage.batch"):
         assert mempool.flush()
         assert not mempool._dirty

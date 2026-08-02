@@ -69,8 +69,7 @@ def test_is_unspendable_opreturn():
 
 @patch("tsarchain.storage.utxo_logic.validate._ensure_env")
 @patch("tsarchain.storage.utxo_logic.validate.H")
-@patch("tsarchain.storage.kv.kv_enabled", return_value=True)
-def test_apply_native_ops_for_txs(mock_kv, mock_h, mock_ensure_env):
+def test_apply_native_ops_for_txs(mock_h, mock_ensure_env):
     mock_store = MagicMock()
     mock_ensure_env.return_value = mock_store
     obj = MockUTXOValidate()

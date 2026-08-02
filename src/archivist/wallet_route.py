@@ -266,9 +266,7 @@ def _process_data_retrieval(server, msg: Dict[str, Any], art_id: str, gid: str, 
     if total_size > 0:
         read_len = int(min(read_len, int(total_size) - int(offset)))
 
-    if server.use_kv:
-        return _fetch_kv_data(server, gid, art_id, offset, read_len, total_size, resp)
-    return _fetch_fs_data(meta, gid, art_id, offset, read_len, total_size, resp)
+    return _fetch_kv_data(server, gid, art_id, offset, read_len, total_size, resp)
 
 def _fetch_kv_data(server, gid: str, art_id: str, offset: int, read_len: int, total_size: int, resp: Dict[str, Any]) -> Dict[str, Any]:
     data_bytes = _read_kv_chunk(server, gid, offset, read_len)
@@ -288,30 +286,6 @@ def _fetch_kv_data(server, gid: str, art_id: str, offset: int, read_len: int, to
         "total_size": int(total_size),
         "eof": eof,
     })
-    return resp
-
-def _fetch_fs_data(meta: Dict[str, Any], gid: str, art_id: str, offset: int, read_len: int, total_size: int, resp: Dict[str, Any]) -> Dict[str, Any]:
-    path = meta.get("path")
-    if path and os.path.isfile(path):
-        try:
-            chunk, total_size_out = _read_fs_chunk(path, offset, read_len, total_size)
-            out_len = len(chunk)
-            eof = bool(total_size_out > 0 and (int(offset) + out_len) >= int(total_size_out))
-            resp.update({
-                "data_b64": base64.b64encode(chunk).decode("ascii"),
-                "status": "ok",
-                "offset": int(offset),
-                "length": int(out_len),
-                "total_size": int(total_size_out),
-                "eof": eof,
-            })
-            return resp
-        except Exception:
-            pass
-            
-    resp["status"] = "error"
-    resp["reason"] = "file_missing"
-    log.warning("[STOR_GET_BY_ART] file_missing art=%s gid=%s path=%s", (art_id[:16] if art_id else "-"), gid, path if "path" in locals() else None)
     return resp
 
 # =============================================================================
@@ -377,14 +351,5 @@ def _read_kv_chunk(server, gid, offset, read_len):
     except Exception:
         pass
     return None
-
-def _read_fs_chunk(path, offset, read_len, total_size):
-    if total_size <= 0:
-        total_size = os.path.getsize(path)
-    with open(path, "rb") as fh:
-        fh.seek(int(offset))
-        chunk = fh.read(int(read_len))
-    return chunk, total_size
-
 
 __all__ = ["handle_wallet_rpc"]

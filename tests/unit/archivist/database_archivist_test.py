@@ -14,7 +14,6 @@ def tmp_db(tmp_path):
 
 def test_db_init_lmdb(tmp_path):
     db = ArchivistDatabase(storage_dir=str(tmp_path), enable_blobs=True, enable_index=True)
-    assert db.use_kv is True
     test_idx = {"files": {"gid1": {"size_bytes": 100}}, "bytes_used": 100, "art_map": {"art1": "gid1"}}
     db.save_index(test_idx)
     
@@ -23,7 +22,6 @@ def test_db_init_lmdb(tmp_path):
 
 def test_db_init_disabled_index(tmp_path):
     db = ArchivistDatabase(storage_dir=str(tmp_path), enable_index=False)
-    assert db.use_kv is False
     test_idx = {"files": {"gid1": {"size_bytes": 100}}, "bytes_used": 100, "art_map": {"art1": "gid1"}}
     db.save_index(test_idx)
     loaded = db.load_index()
@@ -74,8 +72,7 @@ def test_blobs_disabled(tmp_path):
         db.delete_blob("gid", incoming=True, final=True)
 
 @patch("archivist.database_archivist._native_open_storage")
-@patch("tsarchain.storage.kv.kv_enabled", return_value=True)
-def test_kv_operations(mock_kv_enabled, mock_native, tmp_path):
+def test_kv_operations(mock_native, tmp_path):
     # Mock LMDB store
     mock_store_idx = MagicMock()
     mock_store_final = MagicMock()
@@ -106,8 +103,7 @@ def test_kv_operations(mock_kv_enabled, mock_native, tmp_path):
     assert mock_store_final.delete.called
 
 @patch("archivist.database_archivist._native_open_storage")
-@patch("tsarchain.storage.kv.kv_enabled", return_value=True)
-def test_load_index_kv(mock_kv, mock_native, tmp_path):
+def test_load_index_kv(mock_native, tmp_path):
     mock_store_idx = MagicMock()
     mock_native.return_value = mock_store_idx
     

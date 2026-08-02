@@ -19,7 +19,7 @@ from ecdsa import SECP256k1, VerifyingKey
 
 # ---------------- Local Project ----------------
 from . import config as CFG
-from ..storage.kv import iter_prefix, kv_enabled
+from ..storage.kv import iter_prefix
 
 from .tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.utils.bootstrap")
@@ -38,12 +38,6 @@ class SnapshotBootstrapResult:
 
 
 def maybe_bootstrap_snapshot(progress_cb: ProgressCallback = None) -> SnapshotBootstrapResult:
-    if str(CFG.KV_BACKEND).lower() != "lmdb":
-        return SnapshotBootstrapResult(status="backend", reason="JSON active, not support snapshot")
-
-    if kv_enabled():
-        return SnapshotBootstrapResult(status="backend", reason="LMDB backend")
-
     start_time = time.time()
     target_dir = CFG.LMDB_DATA_FILE
     if target_dir.lower().endswith(".mdb"):

@@ -10,10 +10,9 @@ from tsarchain.network import peers_storage
 
 @pytest.fixture
 def mock_kv():
-    with patch("tsarchain.storage.kv.kv_enabled") as mock_enabled, \
-         patch("tsarchain.network.peers_storage.get") as mock_get, \
+    with patch("tsarchain.network.peers_storage.get") as mock_get, \
          patch("tsarchain.network.peers_storage.put") as mock_put:
-        yield mock_enabled, mock_get, mock_put
+        yield mock_get, mock_put
 
 @pytest.fixture
 def mock_cfg():
@@ -24,9 +23,8 @@ def mock_cfg():
         mock_cfg.CANONICAL_SEP = (',', ':')
         yield mock_cfg
 
-def test_load_record_kv_enabled_success(mock_kv, mock_cfg):
-    mock_enabled, mock_get, mock_put = mock_kv
-    mock_enabled.return_value = True
+def test_load_record_success(mock_kv, mock_cfg):
+    mock_get, mock_put = mock_kv
     
     mock_data = {"key": "value"}
     mock_get.return_value = json.dumps(mock_data).encode("utf-8")
@@ -36,9 +34,8 @@ def test_load_record_kv_enabled_success(mock_kv, mock_cfg):
     assert result == mock_data
     mock_get.assert_called_once_with("node_secrets", b"node_key")
 
-def test_load_record_kv_enabled_decode_error(mock_kv, mock_cfg):
-    mock_enabled, mock_get, mock_put = mock_kv
-    mock_enabled.return_value = True
+def test_load_record_decode_error(mock_kv, mock_cfg):
+    mock_get, mock_put = mock_kv
     
     mock_get.return_value = b"invalid_json"
     
@@ -46,16 +43,15 @@ def test_load_record_kv_enabled_decode_error(mock_kv, mock_cfg):
     
     assert result is None
 
-def test_load_record_kv_disabled_returns_none(mock_kv, mock_cfg):
-    mock_enabled, mock_get, mock_put = mock_kv
+def test_load_record_disabled_returns_none(mock_kv, mock_cfg):
+    mock_get, mock_put = mock_kv
     mock_get.return_value = None
     
     result = peers_storage._load_record("node_key")
     assert result is None
 
-def test_load_record_kv_enabled_no_data(mock_kv, mock_cfg):
-    mock_enabled, mock_get, mock_put = mock_kv
-    mock_enabled.return_value = True
+def test_load_record_no_data(mock_kv, mock_cfg):
+    mock_get, mock_put = mock_kv
     mock_get.return_value = None
     
     with patch("os.path.exists", return_value=False):
@@ -64,19 +60,12 @@ def test_load_record_kv_enabled_no_data(mock_kv, mock_cfg):
     assert result is None
     mock_put.assert_not_called()
 
-def test_store_record_kv_enabled(mock_kv, mock_cfg):
-    mock_enabled, mock_get, mock_put = mock_kv
-    mock_enabled.return_value = True
+def test_store_record(mock_kv, mock_cfg):
+    mock_get, mock_put = mock_kv
     
     mock_data = {"key": "value"}
     peers_storage._store_record("node_key", mock_data)
         
-    mock_put.assert_called_once()
-
-def test_store_record_kv_disabled(mock_kv, mock_cfg):
-    mock_enabled, mock_get, mock_put = mock_kv
-    mock_data = {"key": "value"}
-    peers_storage._store_record("node_key", mock_data)
     mock_put.assert_called_once()
 
 def test_load_node_key(mock_kv):
@@ -122,9 +111,8 @@ def test_resolve_key_and_path(mock_cfg):
     assert key == "custom/path.json"
     assert path == "custom/path.json"
 
-def test_load_record_kv_enabled_auto_migration(mock_kv, mock_cfg):
-    mock_enabled, mock_get, mock_put = mock_kv
-    mock_enabled.return_value = True
+def test_load_record_auto_migration(mock_kv, mock_cfg):
+    mock_get, mock_put = mock_kv
     mock_get.return_value = None  # Key not in KV store yet
     
     mock_data = {"id": "node123", "pubkey": "abc"}
@@ -134,4 +122,3 @@ def test_load_record_kv_enabled_auto_migration(mock_kv, mock_cfg):
         
     assert result == mock_data
     mock_put.assert_called_once_with("node_secrets", b"node_key", json.dumps(mock_data, separators=(',', ':')).encode("utf-8"))
-

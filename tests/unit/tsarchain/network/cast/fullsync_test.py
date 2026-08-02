@@ -32,19 +32,13 @@ def test_snapshot_components(sync):
     sync.mempool.get_all_txs.return_value = [MagicMock(to_dict=lambda: {"txid": "T1"})]
     sync.utxodb.to_dict.return_value = {"u1": "v1"}
     
-    with patch("tsarchain.network.cast.fullsync.CFG.KV_BACKEND", "json"):
+    with patch("tsarchain.network.cast.fullsync.H.kv_load_utxo_dict_native", return_value={"u2": "v2"}):
         chain_data, utxo_dict, state_view, mempool_data = sync._snapshot_components()
         assert len(chain_data) == 1
         assert chain_data[0]["hash"] == "B1"
-        assert len(utxo_dict) == 1
+        assert utxo_dict == {"u2": "v2"}
         assert state_view == {"test": 123}
         assert len(mempool_data) == 1
-        
-    # KV mode
-    with patch("tsarchain.network.cast.fullsync.CFG.KV_BACKEND", "lmdb"):
-        with patch("tsarchain.network.cast.fullsync.H.kv_load_utxo_dict_native", return_value={"u2": "v2"}):
-            _, utxo_dict_kv, _, _ = sync._snapshot_components()
-            assert utxo_dict_kv == {"u2": "v2"}
 
 def test_build_full_sync_payload(sync):
     sync.blockchain.chain = []

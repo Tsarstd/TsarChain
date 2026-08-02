@@ -49,7 +49,7 @@ from kremlin.theme import get_theme, install_ttk_styles, FONT
 # ---------------- Local Project (With Node) ----------------
 import tsarcore_native as native
 from tsarchain.utils import config as CFG
-from tsarchain.storage.kv import kv_enabled, iter_prefix, batch
+from tsarchain.storage.kv import iter_prefix, batch
 
 # ---------------- Logger ----------------
 from tsarchain.utils.tsar_logging import setup_logging, open_log_toplevel, get_ctx_logger
@@ -62,45 +62,17 @@ os.makedirs(os.path.dirname(CFG.USER_KEY_PATH), exist_ok=True)
 USER_ID, USER_PUB, USER_PRIV = create_keypair(CFG.USER_KEY_PATH)
 USER_CTX = {"net_id": CFG.DEFAULT_NET_ID, "node_id": USER_ID, "pubkey": USER_PUB, "privkey": USER_PRIV}
 
-WALLET_PEER_KEYS_PATH = os.path.join(os.path.dirname(CFG.USER_KEY_PATH), "wallet_peer_keys.json")
-
-if not kv_enabled():
-    os.makedirs(os.path.dirname(WALLET_PEER_KEYS_PATH), exist_ok=True)
-    
 def _load_peer_keys() -> dict:
-    if kv_enabled():
-        m = {}
-        for k, v in iter_prefix('wallet_peer_keys', b'nid:'):
-            nid = k.decode('utf-8')[4:]
-            m[nid] = v.decode('utf-8')
-        return m
-    if not os.path.exists(WALLET_PEER_KEYS_PATH):
-        _save_peer_keys({})
-    try:
-        with open(WALLET_PEER_KEYS_PATH, 'r', encoding='utf-8') as f:
-            obj = json.load(f)
-            return obj if isinstance(obj, dict) else {}
-    except json.JSONDecodeError:
-        log.warning("wallet_peer_keys.json corrupted; resetting to empty")
-    except FileNotFoundError:
-        pass
-    except Exception as e:
-        log.warning("failed to load wallet_peer_keys: %s", e)
-        
-    _save_peer_keys({})
-    return {}
-    
+    m = {}
+    for k, v in iter_prefix('wallet_peer_keys', b'nid:'):
+        nid = k.decode('utf-8')[4:]
+        m[nid] = v.decode('utf-8')
+    return m
+
 def _save_peer_keys(d: dict) -> None:
-    if kv_enabled():
-        with batch('wallet_peer_keys') as b:
-            for nid, pk in d.items():
-                b.put(f"nid:{nid}".encode('utf-8'), pk.encode('utf-8'))
-        return
-    os.makedirs(os.path.dirname(WALLET_PEER_KEYS_PATH), exist_ok=True)
-    tmp = WALLET_PEER_KEYS_PATH + ".tmp"
-    with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump(d, f, indent=2)
-    os.replace(tmp, WALLET_PEER_KEYS_PATH)
+    with batch('wallet_peer_keys') as b:
+        for nid, pk in d.items():
+            b.put(f"nid:{nid}".encode('utf-8'), pk.encode('utf-8'))
 
 WALLET_PEER_KEYS = _load_peer_keys()
 

@@ -13,7 +13,6 @@ def mock_db():
     with patch("archivist.server_archivist.ArchivistDatabase") as mock:
         db_inst = MagicMock()
         db_inst.load_index.return_value = {"files": {}, "bytes_used": 0, "art_map": {}}
-        db_inst.use_kv = False
         mock.return_value = db_inst
         yield db_inst
 

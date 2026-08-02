@@ -14,7 +14,6 @@ from archivist.wallet_route import handle_wallet_rpc
 def server(tmp_path):
     srv = MagicMock()
     srv.index = {"files": {}, "bytes_used": 0, "art_map": {}}
-    srv.use_kv = False
     srv.storage_dir = str(tmp_path)
     srv.db = MagicMock()
     return srv
@@ -135,7 +134,7 @@ def test_stor_commit_success(mock_val, server, tmp_path):
     meta = server.index["files"]["gid1"]
     assert meta["state"] == "pending_confirm"
     assert meta["expire_at_height"] > 100
-    assert "final" not in meta["path"] # it gets renamed to .bin, but in incoming
+    assert "final" not in meta["path"]
     assert meta["path"].endswith(".bin")
 
 def test_stor_get_by_art_missing(server):
@@ -151,11 +150,9 @@ def test_stor_get_by_art_no_data(server):
     assert "data_b64" not in res
 
 def test_stor_get_by_art_with_data_kv(server):
-    server.use_kv = True
     server.index["art_map"]["art2"] = "gid2"
     server.index["files"]["gid2"] = {"size_bytes": 100, "paid": True}
     
-    # Mock the new method
     server.db.get_final_bytes_range = MagicMock(return_value=b"y" * 5)
     
     res = handle_wallet_rpc(server, {"type": "STOR_GET_BY_ART", "art_id": "art2", "include_data": True, "offset": 10, "length": 5})
@@ -166,22 +163,6 @@ def test_stor_get_by_art_with_data_kv(server):
     decoded = base64.b64decode(res["data_b64"])
     assert decoded == b"y" * 5
     server.db.get_final_bytes_range.assert_called_with("gid2", 10, 5)
-
-def test_stor_get_by_art_with_data_fs(server, tmp_path):
-    file_path = tmp_path / "gid1.bin"
-    file_path.write_bytes(b"x" * 100)
-    
-    server.index["art_map"]["art1"] = "gid1"
-    server.index["files"]["gid1"] = {"size_bytes": 100, "paid": True, "path": str(file_path)}
-    
-    res = handle_wallet_rpc(server, {"type": "STOR_GET_BY_ART", "art_id": "art1", "include_data": True, "offset": 90})
-    assert res["status"] == "ok"
-    assert res["offset"] == 90
-    assert res["length"] == 10
-    assert res["eof"] is True
-    
-    decoded = base64.b64decode(res["data_b64"])
-    assert decoded == b"x" * 10
 
 def test_unknown_wallet_rpc(server):
     res = handle_wallet_rpc(server, {"type": "UNKNOWN"})
@@ -217,9 +198,3 @@ def test_stor_get_by_art_file_too_large(server):
         res = handle_wallet_rpc(server, {"type": "STOR_GET_BY_ART", "graffiti_id": "gid1", "include_data": True})
         assert res["status"] == "error"
         assert res["reason"] == "file_too_large"
-
-def test_stor_get_by_art_fs_missing(server):
-    server.index["files"]["gid1"] = {"size_bytes": 100, "paid": True, "path": "/does/not/exist.bin"}
-    res = handle_wallet_rpc(server, {"type": "STOR_GET_BY_ART", "graffiti_id": "gid1", "include_data": True})
-    assert res["status"] == "error"
-    assert res["reason"] == "file_missing"

@@ -1210,8 +1210,6 @@ The core logic of the Graffiti Protocol governs the creation, validation, storag
 
 ### 1. Metadata Registry (`src/tsarchain/contracts/graffiti_registry.py`)
 The `GraffitiRegistry` tracks state records for posts, comments, payouts, and proofs.
-- **Dual-Database Adapter**:
-  - **LMDB Backend (`_kv = True`)**: Under production configuration, the registry updates via high-performance prefix lookups (`graffiti:`).
 - **State Collections**:
   - `posts`: Links art identifiers (`art_id`) to transactional metadata, hashes, size bounds, and current pool balances.
   - `comments`: Appends commenter signatures, timestamps, and payouts splits.

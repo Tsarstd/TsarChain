@@ -118,10 +118,7 @@ class FullSyncHandler(BroadcastHandlerProxy):
         for tx in mempool_objects:
             mempool_data.append(tx.to_dict())
             
-        if CFG.KV_BACKEND == "lmdb":
-            utxo_dict = H.kv_load_utxo_dict_native(limit=CFG.KV_ITER_CHUNK)
-        else:
-            utxo_dict = self.utxodb.to_dict()
+        utxo_dict = H.kv_load_utxo_dict_native(limit=CFG.KV_ITER_CHUNK)
             
         duration = time.time() - snapshot_start
         log.info(

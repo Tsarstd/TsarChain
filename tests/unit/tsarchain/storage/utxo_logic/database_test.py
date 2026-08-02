@@ -129,8 +129,7 @@ def test_to_from_dict():
 
 
 @patch("tsarchain.storage.utxo_logic.database.TxOut", MockTxOut)
-@patch("tsarchain.storage.kv.kv_enabled", return_value=True)
-def test_load_save_kv(mock_kv):
+def test_load_save_kv():
     db = MockUTXODatabase()
     
     def mock_iter_prefix(prefix, start):

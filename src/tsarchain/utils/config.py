@@ -116,7 +116,6 @@ DATA_SCHEMA_VERSION = 1
 
 
 # ---- KV BACKEND ----
-KV_BACKEND         = "lmdb"  # native key-value backend implementation (100% LMDB)
 LMDB_DATA_FILE     = str(PROJECT_ROOT / "data/node")  # fallback LMDB data directory
 LMDB_KEYS_DIR      = str(PROJECT_ROOT / "data/keys")  # LMDB environment path for node_secrets
 LMDB_CHAIN_DIR     = str(PROJECT_ROOT / "data/node/chain")  # LMDB environment path for chain

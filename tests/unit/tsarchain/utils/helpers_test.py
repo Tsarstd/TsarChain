@@ -252,7 +252,6 @@ def test_native_randomx_mine(m):
 
 @patch("tsarchain.utils.helpers.kv")
 def test_kv_load(m_kv):
-    m_kv.kv_enabled.return_value = True
     store = MagicMock()
     m_kv._ensure_env.return_value = store
     store.iter_prefix_chunk.side_effect = [

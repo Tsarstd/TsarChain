@@ -711,9 +711,6 @@ impl NativeStorage {
                     detected_drive_type: dt.as_str().to_string(),
                 })
             }
-            "json" => Err(PyValueError::new_err(
-                "JSON backend has been deprecated and removed. NativeStorage only supports 'lmdb'.",
-            )),
             _ => Err(PyValueError::new_err(
                 "backend must be 'lmdb'",
             )),

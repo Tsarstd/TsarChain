@@ -30,7 +30,6 @@ class StorageServer:
         self.port = int(port)
         self.storage_dir = storage_dir
         self.db = ArchivistDatabase(storage_dir)
-        self.use_kv = bool(getattr(self.db, "use_kv", False))
         self.idx_path = os.path.join(storage_dir, "index.json")
         self._load_index()
         self.guard = StorageGuard()

@@ -23,7 +23,7 @@ from ..utils import config as CFG
 from ..contracts import graffiti as GRAFFITI
 from ..contracts.graffiti_registry import GraffitiRegistry
 from ..utils.bootstrap import annotate_local_snapshot_meta
-from ..storage.kv import kv_enabled, batch, iter_prefix, clear_db, delete, _ensure_env
+from ..storage.kv import batch, iter_prefix, clear_db, delete, _ensure_env
 from ..utils.helpers import bits_to_target, target_to_difficulty, estimate_block_size_bytes
 
 from ..utils.tsar_logging import get_ctx_logger
@@ -223,7 +223,7 @@ class ChainStorage:
 
 
     def _maybe_backup_snapshot(self, tip_height: int, *, tip_timestamp: int | None = None) -> None:
-        if tip_height < 0 or not kv_enabled():
+        if tip_height < 0:
             return
         if not self._backup_snapshot_enabled():
             return
@@ -450,7 +450,7 @@ class ChainStorage:
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
-        env = _ensure_env("chain") if kv_enabled() else None
+        env = _ensure_env("chain")
         if env is not None:
             os.makedirs(tmp_dir, exist_ok=True)
             env.copy(tmp_dir, compact=True)
@@ -816,82 +816,3 @@ class ChainStorage:
             "pool_balances": int(total_pool_balances),
             "total_graffiti_storage": int(total_graffiti_storage),
         }
-
-
-# =============================================================================
-# JOURNAL (.json)        NOTE: journal is Python-only fallback for non-LMDB mode; not performance-critical, no plan to port to Rust for now.
-# =============================================================================
-
-
-    def _chain_journal_enabled(self) -> bool:
-        return not kv_enabled()
-
-
-    def _chain_journal_size(self) -> int:
-        path = CFG.CHAIN_JOURNAL_FILE
-        if path and os.path.exists(path):
-            try:
-                return os.path.getsize(path)
-            except Exception:
-                log.exception("[_chain_journal_size] Failed getting size for %s", path)
-                return 0
-        return 0
-
-
-    def _clear_chain_journal(self) -> None:
-        path = CFG.CHAIN_JOURNAL_FILE
-        if not path or not os.path.exists(path):
-            return
-        os.remove(path)
-
-
-    def _append_chain_journal(self, start_height: int, blocks: list[Block]) -> None:
-        if not self._chain_journal_enabled() or not blocks:
-            return
-        path = CFG.CHAIN_JOURNAL_FILE
-        if not path:
-            return
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "a", encoding="utf-8") as fh:
-            for offset, block in enumerate(blocks):
-                entry = {
-                    "height": int(start_height + offset),
-                    "block": block.to_dict(),
-                }
-                fh.write(json.dumps(entry, separators=CFG.CANONICAL_SEP) + "\n")
-
-
-    def _apply_chain_journal(self, chain_data: list[dict]) -> list[dict]:
-        path = CFG.CHAIN_JOURNAL_FILE
-        if not path or not os.path.exists(path):
-            return chain_data or []
-        result = list(chain_data or [])
-        with open(path, "r", encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    rec = json.loads(line)
-                except Exception:
-                    log.exception("[_apply_chain_journal] Failed parsing journal line")
-                    continue
-                height = rec.get("height")
-                block_dict = rec.get("block")
-                if block_dict is None:
-                    continue
-                try:
-                    height = int(height)
-                except Exception:
-                    log.exception("[_apply_chain_journal] Failed parsing journal height")
-                    continue
-                if height < 0:
-                    continue
-                if height < len(result):
-                    result[height] = block_dict
-                elif height == len(result):
-                    result.append(block_dict)
-                else:
-                    # journal gap; skip to avoid corrupting chain
-                    continue
-        return result

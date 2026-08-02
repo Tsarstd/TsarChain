@@ -15,10 +15,6 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.storage.kv')
 
 
-def kv_enabled() -> bool:
-    return CFG.KV_BACKEND == "lmdb"
-
-
 _native_store = None
 _native_stores = {}
 _init_lock = threading.RLock()
@@ -37,8 +33,6 @@ def get_db_path(name: str) -> str:
 
 def _init_native_store(name: str = "chain"):
     global _native_store
-    if not kv_enabled():
-        return None
     path = get_db_path(name)
     if path in _native_stores:
         _native_store = _native_stores[path]
@@ -74,47 +68,33 @@ def sync(force: bool = False) -> None:
                 s.sync(force)
 
 def _ensure_env(name: str = "chain"):
-    if not kv_enabled():
-        return None
     path = get_db_path(name)
     if path in _native_stores:
         return _native_stores[path]
     store = _init_native_store(name)
     if store is not None:
         return store
-    if kv_enabled():
-        raise RuntimeError("Native storage required but not initialized; install/build tsarcore_native")
-    return None
+    raise RuntimeError("Native storage required but not initialized; install/build tsarcore_native")
 
 def get(name: str, key: bytes) -> Optional[bytes]:
     store = _ensure_env(name)
-    if store is None:
-        return None
     val = store.get_bytes(name, key)
     return bytes(val) if val is not None else None
 
 def put(name: str, key: bytes, val: bytes) -> None:
     store = _ensure_env(name)
-    if store is None:
-        raise RuntimeError("KV not enabled")
     store.put_bytes(name, key, val)
 
 def delete(name: str, key: bytes) -> None:
     store = _ensure_env(name)
-    if store is None:
-        return
     store.delete(name, key)
 
 def clear_db(name: str) -> int:
     store = _ensure_env(name)
-    if store is None:
-        return 0
     return int(store.clear_db(name))
 
 def iter_prefix(name: str, prefix: bytes) -> Iterator[Tuple[bytes, bytes]]:
     store = _ensure_env(name)
-    if store is None:
-        return iter(())
     def _generator():
         start_after: Optional[bytes] = None
         while True:
@@ -132,8 +112,6 @@ def iter_prefix(name: str, prefix: bytes) -> Iterator[Tuple[bytes, bytes]]:
 @contextmanager
 def batch(name: str):
     store = _ensure_env(name)
-    if store is None:
-        raise RuntimeError("KV not enabled")
 
     class _NativeBatch:
         def __init__(self, native_store, db_name):

@@ -16,12 +16,12 @@ fn init_python() {
 }
 
 #[test]
-fn test_json_backend_deprecated() {
+fn test_invalid_backend() {
     init_python();
     let dir = tempdir().unwrap();
     let path_str = dir.path().to_str().unwrap();
 
-    let storage = open_storage("json", path_str, None, None, true, None);
+    let storage = open_storage("invalid_backend", path_str, None, None, true, None);
     assert!(storage.is_err());
 }
 

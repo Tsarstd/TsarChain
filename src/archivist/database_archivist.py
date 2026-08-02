@@ -42,8 +42,7 @@ def _iter_prefix(store, db_name: str, prefix: bytes) -> Iterator[Tuple[bytes, by
 
 class ArchivistDatabase:
     """
-    Abstraksi backend untuk index + blob archivist.
-    Jika KV_BACKEND != lmdb, hanya menyediakan loader/saver JSON; operasi blob didelegasikan ke filesystem oleh caller.
+    Abstraksi backend LMDB untuk index + blob archivist.
     """
 
     def __init__(self, storage_dir: str | None = None, *, enable_blobs: bool = True, enable_index: bool = True):
@@ -56,10 +55,6 @@ class ArchivistDatabase:
             self._kv_index = self._open_store(CFG.ARCHIVIST_INDEX_DB_PATH)
             if self.enable_blobs:
                 self._kv_final = self._open_store(CFG.ARCHIVIST_FINAL_DB_PATH)
-
-    @property
-    def use_kv(self) -> bool:
-        return self.enable_index and self.enable_blobs
 
 
     # ---------------- Index ----------------

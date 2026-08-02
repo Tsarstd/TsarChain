@@ -71,11 +71,10 @@ def test_secure_erase():
     
     assert data_security.Security.secure_erase(123) == 123
 
-@patch("tsarchain.storage.kv.kv_enabled", return_value=True)
 @patch("kremlin.security.data_security.kv_get")
 @patch("kremlin.security.data_security.kv_put")
 @patch("kremlin.security.data_security.kv_delete")
-def test_secure_backend_kv(mock_del, mock_put, mock_get, mock_kv):
+def test_secure_backend_kv(mock_del, mock_put, mock_get):
     data = {"a": 1}
     data_security._secure_backend_write("ns", "key", None, data)
     mock_put.assert_called()

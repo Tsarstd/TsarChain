@@ -42,17 +42,14 @@ def mock_mempool():
 
 @pytest.fixture(autouse=True)
 def mock_kv():
-    """Mock kv_enabled, iter_prefix, and _ensure_env from storage.kv across modules."""
-    mock_kv_enabled = Mock(return_value=True)
+    """Mock iter_prefix and _ensure_env from storage.kv across modules."""
     mock_iter_prefix = Mock(return_value=[])
     mock_store = MagicMock()
-    with patch('tsarchain.consensus.chain_storage.kv_enabled', mock_kv_enabled), \
-         patch('tsarchain.storage.kv.kv_enabled', mock_kv_enabled), \
-         patch('tsarchain.consensus.blockchain.iter_prefix', mock_iter_prefix), \
+    with patch('tsarchain.consensus.blockchain.iter_prefix', mock_iter_prefix), \
          patch('tsarchain.consensus.chain_storage.iter_prefix', mock_iter_prefix), \
          patch('tsarchain.storage.kv.iter_prefix', mock_iter_prefix), \
          patch('tsarchain.storage.kv._ensure_env', return_value=mock_store):
-        yield mock_kv_enabled, mock_iter_prefix
+        yield mock_iter_prefix
 
 
 @pytest.fixture
@@ -63,15 +60,11 @@ def mock_config(monkeypatch):
 
     monkeypatch.setattr(bc_mod.CFG, "HASH_CACHE_MAX", 100)
     monkeypatch.setattr(bc_mod.CFG, "UTXO_FLUSH_INTERVAL", 10)
-    monkeypatch.setattr(bc_mod.CFG, "CHAIN_JOURNAL_FILE", "/tmp/non_existent_journal.file")
     monkeypatch.setattr(bc_mod.CFG, "LMDB_CHAIN_DIR", "/tmp/non_existent_blocks.json")
     monkeypatch.setattr(bc_mod.CFG, "LMDB_DATA_FILE", "/tmp/non_existent_lmdb")
-    monkeypatch.setattr(bc_mod.CFG, "KV_BACKEND", "json")
 
-    monkeypatch.setattr(cs_mod.CFG, "CHAIN_JOURNAL_FILE", "/tmp/non_existent_journal.file")
     monkeypatch.setattr(cs_mod.CFG, "LMDB_CHAIN_DIR", "/tmp/non_existent_blocks.json")
     monkeypatch.setattr(cs_mod.CFG, "LMDB_DATA_FILE", "/tmp/non_existent_lmdb")
-    monkeypatch.setattr(cs_mod.CFG, "KV_BACKEND", "json")
     monkeypatch.setattr(cs_mod.CFG, "BLOCK_BACKUP_SNAPSHOT", 0)
     yield bc_mod.CFG
 
@@ -182,8 +175,7 @@ def test_get_block_hash_fallback(mock_config):
 
 def test_reload_chain_from_kv(mock_block_module, mock_kv, mock_config):
     """Successfully reload chain from LMDB."""
-    kv_enabled, iter_prefix = mock_kv
-    kv_enabled.return_value = True
+    iter_prefix = mock_kv
 
     block_data = {'height': 0, 'hash': 'abc123', 'transactions': []}
     iter_prefix.return_value = [
@@ -212,8 +204,7 @@ def test_reload_chain_from_kv(mock_block_module, mock_kv, mock_config):
 
 def test_reload_chain_from_kv_empty(mock_config, mock_kv):
     """Reload fails when LMDB has no block data."""
-    kv_enabled, iter_prefix = mock_kv
-    kv_enabled.return_value = True
+    iter_prefix = mock_kv
     iter_prefix.return_value = []  # no data
 
     bc = Blockchain()
@@ -423,8 +414,7 @@ def test_hash_cache_lru(mock_config):
     
 def test_reload_chain_from_kv_corrupt_json(mock_config, mock_kv):
     """Reload fails if JSON data is invalid."""
-    kv_enabled, iter_prefix = mock_kv
-    kv_enabled.return_value = True
+    iter_prefix = mock_kv
     # Data corrupt (not JSON)
     iter_prefix.return_value = [(b'h:0', b'not a json')]
 
@@ -436,8 +426,7 @@ def test_reload_chain_from_kv_corrupt_json(mock_config, mock_kv):
 
 def test_reload_chain_from_kv_block_from_dict_fails(mock_config, mock_kv, mock_block_module):
     """Reload fails if Block.from_dict raises an exception."""
-    kv_enabled, iter_prefix = mock_kv
-    kv_enabled.return_value = True
+    iter_prefix = mock_kv
     block_data = {'height': 0, 'hash': 'abc123', 'transactions': []}
     iter_prefix.return_value = [(b'h:0', json.dumps(block_data).encode('utf-8'))]
     mock_block_module.from_dict.side_effect = Exception("Corrupt block")
