@@ -13,7 +13,6 @@ from typing import Dict, Optional
 from ..core.tx import Tx
 from ..utils import config as CFG
 from ..storage.utxo import UTXODB
-from ..storage.db import BaseDatabase
 
 from .types import PrevoutRef
 from .orphan import OrphanPoolMixin
@@ -30,12 +29,11 @@ class TxPool(
     MempoolPolicyMixin,
     TxMempoolValidator,
     OrphanPoolMixin,
-    BaseDatabase,
 ):
 
     def __init__(
         self,
-        filepath: str = CFG.MEMPOOL_FILE,
+        filepath: str = CFG.LMDB_MEMPOOL_DIR,
         max_size_mb: int = CFG.MEMPOOL_MAX_SIZE,
         utxo_store: Optional[UTXODB] = None,
         inherit_state: bool = False,

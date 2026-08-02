@@ -16,7 +16,6 @@ from typing import Dict, Iterator, Tuple, Optional
 
 from tsarcore_native import open_storage as _native_open_storage
 
-from tsarchain.storage.kv import kv_enabled
 from tsarchain.utils import config as CFG
 
 from tsarchain.utils.tsar_logging import get_ctx_logger
@@ -49,12 +48,11 @@ class ArchivistDatabase:
 
     def __init__(self, storage_dir: str | None = None, *, enable_blobs: bool = True, enable_index: bool = True):
         self.storage_dir = storage_dir or CFG.STORAGE_DIR
-        self.use_kv = kv_enabled()
         self.enable_index = enable_index
         self.enable_blobs = enable_blobs
         self._mem_index = {"files": {}, "bytes_used": 0, "art_map": {}}
 
-        if self.use_kv and self.enable_index:
+        if self.enable_index:
             self._kv_index = self._open_store(CFG.ARCHIVIST_INDEX_DB_PATH)
             if self.enable_blobs:
                 self._kv_final = self._open_store(CFG.ARCHIVIST_FINAL_DB_PATH)
@@ -64,8 +62,6 @@ class ArchivistDatabase:
     def load_index(self) -> Dict:
         if not self.enable_index:
             return dict(self._mem_index)
-        if not self.use_kv:
-            return self._load_index_json()
         files: Dict[str, Dict] = {}
         art_map: Dict[str, str] = {}
         for k, v in _iter_prefix(self._kv_index, "idx", b"file:"):
@@ -88,9 +84,6 @@ class ArchivistDatabase:
                 "bytes_used": int(index.get("bytes_used", 0) or 0),
                 "art_map": dict(index.get("art_map") or {}),
             }
-            return
-        if not self.use_kv:
-            self._save_index_json(index)
             return
         self._kv_index.clear_db("idx")
         ops = []
@@ -155,8 +148,6 @@ class ArchivistDatabase:
 
 
     def put_final(self, gid: str, data: bytes) -> None:
-        if not self.use_kv:
-            raise RuntimeError("kv_disabled")
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
         key = f"blob:{gid}".encode("utf-8")
@@ -167,8 +158,6 @@ class ArchivistDatabase:
         """
         Pindahkan blob dari incoming filesystem ke final_db. Mengembalikan True jika ada data yang dipindah.
         """
-        if not self.use_kv:
-            raise RuntimeError("kv_disabled")
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
         data = self.pop_incoming(gid)
@@ -179,8 +168,6 @@ class ArchivistDatabase:
 
 
     def get_final_bytes_range(self, gid: str, offset: int, length: int) -> Optional[bytes]:
-        if not self.use_kv:
-            raise RuntimeError("kv_disabled")
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
         key = f"blob:{gid}".encode("utf-8")
@@ -189,8 +176,6 @@ class ArchivistDatabase:
 
 
     def get_final_merkle_path(self, gid: str, chunk_size: int, index: int) -> Optional[list]:
-        if not self.use_kv:
-            raise RuntimeError("kv_disabled")
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
         key = f"blob:{gid}".encode("utf-8")
@@ -208,8 +193,6 @@ class ArchivistDatabase:
                     except OSError:
                         pass
         if final:
-            if not self.use_kv:
-                raise RuntimeError("kv_disabled")
             key = f"blob:{gid}".encode("utf-8")
             self._kv_final.delete("final", key)
 
@@ -255,51 +238,6 @@ class ArchivistDatabase:
 
     def _incoming_bin_path(self, gid: str) -> str:
         return os.path.join(self._incoming_dir(), f"{gid}.bin")
-
-
-    # ---------------- JSON fallback ----------------
-    def _idx_path(self) -> str:
-        return os.path.join(self.storage_dir, "index.json")
-
-
-    def _load_index_json(self) -> Dict:
-        path = self._idx_path()
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        default = {"files": {}, "bytes_used": 0, "art_map": {}}
-        if not os.path.exists(path):
-            self._save_index_json(default)
-            return dict(default)
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                data = json.load(fh)
-            if not isinstance(data, dict):
-                data = {}
-        except json.JSONDecodeError:
-            log.warning("index.json corrupted; resetting to empty index")
-            self._save_index_json(default)
-            return dict(default)
-        except FileNotFoundError:
-            self._save_index_json(default)
-            return dict(default)
-        except Exception as e:
-            log.warning("failed to load index.json (%s); resetting", e)
-            self._save_index_json(default)
-            return dict(default)
-        
-        data.setdefault("files", {})
-        data.setdefault("bytes_used", 0)
-        data.setdefault("art_map", {})
-        data["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (data.get("files") or {}).values())
-        return data
-
-
-    def _save_index_json(self, data: Dict) -> None:
-        path = self._idx_path()
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2)
-        os.replace(tmp, path)
 
 
 __all__ = ["ArchivistDatabase"]

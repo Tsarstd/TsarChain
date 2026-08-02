@@ -1,6 +1,6 @@
 # tsarcore_native (Rust + pyo3)
 
-Native acceleration module for **TsarChain** with crypto, PoW, validation, and fused LMDB/JSON storage bindings.
+Native acceleration module for **TsarChain** with crypto, PoW, validation, and LMDB storage bindings.
 
 **Build prerequisites**
 
@@ -21,7 +21,7 @@ The core functionality of `tsarcore_native` is organized into the following Rust
 - **[graff_merkle.rs](src/graff_merkle.rs)**: Implements the single SHA-256 Merkle tree used for chunked "Graffiti" archives, supporting path generation and client-side inclusion proof validation.
 - **[mining.rs](src/mining.rs)**: A multi-threaded RandomX PoW mining orchestrator that checks block difficulty, tracks hashrate progress, and supports cooperative mining thread cancellation.
 - **[networking.rs](src/networking.rs)**: Implements the P2P encryption handshake (`SecureChannelNative`) using X25519 static/ephemeral secrets, Ed25519 peer validation, HKDF key derivation, and sliding-window AES-256-GCM epoch key rotation.
-- **[storage.rs](src/storage.rs)**: Features a dual-backend storage wrapper (`NativeStorage`) exposing high-performance memory-mapped LMDB (with thread-safe growable boundaries, smart drive auto-detection for HDD/SSD/NVMe, and drive-specific flag profiling) and atomic fallback JSON files.
+- **[storage.rs](src/storage.rs)**: Features storage wrapper (`NativeStorage`) exposing high-performance memory-mapped LMDB (with thread-safe growable boundaries, smart drive auto-detection for HDD/SSD/NVMe, and drive-specific flag profiling).
 - **[txcodec.rs](src/txcodec.rs)**: Encodes and decodes consensus transaction byte payloads (varints, inputs, outputs, witness data) and generates BIP-143 transaction signatures and preimages.
 - **[utxo.rs](src/utxo.rs)**: Processes block transaction records to construct bulk UTXO set modifications (inserts and deletions of spent outputs), filtering out OP_RETURN data.
 - **[validation.rs](src/validation.rs)**: Enforces consensus rules over blocks and transactions, checking coinbase maturity constraints, transaction vsize/weight limits, signature verification, and input/output fees.
@@ -89,7 +89,7 @@ digest = tc.randomx_pow_hash(
     cache_entries=1,
 )
 
-# Storage (LMDB backend; set backend="json" for atomic JSON files, optional drive_type override)
+# Storage (LMDB backend)
 store = tc.open_storage(
     "lmdb",
     "/tmp/tsar.db",
@@ -101,7 +101,7 @@ store = tc.open_storage(
 store.put_json("utxo", b"\x01", '{"height": 1, "amount": 5000}')
 assert store.get_json("utxo", b"\x01")["height"] == 1
 rows = store.iter_prefix("utxo", b"")
-store.copy("/tmp/tsar.db.backup", compact=True)  # LMDB only
+store.copy("/tmp/tsar.db.backup", compact=True)
 ```
 
 ## Safety notes
@@ -122,7 +122,7 @@ store.copy("/tmp/tsar.db.backup", compact=True)  # LMDB only
 - **0.1.7** - Added native mempool validator for P2WPKH (no Python fallback) and native UTXO snapshot streaming for full-sync (chunked LMDB read). full-sync uses native streaming when `KV_BACKEND=lmdb`.
 - **0.1.6** - Native UTXO apply (LMDB batch) now default (no Python fallback); compact tx codec exposed (serialize/txid/wtxid/sighash) and wired into txid/wtxid compute, mempool BIP143, and payload compact consensus; P2PKH legacy path deleted (only P2WPKH).
 - **0.1.5** - LMDB storage enhancements: batch put/delete API, chunked prefix iteration, smoother map growth (doubling up to max) to avoid MapFull; thread-safe KV init and streaming iterators exposed to Python for lower memory use.
-- **0.1.4** - Added `NativeStorage`/`open_storage` with LMDB or atomic JSON backends (prefix scans, temp-file persistence, optional pretty JSON, LMDB auto-grow + copy), plus `json_read_file`/`json_write_file` helpers.
+- **0.1.4** - Added `NativeStorage`/`open_storage` with LMDB.
 - **0.1.3** - Added `SecureChannelNative` (X25519 handshake + HKDF + AES-256-GCM) so TsarChain P2P crypto now runs entirely in Rust, lowering latency and hardening TTL/msg quotas.
 - **0.1.2** - Stateless RandomX hashing used by TsarChain PoW.
 - **0.1.1** - Docs synced with code: expose `hash256`, `hash160`, `secp_verify_der_low_s_many`, native `sighash_bip143` (ALL); clarify merkle root behavior and parallel feature.

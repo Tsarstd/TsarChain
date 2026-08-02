@@ -12,7 +12,7 @@ from tsarchain.utils import config as CFG
 # Helper for testing KV behavior
 @pytest.fixture
 def mock_kv():
-    with patch("tsarchain.contracts.graffiti_registry.kv_enabled", return_value=True) as m_kv, \
+    with patch("tsarchain.storage.kv.kv_enabled", return_value=True) as m_kv, \
          patch("tsarchain.contracts.graffiti_registry.iter_prefix") as m_iter, \
          patch("tsarchain.contracts.graffiti_registry.batch") as m_batch:
         yield m_kv, m_iter, m_batch
@@ -21,7 +21,6 @@ def test_init_kv_empty(mock_kv):
     _, m_iter, _ = mock_kv
     m_iter.return_value = []
     reg = GraffitiRegistry()
-    assert reg._kv
     m_iter.assert_called_once_with("graffiti", b"data:")
     assert "proofs" in reg.data
 

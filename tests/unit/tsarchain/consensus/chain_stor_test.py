@@ -216,7 +216,7 @@ def test_reset_chain_store(storage, monkeypatch):
     storage._reset_chain_store()
 
     clear_db_mock.assert_called_once_with('chain')
-    assert remove_mock.call_count == 2  # meta and journal
+    assert remove_mock.call_count == 1  # meta snapshot
     assert storage._persisted_height == -1
     assert storage._chain_dirty_from is None
     assert storage._snapshot_last_backup_height == -1

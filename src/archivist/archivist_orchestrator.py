@@ -13,7 +13,7 @@ import threading
 from typing import Any, Dict, Optional, Callable
 
 from tsarchain.utils import config as CFG
-from tsarchain.storage.db import AtomicJSONFile
+from tsarcore_native import open_storage as _native_open_storage
 from archivist.connect import RPC, NodeDirectory
 from archivist.server_archivist import StorageServer
 from tsarchain.contracts import graffiti as GRAFFITI
@@ -60,8 +60,7 @@ class ArchivistOrchestrator:
         self.pool_data: dict[str, Dict[str, Any]] = {}
         
         self._auto_payout_guard: dict[str, Dict[str, Any]] = {}
-        self._auto_payout_store: Optional[AtomicJSONFile] = None
-        self._auto_payout_guard_path: str = ""
+        self._auto_payout_store: Any = None
         self._auto_payout_lock = threading.Lock()
         self._load_auto_payout_guard()
 
@@ -341,28 +340,45 @@ class ArchivistOrchestrator:
             threading.Thread(target=self.refresh_once, name="ArchivistRefreshAuto", daemon=True).start()
 
 
+    def _open_payout_guard_store(self):
+        path = getattr(CFG, "ARCHIVIST_PAYOUT_GUARD_DB_PATH", "data/archivist/storage/payout_guard")
+        import os
+        os.makedirs(path, exist_ok=True)
+        init_size = int(getattr(CFG, "ARCHIVIST_PAYOUT_GUARD_MAP_SIZE", 4 * 1024 * 1024))
+        return _native_open_storage(
+            "lmdb",
+            path,
+            map_size_init=init_size,
+            map_size_max=init_size,
+            pretty_json=False,
+        )
+
+
     def _load_auto_payout_guard(self) -> None:
-        path = str(CFG.ARCHIVIST_AUTO_PAYOUT_GUARD_FILE)
-        self._auto_payout_guard_path = path
-        self._auto_payout_store = AtomicJSONFile(path, keep_backups=2, checksum=True)
+        self._auto_payout_store = self._open_payout_guard_store()
+        cleaned: dict[str, Dict[str, Any]] = {}
         try:
-            raw = self._auto_payout_store.load(default={}) or {}
+            start_after = None
+            while True:
+                chunk = self._auto_payout_store.iter_prefix_chunk("guard", b"", limit=1000, start_after=start_after) or []
+                if not chunk:
+                    break
+                for k, v in chunk:
+                    art_id = k.decode("utf-8")
+                    try:
+                        entry = json.loads(v.decode("utf-8"))
+                        if isinstance(entry, dict):
+                            epoch = int(entry.get("epoch", -1))
+                            ts = int(entry.get("ts", 0))
+                            status = str(entry.get("status") or "error").lower()
+                            cleaned[art_id] = {"epoch": epoch, "ts": ts, "status": status}
+                    except Exception:
+                        pass
+                    start_after = k
+                if len(chunk) < 1000:
+                    break
         except Exception as exc:
             self._log(f"[auto-payout] guard load failed: {exc}", error=True)
-            raw = {}
-        if not isinstance(raw, dict):
-            raw = {}
-        cleaned: dict[str, Dict[str, Any]] = {}
-        for art_id, entry in raw.items():
-            if not isinstance(entry, dict):
-                continue
-            try:
-                epoch = int(entry.get("epoch", -1))
-                ts = int(entry.get("ts", 0))
-            except Exception:
-                continue
-            status = str(entry.get("status") or "error").lower()
-            cleaned[str(art_id)] = {"epoch": epoch, "ts": ts, "status": status}
         self._auto_payout_guard = cleaned
 
 
@@ -370,7 +386,12 @@ class ArchivistOrchestrator:
         if not self._auto_payout_store:
             return
         try:
-            self._auto_payout_store.save(self._auto_payout_guard)
+            self._auto_payout_store.clear_db("guard")
+            ops = []
+            for art_id, entry in self._auto_payout_guard.items():
+                ops.append((str(art_id).encode("utf-8"), json.dumps(entry).encode("utf-8")))
+            if ops:
+                self._auto_payout_store.put_batch("guard", ops)
         except Exception as exc:
             self._log(f"[auto-payout] guard save failed: {exc}", error=True)
 

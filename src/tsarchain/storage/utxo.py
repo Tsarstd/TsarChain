@@ -5,7 +5,6 @@
 
 import threading
 
-from .db import BaseDatabase
 from ..utils import config as CFG
 from ..contracts.graffiti_registry import GraffitiRegistry
 
@@ -20,10 +19,9 @@ class UTXODB(
     UTXOBalanceMixin,
     UTXOValidationMixin,
     UTXODatabaseMixin,
-    BaseDatabase,
 ):
     def __init__(self):
-        self.filepath = CFG.UTXOS_FILE
+        self.filepath = CFG.LMDB_UTXO_DIR
         self.utxos = {}
         self._lock = threading.RLock()
         self._dirty = False

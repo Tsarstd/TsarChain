@@ -23,13 +23,13 @@ from .chain_ops import ChainOperations
 from .chain_storage import ChainStorage
 from .utxo_validate import UTXOValidator
 from .difficulty import DifficultyManager
-from .genesis import GENESIS_HASH, GenesisManager
+from .genesis import GenesisManager
 
 from ..core.block import Block
 from ..utils import config as CFG
 from ..storage.utxo import UTXODB
 from ..mempool.pool import TxPool
-from ..storage.kv import kv_enabled, iter_prefix
+from ..storage.kv import iter_prefix
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
@@ -175,8 +175,6 @@ class Blockchain():
         self._persist_thread.start()
 
     def _reload_chain_from_kv(self) -> bool:
-        if not kv_enabled():
-            return False
         try:
             items = list(iter_prefix('chain', b''))
             if not items:

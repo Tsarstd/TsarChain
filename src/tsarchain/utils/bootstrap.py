@@ -302,8 +302,6 @@ __all__ = ["maybe_bootstrap_snapshot", "SnapshotBootstrapResult", "annotate_loca
 
 
 def _validate_snapshot_chain() -> tuple[bool, Optional[str]]:
-    if not kv_enabled():
-        return False, "KV backend disabled"
     db_dir = CFG.LMDB_DATA_FILE
     if not db_dir or not os.path.exists(db_dir):
         return False, "DB directory missing"

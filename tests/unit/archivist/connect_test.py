@@ -116,16 +116,28 @@ def test_rpc_call(mock_chan, mock_sock, mock_cp):
 
 def test_load_save_stor_peer_keys(tmp_path):
     import archivist.connect as conn
-    with patch("archivist.connect.kv_enabled", return_value=False):
-        with patch("archivist.connect.CFG.ARCHIV_PEER_KEYS", str(tmp_path / "peers.json")):
-            conn._save_stor_peer_keys({"peer1": "key1"})
-            
-            # Load successfully
-            loaded = conn._load_stor_peer_keys()
-            assert loaded["peer1"] == "key1"
-            
-            # Save None payload
-            conn._save_stor_peer_keys(None)
+    mock_kv_store = {}
+
+    def fake_iter(db_name, prefix):
+        for k, v in list(mock_kv_store.items()):
+            if k.startswith(prefix):
+                yield k, v
+
+    class FakeBatch:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def put(self, k, v): mock_kv_store[k] = v
+
+    with patch("archivist.connect.batch", return_value=FakeBatch()), \
+         patch("archivist.connect.iter_prefix", side_effect=fake_iter):
+        conn._save_stor_peer_keys({"peer1": "key1"})
+        
+        # Load successfully
+        loaded = conn._load_stor_peer_keys()
+        assert loaded["peer1"] == "key1"
+        
+        # Save None payload
+        conn._save_stor_peer_keys(None)
 
 @patch("archivist.connect.create_keypair", return_value=("id", "0"*64, "0"*64))
 def test_rpc_send_recv(mock_cp):

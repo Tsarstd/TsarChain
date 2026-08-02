@@ -11,7 +11,7 @@ import json
 from typing import Dict, Optional
 
 from ..utils import config as CFG
-from ..storage.kv import get, put, kv_enabled
+from ..storage.kv import get, put
 
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.peers_storage")
@@ -65,22 +65,20 @@ def _resolve_key_and_path(name_or_path: str) -> tuple[str, Optional[str]]:
 def _load_record(name: str) -> Optional[Dict]:
     db_key, path = _resolve_key_and_path(name)
 
-    if kv_enabled():
-        raw = get(KEYS_DB_NAME, db_key.encode("utf-8"))
-        if raw is not None:
-            try:
-                return json.loads(raw.decode("utf-8"))
-            except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                log.warning(f"Failed to decode KV record for {db_key}: {e}")
+    raw = get(KEYS_DB_NAME, db_key.encode("utf-8"))
+    if raw is not None:
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            log.warning(f"Failed to decode KV record for {db_key}: {e}")
 
     # One-time migration from legacy JSON file if present
-    if path:
+    if path and os.path.exists(path):
         try:
             with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                if kv_enabled():
-                    payload = json.dumps(data, separators=CFG.CANONICAL_SEP).encode("utf-8")
-                    put(KEYS_DB_NAME, db_key.encode("utf-8"), payload)
+                payload = json.dumps(data, separators=CFG.CANONICAL_SEP).encode("utf-8")
+                put(KEYS_DB_NAME, db_key.encode("utf-8"), payload)
                 return data
         except (json.JSONDecodeError, OSError) as e:
             log.warning(f"No JSON file found for {name}: {e}")
@@ -91,8 +89,4 @@ def _load_record(name: str) -> Optional[Dict]:
 def _store_record(name: str, data: Dict) -> None:
     db_key, _ = _resolve_key_and_path(name)
     payload = json.dumps(data, separators=CFG.CANONICAL_SEP).encode("utf-8")
-    
-    if kv_enabled():
-        put(KEYS_DB_NAME, db_key.encode("utf-8"), payload)
-    else:
-        log.warning("KV storage not enabled; cannot store node secret record")
+    put(KEYS_DB_NAME, db_key.encode("utf-8"), payload)

@@ -67,11 +67,14 @@ def test_is_unspendable_opreturn():
     assert obj._is_unspendable_opreturn(MockTxOut("6a04")) is True
     assert obj._is_unspendable_opreturn(MockTxOut(123)) is False
 
+@patch("tsarchain.storage.utxo_logic.validate._ensure_env")
 @patch("tsarchain.storage.utxo_logic.validate.H")
-@patch("tsarchain.storage.utxo_logic.validate.kv_enabled", return_value=False)
-def test_apply_native_ops_for_txs(mock_kv, mock_h):
+@patch("tsarchain.storage.kv.kv_enabled", return_value=True)
+def test_apply_native_ops_for_txs(mock_kv, mock_h, mock_ensure_env):
+    mock_store = MagicMock()
+    mock_ensure_env.return_value = mock_store
     obj = MockUTXOValidate()
-    
+
     # Mock H.native_utxo_build_ops_compact
     # op tuple: (key, amount, spk_bytes, is_coinbase, born_height)
     mock_h.native_utxo_build_ops_compact.return_value = [
@@ -79,18 +82,17 @@ def test_apply_native_ops_for_txs(mock_kv, mock_h):
         ("tx_del:0", None, b"", False, 0),
         ("bad",) # too short
     ]
-    
+
     obj.utxos["tx_del:0"] = {}
-    
+
     txin = MagicMock(txid="a"*64, vout=0, witness=[b"1", "aa"])
     txout = MagicMock(amount=10, script_pubkey=MockSPK(b"abcd"))
     tx = MagicMock(txid="b"*64, inputs=[txin], outputs=[txout], is_coinbase=True)
-    
+
     res = obj._apply_native_ops_for_txs([tx], 10)
     assert res is True
     assert "tx1:0" in obj.utxos
     assert "tx_del:0" not in obj.utxos
-    assert obj.save_called == 1
     assert obj.index_called == 1
     assert obj.drop_called == 1
     assert obj.graff_called == 1

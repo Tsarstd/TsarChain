@@ -11,7 +11,7 @@ from collections import OrderedDict
 
 from ..core.tx import Tx
 from ..utils import config as CFG
-from ..storage.kv import kv_enabled, iter_prefix, batch, clear_db
+from ..storage.kv import iter_prefix, batch, clear_db
 from ..utils.helpers import _estimate_tx_size_bytes
 
 from ..utils.tsar_logging import get_ctx_logger
@@ -24,13 +24,12 @@ class MempoolStorageMixin:
     def _load_storage_pool(self) -> tuple[list, dict]:
         meta = {}
         out = []
-        if kv_enabled():
-            for k, v in iter_prefix("mempool", b""):
-                key = k.decode("utf-8")
-                if key == "__meta__":
-                    meta = json.loads(v.decode("utf-8")) or {}
-                    continue
-                out.append(json.loads(v.decode("utf-8")))
+        for k, v in iter_prefix("mempool", b""):
+            key = k.decode("utf-8")
+            if key == "__meta__":
+                meta = json.loads(v.decode("utf-8")) or {}
+                continue
+            out.append(json.loads(v.decode("utf-8")))
         return out, meta
 
     def _hydrate_pool(self, entries: list) -> None:
@@ -142,15 +141,14 @@ class MempoolStorageMixin:
             self._dirty = False
             self._last_flush = now
 
-        if kv_enabled():
-            clear_db("mempool")
-            with batch("mempool") as b:
-                b.put(b"__meta__", json.dumps(meta, separators=CFG.CANONICAL_SEP).encode("utf-8"))
-                for entry in snapshot:
-                    txid = entry.get("txid")
-                    if not txid:
-                        continue
-                    b.put(txid.encode("utf-8"), json.dumps(entry, separators=CFG.CANONICAL_SEP).encode("utf-8"))
+        clear_db("mempool")
+        with batch("mempool") as b:
+            b.put(b"__meta__", json.dumps(meta, separators=CFG.CANONICAL_SEP).encode("utf-8"))
+            for entry in snapshot:
+                txid = entry.get("txid")
+                if not txid:
+                    continue
+                b.put(txid.encode("utf-8"), json.dumps(entry, separators=CFG.CANONICAL_SEP).encode("utf-8"))
         return True
 
     def save_pool(self, pool: list) -> None:

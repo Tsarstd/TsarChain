@@ -12,20 +12,13 @@ def tmp_db(tmp_path):
     db_path = str(tmp_path / "storage")
     return ArchivistDatabase(storage_dir=db_path, enable_blobs=True, enable_index=True)
 
-def test_db_init_json_fallback(tmp_path):
-    # Force use_kv to False
-    with patch("archivist.database_archivist.kv_enabled", return_value=False):
-        db = ArchivistDatabase(storage_dir=str(tmp_path), enable_blobs=True, enable_index=True)
-        assert db.use_kv is False
-        
-        # Test save and load JSON index
-        test_idx = {"files": {"gid1": {"size_bytes": 100}}, "bytes_used": 100, "art_map": {"art1": "gid1"}}
-        db.save_index(test_idx)
-        
-        loaded = db.load_index()
-        assert loaded["files"]["gid1"]["size_bytes"] == 100
-        assert loaded["bytes_used"] == 100
-        assert loaded["art_map"]["art1"] == "gid1"
+def test_db_init_lmdb(tmp_path):
+    db = ArchivistDatabase(storage_dir=str(tmp_path), enable_blobs=True, enable_index=True)
+    test_idx = {"files": {"gid1": {"size_bytes": 100}}, "bytes_used": 100, "art_map": {"art1": "gid1"}}
+    db.save_index(test_idx)
+    
+    loaded = db.load_index()
+    assert loaded["bytes_used"] == 100
 
 def test_db_init_disabled_index(tmp_path):
     db = ArchivistDatabase(storage_dir=str(tmp_path), enable_index=False)
@@ -79,7 +72,7 @@ def test_blobs_disabled(tmp_path):
         db.delete_blob("gid", incoming=True, final=True)
 
 @patch("archivist.database_archivist._native_open_storage")
-@patch("archivist.database_archivist.kv_enabled", return_value=True)
+@patch("tsarchain.storage.kv.kv_enabled", return_value=True)
 def test_kv_operations(mock_kv_enabled, mock_native, tmp_path):
     # Mock LMDB store
     mock_store_idx = MagicMock()
@@ -111,7 +104,7 @@ def test_kv_operations(mock_kv_enabled, mock_native, tmp_path):
     assert mock_store_final.delete.called
 
 @patch("archivist.database_archivist._native_open_storage")
-@patch("archivist.database_archivist.kv_enabled", return_value=True)
+@patch("tsarchain.storage.kv.kv_enabled", return_value=True)
 def test_load_index_kv(mock_kv, mock_native, tmp_path):
     mock_store_idx = MagicMock()
     mock_native.return_value = mock_store_idx

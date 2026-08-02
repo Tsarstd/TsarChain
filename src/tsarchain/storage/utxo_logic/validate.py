@@ -6,7 +6,7 @@ from typing import Any
 
 from ...core.tx import TxOut
 from ...utils import helpers as H
-from ..kv import kv_enabled, _ensure_env
+from ..kv import _ensure_env
 
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.storage.utxo_logic.validate")
@@ -57,13 +57,13 @@ class UTXOValidationMixin:
     # ---------------------------
     # Native UTXO delta apply
     # ---------------------------
-    def _apply_native_ops_for_txs(self, txs, block_height: int, block_hash: str | None = None, *, autosave: bool = True) -> bool:
+    def _apply_native_ops_for_txs(self, txs, block_height: int, block_hash: str | None = None) -> bool:
         block_txs = self._build_compact_block_txs(txs)
         if block_txs is None:
             return False
 
         ops = H.native_utxo_build_ops_compact(block_txs, int(block_height))
-        self._apply_native_ops_to_state(ops, autosave)
+        self._apply_native_ops_to_state(ops)
         self._process_graffiti_for_txs(txs, block_height, block_hash)
         
         return True
@@ -141,7 +141,7 @@ class UTXOValidationMixin:
         return outputs_compact
 
 
-    def _apply_native_ops_to_state(self, ops, autosave: bool) -> None:
+    def _apply_native_ops_to_state(self, ops) -> None:
         with self._lock:
             for op in ops or []:
                 if not isinstance(op, (tuple, list)) or len(op) < 5:
@@ -178,15 +178,12 @@ class UTXOValidationMixin:
                 self._removed_keys.discard(key)
                 self._index_entry(key, entry.get("tx_out"))
 
-            if kv_enabled():
-                store = _ensure_env("utxo")
-                store.apply_utxo_ops(ops)  # type: ignore[attr-defined]
-                self._dirty = False
-                self._dirty_keys.clear()
-                self._removed_keys.clear()
-                self._rewrite_all = False
-            elif autosave:
-                self._save()
+            store = _ensure_env("utxo")
+            store.apply_utxo_ops(ops)  # type: ignore[attr-defined]
+            self._dirty = False
+            self._dirty_keys.clear()
+            self._removed_keys.clear()
+            self._rewrite_all = False
             self._bump_version()
 
 
@@ -207,10 +204,10 @@ class UTXOValidationMixin:
             self._record_graffiti_event(tx, outputs_info, block_height, block_hash)
 
 
-    def update(self, transactions, block_height: int, *, block_hash: str | None = None, autosave: bool = True):
+    def update(self, transactions, block_height: int, *, block_hash: str | None = None):
         if not transactions:
             return
-        ok = self._apply_native_ops_for_txs(transactions, block_height, block_hash, autosave=autosave)
+        ok = self._apply_native_ops_for_txs(transactions, block_height, block_hash)
         if not ok:
             raise RuntimeError("native UTXO apply failed")
 

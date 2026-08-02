@@ -104,8 +104,8 @@ DATA_SCHEMA_VERSION = 1
 
 
 # ---- KV BACKEND ----
-KV_BACKEND         = "lmdb"  # active key-value backend implementation (lmdb & json)
-LMDB_DATA_FILE     = "data/node"  # fallback LMDB data file path
+KV_BACKEND         = "lmdb"  # native key-value backend implementation (100% LMDB)
+LMDB_DATA_FILE     = "data/node"  # fallback LMDB data directory
 LMDB_KEYS_DIR      = "data/keys"  # LMDB environment path for node_secrets
 LMDB_CHAIN_DIR     = "data/node/chain"  # LMDB environment path for chain
 LMDB_UTXO_DIR      = "data/node/utxo"  # LMDB environment path for utxo
@@ -153,21 +153,16 @@ BLOCK_BACKUP_SNAPSHOT = 15  # Align last backup marker to nearest interval to av
 # =============================================================================
 # 3. FILESYSTEM LAYOUT
 # =============================================================================
-# ---- CORE STATE FILES ----
-STATE_FILE              = "data_json/node/State/state.json"  # serialized node state snapshot
-BLOCK_FILE              = "data_json/node/Block/blockchain.json"  # block archive used before DB bootstrap
-UTXOS_FILE              = "data_json/node/UTXOS/utxos.json"  # fallback UTXO dump for light tooling
-MEMPOOL_FILE            = "data_json/node/Mempools/txpools.json"  # persistent mempool cache file
-
-CHAIN_JOURNAL_FILE      = os.path.join(os.path.dirname(BLOCK_FILE), "blockchain.journal")  # append-only delta log for JSON mode
-CHAIN_JOURNAL_MAX_BYTES = 8 * 1024 * 1024
+CHAIN_JOURNAL_FILE      = ""
 STATE_HEIGHT_CACHE_TTL  = 2.0  # height for utxo validation & cache
 
 
 # ---- ARCHIVIST LMDB PATH ----
-ARCHIVIST_INDEX_DB_PATH = "data/archivist/storage/index_db"
-ARCHIVIST_FINAL_DB_PATH = "data/archivist/storage/final_db"
-ARCHIVIST_KEY_PATH      = "data/archivist/archivist_key.json" # primary node identity key storage path
+ARCHIVIST_INDEX_DB_PATH        = "data/archivist/storage/index_db"
+ARCHIVIST_FINAL_DB_PATH        = "data/archivist/storage/final_db"
+ARCHIVIST_PAYOUT_GUARD_DB_PATH  = "data/archivist/storage/payout_guard"
+ARCHIVIST_PAYOUT_GUARD_MAP_SIZE = 4 * 1024 * 1024  # 4MB init
+ARCHIVIST_KEY_PATH             = "data/archivist/archivist_key.json" # primary node identity key storage path
 
 
 # ---- WALLET KEY FILES ----

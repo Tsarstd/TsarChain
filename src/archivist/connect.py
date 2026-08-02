@@ -28,7 +28,7 @@ from tsarchain.network.protocol import (
 )
 from tsarchain.utils import config as CFG
 from tsarchain.utils.helpers import hash160
-from tsarchain.storage.kv import kv_enabled, iter_prefix, batch
+from tsarchain.storage.kv import iter_prefix, batch
 from tsarchain.network.peers_storage import load_node_key, save_node_key
 
 
@@ -36,9 +36,6 @@ from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.contracts.storage_node.connect")
 
 manual_bootstrap: Optional[Tuple[str, int]] = None
-
-if not kv_enabled():
-    os.makedirs(os.path.dirname(CFG.ARCHIV_PEER_KEYS), exist_ok=True)
 
 
 def create_keypair(path: str) -> tuple[str, str, str]:
@@ -49,53 +46,25 @@ def create_keypair(path: str) -> tuple[str, str, str]:
     pub_hex  = vk.encode(encoder=HexEncoder).decode()
     node_id  = hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()
     payload = {"id": node_id, "pubkey": pub_hex, "privkey": priv_hex, "created": int(time.time())}
-    if path:
-        save_node_key(path, payload)
-    else:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-        os.chmod(path, 0o600)
+    save_node_key(path, payload)
     return node_id, pub_hex, priv_hex
 
 
 def _load_stor_peer_keys() -> dict:
-    if kv_enabled():
-        m = {}
-        for k, v in iter_prefix('stor_peer_keys', b'nid:'):
-            nid = k.decode('utf-8')[4:]
-            m[nid] = v.decode('utf-8')
-        return m
-    if not os.path.exists(CFG.ARCHIV_PEER_KEYS):
-        _save_stor_peer_keys({})
-    try:
-        with open(CFG.ARCHIV_PEER_KEYS, 'r', encoding='utf-8') as f:
-            obj = json.load(f)
-            return obj if isinstance(obj, dict) else {}
-    except json.JSONDecodeError:
-        log.warning("storage_peer_keys.json corrupted; resetting to empty")
-    except FileNotFoundError:
-        pass
-    
-    except Exception as e:
-        log.warning("failed to load storage peer keys: %s", e)
-    _save_stor_peer_keys({})
-    return {}
+    m = {}
+    for k, v in iter_prefix('stor_peer_keys', b'nid:'):
+        nid = k.decode('utf-8')[4:]
+        m[nid] = v.decode('utf-8')
+    return m
 
 
 def _save_stor_peer_keys(data: Optional[dict] = None) -> None:
     payload = data if data is not None else _STOR_PEER_KEYS
     if payload is None:
         payload = {}
-    if kv_enabled():
-        with batch('stor_peer_keys') as b:
-            for nid, pk in payload.items():
-                b.put(f"nid:{nid}".encode('utf-8'), pk.encode('utf-8'))
-        return
-    os.makedirs(os.path.dirname(CFG.ARCHIV_PEER_KEYS), exist_ok=True)
-    tmp = CFG.ARCHIV_PEER_KEYS + ".tmp"
-    with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump(payload, f, indent=2)
-    os.replace(tmp, CFG.ARCHIV_PEER_KEYS)
+    with batch('stor_peer_keys') as b:
+        for nid, pk in payload.items():
+            b.put(f"nid:{nid}".encode('utf-8'), pk.encode('utf-8'))
 
 
 def _scan_nodes(start: int = CFG.PORT_START, end: int = CFG.PORT_END, manual_nodes: Optional[Sequence[Tuple[str,int]]] = None) -> List[Tuple[str,int]]:

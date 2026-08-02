@@ -146,7 +146,9 @@ def test_decrypt_corrupt_ciphertext():
     packet = alice.encrypt(b"hello", "a", "b", 1, 10)
 
     enc_corrupt = dict(packet["enc"])
-    enc_corrupt["ct"] = enc_corrupt["ct"][:-2] + "00"  # change 1 byte
+    ct_hex = enc_corrupt["ct"]
+    flipped_last = "ff" if ct_hex[-2:] == "00" else "00"
+    enc_corrupt["ct"] = ct_hex[:-2] + flipped_last
 
     with pytest.raises(InvalidTag):
         bob.decrypt(enc_corrupt, "a", "b", 1, 10, packet["ratchet"])

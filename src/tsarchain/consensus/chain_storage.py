@@ -62,8 +62,7 @@ class ChainStorage:
             if not self._should_flush_chain(tip_height, start_height, full_flush):
                 return
 
-            if kv_enabled():
-                self._save_chain_kv(tip_height, start_height, full_flush, chain_meta)
+            self._save_chain_kv(tip_height, start_height, full_flush, chain_meta)
 
             self.blockchain._chain_dirty_from = None
             backup_tip = tip_height
@@ -74,10 +73,7 @@ class ChainStorage:
 
 
     def load_chain(self):
-        meta = {}
-        data_list = []
-        if kv_enabled():
-            meta, data_list = self._fetch_kv_chain_data()
+        meta, data_list = self._fetch_kv_chain_data()
             
         if not isinstance(data_list, list) or not data_list:
             return
@@ -135,11 +131,10 @@ class ChainStorage:
         }
 
         # Save to LMDB
-        if kv_enabled():
-            with batch('state') as b:
-                b.put(b'k:total_supply', str(int(self.blockchain.total_supply)).encode('utf-8'))
-                b.put(b'k:total_blocks', str(int(self.blockchain.total_blocks)).encode('utf-8'))
-                b.put(b'k:snapshot', json.dumps(ordered, separators=CFG.CANONICAL_SEP).encode('utf-8'))
+        with batch('state') as b:
+            b.put(b'k:total_supply', str(int(self.blockchain.total_supply)).encode('utf-8'))
+            b.put(b'k:total_blocks', str(int(self.blockchain.total_blocks)).encode('utf-8'))
+            b.put(b'k:snapshot', json.dumps(ordered, separators=CFG.CANONICAL_SEP).encode('utf-8'))
 
 
     def load_state(self):
@@ -351,8 +346,6 @@ class ChainStorage:
 
 
     def _prune_chain_store(self, start_height: int) -> None:
-        if not kv_enabled():
-            return
         if start_height < 0:
             start_height = 0
             
@@ -366,16 +359,10 @@ class ChainStorage:
 
 
     def _reset_chain_store(self) -> None:
-        if kv_enabled():
-            clear_db('chain')
-        else:
-            AtomicJSONFile(CFG.BLOCK_FILE).save({})
+        clear_db('chain')
         meta_path = CFG.SNAPSHOT_META_PATH
         if meta_path and os.path.exists(meta_path):
             os.remove(meta_path)
-        journal_path = CFG.CHAIN_JOURNAL_FILE
-        if journal_path and os.path.exists(journal_path):
-            os.remove(journal_path)
         self.blockchain._persisted_height = -1
         self.blockchain._chain_dirty_from = None
         self.blockchain._snapshot_last_backup_height = -1
@@ -537,20 +524,19 @@ class ChainStorage:
 
 
     def _read_snapshot_state(self) -> dict:
+        items = {
+            k.decode("utf-8"): v.decode("utf-8")
+            for k, v in iter_prefix("state", b"k:")
+        }
+
         data: dict = {}
-        if kv_enabled():
-            items = {
-                k.decode("utf-8"): v.decode("utf-8")
-                for k, v in iter_prefix("state", b"k:")
-            }
+        snap_raw = items.get("k:snapshot")
+        if snap_raw:
+            data = json.loads(snap_raw)
 
-            snap_raw = items.get("k:snapshot")
-            if snap_raw:
-                data = json.loads(snap_raw)
-
-            if (not data) and items:
-                data["total_supply"] = int(items.get("k:total_supply", "0"))
-                data["total_blocks"] = int(items.get("k:total_blocks", "0"))
+        if (not data) and items:
+            data["total_supply"] = int(items.get("k:total_supply", "0"))
+            data["total_blocks"] = int(items.get("k:total_blocks", "0"))
 
         if not isinstance(data, dict):
             data = {}

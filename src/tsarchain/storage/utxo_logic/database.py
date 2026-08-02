@@ -4,12 +4,10 @@
 
 import json
 import time
-from collections import OrderedDict
 
 from ...core.tx import TxOut
-from ..db import AtomicJSONFile
 from ...utils import config as CFG
-from ..kv import kv_enabled, iter_prefix, batch, clear_db
+from ..kv import iter_prefix, batch, clear_db
 
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.storage.utxo_logic.database")
@@ -155,8 +153,7 @@ class UTXODatabaseMixin:
             self._address_index = None
             self._key_to_spk.clear()
             self._meta = {}
-            if kv_enabled():
-                self._load_kv()
+            self._load_kv()
             self._dirty = False
             self._dirty_keys.clear()
             self._removed_keys.clear()
@@ -189,8 +186,7 @@ class UTXODatabaseMixin:
             rewrite = bool(force or self._rewrite_all)
             target_keys = self.utxos.keys() if rewrite else set(self._dirty_keys)
             meta = self._build_meta()
-            if kv_enabled():
-                self._save_kv(rewrite, target_keys, meta)
+            self._save_kv(rewrite, target_keys, meta)
             self._dirty = False
             self._dirty_keys.clear()
             self._removed_keys.clear()
@@ -202,11 +198,9 @@ class UTXODatabaseMixin:
         if use_cache and (now - self._tip_cache.get("ts", 0.0)) <= self._tip_cache_ttl:
             return int(self._tip_cache.get("height", 0))
 
-        height = 0
-        if kv_enabled():
-            items = {k.decode('utf-8'): v.decode('utf-8') for k, v in iter_prefix('state', b'k:')}
-            tb = int(items.get('k:total_blocks', '0'))
-            height = max(0, tb - 1)
+        items = {k.decode('utf-8'): v.decode('utf-8') for k, v in iter_prefix('state', b'k:')}
+        tb = int(items.get('k:total_blocks', '0'))
+        height = max(0, tb - 1)
         self._tip_cache.update(height=height, ts=now)
         return height
 

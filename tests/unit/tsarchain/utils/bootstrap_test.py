@@ -136,11 +136,11 @@ def test_annotate_local_snapshot_meta_no_path(mock_cfg):
     mock_cfg.SNAPSHOT_META_PATH = ""
     assert annotate_local_snapshot_meta(100) is None
 
-@patch("tsarchain.utils.bootstrap.kv_enabled", return_value=False)
-def test_validate_snapshot_chain_no_kv(mock_kv):
+@patch("os.path.exists", return_value=False)
+def test_validate_snapshot_chain_no_kv(mock_exists):
     valid, reason = _validate_snapshot_chain()
     assert not valid
-    assert "KV backend disabled" in reason
+    assert "missing" in reason.lower()
 
 @patch("tsarchain.utils.bootstrap.kv_enabled", return_value=True)
 @patch("tsarchain.utils.bootstrap.CFG")

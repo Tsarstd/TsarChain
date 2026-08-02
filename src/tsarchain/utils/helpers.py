@@ -976,13 +976,11 @@ def native_randomx_mine(
 # =======================
 
 
-def kv_load_utxo_dict_native(limit: int = 1000) -> dict:   # this module is not used directly
+def kv_load_utxo_dict_native(limit: int = 1000) -> dict:
     """
     Stream UTXO entries dari LMDB via native iter_prefix_chunk.
     dict key -> parsed JSON entry. Ignored __meta__.
     """
-    if not kv.kv_enabled():
-        return {}
     store = kv._ensure_env("utxo")
     out = {}
     start_after = None

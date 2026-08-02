@@ -181,7 +181,6 @@ This document provides an in-depth technical overview of the Graffiti Protocol. 
     │   │   │   │   ├── graff_utxo.py                  # graffiti UTXO logic
     │   │   │   │   └── validate.py                    # core validation UTXO logic
     │   │   │   │
-    │   │   │   ├── db.py                              # JSON database logic
     │   │   │   ├── kv.py                              # LMDB database logic
     │   │   │   └── utxo.py                            # UTXO initialize
     │   │   │
@@ -1194,7 +1193,7 @@ To handle heavy validation loads during network sync or mempool dumps, the exten
 ### 4. Storage & UTXO Delta Optimization
 Ledger updates are kept highly compact.
 
-- **`NativeStorage` (`src/tsarcore_native/storage.rs`)**: Direct C/Rust binding to the **LMDB** engine. It reads and writes JSON blobs and transactional states natively without routing serialization through Python.
+- **`NativeStorage` (`src/tsarcore_native/storage.rs`)**: Direct C/Rust binding to the **LMDB** engine.
 - **`utxo_build_ops_compact` (`src/tsarcore_native/utxo.rs`)**: Optimizes state transitions. Python sends transaction lists as compressed tuples (`_build_compact_block_txs`), and Rust applies the inputs/outputs delta instantly in memory and commits it to the LMDB database.
 
 ### 5. Proof of Retention Merkle Engine (`src/tsarcore_native/graff_merkle.rs`)
@@ -1213,7 +1212,6 @@ The core logic of the Graffiti Protocol governs the creation, validation, storag
 The `GraffitiRegistry` tracks state records for posts, comments, payouts, and proofs.
 - **Dual-Database Adapter**:
   - **LMDB Backend (`_kv = True`)**: Under production configuration, the registry updates via high-performance prefix lookups (`graffiti:`).
-  - **Atomic File Fallback (`AtomicJSONFile`)**: If key-value storage is disabled, the registry falls back to writing database states directly to a JSON file. The file utilizes custom checksum validations and backup rotations to mitigate data corruption.
 - **State Collections**:
   - `posts`: Links art identifiers (`art_id`) to transactional metadata, hashes, size bounds, and current pool balances.
   - `comments`: Appends commenter signatures, timestamps, and payouts splits.

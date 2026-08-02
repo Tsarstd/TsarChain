@@ -71,7 +71,7 @@ def test_secure_erase():
     
     assert data_security.Security.secure_erase(123) == 123
 
-@patch("kremlin.security.data_security.kv_enabled", return_value=True)
+@patch("tsarchain.storage.kv.kv_enabled", return_value=True)
 @patch("kremlin.security.data_security.kv_get")
 @patch("kremlin.security.data_security.kv_put")
 @patch("kremlin.security.data_security.kv_delete")
@@ -87,18 +87,22 @@ def test_secure_backend_kv(mock_del, mock_put, mock_get, mock_kv):
     data_security._secure_backend_delete("ns", "key", None)
     mock_del.assert_called()
 
-@patch("kremlin.security.data_security.kv_enabled", return_value=False)
-def test_secure_backend_read_write(mock_kv, tmp_path):
+@patch("kremlin.security.data_security.kv_put")
+@patch("kremlin.security.data_security.kv_get")
+@patch("kremlin.security.data_security.kv_delete")
+def test_secure_backend_read_write(mock_del, mock_get, mock_put, tmp_path):
     path = tmp_path / "test.json"
+    path.write_text("{}", encoding="utf-8")
     data = {"a": 1}
     data_security._secure_backend_write("ns", "key", path, data)
-    assert path.exists()
+    assert not path.exists()
     
+    mock_get.return_value = json.dumps(data).encode("utf-8")
     read_data, _ = data_security._secure_backend_read("ns", "key", path)
     assert read_data == data
     
-    data_security._secure_backend_delete("ns", "key", path)
-    assert not path.exists()
+    data_security._secure_backend_delete("ns", "key", None)
+    mock_del.assert_called()
 
 @patch("kremlin.security.data_security._secure_backend_read")
 @patch("kremlin.security.data_security._secure_backend_write")

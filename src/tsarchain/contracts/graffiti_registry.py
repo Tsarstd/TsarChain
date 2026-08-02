@@ -9,7 +9,7 @@ import json
 from typing import Any, Dict
 
 from ..utils import config as CFG
-from ..storage.kv import kv_enabled, iter_prefix, batch
+from ..storage.kv import iter_prefix, batch
 
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.contracts.graffiti_registry')
@@ -17,7 +17,6 @@ log = get_ctx_logger('tsarchain.contracts.graffiti_registry')
 
 class GraffitiRegistry:
     def __init__(self) -> None:
-        self._kv = kv_enabled()
         self._kv_prefix = "graffiti:"
         self.store = None
         self._data_cache = None
@@ -230,20 +229,17 @@ class GraffitiRegistry:
 
 
     def _load(self, default: dict) -> dict:
-        if self._kv:
-            data = {"posts": {}, "comments": {}, "payouts": {}, "proofs": {}}
-            for k, v in iter_prefix("graffiti", b"data:"):
-                if k.decode("utf-8") == "data:data":
-                    data = json.loads(v.decode("utf-8"))
-                    break
-            return data or dict(default)
-        return dict(default)
+        data = {"posts": {}, "comments": {}, "payouts": {}, "proofs": {}}
+        for k, v in iter_prefix("graffiti", b"data:"):
+            if k.decode("utf-8") == "data:data":
+                data = json.loads(v.decode("utf-8"))
+                break
+        return data or dict(default)
 
 
     def _flush(self) -> None:
-        if self._kv:
-            with batch("graffiti") as b:
-                b.put(b"data:data", json.dumps(self.data, separators=CFG.CANONICAL_SEP).encode("utf-8"))
+        with batch("graffiti") as b:
+            b.put(b"data:data", json.dumps(self.data, separators=CFG.CANONICAL_SEP).encode("utf-8"))
 
 
 __all__ = ["GraffitiRegistry"]

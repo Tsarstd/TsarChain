@@ -24,16 +24,16 @@ _native_stores = {}
 _init_lock = threading.RLock()
 
 DB_PATH_MAP = {
-    "node_secrets": getattr(CFG, "LMDB_KEYS_DIR", "data/keys"),
-    "chain": getattr(CFG, "LMDB_CHAIN_DIR", "data/node/chain"),
-    "utxo": getattr(CFG, "LMDB_UTXO_DIR", "data/node/utxo"),
-    "state": getattr(CFG, "LMDB_STATE_DIR", "data/node/state"),
-    "graffiti": getattr(CFG, "LMDB_GRAFFITI_DIR", "data/node/graffiti"),
-    "mempool": getattr(CFG, "LMDB_MEMPOOL_DIR", "data/node/mempool"),
+    "node_secrets": CFG.LMDB_KEYS_DIR,
+    "chain": CFG.LMDB_CHAIN_DIR,
+    "utxo": CFG.LMDB_UTXO_DIR,
+    "state": CFG.LMDB_STATE_DIR,
+    "graffiti": CFG.LMDB_GRAFFITI_DIR,
+    "mempool": CFG.LMDB_MEMPOOL_DIR,
 }
 
 def get_db_path(name: str) -> str:
-    return DB_PATH_MAP.get(name, getattr(CFG, "LMDB_DATA_FILE", "data/node"))
+    return DB_PATH_MAP.get(name, CFG.LMDB_DATA_FILE)
 
 def _init_native_store(name: str = "chain"):
     global _native_store
@@ -69,7 +69,7 @@ def sync(force: bool = False) -> None:
     if store is not None and hasattr(store, "sync"):
         store.sync(force)
     with _init_lock:
-        for s in list(_native_stores.values()):
+        for s in (_native_stores.values()):
             if s is not store and hasattr(s, "sync"):
                 s.sync(force)
 

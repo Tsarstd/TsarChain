@@ -6,22 +6,16 @@
 use libc::size_t;
 use lmdb::{Cursor, Database, DatabaseFlags, Environment, Transaction, WriteFlags};
 use lmdb_sys as ffi;
-use parking_lot::Mutex;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
-use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 use hex;
-use std::collections::HashMap;
 use std::ffi::CString;
 use std::fs;
-use std::io::{BufReader, BufWriter, Read, Write};
 use std::os::raw::c_uint;
 use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::Arc;
-use tempfile::NamedTempFile;
 
 const DEFAULT_LMDB_MAP_INIT: usize = 4 * 1024 * 1024; // 4 MB
 const DEFAULT_LMDB_MAP_MAX: u64 = 64 * 1024 * 1024 * 1024; // 64 GB
@@ -54,69 +48,6 @@ fn log_py(level: &str, msg: &str) {
 #[inline]
 fn log_warning(msg: &str) {
     log_py("warning", msg);
-}
-
-// ===== Raw JSON file helpers (compatible with existing on-disk JSON) =====
-
-fn ensure_parent(path: &Path) -> PyResult<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent).map_err(|e| map_err("json mkdir", e))?;
-        }
-    }
-    Ok(())
-}
-
-#[pyfunction]
-pub fn json_read_file(path: &str) -> PyResult<Option<String>> {
-    let p = Path::new(path);
-    if !p.exists() {
-        return Ok(None);
-    }
-    let f = fs::File::open(p).map_err(|e| map_err("json_read_file open", e))?;
-    let mut reader = BufReader::new(f);
-    let mut buf = String::new();
-    reader
-        .read_to_string(&mut buf)
-        .map_err(|e| map_err("json_read_file read", e))?;
-    Ok(Some(buf))
-}
-
-#[pyfunction]
-#[pyo3(signature = (path, data, pretty=true))]
-pub fn json_write_file(path: &str, data: &str, pretty: bool) -> PyResult<()> {
-    let p = Path::new(path);
-    ensure_parent(p)?;
-    // Optional pretty formatting (reformat for consistency)
-    let payload = if pretty {
-        match serde_json::from_str::<JsonValue>(data) {
-            Ok(val) => {
-                let mut s = serde_json::to_string_pretty(&val).unwrap_or_else(|_| data.to_string());
-                if !s.ends_with('\n') {
-                    s.push('\n');
-                }
-                s
-            }
-            Err(_) => data.to_string(),
-        }
-    } else {
-        data.to_string()
-    };
-
-    let tmp = NamedTempFile::new_in(p.parent().unwrap_or(Path::new(".")))
-        .map_err(|e| map_err("json_write_file tmp", e))?;
-    {
-        let mut writer = BufWriter::new(tmp.as_file());
-        writer
-            .write_all(payload.as_bytes())
-            .map_err(|e| map_err("json_write_file write", e))?;
-        writer
-            .flush()
-            .map_err(|e| map_err("json_write_file flush", e))?;
-    }
-    tmp.persist(p)
-        .map_err(|e| map_err("json_write_file persist", e.error))?;
-    Ok(())
 }
 
 // ============================
@@ -726,250 +657,18 @@ impl LmdbBackend {
 }
 
 // ============================
-// JSON backend (atomic file)
+// Native storage exposed to Python
 // ============================
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(tag = "kind", content = "value")]
-enum JsonEntry {
-    #[serde(rename = "bytes")]
-    Bytes(String), // hex-encoded
-    #[serde(rename = "json")]
-    Json(JsonValue),
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-struct JsonSnapshot {
-    #[serde(default = "json_format_v1")]
-    format: String,
-    #[serde(default)]
-    entries: HashMap<String, JsonEntry>, // key hex -> entry
-}
-
-fn json_format_v1() -> String {
-    "native_storage_v1".to_string()
-}
-
-impl Default for JsonSnapshot {
-    fn default() -> Self {
-        Self {
-            format: json_format_v1(),
-            entries: HashMap::new(),
-        }
-    }
-}
-
-#[derive(Clone)]
-struct JsonBackend {
-    root: PathBuf,
-    pretty: bool,
-    lock: Arc<Mutex<()>>,
-}
-
-impl JsonBackend {
-    fn new(root: PathBuf, pretty: bool) -> Self {
-        Self {
-            root,
-            pretty,
-            lock: Arc::new(Mutex::new(())),
-        }
-    }
-
-    fn path_for(&self, db: &str) -> PathBuf {
-        if db.to_lowercase().ends_with(".json") {
-            PathBuf::from(&self.root).join(db)
-        } else {
-            PathBuf::from(&self.root).join(format!("{db}.json"))
-        }
-    }
-
-    fn load(&self, db: &str) -> PyResult<JsonSnapshot> {
-        let path = self.path_for(db);
-        if !path.exists() {
-            return Ok(JsonSnapshot::default());
-        }
-        let file = fs::File::open(&path).map_err(|e| map_err("json open", e))?;
-        let mut reader = BufReader::new(file);
-        let mut buf = Vec::new();
-        reader
-            .read_to_end(&mut buf)
-            .map_err(|e| map_err("json read", e))?;
-        let snap: JsonSnapshot =
-            serde_json::from_slice(&buf).map_err(|e| map_err("json parse", e))?;
-        Ok(snap)
-    }
-
-    fn persist(&self, db: &str, snap: &JsonSnapshot) -> PyResult<()> {
-        let path = self.path_for(db);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| map_err("json mkdir", e))?;
-        }
-        let tmp = NamedTempFile::new_in(path.parent().unwrap_or(Path::new(".")))
-            .map_err(|e| map_err("json tmp", e))?;
-        {
-            let file = tmp.as_file();
-            let mut writer = BufWriter::new(file);
-            if self.pretty {
-                serde_json::to_writer_pretty(&mut writer, snap)
-                    .map_err(|e| map_err("json write", e))?;
-            } else {
-                serde_json::to_writer(&mut writer, snap).map_err(|e| map_err("json write", e))?;
-            }
-            writer.flush().map_err(|e| map_err("json flush", e))?;
-        }
-        tmp.persist(&path)
-            .map_err(|e| map_err("json persist", e.error))?;
-        Ok(())
-    }
-
-    fn serialize_json_bytes(val: &JsonValue) -> PyResult<Vec<u8>> {
-        serde_json::to_vec(val).map_err(|e| map_err("json encode", e))
-    }
-
-    fn get(&self, db: &str, key: &[u8]) -> PyResult<Option<Vec<u8>>> {
-        let _guard = self.lock.lock();
-        let snap = self.load(db)?;
-        let key_hex = hex::encode(key);
-        if let Some(entry) = snap.entries.get(&key_hex) {
-            match entry {
-                JsonEntry::Bytes(data_hex) => {
-                    let v = hex::decode(data_hex).map_err(|e| map_err("json decode hex", e))?;
-                    return Ok(Some(v));
-                }
-                JsonEntry::Json(j) => {
-                    let v = Self::serialize_json_bytes(j)?;
-                    return Ok(Some(v));
-                }
-            }
-        }
-        Ok(None)
-    }
-
-    fn get_bytes_range(&self, db: &str, key: &[u8], offset: usize, length: usize) -> PyResult<Option<Vec<u8>>> {
-        let full_opt = self.get(db, key)?;
-        match full_opt {
-            Some(v) => {
-                if offset >= v.len() {
-                    Ok(Some(Vec::new()))
-                } else {
-                    let end = std::cmp::min(offset.saturating_add(length), v.len());
-                    Ok(Some(v[offset..end].to_vec()))
-                }
-            }
-            None => Ok(None),
-        }
-    }
-
-    fn put_bytes(&self, db: &str, key: &[u8], val: &[u8]) -> PyResult<()> {
-        let _guard = self.lock.lock();
-        let mut snap = self.load(db)?;
-        let key_hex = hex::encode(key);
-        snap.entries
-            .insert(key_hex, JsonEntry::Bytes(hex::encode(val)));
-        self.persist(db, &snap)
-    }
-
-    fn put_json_text(&self, db: &str, key: &[u8], json_text: &str) -> PyResult<()> {
-        let val: JsonValue =
-            serde_json::from_str(json_text).map_err(|e| map_err("json parse input", e))?;
-        let _guard = self.lock.lock();
-        let mut snap = self.load(db)?;
-        snap.entries.insert(hex::encode(key), JsonEntry::Json(val));
-        self.persist(db, &snap)
-    }
-
-    fn delete(&self, db: &str, key: &[u8]) -> PyResult<bool> {
-        let _guard = self.lock.lock();
-        let mut snap = self.load(db)?;
-        let removed = snap.entries.remove(&hex::encode(key)).is_some();
-        if removed {
-            self.persist(db, &snap)?;
-        }
-        Ok(removed)
-    }
-
-    fn clear_db(&self, db: &str) -> PyResult<u64> {
-        let _guard = self.lock.lock();
-        let mut snap = self.load(db)?;
-        let removed = snap.entries.len() as u64;
-        snap.entries.clear();
-        self.persist(db, &snap)?;
-        Ok(removed)
-    }
-
-    fn iter_prefix(&self, db: &str, prefix: &[u8]) -> PyResult<Vec<(Vec<u8>, Vec<u8>)>> {
-        let _guard = self.lock.lock();
-        let snap = self.load(db)?;
-        let prefix_hex = hex::encode(prefix);
-        let mut rows: Vec<(Vec<u8>, Vec<u8>)> = snap
-            .entries
-            .iter()
-            .filter_map(|(k, v)| {
-                if !k.starts_with(&prefix_hex) {
-                    return None;
-                }
-                let key_bytes = match hex::decode(k) {
-                    Ok(b) => b,
-                    Err(_) => return None,
-                };
-                let val_bytes = match v {
-                    JsonEntry::Bytes(h) => hex::decode(h).ok(),
-                    JsonEntry::Json(j) => Self::serialize_json_bytes(j).ok(),
-                }?;
-                Some((key_bytes, val_bytes))
-            })
-            .collect();
-        rows.sort_by(|a, b| a.0.cmp(&b.0));
-        Ok(rows)
-    }
-
-    fn get_json_string(&self, db: &str, key: &[u8]) -> PyResult<Option<String>> {
-        let _guard = self.lock.lock();
-        let snap = self.load(db)?;
-        let key_hex = hex::encode(key);
-        if let Some(entry) = snap.entries.get(&key_hex) {
-            match entry {
-                JsonEntry::Json(v) => {
-                    return serde_json::to_string(v)
-                        .map(Some)
-                        .map_err(|e| map_err("json encode", e));
-                }
-                JsonEntry::Bytes(raw_hex) => {
-                    let bytes = hex::decode(raw_hex).map_err(|e| map_err("json decode hex", e))?;
-                    if let Ok(text) = str::from_utf8(&bytes) {
-                        if let Ok(val) = serde_json::from_str::<JsonValue>(text) {
-                            return serde_json::to_string(&val)
-                                .map(Some)
-                                .map_err(|e| map_err("json encode", e));
-                        }
-                    }
-                }
-            }
-        }
-        Ok(None)
-    }
-}
-
-// ============================
-// Fused storage exposed to Python
-// ============================
-
-#[derive(Clone)]
-enum Backend {
-    Lmdb(LmdbBackend),
-    Json(JsonBackend),
-}
 
 #[pyclass(name = "NativeStorage")]
 pub struct NativeStorage {
-    backend: Backend,
+    lmdb: LmdbBackend,
     backend_name: String,
     base_path: String,
     detected_drive_type: String,
 }
 
-// Backend components are thread-safe (LMDB env is Send + Sync, JSON guarded by Mutex),
-// so it is safe to allow cross-thread transfer.
+// Backend components are thread-safe (LMDB env is Send + Sync)
 unsafe impl Send for NativeStorage {}
 
 #[pymethods]
@@ -986,6 +685,7 @@ impl NativeStorage {
         pretty_json: bool,
         drive_type: Option<&str>,
     ) -> PyResult<Self> {
+        let _ = pretty_json;
         let backend_norm = backend.to_lowercase();
         let path_buf = PathBuf::from(path);
         let base_path = path_buf
@@ -1005,23 +705,17 @@ impl NativeStorage {
                 let max = map_size_max.unwrap_or(default_max);
                 let lmdb = LmdbBackend::new(&path_buf, init, max, dt)?;
                 Ok(Self {
-                    backend: Backend::Lmdb(lmdb),
+                    lmdb,
                     backend_name: "lmdb".to_string(),
                     base_path,
                     detected_drive_type: dt.as_str().to_string(),
                 })
             }
-            "json" => {
-                let json = JsonBackend::new(path_buf, pretty_json);
-                Ok(Self {
-                    backend: Backend::Json(json),
-                    backend_name: "json".to_string(),
-                    base_path,
-                    detected_drive_type: dt.as_str().to_string(),
-                })
-            }
+            "json" => Err(PyValueError::new_err(
+                "JSON backend has been deprecated and removed. NativeStorage only supports 'lmdb'.",
+            )),
             _ => Err(PyValueError::new_err(
-                "backend must be either 'lmdb' or 'json'",
+                "backend must be 'lmdb'",
             )),
         }
     }
@@ -1042,24 +736,15 @@ impl NativeStorage {
     }
 
     pub fn sync(&self, force: bool) -> PyResult<()> {
-        match &self.backend {
-            Backend::Lmdb(b) => b.env.sync(force).map_err(|e| map_err("lmdb sync", e)),
-            Backend::Json(_) => Ok(()),
-        }
+        self.lmdb.env.sync(force).map_err(|e| map_err("lmdb sync", e))
     }
 
     pub fn put_bytes(&self, db: &str, key: &[u8], value: &[u8]) -> PyResult<()> {
-        match &self.backend {
-            Backend::Lmdb(b) => b.put(db, key, value),
-            Backend::Json(b) => b.put_bytes(db, key, value),
-        }
+        self.lmdb.put(db, key, value)
     }
 
     pub fn put_json(&self, db: &str, key: &[u8], json_text: &str) -> PyResult<()> {
-        match &self.backend {
-            Backend::Lmdb(b) => b.put(db, key, json_text.as_bytes()),
-            Backend::Json(b) => b.put_json_text(db, key, json_text),
-        }
+        self.lmdb.put(db, key, json_text.as_bytes())
     }
 
     pub fn get_bytes<'py>(
@@ -1068,10 +753,7 @@ impl NativeStorage {
         db: &str,
         key: &[u8],
     ) -> PyResult<Option<Bound<'py, PyBytes>>> {
-        let res = match &self.backend {
-            Backend::Lmdb(b) => b.get(db, key)?,
-            Backend::Json(b) => b.get(db, key)?,
-        };
+        let res = self.lmdb.get(db, key)?;
         Ok(res.map(|v| PyBytes::new(py, &v)))
     }
 
@@ -1086,10 +768,7 @@ impl NativeStorage {
         offset: usize,
         length: usize,
     ) -> PyResult<Option<Bound<'py, PyBytes>>> {
-        let res = match &self.backend {
-            Backend::Lmdb(b) => b.get_bytes_range(db, key, offset, length)?,
-            Backend::Json(b) => b.get_bytes_range(db, key, offset, length)?,
-        };
+        let res = self.lmdb.get_bytes_range(db, key, offset, length)?;
         Ok(res.map(|v| PyBytes::new(py, &v)))
     }
 
@@ -1103,71 +782,38 @@ impl NativeStorage {
         chunk_size: usize,
         index: usize,
     ) -> PyResult<Option<Bound<'py, PyList>>> {
-        match &self.backend {
-            Backend::Lmdb(b) => {
-                let db_handle = b.open_db(db)?;
-                let txn = b.env.begin_ro_txn().map_err(|e| map_err("lmdb ro_txn", e))?;
-                match txn.get(db_handle, &key) {
-                    Ok(bytes) => {
-                        let leaves = crate::graff_merkle::leaves_from_bytes_internal(bytes, chunk_size)?;
-                        let path = crate::graff_merkle::build_path_internal(leaves, index)?;
-                        let out = crate::graff_merkle::path_to_pylist(py, path)?;
-                        Ok(Some(out))
-                    },
-                    Err(lmdb::Error::NotFound) => Ok(None),
-                    Err(e) => Err(map_err("lmdb get", e)),
-                }
+        let db_handle = self.lmdb.open_db(db)?;
+        let txn = self.lmdb.env.begin_ro_txn().map_err(|e| map_err("lmdb ro_txn", e))?;
+        match txn.get(db_handle, &key) {
+            Ok(bytes) => {
+                let leaves = crate::graff_merkle::leaves_from_bytes_internal(bytes, chunk_size)?;
+                let path = crate::graff_merkle::build_path_internal(leaves, index)?;
+                let out = crate::graff_merkle::path_to_pylist(py, path)?;
+                Ok(Some(out))
             },
-            Backend::Json(b) => {
-                let bytes_opt = b.get(db, key)?;
-                match bytes_opt {
-                    Some(bytes) => {
-                        let leaves = crate::graff_merkle::leaves_from_bytes_internal(&bytes, chunk_size)?;
-                        let path = crate::graff_merkle::build_path_internal(leaves, index)?;
-                        let out = crate::graff_merkle::path_to_pylist(py, path)?;
-                        Ok(Some(out))
-                    },
-                    None => Ok(None),
-                }
-            }
+            Err(lmdb::Error::NotFound) => Ok(None),
+            Err(e) => Err(map_err("lmdb get", e)),
         }
     }
 
     pub fn get_json<'py>(&self, py: Python<'py>, db: &str, key: &[u8]) -> PyResult<Option<Py<PyAny>>>{
-        let json_text_opt = match &self.backend {
-            Backend::Json(b) => b.get_json_string(db, key)?,
-            Backend::Lmdb(b) => {
-                let raw_opt = b.get(db, key)?;
-                match raw_opt {
-                    Some(raw) => match str::from_utf8(&raw) {
-                        Ok(txt) => Some(txt.to_string()),
-                        Err(_) => None,
-                    },
-                    None => None,
-                }
+        let raw_opt = self.lmdb.get(db, key)?;
+        if let Some(raw) = raw_opt {
+            if let Ok(text) = str::from_utf8(&raw) {
+                let json_mod = py.import("json")?;
+                let obj = json_mod.call_method1("loads", (text,))?;
+                return Ok(Some(obj.unbind()));
             }
-        };
-        if let Some(text) = json_text_opt {
-            let json_mod = py.import("json")?;
-            let obj = json_mod.call_method1("loads", (text,))?;
-            Ok(Some(obj.unbind()))
-        } else {
-            Ok(None)
         }
+        Ok(None)
     }
 
     pub fn delete(&self, db: &str, key: &[u8]) -> PyResult<bool> {
-        match &self.backend {
-            Backend::Lmdb(b) => b.delete(db, key),
-            Backend::Json(b) => b.delete(db, key),
-        }
+        self.lmdb.delete(db, key)
     }
 
     pub fn clear_db(&self, db: &str) -> PyResult<u64> {
-        match &self.backend {
-            Backend::Lmdb(b) => b.clear_db(db),
-            Backend::Json(b) => b.clear_db(db),
-        }
+        self.lmdb.clear_db(db)
     }
 
     #[pyo3(signature = (db, prefix, limit=1000, start_after=None))]
@@ -1179,17 +825,7 @@ impl NativeStorage {
         limit: usize,
         start_after: Option<&[u8]>,
     ) -> PyResult<Bound<'py, PyList>> {
-        let items: Vec<(Vec<u8>, Vec<u8>)> = match &self.backend {
-            Backend::Lmdb(b) => b.iter_prefix_chunk(db, prefix, start_after, limit)?,
-            Backend::Json(b) => {
-                let mut all = b.iter_prefix(db, prefix)?;
-                if let Some(after) = start_after {
-                    all.retain(|(k, _)| k.as_slice() > after);
-                }
-                all.truncate(limit);
-                all
-            }
-        };
+        let items: Vec<(Vec<u8>, Vec<u8>)> = self.lmdb.iter_prefix_chunk(db, prefix, start_after, limit)?;
         let out = PyList::empty(py);
         for (k, v) in items {
             out.append((PyBytes::new(py, &k), PyBytes::new(py, &v)))?;
@@ -1198,68 +834,44 @@ impl NativeStorage {
     }
 
     pub fn put_batch(&self, db: &str, ops: Vec<(Vec<u8>, Option<Vec<u8>>)>) -> PyResult<()> {
-        match &self.backend {
-            Backend::Lmdb(b) => b.put_batch(db, ops),
-            Backend::Json(b) => {
-                for (k, maybe_v) in ops {
-                    if let Some(v) = maybe_v {
-                        b.put_bytes(db, &k, &v)?;
-                    } else {
-                        b.delete(db, &k)?;
-                    }
-                }
-                Ok(())
-            }
-        }
+        self.lmdb.put_batch(db, ops)
     }
 
     pub fn apply_utxo_ops(
         &self,
         ops: Vec<(String, Option<u64>, Option<Vec<u8>>, Option<bool>, Option<i64>)>,
     ) -> PyResult<(u64, u64)> {
-        match &self.backend {
-            Backend::Json(_) => Err(PyErr::new::<PyRuntimeError, _>(
-                "apply_utxo_ops only supported for LMDB backend",
-            )),
-            Backend::Lmdb(b) => {
-                let mut batch_ops: Vec<(Vec<u8>, Option<Vec<u8>>)> = Vec::with_capacity(ops.len());
-                let mut put_count: u64 = 0;
-                let mut del_count: u64 = 0;
+        let mut batch_ops: Vec<(Vec<u8>, Option<Vec<u8>>)> = Vec::with_capacity(ops.len());
+        let mut put_count: u64 = 0;
+        let mut del_count: u64 = 0;
 
-                for (key_str, amount_opt, spk_opt, is_cb_opt, h_opt) in ops {
-                    if amount_opt.is_none() {
-                        batch_ops.push((key_str.into_bytes(), None));
-                        del_count = del_count.saturating_add(1);
-                        continue;
-                    }
-                    let amount = amount_opt.unwrap_or(0);
-                    let spk_hex = spk_opt.as_ref().map(|b| hex::encode(b));
-                    let payload = serde_json::json!({
-                        "tx_out": {
-                            "amount": amount,
-                            "script_pubkey": spk_hex,
-                        },
-                        "is_coinbase": is_cb_opt.unwrap_or(false),
-                        "block_height": h_opt.unwrap_or(0),
-                    });
-                    let bytes = serde_json::to_vec(&payload)
-                        .map_err(|e| PyErr::new::<PyRuntimeError, _>(format!("utxo json encode: {e}")))?;
-                    batch_ops.push((key_str.into_bytes(), Some(bytes)));
-                    put_count = put_count.saturating_add(1);
-                }
-                b.put_batch("utxo", batch_ops)?;
-                Ok((put_count, del_count))
+        for (key_str, amount_opt, spk_opt, is_cb_opt, h_opt) in ops {
+            if amount_opt.is_none() {
+                batch_ops.push((key_str.into_bytes(), None));
+                del_count = del_count.saturating_add(1);
+                continue;
             }
+            let amount = amount_opt.unwrap_or(0);
+            let spk_hex = spk_opt.as_ref().map(|b| hex::encode(b));
+            let payload = serde_json::json!({
+                "tx_out": {
+                    "amount": amount,
+                    "script_pubkey": spk_hex,
+                },
+                "is_coinbase": is_cb_opt.unwrap_or(false),
+                "block_height": h_opt.unwrap_or(0),
+            });
+            let bytes = serde_json::to_vec(&payload)
+                .map_err(|e| PyErr::new::<PyRuntimeError, _>(format!("utxo json encode: {e}")))?;
+            batch_ops.push((key_str.into_bytes(), Some(bytes)));
+            put_count = put_count.saturating_add(1);
         }
+        self.lmdb.put_batch("utxo", batch_ops)?;
+        Ok((put_count, del_count))
     }
 
     pub fn copy(&self, dest: &str, compact: bool) -> PyResult<()> {
-        match &self.backend {
-            Backend::Lmdb(b) => b.copy_env(dest, compact),
-            Backend::Json(_b) => Err(PyErr::new::<PyRuntimeError, _>(
-                "copy not supported for json backend",
-            )),
-        }
+        self.lmdb.copy_env(dest, compact)
     }
 
     pub fn iter_prefix<'py>(
@@ -1268,10 +880,7 @@ impl NativeStorage {
         db: &str,
         prefix: &[u8],
     ) -> PyResult<Bound<'py, PyList>> {
-        let items: Vec<(Vec<u8>, Vec<u8>)> = match &self.backend {
-            Backend::Lmdb(b) => b.iter_prefix(db, prefix)?,
-            Backend::Json(b) => b.iter_prefix(db, prefix)?,
-        };
+        let items: Vec<(Vec<u8>, Vec<u8>)> = self.lmdb.iter_prefix(db, prefix)?;
         let out = PyList::empty(py);
         for (k, v) in items {
             out.append((PyBytes::new(py, &k), PyBytes::new(py, &v)))?;

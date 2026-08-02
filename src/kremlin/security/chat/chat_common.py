@@ -125,11 +125,6 @@ def sign(priv_hex: str, data: bytes) -> str:
     sig = sign_digest_der_low_s_native(priv_hex, digest)
     return sig.hex()
 
-def _ecdsa_sign_spend(priv_hex: str, data: bytes) -> str:
-    digest = hashlib.sha256(data).digest()
-    sig_der = sign_digest_der_low_s_native(priv_hex, digest)
-    return sig_der.hex()
-
 # ----------------------------------------------------------------------
 # Chat Key Management (X25519 identity key)
 # ----------------------------------------------------------------------
@@ -235,7 +230,7 @@ def ensure_signed_prekey(addr: str, password_provider=None) -> dict:
     sp_pub = WALL.pubkey_from_privhex(sp_priv)
     spk_sk, spk_pk = chat_dh_gen_keypair()
     payload = CFG.CHAT_SPK + bytes.fromhex(spk_pk) + b"|" + sp_pub
-    sig = _ecdsa_sign_spend(sp_priv, payload)
+    sig = sign(sp_priv, payload)
 
     record = record or {}
     record.update({
@@ -287,7 +282,7 @@ def rotate_signed_prekey(addr: str, password_provider=None) -> dict:
     sp_pub  = WALL.pubkey_from_privhex(sp_priv)
     spk_sk, spk_pk = chat_dh_gen_keypair()
     payload = CFG.CHAT_SPK + bytes.fromhex(spk_pk) + b"|" + sp_pub
-    sig = _ecdsa_sign_spend(sp_priv, payload)
+    sig = sign(sp_priv, payload)
     record = _load_prekey_record(addr, password_provider) or {}
     record.update({
         "addr": addr.lower(),

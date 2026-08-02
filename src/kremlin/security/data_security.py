@@ -33,7 +33,7 @@ from tsarchain.core.tx import Tx
 from tsarchain.utils import config as CFG
 from tsarchain.utils.benchmarks import benchmark
 from tsarchain.utils.helpers import hash160
-from tsarchain.storage.kv import kv_enabled, get as kv_get, put as kv_put, delete as kv_delete
+from tsarchain.storage.kv import get as kv_get, put as kv_put, delete as kv_delete
 
 # ---------------- Logger ----------------
 from tsarchain.utils.tsar_logging import get_ctx_logger
@@ -96,33 +96,25 @@ def decrypt_blob(enc: Dict, password: str) -> bytes:
 def _secure_backend_read(namespace: str, key: str, path: Optional[Path]) -> Tuple[Optional[Dict], bool]:
     raw = None
     from_file = False
-    if kv_enabled():
-        val = kv_get(_SECURE_KV_DB, _secure_kv_key(namespace, key))
-        if val:
-            raw = val.decode("utf-8")
+    val = kv_get(_SECURE_KV_DB, _secure_kv_key(namespace, key))
+    if val:
+        raw = val.decode("utf-8")
     if raw is None and path is not None and path.exists():
         raw = path.read_text(encoding="utf-8")
         from_file = True
     if raw is None:
         return None, from_file
     obj = json.loads(raw)
-    return obj, from_file and kv_enabled()
+    return obj, from_file
 
 def _secure_backend_write(namespace: str, key: str, path: Optional[Path], payload: Dict) -> None:
     data = json.dumps(payload, separators=CFG.CANONICAL_SEP)
-    if kv_enabled():
-        kv_put(_SECURE_KV_DB, _secure_kv_key(namespace, key), data.encode("utf-8"))
-        if path is not None and path.exists():
-            path.unlink()
-    else:
-        if path is None:
-            raise ValueError("file path required for secure storage")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(data, encoding="utf-8")
+    kv_put(_SECURE_KV_DB, _secure_kv_key(namespace, key), data.encode("utf-8"))
+    if path is not None and path.exists():
+        path.unlink()
 
 def _secure_backend_delete(namespace: str, key: str, path: Optional[Path]) -> None:
-    if kv_enabled():
-        kv_delete(_SECURE_KV_DB, _secure_kv_key(namespace, key))
+    kv_delete(_SECURE_KV_DB, _secure_kv_key(namespace, key))
     if path is not None and path.exists():
         path.unlink()
 

@@ -12,7 +12,7 @@ from archivist.archivist_orchestrator import ArchivistOrchestrator
 def mock_orchestrator():
     with patch("archivist.archivist_orchestrator.RPC") as mock_rpc, \
          patch("archivist.archivist_orchestrator.NodeDirectory") as mock_dir, \
-         patch("archivist.archivist_orchestrator.AtomicJSONFile") as mock_json_file:
+         patch("archivist.archivist_orchestrator._native_open_storage") as mock_native_storage:
         
         mock_rpc_instance = MagicMock()
         mock_rpc_instance.address = "tsar1_mock_addr"

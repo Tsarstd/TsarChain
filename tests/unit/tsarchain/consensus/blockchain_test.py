@@ -4,7 +4,7 @@
 
 import json
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, MagicMock, patch
 
 from tsarchain.consensus.blockchain import Blockchain
 
@@ -40,17 +40,18 @@ def mock_mempool():
         yield MockTxPool
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def mock_kv():
-    """Mock kv_enabled and iter_prefix from storage.kv across modules."""
-    mock_kv_enabled = Mock(return_value=False)
+    """Mock kv_enabled, iter_prefix, and _ensure_env from storage.kv across modules."""
+    mock_kv_enabled = Mock(return_value=True)
     mock_iter_prefix = Mock(return_value=[])
-    with patch('tsarchain.consensus.blockchain.kv_enabled', mock_kv_enabled), \
-         patch('tsarchain.consensus.chain_storage.kv_enabled', mock_kv_enabled), \
+    mock_store = MagicMock()
+    with patch('tsarchain.consensus.chain_storage.kv_enabled', mock_kv_enabled), \
          patch('tsarchain.storage.kv.kv_enabled', mock_kv_enabled), \
          patch('tsarchain.consensus.blockchain.iter_prefix', mock_iter_prefix), \
          patch('tsarchain.consensus.chain_storage.iter_prefix', mock_iter_prefix), \
-         patch('tsarchain.storage.kv.iter_prefix', mock_iter_prefix):
+         patch('tsarchain.storage.kv.iter_prefix', mock_iter_prefix), \
+         patch('tsarchain.storage.kv._ensure_env', return_value=mock_store):
         yield mock_kv_enabled, mock_iter_prefix
 
 
@@ -63,12 +64,12 @@ def mock_config(monkeypatch):
     monkeypatch.setattr(bc_mod.CFG, "HASH_CACHE_MAX", 100)
     monkeypatch.setattr(bc_mod.CFG, "UTXO_FLUSH_INTERVAL", 10)
     monkeypatch.setattr(bc_mod.CFG, "CHAIN_JOURNAL_FILE", "/tmp/non_existent_journal.file")
-    monkeypatch.setattr(bc_mod.CFG, "BLOCK_FILE", "/tmp/non_existent_blocks.json")
+    monkeypatch.setattr(bc_mod.CFG, "LMDB_CHAIN_DIR", "/tmp/non_existent_blocks.json")
     monkeypatch.setattr(bc_mod.CFG, "LMDB_DATA_FILE", "/tmp/non_existent_lmdb")
     monkeypatch.setattr(bc_mod.CFG, "KV_BACKEND", "json")
 
     monkeypatch.setattr(cs_mod.CFG, "CHAIN_JOURNAL_FILE", "/tmp/non_existent_journal.file")
-    monkeypatch.setattr(cs_mod.CFG, "BLOCK_FILE", "/tmp/non_existent_blocks.json")
+    monkeypatch.setattr(cs_mod.CFG, "LMDB_CHAIN_DIR", "/tmp/non_existent_blocks.json")
     monkeypatch.setattr(cs_mod.CFG, "LMDB_DATA_FILE", "/tmp/non_existent_lmdb")
     monkeypatch.setattr(cs_mod.CFG, "KV_BACKEND", "json")
     monkeypatch.setattr(cs_mod.CFG, "BLOCK_BACKUP_SNAPSHOT", 0)
@@ -316,7 +317,7 @@ def test_stop_persist_worker(mock_config):
          patch.object(Blockchain, 'load_chain', autospec=True), \
          patch.object(Blockchain, 'load_state', autospec=True), \
          patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed'), \
-         patch('tsarchain.consensus.blockchain.GENESIS_HASH', None):
+         patch('tsarchain.consensus.genesis.GENESIS_HASH', None):
         queue_instance = Mock()
         mock_queue.return_value = queue_instance
         thread_instance = Mock()

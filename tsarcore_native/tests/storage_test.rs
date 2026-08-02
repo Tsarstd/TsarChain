@@ -5,7 +5,7 @@
 use std::sync::Once;
 use pyo3::prelude::*;
 use tempfile::tempdir;
-use tsarcore_native::storage::{json_read_file, json_write_file, open_storage};
+use tsarcore_native::storage::open_storage;
 
 static INIT: Once = Once::new();
 
@@ -16,93 +16,13 @@ fn init_python() {
 }
 
 #[test]
-fn test_json_file_helpers() {
-    init_python();
-    let dir = tempdir().unwrap();
-    let file_path = dir.path().join("test.json");
-    let file_str = file_path.to_str().unwrap();
-
-    // Read non-existent
-    let content = json_read_file(file_str).unwrap();
-    assert_eq!(content, None);
-
-    // Write pretty
-    let json_data = r#"{"hello":"world"}"#;
-    json_write_file(file_str, json_data, true).unwrap();
-    
-    // Read exists
-    let content = json_read_file(file_str).unwrap().unwrap();
-    assert!(content.contains("\"hello\": \"world\""));
-
-    // Write not pretty
-    json_write_file(file_str, json_data, false).unwrap();
-    let content2 = json_read_file(file_str).unwrap().unwrap();
-    assert_eq!(content2, json_data);
-}
-
-#[test]
-fn test_json_backend() {
+fn test_json_backend_deprecated() {
     init_python();
     let dir = tempdir().unwrap();
     let path_str = dir.path().to_str().unwrap();
 
-    Python::attach(|py| {
-        let storage = open_storage("json", path_str, None, None, true, None).unwrap();
-        assert_eq!(storage.backend(), "json");
-
-        let db = "testdb";
-        let key = b"my_key";
-        let val = b"my_val";
-
-        // put_bytes & get_bytes
-        storage.put_bytes(db, key, val).unwrap();
-        let fetched = storage.get_bytes(py, db, key).unwrap().unwrap();
-        assert_eq!(fetched.as_bytes(), val);
-
-        // get_bytes_range
-        let fetched_range = storage.get_bytes_range(py, db, key, 1, 3).unwrap().unwrap();
-        assert_eq!(fetched_range.as_bytes(), b"y_v"); // b"my_val"[1..4]
-
-        // put_json & get_json
-        let json_key = b"my_json";
-        let json_text = r#"{"foo": "bar"}"#;
-        storage.put_json(db, json_key, json_text).unwrap();
-        let fetched_json = storage.get_json(py, db, json_key).unwrap().unwrap();
-        let dict = fetched_json.extract::<pyo3::Bound<pyo3::types::PyDict>>(py).unwrap();
-        assert_eq!(dict.get_item("foo").unwrap().unwrap().extract::<String>().unwrap(), "bar");
-
-        // delete
-        let deleted = storage.delete(db, key).unwrap();
-        assert!(deleted);
-        let fetched2 = storage.get_bytes(py, db, key).unwrap();
-        assert!(fetched2.is_none());
-
-        // put_batch
-        let mut batch = Vec::new();
-        batch.push((b"k1".to_vec(), Some(b"v1".to_vec())));
-        batch.push((b"k2".to_vec(), Some(b"v2".to_vec())));
-        batch.push((b"k3".to_vec(), None)); // delete non-existent
-        storage.put_batch(db, batch).unwrap();
-
-        // iter_prefix
-        let py_list = storage.iter_prefix(py, db, b"k").unwrap();
-        assert_eq!(py_list.len(), 2);
-        
-        let py_list_chunk = storage.iter_prefix_chunk(py, db, b"k", 1, None).unwrap();
-        assert_eq!(py_list_chunk.len(), 1);
-
-        // clear_db
-        storage.clear_db(db).unwrap();
-        let py_list_empty = storage.iter_prefix(py, db, b"k").unwrap();
-        assert_eq!(py_list_empty.len(), 0);
-        
-        // Unsupported operations
-        let copy_res = storage.copy("dest", false);
-        assert!(copy_res.is_err());
-        
-        let apply_res = storage.apply_utxo_ops(vec![]);
-        assert!(apply_res.is_err());
-    });
+    let storage = open_storage("json", path_str, None, None, true, None);
+    assert!(storage.is_err());
 }
 
 #[test]
