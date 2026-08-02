@@ -14,6 +14,7 @@ def tmp_db(tmp_path):
 
 def test_db_init_lmdb(tmp_path):
     db = ArchivistDatabase(storage_dir=str(tmp_path), enable_blobs=True, enable_index=True)
+    assert db.use_kv is True
     test_idx = {"files": {"gid1": {"size_bytes": 100}}, "bytes_used": 100, "art_map": {"art1": "gid1"}}
     db.save_index(test_idx)
     
@@ -22,6 +23,7 @@ def test_db_init_lmdb(tmp_path):
 
 def test_db_init_disabled_index(tmp_path):
     db = ArchivistDatabase(storage_dir=str(tmp_path), enable_index=False)
+    assert db.use_kv is False
     test_idx = {"files": {"gid1": {"size_bytes": 100}}, "bytes_used": 100, "art_map": {"art1": "gid1"}}
     db.save_index(test_idx)
     loaded = db.load_index()

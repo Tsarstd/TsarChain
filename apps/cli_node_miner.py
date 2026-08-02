@@ -36,6 +36,7 @@ from rich.prompt import Prompt
 from rich.console import Console
 
 # ---------------- Local Project ----------------
+from tsarchain.storage import kv
 from tsarchain.utils import config as CFG
 from tsarchain.utils.thread_check import get_thread_monitor
 from tsarchain.miner.cosmetic import interface as COL
@@ -190,6 +191,7 @@ def main():
             g_hash = bc.chain[0].hash().hex()
             clog(f"Genesis Block already exists in LMDB! Hash: {g_hash}", COL.GREEN)
             clog("No need to run --init-genesis again.", COL.YELLOW)
+            bc.shutdown()
             sys.exit(0)
 
         address = args.address
@@ -197,6 +199,7 @@ def main():
         if not address or not cores:
             if not is_interactive:
                 clog("Error: --address and --cores are required for --init-genesis in non-interactive mode.", COL.RED)
+                bc.shutdown()
                 sys.exit(2)
             input_address, input_cores = COL.get_user_input()
             address = address or input_address
@@ -216,9 +219,12 @@ def main():
             clog(f"Timestamp : {g.timestamp}", COL.GREEN)
             clog("================================================================", COL.YELLOW)
             clog("Environment ready! You can now start the node or miner in normal mode.", COL.CYAN)
+            kv.sync(force=True)
+            bc.shutdown()
             sys.exit(0)
         else:
             clog("Failed to create Genesis Block!", COL.RED)
+            bc.shutdown()
             sys.exit(1)
     
     mode_selected = None

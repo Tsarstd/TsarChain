@@ -114,14 +114,14 @@ def test_add_remove():
     
     obj.add("tx1", 0, MockTxOut(b"123"), is_coinbase=True)
     assert "tx1:0" in obj.utxos
-    assert obj.save_called == 1
+    assert obj._dirty is True
     
     obj.add("tx1", 1, MockTxOut(b"\x6a")) # unspendable
     assert "tx1:1" not in obj.utxos
     
     obj.remove("tx1", 0)
     assert "tx1:0" not in obj.utxos
-    assert obj.save_called == 2
+    assert obj._dirty is True
     
     # spend input
     obj.add("tx2", 1, MockTxOut(b"123"))

@@ -57,6 +57,10 @@ class ArchivistDatabase:
             if self.enable_blobs:
                 self._kv_final = self._open_store(CFG.ARCHIVIST_FINAL_DB_PATH)
 
+    @property
+    def use_kv(self) -> bool:
+        return self.enable_index and self.enable_blobs
+
 
     # ---------------- Index ----------------
     def load_index(self) -> Dict:

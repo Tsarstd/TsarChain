@@ -241,7 +241,7 @@ class UTXOValidationMixin:
         
         outputs_info = []
         for index, tx_out in enumerate(getattr(tx, "outputs", []) or []):
-            self.add(txid_hex, index, tx_out, is_coinbase=is_coinbase, block_height=height, autosave=False)
+            self.add(txid_hex, index, tx_out, is_coinbase=is_coinbase, block_height=height)
             outputs_info.append(self._build_output_info(tx_out))
             
         self._record_graffiti_event(tx, outputs_info, height, blk_hash)
@@ -275,7 +275,7 @@ class UTXOValidationMixin:
         return {"script_bytes": script_bytes, "amount": amount, "address": address}
 
 
-    def add(self, txid: str, index: int, tx_out: TxOut, is_coinbase: bool = False, block_height: int = 0, autosave: bool = True):
+    def add(self, txid: str, index: int, tx_out: TxOut, is_coinbase: bool = False, block_height: int = 0):
         if self._is_unspendable_opreturn(tx_out):
             return
 
@@ -289,22 +289,17 @@ class UTXOValidationMixin:
             self._dirty = True
             self._dirty_keys.add(key)
             self._removed_keys.discard(key)
-            if autosave:
-                self._save()
             self._index_entry(key, tx_out)
             self._bump_version()
 
 
-    def remove(self, txid, index: int, autosave: bool = True):
+    def remove(self, txid, index: int):
         key = f"{self._txid_hex(txid)}:{int(index)}"
         with self._lock:
             if self.utxos.pop(key, None) is not None:
                 self._dirty = True
                 self._dirty_keys.discard(key)
                 self._removed_keys.add(key)
-                if autosave:
-                    self._save()
-                    
                 self._drop_index_entry(key)
                 self._bump_version()
 

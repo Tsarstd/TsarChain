@@ -9,6 +9,7 @@ import re
 from typing import TYPE_CHECKING
 
 # ---------------- Local Project ----------------
+from ..storage import kv
 from ..core.block import Block
 from ..core.coinbase import CoinbaseTx
 from ..utils import config as CFG
@@ -54,8 +55,9 @@ class GenesisManager:
             g_hash = self.blockchain.chain[0].hash()
             if g_hash != GENESIS_HASH:
                 raise ValueError("[Blockchain] Created genesis does not match TSAR_GENESIS_HASH; aborting")
-        self.blockchain.save_chain()
+        self.blockchain.save_chain(force_full=True)
         self.blockchain.save_state()
+        kv.sync(force=True)
 
 
     def ensure_genesis(self, miner_address: str, use_cores: int | None = None, init_genesis: bool = False) -> bool:
@@ -110,7 +112,7 @@ class GenesisManager:
         store = self.blockchain.ensure_utxodb()
 
         if store is not None:
-            store.update(genesis.transactions, block_height=0, autosave=False)
+            store.update(genesis.transactions, block_height=0)
             self.blockchain.mark_utxo_dirty()
             self.blockchain.maybe_flush_utxo(force=True)
 

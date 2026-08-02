@@ -78,7 +78,19 @@ NETWORK ISOLATION (not a fork, but cannot connect to each other):
 '''
 
 import os
+import sys
 import appdirs
+from pathlib import Path
+
+
+def get_base_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    else:
+        return Path(__file__).resolve().parents[3]
+
+
+PROJECT_ROOT = get_base_dir()
 
 
 # =============================================================================
@@ -105,13 +117,13 @@ DATA_SCHEMA_VERSION = 1
 
 # ---- KV BACKEND ----
 KV_BACKEND         = "lmdb"  # native key-value backend implementation (100% LMDB)
-LMDB_DATA_FILE     = "data/node"  # fallback LMDB data directory
-LMDB_KEYS_DIR      = "data/keys"  # LMDB environment path for node_secrets
-LMDB_CHAIN_DIR     = "data/node/chain"  # LMDB environment path for chain
-LMDB_UTXO_DIR      = "data/node/utxo"  # LMDB environment path for utxo
-LMDB_STATE_DIR     = "data/node/state"  # LMDB environment path for state
-LMDB_GRAFFITI_DIR  = "data/node/graffiti"  # LMDB environment path for graffiti
-LMDB_MEMPOOL_DIR   = "data/node/mempool"  # LMDB environment path for mempool
+LMDB_DATA_FILE     = str(PROJECT_ROOT / "data/node")  # fallback LMDB data directory
+LMDB_KEYS_DIR      = str(PROJECT_ROOT / "data/keys")  # LMDB environment path for node_secrets
+LMDB_CHAIN_DIR     = str(PROJECT_ROOT / "data/node/chain")  # LMDB environment path for chain
+LMDB_UTXO_DIR      = str(PROJECT_ROOT / "data/node/utxo")  # LMDB environment path for utxo
+LMDB_STATE_DIR     = str(PROJECT_ROOT / "data/node/state")  # LMDB environment path for state
+LMDB_GRAFFITI_DIR  = str(PROJECT_ROOT / "data/node/graffiti")  # LMDB environment path for graffiti
+LMDB_MEMPOOL_DIR   = str(PROJECT_ROOT / "data/node/mempool")  # LMDB environment path for mempool
 
 LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
@@ -119,7 +131,7 @@ KV_ITER_CHUNK      = 512 # number of entries per chunk when iterating prefix sca
 
 
 # ---- WEB CACHE (LMDB) ----
-WEB_DATABASE_PATH  = "data/web"  # dedicated LMDB path for web cache
+WEB_DATABASE_PATH  = str(PROJECT_ROOT / "data/web")  # dedicated LMDB path for web cache
 LMDB_WEB_SIZE_INIT = 100 * 1024  # initial web LMDB size (100 KB)
 LMDB_WEB_SIZE_MAX  = 128 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
 
@@ -139,13 +151,13 @@ SNAPSHOT_BOOTSTRAP_ENABLED = False  # allow nodes to bootstrap via snapshot down
 SNAPSHOT_HTTP_TIMEOUT    = 90  # HTTP timeout applied to snapshot downloads
 SNAPSHOT_CHUNK_BYTES     = 2 * 1024 * 1024  # chunk size when streaming snapshot data
 SNAPSHOT_MIN_SIZE_BYTES  = 15 * 1024  # ignore snapshot files smaller than this
-SNAPSHOT_META_PATH       = "data/node/snapshot.meta.json"  # cached metadata file for snapshots
+SNAPSHOT_META_PATH       = str(PROJECT_ROOT / "data/node/snapshot.meta.json")  # cached metadata file for snapshots
 SNAPSHOT_MAX_AGE_SECONDS = 12 * 3600  # maximum tolerated snapshot age (12h)
 SNAPSHOT_USER_AGENT      = "TsarChainSnapshot/1.0"  # UA string used when fetching snapshots
 
 
 # ---- SNAPSHOT BACKUP ----
-SNAPSHOT_BACKUP_DIR   = "data/snapshot"  # folder storing backup snapshots
+SNAPSHOT_BACKUP_DIR   = str(PROJECT_ROOT / "data/snapshot")  # folder storing backup snapshots
 BACKUP_SNAPSHOT       = False  # toggle to keep automatic backup copies
 BLOCK_BACKUP_SNAPSHOT = 15  # Align last backup marker to nearest interval to avoid drift across restarts
 
@@ -158,26 +170,26 @@ STATE_HEIGHT_CACHE_TTL  = 2.0  # height for utxo validation & cache
 
 
 # ---- ARCHIVIST LMDB PATH ----
-ARCHIVIST_INDEX_DB_PATH        = "data/archivist/storage/index_db"
-ARCHIVIST_FINAL_DB_PATH        = "data/archivist/storage/final_db"
-ARCHIVIST_PAYOUT_GUARD_DB_PATH  = "data/archivist/storage/payout_guard"
+ARCHIVIST_INDEX_DB_PATH        = str(PROJECT_ROOT / "data/archivist/storage/index_db")
+ARCHIVIST_FINAL_DB_PATH        = str(PROJECT_ROOT / "data/archivist/storage/final_db")
+ARCHIVIST_PAYOUT_GUARD_DB_PATH  = str(PROJECT_ROOT / "data/archivist/storage/payout_guard")
 ARCHIVIST_PAYOUT_GUARD_MAP_SIZE = 4 * 1024 * 1024  # 4MB init
-ARCHIVIST_KEY_PATH             = "data/archivist/archivist_key.json" # primary node identity key storage path
+ARCHIVIST_KEY_PATH             = str(PROJECT_ROOT / "data/archivist/archivist_key.json") # primary node identity key storage path
 
 
 # ---- WALLET KEY FILES ----
-USER_KEY_PATH = "data_user/user_key.json"  # default user keypair location
-REGISTRY_PATH = "data_user/wallet_registry.json"  # registry of created wallets
-CHAT_STATE    = "data_user/chat_config.json"  # cached chat preferences and pointers
+USER_KEY_PATH = str(PROJECT_ROOT / "data_user/user_key.json")  # default user keypair location
+REGISTRY_PATH = str(PROJECT_ROOT / "data_user/wallet_registry.json")  # registry of created wallets
+CHAT_STATE    = str(PROJECT_ROOT / "data_user/chat_config.json")  # cached chat preferences and pointers
 
 
 # ---- CHAT KEY FILES ----
-CHAT_KEYS_DIR = "data_user/chat_keys"
-PREKEY_DIR    = "data_user/chat_prekeys"
+CHAT_KEYS_DIR = str(PROJECT_ROOT / "data_user/chat_keys")
+PREKEY_DIR    = str(PROJECT_ROOT / "data_user/chat_prekeys")
 
 
 # ---- NODE KEYS FILES ----
-KEYS_DATA_DIR         = "data/keys"  # root folder for node-specific secrets
+KEYS_DATA_DIR         = str(PROJECT_ROOT / "data/keys")  # root folder for node-specific secrets
 NODE_KEY_PATH         = os.path.join(KEYS_DATA_DIR, "node.json")  # primary node identity key storage path
 PEER_KEYS_PATH        = os.path.join(KEYS_DATA_DIR, "node/peer_keys.json")  # known peer key cache linked to node_data
 
@@ -745,13 +757,13 @@ STORAGE_UPLOAD_CHUNK          = 10 * 1024 * 1024  # chunk size used when slicing
 
 
 # ---- CONTRACT METADATA ----
-CONTRACTS_DIR      = "data_json/node/Contracts"  # storage root for contract-like payloads
+CONTRACTS_DIR      = str(PROJECT_ROOT / "data_json/node/Contracts")  # storage root for contract-like payloads
 GRAFFITI_FILE      = os.path.join(CONTRACTS_DIR, "graffiti.json")  # graffiti metadata archive path
 
 
 # ---- ARCHIVIST ----
-ARCHIV_PEER_KEYS                   = "data/archivist/data_peer/storage_peer_keys.json"
-STORAGE_DIR                        = "data/archivist/storage"  # folder holding uploaded storage blobs
+ARCHIV_PEER_KEYS                   = str(PROJECT_ROOT / "data/archivist/data_peer/storage_peer_keys.json")
+STORAGE_DIR                        = str(PROJECT_ROOT / "data/archivist/storage")  # folder holding uploaded storage blobs
 STORAGE_SIZE_INIT                  = 100 * 1024 * 1024  # initial storage size allocation (100MB)
 STORAGE_MAX_BYTES                  = 128 * 1024 * 1024 * 1024  # cap on cumulative storage usage (64GB)
 RETENTION_GC_SEC                   = 30  # interval between retention garbage collection runs

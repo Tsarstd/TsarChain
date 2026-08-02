@@ -316,8 +316,7 @@ def test_create_genesis_block_success(mock_coinbase_cls, mock_block_cls, monkeyp
     assert bc._chain_dirty is True
     assert bc._saved is True  # save_chain called
     mock_store.update.assert_called_once_with(
-        mock_block.transactions, block_height=0, autosave=False
-    )
+        mock_block.transactions, block_height=0)
     assert bc._utxo_dirty is True
     bc.maybe_flush_utxo = Mock()
     with patch.object(bc, "maybe_flush_utxo") as mock_flush:
@@ -352,4 +351,4 @@ def test_create_genesis_block_hash_mismatch(monkeypatch):
         with pytest.raises(ValueError, match="does not match TSAR_GENESIS_HASH"):
             bc.create_genesis_with_lock("miner")
 
-
+

@@ -74,7 +74,7 @@ class ChainOperations:
         store = self.blockchain.ensure_utxodb()
         if store is not None:
             blk_hash = block.hash().hex()
-            store.update(block.transactions, block_height=0, block_hash=blk_hash, autosave=False)
+            store.update(block.transactions, block_height=0, block_hash=blk_hash)
             self.blockchain.mark_utxo_dirty()
             self.blockchain._utxo_synced = True
             self.blockchain._schedule_persist(force_full=True, flush_force=True, save_state=True)
@@ -108,7 +108,7 @@ class ChainOperations:
         store = self.blockchain.ensure_utxodb()
         if store is not None:
             blk_hash = block.hash().hex()
-            store.update(block.transactions, block_height=block.height, block_hash=blk_hash, autosave=False)
+            store.update(block.transactions, block_height=block.height, block_hash=blk_hash)
             self.blockchain.mark_utxo_dirty()
 
         self._prune_mempool_confirmed(block)

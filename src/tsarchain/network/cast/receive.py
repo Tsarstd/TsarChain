@@ -513,7 +513,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
 
         if not self._utxo_shared:
             blk_hash = block.hash().hex()
-            self.utxodb.update(block.transactions, block.height, block_hash=blk_hash, autosave=False)
+            self.utxodb.update(block.transactions, block.height, block_hash=blk_hash)
             self.maybe_flush_local_utxo(block.height)
 
         recovered = self.mempool.recheck_orphans() if hasattr(self.mempool, "recheck_orphans") else 0
