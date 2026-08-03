@@ -4,8 +4,10 @@
 
 """
 Export LMDB sub-databases to JSON with FULL STREAMING (memory-safe).
-- Supports dedicated environment paths for all sub-databases:
-  node_secrets, chain, state, utxo, mempool, graffiti
+Supports multi-domain exports:
+- Keys: node_secrets -> data/keys/json_output/node_secrets.json
+- Node: chain, state, utxo, mempool, graffiti -> data/node/json_output/
+- Web: web_cache, web_media, web_blocks -> data/web/json_output/
 """
 
 import os
@@ -18,22 +20,27 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 from tqdm import tqdm
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, Optional, Tuple
 
 # ============================
 # USER SETTINGS
 # ============================
-SUBDBS = ['node_secrets', 'chain', 'state', 'utxo', 'mempool', 'graffiti']
-SUBDB_PATHS = {
-    'node_secrets': 'data/keys',
+NODE_SUBDBS = ['chain', 'state', 'utxo', 'mempool', 'graffiti']
+NODE_SUBDB_PATHS = {
     'chain': 'data/node/chain',
     'state': 'data/node/state',
     'utxo': 'data/node/utxo',
     'mempool': 'data/node/mempool',
     'graffiti': 'data/node/graffiti',
 }
-LEGACY_PATH = "data/node"
-OUTPUT_DIR = "data/node/json_output"
+KEYS_ENV_PATH = "data/keys"
+LEGACY_NODE_PATH = "data/node"
+
+KEYS_OUTPUT_DIR = "data/keys/json_output"
+NODE_OUTPUT_DIR = "data/node/json_output"
+ARCHIVIST_OUTPUT_DIR = "data/archivist/storage/json_output"
+WEB_OUTPUT_DIR = "data/web/json_output"
+
 INDENT = 2                        # 'None' for smaller size but less readable.
 
 # Set to True ONLY if you had enough RAM to load the entire UTXO into memory (2GB+ for 1M+ UTXOs)
@@ -41,7 +48,6 @@ INDENT = 2                        # 'None' for smaller size but less readable.
 SORT_UTXO = True
 # ============================
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def decode_key(key_bytes: bytes) -> str:
     try:
@@ -66,22 +72,8 @@ def decode_value(value_bytes: bytes) -> Union[str, Dict, List, Any]:
         }
 
 
-def sort_utxo_items(items):
-    """Sort UTXO items by block_height, with __meta__ placed first."""
-    meta = None
-    others = []
-    for k, v in items:
-        if k == '__meta__':
-            meta = (k, v)
-        else:
-            others.append((k, v))
-    others.sort(key=lambda x: x[1].get('block_height', 0))
-    if meta:
-        return [meta] + others
-    return others
-
-
-def stream_write_json(filepath, cursor):
+def stream_write_json(filepath: str, cursor) -> int:
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
     count = 0
     with open(filepath, 'w', encoding='utf-8') as f:
         f.write('{\n')
@@ -108,57 +100,113 @@ def stream_write_json(filepath, cursor):
     return count
 
 
-def resolve_db_env_path(db_name: str) -> str | None:
-    dedicated_path = SUBDB_PATHS.get(db_name)
-    if dedicated_path and os.path.exists(dedicated_path):
-        return dedicated_path
-    if dedicated_path and not os.path.exists(LEGACY_PATH):
-        return dedicated_path
-    if os.path.isdir(LEGACY_PATH):
-        return LEGACY_PATH
-    return dedicated_path
+def open_lmdb_env_dbi(env_path: str, db_name: Optional[str] = None) -> Tuple[Optional[lmdb.Environment], Any]:
+    if not os.path.exists(env_path):
+        return None, None
+    try:
+        env = lmdb.open(env_path, readonly=True, max_dbs=32, lock=False, subdir=os.path.isdir(env_path))
+    except Exception as e:
+        print(f"❌ Failed to open LMDB environment at {env_path}: {e}")
+        return None, None
 
-
-def export_lmdb():
-    total_entries = 0
-
-    for db_name in SUBDBS:
-        env_path = resolve_db_env_path(db_name)
-        if not env_path:
-            print(f"⚠️  Environment directory for '{db_name}' not found, skipping...")
-            continue
-
-        print(f"\n📁 Reading '{db_name}' from LMDB environment: {env_path}")
-        try:
-            env = lmdb.open(env_path, readonly=True, max_dbs=32, lock=False, subdir=True)
-        except Exception as e:
-            print(f"❌ Failed to open LMDB at {env_path}: {e}")
-            continue
-
-        dbi = None
+    dbi = None
+    if db_name:
         try:
             dbi = env.open_db(db_name.encode('utf-8'), create=False)
         except lmdb.Error:
             try:
-                # Fallback to default unnamed database in dedicated environment
                 dbi = env.open_db(None, create=False)
             except lmdb.Error:
-                print(f"⚠️  Sub-database '{db_name}' not found in {env_path}, skipping...")
                 env.close()
-                continue
+                return None, None
+    else:
+        try:
+            dbi = env.open_db(None, create=False)
+        except lmdb.Error:
+            env.close()
+            return None, None
 
-        print(f"📖 Exporting sub-database: {db_name}")
+    return env, dbi
+
+
+def dump_dbi_to_dict(env: lmdb.Environment, dbi: Any) -> Dict[str, Any]:
+    data = {}
+    with env.begin(db=dbi, write=False) as txn:
+        with txn.cursor() as cursor:
+            for key_bytes, value_bytes in cursor:
+                key_str = decode_key(key_bytes)
+                val = decode_value(value_bytes)
+                data[key_str] = val
+    return data
+
+
+# ============================================================
+# EXPORT MODULES
+# ============================================================
+
+def export_keys_data() -> int:
+    """Exports node_secrets from data/keys (or fallback data/node) to data/keys/json_output/node_secrets.json."""
+    print("\n🔑 --- Exporting Keys Data ---")
+    os.makedirs(KEYS_OUTPUT_DIR, exist_ok=True)
+
+    env_path = KEYS_ENV_PATH if os.path.exists(KEYS_ENV_PATH) else LEGACY_NODE_PATH
+    if not os.path.exists(env_path):
+        print(f"⚠️  Keys LMDB environment directory not found at '{env_path}', skipping...")
+        return 0
+
+    env, dbi = open_lmdb_env_dbi(env_path, 'node_secrets')
+    if not env or dbi is None:
+        print(f"⚠️  Sub-database 'node_secrets' not found in {env_path}, skipping...")
+        return 0
+
+    output_file = os.path.join(KEYS_OUTPUT_DIR, "node_secrets.json")
+    print(f"📁 Reading 'node_secrets' from {env_path}")
+    with env.begin(db=dbi, write=False) as txn:
+        with txn.cursor() as cursor:
+            count = stream_write_json(output_file, cursor)
+            print(f"   ✅ {count} entries written to {output_file}")
+    env.close()
+    return count
+
+
+def sort_utxo_items(items):
+    """Sort UTXO items by block_height, with __meta__ placed first."""
+    meta = None
+    others = []
+    for k, v in items:
+        if k == '__meta__':
+            meta = (k, v)
+        else:
+            others.append((k, v))
+    others.sort(key=lambda x: x[1].get('block_height', 0))
+    if meta:
+        return [meta] + others
+    return others
+
+
+def export_node_data() -> int:
+    """Exports Node sub-databases (chain, state, utxo, mempool, graffiti) to data/node/json_output/."""
+    print("\n📦 --- Exporting Node Data ---")
+    os.makedirs(NODE_OUTPUT_DIR, exist_ok=True)
+    total_entries = 0
+
+    for db_name in NODE_SUBDBS:
+        dedicated_path = NODE_SUBDB_PATHS.get(db_name)
+        env_path = dedicated_path if (dedicated_path and os.path.exists(dedicated_path)) else LEGACY_NODE_PATH
+        if not os.path.exists(env_path):
+            print(f"⚠️  Environment directory for '{db_name}' not found at '{env_path}', skipping...")
+            continue
+
+        env, dbi = open_lmdb_env_dbi(env_path, db_name)
+        if not env or dbi is None:
+            print(f"⚠️  Sub-database '{db_name}' not found in {env_path}, skipping...")
+            continue
+
+        print(f"📁 Reading '{db_name}' from LMDB environment: {env_path}")
 
         # ---------- GRAFFITI ----------
         if db_name == 'graffiti':
-            with env.begin(db=dbi, write=False) as txn:
-                with txn.cursor() as cursor:
-                    db_data = {}
-                    for key_bytes, value_bytes in cursor:
-                        key_str = decode_key(key_bytes)
-                        val = decode_value(value_bytes)
-                        db_data[key_str] = val
-
+            db_data = dump_dbi_to_dict(env, dbi)
             graffiti_content = db_data.get('data:data')
             if graffiti_content is None and len(db_data) == 1:
                 graffiti_content = next(iter(db_data.values()))
@@ -166,7 +214,7 @@ def export_lmdb():
             if graffiti_content is not None and isinstance(graffiti_content, dict):
                 sub_keys = ['posts', 'comments', 'payouts', 'proofs']
                 if any(k in graffiti_content for k in sub_keys):
-                    graffiti_dir = os.path.join(OUTPUT_DIR, 'graffiti')
+                    graffiti_dir = os.path.join(NODE_OUTPUT_DIR, 'graffiti')
                     os.makedirs(graffiti_dir, exist_ok=True)
 
                     for subkey in sub_keys:
@@ -184,8 +232,8 @@ def export_lmdb():
             else:
                 print("   ⚠️  Graffiti 'data:data' key not found, fallback to single file")
 
-            # Fallback: if no graffiti activities in database
-            output_file = os.path.join(OUTPUT_DIR, f"{db_name}.json")
+            # Fallback
+            output_file = os.path.join(NODE_OUTPUT_DIR, f"{db_name}.json")
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(db_data, f, indent=INDENT, ensure_ascii=False, default=str)
             print(f"   ✅ {len(db_data)} entries written to {output_file} (fallback)")
@@ -193,8 +241,8 @@ def export_lmdb():
             env.close()
             continue
 
-        # ---------- STREAMING ALL (node_secrets, chain, state, utxo, mempool) ----------
-        output_file = os.path.join(OUTPUT_DIR, f"{db_name}.json")
+        # ---------- STREAMING ALL OTHER NODE DBS ----------
+        output_file = os.path.join(NODE_OUTPUT_DIR, f"{db_name}.json")
         with env.begin(db=dbi, write=False) as txn:
             with txn.cursor() as cursor:
                 count = stream_write_json(output_file, cursor)
@@ -203,50 +251,137 @@ def export_lmdb():
 
         env.close()
 
-    print(f"\n🔒 All LMDB exports completed. Total entries streamed: {total_entries}")
-
-    # ============================================================
     # POST-PROCESS: SORT UTXO (if enabled)
-    # ============================================================
     if SORT_UTXO:
-        utxo_file = os.path.join(OUTPUT_DIR, "utxo.json")
+        utxo_file = os.path.join(NODE_OUTPUT_DIR, "utxo.json")
         if os.path.exists(utxo_file):
             print("\n🔄 Post-processing UTXO: sorting by block_height...")
             try:
                 with open(utxo_file, 'r', encoding='utf-8') as f:
                     utxo_data = json.load(f)
 
-                if not isinstance(utxo_data, dict):
-                    print("   ⚠️  UTXO file is not a dict, skipping sort.")
-                else:
+                if isinstance(utxo_data, dict):
                     items = list(utxo_data.items())
                     print(f"   📊 Sorting {len(items)} UTXO items...")
                     sorted_items = sort_utxo_items(items)
-
-                    # Rewrite utxo with sorted items
                     sorted_data = dict(sorted_items)
                     with open(utxo_file, 'w', encoding='utf-8') as f:
                         json.dump(sorted_data, f, indent=INDENT, ensure_ascii=False, default=str)
-
                     print(f"   ✅ UTXO sorted and saved back to {utxo_file}")
-
-                    # Memory cleanup
-                    del utxo_data
-                    del items
-                    del sorted_data
-
-            except json.JSONDecodeError as e:
-                print(f"   ❌ Error reading UTXO JSON: {e}. Sorting skipped.")
-            except MemoryError:
-                print("   ❌ MemoryError: UTXO file too large to sort in memory. Consider using external sort or increasing RAM.")
+                    del utxo_data, items, sorted_data
+                else:
+                    print("   ⚠️  UTXO file is not a dict, skipping sort.")
             except Exception as e:
-                print(f"   ❌ Unexpected error during UTXO sorting: {e}")
-        else:
-            print("\n⚠️  UTXO file not found, skipping post-processing sort.")
-    else:
-        print("\n⏩ UTXO sorting is disabled.")
+                print(f"   ❌ Error during UTXO sorting: {e}")
 
-    print(f"\n💾 All done. Output directory: {OUTPUT_DIR}")
+    return total_entries
+
+
+def export_archivist_data() -> int:
+    """Exports Archivist sub-databases (index_db, payout_guard) to data/archivist/storage/json_output/."""
+    print("\n📚 --- Exporting Archivist Storage Data ---")
+    os.makedirs(ARCHIVIST_OUTPUT_DIR, exist_ok=True)
+    total_entries = 0
+
+    targets = [
+        ("index_db", "data/archivist/storage/index_db", "idx", "index.json"),
+        ("payout_guard", "data/archivist/storage/payout_guard", "guard", "payout_guard.json"),
+    ]
+
+    for label, env_path, db_name, out_filename in targets:
+        if not os.path.exists(env_path):
+            print(f"⚠️  Archivist '{label}' environment directory not found at '{env_path}', skipping...")
+            continue
+
+        env, dbi = open_lmdb_env_dbi(env_path, db_name)
+        if not env or dbi is None:
+            print(f"⚠️  Sub-database '{db_name}' not found in {env_path}, skipping...")
+            continue
+
+        output_file = os.path.join(ARCHIVIST_OUTPUT_DIR, out_filename)
+        print(f"📁 Reading '{label}' ({db_name}) from {env_path}")
+        with env.begin(db=dbi, write=False) as txn:
+            with txn.cursor() as cursor:
+                count = stream_write_json(output_file, cursor)
+                print(f"   ✅ {count} entries written to {output_file}")
+                total_entries += count
+
+        env.close()
+
+    return total_entries
+
+
+def export_web_data() -> int:
+    """Exports Web LMDB data (web_cache, web_media, web_blocks) to data/web/json_output/."""
+    print("\n🌐 --- Exporting Web Data ---")
+    os.makedirs(WEB_OUTPUT_DIR, exist_ok=True)
+
+    env_path = "data/web"
+    if not os.path.exists(env_path):
+        print(f"⚠️  Web LMDB environment directory not found at '{env_path}', skipping...")
+        return 0
+
+    web_subdbs = ['web_cache', 'web_media', 'web_blocks']
+    total_entries = 0
+
+    try:
+        env = lmdb.open(env_path, readonly=True, max_dbs=32, lock=False, subdir=os.path.isdir(env_path))
+    except Exception as e:
+        print(f"❌ Failed to open Web LMDB at {env_path}: {e}")
+        return 0
+
+    found_any = False
+    for subdb in web_subdbs:
+        try:
+            dbi = env.open_db(subdb.encode('utf-8'), create=False)
+            output_file = os.path.join(WEB_OUTPUT_DIR, f"{subdb}.json")
+            with env.begin(db=dbi, write=False) as txn:
+                with txn.cursor() as cursor:
+                    count = stream_write_json(output_file, cursor)
+                    print(f"   ✅ {count} entries written to {output_file}")
+                    total_entries += count
+                    found_any = True
+        except lmdb.Error:
+            continue
+
+    if not found_any:
+        # Fallback to default unnamed database
+        try:
+            dbi = env.open_db(None, create=False)
+            output_file = os.path.join(WEB_OUTPUT_DIR, "web.json")
+            with env.begin(db=dbi, write=False) as txn:
+                with txn.cursor() as cursor:
+                    count = stream_write_json(output_file, cursor)
+                    print(f"   ✅ {count} entries written to {output_file} (fallback)")
+                    total_entries += count
+        except lmdb.Error:
+            print(f"⚠️  No readable sub-databases found in {env_path}")
+            env.close()
+            return 0
+
+    env.close()
+    return total_entries
+
+
+# ============================================================
+# MAIN ORCHESTRATION
+# ============================================================
+
+def export_lmdb():
+    print("🚀 Starting Multi-Domain LMDB Export...")
+    keys_count = export_keys_data()
+    node_count = export_node_data()
+    archivist_count = export_archivist_data()
+    web_count = export_web_data()
+
+    total = keys_count + node_count + archivist_count + web_count
+    print("\n🔒 All LMDB exports completed successfully.")
+    print("📊 Summary of exported entries:")
+    print(f"   - Keys: {keys_count}")
+    print(f"   - Node: {node_count}")
+    print(f"   - Archivist: {archivist_count}")
+    print(f"   - Web: {web_count}")
+    print(f"   - Total Entries: {total}")
 
 
 if __name__ == '__main__':
