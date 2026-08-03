@@ -50,8 +50,15 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: "internal_error", detail: err?.message || "Unexpected error" });
 });
 
-const server = app.listen(cfg.port, cfg.host, () => {
-  console.log(`[backend] explorer API listening on ${cfg.host}:${cfg.port}`);
+const http = require("node:http");
+const server = http.createServer(app);
+
+server.listen({
+  port: cfg.port,
+  host: cfg.host,
+  ipv6Only: false
+}, () => {
+  console.log(`[backend] explorer API listening Dual-Stack on ${cfg.host}:${cfg.port}`);
 });
 
 server.on("error", (err) => {

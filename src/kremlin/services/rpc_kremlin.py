@@ -28,7 +28,7 @@ _last_log_gate = {}
 
 def _connect_socket(target: Tuple[str, int], timeout: float) -> socket.socket:
     host, port = str(target[0]), int(target[1])
-    if CFG.IPV6_MODE is True:
+    if CFG.IPV6_MODE:
         last_exc = None
         try:
             infos = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)

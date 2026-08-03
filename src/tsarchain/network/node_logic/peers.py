@@ -32,7 +32,7 @@ def normalize_peer(_, peer: Any) -> Optional[Tuple[str, int]]:
                 port_str = peer[idx+2:]
                 if port_str.isdigit():
                     return (host, int(port_str))
-        elif ":" in peer:
+        elif ":" in peer and peer.count(":") == 1:
             parts = peer.rsplit(":", 1)
             if len(parts) == 2 and parts[1].isdigit():
                 host = parts[0]

@@ -103,7 +103,7 @@ def _scan_nodes(start: int = CFG.PORT_START, end: int = CFG.PORT_END, manual_nod
 
 
 def _connect_socket(host: str, port: int, timeout: float) -> socket.socket:
-    if CFG.IPV6_MODE is True:
+    if CFG.IPV6_MODE:
         last_exc = None
         try:
             infos = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)

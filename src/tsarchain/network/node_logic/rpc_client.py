@@ -241,7 +241,7 @@ def request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> bo
 
 def _connect_socket(target: Tuple[str, int], timeout: float) -> socket.socket:
     host, port = str(target[0]), int(target[1])
-    if CFG.IPV6_MODE is True:
+    if CFG.IPV6_MODE:
         last_exc = None
         try:
             infos = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
