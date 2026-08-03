@@ -111,7 +111,7 @@ def _resolve_storage_sender_meta(_, peers, ip, peer_port, src_node_id, src_pubke
     return best_meta
 
 
-@benchmark(label="GRAFFITI_PROOF_SUBMIT", threshold_ms=1.0)
+@benchmark(label="GRAFFITI_PROOF_SUBMIT", threshold_ms=15.0)
 def _handle_storage_proof_submit(self, message, storer_addr, ip, src_node_id):
     ts_val = int(message.get("ts", 0))
     nonce_val = str(message.get("nonce") or "")

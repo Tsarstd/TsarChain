@@ -146,10 +146,7 @@ class NodeClient:
                         resp = chan.recv(CFG.CONNECT_TIMEOUT_SCAN)
                     except Exception:
                         log.exception("SecureChannel handshake or encrypted I/O failed for %s:%d.", ip, port)
-                        if CFG.P2P_ENC_REQUIRED:
-                            raise
-                        send_message(s, json.dumps(ping_env).encode("utf-8"))
-                        resp = recv_message(s, timeout=CFG.CONNECT_TIMEOUT_SCAN)
+                        raise
 
                     if not resp:
                         continue
@@ -165,9 +162,6 @@ class NodeClient:
                                 continue
                         except Exception:
                             log.exception("Failed to verify/unwrap envelope response from %s:%d.", ip, port)
-                            if CFG.ENVELOPE_REQUIRED:
-                                continue
-                            found.append((ip, port))
                             continue
 
             except (TimeoutError, socket.timeout):
@@ -222,11 +216,7 @@ class NodeClient:
                 resp = chan.recv(CFG.RPC_TIMEOUT)
             except Exception:
                 log.exception("Unhandled exception")
-                if CFG.P2P_ENC_REQUIRED:
-                    raise
-                log.warning("[_try_send_one] secure handshake failed, fallback to plaintext", extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type")))
-                send_message(s, json.dumps(env).encode("utf-8"))
-                resp = recv_message(s, timeout=CFG.RPC_TIMEOUT)
+                raise
 
             if not resp:
                 return None
@@ -238,17 +228,11 @@ class NodeClient:
                     return inner
                 except Exception:
                     log.exception("Unhandled exception")
-                    if CFG.ENVELOPE_REQUIRED:
-                        log.warning("[_try_send_one] envelope verify failed (REQUIRED) -> drop", extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type")))
-                        return None
-                    self.dir.mark_good(peer)
-                    return outer
-            else:
-                if CFG.ENVELOPE_REQUIRED:
-                    log.warning("[_try_send_one] plaintext response but ENVELOPE_REQUIRED -> drop", extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type")))
+                    log.warning("[_try_send_one] envelope verify failed -> drop", extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type")))
                     return None
-                self.dir.mark_good(peer)
-                return outer
+            else:
+                log.warning("[_try_send_one] non-envelope response -> drop", extra=_mk_extra(f"{peer[0]}:{peer[1]}", message.get("type")))
+                return None
 
     def send(self, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         req = secrets.token_hex(6)

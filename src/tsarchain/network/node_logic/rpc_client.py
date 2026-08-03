@@ -264,18 +264,16 @@ def prefetch_peer_channel(self, peer: Tuple[str, int]):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(_RPC_PREFETCH_TIMEOUT)
         sock.connect(norm)
-        chan = None
-        if CFG.P2P_ENC_REQUIRED:
-            chan = SecureChannel(
-                sock,
-                role="client",
-                node_id=self.node_id,
-                node_pub=self.pubkey,
-                node_priv=self.privkey,
-                get_pinned=self.get_pinned,
-                set_pinned=self.set_pinned,
-            )
-            chan.handshake()
+        chan = SecureChannel(
+            sock,
+            role="client",
+            node_id=self.node_id,
+            node_pub=self.pubkey,
+            node_priv=self.privkey,
+            get_pinned=self.get_pinned,
+            set_pinned=self.set_pinned,
+        )
+        chan.handshake()
         sock.settimeout(float(CFG.SYNC_TIMEOUT))
         with cache_lock:
             cache[norm] = {"chan": chan, "sock": sock, "ts": time.time()}
@@ -300,9 +298,8 @@ def _rpc_cleanup(entry):
 
 def _send_with_channel(node, chan, sock, payload, timeout):
     env = build_envelope(payload, node.node_ctx, extra={"pubkey": node.pubkey})
-    if CFG.ENFORCE_HELLO_PUBKEY or CFG.ENVELOPE_REQUIRED:
-        env["pubkey"] = node.pubkey
-    if CFG.P2P_ENC_REQUIRED and chan:
+    env["pubkey"] = node.pubkey
+    if chan:
         chan.send(json.dumps(env).encode("utf-8"))
         return chan.recv(timeout)
     send_message(sock, json.dumps(env).encode("utf-8"))
@@ -337,18 +334,16 @@ def _create_new_connection(node, norm, payload, timeout, cache, cache_lock, max_
     success = False
     try:
         sock_new.connect(norm)
-        chan = None
-        if CFG.P2P_ENC_REQUIRED:
-            chan = SecureChannel(
-                sock_new,
-                role="client",
-                node_id=node.node_id,
-                node_pub=node.pubkey,
-                node_priv=node.privkey,
-                get_pinned=node.get_pinned,
-                set_pinned=node.set_pinned,
-            )
-            chan.handshake()
+        chan = SecureChannel(
+            sock_new,
+            role="client",
+            node_id=node.node_id,
+            node_pub=node.pubkey,
+            node_priv=node.privkey,
+            get_pinned=node.get_pinned,
+            set_pinned=node.set_pinned,
+        )
+        chan.handshake()
 
         sock_new.settimeout(timeout)
         resp = _send_with_channel(node, chan, sock_new, payload, timeout)

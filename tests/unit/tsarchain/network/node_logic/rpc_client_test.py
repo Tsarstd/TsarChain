@@ -101,16 +101,16 @@ def test_rpc_request_success_new_connection(
     mock_cfg,
     mock_node,
 ):
-    mock_cfg.P2P_ENC_REQUIRED = False
-    mock_cfg.ENVELOPE_REQUIRED = False
     mock_cfg.DEBUG_BENCHMARKS = False
     mock_cfg.SYNC_TIMEOUT = 10.0
     mock_cfg.HANDSHAKE_TIMEOUT = 5.0
     mock_cfg.BUFFER_SIZE = 8192
     
+    mock_chan = MagicMock()
+    mock_chan.recv.return_value = json.dumps({"status": "ok"}).encode("utf-8")
+    mock_channel.return_value = mock_chan
     mock_build_env.return_value = {"type": "TEST_ENV"}
     mock_is_env.return_value = False
-    mock_recv.return_value = json.dumps({"status": "ok"}).encode("utf-8")
 
     peer = ("127.0.0.1", 8333)
     resp = rpc_request(mock_node, peer, {"test": "data"})
@@ -303,8 +303,6 @@ def test_rpc_request_invalid_peer(mock_node):
 @patch("tsarchain.network.node_logic.rpc_client.SecureChannel")
 @patch("tsarchain.network.node_logic.rpc_client.socket.socket")
 def test_rpc_request_p2p_enc(mock_socket, mock_channel_class, mock_build, mock_cfg, mock_node):
-    mock_cfg.P2P_ENC_REQUIRED = True
-    mock_cfg.ENVELOPE_REQUIRED = True
     mock_cfg.BUFFER_SIZE = 8192
     mock_cfg.HANDSHAKE_TIMEOUT = 5.0
     
@@ -319,13 +317,15 @@ def test_rpc_request_p2p_enc(mock_socket, mock_channel_class, mock_build, mock_c
     mock_chan.handshake.assert_called_once()
     mock_chan.send.assert_called_once()
 
+@patch("tsarchain.network.node_logic.rpc_client.SecureChannel")
 @patch("tsarchain.network.node_logic.rpc_client.build_envelope")
 @patch("tsarchain.network.node_logic.rpc_client.CFG")
 @patch("tsarchain.network.node_logic.rpc_client.socket.socket")
-def test_rpc_request_cache_eviction(mock_socket, mock_cfg, mock_build, mock_node):
+def test_rpc_request_cache_eviction(mock_socket, mock_cfg, mock_build, mock_chan_cls, mock_node):
     mock_build.return_value = {}
-    mock_cfg.P2P_ENC_REQUIRED = False
-    mock_cfg.ENVELOPE_REQUIRED = False
+    mock_chan = MagicMock()
+    mock_chan.recv.return_value = b'{}'
+    mock_chan_cls.return_value = mock_chan
     mock_cfg.RPC_CONN_CACHE_MAX = 1
     mock_cfg.BUFFER_SIZE = 8192
     mock_cfg.HANDSHAKE_TIMEOUT = 5.0
@@ -334,34 +334,30 @@ def test_rpc_request_cache_eviction(mock_socket, mock_cfg, mock_build, mock_node
     peer1 = ("127.0.0.1", 8333)
     peer2 = ("127.0.0.1", 8334)
     
-    mock_sock = MagicMock()
-    with patch("tsarchain.network.node_logic.rpc_client.send_message"), \
-         patch("tsarchain.network.node_logic.rpc_client.recv_message", return_value=b'{}'):
-        rpc_request(mock_node, peer1, {})
-        rpc_request(mock_node, peer2, {})
+    rpc_request(mock_node, peer1, {})
+    rpc_request(mock_node, peer2, {})
         
     assert peer1 not in mock_node._rpc_conn_cache
     assert peer2 in mock_node._rpc_conn_cache
 
+@patch("tsarchain.network.node_logic.rpc_client.SecureChannel")
 @patch("tsarchain.network.node_logic.rpc_client.build_envelope")
 @patch("tsarchain.network.node_logic.rpc_client.CFG")
 @patch("tsarchain.network.node_logic.rpc_client.verify_and_unwrap")
 @patch("tsarchain.network.node_logic.rpc_client.is_envelope")
-@patch("tsarchain.network.node_logic.rpc_client.recv_message")
-@patch("tsarchain.network.node_logic.rpc_client.send_message")
 @patch("tsarchain.network.node_logic.rpc_client.socket.socket")
-def test_rpc_request_envelope_unwrap(mock_socket, mock_send, mock_recv, mock_is_env, mock_unwrap, mock_cfg, mock_build, mock_node):
+def test_rpc_request_envelope_unwrap(mock_socket, mock_is_env, mock_unwrap, mock_cfg, mock_build, mock_chan_cls, mock_node):
     mock_build.return_value = {}
-    mock_cfg.P2P_ENC_REQUIRED = False
-    mock_cfg.ENVELOPE_REQUIRED = False
     mock_cfg.BUFFER_SIZE = 8192
     mock_cfg.HANDSHAKE_TIMEOUT = 5.0
     mock_cfg.SYNC_TIMEOUT = 10.0
-    mock_recv.return_value = json.dumps({
+    mock_chan = MagicMock()
+    mock_chan.recv.return_value = json.dumps({
         "from": "nodeA",
         "pubkey": "pubA",
         "data": "xyz"
     }).encode("utf-8")
+    mock_chan_cls.return_value = mock_chan
     mock_is_env.return_value = True
     mock_unwrap.return_value = {"unwrapped": "data"}
     

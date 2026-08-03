@@ -87,7 +87,7 @@ def _handle_connection(self, conn, addr):
         if isinstance(first, dict) and first.get("type") == "P2P_HS1":
             _process_p2p_channel(self, conn, addr, ip, first)
         else:
-            _process_legacy_rpc(self, conn, addr, ip, first)
+            ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
 
     except Exception:
         log.exception("[_handle_connection] Connection handler error from %s", addr)
@@ -159,7 +159,7 @@ def _process_p2p_channel(self, conn, addr, ip, first): #NOSONAR
                     log.warning("[_process_p2p_channel] Peer pubkey mismatch from %s", addr)
                     continue
                 
-        elif CFG.ENVELOPE_REQUIRED:
+        else:
             log.warning("[_process_p2p_channel] rejecting legacy P2P from %s", addr)
             continue
 
@@ -171,43 +171,6 @@ def _process_p2p_channel(self, conn, addr, ip, first): #NOSONAR
             if drop:
                 break
 
-
-def _process_legacy_rpc(self, conn, addr, ip, first):
-    if not isinstance(first, dict):
-        ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
-        return
-
-    if CFG.P2P_ENC_REQUIRED:
-        ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
-        return
-
-    msg = first
-    src_nid = None
-    src_pub = None
-    if is_envelope(first):
-        try:
-            msg = verify_and_unwrap(first, lambda nid: self.peer_pubkeys.get(nid))
-        except Exception:
-            ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
-            log.warning("[_process_legacy_rpc] envelope verify fail (unencrypted) from %s (temp-ban)", addr, exc_info=True)
-            return
-        
-        src_nid = first.get("from")
-        src_pub = first.get("pubkey")
-        if isinstance(src_nid, str) and isinstance(src_pub, str):
-            self.peer_pubkeys[src_nid] = src_pub
-            
-    elif CFG.ENVELOPE_REQUIRED:
-        log.warning(f"[_process_legacy_rpc] rejecting legacy RPC from {addr}")
-        return
-
-    response = process_message(self, msg, addr, src_node_id=src_nid, src_pubkey=src_pub)
-    if response is not None:
-        drop = bool(response.pop("drop", False)) if isinstance(response, dict) else False
-        env = build_envelope(response, self.node_ctx, extra={"pubkey": self.pubkey})
-        send_message(conn, json.dumps(env).encode("utf-8"))
-        if drop:
-            return
 
 
 def _teardown_connection(self, conn, peer, ip):

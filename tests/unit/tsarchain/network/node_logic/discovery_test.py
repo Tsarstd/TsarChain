@@ -103,40 +103,12 @@ def test_attempt_hello_recently_dialed(mock_cfg, mock_time, mock_node):
     assert _attempt_hello(mock_node, peer) is True
 
 @patch("tsarchain.network.node_logic.discovery.socket.socket")
-@patch("tsarchain.network.node_logic.discovery.build_envelope")
-@patch("tsarchain.network.node_logic.discovery.send_message")
-@patch("tsarchain.network.node_logic.discovery.recv_message")
-@patch("tsarchain.network.node_logic.discovery.CFG")
-def test_attempt_hello_success(mock_cfg, mock_recv, mock_send, mock_env, mock_socket, mock_node):
-    mock_cfg.DISCOVERY_INTERVAL = 10.0
-    mock_cfg.HANDSHAKE_TIMEOUT = 5.0
-    mock_cfg.P2P_ENC_REQUIRED = False
-    mock_cfg.ENFORCE_HELLO_PUBKEY = True
-    mock_cfg.HEADERS_FANOUT = 4
-    mock_cfg.ENABLE_FULL_SYNC = False
-    mock_cfg.BUFFER_SIZE = 8192
-    
-    mock_env.return_value = {"env": "yes"}
-    
-    peer = ("192.168.1.10", 8334)
-    res = _attempt_hello(mock_node, peer)
-    
-    assert res is True
-    assert peer in mock_node._peer_last_dial
-    mock_socket.return_value.__enter__.return_value.connect.assert_called_once_with(peer)
-    mock_send.assert_called_once()
-    mock_recv.assert_called_once()
-    mock_node.broadcast.send_mempool_to_peer.assert_called_once_with(peer)
-
-@patch("tsarchain.network.node_logic.discovery.socket.socket")
 @patch("tsarchain.network.node_logic.discovery.SecureChannel")
 @patch("tsarchain.network.node_logic.discovery.build_envelope")
 @patch("tsarchain.network.node_logic.discovery.CFG")
 def test_attempt_hello_p2p_secure(mock_cfg, mock_env, mock_channel, mock_socket, mock_node):
     mock_cfg.DISCOVERY_INTERVAL = 10.0
     mock_cfg.HANDSHAKE_TIMEOUT = 5.0
-    mock_cfg.P2P_ENC_REQUIRED = True
-    mock_cfg.ENFORCE_HELLO_PUBKEY = True
     mock_cfg.HEADERS_FANOUT = 4
     mock_cfg.ENABLE_FULL_SYNC = False
     mock_cfg.BUFFER_SIZE = 8192

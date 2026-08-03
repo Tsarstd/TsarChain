@@ -29,21 +29,16 @@ class ChatHandler(NetworkHandlerProxy):
             s.settimeout(1.5)
             s.connect(peer)
             env = build_envelope(payload, self.node_ctx, extra={"pubkey": self.pubkey})
-            if CFG.ENFORCE_HELLO_PUBKEY or CFG.ENVELOPE_REQUIRED:
-                env["pubkey"] = self.pubkey
+            env["pubkey"] = self.pubkey
             raw = json.dumps(env).encode("utf-8")
-            if CFG.P2P_ENC_REQUIRED:
-                chan = SecureChannel(
-                    s, role="client",
-                    node_id=self.node_id, node_pub=self.pubkey, node_priv=self.privkey,
-                    get_pinned=self.get_pinned, set_pinned=self.set_pinned,
-                )
-                chan.handshake()
-                chan.send(raw)
-                _ = chan.recv(1)
-            else:
-                send_message(s, raw)
-                _ = recv_message(s, timeout=1)
+            chan = SecureChannel(
+                s, role="client",
+                node_id=self.node_id, node_pub=self.pubkey, node_priv=self.privkey,
+                get_pinned=self.get_pinned, set_pinned=self.set_pinned,
+            )
+            chan.handshake()
+            chan.send(raw)
+            _ = chan.recv(1)
 
 
     def relay_presence_async(self, pres: dict, exclude=None) -> None:

@@ -188,15 +188,18 @@ def test_handle_connection_not_dict_ban(mock_cfg, mock_ban, mock_allow, mock_sni
 @patch("tsarchain.network.node_logic.server_node.sniff_first_json_frame")
 @patch("tsarchain.network.node_logic.server_node.allow_handshake")
 @patch("tsarchain.network.node_logic.server_node.SecureChannel")
+@patch("tsarchain.network.node_logic.server_node.is_envelope")
+@patch("tsarchain.network.node_logic.server_node.verify_and_unwrap")
 @patch("tsarchain.network.node_logic.server_node.process_message")
 @patch("tsarchain.network.node_logic.server_node.build_envelope")
 @patch("tsarchain.network.node_logic.server_node.CFG")
-def test_handle_connection_p2p_secure(mock_cfg, mock_build_env, mock_process, mock_channel, mock_allow, mock_sniff, mock_node):
+def test_handle_connection_p2p_secure(mock_cfg, mock_build_env, mock_process, mock_unwrap, mock_is_env, mock_channel, mock_allow, mock_sniff, mock_node):
     mock_cfg.BUFFER_SIZE = 8192
     mock_cfg.HANDSHAKE_TIMEOUT = 5.0
-    mock_cfg.ENVELOPE_REQUIRED = False
     mock_sniff.return_value = (b"", {"type": "P2P_HS1"})
     mock_allow.return_value = True
+    mock_is_env.return_value = True
+    mock_unwrap.return_value = {"test": "data"}
     
     mock_chan_inst = MagicMock()
     mock_channel.return_value = mock_chan_inst
@@ -217,59 +220,19 @@ def test_handle_connection_p2p_secure(mock_cfg, mock_build_env, mock_process, mo
     mock_conn.close.assert_called_once()
 
 
+@patch("tsarchain.network.node_logic.server_node.ban_ip")
 @patch("tsarchain.network.node_logic.server_node.sniff_first_json_frame")
 @patch("tsarchain.network.node_logic.server_node.allow_handshake")
-@patch("tsarchain.network.node_logic.server_node.process_message")
-@patch("tsarchain.network.node_logic.server_node.build_envelope")
-@patch("tsarchain.network.node_logic.server_node.send_message")
 @patch("tsarchain.network.node_logic.server_node.CFG")
-def test_handle_connection_legacy_rpc(mock_cfg, mock_send, mock_build_env, mock_process, mock_allow, mock_sniff, mock_node):
+def test_handle_connection_legacy_rpc_banned(mock_cfg, mock_allow, mock_sniff, mock_ban, mock_node):
     mock_cfg.BUFFER_SIZE = 8192
     mock_cfg.HANDSHAKE_TIMEOUT = 5.0
-    mock_cfg.P2P_ENC_REQUIRED = False
-    mock_cfg.ENVELOPE_REQUIRED = False
+    mock_cfg.BAN_MALICIOUS_RPC = 3600
     mock_sniff.return_value = (b"", {"type": "HELLO"})
     mock_allow.return_value = True
     
-    mock_process.return_value = {"status": "ok"}
-    mock_build_env.return_value = {"env": "yes"}
-    
     mock_conn = MagicMock()
     _handle_connection(mock_node, mock_conn, ("127.0.0.1", 12345))
     
-    mock_process.assert_called_once()
-    mock_send.assert_called_once()
+    mock_ban.assert_called_once_with("127.0.0.1", 3600)
     mock_conn.close.assert_called_once()
-
-
-@patch("tsarchain.network.node_logic.server_node.sniff_first_json_frame")
-@patch("tsarchain.network.node_logic.server_node.allow_handshake")
-@patch("tsarchain.network.node_logic.server_node.process_message")
-@patch("tsarchain.network.node_logic.server_node.is_envelope")
-@patch("tsarchain.network.node_logic.server_node.verify_and_unwrap")
-@patch("tsarchain.network.node_logic.server_node.build_envelope")
-@patch("tsarchain.network.node_logic.server_node.send_message")
-@patch("tsarchain.network.node_logic.server_node.CFG")
-def test_handle_connection_legacy_rpc_envelope(mock_cfg, mock_send, mock_build_env, mock_verify, mock_is_env, mock_process, mock_allow, mock_sniff, mock_node):
-    mock_cfg.BUFFER_SIZE = 8192
-    mock_cfg.HANDSHAKE_TIMEOUT = 5.0
-    mock_cfg.P2P_ENC_REQUIRED = False
-    mock_cfg.ENVELOPE_REQUIRED = False
-    
-    msg_dict = {"from": "nid", "pubkey": "pub", "data": "test"}
-    mock_sniff.return_value = (b"", msg_dict)
-    mock_allow.return_value = True
-    mock_is_env.return_value = True
-    mock_verify.return_value = {"type": "HELLO"}
-    
-    mock_process.return_value = {"status": "ok", "drop": True}
-    mock_build_env.return_value = {"env": "yes"}
-    
-    mock_conn = MagicMock()
-    _handle_connection(mock_node, mock_conn, ("127.0.0.1", 12345))
-    
-    mock_verify.assert_called_once()
-    mock_process.assert_called_once()
-    mock_send.assert_called_once()
-    mock_conn.close.assert_called_once()
-    assert mock_node.peer_pubkeys["nid"] == "pub"

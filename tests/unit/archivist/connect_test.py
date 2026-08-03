@@ -31,13 +31,14 @@ def test_scan_nodes(mock_channel, mock_sock, mock_save, mock_load, tmp_path):
     mock_channel.return_value = chan_inst
     chan_inst.recv.return_value = json.dumps({"type": "PONG"}).encode("utf-8")
     
-    with patch("archivist.connect.create_keypair", return_value=("id1", "0"*64, "0"*64)):
+    with patch("archivist.connect.create_keypair", return_value=("id1", "0"*64, "0"*64)), \
+         patch("archivist.connect.is_envelope", return_value=True), \
+         patch("archivist.connect.verify_and_unwrap", return_value={"type": "PONG"}):
         with patch("archivist.connect.CFG.PORT_START", 1234):
             with patch("archivist.connect.CFG.PORT_END", 1234):
-                with patch("archivist.connect.CFG.ENVELOPE_REQUIRED", False):
-                    with patch("archivist.connect.load_node_key", return_value={"id": "x", "pubkey": "0"*64, "privkey": "0"*64}):
-                        nodes = _scan_nodes(manual_nodes=[("10.0.0.1", 5000)])
-                        assert len(nodes) > 0
+                with patch("archivist.connect.load_node_key", return_value={"id": "x", "pubkey": "0"*64, "privkey": "0"*64}):
+                    nodes = _scan_nodes(manual_nodes=[("10.0.0.1", 5000)])
+                    assert len(nodes) > 0
 
 def test_node_directory():
     d = NodeDirectory(ttl=60)

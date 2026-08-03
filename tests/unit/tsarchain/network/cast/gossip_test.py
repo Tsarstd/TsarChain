@@ -32,7 +32,6 @@ def dummy_node():
     CFG.CONNECT_TIMEOUT = 1.0
     CFG.SYNC_TIMEOUT = 10.0
     CFG.BUFFER_SIZE = 1024
-    CFG.P2P_ENC_REQUIRED = False
     CFG.BROADCAST_FAIL_BACKOFF_S = 60
     CFG.BROADCAST_FAIL_THRESHOLD = 3
     CFG.MAX_OUTBOUND_PEERS = 16
@@ -44,10 +43,12 @@ def test_send_skip_port(dummy_node):
     assert dummy_node.start_gossip(("127.0.0.1", 9001), {"type": "TEST"}) is False
 
 @patch("tsarchain.network.cast.gossip.socket.socket")
-@patch("tsarchain.network.cast.gossip.send_message")
-def test_send_success_new_conn(mock_send_message, mock_socket, dummy_node):
+@patch("tsarchain.network.cast.gossip.SecureChannel")
+def test_send_success_new_conn(mock_secure_channel, mock_socket, dummy_node):
     mock_sock = MagicMock()
     mock_socket.return_value = mock_sock
+    mock_chan = MagicMock()
+    mock_secure_channel.return_value = mock_chan
     
     peer = ("127.0.0.1", 8333)
     msg = {"type": "TEST"}
@@ -56,20 +57,21 @@ def test_send_success_new_conn(mock_send_message, mock_socket, dummy_node):
     
     mock_socket.assert_called_once()
     mock_sock.connect.assert_called_once_with(peer)
-    mock_send_message.assert_called_once_with(mock_sock, b'{"type": "TEST"}')
+    mock_chan.send.assert_called_once_with(b'{"type": "TEST"}')
     
     # Check cache
     assert peer in dummy_node._gossip_conn_cache
     assert dummy_node._gossip_conn_cache[peer]["sock"] == mock_sock
+    assert dummy_node._gossip_conn_cache[peer]["chan"] == mock_chan
 
 @patch("tsarchain.network.cast.gossip.socket.socket")
-@patch("tsarchain.network.cast.gossip.send_message")
-def test_send_success_cached_conn(mock_send_message, mock_socket, dummy_node):
+def test_send_success_cached_conn(mock_socket, dummy_node):
     peer = ("127.0.0.1", 8333)
     mock_cached_sock = MagicMock()
+    mock_cached_chan = MagicMock()
     
     dummy_node._gossip_conn_cache = {
-        peer: {"sock": mock_cached_sock, "chan": None, "ts": time.time()}
+        peer: {"sock": mock_cached_sock, "chan": mock_cached_chan, "ts": time.time()}
     }
     dummy_node._gossip_conn_lock = MagicMock()
     
@@ -79,7 +81,7 @@ def test_send_success_cached_conn(mock_send_message, mock_socket, dummy_node):
     # Existing socket used, no new socket created
     mock_socket.assert_not_called()
     mock_cached_sock.send.assert_called_with(b"") # keepalive ping
-    mock_send_message.assert_called_once_with(mock_cached_sock, b'{"type": "TEST"}')
+    mock_cached_chan.send.assert_called_once_with(b'{"type": "TEST"}')
     
     # Put back in cache
     assert peer in dummy_node._gossip_conn_cache

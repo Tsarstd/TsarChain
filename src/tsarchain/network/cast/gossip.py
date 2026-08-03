@@ -106,7 +106,7 @@ class GossipHandler(BroadcastHandlerProxy):
             if sock is None:
                 sock, chan = self._create_new_connection(peer)
 
-            if CFG.P2P_ENC_REQUIRED and chan:
+            if chan:
                 chan.send(payload)
             else:
                 send_message(sock, payload)
@@ -186,18 +186,16 @@ class GossipHandler(BroadcastHandlerProxy):
         sock.connect(peer)
         sock.settimeout(CFG.SYNC_TIMEOUT)
         
-        chan = None
-        if CFG.P2P_ENC_REQUIRED:
-            chan = SecureChannel(
-                sock,
-                role="client",
-                node_id=self.node_id,
-                node_pub=self.pubkey,
-                node_priv=self.privkey,
-                get_pinned=lambda nid: self.peer_pubkeys.get(nid),
-                set_pinned=lambda nid, pk: self.peer_pubkeys.__setitem__(nid, pk),
-            )
-            chan.handshake()
+        chan = SecureChannel(
+            sock,
+            role="client",
+            node_id=self.node_id,
+            node_pub=self.pubkey,
+            node_priv=self.privkey,
+            get_pinned=lambda nid: self.peer_pubkeys.get(nid),
+            set_pinned=lambda nid, pk: self.peer_pubkeys.__setitem__(nid, pk),
+        )
+        chan.handshake()
         return sock, chan
 
 

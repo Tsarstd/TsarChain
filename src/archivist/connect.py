@@ -6,7 +6,6 @@ RPC client for archivist <-> node (storage role) communication.
 This channel is used by archivists for handshakes, info, and STOR_* RPCs to nodes/miners.
 """
 
-import os
 import time
 import json
 import socket
@@ -132,9 +131,6 @@ def _ping_node(ip: str, port: int, node_id: str, pub_hex: str, priv_hex: str, ct
             if is_envelope(outer):
                 inner = verify_and_unwrap(outer, lambda nid: None)
                 if isinstance(inner, dict) and inner.get("type") == "PONG":
-                    return True
-            else:
-                if (not CFG.ENVELOPE_REQUIRED) and isinstance(outer, dict) and outer.get("type") == "PONG":
                     return True
     except Exception as e:
         log.warning("Scan node %s:%s failed: %s", ip, port, e)

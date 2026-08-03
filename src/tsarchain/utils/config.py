@@ -115,7 +115,7 @@ WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wal
 DATA_SCHEMA_VERSION = 1
 
 
-# ---- KV BACKEND ----
+# ---- PATH ----
 LMDB_DATA_FILE     = str(PROJECT_ROOT / "data/node")  # fallback LMDB data directory
 LMDB_KEYS_DIR      = str(PROJECT_ROOT / "data/keys")  # LMDB environment path for node_secrets
 LMDB_CHAIN_DIR     = str(PROJECT_ROOT / "data/node/chain")  # LMDB environment path for chain
@@ -129,10 +129,10 @@ LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
 KV_ITER_CHUNK      = 512 # number of entries per chunk when iterating prefix scans (LMDB)
 
 
-# ---- WEB CACHE (LMDB) ----
+# ---- WEB CACHE ----
 WEB_DATABASE_PATH  = str(PROJECT_ROOT / "data/web")  # dedicated LMDB path for web cache
 LMDB_WEB_SIZE_INIT = 100 * 1024  # initial web LMDB size (100 KB)
-LMDB_WEB_SIZE_MAX  = 128 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
+LMDB_WEB_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
 
 
 # ---- SNAPSHOT SIGNING ----
@@ -471,7 +471,6 @@ PEER_SCORE_MIN             = -40  # floor value before dropping the peer
 # 9. SECURITY & CRYPTOGRAPHY
 # =============================================================================
 # ---- P2P ENCRYPTION ----
-P2P_ENC_REQUIRED     = True  # enforce AEAD encryption for all node links
 P2P_AEAD_KEY_BYTES   = 32  # key size used for AES-256-GCM sessions
 P2P_AEAD_NONCE_BYTES = 12  # nonce size for GCM packets
 P2P_AEAD_AAD_PREFIX  = b"TSAR|P2P|v1"  # additional data binding network id/version
@@ -493,8 +492,6 @@ SYNC_INFO_MIN_INTERVAL_BOOTSTRAP = 300.0  # slower sync-info rate for bootstrap 
 
 
 # ---- REPLAY GUARDS ----
-ENVELOPE_REQUIRED    = True  # require message envelopes for replay protection
-ENFORCE_HELLO_PUBKEY = True  # reject peers that omit long-term pubkeys
 REPLAY_WINDOW_SEC    = 60  # Acceptable skew window for anti-replay stamps
 
 

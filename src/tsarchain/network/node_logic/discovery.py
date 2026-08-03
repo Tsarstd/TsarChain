@@ -119,31 +119,22 @@ def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
             timeout = float(CFG.HANDSHAKE_TIMEOUT)
             s.settimeout(timeout)
             s.connect(norm)
-            if CFG.P2P_ENC_REQUIRED:
-                chan = SecureChannel(
-                    s,
-                    role="client",
-                    node_id=self.node_id,
-                    node_pub=self.pubkey,
-                    node_priv=self.privkey,
-                    get_pinned=self.get_pinned,
-                    set_pinned=self.set_pinned,
-                )
-                chan.handshake()
-                s.settimeout(1.0)
-                env = build_envelope(hello_msg, self.node_ctx, extra={"pubkey": self.pubkey})
-                if CFG.ENFORCE_HELLO_PUBKEY or CFG.ENVELOPE_REQUIRED:
-                    env["pubkey"] = self.pubkey
-                
-                chan.send(json.dumps(env).encode("utf-8"))
-                chan.recv(1)
-            else:
-                s.settimeout(1.0)
-                env = build_envelope(hello_msg, self.node_ctx, extra={"pubkey": self.pubkey})
-                if CFG.ENFORCE_HELLO_PUBKEY or CFG.ENVELOPE_REQUIRED:
-                    env["pubkey"] = self.pubkey
-                send_message(s, json.dumps(env).encode("utf-8"))
-                recv_message(s, timeout=1)
+            chan = SecureChannel(
+                s,
+                role="client",
+                node_id=self.node_id,
+                node_pub=self.pubkey,
+                node_priv=self.privkey,
+                get_pinned=self.get_pinned,
+                set_pinned=self.set_pinned,
+            )
+            chan.handshake()
+            s.settimeout(1.0)
+            env = build_envelope(hello_msg, self.node_ctx, extra={"pubkey": self.pubkey})
+            env["pubkey"] = self.pubkey
+            
+            chan.send(json.dumps(env).encode("utf-8"))
+            chan.recv(1)
                 
     except OSError:
         return False

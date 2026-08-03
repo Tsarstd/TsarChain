@@ -43,9 +43,6 @@ def node():
 def mock_config(monkeypatch):
     """Mock all config flags and constants used."""
     monkeypatch.setattr("tsarchain.network.rpc_helper.chat.CFG", Mock(
-        ENFORCE_HELLO_PUBKEY=False,
-        ENVELOPE_REQUIRED=False,
-        P2P_ENC_REQUIRED=False,
         CHAT_TTL_S=60,
         CHAT_MAILBOX_MAX=10,
         CHAT_GLOBAL_QUEUE_MAX=100,
@@ -65,34 +62,8 @@ def mock_time(monkeypatch):
 
 class TestSendToPeer:
 
-    def test_send_to_peer_valid_no_encryption(self, node, monkeypatch):
-        """Test send_to_peer when encryption is not required."""
-        monkeypatch.setattr("tsarchain.network.rpc_helper.chat.CFG.P2P_ENC_REQUIRED", False)
-
-        mock_socket_instance = Mock()
-        with patch('socket.socket') as mock_socket_class:
-            mock_socket_class.return_value.__enter__.return_value = mock_socket_instance
-
-            mock_build = Mock(return_value={"test": "env"})
-            monkeypatch.setattr("tsarchain.network.rpc_helper.chat.build_envelope", mock_build)
-
-            mock_send = Mock()
-            mock_recv = Mock(return_value=b"ok")
-            monkeypatch.setattr("tsarchain.network.rpc_helper.chat.send_message", mock_send)
-            monkeypatch.setattr("tsarchain.network.rpc_helper.chat.recv_message", mock_recv)
-
-            payload = {"type": "TEST"}
-            node.send_to_peer(("192.168.1.1", 8000), payload)
-
-        mock_socket_instance.connect.assert_called_with(("192.168.1.1", 8000))
-        mock_build.assert_called_once_with(payload, node.node_ctx, extra={"pubkey": node.pubkey})
-        mock_send.assert_called_once_with(mock_socket_instance, ANY)
-        mock_recv.assert_called_once_with(mock_socket_instance, timeout=1)
-
     def test_send_to_peer_valid_with_encryption(self, node, monkeypatch):
-        """Test send_to_peer when encryption is required."""
-        monkeypatch.setattr("tsarchain.network.rpc_helper.chat.CFG.P2P_ENC_REQUIRED", True)
-
+        """Test send_to_peer creates and uses SecureChannel."""
         mock_socket_instance = Mock()
         with patch('socket.socket') as mock_socket_class:
             mock_socket_class.return_value.__enter__.return_value = mock_socket_instance
@@ -123,21 +94,19 @@ class TestSendToPeer:
             node.send_to_peer(("a", "b", "c"), {})
 
     def test_send_to_peer_enforce_hello_pubkey(self, node, monkeypatch):
-        """Test that env gets pubkey when ENFORCE_HELLO_PUBKEY is True."""
-        monkeypatch.setattr("tsarchain.network.rpc_helper.chat.CFG.ENFORCE_HELLO_PUBKEY", True)
-        monkeypatch.setattr("tsarchain.network.rpc_helper.chat.CFG.P2P_ENC_REQUIRED", False)
-
+        """Test that env gets pubkey."""
         mock_socket_instance = Mock()
         with patch('socket.socket') as mock_socket_class:
             mock_socket_class.return_value.__enter__.return_value = mock_socket_instance
 
+            mock_chan = Mock()
+            mock_chan.handshake = Mock()
+            mock_chan.send = Mock()
+            mock_chan.recv = Mock(return_value=b"ok")
+            monkeypatch.setattr("tsarchain.network.rpc_helper.chat.SecureChannel", Mock(return_value=mock_chan))
+
             mock_build = Mock(return_value={"test": "env"})
             monkeypatch.setattr("tsarchain.network.rpc_helper.chat.build_envelope", mock_build)
-
-            mock_send = Mock()
-            mock_recv = Mock(return_value=b"ok")
-            monkeypatch.setattr("tsarchain.network.rpc_helper.chat.send_message", mock_send)
-            monkeypatch.setattr("tsarchain.network.rpc_helper.chat.recv_message", mock_recv)
 
             node.send_to_peer(("192.168.1.1", 8000), {"type": "TEST"})
 

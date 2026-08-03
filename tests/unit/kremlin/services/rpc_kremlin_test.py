@@ -3,6 +3,7 @@
 # Part of TsarChain — see LICENSE
 
 import json
+import pytest
 from unittest.mock import MagicMock, patch
 
 from kremlin.services.rpc_kremlin import (
@@ -69,7 +70,6 @@ def test_node_client_scan(mock_secure_channel, mock_socket, mock_cfg):
     mock_cfg.PORT_END = 8082
     mock_cfg.BOOTSTRAP_NODES = [("127.0.0.1", 8080)]
     mock_cfg.CONNECT_TIMEOUT_SCAN = 1
-    mock_cfg.ENVELOPE_REQUIRED = False
     
     user_ctx = {"node_id": "test", "pubkey": "02" + "01"*32, "privkey": "01"*32, "net_id": "testnet"}
     client = NodeClient(mock_cfg, user_ctx)
@@ -98,16 +98,17 @@ def test_node_client_pace(mock_cfg, mock_sleep, mock_time):
 @patch("kremlin.services.rpc_kremlin.CFG")
 @patch("kremlin.services.rpc_kremlin.socket.socket")
 @patch("kremlin.services.rpc_kremlin.SecureChannel")
+@patch("kremlin.services.rpc_kremlin.verify_and_unwrap")
 @patch("kremlin.services.rpc_kremlin.is_envelope")
-def test_node_client_try_send_one(mock_is_env, mock_secure_channel, mock_socket, mock_cfg):
-    mock_cfg.ENVELOPE_REQUIRED = False
+def test_node_client_try_send_one(mock_is_env, mock_unwrap, mock_secure_channel, mock_socket, mock_cfg):
     user_ctx = {"node_id": "test", "pubkey": "02" + "01"*32, "privkey": "01"*32, "net_id": "testnet"}
     client = NodeClient(mock_cfg, user_ctx)
     
     mock_chan = MagicMock()
     mock_chan.recv.return_value = json.dumps({"status": "ok"}).encode("utf-8")
     mock_secure_channel.return_value = mock_chan
-    mock_is_env.return_value = False
+    mock_is_env.return_value = True
+    mock_unwrap.return_value = {"status": "ok"}
     
     resp = client._try_send_one(("127.0.0.1", 8080), {"type": "TEST"})
     assert resp == {"status": "ok"}
@@ -156,19 +157,15 @@ def test_node_client_scan_fallback_and_envelope(mock_recv, mock_send, mock_secur
     mock_cfg.PORT_END = 8080
     mock_cfg.BOOTSTRAP_NODES = [("127.0.0.1", 8080)]
     mock_cfg.CONNECT_TIMEOUT_SCAN = 1
-    mock_cfg.ENVELOPE_REQUIRED = False
-    mock_cfg.P2P_ENC_REQUIRED = False
     
     user_ctx = {"node_id": "test", "pubkey": "02" + "01"*32, "privkey": "01"*32, "net_id": "testnet"}
     client = NodeClient(mock_cfg, user_ctx)
     
-    # 1. Fallback to plaintext PONG when SecureChannel raises
+    # 1. No plaintext fallback when SecureChannel fails
     mock_secure_channel.side_effect = Exception("Handshake failed")
-    mock_recv.return_value = json.dumps({"type": "PONG"}).encode("utf-8")
     
     found = client.scan(start=8080, end=8080, manual_nodes=[])
-    assert ("127.0.0.1", 8080) in found
-    mock_send.assert_called_once()
+    assert ("127.0.0.1", 8080) not in found
     
     # 2. SecureChannel works, returns an envelope, is_envelope=True, verify_and_unwrap returns PONG
     mock_secure_channel.side_effect = None
@@ -181,11 +178,11 @@ def test_node_client_scan_fallback_and_envelope(mock_recv, mock_send, mock_secur
         found = client.scan(start=8080, end=8080, manual_nodes=[])
         assert ("127.0.0.1", 8080) in found
         
-    # 3. SecureChannel works, envelope verify fails, ENVELOPE_REQUIRED=False
+    # 3. SecureChannel works, envelope verify fails
     with patch("kremlin.services.rpc_kremlin.is_envelope", return_value=True), \
          patch("kremlin.services.rpc_kremlin.verify_and_unwrap", side_effect=Exception("Bad sig")):
         found = client.scan(start=8080, end=8080, manual_nodes=[])
-        assert ("127.0.0.1", 8080) in found
+        assert ("127.0.0.1", 8080) not in found
 
 @patch("kremlin.services.rpc_kremlin.CFG")
 @patch("kremlin.services.rpc_kremlin.socket.socket")
@@ -196,16 +193,12 @@ def test_node_client_try_send_one_fallback_and_envelope(mock_recv, mock_send, mo
     user_ctx = {"node_id": "test", "pubkey": "02" + "01"*32, "privkey": "01"*32, "net_id": "testnet"}
     client = NodeClient(mock_cfg, user_ctx)
     peer = ("127.0.0.1", 8080)
-    mock_cfg.ENVELOPE_REQUIRED = False
-    mock_cfg.P2P_ENC_REQUIRED = False
     
-    # 1. Fallback to plaintext
+    # 1. SecureChannel exception raises without fallback
     mock_secure_channel.side_effect = Exception("Handshake failed")
-    mock_recv.return_value = json.dumps({"status": "ok"}).encode("utf-8")
     
-    with patch("kremlin.services.rpc_kremlin.is_envelope", return_value=False):
-        resp = client._try_send_one(peer, {"type": "TEST"})
-        assert resp == {"status": "ok"}
+    with pytest.raises(Exception, match="Handshake failed"):
+        client._try_send_one(peer, {"type": "TEST"})
         
     # 2. Valid envelope
     mock_secure_channel.side_effect = None
@@ -218,10 +211,9 @@ def test_node_client_try_send_one_fallback_and_envelope(mock_recv, mock_send, mo
         resp = client._try_send_one(peer, {"type": "TEST"})
         assert resp == {"status": "env_ok"}
         
-    # 3. Invalid envelope, not required
-    mock_cfg.ENVELOPE_REQUIRED = False
+    # 3. Invalid envelope, drops response
     with patch("kremlin.services.rpc_kremlin.is_envelope", return_value=True), \
          patch("kremlin.services.rpc_kremlin.verify_and_unwrap", side_effect=Exception("Bad sig")):
         resp = client._try_send_one(peer, {"type": "TEST"})
-        assert resp == {"sig": "abcd", "payload": "xyz"}
+        assert resp is None
 

@@ -3,9 +3,7 @@
 # Part of TsarChain – see LICENSE
 
 """
-Backend penyimpanan untuk Archivist (storage node).
-- JSON filesystem: mempertahankan perilaku lama (index.json + folder incoming/final).
-- LMDB: index_db + final_db, incoming selalu filesystem (temporary).
+- LMDB: index_db + final_db, incoming always filesystem (temporary).
 """
 
 from __future__ import annotations
