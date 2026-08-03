@@ -67,21 +67,21 @@ def _cache_key(kind: str, *parts: object) -> str:
     return db_cache.make_cache_key("web", _CACHE_SCOPE, kind, *parts)
 
 
-def _cache_policy(payload: object) -> Tuple[bool, int | None]:
+def _determine_cache_policy(payload: object) -> Tuple[bool, int | None]:
     if payload is None:
         return False, None
     if isinstance(payload, dict):
         if payload.get("error"):
-            ttl = db_cache.cache_ttl_for_error(payload.get("error") or payload.get("detail") or payload.get("reason"))
+            ttl = db_cache.get_error_cache_ttl(payload.get("error") or payload.get("detail") or payload.get("reason"))
             return ttl is not None, ttl
         if payload.get("status") == "error":
-            ttl = db_cache.cache_ttl_for_error(payload.get("reason"))
+            ttl = db_cache.get_error_cache_ttl(payload.get("reason"))
             return ttl is not None, ttl
     return True, None
 
 
 def _cache_get(key: str, refresh_ttl: bool = False):
-    return db_cache.cache_get_json(key, refresh_ttl=refresh_ttl)
+    return db_cache.cache_get(key, refresh_ttl=refresh_ttl)
 
 
 def _cache_set(key: str, payload: object, ttl_sec: int | None = None) -> None:
@@ -91,12 +91,12 @@ def _cache_set(key: str, payload: object, ttl_sec: int | None = None) -> None:
         db_cache.cache_set(key, payload, ttl_sec=ttl_sec)
 
 
-def _cache_fetch(key: str, fetch_fn):
+def _get_or_fetch_cached(key: str, fetch_fn):
     cached = _cache_get(key)
     if cached is not None:
         return cached
     payload = fetch_fn()
-    cache_ok, ttl_sec = _cache_policy(payload)
+    cache_ok, ttl_sec = _determine_cache_policy(payload)
     if cache_ok:
         _cache_set(key, payload, ttl_sec)
     return payload

@@ -59,11 +59,11 @@ def _open_store():
     return _store
 
 
-def _json_dumps(obj: object) -> bytes:
+def _serialize_payload(obj: object) -> bytes:
     return json.dumps(obj, ensure_ascii=True, default=str, separators=(",", ":")).encode("utf-8")
 
 
-def _json_loads(raw: bytes) -> Optional[dict]:
+def _deserialize_payload(raw: bytes) -> Optional[dict]:
     try:
         return json.loads(raw.decode("utf-8"))
     except Exception:
@@ -95,7 +95,7 @@ def make_cache_key(prefix: str, *parts: object) -> str:
     return ":".join(items)
 
 
-def should_cache_error(reason: object) -> bool:
+def is_not_found_error(reason: object) -> bool:
     txt = str(reason or "").strip().lower()
     if not txt:
         return False
@@ -104,7 +104,7 @@ def should_cache_error(reason: object) -> bool:
     return "not found" in txt
 
 
-def cache_ttl_for_error(reason: object) -> Optional[int]:
+def get_error_cache_ttl(reason: object) -> Optional[int]:
     txt = str(reason or "").strip().lower()
     if not txt:
         return None
@@ -112,12 +112,12 @@ def cache_ttl_for_error(reason: object) -> Optional[int]:
         return WEB_CACHE_ERROR_TTL_SHORT
     if "timeout" in txt or "rate limit" in txt or "pow_required" in txt:
         return WEB_CACHE_ERROR_TTL_SHORT
-    if should_cache_error(txt):
+    if is_not_found_error(txt):
         return WEB_CACHE_TTL_SEC
     return None
 
 
-def cache_get_json(key: str, refresh_ttl: bool = False) -> Optional[object]:
+def cache_get(key: str, refresh_ttl: bool = False) -> Optional[object]:
     store = _open_store()
     if store is None:
         return None
@@ -130,14 +130,14 @@ def cache_get_json(key: str, refresh_ttl: bool = False) -> Optional[object]:
     if raw is None:
         return None
     
-    entry = _json_loads(bytes(raw))
+    entry = _deserialize_payload(bytes(raw))
     if not entry:
         return None
     
     if refresh_ttl and not _is_expired(entry):
         entry["ts"] = int(time.time())
         try:
-            store.put_bytes(WEB_CACHE_DB, k, _json_dumps(entry))
+            store.put_bytes(WEB_CACHE_DB, k, _serialize_payload(entry))
         except Exception:
             pass
     
@@ -161,6 +161,6 @@ def cache_set(key: str, payload: object, ttl_sec: int = WEB_CACHE_TTL_SEC) -> No
         "payload": payload,
     }
     try:
-        store.put_bytes(WEB_CACHE_DB, key.encode("utf-8"), _json_dumps(entry))
+        store.put_bytes(WEB_CACHE_DB, key.encode("utf-8"), _serialize_payload(entry))
     except Exception:
         log.warning("[webdb] cache_set failed key=%s", key)

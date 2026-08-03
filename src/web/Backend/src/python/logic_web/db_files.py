@@ -15,7 +15,7 @@ log = get_ctx_logger("tsarchain.web.logic_web.db_files")
 
 # ============= RECEIPT CACHE HELPER ==============
 
-def get_receipt_file(txid: str) -> str:
+def get_receipt_file_path(txid: str) -> str:
     txid_norm = str(txid or "").strip().lower()
     txid_safe = os.path.basename(txid_norm).replace("..", "").replace("/", "").replace("\\", "")
     if not txid_safe:
@@ -36,7 +36,7 @@ def is_receipt_fresh(file_path: str, max_age_seconds: int) -> bool:
         return False
 
 
-def read_receipt_file(file_path: str, txid: str) -> dict:
+def read_receipt_file_as_dict(file_path: str, txid: str) -> dict:
     with open(file_path, "rb") as f:
         image_bytes = f.read()
     
@@ -52,7 +52,7 @@ def read_receipt_file(file_path: str, txid: str) -> dict:
 
 def schedule_receipt_deletion(txid: str, delay_seconds: int):
     def delete_file():
-        file_path = get_receipt_file(txid)
+        file_path = get_receipt_file_path(txid)
         if os.path.exists(file_path):
             os.remove(file_path)
             log.debug(f"Auto-deleted receipt file after {delay_seconds}s: {file_path}")
@@ -79,7 +79,7 @@ def cleanup_receipt_files(max_age_seconds: int):
 
 # ============= HISTORY BOOK CACHE HELPER ==============
 
-def get_history_book_file(address: str) -> str:
+def get_history_book_file_path(address: str) -> str:
     addr_norm = str(address or "").strip().lower()
     addr_safe = os.path.basename(addr_norm).replace("..", "").replace("/", "").replace("\\", "")
     if not addr_safe:
@@ -100,7 +100,7 @@ def is_history_book_fresh(file_path: str, max_age_seconds: int) -> bool:
         return False
 
 
-def read_history_book_file(file_path: str, address: str) -> dict:
+def read_history_book_file_as_dict(file_path: str, address: str) -> dict:
     with open(file_path, "rb") as f:
         pdf_bytes = f.read()
     
@@ -116,7 +116,7 @@ def read_history_book_file(file_path: str, address: str) -> dict:
 
 def schedule_history_book_deletion(address: str, delay_seconds: int):
     def delete_file():
-        file_path = get_history_book_file(address)
+        file_path = get_history_book_file_path(address)
         if os.path.exists(file_path):
             os.remove(file_path)
             log.debug(f"Auto-deleted history book file after {delay_seconds}s: {file_path}")

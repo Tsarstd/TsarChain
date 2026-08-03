@@ -25,7 +25,7 @@ def _block_key(height: int) -> bytes:
     return f"block:{height:08d}".encode("utf-8")
 
 
-def save_blocks_permanent(blocks: list) -> None:
+def save_blocks_to_storage(blocks: list) -> None:
     store = db_cache._open_store()
     if store is None:
         return
@@ -42,7 +42,7 @@ def save_blocks_permanent(blocks: list) -> None:
             continue
             
         try:
-            store.put_bytes(WEB_BLOCKS_DB, _block_key(int(height)), db_cache._json_dumps(block))
+            store.put_bytes(WEB_BLOCKS_DB, _block_key(int(height)), db_cache._serialize_payload(block))
         except Exception:
             log.warning("[webdb] Failed to save block %s", height)
 
@@ -55,7 +55,7 @@ def get_block_from_storage(height: int) -> Optional[dict]:
     try:
         raw = store.get_bytes(WEB_BLOCKS_DB, _block_key(height))
         if raw:
-            return db_cache._json_loads(bytes(raw))
+            return db_cache._deserialize_payload(bytes(raw))
     except Exception:
         log.exception("get_block_from_storage, fail")
     
@@ -118,7 +118,7 @@ def get_last_stored_height() -> int:
     return max_height
 
 
-def _store_initial_height_key() -> bytes:
+def _prefetch_last_height_key() -> bytes:
     return b"prefetch:last_height"
 
 
@@ -127,7 +127,7 @@ def get_prefetch_last_height() -> int:
     if store is None:
         return -1
     try:
-        raw = store.get_bytes(db_cache.WEB_CACHE_DB, _store_initial_height_key())
+        raw = store.get_bytes(db_cache.WEB_CACHE_DB, _prefetch_last_height_key())
         if raw:
             return int(raw.decode("utf-8"))
     except Exception:
@@ -140,7 +140,7 @@ def set_prefetch_last_height(height: int) -> None:
     if store is None:
         return
     try:
-        store.put_bytes(db_cache.WEB_CACHE_DB, _store_initial_height_key(), 
+        store.put_bytes(db_cache.WEB_CACHE_DB, _prefetch_last_height_key(), 
                        str(height).encode("utf-8"))
     except Exception:
         log.warning("[webdb] Failed to save prefetch last height")
@@ -206,7 +206,7 @@ def prefetch_blocks(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]
                 new_items.append(item)
         
         if new_items:
-            save_blocks_permanent(new_items)
+            save_blocks_to_storage(new_items)
             log.info("[webdb] Prefetched %d new blocks (height %d to %d)", 
                     len(new_items), new_items[0].get("height", 0), 
                     new_items[-1].get("height", 0))

@@ -26,14 +26,14 @@ def rpc_receipt(client, txid: str):
     if not txid_norm:
         return {"status": "error", "message": "Missing txid"}
     
-    file_path = db_files.get_receipt_file(txid_norm)
+    file_path = db_files.get_receipt_file_path(txid_norm)
     cache_key = rpc_client._cache_key("receipt", txid_norm)
     cached = rpc_client._cache_get(cache_key, refresh_ttl=True)
 
     if cached is not None:
         if db_files.is_receipt_fresh(file_path, max_age_seconds=RECEIPT_TTL):
             try:
-                result = db_files.read_receipt_file(file_path, txid_norm)
+                result = db_files.read_receipt_file_as_dict(file_path, txid_norm)
                 if result is not None:
                     return result
             except FileNotFoundError:
@@ -77,14 +77,14 @@ def rpc_history_book(client, address: str):
     if not addr_norm:
         return {"status": "error", "message": "Missing address"}
     
-    file_path = db_files.get_history_book_file(addr_norm)
+    file_path = db_files.get_history_book_file_path(addr_norm)
     cache_key = rpc_client._cache_key("history_book", addr_norm)
     cached = rpc_client._cache_get(cache_key, refresh_ttl=True)
 
     if cached is not None:
         if db_files.is_history_book_fresh(file_path, max_age_seconds=RECEIPT_TTL):
             try:
-                result = db_files.read_history_book_file(file_path, addr_norm)
+                result = db_files.read_history_book_file_as_dict(file_path, addr_norm)
                 if result is not None:
                     return result
             except FileNotFoundError:
@@ -145,7 +145,7 @@ def rpc_network(client):
         if isinstance(info, dict) and info.get("type") == "NETWORK_INFO":
             return info.get("data") or info
         return info
-    return rpc_client._cache_fetch(key, _fetch)
+    return rpc_client._get_or_fetch_cached(key, _fetch)
 
 
 @benchmark(label="rpc_block", threshold_ms=15.0)
@@ -161,7 +161,7 @@ def rpc_block(client, val: str):
         return cached
     resp = rpc_client._rpc_send(client, payload)
     if rpc_client._payload_has_error(resp):
-        ttl_err = db_cache.cache_ttl_for_error(resp.get("error") if isinstance(resp, dict) else None)
+        ttl_err = db_cache.get_error_cache_ttl(resp.get("error") if isinstance(resp, dict) else None)
         if ttl_err is not None:
             rpc_client._cache_set(key, resp, ttl_err)
         return resp
@@ -202,7 +202,7 @@ def rpc_block_range(client, opts: dict):
                 
                 if isinstance(rpc_resp, dict) and "items" in rpc_resp:
                     new_items = rpc_resp.get("items", [])
-                    db_blocks.save_blocks_permanent(new_items)
+                    db_blocks.save_blocks_to_storage(new_items)
                     storage_result["items"].extend(new_items)
                     storage_result["has_more"] = rpc_resp.get("has_more", False)
                     storage_result["next_height"] = rpc_resp.get("next_height")
@@ -218,7 +218,7 @@ def rpc_block_range(client, opts: dict):
     })
     
     if not rpc_client._payload_has_error(resp) and isinstance(resp, dict) and "items" in resp:
-        db_blocks.save_blocks_permanent(resp["items"])
+        db_blocks.save_blocks_to_storage(resp["items"])
         
         if start_height is None or start_height == "latest":
             cache_key = rpc_client._cache_key("block_range", "latest", limit)
@@ -231,7 +231,7 @@ def rpc_block_range(client, opts: dict):
 def rpc_tx(client, txid: str):
     txid_norm = str(txid).lower()
     key = rpc_client._cache_key("tx", txid_norm)
-    return rpc_client._cache_fetch(key, lambda: rpc_client._rpc_send(client, {"type": "GET_TX_DETAIL", "txid": txid_norm}))
+    return rpc_client._get_or_fetch_cached(key, lambda: rpc_client._rpc_send(client, {"type": "GET_TX_DETAIL", "txid": txid_norm}))
 
 
 @benchmark(label="rpc_address", threshold_ms=15.0)
@@ -269,7 +269,7 @@ def rpc_address(client, addr: str):
         error_ttl = None
         for resp in (balances, utxos, history):
             if rpc_client._payload_has_error(resp):
-                ttl = db_cache.cache_ttl_for_error(resp.get("error"))
+                ttl = db_cache.get_error_cache_ttl(resp.get("error"))
                 if ttl and (error_ttl is None or ttl > error_ttl):
                     error_ttl = ttl
         
@@ -302,7 +302,7 @@ def rpc_graffiti(client, art_id: str):
     for resp in (post_resp, comments_resp):
         if not rpc_client._payload_has_error(resp):
             continue
-        ttl = db_cache.cache_ttl_for_error(resp.get("error") if isinstance(resp, dict) else None)
+        ttl = db_cache.get_error_cache_ttl(resp.get("error") if isinstance(resp, dict) else None)
         if ttl is None:
             cache_ok = False
             break
@@ -332,7 +332,7 @@ def rpc_graffiti_posts(client, opts: dict):
     cache_ok = True
     error_ttl = None
     if rpc_client._payload_has_error(resp):
-        error_ttl = db_cache.cache_ttl_for_error(resp.get("error") if isinstance(resp, dict) else None)
+        error_ttl = db_cache.get_error_cache_ttl(resp.get("error") if isinstance(resp, dict) else None)
         cache_ok = error_ttl is not None
     if isinstance(resp, dict) and resp.get("type") == "GRAFFITI_GET_POSTS":
         out = {"posts": resp.get("posts") or [], "limit": limit, "offset": offset}

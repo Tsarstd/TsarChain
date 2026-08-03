@@ -38,13 +38,13 @@ def _cache_media_error(art_id: str, reason: str, ttl_sec: int = db_cache.WEB_CAC
         "reason": str(reason or "error"),
     }
     try:
-        store.put_bytes(db_cache.WEB_MEDIA_DB, _media_meta_key(art_id), db_cache._json_dumps(entry))
+        store.put_bytes(db_cache.WEB_MEDIA_DB, _media_meta_key(art_id), db_cache._serialize_payload(entry))
         store.delete(db_cache.WEB_MEDIA_DB, _media_data_key(art_id))
     except Exception:
         log.warning("[webdb] media_error cache failed art=%s", art_id[:16])
 
 
-def _cache_media_ok_path(art_id: str, meta: dict, cache_path: str, size: int, ttl_sec: int = 0) -> None:
+def _cache_media_success(art_id: str, meta: dict, cache_path: str, size: int, ttl_sec: int = 0) -> None:
     store = db_cache._open_store()
     if store is None:
         return
@@ -57,7 +57,7 @@ def _cache_media_ok_path(art_id: str, meta: dict, cache_path: str, size: int, tt
         "cache_path": str(cache_path or ""),
     }
     try:
-        store.put_bytes(db_cache.WEB_MEDIA_DB, _media_meta_key(art_id), db_cache._json_dumps(entry))
+        store.put_bytes(db_cache.WEB_MEDIA_DB, _media_meta_key(art_id), db_cache._serialize_payload(entry))
         store.delete(db_cache.WEB_MEDIA_DB, _media_data_key(art_id))
     except Exception:
         log.warning("[webdb] media_ok_path cache failed art=%s", art_id[:16])
@@ -70,7 +70,7 @@ def _load_media_entry(art_id: str) -> Optional[dict]:
     raw = store.get_bytes(db_cache.WEB_MEDIA_DB, _media_meta_key(art_id))
     if raw is None:
         return None
-    entry = db_cache._json_loads(bytes(raw))
+    entry = db_cache._deserialize_payload(bytes(raw))
     if not entry or db_cache._is_expired(entry):
         try:
             store.delete(db_cache.WEB_MEDIA_DB, _media_meta_key(art_id))
@@ -143,13 +143,13 @@ def fetch_storers(
     
     ttl_sec = int(ttl_sec or db_cache.WEB_STOR_LIST_TTL_SEC)
     cache_key = db_cache.make_cache_key("web", cache_scope, "stor_list")
-    cached = db_cache.cache_get_json(cache_key)
+    cached = db_cache.cache_get(cache_key)
     if isinstance(cached, list):
         return cached[:limit] if limit is not None and limit > 0 else cached
 
     resp = rpc_call({"type": "STOR_LIST"}) or {}
     if isinstance(resp, dict) and resp.get("error"):
-        ttl_err = db_cache.cache_ttl_for_error(resp.get("error"))
+        ttl_err = db_cache.get_error_cache_ttl(resp.get("error"))
         if ttl_err is not None:
             db_cache.cache_set(cache_key, [], ttl_sec=ttl_err)
         return []
@@ -195,7 +195,7 @@ def _do_oneshot_fetch(
     raw = base64.b64decode(data_b64)
     meta_out = resp.get("meta") or meta_info
     cache_path = _write_cache_file(cache_root, art_norm, meta_out, raw)
-    _cache_media_ok_path(art_norm, meta_out, cache_path, len(raw), ttl_sec=0)
+    _cache_media_success(art_norm, meta_out, cache_path, len(raw), ttl_sec=0)
     log.info("[webdb] ok(%s) art=%s host=%s bytes=%s cache=%s", log_tag, art_norm[:16], host, len(raw), True)
     return {"status": "ok", "meta": meta_out, "cache_path": cache_path}
 
@@ -294,7 +294,7 @@ def fetch_graffiti_file(
 
         try:
             if os.path.isfile(cache_path) and os.path.getsize(cache_path) == int(total_size):
-                _cache_media_ok_path(art_norm, meta_info, cache_path, int(total_size), ttl_sec=0)
+                _cache_media_success(art_norm, meta_info, cache_path, int(total_size), ttl_sec=0)
                 log.info("[webdb] ok(disk_hit) art=%s host=%s size=%s cache=%s", art_norm[:16], host, total_size, True)
                 return {"status": "ok", "meta": meta_info, "cache_path": cache_path}
         except Exception:
@@ -400,7 +400,7 @@ def fetch_graffiti_file(
 
         elapsed = max(0.001, time.time() - start_ts)
         mbps = (float(total_size) / (1024 * 1024)) / elapsed
-        _cache_media_ok_path(art_norm, meta_info, cache_path, int(total_size), ttl_sec=0)
+        _cache_media_success(art_norm, meta_info, cache_path, int(total_size), ttl_sec=0)
         log.info(
             "[webdb] ok(chunked) art=%s host=%s size=%s chunk=%s calls~%s speed=%.2fMB/s cache=%s",
             art_norm[:16],
@@ -414,7 +414,7 @@ def fetch_graffiti_file(
         return {"status": "ok", "meta": meta_info, "cache_path": cache_path}
 
     reason = last_error or "unavailable"
-    ttl_err = db_cache.cache_ttl_for_error(reason)
+    ttl_err = db_cache.get_error_cache_ttl(reason)
     if ttl_err is not None:
         _cache_media_error(art_norm, reason, ttl_sec=ttl_err)
     return {"status": "error", "reason": reason}

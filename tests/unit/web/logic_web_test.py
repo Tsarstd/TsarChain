@@ -46,32 +46,32 @@ def test_cache_keys():
     assert db_cache.make_cache_key("web", None, "test") == "web:test"
 
 
-def test_should_cache_error():
-    assert db_cache.should_cache_error("not_found") is True
-    assert db_cache.should_cache_error("height_out_of_range") is True
-    assert db_cache.should_cache_error("not found something") is True
-    assert db_cache.should_cache_error("other error") is False
+def test_is_not_found_error():
+    assert db_cache.is_not_found_error("not_found") is True
+    assert db_cache.is_not_found_error("height_out_of_range") is True
+    assert db_cache.is_not_found_error("not found something") is True
+    assert db_cache.is_not_found_error("other error") is False
 
 
-def test_cache_ttl_for_error():
-    assert db_cache.cache_ttl_for_error("pow_required") == db_cache.WEB_CACHE_ERROR_TTL_SHORT
-    assert db_cache.cache_ttl_for_error("rate limit exceeded") == db_cache.WEB_CACHE_ERROR_TTL_SHORT
-    assert db_cache.cache_ttl_for_error("timeout") == db_cache.WEB_CACHE_ERROR_TTL_SHORT
-    assert db_cache.cache_ttl_for_error("not_found") == db_cache.WEB_CACHE_TTL_SEC
-    assert db_cache.cache_ttl_for_error("unknown_error") is None
+def test_get_error_cache_ttl():
+    assert db_cache.get_error_cache_ttl("pow_required") == db_cache.WEB_CACHE_ERROR_TTL_SHORT
+    assert db_cache.get_error_cache_ttl("rate limit exceeded") == db_cache.WEB_CACHE_ERROR_TTL_SHORT
+    assert db_cache.get_error_cache_ttl("timeout") == db_cache.WEB_CACHE_ERROR_TTL_SHORT
+    assert db_cache.get_error_cache_ttl("not_found") == db_cache.WEB_CACHE_TTL_SEC
+    assert db_cache.get_error_cache_ttl("unknown_error") is None
 
 
 def test_cache_set_get(mock_store):
     mock_store.get_bytes.return_value = None
-    assert db_cache.cache_get_json("key1") is None
+    assert db_cache.cache_get("key1") is None
     
-    expired_entry = db_cache._json_dumps({"ts": 0, "ttl": 10, "payload": "data"})
+    expired_entry = db_cache._serialize_payload({"ts": 0, "ttl": 10, "payload": "data"})
     mock_store.get_bytes.return_value = expired_entry
-    assert db_cache.cache_get_json("key2") is None
+    assert db_cache.cache_get("key2") is None
     
-    valid_entry = db_cache._json_dumps({"ts": int(time.time()), "ttl": 100, "payload": "data"})
+    valid_entry = db_cache._serialize_payload({"ts": int(time.time()), "ttl": 100, "payload": "data"})
     mock_store.get_bytes.return_value = valid_entry
-    assert db_cache.cache_get_json("key3", refresh_ttl=True) == "data"
+    assert db_cache.cache_get("key3", refresh_ttl=True) == "data"
     
     db_cache.cache_set("key4", {"test": 123}, ttl_sec=50)
 
@@ -84,15 +84,15 @@ def test_is_expired():
 # ==================== DB_BLOCKS TESTS ====================
 
 def test_block_storage(mock_store):
-    db_blocks.save_blocks_permanent([{"height": 1, "hash": "A"}, "invalid", {"height": 2, "hash": "B"}])
+    db_blocks.save_blocks_to_storage([{"height": 1, "hash": "A"}, "invalid", {"height": 2, "hash": "B"}])
     
-    mock_store.get_bytes.return_value = db_cache._json_dumps({"height": 1, "hash": "A"})
+    mock_store.get_bytes.return_value = db_cache._serialize_payload({"height": 1, "hash": "A"})
     assert db_blocks.get_block_from_storage(1)["hash"] == "A"
     
     def mock_get(db, k):
         h = int(k.decode("utf-8").split(":")[1])
         if h <= 2:
-            return db_cache._json_dumps({"height": h, "hash": "A"})
+            return db_cache._serialize_payload({"height": h, "hash": "A"})
         return None
     mock_store.get_bytes.side_effect = mock_get
     
@@ -104,12 +104,12 @@ def test_block_storage(mock_store):
 
 
 def test_block_storage_edge_cases(mock_store):
-    db_blocks.save_blocks_permanent(None)
-    db_blocks.save_blocks_permanent(["not_a_dict"])
-    db_blocks.save_blocks_permanent([{}])
+    db_blocks.save_blocks_to_storage(None)
+    db_blocks.save_blocks_to_storage(["not_a_dict"])
+    db_blocks.save_blocks_to_storage([{}])
     
     mock_store.put_bytes.side_effect = Exception("err")
-    db_blocks.save_blocks_permanent([{"height": 1}])
+    db_blocks.save_blocks_to_storage([{"height": 1}])
     
     mock_store.get_bytes.side_effect = Exception("err")
     assert db_blocks.get_block_from_storage(1) is None
@@ -181,9 +181,9 @@ def test_prefetch_blocks_has_more(mock_store):
 
 def test_media_cache(mock_store):
     db_media._cache_media_error("art1", "not_found", 10)
-    db_media._cache_media_ok_path("art2", {"mime": "image/jpeg"}, "/path/x.jpg", 100)
+    db_media._cache_media_success("art2", {"mime": "image/jpeg"}, "/path/x.jpg", 100)
     
-    mock_store.get_bytes.return_value = db_cache._json_dumps({"ts": int(time.time()), "ttl": 100, "status": "ok"})
+    mock_store.get_bytes.return_value = db_cache._serialize_payload({"ts": int(time.time()), "ttl": 100, "status": "ok"})
     assert db_media._load_media_entry("art2") is not None
     
     mock_store.get_bytes.return_value = None
@@ -235,10 +235,10 @@ def test_chunked_download(mock_store, tmp_path):
 
 
 def test_fetch_graffiti_unknown_size_and_errors(mock_store, tmp_path):
-    mock_store.get_bytes.return_value = db_cache._json_dumps({"ts": int(time.time()), "ttl": 100, "status": "error", "reason": "banned"})
+    mock_store.get_bytes.return_value = db_cache._serialize_payload({"ts": int(time.time()), "ttl": 100, "status": "error", "reason": "banned"})
     assert db_media.fetch_graffiti_file(lambda p: None, "art6")["status"] == "error"
     
-    mock_store.get_bytes.side_effect = [db_cache._json_dumps({"ts": int(time.time()), "ttl": 100, "status": "ok"}), None]
+    mock_store.get_bytes.side_effect = [db_cache._serialize_payload({"ts": int(time.time()), "ttl": 100, "status": "ok"}), None]
     assert db_media._get_cached_graffiti_file("art7", None) is None
     
     db_media._write_cache_file("/invalid/dir", "art8", {}, b"data")
@@ -274,7 +274,7 @@ def test_receipt_cache(tmp_path):
     assert db_files.is_receipt_fresh(str(f), 100) is True
     assert db_files.is_receipt_fresh(str(f), -100) is False
     
-    res = db_files.read_receipt_file(str(f), "txid")
+    res = db_files.read_receipt_file_as_dict(str(f), "txid")
     assert res["status"] == "success"
 
 
@@ -300,7 +300,7 @@ def test_history_book_cache(tmp_path):
     assert db_files.is_history_book_fresh(str(f), 100) is True
     assert db_files.is_history_book_fresh(str(f), -100) is False
     
-    res = db_files.read_history_book_file(str(f), "tsar123")
+    res = db_files.read_history_book_file_as_dict(str(f), "tsar123")
     assert res["status"] == "success"
     assert res["data_url"].startswith("data:application/pdf;base64,")
 
@@ -319,11 +319,11 @@ def test_history_book_cleanup_and_timer():
 
 
 def test_path_traversal_sanitization():
-    safe_path1 = db_files.get_receipt_file("../../../secret_file")
+    safe_path1 = db_files.get_receipt_file_path("../../../secret_file")
     assert ".." not in safe_path1
     assert "/" not in os.path.basename(safe_path1)
     
-    assert db_files.get_receipt_file("../..") == ""
+    assert db_files.get_receipt_file_path("../..") == ""
     
     res = db_media.fetch_graffiti_file(lambda p: None, "../../..")
     assert res["status"] == "error"
@@ -343,11 +343,11 @@ def test_client_cache():
 
 
 def test_cache_policy():
-    ok, ttl = rpc_client._cache_policy(None)
+    ok, ttl = rpc_client._determine_cache_policy(None)
     assert not ok
-    ok, ttl = rpc_client._cache_policy({"error": "not_found"})
+    ok, ttl = rpc_client._determine_cache_policy({"error": "not_found"})
     assert ok
-    ok, ttl = rpc_client._cache_policy({"status": "error", "reason": "timeout"})
+    ok, ttl = rpc_client._determine_cache_policy({"status": "error", "reason": "timeout"})
     assert ok
     assert ttl == db_cache.WEB_CACHE_ERROR_TTL_SHORT
 
