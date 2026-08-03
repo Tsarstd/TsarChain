@@ -6,6 +6,7 @@ dotenv.config({ path: path.join(__dirname, "..", "..", ".env") });
 
 const getConfig = () => {
   const port = Number(process.env.PORT) || 4000;
+  const host = process.env.HOST || "::";
   const nodeHost = process.env.TSAR_NODE_HOST || "127.0.0.1";
   const nodePort = Number(process.env.TSAR_NODE_PORT) || 19000;
   const allowedOrigins = process.env.ALLOWED_ORIGINS 
@@ -14,6 +15,7 @@ const getConfig = () => {
 
   return { 
     port, 
+    host,
     nodeHost, 
     nodePort,
     allowedOrigins

@@ -50,6 +50,13 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: "internal_error", detail: err?.message || "Unexpected error" });
 });
 
-app.listen(cfg.port, () => {
-  console.log(`[backend] explorer API listening on port ${cfg.port}`);
+const server = app.listen(cfg.port, cfg.host, () => {
+  console.log(`[backend] explorer API listening on ${cfg.host}:${cfg.port}`);
+});
+
+server.on("error", (err) => {
+  if (err.code === "EADDRNOTAVAIL" || err.code === "EINVAL") {
+    console.warn(`[backend] binding to ${cfg.host} failed (${err.code}), falling back to 0.0.0.0`);
+    app.listen(cfg.port, "0.0.0.0");
+  }
 });

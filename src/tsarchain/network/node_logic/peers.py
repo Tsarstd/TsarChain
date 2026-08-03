@@ -18,10 +18,27 @@ if TYPE_CHECKING:
 def normalize_peer(_, peer: Any) -> Optional[Tuple[str, int]]:
     if not peer:
         return None
-    if isinstance(peer, tuple) and len(peer) == 2:
-        return (str(peer[0]), int(peer[1]))
-    if isinstance(peer, list) and len(peer) == 2:
-        return (str(peer[0]), int(peer[1]))
+    if isinstance(peer, (tuple, list)) and len(peer) >= 2:
+        host = str(peer[0])
+        if host.startswith("::ffff:"):
+            host = host[7:]
+        return (host, int(peer[1]))
+    if isinstance(peer, str):
+        peer = peer.strip()
+        if peer.startswith("["):
+            idx = peer.rfind("]:")
+            if idx != -1:
+                host = peer[1:idx]
+                port_str = peer[idx+2:]
+                if port_str.isdigit():
+                    return (host, int(port_str))
+        elif ":" in peer:
+            parts = peer.rsplit(":", 1)
+            if len(parts) == 2 and parts[1].isdigit():
+                host = parts[0]
+                if host.startswith("::ffff:"):
+                    host = host[7:]
+                return (host, int(parts[1]))
     return None
 
 

@@ -367,6 +367,7 @@ MAX_GRAFFITI_ON_MEMPOOL = 7                # NOTE: do not change the value above
 # =============================================================================
 # 8. NETWORK & SYNC
 # =============================================================================
+IPV6_MODE       = True   # set True for Dual-Stack (IPv6 + IPv4), False for IPv4-only
 # ---- PORTS & BOOTSTRAP ----
 PORT_RANGE_DEV  = (38169, 38178)  # port span reserved for dev deployments
 PORT_RANGE_PROD = (40196, 40205)  # port span reserved for production nodes

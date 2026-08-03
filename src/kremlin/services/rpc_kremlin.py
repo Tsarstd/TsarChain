@@ -26,6 +26,33 @@ log = get_ctx_logger("tsarchain.wallet.services.rpc_kremlin")
 _last_log_gate = {}
 
 
+def _connect_socket(target: Tuple[str, int], timeout: float) -> socket.socket:
+    host, port = str(target[0]), int(target[1])
+    if CFG.IPV6_MODE is True:
+        last_exc = None
+        try:
+            infos = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        except OSError as exc:
+            infos = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', (host, port))]
+        for family, socktype, proto, _, sockaddr in infos:
+            try:
+                s = socket.socket(family, socktype, proto)
+                s.settimeout(timeout)
+                s.connect(sockaddr)
+                return s
+            except OSError as exc:
+                last_exc = exc
+                continue
+        if last_exc:
+            raise last_exc
+        raise OSError(f"Could not connect to {host}:{port}")
+    else:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        s.connect((host, port))
+        return s
+
+
 def _mk_extra(peer=None, rpc=None, req=None):
     return {"peer": peer or "-", "rpc": rpc or "-", "req": req or "-"}
 
@@ -128,9 +155,7 @@ class NodeClient:
         for ip, port in uniq:
             try:
                 self._pace()
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(CFG.CONNECT_TIMEOUT_SCAN)
-                    s.connect((ip, port))
+                with _connect_socket((ip, port), CFG.CONNECT_TIMEOUT_SCAN) as s:
 
                     ping_env = build_envelope({"type": "PING"}, self.user_ctx, extra={"pubkey": self.user_pub})
                     resp = None
@@ -199,9 +224,7 @@ class NodeClient:
 
     # ----------- Core Send -----------
     def _try_send_one(self, peer: Tuple[str, int], message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(CFG.RPC_TIMEOUT)
-            s.connect(peer)
+        with _connect_socket(peer, CFG.RPC_TIMEOUT) as s:
             env = build_envelope(message, self.user_ctx, extra={"pubkey": self.user_pub})
             resp = None
             try:

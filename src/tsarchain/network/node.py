@@ -272,13 +272,21 @@ class Network(NetworkProxy):
     # -------------------------- Server / Accept ---------------------------
 
     def _find_available_port(self) -> Optional[int]:
+        use_ipv6 = CFG.IPV6_MODE is True
+        family = socket.AF_INET6 if use_ipv6 else socket.AF_INET
+        bind_addr = "::" if use_ipv6 else "0.0.0.0"
         for port in range(CFG.PORT_START, CFG.PORT_END + 1):
             if port in Network.active_ports:
                 continue
             try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                with socket.socket(family, socket.SOCK_STREAM) as s:
                     s.settimeout(1)
-                    s.bind(('0.0.0.0', port))
+                    if use_ipv6 and hasattr(socket, "IPV6_V6ONLY"):
+                        try:
+                            s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+                        except (AttributeError, OSError):
+                            pass
+                    s.bind((bind_addr, port))
                     return port
             except (socket.error, OSError):
                 continue
@@ -298,30 +306,48 @@ class Network(NetworkProxy):
         if not host:
             return False
         
-        if host in ("127.0.0.1", "localhost", "::1"):
+        if host.startswith("[") and host.endswith("]"):
+            host = host[1:-1]
+
+        if host in ("127.0.0.1", "localhost", "::1", "0.0.0.0", "::") or host.startswith("fe80:"):
             return True
 
         target_ips: set[str] = set()
-        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
-            
-        for info in infos:
-            ip = info[4][0]
-            if ip:
-                target_ips.add(ip)
+        try:
+            infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+            for info in infos:
+                ip = info[4][0]
+                if ip:
+                    if ip.startswith("::ffff:"):
+                        ip = ip[7:]
+                    target_ips.add(ip)
+        except (socket.gaierror, OSError):
+            target_ips.add(host)
             
         if not target_ips:
             return False
 
-        local_ips: set[str] = {"127.0.0.1", "::1"}
-        hn = socket.gethostname()
-        local_ips.update(socket.gethostbyname_ex(hn)[2])
-        
-        fqdn = socket.getfqdn()
-        local_ips.update(socket.gethostbyname_ex(fqdn)[2])
-        
-        for info in socket.getaddrinfo(None, 0, proto=socket.IPPROTO_TCP):
-            ip = info[4][0]
-            if ip:
-                local_ips.add(ip)
+        local_ips: set[str] = {"127.0.0.1", "::1", "0.0.0.0", "::"}
+        try:
+            hn = socket.gethostname()
+            local_ips.update(socket.gethostbyname_ex(hn)[2])
+        except Exception:
+            pass
+
+        try:
+            fqdn = socket.getfqdn()
+            local_ips.update(socket.gethostbyname_ex(fqdn)[2])
+        except Exception:
+            pass
+
+        try:
+            for info in socket.getaddrinfo(None, 0, proto=socket.IPPROTO_TCP):
+                ip = info[4][0]
+                if ip:
+                    if ip.startswith("::ffff:"):
+                        ip = ip[7:]
+                    local_ips.add(ip)
+        except Exception:
+            pass
 
         return any(ip in local_ips for ip in target_ips)

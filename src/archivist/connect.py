@@ -102,11 +102,35 @@ def _scan_nodes(start: int = CFG.PORT_START, end: int = CFG.PORT_END, manual_nod
     return found
 
 
+def _connect_socket(host: str, port: int, timeout: float) -> socket.socket:
+    if CFG.IPV6_MODE is True:
+        last_exc = None
+        try:
+            infos = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        except OSError as exc:
+            infos = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', (host, port))]
+        for family, socktype, proto, _, sockaddr in infos:
+            try:
+                s = socket.socket(family, socktype, proto)
+                s.settimeout(timeout)
+                s.connect(sockaddr)
+                return s
+            except OSError as exc:
+                last_exc = exc
+                continue
+        if last_exc:
+            raise last_exc
+        raise OSError(f"Could not connect to {host}:{port}")
+    else:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        s.connect((host, port))
+        return s
+
+
 def _ping_node(ip: str, port: int, node_id: str, pub_hex: str, priv_hex: str, ctx: dict) -> bool:
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(CFG.CONNECT_TIMEOUT_SCAN)
-            s.connect((ip, port))
+        with _connect_socket(ip, port, CFG.CONNECT_TIMEOUT_SCAN) as s:
 
             ping_env = build_envelope(
                 {"type": "PING"},
@@ -248,9 +272,7 @@ class RPC:
                 raise RuntimeError("Not connected")
             ip, port = self.node
         payload = build_envelope(inner, self.ctx, extra={"pubkey": self.pub})
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(timeout)
-            s.connect((ip, port))
+        with _connect_socket(ip, port, timeout) as s:
             raw = None
             chan = SecureChannel(
                 s, role="client",

@@ -239,6 +239,37 @@ def request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> bo
     return False
 
 
+def _connect_socket(target: Tuple[str, int], timeout: float) -> socket.socket:
+    host, port = str(target[0]), int(target[1])
+    if CFG.IPV6_MODE is True:
+        last_exc = None
+        try:
+            infos = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        except OSError as exc:
+            infos = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', (host, port))]
+        for family, socktype, proto, _, sockaddr in infos:
+            try:
+                s = socket.socket(family, socktype, proto)
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
+                s.settimeout(timeout)
+                s.connect(sockaddr)
+                return s
+            except OSError as exc:
+                last_exc = exc
+                continue
+        if last_exc:
+            raise last_exc
+        raise OSError(f"Could not connect to {host}:{port}")
+    else:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
+        s.settimeout(timeout)
+        s.connect((host, port))
+        return s
+
+
 def prefetch_rpc_connections(self):
     """
     Dial bootstrap/persistent peers once at startup to warm up handshake+channel.
@@ -260,10 +291,9 @@ def prefetch_peer_channel(self, peer: Tuple[str, int]):
     norm = self.normalize_peer(peer)
     if not norm or norm in prefetched:
         return
+    sock = None
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(_RPC_PREFETCH_TIMEOUT)
-        sock.connect(norm)
+        sock = _connect_socket(norm, _RPC_PREFETCH_TIMEOUT)
         chan = SecureChannel(
             sock,
             role="client",
@@ -281,7 +311,8 @@ def prefetch_peer_channel(self, peer: Tuple[str, int]):
         log.debug("[prefetch_peer_channel] warmed channel to %s", norm)
     except Exception:
         log.exception("[prefetch_peer_channel]")
-        sock.close()
+        if sock:
+            sock.close()
         return
 
 
@@ -327,13 +358,10 @@ def _try_cached_connection(node, norm, entry, payload, timeout, now, cache, cach
 
 
 def _create_new_connection(node, norm, payload, timeout, cache, cache_lock, max_cache):
-    sock_new = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock_new.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
-    sock_new.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
-    sock_new.settimeout(float(CFG.HANDSHAKE_TIMEOUT))
+    sock_new = None
     success = False
     try:
-        sock_new.connect(norm)
+        sock_new = _connect_socket(norm, float(CFG.HANDSHAKE_TIMEOUT))
         chan = SecureChannel(
             sock_new,
             role="client",
@@ -358,7 +386,7 @@ def _create_new_connection(node, norm, payload, timeout, cache, cache_lock, max_
         success = True
         return resp
     finally:
-        if not success:
+        if not success and sock_new:
             sock_new.close()
 
 
