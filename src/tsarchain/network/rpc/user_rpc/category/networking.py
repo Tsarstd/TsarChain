@@ -81,33 +81,38 @@ def stor_list(self, message, pow_obj, base_identity, *,
     if not ok:
         return pow_resp
 
-    by_addr = {}
+    by_key = {}
     with self.lock:
         for v in self.storage_peers.values():
             if not isinstance(v, dict):
                 continue
-            addr = v.get("addr")
-            if not addr:
+            key = v.get("node_id") or v.get("pubkey") or v.get("addr") or f"{v.get('ip')}:{v.get('port')}"
+            if not key:
                 continue
-            addr = addr.lower()
-            old = by_addr.get(addr)
+            key = str(key).lower()
+            old = by_key.get(key)
             if old is None:
-                by_addr[addr] = dict(v)
+                by_key[key] = dict(v)
             else:
                 cand = dict(v)
                 if ((old.get("port") or 0) == 0 and (cand.get("port") or 0) > 0) or \
                    (int(cand.get("last_seen") or 0) > int(old.get("last_seen") or 0)):
-                    by_addr[addr] = cand
+                    by_key[key] = cand
 
     items = []
-    for meta in by_addr.values():
-        items.append({
-            "addr": meta.get("addr"),
+    for meta in by_key.values():
+        item = {
+            "addr": meta.get("addr", ""),
             "url": meta.get("url", ""),
             "ip": meta.get("ip", ""),
             "port": int(meta.get("port", 0)),
             "last_seen": int(meta.get("last_seen", 0)),
             "alive": bool(meta.get("alive", False)),
-        })
+        }
+        if "trusted" in meta:
+            item["trusted"] = bool(meta.get("trusted", False))
+        if "node_id" in meta:
+            item["node_id"] = meta.get("node_id", "")
+        items.append(item)
 
     return {"type": "STOR_LIST", "storers": items}

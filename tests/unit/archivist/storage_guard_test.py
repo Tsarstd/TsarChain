@@ -74,7 +74,7 @@ def test_allow(mock_issue_pow, mock_verify_pow, guard):
     res = guard.allow("5.5.5.5", "UNKNOWN_MSG")
     assert res["ok"] is False
     assert res["error"] == "unknown_type"
-    assert guard.is_banned("5.5.5.5")
+    assert not guard.is_banned("5.5.5.5")
     
     # 4. PoW accepted
     mock_verify_pow.return_value = True

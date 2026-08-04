@@ -28,29 +28,10 @@ _last_log_gate = {}
 
 def _connect_socket(target: Tuple[str, int], timeout: float) -> socket.socket:
     host, port = str(target[0]), int(target[1])
-    if CFG.IPV6_MODE:
-        last_exc = None
-        try:
-            infos = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
-        except OSError as exc:
-            infos = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', (host, port))]
-        for family, socktype, proto, _, sockaddr in infos:
-            try:
-                s = socket.socket(family, socktype, proto)
-                s.settimeout(timeout)
-                s.connect(sockaddr)
-                return s
-            except OSError as exc:
-                last_exc = exc
-                continue
-        if last_exc:
-            raise last_exc
-        raise OSError(f"Could not connect to {host}:{port}")
-    else:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(timeout)
-        s.connect((host, port))
-        return s
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(timeout)
+    s.connect((host, port))
+    return s
 
 
 def _mk_extra(peer=None, rpc=None, req=None):

@@ -269,7 +269,7 @@ class ArchivistOrchestrator:
         files_by_sha, files_by_art = self._build_file_maps(files, art_map_idx)
         self._populate_pool_data(posts, files_by_sha, files_by_art)
         
-        self._auto_mark_paid(posts, files_by_art)
+        self._auto_mark_paid(posts, files_by_art, files_by_sha)
         self._auto_payout()
 
 
@@ -310,15 +310,20 @@ class ArchivistOrchestrator:
             self.pool_data[aid] = {"post": art, "stats": stats, "file": file_meta["meta"]}
 
 
-    def _auto_mark_paid(self, posts: list[dict], files_by_art: dict[str, dict]) -> None:
-        if not posts or not files_by_art:
+    def _auto_mark_paid(self, posts: list[dict], files_by_art: dict[str, dict], files_by_sha: dict[str, dict] = None) -> None:
+        if not posts:
             return
+        files_by_sha = files_by_sha or {}
+        files_by_art = files_by_art or {}
         marked = False
         for art in posts:
             aid = str(art.get("art_id") or "").lower()
-            if not aid:
+            sha = str(art.get("sha256") or "").lower()
+            if not aid and not sha:
                 continue
-            file_entry = files_by_art.get(aid)
+            file_entry = files_by_art.get(aid) if aid else None
+            if not file_entry and sha:
+                file_entry = files_by_sha.get(sha)
             if not file_entry:
                 continue
             meta = file_entry.get("meta") or {}
@@ -327,15 +332,15 @@ class ArchivistOrchestrator:
             bh = int(art.get("block_height", 0) or 0)
             if bh <= 0:
                 continue
-            gid = file_entry.get("id") or aid
+            gid = file_entry.get("id") or sha or aid
             txid = (art.get("txid") or "").strip()
             resp = self._call_storage_local(
-                {"type": "STOR_PAID", "graffiti_id": gid, "txid": txid, "block_height": bh},
+                {"type": "STOR_PAID", "graffiti_id": gid, "art_id": aid, "txid": txid, "block_height": bh},
                 timeout=4.0,
             )
             if isinstance(resp, dict) and resp.get("status") in ("ok", None):
                 marked = True
-                self._log(f"[auto-paid] {gid} (h={bh})")
+                self._log(f"[auto-paid] {gid} (art={aid}, h={bh})")
         if marked:
             threading.Thread(target=self.refresh_once, name="ArchivistRefreshAuto", daemon=True).start()
 

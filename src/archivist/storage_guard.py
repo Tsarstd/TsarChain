@@ -68,7 +68,8 @@ class StorageGuard:
 
     @staticmethod
     def _is_local(ip: str) -> bool:
-        return ip in ("127.0.0.1", "::1")
+        clean_ip = (ip or "").replace("::ffff:", "").strip()
+        return clean_ip in ("127.0.0.1", "::1", "localhost")
 
     @staticmethod
     def _subnet(ip: str) -> str:
@@ -158,7 +159,7 @@ class StorageGuard:
 
         rule_name = TYPE_TO_RULE.get(mtype_norm)
         if not rule_name:
-            self.ban_ip(ip, CFG.BAN_UNKNOWN_STORAGE_RPC, identity=identity)
+            log.warning("[stor_guard] unhandled rpc type=%s from ip=%s -> drop without ban", mtype_norm, ip)
             return {"ok": False, "drop": True, "error": "unknown_type"}
 
         rule = RULES.get(rule_name)

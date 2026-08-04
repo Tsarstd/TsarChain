@@ -38,7 +38,7 @@ log = get_ctx_logger("tsarchain.wallet.graffiti_service")
 
 
 def _pick_endpoint(meta: Dict[str, Any]) -> Optional[Tuple[str, int]]:
-    host = str(meta.get("ip") or "").strip()
+    host = str(meta.get("ip") or meta.get("host") or "").strip()
     port = int(meta.get("port") or 0)
     if host and port > 0:
         return host, port
@@ -50,17 +50,26 @@ def _pick_endpoint(meta: Dict[str, Any]) -> Optional[Tuple[str, int]]:
         if netloc:
             if ":" in netloc:
                 host_part, port_part = netloc.split(":", 1)
-                port = int(port_part)
+                try:
+                    port = int(port_part)
+                except Exception:
+                    port = 0
             else:
                 host_part = netloc
             host_part = host_part.strip()
             if host_part:
                 if port <= 0:
-                    port = CFG.STORAGE_PORT_START or CFG.PORT_START
+                    port = int(CFG.STORAGE_PORT_START or CFG.PORT_START or 8090)
                 if port <= 0:
                     return None
                 return host_part, port
     return None
+
+def _connect_socket(host: str, port: int, timeout: float) -> socket.socket:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(timeout)
+    s.connect((host, port))
+    return s
 
 def _send_storage_request(
     host: str,
@@ -78,20 +87,23 @@ def _send_storage_request(
     identity_norm = (identity_hint or base_payload.get("wallet_addr") or base_payload.get("creator_addr") or "").strip().lower()
     if identity_norm and "wallet_addr" not in base_payload:
         base_payload["wallet_addr"] = identity_norm
+
     resp: Dict[str, Any] = {}
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(timeout)
-        s.connect((host, int(port)))
-        raw = json.dumps(base_payload).encode("utf-8")
-        send_message(s, raw, max_len=max_len)
-        data = recv_message(s, timeout, max_len=max_len)
-        if not data:
-            return {"status": "error", "reason": "no_response"}
-        obj = json.loads(data.decode("utf-8"))
-        if isinstance(obj, dict):
-            resp = obj
-        else:
-            resp = {"status": "error", "reason": "bad_response"}
+    try:
+        with _connect_socket(host, int(port), timeout) as s:
+            raw = json.dumps(base_payload).encode("utf-8")
+            send_message(s, raw, max_len=max_len)
+            data = recv_message(s, timeout, max_len=max_len)
+            if not data:
+                return {"status": "error", "reason": "no_response"}
+            obj = json.loads(data.decode("utf-8"))
+            if isinstance(obj, dict):
+                resp = obj
+            else:
+                resp = {"status": "error", "reason": "bad_response"}
+    except OSError as exc:
+        return {"status": "error", "reason": f"connection_failed: {exc}"}
+
     pow_challenge = resp.get("pow_challenge") if isinstance(resp, dict) else None
     need_pow = resp.get("reason") in ("pow_required", "rate_limited") if isinstance(resp, dict) else False
     if max_pow_retry > 0 and pow_challenge:
@@ -178,11 +190,13 @@ def _read_cached_graffiti_file(art_id: str, cache_root: str) -> Optional[Dict[st
         return None
     mime = _infer_cache_mime(cache_path)
     meta = {"size_bytes": int(size), "mime": mime, "filename": os.path.basename(cache_path)}
-    try:
-        with open(cache_path, "rb") as fh:
-            data_bytes = fh.read()
-    except OSError:
-        return None
+    data_bytes = None
+    if size <= 8 * 1024 * 1024:
+        try:
+            with open(cache_path, "rb") as fh:
+                data_bytes = fh.read()
+        except OSError:
+            return None
     return {"status": "ok", "bytes": data_bytes, "meta": meta, "cache_path": cache_path}
 
 @benchmark(label="read_graffiti_file_info", threshold_ms=2.0)
@@ -238,12 +252,17 @@ def filter_online_storers(storers: list[Dict[str, Any]], timeout: float = 2.0) -
     """
     online: list[Dict[str, Any]] = []
     for meta in storers:
-        host = str(meta.get("ip") or meta.get("host") or "").strip() or "127.0.0.1"
-        port = int(meta.get("port") or 0)
-        if port <= 0:
+        endpoint = _pick_endpoint(meta)
+        if not endpoint:
+            host = str(meta.get("ip") or meta.get("host") or "").strip() or "127.0.0.1"
+            port = int(meta.get("port") or 0)
+            if port > 0:
+                endpoint = (host, port)
+        if not endpoint:
             continue
+        host, port = endpoint
         try:
-            with socket.create_connection((host, port), timeout=timeout):
+            with _connect_socket(host, port, timeout=timeout) as s:
                 online.append(meta)
         except OSError:
             continue
@@ -511,15 +530,6 @@ def fetch_graffiti_file(
     max_bytes: int = CFG.GRAFFITI_MAX_SIZE_BYTES,
     timeout: float = 5.0,
 ) -> Dict[str, Any]:
-    """
-    Retrieve graffiti files from the storage node based on art_id.
-    - Upload (STOR_PUT) is already chunked (default 8MB) => Small, fast, and cheap RPC for JSON/base64.
-    
-    This patch also makes downloads "chunked" (without wallet_addr, still public) by:
-    - Fetch metadata first (include_data=False)
-    - Then fetch data per chunk using STOR_GET_BY_ART + offset/length (backward-compatible:
-    Older nodes will ignore offset/length and still send the full data).
-    """
     art_norm = (art_id or "").strip().lower()
     if not art_norm:
         return {"status": "error", "reason": "missing_art_id"}
@@ -529,12 +539,9 @@ def fetch_graffiti_file(
     if cached is not None:
         return cached
 
-    # max_bytes = file size ceiling (NOT per-message ceiling)
     max_bytes = max(32 * 1024, min(int(max_bytes), int(CFG.GRAFFITI_MAX_SIZE_BYTES)))
-
-    # Per-message cap for RPC framing; used to clamp each chunk.
     msg_cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
-    data_cap = int(msg_cap * 3 // 4)  # guard for base64/json overhead
+    data_cap = int(msg_cap * 3 // 4)
 
     storers = fetch_storers(rpc_call)  # type: ignore[arg-type]
     if not storers:
@@ -619,10 +626,10 @@ def fetch_graffiti_file(
 
         # 3) Large files: chunked download using STOR_GET_BY_ART + offset/length
         burst = int(CFG.STOR_GET_RL_IP_BURST)
-        target_calls = max(1, min(max(1, burst - 1), 8))  # keep under typical RL burst
-        chunk_raw = (int(total_size) + int(target_calls) - 1) // int(target_calls)  # ceil div
-        chunk_raw = max(1024 * 1024, chunk_raw)  # >= 1MB
-        chunk_raw = min(int(chunk_raw), int(min(data_cap, 64 * 1024 * 1024)))  # <= 64MB and per-message safe
+        target_calls = max(1, min(max(1, burst - 1), 8))
+        chunk_raw = (int(total_size) + int(target_calls) - 1) // int(target_calls)
+        chunk_raw = max(1024 * 1024, chunk_raw)
+        chunk_raw = min(int(chunk_raw), int(min(data_cap, 64 * 1024 * 1024)))
 
         dl_timeout = max(timeout, 60.0)
         offset = 0
@@ -638,7 +645,7 @@ def fetch_graffiti_file(
                         "include_data": True,
                         "offset": int(offset),
                         "length": int(want),
-                        "max_bytes": int(want),  # enforce per-response cap
+                        "max_bytes": int(want),
                     }
                     resp = _send_storage_request(host, port, chunk_payload, timeout=dl_timeout, max_len=msg_cap)
                     if not isinstance(resp, dict):
@@ -677,8 +684,10 @@ def fetch_graffiti_file(
                 continue
 
             os.replace(tmp_path, cache_path)
-            with open(cache_path, "rb") as fh:
-                raw = fh.read()
+            raw = None
+            if total_size <= 8 * 1024 * 1024:
+                with open(cache_path, "rb") as fh:
+                    raw = fh.read()
 
             dt = max(0.001, time.time() - start_ts)
             mbps = (float(total_size) / (1024 * 1024)) / dt

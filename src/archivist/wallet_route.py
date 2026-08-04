@@ -121,7 +121,6 @@ def _handle_stor_put(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     meta["received_bytes"] = int(received_total)
     meta["updated_ts"] = int(time.time())
     server.index["files"][aid] = meta
-    server._save_index()
     
     return {
         "type": "STOR_ACK",

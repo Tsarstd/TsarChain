@@ -124,23 +124,37 @@ class ArchivistDatabase:
             return f.read()
 
 
+    def has_final(self, gid: str) -> bool:
+        if not self.enable_blobs:
+            return False
+        key = f"blob:{gid}".encode("utf-8")
+        data = self._kv_final.get_bytes_range("final", key, 0, 1)
+        return data is not None
+
     def pop_incoming(self, gid: str) -> Optional[bytes]:
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
         bin_path = self._incoming_bin_path(gid)
         part_path = self._incoming_part_path(gid)
         path = bin_path if os.path.isfile(bin_path) else part_path
+
+        if not os.path.isfile(path):
+            inc_dir = self._incoming_dir()
+            if os.path.isdir(inc_dir):
+                try:
+                    for fname in os.listdir(inc_dir):
+                        if fname.startswith(gid):
+                            path = os.path.join(inc_dir, fname)
+                            break
+                except OSError:
+                    pass
+
         if not os.path.isfile(path):
             return None
         with open(path, "rb") as f:
             data = f.read()
-        try:
-            if os.path.isfile(path):
-                os.remove(path)
-            if path != part_path and os.path.isfile(part_path):
-                os.remove(part_path)
-        except OSError:
-            pass
+
+        self.delete_blob(gid, incoming=True)
         return data
 
 
@@ -169,7 +183,29 @@ class ArchivistDatabase:
             raise RuntimeError("blobs_disabled")
         key = f"blob:{gid}".encode("utf-8")
         data = self._kv_final.get_bytes_range("final", key, offset, length)
-        return bytes(data) if data is not None else None
+        if data is not None:
+            return bytes(data)
+        bin_path = self._incoming_bin_path(gid)
+        part_path = self._incoming_part_path(gid)
+        path = bin_path if os.path.isfile(bin_path) else part_path
+        if not os.path.isfile(path):
+            inc_dir = self._incoming_dir()
+            if os.path.isdir(inc_dir):
+                try:
+                    for fname in os.listdir(inc_dir):
+                        if fname.startswith(gid):
+                            path = os.path.join(inc_dir, fname)
+                            break
+                except OSError:
+                    pass
+        if os.path.isfile(path):
+            try:
+                with open(path, "rb") as f:
+                    f.seek(int(offset))
+                    return f.read(int(length))
+            except OSError:
+                pass
+        return None
 
 
     def get_final_merkle_path(self, gid: str, chunk_size: int, index: int) -> Optional[list]:
@@ -183,6 +219,17 @@ class ArchivistDatabase:
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
         if incoming:
+            inc_dir = self._incoming_dir()
+            if os.path.isdir(inc_dir):
+                try:
+                    for fname in os.listdir(inc_dir):
+                        if fname.startswith(gid):
+                            try:
+                                os.remove(os.path.join(inc_dir, fname))
+                            except OSError:
+                                pass
+                except OSError:
+                    pass
             for path in (self._incoming_part_path(gid), self._incoming_bin_path(gid)):
                 if os.path.isfile(path):
                     try:

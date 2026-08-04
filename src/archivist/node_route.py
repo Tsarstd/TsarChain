@@ -48,12 +48,25 @@ def _handle_stor_index(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return {"type": "STOR_INDEX", "status": "ok", **server.index}
 
 def _finalize_storage(server, aid: str, meta: dict) -> tuple[bool, Optional[str]]:
-    already_final = server.db.get_final_bytes_range(aid, 0, 1) is not None
-    if not already_final:
+    already_final = server.db.has_final(aid) if hasattr(server.db, "has_final") else (server.db.get_final_bytes_range(aid, 0, 1) is not None)
+    if already_final is not True:
         data = server.db.pop_incoming(aid)
+        if data is None:
+            p = meta.get("path")
+            if p and os.path.isfile(p):
+                try:
+                    with open(p, "rb") as f:
+                        data = f.read()
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+                except OSError:
+                    pass
         if data is None:
             return False, "missing_file"
         server.db.put_final(aid, data)
+    server.db.delete_blob(aid, incoming=True)
     meta["path"] = f"lmdb://final/{aid}"
     meta["state"] = "stored"
     return True, None
@@ -61,12 +74,28 @@ def _finalize_storage(server, aid: str, meta: dict) -> tuple[bool, Optional[str]
 @benchmark(label="STOR_PAID", threshold_ms=500.0)
 def _handle_stor_paid(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     aid = str(msg.get("graffiti_id", "")).strip()
+    art_id = str(msg.get("art_id", "")).strip().lower()
     txid = str(msg.get("txid", "")).strip()
     block_h = int(msg.get("block_height", 0) or 0)
     meta = server.index.get("files", {}).get(aid)
+    if not meta and art_id:
+        real_gid = server.index.get("art_map", {}).get(art_id)
+        if real_gid:
+            meta = server.index.get("files", {}).get(real_gid)
+            aid = real_gid
+    if not meta:
+        for gid_k, m in server.index.get("files", {}).items():
+            if m.get("sha256", "").lower() == aid.lower() or m.get("art_id", "").lower() == aid.lower():
+                meta = m
+                aid = gid_k
+                break
     if not aid or not meta:
         return {"type": "STOR_PAID", "status": "error", "reason": "no_such"}
         
+    if art_id:
+        meta["art_id"] = art_id
+        server.index.setdefault("art_map", {})[art_id] = aid
+
     success, err_reason = _finalize_storage(server, aid, meta)
     if not success:
         return {"type": "STOR_PAID", "status": "error", "reason": err_reason}

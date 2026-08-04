@@ -56,9 +56,8 @@ const server = http.createServer(app);
 server.listen({
   port: cfg.port,
   host: cfg.host,
-  ipv6Only: false
 }, () => {
-  console.log(`[backend] explorer API listening Dual-Stack on ${cfg.host}:${cfg.port}`);
+  console.log(`[backend] explorer API listening on ${cfg.host}:${cfg.port}`);
 });
 
 server.on("error", (err) => {

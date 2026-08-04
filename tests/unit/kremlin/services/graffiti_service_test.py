@@ -3,6 +3,7 @@
 # Part of TsarChain — see LICENSE
 
 import json
+import socket
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -404,4 +405,18 @@ def test_fetch_graffiti_file_chunked_errors(mock_cfg, mock_makedirs, mock_send, 
     with patch("kremlin.services.graffiti_service._read_cached_graffiti_file", return_value=None):
         resp = fetch_graffiti_file(MagicMock(), "art_bad", cache_dir=str(tmp_path))
         assert resp["status"] == "error"
+
+
+@patch("kremlin.services.graffiti_service.socket.socket")
+def test_connect_socket_ipv4(mock_socket):
+    from kremlin.services.graffiti_service import _connect_socket
+    mock_sock_inst = MagicMock()
+    mock_socket.return_value = mock_sock_inst
+
+    s = _connect_socket("127.0.0.1", 8080, 5.0)
+    assert s == mock_sock_inst
+    mock_socket.assert_called_with(socket.AF_INET, socket.SOCK_STREAM)
+    mock_sock_inst.settimeout.assert_called_with(5.0)
+    mock_sock_inst.connect.assert_called_with(("127.0.0.1", 8080))
+
 

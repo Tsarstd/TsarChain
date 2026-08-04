@@ -223,11 +223,13 @@ def _process_storage_hello(self, message, peer_ip, peer_port, src_node_id, src_p
                 if pinned_pk and pinned_pk != src_pubkey:
                     log.warning("[_process_storage_hello] storage pubkey change rejected nid=%s", src_node_id[:12])
                     return {"error": "storage_pubkey_pinned"}
+    msg_port = int(message.get("port") or 0)
+    storer_port = msg_port if msg_port > 0 else int(peer_port or 0)
     meta = {
         "addr": (message.get("address") or "").strip().lower(),
         "url": (message.get("url") or "").strip(),
         "ip": peer_ip,
-        "port": int(peer_port or 0),
+        "port": storer_port,
         "last_seen": int(time.time()),
         "alive": True,
         "trusted": bool(message.get("trusted", False)),

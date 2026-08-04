@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import time
+import socket
 import base64
 from typing import Any, Callable, Dict, Optional
 
@@ -247,90 +248,90 @@ def fetch_graffiti_file(
             continue
         host, port = endpoint
 
-        meta_payload = {"type": "STOR_GET_BY_ART", "art_id": art_norm, "include_data": False}
-        meta_resp = _send_storage_request(host, port, meta_payload, timeout=max(float(timeout), 8.0), max_len=msg_cap)
-
-        if not isinstance(meta_resp, dict):
-            last_error = "bad_response"
-            continue
-        if not meta_resp.get("found"):
-            last_error = meta_resp.get("reason") or "not_found"
-            continue
-        if meta_resp.get("status") == "error":
-            last_error = meta_resp.get("reason") or "error"
-            continue
-
-        gid = str(meta_resp.get("graffiti_id") or "").strip()
-        meta_info = meta_resp.get("meta") or {}
-
         try:
-            total_size = int(meta_info.get("size_bytes") or meta_info.get("size") or meta_info.get("bytes") or 0)
-        except Exception:
-            total_size = 0
+            meta_payload = {"type": "STOR_GET_BY_ART", "art_id": art_norm, "include_data": False}
+            meta_resp = _send_storage_request(host, port, meta_payload, timeout=max(float(timeout), 8.0), max_len=msg_cap)
 
-        if total_size <= 0:
-            payload = {
-                "type": "STOR_GET_BY_ART",
-                "art_id": art_norm,
-                "include_data": True,
-                "max_bytes": int(min(max_bytes, data_cap)),
-            }
-            res = _do_oneshot_fetch(
-                host=host, port=port, payload=payload, timeout=timeout, msg_cap=msg_cap,
-                art_norm=art_norm, meta_info=meta_info, cache_root=cache_root, log_tag="oneshot_unknown"
-            )
-            if isinstance(res, str):
-                last_error = res
+            if not isinstance(meta_resp, dict):
+                last_error = "bad_response"
                 continue
-            return res
-
-        if total_size > max_bytes:
-            last_error = "file_too_large"
-            continue
-
-        ext = _guess_media_ext(meta_info, art_norm)
-        cache_path = os.path.join(cache_root, f"{art_norm}{ext}")
-        tmp_path = cache_path + ".part"
-
-        try:
-            if os.path.isfile(cache_path) and os.path.getsize(cache_path) == int(total_size):
-                _cache_media_success(art_norm, meta_info, cache_path, int(total_size), ttl_sec=0)
-                log.info("[webdb] ok(disk_hit) art=%s host=%s size=%s cache=%s", art_norm[:16], host, total_size, True)
-                return {"status": "ok", "meta": meta_info, "cache_path": cache_path}
-        except Exception:
-            pass
-
-        one_shot_limit = int(min(int(data_cap), 8 * 1024 * 1024))
-        if int(total_size) <= one_shot_limit:
-            payload = {
-                "type": "STOR_GET_BY_ART",
-                "art_id": art_norm,
-                "include_data": True,
-                "max_bytes": int(min(int(total_size), int(data_cap))),
-            }
-            res = _do_oneshot_fetch(
-                host=host, port=port, payload=payload, timeout=timeout, msg_cap=msg_cap,
-                art_norm=art_norm, meta_info=meta_info, cache_root=cache_root, log_tag="oneshot"
-            )
-            if isinstance(res, str):
-                last_error = res
+            if not meta_resp.get("found"):
+                last_error = meta_resp.get("reason") or "not_found"
                 continue
-            return res
+            if meta_resp.get("status") == "error":
+                last_error = meta_resp.get("reason") or "error"
+                continue
 
-        burst = int(CFG.STOR_GET_RL_IP_BURST)
-        target_calls = max(2, min(8, max(2, burst - 2)))
-        chunk_raw = (int(total_size) + int(target_calls) - 1) // int(target_calls)
-        chunk_raw = max(1024 * 1024, int(chunk_raw))
-        chunk_raw = min(int(chunk_raw), int(min(int(data_cap), 64 * 1024 * 1024)))
+            gid = str(meta_resp.get("graffiti_id") or "").strip()
+            meta_info = meta_resp.get("meta") or {}
 
-        dl_timeout = max(float(timeout), 20.0)
+            try:
+                total_size = int(meta_info.get("size_bytes") or meta_info.get("size") or meta_info.get("bytes") or 0)
+            except Exception:
+                total_size = 0
 
-        offset = 0
-        calls = 0
-        start_ts = time.time()
-        ok = True
+            if total_size <= 0:
+                payload = {
+                    "type": "STOR_GET_BY_ART",
+                    "art_id": art_norm,
+                    "include_data": True,
+                    "max_bytes": int(min(max_bytes, data_cap)),
+                }
+                res = _do_oneshot_fetch(
+                    host=host, port=port, payload=payload, timeout=timeout, msg_cap=msg_cap,
+                    art_norm=art_norm, meta_info=meta_info, cache_root=cache_root, log_tag="oneshot_unknown"
+                )
+                if isinstance(res, str):
+                    last_error = res
+                    continue
+                return res
 
-        try:
+            if total_size > max_bytes:
+                last_error = "file_too_large"
+                continue
+
+            ext = _guess_media_ext(meta_info, art_norm)
+            cache_path = os.path.join(cache_root, f"{art_norm}{ext}")
+            tmp_path = cache_path + ".part"
+
+            try:
+                if os.path.isfile(cache_path) and os.path.getsize(cache_path) == int(total_size):
+                    _cache_media_success(art_norm, meta_info, cache_path, int(total_size), ttl_sec=0)
+                    log.info("[webdb] ok(disk_hit) art=%s host=%s size=%s cache=%s", art_norm[:16], host, total_size, True)
+                    return {"status": "ok", "meta": meta_info, "cache_path": cache_path}
+            except Exception:
+                pass
+
+            one_shot_limit = int(min(int(data_cap), 8 * 1024 * 1024))
+            if int(total_size) <= one_shot_limit:
+                payload = {
+                    "type": "STOR_GET_BY_ART",
+                    "art_id": art_norm,
+                    "include_data": True,
+                    "max_bytes": int(min(int(total_size), int(data_cap))),
+                }
+                res = _do_oneshot_fetch(
+                    host=host, port=port, payload=payload, timeout=timeout, msg_cap=msg_cap,
+                    art_norm=art_norm, meta_info=meta_info, cache_root=cache_root, log_tag="oneshot"
+                )
+                if isinstance(res, str):
+                    last_error = res
+                    continue
+                return res
+
+            burst = int(CFG.STOR_GET_RL_IP_BURST)
+            target_calls = max(2, min(8, max(2, burst - 2)))
+            chunk_raw = (int(total_size) + int(target_calls) - 1) // int(target_calls)
+            chunk_raw = max(1024 * 1024, int(chunk_raw))
+            chunk_raw = min(int(chunk_raw), int(min(int(data_cap), 64 * 1024 * 1024)))
+
+            dl_timeout = max(float(timeout), 20.0)
+
+            offset = 0
+            calls = 0
+            start_ts = time.time()
+            ok = True
+
             with open(tmp_path, "wb") as out:
                 while offset < int(total_size):
                     want = min(int(chunk_raw), int(total_size) - int(offset))

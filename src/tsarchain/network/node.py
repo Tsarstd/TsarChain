@@ -272,21 +272,13 @@ class Network(NetworkProxy):
     # -------------------------- Server / Accept ---------------------------
 
     def _find_available_port(self) -> Optional[int]:
-        use_ipv6 = CFG.IPV6_MODE is True
-        family = socket.AF_INET6 if use_ipv6 else socket.AF_INET
-        bind_addr = "::" if use_ipv6 else "0.0.0.0"
         for port in range(CFG.PORT_START, CFG.PORT_END + 1):
             if port in Network.active_ports:
                 continue
             try:
-                with socket.socket(family, socket.SOCK_STREAM) as s:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.settimeout(1)
-                    if use_ipv6 and hasattr(socket, "IPV6_V6ONLY"):
-                        try:
-                            s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
-                        except (AttributeError, OSError):
-                            pass
-                    s.bind((bind_addr, port))
+                    s.bind(("0.0.0.0", port))
                     return port
             except (socket.error, OSError):
                 continue

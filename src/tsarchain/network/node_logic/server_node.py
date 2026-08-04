@@ -26,24 +26,15 @@ log = get_ctx_logger("tsarchain.network.node_logic.server_node")
 
 
 def start_server(self):
-    use_ipv6 = CFG.IPV6_MODE is True
-    family = socket.AF_INET6 if use_ipv6 else socket.AF_INET
-    bind_addr = "::" if use_ipv6 else "0.0.0.0"
-
-    with socket.socket(family, socket.SOCK_STREAM) as s:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         self._server_sock = s
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        if use_ipv6 and hasattr(socket, "IPV6_V6ONLY"):
-            try:
-                s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
-            except (AttributeError, OSError):
-                pass
         s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
         s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
-        s.bind((bind_addr, self.port))
+        s.bind(("0.0.0.0", self.port))
         s.listen(8)
         s.settimeout(1.0)
-        log.info("[start_server] Listening on %s port %s (IPv6 Dual-Stack=%s)...", bind_addr, self.port, use_ipv6)
+        log.info("[start_server] Listening on 0.0.0.0 port %s...", self.port)
         while not self._stop.is_set():
             try:
                 conn, addr = s.accept()

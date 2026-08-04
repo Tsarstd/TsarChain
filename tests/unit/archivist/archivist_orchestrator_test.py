@@ -186,7 +186,7 @@ def test_auto_mark_paid(mock_orchestrator):
          patch("archivist.archivist_orchestrator.threading.Thread.start"):
         mock_orchestrator._auto_mark_paid(posts, files_by_art)
         mock_call.assert_any_call(
-            {"type": "STOR_PAID", "graffiti_id": "gid1", "txid": "tx1", "block_height": 100},
+            {"type": "STOR_PAID", "graffiti_id": "gid1", "art_id": "art1", "txid": "tx1", "block_height": 100},
             timeout=4.0
         )
 
