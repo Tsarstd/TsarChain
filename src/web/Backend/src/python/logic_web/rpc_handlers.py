@@ -377,3 +377,42 @@ def rpc_graffiti_file(client, opts: dict, fallback_art_id: str | None):
         "cache_path": resp.get("cache_path"),
     }
     return out
+
+
+def rpc_graffiti_media_meta(client, opts: dict, fallback_art_id: str | None = None):
+    art_id = (opts.get("art_id") or fallback_art_id or "").strip()
+    storer = (opts.get("storer_addr") or opts.get("storer") or "").strip()
+    cache_dir = (opts.get("cache_dir") or opts.get("cache") or "").strip() or None
+    if not art_id:
+        return {"status": "error", "reason": "missing_art_id"}
+    return db_media.get_graffiti_media_meta(
+        lambda payload: rpc_client._rpc_send(client, payload),
+        art_id,
+        storer_addr=storer,
+        cache_dir=cache_dir,
+        cache_scope=rpc_client._CACHE_SCOPE,
+    )
+
+
+def rpc_graffiti_chunk(client, opts: dict):
+    art_id = str(opts.get("art_id") or "").strip()
+    storer = (opts.get("storer_addr") or opts.get("storer") or "").strip()
+    try:
+        offset = int(opts.get("offset") or 0)
+    except Exception:
+        offset = 0
+    try:
+        length = int(opts.get("length") or db_media.GRAFFITI_CHUNK_BYTES)
+    except Exception:
+        length = db_media.GRAFFITI_CHUNK_BYTES
+    if not art_id:
+        return {"status": "error", "reason": "missing_art_id"}
+    return db_media.fetch_graffiti_chunk(
+        lambda payload: rpc_client._rpc_send(client, payload),
+        art_id,
+        offset=offset,
+        length=length,
+        storer_addr=storer,
+        cache_scope=rpc_client._CACHE_SCOPE,
+    )
+

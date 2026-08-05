@@ -292,6 +292,16 @@ class ExplorerService {
     return rpcCall("graffiti_file", payload, this.nodeHost, this.nodePort);
   }
 
+  async getGraffitiMediaMeta(artId) {
+    const payload = JSON.stringify({ art_id: artId });
+    return rpcCall("graffiti_media_meta", payload, this.nodeHost, this.nodePort);
+  }
+
+  async getGraffitiChunk(artId, offset, length) {
+    const payload = JSON.stringify({ art_id: artId, offset, length });
+    return rpcCall("graffiti_chunk", payload, this.nodeHost, this.nodePort);
+  }
+
   async getBlockRange({ startHeight = null, limit = 10, source = 'auto' } = {}) {
     const payload = {
       limit: Number(limit || 10),

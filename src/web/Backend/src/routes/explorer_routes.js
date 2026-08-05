@@ -247,37 +247,16 @@ router.get("/graffiti/:artId", async (req, res, next) => {
   }
 });
 
-router.get("/graffiti/:artId/media", graffitiMediaLimiter, async (req, res, next) => {
-  try {
-    cleanupGraffitiCache().catch((err) => console.warn("Cache cleanup error:", err));
-    const artId = req.params.artId;
-    if (!isArtId(artId)) {
-      return res.status(400).json({ error: "invalid_art_id" });
-    }
-    let filePath = await findCachedFile(artId);
-    let info = null;
-    if (!filePath) {
-      info = await svc.getGraffitiMediaInfo(artId);
-      if (info?.status !== "ok" || !info?.cache_path) {
-        return res.status(404).json({ error: "media_not_found" });
-      }
-      filePath = resolveCachePath(info.cache_path);
-    }
-    
-    if (!filePath) {
-      return res.status(404).json({ error: "media_not_found" });
-    }
-    
-    try {
-      await fsPromises.access(filePath);
-    } catch {
-      return res.status(404).json({ error: "media_not_found" });
-    }
+const STREAM_THRESHOLD_BYTES = 10 * 1024 * 1024;
+const STREAM_CHUNK_BYTES = 4 * 1024 * 1024;
 
+const serveLocalFile = async (req, res, next, filePath, meta = null) => {
+  try {
+    await fsPromises.access(filePath);
     touchFile(filePath).catch((err) => console.warn("Touch file error:", err));
     const stat = await fsPromises.stat(filePath);
     const size = stat.size;
-    const type = inferMediaType(info?.meta, filePath);
+    const type = inferMediaType(meta, filePath);
     res.setHeader("Content-Type", type);
     res.setHeader("Cache-Control", "public, max-age=300");
     res.setHeader("Accept-Ranges", "bytes");
@@ -287,20 +266,128 @@ router.get("/graffiti/:artId/media", graffitiMediaLimiter, async (req, res, next
       if (range.invalid) {
         res.status(416);
         res.setHeader("Content-Range", `bytes */${size}`);
-        return res.end();
+        res.end();
+        return true;
       }
       res.status(206);
       res.setHeader("Content-Range", `bytes ${range.start}-${range.end}/${size}`);
       res.setHeader("Content-Length", String(range.end - range.start + 1));
       const stream = fs.createReadStream(filePath, { start: range.start, end: range.end });
       stream.on("error", next);
-      return stream.pipe(res);
+      stream.pipe(res);
+      return true;
     }
 
     res.setHeader("Content-Length", String(size));
     const stream = fs.createReadStream(filePath);
     stream.on("error", next);
-    return stream.pipe(res);
+    stream.pipe(res);
+    return true;
+  } catch (err) {
+    console.warn("Failed to serve local cached file:", err);
+    return false;
+  }
+};
+
+const tryServeFromServiceCache = async (artId, req, res, next) => {
+  const info = await svc.getGraffitiMediaInfo(artId);
+  if (info?.status === "ok" && info?.cache_path) {
+    const resolvedPath = resolveCachePath(info.cache_path);
+    if (resolvedPath) {
+      return await serveLocalFile(req, res, next, resolvedPath, info.meta);
+    }
+  }
+  return false;
+};
+
+const streamGraffitiChunks = async (req, res, artId, totalSize, meta) => {
+  const type = inferMediaType(meta, meta?.filename || artId);
+  res.setHeader("Content-Type", type);
+  res.setHeader("Cache-Control", "public, max-age=300");
+  res.setHeader("Accept-Ranges", "bytes");
+
+  let start = 0;
+  let end = totalSize > 0 ? totalSize - 1 : 0;
+
+  const range = totalSize > 0 ? parseRangeHeader(req.headers.range, totalSize) : null;
+  if (range) {
+    if (range.invalid) {
+      res.status(416);
+      res.setHeader("Content-Range", `bytes */${totalSize}`);
+      return res.end();
+    }
+    start = range.start;
+    end = range.end;
+    res.status(206);
+    res.setHeader("Content-Range", `bytes ${start}-${end}/${totalSize}`);
+    res.setHeader("Content-Length", String(end - start + 1));
+  } else if (totalSize > 0) {
+    res.setHeader("Content-Length", String(totalSize));
+  }
+
+  let clientAborted = false;
+  req.on("close", () => {
+    clientAborted = true;
+  });
+
+  let currOffset = start;
+  const targetEnd = totalSize > 0 ? end : Number.MAX_SAFE_INTEGER;
+
+  while (currOffset <= targetEnd && !clientAborted) {
+    const want = totalSize > 0
+      ? Math.min(STREAM_CHUNK_BYTES, targetEnd - currOffset + 1)
+      : STREAM_CHUNK_BYTES;
+
+    const chunkResp = await svc.getGraffitiChunk(artId, currOffset, want);
+    if (chunkResp?.status !== "ok" || !chunkResp?.data_b64) {
+      break;
+    }
+
+    const buf = Buffer.from(chunkResp.data_b64, "base64");
+    if (buf.length === 0) break;
+
+    const canContinue = res.write(buf);
+    currOffset += buf.length;
+
+    if (!canContinue && !clientAborted) {
+      await new Promise((resolve) => res.once("drain", resolve));
+    }
+
+    if (chunkResp.eof) break;
+  }
+
+  res.end();
+};
+
+router.get("/graffiti/:artId/media", graffitiMediaLimiter, async (req, res, next) => {
+  try {
+    cleanupGraffitiCache().catch((err) => console.warn("Cache cleanup error:", err));
+    const artId = req.params.artId;
+    if (!isArtId(artId)) {
+      return res.status(400).json({ error: "invalid_art_id" });
+    }
+
+    const filePath = await findCachedFile(artId);
+    if (filePath && (await serveLocalFile(req, res, next, filePath))) {
+      return;
+    }
+
+    const metaResp = await svc.getGraffitiMediaMeta(artId);
+    if (metaResp?.status !== "ok") {
+      return res.status(404).json({ error: "media_not_found" });
+    }
+
+    const meta = metaResp.meta || {};
+    const totalSize = Number(meta.size_bytes || meta.size || metaResp.size_bytes || 0);
+
+    // Smart Caching: file size <= 10MB -> Full download to disk cache
+    if (totalSize > 0 && totalSize <= STREAM_THRESHOLD_BYTES) {
+      const served = await tryServeFromServiceCache(artId, req, res, next);
+      if (served) return;
+    }
+
+    // File size > 10MB -> On-demand HTTP streaming (4MB chunks)
+    await streamGraffitiChunks(req, res, artId, totalSize, meta);
   } catch (err) {
     next(err);
   }

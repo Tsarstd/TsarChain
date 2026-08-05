@@ -439,3 +439,51 @@ def test_rpc_history_book(mock_client):
                 
                 res = rpc_handlers.rpc_history_book(mock_client, "tsar123")
                 assert res["status"] == "success"
+
+
+def test_get_graffiti_media_meta(mock_store, tmp_path):
+    mock_store.get_bytes.return_value = None
+    with patch("web.Backend.src.python.logic_web.db_media.fetch_storers", return_value=[{"ip": "127.0.0.1", "port": 8080}]):
+        with patch("web.Backend.src.python.logic_web.db_media._send_storage_request") as mock_send:
+            mock_send.return_value = {
+                "status": "ok",
+                "found": True,
+                "graffiti_id": "gid123",
+                "meta": {"size_bytes": 15000000, "mime": "video/mp4", "filename": "sample.mp4"},
+            }
+            res = db_media.get_graffiti_media_meta(lambda p: None, "art_meta1", cache_dir=str(tmp_path))
+            assert res["status"] == "ok"
+            assert res["size_bytes"] == 15000000
+            assert res["meta"]["mime"] == "video/mp4"
+
+
+def test_fetch_graffiti_chunk(mock_store):
+    mock_store.get_bytes.return_value = None
+    with patch("web.Backend.src.python.logic_web.db_media.fetch_storers", return_value=[{"ip": "127.0.0.1", "port": 8080}]):
+        with patch("web.Backend.src.python.logic_web.db_media._send_storage_request") as mock_send:
+            mock_send.return_value = {
+                "status": "ok",
+                "found": True,
+                "data_b64": base64.b64encode(b"chunk_bytes").decode("utf-8"),
+                "offset": 0,
+                "length": 11,
+                "total_size": 15000000,
+                "eof": False,
+            }
+            res = db_media.fetch_graffiti_chunk(lambda p: None, "art_chunk1", offset=0, length=4096)
+            assert res["status"] == "ok"
+            assert res["data_b64"] == base64.b64encode(b"chunk_bytes").decode("utf-8")
+            assert res["total_size"] == 15000000
+
+
+def test_rpc_graffiti_media_meta_and_chunk(mock_client):
+    with patch("web.Backend.src.python.logic_web.db_media.get_graffiti_media_meta", return_value={"status": "ok", "size_bytes": 100}):
+        res = rpc_handlers.rpc_graffiti_media_meta(mock_client, {"art_id": "art1"})
+        assert res["status"] == "ok"
+        assert res["size_bytes"] == 100
+
+    with patch("web.Backend.src.python.logic_web.db_media.fetch_graffiti_chunk", return_value={"status": "ok", "data_b64": "abc"}):
+        res2 = rpc_handlers.rpc_graffiti_chunk(mock_client, {"art_id": "art1", "offset": 0, "length": 4096})
+        assert res2["status"] == "ok"
+        assert res2["data_b64"] == "abc"
+

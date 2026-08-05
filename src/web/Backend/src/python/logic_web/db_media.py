@@ -200,6 +200,174 @@ def _do_oneshot_fetch(
     return {"status": "ok", "meta": meta_out, "cache_path": cache_path}
 
 
+def get_graffiti_media_meta(
+    rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
+    art_id: str,
+    *,
+    storer_addr: Optional[str] = None,
+    cache_dir: Optional[str] = None,
+    cache_scope: Optional[str] = None,
+    stor_list_ttl_sec: Optional[int] = None,
+    timeout: float = 5.0,
+) -> Dict[str, Any]:
+    art_norm = (art_id or "").strip().lower()
+    art_norm = os.path.basename(art_norm).replace("..", "").replace("/", "").replace("\\", "")
+    if not art_norm:
+        return {"status": "error", "reason": "missing_art_id"}
+
+    cached = _get_cached_graffiti_file(art_norm, cache_dir)
+    if cached is not None and cached.get("status") == "ok":
+        cache_path = cached.get("cache_path")
+        size_bytes = os.path.getsize(cache_path) if cache_path and os.path.isfile(cache_path) else 0
+        meta = cached.get("meta") or {}
+        if size_bytes > 0 and "size_bytes" not in meta:
+            meta["size_bytes"] = size_bytes
+        return {
+            "status": "ok",
+            "cached": True,
+            "meta": meta,
+            "cache_path": cache_path,
+            "size_bytes": size_bytes,
+        }
+
+    storers = fetch_storers(rpc_call, cache_scope=cache_scope, ttl_sec=stor_list_ttl_sec)
+    if not storers:
+        return {"status": "error", "reason": "no_storers"}
+
+    preferred, others = [], []
+    storer_target = (storer_addr or "").strip().lower()
+    for meta in storers:
+        addr = str(meta.get("addr") or meta.get("address") or "").strip().lower()
+        (preferred if storer_target and addr == storer_target else others).append(meta)
+    candidates = preferred + others
+
+    last_error = None
+    msg_cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
+    for meta in candidates:
+        endpoint = _pick_endpoint(meta)
+        if not endpoint:
+            continue
+        host, port = endpoint
+
+        try:
+            meta_payload = {"type": "STOR_GET_BY_ART", "art_id": art_norm, "include_data": False}
+            meta_resp = _send_storage_request(host, port, meta_payload, timeout=max(float(timeout), 8.0), max_len=msg_cap)
+
+            if not isinstance(meta_resp, dict):
+                last_error = "bad_response"
+                continue
+            if not meta_resp.get("found"):
+                last_error = meta_resp.get("reason") or "not_found"
+                continue
+            if meta_resp.get("status") == "error":
+                last_error = meta_resp.get("reason") or "error"
+                continue
+
+            gid = str(meta_resp.get("graffiti_id") or "").strip()
+            meta_info = meta_resp.get("meta") or {}
+            try:
+                total_size = int(meta_info.get("size_bytes") or meta_info.get("size") or meta_info.get("bytes") or 0)
+            except Exception:
+                total_size = 0
+
+            return {
+                "status": "ok",
+                "cached": False,
+                "graffiti_id": gid,
+                "meta": meta_info,
+                "size_bytes": total_size,
+            }
+        except Exception:
+            last_error = "io_error"
+            continue
+
+    return {"status": "error", "reason": last_error or "unavailable"}
+
+
+def fetch_graffiti_chunk(
+    rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
+    art_id: str,
+    offset: int = 0,
+    length: int = CFG.GRAFFITI_CHUNK_BYTES,
+    *,
+    storer_addr: Optional[str] = None,
+    cache_scope: Optional[str] = None,
+    stor_list_ttl_sec: Optional[int] = None,
+    timeout: float = 10.0,
+) -> Dict[str, Any]:
+    art_norm = (art_id or "").strip().lower()
+    art_norm = os.path.basename(art_norm).replace("..", "").replace("/", "").replace("\\", "")
+    if not art_norm:
+        return {"status": "error", "reason": "missing_art_id"}
+
+    offset = max(0, int(offset or 0))
+    length = max(1024, min(int(length or CFG.GRAFFITI_CHUNK_BYTES), CFG.GRAFFITI_CHUNK_BYTES))
+
+    storers = fetch_storers(rpc_call, cache_scope=cache_scope, ttl_sec=stor_list_ttl_sec)
+    if not storers:
+        return {"status": "error", "reason": "no_storers"}
+
+    preferred, others = [], []
+    storer_target = (storer_addr or "").strip().lower()
+    for meta in storers:
+        addr = str(meta.get("addr") or meta.get("address") or "").strip().lower()
+        (preferred if storer_target and addr == storer_target else others).append(meta)
+    candidates = preferred + others
+
+    last_error = None
+    msg_cap = int(CFG.GRAFFITI_MAX_MSG_BYTES)
+    for meta in candidates:
+        endpoint = _pick_endpoint(meta)
+        if not endpoint:
+            continue
+        host, port = endpoint
+
+        try:
+            chunk_payload = {
+                "type": "STOR_GET_BY_ART",
+                "art_id": art_norm,
+                "include_data": True,
+                "offset": offset,
+                "length": length,
+                "max_bytes": length,
+            }
+            resp = _send_storage_request(host, port, chunk_payload, timeout=max(float(timeout), 10.0), max_len=msg_cap)
+            if not isinstance(resp, dict):
+                last_error = "bad_response"
+                continue
+            if not resp.get("found"):
+                last_error = resp.get("reason") or "not_found"
+                continue
+            if resp.get("status") == "error":
+                last_error = resp.get("reason") or "error"
+                continue
+
+            data_b64 = resp.get("data_b64") or ""
+            if not data_b64 and not resp.get("eof"):
+                last_error = "no_data"
+                continue
+
+            total_size = int(resp.get("total_size") or 0)
+            eof = bool(resp.get("eof", False))
+            resp_offset = int(resp.get("offset") if resp.get("offset") is not None else offset)
+            resp_length = int(resp.get("length") if resp.get("length") is not None else 0)
+
+            return {
+                "status": "ok",
+                "data_b64": data_b64,
+                "offset": resp_offset,
+                "length": resp_length,
+                "total_size": total_size,
+                "eof": eof,
+                "meta": resp.get("meta") or {},
+            }
+        except Exception:
+            last_error = "io_error"
+            continue
+
+    return {"status": "error", "reason": last_error or "unavailable"}
+
+
 @benchmark(label="fetch_graffiti_file", threshold_ms=15.0)
 def fetch_graffiti_file(
     rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],

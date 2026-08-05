@@ -748,6 +748,7 @@ GRAFFITI_ALLOWED_EXT          = ("jpg", "jpeg", "mp4", "mkv", "pdf")  # extensio
 
 # ---- STORAGE POLICY ----
 STORAGE_UPLOAD_CHUNK          = 10 * 1024 * 1024  # chunk size used when slicing storage payloads
+GRAFFITI_CHUNK_BYTES          = 4 * 1024 * 1024  # 4MB chunk size for streaming (web)
 
 
 # ---- CONTRACT METADATA ----

@@ -403,6 +403,17 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
       return;
     }
 
+    const size = Number(data?.size || data?.size_bytes || 0);
+    const isLargeOrStreamable = isVideo || (size > 10 * 1024 * 1024);
+
+    if (isLargeOrStreamable) {
+      // Direct HTTP Streaming mode: allow browser native HTTP Range streaming
+      setIsLoaded(true);
+      setLoadingProgress(100);
+      setMediaBlobUrl(null);
+      return;
+    }
+
     let isMounted = true;
     setIsLoaded(false);
     setLoadingProgress(0);
@@ -453,7 +464,7 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
         URL.revokeObjectURL(mediaBlobUrl);
       }
     };
-  }, [data?.art_id, data?.preview_url]);
+  }, [data?.art_id, data?.preview_url, data?.size, data?.size_bytes, isVideo]);
 
   // Render media preview
   const renderMediaPreview = () => {

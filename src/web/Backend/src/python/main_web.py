@@ -137,6 +137,13 @@ def _dispatch_rpc(op: str, param: object | None, host: str, port: int):
         opts = param_norm if isinstance(param_norm, dict) else _parse_opts(param_norm)
         fallback = param_norm if isinstance(param_norm, str) else None
         return rpc_handlers.rpc_graffiti_file(client, opts, fallback)
+    if op == "graffiti_media_meta":
+        opts = param_norm if isinstance(param_norm, dict) else _parse_opts(param_norm)
+        fallback = param_norm if isinstance(param_norm, str) else None
+        return rpc_handlers.rpc_graffiti_media_meta(client, opts, fallback)
+    if op == "graffiti_chunk":
+        opts = param_norm if isinstance(param_norm, dict) else _parse_opts(param_norm)
+        return rpc_handlers.rpc_graffiti_chunk(client, opts)
     if op == "prefetch_blocks":
         try:
             db_blocks.prefetch_blocks(lambda payload: _rpc_send(client, payload))
