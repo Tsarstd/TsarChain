@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import os
 import time
-import socket
 import base64
 from typing import Any, Callable, Dict, Optional
 

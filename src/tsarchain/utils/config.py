@@ -164,16 +164,14 @@ BLOCK_BACKUP_SNAPSHOT = 15  # Align last backup marker to nearest interval to av
 # =============================================================================
 # 3. FILESYSTEM LAYOUT
 # =============================================================================
-CHAIN_JOURNAL_FILE      = ""
 STATE_HEIGHT_CACHE_TTL  = 2.0  # height for utxo validation & cache
 
 
 # ---- ARCHIVIST LMDB PATH ----
-ARCHIVIST_INDEX_DB_PATH        = str(PROJECT_ROOT / "data/archivist/storage/index_db")
-ARCHIVIST_FINAL_DB_PATH        = str(PROJECT_ROOT / "data/archivist/storage/final_db")
+ARCHIVIST_INDEX_DB_PATH         = str(PROJECT_ROOT / "data/archivist/storage/index_db")
+ARCHIVIST_KEY_PATH              = str(PROJECT_ROOT / "data/archivist/archivist_key.json") # primary node identity key storage path
 ARCHIVIST_PAYOUT_GUARD_DB_PATH  = str(PROJECT_ROOT / "data/archivist/storage/payout_guard")
 ARCHIVIST_PAYOUT_GUARD_MAP_SIZE = 4 * 1024 * 1024  # 4MB init
-ARCHIVIST_KEY_PATH             = str(PROJECT_ROOT / "data/archivist/archivist_key.json") # primary node identity key storage path
 
 
 # ---- WALLET KEY FILES ----
