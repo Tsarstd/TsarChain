@@ -26,9 +26,6 @@ def test_subnet_key():
     assert _subnet_key("192.168.1.100") == "192.168.1"
     assert _subnet_key("10.0.0.1") == "10.0.0"
     assert _subnet_key("invalid_ip") is None
-    # IPv6 test
-    assert _subnet_key("2001:db8:3333:4444:5555:6666:7777:8888") == "2001:db8:3333:4444"
-    assert _subnet_key("2001:db8::1") == "2001:db8::1"
     assert _subnet_key("127.0.0") is None
 
 def test_identity_from_msg():

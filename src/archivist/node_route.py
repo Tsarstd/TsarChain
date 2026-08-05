@@ -50,24 +50,33 @@ def _handle_stor_index(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 def _finalize_storage(server, aid: str, meta: dict) -> tuple[bool, Optional[str]]:
     already_final = server.db.has_final(aid) if hasattr(server.db, "has_final") else (server.db.get_final_bytes_range(aid, 0, 1) is not None)
     if already_final is not True:
-        data = server.db.pop_incoming(aid)
-        if data is None:
-            p = meta.get("path")
-            if p and os.path.isfile(p):
-                try:
-                    with open(p, "rb") as f:
-                        data = f.read()
-                    try:
-                        os.remove(p)
-                    except OSError:
-                        pass
-                except OSError:
-                    pass
-        if data is None:
+        promoted = False
+        if hasattr(server.db, "promote_incoming"):
+            promoted = (server.db.promote_incoming(aid) is True)
+        if not promoted:
+            data = server.db.pop_incoming(aid) if hasattr(server.db, "pop_incoming") else None
+            if data is None:
+                p = meta.get("path")
+                if p and os.path.isfile(p):
+                    final_p = server.db._final_blob_path(aid) if hasattr(server.db, "_final_blob_path") else None
+                    if final_p:
+                        os.makedirs(os.path.dirname(final_p) or ".", exist_ok=True)
+                        try:
+                            os.replace(p, final_p)
+                            promoted = True
+                        except OSError:
+                            pass
+            if data is not None:
+                server.db.put_final(aid, data)
+                promoted = True
+        if not promoted and not server.db.has_final(aid):
             return False, "missing_file"
-        server.db.put_final(aid, data)
     server.db.delete_blob(aid, incoming=True)
-    meta["path"] = f"lmdb://final/{aid}"
+    blob_p = server.db._final_blob_path(aid) if hasattr(server.db, "_final_blob_path") else None
+    if blob_p and isinstance(blob_p, str):
+        meta["path"] = blob_p
+    else:
+        meta["path"] = f"lmdb://final/{aid}"
     meta["state"] = "stored"
     return True, None
 
@@ -238,8 +247,18 @@ def _get_chunk_and_merkle(server, aid: str, meta: dict, offset: int, length: int
         raise FileNotFoundError("file_missing")
     merkle_path = server.db.get_final_merkle_path(aid, merkle_chunk, chunk_index)
     if merkle_path is None:
-        raise FileNotFoundError("file_missing")
-    log.debug("use merkle_path_for_lmdb")
+        blob_path = server.db._final_blob_path(aid)
+        if not os.path.isfile(blob_path):
+            blob_path = server.db._incoming_bin_path(aid)
+        if not os.path.isfile(blob_path):
+            blob_path = server.db._incoming_part_path(aid)
+        if os.path.isfile(blob_path):
+            merkle_path = GRAFFITI.merkle_path_for_file(blob_path, merkle_chunk, chunk_index)
+            log.debug("use merkle_path_for_file")
+        else:
+            raise FileNotFoundError("file_missing")
+    else:
+        log.debug("use merkle_path_for_lmdb")
     return chunk, merkle_path
 
 

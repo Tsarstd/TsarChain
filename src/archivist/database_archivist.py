@@ -51,8 +51,6 @@ class ArchivistDatabase:
 
         if self.enable_index:
             self._kv_index = self._open_store(CFG.ARCHIVIST_INDEX_DB_PATH)
-            if self.enable_blobs:
-                self._kv_final = self._open_store(CFG.ARCHIVIST_FINAL_DB_PATH)
 
 
     # ---------------- Index ----------------
@@ -92,7 +90,15 @@ class ArchivistDatabase:
             self._kv_index.put_batch("idx", ops)
 
 
-    # ---------------- Blob operations (incoming filesystem, final LMDB) ----------------
+    # ---------------- Blob operations (incoming filesystem, final filesystem + LMDB fallback) ----------------
+    def _blobs_dir(self) -> str:
+        path = os.path.join(self.storage_dir, "blobs")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def _final_blob_path(self, gid: str) -> str:
+        return os.path.join(self._blobs_dir(), f"{gid}.bin")
+
     def append_incoming(self, gid: str, chunk: bytes, max_chunk: int) -> int:
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
@@ -111,7 +117,6 @@ class ArchivistDatabase:
             f.write(chunk)
         return new_size
 
-
     def get_incoming_bytes(self, gid: str) -> Optional[bytes]:
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
@@ -123,13 +128,11 @@ class ArchivistDatabase:
         with open(path, "rb") as f:
             return f.read()
 
-
     def has_final(self, gid: str) -> bool:
         if not self.enable_blobs:
             return False
-        key = f"blob:{gid}".encode("utf-8")
-        data = self._kv_final.get_bytes_range("final", key, 0, 1)
-        return data is not None
+        final_path = self._final_blob_path(gid)
+        return os.path.isfile(final_path)
 
     def pop_incoming(self, gid: str) -> Optional[bytes]:
         if not self.enable_blobs:
@@ -157,34 +160,69 @@ class ArchivistDatabase:
         self.delete_blob(gid, incoming=True)
         return data
 
-
     def put_final(self, gid: str, data: bytes) -> None:
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
-        key = f"blob:{gid}".encode("utf-8")
-        self._kv_final.put_bytes("final", key, bytes(data))
-
+        final_path = self._final_blob_path(gid)
+        os.makedirs(os.path.dirname(final_path) or ".", exist_ok=True)
+        with open(final_path, "wb") as f:
+            f.write(data)
 
     def promote_incoming(self, gid: str) -> bool:
         """
-        Pindahkan blob dari incoming filesystem ke final_db. Mengembalikan True jika ada data yang dipindah.
+        Pindahkan blob dari incoming filesystem ke blobs/.
+        Mengembalikan True jika ada data yang dipindah.
         """
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
-        data = self.pop_incoming(gid)
-        if data is None:
-            return False
-        self.put_final(gid, data)
-        return True
+        bin_path = self._incoming_bin_path(gid)
+        part_path = self._incoming_part_path(gid)
+        src_path = bin_path if os.path.isfile(bin_path) else part_path
 
+        if not os.path.isfile(src_path):
+            inc_dir = self._incoming_dir()
+            if os.path.isdir(inc_dir):
+                try:
+                    for fname in os.listdir(inc_dir):
+                        if fname.startswith(gid):
+                            src_path = os.path.join(inc_dir, fname)
+                            break
+                except OSError:
+                    pass
+
+        if not os.path.isfile(src_path):
+            return False
+
+        final_path = self._final_blob_path(gid)
+        os.makedirs(os.path.dirname(final_path) or ".", exist_ok=True)
+        
+        # OS fast rename/move
+        try:
+            os.replace(src_path, final_path)
+        except OSError:
+            with open(src_path, "rb") as sf, open(final_path, "wb") as df:
+                df.write(sf.read())
+            try:
+                os.remove(src_path)
+            except OSError:
+                pass
+        return True
 
     def get_final_bytes_range(self, gid: str, offset: int, length: int) -> Optional[bytes]:
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
-        key = f"blob:{gid}".encode("utf-8")
-        data = self._kv_final.get_bytes_range("final", key, offset, length)
-        if data is not None:
-            return bytes(data)
+        
+        # 1. Fast path: check filesystem blob
+        final_path = self._final_blob_path(gid)
+        if os.path.isfile(final_path):
+            try:
+                with open(final_path, "rb") as f:
+                    f.seek(int(offset))
+                    return f.read(int(length))
+            except OSError:
+                pass
+
+        # 2. Fallback: check incoming file
         bin_path = self._incoming_bin_path(gid)
         part_path = self._incoming_part_path(gid)
         path = bin_path if os.path.isfile(bin_path) else part_path
@@ -207,13 +245,18 @@ class ArchivistDatabase:
                 pass
         return None
 
-
     def get_final_merkle_path(self, gid: str, chunk_size: int, index: int) -> Optional[list]:
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
-        key = f"blob:{gid}".encode("utf-8")
-        return self._kv_final.get_merkle_path("final", key, chunk_size, index)
-
+        blob_path = self._final_blob_path(gid)
+        if not os.path.isfile(blob_path):
+            blob_path = self._incoming_bin_path(gid)
+        if not os.path.isfile(blob_path):
+            blob_path = self._incoming_part_path(gid)
+        if os.path.isfile(blob_path):
+            from tsarchain.contracts import graffiti as GRAFFITI
+            return GRAFFITI.merkle_path_for_file(blob_path, chunk_size, index)
+        return None
 
     def delete_blob(self, gid: str, *, incoming: bool = False, final: bool = False) -> None:
         if not self.enable_blobs:
@@ -237,9 +280,36 @@ class ArchivistDatabase:
                     except OSError:
                         pass
         if final:
-            key = f"blob:{gid}".encode("utf-8")
-            self._kv_final.delete("final", key)
+            final_path = self._final_blob_path(gid)
+            if os.path.isfile(final_path):
+                try:
+                    os.remove(final_path)
+                except OSError:
+                    pass
 
+    def cleanup_expired_incoming(self, max_age_seconds: int = 7200) -> int:
+        """
+        Garbage collector untuk membersihkan file .part / unconfirmed uploads yang mengendap.
+        """
+        inc_dir = self._incoming_dir()
+        if not os.path.isdir(inc_dir):
+            return 0
+        cleaned = 0
+        now = time.time()
+        try:
+            for fname in os.listdir(inc_dir):
+                full_path = os.path.join(inc_dir, fname)
+                if os.path.isfile(full_path):
+                    mtime = os.path.getmtime(full_path)
+                    if (now - mtime) > max_age_seconds:
+                        try:
+                            os.remove(full_path)
+                            cleaned += 1
+                        except OSError:
+                            pass
+        except OSError:
+            pass
+        return cleaned
 
     # ---------------- KV helpers ----------------
     def _open_store(self, path: str):
@@ -269,19 +339,17 @@ class ArchivistDatabase:
         log.info(f"Archivist LMDB storage initialized at '{path}' [Drive Profile: {dt.upper()}]")
         return store
 
-
     def _incoming_dir(self) -> str:
         path = os.path.join(self.storage_dir, "incoming")
         os.makedirs(path, exist_ok=True)
         return path
 
-
     def _incoming_part_path(self, gid: str) -> str:
         return os.path.join(self._incoming_dir(), f"{gid}.part")
-
 
     def _incoming_bin_path(self, gid: str) -> str:
         return os.path.join(self._incoming_dir(), f"{gid}.bin")
 
 
 __all__ = ["ArchivistDatabase"]
+

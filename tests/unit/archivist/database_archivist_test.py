@@ -73,10 +73,9 @@ def test_blobs_disabled(tmp_path):
 
 @patch("archivist.database_archivist._native_open_storage")
 def test_kv_operations(mock_native, tmp_path):
-    # Mock LMDB store
+    # Mock LMDB index store
     mock_store_idx = MagicMock()
-    mock_store_final = MagicMock()
-    mock_native.side_effect = [mock_store_idx, mock_store_final]
+    mock_native.return_value = mock_store_idx
     
     db = ArchivistDatabase(storage_dir=str(tmp_path), enable_blobs=True, enable_index=True)
     
@@ -86,21 +85,19 @@ def test_kv_operations(mock_native, tmp_path):
     assert mock_store_idx.clear_db.called
     assert mock_store_idx.put_batch.called
     
-    # Test promote incoming
-    db.append_incoming("gid2", b"data", 100)
+    # Test promote incoming (filesystem)
+    db.append_incoming("gid2", b"0123456789", 100)
     promoted = db.promote_incoming("gid2")
     assert promoted is True
-    assert mock_store_final.put_bytes.called
+    assert db.has_final("gid2") is True
     
     # Test get_final_bytes_range
-    mock_store_final.get_bytes_range.return_value = b"nal"
     res_range = db.get_final_bytes_range("gid2", 2, 3)
-    assert res_range == b"nal"
-    mock_store_final.get_bytes_range.assert_called_with("final", b"blob:gid2", 2, 3)
+    assert res_range == b"234"
     
     # Test delete
     db.delete_blob("gid2", final=True)
-    assert mock_store_final.delete.called
+    assert db.has_final("gid2") is False
 
 @patch("archivist.database_archivist._native_open_storage")
 def test_load_index_kv(mock_native, tmp_path):
