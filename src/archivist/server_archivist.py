@@ -13,7 +13,6 @@ from . import wallet_route, node_route
 from .storage_guard import StorageGuard
 from tsarchain.utils import config as CFG
 from .database_archivist import ArchivistDatabase
-from .http_stream import ArchivistHTTPServer
 from tsarchain.network.protocol import (
     is_envelope,
     send_message,
@@ -26,7 +25,7 @@ from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.contracts.storage_node.server")
 
 class StorageServer:
-    def __init__(self, host: str, port: int, storage_dir: str, enable_http: bool = True, http_port: int = 0):
+    def __init__(self, host: str, port: int, storage_dir: str):
         self.host = host
         self.port = int(port)
         self.storage_dir = storage_dir
@@ -35,15 +34,6 @@ class StorageServer:
         self._load_index()
         self.guard = StorageGuard()
         self._stop = False
-        
-        self.http_server = None
-        if enable_http:
-            try:
-                self.http_server = ArchivistHTTPServer(self, host="0.0.0.0", http_port=http_port)
-                self.http_server.start()
-            except Exception as e:
-                log.warning("[http_stream] failed to start http server: %s", e)
-
         self.thread = threading.Thread(target=self._serve, daemon=True)
         self.thread.start()
 
