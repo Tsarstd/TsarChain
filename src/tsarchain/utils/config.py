@@ -418,7 +418,7 @@ HANDSHAKE_RL_PER_IP_WINDOW_S   = 30  # time window for handshake rate limit
 HANDSHAKE_RL_PER_NODE_BURST    = 80  # burst limit per node_id to avoid CGNAT false positives
 
 HANDSHAKE_RL_PER_NODE_WINDOW_S = 10  # time window for per-node limiter
-HANDSHAKE_RL_SUBNET_BURST      = 100  # burst cap per /24 subnet (IPv4) or /64 (IPv6) for floods
+HANDSHAKE_RL_SUBNET_BURST      = 100  # burst cap per /24
 HANDSHAKE_RL_SUBNET_WINDOW_S   = 20  # subnet limiter window (seconds)
 
 CGNAT_IP_BURST_MULT            = 3  # multiplier to loosen per-IP limits when identity is present
