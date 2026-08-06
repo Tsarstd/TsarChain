@@ -1,0 +1,23 @@
+# Workflows and GitHub Settings
+.github/workflows/       @Tsarstd
+.github/                 @Tsarstd
+
+# Unit Tests (Python & Rust)
+tests/                   @Tsarstd
+tsarcore_native/tests/   @Tsarstd
+
+# Core Consensus
+src/tsarchain/consensus/ @Tsarstd
+src/tsarchain/contracts/ @Tsarstd
+src/tsarchain/utils/     @Tsarstd
+src/tsarchain/network/   @Tsarstd
+tsarcore_native/src/     @Tsarstd
+assets/                  @Tsarstd
+
+# Wallet & Archivist
+src/kremlin/security/    @Tsarstd
+src/archivist/           @Tsarstd
+
+# Website
+src/web/Backend/         @Tsarstd
+src/web/Frontend/        @Tsarstd

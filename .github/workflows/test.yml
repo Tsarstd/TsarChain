@@ -7,11 +7,37 @@ on:
     branches: [ "main" ]
 
 jobs:
-  test-python:
-    name: Test Python
+  test-rust:
+    name: Test Rust Core (tsarcore_native)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Rust tests
+        working-directory: ./tsarcore_native
+        run: cargo test
+
+  test-python:
+    name: Test Python Architecture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for Test File Modifications in PR
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin main:main || true
+          MODIFIED_TESTS=$(git diff --name-only main...HEAD | grep -E '^tests/|^tsarcore_native/tests/' || true)
+          if [ -n "$MODIFIED_TESTS" ]; then
+            echo "::warning::PR attempts to modify unit test files:"
+            echo "$MODIFIED_TESTS"
+            echo "Unit test files must not be altered by external contributors without core maintainer approval."
+          fi
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -31,8 +57,4 @@ jobs:
 
       - name: Run Python unit tests
         run: |
-         xvfb-run -a env PYTHONPATH=src pytest
-
-      - name: Run Rust tests
-        working-directory: ./tsarcore_native
-        run: cargo test
+          xvfb-run -a env PYTHONPATH=src pytest
