@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Tsarstd/Graffiti-Protocol/actions/workflows/test.yml"><img alt="Unit Tests" src="https://github.com/Tsarstd/Graffiti-Protocol/actions/workflows/test.yml/badge.svg"></a>
   <img alt="License" src="https://img.shields.io/badge/License-MIT-brightgreen">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.11%2B-blue">
   <img alt="Rust" src="https://img.shields.io/badge/Rust-Pyo3-black">
@@ -37,6 +38,8 @@ Graffiti Protocol focuses on **Voice Sovereignty**: preserving *cultural archive
 - [Roadmap](#️-roadmap)
 - [Performance Evidence](#-performance-evidence)
 - [Documentation](#-documentation)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
 - [License](#-license)
 
 ---
