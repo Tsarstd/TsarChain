@@ -2,22 +2,32 @@
 .github/workflows/       @Tsarstd
 .github/                 @Tsarstd
 
-# Unit Tests (Python & Rust)
-tests/                   @Tsarstd
-tsarcore_native/tests/   @Tsarstd
+# Main App
+apps/                    @Tsarstd
 
 # Core Consensus
-src/tsarchain/consensus/ @Tsarstd
-src/tsarchain/contracts/ @Tsarstd
-src/tsarchain/utils/     @Tsarstd
-src/tsarchain/network/   @Tsarstd
-tsarcore_native/src/     @Tsarstd
-assets/                  @Tsarstd
+src/tsarchain/           @Tsarstd
 
-# Wallet & Archivist
-src/kremlin/security/    @Tsarstd
+# Kremlin Wallet
+src/kremlin/             @Tsarstd
+
+# Archivist Node
 src/archivist/           @Tsarstd
 
 # Website
 src/web/Backend/         @Tsarstd
 src/web/Frontend/        @Tsarstd
+
+# Rust Native
+tsarcore_native/src/     @Tsarstd
+
+# Unit Tests (Python & Rust)
+tests/                   @Tsarstd
+tsarcore_native/tests/   @Tsarstd
+
+# Tools, Docs, etc.
+docs/                    @Tsarstd
+benchmarks/              @Tsarstd
+tools/                   @Tsarstd
+assets/                  @Tsarstd
+log_samples/             @Tsarstd
