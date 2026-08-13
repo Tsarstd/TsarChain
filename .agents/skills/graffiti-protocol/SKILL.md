@@ -133,6 +133,8 @@ $env:PYTHONPATH="src"; pytest tests/unit/tsarchain/consensus/blockchain_test.py 
 
 # Pytest with coverage report:
 $env:PYTHONPATH="src"; pytest --cov=src --cov-report=term-missing
+
+# NOTE: always use .venv to run python tests.
 ```
 
 ```bash
