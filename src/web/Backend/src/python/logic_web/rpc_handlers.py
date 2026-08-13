@@ -55,7 +55,7 @@ def rpc_receipt(client, txid: str):
     if isinstance(tx_data, dict) and tx_data.get("error"):
         return {"status": "error", "message": f"Failed to fetch transaction: {tx_data.get('error')}"}
     
-    output_dir = "data/web/receipts"
+    output_dir = CFG.WEB_RECEIPTS_DIR
     receipt_gen = build_receipt.PaymentReceiptGenerator(output_dir)
     result = receipt_gen.generate_receipt_base64(tx_data)
     if result.get("status") == "success" and txid_norm:
@@ -118,7 +118,7 @@ def rpc_history_book(client, address: str):
             "message": f"History Book requires at least 20 transactions (found {total_txs})."
         }
     
-    output_dir = "data/web/history_books"
+    output_dir = CFG.WEB_HISTORY_BOOKS_DIR
     hb_gen = build_history_book.HistoryBookGenerator(output_dir)
     result = hb_gen.generate_history_book_base64(tx_data)
     if result.get("status") == "success" and addr_norm:

@@ -9,6 +9,7 @@ import time
 import base64
 import threading
 
+from tsarchain.utils import config as CFG
 from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.web.logic_web.db_files")
 
@@ -20,7 +21,7 @@ def get_receipt_file_path(txid: str) -> str:
     txid_safe = os.path.basename(txid_norm).replace("..", "").replace("/", "").replace("\\", "")
     if not txid_safe:
         return ""
-    output_dir = "data/web/receipts"
+    output_dir = CFG.WEB_RECEIPTS_DIR
     os.makedirs(output_dir, exist_ok=True)
     return os.path.join(output_dir, f"{txid_safe[:64]}.jpg")
 
@@ -63,7 +64,7 @@ def schedule_receipt_deletion(txid: str, delay_seconds: int):
 
 
 def cleanup_receipt_files(max_age_seconds: int):
-    output_dir = "data/web/receipts"
+    output_dir = CFG.WEB_RECEIPTS_DIR
     if not os.path.exists(output_dir):
         return
     
@@ -84,7 +85,7 @@ def get_history_book_file_path(address: str) -> str:
     addr_safe = os.path.basename(addr_norm).replace("..", "").replace("/", "").replace("\\", "")
     if not addr_safe:
         return ""
-    output_dir = "data/web/history_books"
+    output_dir = CFG.WEB_HISTORY_BOOKS_DIR
     os.makedirs(output_dir, exist_ok=True)
     return os.path.join(output_dir, f"history_{addr_safe[:16]}.pdf")
 
@@ -127,7 +128,7 @@ def schedule_history_book_deletion(address: str, delay_seconds: int):
 
 
 def cleanup_history_book_files(max_age_seconds: int):
-    output_dir = "data/web/history_books"
+    output_dir = CFG.WEB_HISTORY_BOOKS_DIR
     if not os.path.exists(output_dir):
         return
     

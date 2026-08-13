@@ -128,7 +128,7 @@ def _get_cached_graffiti_file(art_id: str, cache_dir: Optional[str]) -> Optional
     data_raw = store.get_bytes(db_cache.WEB_MEDIA_DB, _media_data_key(art_id))
     if data_raw is None:
         return None
-    cache_root = cache_dir or os.path.join("data", "web", "graffiti_cache")
+    cache_root = cache_dir or CFG.WEB_MEDIA_CACHE_DIR
     cache_path = _write_cache_file(cache_root, art_id, entry.get("meta") or {}, bytes(data_raw))
     return {"status": "ok", "meta": entry.get("meta") or {}, "cache_path": cache_path}
 
@@ -405,7 +405,7 @@ def fetch_graffiti_file(
         (preferred if storer_target and addr == storer_target else others).append(meta)
     candidates = preferred + others
 
-    cache_root = cache_dir or os.path.join("data", "web", "graffiti_cache")
+    cache_root = cache_dir or CFG.WEB_MEDIA_CACHE_DIR
     os.makedirs(cache_root, exist_ok=True)
 
     last_error = None

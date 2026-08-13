@@ -33,13 +33,13 @@ class TxPool(
 
     def __init__(
         self,
-        filepath: str = CFG.LMDB_MEMPOOL_DIR,
+        filepath: Optional[str] = None,
         max_size_mb: int = CFG.MEMPOOL_MAX_SIZE,
         utxo_store: Optional[UTXODB] = None,
         inherit_state: bool = False,
     ):
         super().__init__()
-        self.filepath = filepath
+        self.filepath = filepath or CFG.LMDB_MEMPOOL_DIR
         self.max_size_mb = max_size_mb
         self._lock = threading.RLock()
         self._pool: "OrderedDict[str, Tx]" = OrderedDict()

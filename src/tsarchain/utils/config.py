@@ -130,9 +130,12 @@ KV_ITER_CHUNK      = 512 # number of entries per chunk when iterating prefix sca
 
 
 # ---- WEB CACHE ----
-WEB_DATABASE_PATH  = str(PROJECT_ROOT / "data/web")  # dedicated LMDB path for web cache
-LMDB_WEB_SIZE_INIT = 100 * 1024  # initial web LMDB size (100 KB)
-LMDB_WEB_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
+WEB_DATABASE_PATH      = str(PROJECT_ROOT / "data/web")  # dedicated LMDB path for web cache
+WEB_MEDIA_CACHE_DIR    = str(PROJECT_ROOT / "data/web/graffiti_cache")  # path for cached media files
+WEB_RECEIPTS_DIR       = str(PROJECT_ROOT / "data/web/receipts")  # path for generated receipts
+WEB_HISTORY_BOOKS_DIR  = str(PROJECT_ROOT / "data/web/history_books")  # path for generated history books
+LMDB_WEB_SIZE_INIT     = 100 * 1024  # initial web LMDB size (100 KB)
+LMDB_WEB_SIZE_MAX      = 64 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
 
 
 # ---- SNAPSHOT SIGNING ----
