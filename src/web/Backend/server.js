@@ -4,7 +4,6 @@
 const path = require("node:path");
 const express = require("express");
 const cors = require("cors");
-const bodyParser = require("body-parser");
 require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const { getConfig } = require("./src/config/env");
@@ -17,26 +16,20 @@ app.set('trust proxy', true);
 app.disable('x-powered-by');
 
 const cfg = getConfig();
-const allowedOrigins = cfg.allowedOrigins || ['http://localhost:3000'];
+const allowedOrigins = cfg.allowedOrigins || ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:5173'];
 
 const corsOptions = {
   origin: function (origin, callback) {
-    if (origin == null) {
+    if (!origin || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
-
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('CORS policy: Domain ini tidak diizinkan!'));
-    }
+    return callback(null, false);
   },
   optionsSuccessStatus: 200
 };
 
 app.use(cors(corsOptions));
-
-app.use(bodyParser.json());
+app.use(express.json({ limit: "10mb" }));
 
 const apiLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 120 });
 app.use("/api", apiLimiter);
@@ -53,16 +46,20 @@ app.use((err, _req, res, _next) => {
 const http = require("node:http");
 const server = http.createServer(app);
 
+server.on("error", (err) => {
+  if (err.code === "EADDRNOTAVAIL" || err.code === "EINVAL") {
+    console.warn(`[backend] binding to ${cfg.host} failed (${err.code}), retrying on 0.0.0.0:${cfg.port}`);
+    server.close(() => {
+      server.listen(cfg.port, "0.0.0.0");
+    });
+  } else {
+    console.error("[backend] server listen error:", err);
+  }
+});
+
 server.listen({
   port: cfg.port,
   host: cfg.host,
 }, () => {
   console.log(`[backend] explorer API listening on ${cfg.host}:${cfg.port}`);
-});
-
-server.on("error", (err) => {
-  if (err.code === "EADDRNOTAVAIL" || err.code === "EINVAL") {
-    console.warn(`[backend] binding to ${cfg.host} failed (${err.code}), falling back to 0.0.0.0`);
-    app.listen(cfg.port, "0.0.0.0");
-  }
 });

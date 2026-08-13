@@ -6,6 +6,7 @@ const { ExplorerService } = require("../services/explorerService");
 const { getConfig } = require("../config/env");
 const { createRateLimiter } = require("../utils/rateLimit");
 const { guessKind, isHex64 } = require("../utils/searchKind");
+const { rpcCall } = require("../tsarRpcAdapter");
 
 const isArtId = (s) => /^graf[0-9a-fA-F]{60}$/.test(s || "");
 

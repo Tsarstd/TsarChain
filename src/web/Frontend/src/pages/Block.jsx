@@ -227,10 +227,9 @@ const Home = ({ onSearchClick }) => {
     try {
       const cached = localStorage.getItem(CACHE_KEY);
       if (cached) {
-        const { blocks, timestamp } = JSON.parse(cached);
-        // Validitas cache 30 detik
+        const { state, timestamp } = JSON.parse(cached);
         if (Date.now() - timestamp < 30000) {
-          return blocks;
+          return state?.blocks || null;
         }
       }
     } catch (e) {
@@ -397,18 +396,7 @@ const Home = ({ onSearchClick }) => {
   }, [isLive, blocks, loading, isRefreshing, loadBlocks]);
 
 
-  useEffect(() => {
-    const cached = getCachedBlocks();
-    if (cached && cached.length > 0) {
-      setBlocks(cached);
-      // Load lebih banyak jika perlu
-      if (cached.length < PAGE_SIZE) {
-        loadBlocks(null);
-      }
-    } else if (blocks.length === 0 && !loading) {
-      loadBlocks(null);
-    }
-  }, [blocks.length, loadBlocks, loading]);
+
 
 
   const handleNavigateToBlock = async () => {
