@@ -132,13 +132,13 @@ class Blockchain():
         if height < 0:
             return None
 
-        if height in self._hash_cache:
-            h = self._hash_cache.pop(height)
-            self._hash_cache[height] = h  # move to end (MRU)
-            return h
-        
         with self.lock:
-            if height < 0 or height >= len(self.chain):
+            if height in self._hash_cache:
+                h = self._hash_cache.pop(height)
+                self._hash_cache[height] = h  # move to end (MRU)
+                return h
+
+            if height >= len(self.chain):
                 return None
             
             h = self.chain[height].hash()
@@ -295,6 +295,17 @@ class Blockchain():
 
     def get_mempool(self) -> TxPool | None:
         return self._mempool
+
+    def get_mempool_size(self) -> int:
+        if self._mempool is not None:
+            try:
+                if hasattr(self._mempool, "size") and callable(self._mempool.size):
+                    return self._mempool.size()
+                if hasattr(self._mempool, "__len__"):
+                    return len(self._mempool)
+            except Exception:
+                pass
+        return 0
 
     @property
     def height(self) -> int:

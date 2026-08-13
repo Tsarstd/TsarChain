@@ -250,7 +250,7 @@ class Network(NetworkProxy):
             if t.is_alive():
                 t.join(timeout=1.5)
             
-        with self.lock:
+        with Network._instance_lock:
             Network.active_ports.discard(self.port)
         self.broadcast.shutdown()
         
@@ -313,7 +313,7 @@ class Network(NetworkProxy):
                     if ip.startswith("::ffff:"):
                         ip = ip[7:]
                     target_ips.add(ip)
-        except (socket.gaierror, OSError):
+        except (OSError):
             target_ips.add(host)
             
         if not target_ips:

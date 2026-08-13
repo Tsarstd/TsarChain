@@ -240,14 +240,24 @@ class NodeClient:
 
     def send(self, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         req = secrets.token_hex(6)
-        peers = self.dir.get() or self.scan()
+        did_scan = False
+        peers = self.dir.get()
+        if not peers:
+            peers = self.scan()
+            did_scan = True
         if not peers:
             if _throttle("no_peers", 10.0):
                 log.warning("[send] no peers", extra=_mk_extra(req=req, rpc=message.get("type")))
             return {"error": "No peers"}
 
         for round_idx in (0, 1):
-            targets = peers if round_idx == 0 else self.scan()
+            if round_idx == 0:
+                targets = peers
+            else:
+                if did_scan:
+                    break
+                targets = self.scan()
+                did_scan = True
             for peer in targets:
                 self._pace()
                 resp = self._try_send_one(peer, message)

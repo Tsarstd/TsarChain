@@ -221,7 +221,8 @@ class SendTab:
 
     def on_wallets_changed(self, wallets: Sequence[str]) -> None:
         values = list(wallets or [])
-        self.from_combo["values"] = values
+        if self.from_combo is not None:
+            self.from_combo["values"] = values
         cur = (self.from_var.get() or "")
         if not values:
             self.from_var.set("")

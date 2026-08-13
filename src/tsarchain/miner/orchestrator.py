@@ -174,7 +174,7 @@ class SimpleMiner:
             try:
                 self._pending_block_hashes.discard(old.hash().hex())
             except Exception:
-                log.exception("error_6")
+                log.exception("[_queue_block_for_broadcast] Failed to discard old block hash")
 
     def _flush_pending_blocks(self) -> None:
         if not self.network or not self._pending_blocks:
@@ -187,7 +187,7 @@ class SimpleMiner:
                     try:
                         self._pending_block_hashes.discard(blk.hash().hex())
                     except Exception:
-                        log.exception("error_7")
+                        log.exception("[_flush_pending_blocks] Failed to discard published block hash")
                     continue
             except Exception as exc:
                 clog(f"[broadcast] retry failed: {exc}")
@@ -530,7 +530,12 @@ class SimpleMiner:
         if self.cancel_mining:
             self.cancel_mining.set()
             
-        
+        if self._progress_q:
+            try:
+                self._progress_q.cancel_join_thread()
+            except Exception:
+                pass
+
         if self.network:
             self.network.shutdown()
         clog("Miner stopped")

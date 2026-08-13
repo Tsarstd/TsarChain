@@ -66,7 +66,20 @@ def encrypt_blob(blob: bytes, password: str) -> Dict:
     }
     
 def create_keypair(path: str) -> tuple[str, str, str]:
-    load_user_key_record()
+    existing = load_user_key_record()
+    if isinstance(existing, dict) and existing.get("id") and existing.get("pubkey") and existing.get("privkey"):
+        return str(existing["id"]), str(existing["pubkey"]), str(existing["privkey"])
+
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict) and data.get("id") and data.get("pubkey") and data.get("privkey"):
+                    save_user_key_record(data)
+                    return str(data["id"]), str(data["pubkey"]), str(data["privkey"])
+        except Exception:
+            pass
+
     sk = SigningKey.generate()
     vk = sk.verify_key
     priv_hex = sk.encode(encoder=HexEncoder).decode()
@@ -74,9 +87,15 @@ def create_keypair(path: str) -> tuple[str, str, str]:
     node_id  = hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()
     payload = {"id": node_id, "pubkey": pub_hex, "privkey": priv_hex, "created": int(time.time())}
     save_user_key_record(payload)
+    parent_dir = os.path.dirname(path)
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
-    os.chmod(path, 0o600)
+    try:
+        os.chmod(path, 0o600)
+    except Exception:
+        pass
     return node_id, pub_hex, priv_hex
 
 def decrypt_blob(enc: Dict, password: str) -> bytes:
@@ -585,17 +604,13 @@ class Security:
     @staticmethod
     def secure_erase(data):
         if isinstance(data, str):
-            data_bytes = bytearray(data.encode('utf-8'))
-            for i in range(len(data_bytes)):
-                data_bytes[i] = 0
-            return bytes(data_bytes)
-        
+            encoded = data.encode("utf-8")
+            return b"\x00" * len(encoded)
         elif isinstance(data, (bytes, bytearray)):
-            mutable_data = bytearray(data)
-            for i in range(len(mutable_data)):
-                mutable_data[i] = 0
-            return bytes(mutable_data)
-        
+            if isinstance(data, bytearray):
+                for i in range(len(data)):
+                    data[i] = 0
+            return b"\x00" * len(data)
         return data
             
     @staticmethod

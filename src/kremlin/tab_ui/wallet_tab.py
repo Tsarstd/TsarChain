@@ -112,7 +112,7 @@ class CreateWalletDialog(tk.Toplevel):
                 show["v"] = not show["v"]
                 ent.config(show=("" if show["v"] else "*"))
                 eye_btn.config(text=("🙈" if show["v"] else "👁"))
-            eye_btn = tk.Button(box, text="🙈", width=3, command=toggle,
+            eye_btn = tk.Button(box, text="👁", width=3, command=toggle,
                                 bg=theme["panel_bg"], fg=theme["fg"], bd=0, relief=tk.FLAT, cursor="hand2")
             eye_btn.pack(side=tk.LEFT, padx=(6,0))
             return ent
