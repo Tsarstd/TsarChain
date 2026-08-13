@@ -139,18 +139,6 @@ def _cpu_brand() -> str:
             except Exception:
                 pass
 
-            try:
-                out = subprocess.check_output(
-                    ["powershell", "-NoProfile", "-Command",
-                     "Get-CimInstance Win32_Processor | Select-Object -ExpandProperty Name"],
-                    stderr=subprocess.DEVNULL
-                )
-                name = " ".join(out.decode(errors="ignore").strip().split())
-                if name:
-                    return name
-            except Exception:
-                pass
-
         if sysname == "Darwin":
             try:
                 out = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"])

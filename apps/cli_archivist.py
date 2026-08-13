@@ -93,13 +93,7 @@ class ArchivistCLI:
         files = idx.get("files") if isinstance(idx, dict) else {}
         files = files if isinstance(files, dict) else {}
         table = format_files_table(files)
-
-        if self.tui and self.tui._live:
-            # Temporarily print table above or suspend live
-            console = Console()
-            console.print(table)
-        else:
-            Console().print(table)
+        Console().print(table)
 
     def _print_pool_table(self) -> None:
         table = format_pool_table(self.orchestrator.pool_data)

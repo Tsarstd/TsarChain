@@ -216,8 +216,8 @@ class ArchivistOrchestrator:
         for port in cand_ports:
             if port <= 0 or port in tried:
                 continue
-            tried.add(port)
             self._server = StorageServer("0.0.0.0", port, CFG.STORAGE_DIR)
+            self._load_auto_payout_guard()
             return port
         raise RuntimeError("No free port for storage server")
 
@@ -342,63 +342,26 @@ class ArchivistOrchestrator:
                 marked = True
                 self._log(f"[auto-paid] {gid} (art={aid}, h={bh})")
         if marked:
-            threading.Thread(target=self.refresh_once, name="ArchivistRefreshAuto", daemon=True).start()
-
-
-    def _open_payout_guard_store(self):
-        path = getattr(CFG, "ARCHIVIST_PAYOUT_GUARD_DB_PATH", "data/archivist/storage/payout_guard")
-        import os
-        os.makedirs(path, exist_ok=True)
-        init_size = int(getattr(CFG, "ARCHIVIST_PAYOUT_GUARD_MAP_SIZE", 4 * 1024 * 1024))
-        return _native_open_storage(
-            "lmdb",
-            path,
-            map_size_init=init_size,
-            map_size_max=init_size,
-            pretty_json=False,
-        )
+            self._log("[auto-paid] Updated file payment statuses.")
 
 
     def _load_auto_payout_guard(self) -> None:
-        self._auto_payout_store = self._open_payout_guard_store()
-        cleaned: dict[str, Dict[str, Any]] = {}
-        try:
-            start_after = None
-            while True:
-                chunk = self._auto_payout_store.iter_prefix_chunk("guard", b"", limit=1000, start_after=start_after) or []
-                if not chunk:
-                    break
-                for k, v in chunk:
-                    art_id = k.decode("utf-8")
-                    try:
-                        entry = json.loads(v.decode("utf-8"))
-                        if isinstance(entry, dict):
-                            epoch = int(entry.get("epoch", -1))
-                            ts = int(entry.get("ts", 0))
-                            status = str(entry.get("status") or "error").lower()
-                            cleaned[art_id] = {"epoch": epoch, "ts": ts, "status": status}
-                    except Exception:
-                        pass
-                    start_after = k
-                if len(chunk) < 1000:
-                    break
-        except Exception as exc:
-            self._log(f"[auto-payout] guard load failed: {exc}", error=True)
-        self._auto_payout_guard = cleaned
+        if self._server and hasattr(self._server, "db"):
+            try:
+                self._auto_payout_guard = self._server.db.load_payout_guard()
+            except Exception as exc:
+                self._log(f"[auto-payout] guard load failed: {exc}", error=True)
+                self._auto_payout_guard = {}
+        else:
+            self._auto_payout_guard = {}
 
 
     def _save_auto_payout_guard(self) -> None:
-        if not self._auto_payout_store:
-            return
-        try:
-            self._auto_payout_store.clear_db("guard")
-            ops = []
-            for art_id, entry in self._auto_payout_guard.items():
-                ops.append((str(art_id).encode("utf-8"), json.dumps(entry).encode("utf-8")))
-            if ops:
-                self._auto_payout_store.put_batch("guard", ops)
-        except Exception as exc:
-            self._log(f"[auto-payout] guard save failed: {exc}", error=True)
+        if self._server and hasattr(self._server, "db"):
+            try:
+                self._server.db.save_payout_guard(self._auto_payout_guard)
+            except Exception as exc:
+                self._log(f"[auto-payout] guard save failed: {exc}", error=True)
 
 
     def _auto_payout(self) -> None:

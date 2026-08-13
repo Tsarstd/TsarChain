@@ -182,7 +182,7 @@ class StorageGuard:
             if ":ip:" in key:
                 burst = int(max(burst_base, burst_base * ip_multiplier))
             elif ":subnet:" in key:
-                burst = int(max(burst_base * ip_multiplier, burst_base * ip_multiplier * 2))
+                burst = int(max(burst_base, burst_base * ip_multiplier * 2))
             allowed = self._tb_allow(
                 self.rl_ip,
                 key,
