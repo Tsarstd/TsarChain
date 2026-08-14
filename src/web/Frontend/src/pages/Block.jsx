@@ -223,21 +223,6 @@ const Home = ({ onSearchClick }) => {
     }
   }, [onSearchClick, navigate]);
 
-  const getCachedBlocks = () => {
-    try {
-      const cached = localStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const { state, timestamp } = JSON.parse(cached);
-        if (Date.now() - timestamp < 30000) {
-          return state?.blocks || null;
-        }
-      }
-    } catch (e) {
-      console.warn('Cache read error:', e);
-    }
-    return null;
-  };
-
   const getCachedState = () => {
     try {
       const cached = localStorage.getItem(CACHE_KEY);
