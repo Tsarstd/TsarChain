@@ -225,7 +225,7 @@ class ChainOperations:
         if store is not None:
             store.rebuild_from_chain(self.blockchain.chain)
             self.blockchain._utxo_dirty = False
-            self.blockchain._utxo_last_flush_height = getattr(self, "height", len(self.blockchain.chain) - 1)
+            self.blockchain._utxo_last_flush_height = self.blockchain.height
         self.blockchain.save_state()
 
         self._prune_mempool_confirmed(block)
@@ -242,12 +242,10 @@ class ChainOperations:
             return
 
         pool = None
-        owned_pool = False
         if hasattr(self.blockchain, "get_mempool"):
             pool = self.blockchain.get_mempool()
         if pool is None:
-            pool = TxPool(utxo_store=self.blockchain.ensure_utxodb())
-            owned_pool = True
+            return
 
         seen: set[str] = set()
         if hasattr(pool, "remove_many"):
@@ -266,9 +264,6 @@ class ChainOperations:
             log.warning("[_prune_mempool_confirmed] pruned conflicts=%d stale=%d", conflicts, stale_removed)
             
         pool.flush()
-
-        if owned_pool:
-            pool.flush(force=True)
 
 
     def _extract_spent_prevouts_and_txids(self, txs: list) -> tuple[set, list]:

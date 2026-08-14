@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 class ChainStorage:
     def __init__(self, blockchain: "Blockchain"):
         self.blockchain = blockchain
+        self._backup_lock = threading.Lock()
 
 
     def save_chain(self, *, force_full: bool = False):
@@ -240,12 +241,7 @@ class ChainStorage:
         if not target_dir:
             return
 
-        lock = getattr(self.blockchain, "_snapshot_backup_lock", None)
-        if lock is None:
-            lock = threading.Lock()
-            self.blockchain._snapshot_backup_lock = lock
-
-        with lock:
+        with self._backup_lock:
             if getattr(self.blockchain, "_snapshot_backup_active", False):
                 return
             self.blockchain._snapshot_backup_active = True
@@ -436,7 +432,7 @@ class ChainStorage:
         except Exception:
             log.exception("[backup_snapshot] Unexpected error during snapshot backup:")
         finally:
-            with self.blockchain._snapshot_backup_lock:
+            with self._backup_lock:
                 self.blockchain._snapshot_backup_active = False
 
 

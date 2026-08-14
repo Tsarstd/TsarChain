@@ -93,7 +93,8 @@ class Block:
             raise TypeError(f"bits float non-integer: {v}")
         if isinstance(v, str):
             s = v.strip().lower()
-            return int(s, 16) if s.startswith("0x") else int(s)
+            val = int(s, 16) if s.startswith("0x") else int(s)
+            return val & 0xFFFFFFFF
         raise TypeError(f"bits must be int/hexstr, got {type(v)}")
 
     @classmethod
