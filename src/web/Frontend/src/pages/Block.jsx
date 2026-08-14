@@ -5,12 +5,39 @@ import { fetchBlockRange, fetchByKind } from "../api/explorer";
 import { ResultBlock } from "../components/search/SearchResults";
 import { SkeletonCard, SkeletonSearch } from "../components/common/SkeletonLoader";
 import { LiveIndicator } from "../components/common/LiveIndicator";
-import { useCallback, useEffect, useRef, useState, memo } from "react";
+import { useCallback, useEffect, useState, memo } from "react";
+import { useDragScroll } from "../utils/useDragScroll";
 
 const PAGE_SIZE = 200;
 const SCROLL_THRESHOLD = 800;
 const CACHE_KEY = 'block_range_cache';
 const CACHE_EXPIRE_MS = 15 * 60 * 1000;
+
+const getCachedState = () => {
+  try {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+      const { state, timestamp } = JSON.parse(cached);
+      if (Date.now() - timestamp < CACHE_EXPIRE_MS) {
+        return state;
+      }
+    }
+  } catch (e) {
+    console.warn('Cache read error:', e);
+  }
+  return null;
+};
+
+const setCachedState = (state) => {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      state,
+      timestamp: Date.now()
+    }));
+  } catch (e) {
+    console.warn('Cache write error:', e);
+  }
+};
 
 const BlockCard = memo(({ item, onSelect, active, isGenesis }) => {
   const graffitiComments = Number(item?.graffiti_comments || 0);
@@ -73,133 +100,12 @@ const BlockCard = memo(({ item, onSelect, active, isGenesis }) => {
   );
 });
 
-// ============ Custom Hook for Drag Scroll ============
-export const useDragScroll = () => {
-  const scrollerRef = useRef(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const dragRef = useRef({
-    isDown: false,
-    startX: 0,
-    scrollLeft: 0,
-    moved: false,
-    wasDrag: false,
-  });
-
-  useEffect(() => {
-    const handleGlobalMouseMove = (e) => {
-      if (!dragRef.current.isDown) return;
-      const el = scrollerRef.current;
-      if (!el) return;
-
-      const walk = (e.clientX - dragRef.current.startX) * 1.15;
-      if (Math.abs(walk) > 5) {
-        dragRef.current.moved = true;
-        setIsDragging(true);
-      }
-      el.scrollLeft = dragRef.current.scrollLeft - walk;
-    };
-
-    const handleGlobalMouseUp = () => {
-      if (!dragRef.current.isDown) return;
-      dragRef.current.isDown = false;
-      dragRef.current.wasDrag = dragRef.current.moved;
-      setIsDragging(false);
-      setTimeout(() => {
-        dragRef.current.wasDrag = false;
-      }, 100);
-    };
-
-    globalThis.addEventListener("mousemove", handleGlobalMouseMove);
-    globalThis.addEventListener("mouseup", handleGlobalMouseUp);
-    return () => {
-      globalThis.removeEventListener("mousemove", handleGlobalMouseMove);
-      globalThis.removeEventListener("mouseup", handleGlobalMouseUp);
-    };
-  }, []);
-
-  const handleMouseDown = (event) => {
-    if (event.button !== undefined && event.button !== 0) return;
-    const el = scrollerRef.current;
-    if (!el) return;
-    dragRef.current.isDown = true;
-    dragRef.current.startX = event.clientX;
-    dragRef.current.scrollLeft = el.scrollLeft;
-    dragRef.current.moved = false;
-    dragRef.current.wasDrag = false;
-  };
-
-  const handleTouchStart = (event) => {
-    const touch = event.touches[0];
-    if (!touch) return;
-    const el = scrollerRef.current;
-    if (!el) return;
-    dragRef.current.isDown = true;
-    dragRef.current.startX = touch.clientX;
-    dragRef.current.scrollLeft = el.scrollLeft;
-    dragRef.current.moved = false;
-    dragRef.current.wasDrag = false;
-  };
-
-  const handleTouchMove = (event) => {
-    if (!dragRef.current.isDown) return;
-    const el = scrollerRef.current;
-    if (!el) return;
-    const touch = event.touches[0];
-    if (!touch) return;
-    const walk = (touch.clientX - dragRef.current.startX) * 1.15;
-    if (Math.abs(walk) > 5) {
-      dragRef.current.moved = true;
-      setIsDragging(true);
-    }
-    el.scrollLeft = dragRef.current.scrollLeft - walk;
-  };
-
-  const handleTouchEnd = () => {
-    dragRef.current.isDown = false;
-    dragRef.current.wasDrag = dragRef.current.moved;
-    setIsDragging(false);
-    setTimeout(() => {
-      dragRef.current.wasDrag = false;
-    }, 100);
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      e.preventDefault();
-      const el = scrollerRef.current;
-      if (!el) return;
-      const scrollAmount = e.key === 'ArrowLeft' ? -300 : 300;
-      el.scrollBy({ left: scrollAmount, behavior: 'smooth' });
-    }
-  };
-
-  const handleClickCapture = (event) => {
-    if (dragRef.current.wasDrag) {
-      event.preventDefault();
-      event.stopPropagation();
-      dragRef.current.wasDrag = false;
-    }
-  };
-
-  return {
-    scrollerRef,
-    isDragging,
-    dragHandlers: {
-      onMouseDown: handleMouseDown,
-      onTouchStart: handleTouchStart,
-      onTouchMove: handleTouchMove,
-      onTouchEnd: handleTouchEnd,
-      onKeyDown: handleKeyDown,
-      onClickCapture: handleClickCapture,
-    },
-  };
-};
-
 const Home = ({ onSearchClick }) => {
   const navigate = useNavigate();
-  const [blocks, setBlocks] = useState([]);
-  const [nextHeight, setNextHeight] = useState(null);
-  const [hasMore, setHasMore] = useState(true);
+  const [cachedState] = useState(() => getCachedState());
+  const [blocks, setBlocks] = useState(() => cachedState?.blocks || []);
+  const [nextHeight, setNextHeight] = useState(() => cachedState?.nextHeight ?? null);
+  const [hasMore, setHasMore] = useState(() => cachedState?.hasMore ?? true);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [detail, setDetail] = useState(null);
@@ -208,7 +114,7 @@ const Home = ({ onSearchClick }) => {
   const [selectedHeight, setSelectedHeight] = useState(null);
   const [navInput, setNavInput] = useState("");
   const [isNavigating, setIsNavigating] = useState(false);
-  const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const [initialLoadDone, setInitialLoadDone] = useState(() => cachedState?.initialLoadDone || false);
   const [isLive, setIsLive] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -218,37 +124,9 @@ const Home = ({ onSearchClick }) => {
     if (onSearchClick) {
       onSearchClick(value);
     } else {
-      // Fallback ke navigate
       navigate(`/?search=${encodeURIComponent(value)}`);
     }
   }, [onSearchClick, navigate]);
-
-  const getCachedState = () => {
-    try {
-      const cached = localStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const { state, timestamp } = JSON.parse(cached);
-        // Cache valid selama 5 menit
-        if (Date.now() - timestamp < CACHE_EXPIRE_MS) {
-          return state;
-        }
-      }
-    } catch (e) {
-      console.warn('Cache read error:', e);
-    }
-    return null;
-  };
-
-  const setCachedState = (state) => {
-    try {
-      localStorage.setItem(CACHE_KEY, JSON.stringify({
-        state,
-        timestamp: Date.now()
-      }));
-    } catch (e) {
-      console.warn('Cache write error:', e);
-    }
-  };
 
   useEffect(() => {
     if (blocks.length > 0 || nextHeight !== null || hasMore !== true) {
@@ -256,13 +134,8 @@ const Home = ({ onSearchClick }) => {
     }
   }, [blocks, nextHeight, hasMore, initialLoadDone]);
 
-  const loadBlocks = useCallback(
-    async (startHeight, forceRefresh = false) => {
-      if ((loading && !forceRefresh) || (!forceRefresh && !hasMore)) return;
-      
-      setLoading(true);
-      setMessage("");
-      
+  const fetchBlocks = useCallback(
+    async (startHeight) => {
       try {
         const resp = await fetchBlockRange({
           limit: PAGE_SIZE,
@@ -312,7 +185,17 @@ const Home = ({ onSearchClick }) => {
         setLoading(false);
       }
     },
-    [hasMore, loading]
+    []
+  );
+
+  const loadBlocks = useCallback(
+    async (startHeight, forceRefresh = false) => {
+      if ((loading && !forceRefresh) || (!forceRefresh && !hasMore)) return;
+      setLoading(true);
+      setMessage("");
+      await fetchBlocks(startHeight);
+    },
+    [fetchBlocks, hasMore, loading]
   );
 
   const handleManualRefresh = useCallback(async () => {
@@ -329,31 +212,47 @@ const Home = ({ onSearchClick }) => {
   }, [loadBlocks, isRefreshing]);
 
   useEffect(() => {
-    const cached = getCachedState();
-    
-    if (cached?.blocks?.length > 0) {
-      setBlocks(cached.blocks);
-      setNextHeight(cached.nextHeight);
-      setHasMore(cached.hasMore);
-      setInitialLoadDone(cached.initialLoadDone || false);
-      
-      if (cached.blocks.length > 0) {
-        const latestCachedHeight = cached.blocks[0].height;
-        
-        fetchBlockRange({ limit: 1, source: 'database' })
-          .then(resp => {
-            const currentTip = resp.data?.items?.[0]?.height;
-            setLastUpdated(new Date());
-            if (currentTip > latestCachedHeight) {
-              loadBlocks(null, true);
-            }
-          })
-          .catch(console.error);
-      }
+    let isMounted = true;
+    const initialBlocks = cachedState?.blocks || [];
+    if (initialBlocks.length > 0) {
+      const latestCachedHeight = initialBlocks[0]?.height;
+      fetchBlockRange({ limit: 1, source: 'database' })
+        .then((resp) => {
+          if (!isMounted) return;
+          const currentTip = resp.data?.items?.[0]?.height;
+          setLastUpdated(new Date());
+          if (currentTip > latestCachedHeight) {
+            fetchBlockRange({ limit: PAGE_SIZE, startHeight: null, source: 'database' })
+              .then((freshResp) => {
+                if (!isMounted) return;
+                const incoming = Array.isArray(freshResp.data?.items) ? freshResp.data.items : [];
+                setBlocks(incoming);
+                setNextHeight(freshResp.data?.nextHeight ?? -1);
+                setHasMore(Boolean(freshResp.data?.hasMore));
+                setInitialLoadDone(true);
+              })
+              .catch(console.error);
+          }
+        })
+        .catch(console.error);
     } else {
-      loadBlocks(null);
+      fetchBlockRange({ limit: PAGE_SIZE, startHeight: null, source: 'database' })
+        .then((freshResp) => {
+          if (!isMounted) return;
+          const incoming = Array.isArray(freshResp.data?.items) ? freshResp.data.items : [];
+          setBlocks(incoming);
+          setNextHeight(freshResp.data?.nextHeight ?? -1);
+          setHasMore(Boolean(freshResp.data?.hasMore));
+          setInitialLoadDone(true);
+        })
+        .catch((err) => {
+          if (isMounted) setMessage(err.message || "Gagal memuat block.");
+        });
     }
-  }, []);
+    return () => {
+      isMounted = false;
+    };
+  }, [cachedState]);
 
   useEffect(() => {
     if (!isLive) return;
@@ -572,11 +471,8 @@ const Home = ({ onSearchClick }) => {
               lastUpdated={lastUpdated}
               isRefreshing={isRefreshing}
               intervalSec={30}
-              label="LIVE BLOCK STREAM"
+              label="Live"
             />
-            <p className="muted" style={{ margin: 0 }}>
-              Swipe right to load older blocks.
-            </p>
           </div>
           <div className="navigation-controls">
             <button 

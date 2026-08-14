@@ -1,6 +1,6 @@
 import PropTypes from "prop-types";
 import { FaCopy, FaDownload } from "react-icons/fa";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { getStatusBadge, getDirectionBadge } from "../SearchUX";
 import { useRenderHelpers, copyToClipboard } from "../SearchHelpers";
 import {  
@@ -12,10 +12,9 @@ import {
 } from "../../../utils/format";
 import { AddressAnalytics } from "../../common/AddressAnalytics";
 
-
-const AddressHeaderCell = ({ val, cellKey }) => {
+const AddressHeaderCell = ({ val }) => {
   return (
-    <div key={cellKey} className="address-cell">
+    <div className="address-cell">
       <div className="address-char-container">
         <span className="address-char">{val}</span>
       </div>
@@ -25,12 +24,11 @@ const AddressHeaderCell = ({ val, cellKey }) => {
 
 AddressHeaderCell.propTypes = {
   val: PropTypes.string.isRequired,
-  cellKey: PropTypes.string.isRequired,
 };
 
-const AddressChunk = ({ cell, shouldHighlight, cellKey }) => {
+const AddressChunk = ({ cell, shouldHighlight }) => {
   return (
-    <div key={cellKey} className="address-cell">
+    <div className="address-cell">
       <div className={`address-chunk-container ${shouldHighlight ? 'highlighted' : ''}`}>
         <div className="address-chunk-grid">
           {cell.chars.map((charObj) => (
@@ -43,11 +41,128 @@ const AddressChunk = ({ cell, shouldHighlight, cellKey }) => {
 };
 
 AddressChunk.propTypes = {
-  cell: PropTypes.object.isRequired,
+  cell: PropTypes.shape({
+    chars: PropTypes.arrayOf(
+      PropTypes.shape({
+        id: PropTypes.string.isRequired,
+        val: PropTypes.string.isRequired,
+      })
+    ).isRequired,
+  }).isRequired,
   shouldHighlight: PropTypes.bool.isRequired,
-  cellKey: PropTypes.string.isRequired,
 };
 
+const splitAddressGrid = (address) => {
+  if (!address) return null;
+  
+  const len = address.length;
+  if (len !== 44 && len !== 64) return null;
+  
+  const headerChars = address.substring(0, 4).split('').map((char, charIdx) => ({
+    id: `header-char-${charIdx}`,
+    val: char
+  }));
+
+  const bodyRows = [];
+  let rowIndex = 1;
+  for (let start = 4; start < len; start += 20) {
+    const cells = [];
+    let colIndex = 0;
+    for (let i = start; i < Math.min(start + 20, len); i += 5) {
+      const chunkVal = address.substring(i, i + 5);
+      cells.push({
+        id: `cell-${rowIndex}-${colIndex}`,
+        rIdx: rowIndex,
+        cIdx: colIndex,
+        val: chunkVal,
+        chars: chunkVal.split('').map((char, charIdx) => ({
+          id: `cell-char-${rowIndex}-${colIndex}-${charIdx}`,
+          val: char
+        }))
+      });
+      colIndex++;
+    }
+    bodyRows.push({
+      id: `row-${rowIndex}`,
+      rIdx: rowIndex,
+      cells
+    });
+    rowIndex++;
+  }
+  
+  const isP2WPKH = len === 44;
+  const addressType = isP2WPKH ? "P2WPKH" : "P2WSH";
+  const labelType = isP2WPKH ? "Citizen Address" : "Pool Address";
+  const badgeText = `${labelType} (${addressType})`;
+  
+  return {
+    headerChars,
+    bodyRows,
+    badgeText,
+    labelClass: isP2WPKH ? "address-label-p2wpkh" : "address-label-p2wsh"
+  };
+};
+
+const getHighlightPositions = (addressLength) => {
+  if (addressLength === 44) { // P2WPKH
+    return [
+      [1, 0], [1, 2], // Row 1, col 0 and 2
+      [2, 1], [2, 3]  // Row 2, col 1 and 3
+    ];
+  }
+  if (addressLength === 64) { // P2WSH
+    return [
+      [1, 0], [1, 2], // Row 1, col 0 and 2
+      [2, 1], [2, 3], // Row 2, col 1 and 3
+      [3, 0], [3, 2]  // Row 3, col 0 and 2
+    ];
+  }
+  return [];
+};
+
+const renderAddressGrid = (address) => {
+  if (!address) return <span>-</span>;
+  
+  const gridData = splitAddressGrid(address);
+  if (!gridData) {
+    return <span className="value wrap">{address}</span>;
+  }
+
+  const { headerChars, bodyRows, badgeText, labelClass } = gridData;
+  const highlightPositions = getHighlightPositions(address.length);
+  const isHighlighted = (r, c) => highlightPositions.some(pos => pos[0] === r && pos[1] === c);
+
+  return (
+    <div className="address-grid-wrapper">
+      <div className="address-container">
+        {/* Row 0 Header ("tsar" HRP) */}
+        <div className="address-row">
+          {headerChars.map((charObj) => (
+            <AddressHeaderCell key={charObj.id} val={charObj.val} />
+          ))}
+        </div>
+        {/* Body Rows */}
+        {bodyRows.map((row) => (
+          <div key={row.id} className="address-row">
+            {row.cells.map((cell) => (
+              <AddressChunk
+                key={cell.id}
+                cell={cell}
+                shouldHighlight={isHighlighted(row.rIdx, cell.cIdx)}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+      {/* Centered Badge Row */}
+      <div className="address-badge-row">
+        <div className={labelClass}>
+          <span className="address-label">{badgeText}</span>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const ResultAddress = ({ data, onSearchClick }) => {
   const { renderClickableHash } = useRenderHelpers();
@@ -57,6 +172,7 @@ const ResultAddress = ({ data, onSearchClick }) => {
   const [isDownloading, setIsDownloading] = useState(false);
 
   const handleDownloadHistory = async () => {
+    if (!data?.address) return;
     setIsDownloading(true);
     try {
       const response = await fetch(`/api/history_book?address=${data.address}`);
@@ -80,14 +196,11 @@ const ResultAddress = ({ data, onSearchClick }) => {
     }
   };
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [data?.address]);
-  
   const historyData = data?.history || [];
   const totalItems = Math.min(historyData.length, 200); // limit
-  const totalPages = Math.ceil(totalItems / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
+  const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+  const activePage = Math.min(currentPage, totalPages);
+  const startIndex = (activePage - 1) * itemsPerPage;
   const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
   const currentHistory = historyData.slice(startIndex, endIndex);
   
@@ -99,24 +212,24 @@ const ResultAddress = ({ data, onSearchClick }) => {
   
   const getPageNumbers = () => {
     const pageNumbers = [];
-    const maxVisiblePages = 20; // Maximum number of page buttons to show
+    const maxVisiblePages = 20;
     
     if (totalPages <= maxVisiblePages) {
       for (let i = 1; i <= totalPages; i++) {
         pageNumbers.push(i);
       }
-    } else if (currentPage <= 3) {
+    } else if (activePage <= 3) {
       for (let i = 1; i <= 4; i++) {
         pageNumbers.push(i);
       }
       pageNumbers.push('...1', totalPages);
-    } else if (currentPage >= totalPages - 2) {
+    } else if (activePage >= totalPages - 2) {
       pageNumbers.push(1, '...2');
       for (let i = totalPages - 3; i <= totalPages; i++) {
         pageNumbers.push(i);
       }
     } else {
-      pageNumbers.push(1, '...3', currentPage - 1, currentPage, currentPage + 1, '...4', totalPages);
+      pageNumbers.push(1, '...3', activePage - 1, activePage, activePage + 1, '...4', totalPages);
     }
     
     return pageNumbers;
@@ -129,152 +242,39 @@ const ResultAddress = ({ data, onSearchClick }) => {
     if (direction === 'in') {
       if (isFromCoinbase) {
         return <span className="tx-address-label">From : Coinbase</span>;
-      } else {
-        return (
-          <>
-            <span className="tx-address-label">From : </span>
-            {renderClickableHash(
-              fromAddress,
-              onSearchClick,
-              fromAddress,
-              fmtAddress(fromAddress),
-              true
-            )}
-          </>
-        );
       }
-    } else if (direction === 'out') {
+      return (
+        <>
+          <span className="tx-address-label">From : </span>
+          {renderClickableHash(
+            fromAddress,
+            onSearchClick,
+            fromAddress,
+            fmtAddress(fromAddress),
+            true
+          )}
+        </>
+      );
+    }
+    
+    if (direction === 'out') {
       if (isToCoinbase) {
         return <span className="tx-address-label">To : Coinbase</span>;
-      } else {
-        return (
-          <>
-            <span className="tx-address-label">To : </span>
-            {renderClickableHash(
-              toAddress,
-              onSearchClick,
-              toAddress,
-              fmtAddress(toAddress),
-              true
-            )}
-          </>
-        );
       }
+      return (
+        <>
+          <span className="tx-address-label">To : </span>
+          {renderClickableHash(
+            toAddress,
+            onSearchClick,
+            toAddress,
+            fmtAddress(toAddress),
+            true
+          )}
+        </>
+      );
     }
     return null;
-  };
-
-  const splitAddressGrid = (address) => {
-    if (!address) return null;
-    
-    const len = address.length;
-    if (len !== 44 && len !== 64) return null;
-    
-    const headerChars = address.substring(0, 4).split('').map((char, charIdx) => ({
-      id: `header-char-${charIdx}`,
-      val: char
-    }));
-
-    const bodyRows = [];
-    let rowIndex = 1;
-    for (let start = 4; start < len; start += 20) {
-      const cells = [];
-      let colIndex = 0;
-      for (let i = start; i < Math.min(start + 20, len); i += 5) {
-        const chunkVal = address.substring(i, i + 5);
-        cells.push({
-          id: `cell-${rowIndex}-${colIndex}`,
-          rIdx: rowIndex,
-          cIdx: colIndex,
-          val: chunkVal,
-          chars: chunkVal.split('').map((char, charIdx) => ({
-            id: `cell-char-${rowIndex}-${colIndex}-${charIdx}`,
-            val: char
-          }))
-        });
-        colIndex++;
-      }
-      bodyRows.push({
-        id: `row-${rowIndex}`,
-        rIdx: rowIndex,
-        cells
-      });
-      rowIndex++;
-    }
-    
-    const isP2WPKH = len === 44;
-    const addressType = isP2WPKH ? "P2WPKH" : "P2WSH";
-    const labelType = isP2WPKH ? "Citizen Address" : "Pool Address";
-    const badgeText = `${labelType} (${addressType})`;
-    
-    return {
-      headerChars,
-      bodyRows,
-      isP2WPKH,
-      badgeText,
-      labelClass: isP2WPKH ? "address-label-p2wpkh" : "address-label-p2wsh"
-    };
-  };
-
-  const getHighlightPositions = (addressLength) => {
-    if (addressLength === 44) { // P2WPKH
-      return [
-        [1, 0], [1, 2], // Row 1, col 0 and 2
-        [2, 1], [2, 3]  // Row 2, col 1 and 3
-      ];
-    } else if (addressLength === 64) { // P2WSH
-      return [
-        [1, 0], [1, 2], // Row 1, col 0 and 2
-        [2, 1], [2, 3], // Row 2, col 1 and 3
-        [3, 0], [3, 2]  // Row 3, col 0 and 2
-      ];
-    }
-    return [];
-  };
-
-  const renderAddressGrid = (address) => {
-    if (!address) return <span>-</span>;
-    
-    const gridData = splitAddressGrid(address);
-    if (!gridData) {
-      return <span className="value wrap">{address}</span>;
-    }
-
-    const { headerChars, bodyRows, badgeText, labelClass } = gridData;
-    const highlightPositions = getHighlightPositions(address.length);
-    const isHighlighted = (r, c) => highlightPositions.some(pos => pos[0] === r && pos[1] === c);
-
-    return (
-      <div className="address-grid-wrapper">
-        <div className="address-container">
-          {/* Row 0 Header ("tsar") */}
-          <div className="address-row">
-            {headerChars.map((charObj) => (
-              <AddressHeaderCell key={charObj.id} val={charObj.val} cellKey={charObj.id} />
-            ))}
-          </div>
-          {/* Body Rows */}
-          {bodyRows.map((row) => (
-            <div key={row.id} className="address-row">
-              {row.cells.map((cell) => (
-                <AddressChunk
-                  key={cell.id}
-                  cell={cell}
-                  shouldHighlight={isHighlighted(row.rIdx, cell.cIdx)}
-                  cellKey={cell.id}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
-        {/* Centered Badge Row */}
-        <div className="address-badge-row">
-          <div className={labelClass}>
-            <span className="address-label">{badgeText}</span>
-          </div>
-        </div>
-      </div>
-    );
   };
 
   return (
@@ -288,12 +288,11 @@ const ResultAddress = ({ data, onSearchClick }) => {
         width: '100%'
       }}>
         {/* ADDRESS */}
-        <h1 className="stat"> Address Info
-        </h1>
-        <h1 className="address-details">
+        <h1 className="stat"> Address Info</h1>
+        <div className="address-details" style={{ width: '100%' }}>
           {renderAddressGrid(data?.address)}
           <div className="divider2" />
-        </h1>
+        </div>
         
         {/* BUTTONS CONTAINER - CENTERED */}
         {(() => {
@@ -301,31 +300,32 @@ const ResultAddress = ({ data, onSearchClick }) => {
           const isGuardBlocked = totalTx < 20;
           let downloadTitle = "Download History Book PDF";
           if (isGuardBlocked) {
-            downloadTitle = `A minimum of 20 transactions is required to download the History Book`;
+            downloadTitle = "A minimum of 20 transactions is required to download the History Book";
           } else if (isDownloading) {
             downloadTitle = "Generating History Book...";
           }
 
           return (
             <div className="action-buttons">
-              {/* COPY ADDRESS BUTTON */}
               <button
-                onClick={() => copyToClipboard(data.address, setCopyStatus)}
-                className={`action-button copy-button`}
+                type="button"
+                onClick={() => copyToClipboard(data?.address, setCopyStatus)}
+                className="action-button copy-button"
               >
-                <span><FaCopy /></span>
-                {copyStatus || "Copy"}
+                <FaCopy />
+                <span>{copyStatus || "Copy"}</span>
               </button>
 
               <button
+                type="button"
                 onClick={handleDownloadHistory}
                 disabled={isDownloading || isGuardBlocked}
                 title={downloadTitle}
                 className={`action-button receipt-button ${isDownloading || isGuardBlocked ? 'disabled' : ''}`}
                 style={{ marginLeft: '10px' }}
               >
-                <span><FaDownload /></span>
-                {isDownloading ? "Generating..." : "Download Book"}
+                <FaDownload />
+                <span>{isDownloading ? "Generating..." : "Download Book"}</span>
               </button>
             </div>
           );
@@ -365,13 +365,13 @@ const ResultAddress = ({ data, onSearchClick }) => {
         </div>
 
         {/* ADDRESS ANALYTICS CHART & GRAFFITI BREAKDOWN */}
-        <AddressAnalytics history={data?.history} spendable={data?.spendable} balance={data?.balance} />
+        <AddressAnalytics history={data?.history} />
 
         <div className="divider2" />
         <div className="stat">
           <span className="value">
             Recent Activity: {totalItems} transactions 
-            {totalPages > 1 && ` (Page ${currentPage} of ${totalPages})`}
+            {totalPages > 1 && ` (Page ${activePage} of ${totalPages})`}
           </span>
         </div>
         <div className="list">
@@ -390,16 +390,16 @@ const ResultAddress = ({ data, onSearchClick }) => {
                 <div className="tx-items">
                   <div className="stat">
                     <span className="value">{fmtTimestamp(h.timestamp)}</span>
-                      {renderClickableHash(
-                        h.txid,
-                        onSearchClick,
-                        h.txid,
-                        fmtTxid(h.txid) || "-"
-                      )}
-                      {/* From/To Address */}
-                      <div className="tx-address-row">
-                        {renderAddressLabel(h.direction, h.from, h.to)}
-                      </div>
+                    {renderClickableHash(
+                      h.txid,
+                      onSearchClick,
+                      h.txid,
+                      fmtTxid(h.txid) || "-"
+                    )}
+                    {/* From/To Address */}
+                    <div className="tx-address-row">
+                      {renderAddressLabel(h.direction, h.from, h.to)}
+                    </div>
                     <div className="tx-meta">
                       <span 
                         className="direction-badge" 
@@ -445,9 +445,11 @@ const ResultAddress = ({ data, onSearchClick }) => {
         {totalPages > 1 && (
           <div className="pagination-container">
             <button 
-              onClick={() => handlePageChange(currentPage - 1)}
-              disabled={currentPage === 1}
+              type="button"
+              onClick={() => handlePageChange(activePage - 1)}
+              disabled={activePage === 1}
               className="pagination-btn"
+              aria-label="Previous page"
             >
               &lt;
             </button>
@@ -457,9 +459,10 @@ const ResultAddress = ({ data, onSearchClick }) => {
                 <span key={pageNum} className="pagination-ellipsis">...</span>
               ) : (
                 <button
+                  type="button"
                   key={`page-${pageNum}`}
                   onClick={() => handlePageChange(pageNum)}
-                  className={`pagination-btn ${currentPage === pageNum ? 'active' : ''}`}
+                  className={`pagination-btn ${activePage === pageNum ? 'active' : ''}`}
                 >
                   {pageNum}
                 </button>
@@ -467,9 +470,11 @@ const ResultAddress = ({ data, onSearchClick }) => {
             ))}
             
             <button 
-              onClick={() => handlePageChange(currentPage + 1)}
-              disabled={currentPage === totalPages}
+              type="button"
+              onClick={() => handlePageChange(activePage + 1)}
+              disabled={activePage === totalPages}
               className="pagination-btn"
+              aria-label="Next page"
             >
               &gt;
             </button>

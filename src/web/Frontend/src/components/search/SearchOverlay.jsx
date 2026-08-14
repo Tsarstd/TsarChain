@@ -2,47 +2,23 @@ import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import SearchResultPanel from "./SearchResults";
 import { IoClose, IoTrashOutline, IoTimeOutline } from "react-icons/io5";
+import { getSearchHistory, clearSearchHistory, removeSearchHistoryItem } from "../../utils/searchHistory";
 
-const HISTORY_KEY = "tsar_search_history";
-
-export const getSearchHistory = () => {
-  try {
-    const raw = localStorage.getItem(HISTORY_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    console.warn("Read search history error:", e);
-    return [];
-  }
-};
-
-export const saveSearchHistory = (query) => {
-  if (!query || typeof query !== "string" || !query.trim()) return [];
-  const cleaned = query.trim();
-  try {
-    const prev = getSearchHistory();
-    const updated = [cleaned, ...prev.filter((item) => item.toLowerCase() !== cleaned.toLowerCase())].slice(0, 8);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
-    return updated;
-  } catch (e) {
-    console.warn("Save search history error:", e);
-    return [];
-  }
-};
-
-const SearchOverlay = ({ open, status, kind, result, message, onSearchClick, onClose }) => {
-  const [history, setHistory] = useState([]);
-  const [activeFilter] = useState("all");
-
-  useEffect(() => {
-    if (open) {
-      setHistory(getSearchHistory());
-    }
-  }, [open, status]);
+const SearchOverlay = ({
+  open,
+  status = "idle",
+  kind = "",
+  result = null,
+  message = "",
+  onSearchClick = () => {},
+  onClose,
+}) => {
+  const [historyKey, setHistoryKey] = useState(0);
 
   // Handle ESC key
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === "Escape" && open) {
+      if (e.key === "Escape" && open && onClose) {
         onClose();
       }
     };
@@ -50,39 +26,23 @@ const SearchOverlay = ({ open, status, kind, result, message, onSearchClick, onC
     return () => globalThis.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose]);
 
+  if (!open) return null;
+
+  const history = getSearchHistory();
+
   const handleClearHistory = () => {
-    try {
-      localStorage.removeItem(HISTORY_KEY);
-      setHistory([]);
-    } catch (e) {
-      console.warn("Clear history error:", e);
-    }
+    clearSearchHistory();
+    setHistoryKey((k) => k + 1);
   };
 
   const handleRemoveHistoryItem = (item, e) => {
     e.stopPropagation();
-    try {
-      const updated = history.filter((h) => h !== item);
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
-      setHistory(updated);
-    } catch (err) {
-      console.warn("Remove history item error:", err);
-    }
+    removeSearchHistoryItem(item);
+    setHistoryKey((k) => k + 1);
   };
-
-  if (!open) return null;
-
-  // Filter display kind match
-  const getFilteredKind = (filter, currentKind) => {
-    if (filter === "all" || filter === currentKind) {
-      return currentKind;
-    }
-    return "filtered_mismatch";
-  };
-  const filteredKind = getFilteredKind(activeFilter, kind);
 
   return (
-    <dialog className="search-overlay" open aria-modal="true" aria-label="Search Results">
+    <dialog className="search-overlay" open aria-modal="true" aria-label="Search Results" key={historyKey}>
       <div className="search-overlay__panel glass-panel">
         <div className="search-overlay__header">
           <div className="search-overlay__title-group">
@@ -138,19 +98,13 @@ const SearchOverlay = ({ open, status, kind, result, message, onSearchClick, onC
           </div>
         )}
 
-        {filteredKind === "filtered_mismatch" ? (
-          <div className="result-empty" style={{ margin: "20px 0" }}>
-            No results under filter <strong>{activeFilter.toUpperCase()}</strong>. Detected result type is <strong>{kind?.toUpperCase()}</strong>. Switch to <strong>ALL</strong> or <strong>{kind?.toUpperCase()}</strong> tab to view.
-          </div>
-        ) : (
-          <SearchResultPanel
-            status={status}
-            result={result}
-            kind={kind}
-            message={message}
-            onSearchClick={onSearchClick}
-          />
-        )}
+        <SearchResultPanel
+          status={status}
+          result={result}
+          kind={kind}
+          message={message}
+          onSearchClick={onSearchClick}
+        />
       </div>
     </dialog>
   );
@@ -164,14 +118,6 @@ SearchOverlay.propTypes = {
   message: PropTypes.string,
   onSearchClick: PropTypes.func,
   onClose: PropTypes.func.isRequired,
-};
-
-SearchOverlay.defaultProps = {
-  status: "idle",
-  kind: "",
-  result: null,
-  message: "",
-  onSearchClick: () => {},
 };
 
 export default SearchOverlay;

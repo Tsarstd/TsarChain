@@ -1,5 +1,5 @@
 import PropTypes from "prop-types";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useRenderHelpers } from "../SearchHelpers";
 import { ClickableValue } from "../SearchResults";
 import { graffitiMediaUrl } from "../../../api/explorer";
@@ -8,10 +8,6 @@ import {
   FaSearchPlus, 
   FaSearchMinus, 
   FaSync, 
-  FaExpand, 
-  FaCompress, 
-  FaAngleLeft, 
-  FaAngleRight,
   FaComments,
   FaCommentDots,
   FaUserCircle,
@@ -21,7 +17,6 @@ import {
   FaChevronUp
 } from "react-icons/fa";
 
-import { Document, Page, pdfjs } from 'react-pdf';
 import { 
   fmtBytes, 
   fmtTimestamp, 
@@ -31,8 +26,8 @@ import {
   fmtTxid
 } from "../../../utils/format";
 
-// Konfigurasi worker PDF
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Lazy-load PDF viewer to reduce initial bundle size by ~450KB
+const SmartPdfViewer = lazy(() => import("./SmartPdfViewer"));
 
 // Komponen Interactive Image Zoom & Drag
 const ImageZoomViewer = ({ src, alt = "Graffiti preview" }) => {
@@ -181,207 +176,6 @@ ImageZoomViewer.propTypes = {
   alt: PropTypes.string,
 };
 
-// Komponen Smart PDF Viewer dengan Smart Control Toolbar
-const SmartPdfViewer = ({ file, previewUrl }) => {
-  const [numPages, setNumPages] = useState(null);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [pageInput, setPageInput] = useState("1");
-  const [scale, setScale] = useState(1);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const containerRef = useRef(null);
-
-  const onDocumentLoadSuccess = ({ numPages: totalPages }) => {
-    setNumPages(totalPages);
-    setPageNumber(1);
-    setPageInput("1");
-  };
-
-  const goToPrevPage = () => {
-    setPageNumber((prev) => {
-      const next = Math.max(1, prev - 1);
-      setPageInput(String(next));
-      return next;
-    });
-  };
-
-  const goToNextPage = () => {
-    setPageNumber((prev) => {
-      const next = Math.min(numPages || 1, prev + 1);
-      setPageInput(String(next));
-      return next;
-    });
-  };
-
-  const commitPageJump = () => {
-    const val = Number.parseInt(pageInput, 10);
-    if (!Number.isNaN(val) && val >= 1 && val <= (numPages || 1)) {
-      setPageNumber(val);
-    } else {
-      setPageInput(String(pageNumber));
-    }
-  };
-
-  const handlePageInputSubmit = (e) => {
-    if (e.key === "Enter") {
-      commitPageJump();
-    }
-  };
-
-  const handleZoomIn = () => {
-    setScale((prev) => Math.min(2.5, Number((prev + 0.15).toFixed(2))));
-  };
-
-  const handleZoomOut = () => {
-    setScale((prev) => Math.max(0.5, Number((prev - 0.15).toFixed(2))));
-  };
-
-  const toggleFullscreen = () => {
-    if (!containerRef.current) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
-    } else {
-      containerRef.current.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
-    }
-  };
-
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
-  }, []);
-
-  // Keyboard navigation for PDF reader
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
-
-      if (e.key === "ArrowLeft" || e.key === "PageUp") {
-        e.preventDefault();
-        goToPrevPage();
-      } else if (e.key === "ArrowRight" || e.key === "PageDown") {
-        e.preventDefault();
-        goToNextPage();
-      }
-    };
-
-    globalThis.addEventListener("keydown", handleKeyDown);
-    return () => globalThis.removeEventListener("keydown", handleKeyDown);
-  }, [numPages, pageNumber]);
-
-  return (
-    <div
-      ref={containerRef}
-      className={`smart-pdf-container ${isFullscreen ? "fullscreen" : ""}`}
-    >
-      {/* Smart Control Toolbar */}
-      <div className="pdf-smart-toolbar">
-        {/* Direct Page Jump Input & Prev/Next */}
-        <div className="pdf-toolbar-group pdf-page-jump">
-          <button
-            type="button"
-            onClick={goToPrevPage}
-            disabled={pageNumber <= 1}
-            className="pdf-tool-btn"
-            title="Previous Page (←)"
-          >
-            <FaAngleLeft />
-          </button>
-          <div className="pdf-page-counter">
-            <span>Page</span>
-            <input
-              type="number"
-              min={1}
-              max={numPages || 1}
-              value={pageInput}
-              onChange={(e) => setPageInput(e.target.value)}
-              onKeyDown={handlePageInputSubmit}
-              onBlur={commitPageJump}
-              className="pdf-page-input"
-              aria-label="Direct Page Number Jump"
-            />
-            <span>of {numPages || "--"}</span>
-          </div>
-          <button
-            type="button"
-            onClick={goToNextPage}
-            disabled={pageNumber >= (numPages || 1)}
-            className="pdf-tool-btn"
-            title="Next Page (→)"
-          >
-            <FaAngleRight />
-          </button>
-        </div>
-
-        {/* Zoom & Fullscreen Controls */}
-        <div className="pdf-toolbar-group">
-          <button
-            type="button"
-            onClick={handleZoomIn}
-            disabled={scale >= 2.5}
-            className="pdf-tool-btn"
-            title="Zoom In (+)"
-          >
-            <FaSearchPlus />
-          </button>
-          <span className="pdf-scale-indicator">{Math.round(scale * 100)}%</span>
-          <button
-            type="button"
-            onClick={handleZoomOut}
-            disabled={scale <= 0.5}
-            className="pdf-tool-btn"
-            title="Zoom Out (-)"
-          >
-            <FaSearchMinus />
-          </button>
-          <button
-            type="button"
-            onClick={toggleFullscreen}
-            className="pdf-tool-btn"
-            title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Reader Mode"}
-          >
-            {isFullscreen ? <FaCompress /> : <FaExpand />}
-          </button>
-        </div>
-      </div>
-
-      {/* PDF Stage Wrapper */}
-      <div className="pdf-stage-wrapper">
-        <Document
-          file={file}
-          onLoadSuccess={onDocumentLoadSuccess}
-          loading={<div className="pdf-loading">Loading PDF document...</div>}
-          error={
-            <div className="pdf-error muted">
-              PDF document could not be rendered.{" "}
-              {previewUrl && (
-                <a href={previewUrl} target="_blank" rel="noopener noreferrer">
-                  Open PDF directly
-                </a>
-              )}
-            </div>
-          }
-          className="pdf-document"
-        >
-          <Page
-            pageNumber={pageNumber}
-            className="pdf-page"
-            scale={scale}
-            renderTextLayer={false}
-            renderAnnotationLayer={false}
-          />
-        </Document>
-      </div>
-    </div>
-  );
-};
-
-SmartPdfViewer.propTypes = {
-  file: PropTypes.any.isRequired,
-  previewUrl: PropTypes.string,
-};
-
 const ResultGraffiti = ({ data, onSearchClick }) => {
   const mime = String(data?.mime || "").toLowerCase();
   const isVideo = mime.includes("video") || mime.includes("mp4");
@@ -390,103 +184,12 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
   const [showDetails, setShowDetails] = useState(false);
   const [showAllComments, setShowAllComments] = useState(false);
 
-  // Percentage Loading State for Media
-  const [loadingProgress, setLoadingProgress] = useState(0);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [mediaBlobUrl, setMediaBlobUrl] = useState(null);
-
-  useEffect(() => {
-    const targetUrl = data?.preview_url || (data?.art_id ? graffitiMediaUrl(data.art_id) : null);
-    if (!targetUrl) {
-      setIsLoaded(true);
-      setLoadingProgress(100);
-      return;
-    }
-
-    const size = Number(data?.size || data?.size_bytes || 0);
-    const isLargeOrStreamable = isVideo || (size > 10 * 1024 * 1024);
-
-    if (isLargeOrStreamable) {
-      // Direct HTTP Streaming mode: allow browser native HTTP Range streaming
-      setIsLoaded(true);
-      setLoadingProgress(100);
-      setMediaBlobUrl(null);
-      return;
-    }
-
-    let isMounted = true;
-    setIsLoaded(false);
-    setLoadingProgress(0);
-
-    const xhr = new XMLHttpRequest();
-    xhr.open("GET", targetUrl, true);
-    xhr.responseType = "blob";
-
-    xhr.onprogress = (event) => {
-      if (isMounted) {
-        if (event.lengthComputable && event.total > 0) {
-          const percent = Math.min(99, Math.round((event.loaded / event.total) * 100));
-          setLoadingProgress(percent);
-        } else {
-          setLoadingProgress((prev) => Math.min(95, prev + 15));
-        }
-      }
-    };
-
-    xhr.onload = () => {
-      if (isMounted) {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          const blob = xhr.response;
-          const objectUrl = URL.createObjectURL(blob);
-          setMediaBlobUrl(objectUrl);
-          setLoadingProgress(100);
-          setIsLoaded(true);
-        } else {
-          setIsLoaded(true);
-          setLoadingProgress(100);
-        }
-      }
-    };
-
-    xhr.onerror = () => {
-      if (isMounted) {
-        setIsLoaded(true);
-        setLoadingProgress(100);
-      }
-    };
-
-    xhr.send();
-
-    return () => {
-      isMounted = false;
-      xhr.abort();
-      if (mediaBlobUrl) {
-        URL.revokeObjectURL(mediaBlobUrl);
-      }
-    };
-  }, [data?.art_id, data?.preview_url, data?.size, data?.size_bytes, isVideo]);
+  const targetMediaUrl = data?.preview_url || (data?.art_id ? graffitiMediaUrl(data.art_id) : null);
 
   // Render media preview
   const renderMediaPreview = () => {
-    if (!data?.preview_url) {
+    if (!targetMediaUrl) {
       return <div className="muted">Preview is not available</div>;
-    }
-
-    if (!isLoaded) {
-      return (
-        <div className="graffiti-loading-box glass-panel">
-          <div className="graffiti-loading-content">
-            <span className="graffiti-loading-spinner" />
-            <div className="graffiti-loading-text">
-              <span>Loading Graffiti Media...</span>
-              <span className="graffiti-pct">{loadingProgress}%</span>
-            </div>
-            <div className="graffiti-progress-track">
-              <div className="graffiti-progress-fill" style={{ width: `${loadingProgress}%` }} />
-            </div>
-          </div>
-        </div>
-      );
     }
 
     if (isVideo) {
@@ -497,7 +200,7 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
           controlsList="nodownload"
           onContextMenu={(e) => e.preventDefault()}
           preload="metadata"
-          src={mediaBlobUrl || data.preview_url}
+          src={targetMediaUrl}
         >
           <track
             kind="captions"
@@ -511,23 +214,25 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
 
     if (isPdf) {
       return (
-        <SmartPdfViewer
-          file={mediaBlobUrl || data.preview_url}
-          previewUrl={data.preview_url}
-        />
+        <Suspense fallback={<div className="pdf-loading">Loading PDF Viewer Engine...</div>}>
+          <SmartPdfViewer
+            file={targetMediaUrl}
+            previewUrl={targetMediaUrl}
+          />
+        </Suspense>
       );
     }
 
     return (
       <ImageZoomViewer
-        src={mediaBlobUrl || data.preview_url}
+        src={targetMediaUrl}
         alt="Graffiti preview"
       />
     );
   };
 
   return (
-      <>
+    <>
       {/* Media Preview */}
       {renderMediaPreview()}
       <div className="divider" />
@@ -546,33 +251,30 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
           {data?.art_id && (
             <button
               type="button"
-              disabled={!isLoaded}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px',
                 padding: '8px 18px',
-                backgroundColor: isLoaded ? '#10b981' : '#475569',
-                color: isLoaded ? 'white' : '#94a3b8',
+                backgroundColor: '#10b981',
+                color: 'white',
                 border: 'none',
                 borderRadius: '4px',
-                cursor: isLoaded ? 'pointer' : 'not-allowed',
+                cursor: 'pointer',
                 fontSize: '14px',
                 fontWeight: '500',
-                opacity: isLoaded ? 1 : 0.65,
                 transition: 'all 0.3s ease',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
               }}
               onMouseEnter={(e) => {
-                if (isLoaded) e.currentTarget.style.backgroundColor = '#059669';
+                e.currentTarget.style.backgroundColor = '#059669';
               }}
               onMouseLeave={(e) => {
-                if (isLoaded) e.currentTarget.style.backgroundColor = '#10b981';
+                e.currentTarget.style.backgroundColor = '#10b981';
               }}
-              title={isLoaded ? `Download media (${data.art_id})` : `Loading media data (${loadingProgress}%)...`}
+              title={`Download media (${data.art_id})`}
               onClick={() => {
-                if (!isLoaded) return;
-                const downloadUrl = mediaBlobUrl || graffitiMediaUrl(data.art_id);
+                const downloadUrl = targetMediaUrl || graffitiMediaUrl(data.art_id);
                 const link = document.createElement("a");
                 link.href = downloadUrl;
                 link.download = `${data.art_id}`;
@@ -581,7 +283,7 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
                 link.remove();
               }}
             >
-              <FaDownload /> {isLoaded ? "Download" : `Loading (${loadingProgress}%)...`}
+              <FaDownload /> Download Media
             </button>
           )}
           <button 

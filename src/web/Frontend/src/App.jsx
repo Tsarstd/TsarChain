@@ -8,7 +8,8 @@ import Block from "./pages/Block";
 import Graffiti from "./pages/Graffiti";
 import Network from "./pages/Network";
 
-import SearchOverlay, { saveSearchHistory } from "./components/search/SearchOverlay";
+import SearchOverlay from "./components/search/SearchOverlay";
+import { saveSearchHistory } from "./utils/searchHistory";
 import { ToastProvider } from "./components/common/ToastContainer";
 import { searchExplorer } from "./api/explorer";
 import { guessKind } from "./utils/searchKind";
@@ -41,26 +42,15 @@ const pageTransition = {
 const App = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => new URLSearchParams(globalThis.location?.search || "").get('search') || "");
   const [kind, setKind] = useState("unknown");
   const [result, setResult] = useState(null);
   const [status, setStatus] = useState("idle");
   const [message, setMessage] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
-
-  useEffect(() => {
-    const searchParams = new URLSearchParams(location.search);
-    const searchQuery = searchParams.get('search');
-    
-    if (searchQuery?.trim()) {
-      setQuery(searchQuery);
-      setSearchOpen(true);
-      runSearch(searchQuery);
-    }
-  }, [location]);
+  const [searchOpen, setSearchOpen] = useState(() => Boolean(new URLSearchParams(globalThis.location?.search || "").get('search')?.trim()));
 
   const runSearch = useCallback(async (q) => {
-    if (!q.trim()) return;
+    if (!q || !q.trim()) return;
     saveSearchHistory(q);
     const inferred = guessKind(q);
     setKind(inferred);
@@ -77,6 +67,34 @@ const App = () => {
       setMessage(err.message || "Gagal memuat data.");
     }
   }, []);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const searchQuery = searchParams.get('search');
+    
+    if (searchQuery?.trim()) {
+      let isMounted = true;
+      saveSearchHistory(searchQuery);
+      searchExplorer(searchQuery)
+        .then((resp) => {
+          if (isMounted) {
+            setResult(resp.data);
+            setKind(resp.kind || guessKind(searchQuery));
+            setStatus("done");
+          }
+        })
+        .catch((err) => {
+          if (isMounted) {
+            setResult(null);
+            setStatus("error");
+            setMessage(err.message || "Gagal memuat data.");
+          }
+        });
+      return () => {
+        isMounted = false;
+      };
+    }
+  }, [location.search]);
 
   const handleSearchClick = useCallback((value) => {
     setQuery(value);
@@ -98,6 +116,18 @@ const App = () => {
     runSearch(q);
   }, [query, runSearch]);
 
+  const renderBlockPage = (
+    <motion.div
+      variants={pageVariants}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      transition={pageTransition}
+    >
+      <Block onSearchClick={handleSearchClick} />
+    </motion.div>
+  );
+
   return (
     <ToastProvider>
       <div className="app">
@@ -116,20 +146,8 @@ const App = () => {
         <div className="app-main">
           <AnimatePresence mode="wait">
             <Routes location={location} key={location.pathname}>
-              <Route
-                path="/"
-                element={
-                  <motion.div
-                    variants={pageVariants}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    transition={pageTransition}
-                  >
-                    <Block onSearchClick={handleSearchClick} />
-                  </motion.div>
-                }
-              />
+              <Route path="/" element={renderBlockPage} />
+              <Route path="/block" element={renderBlockPage} />
               <Route
                 path="/graffiti"
                 element={

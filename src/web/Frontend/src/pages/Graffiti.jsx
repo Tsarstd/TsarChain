@@ -1,5 +1,5 @@
 import PropTypes from "prop-types";
-import { useDragScroll } from "./Block";
+import { useDragScroll } from "../utils/useDragScroll";
 import { fmtBytes } from "../utils/format";
 import { useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useState, useMemo, memo } from "react";
@@ -110,12 +110,9 @@ const Graffiti = ({ onSearchClick }) => {
 
   const { scrollerRef, isDragging, dragHandlers } = useDragScroll();
 
-  const loadMore = useCallback(async () => {
-    if (loading || !hasMore) return;
-    setLoading(true);
-    setMessage("");
+  const fetchGraffiti = useCallback(async (currentOffset) => {
     try {
-      const resp = await fetchGraffitiList({ limit: PAGE_SIZE, offset });
+      const resp = await fetchGraffitiList({ limit: PAGE_SIZE, offset: currentOffset });
       const data = resp.data || {};
       const nextItems = data.items || [];
       setItems((prev) => {
@@ -129,20 +126,40 @@ const Graffiti = ({ onSearchClick }) => {
         }
         return merged;
       });
-      setOffset(data.nextOffset ?? offset + nextItems.length);
+      setOffset(data.nextOffset ?? currentOffset + nextItems.length);
       setHasMore(Boolean(data.hasMore));
     } catch (err) {
       setMessage(err.message || "Failed to load graffiti.");
     } finally {
       setLoading(false);
     }
-  }, [hasMore, loading, offset]);
+  }, []);
+
+  const loadMore = useCallback(async () => {
+    if (loading || !hasMore) return;
+    setLoading(true);
+    setMessage("");
+    await fetchGraffiti(offset);
+  }, [fetchGraffiti, hasMore, loading, offset]);
 
   useEffect(() => {
-    if (items.length === 0 && !loading) {
-      loadMore();
-    }
-  }, [items.length, loading, loadMore]);
+    let isMounted = true;
+    fetchGraffitiList({ limit: PAGE_SIZE, offset: 0 })
+      .then((resp) => {
+        if (!isMounted) return;
+        const data = resp.data || {};
+        const incoming = Array.isArray(data.items) ? data.items : [];
+        setItems(incoming);
+        setOffset(data.nextOffset ?? incoming.length);
+        setHasMore(Boolean(data.hasMore));
+      })
+      .catch((err) => {
+        if (isMounted) setMessage(err.message || "Failed to load graffiti.");
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Filter items based on active tab
   const filteredItems = useMemo(() => {
@@ -187,7 +204,7 @@ const Graffiti = ({ onSearchClick }) => {
   const handleNavigateToGraffiti = async () => {
     const targetId = navInput.trim();
     if (!targetId) {
-      setMessage("Masukkan ID graffiti");
+      setMessage("Input Graffiti ID");
       return;
     }
 
@@ -290,7 +307,7 @@ const Graffiti = ({ onSearchClick }) => {
         {/* Category Filter Tab Bar */}
         <div className="graffiti-filter-bar glass-panel">
           <div className="graffiti-filter-title">
-            <RiFilter3Line className="filter-icon" /> Filter Media:
+            <RiFilter3Line className="filter-icon" /> Filter
           </div>
           <div className="graffiti-tabs">
             <button
@@ -325,11 +342,6 @@ const Graffiti = ({ onSearchClick }) => {
         </div>
 
         <div className="section-header">
-          <div>
-            <p className="muted">
-              Swipe right to load older posts.
-            </p>
-          </div>
           <div className="navigation-controls">
             <button
               className="nav-button nav-button--back"
@@ -384,9 +396,9 @@ const Graffiti = ({ onSearchClick }) => {
           )}
         </div>
 
-        {loading && items.length > 0 && <div className="result-empty">Loading More Inscriptions...</div>}
+        {loading && items.length > 0 && <div className="result-empty">Loading More ...</div>}
         {!hasMore && items.length > 0 && (
-          <div className="result-empty">*All Graffiti Inscriptions Loaded</div>
+          <div className="result-empty">*All Graffiti Loaded</div>
         )}
         {message && <div className="result-empty">{message}</div>}
       </section>

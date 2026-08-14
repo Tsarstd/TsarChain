@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { ClickableValue } from "./SearchResults";
 import { formatHashForDisplay, getMaxCharsPerLine } from "../../utils/format";
-import { toast } from "../common/ToastContainer";
+import { toast } from "../../utils/toast";
 
 // ---------- Hook untuk deteksi mobile ----------
 export const useMobile = () => {

@@ -4,9 +4,9 @@ export const fmtShort = (str, startLen = 6, endLen = 4) => {
   return `${str.slice(0, startLen)}...${str.slice(-endLen)}`;
 };
 
-export const fmtHash = (hash) => fmtShort(hash, 8, 10);
-export const fmtTxid = (txid) => fmtShort(txid, 8, 10);
-export const fmtAddress = (addr) => fmtShort(addr, 8, 10);
+export const fmtHash = (hash, startLen = 8, endLen = 10) => fmtShort(hash, startLen, endLen);
+export const fmtTxid = (txid, startLen = 8, endLen = 10) => fmtShort(txid, startLen, endLen);
+export const fmtAddress = (addr, startLen = 8, endLen = 10) => fmtShort(addr, startLen, endLen);
 
 export const formatHashForDisplay = (hash, maxCharsPerLine = 32) => {
   if (!hash || hash.length <= maxCharsPerLine) return hash;

@@ -9,8 +9,8 @@ const footerSections = [
   {
     title: "Explore",
     links: [
-      { text: "Home", url: "/Graffiti", isInternal: true },
-      { text: "About", url: "#" },
+      { text: "Blocks", url: "/", isInternal: true },
+      { text: "Graffiti", url: "/graffiti", isInternal: true },
       { text: "Services", url: "#" },
       { text: "Contact", url: "#" }
     ]
@@ -27,9 +27,9 @@ const footerSections = [
   {
     title: "Networks",
     links: [
-      { text: "Devnet", url: "/Network", isInternal: true  },
+      { text: "Devnet", url: "/network", isInternal: true },
       { text: "Testnet", url: "#" },
-      { text: "Info", url: "#"},
+      { text: "Info", url: "#" },
     ]
   },
   {

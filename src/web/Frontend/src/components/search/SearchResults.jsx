@@ -6,7 +6,7 @@ import { ResultTx } from "./category/SearchTxid";
 import { ResultAddress } from "./category/SearchAddress";
 import { ResultGraffiti } from "./category/SearchGraffiti";
 import { SkeletonSearch } from "../common/SkeletonLoader";
-import { toast } from "../common/ToastContainer";
+import { toast } from "../../utils/toast";
 
 export const ClickableValue = ({
   value,
@@ -51,23 +51,7 @@ export const ClickableValue = ({
       {onSearchClick ? (
         <a
           href={`/?search=${encodeURIComponent(value)}`}
-          className={finalClassName}
-          style={{
-            cursor: "pointer",
-            color: "#5e9de6ff",
-            transition: "color 0.2s",
-            alignSelf: "baseline",
-            background: "none",
-            border: "none",
-            padding: 0,
-            fontFamily: "inherit",
-            fontSize: "inherit",
-            fontWeight: "inherit",
-            lineHeight: "inherit",
-            textAlign: "inherit",
-            display: "inline",
-            textDecoration: "none",
-          }}
+          className={`clickable-link ${finalClassName}`}
           onClick={(e) => {
             if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) {
               return;
@@ -76,8 +60,6 @@ export const ClickableValue = ({
             onSearchClick(value);
           }}
           data-tooltip={currentTooltip || undefined}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#4d7fb7ff")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "#5e9de6ff")}
         >
           {displayValue}
         </a>

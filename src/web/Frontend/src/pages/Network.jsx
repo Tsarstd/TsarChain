@@ -177,9 +177,8 @@ const Network = ({onSearchClick}) => {
   const [isLive, setIsLive] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const loadData = useCallback((showRefreshing = false) => {
-    if (showRefreshing) setIsRefreshing(true);
-    fetchNetwork()
+  const loadData = useCallback(() => {
+    return fetchNetwork()
       .then((resp) => {
         setSnap(resp.data || null);
         setStatus("done");
@@ -187,24 +186,30 @@ const Network = ({onSearchClick}) => {
       })
       .catch((err) => {
         setMessage(err.message || "Gagal memuat data network.");
-        if (!snap) setStatus("error");
-      })
-      .finally(() => {
-        setIsRefreshing(false);
+        setStatus((prevStatus) => (prevStatus === "loading" ? "error" : prevStatus));
       });
-  }, [snap]);
+  }, []);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await loadData();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [loadData]);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   useEffect(() => {
     if (!isLive) return;
     const interval = setInterval(() => {
-      loadData(true);
+      handleRefresh();
     }, 30000);
     return () => clearInterval(interval);
-  }, [isLive, loadData]);
+  }, [isLive, handleRefresh]);
 
   const view = useMemo(() => normalizeSnapshot(snap), [snap]);
 

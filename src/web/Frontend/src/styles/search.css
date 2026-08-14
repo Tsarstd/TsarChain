@@ -43,6 +43,22 @@
   word-break: break-word;
 }
 
+.clickable-link {
+  cursor: pointer;
+  color: #38bdf8 !important;
+  transition: color 0.15s ease, opacity 0.15s ease;
+  text-decoration: none;
+}
+
+.clickable-link:hover {
+  color: #7dd3fc !important;
+  text-decoration: underline;
+}
+
+.clickable-link:active {
+  color: #0284c7 !important;
+}
+
 .btn-ghost {
   background: #451a1a;
   border: 1px solid rgba(221, 43, 43, 0.4);

@@ -5,7 +5,7 @@ import { RiBarChartFill } from "react-icons/ri";
 import { fmtTsar } from "../../utils/format";
 
 // Global configurable thresholds for Persona Badges
-export const PERSONA_THRESHOLDS = {
+const PERSONA_THRESHOLDS = {
   GRAFFITI_CREATOR: 15,    // Minimal 15 Graffiti POSTs
   GRAFFITI_COMMENTER: 25,  // Minimal 25 Graffiti COMMENTs
   ROYALTY_EARNER: 25,      // Minimal 25 Graffiti PAYOUTs
@@ -21,19 +21,16 @@ const PieChart = ({ title, items, totals = [], size = 180 }) => {
   const radius = size * 0.4;
   const labelRadius = radius * 0.62;
 
-  let cumulativeAngle = -90; // Start at top center (-90deg)
-
   const slices = items
     .filter((item) => item.value > 0)
-    .map((item) => {
+    .reduce((acc, item) => {
+      const prevEndAngle = acc.length > 0 ? acc[acc.length - 1].endAngle : -90;
       const percentage = total > 0 ? (item.value / total) * 100 : 0;
       const angle = (percentage / 100) * 360;
 
-      const startAngle = cumulativeAngle;
-      const endAngle = cumulativeAngle + angle;
+      const startAngle = prevEndAngle;
+      const endAngle = prevEndAngle + angle;
       const midAngle = startAngle + angle / 2;
-
-      cumulativeAngle = endAngle;
 
       const startRad = (startAngle * Math.PI) / 180;
       const endRad = (endAngle * Math.PI) / 180;
@@ -54,15 +51,18 @@ const PieChart = ({ title, items, totals = [], size = 180 }) => {
       const lx = cx + labelRadius * Math.cos(midRad);
       const ly = cy + labelRadius * Math.sin(midRad);
 
-      return {
+      acc.push({
         ...item,
         percentage,
+        startAngle,
+        endAngle,
         pathData,
         lx,
         ly,
         showLabel: percentage >= 5,
-      };
-    });
+      });
+      return acc;
+    }, []);
 
   return (
     <div className="pie-chart-card">
@@ -188,7 +188,7 @@ PieChart.propTypes = {
   size: PropTypes.number,
 };
 
-export const AddressAnalytics = ({ history = [], spendable = 0, balance = 0 }) => {
+export const AddressAnalytics = ({ history = [] }) => {
   const stats = useMemo(() => {
     let receivedCount = 0;
     let receivedAmt = 0;
@@ -367,6 +367,4 @@ export const AddressAnalytics = ({ history = [], spendable = 0, balance = 0 }) =
 
 AddressAnalytics.propTypes = {
   history: PropTypes.array,
-  spendable: PropTypes.number,
-  balance: PropTypes.number,
 };
