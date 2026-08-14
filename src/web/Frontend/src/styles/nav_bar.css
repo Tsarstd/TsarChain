@@ -1,22 +1,22 @@
 .navbar {
-  --nav-bg: linear-gradient(180deg, #0f121c 0%, #0b0c12 100%);
-  --nav-line: rgba(40, 40, 40, 0.18);
-  --nav-accent: #db886a;
-  --nav-text: #ffffff;
-  --nav-muted: rgba(255, 255, 255, 0.7);
-  --nav-active: rgba(249, 116, 22, 0.87);
-  --nav-hover: rgba(228, 103, 13, 0.367);
-  --mobile-overlay: rgba(11, 12, 18, 0.95);
+  --nav-bg: var(--bg-nav);
+  --nav-line: var(--border);
+  --nav-accent: var(--accent-nav);
+  --nav-text: var(--text-heading);
+  --nav-muted: var(--text-muted);
+  --nav-active: var(--accent);
+  --nav-hover: var(--accent-subtle-hover);
+  --mobile-overlay: var(--bg-glass-modal);
   
   background: 
     radial-gradient(
       900px 420px at 12% 0%,
-      rgba(59, 130, 246, 0.16),
+      var(--primary-subtle),
       transparent 60%
     ),
     radial-gradient(
       900px 520px at 88% 10%,
-      rgba(224, 95, 50, 0.12),
+      var(--accent-subtle),
       transparent 65%
     ),
     var(--nav-bg);
@@ -37,10 +37,10 @@
   inset: 0;
   background: linear-gradient(
     120deg,
-    rgba(255, 255, 255, 0.03),
+    var(--bg-glass-subtle),
     transparent 40%,
     transparent 60%,
-    rgba(255, 255, 255, 0.02)
+    var(--bg-glass-subtle)
   );
   pointer-events: none;
   z-index: -1;
@@ -124,7 +124,7 @@
 .navbar__menu-link.active {
   color: var(--nav-text);
   background: var(--nav-active);
-  box-shadow: 0 4px 15px rgba(249, 116, 22, 0.25);
+  box-shadow: var(--shadow-accent);
 }
 
 .navbar__menu-link.active::after {
@@ -152,8 +152,8 @@
 .navbar__search {
   display: flex;
   align-items: center;
-  background: rgba(24, 26, 32, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-nav-dropdown);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 4px 6px 4px 8px;
   gap: 8px;
@@ -165,9 +165,9 @@
 }
 
 .navbar__search:focus-within {
-  border-color: rgba(224, 95, 50, 0.5);
-  box-shadow: 0 0 0 3px rgba(224, 95, 50, 0.15),
-              0 4px 20px rgba(0, 0, 0, 0.4);
+  border-color: var(--accent-glow-strong);
+  box-shadow: 0 0 0 3px var(--accent-subtle-hover),
+              var(--shadow-md);
   transform: translateY(-1px);
 }
 
@@ -191,15 +191,15 @@
 }
 
 .navbar__search-input::placeholder {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-disabled);
   font-size: 12px;
 }
 
 .navbar__shortcut {
-  background: #1e293b;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--bg-badge-slate);
+  border: 1px solid var(--border-medium);
   border-radius: 5px;
-  color: #cbd5e1;
+  color: var(--text-slate-body);
   font-size: 10px;
   font-weight: var(--fw-light);
   padding: 2px 6px;
@@ -209,11 +209,10 @@
 }
 
 .navbar__search-btn {
-  background-color: #a13204;
-  background-image: linear-gradient(135deg, #cc4e21, #a13204);
+  background-image: linear-gradient(135deg, var(--accent-active), var(--accent-darker));
   border: none;
   border-radius: 8px;
-  color: white;
+  color: var(--text-heading);
   padding: 8px 16px;
   font-size: 16px;
   cursor: pointer;
@@ -226,10 +225,9 @@
 }
 
 .navbar__search-btn:hover {
-  background-color: #b03c13;
-  background-image: linear-gradient(135deg, #cc4e21, #b03c13);
+  background-image: linear-gradient(135deg, var(--accent-active), var(--accent-dark));
   transform: translateY(-1px);
-  box-shadow: 0 4px 15px rgba(224, 95, 50, 0.3);
+  box-shadow: var(--shadow-accent);
 }
 
 /* Mobile Toggle Button */
@@ -247,7 +245,7 @@
 }
 
 .navbar__mobile-toggle:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--bg-glass-active);
   color: var(--nav-accent);
 }
 
@@ -304,16 +302,16 @@
     top: 70px;
     left: 0;
     right: 0;
-    background: rgba(15, 18, 28, 0.98);
+    background: var(--bg-nav-dropdown);
     backdrop-filter: blur(20px);
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid var(--border);
     padding: 20px;
     transform: translateY(-100%);
     opacity: 0;
     visibility: hidden;
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 1000;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow-md);
   }
   
   .navbar__menu.open {
@@ -346,7 +344,7 @@
   
   .navbar__menu-link.active {
     border-left-color: var(--nav-accent);
-    background: rgba(249, 116, 22, 0.15);
+    background: var(--accent-subtle-hover);
     box-shadow: none;
   }
   

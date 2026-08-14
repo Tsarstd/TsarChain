@@ -5,8 +5,8 @@
   align-self: baseline;
   justify-self: start;
   padding: 1px 5px;
-  background: linear-gradient(135deg, rgba(77, 77, 77, 0.809), rgba(42, 42, 42, 0.768));
-  border: 1px solid rgba(128, 121, 115, 0.618);
+  background: var(--badge-neutral-bg);
+  border: 1px solid var(--border-gray);
   backdrop-filter: blur(10px);
   transition: all 0.2s ease;
 }
@@ -18,21 +18,13 @@
   color: var(--card);
   font-weight: var(--fw-bold);
   letter-spacing: 0.4px;
-  background: linear-gradient(
-    45deg,
-    #555555,
-    #7e7e7e,
-    #acacac,
-    #d2d2d2,
-    #acacac,
-    #555555
-  );
+  background: var(--gradient-silver);
   background-size: 200% 200%;
   animation: gradient-wave 6s ease-in-out infinite;
   box-shadow: 
-    0 2px 3px rgba(0, 0, 0, 0.281),
-    inset 0 1px 1px rgba(255, 255, 255, 0.2),
-    inset 0 -1px 1px rgba(0, 0, 0, 0.3);
+    var(--shadow-sm),
+    inset 0 1px 1px var(--border-strong),
+    inset 0 -1px 1px var(--bg-overlay);
 }
 
 .coinbase-label {
@@ -41,13 +33,13 @@
   font-weight: var(--fw-medium);
   color: var(--card);
   white-space: nowrap;
-  background: linear-gradient(135deg, rgb(201, 168, 3), rgba(114, 114, 7, 0.916));
+  background: linear-gradient(135deg, var(--color-warning), var(--color-warning-darker));
   position: relative;
   overflow: hidden;
   transition: all 0.3s ease;
   transform: translateZ(0);
 
-  border: 1px solid rgba(168, 168, 168, 0.618);
+  border: 1px solid var(--border-gray);
 }
 
 .coinbase-label::after {
@@ -60,25 +52,25 @@
   background: linear-gradient(
     45deg,
     transparent 30%,
-    rgba(255, 255, 138, 0.702) 50%,
+    var(--color-warning-light) 50%,
     transparent 70%
   );
   animation: shine 2s ease-in-out infinite;
 }
 
 .inputs-label {
-  background: linear-gradient(135deg, rgb(77, 0, 0), rgb(42, 0, 0));
+  background: linear-gradient(135deg, var(--color-danger-dark), var(--color-danger-darker));
   color: var(--text);
-  border: 1px solid rgba(168, 168, 168, 0.618);
+  border: 1px solid var(--border-gray);
   padding: 2px 8px;
   font-size: 12px;
   font-weight: var(--fw-medium);
 }
 
 .outputs-label {
-  background: linear-gradient(135deg, rgb(223, 97, 0), rgb(143, 69, 0));
+  background: linear-gradient(135deg, var(--accent-hover), var(--accent-darker));
   color: var(--text);
-  border: 1px solid rgba(168, 168, 168, 0.618);
+  border: 1px solid var(--border-gray);
   padding: 2px 8px;
   font-size: 12px;
   font-weight: var(--fw-medium);
@@ -115,7 +107,7 @@
 /* BASE BUTTON STYLE */
 .action-button {
   padding: 10px 20px;
-  color: white;
+  color: var(--text-heading);
   border: none;
   border-radius: 5px;
   cursor: pointer;
@@ -141,21 +133,21 @@
   background: linear-gradient(
     45deg,
     transparent 30%,
-    rgba(255, 255, 255, 0.1) 50%,
+    var(--bg-glass-active) 50%,
     transparent 70%
   );
   animation: shine 3s ease-in-out infinite;
 }
 
 .action-button.receipt-button {
-  background: linear-gradient(135deg, #dd6a05 0%, #593411cf 100%);
-  border: 1px solid rgba(237, 182, 115, 0.618);
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+  background: var(--badge-graffiti-bg);
+  border: 1px solid var(--accent-subtle-border);
+  box-shadow: var(--shadow-sm);
 }
 
 .action-button.receipt-button:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-md);
 }
 
 .action-button.receipt-button:disabled {
@@ -164,23 +156,23 @@
 }
 
 .action-button.copy-button {
-  background: linear-gradient(135deg, rgba(64, 46, 36, 0.8) 0%, rgba(0, 0, 0, 0.47) 100%);
-  border: 1px solid rgba(171, 171, 171, 0.618);
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+  background: linear-gradient(135deg, var(--accent-glow) 0%, var(--bg-overlay) 100%);
+  border: 1px solid var(--border-gray);
+  box-shadow: var(--shadow-sm);
 }
 
 .action-button.copy-button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-md);
 }
 
 .spinner {
   display: inline-block;
   width: 12px;
   height: 12px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  border: 2px solid var(--border-strong);
   border-radius: 50%;
-  border-top-color: white;
+  border-top-color: var(--text-heading);
   animation: spin 1s ease-in-out infinite;
 }
 
@@ -189,11 +181,11 @@
 .addr-badge {
   padding: 3px 6px;
   font-size: 10px;
-  border: solid 1px #b6b6b67c;
+  border: solid 1px var(--border-gray);
   font-weight: var(--fw-light);
   letter-spacing: 0.4px;
   white-space: nowrap;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.2), inset 0 -1px 1px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-sm), inset 0 1px 1px var(--border-strong), inset 0 -1px 1px var(--bg-overlay);
   position: relative;
   transition: all 0.3s ease;
   transform: translateZ(0);
@@ -213,46 +205,46 @@
   background: linear-gradient(
     45deg,
     transparent 30%,
-    rgba(255, 255, 255, 0.1) 50%,
+    var(--bg-glass-active) 50%,
     transparent 70%
   );
   animation: shine 3s ease-in-out infinite;
 }
 
 .addr-type-P2WPKH { 
-  background: linear-gradient(135deg, #68441d 0%, #51411da4 100%);
-  color: #fefae0; 
+  background: var(--badge-orange-bg);
+  color: var(--text-primary); 
 }
 
 .addr-P2WPKH { 
-  background: linear-gradient(135deg, #48721e 0%, #3d5c21af 100%);
-  color: #fefae0; 
+  background: var(--badge-p2wpkh-bg);
+  color: var(--text-primary); 
 }
 
 .addr-type-P2WSH { 
-  background: linear-gradient(135deg, #1f5676 0%, #123f57c6 100%);
-  color: #f8f9fa; 
+  background: var(--badge-contract-bg);
+  color: var(--text-heading); 
 }
 
 .addr-P2WSH { 
-  background: linear-gradient(135deg, #972a95 0%, #391335b8 100%);
-  color: #f8f9fa; 
+  background: var(--badge-p2wsh-bg);
+  color: var(--text-heading); 
 }
 
 .addr-opreturn { 
-  background: linear-gradient(135deg, #a83232 0%, #8d2d2d 100%);
-  color: #f8f9fa; 
+  background: var(--badge-reward-bg);
+  color: var(--text-heading); 
 }
 
 /* Event Badge Styles */
 .event-badge {
   padding: 3px 6px;
   font-size: 10px;
-  border: solid 1px #b6b6b67c;
+  border: solid 1px var(--border-gray);
   font-weight: var(--fw-light);
   letter-spacing: 0.4px;
   white-space: nowrap;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.2), inset 0 -1px 1px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-sm), inset 0 1px 1px var(--border-strong), inset 0 -1px 1px var(--bg-overlay);
   position: relative;
   transition: all 0.3s ease;
   transform: translateZ(0);
@@ -272,25 +264,25 @@
   background: linear-gradient(
     45deg,
     transparent 30%,
-    rgba(255, 255, 255, 0.1) 50%,
+    var(--bg-glass-active) 50%,
     transparent 70%
   );
   animation: shine 3s ease-in-out infinite;
 }
 
 .event-post {
-  background: linear-gradient(135deg, #b84a14 0%, #7e3e18e3 100%);
-  color: white;
+  background: var(--badge-graffiti-bg);
+  color: var(--text-heading);
 }
 
 .event-comment {
-  background: linear-gradient(135deg, #1b7a37 0%, #114c22b7 100%);
-  color: white;
+  background: var(--badge-genesis-bg);
+  color: var(--text-heading);
 }
 
 .event-payout {
-  background: linear-gradient(135deg, #1b74ad 0%, #154573dd 100%);
-  color: white;
+  background: var(--badge-contract-bg);
+  color: var(--text-heading);
 }
 
 /* STYLE FOR ADDRESS QUERY */
@@ -298,14 +290,14 @@
 .tx-meta {
   display: flex;
   font-size: 11px;
-  color: #aaa;
+  color: var(--text-muted);
   margin-top: 1px;
 }
 
 .tx-height {
-  background: #194d13;
+  background: var(--color-success-darker);
   padding: 3px 6px;
-  color: #ffffff;
+  color: var(--text-heading);
   position: relative;
   overflow: hidden;
 }
@@ -320,16 +312,16 @@
   background: linear-gradient(
     45deg,
     transparent 30%,
-    rgba(255, 255, 255, 0.1) 50%,
+    var(--bg-glass-active) 50%,
     transparent 70%
     );
     animation: shine 3.6s infinite linear;
 }
   
 .tx-confirms {
-  background: rgba(51, 89, 54, 0.3);
+  background: var(--color-success-bg);
   padding: 3px 6px;
-  color: #ffffff;
+  color: var(--text-heading);
   position: relative;
   overflow: hidden;
 }
@@ -344,7 +336,7 @@
   background: linear-gradient(
   45deg,
   transparent 30%,
-  rgba(255, 255, 255, 0.1) 50%,
+  var(--bg-glass-active) 50%,
   transparent 70%
   );
   animation: shine 4s infinite linear;
@@ -369,7 +361,7 @@
 }
 
 .tx-address-label {
-  color: #aaa;
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: var(--fw-medium);
 }
@@ -382,7 +374,7 @@
   font-size: 12px;
   font-weight: var(--fw-light);
   white-space: nowrap;
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4),    inset 0 1px 1px rgba(255, 255, 255, 0.2);
+  box-shadow: var(--shadow-sm),    inset 0 1px 1px var(--border-strong);
   position: relative;
   overflow: hidden;
   transition: all 0.3s ease;
@@ -398,30 +390,30 @@
   background: linear-gradient(
     45deg,
     transparent 30%,
-    rgba(255, 255, 255, 0.1) 50%,
+    var(--bg-glass-active) 50%,
     transparent 70%
   );
   animation: shine 1s infinite linear;
 }
 
 .vout-0 { 
-  background: linear-gradient(135deg, #e0965e 0%, #ce8456 100%);
-  color: rgb(30, 30, 30); 
+  background: var(--badge-orange-bg);
+  color: var(--text-inverse); 
 }
 
 .vout-1 { 
-  background: linear-gradient(135deg, #7aaf73 0%, #659B5E 100%);
-  color: rgb(30, 30, 30); 
+  background: linear-gradient(135deg, var(--color-success-light), var(--color-success));
+  color: var(--text-inverse); 
 }
 
 .vout-2 { 
-  background: linear-gradient(135deg, #4d6d3c 0%, #3e5830 100%);
-  color: white; 
+  background: var(--badge-mint-bg);
+  color: var(--text-heading); 
 }
 
 .vout-3 { 
-  background: linear-gradient(135deg, #517a73 0%, #40625c 100%);
-  color: white; 
+  background: linear-gradient(135deg, var(--color-info-dark), var(--color-info-darker));
+  color: var(--text-heading); 
 }
 
 .vout-hint {
@@ -432,9 +424,9 @@
 
 /* STATUS & DIRECTION BADGE */
 .status-badge, .direction-badge {
-  background: #157a20;
+  background: var(--color-success-dark);
   padding: 3px 6px;
-  color: #ffffff;
+  color: var(--text-heading);
   position: relative;
   overflow: hidden;
 }
@@ -449,7 +441,7 @@
   background: linear-gradient(
     45deg,
     transparent 30%,
-    rgba(255, 255, 255, 0.1) 50%,
+    var(--bg-glass-active) 50%,
     transparent 70%
     );
     animation: shine 3.6s infinite linear;

@@ -5,11 +5,11 @@
 .address-analytics-card {
   margin: 1.5rem 0;
   padding: 1.5rem;
-  background: rgba(15, 23, 42, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-card-slate);
+  border: 1px solid var(--border);
   border-radius: 16px;
   backdrop-filter: blur(16px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
+  box-shadow: var(--shadow-md);
   transition: all 0.3s ease;
 }
 
@@ -18,7 +18,7 @@
   align-items: center;
   justify-content: space-between;
   padding-bottom: 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--border);
 }
 
 .analytics-title-group {
@@ -29,20 +29,20 @@
 
 .analytics-icon {
   font-size: 1.6rem;
-  color: #38bdf8;
-  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.5));
+  color: var(--color-info);
+  filter: drop-shadow(0 0 8px var(--color-info-glow));
 }
 
 .analytics-title-group h4 {
   margin: 0;
   font-size: 1.15rem;
-  font-weight: 700;
-  color: #f8fafc;
+  font-weight: var(--fw-bold);
+  color: var(--text-secondary);
 }
 
 .analytics-subtitle {
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: var(--text-dim);
 }
 
 .persona-badges-group {
@@ -60,9 +60,9 @@
   border-radius: 20px;
   border: 1px solid;
   font-size: 0.8rem;
-  font-weight: 700;
-  background: rgba(15, 23, 42, 0.8);
-  box-shadow: 0 0 12px rgba(0, 0, 0, 0.3);
+  font-weight: var(--fw-bold);
+  background: var(--bg-input-focus);
+  box-shadow: var(--shadow-sm);
 }
 
 .persona-icon {
@@ -79,8 +79,8 @@
 }
 
 .pie-chart-card {
-  background: rgba(30, 41, 59, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-card-slate-alt);
+  border: 1px solid var(--border);
   border-radius: 14px;
   padding: 1rem 1.2rem;
   display: flex;
@@ -89,16 +89,16 @@
 }
 
 .pie-chart-card:hover {
-  border-color: rgba(255, 255, 255, 0.16);
-  background: rgba(30, 41, 59, 0.75);
+  border-color: var(--border-strong);
+  background: var(--bg-card-slate-hover);
 }
 
 .pie-chart-title {
   margin: 0 0 1rem 0;
   font-size: 0.9rem;
-  font-weight: 700;
-  color: #e2e8f0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-weight: var(--fw-bold);
+  color: var(--text-slate-light);
+  border-bottom: 1px solid var(--border-subtle);
   padding-bottom: 0.5rem;
 }
 
@@ -124,31 +124,31 @@
 
 .pie-slice-group:hover .pie-slice-path {
   opacity: 0.9;
-  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.4));
+  filter: drop-shadow(0 0 6px var(--border-strong));
 }
 
 .pie-slice-text {
   pointer-events: none;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  text-shadow: 0 1px 3px var(--bg-overlay);
 }
 
 .pie-legend-box {
   flex: 1;
   min-width: 160px;
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 10px 12px;
 }
 
 .pie-legend-header {
   font-size: 0.72rem;
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #94a3b8;
+  color: var(--text-dim);
   margin-bottom: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border-subtle);
   padding-bottom: 4px;
 }
 
@@ -173,14 +173,14 @@
 }
 
 .legend-label {
-  color: #cbd5e1;
-  font-weight: 500;
+  color: var(--text-slate-body);
+  font-weight: var(--fw-medium);
   flex: 1;
   white-space: nowrap;
 }
 
 .legend-value {
-  color: #94a3b8;
+  color: var(--text-dim);
   font-family: monospace;
   font-size: 0.75rem;
   white-space: nowrap;
@@ -190,15 +190,15 @@
 .pie-totals-section {
   margin-top: 10px;
   padding-top: 8px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  border-top: 1px dashed var(--border-medium);
 }
 
 .pie-totals-header {
   font-size: 0.72rem;
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #94a3b8;
+  color: var(--text-dim);
   margin-bottom: 6px;
 }
 
@@ -216,9 +216,9 @@
 }
 
 .totals-amount {
-  color: #f8fafc;
+  color: var(--text-secondary);
   font-family: monospace;
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   font-size: 0.8rem;
   white-space: nowrap;
 }

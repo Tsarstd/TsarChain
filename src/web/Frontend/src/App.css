@@ -15,7 +15,7 @@
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border);
   border-radius: 16px;
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  box-shadow: var(--shadow-md);
 }
 
 .mono-text {
@@ -23,8 +23,8 @@
 }
 
 .copy-btn-inline {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
   color: var(--text-muted);
   cursor: pointer;
   padding: 3px 5px;
@@ -39,13 +39,13 @@
 
 .copy-btn-inline:hover {
   color: var(--accent);
-  border-color: rgba(224, 95, 50, 0.3);
-  background: rgba(224, 95, 50, 0.12);
+  border-color: var(--accent-subtle-border);
+  background: var(--accent-subtle);
 }
 
 .btn-primary {
   background: var(--accent-gradient);
-  color: #0b0c10;
+  color: var(--text-inverse);
   border: none;
   padding: 10px 18px;
   border-radius: 12px;
@@ -57,12 +57,12 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  box-shadow: 0 4px 14px rgba(224, 95, 50, 0.25);
+  box-shadow: var(--shadow-accent);
 }
 
 .btn-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(224, 95, 50, 0.4);
+  box-shadow: var(--shadow-accent-lg);
 }
 
 .btn-primary:active {
@@ -103,14 +103,14 @@
 }
 
 .pill {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-glass-pill);
   backdrop-filter: blur(4px);
   padding: 4px 10px;
   border-radius: 20px;
   font-size: 11px;
   font-weight: var(--fw-medium);
   color: var(--text-muted);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
 }
 
 .stat {
@@ -149,7 +149,7 @@
 
 .divider2 {
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(224, 95, 50, 0.3), transparent);
+  background: linear-gradient(90deg, transparent, var(--border-glow), transparent);
   margin: 20px 0;
 }
 
@@ -171,7 +171,7 @@
   border-radius: 12px;
   display: block;
   margin: 0 auto;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-lg);
   border: 1px solid var(--border);
 }
 
@@ -243,9 +243,9 @@
 .skeleton-line {
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.03) 25%,
-    rgba(255, 255, 255, 0.1) 37%,
-    rgba(255, 255, 255, 0.03) 63%
+    var(--bg-glass-subtle) 25%,
+    var(--bg-glass-hover) 37%,
+    var(--bg-glass-subtle) 63%
   );
   background-size: 200% 100%;
   animation: shimmer-sweep 1.6s infinite ease-in-out;

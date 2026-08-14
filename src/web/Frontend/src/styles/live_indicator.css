@@ -3,13 +3,13 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  background: rgba(15, 23, 42, 0.65);
+  background: var(--bg-card-slate);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 6px 14px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-sm);
   font-family: inherit;
   font-size: 0.825rem;
 }
@@ -20,7 +20,7 @@
   gap: 8px;
   padding: 4px 10px;
   border-radius: 20px;
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   letter-spacing: 0.05em;
   font-size: 0.725rem;
   text-transform: uppercase;
@@ -28,16 +28,16 @@
 }
 
 .live-status-pill.active {
-  background: #064e3b;
-  color: #34d399;
-  border: 1px solid rgba(52, 211, 153, 0.4);
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.2);
+  background: var(--color-success-darker);
+  color: var(--color-success-light);
+  border: 1px solid var(--color-success-border);
+  box-shadow: 0 0 12px var(--color-success-glow);
 }
 
 .live-status-pill.paused {
-  background: #1e293b;
-  color: #cbd5e1;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: var(--bg-badge-slate);
+  color: var(--text-slate-body);
+  border: 1px solid var(--border-medium);
 }
 
 /* Pulsing Dot Animation */
@@ -85,15 +85,15 @@
 }
 
 .live-updated-time {
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-muted);
   font-size: 0.775rem;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   white-space: nowrap;
 }
 
 .syncing-text {
-  color: #38bdf8;
-  font-weight: 600;
+  color: var(--color-info);
+  font-weight: var(--fw-semibold);
   animation: pulseOpacity 1.2s infinite ease-in-out;
 }
 
@@ -105,14 +105,14 @@
 .live-progress-mini {
   height: 2px;
   width: 100%;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--bg-glass-active);
   border-radius: 2px;
   overflow: hidden;
 }
 
 .live-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #38bdf8, #10b981);
+  background: linear-gradient(90deg, var(--color-info), var(--color-success));
   transition: width 1s linear;
 }
 
@@ -126,21 +126,21 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: #1e293b;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #f1f5f9;
+  background: var(--bg-badge-slate);
+  border: 1px solid var(--border-medium);
+  color: var(--text-light);
   padding: 4px 8px;
   border-radius: 6px;
   cursor: pointer;
   font-size: 0.8rem;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   transition: all 0.2s ease;
 }
 
 .live-btn:hover:not(:disabled) {
-  background: #0f172a;
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.3);
+  background: var(--bg-badge-dark);
+  color: var(--text-heading);
+  border-color: var(--border-strong);
   transform: translateY(-1px);
 }
 
@@ -149,9 +149,9 @@
 }
 
 .live-btn.is-live {
-  background: #082f49;
-  border-color: rgba(56, 189, 248, 0.4);
-  color: #38bdf8;
+  background: var(--color-info-darker);
+  border-color: var(--color-info-border);
+  color: var(--color-info);
 }
 
 .live-btn--refresh.spinning svg {

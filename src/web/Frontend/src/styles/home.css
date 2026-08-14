@@ -43,15 +43,15 @@
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
-  background: rgba(224, 95, 50, 0.1);
-  border: 1px solid rgba(224, 95, 50, 0.35);
+  background: var(--accent-subtle);
+  border: 1px solid var(--border-glow);
   padding: 0.4rem 1rem;
   border-radius: 9999px;
   width: fit-content;
   font-size: 0.82rem;
   font-weight: var(--fw-medium);
   letter-spacing: 0.06em;
-  color: #ff9d75;
+  color: var(--accent-peach);
   text-transform: uppercase;
   backdrop-filter: blur(8px);
 }
@@ -75,7 +75,7 @@
 
 .hero-title-accent {
   color: var(--accent);
-  text-shadow: 0 0 28px rgba(224, 95, 50, 0.45);
+  text-shadow: 0 0 28px var(--accent-glow-strong);
   display: inline-block;
 }
 
@@ -102,7 +102,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  background: rgba(28, 31, 46, 0.7);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   padding: 0.45rem 0.95rem;
   border-radius: 8px;
@@ -113,9 +113,9 @@
 }
 
 .hero-pill:hover {
-  border-color: rgba(224, 95, 50, 0.4);
+  border-color: var(--accent-glow-strong);
   transform: translateY(-2px);
-  background: rgba(40, 44, 62, 0.8);
+  background: var(--bg-card-hover);
 }
 
 .hero-actions {
@@ -135,12 +135,12 @@
   align-items: center;
   gap: 0.6rem;
   background: var(--accent-gradient);
-  color: #fff;
+  color: var(--text-heading);
   font-weight: var(--fw-semibold);
   font-size: 0.95rem;
   padding: 0.85rem 1.8rem;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--border-strong);
   box-shadow: 0 4px 20px var(--accent-glow);
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -148,7 +148,7 @@
 
 .btn-hero-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 28px rgba(224, 95, 50, 0.45);
+  box-shadow: var(--shadow-accent-lg);
 }
 
 .btn-hero-secondary {
@@ -168,8 +168,8 @@
 }
 
 .btn-hero-secondary:hover {
-  background: rgba(40, 44, 62, 0.85);
-  border-color: rgba(224, 95, 50, 0.4);
+  background: var(--bg-card-hover);
+  border-color: var(--accent-glow-strong);
   transform: translateY(-2px);
 }
 
@@ -200,7 +200,7 @@
   grid-template-columns: repeat(4, 1fr);
   gap: 1.5rem;
   backdrop-filter: blur(12px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-md);
   position: relative;
   z-index: 1;
 }
@@ -270,10 +270,10 @@
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--accent);
-  background: rgba(224, 95, 50, 0.1);
+  background: var(--accent-subtle);
   padding: 0.3rem 0.8rem;
   border-radius: 4px;
-  border: 1px solid rgba(224, 95, 50, 0.25);
+  border: 1px solid var(--accent-subtle-border);
   width: fit-content;
 }
 
@@ -312,18 +312,18 @@
 }
 
 .manifesto-card:hover {
-  border-color: rgba(224, 95, 50, 0.3);
+  border-color: var(--accent-subtle-border);
   transform: translateY(-3px);
 }
 
 .manifesto-card--web2 {
-  border-left: 3px solid rgba(255, 255, 255, 0.2);
+  border-left: 3px solid var(--border-strong);
 }
 
 .manifesto-card--sovereign {
   border-left: 3px solid var(--accent);
-  background: linear-gradient(145deg, rgba(28, 31, 46, 0.75) 0%, rgba(20, 22, 32, 0.95) 100%);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  background: linear-gradient(145deg, var(--bg-card) 0%, var(--bg-panel) 100%);
+  box-shadow: var(--shadow-md);
 }
 
 .manifesto-card-tag {
@@ -368,12 +368,12 @@
 }
 
 .manifesto-feature-icon-bad {
-  color: #f87171;
+  color: var(--color-danger-light);
   flex-shrink: 0;
 }
 
 .manifesto-feature-icon-good {
-  color: #34d399;
+  color: var(--color-success-light);
   flex-shrink: 0;
 }
 
@@ -417,8 +417,8 @@
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  background: rgba(224, 95, 50, 0.15);
-  border: 1px solid rgba(224, 95, 50, 0.4);
+  background: var(--accent-subtle-hover);
+  border: 1px solid var(--accent-glow-strong);
   color: var(--accent);
   display: flex;
   align-items: center;
@@ -473,9 +473,9 @@
 }
 
 .bento-card:hover {
-  border-color: rgba(224, 95, 50, 0.4);
+  border-color: var(--accent-glow-strong);
   transform: translateY(-3px);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-lg);
 }
 
 .bento-card-large-1 {
@@ -505,8 +505,8 @@
   width: 44px;
   height: 44px;
   border-radius: 10px;
-  background: rgba(224, 95, 50, 0.12);
-  border: 1px solid rgba(224, 95, 50, 0.3);
+  background: var(--accent-subtle);
+  border: 1px solid var(--accent-subtle-border);
   color: var(--accent);
   display: flex;
   align-items: center;
@@ -519,10 +519,10 @@
   font-size: 0.75rem;
   font-family: monospace;
   color: var(--accent);
-  background: rgba(224, 95, 50, 0.1);
+  background: var(--accent-subtle);
   padding: 0.2rem 0.6rem;
   border-radius: 4px;
-  border: 1px solid rgba(224, 95, 50, 0.2);
+  border: 1px solid var(--accent-subtle-border);
 }
 
 .bento-card-content {
@@ -552,7 +552,7 @@
 
 .bento-badge {
   font-size: 0.75rem;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-glass-pill);
   border: 1px solid var(--border);
   color: var(--text-muted);
   padding: 0.2rem 0.6rem;
@@ -563,8 +563,8 @@
    6. RESOURCE & DOCUMENTATION HUB
    ========================================================================== */
 .docs-hub-banner {
-  background: linear-gradient(135deg, rgba(224, 95, 50, 0.15) 0%, rgba(20, 22, 32, 0.9) 100%);
-  border: 1px solid rgba(224, 95, 50, 0.35);
+  background: linear-gradient(135deg, var(--accent-subtle-hover) 0%, var(--bg-panel) 100%);
+  border: 1px solid var(--border-glow);
   border-radius: 16px;
   padding: 3rem 2.5rem;
   display: flex;
@@ -573,7 +573,7 @@
   gap: 2rem;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-lg);
 }
 
 .docs-hub-content {

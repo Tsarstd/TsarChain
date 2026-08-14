@@ -5,11 +5,11 @@
 .utxo-flowchart-card {
   margin: 1.5rem 0;
   padding: 1.5rem;
-  background: rgba(15, 23, 42, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-card-slate);
+  border: 1px solid var(--border);
   border-radius: 16px;
   backdrop-filter: blur(16px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
+  box-shadow: var(--shadow-md);
   transition: all 0.3s ease;
 }
 
@@ -18,7 +18,7 @@
   align-items: center;
   justify-content: space-between;
   padding-bottom: 1.2rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--border);
 }
 
 .utxo-header-title {
@@ -29,34 +29,34 @@
 
 .utxo-header-icon {
   font-size: 1.6rem;
-  color: #38bdf8;
-  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.5));
+  color: var(--color-info);
+  filter: drop-shadow(0 0 8px var(--color-info-glow));
 }
 
 .utxo-header-title h4 {
   margin: 0;
   font-size: 1.15rem;
-  font-weight: 700;
-  color: #f8fafc;
+  font-weight: var(--fw-bold);
+  color: var(--text-secondary);
   letter-spacing: 0.3px;
 }
 
 .utxo-toggle-btn {
-  background: rgba(30, 41, 59, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #cbd5e1;
+  background: var(--bg-card-slate-hover);
+  border: 1px solid var(--border-medium);
+  color: var(--text-slate-body);
   padding: 6px 14px;
   border-radius: 8px;
   font-size: 0.8rem;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .utxo-toggle-btn:hover {
-  background: #082f49;
-  border-color: rgba(56, 189, 248, 0.4);
-  color: #38bdf8;
+  background: var(--color-info-darker);
+  border-color: var(--color-info-border);
+  color: var(--color-info);
 }
 
 /* MAIN DIAGRAM CONTAINER */
@@ -95,7 +95,7 @@
 
 .col-badge {
   font-size: 0.7rem;
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   padding: 4px 10px;
   border-radius: 12px;
   letter-spacing: 0.5px;
@@ -103,22 +103,22 @@
 }
 
 .input-badge {
-  background: #082f49;
-  color: #38bdf8;
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: var(--color-info-darker);
+  color: var(--color-info);
+  border: 1px solid var(--color-info-border);
 }
 
 .output-badge {
-  background: #3b0764;
-  color: #c084fc;
-  border: 1px solid rgba(168, 85, 247, 0.3);
+  background: var(--color-purple-darker);
+  color: var(--color-purple-light);
+  border: 1px solid var(--color-purple-border);
 }
 
 .col-total {
   font-size: 0.8rem;
   font-family: monospace;
-  font-weight: 700;
-  color: #94a3b8;
+  font-weight: var(--fw-bold);
+  color: var(--text-dim);
 }
 
 .utxo-nodes-stack {
@@ -129,34 +129,34 @@
 
 /* NODE CARDS */
 .utxo-node {
-  background: rgba(30, 41, 59, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-card-slate-alt);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 10px 12px;
-  transition: all 0.25 ease;
+  transition: all 0.25s ease;
   position: relative;
 }
 
 .utxo-node:hover {
-  border-color: rgba(56, 189, 248, 0.4);
-  background: rgba(30, 41, 59, 0.95);
+  border-color: var(--color-info-border);
+  background: var(--bg-card-slate-hover);
   transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-sm);
 }
 
 .utxo-node.coinbase {
-  border-color: rgba(234, 179, 8, 0.4);
-  background: rgba(234, 179, 8, 0.08);
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-bg-subtle);
 }
 
 .utxo-node.opreturn {
-  border-color: rgba(236, 72, 153, 0.4);
-  background: rgba(236, 72, 153, 0.08);
+  border-color: var(--color-pink-border);
+  background: var(--color-pink-bg-subtle);
 }
 
 .utxo-node.change {
-  border-color: rgba(16, 185, 129, 0.3);
-  background: rgba(16, 185, 129, 0.06);
+  border-color: var(--color-success-border);
+  background: var(--color-success-bg-subtle);
 }
 
 .node-top {
@@ -168,8 +168,8 @@
 
 .node-tag {
   font-size: 0.72rem;
-  font-weight: 600;
-  color: #94a3b8;
+  font-weight: var(--fw-semibold);
+  color: var(--text-dim);
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -177,9 +177,9 @@
 
 .node-amount {
   font-size: 0.85rem;
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   font-family: monospace;
-  color: #38bdf8;
+  color: var(--color-info);
 }
 
 button.node-address {
@@ -192,12 +192,12 @@ button.node-address {
 .node-address {
   font-size: 0.8rem;
   font-family: monospace;
-  color: #cbd5e1;
+  color: var(--text-slate-body);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 4px 8px;
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--bg-input);
   border-radius: 6px;
   white-space: nowrap;
   overflow: hidden;
@@ -209,8 +209,8 @@ button.node-address {
 }
 
 .node-address.clickable:hover {
-  color: #38bdf8;
-  background: #082f49;
+  color: var(--color-info);
+  background: var(--color-info-darker);
 }
 
 .ext-icon {
@@ -239,7 +239,7 @@ button.node-address {
 .connector-line {
   width: 100%;
   height: 3px;
-  background: linear-gradient(90deg, rgba(56, 189, 248, 0.2), rgba(168, 85, 247, 0.4));
+  background: linear-gradient(90deg, var(--color-info-glow), var(--color-purple-glow));
   border-radius: 2px;
   position: relative;
   overflow: hidden;
@@ -251,7 +251,7 @@ button.node-address {
   left: -100%;
   width: 60%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, #38bdf8, transparent);
+  background: linear-gradient(90deg, transparent, var(--color-info), transparent);
   animation: utxoFlowPulse 1.8s infinite linear;
 }
 
@@ -265,7 +265,7 @@ button.node-address {
 }
 
 .connector-arrow {
-  color: #a855f7;
+  color: var(--color-purple);
   font-size: 1rem;
   margin-top: 4px;
 }
@@ -289,12 +289,12 @@ button.node-address {
 
 .utxo-core-node {
   width: 100%;
-  background: rgba(30, 41, 59, 0.85);
-  border: 1px solid rgba(168, 85, 247, 0.3);
+  background: var(--bg-card-slate-hover);
+  border: 1px solid var(--color-purple-border);
   border-radius: 14px;
   padding: 16px;
   text-align: center;
-  box-shadow: 0 0 20px rgba(168, 85, 247, 0.15);
+  box-shadow: 0 0 20px var(--color-purple-glow);
   position: relative;
 }
 
@@ -302,30 +302,30 @@ button.node-address {
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #0284c7, #9333ea);
+  background: linear-gradient(135deg, var(--color-info-dark), var(--color-purple-dark));
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto 8px auto;
-  box-shadow: 0 0 12px rgba(147, 51, 234, 0.4);
+  box-shadow: 0 0 12px var(--color-purple-glow);
 }
 
 .core-icon {
   font-size: 1.2rem;
-  color: #ffffff;
+  color: var(--text-heading);
 }
 
 .core-title {
   margin: 0 0 4px 0;
   font-size: 0.95rem;
-  font-weight: 700;
-  color: #f8fafc;
+  font-weight: var(--fw-bold);
+  color: var(--text-secondary);
 }
 
 .core-txid {
   font-size: 0.75rem;
   font-family: monospace;
-  color: #94a3b8;
+  color: var(--text-dim);
   display: block;
   margin-bottom: 12px;
 }
@@ -335,7 +335,7 @@ button.node-address {
   flex-direction: column;
   gap: 10px;
   text-align: left;
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--bg-input);
   padding: 10px 12px;
   border-radius: 8px;
 }
@@ -349,24 +349,24 @@ button.node-address {
 }
 
 .metric-lbl {
-  color: #94a3b8;
+  color: var(--text-dim);
   white-space: nowrap;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
 }
 
 .metric-val {
   font-family: monospace;
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   white-space: nowrap;
   text-align: right;
 }
 
 .text-cyan {
-  color: #38bdf8;
+  color: var(--color-info);
 }
 
 .text-amber {
-  color: #f59e0b;
+  color: var(--color-warning);
 }
 
 .status-pill {
@@ -376,17 +376,15 @@ button.node-address {
   padding: 2px 8px;
   border-radius: 10px;
   font-size: 0.68rem;
-  font-weight: 700;
+  font-weight: var(--fw-bold);
 }
 
 .status-pill.confirmed {
-  background: #064e3b;
-  color: #34d399;
+  background: var(--color-success-darker);
+  color: var(--color-success-light);
 }
 
 .status-pill.pending {
-  background: #451a03;
-  color: #fbbf24;
+  background: var(--color-warning-darker);
+  color: var(--color-warning-light);
 }
-
-
