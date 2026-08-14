@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useRenderHelpers, copyToClipboard } from "../SearchHelpers";
+import { useRenderHelpers, copyToClipboard, useScrambleText } from "../SearchHelpers";
 import PropTypes from "prop-types";
 import { saveAs } from 'file-saver';
 import { IoReceiptSharp } from "react-icons/io5";
@@ -148,6 +148,12 @@ const ResultTx = ({ data, onSearchClick }) => {
   const { renderClickableHash } = useRenderHelpers();
   const [isGeneratingReceipt, setIsGeneratingReceipt] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
+
+  const displayTxid = useScrambleText(data?.txid, {
+    preservePrefix: 0,
+    charset: "0123456789abcdef",
+    duration: 700
+  });
 
   const blockDisplay = useMemo(() => {
     if (!data?.block_height && data?.block_height !== 0) {
@@ -306,7 +312,7 @@ const ResultTx = ({ data, onSearchClick }) => {
         {/* TXID */}
         <h1 className="stat"> Transaction ID</h1>
         <div className="txid-details" style={{ width: '100%' }}>
-          {renderTxidGrid(data?.txid)}
+          {renderTxidGrid(displayTxid)}
           <div className="divider2" />
         </div>
 

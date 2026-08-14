@@ -121,3 +121,84 @@ export const copyToClipboard = async (text, setCopyStatus) => {
     setTimeout(() => setCopyStatus(""), 2000);
   }
 };
+
+// ---------- Hook Animasi Scramble Text ----------
+export const useScrambleText = (
+  text,
+  {
+    duration = 700,
+    speed = 30,
+    preservePrefix = 0,
+    charset = "0123456789abcdef"
+  } = {}
+) => {
+  const [displayText, setDisplayText] = useState(text || "");
+
+  useEffect(() => {
+    if (!text) {
+      setDisplayText("");
+      return;
+    }
+
+    const totalLen = text.length;
+    const prefixLen = Math.min(Math.max(0, preservePrefix), totalLen);
+    const scrambleLen = totalLen - prefixLen;
+
+    if (scrambleLen <= 0) {
+      setDisplayText(text);
+      return;
+    }
+
+    const chars = charset || "0123456789abcdef";
+    const getRandomChar = () => chars[Math.floor(Math.random() * chars.length)];
+
+    let animationFrameId;
+    const startTime = performance.now();
+    let lastTick = 0;
+
+    const update = (now) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // Karakter yang sudah ter-resolve dari payload
+      const resolvedCount = Math.floor(progress * scrambleLen);
+
+      if (now - lastTick >= speed || progress >= 1) {
+        lastTick = now;
+
+        let result = "";
+        // 1. Static Prefix (misal: 'tsar')
+        if (prefixLen > 0) {
+          result += text.slice(0, prefixLen);
+        }
+
+        // 2. Payload scramble / resolve
+        for (let i = 0; i < scrambleLen; i++) {
+          if (i < resolvedCount || progress >= 1) {
+            result += text[prefixLen + i];
+          } else {
+            result += getRandomChar();
+          }
+        }
+
+        setDisplayText(result);
+      }
+
+      if (progress < 1) {
+        animationFrameId = requestAnimationFrame(update);
+      } else {
+        setDisplayText(text);
+      }
+    };
+
+    animationFrameId = requestAnimationFrame(update);
+
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [text, duration, speed, preservePrefix, charset]);
+
+  return displayText;
+};

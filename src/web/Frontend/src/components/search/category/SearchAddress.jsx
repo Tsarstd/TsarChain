@@ -2,7 +2,7 @@ import PropTypes from "prop-types";
 import { FaCopy, FaDownload } from "react-icons/fa";
 import { useState } from "react";
 import { getStatusBadge, getDirectionBadge } from "../SearchUX";
-import { useRenderHelpers, copyToClipboard } from "../SearchHelpers";
+import { useRenderHelpers, copyToClipboard, useScrambleText } from "../SearchHelpers";
 import {  
   fmtAddress,
   fmtTimestamp,
@@ -171,6 +171,12 @@ const ResultAddress = ({ data, onSearchClick }) => {
   const [copyStatus, setCopyStatus] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
 
+  const displayAddress = useScrambleText(data?.address, {
+    preservePrefix: data?.address?.toLowerCase().startsWith("tsar") ? 4 : 0,
+    charset: "qpzry9x8gf2tvdw0s3jn54khce6mua7l",
+    duration: 700
+  });
+
   const handleDownloadHistory = async () => {
     if (!data?.address) return;
     setIsDownloading(true);
@@ -290,7 +296,7 @@ const ResultAddress = ({ data, onSearchClick }) => {
         {/* ADDRESS */}
         <h1 className="stat"> Address Info</h1>
         <div className="address-details" style={{ width: '100%' }}>
-          {renderAddressGrid(data?.address)}
+          {renderAddressGrid(displayAddress)}
           <div className="divider2" />
         </div>
         
