@@ -52,6 +52,7 @@ class TxPool(
         self.current_size = 0
 
         self._prevout_index: dict[PrevoutRef, str] = {}
+        self._tx_prevouts: dict[str, set[PrevoutRef]] = {}
         self._last_prune_version: int | None = None
         self._last_prune_reload_ts = 0.0
 

@@ -167,8 +167,9 @@ class UTXOValidationMixin:
                 spk_hex = None
                 if isinstance(spk_bytes, (bytes, bytearray)):
                     spk_hex = bytes(spk_bytes).hex()
+                tx_out_obj = TxOut.from_dict({"amount": amt_int, "script_pubkey": spk_hex or ""})
                 entry = {
-                    "tx_out": {"amount": amt_int, "script_pubkey": spk_hex},
+                    "tx_out": tx_out_obj,
                     "is_coinbase": bool(is_coinbase),
                     "block_height": int(born_height),
                 }
@@ -176,7 +177,7 @@ class UTXOValidationMixin:
                 self._dirty = True
                 self._dirty_keys.add(key)
                 self._removed_keys.discard(key)
-                self._index_entry(key, entry.get("tx_out"))
+                self._index_entry(key, tx_out_obj)
 
             store = _ensure_env("utxo")
             store.apply_utxo_ops(ops)  # type: ignore[attr-defined]

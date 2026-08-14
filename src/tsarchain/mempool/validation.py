@@ -11,9 +11,8 @@ from ..core.tx import Tx
 from ..utils import config as CFG
 from ..storage.utxo import UTXODB
 from ..utils.benchmarks import benchmark
-from .scripts import get_utxo_script_bytes
+from .scripts import get_utxo_script_bytes, script_to_address
 from ..contracts import graffiti as GRAFFITI
-from bech32 import bech32_encode, convertbits
 from ..contracts.graffiti_registry import GraffitiRegistry
 from ..utils.helpers import (
     is_p2wpkh,
@@ -105,24 +104,7 @@ class TxMempoolValidator:
         """
         Convert P2WPKH/P2WSH scriptPubKey to bech32 address.
         """
-        b = None
-        if hasattr(script, "serialize"):
-            b = script.serialize()
-        elif isinstance(script, (bytes, bytearray)):
-            b = bytes(script)
-        elif isinstance(script, str):
-            b = bytes.fromhex(script)
-        if not b:
-            return None
-        if len(b) == 22 and b[0] == 0x00 and b[1] == 0x14:
-            data = [0] + list(convertbits(b[2:], 8, 5, True))
-            return bech32_encode(CFG.ADDRESS_PREFIX, data)
-        
-        if len(b) == 34 and b[0] == 0x00 and b[1] == 0x20:
-            data = [0] + list(convertbits(b[2:], 8, 5, True))
-            return bech32_encode(CFG.ADDRESS_PREFIX, data)
-        
-        return None
+        return script_to_address(script)
 
 
     def _check_mempool_payout_sanity(self, tx: Tx) -> bool:

@@ -159,6 +159,8 @@ class MempoolStorageMixin:
             self._pool = OrderedDict()
             self._size_map = {}
             self._prevout_index = {}
+            if hasattr(self, "_tx_prevouts"):
+                self._tx_prevouts.clear()
             self._fee_heap = []
             self._heap_entries = {}
             for tx in tx_objects:
@@ -253,6 +255,8 @@ class MempoolStorageMixin:
             self._size_map.clear()
             self.current_size = 0
             self._prevout_index.clear()
+            if hasattr(self, "_tx_prevouts"):
+                self._tx_prevouts.clear()
             self._fee_heap.clear()
             self._heap_entries.clear()
         self._mark_dirty()

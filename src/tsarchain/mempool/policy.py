@@ -29,6 +29,7 @@ class MempoolPolicyMixin:
         owner_txid = self._normalize_txid(tx_obj.txid)
         if not owner_txid:
             return
+        prevouts: set[PrevoutRef] = set()
         for txin in getattr(tx_obj, "inputs", []) or []:
             key = self._prevout_key(
                 getattr(txin, "txid", None) or getattr(txin, "prev_tx", None),
@@ -36,16 +37,31 @@ class MempoolPolicyMixin:
             )
             if key:
                 self._prevout_index[key] = owner_txid
+                prevouts.add(key)
+        if prevouts:
+            if not hasattr(self, "_tx_prevouts"):
+                self._tx_prevouts = {}
+            self._tx_prevouts[owner_txid] = prevouts
 
     def _drop_tx_prevouts(self, tx_obj: Tx | None) -> None:
         if not tx_obj or getattr(tx_obj, "is_coinbase", False):
             return
-        owner_txid = self._normalize_txid(tx_obj.txid)
+        txid_val = getattr(tx_obj, "txid", None)
+        if not txid_val:
+            return
+        owner_txid = self._normalize_txid(txid_val)
         if not owner_txid or not self._prevout_index:
             return
-        to_delete = [k for k, owner in self._prevout_index.items() if owner == owner_txid]
-        for key in to_delete:
-            self._prevout_index.pop(key, None)
+        
+        tx_prevouts_map = getattr(self, "_tx_prevouts", None)
+        prevouts = tx_prevouts_map.pop(owner_txid, None) if tx_prevouts_map else None
+        if prevouts:
+            for key in prevouts:
+                self._prevout_index.pop(key, None)
+        else:
+            to_delete = [k for k, owner in self._prevout_index.items() if owner == owner_txid]
+            for key in to_delete:
+                self._prevout_index.pop(key, None)
 
     def _ensure_space(self, needed_space: int) -> None:
         if needed_space <= 0:
@@ -79,19 +95,25 @@ class MempoolPolicyMixin:
             return 0
         removed = 0
         with self._lock:
-            to_remove = []
-            for txid, tx in self._pool.items():
-                conflict = False
-                for txin in getattr(tx, "inputs", []) or []:
-                    prev = self._prevout_key(
-                        getattr(txin, "txid", None) or getattr(txin, "prev_tx", None),
-                        getattr(txin, "vout", getattr(txin, "prev_index", None)),
-                    )
-                    if prev and prev in normalized_spent:
-                        conflict = True
-                        break
-                if conflict:
-                    to_remove.append(txid)
+            to_remove = set()
+            if hasattr(self, "_prevout_index") and self._prevout_index:
+                for prev in normalized_spent:
+                    cid = self._prevout_index.get(prev)
+                    if cid and cid in self._pool:
+                        to_remove.add(cid)
+            if not to_remove:
+                for txid, tx in self._pool.items():
+                    conflict = False
+                    for txin in getattr(tx, "inputs", []) or []:
+                        prev = self._prevout_key(
+                            getattr(txin, "txid", None) or getattr(txin, "prev_tx", None),
+                            getattr(txin, "vout", getattr(txin, "prev_index", None)),
+                        )
+                        if prev and prev in normalized_spent:
+                            conflict = True
+                            break
+                    if conflict:
+                        to_remove.add(txid)
             for txid in to_remove:
                 tx_obj = self._pool.pop(txid, None)
                 if tx_obj:
@@ -114,6 +136,7 @@ class MempoolPolicyMixin:
         now = time.time()
         if now - self._last_prune_reload_ts > max(float(CFG.MEMPOOL_FLUSH_INTERVAL), 5.0):
             self.utxo._load()
+            self._last_prune_reload_ts = now
         utxo_set = getattr(self.utxo, "utxos", {})
         tip = self.utxo._get_tip_height_from_state()
         removed = 0
