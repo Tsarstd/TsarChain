@@ -142,25 +142,6 @@ const Graffiti = ({ onSearchClick }) => {
     await fetchGraffiti(offset);
   }, [fetchGraffiti, hasMore, loading, offset]);
 
-  useEffect(() => {
-    let isMounted = true;
-    fetchGraffitiList({ limit: PAGE_SIZE, offset: 0 })
-      .then((resp) => {
-        if (!isMounted) return;
-        const data = resp.data || {};
-        const incoming = Array.isArray(data.items) ? data.items : [];
-        setItems(incoming);
-        setOffset(data.nextOffset ?? incoming.length);
-        setHasMore(Boolean(data.hasMore));
-      })
-      .catch((err) => {
-        if (isMounted) setMessage(err.message || "Failed to load graffiti.");
-      });
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
   // Filter items based on active tab
   const filteredItems = useMemo(() => {
     if (filterTab === "all") return items;
@@ -185,7 +166,19 @@ const Graffiti = ({ onSearchClick }) => {
     return { all: items.length, video, image, pdf };
   }, [items]);
 
-  const handleSelect = async (item) => {
+  const scrollToGraffiti = useCallback((artId) => {
+    const graffitiIndex = filteredItems.findIndex((item) => item.art_id === artId);
+    if (graffitiIndex !== -1 && scrollerRef.current) {
+      const cardWidth = 240 + 18;
+      const scrollPosition = graffitiIndex * cardWidth;
+      scrollerRef.current.scrollTo({
+        left: scrollPosition,
+        behavior: "smooth",
+      });
+    }
+  }, [filteredItems, scrollerRef]);
+
+  const handleSelect = useCallback(async (item) => {
     if (!item?.art_id) return;
     setDetailStatus("loading");
     setDetail(null);
@@ -199,7 +192,26 @@ const Graffiti = ({ onSearchClick }) => {
       setDetailStatus("error");
       setMessage(err.message || "Failed to load graffiti details.");
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchGraffitiList({ limit: PAGE_SIZE, offset: 0 })
+      .then((resp) => {
+        if (!isMounted) return;
+        const data = resp.data || {};
+        const incoming = Array.isArray(data.items) ? data.items : [];
+        setItems(incoming);
+        setOffset(data.nextOffset ?? incoming.length);
+        setHasMore(Boolean(data.hasMore));
+      })
+      .catch((err) => {
+        if (isMounted) setMessage(err.message || "Failed to load graffiti.");
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleNavigateToGraffiti = async () => {
     const targetId = navInput.trim();
@@ -243,18 +255,6 @@ const Graffiti = ({ onSearchClick }) => {
       setMessage(err.message || "Gagal navigasi ke graffiti");
     } finally {
       setIsNavigating(false);
-    }
-  };
-
-  const scrollToGraffiti = (artId) => {
-    const graffitiIndex = filteredItems.findIndex((item) => item.art_id === artId);
-    if (graffitiIndex !== -1 && scrollerRef.current) {
-      const cardWidth = 240 + 18;
-      const scrollPosition = graffitiIndex * cardWidth;
-      scrollerRef.current.scrollTo({
-        left: scrollPosition,
-        behavior: "smooth",
-      });
     }
   };
 

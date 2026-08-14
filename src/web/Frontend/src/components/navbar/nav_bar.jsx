@@ -35,9 +35,11 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
   };
 
   const navLinks = [
-    { label: "Block", path: "/" },
+    { label: "Home", path: "/" },
+    { label: "Block", path: "/block" },
     { label: "Graffiti", path: "/graffiti" },
     { label: "Network", path: "/network" },
+    { label: "Docs", path: "/documentation" },
   ];
 
   const toggleMobileMenu = () => {
@@ -49,8 +51,8 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
   };
 
   const isLinkActive = (linkPath) => {
-    if (linkPath === "/" || linkPath === "/block") {
-      return location.pathname === "/" || location.pathname === "/block";
+    if (linkPath === "/") {
+      return location.pathname === "/";
     }
     return location.pathname.startsWith(linkPath);
   };

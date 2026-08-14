@@ -136,8 +136,8 @@ export const useScrambleText = (
 
   useEffect(() => {
     if (!text) {
-      setDisplayText("");
-      return;
+      const id = requestAnimationFrame(() => setDisplayText(""));
+      return () => cancelAnimationFrame(id);
     }
 
     const totalLen = text.length;
@@ -145,8 +145,8 @@ export const useScrambleText = (
     const scrambleLen = totalLen - prefixLen;
 
     if (scrambleLen <= 0) {
-      setDisplayText(text);
-      return;
+      const id = requestAnimationFrame(() => setDisplayText(text));
+      return () => cancelAnimationFrame(id);
     }
 
     const chars = charset || "0123456789abcdef";

@@ -9,19 +9,16 @@ const footerSections = [
   {
     title: "Explore",
     links: [
-      { text: "Blocks", url: "/", isInternal: true },
+      { text: "Block", url: "/block", isInternal: true },
       { text: "Graffiti", url: "/graffiti", isInternal: true },
-      { text: "Services", url: "#" },
-      { text: "Contact", url: "#" }
+      { text: "Network", url: "/network", isInternal: true },
     ]
   },
   {
     title: "Learn",
     links: [
-      { text: "Documentation", url: "#" },
-      { text: "Tutorials", url: "#" },
-      { text: "Blog", url: "#" },
-      { text: "FAQs", url: "#" }
+      { text: "Documentation", url: "/documentation", isInternal: true },
+      { text: "Tutorials", url: "#" }
     ]
   },
   {

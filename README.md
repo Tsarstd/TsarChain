@@ -366,12 +366,12 @@ Graffiti Protocol is built to be fast, responsive, and robust. I have provided r
 ## 📄 Documentation
 
 ##### Grungepaper
-- [`Grungepaper - The Voice Sovereignty (EN)`](docs/Grungepaper%20-%20The%20Voice%20Sovereignty%20(EN).pdf) | [*Download*](docs/Grungepaper%20-%20The%20Voice%20Sovereignty%20(EN).pdf?raw=true)
-- [`Grungepaper - The Voice Sovereignty (ID)`](docs/Grungepaper%20-%20The%20Voice%20Sovereignty%20(ID).pdf) | [*Download*](docs/Grungepaper%20-%20The%20Voice%20Sovereignty%20(ID).pdf?raw=true)
+- [`Grungepaper - The Voice Sovereignty (EN)`](https://drive.google.com/file/d/1DmuYpvFHVAOSaPMMRSo1AKIOt-ZbW3BY/view?usp=drive_link)
+- [`Grungepaper - The Voice Sovereignty (ID)`](https://drive.google.com/file/d/1YgTj2i-8mj_CoLMtg7dn_fpY0_WX7_GV/view?usp=drive_link)
 
 ##### Graffiti Protocol
-- [`Graffiti Protocol - Draft v0.1 (EN)`](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(EN).pdf) | [*Download*](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(EN).pdf?raw=true)
-- [`Graffiti Protocol - Draft v0.1 (ID)`](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(ID).pdf) | [*Download*](docs/Graffiti%20Protocol%20-%20Draft%20v0.1%20(ID).pdf?raw=true)
+- [`Graffiti Protocol - Draft v0.1 (EN)`](https://drive.google.com/file/d/1Xv_tr2Y0eKso62d6LPeVHBi1v8K_DF_N/view?usp=drive_link)
+- [`Graffiti Protocol - Draft v0.1 (ID)`](https://drive.google.com/file/d/1nlNyPciI5Ba0HEHtmR1T-PBASyKowek1/view?usp=drive_link)
 
 ##### API
 - [`API.md`](docs/API.md)

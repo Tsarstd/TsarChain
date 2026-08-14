@@ -4,9 +4,11 @@ import { motion, AnimatePresence } from "motion/react";
 
 import Navbar from "./components/navbar/nav_bar";
 import Footer from "./components/footer/footer";
+import Home from "./pages/Home";
 import Block from "./pages/Block";
 import Graffiti from "./pages/Graffiti";
 import Network from "./pages/Network";
+import Documentation from "./pages/Documentation";
 
 import SearchOverlay from "./components/search/SearchOverlay";
 import { saveSearchHistory } from "./utils/searchHistory";
@@ -15,6 +17,7 @@ import { searchExplorer } from "./api/explorer";
 import { guessKind } from "./utils/searchKind";
 
 import "./App.css";
+import "./styles/home.css";
 import "./styles/networkpages.css";
 import "./styles/card.css";
 import "./styles/search.css";
@@ -27,6 +30,7 @@ import "./styles/txid.css";
 import "./styles/address.css";
 import "./styles/live_indicator.css";
 import "./styles/toast.css";
+import "./styles/documentation.css";
 
 const pageVariants = {
   initial: { opacity: 0, y: 12 },
@@ -116,6 +120,18 @@ const App = () => {
     runSearch(q);
   }, [query, runSearch]);
 
+  const renderHomePage = (
+    <motion.div
+      variants={pageVariants}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      transition={pageTransition}
+    >
+      <Home onSearchClick={handleSearchClick} />
+    </motion.div>
+  );
+
   const renderBlockPage = (
     <motion.div
       variants={pageVariants}
@@ -146,7 +162,7 @@ const App = () => {
         <div className="app-main">
           <AnimatePresence mode="wait">
             <Routes location={location} key={location.pathname}>
-              <Route path="/" element={renderBlockPage} />
+              <Route path="/" element={renderHomePage} />
               <Route path="/block" element={renderBlockPage} />
               <Route
                 path="/graffiti"
@@ -173,6 +189,20 @@ const App = () => {
                     transition={pageTransition}
                   >
                     <Network onSearchClick={handleSearchClick} />
+                  </motion.div>
+                }
+              />
+              <Route
+                path="/documentation"
+                element={
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <Documentation onSearchClick={handleSearchClick} />
                   </motion.div>
                 }
               />
