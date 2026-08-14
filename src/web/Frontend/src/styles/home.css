@@ -254,7 +254,7 @@
   z-index: 1;
 }
 
-.section-header {
+.home-container .section-header {
   text-align: center;
   max-width: 720px;
   margin: 0 auto;

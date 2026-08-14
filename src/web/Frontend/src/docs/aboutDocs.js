@@ -664,12 +664,16 @@ GRAFFITI adalah **"lapisan arsip pro kedaulatan digital"** dalam ekosistem TsarC
           id: "model-data",
           title: "4. Model Data & Pengenal",
           content: `Objek Seni:
+
+
 - Hash File: \`Hc = SHA256(file_blob)\`
 - Jangkar Blok: \`Hb = Hash blok di mana transaksi upload dikonfirmasi\`
 - Kreator: \`addr_c\` (P2WPKH)
 - Art ID: \`art_id = SHA256("GRAFFITI" || Hc || Hb || addr_c)\`
 
 Objek Komentar:
+
+
 - Panjang Maksimum: \`COMMENT_MAX_BYTES\` (280 Byte)
 - ID Komentar: \`comment_id = SHA256(art_id || txid || vout_index)\`
 - Teks Komentar: Disimpan on-chain (UTF-8 hex) melalui kolom payload \`OP_RETURN\`.`
@@ -715,17 +719,25 @@ Outputs: [ 80% -> addr_c, 10% -> pool_addr ]; 10% biaya miner via delta input-ou
           id: "contoh-kasus",
           title: "9. Contoh Kasus",
           content: `**Skenario**:
-1. Kreator mengunggah gambar **720KB** → Ditagihkan 800KB.
+
+
+Kreator mengunggah gambar **720KB** → Ditagihkan 800KB.
    \`UPLOAD_FEE\` (0.8 TSAR) × 8 = **6.4 TSAR** biaya unggah masuk ke \`pool_addr\`.
-2. Pengguna mengirim **Komentar A (2 TSAR)**:
+
+
+Pengguna mengirim **Komentar A (2 TSAR)**:
    - **1.6 TSAR** → Alamat kreator
    - **0.2 TSAR** → \`pool_addr\`
    - **0.2 TSAR** → Biaya penambang (miner fee)
-3. Pengguna mengirim **Komentar B (2 TSAR + 5 TSAR Tip)**:
+
+
+Pengguna mengirim **Komentar B (2 TSAR + 5 TSAR Tip)**:
    - **1.6 TSAR** (royalti) + **5.0 TSAR** (tip) = **6.6 TSAR** → Kreator
    - **0.2 TSAR** → \`pool_addr\`
    - **0.2 TSAR** → Biaya penambang
-4. **Pembayaran Epoch**: Node penyimpanan yang lulus verifikasi bukti Merkle mengklaim pembayaran dari saldo \`pool_addr\`.`
+
+
+Pembayaran Epoch : Node penyimpanan yang lulus verifikasi bukti Merkle mengklaim pembayaran dari saldo \`pool_addr\`.`
         },
         {
           id: "parameter-protokol",

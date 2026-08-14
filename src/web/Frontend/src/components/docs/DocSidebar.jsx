@@ -49,7 +49,6 @@ const DocSidebar = ({ activeDocId, onSelectDoc, isMobileOpen, onCloseMobile }) =
         <div className="doc-sidebar-header">
           <div className="doc-sidebar-title-wrap">
             <span className="doc-sidebar-title">Documentation</span>
-            <span className="doc-sidebar-version">v0.1 Draft</span>
           </div>
           {isMobileOpen && (
             <button 

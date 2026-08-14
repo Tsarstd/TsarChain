@@ -462,8 +462,8 @@ const Home = ({ onSearchClick }) => {
   return (
     <main className="page">
       <section className="section">
-        <div className="section-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+        <div className="block-header-bar">
+          <div className="block-header-left">
             <LiveIndicator
               isLive={isLive}
               onToggleLive={() => setIsLive(prev => !prev)}

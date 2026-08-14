@@ -304,44 +304,44 @@ const Graffiti = ({ onSearchClick }) => {
   return (
     <main className="page">
       <section className="section">
-        {/* Category Filter Tab Bar */}
+        {/* Top Header Bar: Filter Tabs on Left, Jump To on Right */}
         <div className="graffiti-filter-bar glass-panel">
-          <div className="graffiti-filter-title">
-            <RiFilter3Line className="filter-icon" /> Filter
+          <div className="graffiti-filter-left">
+            <div className="graffiti-filter-title">
+              <RiFilter3Line className="filter-icon" /> Filter
+            </div>
+            <div className="graffiti-tabs">
+              <button
+                className={`graffiti-tab-btn ${filterTab === "all" ? "active" : ""}`}
+                onClick={() => setFilterTab("all")}
+                type="button"
+              >
+                <RiLayoutGridLine /> All ({counts.all})
+              </button>
+              <button
+                className={`graffiti-tab-btn ${filterTab === "image" ? "active" : ""}`}
+                onClick={() => setFilterTab("image")}
+                type="button"
+              >
+                <RiImageLine /> Images ({counts.image})
+              </button>
+              <button
+                className={`graffiti-tab-btn ${filterTab === "video" ? "active" : ""}`}
+                onClick={() => setFilterTab("video")}
+                type="button"
+              >
+                <RiFilmLine /> Videos ({counts.video})
+              </button>
+              <button
+                className={`graffiti-tab-btn ${filterTab === "pdf" ? "active" : ""}`}
+                onClick={() => setFilterTab("pdf")}
+                type="button"
+              >
+                <RiFilePdfLine /> Documents ({counts.pdf})
+              </button>
+            </div>
           </div>
-          <div className="graffiti-tabs">
-            <button
-              className={`graffiti-tab-btn ${filterTab === "all" ? "active" : ""}`}
-              onClick={() => setFilterTab("all")}
-              type="button"
-            >
-              <RiLayoutGridLine /> All ({counts.all})
-            </button>
-            <button
-              className={`graffiti-tab-btn ${filterTab === "image" ? "active" : ""}`}
-              onClick={() => setFilterTab("image")}
-              type="button"
-            >
-              <RiImageLine /> Images ({counts.image})
-            </button>
-            <button
-              className={`graffiti-tab-btn ${filterTab === "video" ? "active" : ""}`}
-              onClick={() => setFilterTab("video")}
-              type="button"
-            >
-              <RiFilmLine /> Videos ({counts.video})
-            </button>
-            <button
-              className={`graffiti-tab-btn ${filterTab === "pdf" ? "active" : ""}`}
-              onClick={() => setFilterTab("pdf")}
-              type="button"
-            >
-              <RiFilePdfLine /> Documents ({counts.pdf})
-            </button>
-          </div>
-        </div>
 
-        <div className="section-header">
           <div className="navigation-controls">
             <button
               className="nav-button nav-button--back"

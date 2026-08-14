@@ -64,18 +64,6 @@
   color: #fff;
 }
 
-.doc-sidebar-version {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  padding: 0.15rem 0.45rem;
-  background: rgba(224, 95, 50, 0.15);
-  border: 1px solid rgba(224, 95, 50, 0.3);
-  color: var(--accent);
-  border-radius: 6px;
-  letter-spacing: 0.03em;
-}
-
 .doc-sidebar-close-btn {
   background: transparent;
   border: none;

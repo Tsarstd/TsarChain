@@ -1,29 +1,49 @@
-/* Navigation Controls */
+/* Block Header Bar */
+.block-header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding: 0 4px;
+}
+
+.block-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* Navigation Controls (Jump To) */
 .navigation-controls {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-top: 12px;
-  padding: 0 90px;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
 }
 
 .nav-input-group {
   display: flex;
   gap: 8px;
-  flex: 1;
-  max-width: 300px;
+  align-items: center;
+  max-width: 280px;
 }
 
 .nav-input {
   flex: 1;
-  padding: 10px 16px;
+  padding: 8px 14px;
+  height: 38px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--card);
   color: var(--text);
-  font-size: 14px;
+  font-size: 13px;
   transition: all 0.2s ease;
-  min-width: 120px;
+  min-width: 110px;
+  box-sizing: border-box;
 }
 
 .nav-input:focus {
@@ -33,19 +53,21 @@
 }
 
 .nav-button {
-  padding: 10px 20px;
+  padding: 8px 16px;
+  height: 38px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--card);
   color: var(--text);
-  font-size: 14px;
-  font-weight: var(--fw-light);
+  font-size: 13px;
+  font-weight: var(--fw-medium);
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 60px;
+  min-width: 52px;
+  box-sizing: border-box;
 }
 
 .nav-button:hover:not(:disabled) {
@@ -65,8 +87,8 @@
 }
 
 .nav-button--back {
-  padding: 10px 16px;
-  font-size: 18px;
+  padding: 8px 14px;
+  font-size: 16px;
   background: linear-gradient(135deg, rgba(36, 35, 34, 0.67), rgba(12, 11, 10, 0.768));
   border-color: rgba(99, 76, 58, 0.618);
 }
@@ -666,21 +688,33 @@
 
 /* Responsive adjustments */
 @media (max-width: 768px) {
-  .navigation-controls {
+  .block-header-bar,
+  .graffiti-filter-bar {
     flex-direction: column;
-    gap: 12px;
     align-items: stretch;
-    padding: 0 10px;
+    gap: 12px;
+  }
+
+  .block-header-left,
+  .graffiti-filter-left {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .navigation-controls {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0;
   }
   
   .nav-input-group {
     max-width: 100%;
-    order: 2;
+    flex: 1;
   }
   
   .nav-button--back {
-    align-self: flex-start;
-    order: 1;
+    align-self: auto;
   }
   
   .lane-scroll {
@@ -861,13 +895,21 @@
 
 /* Graffiti Media Filter Bar & Lightbox Styles */
 .graffiti-filter-bar {
-  padding: 16px 20px;
-  margin-bottom: 8px;
+  padding: 12px 18px;
+  margin-bottom: 14px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 14px;
+  border-radius: 14px;
+}
+
+.graffiti-filter-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .graffiti-filter-title,
@@ -878,6 +920,7 @@
   font-weight: var(--fw-medium);
   font-size: 14px;
   color: var(--text);
+  white-space: nowrap;
 }
 
 .filter-icon {
@@ -888,7 +931,7 @@
 .graffiti-tabs {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
