@@ -20,19 +20,20 @@ def test_init_kv_empty(mock_kv):
     m_iter, _ = mock_kv
     m_iter.return_value = []
     reg = GraffitiRegistry()
-    m_iter.assert_called_once_with("graffiti", b"data:")
+    m_iter.assert_called_once_with("graffiti", b"")
     assert "proofs" in reg.data
 
 def test_init_kv_with_data(mock_kv):
+    from tsarchain.contracts.graffiti_registry import serialize_post_binary
     m_iter, _ = mock_kv
-    existing_data = {"posts": {"art1": {}}, "comments": {}, "payouts": {}, "proofs": {}}
-    m_iter.return_value = [(b"data:data", json.dumps(existing_data).encode("utf-8"))]
+    post_bytes = serialize_post_binary({"art_id": "art1", "stats": {}})
+    m_iter.return_value = [(b"p:art1", post_bytes)]
     reg = GraffitiRegistry()
-    assert reg.data["posts"] == {"art1": {}}
+    assert "art1" in reg.data["posts"]
 
 def test_init_kv_with_other_keys(mock_kv):
     m_iter, _ = mock_kv
-    m_iter.return_value = [(b"data:other", b"{}")]
+    m_iter.return_value = [(b"other:key", b"{}")]
     reg = GraffitiRegistry()
     assert reg.data == {"posts": {}, "comments": {}, "payouts": {}, "proofs": {}}
 
@@ -41,6 +42,7 @@ def test_flush_kv(mock_kv):
     m_b = MagicMock()
     m_batch.return_value.__enter__.return_value = m_b
     reg = GraffitiRegistry()
+    reg.data["posts"]["art1"] = {"stats": {}}
     reg._flush()
     m_batch.assert_called_once_with("graffiti")
     m_b.put.assert_called_once()

@@ -79,7 +79,17 @@ class ChainStorage:
             
         if not isinstance(data_list, list) or not data_list:
             return
-        chain = [Block.from_dict(d) for d in data_list]
+        chain = []
+        for d in data_list:
+            if hasattr(d, "prev_block_hash") and hasattr(d, "height"):
+                chain.append(d)
+            elif isinstance(d, dict):
+                chain.append(Block.from_dict(d))
+            else:
+                try:
+                    chain.append(Block.from_dict(d))
+                except Exception:
+                    chain.append(d)
         if not chain or not self._validate_loaded_chain(chain):
             return
 
@@ -216,8 +226,22 @@ class ChainStorage:
                 b.put(b'__meta__', json.dumps(chain_meta, separators=CFG.CANONICAL_SEP).encode('utf-8'))
                 for height in range(start_height, tip_height + 1):
                     key = f"h:{height:012d}".encode('utf-8')
-                    blk_dict, cw_prev = self._serialize_block_for_store(self.blockchain.chain[height], cw_prev)
-                    payload = json.dumps(blk_dict, separators=CFG.CANONICAL_SEP).encode('utf-8')
+                    blk = self.blockchain.chain[height]
+                    cw_prev = int(getattr(blk, "chainwork", 0) or 0)
+                    if cw_prev == 0:
+                        cw_prev = int(self.blockchain._compute_chainwork_for_chain(self.blockchain.chain[:height + 1]))
+                    diff = getattr(blk, "difficulty", None)
+                    if diff is None or diff == 0:
+                        try:
+                            blk.difficulty = int(self.blockchain.calculate_block_difficulty(blk.bits))
+                        except Exception:
+                            blk.difficulty = 1
+                    try:
+                        payload = blk.to_storage_bytes()
+                        if not isinstance(payload, (bytes, bytearray)):
+                            payload = Block.to_storage_bytes(blk)
+                    except Exception:
+                        payload = Block.to_storage_bytes(blk)
                     b.put(key, payload)
             self.blockchain._persisted_height = tip_height
 
@@ -510,12 +534,26 @@ class ChainStorage:
         blocks: list[tuple[bytes, bytes]] = []
         for k, v in items:
             if k == b'__meta__':
-                meta = json.loads(v.decode('utf-8')) or {}
+                try:
+                    meta = json.loads(v.decode('utf-8')) or {}
+                except Exception:
+                    meta = {}
             elif k.startswith(b'h:'):
                 blocks.append((k, v))
         blocks.sort(key=lambda kv: kv[0])
-        data_list = [json.loads(v.decode('utf-8')) for _, v in blocks]
-        return meta, data_list
+        chain_objs = []
+        for _, v in blocks:
+            if len(v) >= 108 and not v.startswith(b'{'):
+                try:
+                    chain_objs.append(Block.from_storage_bytes(v))
+                    continue
+                except Exception:
+                    pass
+            try:
+                chain_objs.append(json.loads(v.decode('utf-8')))
+            except Exception:
+                pass
+        return meta, chain_objs
 
 
     def _validate_loaded_chain(self, chain: list) -> bool:

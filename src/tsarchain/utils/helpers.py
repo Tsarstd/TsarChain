@@ -398,7 +398,14 @@ def compute_tx_weight_vsize(tx) -> tuple[int, int, int, int]:
 
 
 def _estimate_tx_size_bytes(tx) -> int:
-    size = 0
+    if hasattr(tx, "to_storage_bytes"):
+        try:
+            raw = tx.to_storage_bytes()
+            if isinstance(raw, (bytes, bytearray)):
+                return len(raw)
+        except Exception:
+            pass
+    size = 10
     for txin in getattr(tx, "inputs", []) or []:
         size += 40
         if getattr(txin, "script_sig", None):
@@ -409,19 +416,30 @@ def _estimate_tx_size_bytes(tx) -> int:
         size += 8
         if getattr(txout, "script_pubkey", None):
             size += len(txout.script_pubkey.serialize())
-    size = max(size, len(tx.to_dict(include_txid=True)))
     return int(size)
 
 
 def estimate_block_size_bytes(block) -> int:
+    if hasattr(block, "to_storage_bytes"):
+        try:
+            raw = block.to_storage_bytes()
+            if isinstance(raw, (bytes, bytearray)):
+                return len(raw)
+        except Exception:
+            pass
     txs = getattr(block, "transactions", []) or []
-    total = 80  # header bytes
+    total = 108  # 80 bytes header + 24 bytes metadata + 4 bytes tx count
     for tx in txs:
+        if hasattr(tx, "to_storage_bytes"):
+            try:
+                total += 4 + len(tx.to_storage_bytes())
+                continue
+            except Exception:
+                pass
         if hasattr(tx, 'inputs') and hasattr(tx, 'outputs'):
             total += _estimate_tx_size_bytes(tx)
         else:
             total += len(json.dumps(tx))
-    total = max(total, len(json.dumps(block.to_dict())))
     return int(total)
 
 

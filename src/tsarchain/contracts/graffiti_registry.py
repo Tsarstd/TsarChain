@@ -6,6 +6,7 @@
 import os
 import time
 import json
+import struct
 from typing import Any, Dict
 
 from ..utils import config as CFG
@@ -13,6 +14,104 @@ from ..storage.kv import iter_prefix, batch
 
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger('tsarchain.contracts.graffiti_registry')
+
+
+# =============================================================================
+# BINARY SERIALIZATION / DESERIALIZATION HELPERS
+# =============================================================================
+
+def serialize_post_binary(entry: dict) -> bytes:
+    stats = entry.get("stats") or {}
+    pool_bal = int(stats.get("pool_balance") or 0)
+    creator_paid = int(stats.get("creator_paid") or 0)
+    storage_paid = int(stats.get("storage_paid") or 0)
+    comments = int(stats.get("comments") or 0)
+    last_paid_epoch = int(stats.get("last_paid_epoch", -1))
+    height = int(entry.get("block_height") or 0)
+    amt_paid = int(entry.get("amount_paid") or 0)
+    
+    payload = json.dumps(entry, separators=CFG.CANONICAL_SEP).encode("utf-8")
+    header = struct.pack("<QQQQIIiI", amt_paid, pool_bal, creator_paid, storage_paid, height, comments, last_paid_epoch, len(payload))
+    return header + payload
+
+
+def deserialize_post_binary(raw: bytes, art_id: str = "") -> dict:
+    if raw.startswith(b"{"):
+        return json.loads(raw.decode("utf-8"))
+    header_size = struct.calcsize("<QQQQIIiI")
+    if len(raw) < header_size:
+        return json.loads(raw.decode("utf-8"))
+    amt_paid, pool_bal, creator_paid, storage_paid, height, comments, last_paid_epoch, payload_len = struct.unpack_from("<QQQQIIiI", raw, 0)
+    payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
+    data = json.loads(payload_json)
+    if art_id and "art_id" not in data:
+        data["art_id"] = art_id
+    return data
+
+
+def serialize_comment_binary(entry: dict) -> bytes:
+    height = int(entry.get("block_height") or 0)
+    amount = int(entry.get("amount") or 0)
+    tip = int(entry.get("tip") or 0)
+    creator_paid = int(entry.get("creator_paid") or 0)
+    storage_paid = int(entry.get("storage_paid") or 0)
+    ts = int(entry.get("ts") or 0)
+    payload = json.dumps(entry, separators=CFG.CANONICAL_SEP).encode("utf-8")
+    header = struct.pack("<IQQQQQI", height, amount, tip, creator_paid, storage_paid, ts, len(payload))
+    return header + payload
+
+
+def deserialize_comment_binary(raw: bytes) -> dict:
+    if raw.startswith(b"{"):
+        return json.loads(raw.decode("utf-8"))
+    header_size = struct.calcsize("<IQQQQQI")
+    if len(raw) < header_size:
+        return json.loads(raw.decode("utf-8"))
+    height, amount, tip, creator_paid, storage_paid, ts, payload_len = struct.unpack_from("<IQQQQQI", raw, 0)
+    payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
+    return json.loads(payload_json)
+
+
+def serialize_payout_binary(entry: dict) -> bytes:
+    height = int(entry.get("block_height") or 0)
+    amount = int(entry.get("amount") or 0)
+    epoch = int(entry.get("epoch", -1) if entry.get("epoch") is not None else -1)
+    payload = json.dumps(entry, separators=CFG.CANONICAL_SEP).encode("utf-8")
+    header = struct.pack("<IQiI", height, amount, epoch, len(payload))
+    return header + payload
+
+
+def deserialize_payout_binary(raw: bytes) -> dict:
+    if raw.startswith(b"{"):
+        return json.loads(raw.decode("utf-8"))
+    header_size = struct.calcsize("<IQiI")
+    if len(raw) < header_size:
+        return json.loads(raw.decode("utf-8"))
+    height, amount, epoch, payload_len = struct.unpack_from("<IQiI", raw, 0)
+    payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
+    return json.loads(payload_json)
+
+
+def serialize_proof_binary(entry: dict) -> bytes:
+    epoch = int(entry.get("epoch") or 0)
+    offset = int(entry.get("offset") or 0)
+    length = int(entry.get("length") or 0)
+    height = int(entry.get("height") or 0)
+    ts = int(entry.get("ts") or 0)
+    payload = json.dumps(entry, separators=CFG.CANONICAL_SEP).encode("utf-8")
+    header = struct.pack("<QQIIQI", epoch, offset, length, height, ts, len(payload))
+    return header + payload
+
+
+def deserialize_proof_binary(raw: bytes) -> dict:
+    if raw.startswith(b"{"):
+        return json.loads(raw.decode("utf-8"))
+    header_size = struct.calcsize("<QQIIQI")
+    if len(raw) < header_size:
+        return json.loads(raw.decode("utf-8"))
+    epoch, offset_val, length, height, ts, payload_len = struct.unpack_from("<QQIIQI", raw, 0)
+    payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
+    return json.loads(payload_json)
 
 
 class GraffitiRegistry:
@@ -223,23 +322,46 @@ class GraffitiRegistry:
         return items
 
 
-# =============================================================================
-# INTERNAL METHOD
-# =============================================================================
-
-
     def _load(self, default: dict) -> dict:
         data = {"posts": {}, "comments": {}, "payouts": {}, "proofs": {}}
-        for k, v in iter_prefix("graffiti", b"data:"):
-            if k.decode("utf-8") == "data:data":
-                data = json.loads(v.decode("utf-8"))
-                break
+        for k, v in iter_prefix("graffiti", b""):
+            try:
+                if k.startswith(b"p:"):
+                    art_id = k[2:].decode("utf-8")
+                    data["posts"][art_id] = deserialize_post_binary(v, art_id)
+                elif k.startswith(b"c:"):
+                    parts = k[2:].decode("utf-8").split(":")
+                    if len(parts) >= 2:
+                        art_id = parts[0]
+                        data["comments"].setdefault(art_id, []).append(deserialize_comment_binary(v))
+                elif k.startswith(b"y:"):
+                    parts = k[2:].decode("utf-8").split(":")
+                    if len(parts) >= 2:
+                        art_id = parts[0]
+                        data["payouts"].setdefault(art_id, []).append(deserialize_payout_binary(v))
+                elif k.startswith(b"r:"):
+                    parts = k[2:].decode("utf-8").split(":")
+                    if len(parts) >= 2:
+                        art_id = parts[0]
+                        data["proofs"].setdefault(art_id, []).append(deserialize_proof_binary(v))
+            except Exception:
+                log.exception("Error decoding graffiti key %s", k)
         return data or dict(default)
 
 
     def _flush(self) -> None:
         with batch("graffiti") as b:
-            b.put(b"data:data", json.dumps(self.data, separators=CFG.CANONICAL_SEP).encode("utf-8"))
+            for art_id, post in (self.data.get("posts") or {}).items():
+                b.put(f"p:{art_id}".encode("utf-8"), serialize_post_binary(post))
+            for art_id, comments in (self.data.get("comments") or {}).items():
+                for idx, c in enumerate(comments):
+                    b.put(f"c:{art_id}:{idx:08d}".encode("utf-8"), serialize_comment_binary(c))
+            for art_id, payouts in (self.data.get("payouts") or {}).items():
+                for idx, y in enumerate(payouts):
+                    b.put(f"y:{art_id}:{idx:08d}".encode("utf-8"), serialize_payout_binary(y))
+            for art_id, proofs in (self.data.get("proofs") or {}).items():
+                for idx, r in enumerate(proofs):
+                    b.put(f"r:{art_id}:{idx:08d}".encode("utf-8"), serialize_proof_binary(r))
 
 
-__all__ = ["GraffitiRegistry"]
+__all__ = ["GraffitiRegistry", "serialize_post_binary", "deserialize_post_binary", "serialize_comment_binary", "deserialize_comment_binary", "serialize_payout_binary", "deserialize_payout_binary", "serialize_proof_binary", "deserialize_proof_binary"]

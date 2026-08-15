@@ -78,13 +78,35 @@ fn cache_flags_from(flags: RandomXFlag) -> RandomXFlag {
 
 fn instantiate_vm(key: &[u8], flags: RandomXFlag) -> Result<RandomXVM, RandomXError> {
     let cache_flags = cache_flags_from(flags);
-    let cache = RandomXCache::new(cache_flags, key)?;
+    let cache = match RandomXCache::new(cache_flags, key) {
+        Ok(c) => c,
+        Err(_e) if cache_flags.contains(RandomXFlag::FLAG_LARGE_PAGES) => {
+            let fallback_flags = cache_flags - RandomXFlag::FLAG_LARGE_PAGES;
+            RandomXCache::new(fallback_flags, key)?
+        }
+        Err(e) => return Err(e),
+    };
     let dataset = if flags.contains(RandomXFlag::FLAG_FULL_MEM) {
-        Some(RandomXDataset::new(flags, cache.clone(), 0)?)
+        let ds = match RandomXDataset::new(flags, cache.clone(), 0) {
+            Ok(d) => d,
+            Err(_e) if flags.contains(RandomXFlag::FLAG_LARGE_PAGES) => {
+                let fallback_flags = flags - RandomXFlag::FLAG_LARGE_PAGES;
+                RandomXDataset::new(fallback_flags, cache.clone(), 0)?
+            }
+            Err(e) => return Err(e),
+        };
+        Some(ds)
     } else {
         None
     };
-    RandomXVM::new(flags, Some(cache), dataset)
+    match RandomXVM::new(flags, Some(cache.clone()), dataset.clone()) {
+        Ok(vm) => Ok(vm),
+        Err(_e) if flags.contains(RandomXFlag::FLAG_LARGE_PAGES) => {
+            let fallback_flags = flags - RandomXFlag::FLAG_LARGE_PAGES;
+            RandomXVM::new(fallback_flags, Some(cache), dataset)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 fn with_cached_vm<R>(

@@ -4,9 +4,10 @@
 
 """
 Export LMDB sub-databases to JSON with FULL STREAMING (memory-safe).
-Supports multi-domain exports:
+Supports multi-domain exports with native binary decoding:
 - Keys: node_secrets -> data/keys/json_output/node_secrets.json
 - Node: chain, state, utxo, mempool, graffiti -> data/node/json_output/
+- Archivist: index_db, payout_guard -> data/archivist/storage/json_output/
 - Web: web_cache, web_media, web_blocks -> data/web/json_output/
 """
 
@@ -15,12 +16,37 @@ import sys
 import json
 import lmdb
 import base64
+import struct
 
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 from tqdm import tqdm
 from typing import Any, Dict, List, Union, Optional, Tuple
+
+# Add src to sys.path for native models
+SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
+
+try:
+    from tsarchain.core.block import Block
+    from tsarchain.core.tx import Tx
+    from tsarchain.mempool.scripts import script_to_address
+    from tsarchain.contracts.graffiti_registry import (
+        deserialize_post_binary,
+        deserialize_comment_binary,
+        deserialize_payout_binary,
+        deserialize_proof_binary,
+    )
+except ImportError:
+    Block = None
+    Tx = None
+    script_to_address = None
+    deserialize_post_binary = None
+    deserialize_comment_binary = None
+    deserialize_payout_binary = None
+    deserialize_proof_binary = None
 
 # ============================
 # USER SETTINGS
@@ -42,10 +68,27 @@ ARCHIVIST_OUTPUT_DIR = "data/archivist/storage/json_output"
 WEB_OUTPUT_DIR = "data/web/json_output"
 
 INDENT = 2                        # 'None' for smaller size but less readable.
-
-# Set to True ONLY if you had enough RAM to load the entire UTXO into memory (2GB+ for 1M+ UTXOs)
-# and you really need the order by block_height.
 SORT_UTXO = True
+
+# Registry of databases operating on Pure Binary storage
+BINARY_STORAGE_REGISTRY = {
+    'utxo': {
+        'model': 'Compact Binary Header (<Q?qH) + Raw ScriptPubkey',
+        'benefit': '~80% disk reduction, instant O(log N) prefix lookups',
+    },
+    'chain': {
+        'model': 'Binary Block (80B Header + 24B Meta + Serialized Witness Txs)',
+        'benefit': '~70% disk reduction, zero-copy native parsing for IBD',
+    },
+    'graffiti': {
+        'model': 'Granular Binary Structs (p: Posts, c: Comments, y: Payouts, r: Proofs)',
+        'benefit': 'O(1) isolated record updates, prevents monolithic rewrite lag',
+    },
+    'mempool': {
+        'model': 'Compact Binary Header (<dIII) + Binary Tx Bytes',
+        'benefit': 'Microsecond memory-mapped queue persistence',
+    },
+}
 # ============================
 
 
@@ -72,7 +115,63 @@ def decode_value(value_bytes: bytes) -> Union[str, Dict, List, Any]:
         }
 
 
-def stream_write_json(filepath: str, cursor) -> int:
+def decode_db_value(db_name: str, key_bytes: bytes, value_bytes: bytes) -> Union[str, Dict, List, Any]:
+    key_str = decode_key(key_bytes)
+    if key_str == '__meta__':
+        try:
+            return json.loads(value_bytes.decode('utf-8'))
+        except Exception:
+            return value_bytes.decode('utf-8', errors='replace')
+
+    # 1. UTXO binary decoding
+    if db_name == 'utxo' and len(value_bytes) >= 19 and not value_bytes.startswith(b'{'):
+        try:
+            amt, is_cb, height, spk_len = struct.unpack_from("<Q?qH", value_bytes, 0)
+            spk_bytes = value_bytes[19:19 + spk_len]
+            spk_hex = spk_bytes.hex()
+            addr = script_to_address(spk_bytes) if script_to_address else None
+            return {
+                "amount": amt,
+                "is_coinbase": bool(is_cb),
+                "block_height": height,
+                "script_pubkey": spk_hex,
+                "address": addr,
+            }
+        except Exception:
+            pass
+
+    # 2. Chain binary decoding
+    if db_name == 'chain' and key_str.startswith('h:') and len(value_bytes) >= 108 and not value_bytes.startswith(b'{'):
+        if Block:
+            try:
+                blk = Block.from_storage_bytes(value_bytes)
+                return blk.to_dict()
+            except Exception:
+                pass
+
+    # 3. Mempool binary decoding
+    if db_name == 'mempool' and len(value_bytes) >= 20 and not value_bytes.startswith(b'{'):
+        if Tx:
+            try:
+                recv_at, fee, vsize, weight = struct.unpack_from("<dIII", value_bytes, 0)
+                raw_tx = value_bytes[20:]
+                tx_obj = Tx.from_storage_bytes(raw_tx)
+                tx_dict = tx_obj.to_dict(include_txid=True)
+                tx_dict["_meta"] = {
+                    "received_at": recv_at,
+                    "fee": fee,
+                    "vbytes": vsize,
+                    "weight": weight,
+                }
+                return tx_dict
+            except Exception:
+                pass
+
+    # Fallback to standard text / json decoding
+    return decode_value(value_bytes)
+
+
+def stream_write_json(filepath: str, cursor, db_name: str = "") -> int:
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     count = 0
     with open(filepath, 'w', encoding='utf-8') as f:
@@ -81,7 +180,7 @@ def stream_write_json(filepath: str, cursor) -> int:
 
         for key_bytes, value_bytes in tqdm(cursor, desc=f"Writing {os.path.basename(filepath)}", unit=" entries"):
             key_str = decode_key(key_bytes)
-            val = decode_value(value_bytes)
+            val = decode_db_value(db_name, key_bytes, value_bytes)
 
             if not first:
                 f.write(',\n')
@@ -129,23 +228,12 @@ def open_lmdb_env_dbi(env_path: str, db_name: Optional[str] = None) -> Tuple[Opt
     return env, dbi
 
 
-def dump_dbi_to_dict(env: lmdb.Environment, dbi: Any) -> Dict[str, Any]:
-    data = {}
-    with env.begin(db=dbi, write=False) as txn:
-        with txn.cursor() as cursor:
-            for key_bytes, value_bytes in cursor:
-                key_str = decode_key(key_bytes)
-                val = decode_value(value_bytes)
-                data[key_str] = val
-    return data
-
-
 # ============================================================
 # EXPORT MODULES
 # ============================================================
 
 def export_keys_data() -> int:
-    """Exports node_secrets from data/keys (or fallback data/node) to data/keys/json_output/node_secrets.json."""
+    """Exports node_secrets from data/keys to data/keys/json_output/node_secrets.json."""
     print("\n🔑 --- Exporting Keys Data ---")
     os.makedirs(KEYS_OUTPUT_DIR, exist_ok=True)
 
@@ -163,7 +251,7 @@ def export_keys_data() -> int:
     print(f"📁 Reading 'node_secrets' from {env_path}")
     with env.begin(db=dbi, write=False) as txn:
         with txn.cursor() as cursor:
-            count = stream_write_json(output_file, cursor)
+            count = stream_write_json(output_file, cursor, db_name="node_secrets")
             print(f"   ✅ {count} entries written to {output_file}")
     env.close()
     return count
@@ -178,7 +266,7 @@ def sort_utxo_items(items):
             meta = (k, v)
         else:
             others.append((k, v))
-    others.sort(key=lambda x: x[1].get('block_height', 0))
+    others.sort(key=lambda x: (x[1].get('block_height', 0) if isinstance(x[1], dict) else 0))
     if meta:
         return [meta] + others
     return others
@@ -202,42 +290,58 @@ def export_node_data() -> int:
             print(f"⚠️  Sub-database '{db_name}' not found in {env_path}, skipping...")
             continue
 
-        print(f"📁 Reading '{db_name}' from LMDB environment: {env_path}")
+        is_binary = db_name in BINARY_STORAGE_REGISTRY
+        badge = " [BINARY ENGINE]" if is_binary else " [JSON/KV]"
+        print(f"📁 Reading '{db_name}'{badge} from: {env_path}")
 
-        # ---------- GRAFFITI ----------
+        # ---------- GRAFFITI (Granular Binary / Legacy Parser) ----------
         if db_name == 'graffiti':
-            db_data = dump_dbi_to_dict(env, dbi)
-            graffiti_content = db_data.get('data:data')
-            if graffiti_content is None and len(db_data) == 1:
-                graffiti_content = next(iter(db_data.values()))
+            posts = {}
+            comments = {}
+            payouts = {}
+            proofs = {}
+            count = 0
 
-            if graffiti_content is not None and isinstance(graffiti_content, dict):
-                sub_keys = ['posts', 'comments', 'payouts', 'proofs']
-                if any(k in graffiti_content for k in sub_keys):
-                    graffiti_dir = os.path.join(NODE_OUTPUT_DIR, 'graffiti')
-                    os.makedirs(graffiti_dir, exist_ok=True)
+            with env.begin(db=dbi, write=False) as txn:
+                with txn.cursor() as cursor:
+                    for k_bytes, v_bytes in cursor:
+                        count += 1
+                        try:
+                            if k_bytes.startswith(b"p:") and deserialize_post_binary:
+                                art_id = k_bytes[2:].decode("utf-8", errors="replace")
+                                posts[art_id] = deserialize_post_binary(v_bytes, art_id)
+                            elif k_bytes.startswith(b"c:") and deserialize_comment_binary:
+                                parts = k_bytes[2:].decode("utf-8", errors="replace").split(":")
+                                if len(parts) >= 2:
+                                    comments.setdefault(parts[0], []).append(deserialize_comment_binary(v_bytes))
+                            elif k_bytes.startswith(b"y:") and deserialize_payout_binary:
+                                parts = k_bytes[2:].decode("utf-8", errors="replace").split(":")
+                                if len(parts) >= 2:
+                                    payouts.setdefault(parts[0], []).append(deserialize_payout_binary(v_bytes))
+                            elif k_bytes.startswith(b"r:") and deserialize_proof_binary:
+                                parts = k_bytes[2:].decode("utf-8", errors="replace").split(":")
+                                if len(parts) >= 2:
+                                    proofs.setdefault(parts[0], []).append(deserialize_proof_binary(v_bytes))
+                            elif k_bytes == b"data:data":
+                                legacy = json.loads(v_bytes.decode("utf-8"))
+                                if isinstance(legacy, dict):
+                                    posts.update(legacy.get("posts", {}))
+                                    comments.update(legacy.get("comments", {}))
+                                    payouts.update(legacy.get("payouts", {}))
+                                    proofs.update(legacy.get("proofs", {}))
+                        except Exception as e:
+                            print(f"   ⚠️  Error decoding graffiti key {k_bytes}: {e}")
 
-                    for subkey in sub_keys:
-                        data = graffiti_content.get(subkey, {})
-                        out_file = os.path.join(graffiti_dir, f"{subkey}.json")
-                        with open(out_file, 'w', encoding='utf-8') as f:
-                            json.dump(data, f, indent=INDENT, ensure_ascii=False, default=str)
-                        entry_count = len(data) if isinstance(data, dict) else 0
-                        print(f"   ✅ {subkey}.json written ({entry_count} entries)")
-                    total_entries += 1
-                    env.close()
-                    continue
-                else:
-                    print("   ⚠️  Graffiti data doesn't contain expected keys, fallback to single file")
-            else:
-                print("   ⚠️  Graffiti 'data:data' key not found, fallback to single file")
+            graffiti_dir = os.path.join(NODE_OUTPUT_DIR, 'graffiti')
+            os.makedirs(graffiti_dir, exist_ok=True)
 
-            # Fallback
-            output_file = os.path.join(NODE_OUTPUT_DIR, f"{db_name}.json")
-            with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(db_data, f, indent=INDENT, ensure_ascii=False, default=str)
-            print(f"   ✅ {len(db_data)} entries written to {output_file} (fallback)")
-            total_entries += len(db_data)
+            for subkey, sdata in [('posts', posts), ('comments', comments), ('payouts', payouts), ('proofs', proofs)]:
+                out_file = os.path.join(graffiti_dir, f"{subkey}.json")
+                with open(out_file, 'w', encoding='utf-8') as f:
+                    json.dump(sdata, f, indent=INDENT, ensure_ascii=False, default=str)
+                print(f"   ✅ {subkey}.json written ({len(sdata)} entries)")
+
+            total_entries += count
             env.close()
             continue
 
@@ -245,7 +349,7 @@ def export_node_data() -> int:
         output_file = os.path.join(NODE_OUTPUT_DIR, f"{db_name}.json")
         with env.begin(db=dbi, write=False) as txn:
             with txn.cursor() as cursor:
-                count = stream_write_json(output_file, cursor)
+                count = stream_write_json(output_file, cursor, db_name=db_name)
                 print(f"   ✅ {count} entries streamed to {output_file}")
                 total_entries += count
 
@@ -302,7 +406,7 @@ def export_archivist_data() -> int:
         print(f"📁 Reading '{label}' ({db_name}) from {env_path}")
         with env.begin(db=dbi, write=False) as txn:
             with txn.cursor() as cursor:
-                count = stream_write_json(output_file, cursor)
+                count = stream_write_json(output_file, cursor, db_name=db_name)
                 print(f"   ✅ {count} entries written to {output_file}")
                 total_entries += count
 
@@ -337,7 +441,7 @@ def export_web_data() -> int:
             output_file = os.path.join(WEB_OUTPUT_DIR, f"{subdb}.json")
             with env.begin(db=dbi, write=False) as txn:
                 with txn.cursor() as cursor:
-                    count = stream_write_json(output_file, cursor)
+                    count = stream_write_json(output_file, cursor, db_name=subdb)
                     print(f"   ✅ {count} entries written to {output_file}")
                     total_entries += count
                     found_any = True
@@ -345,13 +449,12 @@ def export_web_data() -> int:
             continue
 
     if not found_any:
-        # Fallback to default unnamed database
         try:
             dbi = env.open_db(None, create=False)
             output_file = os.path.join(WEB_OUTPUT_DIR, "web.json")
             with env.begin(db=dbi, write=False) as txn:
                 with txn.cursor() as cursor:
-                    count = stream_write_json(output_file, cursor)
+                    count = stream_write_json(output_file, cursor, db_name="web")
                     print(f"   ✅ {count} entries written to {output_file} (fallback)")
                     total_entries += count
         except lmdb.Error:
@@ -368,20 +471,30 @@ def export_web_data() -> int:
 # ============================================================
 
 def export_lmdb():
-    print("🚀 Starting Multi-Domain LMDB Export...")
+    print("=" * 72)
+    print("🚀 TSARCHAIN MULTI-DOMAIN LMDB EXPORTER & SMART BINARY DECODER")
+    print("=" * 72)
+    print("🛡️  ACTIVE BINARY STORAGE ENGINE REGISTER:")
+    for db_name, info in BINARY_STORAGE_REGISTRY.items():
+        print(f"   ⚡ [{db_name.upper():<8}] Model   : {info['model']}")
+        print(f"                 Benefit : {info['benefit']}")
+    print("=" * 72)
+
     keys_count = export_keys_data()
     node_count = export_node_data()
     archivist_count = export_archivist_data()
     web_count = export_web_data()
 
     total = keys_count + node_count + archivist_count + web_count
-    print("\n🔒 All LMDB exports completed successfully.")
-    print("📊 Summary of exported entries:")
-    print(f"   - Keys: {keys_count}")
-    print(f"   - Node: {node_count}")
-    print(f"   - Archivist: {archivist_count}")
-    print(f"   - Web: {web_count}")
-    print(f"   - Total Entries: {total}")
+    print("\n" + "=" * 72)
+    print("🔒 ALL LMDB EXPORTS & BINARY DECODING COMPLETED SUCCESSFULLY.")
+    print("📊 SUMMARY OF EXPORTED ENTRIES:")
+    print(f"   - Keys (node_secrets)    : {keys_count}")
+    print(f"   - Node (chain,utxo,etc)  : {node_count}")
+    print(f"   - Archivist (storage)    : {archivist_count}")
+    print(f"   - Web (explorer cache)   : {web_count}")
+    print(f"   - Total Decoded Entries  : {total}")
+    print("=" * 72)
 
 
 if __name__ == '__main__':

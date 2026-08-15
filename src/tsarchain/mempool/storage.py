@@ -22,14 +22,27 @@ __all__ = ["MempoolStorageMixin"]
 
 class MempoolStorageMixin:
     def _load_storage_pool(self) -> tuple[list, dict]:
+        import struct
         meta = {}
         out = []
         for k, v in iter_prefix("mempool", b""):
             key = k.decode("utf-8")
             if key == "__meta__":
-                meta = json.loads(v.decode("utf-8")) or {}
+                try:
+                    meta = json.loads(v.decode("utf-8")) or {}
+                except Exception:
+                    meta = {}
                 continue
-            out.append(json.loads(v.decode("utf-8")))
+            if len(v) >= 20:
+                try:
+                    recv_at, fee, vsize, weight = struct.unpack_from("<dIII", v, 0)
+                    raw_tx = v[20:]
+                    tx_obj = Tx.from_storage_bytes(raw_tx)
+                    tx_obj.fee = fee
+                    setattr(tx_obj, "_received_at", recv_at)
+                    out.append(tx_obj)
+                except Exception:
+                    pass
         return out, meta
 
     def _hydrate_pool(self, entries: list) -> None:
@@ -74,21 +87,6 @@ class MempoolStorageMixin:
             tx_obj.compute_txid()
         return tx_obj
 
-    def _serialize_tx(self, tx_obj: Tx) -> dict:
-        tx_dict = tx_obj.to_dict(include_txid=True)
-        if not tx_dict.get("txid") and getattr(tx_obj, "txid", None):
-            tx_dict["txid"] = tx_obj.txid.hex()
-        tx_size = _estimate_tx_size_bytes(tx_obj)
-        meta = {
-            "schema_version": int(CFG.DATA_SCHEMA_VERSION),
-            "received_at": getattr(tx_obj, "_received_at", None),
-            "vbytes": int(tx_size),
-            "weight": int(tx_size * 4),
-            "fee_rate": self._compute_fee_rate(tx_obj, tx_size),
-        }
-        tx_dict["_meta"] = meta
-        return tx_dict
-
     def _build_meta_snapshot(self) -> dict:
         return {
             "schema_version": int(CFG.DATA_SCHEMA_VERSION),
@@ -129,6 +127,7 @@ class MempoolStorageMixin:
         return self._change_seq
 
     def flush(self, force: bool = False) -> bool:
+        import struct
         with self._lock:
             if not self._dirty and not force:
                 return False
@@ -136,7 +135,7 @@ class MempoolStorageMixin:
             if not force and (now - self._last_flush) < CFG.MEMPOOL_FLUSH_INTERVAL:
                 return False
 
-            snapshot = [self._serialize_tx(tx) for tx in self._pool.values()]
+            tx_list = list(self._pool.values())
             meta = self._build_meta_snapshot()
             self._dirty = False
             self._last_flush = now
@@ -144,11 +143,18 @@ class MempoolStorageMixin:
         clear_db("mempool")
         with batch("mempool") as b:
             b.put(b"__meta__", json.dumps(meta, separators=CFG.CANONICAL_SEP).encode("utf-8"))
-            for entry in snapshot:
-                txid = entry.get("txid")
+            for tx_obj in tx_list:
+                txid = self._normalize_txid(getattr(tx_obj, "txid", None))
                 if not txid:
                     continue
-                b.put(txid.encode("utf-8"), json.dumps(entry, separators=CFG.CANONICAL_SEP).encode("utf-8"))
+                tx_size = _estimate_tx_size_bytes(tx_obj)
+                recv_at = float(getattr(tx_obj, "_received_at", now) or now)
+                fee = int(getattr(tx_obj, "fee", 0) or 0)
+                vsize = int(tx_size)
+                weight = int(tx_size * 4)
+                hdr = struct.pack("<dIII", recv_at, fee, vsize, weight)
+                payload = hdr + (tx_obj.to_storage_bytes() if hasattr(tx_obj, "to_storage_bytes") else Tx.to_storage_bytes(tx_obj))
+                b.put(txid.encode("utf-8"), payload)
         return True
 
     def save_pool(self, pool: list) -> None:

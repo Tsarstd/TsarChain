@@ -176,6 +176,99 @@ class Tx:
             obj.compute_txid()
         return obj
 
+    def to_storage_bytes(self) -> bytes:
+        import struct
+        parts = [struct.pack("<II?H", self.version, self.locktime, self.is_coinbase, len(self.inputs))]
+        for txin in self.inputs:
+            prev_b = txin.txid if isinstance(txin.txid, (bytes, bytearray)) else bytes.fromhex(txin.txid)
+            ss_bytes = txin.script_sig.serialize() if hasattr(txin.script_sig, "serialize") else (bytes.fromhex(txin.script_sig) if isinstance(txin.script_sig, str) else bytes(txin.script_sig or b""))
+            parts.append(struct.pack("<32sIQHH", prev_b, int(txin.vout), int(getattr(txin, "amount", 0) or 0), len(ss_bytes), len(txin.witness)))
+            if ss_bytes:
+                parts.append(ss_bytes)
+            for w in txin.witness:
+                wb = bytes.fromhex(w) if isinstance(w, str) else bytes(w)
+                parts.append(struct.pack("<H", len(wb)) + wb)
+        
+        parts.append(struct.pack("<H", len(self.outputs)))
+        for txout in self.outputs:
+            amt = int(getattr(txout, "amount", 0) or 0)
+            spk = getattr(txout, "script_pubkey", None)
+            spk_bytes = spk.serialize() if hasattr(spk, "serialize") else (bytes.fromhex(spk) if isinstance(spk, str) else bytes(spk or b""))
+            parts.append(struct.pack("<QH", amt, len(spk_bytes)) + spk_bytes)
+            
+        if self.is_coinbase:
+            to_addr = (getattr(self, "to_address", "") or "").encode("utf-8")
+            blk_id = (str(getattr(self, "block_id", "") or "")).encode("utf-8")
+            h = int(getattr(self, "height", 0) or 0)
+            parts.append(struct.pack("<BHHq", len(to_addr), len(blk_id), 0, h))
+            parts.append(to_addr)
+            parts.append(blk_id)
+
+        return b"".join(parts)
+
+    @classmethod
+    def from_storage_bytes(cls, raw: bytes) -> "Tx":
+        import struct
+        offset = 0
+        version, locktime, is_coinbase, in_count = struct.unpack_from("<II?H", raw, offset)
+        offset += struct.calcsize("<II?H")
+        
+        inputs = []
+        for _ in range(in_count):
+            prev_txid, vout, amt, ss_len, wit_count = struct.unpack_from("<32sIQHH", raw, offset)
+            offset += struct.calcsize("<32sIQHH")
+            ss_bytes = raw[offset:offset + ss_len]
+            offset += ss_len
+            script_sig = Script.deserialize(ss_bytes) if ss_bytes else Script([])
+            
+            witness = []
+            for _ in range(wit_count):
+                (w_len,) = struct.unpack_from("<H", raw, offset)
+                offset += 2
+                wb = raw[offset:offset + w_len]
+                offset += w_len
+                witness.append(wb)
+                
+            inputs.append(TxIn(txid=prev_txid, vout=vout, amount=amt, script_sig=script_sig, witness=witness))
+            
+        (out_count,) = struct.unpack_from("<H", raw, offset)
+        offset += 2
+        
+        outputs = []
+        for _ in range(out_count):
+            amt, spk_len = struct.unpack_from("<QH", raw, offset)
+            offset += struct.calcsize("<QH")
+            spk_bytes = raw[offset:offset + spk_len]
+            offset += spk_len
+            script_pubkey = Script.deserialize(spk_bytes) if spk_bytes else Script([])
+            outputs.append(TxOut(amount=amt, script_pubkey=script_pubkey))
+            
+        if is_coinbase:
+            to_addr_len, blk_id_len, _, h = struct.unpack_from("<BHHq", raw, offset)
+            offset += struct.calcsize("<BHHq")
+            to_addr = raw[offset:offset + to_addr_len].decode("utf-8", errors="replace")
+            offset += to_addr_len
+            blk_id = raw[offset:offset + blk_id_len].decode("utf-8", errors="replace")
+            offset += blk_id_len
+            from .coinbase import CoinbaseTx
+            obj = CoinbaseTx.__new__(CoinbaseTx)
+            obj.version = version
+            obj.locktime = locktime
+            obj.is_coinbase = True
+            obj.inputs = inputs
+            obj.outputs = outputs
+            obj.to_address = to_addr
+            obj.reward = outputs[0].amount if outputs else 0
+            obj.block_id = blk_id
+            obj.height = h
+            obj.fee = 0
+            obj.txid = None
+            obj.compute_txid()
+            return obj
+            
+        tx = cls(version=version, locktime=locktime, is_coinbase=False, inputs=inputs, outputs=outputs)
+        return tx
+
     # -------- Convenience props ----------
     
     @property

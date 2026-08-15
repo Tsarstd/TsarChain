@@ -65,9 +65,24 @@ fn build_shared_cache_and_dataset(
             cache_flags.insert(candidate);
         }
     }
-    let cache = RandomXCache::new(cache_flags, key)?;
+    let cache = match RandomXCache::new(cache_flags, key) {
+        Ok(c) => c,
+        Err(_e) if cache_flags.contains(RandomXFlag::FLAG_LARGE_PAGES) => {
+            let fallback_flags = cache_flags - RandomXFlag::FLAG_LARGE_PAGES;
+            RandomXCache::new(fallback_flags, key)?
+        }
+        Err(e) => return Err(e),
+    };
     let dataset = if flags.contains(RandomXFlag::FLAG_FULL_MEM) {
-        Some(Arc::new(SharedDataset(RandomXDataset::new(flags, cache.clone(), 0)?)))
+        let ds = match RandomXDataset::new(flags, cache.clone(), 0) {
+            Ok(d) => d,
+            Err(_e) if flags.contains(RandomXFlag::FLAG_LARGE_PAGES) => {
+                let fallback_flags = flags - RandomXFlag::FLAG_LARGE_PAGES;
+                RandomXDataset::new(fallback_flags, cache.clone(), 0)?
+            }
+            Err(e) => return Err(e),
+        };
+        Some(Arc::new(SharedDataset(ds)))
     } else {
         None
     };
