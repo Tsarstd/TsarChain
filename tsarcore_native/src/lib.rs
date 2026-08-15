@@ -43,8 +43,8 @@ pub mod generate_history_book;
 // ---------------------
 // RandomX VM cache
 // ---------------------
-struct SafeRandomXVM(RandomXVM);
-// SAFETY: RandomXVM internally uses raw pointers; we guard with external mutex and never share mutable access without lock.
+struct SafeRandomXVM(Mutex<RandomXVM>);
+// SAFETY: RandomXVM internally uses raw pointers; guarded with Mutex for thread-safe access.
 unsafe impl Send for SafeRandomXVM {}
 unsafe impl Sync for SafeRandomXVM {}
 
@@ -111,9 +111,12 @@ fn with_cached_vm<R>(
             if entry.flags == flags {
                 entry.last_used = now;
                 vm_arc = entry.vm.clone();
-                // release lock before running caller
                 drop(cache);
-                return f(&vm_arc.0);
+                let guard = match vm_arc.0.lock() {
+                    Ok(g) => g,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                return f(&*guard);
             } else {
                 needs_purge = true;
             }
@@ -127,7 +130,7 @@ fn with_cached_vm<R>(
         }
 
         let vm = instantiate_vm(key, flags)?;
-        let arc_vm = Arc::new(SafeRandomXVM(vm));
+        let arc_vm = Arc::new(SafeRandomXVM(Mutex::new(vm)));
         cache.insert(
             key.to_vec(),
             RandomxVmEntry {
@@ -139,7 +142,11 @@ fn with_cached_vm<R>(
         vm_arc = arc_vm;
     }
 
-    f(&vm_arc.0)
+    let guard = match vm_arc.0.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    f(&*guard)
 }
 
 fn configure_randomx_flags(
@@ -240,23 +247,24 @@ pub fn randomx_pow_hash<'py>(
         max_cache_entries
     };
 
-    let hash = match with_cached_vm(key_bytes, flags, max_entries, |vm| {
-        vm.calculate_hash(header_bytes)
-    }) {
-        Ok(h) => h,
-        Err(e) if large_pages => {
-            log_warning(&format!(
-                "[randomx] large pages unavailable ({e}); retrying without large pages"
-            ));
-            let mut fallback_flags = flags;
-            fallback_flags.remove(RandomXFlag::FLAG_LARGE_PAGES);
-            with_cached_vm(key_bytes, fallback_flags, max_entries, |vm| {
-                vm.calculate_hash(header_bytes)
-            })
-            .map_err(map_randomx_err)?
+    let hash = py.detach(|| {
+        match with_cached_vm(key_bytes, flags, max_entries, |vm| {
+            vm.calculate_hash(header_bytes)
+        }) {
+            Ok(h) => Ok(h),
+            Err(e) if large_pages => {
+                log_warning(&format!(
+                    "[randomx] large pages unavailable ({e}); retrying without large pages"
+                ));
+                let mut fallback_flags = flags;
+                fallback_flags.remove(RandomXFlag::FLAG_LARGE_PAGES);
+                with_cached_vm(key_bytes, fallback_flags, max_entries, |vm| {
+                    vm.calculate_hash(header_bytes)
+                })
+            }
+            Err(e) => Err(e),
         }
-        Err(e) => return Err(map_randomx_err(e)),
-    };
+    }).map_err(map_randomx_err)?;
     Ok(PyBytes::new(py, &hash))
 }
 
@@ -416,20 +424,17 @@ pub fn count_sigops(script: &[u8]) -> PyResult<u32> {
                     total = total.saturating_add(1);
                 }
                 OP_CHECKMULTISIG | OP_CHECKMULTISIGVERIFY => {
-                    // cari small-int terdekat sebelumnya (jika ada)
-                    let mut n: Option<u32> = None;
-                    let mut j: isize = idx as isize - 1;
-                    while j >= 0 {
-                        if let Some(prev) = ops[j as usize].0 {
-                            if let Some(si) = small_int(prev) {
-                                n = Some(si);
-                                break;
-                            }
+                    let n = if idx > 0 {
+                        if let Some(prev) = ops[idx - 1].0 {
+                            small_int(prev)
+                        } else {
+                            None
                         }
-                        j -= 1;
-                    }
+                    } else {
+                        None
+                    };
                     let add = n.unwrap_or(20).min(20);
-                    total = total.saturating_add(add as u32);
+                    total = total.saturating_add(add);
                 }
                 _ => {}
             }
@@ -846,28 +851,30 @@ pub fn secp_verify_der_low_s_many<'py>(
         }
     };
 
-    let results: Vec<bool> = if use_parallel {
-        #[cfg(feature = "parallel")]
-        {
-            use rayon::prelude::*;
-            tasks
-                .par_iter()
-                .map(|(pk, d32, sg)| verify_one(pk, d32, sg))
-                .collect()
-        }
-        #[cfg(not(feature = "parallel"))]
-        {
+    let results: Vec<bool> = py.detach(|| {
+        if use_parallel {
+            #[cfg(feature = "parallel")]
+            {
+                use rayon::prelude::*;
+                tasks
+                    .par_iter()
+                    .map(|(pk, d32, sg)| verify_one(pk, d32, sg))
+                    .collect()
+            }
+            #[cfg(not(feature = "parallel"))]
+            {
+                tasks
+                    .iter()
+                    .map(|(pk, d32, sg)| verify_one(pk, d32, sg))
+                    .collect()
+            }
+        } else {
             tasks
                 .iter()
                 .map(|(pk, d32, sg)| verify_one(pk, d32, sg))
                 .collect()
         }
-    } else {
-        tasks
-            .iter()
-            .map(|(pk, d32, sg)| verify_one(pk, d32, sg))
-            .collect()
-    };
+    });
 
     // === Logging ===
     let total = results.len();

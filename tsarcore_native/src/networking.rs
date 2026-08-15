@@ -545,8 +545,8 @@ impl SecureChannelNative {
         dict.set_item("node_pub", &self.node_pub_hex)?;
         dict.set_item("sig", hex::encode(signature.to_bytes()))?;
 
-        self.root_send = Some(k_send_raw.to_vec());
-        self.root_recv = Some(k_recv_raw.to_vec());
+        self.root_send = Some(k_recv_raw.to_vec());
+        self.root_recv = Some(k_send_raw.to_vec());
         self.aes_send = Some(aes_send);
         self.aes_recv = Some(aes_recv);
         self.send_epoch = 0;

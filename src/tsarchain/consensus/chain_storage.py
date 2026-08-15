@@ -22,6 +22,7 @@ from ..storage.utxo import UTXODB
 from ..utils import config as CFG
 from ..contracts import graffiti as GRAFFITI
 from ..contracts.graffiti_registry import GraffitiRegistry
+from ..mempool.scripts import script_to_address
 from ..utils.bootstrap import annotate_local_snapshot_meta
 from ..storage.kv import batch, iter_prefix, clear_db, delete, _ensure_env
 from ..utils.helpers import bits_to_target, target_to_difficulty, estimate_block_size_bytes
@@ -308,8 +309,29 @@ class ChainStorage:
                     continue
                 event = str(meta.get("event", "")).upper()
                 if event == "POST":
+                    art_id = str(meta.get("art_id") or "").strip().lower()
+                    if not art_id:
+                        sha_hex = str(meta.get("sha256") or "").strip().lower()
+                        creator = str(meta.get("creator") or "").strip().lower()
+                        art_id = GRAFFITI.compute_art_id(sha_hex, creator) if sha_hex and creator else ""
+                    if not art_id:
+                        continue
+
+                    pool_addr = GRAFFITI.derive_pool_address(art_id)
+                    min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
+                    paid = 0
+                    for out in getattr(tx, "outputs", []) or []:
+                        out_spk = getattr(out, "script_pubkey", None)
+                        out_addr = script_to_address(out_spk) if out_spk is not None else getattr(out, "address", None)
+                        if out_addr == pool_addr:
+                            paid += int(getattr(out, "amount", 0))
+
+                    if paid < min_fee:
+                        continue
+
                     posts.append({
                         "txid": txid_hex,
+                        "art_id": art_id,
                         "sha256": meta.get("sha256"),
                         "size": meta.get("size"),
                         "mime": meta.get("mime"),

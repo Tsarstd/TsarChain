@@ -368,6 +368,26 @@ class TxMempoolValidator:
             meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
             if meta and str(meta.get("event", "")).upper() == "POST":
                 is_post = True
+                art_id = str(meta.get("art_id") or "").strip().lower()
+                if not art_id:
+                    sha_hex = str(meta.get("sha256") or "").strip().lower()
+                    creator = str(meta.get("creator") or "").strip().lower()
+                    art_id = GRAFFITI.compute_art_id(sha_hex, creator) if sha_hex and creator else ""
+                if art_id:
+                    try:
+                        pool_addr = GRAFFITI.derive_pool_address(art_id)
+                        min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
+                        paid = sum(
+                            int(getattr(out, "amount", 0))
+                            for out in getattr(tx, "outputs", []) or []
+                            if (script_to_address(getattr(out, "script_pubkey", None)) if getattr(out, "script_pubkey", None) is not None else getattr(out, "address", None)) == pool_addr
+                        )
+                        if paid < min_fee:
+                            self.last_error_reason = "graffiti_post_fee_insufficient"
+                            log.warning("[_enforce_mempool_post_limit] POST rejected due to insufficient pool fee: paid=%s required=%s art_id=%s", paid, min_fee, art_id[:16])
+                            return False
+                    except Exception:
+                        pass
                 break
             
         if is_post and int(CFG.MAX_GRAFFITI_ON_MEMPOOL) > 0:

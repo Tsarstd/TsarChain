@@ -251,9 +251,10 @@ def test_validate_transactions_graffiti_post_ok(validation_chain):
 
 def test_validate_transactions_graffiti_post_mismatch(validation_chain):
     """Scenario 5: POST graffiti with mismatched block_id -> failure."""
+    import hashlib
     chain = validation_chain
 
-    art_id = "abc123"
+    art_id = "graf" + "a" * 60
     cb = create_coinbase_tx(50_000_000 + 10, block_id="wrong_id")
 
     graffiti_data = b'GRAFFITI' + b'\x01\x02\x03'
@@ -284,11 +285,16 @@ def test_validate_transactions_graffiti_post_mismatch(validation_chain):
                 return parse_payload_side_effect(data)
         return None
     chain._mock_graffiti.parse_from_script.side_effect = parse_from_script_side_effect
+    chain._mock_graffiti.derive_pool_address.side_effect = GRAFFITI.derive_pool_address
+    chain._mock_graffiti.calc_upload_fee_sats.side_effect = GRAFFITI.calc_upload_fee_sats
 
     op_return_script = b'\x6a' + bytes([len(graffiti_data)]) + graffiti_data
     tx_out = create_output(0, op_return_script)
+    redeem = GRAFFITI._pool_redeem_script(art_id)
+    pool_spk = b'\x00\x20' + hashlib.sha256(redeem).digest()
+    tx_pool_out = create_output(5000000000, pool_spk)
     tx_input = create_utxo_input(b'\xaa' * 32, 0)
-    normal_tx = create_normal_tx([tx_input], [tx_out], fee=10)
+    normal_tx = create_normal_tx([tx_input], [tx_out, tx_pool_out], fee=10)
 
     block = DummyBlock(height=10, transactions=[cb, normal_tx])
 

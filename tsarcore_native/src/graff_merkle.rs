@@ -172,25 +172,26 @@ pub fn graff_merkle_root_for_file<'py>(
     path: &str,
     chunk_size: usize,
 ) -> PyResult<(Bound<'py, PyBytes>, usize)> {
-    let file = File::open(path)
-        .map_err(|e| {
-            log_warning(&format!("graff_merkle_root_for_file open error={}", e));
-            PyErr::new::<exceptions::PyFileNotFoundError, _>(e.to_string())
-        })?;
-    let mut reader = BufReader::new(file);
-    let leaves = match leaves_from_reader(&mut reader, chunk_size) {
-        Ok(v) => v,
-        Err(e) => {
-            log_warning(&format!("graff_merkle_root_for_file error={}", e));
-            return Err(e);
-        }
-    };
-    let count = leaves.len();
-    let root = build_root(leaves);
+    let (root, count) = py.detach(|| -> Result<([u8; 32], usize), PyErr> {
+        let file = File::open(path)
+            .map_err(|e| {
+                log_warning(&format!("graff_merkle_root_for_file open error={}", e));
+                PyErr::new::<exceptions::PyFileNotFoundError, _>(e.to_string())
+            })?;
+        let mut reader = BufReader::new(file);
+        let leaves = match leaves_from_reader(&mut reader, chunk_size) {
+            Ok(v) => v,
+            Err(e) => {
+                log_warning(&format!("graff_merkle_root_for_file error={}", e));
+                return Err(e);
+            }
+        };
+        let count = leaves.len();
+        let root = build_root(leaves);
+        Ok((root, count))
+    })?;
     Ok((PyBytes::new(py, &root), count))
 }
-
-
 
 #[pyfunction]
 pub fn graff_merkle_path_for_file<'py>(
@@ -199,27 +200,30 @@ pub fn graff_merkle_path_for_file<'py>(
     chunk_size: usize,
     index: usize,
 ) -> PyResult<Bound<'py, PyList>> {
-    let file = File::open(path)
-        .map_err(|e| {
-            log_warning(&format!("graff_merkle_path_for_file open error={}", e));
-            PyErr::new::<exceptions::PyFileNotFoundError, _>(e.to_string())
-        })?;
-    let mut reader = BufReader::new(file);
-    let leaves = match leaves_from_reader(&mut reader, chunk_size) {
-        Ok(v) => v,
-        Err(e) => {
-            log_warning(&format!("graff_merkle_path_for_file error={}", e));
-            return Err(e);
-        }
-    };
-    let path = match build_path_internal(leaves, index) {
-        Ok(v) => v,
-        Err(e) => {
-            log_warning(&format!("graff_merkle_path_for_file error={}", e));
-            return Err(e);
-        }
-    };
-    let out = path_to_pylist(py, path)?;
+    let path_tuples = py.detach(|| -> Result<Vec<(char, [u8; 32])>, PyErr> {
+        let file = File::open(path)
+            .map_err(|e| {
+                log_warning(&format!("graff_merkle_path_for_file open error={}", e));
+                PyErr::new::<exceptions::PyFileNotFoundError, _>(e.to_string())
+            })?;
+        let mut reader = BufReader::new(file);
+        let leaves = match leaves_from_reader(&mut reader, chunk_size) {
+            Ok(v) => v,
+            Err(e) => {
+                log_warning(&format!("graff_merkle_path_for_file error={}", e));
+                return Err(e);
+            }
+        };
+        let path = match build_path_internal(leaves, index) {
+            Ok(v) => v,
+            Err(e) => {
+                log_warning(&format!("graff_merkle_path_for_file error={}", e));
+                return Err(e);
+            }
+        };
+        Ok(path)
+    })?;
+    let out = path_to_pylist(py, path_tuples)?;
     Ok(out)
 }
 

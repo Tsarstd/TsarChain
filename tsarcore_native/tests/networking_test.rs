@@ -106,29 +106,24 @@ fn test_secure_channel_handshake_and_messaging() {
         assert_eq!(decrypted_reply_bound.as_bytes(), reply);
         
         // 6. Trigger Rekeying by sending enough messages (rekey_every is 10)
-        // Due to existing role logic in rekeying, server and client will derive mismatched keys after rekey,
-        // causing decryption to fail. We test that this failure occurs correctly to cover the rekeying code blocks.
-        for _ in 0..10 {
-            let (seq, c_bound) = client.encrypt(py, b"spam").unwrap();
+        // With synchronized root keys, messages across rekey boundaries must decrypt successfully.
+        for i in 0..15 {
+            let msg = format!("client spam {}", i);
+            let (seq, c_bound) = client.encrypt(py, msg.as_bytes()).unwrap();
             let c = c_bound.as_bytes();
             let d_res = server.decrypt(py, seq, c);
-            if seq >= 10 {
-                assert!(d_res.is_err(), "Decryption should fail post-rekey due to known logic");
-            } else {
-                assert_eq!(d_res.unwrap().as_bytes(), b"spam");
-            }
+            assert!(d_res.is_ok(), "Decryption failed at seq {}", seq);
+            assert_eq!(d_res.unwrap().as_bytes(), msg.as_bytes());
         }
         
         // Also trigger server rekey
-        for _ in 0..10 {
-            let (seq, c_bound) = server.encrypt(py, b"spam").unwrap();
+        for i in 0..15 {
+            let msg = format!("server spam {}", i);
+            let (seq, c_bound) = server.encrypt(py, msg.as_bytes()).unwrap();
             let c = c_bound.as_bytes();
             let d_res = client.decrypt(py, seq, c);
-            if seq >= 10 {
-                assert!(d_res.is_err());
-            } else {
-                assert_eq!(d_res.unwrap().as_bytes(), b"spam");
-            }
+            assert!(d_res.is_ok(), "Server decryption failed at seq {}", seq);
+            assert_eq!(d_res.unwrap().as_bytes(), msg.as_bytes());
         }
     });
 }

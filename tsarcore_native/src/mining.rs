@@ -8,7 +8,6 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use randomx_rs::{RandomXCache, RandomXDataset, RandomXError, RandomXFlag, RandomXVM};
 use num_cpus;
-use std::cmp::Ordering;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering},
     Arc, Mutex,
@@ -42,25 +41,37 @@ fn configure_flags(
     flags
 }
 
-fn build_vm(key: &[u8], flags: RandomXFlag) -> Result<RandomXVM, RandomXError> {
-    let cache = RandomXCache::new(flags, key)?;
+struct SharedCache(RandomXCache);
+unsafe impl Send for SharedCache {}
+unsafe impl Sync for SharedCache {}
+
+struct SharedDataset(RandomXDataset);
+unsafe impl Send for SharedDataset {}
+unsafe impl Sync for SharedDataset {}
+
+fn build_shared_cache_and_dataset(
+    key: &[u8],
+    flags: RandomXFlag,
+) -> Result<(Arc<SharedCache>, Option<Arc<SharedDataset>>), RandomXError> {
+    let mut cache_flags = RandomXFlag::FLAG_DEFAULT;
+    for candidate in [
+        RandomXFlag::FLAG_LARGE_PAGES,
+        RandomXFlag::FLAG_JIT,
+        RandomXFlag::FLAG_ARGON2,
+        RandomXFlag::FLAG_ARGON2_AVX2,
+        RandomXFlag::FLAG_ARGON2_SSSE3,
+    ] {
+        if flags.contains(candidate) {
+            cache_flags.insert(candidate);
+        }
+    }
+    let cache = RandomXCache::new(cache_flags, key)?;
     let dataset = if flags.contains(RandomXFlag::FLAG_FULL_MEM) {
-        Some(RandomXDataset::new(flags, cache.clone(), 0)?)
+        Some(Arc::new(SharedDataset(RandomXDataset::new(flags, cache.clone(), 0)?)))
     } else {
         None
     };
-    RandomXVM::new(flags, Some(cache), dataset)
-}
-
-fn cmp_be(a: &[u8; 32], b: &[u8; 32]) -> Ordering {
-    for i in 0..32 {
-        if a[i] < b[i] {
-            return Ordering::Less;
-        } else if a[i] > b[i] {
-            return Ordering::Greater;
-        }
-    }
-    Ordering::Equal
+    Ok((Arc::new(SharedCache(cache)), dataset))
 }
 
 #[pyfunction]
@@ -104,6 +115,10 @@ pub fn randomx_mine<'py>(
 
     let flags = configure_flags(full_mem, large_pages, jit, hard_aes, secure_jit);
     let threads = if threads == 0 { num_cpus::get() } else { threads }.max(1);
+
+    let (shared_cache, shared_dataset) = py
+        .detach(|| build_shared_cache_and_dataset(&key_vec, flags))
+        .map_err(|e| PyErr::new::<exceptions::PyRuntimeError, _>(format!("RandomX init error: {e}")))?;
 
     let signal_err: Arc<Mutex<Option<PyErr>>> = Arc::new(Mutex::new(None));
 
@@ -155,7 +170,6 @@ pub fn randomx_mine<'py>(
             let stop_local = Arc::clone(&stop_flag);
             let found_local = Arc::clone(&found);
             let signal_err_local = Arc::clone(&signal_err);
-            // Move optional event into thread
             let stop_obj = stop_event;
             Some(thread::spawn(move || {
                 loop {
@@ -190,14 +204,19 @@ pub fn randomx_mine<'py>(
         for tid in 0..threads {
             let prefix_local = prefix.clone();
             let target_local = target;
-            let key_local = key_vec.clone();
             let found_local = Arc::clone(&found);
             let stop_local = Arc::clone(&stop_flag);
             let counter_local = Arc::clone(&hash_counters);
             let result_local = Arc::clone(&result);
             let flags_local = flags;
+            let cache_local = Arc::clone(&shared_cache);
+            let dataset_local = shared_dataset.as_ref().map(Arc::clone);
             let handle = thread::spawn(move || {
-                let vm = match build_vm(&key_local, flags_local) {
+                let vm = match RandomXVM::new(
+                    flags_local,
+                    Some(cache_local.0.clone()),
+                    dataset_local.as_ref().map(|d| d.0.clone()),
+                ) {
                     Ok(v) => v,
                     Err(_) => return,
                 };
@@ -228,7 +247,7 @@ pub fn randomx_mine<'py>(
                     }
                     let mut h32 = [0u8; 32];
                     h32.copy_from_slice(&h);
-                    if cmp_be(&h32, &target_local) == Ordering::Less {
+                    if h32 < target_local {
                         found_local.store(true, AtomicOrdering::Relaxed);
                         if let Some(c) = counter_local.get(tid) {
                             let _ = c.fetch_add(local_count, AtomicOrdering::Relaxed);

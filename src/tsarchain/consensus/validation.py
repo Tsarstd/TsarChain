@@ -297,14 +297,32 @@ class BlockValidator:
                 meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
                 if not meta or str(meta.get("event", "")).upper() != "POST":
                     continue
+
+                art_id = str(meta.get("art_id") or "").strip().lower()
+                if not art_id:
+                    sha_hex = str(meta.get("sha256") or "").strip().lower()
+                    creator = str(meta.get("creator") or "").strip().lower()
+                    art_id = GRAFFITI.compute_art_id(sha_hex, creator) if sha_hex and creator else ""
+                if not art_id:
+                    continue
+
+                try:
+                    pool_addr = GRAFFITI.derive_pool_address(art_id)
+                    min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
+                except Exception:
+                    continue
+
+                paid = sum(
+                    int(getattr(out, "amount", 0))
+                    for out in getattr(tx, "outputs", []) or []
+                    if (self._spk_to_address(getattr(out, "script_pubkey", None)) if getattr(out, "script_pubkey", None) is not None else getattr(out, "address", None)) == pool_addr
+                )
+                if paid < min_fee:
+                    continue
+
                 graffiti_posts += 1
                 if not first_art_id:
-                    sha_hex = meta.get("sha256")
-                    creator = meta.get("creator")
-                    art_id = meta.get("art_id")
-                    if not art_id and sha_hex and creator:
-                        art_id = GRAFFITI.compute_art_id(sha_hex, creator)
-                    first_art_id = (art_id or "").strip().lower() if art_id else None
+                    first_art_id = art_id
 
         if graffiti_posts > 1:
             self.blockchain._last_block_validation_error = "too_many_graffiti_posts"
