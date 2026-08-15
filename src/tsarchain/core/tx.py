@@ -3,6 +3,7 @@
 # Part of TsarChain — see LICENSE
 # Refs: BIP143; BIP141; libsecp256k1; LowS-Policy; Signal-X3DH
 
+import struct
 from ecdsa import SECP256k1, SigningKey
 
 # ---------------- Local Project ----------------
@@ -24,6 +25,19 @@ from ..utils.helpers import (
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.core(tx)")
+
+_TX_HEADER_STRUCT = "<II?H"
+_TXIN_STRUCT = "<32sIQHH"
+_COINBASE_EXTRA_STRUCT = "<BHHq"
+
+
+def _extract_script_bytes(script) -> bytes:
+    if hasattr(script, "serialize"):
+        return script.serialize()
+    if isinstance(script, str):
+        return bytes.fromhex(script)
+    return bytes(script or b"")
+
 
 class Tx:
     def __init__(self, version: int = 1, locktime: int = 0, txid: bytes = None, is_coinbase: bool = False, inputs=None, outputs=None, auto_compute_txid: bool = True):
@@ -177,12 +191,11 @@ class Tx:
         return obj
 
     def to_storage_bytes(self) -> bytes:
-        import struct
-        parts = [struct.pack("<II?H", self.version, self.locktime, self.is_coinbase, len(self.inputs))]
+        parts = [struct.pack(_TX_HEADER_STRUCT, self.version, self.locktime, self.is_coinbase, len(self.inputs))]
         for txin in self.inputs:
             prev_b = txin.txid if isinstance(txin.txid, (bytes, bytearray)) else bytes.fromhex(txin.txid)
-            ss_bytes = txin.script_sig.serialize() if hasattr(txin.script_sig, "serialize") else (bytes.fromhex(txin.script_sig) if isinstance(txin.script_sig, str) else bytes(txin.script_sig or b""))
-            parts.append(struct.pack("<32sIQHH", prev_b, int(txin.vout), int(getattr(txin, "amount", 0) or 0), len(ss_bytes), len(txin.witness)))
+            ss_bytes = _extract_script_bytes(txin.script_sig)
+            parts.append(struct.pack(_TXIN_STRUCT, prev_b, int(txin.vout), int(getattr(txin, "amount", 0) or 0), len(ss_bytes), len(txin.witness)))
             if ss_bytes:
                 parts.append(ss_bytes)
             for w in txin.witness:
@@ -193,14 +206,14 @@ class Tx:
         for txout in self.outputs:
             amt = int(getattr(txout, "amount", 0) or 0)
             spk = getattr(txout, "script_pubkey", None)
-            spk_bytes = spk.serialize() if hasattr(spk, "serialize") else (bytes.fromhex(spk) if isinstance(spk, str) else bytes(spk or b""))
+            spk_bytes = _extract_script_bytes(spk)
             parts.append(struct.pack("<QH", amt, len(spk_bytes)) + spk_bytes)
             
         if self.is_coinbase:
             to_addr = (getattr(self, "to_address", "") or "").encode("utf-8")
             blk_id = (str(getattr(self, "block_id", "") or "")).encode("utf-8")
             h = int(getattr(self, "height", 0) or 0)
-            parts.append(struct.pack("<BHHq", len(to_addr), len(blk_id), 0, h))
+            parts.append(struct.pack(_COINBASE_EXTRA_STRUCT, len(to_addr), len(blk_id), 0, h))
             parts.append(to_addr)
             parts.append(blk_id)
 
@@ -208,15 +221,14 @@ class Tx:
 
     @classmethod
     def from_storage_bytes(cls, raw: bytes) -> "Tx":
-        import struct
         offset = 0
-        version, locktime, is_coinbase, in_count = struct.unpack_from("<II?H", raw, offset)
-        offset += struct.calcsize("<II?H")
+        version, locktime, is_coinbase, in_count = struct.unpack_from(_TX_HEADER_STRUCT, raw, offset)
+        offset += struct.calcsize(_TX_HEADER_STRUCT)
         
         inputs = []
         for _ in range(in_count):
-            prev_txid, vout, amt, ss_len, wit_count = struct.unpack_from("<32sIQHH", raw, offset)
-            offset += struct.calcsize("<32sIQHH")
+            prev_txid, vout, amt, ss_len, wit_count = struct.unpack_from(_TXIN_STRUCT, raw, offset)
+            offset += struct.calcsize(_TXIN_STRUCT)
             ss_bytes = raw[offset:offset + ss_len]
             offset += ss_len
             script_sig = Script.deserialize(ss_bytes) if ss_bytes else Script([])
@@ -244,13 +256,13 @@ class Tx:
             outputs.append(TxOut(amount=amt, script_pubkey=script_pubkey))
             
         if is_coinbase:
-            to_addr_len, blk_id_len, _, h = struct.unpack_from("<BHHq", raw, offset)
-            offset += struct.calcsize("<BHHq")
+            from .coinbase import CoinbaseTx
+            to_addr_len, blk_id_len, _, h = struct.unpack_from(_COINBASE_EXTRA_STRUCT, raw, offset)
+            offset += struct.calcsize(_COINBASE_EXTRA_STRUCT)
             to_addr = raw[offset:offset + to_addr_len].decode("utf-8", errors="replace")
             offset += to_addr_len
             blk_id = raw[offset:offset + blk_id_len].decode("utf-8", errors="replace")
             offset += blk_id_len
-            from .coinbase import CoinbaseTx
             obj = CoinbaseTx.__new__(CoinbaseTx)
             obj.version = version
             obj.locktime = locktime

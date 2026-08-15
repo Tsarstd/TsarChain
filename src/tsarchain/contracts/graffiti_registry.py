@@ -3,7 +3,7 @@
 # Part of TsarChain — see LICENSE
 # Refs: see REFERENCES.md
 
-import os
+
 import time
 import json
 import struct
@@ -20,6 +20,12 @@ log = get_ctx_logger('tsarchain.contracts.graffiti_registry')
 # BINARY SERIALIZATION / DESERIALIZATION HELPERS
 # =============================================================================
 
+_POST_HEADER_STRUCT = "<QQQQIIiI"
+_COMMENT_HEADER_STRUCT = "<IQQQQQI"
+_PAYOUT_HEADER_STRUCT = "<IQiI"
+_PROOF_HEADER_STRUCT = "<QQIIQI"
+
+
 def serialize_post_binary(entry: dict) -> bytes:
     stats = entry.get("stats") or {}
     pool_bal = int(stats.get("pool_balance") or 0)
@@ -31,17 +37,17 @@ def serialize_post_binary(entry: dict) -> bytes:
     amt_paid = int(entry.get("amount_paid") or 0)
     
     payload = json.dumps(entry, separators=CFG.CANONICAL_SEP).encode("utf-8")
-    header = struct.pack("<QQQQIIiI", amt_paid, pool_bal, creator_paid, storage_paid, height, comments, last_paid_epoch, len(payload))
+    header = struct.pack(_POST_HEADER_STRUCT, amt_paid, pool_bal, creator_paid, storage_paid, height, comments, last_paid_epoch, len(payload))
     return header + payload
 
 
 def deserialize_post_binary(raw: bytes, art_id: str = "") -> dict:
     if raw.startswith(b"{"):
         return json.loads(raw.decode("utf-8"))
-    header_size = struct.calcsize("<QQQQIIiI")
+    header_size = struct.calcsize(_POST_HEADER_STRUCT)
     if len(raw) < header_size:
         return json.loads(raw.decode("utf-8"))
-    amt_paid, pool_bal, creator_paid, storage_paid, height, comments, last_paid_epoch, payload_len = struct.unpack_from("<QQQQIIiI", raw, 0)
+    *_, payload_len = struct.unpack_from(_POST_HEADER_STRUCT, raw, 0)
     payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
     data = json.loads(payload_json)
     if art_id and "art_id" not in data:
@@ -57,17 +63,17 @@ def serialize_comment_binary(entry: dict) -> bytes:
     storage_paid = int(entry.get("storage_paid") or 0)
     ts = int(entry.get("ts") or 0)
     payload = json.dumps(entry, separators=CFG.CANONICAL_SEP).encode("utf-8")
-    header = struct.pack("<IQQQQQI", height, amount, tip, creator_paid, storage_paid, ts, len(payload))
+    header = struct.pack(_COMMENT_HEADER_STRUCT, height, amount, tip, creator_paid, storage_paid, ts, len(payload))
     return header + payload
 
 
 def deserialize_comment_binary(raw: bytes) -> dict:
     if raw.startswith(b"{"):
         return json.loads(raw.decode("utf-8"))
-    header_size = struct.calcsize("<IQQQQQI")
+    header_size = struct.calcsize(_COMMENT_HEADER_STRUCT)
     if len(raw) < header_size:
         return json.loads(raw.decode("utf-8"))
-    height, amount, tip, creator_paid, storage_paid, ts, payload_len = struct.unpack_from("<IQQQQQI", raw, 0)
+    *_, payload_len = struct.unpack_from(_COMMENT_HEADER_STRUCT, raw, 0)
     payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
     return json.loads(payload_json)
 
@@ -77,17 +83,17 @@ def serialize_payout_binary(entry: dict) -> bytes:
     amount = int(entry.get("amount") or 0)
     epoch = int(entry.get("epoch", -1) if entry.get("epoch") is not None else -1)
     payload = json.dumps(entry, separators=CFG.CANONICAL_SEP).encode("utf-8")
-    header = struct.pack("<IQiI", height, amount, epoch, len(payload))
+    header = struct.pack(_PAYOUT_HEADER_STRUCT, height, amount, epoch, len(payload))
     return header + payload
 
 
 def deserialize_payout_binary(raw: bytes) -> dict:
     if raw.startswith(b"{"):
         return json.loads(raw.decode("utf-8"))
-    header_size = struct.calcsize("<IQiI")
+    header_size = struct.calcsize(_PAYOUT_HEADER_STRUCT)
     if len(raw) < header_size:
         return json.loads(raw.decode("utf-8"))
-    height, amount, epoch, payload_len = struct.unpack_from("<IQiI", raw, 0)
+    *_, payload_len = struct.unpack_from(_PAYOUT_HEADER_STRUCT, raw, 0)
     payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
     return json.loads(payload_json)
 
@@ -99,17 +105,17 @@ def serialize_proof_binary(entry: dict) -> bytes:
     height = int(entry.get("height") or 0)
     ts = int(entry.get("ts") or 0)
     payload = json.dumps(entry, separators=CFG.CANONICAL_SEP).encode("utf-8")
-    header = struct.pack("<QQIIQI", epoch, offset, length, height, ts, len(payload))
+    header = struct.pack(_PROOF_HEADER_STRUCT, epoch, offset, length, height, ts, len(payload))
     return header + payload
 
 
 def deserialize_proof_binary(raw: bytes) -> dict:
     if raw.startswith(b"{"):
         return json.loads(raw.decode("utf-8"))
-    header_size = struct.calcsize("<QQIIQI")
+    header_size = struct.calcsize(_PROOF_HEADER_STRUCT)
     if len(raw) < header_size:
         return json.loads(raw.decode("utf-8"))
-    epoch, offset_val, length, height, ts, payload_len = struct.unpack_from("<QQIIQI", raw, 0)
+    *_, payload_len = struct.unpack_from(_PROOF_HEADER_STRUCT, raw, 0)
     payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
     return json.loads(payload_json)
 

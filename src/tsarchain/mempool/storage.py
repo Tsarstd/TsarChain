@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import time
 import heapq
+import struct
 from collections import OrderedDict
 
 from ..core.tx import Tx
@@ -22,7 +23,6 @@ __all__ = ["MempoolStorageMixin"]
 
 class MempoolStorageMixin:
     def _load_storage_pool(self) -> tuple[list, dict]:
-        import struct
         meta = {}
         out = []
         for k, v in iter_prefix("mempool", b""):
@@ -35,7 +35,7 @@ class MempoolStorageMixin:
                 continue
             if len(v) >= 20:
                 try:
-                    recv_at, fee, vsize, weight = struct.unpack_from("<dIII", v, 0)
+                    recv_at, fee, _, _ = struct.unpack_from("<dIII", v, 0)
                     raw_tx = v[20:]
                     tx_obj = Tx.from_storage_bytes(raw_tx)
                     tx_obj.fee = fee
@@ -127,7 +127,6 @@ class MempoolStorageMixin:
         return self._change_seq
 
     def flush(self, force: bool = False) -> bool:
-        import struct
         with self._lock:
             if not self._dirty and not force:
                 return False

@@ -4,6 +4,7 @@
 # Refs: see REFERENCES.md
 
 import time
+import struct
 import multiprocessing as mp
 
 from typing import List, Optional
@@ -161,7 +162,6 @@ class Block:
         return h.serialize_block()
 
     def to_storage_bytes(self) -> bytes:
-        import struct
         header_bytes = self.header() if hasattr(self, "header") else b""
         if not isinstance(header_bytes, (bytes, bytearray)):
             header_bytes = b"\x00" * 80
@@ -180,7 +180,6 @@ class Block:
 
     @classmethod
     def from_storage_bytes(cls, raw: bytes) -> "Block":
-        import struct
         if len(raw) < 108:
             raise ValueError(f"Raw block data too short: {len(raw)} bytes")
         version = int.from_bytes(raw[0:4], "little")

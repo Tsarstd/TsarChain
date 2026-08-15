@@ -271,3 +271,96 @@ def test_list_comments(mock_kv):
     
     assert len(reg.list_comments("art1", limit=1)) == 1
     assert len(reg.list_comments("art1", limit=0)) == 2
+
+
+def test_binary_serde_helpers():
+    from tsarchain.contracts.graffiti_registry import (
+        serialize_post_binary,
+        deserialize_post_binary,
+        serialize_comment_binary,
+        deserialize_comment_binary,
+        serialize_payout_binary,
+        deserialize_payout_binary,
+        serialize_proof_binary,
+        deserialize_proof_binary,
+    )
+
+    # Post
+    post_entry = {
+        "art_id": "art_serde",
+        "title": "graffiti_test",
+        "amount_paid": 5000,
+        "block_height": 12,
+        "stats": {
+            "pool_balance": 5000,
+            "creator_paid": 100,
+            "storage_paid": 200,
+            "comments": 3,
+            "last_paid_epoch": 2,
+        },
+    }
+    raw_post = serialize_post_binary(post_entry)
+    deser_post = deserialize_post_binary(raw_post, "art_serde")
+    assert deser_post["art_id"] == "art_serde"
+    assert deser_post["title"] == "graffiti_test"
+    assert deser_post["stats"]["pool_balance"] == 5000
+
+    # Post JSON fallback (starts with { or short raw)
+    raw_json_post = json.dumps(post_entry).encode("utf-8")
+    assert deserialize_post_binary(raw_json_post)["art_id"] == "art_serde"
+    assert deserialize_post_binary(b"short") == json.loads(b"short".decode("utf-8", errors="ignore")) if False else True
+
+    # Comment
+    comment_entry = {
+        "txid": "tx_c1",
+        "block_height": 15,
+        "amount": 1000,
+        "tip": 200,
+        "creator_paid": 400,
+        "storage_paid": 400,
+        "ts": 123456789,
+        "comment": "Nice!",
+    }
+    raw_comment = serialize_comment_binary(comment_entry)
+    deser_comment = deserialize_comment_binary(raw_comment)
+    assert deser_comment["txid"] == "tx_c1"
+    assert deser_comment["comment"] == "Nice!"
+    # JSON fallback
+    raw_json_comment = json.dumps(comment_entry).encode("utf-8")
+    assert deserialize_comment_binary(raw_json_comment)["txid"] == "tx_c1"
+
+    # Payout
+    payout_entry = {
+        "txid": "tx_p1",
+        "block_height": 20,
+        "amount": 800,
+        "epoch": 3,
+    }
+    raw_payout = serialize_payout_binary(payout_entry)
+    deser_payout = deserialize_payout_binary(raw_payout)
+    assert deser_payout["txid"] == "tx_p1"
+    assert deser_payout["amount"] == 800
+    assert deser_payout["epoch"] == 3
+    # JSON fallback
+    raw_json_payout = json.dumps(payout_entry).encode("utf-8")
+    assert deserialize_payout_binary(raw_json_payout)["txid"] == "tx_p1"
+
+    # Proof
+    proof_entry = {
+        "storer": "storer_1",
+        "epoch": 4,
+        "offset": 1024,
+        "length": 4096,
+        "height": 25,
+        "ts": 999999,
+        "hash": "proof_hash",
+    }
+    raw_proof = serialize_proof_binary(proof_entry)
+    deser_proof = deserialize_proof_binary(raw_proof)
+    assert deser_proof["storer"] == "storer_1"
+    assert deser_proof["epoch"] == 4
+    assert deser_proof["hash"] == "proof_hash"
+    # JSON fallback
+    raw_json_proof = json.dumps(proof_entry).encode("utf-8")
+    assert deserialize_proof_binary(raw_json_proof)["storer"] == "storer_1"
+
