@@ -312,32 +312,18 @@ const Block = ({ onSearchClick }) => {
       const blockData = resp.data || null;
       
       if (blockData) {
-        // Fetch 5 blocks sebelumnya (lebih rendah height-nya)
-        const beforeResp = await fetchBlockRange({
-          startHeight: Math.max(0, targetHeight - 50), // Ambil 50 block sebelumnya
-          limit: 80, // Ambil lebih banyak untuk jaga-jaga
+        // Fetch blocks around target height (descending from targetHeight + 50 down)
+        const rangeResp = await fetchBlockRange({
+          startHeight: targetHeight + 50,
+          limit: 100,
           source: 'database'
-        });
+        }).catch(() => ({ data: { items: [] } }));
         
-        // Fetch 50 blocks sesudahnya (lebih tinggi height-nya)
-        const afterResp = await fetchBlockRange({
-          startHeight: targetHeight + 1,
-          limit: 80,
-          source: 'database'
-        });
-        
-        // Gabungkan semua block yang didapat
         const allNewBlocks = [];
-        
-        if (beforeResp.data?.items) {
-          allNewBlocks.push(...beforeResp.data.items);
+        if (rangeResp.data?.items) {
+          allNewBlocks.push(...rangeResp.data.items);
         }
-        
         allNewBlocks.push(blockData);
-        
-        if (afterResp.data?.items) {
-          allNewBlocks.push(...afterResp.data.items);
-        }
         
         // Update state blocks dengan block baru
         setBlocks(prev => {
@@ -368,15 +354,18 @@ const Block = ({ onSearchClick }) => {
         setDetailStatus("done");
         setSelectedHeight(targetHeight);
         
-        // Scroll ke block target setelah render
-        setTimeout(() => scrollToBlock(targetHeight), 100);
+        // Scroll ke target block setelah render
+        setTimeout(() => {
+          scrollToBlock(targetHeight);
+          setIsNavigating(false);
+        }, 100);
       } else {
-        setMessage(`Block #${targetHeight} not found`);
+        alert(`Block #${targetHeight} tidak ditemukan`);
+        setIsNavigating(false);
       }
     } catch (err) {
-      console.error('Navigation error:', err);
-      setMessage(err.message || "Failed to navigate to block target");
-    } finally {
+      console.error("Navigation error:", err);
+      alert(`Gagal navigasi ke block #${targetHeight}: ${err.message}`);
       setIsNavigating(false);
     }
   };
@@ -411,8 +400,30 @@ const Block = ({ onSearchClick }) => {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       handleNavigateToBlock();
+    }
+  };
+
+  const safeSetBlockDetailCache = (height, detailData) => {
+    try {
+      const cacheKey = `block_detail_${height}`;
+      const detailKeys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("block_detail_")) {
+          detailKeys.push(k);
+        }
+      }
+      if (detailKeys.length > 25) {
+        detailKeys.slice(0, detailKeys.length - 20).forEach(k => localStorage.removeItem(k));
+      }
+      localStorage.setItem(cacheKey, JSON.stringify({
+        detail: detailData,
+        timestamp: Date.now()
+      }));
+    } catch (err) {
+      console.warn("LocalStorage cache error:", err);
     }
   };
 
@@ -420,16 +431,19 @@ const Block = ({ onSearchClick }) => {
     if (item?.height === undefined) return;
     
     const cacheKey = `block_detail_${item.height}`;
-    const cachedDetail = localStorage.getItem(cacheKey);
-    
-    if (cachedDetail) {
-      const { detail: cached, timestamp } = JSON.parse(cachedDetail);
-      if (Date.now() - timestamp < 60000) { // Cache 1 menit
-        setDetail(cached);
-        setDetailStatus("done");
-        setSelectedHeight(item.height);
-        return;
+    try {
+      const cachedDetail = localStorage.getItem(cacheKey);
+      if (cachedDetail) {
+        const { detail: cached, timestamp } = JSON.parse(cachedDetail);
+        if (Date.now() - timestamp < 60000) { // Cache 1 menit
+          setDetail(cached);
+          setDetailStatus("done");
+          setSelectedHeight(item.height);
+          return;
+        }
       }
+    } catch {
+      // Ignore cache parse error
     }
     
     setDetailStatus("loading");
@@ -443,10 +457,7 @@ const Block = ({ onSearchClick }) => {
       setDetailStatus("done");
       
       if (detailData) {
-        localStorage.setItem(cacheKey, JSON.stringify({
-          detail: detailData,
-          timestamp: Date.now()
-        }));
+        safeSetBlockDetailCache(item.height, detailData);
       }
     } catch (err) {
       setDetail(null);

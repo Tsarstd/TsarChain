@@ -25,6 +25,10 @@ def _block_key(height: int) -> bytes:
     return f"block:{height:08d}".encode("utf-8")
 
 
+def _meta_max_height_key() -> bytes:
+    return b"meta:max_block_height"
+
+
 def save_blocks_to_storage(blocks: list) -> None:
     store = db_cache._open_store()
     if store is None:
@@ -33,6 +37,7 @@ def save_blocks_to_storage(blocks: list) -> None:
     if not isinstance(blocks, list):
         return
     
+    max_h = -1
     for block in blocks:
         if not isinstance(block, dict):
             continue
@@ -42,9 +47,20 @@ def save_blocks_to_storage(blocks: list) -> None:
             continue
             
         try:
-            store.put_bytes(WEB_BLOCKS_DB, _block_key(int(height)), db_cache._serialize_payload(block))
+            h_int = int(height)
+            store.put_bytes(WEB_BLOCKS_DB, _block_key(h_int), db_cache._serialize_payload(block))
+            if h_int > max_h:
+                max_h = h_int
         except Exception:
             log.warning("[webdb] Failed to save block %s", height)
+
+    if max_h >= 0:
+        try:
+            prev_max = get_last_stored_height()
+            if max_h > prev_max:
+                store.put_bytes(WEB_BLOCKS_DB, _meta_max_height_key(), str(max_h).encode("utf-8"))
+        except Exception:
+            pass
 
 
 def get_block_from_storage(height: int) -> Optional[dict]:
@@ -69,21 +85,24 @@ def get_block_range_from_storage(start: int, limit: int) -> dict:
     
     items = []
     for offset in range(limit):
-        height = start + offset
+        height = start - offset
+        if height < 0:
+            break
         block = get_block_from_storage(height)
         if block:
             items.append(block)
         else:
             break
     
-    has_more = len(items) == limit
+    next_h = start - len(items)
+    has_more = next_h >= 0 and len(items) == limit
     
     return {
         "items": items,
         "start_height": start,
         "limit": limit,
         "has_more": has_more,
-        "next_height": start + len(items) if has_more else None,
+        "next_height": next_h if has_more else -1,
         "tip_height": None,
     }
 
@@ -93,6 +112,13 @@ def get_last_stored_height() -> int:
     if store is None:
         return -1
     
+    try:
+        meta_raw = store.get_bytes(WEB_BLOCKS_DB, _meta_max_height_key())
+        if meta_raw:
+            return int(meta_raw.decode("utf-8"))
+    except Exception:
+        pass
+
     max_height = -1
     try:
         prefix = b"block:"
@@ -115,6 +141,12 @@ def get_last_stored_height() -> int:
         log.warning("[webdb] Error in get_last_stored_height: %s", e)
         return -1
     
+    if max_height >= 0:
+        try:
+            store.put_bytes(WEB_BLOCKS_DB, _meta_max_height_key(), str(max_height).encode("utf-8"))
+        except Exception:
+            pass
+
     return max_height
 
 
@@ -173,13 +205,13 @@ def prefetch_blocks(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]
     if blocks_to_fetch <= 0:
         return False
     
-    log.info("[webdb] Prefetching %d blocks from height %d to %d", 
-             blocks_to_fetch, last_stored + 1, tip_height)
+    start_height = min(tip_height, last_stored + blocks_to_fetch)
+    log.info("[webdb] Prefetching %d blocks up to height %d (current stored: %d, tip: %d)", 
+             blocks_to_fetch, start_height, last_stored, tip_height)
     
-    has_more = (tip_height - last_stored) > blocks_to_fetch
+    has_more = tip_height > start_height
     
     try:
-        start_height = last_stored + 1
         resp = rpc_call({
             "type": "GET_BLOCK_RANGE",
             "start_height": start_height,
@@ -208,16 +240,18 @@ def prefetch_blocks(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]
         if new_items:
             save_blocks_to_storage(new_items)
             log.info("[webdb] Prefetched %d new blocks (height %d to %d)", 
-                    len(new_items), new_items[0].get("height", 0), 
-                    new_items[-1].get("height", 0))
+                    len(new_items), new_items[-1].get("height", 0), 
+                    new_items[0].get("height", 0))
             
             highest_new = max(item.get("height", 0) for item in new_items)
-            set_prefetch_last_height(highest_new)
+            set_prefetch_last_height(max(highest_new, start_height))
         else:
             log.info("[webdb] All blocks already exist in storage")
             valid_heights = [item.get("height") for item in items if item.get("height") is not None]
             if valid_heights:
-                set_prefetch_last_height(max(valid_heights))
+                set_prefetch_last_height(max(max(valid_heights), start_height))
+            else:
+                set_prefetch_last_height(start_height)
             
         return has_more
             

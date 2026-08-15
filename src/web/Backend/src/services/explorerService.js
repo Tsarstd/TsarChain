@@ -22,20 +22,27 @@ const decodeCommentHex = (hex) => {
 };
 
 const normalizeBlock = (blk) => {
-  if (!blk || typeof blk !== "object") return blk;
-  const height = pick(blk, "height", "index");
-  const hash = pick(blk, "hash");
-  let blockId = pick(blk, "block_id");
-  const prev = pick(blk, "prev_block_hash", "prev_hash", "previous_hash", "previousblockhash");
-  const timestamp = pick(blk, "timestamp", "time");
-  const difficulty = pick(blk, "difficulty");
-  const sizeBytes = pick(blk, "size_bytes", "size");
-  const chainwork = pick(blk, "chainwork");
-  const bits = pick(blk, "bits");
-  const version = pick(blk, "version");
-  const merkleRoot = pick(blk, "merkle_root", "merkleroot");
-  const nonce = pick(blk, "nonce");
-  const txsRaw = blk.transactions || blk.tx || [];
+  if (!blk || typeof blk !== "object") return null;
+  if (blk.error || blk.status === "error" || blk.found === false) return null;
+  let obj = blk;
+  if (obj.block && typeof obj.block === "object") obj = obj.block;
+  if (obj.error || obj.status === "error" || obj.found === false) return null;
+
+  const height = pick(obj, "height", "index");
+  const hash = pick(obj, "hash");
+  if (height === null && !hash) return null;
+
+  let blockId = pick(obj, "block_id");
+  const prev = pick(obj, "prev_block_hash", "prev_hash", "previous_hash", "previousblockhash");
+  const timestamp = pick(obj, "timestamp", "time");
+  const difficulty = pick(obj, "difficulty");
+  const sizeBytes = pick(obj, "size_bytes", "size");
+  const chainwork = pick(obj, "chainwork");
+  const bits = pick(obj, "bits");
+  const version = pick(obj, "version");
+  const merkleRoot = pick(obj, "merkle_root", "merkleroot");
+  const nonce = pick(obj, "nonce");
+  const txsRaw = obj.transactions || obj.tx || [];
   if (!blockId && Array.isArray(txsRaw) && txsRaw.length > 0) {
     const first = txsRaw[0];
     if (first && typeof first === "object") {
@@ -114,14 +121,18 @@ const normalizeBlockSummary = (blk) => {
 };
 
 const normalizeTx = (tx, fallbackTxid) => {
-  if (!tx || typeof tx !== "object") return tx;
+  if (!tx || typeof tx !== "object") return null;
+  if (tx.error || tx.status === "error" || tx.found === false) return null;
   let obj = tx;
   if (obj.tx && typeof obj.tx === "object") obj = obj.tx;
   if (obj.transaction && typeof obj.transaction === "object") obj = obj.transaction;
+  if (obj.error || obj.status === "error" || obj.found === false) return null;
 
   const inputs = obj.inputs || obj.vin || [];
   const outputs = obj.outputs || obj.vout || [];
-  const txid = obj.txid || obj.id || obj.hash || fallbackTxid;
+  const txid = obj.txid || obj.id || obj.hash || (Array.isArray(inputs) && inputs.length > 0 ? fallbackTxid : (Array.isArray(outputs) && outputs.length > 0 ? fallbackTxid : null));
+  if (!txid) return null;
+
   const confirmations = obj.confirmations || obj.conf || 0;
   const fee = obj.fee || obj.fees || 0;
   const height = obj.block_height || obj.height || "-";

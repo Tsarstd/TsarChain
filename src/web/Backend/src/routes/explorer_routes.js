@@ -267,6 +267,14 @@ const serveLocalFile = async (req, res, next, filePath, meta = null) => {
     res.setHeader("Cache-Control", "public, max-age=300");
     res.setHeader("Accept-Ranges", "bytes");
 
+    const streamErrorHandler = (err) => {
+      if (!res.headersSent) {
+        next(err);
+      } else {
+        res.destroy(err);
+      }
+    };
+
     const range = parseRangeHeader(req.headers.range, size);
     if (range) {
       if (range.invalid) {
@@ -279,14 +287,14 @@ const serveLocalFile = async (req, res, next, filePath, meta = null) => {
       res.setHeader("Content-Range", `bytes ${range.start}-${range.end}/${size}`);
       res.setHeader("Content-Length", String(range.end - range.start + 1));
       const stream = fs.createReadStream(filePath, { start: range.start, end: range.end });
-      stream.on("error", next);
+      stream.on("error", streamErrorHandler);
       stream.pipe(res);
       return true;
     }
 
     res.setHeader("Content-Length", String(size));
     const stream = fs.createReadStream(filePath);
-    stream.on("error", next);
+    stream.on("error", streamErrorHandler);
     stream.pipe(res);
     return true;
   } catch (err) {

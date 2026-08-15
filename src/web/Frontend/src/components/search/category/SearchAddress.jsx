@@ -11,6 +11,7 @@ import {
   timeAgo
 } from "../../../utils/format";
 import { AddressAnalytics } from "../../common/AddressAnalytics";
+import { fetchHistoryBook } from "../../../api/explorer";
 
 const AddressHeaderCell = ({ val }) => {
   return (
@@ -181,8 +182,7 @@ const ResultAddress = ({ data, onSearchClick }) => {
     if (!data?.address) return;
     setIsDownloading(true);
     try {
-      const response = await fetch(`/api/history_book?address=${data.address}`);
-      const resData = await response.json();
+      const resData = await fetchHistoryBook(data.address);
       
       if (resData.status === "ok" && resData.data?.data_url) {
         const link = document.createElement("a");

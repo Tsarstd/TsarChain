@@ -6,6 +6,8 @@ import os
 import sys
 import json
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from web.Backend.src.python.logic_web import db_blocks, db_files
 from web.Backend.src.python.logic_web.rpc_client import (
@@ -154,54 +156,62 @@ def _dispatch_rpc(op: str, param: object | None, host: str, port: int):
     return {"error": "unknown_op"}
 
 
+_stdout_lock = threading.Lock()
+
+
 def _emit_worker(req_id: object, payload: object) -> None:
-    try:
-        sys.stdout.write(json.dumps({"id": req_id, "payload": payload}, ensure_ascii=True, default=str) + "\n")
-    except Exception:
-        sys.stdout.write('{"id":null,"payload":{"error":"json_encode_failed"}}\n')
-    sys.stdout.flush()
+    with _stdout_lock:
+        try:
+            sys.stdout.write(json.dumps({"id": req_id, "payload": payload}, ensure_ascii=True, default=str) + "\n")
+        except Exception:
+            sys.stdout.write('{"id":null,"payload":{"error":"json_encode_failed"}}\n')
+        sys.stdout.flush()
 
 
 def _worker_loop() -> None:
     global _last_cleanup
     _last_cleanup = 0
     
-    for line in sys.stdin:
-        raw = (line or "").strip()
-        if not raw:
-            continue
-        
+    def _handle_request(req_id: object, op: str, param: object, host: str, port: int) -> None:
         try:
-            req = json.loads(raw)
-        except Exception:
-            log.exception("[worker] bad_json")
-            continue
-        
-        if not isinstance(req, dict):
-            log.warning("[worker] bad_request")
-            continue
-        
-        req_id = req.get("id")
-        op = req.get("op")
-        if req_id is None or not op:
-            _emit_worker(req_id, {"error": "missing_op"})
-            continue
-        
-        current_time = time.time()
-        if current_time - _last_cleanup > 60:
-            db_files.cleanup_receipt_files(35)
-            db_files.cleanup_history_book_files(35)
-            _last_cleanup = current_time
-        
-        host, port = _parse_host_port(req.get("host"), req.get("port"))
-        try:
-            out = _dispatch_rpc(str(op), req.get("param"), host, port)
+            out = _dispatch_rpc(str(op), param, host, port)
         except Exception as exc:
             _drop_client(host, port)
             log.exception("[worker_exception]")
             detail = str(exc) or exc.__class__.__name__
             out = {"error": "rpc_exception", "detail": detail}
         _emit_worker(req_id, out)
+
+    with ThreadPoolExecutor(max_workers=8, thread_name_prefix="rpc_worker") as executor:
+        for line in sys.stdin:
+            raw = (line or "").strip()
+            if not raw:
+                continue
+            
+            try:
+                req = json.loads(raw)
+            except Exception:
+                log.exception("[worker] bad_json")
+                continue
+            
+            if not isinstance(req, dict):
+                log.warning("[worker] bad_request")
+                continue
+            
+            req_id = req.get("id")
+            op = req.get("op")
+            if req_id is None or not op:
+                _emit_worker(req_id, {"error": "missing_op"})
+                continue
+            
+            current_time = time.time()
+            if current_time - _last_cleanup > 60:
+                db_files.cleanup_receipt_files(35)
+                db_files.cleanup_history_book_files(35)
+                _last_cleanup = current_time
+            
+            host, port = _parse_host_port(req.get("host"), req.get("port"))
+            executor.submit(_handle_request, req_id, str(op), req.get("param"), host, port)
 
 
 def main():

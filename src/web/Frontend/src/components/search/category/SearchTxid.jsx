@@ -14,6 +14,7 @@ import {
 
 import { getVoutLabel, getAddressType } from "../SearchUX";
 import { TxFlowchart } from "../../common/TxFlowchart";
+import { fetchReceipt } from "../../../api/explorer";
 
 const TxidGridCell = ({ cell, isHighlightedCell }) => {
   if (cell.row === 3) {
@@ -156,14 +157,14 @@ const ResultTx = ({ data, onSearchClick }) => {
   });
 
   const blockDisplay = useMemo(() => {
-    if (!data?.block_height && data?.block_height !== 0) {
-      return "0";
+    if (data?.block_height === null || data?.block_height === undefined || data?.block_height === "" || data?.block_height === "-") {
+      return data?.status === "confirmed" ? "-" : "Pending";
     }
-    if (data?.block_height === "-") {
+    if (data?.block_height === 0 || data?.block_height === "0") {
       return "Genesis (0)";
     }
     return data?.block_height;
-  }, [data?.block_height]);
+  }, [data?.block_height, data?.status]);
 
   const downloadReceiptDirect = async () => {
     if (!data?.txid) return;
@@ -171,10 +172,9 @@ const ResultTx = ({ data, onSearchClick }) => {
     setIsGeneratingReceipt(true);
     
     try {
-      const response = await fetch(`/api/receipt?txid=${data.txid}`);
-      const result = await response.json();
+      const result = await fetchReceipt(data.txid);
       
-      if (response.ok && result.status === "ok") {
+      if (result.status === "ok" && result.data?.data_url) {
         const dataUrl = result.data.data_url;
         const base64Response = await fetch(dataUrl);
         const blob = await base64Response.blob();

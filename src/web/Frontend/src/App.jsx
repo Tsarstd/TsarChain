@@ -71,6 +71,7 @@ const AppContent = () => {
     const searchQuery = searchParams.get('search')?.trim();
     
     if (searchQuery) {
+      const controller = new AbortController();
       let isMounted = true;
       saveSearchHistory(searchQuery);
       const inferred = guessKind(searchQuery);
@@ -83,7 +84,7 @@ const AppContent = () => {
         setMessage("");
       });
 
-      searchExplorer(searchQuery)
+      searchExplorer(searchQuery, controller.signal)
         .then((resp) => {
           if (isMounted) {
             setResult(resp.data);
@@ -92,6 +93,7 @@ const AppContent = () => {
           }
         })
         .catch((err) => {
+          if (err.name === "AbortError") return;
           if (isMounted) {
             setResult(null);
             setStatus("error");
@@ -101,6 +103,7 @@ const AppContent = () => {
 
       return () => {
         isMounted = false;
+        controller.abort();
       };
     } else {
       Promise.resolve().then(() => {

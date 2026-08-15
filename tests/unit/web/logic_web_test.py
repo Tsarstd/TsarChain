@@ -90,6 +90,8 @@ def test_block_storage(mock_store):
     assert db_blocks.get_block_from_storage(1)["hash"] == "A"
     
     def mock_get(db, k):
+        if k == db_blocks._meta_max_height_key():
+            return b"2"
         h = int(k.decode("utf-8").split(":")[1])
         if h <= 2:
             return db_cache._serialize_payload({"height": h, "hash": "A"})
@@ -98,8 +100,12 @@ def test_block_storage(mock_store):
     
     res = db_blocks.get_block_range_from_storage(1, 5)
     assert len(res["items"]) == 2
+    assert res["start_height"] == 1
+    assert res["items"][0]["height"] == 1
+    assert res["items"][1]["height"] == 0
+    assert res["next_height"] == -1
+    assert res["has_more"] is False
     
-    mock_store.iter_prefix.return_value = [(b"block:00000001", b""), (b"block:00000002", b"")]
     assert db_blocks.get_last_stored_height() == 2
 
 
@@ -280,8 +286,18 @@ def test_receipt_cache(tmp_path):
 
 def test_receipt_cleanup_and_timer():
     with patch("threading.Timer") as mock_timer:
+        t1 = MagicMock()
+        mock_timer.return_value = t1
         db_files.schedule_receipt_deletion("tx1", 10)
         mock_timer.assert_called_once()
+        t1.start.assert_called_once()
+        
+        # Reschedule should cancel previous timer
+        t2 = MagicMock()
+        mock_timer.return_value = t2
+        db_files.schedule_receipt_deletion("tx1", 20)
+        t1.cancel.assert_called_once()
+        t2.start.assert_called_once()
         
     with patch("os.path.exists", return_value=True):
         with patch("os.listdir", return_value=["tx1.jpg"]):

@@ -193,19 +193,23 @@ def rpc_block_range(client, opts: dict):
             
             missing_count = limit - len(storage_result["items"])
             if missing_count > 0:
-                next_start = start_height_int + len(storage_result["items"])
-                rpc_resp = rpc_client._rpc_send(client, {
-                    "type": "GET_BLOCK_RANGE", 
-                    "start_height": next_start, 
-                    "limit": missing_count
-                })
-                
-                if isinstance(rpc_resp, dict) and "items" in rpc_resp:
-                    new_items = rpc_resp.get("items", [])
-                    db_blocks.save_blocks_to_storage(new_items)
-                    storage_result["items"].extend(new_items)
-                    storage_result["has_more"] = rpc_resp.get("has_more", False)
-                    storage_result["next_height"] = rpc_resp.get("next_height")
+                next_start = start_height_int - len(storage_result["items"])
+                if next_start >= 0:
+                    rpc_resp = rpc_client._rpc_send(client, {
+                        "type": "GET_BLOCK_RANGE", 
+                        "start_height": next_start, 
+                        "limit": missing_count
+                    })
+                    
+                    if isinstance(rpc_resp, dict) and "items" in rpc_resp:
+                        new_items = rpc_resp.get("items", [])
+                        db_blocks.save_blocks_to_storage(new_items)
+                        storage_result["items"].extend(new_items)
+                        storage_result["has_more"] = rpc_resp.get("has_more", False)
+                        storage_result["next_height"] = rpc_resp.get("next_height", -1)
+                else:
+                    storage_result["has_more"] = False
+                    storage_result["next_height"] = -1
                 return storage_result   
             
         except ValueError:
