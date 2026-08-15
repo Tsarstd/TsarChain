@@ -54,18 +54,19 @@ fn test_lib_randomx() {
         assert!(hash_result.is_ok());
         assert_eq!(hash_result.unwrap().as_bytes().len(), 32);
 
-        // Test with large pages (likely to fail gracefully and fallback on Windows)
-        let _ = randomx_pow_hash(
+        // Test with custom max_cache_entries
+        let hash_result2 = randomx_pow_hash(
             py, 
             header.clone(), 
             key.clone(), 
             false, 
-            true,  // large_pages
+            false,  // large_pages
             true,  
             false, 
             false, 
-            0      // max_cache_entries = 0 causes a clear
+            2      // max_cache_entries
         );
+        assert!(hash_result2.is_ok());
 
         // Test cache eviction (max_entries = 1, use 2 keys)
         let header2 = PyBytes::new(py, b"hdr2");

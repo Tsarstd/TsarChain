@@ -51,8 +51,8 @@ unsafe impl Sync for SharedDataset {}
 
 fn build_shared_cache_and_dataset(
     key: &[u8],
-    flags: RandomXFlag,
-) -> Result<(Arc<SharedCache>, Option<Arc<SharedDataset>>), RandomXError> {
+    mut flags: RandomXFlag,
+) -> Result<(Arc<SharedCache>, Option<Arc<SharedDataset>>, RandomXFlag), RandomXError> {
     let mut cache_flags = RandomXFlag::FLAG_DEFAULT;
     for candidate in [
         RandomXFlag::FLAG_LARGE_PAGES,
@@ -65,20 +65,23 @@ fn build_shared_cache_and_dataset(
             cache_flags.insert(candidate);
         }
     }
-    let cache = match RandomXCache::new(cache_flags, key) {
-        Ok(c) => c,
+    let (cache, used_large) = match RandomXCache::new(cache_flags, key) {
+        Ok(c) => (c, cache_flags.contains(RandomXFlag::FLAG_LARGE_PAGES)),
         Err(_e) if cache_flags.contains(RandomXFlag::FLAG_LARGE_PAGES) => {
             let fallback_flags = cache_flags - RandomXFlag::FLAG_LARGE_PAGES;
-            RandomXCache::new(fallback_flags, key)?
+            (RandomXCache::new(fallback_flags, key)?, false)
         }
         Err(e) => return Err(e),
     };
+    if !used_large {
+        flags.remove(RandomXFlag::FLAG_LARGE_PAGES);
+    }
     let dataset = if flags.contains(RandomXFlag::FLAG_FULL_MEM) {
         let ds = match RandomXDataset::new(flags, cache.clone(), 0) {
             Ok(d) => d,
             Err(_e) if flags.contains(RandomXFlag::FLAG_LARGE_PAGES) => {
-                let fallback_flags = flags - RandomXFlag::FLAG_LARGE_PAGES;
-                RandomXDataset::new(fallback_flags, cache.clone(), 0)?
+                flags.remove(RandomXFlag::FLAG_LARGE_PAGES);
+                RandomXDataset::new(flags, cache.clone(), 0)?
             }
             Err(e) => return Err(e),
         };
@@ -86,7 +89,7 @@ fn build_shared_cache_and_dataset(
     } else {
         None
     };
-    Ok((Arc::new(SharedCache(cache)), dataset))
+    Ok((Arc::new(SharedCache(cache)), dataset, flags))
 }
 
 #[pyfunction]
@@ -131,7 +134,7 @@ pub fn randomx_mine<'py>(
     let flags = configure_flags(full_mem, large_pages, jit, hard_aes, secure_jit);
     let threads = if threads == 0 { num_cpus::get() } else { threads }.max(1);
 
-    let (shared_cache, shared_dataset) = py
+    let (shared_cache, shared_dataset, effective_flags) = py
         .detach(|| build_shared_cache_and_dataset(&key_vec, flags))
         .map_err(|e| PyErr::new::<exceptions::PyRuntimeError, _>(format!("RandomX init error: {e}")))?;
 
@@ -155,18 +158,15 @@ pub fn randomx_mine<'py>(
                 let mut last_total: u64 = 0;
                 let mut last_ts = Instant::now();
                 loop {
-                    if found_local.load(AtomicOrdering::Relaxed) || stop_local.load(AtomicOrdering::Relaxed) {
+                    if stop_local.load(AtomicOrdering::Relaxed) || found_local.load(AtomicOrdering::Relaxed) {
                         break;
                     }
                     thread::sleep(Duration::from_millis(interval_ms));
                     let now = Instant::now();
-                    let mut total: u64 = 0;
-                    for c in counters.iter() {
-                        total = total.saturating_add(c.load(AtomicOrdering::Relaxed));
-                    }
-                    let dt = now.saturating_duration_since(last_ts).as_secs_f64();
+                    let dt = now.duration_since(last_ts).as_secs_f64();
+                    let total: u64 = counters.iter().map(|c| c.load(AtomicOrdering::Relaxed)).sum();
+                    let delta = total.saturating_sub(last_total) as f64;
                     if dt > 0.0 {
-                        let delta = total.saturating_sub(last_total) as f64;
                         let hps = delta / dt;
                         Python::attach(|py| {
                             let _ = q_obj.bind(py).call_method1("put", (("TOTAL_HPS", hps),));
@@ -223,7 +223,7 @@ pub fn randomx_mine<'py>(
             let stop_local = Arc::clone(&stop_flag);
             let counter_local = Arc::clone(&hash_counters);
             let result_local = Arc::clone(&result);
-            let flags_local = flags;
+            let flags_local = effective_flags;
             let cache_local = Arc::clone(&shared_cache);
             let dataset_local = shared_dataset.as_ref().map(Arc::clone);
             let handle = thread::spawn(move || {
