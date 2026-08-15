@@ -21,8 +21,8 @@
   gap: 12px;
   padding: 12px 18px;
   border-radius: 2px;
-  background: #181818;
-  border: 1px solid rgba(255, 248, 240, 0.15);
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-medium-15);
   box-shadow: 3px 3px 0px var(--color-tsar-black);
   color: var(--color-tsar-cream);
   font-family: var(--font-montserrat);

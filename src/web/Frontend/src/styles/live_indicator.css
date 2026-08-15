@@ -6,8 +6,8 @@
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  background: #181818;
-  border: 1px solid rgba(255, 248, 240, 0.14);
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-medium-14);
   border-radius: 3px;
   padding: 4px 10px;
   height: 38px;
@@ -19,7 +19,7 @@
 }
 
 .live-indicator-bar:hover {
-  border-color: rgba(255, 248, 240, 0.22);
+  border-color: var(--border-strong-22);
 }
 
 /* Status Pill */
@@ -40,15 +40,15 @@
 }
 
 .live-status-pill.active {
-  background: rgba(222, 85, 38, 0.15);
+  background: var(--accent-subtle-15);
   color: var(--color-tsar-cream);
-  border: 1px solid rgba(222, 85, 38, 0.45);
+  border: 1px solid var(--border-orange-45);
 }
 
 .live-status-pill.paused {
-  background: rgba(255, 248, 240, 0.04);
-  color: rgba(255, 248, 240, 0.5);
-  border: 1px solid rgba(255, 248, 240, 0.12);
+  background: var(--bg-glass);
+  color: var(--text-muted-50);
+  border: 1px solid var(--border);
 }
 
 /* Pulsing Dot Animation */
@@ -67,12 +67,12 @@
   height: 6px;
   border-radius: 50%;
   background-color: var(--color-tsar-orange);
-  box-shadow: 0 0 6px rgba(222, 85, 38, 0.85);
+  box-shadow: 0 0 6px var(--accent-glow-85);
   transition: background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .live-status-pill.paused .live-dot-core {
-  background-color: rgba(255, 248, 240, 0.35);
+  background-color: var(--text-dim-35);
   box-shadow: none;
 }
 
@@ -119,7 +119,7 @@
 }
 
 .live-updated-time {
-  color: rgba(255, 248, 240, 0.7);
+  color: var(--text-secondary-70);
   font-size: 0.725rem;
   font-weight: var(--fw-medium);
   white-space: nowrap;
@@ -127,7 +127,7 @@
 }
 
 .updated-label {
-  color: rgba(255, 248, 240, 0.4);
+  color: var(--text-dim);
   font-size: 0.7rem;
   margin-right: 2px;
 }
@@ -144,7 +144,7 @@
 .syncing-spinner {
   width: 7px;
   height: 7px;
-  border: 1.5px solid rgba(222, 85, 38, 0.3);
+  border: 1.5px solid var(--accent-glow-30);
   border-top-color: var(--color-tsar-orange);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -154,14 +154,14 @@
 .live-progress-mini {
   width: 100%;
   height: 2px;
-  background: rgba(255, 248, 240, 0.08);
+  background: var(--bg-glass-hover);
   border-radius: 1px;
   overflow: hidden;
 }
 
 .live-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--color-tsar-orange), #ff8c5a);
+  background: linear-gradient(90deg, var(--color-tsar-orange), var(--color-warning-light));
   border-radius: 1px;
   transition: width 0.35s ease;
 }
@@ -170,7 +170,7 @@
 .live-divider {
   width: 1px;
   height: 18px;
-  background: rgba(255, 248, 240, 0.12);
+  background: var(--border);
   flex-shrink: 0;
 }
 
@@ -188,10 +188,10 @@
   gap: 4px;
   height: 26px;
   padding: 0 8px;
-  background: #202020;
-  border: 1px solid rgba(255, 248, 240, 0.14);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-medium-14);
   border-radius: 2px;
-  color: rgba(255, 248, 240, 0.8);
+  color: var(--text-secondary-80);
   font-family: var(--font-montserrat);
   font-size: 0.7rem;
   font-weight: var(--fw-semibold);
@@ -203,7 +203,7 @@
 }
 
 .live-btn:hover:not(:disabled) {
-  background: #2a2a2a;
+  background: var(--badge-gray-solid);
   border-color: var(--color-tsar-orange);
   color: var(--color-tsar-cream);
   box-shadow: 1px 1px 0px var(--color-tsar-black);
@@ -226,7 +226,7 @@
 }
 
 .live-btn--toggle.is-live {
-  background: #202020;
+  background: var(--bg-surface-2);
 }
 
 .live-btn--refresh {

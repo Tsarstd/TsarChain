@@ -3,9 +3,9 @@
    ========================================================================== */
 
 .site-footer {
-  --footer-line: rgba(255, 248, 240, 0.12);
+  --footer-line: var(--border);
   --footer-text: var(--color-tsar-orange);
-  --footer-muted: rgba(255, 248, 240, 0.6);
+  --footer-muted: var(--text-muted-60);
   background-color: var(--color-tsar-black);
   border-top: 2px solid var(--footer-line);
   padding: 40px 24px 28px;
@@ -69,7 +69,7 @@
 }
 
 .site-footer__link {
-  color: rgba(255, 248, 240, 0.75);
+  color: var(--text-secondary-75);
   font-family: var(--font-montserrat);
   font-size: 13px;
   font-weight: var(--fw-medium);
@@ -107,8 +107,8 @@
 .site-footer__social {
   width: 40px;
   height: 40px;
-  background-color: #181818;
-  border: 1px solid rgba(255, 248, 240, 0.15);
+  background-color: var(--bg-surface-1);
+  border: 1px solid var(--border-medium-15);
   border-radius: 4px;
   color: var(--color-tsar-cream);
   display: inline-flex;

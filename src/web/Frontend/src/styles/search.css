@@ -45,18 +45,18 @@
 
 .clickable-link {
   cursor: pointer;
-  color: #e07a52 !important;
+  color: var(--link-color) !important;
   transition: color 0.15s ease, opacity 0.15s ease;
   text-decoration: none;
 }
 
 .clickable-link:hover {
-  color: #ff8c5a !important;
+  color: var(--link-hover) !important;
   text-decoration: underline;
 }
 
 .clickable-link:active {
-  color: #de5526 !important;
+  color: var(--color-tsar-orange) !important;
 }
 
 .btn-ghost {

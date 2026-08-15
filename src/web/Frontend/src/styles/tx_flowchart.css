@@ -5,8 +5,8 @@
 .utxo-flowchart-card {
   margin: 1.5rem 0;
   padding: 1.5rem;
-  background: #181818;
-  border: 1px solid rgba(255, 248, 240, 0.15);
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-medium-15);
   border-radius: 4px;
   box-shadow: 3px 3px 0px var(--color-tsar-black);
   transition: all 0.2s ease;
@@ -19,7 +19,7 @@
   align-items: center;
   justify-content: space-between;
   padding-bottom: 1rem;
-  border-bottom: 1px solid rgba(255, 248, 240, 0.12);
+  border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
   gap: 12px;
 }
@@ -53,8 +53,8 @@
 }
 
 .utxo-toggle-btn {
-  background: #242424;
-  border: 1px solid rgba(255, 248, 240, 0.15);
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-medium-15);
   color: var(--color-tsar-cream);
   font-family: var(--font-newspaper);
   text-transform: uppercase;
@@ -119,9 +119,9 @@
 }
 
 .input-badge {
-  background: #141414;
+  background: var(--bg-surface-0);
   color: var(--color-tsar-cream);
-  border: 1px solid rgba(255, 248, 240, 0.2);
+  border: 1px solid var(--border-medium);
 }
 
 .output-badge {
@@ -135,7 +135,7 @@
   font-size: 0.8rem;
   font-family: var(--font-montserrat);
   font-weight: var(--fw-bold);
-  color: rgba(255, 248, 240, 0.7);
+  color: var(--text-secondary-70);
   white-space: nowrap;
 }
 
@@ -149,8 +149,8 @@
 
 /* NODE CARDS */
 .utxo-node {
-  background: #1e1e1e;
-  border: 1px solid rgba(255, 248, 240, 0.12);
+  background: var(--bg-tint-gray-2);
+  border: 1px solid var(--border);
   border-radius: 3px;
   padding: 10px 12px;
   transition: all 0.2s ease;
@@ -167,17 +167,17 @@
 
 .utxo-node.coinbase {
   border-color: var(--color-tsar-orange);
-  background: #201714;
+  background: var(--bg-tint-orange-dark);
 }
 
 .utxo-node.opreturn {
-  border-color: rgba(255, 248, 240, 0.3);
-  background: #181818;
+  border-color: var(--border-strong-30);
+  background: var(--bg-surface-1);
 }
 
 .utxo-node.change {
-  border-color: rgba(255, 248, 240, 0.3);
-  background: #1a1a1a;
+  border-color: var(--border-strong-30);
+  background: var(--bg-dark-14);
 }
 
 .node-top {
@@ -193,7 +193,7 @@
   font-family: var(--font-montserrat);
   font-size: 0.72rem;
   font-weight: var(--fw-semibold);
-  color: rgba(255, 248, 240, 0.65);
+  color: var(--text-muted-65);
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -232,8 +232,8 @@ button.node-address {
   justify-content: space-between;
   gap: 6px;
   padding: 5px 8px;
-  background: #141414;
-  border: 1px solid rgba(255, 248, 240, 0.1);
+  background: var(--bg-surface-0);
+  border: 1px solid var(--border-subtle-08);
   border-radius: 2px;
   width: 100%;
   box-sizing: border-box;
@@ -314,7 +314,7 @@ button.node-address {
 
 .utxo-core-node {
   width: 100%;
-  background: #1c1512;
+  background: var(--bg-tint-orange-darker);
   border: 2px solid var(--color-tsar-orange);
   border-radius: 4px;
   padding: 16px;
@@ -352,7 +352,7 @@ button.node-address {
 .core-txid {
   font-size: 0.72rem;
   font-family: monospace;
-  color: rgba(255, 248, 240, 0.6);
+  color: var(--text-muted-60);
   display: block;
   margin-bottom: 12px;
 }
@@ -362,8 +362,8 @@ button.node-address {
   flex-direction: column;
   gap: 8px;
   text-align: left;
-  background: #141414;
-  border: 1px solid rgba(255, 248, 240, 0.1);
+  background: var(--bg-surface-0);
+  border: 1px solid var(--border-subtle-08);
   padding: 8px 10px;
   border-radius: 2px;
   box-sizing: border-box;
@@ -378,7 +378,7 @@ button.node-address {
 }
 
 .metric-lbl {
-  color: rgba(255, 248, 240, 0.6);
+  color: var(--text-muted-60);
   white-space: nowrap;
   font-family: var(--font-montserrat);
   font-weight: var(--fw-medium);

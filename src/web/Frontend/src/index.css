@@ -2,16 +2,30 @@
 
 :root {
   /* ==========================================================================
-     1. TSAR STUDIO CORE PALETTE (Strict 3 Colors)
+     1. TSAR STUDIO CORE PALETTE (Strict 3 Colors + Accents)
      ========================================================================== */
   --color-tsar-orange: #de5526;
   --color-tsar-black: #121212;
   --color-tsar-cream: #fff8f0;
+  
+  --color-tsar-orange-hover: #ff7a45;
+  --color-tsar-orange-bright: #eb6030;
+  --color-tsar-orange-peach: #ffb191;
 
   /* ==========================================================================
      2. BACKGROUNDS & SURFACES (Tsar Studio Black Tones)
      ========================================================================== */
   --bg-darkest: #080808;
+  --bg-darker: #050505;
+  --bg-dark-10: #101010;
+  --bg-dark-14: #141414;
+  --bg-surface-0: #141414;
+  --bg-surface-1: #181818;
+  --bg-surface-2: #202020;
+  --bg-surface-2-alt: #222222;
+  --bg-surface-3: #242424;
+  --bg-surface-4: #282828;
+
   --bg-gradient: radial-gradient(circle at 50% 0%, #1e1e1e 0%, #121212 80%);
   
   --panel: rgba(24, 24, 24, 0.88);
@@ -34,6 +48,8 @@
   --bg-code-darker: #050505;
   --bg-code-block: #151515;
   --bg-overlay: rgba(0, 0, 0, 0.8);
+  --bg-overlay-mobile: rgba(18, 18, 18, 0.95);
+  --bg-overlay-dark: rgba(0, 0, 0, 0.85);
   --bg-tooltip: #fff8f0;
 
   /* Tinted Dark Containers */
@@ -47,19 +63,34 @@
   --bg-tint-gray-1: #161616;
   --bg-tint-gray-2: #1e1e1e;
   --bg-tint-gray-3: #262626;
+  --bg-tint-orange-darker: #1c1512;
+  --bg-tint-orange-dark: #1e1815;
+  --bg-tint-orange-subtle: #1c1816;
+  --bg-tint-orange-active: #201815;
+  --bg-tint-orange-creator: #201a18;
+  --bg-dark-tint-16: rgba(18, 18, 18, 0.16);
+  --bg-dark-25: rgba(0, 0, 0, 0.25);
+  --bg-dark-30: rgba(0, 0, 0, 0.3);
 
   /* ==========================================================================
-     3. TYPOGRAPHY / TEXT (Tsar Cream & Accents)
+     3. TYPOGRAPHY / TEXT (Tsar Cream & Opacity Steps)
      ========================================================================== */
   --text: #fff8f0;
   --text-primary: #fff8f0;
   --text-heading: #fff8f0;
-  --text-secondary: rgba(255, 248, 240, 0.85);
   --text-light: #fff8f0;
+  --text-secondary: rgba(255, 248, 240, 0.85);
+  --text-secondary-80: rgba(255, 248, 240, 0.8);
+  --text-secondary-75: rgba(255, 248, 240, 0.75);
+  --text-secondary-70: rgba(255, 248, 240, 0.7);
   --text-slate-light: #ede6de;
   --text-slate-body: #d5ccc4;
+  --text-muted-65: rgba(255, 248, 240, 0.65);
+  --text-muted-60: rgba(255, 248, 240, 0.6);
   --text-muted: rgba(255, 248, 240, 0.55);
+  --text-muted-50: rgba(255, 248, 240, 0.5);
   --text-dim: rgba(255, 248, 240, 0.4);
+  --text-dim-35: rgba(255, 248, 240, 0.35);
   --text-dimmer: rgba(255, 248, 240, 0.25);
   --text-disabled: rgba(255, 248, 240, 0.18);
   --text-inverse: #121212;
@@ -72,7 +103,13 @@
   --accent-gradient: linear-gradient(135deg, #de5526 0%, #b03c13 100%);
   --accent-glow: rgba(222, 85, 38, 0.25);
   --accent-glow-strong: rgba(222, 85, 38, 0.45);
+  --accent-glow-30: rgba(222, 85, 38, 0.3);
+  --accent-glow-60: rgba(222, 85, 38, 0.6);
+  --accent-glow-70: rgba(222, 85, 38, 0.7);
+  --accent-glow-85: rgba(222, 85, 38, 0.85);
+  --accent-subtle-08: rgba(222, 85, 38, 0.08);
   --accent-subtle: rgba(222, 85, 38, 0.12);
+  --accent-subtle-15: rgba(222, 85, 38, 0.15);
   --accent-subtle-hover: rgba(222, 85, 38, 0.2);
   --accent-subtle-border: rgba(222, 85, 38, 0.35);
 
@@ -81,18 +118,35 @@
      ========================================================================== */
   --border: rgba(255, 248, 240, 0.12);
   --border-subtle: rgba(255, 248, 240, 0.06);
-  --border-medium: rgba(255, 248, 240, 0.2);
-  --border-strong: rgba(255, 248, 240, 0.35);
+  --border-subtle-08: rgba(255, 248, 240, 0.08);
   --border-glass: rgba(255, 248, 240, 0.1);
+  --border-medium-14: rgba(255, 248, 240, 0.14);
+  --border-medium-15: rgba(255, 248, 240, 0.15);
+  --border-medium: rgba(255, 248, 240, 0.2);
+  --border-strong-22: rgba(255, 248, 240, 0.22);
+  --border-strong-30: rgba(255, 248, 240, 0.3);
+  --border-strong: rgba(255, 248, 240, 0.35);
+  --border-gray: rgba(255, 248, 240, 0.2);
   --border-glow: rgba(222, 85, 38, 0.4);
   --border-blue-glow: rgba(222, 85, 38, 0.4);
-  --border-gray: rgba(255, 248, 240, 0.2);
+  --border-orange-30: rgba(222, 85, 38, 0.3);
+  --border-orange-35: rgba(222, 85, 38, 0.35);
+  --border-orange-45: rgba(222, 85, 38, 0.45);
+  --border-orange-60: rgba(222, 85, 38, 0.6);
+  --border-dark-30: rgba(18, 18, 18, 0.3);
+  --border-dark-subtle: rgba(0, 0, 0, 0.3);
 
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.65);
   --shadow-accent: 0 4px 14px rgba(222, 85, 38, 0.25);
   --shadow-accent-lg: 0 8px 25px rgba(222, 85, 38, 0.4);
+  --shadow-dark-30: rgba(0, 0, 0, 0.3);
+  --shadow-dark-40: rgba(0, 0, 0, 0.4);
+  --shadow-dark-50: rgba(0, 0, 0, 0.5);
+  --shadow-dark-70: rgba(0, 0, 0, 0.7);
+  --shadow-dark-80: rgba(0, 0, 0, 0.8);
+  --shadow-dark-85: rgba(0, 0, 0, 0.85);
 
   /* ==========================================================================
      6. SEMANTIC / STATUS COLORS (Studio High Contrast)
@@ -106,11 +160,13 @@
   --color-success-bg-subtle: rgba(255, 248, 240, 0.05);
   --color-success-border: rgba(255, 248, 240, 0.35);
 
-  /* Danger */
+  /* Danger & Errors */
   --color-danger: #de5526;
   --color-danger-light: #ff7a45;
   --color-danger-bg: rgba(222, 85, 38, 0.16);
   --color-danger-border: rgba(222, 85, 38, 0.45);
+  --color-error-bright: #ff5252;
+  --bg-error-subtle: rgba(255, 82, 82, 0.15);
 
   /* Warning */
   --color-warning: #de5526;
@@ -141,6 +197,48 @@
   --badge-p2wpkh-bg: #171717;
   --badge-neutral-bg: #1c1c1c;
   --badge-gray-solid: #2a2a2a;
+
+  /* Genesis Block Tokens */
+  --genesis-gold-1: #ffd700;
+  --genesis-gold-2: #e6be10;
+  --genesis-gold-3: #c49608;
+  --genesis-gold-hover-1: #ffe033;
+  --genesis-gold-hover-2: #edd015;
+  --genesis-gold-hover-3: #d4a810;
+  --genesis-gradient: linear-gradient(135deg, #ffd700 0%, #e6be10 50%, #c49608 100%);
+  --genesis-gradient-hover: linear-gradient(135deg, #ffe033 0%, #edd015 50%, #d4a810 100%);
+
+  /* Interactive Links */
+  --link-color: #e07a52;
+  --link-hover: #ff8c5a;
+
+  /* Syntax Highlighting Tokens */
+  --syn-comment: #78716c;
+  --syn-string: #fbbf24;
+  --syn-flag: #38bdf8;
+  --syn-number: #4ade80;
+
+  /* CRT Visual Engine Tokens */
+  --crt-glow-red: rgba(255, 60, 60, 0.45);
+  --crt-glow-red-hover: rgba(255, 60, 60, 0.65);
+  --crt-glow-red-monochrome: rgba(255, 60, 60, 0.38);
+  --crt-glow-red-badge: rgba(255, 60, 60, 0.35);
+  --crt-glow-red-btn-hover: rgba(255, 60, 60, 0.55);
+  --crt-glow-cyan: rgba(0, 220, 255, 0.4);
+  --crt-glow-cyan-hover: rgba(0, 220, 255, 0.6);
+  --crt-glow-cyan-monochrome: rgba(0, 220, 255, 0.32);
+  --crt-glow-cyan-badge: rgba(0, 220, 255, 0.3);
+  --crt-glow-cyan-btn-hover: rgba(0, 220, 255, 0.5);
+  --crt-glow-orange: rgba(255, 110, 36, 0.35);
+  --crt-glow-orange-hover: rgba(255, 110, 36, 0.55);
+  --crt-glow-orange-icon-hover: rgba(255, 110, 36, 0.75);
+  --crt-glow-orange-monochrome: rgba(255, 110, 36, 0.3);
+  --crt-glow-orange-badge: rgba(255, 110, 36, 0.3);
+  --crt-glow-orange-btn-hover: rgba(255, 110, 36, 0.65);
+  --crt-glow-white-hover: rgba(255, 248, 240, 0.6);
+  --crt-glow-white-btn: rgba(255, 248, 240, 0.5);
+  --crt-scanline: rgba(0, 0, 0, 0.22);
+  --crt-scanline-card: rgba(0, 0, 0, 0.2);
 
   /* Terminal Window Tokens */
   --terminal-dot-red: #de5526;

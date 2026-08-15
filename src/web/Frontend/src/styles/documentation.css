@@ -1348,7 +1348,7 @@ button.doc-toggle-badge:hover {
   color: var(--color-tsar-orange) !important;
   font-weight: 600;
   border-left-color: var(--color-tsar-orange) !important;
-  background: rgba(222, 85, 38, 0.08);
+  background: var(--accent-subtle-08);
   padding-left: 12px;
   box-shadow: inset 3px 0 0 var(--color-tsar-orange);
 }
@@ -1383,12 +1383,12 @@ button.doc-toggle-badge:hover {
 }
 
 .syn-comment {
-  color: #78716c;
+  color: var(--syn-comment);
   font-style: italic;
 }
 
 .syn-string {
-  color: #fbbf24;
+  color: var(--syn-string);
 }
 
 .syn-keyword {
@@ -1397,11 +1397,11 @@ button.doc-toggle-badge:hover {
 }
 
 .syn-flag {
-  color: #38bdf8;
+  color: var(--syn-flag);
 }
 
 .syn-number {
-  color: #4ade80;
+  color: var(--syn-number);
 }
 
 .syn-prompt {
@@ -1423,13 +1423,13 @@ button.doc-toggle-badge:hover {
   position: sticky;
   top: 72px;
   z-index: 20;
-  background: #161616;
-  border-bottom: 1px solid rgba(255, 248, 240, 0.14);
+  background: var(--bg-tint-gray-1);
+  border-bottom: 1px solid var(--border-medium-14);
   padding: 0.65rem 1rem;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  box-shadow: var(--shadow-dark-50);
 }
 
 .doc-mobile-left-controls {
@@ -1469,8 +1469,8 @@ button.doc-toggle-badge:hover {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #202020;
-  border: 1px solid rgba(255, 248, 240, 0.15);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-medium-15);
   border-radius: 3px;
   padding: 2px 8px;
   max-width: 170px;
@@ -1495,7 +1495,7 @@ button.doc-toggle-badge:hover {
 }
 
 .doc-mobile-select option {
-  background: #181818;
+  background: var(--bg-surface-1);
   color: var(--color-tsar-cream);
 }
 
@@ -1544,7 +1544,7 @@ button.doc-toggle-badge:hover {
     transform: translateX(-100%);
     transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     z-index: 999;
-    box-shadow: 6px 0 24px rgba(0,0,0,0.8);
+    box-shadow: 6px 0 24px var(--shadow-dark-80);
   }
 
   .doc-sidebar--mobile-open {

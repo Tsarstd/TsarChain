@@ -40,9 +40,9 @@
   flex: 1;
   padding: 8px 14px;
   height: 38px;
-  border: 1px solid rgba(255, 248, 240, 0.15);
+  border: 1px solid var(--border-medium-15);
   border-radius: 3px;
-  background: #181818;
+  background: var(--bg-surface-1);
   color: var(--color-tsar-cream);
   font-family: var(--font-montserrat);
   font-size: 13px;
@@ -60,9 +60,9 @@
 .nav-button {
   padding: 8px 16px;
   height: 38px;
-  border: 1px solid rgba(255, 248, 240, 0.15);
+  border: 1px solid var(--border-medium-15);
   border-radius: 3px;
-  background: #1c1c1c;
+  background: var(--bg-tint-slate);
   color: var(--color-tsar-cream);
   font-family: var(--font-newspaper);
   font-size: 13px;
@@ -96,8 +96,8 @@
 .nav-button--back {
   padding: 8px 14px;
   font-size: 14px;
-  background: #181818;
-  border-color: rgba(255, 248, 240, 0.15);
+  background: var(--bg-surface-1);
+  border-color: var(--border-medium-15);
 }
 
 .nav-button--go {
@@ -107,8 +107,8 @@
 }
 
 .nav-button--go:hover:not(:disabled) {
-  background: #ff7a45;
-  border-color: #ff7a45;
+  background: var(--color-danger-light);
+  border-color: var(--color-danger-light);
 }
 
 /* Lane Scroll - Full Width */
@@ -176,8 +176,8 @@
 }
 
 .lane-card__pdf {
-  background: #181818;
-  border-color: rgba(255, 248, 240, 0.3);
+  background: var(--bg-surface-1);
+  border-color: var(--border-strong-30);
   color: var(--color-tsar-cream);
 }
 
@@ -198,7 +198,7 @@
   font-size: 12px;
   text-align: left;
   font-weight: var(--fw-medium);
-  color: rgba(255, 248, 240, 0.75);
+  color: var(--text-secondary-75);
 }
 
 .lane-card__time-ago {
@@ -211,15 +211,15 @@
   justify-self: right;
   padding: 1px 6px;
   border-radius: 2px;
-  background: #242424;
-  border: 1px solid rgba(255, 248, 240, 0.15);
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-medium-15);
   white-space: nowrap;
 }
 
 /* Hash & Graffiti id */
 .lane-card__id {
   font-family: var(--font-montserrat);
-  color: rgba(255, 248, 240, 0.55);
+  color: var(--text-muted);
   font-size: 11px;
 }
 
@@ -227,9 +227,9 @@
    1. BASE STANDARD BLOCK CARD (Black / Dark Studio)
    ========================================================================== */
 .lane-card {
-  border: 1px solid rgba(255, 248, 240, 0.12);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  background: #181818;
+  background: var(--bg-surface-1);
   padding: 16px;
   text-align: left;
   color: inherit;
@@ -261,7 +261,7 @@
 
 .lane-card--active {
   border-color: var(--color-tsar-orange);
-  background: #201815;
+  background: var(--bg-tint-orange-active);
   box-shadow: 0 0 0 1px var(--color-tsar-orange), 3px 3px 0px var(--color-tsar-black);
 }
 
@@ -276,7 +276,7 @@
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: rgba(255, 248, 240, 0.65);
+  color: var(--text-muted-65);
   font-weight: var(--fw-semibold);
   line-height: 1.2;
 }
@@ -301,10 +301,10 @@
   font-size: 10.5px;
   font-weight: var(--fw-semibold);
   letter-spacing: 0.02em;
-  background: #201a18;
+  background: var(--bg-tint-orange-creator);
   color: var(--color-tsar-cream);
-  border-top: 1px solid rgba(222, 85, 38, 0.3);
-  border-bottom: 1px solid rgba(222, 85, 38, 0.3);
+  border-top: 1px solid var(--border-orange-30);
+  border-bottom: 1px solid var(--border-orange-30);
   flex-shrink: 0;
   min-height: 32px;
   display: flex;
@@ -333,10 +333,10 @@
   padding: 4px 8px;
   font-family: var(--font-montserrat);
   font-size: 10px;
-  background: #121212;
-  color: rgba(255, 248, 240, 0.85);
-  border-top: 1px solid rgba(255, 248, 240, 0.15);
-  border-bottom: 1px solid rgba(255, 248, 240, 0.15);
+  background: var(--color-tsar-black);
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border-medium-15);
+  border-bottom: 1px solid var(--border-medium-15);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -376,59 +376,59 @@
    ========================================================================== */
 .lane-card--graffiti {
   background: var(--color-tsar-orange) !important;
-  color: #121212 !important;
+  color: var(--color-tsar-black) !important;
   border: 2px solid var(--color-tsar-black) !important;
   box-shadow: 3px 3px 0px var(--color-tsar-black) !important;
 }
 
 .lane-card--graffiti .lane-card__date {
-  color: #121212 !important;
+  color: var(--color-tsar-black) !important;
   opacity: 0.85;
   font-weight: var(--fw-semibold);
 }
 
 .lane-card--graffiti .lane-card__blockheight,
 .lane-card--graffiti .lane-card__graffheader {
-  color: #121212 !important;
+  color: var(--color-tsar-black) !important;
   font-weight: 800;
 }
 
 .lane-card--graffiti .lane-card__time-ago {
-  background: rgba(18, 18, 18, 0.16) !important;
-  border: 1px solid rgba(18, 18, 18, 0.3) !important;
-  color: #121212 !important;
+  background: var(--bg-dark-tint-16) !important;
+  border: 1px solid var(--border-dark-30) !important;
+  color: var(--color-tsar-black) !important;
   font-weight: 700;
 }
 
 .lane-card--graffiti .lane-card__graf {
-  background: #121212 !important;
-  color: #ffffff !important;
-  border-top: 1px solid #121212 !important;
-  border-bottom: 1px solid #121212 !important;
-  box-shadow: 1px 1px 0px rgba(0, 0, 0, 0.3) !important;
+  background: var(--color-tsar-black) !important;
+  color: var(--color-tsar-cream) !important;
+  border-top: 1px solid var(--color-tsar-black) !important;
+  border-bottom: 1px solid var(--color-tsar-black) !important;
+  box-shadow: 1px 1px 0px var(--shadow-dark-30) !important;
 }
 
 .lane-card--graffiti .lane-card__creator,
 .lane-card--graffiti .lane-card__bid {
-  background: #121212 !important;
-  color: #ffffff !important;
-  border-top: 1px solid #121212 !important;
-  border-bottom: 1px solid #121212 !important;
+  background: var(--color-tsar-black) !important;
+  color: var(--color-tsar-cream) !important;
+  border-top: 1px solid var(--color-tsar-black) !important;
+  border-bottom: 1px solid var(--color-tsar-black) !important;
 }
 
 .lane-card--graffiti .stat .label {
-  color: #121212 !important;
+  color: var(--color-tsar-black) !important;
   opacity: 0.8;
   font-weight: var(--fw-semibold);
 }
 
 .lane-card--graffiti .stat .value {
-  color: #121212 !important;
+  color: var(--color-tsar-black) !important;
   font-weight: 800;
 }
 
 .lane-card--graffiti .lane-card__id {
-  color: #121212 !important;
+  color: var(--color-tsar-black) !important;
   opacity: 0.85;
   font-weight: var(--fw-medium);
 }
@@ -437,30 +437,30 @@
 .lane-card--graffiti .lane-card__pdf,
 .lane-card--graffiti .lane-card__jpeg,
 .lane-card--graffiti .lane-card__mkv {
-  background: #121212 !important;
-  color: #ffffff !important;
-  border-color: #121212 !important;
+  background: var(--color-tsar-black) !important;
+  color: var(--color-tsar-cream) !important;
+  border-color: var(--color-tsar-black) !important;
 }
 
 .lane-card--graffiti:hover {
-  background: #eb6030 !important;
+  background: var(--color-tsar-orange-bright) !important;
   box-shadow: 5px 5px 0px var(--color-tsar-black) !important;
   transform: translateY(-4px);
 }
 
 .lane-card--graffiti.lane-card--active {
-  border: 2px solid #ffffff !important;
-  box-shadow: 0 0 0 2px #121212, 4px 4px 0px #121212 !important;
+  border: 2px solid var(--color-tsar-cream) !important;
+  box-shadow: 0 0 0 2px var(--color-tsar-black), 4px 4px 0px var(--color-tsar-black) !important;
 }
 
 /* ==========================================================================
    3. GENESIS BLOCK CARD (Rich Metallic Gold Vibe)
    ========================================================================== */
 .lane-card--genesis {
-  background: linear-gradient(135deg, #ffd700 0%, #e6be10 50%, #c49608 100%) !important;
-  color: #121212 !important;
-  border: 2px solid #121212 !important;
-  box-shadow: 4px 4px 0px #121212 !important;
+  background: var(--genesis-gradient) !important;
+  color: var(--color-tsar-black) !important;
+  border: 2px solid var(--color-tsar-black) !important;
+  box-shadow: 4px 4px 0px var(--color-tsar-black) !important;
 }
 
 .lane-card--genesis .lane-card__genesis-label {
@@ -469,61 +469,61 @@
   font-family: var(--font-newspaper);
   font-size: 13px;
   text-transform: uppercase;
-  color: #ffd700 !important;
+  color: var(--genesis-gold-1) !important;
   letter-spacing: 0.08em;
   margin-top: 4px;
-  background: #121212 !important;
-  border: 1px solid #121212 !important;
+  background: var(--color-tsar-black) !important;
+  border: 1px solid var(--color-tsar-black) !important;
   border-radius: 2px;
   padding: 2px 8px;
-  box-shadow: 1px 1px 0px rgba(0, 0, 0, 0.4) !important;
+  box-shadow: 1px 1px 0px var(--shadow-dark-40) !important;
 }
 
 .lane-card--genesis .lane-card__date {
-  color: #121212 !important;
+  color: var(--color-tsar-black) !important;
   opacity: 0.85;
   font-weight: var(--fw-semibold);
 }
 
 .lane-card--genesis .lane-card__blockheight,
 .lane-card--genesis .lane-card__graffheader {
-  color: #121212 !important;
+  color: var(--color-tsar-black) !important;
   font-weight: 800;
 }
 
 .lane-card--genesis .lane-card__time-ago {
-  background: rgba(18, 18, 18, 0.16) !important;
-  border: 1px solid rgba(18, 18, 18, 0.3) !important;
-  color: #121212 !important;
+  background: var(--bg-dark-tint-16) !important;
+  border: 1px solid var(--border-dark-30) !important;
+  color: var(--color-tsar-black) !important;
   font-weight: 700;
 }
 
 .lane-card--genesis .stat .label {
-  color: #121212 !important;
+  color: var(--color-tsar-black) !important;
   opacity: 0.8;
   font-weight: var(--fw-semibold);
 }
 
 .lane-card--genesis .stat .value {
-  color: #121212 !important;
+  color: var(--color-tsar-black) !important;
   font-weight: 800;
 }
 
 .lane-card--genesis .lane-card__id {
-  color: #121212 !important;
+  color: var(--color-tsar-black) !important;
   opacity: 0.85;
   font-weight: var(--fw-medium);
 }
 
 .lane-card--genesis:hover {
-  background: linear-gradient(135deg, #ffe033 0%, #edd015 50%, #d4a810 100%) !important;
-  box-shadow: 5px 5px 0px #121212 !important;
+  background: var(--genesis-gradient-hover) !important;
+  box-shadow: 5px 5px 0px var(--color-tsar-black) !important;
   transform: translateY(-4px);
 }
 
 .lane-card--genesis.lane-card--active {
-  border: 2px solid #ffffff !important;
-  box-shadow: 0 0 0 2px #121212, 5px 5px 0px #121212 !important;
+  border: 2px solid var(--color-tsar-cream) !important;
+  box-shadow: 0 0 0 2px var(--color-tsar-black), 5px 5px 0px var(--color-tsar-black) !important;
 }
 
 /* Graffiti Media Filter Bar */
@@ -535,8 +535,8 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 14px;
-  background: #181818;
-  border: 1px solid rgba(255, 248, 240, 0.12);
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border);
   border-radius: 4px;
 }
 
@@ -559,9 +559,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-family: var(--font-newspaper);
+  font-family: var(--font-montserrat);
   font-size: 15px;
-  text-transform: uppercase;
   color: var(--color-tsar-cream);
   white-space: nowrap;
 }
@@ -580,14 +579,13 @@
 
 .graffiti-tab-btn,
 .graffiti-tab {
-  background: #202020;
-  border: 1px solid rgba(255, 248, 240, 0.12);
-  color: rgba(255, 248, 240, 0.7);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-secondary-70);
   padding: 6px 14px;
   border-radius: 2px;
-  font-family: var(--font-newspaper);
+  font-family: var(--font-montserrat);
   font-size: 12px;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -598,7 +596,7 @@
 
 .graffiti-tab-btn:hover,
 .graffiti-tab:hover {
-  background: #282828;
+  background: var(--bg-surface-4);
   border-color: var(--color-tsar-orange);
   color: var(--color-tsar-cream);
 }
@@ -619,15 +617,15 @@
 .graffiti-detail-wrapper {
   padding: 20px;
   margin-top: 16px;
-  background: #181818;
-  border: 1px solid rgba(255, 248, 240, 0.12);
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border);
   border-radius: 4px;
 }
 
 /* Glass panel studio override */
 .glass-panel {
-  background: #181818 !important;
-  border: 1px solid rgba(255, 248, 240, 0.12) !important;
+  background: var(--bg-surface-1) !important;
+  border: 1px solid var(--border) !important;
   border-radius: 4px !important;
   box-shadow: 3px 3px 0px var(--color-tsar-black) !important;
 }
@@ -688,7 +686,7 @@
 
   .lane-card__date {
     font-size: 10.5px;
-    color: rgba(255, 248, 240, 0.7);
+    color: var(--text-secondary-70);
     line-height: 1.2;
     white-space: nowrap;
     overflow: hidden;
@@ -750,7 +748,7 @@
   .lane-card .stat .label,
   .stat .label {
     font-size: 9.5px;
-    color: rgba(255, 248, 240, 0.65);
+    color: var(--text-muted-65);
     font-weight: 600;
     letter-spacing: 0.04em;
     line-height: 1.2;
@@ -769,6 +767,6 @@
     font-size: 10px;
     line-height: 1.2;
     flex-shrink: 0;
-    color: rgba(255, 248, 240, 0.55);
+    color: var(--text-muted);
   }
 }

@@ -22,16 +22,16 @@
     /* 1. Horizontal TV Scanline Raster */
     repeating-linear-gradient(
       0deg,
-      rgba(0, 0, 0, 0.22) 0px,
-      rgba(0, 0, 0, 0.22) 1px,
+      var(--crt-scanline) 0px,
+      var(--crt-scanline) 1px,
       transparent 1px,
       transparent 3px
     ),
     /* 2. CRT Screen Vignette (Slightly curved tube darkness around perimeter) */
     radial-gradient(
       ellipse at center,
-      rgba(18, 18, 18, 0) 65%,
-      rgba(0, 0, 0, 0.8) 100%
+      transparent 65%,
+      var(--bg-overlay) 100%
     );
   mix-blend-mode: multiply;
   transform: translate3d(0, 0, 0);
@@ -62,9 +62,9 @@
 .crt-mode-active .engine-step-title {
   filter: blur(0.6px);
   text-shadow: 
-    -1px 0px rgba(255, 60, 60, 0.45),
-     1px 0px rgba(0, 220, 255, 0.4),
-     0 0 6px rgba(255, 110, 36, 0.35);
+    -1px 0px var(--crt-glow-red),
+     1px 0px var(--crt-glow-cyan),
+     0 0 6px var(--crt-glow-orange);
   transition: filter 0.2s ease, text-shadow 0.2s ease;
 }
 
@@ -75,10 +75,10 @@
 .crt-mode-active .docs-hub-banner:hover .docs-hub-title {
   filter: blur(1.2px);
   text-shadow: 
-    -1.8px 0px rgba(255, 60, 60, 0.65),
-     1.8px 0px rgba(0, 220, 255, 0.6),
-     0 0 12px rgba(255, 110, 36, 0.55),
-     0 0 6px rgba(255, 248, 240, 0.6);
+    -1.8px 0px var(--crt-glow-red-hover),
+     1.8px 0px var(--crt-glow-cyan-hover),
+     0 0 12px var(--crt-glow-orange-hover),
+     0 0 6px var(--crt-glow-white-hover);
 }
 
 /* Monospace, Code, Hash, Values & Tickers */
@@ -90,9 +90,9 @@
 .crt-mode-active .engine-step-badge {
   filter: blur(0.6px);
   text-shadow: 
-    -0.8px 0px rgba(255, 60, 60, 0.38),
-     0.8px 0px rgba(0, 220, 255, 0.32),
-     0 0 4px rgba(255, 110, 36, 0.3);
+    -0.8px 0px var(--crt-glow-red-monochrome),
+     0.8px 0px var(--crt-glow-cyan-monochrome),
+     0 0 4px var(--crt-glow-orange-monochrome);
 }
 
 /* Badges, Pills, Tags & Labels */
@@ -107,9 +107,9 @@
 .crt-mode-active .stat .label {
   filter: blur(0.5px);
   text-shadow: 
-    -0.6px 0px rgba(255, 60, 60, 0.35),
-     0.6px 0px rgba(0, 220, 255, 0.3),
-     0 0 3px rgba(255, 110, 36, 0.3);
+    -0.6px 0px var(--crt-glow-red-badge),
+     0.6px 0px var(--crt-glow-cyan-badge),
+     0 0 3px var(--crt-glow-orange-badge);
 }
 
 /* Buttons & Interactive Elements */
@@ -120,7 +120,7 @@
 .crt-mode-active .navbar__search-btn,
 .crt-mode-active .navbar__menu-link.active {
   filter: blur(0.6px);
-  text-shadow: 0 0 4px rgba(255, 110, 36, 0.35), 0 0 2px rgba(255, 248, 240, 0.5);
+  text-shadow: 0 0 4px var(--crt-glow-orange), 0 0 2px var(--crt-glow-white-btn);
 }
 
 .crt-mode-active .btn-hero-primary:hover,
@@ -129,9 +129,9 @@
 .crt-mode-active .btn-primary:hover {
   filter: blur(0.3px);
   text-shadow: 
-    -1.5px 0px rgba(255, 60, 60, 0.55),
-     1.5px 0px rgba(0, 220, 255, 0.5),
-     0 0 8px rgba(255, 110, 36, 0.65);
+    -1.5px 0px var(--crt-glow-red-btn-hover),
+     1.5px 0px var(--crt-glow-cyan-btn-hover),
+     0 0 8px var(--crt-glow-orange-btn-hover);
 }
 
 /* SVG Icons Across Global Navigation, Cards, Footer */
@@ -142,7 +142,7 @@
 .crt-mode-active .manifesto-card svg,
 .crt-mode-active .engine-step-card svg,
 .crt-mode-active .glass-panel svg {
-  filter: blur(0.6px) drop-shadow(0 0 4px rgba(255, 110, 36, 0.35));
+  filter: blur(0.6px) drop-shadow(0 0 4px var(--crt-glow-orange));
   transition: filter 0.2s ease, transform 0.2s ease;
   will-change: filter;
 }
@@ -153,7 +153,7 @@
 .crt-mode-active .engine-step-card:hover svg,
 .crt-mode-active .engine-step-card.active svg,
 .crt-mode-active .docs-hub-banner:hover svg {
-  filter: blur(0.3px) drop-shadow(0 0 8px rgba(255, 110, 36, 0.75));
+  filter: blur(0.3px) drop-shadow(0 0 8px var(--crt-glow-orange-icon-hover));
 }
 
 /* ==========================================================================
@@ -170,8 +170,8 @@
   inset: 0;
   background: repeating-linear-gradient(
     0deg,
-    rgba(0, 0, 0, 0.2),
-    rgba(0, 0, 0, 0.2) 1px,
+    var(--crt-scanline-card),
+    var(--crt-scanline-card) 1px,
     transparent 1px,
     transparent 3px
   );
