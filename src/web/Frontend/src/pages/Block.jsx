@@ -471,7 +471,7 @@ const Home = ({ onSearchClick }) => {
               lastUpdated={lastUpdated}
               isRefreshing={isRefreshing}
               intervalSec={30}
-              label="Live"
+              label="Live Sync"
             />
           </div>
           <div className="navigation-controls">

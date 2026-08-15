@@ -1,0 +1,234 @@
+/* ==========================================================================
+   TSAR STUDIO - GLOBAL CRT / RETRO TUBE TV & GLITCH ENGINE
+   ========================================================================== */
+
+/* ==========================================================================
+   1. GLOBAL CRT SCREEN OVERLAYS (Screen Raster + Vignette + Phosphor)
+   ========================================================================== */
+.crt-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 100vw;
+  min-height: 100vh;
+  pointer-events: none;
+  z-index: 9998;
+  opacity: 0.75;
+  background: 
+    /* 1. Horizontal TV Scanline Raster */
+    repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.22) 0px,
+      rgba(0, 0, 0, 0.22) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    /* 2. CRT Screen Vignette (Slightly curved tube darkness around perimeter) */
+    radial-gradient(
+      ellipse at center,
+      rgba(18, 18, 18, 0) 65%,
+      rgba(0, 0, 0, 0.8) 100%
+    );
+  mix-blend-mode: multiply;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  will-change: opacity;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  animation: crt-faint-flicker 0.18s infinite alternate;
+}
+
+/* ==========================================================================
+   2. CRT MODE ACTIVE: TYPOGRAPHY, CHROMATIC ABERRATION & PHOSPHOR GLOW
+   ========================================================================== */
+
+/* Global Headings */
+.crt-mode-active h1,
+.crt-mode-active h2,
+.crt-mode-active h3,
+.crt-mode-active h4,
+.crt-mode-active h5,
+.crt-mode-active h6,
+.crt-mode-active .hero-title,
+.crt-mode-active .section-title,
+.crt-mode-active .manifesto-card-heading,
+.crt-mode-active .bento-card-title,
+.crt-mode-active .docs-hub-title,
+.crt-mode-active .engine-step-title {
+  filter: blur(0.6px);
+  text-shadow: 
+    -1px 0px rgba(255, 60, 60, 0.45),
+     1px 0px rgba(0, 220, 255, 0.4),
+     0 0 6px rgba(255, 110, 36, 0.35);
+  transition: filter 0.2s ease, text-shadow 0.2s ease;
+}
+
+.crt-mode-active .hero-title:hover,
+.crt-mode-active .section-title:hover,
+.crt-mode-active .manifesto-card:hover .manifesto-card-heading,
+.crt-mode-active .bento-card:hover .bento-card-title,
+.crt-mode-active .docs-hub-banner:hover .docs-hub-title {
+  filter: blur(1.2px);
+  text-shadow: 
+    -1.8px 0px rgba(255, 60, 60, 0.65),
+     1.8px 0px rgba(0, 220, 255, 0.6),
+     0 0 12px rgba(255, 110, 36, 0.55),
+     0 0 6px rgba(255, 248, 240, 0.6);
+}
+
+/* Monospace, Code, Hash, Values & Tickers */
+.crt-mode-active code,
+.crt-mode-active .mono-text,
+.crt-mode-active .hash-multiline,
+.crt-mode-active .stat .value,
+.crt-mode-active .ticker-value,
+.crt-mode-active .engine-step-badge {
+  filter: blur(0.6px);
+  text-shadow: 
+    -0.8px 0px rgba(255, 60, 60, 0.38),
+     0.8px 0px rgba(0, 220, 255, 0.32),
+     0 0 4px rgba(255, 110, 36, 0.3);
+}
+
+/* Badges, Pills, Tags & Labels */
+.crt-mode-active .hero-badge-container,
+.crt-mode-active .section-tag,
+.crt-mode-active .bento-card-chip,
+.crt-mode-active .bento-badge,
+.crt-mode-active .hero-pill,
+.crt-mode-active .pill,
+.crt-mode-active .ticker-label,
+.crt-mode-active .manifesto-card-tag,
+.crt-mode-active .stat .label {
+  filter: blur(0.5px);
+  text-shadow: 
+    -0.6px 0px rgba(255, 60, 60, 0.35),
+     0.6px 0px rgba(0, 220, 255, 0.3),
+     0 0 3px rgba(255, 110, 36, 0.3);
+}
+
+/* Buttons & Interactive Elements */
+.crt-mode-active .btn-hero-primary,
+.crt-mode-active .btn-hero-secondary,
+.crt-mode-active .btn-hero-ghost,
+.crt-mode-active .btn-primary,
+.crt-mode-active .navbar__search-btn,
+.crt-mode-active .navbar__menu-link.active {
+  filter: blur(0.6px);
+  text-shadow: 0 0 4px rgba(255, 110, 36, 0.35), 0 0 2px rgba(255, 248, 240, 0.5);
+}
+
+.crt-mode-active .btn-hero-primary:hover,
+.crt-mode-active .btn-hero-secondary:hover,
+.crt-mode-active .btn-hero-ghost:hover,
+.crt-mode-active .btn-primary:hover {
+  filter: blur(0.3px);
+  text-shadow: 
+    -1.5px 0px rgba(255, 60, 60, 0.55),
+     1.5px 0px rgba(0, 220, 255, 0.5),
+     0 0 8px rgba(255, 110, 36, 0.65);
+}
+
+/* SVG Icons Across Global Navigation, Cards, Footer */
+.crt-mode-active .navbar svg,
+.crt-mode-active .home-container svg,
+.crt-mode-active .footer svg,
+.crt-mode-active .bento-card svg,
+.crt-mode-active .manifesto-card svg,
+.crt-mode-active .engine-step-card svg,
+.crt-mode-active .glass-panel svg {
+  filter: blur(0.6px) drop-shadow(0 0 4px rgba(255, 110, 36, 0.35));
+  transition: filter 0.2s ease, transform 0.2s ease;
+  will-change: filter;
+}
+
+.crt-mode-active .navbar__logo-link:hover svg,
+.crt-mode-active .bento-card:hover svg,
+.crt-mode-active .manifesto-card:hover svg,
+.crt-mode-active .engine-step-card:hover svg,
+.crt-mode-active .engine-step-card.active svg,
+.crt-mode-active .docs-hub-banner:hover svg {
+  filter: blur(0.3px) drop-shadow(0 0 8px rgba(255, 110, 36, 0.75));
+}
+
+/* ==========================================================================
+   3. CRT SCANLINE BACKDROPS ON CARDS & PANELS
+   ========================================================================== */
+.crt-mode-active .telemetry-ticker::before,
+.crt-mode-active .manifesto-card::before,
+.crt-mode-active .engine-step-card::before,
+.crt-mode-active .bento-card::before,
+.crt-mode-active .docs-hub-banner::before,
+.crt-mode-active .glass-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.2),
+    rgba(0, 0, 0, 0.2) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  pointer-events: none;
+  opacity: 0.6;
+  transition: opacity 0.3s ease;
+  z-index: 0;
+}
+
+.crt-mode-active .manifesto-card:hover::before,
+.crt-mode-active .engine-step-card:hover::before,
+.crt-mode-active .engine-step-card.active::before,
+.crt-mode-active .bento-card:hover::before,
+.crt-mode-active .docs-hub-banner:hover::before,
+.crt-mode-active .glass-panel:hover::before {
+  opacity: 0.85;
+}
+
+/* Ensure contents stay above card scanlines */
+.crt-mode-active .telemetry-ticker > *,
+.crt-mode-active .manifesto-card > *,
+.crt-mode-active .engine-step-card > *,
+.crt-mode-active .bento-card > *,
+.crt-mode-active .docs-hub-banner > *,
+.crt-mode-active .glass-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ==========================================================================
+   4. ANIMATIONS & GLITCH KEYFRAMES
+   ========================================================================== */
+@keyframes crt-faint-flicker {
+  0% { opacity: 0.72; }
+  50% { opacity: 0.76; }
+  100% { opacity: 0.74; }
+}
+
+@keyframes crt-text-glitch {
+  0% { transform: translate(0, 0); }
+  20% { transform: translate(-1px, 0.5px); }
+  40% { transform: translate(1px, -0.5px); }
+  60% { transform: translate(-0.5px, 0.2px); }
+  80% { transform: translate(0.5px, -0.2px); }
+  100% { transform: translate(0, 0); }
+}
+
+/* ==========================================================================
+   5. ACCESSIBILITY / PREFERS-REDUCED-MOTION
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .crt-overlay {
+    animation: none;
+    opacity: 0.5;
+  }
+  
+  .crt-mode-active .hero-title--scrambling {
+    animation: none;
+  }
+}

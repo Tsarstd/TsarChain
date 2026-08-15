@@ -1,18 +1,16 @@
 import { useNavigate } from "react-router-dom";
 import { motion } from "motion/react";
-import { 
-  RiCompassDiscoverLine, 
-  RiBrushLine,
-  RiCpuLine,
-  RiShieldCheckLine,
-  RiLockLine
-} from "react-icons/ri";
 import { useScrambleText } from "../../utils/useScrambleText";
+
+const HEADLINE_TEXT = "WHERE VOICE BECOMES IMMUTABLE CONSENSUS";
+const ACCENT_WORD = "IMMUTABLE";
+const accentStart = HEADLINE_TEXT.indexOf(ACCENT_WORD);
+const accentEnd = accentStart + ACCENT_WORD.length;
 
 const HeroBanner = () => {
   const navigate = useNavigate();
-  const { displayText: headlineText } = useScrambleText(
-    "WHERE VOICE BECOMES IMMUTABLE CONSENSUS",
+  const { displayText: headlineText, isScrambling } = useScrambleText(
+    HEADLINE_TEXT,
     { speed: 20, scrambleDuration: 800 }
   );
 
@@ -28,10 +26,12 @@ const HeroBanner = () => {
           <span>Graffiti Protocol</span>
         </div>
 
-        <h1 className="hero-title hero-title--centered">
-          {headlineText.split("IMMUTABLE")[0]}
-          <span className="hero-title-accent">IMMUTABLE</span>
-          {headlineText.split("IMMUTABLE")[1] || " CONSENSUS"}
+        <h1 className={`hero-title hero-title--centered ${isScrambling ? "hero-title--scrambling" : ""}`}>
+          {headlineText.slice(0, accentStart)}
+          <span className="hero-title-accent">
+            {headlineText.slice(accentStart, accentEnd)}
+          </span>
+          {headlineText.slice(accentEnd)}
         </h1>
 
         <p className="hero-description hero-description--centered">
@@ -40,32 +40,12 @@ const HeroBanner = () => {
           preserved across epochs by citizen-owned nodes.
         </p>
 
-        <div className="hero-feature-pills">
-          <div className="hero-pill">
-            <RiBrushLine color="var(--accent)" />
-            <span>1 Block = 1 Graffiti</span>
-          </div>
-          <div className="hero-pill">
-            <RiCpuLine color="var(--accent)" />
-            <span>Democratic RandomX PoW</span>
-          </div>
-          <div className="hero-pill">
-            <RiShieldCheckLine color="var(--accent)" />
-            <span>Archivist Proof of Retention</span>
-          </div>
-          <div className="hero-pill">
-            <RiLockLine color="var(--accent)" />
-            <span>Signal-Grade E2EE</span>
-          </div>
-        </div>
-
         <div className="hero-actions hero-actions--centered">
           <button 
             type="button" 
             className="btn-hero-primary"
             onClick={() => navigate("/block")}
           >
-            <RiCompassDiscoverLine size={18} />
             <span>Explore Blocks</span>
           </button>
 
@@ -74,7 +54,6 @@ const HeroBanner = () => {
             className="btn-hero-secondary"
             onClick={() => navigate("/graffiti")}
           >
-            <RiBrushLine size={18} />
             <span>Explore Graffiti</span>
           </button>
         </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { useSearchParams } from "react-router-dom";
-import { RiMenuUnfoldLine } from "react-icons/ri";
+import { RiMenuUnfoldLine, RiListCheck2 } from "react-icons/ri";
 
 import DocSidebar from "../components/docs/DocSidebar";
 import DocHeader from "../components/docs/DocHeader";
@@ -12,6 +12,7 @@ import { getDocData, getDocById } from "../docs";
 const Documentation = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [selectedMobileSection, setSelectedMobileSection] = useState("");
 
   // Derive state directly from URL search params (single source of truth)
   const activeDocId = searchParams.get("doc") || "grungepaper";
@@ -47,22 +48,63 @@ const Documentation = () => {
     document.title = `${docMeta.title} | TsarChain Documentation`;
   }, [docMeta]);
 
+  // Handle jumping to section on mobile
+  const handleMobileSectionJump = (sectionId) => {
+    if (!sectionId) return;
+    setSelectedMobileSection(sectionId);
+    const el = document.getElementById(sectionId);
+    if (el) {
+      const offset = 80;
+      const bodyRect = document.body.getBoundingClientRect().top;
+      const elementRect = el.getBoundingClientRect().top;
+      const elementPosition = elementRect - bodyRect;
+      const offsetPosition = elementPosition - offset;
+
+      globalThis.scrollTo({
+        top: offsetPosition,
+        behavior: "smooth",
+      });
+    }
+  };
+
   return (
     <div className="doc-page-container">
-      {/* Mobile Sticky Bar */}
+      {/* Mobile Sticky Bar with Menu & Chapter Quick Picker */}
       <div className="doc-mobile-trigger-bar">
-        <button
-          type="button"
-          className="doc-mobile-trigger-btn"
-          onClick={() => setMobileSidebarOpen(true)}
-        >
-          <RiMenuUnfoldLine size={18} />
-          <span>Menu</span>
-        </button>
+        <div className="doc-mobile-left-controls">
+          <button
+            type="button"
+            className="doc-mobile-trigger-btn"
+            onClick={() => setMobileSidebarOpen(true)}
+            aria-label="Open documentation navigation menu"
+          >
+            <RiMenuUnfoldLine size={18} />
+            <span>Docs</span>
+          </button>
 
-        <div className="doc-mobile-current-title">
-          {docMeta.title}
+          <div className="doc-mobile-current-title">
+            {docMeta.title}
+          </div>
         </div>
+
+        {tocItems && tocItems.length > 0 && (
+          <div className="doc-mobile-chapter-picker">
+            <RiListCheck2 className="picker-icon" size={14} />
+            <select
+              className="doc-mobile-select"
+              value={selectedMobileSection}
+              onChange={(e) => handleMobileSectionJump(e.target.value)}
+              aria-label="Jump to section on this page"
+            >
+              <option value="" disabled>Jump to chapter...</option>
+              {tocItems.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       <div className="doc-layout">

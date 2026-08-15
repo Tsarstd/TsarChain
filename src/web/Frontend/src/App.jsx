@@ -13,10 +13,13 @@ import Documentation from "./pages/Documentation";
 import SearchOverlay from "./components/search/SearchOverlay";
 import { saveSearchHistory } from "./utils/searchHistory";
 import { ToastProvider } from "./components/common/ToastContainer";
+import { CrtProvider } from "./context/CrtContext";
+import { useCrt } from "./context/useCrt";
 import { searchExplorer } from "./api/explorer";
 import { guessKind } from "./utils/searchKind";
 
 import "./App.css";
+import "./styles/crt.css";
 import "./styles/home.css";
 import "./styles/networkpages.css";
 import "./styles/card.css";
@@ -43,7 +46,8 @@ const pageTransition = {
   ease: [0.25, 0.1, 0.25, 1]
 };
 
-const App = () => {
+const AppContent = () => {
+  const { isCrtEnabled } = useCrt();
   const location = useLocation();
   const navigate = useNavigate();
   const [query, setQuery] = useState(() => new URLSearchParams(globalThis.location?.search || "").get('search') || "");
@@ -145,74 +149,88 @@ const App = () => {
   );
 
   return (
-    <ToastProvider>
-      <div className="app">
-        <Navbar query={query} onQueryChange={setQuery} onSearch={handleSearch} />
-        
-        <SearchOverlay
-          open={searchOpen}
-          status={status}
-          kind={kind}
-          result={result}
-          message={message}
-          onSearchClick={handleSearchClick}
-          onClose={() => setSearchOpen(false)}
-        />
-        
-        <div className="app-main">
-          <AnimatePresence mode="wait">
-            <Routes location={location} key={location.pathname}>
-              <Route path="/" element={renderHomePage} />
-              <Route path="/block" element={renderBlockPage} />
-              <Route
-                path="/graffiti"
-                element={
-                  <motion.div
-                    variants={pageVariants}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    transition={pageTransition}
-                  >
-                    <Graffiti onSearchClick={handleSearchClick} />
-                  </motion.div>
-                }
-              />
-              <Route
-                path="/network"
-                element={
-                  <motion.div
-                    variants={pageVariants}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    transition={pageTransition}
-                  >
-                    <Network onSearchClick={handleSearchClick} />
-                  </motion.div>
-                }
-              />
-              <Route
-                path="/documentation"
-                element={
-                  <motion.div
-                    variants={pageVariants}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    transition={pageTransition}
-                  >
-                    <Documentation onSearchClick={handleSearchClick} />
-                  </motion.div>
-                }
-              />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </AnimatePresence>
-        </div>
-        <Footer />
+    <div className={`app ${isCrtEnabled ? "crt-mode-active" : ""}`}>
+      {/* 1. Subtle Tsar Studio Film Grain Noise */}
+      <div className="grain-overlay" aria-hidden="true" />
+      
+      {/* 2. Global Retro CRT / TV Tube Raster Overlay */}
+      {isCrtEnabled && <div className="crt-overlay" aria-hidden="true" />}
+
+      <Navbar query={query} onQueryChange={setQuery} onSearch={handleSearch} />
+      
+      <SearchOverlay
+        open={searchOpen}
+        status={status}
+        kind={kind}
+        result={result}
+        message={message}
+        onSearchClick={handleSearchClick}
+        onClose={() => setSearchOpen(false)}
+      />
+      
+      <div className="app-main">
+        <AnimatePresence mode="wait">
+          <Routes location={location} key={location.pathname}>
+            <Route path="/" element={renderHomePage} />
+            <Route path="/block" element={renderBlockPage} />
+            <Route
+              path="/graffiti"
+              element={
+                <motion.div
+                  variants={pageVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={pageTransition}
+                >
+                  <Graffiti onSearchClick={handleSearchClick} />
+                </motion.div>
+              }
+            />
+            <Route
+              path="/network"
+              element={
+                <motion.div
+                  variants={pageVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={pageTransition}
+                >
+                  <Network onSearchClick={handleSearchClick} />
+                </motion.div>
+              }
+            />
+            <Route
+              path="/documentation"
+              element={
+                <motion.div
+                  variants={pageVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={pageTransition}
+                >
+                  <Documentation onSearchClick={handleSearchClick} />
+                </motion.div>
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </AnimatePresence>
       </div>
-    </ToastProvider>
+      <Footer />
+    </div>
+  );
+};
+
+const App = () => {
+  return (
+    <CrtProvider>
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
+    </CrtProvider>
   );
 };
 

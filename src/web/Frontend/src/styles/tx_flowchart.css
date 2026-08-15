@@ -1,16 +1,15 @@
 /* ==========================================================================
-   UTXO TRANSACTION FLOWCHART STYLES
+   TSAR STUDIO - UTXO TRANSACTION FLOWCHART STYLES
    ========================================================================== */
 
 .utxo-flowchart-card {
   margin: 1.5rem 0;
-  padding: 1.5rem;
-  background: var(--bg-card-slate);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  backdrop-filter: blur(16px);
-  box-shadow: var(--shadow-md);
-  transition: all 0.3s ease;
+  padding: 1.8rem;
+  background: #181818;
+  border: 1px solid rgba(255, 248, 240, 0.15);
+  border-radius: 4px;
+  box-shadow: 3px 3px 0px var(--color-tsar-black);
+  transition: all 0.2s ease;
 }
 
 .utxo-flowchart-header {
@@ -18,7 +17,7 @@
   align-items: center;
   justify-content: space-between;
   padding-bottom: 1.2rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(255, 248, 240, 0.12);
 }
 
 .utxo-header-title {
@@ -28,35 +27,38 @@
 }
 
 .utxo-header-icon {
-  font-size: 1.6rem;
-  color: var(--color-info);
-  filter: drop-shadow(0 0 8px var(--color-info-glow));
+  font-size: 1.5rem;
+  color: var(--color-tsar-orange);
 }
 
 .utxo-header-title h4 {
   margin: 0;
-  font-size: 1.15rem;
-  font-weight: var(--fw-bold);
-  color: var(--text-secondary);
-  letter-spacing: 0.3px;
+  font-family: var(--font-newspaper);
+  font-size: 1.3rem;
+  text-transform: uppercase;
+  color: var(--color-tsar-cream);
+  letter-spacing: 0.04em;
 }
 
 .utxo-toggle-btn {
-  background: var(--bg-card-slate-hover);
-  border: 1px solid var(--border-medium);
-  color: var(--text-slate-body);
+  background: #242424;
+  border: 1px solid rgba(255, 248, 240, 0.15);
+  color: var(--color-tsar-cream);
+  font-family: var(--font-newspaper);
+  text-transform: uppercase;
   padding: 6px 14px;
-  border-radius: 8px;
+  border-radius: 2px;
   font-size: 0.8rem;
-  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .utxo-toggle-btn:hover {
-  background: var(--color-info-darker);
-  border-color: var(--color-info-border);
-  color: var(--color-info);
+  background: var(--color-tsar-orange);
+  border-color: var(--color-tsar-orange);
+  color: var(--color-tsar-cream);
+  box-shadow: 2px 2px 0px var(--color-tsar-black);
 }
 
 /* MAIN DIAGRAM CONTAINER */
@@ -68,7 +70,7 @@
   display: flex;
   align-items: stretch;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   position: relative;
 }
 
@@ -90,35 +92,36 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .col-badge {
-  font-size: 0.7rem;
-  font-weight: var(--fw-bold);
-  padding: 4px 10px;
-  border-radius: 12px;
-  letter-spacing: 0.5px;
+  font-family: var(--font-newspaper);
+  font-size: 0.75rem;
+  padding: 3px 8px;
+  border-radius: 2px;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
 .input-badge {
-  background: var(--color-info-darker);
-  color: var(--color-info);
-  border: 1px solid var(--color-info-border);
+  background: #141414;
+  color: var(--color-tsar-cream);
+  border: 1px solid rgba(255, 248, 240, 0.2);
 }
 
 .output-badge {
-  background: var(--color-purple-darker);
-  color: var(--color-purple-light);
-  border: 1px solid var(--color-purple-border);
+  background: var(--color-tsar-orange);
+  color: var(--color-tsar-cream);
+  border: 1px solid var(--color-tsar-black);
+  box-shadow: 1px 1px 0px var(--color-tsar-black);
 }
 
 .col-total {
-  font-size: 0.8rem;
-  font-family: monospace;
+  font-size: 0.85rem;
+  font-family: monospace, var(--font-monserat);
   font-weight: var(--fw-bold);
-  color: var(--text-dim);
+  color: rgba(255, 248, 240, 0.7);
 }
 
 .utxo-nodes-stack {
@@ -129,34 +132,33 @@
 
 /* NODE CARDS */
 .utxo-node {
-  background: var(--bg-card-slate-alt);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
-  transition: all 0.25s ease;
+  background: #1e1e1e;
+  border: 1px solid rgba(255, 248, 240, 0.12);
+  border-radius: 3px;
+  padding: 12px 14px;
+  transition: all 0.2s ease;
   position: relative;
 }
 
 .utxo-node:hover {
-  border-color: var(--color-info-border);
-  background: var(--bg-card-slate-hover);
+  border-color: var(--color-tsar-orange);
   transform: translateY(-2px);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 2px 2px 0px var(--color-tsar-black);
 }
 
 .utxo-node.coinbase {
-  border-color: var(--color-warning-border);
-  background: var(--color-warning-bg-subtle);
+  border-color: var(--color-tsar-orange);
+  background: #201714;
 }
 
 .utxo-node.opreturn {
-  border-color: var(--color-pink-border);
-  background: var(--color-pink-bg-subtle);
+  border-color: rgba(255, 248, 240, 0.3);
+  background: #181818;
 }
 
 .utxo-node.change {
-  border-color: var(--color-success-border);
-  background: var(--color-success-bg-subtle);
+  border-color: rgba(255, 248, 240, 0.3);
+  background: #1a1a1a;
 }
 
 .node-top {
@@ -167,19 +169,21 @@
 }
 
 .node-tag {
-  font-size: 0.72rem;
+  font-family: var(--font-monserat);
+  font-size: 0.75rem;
   font-weight: var(--fw-semibold);
-  color: var(--text-dim);
+  color: rgba(255, 248, 240, 0.65);
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  text-transform: uppercase;
 }
 
 .node-amount {
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   font-weight: var(--fw-bold);
   font-family: monospace;
-  color: var(--color-info);
+  color: var(--color-tsar-orange);
 }
 
 button.node-address {
@@ -190,15 +194,16 @@ button.node-address {
 }
 
 .node-address {
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-family: monospace;
-  color: var(--text-slate-body);
+  color: var(--color-tsar-cream);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px;
-  background: var(--bg-input);
-  border-radius: 6px;
+  padding: 5px 8px;
+  background: #141414;
+  border: 1px solid rgba(255, 248, 240, 0.1);
+  border-radius: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -209,8 +214,8 @@ button.node-address {
 }
 
 .node-address.clickable:hover {
-  color: var(--color-info);
-  background: var(--color-info-darker);
+  color: var(--color-tsar-orange);
+  border-color: var(--color-tsar-orange);
 }
 
 .ext-icon {
@@ -238,9 +243,8 @@ button.node-address {
 
 .connector-line {
   width: 100%;
-  height: 3px;
-  background: linear-gradient(90deg, var(--color-info-glow), var(--color-purple-glow));
-  border-radius: 2px;
+  height: 2px;
+  background: var(--color-tsar-orange);
   position: relative;
   overflow: hidden;
 }
@@ -251,21 +255,17 @@ button.node-address {
   left: -100%;
   width: 60%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, var(--color-info), transparent);
+  background: linear-gradient(90deg, transparent, var(--color-tsar-cream), transparent);
   animation: utxoFlowPulse 1.8s infinite linear;
 }
 
 @keyframes utxoFlowPulse {
-  0% {
-    left: -100%;
-  }
-  100% {
-    left: 200%;
-  }
+  0% { left: -100%; }
+  100% { left: 200%; }
 }
 
 .connector-arrow {
-  color: var(--color-purple);
+  color: var(--color-tsar-orange);
   font-size: 1rem;
   margin-top: 4px;
 }
@@ -289,45 +289,46 @@ button.node-address {
 
 .utxo-core-node {
   width: 100%;
-  background: var(--bg-card-slate-hover);
-  border: 1px solid var(--color-purple-border);
-  border-radius: 14px;
-  padding: 16px;
+  background: #1c1512;
+  border: 2px solid var(--color-tsar-orange);
+  border-radius: 4px;
+  padding: 18px;
   text-align: center;
-  box-shadow: 0 0 20px var(--color-purple-glow);
+  box-shadow: 3px 3px 0px var(--color-tsar-black);
   position: relative;
 }
 
 .core-icon-wrap {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--color-info-dark), var(--color-purple-dark));
+  width: 44px;
+  height: 44px;
+  border-radius: 2px;
+  background: var(--color-tsar-orange);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 8px auto;
-  box-shadow: 0 0 12px var(--color-purple-glow);
+  margin: 0 auto 10px auto;
+  box-shadow: 2px 2px 0px var(--color-tsar-black);
 }
 
 .core-icon {
-  font-size: 1.2rem;
-  color: var(--text-heading);
+  font-size: 1.3rem;
+  color: var(--color-tsar-cream);
 }
 
 .core-title {
   margin: 0 0 4px 0;
-  font-size: 0.95rem;
-  font-weight: var(--fw-bold);
-  color: var(--text-secondary);
+  font-family: var(--font-newspaper);
+  font-size: 1.2rem;
+  text-transform: uppercase;
+  color: var(--color-tsar-cream);
 }
 
 .core-txid {
   font-size: 0.75rem;
   font-family: monospace;
-  color: var(--text-dim);
+  color: rgba(255, 248, 240, 0.6);
   display: block;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .core-metrics {
@@ -335,9 +336,10 @@ button.node-address {
   flex-direction: column;
   gap: 10px;
   text-align: left;
-  background: var(--bg-input);
+  background: #141414;
+  border: 1px solid rgba(255, 248, 240, 0.1);
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: 2px;
 }
 
 .core-metric-item {
@@ -345,13 +347,15 @@ button.node-address {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 0.76rem;
+  font-size: 0.78rem;
 }
 
 .metric-lbl {
-  color: var(--text-dim);
+  color: rgba(255, 248, 240, 0.6);
   white-space: nowrap;
+  font-family: var(--font-monserat);
   font-weight: var(--fw-medium);
+  text-transform: uppercase;
 }
 
 .metric-val {
@@ -359,14 +363,15 @@ button.node-address {
   font-weight: var(--fw-bold);
   white-space: nowrap;
   text-align: right;
+  color: var(--color-tsar-cream);
 }
 
 .text-cyan {
-  color: var(--color-info);
+  color: var(--color-tsar-cream);
 }
 
 .text-amber {
-  color: var(--color-warning);
+  color: var(--color-tsar-orange);
 }
 
 .status-pill {
@@ -374,17 +379,18 @@ button.node-address {
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 0.68rem;
-  font-weight: var(--fw-bold);
+  border-radius: 2px;
+  font-family: var(--font-newspaper);
+  font-size: 0.72rem;
+  text-transform: uppercase;
 }
 
 .status-pill.confirmed {
-  background: var(--color-success-darker);
-  color: var(--color-success-light);
+  background: var(--color-tsar-cream);
+  color: var(--color-tsar-black);
 }
 
 .status-pill.pending {
-  background: var(--color-warning-darker);
-  color: var(--color-warning-light);
+  background: var(--color-tsar-orange);
+  color: var(--color-tsar-cream);
 }

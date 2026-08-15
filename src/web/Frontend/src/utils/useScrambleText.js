@@ -51,6 +51,7 @@ export const useScrambleText = (targetText, options = {}) => {
     if (!trigger || !targetText) return;
 
     let isCancelled = false;
+    setIsScrambling(true);
     const length = targetText.length;
     const startTime = Date.now();
 
@@ -76,12 +77,14 @@ export const useScrambleText = (targetText, options = {}) => {
       if (progress >= 1) {
         clearInterval(interval);
         setDisplayText(targetText);
+        setIsScrambling(false);
       }
     }, speed);
 
     return () => {
       isCancelled = true;
       clearInterval(interval);
+      setIsScrambling(false);
     };
   }, [trigger, targetText, speed, scrambleDuration]);
 

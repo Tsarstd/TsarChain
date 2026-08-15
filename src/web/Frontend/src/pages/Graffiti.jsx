@@ -29,12 +29,28 @@ const GraffitiCard = memo(({ item, onSelect, active, isGenesis }) => {
   const isPdf = typeof mime === "string" && mime.toLowerCase().startsWith("application/pdf");
 
   const classes = [
+    "lane-card",
     "lane-card--graffiti",
     active ? "lane-card--active" : "",
     isGenesis ? "lane-card--genesis" : "",
   ]
     .filter(Boolean)
     .join(" ");
+
+  const renderCreatorAddress = (addr) => {
+    if (!addr || typeof addr !== "string") return addr || "-";
+    if (addr.length > 22) {
+      const line1 = addr.slice(0, 22);
+      const line2 = addr.slice(22);
+      return (
+        <>
+          <span className="creator-addr-line">{line1}</span>
+          <span className="creator-addr-line">{line2}</span>
+        </>
+      );
+    }
+    return <span className="creator-addr-line">{addr}</span>;
+  };
 
   return (
     <button className={classes} type="button" onClick={() => onSelect(item)}>
@@ -74,7 +90,9 @@ const GraffitiCard = memo(({ item, onSelect, active, isGenesis }) => {
       </div>
 
       {isGenesis ? null : (
-        <div className="lane-card__creator mono-text">{creator}</div>
+        <div className="lane-card__creator mono-text" title={creator}>
+          {renderCreatorAddress(creator)}
+        </div>
       )}
 
       <div className="lane-card__grid">

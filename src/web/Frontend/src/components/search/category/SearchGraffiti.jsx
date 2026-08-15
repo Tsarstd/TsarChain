@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useRenderHelpers } from "../SearchHelpers";
 import { ClickableValue } from "../SearchResults";
 import { graffitiMediaUrl } from "../../../api/explorer";
+import Identicon from "../../common/Identicon";
 import { 
   FaDownload, 
   FaSearchPlus, 
@@ -319,12 +320,15 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
               </div>
               <div className="stat">
                 <span className="info-label">Creator</span>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "4px" }}>
+                  <Identicon value={data.creator || "creator"} size={22} />
                   {renderClickableHash(
                     data.creator,
                     onSearchClick,
                     data.creator,
                     fmtAddress(data.creator) || "-"
                   )}
+                </div>
               </div>
             </div>
             <div className="grid">
@@ -473,9 +477,7 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
                 <div className="comment-card" key={c.txid || `${commenterAddress}-${c.ts}-${index}`}>
                   <div className="comment-card-header">
                     <div className="comment-user-info">
-                      <div className="comment-avatar">
-                        <FaUserCircle />
-                      </div>
+                      <Identicon value={commenterAddress} size={22} />
                       <ClickableValue
                         value={commenterAddress}
                         onSearchClick={onSearchClick}

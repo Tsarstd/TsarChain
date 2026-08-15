@@ -1,105 +1,111 @@
+@import "./styles/crt.css";
+
 :root {
   /* ==========================================================================
-     1. BASE PALETTE & RGB TRIPLET (For dynamic alpha / transparency)
+     1. TSAR STUDIO CORE PALETTE (Strict 3 Colors)
      ========================================================================== */
+  --color-tsar-orange: #de5526;
+  --color-tsar-black: #121212;
+  --color-tsar-cream: #fff8f0;
+
+  /* RGB Triplets for Dynamic Alpha / Transparency */
+  --rgb-tsar-orange: 222, 85, 38;
+  --rgb-tsar-black: 18, 18, 18;
+  --rgb-tsar-cream: 255, 248, 240;
+
   --rgb-black: 0, 0, 0;
   --rgb-white: 255, 255, 255;
   --rgb-bg: 18, 18, 18;
-  --rgb-panel: 20, 22, 32;
-  --rgb-card: 28, 31, 46;
-  --rgb-card-hover: 40, 44, 62;
-  --rgb-slate-900: 15, 23, 42;
-  --rgb-slate-800: 30, 41, 59;
-  --rgb-slate-700: 51, 65, 85;
-  --rgb-accent: 224, 95, 50;
-  --rgb-accent-secondary: 222, 85, 38;
-  --rgb-blue: 56, 189, 248;
-  --rgb-blue-intense: 59, 130, 246;
-  --rgb-green: 16, 185, 129;
-  --rgb-green-emerald: 52, 211, 153;
-  --rgb-red: 239, 68, 68;
-  --rgb-amber: 245, 158, 11;
-  --rgb-yellow: 234, 179, 8;
-  --rgb-purple: 168, 85, 247;
-  --rgb-purple-intense: 147, 51, 234;
-  --rgb-pink: 236, 72, 153;
-  --rgb-gray: 128, 121, 115;
+  --rgb-panel: 24, 24, 24;
+  --rgb-card: 24, 24, 24;
+  --rgb-card-hover: 32, 32, 32;
+  --rgb-slate-900: 18, 18, 18;
+  --rgb-slate-800: 24, 24, 24;
+  --rgb-slate-700: 40, 40, 40;
+  --rgb-accent: 222, 85, 38;
+  --rgb-accent-secondary: 224, 95, 50;
 
   /* ==========================================================================
-     2. BACKGROUNDS & SURFACES
+     2. BACKGROUNDS & SURFACES (Tsar Studio Black Tones)
      ========================================================================== */
   --bg: #121212;
   --bg-app: #121212;
-  --bg-secondary: #151824;
-  --bg-darker: #0b0c10;
-  --bg-darkest: #08090e;
-  --bg-gradient: radial-gradient(circle at 50% 0%, #151824 0%, #121212 70%);
-  --panel: rgba(20, 22, 32, 0.75);
-  --bg-panel: rgba(20, 22, 32, 0.75);
-  --bg-panel-solid: #141620;
-  --bg-panel-translucent: rgba(15, 18, 28, 0.7);
-  --card: rgba(28, 31, 46, 0.65);
-  --bg-card: rgba(28, 31, 46, 0.65);
-  --bg-card-hover: rgba(38, 42, 60, 0.75);
-  --bg-card-solid: #1c1f2e;
-  --bg-card-slate: rgba(15, 23, 42, 0.65);
-  --bg-card-slate-alt: rgba(30, 41, 59, 0.55);
-  --bg-card-slate-hover: rgba(30, 41, 59, 0.75);
-  --bg-input: rgba(15, 23, 42, 0.6);
-  --bg-input-focus: rgba(15, 23, 42, 0.85);
-  --bg-input-dark: #080a0f;
-  --bg-glass: rgba(255, 255, 255, 0.04);
-  --bg-glass-subtle: rgba(255, 255, 255, 0.02);
-  --bg-glass-hover: rgba(255, 255, 255, 0.08);
-  --bg-glass-active: rgba(255, 255, 255, 0.12);
-  --bg-glass-pill: rgba(255, 255, 255, 0.06);
-  --bg-glass-modal: rgba(15, 23, 42, 0.92);
-  --bg-nav: linear-gradient(180deg, #0f121c 0%, #0b0c12 100%);
-  --bg-nav-dropdown: rgba(24, 26, 32, 0.9);
-  --bg-footer: linear-gradient(180deg, #0f121c 0%, #0b0c12 100%);
-  --bg-code: #080d14;
-  --bg-code-dark: #090c14;
-  --bg-code-darker: #080a10;
-  --bg-code-block: #0d101a;
-  --bg-overlay: rgba(0, 0, 0, 0.75);
-  --bg-overlay-heavy: rgba(0, 0, 0, 0.85);
-  --bg-badge-slate: #1e293b;
-  --bg-badge-dark: #0f172a;
-  --bg-tooltip: rgb(220, 220, 220);
+  --bg-secondary: #171717;
+  --bg-darker: #0d0d0d;
+  --bg-darkest: #080808;
+  --bg-gradient: radial-gradient(circle at 50% 0%, #1e1e1e 0%, #121212 80%);
+  
+  --panel: rgba(24, 24, 24, 0.88);
+  --bg-panel: rgba(24, 24, 24, 0.88);
+  --bg-panel-solid: #181818;
+  --bg-panel-translucent: rgba(18, 18, 18, 0.9);
 
-  /* Tinted Dark Containers (Metrics, badges, search items) */
-  --bg-tint-info: #162a38;
-  --bg-tint-purple: #251838;
-  --bg-tint-warning: #362614;
-  --bg-tint-success: #122b22;
-  --bg-tint-danger: #451a1a;
-  --bg-tint-slate: #1e222b;
-  --bg-tint-slate-hover: #232833;
-  --bg-tint-slate-subtle: #181d26;
-  --bg-tint-gray-1: #191919;
-  --bg-tint-gray-2: #1d1d1d;
-  --bg-tint-gray-3: #242424;
+  --card: rgba(24, 24, 24, 0.85);
+  --bg-card: rgba(24, 24, 24, 0.85);
+  --bg-card-hover: rgba(34, 34, 34, 0.95);
+  --bg-card-solid: #1a1a1a;
+  --bg-card-slate: rgba(24, 24, 24, 0.85);
+  --bg-card-slate-alt: rgba(20, 20, 20, 0.75);
+  --bg-card-slate-hover: rgba(36, 36, 36, 0.92);
+
+  --bg-input: rgba(18, 18, 18, 0.85);
+  --bg-input-focus: rgba(18, 18, 18, 0.98);
+  --bg-input-dark: #0f0f0f;
+
+  --bg-glass: rgba(255, 248, 240, 0.04);
+  --bg-glass-subtle: rgba(255, 248, 240, 0.02);
+  --bg-glass-hover: rgba(255, 248, 240, 0.08);
+  --bg-glass-active: rgba(255, 248, 240, 0.12);
+  --bg-glass-pill: rgba(255, 248, 240, 0.06);
+  --bg-glass-modal: rgba(18, 18, 18, 0.96);
+
+  --bg-nav: #121212;
+  --bg-nav-dropdown: rgba(18, 18, 18, 0.96);
+  --bg-footer: #121212;
+
+  --bg-code: #0c0c0c;
+  --bg-code-dark: #080808;
+  --bg-code-darker: #050505;
+  --bg-code-block: #151515;
+  --bg-overlay: rgba(0, 0, 0, 0.8);
+  --bg-overlay-heavy: rgba(0, 0, 0, 0.92);
+  --bg-badge-slate: #1c1c1c;
+  --bg-badge-dark: #121212;
+  --bg-tooltip: #fff8f0;
+
+  /* Tinted Dark Containers */
+  --bg-tint-info: rgba(222, 85, 38, 0.12);
+  --bg-tint-purple: rgba(255, 248, 240, 0.06);
+  --bg-tint-warning: rgba(222, 85, 38, 0.16);
+  --bg-tint-success: rgba(255, 248, 240, 0.08);
+  --bg-tint-danger: rgba(222, 85, 38, 0.2);
+  --bg-tint-slate: #1c1c1c;
+  --bg-tint-slate-hover: #262626;
+  --bg-tint-slate-subtle: #161616;
+  --bg-tint-gray-1: #161616;
+  --bg-tint-gray-2: #1e1e1e;
+  --bg-tint-gray-3: #262626;
 
   /* ==========================================================================
-     3. TYPOGRAPHY / TEXT
+     3. TYPOGRAPHY / TEXT (Tsar Cream & Accents)
      ========================================================================== */
   --text: #fff8f0;
   --text-primary: #fff8f0;
-  --text-heading: #ffffff;
-  --text-secondary: #f8fafc;
-  --text-light: #f1f5f9;
-  --text-slate-light: #e2e8f0;
-  --text-slate-body: #cbd5e1;
-  --text-muted: #bec4ce;
-  --text-dim: #94a3b8;
-  --text-dimmer: #64748b;
-  --text-disabled: #475569;
-  --text-inverse: #0b0c10;
-  --text-link: #38bdf8;
-  --text-link-hover: #7dd3fc;
+  --text-heading: #fff8f0;
+  --text-secondary: rgba(255, 248, 240, 0.85);
+  --text-light: #fff8f0;
+  --text-slate-light: #ede6de;
+  --text-slate-body: #d5ccc4;
+  --text-muted: rgba(255, 248, 240, 0.55);
+  --text-dim: rgba(255, 248, 240, 0.4);
+  --text-dimmer: rgba(255, 248, 240, 0.25);
+  --text-disabled: rgba(255, 248, 240, 0.18);
+  --text-inverse: #121212;
+  --text-link: #e07a52;
+  --text-link-hover: #ff8c5a;
 
   /* ==========================================================================
-     4. BRAND & ACCENTS
+     4. BRAND & ACCENTS (Tsar Orange)
      ========================================================================== */
   --accent: #de5526;
   --accent-secondary: #e05f32;
@@ -107,163 +113,170 @@
   --accent-hover: #ff7a45;
   --accent-active: #cc4e21;
   --accent-dark: #b03c13;
-  --accent-darker: #a13204;
-  --accent-peach: #ff9d75;
-  --accent-nav: #db886a;
-  --accent-gradient: linear-gradient(135deg, #de5526 0%, #ff7a45 100%);
-  --accent-glow: rgba(224, 95, 50, 0.25);
-  --accent-glow-strong: rgba(224, 95, 50, 0.45);
-  --accent-subtle: rgba(224, 95, 50, 0.12);
-  --accent-subtle-hover: rgba(224, 95, 50, 0.2);
-  --accent-subtle-border: rgba(224, 95, 50, 0.3);
+  --accent-darker: #8f2b09;
+  --accent-peach: #ffb191;
+  --accent-nav: #de5526;
+  --accent-gradient: linear-gradient(135deg, #de5526 0%, #b03c13 100%);
+  --accent-glow: rgba(222, 85, 38, 0.25);
+  --accent-glow-strong: rgba(222, 85, 38, 0.45);
+  --accent-subtle: rgba(222, 85, 38, 0.12);
+  --accent-subtle-hover: rgba(222, 85, 38, 0.2);
+  --accent-subtle-border: rgba(222, 85, 38, 0.35);
 
   /* ==========================================================================
-     5. BORDERS & GLOWS
+     5. BORDERS & SHADOWS (Neo-Brutalist Sharp Precision)
      ========================================================================== */
-  --border: rgba(255, 255, 255, 0.08);
-  --border-subtle: rgba(255, 255, 255, 0.05);
-  --border-medium: rgba(255, 255, 255, 0.12);
-  --border-strong: rgba(255, 255, 255, 0.2);
-  --border-glass: rgba(255, 255, 255, 0.07);
-  --border-glow: rgba(224, 95, 50, 0.35);
-  --border-blue-glow: rgba(56, 189, 248, 0.35);
-  --border-green-glow: rgba(16, 185, 129, 0.35);
-  --border-red-glow: rgba(239, 68, 68, 0.35);
-  --border-purple-glow: rgba(168, 85, 247, 0.35);
-  --border-gray: rgb(128, 121, 115);
+  --border: rgba(255, 248, 240, 0.12);
+  --border-subtle: rgba(255, 248, 240, 0.06);
+  --border-medium: rgba(255, 248, 240, 0.2);
+  --border-strong: rgba(255, 248, 240, 0.35);
+  --border-glass: rgba(255, 248, 240, 0.1);
+  --border-glow: rgba(222, 85, 38, 0.4);
+  --border-blue-glow: rgba(222, 85, 38, 0.4);
+  --border-green-glow: rgba(255, 248, 240, 0.4);
+  --border-red-glow: rgba(222, 85, 38, 0.5);
+  --border-purple-glow: rgba(222, 85, 38, 0.4);
+  --border-gray: rgba(255, 248, 240, 0.2);
+
+  /* Hard offset studio shadows */
+  --shadow-studio-sm: 2px 2px 0px #121212;
+  --shadow-studio-md: 4px 4px 0px #121212;
+  --shadow-studio-orange: 3px 3px 0px #de5526;
+  --shadow-studio-cream: 3px 3px 0px #fff8f0;
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.65);
+  --shadow-accent: 0 4px 14px rgba(222, 85, 38, 0.25);
+  --shadow-accent-lg: 0 8px 25px rgba(222, 85, 38, 0.4);
 
   /* ==========================================================================
-     6. SEMANTIC / STATUS COLORS
+     6. SEMANTIC / STATUS COLORS (Studio High Contrast)
      ========================================================================== */
-  /* Primary (Blue) */
-  --primary: #3b82f6;
-  --primary-glow: rgba(59, 130, 246, 0.35);
-  --primary-subtle: rgba(59, 130, 246, 0.12);
+  --primary: #de5526;
+  --primary-glow: rgba(222, 85, 38, 0.35);
+  --primary-subtle: rgba(222, 85, 38, 0.12);
 
-  /* Success (Green / Inflow / Verified) */
-  --color-success: #10b981;
-  --color-success-light: #34d399;
-  --color-success-dark: #059669;
-  --color-success-darker: #064e3b;
-  --color-success-bg: rgba(16, 185, 129, 0.12);
-  --color-success-bg-subtle: rgba(16, 185, 129, 0.06);
-  --color-success-border: rgba(16, 185, 129, 0.3);
-  --color-success-glow: rgba(16, 185, 129, 0.25);
+  /* Success / Inflow / Verified -> Clean Tsar Cream */
+  --color-success: #fff8f0;
+  --color-success-light: #ffffff;
+  --color-success-dark: #ede6de;
+  --color-success-darker: #202020;
+  --color-success-bg: rgba(255, 248, 240, 0.1);
+  --color-success-bg-subtle: rgba(255, 248, 240, 0.05);
+  --color-success-border: rgba(255, 248, 240, 0.35);
+  --color-success-glow: rgba(255, 248, 240, 0.25);
 
-  /* Danger (Red / Outflow / Error / Burn) */
-  --color-danger: #ef4444;
-  --color-danger-light: #fca5a5;
-  --color-danger-dark: #dc2626;
-  --color-danger-darker: #451a1a;
-  --color-danger-bg: rgba(239, 68, 68, 0.12);
-  --color-danger-bg-subtle: rgba(239, 68, 68, 0.06);
-  --color-danger-border: rgba(239, 68, 68, 0.3);
-  --color-danger-glow: rgba(239, 68, 68, 0.25);
+  /* Danger / Outflow / Error / Burn -> High Contrast Tsar Orange */
+  --color-danger: #de5526;
+  --color-danger-light: #ff7a45;
+  --color-danger-dark: #b03c13;
+  --color-danger-darker: #2b0c03;
+  --color-danger-bg: rgba(222, 85, 38, 0.16);
+  --color-danger-bg-subtle: rgba(222, 85, 38, 0.08);
+  --color-danger-border: rgba(222, 85, 38, 0.45);
+  --color-danger-glow: rgba(222, 85, 38, 0.3);
 
-  /* Warning (Amber / Yellow / Pending / Mining) */
-  --color-warning: #f59e0b;
-  --color-warning-light: #fbbf24;
-  --color-warning-dark: #d97706;
-  --color-warning-darker: #451a03;
-  --color-warning-bg: rgba(245, 158, 11, 0.12);
-  --color-warning-bg-subtle: rgba(245, 158, 11, 0.06);
-  --color-warning-border: rgba(245, 158, 11, 0.3);
-  --color-warning-glow: rgba(245, 158, 11, 0.25);
+  /* Warning / Pending / Mining -> Warm Amber-Orange */
+  --color-warning: #de5526;
+  --color-warning-light: #ff8c5a;
+  --color-warning-dark: #b03c13;
+  --color-warning-darker: #2b0c03;
+  --color-warning-bg: rgba(222, 85, 38, 0.14);
+  --color-warning-bg-subtle: rgba(222, 85, 38, 0.06);
+  --color-warning-border: rgba(222, 85, 38, 0.4);
+  --color-warning-glow: rgba(222, 85, 38, 0.25);
 
-  /* Info (Sky / Cyan / Network) */
-  --color-info: #38bdf8;
-  --color-info-light: #7dd3fc;
-  --color-info-dark: #0284c7;
-  --color-info-darker: #082f49;
-  --color-info-bg: rgba(56, 189, 248, 0.12);
-  --color-info-bg-subtle: rgba(56, 189, 248, 0.06);
-  --color-info-border: rgba(56, 189, 248, 0.3);
-  --color-info-glow: rgba(56, 189, 248, 0.25);
+  /* Info / Network / Metrics -> High Contrast Cream / Subtle Orange */
+  --color-info: #fff8f0;
+  --color-info-light: #ffffff;
+  --color-info-dark: #de5526;
+  --color-info-darker: #171717;
+  --color-info-bg: rgba(255, 248, 240, 0.08);
+  --color-info-bg-subtle: rgba(255, 248, 240, 0.04);
+  --color-info-border: rgba(255, 248, 240, 0.25);
+  --color-info-glow: rgba(255, 248, 240, 0.2);
 
-  /* Purple / Violet (Special Badges / Contracts) */
-  --color-purple: #a855f7;
-  --color-purple-light: #c084fc;
-  --color-purple-dark: #9333ea;
-  --color-purple-darker: #3b0764;
-  --color-purple-bg: rgba(168, 85, 247, 0.12);
-  --color-purple-bg-subtle: rgba(168, 85, 247, 0.06);
-  --color-purple-border: rgba(168, 85, 247, 0.3);
-  --color-purple-glow: rgba(168, 85, 247, 0.25);
+  /* Special / Contract Badges */
+  --color-purple: #de5526;
+  --color-purple-light: #ff7a45;
+  --color-purple-dark: #b03c13;
+  --color-purple-darker: #1c1c1c;
+  --color-purple-bg: rgba(222, 85, 38, 0.12);
+  --color-purple-bg-subtle: rgba(222, 85, 38, 0.06);
+  --color-purple-border: rgba(222, 85, 38, 0.35);
+  --color-purple-glow: rgba(222, 85, 38, 0.25);
 
-  /* Pink / Magenta */
-  --color-pink: #ec4899;
-  --color-pink-light: #f472b6;
-  --color-pink-dark: #db2777;
-  --color-pink-darker: #331526;
-  --color-pink-bg: rgba(236, 72, 153, 0.12);
-  --color-pink-bg-subtle: rgba(236, 72, 153, 0.06);
-  --color-pink-border: rgba(236, 72, 153, 0.3);
-  --color-pink-glow: rgba(236, 72, 153, 0.25);
+  --color-pink: #de5526;
+  --color-pink-light: #ff7a45;
+  --color-pink-dark: #b03c13;
+  --color-pink-darker: #1c1c1c;
+  --color-pink-bg: rgba(222, 85, 38, 0.12);
+  --color-pink-bg-subtle: rgba(222, 85, 38, 0.06);
+  --color-pink-border: rgba(222, 85, 38, 0.35);
+  --color-pink-glow: rgba(222, 85, 38, 0.25);
 
   /* ==========================================================================
-     7. SPECIALIZED BADGES & PROTOCOL LABELS
+     7. SPECIALIZED BADGES & PROTOCOL LABELS (Tsar Studio Style)
      ========================================================================== */
-  --badge-p2wsh-bg: linear-gradient(135deg, #6d1f76 0%, rgba(87, 18, 77, 0.78) 100%);
-  --badge-p2wpkh-bg: linear-gradient(135deg, #48721e 0%, rgba(61, 92, 33, 0.69) 100%);
-  --badge-burn-bg: linear-gradient(135deg, #6d1f76 0%, rgba(87, 18, 77, 0.78) 100%);
-  --badge-mint-bg: linear-gradient(135deg, #48721e 0%, rgba(61, 92, 33, 0.69) 100%);
-  --badge-reward-bg: linear-gradient(135deg, #a83232 0%, #8d2d2d 100%);
-  --badge-contract-bg: linear-gradient(135deg, #1b74ad 0%, rgba(21, 69, 115, 0.87) 100%);
-  --badge-genesis-bg: linear-gradient(135deg, #1b7a37 0%, rgba(17, 76, 34, 0.72) 100%);
-  --badge-graffiti-bg: linear-gradient(135deg, #b84a14 0%, rgba(126, 62, 24, 0.89) 100%);
-  --badge-neutral-bg: linear-gradient(135deg, rgba(77, 77, 77, 0.81), rgba(42, 42, 42, 0.77));
-  --badge-orange-bg: linear-gradient(145deg, rgba(249, 116, 22, 0.95), rgba(120, 53, 5, 0.86));
-  --badge-orange-border: rgba(198, 103, 34, 0.96);
-  --badge-orange-text: #ffbd83;
-  --badge-brown-bg: linear-gradient(145deg, rgba(92, 48, 16, 0.79), rgba(35, 21, 11, 0.68));
-  --badge-brown-border: rgba(153, 87, 39, 0.96);
-  --badge-brown-text: #ffdab9;
-  --badge-gray-solid: #979797;
-  --badge-gray-border: rgb(128, 121, 115);
-  --badge-shimmer: rgba(247, 247, 247, 0.55);
-  --gradient-silver: linear-gradient(45deg, #555555, #7e7e7e, #acacac, #d2d2d2, #acacac, #555555);
+  --badge-p2wsh-bg: #1c1c1c;
+  --badge-p2wpkh-bg: #171717;
+  --badge-burn-bg: #de5526;
+  --badge-mint-bg: #fff8f0;
+  --badge-reward-bg: #1c1c1c;
+  --badge-contract-bg: #1c1c1c;
+  --badge-genesis-bg: #de5526;
+  --badge-graffiti-bg: #de5526;
+  --badge-neutral-bg: #1c1c1c;
+  --badge-orange-bg: #de5526;
+  --badge-orange-border: #fff8f0;
+  --badge-orange-text: #fff8f0;
+  --badge-brown-bg: #1f1a18;
+  --badge-brown-border: rgba(222, 85, 38, 0.5);
+  --badge-brown-text: #fff8f0;
+  --badge-gray-solid: #2a2a2a;
+  --badge-gray-border: rgba(255, 248, 240, 0.2);
+  --badge-shimmer: rgba(255, 248, 240, 0.3);
+  --gradient-silver: linear-gradient(135deg, #1c1c1c 0%, #2a2a2a 50%, #1c1c1c 100%);
 
-  /* Gold & Genesis Theme Tokens */
-  --gold-primary: #FFD700;
-  --gold-light: #FFF8DC;
-  --gold-border: rgba(212, 175, 55, 0.9);
-  --gold-border-glow: rgba(235, 207, 21, 0.8);
-  --gold-bg: rgba(255, 215, 0, 0.2);
-  --gold-bg-dark: #201804;
-  --gold-glow: rgba(255, 215, 0, 0.8);
-  --gold-glow-subtle: rgba(212, 175, 55, 0.35);
-  --gold-gradient: linear-gradient(135deg, rgba(255, 217, 0, 0.21) 0%, rgba(218, 165, 32, 0.23) 30%, rgba(184, 135, 11, 0.25) 100%);
-  --gold-active-gradient: linear-gradient(135deg, rgba(188, 138, 11, 0.77) 0%, rgba(23, 22, 18, 0.41) 100%);
-  --gold-shadow: 0 0 0 2px rgba(212, 175, 55, 0.4), 0 12px 32px rgba(212, 175, 55, 0.3);
+  /* Genesis & Gold Tokens -> Tsar Studio Orange & Cream */
+  --gold-primary: #de5526;
+  --gold-light: #fff8f0;
+  --gold-border: #de5526;
+  --gold-border-glow: rgba(222, 85, 38, 0.6);
+  --gold-bg: rgba(222, 85, 38, 0.15);
+  --gold-bg-dark: #181210;
+  --gold-glow: rgba(222, 85, 38, 0.5);
+  --gold-glow-subtle: rgba(222, 85, 38, 0.3);
+  --gold-gradient: linear-gradient(135deg, rgba(222, 85, 38, 0.25) 0%, rgba(18, 18, 18, 0.8) 100%);
+  --gold-active-gradient: linear-gradient(135deg, #de5526 0%, #121212 100%);
+  --gold-shadow: 2px 2px 0px #121212;
 
   /* Terminal Window Tokens */
-  --terminal-dot-red: #ff5f56;
-  --terminal-dot-yellow: #ffbd2e;
-  --terminal-dot-green: #27c93f;
+  --terminal-dot-red: #de5526;
+  --terminal-dot-yellow: #fff8f0;
+  --terminal-dot-green: #fff8f0;
 
   /* Card Selected States */
-  --card-selected-bg: linear-gradient(135deg, #08121d 0%, #000000 100%);
-  --card-selected-border: rgba(37, 99, 235, 0.8);
-  --card-selected-glow: 0 0 0 1px rgba(59, 131, 246, 0.78), 0 8px 24px rgba(25, 94, 205, 0.72);
-  --card-orange-selected-bg: linear-gradient(135deg, rgba(108, 57, 25, 0.66) 0%, #000000 70%);
-  --card-orange-selected-glow: 0 0 0 1px rgba(246, 165, 59, 0.86), 0 8px 24px rgba(209, 109, 21, 0.8);
+  --card-selected-bg: #1c1c1c;
+  --card-selected-border: #de5526;
+  --card-selected-glow: 0 0 0 1px #de5526, 3px 3px 0px #121212;
+  --card-orange-selected-bg: #1f1714;
+  --card-orange-selected-glow: 0 0 0 1px #de5526, 3px 3px 0px #121212;
 
   /* ==========================================================================
-     8. SHADOWS & SCROLLBAR
+     8. SCROLLBAR
      ========================================================================== */
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
-  --shadow-accent: 0 4px 14px rgba(224, 95, 50, 0.25);
-  --shadow-accent-lg: 0 8px 25px rgba(224, 95, 50, 0.4);
-  --scrollbar-track: rgba(11, 12, 16, 0.8);
-  --scrollbar-thumb: rgba(224, 95, 50, 0.3);
-  --scrollbar-thumb-hover: rgba(224, 95, 50, 0.6);
+  --scrollbar-track: #121212;
+  --scrollbar-thumb: #fff8f0;
+  --scrollbar-thumb-hover: #de5526;
 
   /* ==========================================================================
-     9. FONTS & WEIGHTS
+     9. FONTS & TYPOGRAPHY
      ========================================================================== */
-  --font-primary: 'Inter', system-ui, -apple-system, BlinkMacSystemFont;
+  --font-newspaper: 'Newspaper', sans-serif;
+  --font-monserat: 'Montserrat', sans-serif;
+
   --fw-light: 300;
   --fw-normal: 400;
   --fw-medium: 500;
@@ -271,35 +284,70 @@
   --fw-bold: 700;
 }
 
+/* ==========================================================================
+   FONT-FACE DECLARATIONS
+   ========================================================================== */
 @font-face {
-  font-family: 'Inter';
-  src: url('./assets/fonts/Inter-Regular.woff2') format('woff2');
+  font-family: 'Newspaper';
+  src: url('./assets/fonts/newspaper.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
   font-display: swap;
 }
 
+@font-face {
+  font-family: 'Montserrat';
+  src: url('./assets/fonts/montserrat.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ==========================================================================
+   BASE & RESET
+   ========================================================================== */
 * {
   padding: 0;
   margin: 0;
   box-sizing: border-box;
-  font-family: inherit;
-  font-weight: inherit;
 }
 
 html {
   color-scheme: dark;
   scroll-behavior: smooth;
+  background-color: var(--color-tsar-black);
+  min-height: 100%;
+  min-height: 100dvh;
 }
 
 body {
+  min-height: 100%;
   min-height: 100vh;
-  background: var(--bg-gradient);
+  min-height: 100dvh;
+  background-color: var(--color-tsar-black);
+  background-image: var(--bg-gradient);
   background-attachment: fixed;
-  color: var(--text);
-  font-family: var(--font-primary);
+  color: var(--color-tsar-cream);
+  font-family: var(--font-monserat);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;
   font-size: 14px;
+  overflow-x: hidden;
+  position: relative;
+  width: 100%;
+}
+
+::selection {
+  background-color: var(--color-tsar-orange);
+  color: var(--color-tsar-cream);
+}
+
+/* Headings default font */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-newspaper);
+  letter-spacing: -0.01em;
+  font-weight: normal;
 }
 
 a {
@@ -308,29 +356,67 @@ a {
   transition: color 0.2s ease;
 }
 
-/* Custom Web3 Scrollbar */
+/* ==========================================================================
+   SUBTLE FILM GRAIN NOISE OVERLAY (Tsar Studio Signature)
+   Full-Coverage Across All Devices (Mobile, Tablet, Desktop, Retina)
+   ========================================================================== */
+.grain-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 100vw;
+  min-height: 100vh;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.08;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 600 600' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 180px 180px;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  will-change: transform;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ==========================================================================
+   CUSTOM STUDIO SCROLLBAR
+   ========================================================================== */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
+  background: var(--color-tsar-black);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  border-radius: 4px;
+  background: var(--color-tsar-cream);
+  border-radius: 0px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover);
+  background: var(--color-tsar-orange);
 }
 
 .app {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  position: relative;
+  background-color: var(--color-tsar-black);
+}
+
+.app-main {
+  flex: 1;
+  position: relative;
+  z-index: 1;
 }
 
 @media (max-width: 768px) {

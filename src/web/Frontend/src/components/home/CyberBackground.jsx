@@ -112,11 +112,15 @@ const CyberBackground = () => {
     if (!ctx) return;
 
     let animationFrameId;
+    let isPaused = false;
     let width = (canvas.width = globalThis.innerWidth);
     let height = (canvas.height = globalThis.innerHeight);
 
+    // Respect reduced motion preference
+    const prefersReducedMotion = globalThis.matchMedia && globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
     // Particles configuration
-    const particleCount = Math.min(Math.floor((width * height) / 18000), 75);
+    const particleCount = prefersReducedMotion ? 0 : Math.min(Math.floor((width * height) / 18000), 70);
     const particles = [];
 
     for (let i = 0; i < particleCount; i++) {
@@ -137,6 +141,10 @@ const CyberBackground = () => {
       if (!canvas) return;
       width = canvas.width = globalThis.innerWidth;
       height = canvas.height = globalThis.innerHeight;
+      if (prefersReducedMotion) {
+        ctx.clearRect(0, 0, width, height);
+        drawCyberGrid(ctx, width, height);
+      }
     };
 
     const handleMouseMove = (e) => {
@@ -152,42 +160,69 @@ const CyberBackground = () => {
       mouseRef.current = { x: -1000, y: -1000, active: false };
     };
 
+    // Pause rendering loop when tab is in background to save CPU and battery
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        isPaused = true;
+        if (animationFrameId) {
+          cancelAnimationFrame(animationFrameId);
+        }
+      } else {
+        isPaused = false;
+        if (!prefersReducedMotion) {
+          animationFrameId = requestAnimationFrame(render);
+        }
+      }
+    };
+
     globalThis.addEventListener("resize", handleResize);
     globalThis.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseleave", handleMouseLeave);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     let scanlineY = 0;
 
     const render = () => {
+      if (isPaused) return;
+
       ctx.clearRect(0, 0, width, height);
 
       // 1. Subtle Cyber Grid
       drawCyberGrid(ctx, width, height);
 
-      // 2. Faint Scanning Light Beam
-      scanlineY += 0.8;
-      if (scanlineY > height + 100) {
-        scanlineY = -100;
+      if (!prefersReducedMotion) {
+        // 2. Faint Scanning Light Beam
+        scanlineY += 0.8;
+        if (scanlineY > height + 100) {
+          scanlineY = -100;
+        }
+        drawScanBeam(ctx, width, scanlineY);
+
+        // 3. Connective Constellation Lines
+        drawConstellationLines(ctx, particles);
+
+        // 4. Update & Render Particles
+        updateAndDrawParticles(ctx, particles, width, height, mouseRef.current);
+
+        ctx.globalAlpha = 1;
+        animationFrameId = requestAnimationFrame(render);
       }
-      drawScanBeam(ctx, width, scanlineY);
-
-      // 3. Connective Constellation Lines
-      drawConstellationLines(ctx, particles);
-
-      // 4. Update & Render Particles
-      updateAndDrawParticles(ctx, particles, width, height, mouseRef.current);
-
-      ctx.globalAlpha = 1;
-      animationFrameId = requestAnimationFrame(render);
     };
 
-    render();
+    if (prefersReducedMotion) {
+      drawCyberGrid(ctx, width, height);
+    } else {
+      render();
+    }
 
     return () => {
-      cancelAnimationFrame(animationFrameId);
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
       globalThis.removeEventListener("resize", handleResize);
       globalThis.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseleave", handleMouseLeave);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 
@@ -203,6 +238,7 @@ const CyberBackground = () => {
         pointerEvents: "none",
         zIndex: 0,
       }}
+      aria-hidden="true"
     />
   );
 };

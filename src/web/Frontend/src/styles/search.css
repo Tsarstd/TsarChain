@@ -45,18 +45,18 @@
 
 .clickable-link {
   cursor: pointer;
-  color: var(--color-info) !important;
+  color: #e07a52 !important;
   transition: color 0.15s ease, opacity 0.15s ease;
   text-decoration: none;
 }
 
 .clickable-link:hover {
-  color: var(--color-info-light) !important;
+  color: #ff8c5a !important;
   text-decoration: underline;
 }
 
 .clickable-link:active {
-  color: var(--color-info-dark) !important;
+  color: #de5526 !important;
 }
 
 .btn-ghost {
@@ -440,6 +440,11 @@
 }
 
 @media (max-width: 768px) {
+  .search-overlay {
+    top: 64px;
+    padding: 12px 10px 24px;
+  }
+
   .hash-multiline {
     font-size: 0.8em;
     line-height: 1.3;
@@ -469,7 +474,7 @@
   }
 
   .search-overlay {
-    top: 56px;
+    top: 64px;
     padding: 8px;
   }
   
@@ -503,7 +508,7 @@
   }
 
   .search-overlay {
-    top: 52px;
+    top: 64px;
     padding: 6px;
   }
   
@@ -1098,12 +1103,12 @@
   flex-shrink: 0;
 }
 
-.metric-icon-wrap.time { background: var(--bg-tint-info); color: var(--color-info); }
-.metric-icon-wrap.size { background: var(--bg-tint-purple); color: var(--color-purple-light); }
-.metric-icon-wrap.diff { background: var(--bg-tint-danger); color: var(--color-danger-light); }
-.metric-icon-wrap.nonce { background: var(--bg-tint-warning); color: var(--color-warning-light); }
-.metric-icon-wrap.version { background: var(--bg-tint-success); color: var(--color-success-light); }
-.metric-icon-wrap.chainwork { background: var(--color-pink-darker); color: var(--color-pink-light); }
+.metric-icon-wrap.time { background: var(--bg-tint-success); color: var(--color-warning-light); }
+.metric-icon-wrap.size { background: var(--bg-tint-success); color: var(--color-warning-light); }
+.metric-icon-wrap.diff { background: var(--bg-tint-success); color: var(--color-warning-light); }
+.metric-icon-wrap.nonce { background: var(--bg-tint-success); color: var(--color-warning-light); }
+.metric-icon-wrap.version { background: var(--bg-tint-success); color: var(--color-warning-light); }
+.metric-icon-wrap.chainwork { background: var(--bg-tint-success); color: var(--color-warning-light); }
 
 .metric-info {
   display: flex;

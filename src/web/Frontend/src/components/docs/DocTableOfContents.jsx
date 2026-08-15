@@ -1,38 +1,55 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import PropTypes from "prop-types";
 import { RiListCheck2, RiArrowUpLine } from "react-icons/ri";
 
 const DocTableOfContents = ({ items = [] }) => {
   const [activeId, setActiveId] = useState("");
 
+  const handleScrollSpy = useCallback(() => {
+    if (!items || items.length === 0) return;
+
+    const scrollY = globalThis.scrollY || document.documentElement.scrollTop;
+    const headerOffset = 140;
+
+    // Check if bottom of page is reached
+    if (globalThis.innerHeight + scrollY >= document.documentElement.scrollHeight - 50) {
+      if (items.length > 0) {
+        setActiveId(items[items.length - 1].id);
+        return;
+      }
+    }
+
+    // Find the section currently in viewport
+    let currentId = items[0]?.id || "";
+    for (const item of items) {
+      const el = document.getElementById(item.id);
+      if (el) {
+        const top = el.getBoundingClientRect().top + scrollY;
+        if (scrollY >= top - headerOffset) {
+          currentId = item.id;
+        }
+      }
+    }
+
+    if (currentId) {
+      setActiveId(currentId);
+    }
+  }, [items]);
+
   useEffect(() => {
     if (!items || items.length === 0) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.find((e) => e.isIntersecting);
-        if (visible) {
-          setActiveId(visible.target.id);
-        }
-      },
-      {
-        rootMargin: "-80px 0% -60% 0%",
-        threshold: 0.1,
-      }
-    );
-
-    items.forEach((item) => {
-      const el = document.getElementById(item.id);
-      if (el) observer.observe(el);
-    });
-
-    return () => observer.disconnect();
-  }, [items]);
+    handleScrollSpy();
+    globalThis.addEventListener("scroll", handleScrollSpy, { passive: true });
+    return () => {
+      globalThis.removeEventListener("scroll", handleScrollSpy);
+    };
+  }, [items, handleScrollSpy]);
 
   const scrollToSection = (id) => {
     const el = document.getElementById(id);
     if (el) {
-      const offset = 80;
+      const offset = 90;
       const bodyRect = document.body.getBoundingClientRect().top;
       const elementRect = el.getBoundingClientRect().top;
       const elementPosition = elementRect - bodyRect;
@@ -68,6 +85,7 @@ const DocTableOfContents = ({ items = [] }) => {
                 type="button"
                 className={`doc-toc-link ${isActive ? "active" : ""}`}
                 onClick={() => scrollToSection(item.id)}
+                aria-current={isActive ? "true" : undefined}
               >
                 {item.label}
               </button>
@@ -77,7 +95,12 @@ const DocTableOfContents = ({ items = [] }) => {
       </ul>
 
       <div className="doc-toc-footer">
-        <button type="button" className="doc-toc-back-to-top" onClick={scrollToTop}>
+        <button 
+          type="button" 
+          className="doc-toc-back-to-top" 
+          onClick={scrollToTop}
+          aria-label="Scroll back to top of document"
+        >
           <RiArrowUpLine size={15} />
           <span>Back to Top</span>
         </button>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import PropTypes from "prop-types";
 import { 
   RiInformationLine, 
@@ -17,10 +17,78 @@ import {
 import CollapsibleJson from "./CollapsibleJson";
 
 const ALERT_ICONS = {
-  important: <RiAlertLine size={20} color="#e05f32" />,
+  important: <RiAlertLine size={20} color="var(--color-tsar-orange)" />,
   warning: <RiAlertLine size={20} color="#f59e0b" />,
-  note: <RiInformationLine size={20} color="#38bdf8" />,
+  note: <RiInformationLine size={20} color="var(--color-tsar-cream)" />,
   tip: <RiCheckLine size={20} color="#22c55e" />,
+};
+
+// Lightweight Syntax Highlighter Tokenizer
+const highlightCodeSyntax = (codeStr, lang = "text") => {
+  if (!codeStr || typeof codeStr !== "string") return codeStr;
+
+  const lines = codeStr.split("\n");
+  return lines.map((line, lineIdx) => {
+    // 1. Comment line (starts with // or #)
+    if (/^\s*(\/\/|#)/.test(line)) {
+      return (
+        <span key={`line-${lineIdx}`} className="syn-line">
+          <span className="syn-comment">{line}</span>
+          {"\n"}
+        </span>
+      );
+    }
+
+    // 2. CLI Prompt line ($ command)
+    if (/^\s*\$\s+/.test(line)) {
+      const parts = line.split(/^\s*\$\s+/);
+      return (
+        <span key={`line-${lineIdx}`} className="syn-line">
+          <span className="syn-prompt">$ </span>
+          <span className="syn-command">{parts[1]}</span>
+          {"\n"}
+        </span>
+      );
+    }
+
+    // 3. Tokenize strings, numbers, keywords
+    const tokens = [];
+    let remaining = line;
+    let keyIdx = 0;
+
+    const regex = /(".*?"|'.*?'|\b(fn|let|pub|struct|impl|const|return|async|await|match|enum|mut|type|self|Self|true|false|null|import|from|def|class|cargo|python|node|tsarchain|kremlin|archivist)\b|--?[a-zA-Z0-9_-]+|\b\d+\b)/g;
+    let match;
+    let lastIndex = 0;
+
+    while ((match = regex.exec(line)) !== null) {
+      if (match.index > lastIndex) {
+        tokens.push(line.substring(lastIndex, match.index));
+      }
+
+      const matchStr = match[0];
+      if (matchStr.startsWith('"') || matchStr.startsWith("'")) {
+        tokens.push(<span key={`tok-${lineIdx}-${keyIdx++}`} className="syn-string">{matchStr}</span>);
+      } else if (matchStr.startsWith("-")) {
+        tokens.push(<span key={`tok-${lineIdx}-${keyIdx++}`} className="syn-flag">{matchStr}</span>);
+      } else if (/^\d+$/.test(matchStr)) {
+        tokens.push(<span key={`tok-${lineIdx}-${keyIdx++}`} className="syn-number">{matchStr}</span>);
+      } else {
+        tokens.push(<span key={`tok-${lineIdx}-${keyIdx++}`} className="syn-keyword">{matchStr}</span>);
+      }
+      lastIndex = regex.lastIndex;
+    }
+
+    if (lastIndex < line.length) {
+      tokens.push(line.substring(lastIndex));
+    }
+
+    return (
+      <span key={`line-${lineIdx}`} className="syn-line">
+        {tokens.length > 0 ? tokens : line}
+        {"\n"}
+      </span>
+    );
+  });
 };
 
 // Format inline markdown (code, bold, italic)
@@ -99,6 +167,8 @@ const TerminalWindow = ({ title = "CLI Output", status = "Completed", output }) 
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const renderedSyntax = useMemo(() => highlightCodeSyntax(output, "terminal"), [output]);
+
   return (
     <div className="doc-terminal-window">
       <div className="doc-terminal-titlebar">
@@ -118,6 +188,7 @@ const TerminalWindow = ({ title = "CLI Output", status = "Completed", output }) 
             className="doc-btn-copy doc-btn-copy--terminal" 
             onClick={handleCopy}
             title="Copy terminal output"
+            aria-label="Copy terminal output"
           >
             {copied ? <RiCheckLine size={13} color="#22c55e" /> : <RiFileCopyLine size={13} />}
             <span>{copied ? "Copied!" : "Copy"}</span>
@@ -126,7 +197,7 @@ const TerminalWindow = ({ title = "CLI Output", status = "Completed", output }) 
       </div>
       <div className="doc-terminal-body">
         <pre className="doc-terminal-pre">
-          <code>{output}</code>
+          <code>{renderedSyntax}</code>
         </pre>
       </div>
     </div>
@@ -156,7 +227,7 @@ const CommandCard = ({ command, title = "Command", comment }) => {
           <span className="doc-command-prompt">$</span>
           <span className="doc-command-title">{title}</span>
         </div>
-        <button type="button" className="doc-btn-copy" onClick={handleCopy}>
+        <button type="button" className="doc-btn-copy" onClick={handleCopy} aria-label="Copy command">
           {copied ? <RiCheckLine size={14} color="#22c55e" /> : <RiFileCopyLine size={14} />}
           <span>{copied ? "Copied!" : "Copy"}</span>
         </button>
@@ -178,7 +249,7 @@ CommandCard.propTypes = {
   comment: PropTypes.string,
 };
 
-// Code Snippet Box
+// Code Snippet Box with Syntax Highlights
 const CodeSnippet = ({ code, lang = "bash", title }) => {
   const [copied, setCopied] = useState(false);
 
@@ -188,6 +259,8 @@ const CodeSnippet = ({ code, lang = "bash", title }) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const renderedSyntax = useMemo(() => highlightCodeSyntax(code, lang), [code, lang]);
+
   return (
     <div className="doc-code-snippet-wrap">
       <div className="doc-code-header">
@@ -195,13 +268,13 @@ const CodeSnippet = ({ code, lang = "bash", title }) => {
           <RiTerminalBoxLine size={15} />
           <span>{title || lang.toUpperCase()}</span>
         </div>
-        <button type="button" className="doc-btn-copy" onClick={handleCopy}>
+        <button type="button" className="doc-btn-copy" onClick={handleCopy} aria-label="Copy code snippet">
           {copied ? <RiCheckLine size={14} color="#22c55e" /> : <RiFileCopyLine size={14} />}
           <span>{copied ? "Copied!" : "Copy"}</span>
         </button>
       </div>
       <pre className="doc-code-block">
-        <code>{code}</code>
+        <code>{renderedSyntax}</code>
       </pre>
     </div>
   );
@@ -226,6 +299,10 @@ const CodeTabs = ({ tabs = [] }) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const renderedSyntax = useMemo(() => {
+    return activeTab ? highlightCodeSyntax(activeTab.code, activeTab.lang || "text") : null;
+  }, [activeTab]);
+
   return (
     <div className="doc-code-tabs-wrap">
       <div className="doc-tabs-nav-row">
@@ -236,18 +313,19 @@ const CodeTabs = ({ tabs = [] }) => {
               type="button"
               className={`doc-tab-pill ${idx === activeTabIdx ? "active" : ""}`}
               onClick={() => setActiveTabIdx(idx)}
+              aria-label={`Switch to tab ${tab.label}`}
             >
               {tab.label}
             </button>
           ))}
         </div>
-        <button type="button" className="doc-btn-copy" onClick={handleCopy}>
+        <button type="button" className="doc-btn-copy" onClick={handleCopy} aria-label="Copy active tab code">
           {copied ? <RiCheckLine size={14} color="#22c55e" /> : <RiFileCopyLine size={14} />}
           <span>{copied ? "Copied!" : "Copy"}</span>
         </button>
       </div>
       <pre className="doc-code-block">
-        <code>{activeTab?.code}</code>
+        <code>{renderedSyntax}</code>
       </pre>
     </div>
   );
@@ -435,6 +513,7 @@ const DocContentRenderer = ({ docData, activeLang }) => {
               rel="noopener noreferrer" 
               className="doc-diagram-ext-btn"
               title="Open full diagram in new tab"
+              aria-label="Open full SVG diagram in new window"
             >
               <RiExternalLinkLine size={16} />
               <span>View Full SVG</span>
@@ -619,6 +698,7 @@ const DocContentRenderer = ({ docData, activeLang }) => {
                 className="doc-collapsible-tree-header" 
                 onClick={() => setTreeOpen((prev) => !prev)}
                 aria-expanded={treeOpen}
+                aria-label="Toggle file tree visualization"
               >
                 <div className="doc-collapsible-tree-title">
                   <RiFolderLine size={18} color="var(--accent)" />
@@ -662,6 +742,7 @@ const DocContentRenderer = ({ docData, activeLang }) => {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="doc-link-card"
+                  aria-label={`Open reference link ${link.title}`}
                 >
                   <div className="doc-link-card-header">
                     <span className="doc-link-title">{link.title}</span>

@@ -1,24 +1,25 @@
 /* ==========================================================================
-   ADDRESS ANALYTICS & GRAFFITI BREAKDOWN STYLES
+   TSAR STUDIO - ADDRESS ANALYTICS & GRAFFITI BREAKDOWN STYLES
    ========================================================================== */
 
 .address-analytics-card {
   margin: 1.5rem 0;
-  padding: 1.5rem;
-  background: var(--bg-card-slate);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  backdrop-filter: blur(16px);
-  box-shadow: var(--shadow-md);
-  transition: all 0.3s ease;
+  padding: 1.8rem;
+  background: #181818;
+  border: 1px solid rgba(255, 248, 240, 0.15);
+  border-radius: 4px;
+  box-shadow: 3px 3px 0px var(--color-tsar-black);
+  transition: all 0.2s ease;
 }
 
 .analytics-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border);
+  padding-bottom: 1.2rem;
+  border-bottom: 1px solid rgba(255, 248, 240, 0.12);
+  flex-wrap: wrap;
+  gap: 16px;
 }
 
 .analytics-title-group {
@@ -28,21 +29,23 @@
 }
 
 .analytics-icon {
-  font-size: 1.6rem;
-  color: var(--color-info);
-  filter: drop-shadow(0 0 8px var(--color-info-glow));
+  font-size: 1.5rem;
+  color: var(--color-tsar-orange);
 }
 
 .analytics-title-group h4 {
   margin: 0;
-  font-size: 1.15rem;
-  font-weight: var(--fw-bold);
-  color: var(--text-secondary);
+  font-family: var(--font-newspaper);
+  font-size: 1.3rem;
+  text-transform: uppercase;
+  color: var(--color-tsar-cream);
+  letter-spacing: 0.04em;
 }
 
 .analytics-subtitle {
-  font-size: 0.8rem;
-  color: var(--text-dim);
+  font-family: var(--font-monserat);
+  font-size: 0.82rem;
+  color: rgba(255, 248, 240, 0.6);
 }
 
 .persona-badges-group {
@@ -56,13 +59,14 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
-  border-radius: 20px;
+  padding: 4px 10px;
+  border-radius: 2px;
   border: 1px solid;
+  font-family: var(--font-newspaper);
   font-size: 0.8rem;
-  font-weight: var(--fw-bold);
-  background: var(--bg-input-focus);
-  box-shadow: var(--shadow-sm);
+  text-transform: uppercase;
+  background: #141414;
+  box-shadow: 1px 1px 0px var(--color-tsar-black);
 }
 
 .persona-icon {
@@ -73,32 +77,34 @@
 /* 2-COLUMN PIE CHARTS LAYOUT */
 .analytics-charts-wrapper {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 16px;
   margin-top: 1.25rem;
 }
 
 .pie-chart-card {
-  background: var(--bg-card-slate-alt);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 1rem 1.2rem;
+  background: #1e1e1e;
+  border: 1px solid rgba(255, 248, 240, 0.12);
+  border-radius: 4px;
+  padding: 1.2rem;
   display: flex;
   flex-direction: column;
-  transition: all 0.25s ease;
+  transition: all 0.2s ease;
 }
 
 .pie-chart-card:hover {
-  border-color: var(--border-strong);
-  background: var(--bg-card-slate-hover);
+  border-color: var(--color-tsar-orange);
+  box-shadow: 2px 2px 0px var(--color-tsar-black);
 }
 
 .pie-chart-title {
   margin: 0 0 1rem 0;
-  font-size: 0.9rem;
-  font-weight: var(--fw-bold);
-  color: var(--text-slate-light);
-  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-newspaper);
+  font-size: 1.05rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-tsar-cream);
+  border-bottom: 1px solid rgba(255, 248, 240, 0.1);
   padding-bottom: 0.5rem;
 }
 
@@ -124,65 +130,68 @@
 
 .pie-slice-group:hover .pie-slice-path {
   opacity: 0.9;
-  filter: drop-shadow(0 0 6px var(--border-strong));
+  filter: drop-shadow(0 0 6px rgba(255, 248, 240, 0.3));
 }
 
 .pie-slice-text {
   pointer-events: none;
-  text-shadow: 0 1px 3px var(--bg-overlay);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 
+/* LEGEND BOX */
 .pie-legend-box {
   flex: 1;
   min-width: 160px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
+  background: #141414;
+  border: 1px solid rgba(255, 248, 240, 0.12);
+  border-radius: 4px;
+  padding: 12px 14px;
 }
 
 .pie-legend-header {
-  font-size: 0.72rem;
-  font-weight: var(--fw-bold);
+  font-family: var(--font-newspaper);
+  font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-dim);
+  color: rgba(255, 248, 240, 0.6);
   margin-bottom: 8px;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid rgba(255, 248, 240, 0.1);
   padding-bottom: 4px;
 }
 
 .pie-legend-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .pie-legend-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
 }
 
 .legend-color-badge {
   width: 12px;
   height: 12px;
-  border-radius: 3px;
+  border-radius: 2px;
   flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.3);
 }
 
 .legend-label {
-  color: var(--text-slate-body);
+  color: var(--color-tsar-cream);
+  font-family: var(--font-monserat);
   font-weight: var(--fw-medium);
   flex: 1;
   white-space: nowrap;
 }
 
 .legend-value {
-  color: var(--text-dim);
+  color: rgba(255, 248, 240, 0.65);
   font-family: monospace;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   white-space: nowrap;
 }
 
@@ -190,35 +199,35 @@
 .pie-totals-section {
   margin-top: 10px;
   padding-top: 8px;
-  border-top: 1px dashed var(--border-medium);
+  border-top: 1px dashed rgba(255, 248, 240, 0.15);
 }
 
 .pie-totals-header {
-  font-size: 0.72rem;
-  font-weight: var(--fw-bold);
+  font-family: var(--font-newspaper);
+  font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-dim);
+  color: rgba(255, 248, 240, 0.6);
   margin-bottom: 6px;
 }
 
 .pie-totals-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .pie-totals-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
 }
 
 .totals-amount {
-  color: var(--text-secondary);
+  color: var(--color-tsar-cream);
   font-family: monospace;
   font-weight: var(--fw-bold);
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   white-space: nowrap;
 }
