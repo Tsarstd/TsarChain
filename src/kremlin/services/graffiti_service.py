@@ -163,7 +163,7 @@ def _infer_cache_mime(path: str) -> str:
 def _find_cached_graffiti_path(art_id: str, cache_root: str) -> Optional[str]:
     if not cache_root or not os.path.isdir(cache_root):
         return None
-    for ext in (".jpg", ".jpeg", ".mp4", ".bin"):
+    for ext in (".pdf", ".jpg", ".jpeg", ".mp4", ".mkv", ".bin"):
         candidate = os.path.join(cache_root, f"{art_id}{ext}")
         if os.path.isfile(candidate):
             return candidate

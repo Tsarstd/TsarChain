@@ -75,11 +75,16 @@ const resolveCachePath = (cachePath) => {
 const inferMediaType = (meta, filePath) => {
   const mime = meta?.mime || meta?.mime_type;
   if (mime) {
-    if (String(mime).includes("video")) return "video/mp4";
-    if (String(mime).includes("image")) return "image/jpeg";
+    const mimeStr = String(mime).toLowerCase();
+    if (mimeStr.includes("pdf")) return "application/pdf";
+    if (mimeStr.includes("video/mp4") || mimeStr.includes("mp4")) return "video/mp4";
+    if (mimeStr.includes("video/x-matroska") || mimeStr.includes("mkv")) return "video/x-matroska";
+    if (mimeStr.includes("image/jpeg") || mimeStr.includes("image")) return "image/jpeg";
   }
   const ext = path.extname(filePath || "").toLowerCase();
+  if (ext === ".pdf") return "application/pdf";
   if (ext === ".mp4") return "video/mp4";
+  if (ext === ".mkv") return "video/x-matroska";
   if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
   return "application/octet-stream";
 };
@@ -90,7 +95,7 @@ const findCachedFile = async (artId) => {
   } catch {
     return null;
   }
-  for (const ext of [".jpg", ".jpeg", ".mp4", ".bin"]) {
+  for (const ext of [".pdf", ".jpg", ".jpeg", ".mp4", ".mkv", ".bin"]) {
     const candidate = path.join(cacheDir, `${artId}${ext}`);
     try {
       await fsPromises.access(candidate);
@@ -368,17 +373,17 @@ router.get("/graffiti/:artId/media", graffitiMediaLimiter, async (req, res, next
       return res.status(400).json({ error: "invalid_art_id" });
     }
 
+    const metaResp = await svc.getGraffitiMediaMeta(artId);
+    const meta = metaResp?.status === "ok" ? (metaResp.meta || {}) : null;
+
     const filePath = await findCachedFile(artId);
-    if (filePath && (await serveLocalFile(req, res, next, filePath))) {
+    if (filePath && (await serveLocalFile(req, res, next, filePath, meta))) {
       return;
     }
 
-    const metaResp = await svc.getGraffitiMediaMeta(artId);
-    if (metaResp?.status !== "ok") {
+    if (!meta || metaResp?.status !== "ok") {
       return res.status(404).json({ error: "media_not_found" });
     }
-
-    const meta = metaResp.meta || {};
     const totalSize = Number(meta.size_bytes || meta.size || metaResp.size_bytes || 0);
 
     // Smart Caching: file size <= 10MB -> Full download to disk cache

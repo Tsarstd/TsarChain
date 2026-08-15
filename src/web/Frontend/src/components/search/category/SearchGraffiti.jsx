@@ -11,7 +11,6 @@ import {
   FaSync, 
   FaComments,
   FaCommentDots,
-  FaUserCircle,
   FaCoins,
   FaClock,
   FaChevronDown,
@@ -26,6 +25,7 @@ import {
   fmtHash,
   fmtTxid
 } from "../../../utils/format";
+import { saveAs } from "file-saver";
 
 // Lazy-load PDF viewer to reduce initial bundle size by ~450KB
 const SmartPdfViewer = lazy(() => import("./SmartPdfViewer"));
@@ -177,15 +177,62 @@ ImageZoomViewer.propTypes = {
   alt: PropTypes.string,
 };
 
+const getMediaFilename = (item) => {
+  if (item?.filename) return item.filename;
+  const mime = String(item?.mime || "").toLowerCase();
+  let ext = "";
+  if (mime.includes("pdf") || item?.file_type?.toLowerCase() === "pdf") {
+    ext = ".pdf";
+  } else if (mime.includes("video/mp4") || mime.includes("mp4")) {
+    ext = ".mp4";
+  } else if (mime.includes("video/x-matroska") || mime.includes("mkv")) {
+    ext = ".mkv";
+  } else if (mime.includes("image/jpeg") || mime.includes("image") || mime.includes("jpg") || mime.includes("jpeg")) {
+    ext = ".jpg";
+  } else if (item?.preview_url && /\.(jpg|jpeg|mp4|mkv|pdf)$/i.test(item.preview_url)) {
+    const match = item.preview_url.match(/\.(jpg|jpeg|mp4|mkv|pdf)$/i);
+    if (match) ext = `.${match[1].toLowerCase()}`;
+  }
+  return `${item?.art_id || "graffiti_media"}${ext}`;
+};
+
 const ResultGraffiti = ({ data, onSearchClick }) => {
   const mime = String(data?.mime || "").toLowerCase();
-  const isVideo = mime.includes("video") || mime.includes("mp4");
-  const isPdf = mime.includes("pdf") || data?.preview_url?.toLowerCase().endsWith('.pdf');
+  const isVideo = mime.includes("video") || mime.includes("mp4") || mime.includes("mkv");
+  const isPdf =
+    mime.includes("pdf") ||
+    data?.file_type?.toLowerCase() === "pdf" ||
+    data?.preview_url?.toLowerCase().endsWith(".pdf") ||
+    data?.filename?.toLowerCase().endsWith(".pdf");
   const { renderHash, renderClickableHash } = useRenderHelpers();
   const [showDetails, setShowDetails] = useState(false);
   const [showAllComments, setShowAllComments] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const targetMediaUrl = data?.preview_url || (data?.art_id ? graffitiMediaUrl(data.art_id) : null);
+
+  const handleDownloadMedia = async () => {
+    const downloadUrl = targetMediaUrl || (data?.art_id ? graffitiMediaUrl(data.art_id) : null);
+    if (!downloadUrl) return;
+    const filename = getMediaFilename(data);
+
+    setIsDownloading(true);
+    try {
+      const response = await fetch(downloadUrl);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      saveAs(blob, filename);
+    } catch {
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   // Render media preview
   const renderMediaPreview = () => {
@@ -252,39 +299,33 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
           {data?.art_id && (
             <button
               type="button"
+              disabled={isDownloading}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px',
                 padding: '8px 18px',
-                backgroundColor: '#10b981',
+                backgroundColor: isDownloading ? '#059669' : '#10b981',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',
-                cursor: 'pointer',
+                cursor: isDownloading ? 'wait' : 'pointer',
                 fontSize: '14px',
                 fontWeight: '500',
                 transition: 'all 0.3s ease',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                opacity: isDownloading ? 0.8 : 1,
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#059669';
+                if (!isDownloading) e.currentTarget.style.backgroundColor = '#059669';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = '#10b981';
+                if (!isDownloading) e.currentTarget.style.backgroundColor = '#10b981';
               }}
               title={`Download media (${data.art_id})`}
-              onClick={() => {
-                const downloadUrl = targetMediaUrl || graffitiMediaUrl(data.art_id);
-                const link = document.createElement("a");
-                link.href = downloadUrl;
-                link.download = `${data.art_id}`;
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-              }}
+              onClick={handleDownloadMedia}
             >
-              <FaDownload /> Download Media
+              <FaDownload /> {isDownloading ? 'Downloading...' : 'Download Media'}
             </button>
           )}
           <button 

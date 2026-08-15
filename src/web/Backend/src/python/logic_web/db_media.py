@@ -99,12 +99,16 @@ def _sanitize_art_id(art_id: str) -> Optional[str]:
 def _guess_media_ext(meta: dict, art_id: str) -> str:
     fname = str(meta.get("filename") or f"{art_id}.bin")
     ext = os.path.splitext(fname)[1] or ""
-    mime = str(meta.get("mime") or "")
+    mime = str(meta.get("mime") or "").lower()
+    if "pdf" in mime or ext.lower() == ".pdf":
+        return ".pdf"
     if mime.startswith("image/"):
         if ext.lower() in (".jpg", ".jpeg"):
             return ext
         return ".jpg"
     if mime.startswith("video/"):
+        if "matroska" in mime or "mkv" in mime:
+            return ".mkv"
         return ".mp4" if ext.lower() != ".mp4" else ext
     return ext or ".bin"
 

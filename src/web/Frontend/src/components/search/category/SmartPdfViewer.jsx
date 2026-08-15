@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Document, Page, pdfjs } from "react-pdf";
+import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import {
   FaSearchPlus,
   FaSearchMinus,
@@ -10,17 +11,18 @@ import {
   FaAngleRight,
 } from "react-icons/fa";
 
-// Configure PDF worker (prefer local bundle, fallback to CDN)
-if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-  try {
-    pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-      "pdfjs-dist/build/pdf.worker.min.mjs",
-      import.meta.url
-    ).toString();
-  } catch {
-    pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
-  }
+// Configure PDF worker
+if (typeof window !== "undefined") {
+  pdfjs.GlobalWorkerOptions.workerSrc =
+    pdfWorker ||
+    `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 }
+
+const PDF_OPTIONS = {
+  cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
+};
 
 export const SmartPdfViewer = ({ file, previewUrl }) => {
   const [numPages, setNumPages] = useState(null);
@@ -198,7 +200,14 @@ export const SmartPdfViewer = ({ file, previewUrl }) => {
       <div className="pdf-stage-wrapper">
         <Document
           file={file}
+          options={PDF_OPTIONS}
           onLoadSuccess={onDocumentLoadSuccess}
+          onLoadError={(err) => {
+            console.error("SmartPdfViewer load error:", err);
+          }}
+          onSourceError={(err) => {
+            console.error("SmartPdfViewer source error:", err);
+          }}
           loading={<div className="pdf-loading">Loading PDF document...</div>}
           error={
             <div className="pdf-error muted">
