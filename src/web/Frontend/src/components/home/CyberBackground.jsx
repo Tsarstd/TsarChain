@@ -36,19 +36,23 @@ const drawScanBeam = (ctx, width, scanlineY) => {
 };
 
 const drawConstellationLines = (ctx, particles, maxDistance = 140) => {
+  const maxDistSq = maxDistance * maxDistance;
   for (let i = 0; i < particles.length; i++) {
+    const p1 = particles[i];
     for (let j = i + 1; j < particles.length; j++) {
-      const dx = particles[i].x - particles[j].x;
-      const dy = particles[i].y - particles[j].y;
-      const dist = Math.hypot(dx, dy);
+      const p2 = particles[j];
+      const dx = p1.x - p2.x;
+      const dy = p1.y - p2.y;
+      const distSq = dx * dx + dy * dy;
 
-      if (dist < maxDistance) {
+      if (distSq < maxDistSq) {
+        const dist = Math.sqrt(distSq);
         const lineAlpha = (1 - dist / maxDistance) * 0.14;
         ctx.strokeStyle = `rgba(224, 95, 50, ${lineAlpha})`;
         ctx.lineWidth = 0.75;
         ctx.beginPath();
-        ctx.moveTo(particles[i].x, particles[i].y);
-        ctx.lineTo(particles[j].x, particles[j].y);
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
         ctx.stroke();
       }
     }
@@ -65,9 +69,11 @@ const updateParticlePosition = (p, width, height, mouse) => {
   if (mouse.active) {
     const mdx = p.x - mouse.x;
     const mdy = p.y - mouse.y;
-    const mdist = Math.hypot(mdx, mdy);
-    if (mdist < 160 && mdist > 0) {
-      const force = (160 - mdist) / 160;
+    const mdistSq = mdx * mdx + mdy * mdy;
+    const maxMouseDist = 160;
+    if (mdistSq < maxMouseDist * maxMouseDist && mdistSq > 0) {
+      const mdist = Math.sqrt(mdistSq);
+      const force = (maxMouseDist - mdist) / maxMouseDist;
       p.x += (mdx / mdist) * force * 1.5;
       p.y += (mdy / mdist) * force * 1.5;
     }
@@ -119,8 +125,10 @@ const CyberBackground = () => {
     // Respect reduced motion preference
     const prefersReducedMotion = globalThis.matchMedia && globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    // Particles configuration
-    const particleCount = prefersReducedMotion ? 0 : Math.min(Math.floor((width * height) / 18000), 70);
+    // Particles configuration optimized for performance
+    const isMobile = width < 768;
+    const maxParticles = isMobile ? 25 : 55;
+    const particleCount = prefersReducedMotion ? 0 : Math.min(Math.floor((width * height) / 22000), maxParticles);
     const particles = [];
 
     for (let i = 0; i < particleCount; i++) {

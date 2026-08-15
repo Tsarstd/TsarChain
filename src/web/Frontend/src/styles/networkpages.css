@@ -110,7 +110,7 @@
 }
 
 .status-text {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 0.75rem;
   font-weight: var(--fw-semibold);
   text-transform: uppercase;
@@ -138,7 +138,7 @@
 
 .summary-label {
   display: block;
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 11px;
   color: rgba(255, 248, 240, 0.6);
   text-transform: uppercase;
@@ -248,7 +248,7 @@
 }
 
 .stat-label {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 11px;
   color: rgba(255, 248, 240, 0.6);
   font-weight: var(--fw-bold);
@@ -265,7 +265,7 @@
 }
 
 .stat-subtext {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 12px;
   color: rgba(255, 248, 240, 0.6);
 }
@@ -323,7 +323,7 @@
 }
 
 .genesis-text {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 15px;
   color: var(--color-tsar-cream);
   line-height: 1.6;
@@ -411,14 +411,14 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-family: monospace, var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 13.5px;
   color: var(--color-tsar-cream);
   min-width: 0;
 }
 
 .address-list {
-  font-family: monospace, var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 14px;
   color: var(--color-tsar-cream);
 }
@@ -438,7 +438,7 @@
 .table-empty {
   padding: 40px 20px;
   text-align: center;
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   color: rgba(255, 248, 240, 0.5);
   font-style: italic;
 }
@@ -479,7 +479,7 @@
 }
 
 .error-message {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 16px;
   color: var(--color-tsar-orange);
   text-align: center;

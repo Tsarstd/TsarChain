@@ -101,7 +101,7 @@
 }
 
 .hero-description {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: clamp(1.05rem, 1.3vw, 1.25rem);
   line-height: 1.65;
   color: rgba(255, 248, 240, 0.85);
@@ -121,7 +121,7 @@
   border: 1px solid rgba(255, 248, 240, 0.15);
   padding: 0.5rem 1rem;
   border-radius: 4px;
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 0.85rem;
   color: var(--color-tsar-cream);
   transition: all 0.2s ease;
@@ -210,7 +210,7 @@
   align-items: center;
   gap: 0.5rem;
   color: rgba(255, 248, 240, 0.65);
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 0.92rem;
   font-weight: var(--fw-semibold);
   letter-spacing: 0.04em;
@@ -265,7 +265,7 @@
 }
 
 .ticker-label {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 0.75rem;
   color: rgba(255, 248, 240, 0.6);
   text-transform: uppercase;
@@ -338,7 +338,7 @@
 
 .home-container .section-subtitle,
 .section-subtitle {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 1rem;
   line-height: 1.6;
   color: rgba(255, 248, 240, 0.7);
@@ -403,7 +403,7 @@
 }
 
 .manifesto-card-body {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 0.92rem;
   line-height: 1.65;
   color: rgba(255, 248, 240, 0.75);
@@ -421,7 +421,7 @@
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 0.88rem;
   color: var(--color-tsar-cream);
 }
@@ -503,7 +503,7 @@
 }
 
 .engine-step-desc {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 0.82rem;
   color: rgba(255, 248, 240, 0.65);
   line-height: 1.5;
@@ -622,7 +622,7 @@
 }
 
 .bento-card-desc {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 0.9rem;
   line-height: 1.6;
   color: rgba(255, 248, 240, 0.7);
@@ -636,7 +636,7 @@
 }
 
 .bento-badge {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 0.75rem;
   font-weight: var(--fw-semibold);
   background: #222222;
@@ -681,7 +681,7 @@
 }
 
 .docs-hub-desc {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 0.95rem;
   line-height: 1.6;
   color: rgba(255, 248, 240, 0.75);

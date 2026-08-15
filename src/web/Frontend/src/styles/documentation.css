@@ -447,21 +447,18 @@
   color: var(--text-heading);
   display: flex;
   align-items: center;
-  gap: 0.5rem;
   padding-bottom: 0.6rem;
   border-bottom: 1px solid var(--bg-glass-pill);
 }
 
-.doc-section-anchor {
-  color: var(--accent);
-  opacity: 0.4;
-  font-weight: 400;
+.doc-section-title-link {
+  color: inherit;
   text-decoration: none;
-  transition: opacity 0.2s ease;
+  transition: color 0.2s ease;
 }
 
-.doc-section-title:hover .doc-section-anchor {
-  opacity: 1;
+.doc-section-title-link:hover {
+  color: var(--text-dim);
 }
 
 .doc-subheading-h3 {
@@ -1490,7 +1487,7 @@ button.doc-toggle-badge:hover {
   border: none;
   color: var(--color-tsar-cream);
   font-size: 0.76rem;
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   outline: none;
   cursor: pointer;
   width: 100%;

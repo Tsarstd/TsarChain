@@ -24,7 +24,7 @@ const ALERT_ICONS = {
 };
 
 // Lightweight Syntax Highlighter Tokenizer
-const highlightCodeSyntax = (codeStr, lang = "text") => {
+const highlightCodeSyntax = (codeStr) => {
   if (!codeStr || typeof codeStr !== "string") return codeStr;
 
   const lines = codeStr.split("\n");
@@ -53,7 +53,6 @@ const highlightCodeSyntax = (codeStr, lang = "text") => {
 
     // 3. Tokenize strings, numbers, keywords
     const tokens = [];
-    let remaining = line;
     let keyIdx = 0;
 
     const regex = /(".*?"|'.*?'|\b(fn|let|pub|struct|impl|const|return|async|await|match|enum|mut|type|self|Self|true|false|null|import|from|def|class|cargo|python|node|tsarchain|kremlin|archivist)\b|--?[a-zA-Z0-9_-]+|\b\d+\b)/g;
@@ -533,8 +532,9 @@ const DocContentRenderer = ({ docData, activeLang }) => {
       {content.sections?.map((section) => (
         <section key={section.id} id={section.id} className="doc-section">
           <h2 className="doc-section-title">
-            <a href={`#${section.id}`} className="doc-section-anchor">#</a>
-            {section.title}
+            <a href={`#${section.id}`} className="doc-section-title-link">
+              {section.title}
+            </a>
           </h2>
 
           {/* Section Quote */}

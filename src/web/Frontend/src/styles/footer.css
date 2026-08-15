@@ -42,7 +42,7 @@
 
 .site-footer__tagline {
   color: var(--footer-muted);
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -58,7 +58,7 @@
 
 .site-footer__copyright {
   color: var(--footer-muted);
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 12px;
   margin-top: 12px;
 }
@@ -70,7 +70,7 @@
 
 .site-footer__link {
   color: rgba(255, 248, 240, 0.75);
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 13px;
   font-weight: var(--fw-medium);
   transition: all 0.2s ease;

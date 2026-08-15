@@ -30,8 +30,12 @@ const getCachedState = () => {
 
 const setCachedState = (state) => {
   try {
+    const limitedState = {
+      ...state,
+      blocks: Array.isArray(state.blocks) ? state.blocks.slice(0, 30) : []
+    };
     localStorage.setItem(CACHE_KEY, JSON.stringify({
-      state,
+      state: limitedState,
       timestamp: Date.now()
     }));
   } catch (e) {
@@ -100,7 +104,7 @@ const BlockCard = memo(({ item, onSelect, active, isGenesis }) => {
   );
 });
 
-const Home = ({ onSearchClick }) => {
+const Block = ({ onSearchClick }) => {
   const navigate = useNavigate();
   const [cachedState] = useState(() => getCachedState());
   const [blocks, setBlocks] = useState(() => cachedState?.blocks || []);
@@ -549,7 +553,7 @@ const Home = ({ onSearchClick }) => {
   );
 };
 
-Home.propTypes = {
+Block.propTypes = {
   onSearchClick: PropTypes.func,
 };
 
@@ -570,4 +574,4 @@ BlockCard.propTypes = {
   isGenesis: PropTypes.bool,
 };
 
-export default Home;
+export default Block;

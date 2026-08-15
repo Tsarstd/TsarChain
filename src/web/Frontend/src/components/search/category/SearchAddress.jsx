@@ -394,18 +394,47 @@ const ResultAddress = ({ data, onSearchClick }) => {
             return (
               <div className="tx-item" key={h.txid || h.id || idx}>
                 <div className="tx-items">
-                  <div className="stat">
-                    <span className="value">{fmtTimestamp(h.timestamp)}</span>
-                    {renderClickableHash(
-                      h.txid,
-                      onSearchClick,
-                      h.txid,
-                      fmtTxid(h.txid) || "-"
-                    )}
+                  <div className="stat" style={{ width: '100%', minWidth: 0, margin: 0 }}>
+                    {/* Top Row: Timestamp & Amount */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '8px',
+                      marginBottom: '4px',
+                      width: '100%'
+                    }}>
+                      <span className="value" style={{ fontSize: '12px' }}>{fmtTimestamp(h.timestamp)}</span>
+                      <div style={{
+                        fontSize: '13px',
+                        fontWeight: '700',
+                        fontFamily: 'monospace',
+                        color: directionColor,
+                        whiteSpace: 'nowrap',
+                        marginLeft: 'auto'
+                      }}>
+                        {directionBadge.type === "outgoing" ? "-" : "+"}
+                        {fmtTsar(h.amount || h.value || 0)}
+                      </div>
+                    </div>
+
+                    {/* Txid Hash */}
+                    <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {renderClickableHash(
+                        h.txid,
+                        onSearchClick,
+                        h.txid,
+                        fmtTxid(h.txid) || "-"
+                      )}
+                    </div>
+
                     {/* From/To Address */}
                     <div className="tx-address-row">
                       {renderAddressLabel(h.direction, h.from, h.to)}
                     </div>
+
+                    {/* Badges & Time Ago */}
                     <div className="tx-meta">
                       <span 
                         className="direction-badge" 
@@ -425,20 +454,9 @@ const ResultAddress = ({ data, onSearchClick }) => {
                       {confirmations > 0 ? (
                         <span className="tx-confirms">{confirmations} Confirms</span>
                       ) : null}
-                    </div>
-                    <div className="tx-meta">
-                      <span className="value">{timeAgo(h.timestamp)}</span>
-                    </div>
-                  </div>
-                  <div className="stat">
-                    <div style={{
-                      flex: 1,
-                      textAlign: 'right',
-                      fontSize: '12px',
-                      color: directionColor
-                    }}>
-                      {directionBadge.type === "outgoing" ? "-" : "+"}
-                      {fmtTsar(h.amount || h.value || 0)}
+                      <span className="value" style={{ fontSize: '11px', color: 'rgba(255, 248, 240, 0.6)', marginLeft: 'auto' }}>
+                        {timeAgo(h.timestamp)}
+                      </span>
                     </div>
                   </div>
                 </div>

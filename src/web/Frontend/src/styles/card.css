@@ -44,7 +44,7 @@
   border-radius: 3px;
   background: #181818;
   color: var(--color-tsar-cream);
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 13px;
   transition: all 0.2s ease;
   min-width: 110px;
@@ -194,7 +194,7 @@
 
 /* Timestamp label */
 .lane-card__date {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 12px;
   text-align: left;
   font-weight: var(--fw-medium);
@@ -202,7 +202,7 @@
 }
 
 .lane-card__time-ago {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 10px;
   text-align: center;
   font-weight: var(--fw-bold);
@@ -218,7 +218,7 @@
 
 /* Hash & Graffiti id */
 .lane-card__id {
-  font-family: monospace, var(--font-monserat);
+  font-family: var(--font-montserrat);
   color: rgba(255, 248, 240, 0.55);
   font-size: 11px;
 }
@@ -272,7 +272,7 @@
 }
 
 .lane-card .stat .label {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -282,7 +282,7 @@
 }
 
 .lane-card .stat .value {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-weight: var(--fw-bold);
   font-size: 14px;
   color: var(--color-tsar-cream);
@@ -297,7 +297,7 @@
   text-align: center;
   box-sizing: border-box;
   padding: 4px 6px;
-  font-family: monospace, var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 10.5px;
   font-weight: var(--fw-semibold);
   letter-spacing: 0.02em;
@@ -316,7 +316,7 @@
 
 .creator-addr-line {
   display: block;
-  font-family: monospace, var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 10px;
   letter-spacing: 0.03em;
   line-height: 1.25;
@@ -331,7 +331,7 @@
   text-align: center;
   box-sizing: border-box;
   padding: 4px 8px;
-  font-family: monospace, var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 10px;
   background: #121212;
   color: rgba(255, 248, 240, 0.85);

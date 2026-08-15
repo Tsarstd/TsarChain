@@ -70,7 +70,13 @@ const PieChart = ({ title, items, totals = [], size = 180 }) => {
       <div className="pie-chart-body">
         <div className="pie-svg-container">
           {total === 0 ? (
-            <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            <svg
+              width={size}
+              height={size}
+              viewBox={`0 0 ${size} ${size}`}
+              className="pie-svg"
+              style={{ maxWidth: '100%', height: 'auto', display: 'block' }}
+            >
               <circle
                 cx={cx}
                 cy={cy}
@@ -92,7 +98,13 @@ const PieChart = ({ title, items, totals = [], size = 180 }) => {
               </text>
             </svg>
           ) : (
-            <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            <svg
+              width={size}
+              height={size}
+              viewBox={`0 0 ${size} ${size}`}
+              className="pie-svg"
+              style={{ maxWidth: '100%', height: 'auto', display: 'block' }}
+            >
               <g className="pie-slices">
                 {slices.map((slice, i) => (
                   <g key={slice.id || i} className="pie-slice-group">
@@ -326,9 +338,9 @@ export const AddressAnalytics = ({ history = [] }) => {
         <div className="analytics-title-group">
           <RiBarChartFill className="analytics-icon" />
           <div>
-            <h4>Address Flow & Graffiti Analytics</h4>
+            <h4>Address Analytics</h4>
             <span className="analytics-subtitle">
-              Portfolio Breakdown across recent {stats.totalTxs} transactions
+              Total of {stats.totalTxs} Transactions
             </span>
           </div>
         </div>
@@ -351,12 +363,12 @@ export const AddressAnalytics = ({ history = [] }) => {
       {/* 2-Column Pie Charts with Legend & Totals */}
       <div className="analytics-charts-wrapper">
         <PieChart
-          title="Transaction Flow (Received & Sent)"
+          title="Received & Sent"
           items={chart1Items}
           totals={chart1Totals}
         />
         <PieChart
-          title="Network & Graffiti Activity"
+          title="Network Activity"
           items={chart2Items}
           totals={chart2Totals}
         />

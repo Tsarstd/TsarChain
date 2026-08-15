@@ -5,21 +5,69 @@ import { TbDeviceTvOld, TbDeviceTvOff } from "react-icons/tb";
 import PropTypes from "prop-types";
 import { assets } from "../../assets/assets";
 import { useCrt } from "../../context/useCrt";
+import RecentSearchesDropdown from "../search/RecentSearchesDropdown";
+import { getSearchHistory } from "../../utils/searchHistory";
 
-const Navbar = ({ query, onQueryChange, onSearch }) => {
+const getFilteredRecent = (q) => {
+  const all = getSearchHistory();
+  const clean = q?.trim().toLowerCase() || "";
+  return clean ? all.filter((item) => item.toLowerCase().includes(clean)) : all;
+};
+
+const Navbar = ({ query, onQueryChange, onSearch, onSearchClick }) => {
   const { isCrtEnabled, toggleCrt } = useCrt();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const [isDesktopHistoryOpen, setIsDesktopHistoryOpen] = useState(false);
+  const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);
+  const [desktopActiveIndex, setDesktopActiveIndex] = useState(-1);
+  const [mobileActiveIndex, setMobileActiveIndex] = useState(-1);
+
+  const desktopSearchRef = useRef(null);
+  const mobileSearchRef = useRef(null);
   const desktopInputRef = useRef(null);
   const mobileInputRef = useRef(null);
   const location = useLocation();
 
-  const [prevPath, setPrevPath] = useState(location.pathname);
-  if (prevPath !== location.pathname) {
-    setPrevPath(location.pathname);
-    setIsMobileMenuOpen(false);
-    setIsMobileSearchOpen(false);
-  }
+  // Reset drawer states on route navigation
+  useEffect(() => {
+    Promise.resolve().then(() => {
+      setIsMobileMenuOpen(false);
+      setIsMobileSearchOpen(false);
+      setIsDesktopHistoryOpen(false);
+      setIsMobileHistoryOpen(false);
+    });
+  }, [location.pathname]);
+
+  const isAnyMobileDrawerOpen = isMobileMenuOpen || isMobileSearchOpen;
+
+  // Lock body scroll when mobile drawers are open
+  useEffect(() => {
+    if (isAnyMobileDrawerOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isAnyMobileDrawerOpen]);
+
+  // Click outside to close dropdowns
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (desktopSearchRef.current && !desktopSearchRef.current.contains(e.target)) {
+        setIsDesktopHistoryOpen(false);
+        setDesktopActiveIndex(-1);
+      }
+      if (mobileSearchRef.current && !mobileSearchRef.current.contains(e.target)) {
+        setIsMobileHistoryOpen(false);
+        setMobileActiveIndex(-1);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Focus mobile input when mobile search bar opens
   useEffect(() => {
@@ -36,6 +84,8 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === "Escape") {
+        if (isDesktopHistoryOpen) setIsDesktopHistoryOpen(false);
+        if (isMobileHistoryOpen) setIsMobileHistoryOpen(false);
         if (isMobileSearchOpen) setIsMobileSearchOpen(false);
         if (isMobileMenuOpen) setIsMobileMenuOpen(false);
         return;
@@ -49,6 +99,7 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
         } else {
           desktopInputRef.current?.focus();
           desktopInputRef.current?.select();
+          setIsDesktopHistoryOpen(true);
         }
       } else if (e.key === "/" && document.activeElement !== desktopInputRef.current && document.activeElement !== mobileInputRef.current) {
         const isInput = ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName);
@@ -59,18 +110,104 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
             setIsMobileSearchOpen(true);
           } else {
             desktopInputRef.current?.focus();
+            setIsDesktopHistoryOpen(true);
           }
         }
       }
     };
     globalThis.addEventListener("keydown", handleKeyDown);
     return () => globalThis.removeEventListener("keydown", handleKeyDown);
-  }, [isMobileSearchOpen, isMobileMenuOpen]);
+  }, [isMobileSearchOpen, isMobileMenuOpen, isDesktopHistoryOpen, isMobileHistoryOpen]);
 
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    if (onSearch) onSearch();
+  const handleSelectRecent = (item) => {
+    onQueryChange?.(item);
+    setIsDesktopHistoryOpen(false);
+    setIsMobileHistoryOpen(false);
     setIsMobileSearchOpen(false);
+    setDesktopActiveIndex(-1);
+    setMobileActiveIndex(-1);
+    if (onSearchClick) {
+      onSearchClick(item);
+    } else if (onSearch) {
+      onSearch();
+    }
+  };
+
+  const handleDesktopSubmit = (event) => {
+    event.preventDefault();
+    const items = getFilteredRecent(query);
+    if (isDesktopHistoryOpen && desktopActiveIndex >= 0 && desktopActiveIndex < items.length) {
+      handleSelectRecent(items[desktopActiveIndex]);
+      return;
+    }
+    setIsDesktopHistoryOpen(false);
+    setDesktopActiveIndex(-1);
+    if (onSearch) onSearch();
+  };
+
+  const handleMobileSubmit = (event) => {
+    event.preventDefault();
+    const items = getFilteredRecent(query);
+    if (isMobileHistoryOpen && mobileActiveIndex >= 0 && mobileActiveIndex < items.length) {
+      handleSelectRecent(items[mobileActiveIndex]);
+      return;
+    }
+    setIsMobileHistoryOpen(false);
+    setIsMobileSearchOpen(false);
+    setMobileActiveIndex(-1);
+    if (onSearch) onSearch();
+  };
+
+  const handleDesktopInputKeyDown = (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      const items = getFilteredRecent(query);
+      if (items.length === 0) return;
+
+      if (!isDesktopHistoryOpen) {
+        setIsDesktopHistoryOpen(true);
+        setDesktopActiveIndex(0);
+        return;
+      }
+
+      e.preventDefault();
+      if (e.key === "ArrowDown") {
+        setDesktopActiveIndex((prev) => (prev + 1) % items.length);
+      } else {
+        setDesktopActiveIndex((prev) => (prev <= 0 ? items.length - 1 : prev - 1));
+      }
+    } else if (e.key === "Escape") {
+      if (isDesktopHistoryOpen) {
+        e.stopPropagation();
+        setIsDesktopHistoryOpen(false);
+        setDesktopActiveIndex(-1);
+      }
+    }
+  };
+
+  const handleMobileInputKeyDown = (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      const items = getFilteredRecent(query);
+      if (items.length === 0) return;
+
+      if (!isMobileHistoryOpen) {
+        setIsMobileHistoryOpen(true);
+        setMobileActiveIndex(0);
+        return;
+      }
+
+      e.preventDefault();
+      if (e.key === "ArrowDown") {
+        setMobileActiveIndex((prev) => (prev + 1) % items.length);
+      } else {
+        setMobileActiveIndex((prev) => (prev <= 0 ? items.length - 1 : prev - 1));
+      }
+    } else if (e.key === "Escape") {
+      if (isMobileHistoryOpen) {
+        e.stopPropagation();
+        setIsMobileHistoryOpen(false);
+        setMobileActiveIndex(-1);
+      }
+    }
   };
 
   const navLinks = [
@@ -85,6 +222,7 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
     setIsMobileMenuOpen((prev) => !prev);
     if (!isMobileMenuOpen) {
       setIsMobileSearchOpen(false);
+      setIsMobileHistoryOpen(false);
     }
   };
 
@@ -92,12 +230,15 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
     setIsMobileSearchOpen((prev) => !prev);
     if (!isMobileSearchOpen) {
       setIsMobileMenuOpen(false);
+    } else {
+      setIsMobileHistoryOpen(false);
     }
   };
 
   const closeAllMobile = () => {
     setIsMobileMenuOpen(false);
     setIsMobileSearchOpen(false);
+    setIsMobileHistoryOpen(false);
   };
 
   const isLinkActive = (linkPath) => {
@@ -106,8 +247,6 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
     }
     return location.pathname.startsWith(linkPath);
   };
-
-  const isAnyMobileDrawerOpen = isMobileMenuOpen || isMobileSearchOpen;
 
   return (
     <header className="navbar">
@@ -151,7 +290,11 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
         {/* Right Section */}
         <div className="navbar__right">
           {/* Desktop Search Form */}
-          <form className="navbar__search navbar__search--desktop" onSubmit={handleSubmit}>
+          <form
+            ref={desktopSearchRef}
+            className="navbar__search navbar__search--desktop"
+            onSubmit={handleDesktopSubmit}
+          >
             <div className="navbar__search-wrapper">
               <input
                 ref={desktopInputRef}
@@ -159,9 +302,41 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
                 className="navbar__search-input"
                 placeholder="Search Height / BlockHash / TxId / Address / Graffiti"
                 value={query}
-                onChange={(e) => onQueryChange?.(e.target.value)}
+                onFocus={() => setIsDesktopHistoryOpen(true)}
+                onChange={(e) => {
+                  onQueryChange?.(e.target.value);
+                  setIsDesktopHistoryOpen(true);
+                  setDesktopActiveIndex(-1);
+                }}
+                onKeyDown={handleDesktopInputKeyDown}
               />
-              <kbd className="navbar__shortcut">/</kbd>
+              {query ? (
+                <button
+                  type="button"
+                  className="navbar__desktop-search-clear"
+                  onClick={() => {
+                    onQueryChange?.("");
+                    desktopInputRef.current?.focus();
+                  }}
+                  aria-label="Clear search input"
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "rgba(255, 248, 240, 0.6)",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "0 6px",
+                    fontSize: "16px",
+                    lineHeight: 1
+                  }}
+                  title="Clear input"
+                >
+                  <IoCloseCircle />
+                </button>
+              ) : (
+                <kbd className="navbar__shortcut">/</kbd>
+              )}
             </div>
             <button 
               className="navbar__search-btn btn-primary" 
@@ -170,6 +345,13 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
             >
               <IoSearch />
             </button>
+
+            <RecentSearchesDropdown
+              isOpen={isDesktopHistoryOpen}
+              query={query}
+              onSelect={handleSelectRecent}
+              activeIndex={desktopActiveIndex}
+            />
           </form>
 
           {/* Desktop CRT Mode Switcher (USP Feature) */}
@@ -226,7 +408,11 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
 
       {/* Mobile Expandable Search Bar (Full-width drop-down under navbar) */}
       <div className={`navbar__mobile-search-dropdown ${isMobileSearchOpen ? "open" : ""}`}>
-        <form className="navbar__mobile-search-form" onSubmit={handleSubmit}>
+        <form
+          ref={mobileSearchRef}
+          className="navbar__mobile-search-form"
+          onSubmit={handleMobileSubmit}
+        >
           <div className="navbar__mobile-search-input-wrapper">
             <IoSearch className="navbar__mobile-search-icon" />
             <input
@@ -235,7 +421,13 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
               className="navbar__mobile-search-input"
               placeholder="Search Height, Hash, TxID, Address..."
               value={query}
-              onChange={(e) => onQueryChange?.(e.target.value)}
+              onFocus={() => setIsMobileHistoryOpen(true)}
+              onChange={(e) => {
+                onQueryChange?.(e.target.value);
+                setIsMobileHistoryOpen(true);
+                setMobileActiveIndex(-1);
+              }}
+              onKeyDown={handleMobileInputKeyDown}
             />
             {query && (
               <button
@@ -258,6 +450,14 @@ const Navbar = ({ query, onQueryChange, onSearch }) => {
           >
             Search
           </button>
+
+          <RecentSearchesDropdown
+            isOpen={isMobileHistoryOpen}
+            query={query}
+            onSelect={handleSelectRecent}
+            activeIndex={mobileActiveIndex}
+            className="recent-searches-dropdown--mobile"
+          />
         </form>
       </div>
 
@@ -277,6 +477,7 @@ Navbar.propTypes = {
   query: PropTypes.string.isRequired,
   onQueryChange: PropTypes.func,
   onSearch: PropTypes.func,
+  onSearchClick: PropTypes.func,
 };
 
 export default Navbar;

@@ -4,40 +4,52 @@
 
 .utxo-flowchart-card {
   margin: 1.5rem 0;
-  padding: 1.8rem;
+  padding: 1.5rem;
   background: #181818;
   border: 1px solid rgba(255, 248, 240, 0.15);
   border-radius: 4px;
   box-shadow: 3px 3px 0px var(--color-tsar-black);
   transition: all 0.2s ease;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .utxo-flowchart-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 1.2rem;
+  padding-bottom: 1rem;
   border-bottom: 1px solid rgba(255, 248, 240, 0.12);
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .utxo-header-title {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  min-width: 0;
 }
 
 .utxo-header-icon {
-  font-size: 1.5rem;
+  font-size: 1.4rem;
   color: var(--color-tsar-orange);
+  flex-shrink: 0;
 }
 
 .utxo-header-title h4 {
   margin: 0;
   font-family: var(--font-newspaper);
-  font-size: 1.3rem;
+  font-size: 1.2rem;
   text-transform: uppercase;
   color: var(--color-tsar-cream);
   letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+.utxo-header-controls {
+  display: flex;
+  align-items: center;
 }
 
 .utxo-toggle-btn {
@@ -46,11 +58,12 @@
   color: var(--color-tsar-cream);
   font-family: var(--font-newspaper);
   text-transform: uppercase;
-  padding: 6px 14px;
+  padding: 6px 12px;
   border-radius: 2px;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   letter-spacing: 0.04em;
   cursor: pointer;
+  white-space: nowrap;
   transition: all 0.2s ease;
 }
 
@@ -63,22 +76,19 @@
 
 /* MAIN DIAGRAM CONTAINER */
 .utxo-flowchart-body {
-  margin-top: 1.5rem;
+  margin-top: 1.25rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .utxo-flow-diagram {
   display: flex;
   align-items: stretch;
   justify-content: space-between;
-  gap: 16px;
+  gap: 14px;
   position: relative;
-}
-
-@media (max-width: 900px) {
-  .utxo-flow-diagram {
-    flex-direction: column;
-    align-items: center;
-  }
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .utxo-column {
@@ -86,13 +96,16 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  box-sizing: border-box;
 }
 
 .utxo-column-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .col-badge {
@@ -102,6 +115,7 @@
   border-radius: 2px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .input-badge {
@@ -118,16 +132,19 @@
 }
 
 .col-total {
-  font-size: 0.85rem;
-  font-family: monospace, var(--font-monserat);
+  font-size: 0.8rem;
+  font-family: var(--font-montserrat);
   font-weight: var(--fw-bold);
   color: rgba(255, 248, 240, 0.7);
+  white-space: nowrap;
 }
 
 .utxo-nodes-stack {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* NODE CARDS */
@@ -135,9 +152,11 @@
   background: #1e1e1e;
   border: 1px solid rgba(255, 248, 240, 0.12);
   border-radius: 3px;
-  padding: 12px 14px;
+  padding: 10px 12px;
   transition: all 0.2s ease;
   position: relative;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .utxo-node:hover {
@@ -166,24 +185,35 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 6px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .node-tag {
-  font-family: var(--font-monserat);
-  font-size: 0.75rem;
+  font-family: var(--font-montserrat);
+  font-size: 0.72rem;
   font-weight: var(--fw-semibold);
   color: rgba(255, 248, 240, 0.65);
   display: inline-flex;
   align-items: center;
   gap: 4px;
   text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tag-icon {
+  font-size: 0.8rem;
 }
 
 .node-amount {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: var(--fw-bold);
   font-family: monospace;
   color: var(--color-tsar-orange);
+  text-align: right;
+  white-space: nowrap;
+  margin-left: auto;
 }
 
 button.node-address {
@@ -194,19 +224,27 @@ button.node-address {
 }
 
 .node-address {
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-family: monospace;
   color: var(--color-tsar-cream);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
   padding: 5px 8px;
   background: #141414;
   border: 1px solid rgba(255, 248, 240, 0.1);
   border-radius: 2px;
-  white-space: nowrap;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.node-address span {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
 }
 
 .node-address.clickable {
@@ -221,24 +259,18 @@ button.node-address {
 .ext-icon {
   font-size: 0.65rem;
   opacity: 0.7;
+  flex-shrink: 0;
 }
 
-/* FLOW CONNECTORS */
+/* FLOW CONNECTORS (DESKTOP HORIZONTAL) */
 .utxo-flow-connector {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 40px;
+  width: 36px;
   position: relative;
-}
-
-@media (max-width: 900px) {
-  .utxo-flow-connector {
-    height: 40px;
-    width: 100%;
-    transform: rotate(90deg);
-  }
+  flex-shrink: 0;
 }
 
 .connector-line {
@@ -256,17 +288,17 @@ button.node-address {
   width: 60%;
   height: 100%;
   background: linear-gradient(90deg, transparent, var(--color-tsar-cream), transparent);
-  animation: utxoFlowPulse 1.8s infinite linear;
+  animation: utxoFlowPulseHorizontal 1.8s infinite linear;
 }
 
-@keyframes utxoFlowPulse {
+@keyframes utxoFlowPulseHorizontal {
   0% { left: -100%; }
   100% { left: 200%; }
 }
 
 .connector-arrow {
   color: var(--color-tsar-orange);
-  font-size: 1rem;
+  font-size: 0.9rem;
   margin-top: 4px;
 }
 
@@ -275,16 +307,9 @@ button.node-address {
   display: flex;
   align-items: center;
   justify-content: center;
-  max-width: 310px;
-  min-width: 260px;
-}
-
-@media (max-width: 900px) {
-  .utxo-column--core {
-    max-width: 100%;
-    width: 100%;
-    min-width: 0;
-  }
+  max-width: 290px;
+  min-width: 240px;
+  box-sizing: border-box;
 }
 
 .utxo-core-node {
@@ -292,70 +317,73 @@ button.node-address {
   background: #1c1512;
   border: 2px solid var(--color-tsar-orange);
   border-radius: 4px;
-  padding: 18px;
+  padding: 16px;
   text-align: center;
   box-shadow: 3px 3px 0px var(--color-tsar-black);
   position: relative;
+  box-sizing: border-box;
 }
 
 .core-icon-wrap {
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border-radius: 2px;
   background: var(--color-tsar-orange);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 10px auto;
+  margin: 0 auto 8px auto;
   box-shadow: 2px 2px 0px var(--color-tsar-black);
 }
 
 .core-icon {
-  font-size: 1.3rem;
+  font-size: 1.2rem;
   color: var(--color-tsar-cream);
 }
 
 .core-title {
-  margin: 0 0 4px 0;
+  margin: 0 0 3px 0;
   font-family: var(--font-newspaper);
-  font-size: 1.2rem;
+  font-size: 1.15rem;
   text-transform: uppercase;
   color: var(--color-tsar-cream);
 }
 
 .core-txid {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-family: monospace;
   color: rgba(255, 248, 240, 0.6);
   display: block;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .core-metrics {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   text-align: left;
   background: #141414;
   border: 1px solid rgba(255, 248, 240, 0.1);
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-radius: 2px;
+  box-sizing: border-box;
 }
 
 .core-metric-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  font-size: 0.78rem;
+  gap: 8px;
+  font-size: 0.76rem;
 }
 
 .metric-lbl {
   color: rgba(255, 248, 240, 0.6);
   white-space: nowrap;
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-weight: var(--fw-medium);
   text-transform: uppercase;
+  font-size: 0.72rem;
 }
 
 .metric-val {
@@ -364,6 +392,7 @@ button.node-address {
   white-space: nowrap;
   text-align: right;
   color: var(--color-tsar-cream);
+  font-size: 0.78rem;
 }
 
 .text-cyan {
@@ -378,11 +407,12 @@ button.node-address {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: 2px;
   font-family: var(--font-newspaper);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .status-pill.confirmed {
@@ -393,4 +423,179 @@ button.node-address {
 .status-pill.pending {
   background: var(--color-tsar-orange);
   color: var(--color-tsar-cream);
+}
+
+.status-ic {
+  font-size: 0.68rem;
+}
+
+/* ==========================================================================
+   RESPONSIVE / MOBILE STYLES FOR UTXO FLOWCHART
+   ========================================================================== */
+
+@media (max-width: 900px) {
+  .utxo-flow-diagram {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+
+  .utxo-column {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .utxo-column--core {
+    max-width: 100%;
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* Dedicated vertical flow connector on tablet/mobile */
+  .utxo-flow-connector {
+    width: 100%;
+    height: auto;
+    padding: 10px 0;
+    margin: 2px auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transform: none; /* NO ROTATION */
+  }
+
+  .utxo-flow-connector .connector-line {
+    width: 2px;
+    height: 24px;
+    background: var(--color-tsar-orange);
+    position: relative;
+    overflow: hidden;
+    margin: 0 auto 3px auto;
+    border-radius: 1px;
+  }
+
+  .utxo-flow-connector .flow-pulse {
+    position: absolute;
+    top: -100%;
+    left: 0;
+    width: 100%;
+    height: 60%;
+    background: linear-gradient(180deg, transparent, var(--color-tsar-cream), transparent);
+    animation: utxoFlowPulseVertical 1.6s infinite linear;
+  }
+
+  @keyframes utxoFlowPulseVertical {
+    0% { top: -100%; }
+    100% { top: 200%; }
+  }
+
+  .utxo-flow-connector .connector-arrow {
+    transform: rotate(90deg); /* Points downwards cleanly */
+    color: var(--color-tsar-orange);
+    font-size: 0.95rem;
+    margin-top: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .utxo-flowchart-card {
+    padding: 1rem 0.9rem;
+    margin: 1rem 0;
+  }
+
+  .utxo-flowchart-header {
+    padding-bottom: 0.75rem;
+    gap: 8px;
+  }
+
+  .utxo-header-title h4 {
+    font-size: 1.05rem;
+  }
+
+  .utxo-toggle-btn {
+    padding: 4px 10px;
+    font-size: 0.72rem;
+  }
+
+  .utxo-node {
+    padding: 9px 10px;
+  }
+
+  .node-amount {
+    font-size: 0.8rem;
+  }
+
+  .node-address {
+    font-size: 0.75rem;
+    padding: 4px 7px;
+  }
+}
+
+@media (max-width: 480px) {
+  .utxo-flowchart-card {
+    padding: 0.85rem 0.75rem;
+    margin: 0.85rem 0;
+    box-shadow: 2px 2px 0px var(--color-tsar-black);
+  }
+
+  .utxo-header-title h4 {
+    font-size: 0.95rem;
+    letter-spacing: 0.02em;
+  }
+
+  .utxo-header-icon {
+    font-size: 1.2rem;
+  }
+
+  .utxo-toggle-btn {
+    padding: 3px 8px;
+    font-size: 0.68rem;
+  }
+
+  .utxo-core-node {
+    padding: 12px 10px;
+  }
+
+  .core-title {
+    font-size: 1.05rem;
+  }
+
+  .core-metrics {
+    padding: 7px 8px;
+    gap: 6px;
+  }
+
+  .core-metric-item {
+    font-size: 0.72rem;
+  }
+
+  .metric-lbl,
+  .metric-val {
+    font-size: 0.7rem;
+  }
+
+  .col-badge {
+    font-size: 0.7rem;
+    padding: 2px 6px;
+  }
+
+  .col-total {
+    font-size: 0.72rem;
+  }
+
+  .node-top {
+    gap: 6px;
+  }
+
+  .node-tag {
+    font-size: 0.68rem;
+  }
+
+  .node-amount {
+    font-size: 0.75rem;
+  }
+
+  .node-address {
+    font-size: 0.72rem;
+  }
 }

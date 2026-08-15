@@ -25,7 +25,7 @@
   border: 1px solid rgba(255, 248, 240, 0.15);
   box-shadow: 3px 3px 0px var(--color-tsar-black);
   color: var(--color-tsar-cream);
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 0.875rem;
   font-weight: var(--fw-medium);
   animation: toastSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;

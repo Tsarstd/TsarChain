@@ -5,7 +5,7 @@ const CHARS = "ABCDEF0123456789!@#$%^&*()_+-=[]{}|;:,.<>?/~`";
 export const useScrambleText = (targetText, options = {}) => {
   const {
     speed = 25,
-    scrambleDuration = 600,
+    scrambleDuration = 800,
     trigger = true,
   } = options;
 
@@ -51,7 +51,9 @@ export const useScrambleText = (targetText, options = {}) => {
     if (!trigger || !targetText) return;
 
     let isCancelled = false;
-    setIsScrambling(true);
+    Promise.resolve().then(() => {
+      if (!isCancelled) setIsScrambling(true);
+    });
     const length = targetText.length;
     const startTime = Date.now();
 

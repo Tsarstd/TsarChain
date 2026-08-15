@@ -39,9 +39,12 @@ const DocTableOfContents = ({ items = [] }) => {
   useEffect(() => {
     if (!items || items.length === 0) return;
 
-    handleScrollSpy();
+    const rafId = requestAnimationFrame(() => {
+      handleScrollSpy();
+    });
     globalThis.addEventListener("scroll", handleScrollSpy, { passive: true });
     return () => {
+      cancelAnimationFrame(rafId);
       globalThis.removeEventListener("scroll", handleScrollSpy);
     };
   }, [items, handleScrollSpy]);

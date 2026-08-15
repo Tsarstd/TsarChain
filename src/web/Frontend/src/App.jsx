@@ -1,16 +1,12 @@
-import { useCallback, useState, useEffect } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 
 import Navbar from "./components/navbar/nav_bar";
 import Footer from "./components/footer/footer";
 import Home from "./pages/Home";
-import Block from "./pages/Block";
-import Graffiti from "./pages/Graffiti";
-import Network from "./pages/Network";
-import Documentation from "./pages/Documentation";
-
 import SearchOverlay from "./components/search/SearchOverlay";
+import { SkeletonSearch } from "./components/common/SkeletonLoader";
 import { saveSearchHistory } from "./utils/searchHistory";
 import { ToastProvider } from "./components/common/ToastContainer";
 import { CrtProvider } from "./context/CrtContext";
@@ -35,6 +31,12 @@ import "./styles/live_indicator.css";
 import "./styles/toast.css";
 import "./styles/documentation.css";
 
+// Lazy-load secondary routes for faster initial load
+const Block = lazy(() => import("./pages/Block"));
+const Graffiti = lazy(() => import("./pages/Graffiti"));
+const Network = lazy(() => import("./pages/Network"));
+const Documentation = lazy(() => import("./pages/Documentation"));
+
 const pageVariants = {
   initial: { opacity: 0, y: 12 },
   animate: { opacity: 1, y: 0 },
@@ -45,6 +47,12 @@ const pageTransition = {
   duration: 0.25,
   ease: [0.25, 0.1, 0.25, 1]
 };
+
+const RouteFallback = () => (
+  <div className="page" style={{ padding: "40px 20px" }}>
+    <SkeletonSearch />
+  </div>
+);
 
 const AppContent = () => {
   const { isCrtEnabled } = useCrt();
@@ -57,37 +65,29 @@ const AppContent = () => {
   const [message, setMessage] = useState("");
   const [searchOpen, setSearchOpen] = useState(() => Boolean(new URLSearchParams(globalThis.location?.search || "").get('search')?.trim()));
 
-  const runSearch = useCallback(async (q) => {
-    if (!q || !q.trim()) return;
-    saveSearchHistory(q);
-    const inferred = guessKind(q);
-    setKind(inferred);
-    setStatus("loading");
-    setMessage("");
-    try {
-      const resp = await searchExplorer(q);
-      setResult(resp.data);
-      setKind(resp.kind || inferred);
-      setStatus("done");
-    } catch (err) {
-      setResult(null);
-      setStatus("error");
-      setMessage(err.message || "Gagal memuat data.");
-    }
-  }, []);
-
+  // Single source of truth: listen to URL search params
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
-    const searchQuery = searchParams.get('search');
+    const searchQuery = searchParams.get('search')?.trim();
     
-    if (searchQuery?.trim()) {
+    if (searchQuery) {
       let isMounted = true;
       saveSearchHistory(searchQuery);
+      const inferred = guessKind(searchQuery);
+
+      Promise.resolve().then(() => {
+        if (!isMounted) return;
+        setSearchOpen(true);
+        setKind(inferred);
+        setStatus("loading");
+        setMessage("");
+      });
+
       searchExplorer(searchQuery)
         .then((resp) => {
           if (isMounted) {
             setResult(resp.data);
-            setKind(resp.kind || guessKind(searchQuery));
+            setKind(resp.kind || inferred);
             setStatus("done");
           }
         })
@@ -98,19 +98,29 @@ const AppContent = () => {
             setMessage(err.message || "Gagal memuat data.");
           }
         });
+
       return () => {
         isMounted = false;
       };
+    } else {
+      Promise.resolve().then(() => {
+        setSearchOpen(false);
+        setResult(null);
+        setStatus("idle");
+        setMessage("");
+      });
     }
   }, [location.search]);
 
   const handleSearchClick = useCallback((value) => {
-    setQuery(value);
-    setSearchOpen(true);
-    runSearch(value);
-    const newUrl = `${location.pathname}?search=${encodeURIComponent(value)}`;
+    const trimmed = String(value || "").trim();
+    if (!trimmed) return;
+    setQuery("");
+    const searchParams = new URLSearchParams(location.search);
+    searchParams.set("search", trimmed);
+    const newUrl = `${location.pathname}?${searchParams.toString()}`;
     navigate(newUrl, { replace: true });
-  }, [runSearch, location.pathname, navigate]);
+  }, [location.pathname, location.search, navigate]);
 
   const handleSearch = useCallback(() => {
     const q = query.trim();
@@ -120,33 +130,27 @@ const AppContent = () => {
       setSearchOpen(true);
       return;
     }
-    setSearchOpen(true);
-    runSearch(q);
-  }, [query, runSearch]);
+    const searchParams = new URLSearchParams(location.search);
+    searchParams.set("search", q);
+    const newUrl = `${location.pathname}?${searchParams.toString()}`;
+    navigate(newUrl, { replace: true });
+  }, [query, location.pathname, location.search, navigate]);
 
-  const renderHomePage = (
-    <motion.div
-      variants={pageVariants}
-      initial="initial"
-      animate="animate"
-      exit="exit"
-      transition={pageTransition}
-    >
-      <Home onSearchClick={handleSearchClick} />
-    </motion.div>
-  );
+  const handleCloseSearch = useCallback(() => {
+    setSearchOpen(false);
+    setResult(null);
+    setStatus("idle");
+    setMessage("");
+    setQuery("");
 
-  const renderBlockPage = (
-    <motion.div
-      variants={pageVariants}
-      initial="initial"
-      animate="animate"
-      exit="exit"
-      transition={pageTransition}
-    >
-      <Block onSearchClick={handleSearchClick} />
-    </motion.div>
-  );
+    const searchParams = new URLSearchParams(location.search);
+    if (searchParams.has("search")) {
+      searchParams.delete("search");
+      const remainingQuery = searchParams.toString();
+      const newUrl = remainingQuery ? `${location.pathname}?${remainingQuery}` : location.pathname;
+      navigate(newUrl, { replace: true });
+    }
+  }, [location.pathname, location.search, navigate]);
 
   return (
     <div className={`app ${isCrtEnabled ? "crt-mode-active" : ""}`}>
@@ -156,7 +160,12 @@ const AppContent = () => {
       {/* 2. Global Retro CRT / TV Tube Raster Overlay */}
       {isCrtEnabled && <div className="crt-overlay" aria-hidden="true" />}
 
-      <Navbar query={query} onQueryChange={setQuery} onSearch={handleSearch} />
+      <Navbar
+        query={query}
+        onQueryChange={setQuery}
+        onSearch={handleSearch}
+        onSearchClick={handleSearchClick}
+      />
       
       <SearchOverlay
         open={searchOpen}
@@ -165,16 +174,14 @@ const AppContent = () => {
         result={result}
         message={message}
         onSearchClick={handleSearchClick}
-        onClose={() => setSearchOpen(false)}
+        onClose={handleCloseSearch}
       />
       
       <div className="app-main">
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
-            <Route path="/" element={renderHomePage} />
-            <Route path="/block" element={renderBlockPage} />
             <Route
-              path="/graffiti"
+              path="/"
               element={
                 <motion.div
                   variants={pageVariants}
@@ -183,36 +190,72 @@ const AppContent = () => {
                   exit="exit"
                   transition={pageTransition}
                 >
-                  <Graffiti onSearchClick={handleSearchClick} />
+                  <Home onSearchClick={handleSearchClick} />
                 </motion.div>
+              }
+            />
+            <Route
+              path="/block"
+              element={
+                <Suspense fallback={<RouteFallback />}>
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <Block onSearchClick={handleSearchClick} />
+                  </motion.div>
+                </Suspense>
+              }
+            />
+            <Route
+              path="/graffiti"
+              element={
+                <Suspense fallback={<RouteFallback />}>
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <Graffiti onSearchClick={handleSearchClick} />
+                  </motion.div>
+                </Suspense>
               }
             />
             <Route
               path="/network"
               element={
-                <motion.div
-                  variants={pageVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={pageTransition}
-                >
-                  <Network onSearchClick={handleSearchClick} />
-                </motion.div>
+                <Suspense fallback={<RouteFallback />}>
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <Network onSearchClick={handleSearchClick} />
+                  </motion.div>
+                </Suspense>
               }
             />
             <Route
               path="/documentation"
               element={
-                <motion.div
-                  variants={pageVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={pageTransition}
-                >
-                  <Documentation onSearchClick={handleSearchClick} />
-                </motion.div>
+                <Suspense fallback={<RouteFallback />}>
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <Documentation onSearchClick={handleSearchClick} />
+                  </motion.div>
+                </Suspense>
               }
             />
             <Route path="*" element={<Navigate to="/" replace />} />

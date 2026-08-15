@@ -3,7 +3,7 @@
    ========================================================================== */
 
 .info-label {
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 0.75rem;
   font-weight: var(--fw-semibold);
   color: rgba(255, 248, 240, 0.7);
@@ -228,10 +228,15 @@
 /* STYLE FOR ADDRESS QUERY */
 .tx-meta {
   display: flex;
-  font-family: var(--font-monserat);
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-family: var(--font-montserrat);
   font-size: 11px;
   color: rgba(255, 248, 240, 0.6);
-  margin-top: 2px;
+  margin-top: 6px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .tx-height {
@@ -242,6 +247,8 @@
   font-size: 11px;
   border-radius: 2px;
   border: 1px solid rgba(255, 248, 240, 0.15);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
   
 .tx-confirms {
@@ -252,6 +259,8 @@
   font-family: var(--font-newspaper);
   font-size: 11px;
   border-radius: 2px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .tx-badges {
@@ -263,18 +272,21 @@
 }
 
 .tx-address-row {
-  margin-top: 2px;
+  margin-top: 3px;
   font-size: 12px;
-  margin-bottom: 2px;
+  margin-bottom: 3px;
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  word-break: break-all;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .tx-address-label {
   color: rgba(255, 248, 240, 0.6);
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-size: 11px;
   font-weight: var(--fw-semibold);
   text-transform: uppercase;
@@ -357,12 +369,32 @@
   .action-button {
     padding: 8px 16px;
     font-size: 12px;
-    min-width: 140px;
+    min-width: 130px;
   }
   
   .txid-details,
   .address-details {
     font-size: 15px;
     padding: 4px 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .action-buttons {
+    gap: 8px;
+  }
+
+  .action-button {
+    padding: 7px 12px;
+    font-size: 11.5px;
+    min-width: 110px;
+    flex: 1 1 110px;
+  }
+
+  .addr-badge,
+  .event-badge,
+  .vout-badge {
+    font-size: 10px;
+    padding: 2px 6px;
   }
 }

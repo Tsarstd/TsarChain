@@ -119,6 +119,7 @@ const Graffiti = ({ onSearchClick }) => {
   const [message, setMessage] = useState("");
   const [detail, setDetail] = useState(null);
   const [detailStatus, setDetailStatus] = useState("idle");
+  const [detailMessage, setDetailMessage] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [navInput, setNavInput] = useState("");
   const [isNavigating, setIsNavigating] = useState(false);
@@ -200,6 +201,7 @@ const Graffiti = ({ onSearchClick }) => {
     if (!item?.art_id) return;
     setDetailStatus("loading");
     setDetail(null);
+    setDetailMessage("");
     setSelectedId(item.art_id);
     try {
       const resp = await fetchGraffitiDetail(item.art_id);
@@ -208,7 +210,7 @@ const Graffiti = ({ onSearchClick }) => {
     } catch (err) {
       setDetail(null);
       setDetailStatus("error");
-      setMessage(err.message || "Failed to load graffiti details.");
+      setDetailMessage(err.message || "Failed to load graffiti details.");
     }
   }, []);
 
@@ -427,7 +429,7 @@ const Graffiti = ({ onSearchClick }) => {
           <SkeletonSearch />
         )}
         {detailStatus === "error" && (
-          <div className="result-empty">{message || "Failed to load graffiti details."}</div>
+          <div className="result-empty">{detailMessage || "Failed to load graffiti details."}</div>
         )}
         {detailStatus === "done" && detail ? (
           <div className="graffiti-detail-wrapper glass-panel">

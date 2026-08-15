@@ -4,69 +4,77 @@
 
 .address-analytics-card {
   margin: 1.5rem 0;
-  padding: 1.8rem;
+  padding: 1.5rem;
   background: #181818;
   border: 1px solid rgba(255, 248, 240, 0.15);
   border-radius: 4px;
   box-shadow: 3px 3px 0px var(--color-tsar-black);
   transition: all 0.2s ease;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .analytics-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 1.2rem;
+  padding-bottom: 1rem;
   border-bottom: 1px solid rgba(255, 248, 240, 0.12);
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 12px;
 }
 
 .analytics-title-group {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  min-width: 0;
 }
 
 .analytics-icon {
-  font-size: 1.5rem;
+  font-size: 1.4rem;
   color: var(--color-tsar-orange);
+  flex-shrink: 0;
 }
 
 .analytics-title-group h4 {
   margin: 0;
   font-family: var(--font-newspaper);
-  font-size: 1.3rem;
+  font-size: 1.2rem;
   text-transform: uppercase;
   color: var(--color-tsar-cream);
   letter-spacing: 0.04em;
+  line-height: 1.2;
 }
 
 .analytics-subtitle {
-  font-family: var(--font-monserat);
-  font-size: 0.82rem;
+  font-family: var(--font-montserrat);
+  font-size: 0.78rem;
   color: rgba(255, 248, 240, 0.6);
+  display: block;
+  margin-top: 2px;
 }
 
 .persona-badges-group {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .persona-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+  padding: 4px 8px;
   border-radius: 2px;
   border: 1px solid;
   font-family: var(--font-newspaper);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
   background: #141414;
   box-shadow: 1px 1px 0px var(--color-tsar-black);
+  white-space: nowrap;
 }
 
 .persona-icon {
@@ -77,9 +85,11 @@
 /* 2-COLUMN PIE CHARTS LAYOUT */
 .analytics-charts-wrapper {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
   margin-top: 1.25rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .pie-chart-card {
@@ -90,6 +100,9 @@
   display: flex;
   flex-direction: column;
   transition: all 0.2s ease;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
 }
 
 .pie-chart-card:hover {
@@ -106,14 +119,17 @@
   color: var(--color-tsar-cream);
   border-bottom: 1px solid rgba(255, 248, 240, 0.1);
   padding-bottom: 0.5rem;
+  line-height: 1.2;
 }
 
 .pie-chart-body {
   display: flex;
   align-items: center;
   justify-content: space-around;
-  gap: 16px;
+  gap: 14px;
   flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .pie-svg-container {
@@ -121,6 +137,7 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  margin: 0 auto;
 }
 
 .pie-slice-path {
@@ -141,16 +158,18 @@
 /* LEGEND BOX */
 .pie-legend-box {
   flex: 1;
-  min-width: 160px;
+  min-width: 150px;
   background: #141414;
   border: 1px solid rgba(255, 248, 240, 0.12);
   border-radius: 4px;
-  padding: 12px 14px;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .pie-legend-header {
   font-family: var(--font-newspaper);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: rgba(255, 248, 240, 0.6);
@@ -162,19 +181,22 @@
 .pie-legend-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  width: 100%;
 }
 
 .pie-legend-item {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
+  width: 100%;
 }
 
 .legend-color-badge {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 2px;
   flex-shrink: 0;
   border: 1px solid rgba(0, 0, 0, 0.3);
@@ -182,29 +204,35 @@
 
 .legend-label {
   color: var(--color-tsar-cream);
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   font-weight: var(--fw-medium);
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .legend-value {
-  color: rgba(255, 248, 240, 0.65);
+  color: rgba(255, 248, 240, 0.7);
   font-family: monospace;
   font-size: 0.78rem;
   white-space: nowrap;
+  flex-shrink: 0;
+  text-align: right;
 }
 
 /* TOTALS AMOUNT SECTION INSIDE LEGEND BOX */
 .pie-totals-section {
-  margin-top: 10px;
+  margin-top: 8px;
   padding-top: 8px;
   border-top: 1px dashed rgba(255, 248, 240, 0.15);
+  width: 100%;
 }
 
 .pie-totals-header {
   font-family: var(--font-newspaper);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: rgba(255, 248, 240, 0.6);
@@ -214,20 +242,125 @@
 .pie-totals-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  width: 100%;
 }
 
 .pie-totals-item {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
+  width: 100%;
 }
 
 .totals-amount {
   color: var(--color-tsar-cream);
   font-family: monospace;
   font-weight: var(--fw-bold);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   white-space: nowrap;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+/* ==========================================================================
+   RESPONSIVE / MOBILE STYLES FOR ADDRESS ANALYTICS
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .address-analytics-card {
+    padding: 1rem 0.9rem;
+    margin: 1rem 0;
+  }
+
+  .analytics-header {
+    padding-bottom: 0.75rem;
+    gap: 8px;
+  }
+
+  .analytics-title-group h4 {
+    font-size: 1.05rem;
+  }
+
+  .analytics-subtitle {
+    font-size: 0.75rem;
+  }
+
+  .analytics-charts-wrapper {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .pie-chart-card {
+    padding: 1rem 0.9rem;
+  }
+
+  .pie-chart-body {
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .pie-legend-box {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .address-analytics-card {
+    padding: 0.85rem 0.75rem;
+    margin: 0.85rem 0;
+    box-shadow: 2px 2px 0px var(--color-tsar-black);
+  }
+
+  .analytics-title-group h4 {
+    font-size: 0.95rem;
+    letter-spacing: 0.02em;
+  }
+
+  .analytics-icon {
+    font-size: 1.2rem;
+  }
+
+  .analytics-subtitle {
+    font-size: 0.72rem;
+  }
+
+  .persona-badge {
+    padding: 2px 6px;
+    font-size: 0.7rem;
+    gap: 4px;
+  }
+
+  .pie-chart-card {
+    padding: 10px;
+  }
+
+  .pie-chart-title {
+    font-size: 0.95rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.4rem;
+  }
+
+  .pie-legend-box {
+    padding: 8px 10px;
+  }
+
+  .pie-legend-header,
+  .pie-totals-header {
+    font-size: 0.72rem;
+    margin-bottom: 4px;
+  }
+
+  .legend-label {
+    font-size: 0.75rem;
+  }
+
+  .legend-value,
+  .totals-amount {
+    font-size: 0.75rem;
+  }
 }

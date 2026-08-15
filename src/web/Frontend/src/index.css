@@ -8,74 +8,36 @@
   --color-tsar-black: #121212;
   --color-tsar-cream: #fff8f0;
 
-  /* RGB Triplets for Dynamic Alpha / Transparency */
-  --rgb-tsar-orange: 222, 85, 38;
-  --rgb-tsar-black: 18, 18, 18;
-  --rgb-tsar-cream: 255, 248, 240;
-
-  --rgb-black: 0, 0, 0;
-  --rgb-white: 255, 255, 255;
-  --rgb-bg: 18, 18, 18;
-  --rgb-panel: 24, 24, 24;
-  --rgb-card: 24, 24, 24;
-  --rgb-card-hover: 32, 32, 32;
-  --rgb-slate-900: 18, 18, 18;
-  --rgb-slate-800: 24, 24, 24;
-  --rgb-slate-700: 40, 40, 40;
-  --rgb-accent: 222, 85, 38;
-  --rgb-accent-secondary: 224, 95, 50;
-
   /* ==========================================================================
      2. BACKGROUNDS & SURFACES (Tsar Studio Black Tones)
      ========================================================================== */
-  --bg: #121212;
-  --bg-app: #121212;
-  --bg-secondary: #171717;
-  --bg-darker: #0d0d0d;
   --bg-darkest: #080808;
   --bg-gradient: radial-gradient(circle at 50% 0%, #1e1e1e 0%, #121212 80%);
   
   --panel: rgba(24, 24, 24, 0.88);
   --bg-panel: rgba(24, 24, 24, 0.88);
-  --bg-panel-solid: #181818;
   --bg-panel-translucent: rgba(18, 18, 18, 0.9);
 
-  --card: rgba(24, 24, 24, 0.85);
-  --bg-card: rgba(24, 24, 24, 0.85);
-  --bg-card-hover: rgba(34, 34, 34, 0.95);
   --bg-card-solid: #1a1a1a;
   --bg-card-slate: rgba(24, 24, 24, 0.85);
-  --bg-card-slate-alt: rgba(20, 20, 20, 0.75);
   --bg-card-slate-hover: rgba(36, 36, 36, 0.92);
 
   --bg-input: rgba(18, 18, 18, 0.85);
-  --bg-input-focus: rgba(18, 18, 18, 0.98);
-  --bg-input-dark: #0f0f0f;
 
   --bg-glass: rgba(255, 248, 240, 0.04);
   --bg-glass-subtle: rgba(255, 248, 240, 0.02);
   --bg-glass-hover: rgba(255, 248, 240, 0.08);
   --bg-glass-active: rgba(255, 248, 240, 0.12);
   --bg-glass-pill: rgba(255, 248, 240, 0.06);
-  --bg-glass-modal: rgba(18, 18, 18, 0.96);
 
-  --bg-nav: #121212;
-  --bg-nav-dropdown: rgba(18, 18, 18, 0.96);
-  --bg-footer: #121212;
-
-  --bg-code: #0c0c0c;
   --bg-code-dark: #080808;
   --bg-code-darker: #050505;
   --bg-code-block: #151515;
   --bg-overlay: rgba(0, 0, 0, 0.8);
-  --bg-overlay-heavy: rgba(0, 0, 0, 0.92);
-  --bg-badge-slate: #1c1c1c;
-  --bg-badge-dark: #121212;
   --bg-tooltip: #fff8f0;
 
   /* Tinted Dark Containers */
   --bg-tint-info: rgba(222, 85, 38, 0.12);
-  --bg-tint-purple: rgba(255, 248, 240, 0.06);
   --bg-tint-warning: rgba(222, 85, 38, 0.16);
   --bg-tint-success: rgba(255, 248, 240, 0.08);
   --bg-tint-danger: rgba(222, 85, 38, 0.2);
@@ -101,21 +63,12 @@
   --text-dimmer: rgba(255, 248, 240, 0.25);
   --text-disabled: rgba(255, 248, 240, 0.18);
   --text-inverse: #121212;
-  --text-link: #e07a52;
-  --text-link-hover: #ff8c5a;
 
   /* ==========================================================================
      4. BRAND & ACCENTS (Tsar Orange)
      ========================================================================== */
   --accent: #de5526;
-  --accent-secondary: #e05f32;
-  --accent-light: #ff7a45;
-  --accent-hover: #ff7a45;
-  --accent-active: #cc4e21;
-  --accent-dark: #b03c13;
-  --accent-darker: #8f2b09;
   --accent-peach: #ffb191;
-  --accent-nav: #de5526;
   --accent-gradient: linear-gradient(135deg, #de5526 0%, #b03c13 100%);
   --accent-glow: rgba(222, 85, 38, 0.25);
   --accent-glow-strong: rgba(222, 85, 38, 0.45);
@@ -133,16 +86,7 @@
   --border-glass: rgba(255, 248, 240, 0.1);
   --border-glow: rgba(222, 85, 38, 0.4);
   --border-blue-glow: rgba(222, 85, 38, 0.4);
-  --border-green-glow: rgba(255, 248, 240, 0.4);
-  --border-red-glow: rgba(222, 85, 38, 0.5);
-  --border-purple-glow: rgba(222, 85, 38, 0.4);
   --border-gray: rgba(255, 248, 240, 0.2);
-
-  /* Hard offset studio shadows */
-  --shadow-studio-sm: 2px 2px 0px #121212;
-  --shadow-studio-md: 4px 4px 0px #121212;
-  --shadow-studio-orange: 3px 3px 0px #de5526;
-  --shadow-studio-cream: 3px 3px 0px #fff8f0;
 
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
@@ -154,40 +98,29 @@
      6. SEMANTIC / STATUS COLORS (Studio High Contrast)
      ========================================================================== */
   --primary: #de5526;
-  --primary-glow: rgba(222, 85, 38, 0.35);
-  --primary-subtle: rgba(222, 85, 38, 0.12);
 
-  /* Success / Inflow / Verified -> Clean Tsar Cream */
-  --color-success: #fff8f0;
+  /* Success */
   --color-success-light: #ffffff;
   --color-success-dark: #ede6de;
-  --color-success-darker: #202020;
   --color-success-bg: rgba(255, 248, 240, 0.1);
   --color-success-bg-subtle: rgba(255, 248, 240, 0.05);
   --color-success-border: rgba(255, 248, 240, 0.35);
-  --color-success-glow: rgba(255, 248, 240, 0.25);
 
-  /* Danger / Outflow / Error / Burn -> High Contrast Tsar Orange */
+  /* Danger */
   --color-danger: #de5526;
   --color-danger-light: #ff7a45;
-  --color-danger-dark: #b03c13;
-  --color-danger-darker: #2b0c03;
   --color-danger-bg: rgba(222, 85, 38, 0.16);
-  --color-danger-bg-subtle: rgba(222, 85, 38, 0.08);
   --color-danger-border: rgba(222, 85, 38, 0.45);
-  --color-danger-glow: rgba(222, 85, 38, 0.3);
 
-  /* Warning / Pending / Mining -> Warm Amber-Orange */
+  /* Warning */
   --color-warning: #de5526;
   --color-warning-light: #ff8c5a;
   --color-warning-dark: #b03c13;
-  --color-warning-darker: #2b0c03;
-  --color-warning-bg: rgba(222, 85, 38, 0.14);
   --color-warning-bg-subtle: rgba(222, 85, 38, 0.06);
   --color-warning-border: rgba(222, 85, 38, 0.4);
   --color-warning-glow: rgba(222, 85, 38, 0.25);
 
-  /* Info / Network / Metrics -> High Contrast Cream / Subtle Orange */
+  /* Info / Network */
   --color-info: #fff8f0;
   --color-info-light: #ffffff;
   --color-info-dark: #de5526;
@@ -199,86 +132,28 @@
 
   /* Special / Contract Badges */
   --color-purple: #de5526;
-  --color-purple-light: #ff7a45;
-  --color-purple-dark: #b03c13;
-  --color-purple-darker: #1c1c1c;
-  --color-purple-bg: rgba(222, 85, 38, 0.12);
-  --color-purple-bg-subtle: rgba(222, 85, 38, 0.06);
-  --color-purple-border: rgba(222, 85, 38, 0.35);
-  --color-purple-glow: rgba(222, 85, 38, 0.25);
-
   --color-pink: #de5526;
-  --color-pink-light: #ff7a45;
-  --color-pink-dark: #b03c13;
-  --color-pink-darker: #1c1c1c;
-  --color-pink-bg: rgba(222, 85, 38, 0.12);
-  --color-pink-bg-subtle: rgba(222, 85, 38, 0.06);
-  --color-pink-border: rgba(222, 85, 38, 0.35);
-  --color-pink-glow: rgba(222, 85, 38, 0.25);
 
   /* ==========================================================================
      7. SPECIALIZED BADGES & PROTOCOL LABELS (Tsar Studio Style)
      ========================================================================== */
   --badge-p2wsh-bg: #1c1c1c;
   --badge-p2wpkh-bg: #171717;
-  --badge-burn-bg: #de5526;
-  --badge-mint-bg: #fff8f0;
-  --badge-reward-bg: #1c1c1c;
-  --badge-contract-bg: #1c1c1c;
-  --badge-genesis-bg: #de5526;
-  --badge-graffiti-bg: #de5526;
   --badge-neutral-bg: #1c1c1c;
-  --badge-orange-bg: #de5526;
-  --badge-orange-border: #fff8f0;
-  --badge-orange-text: #fff8f0;
-  --badge-brown-bg: #1f1a18;
-  --badge-brown-border: rgba(222, 85, 38, 0.5);
-  --badge-brown-text: #fff8f0;
   --badge-gray-solid: #2a2a2a;
-  --badge-gray-border: rgba(255, 248, 240, 0.2);
-  --badge-shimmer: rgba(255, 248, 240, 0.3);
-  --gradient-silver: linear-gradient(135deg, #1c1c1c 0%, #2a2a2a 50%, #1c1c1c 100%);
-
-  /* Genesis & Gold Tokens -> Tsar Studio Orange & Cream */
-  --gold-primary: #de5526;
-  --gold-light: #fff8f0;
-  --gold-border: #de5526;
-  --gold-border-glow: rgba(222, 85, 38, 0.6);
-  --gold-bg: rgba(222, 85, 38, 0.15);
-  --gold-bg-dark: #181210;
-  --gold-glow: rgba(222, 85, 38, 0.5);
-  --gold-glow-subtle: rgba(222, 85, 38, 0.3);
-  --gold-gradient: linear-gradient(135deg, rgba(222, 85, 38, 0.25) 0%, rgba(18, 18, 18, 0.8) 100%);
-  --gold-active-gradient: linear-gradient(135deg, #de5526 0%, #121212 100%);
-  --gold-shadow: 2px 2px 0px #121212;
 
   /* Terminal Window Tokens */
   --terminal-dot-red: #de5526;
   --terminal-dot-yellow: #fff8f0;
   --terminal-dot-green: #fff8f0;
 
-  /* Card Selected States */
-  --card-selected-bg: #1c1c1c;
-  --card-selected-border: #de5526;
-  --card-selected-glow: 0 0 0 1px #de5526, 3px 3px 0px #121212;
-  --card-orange-selected-bg: #1f1714;
-  --card-orange-selected-glow: 0 0 0 1px #de5526, 3px 3px 0px #121212;
-
   /* ==========================================================================
-     8. SCROLLBAR
-     ========================================================================== */
-  --scrollbar-track: #121212;
-  --scrollbar-thumb: #fff8f0;
-  --scrollbar-thumb-hover: #de5526;
-
-  /* ==========================================================================
-     9. FONTS & TYPOGRAPHY
+     8. FONTS & TYPOGRAPHY
      ========================================================================== */
   --font-newspaper: 'Newspaper', sans-serif;
-  --font-monserat: 'Montserrat', sans-serif;
+  --font-montserrat: 'Montserrat', sans-serif;
 
   --fw-light: 300;
-  --fw-normal: 400;
   --fw-medium: 500;
   --fw-semibold: 600;
   --fw-bold: 700;
@@ -328,7 +203,7 @@ body {
   background-image: var(--bg-gradient);
   background-attachment: fixed;
   color: var(--color-tsar-cream);
-  font-family: var(--font-monserat);
+  font-family: var(--font-montserrat);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;

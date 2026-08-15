@@ -250,8 +250,8 @@ const Network = ({ onSearchClick }) => {
   const miners = view.miners_snapshot || {};
 
   // Adaptive network health status
-  let networkHealth = "healthy";
-  let statusText = "Operational";
+  let networkHealth;
+  let statusText;
 
   if (peersCount >= 3 || (peersCount >= 1 && chain.tip_height > 0)) {
     networkHealth = "healthy";
@@ -276,7 +276,7 @@ const Network = ({ onSearchClick }) => {
             <LiveIndicator
               isLive={isLive}
               onToggleLive={() => setIsLive(prev => !prev)}
-              onRefresh={() => loadData(true)}
+              onRefresh={handleRefresh}
               lastUpdated={lastUpdated}
               isRefreshing={isRefreshing}
               intervalSec={30}
