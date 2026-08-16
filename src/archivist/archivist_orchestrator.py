@@ -60,7 +60,6 @@ class ArchivistOrchestrator:
         self.pool_data: dict[str, Dict[str, Any]] = {}
         
         self._auto_payout_guard: dict[str, Dict[str, Any]] = {}
-        self._auto_payout_store: Any = None
         self._auto_payout_lock = threading.Lock()
         self._load_auto_payout_guard()
 

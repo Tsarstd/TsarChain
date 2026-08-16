@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import json
+import time
 from typing import Dict, Iterator, Tuple, Optional
 
 from tsarcore_native import open_storage as _native_open_storage
@@ -51,9 +52,14 @@ class ArchivistDatabase:
         self.enable_index = enable_index
         self.enable_blobs = enable_blobs
         self._mem_index = {"files": {}, "bytes_used": 0, "art_map": {}}
+        self._mem_guard: dict = {}
+        self._kv_guard = None
 
         if self.enable_index:
             self._kv_index = self._open_store(CFG.ARCHIVIST_INDEX_DB_PATH)
+            guard_path = CFG.ARCHIVIST_PAYOUT_GUARD_DB_PATH
+            guard_map_size = CFG.ARCHIVIST_PAYOUT_GUARD_MAP_SIZE
+            self._kv_guard = self._open_store(guard_path, init_size=guard_map_size)
 
 
     # ---------------- Index ----------------
@@ -254,11 +260,12 @@ class ArchivistDatabase:
 
     # ---------------- Payout Guard KV Store Integration ----------------
     def load_payout_guard(self) -> dict:
-        if not self.enable_index:
-            return {}
+        if not self.enable_index or not getattr(self, "_kv_guard", None):
+            return dict(self._mem_guard)
         guard: dict = {}
-        for k, v in _iter_prefix(self._kv_index, "idx", b"guard:"):
-            art_id = k.decode("utf-8")[6:]
+        for k, v in _iter_prefix(self._kv_guard, "guard", b""):
+            raw_k = k.decode("utf-8")
+            art_id = raw_k[6:] if raw_k.startswith("guard:") else raw_k
             try:
                 entry = json.loads(v.decode("utf-8"))
                 if isinstance(entry, dict):
@@ -271,13 +278,14 @@ class ArchivistDatabase:
         return guard
 
     def save_payout_guard(self, guard_data: dict) -> None:
-        if not self.enable_index:
+        if not self.enable_index or not getattr(self, "_kv_guard", None):
+            self._mem_guard = dict(guard_data or {})
             return
         ops = []
         for art_id, entry in (guard_data or {}).items():
-            ops.append((f"guard:{art_id}".encode("utf-8"), json.dumps(entry).encode("utf-8")))
+            ops.append((str(art_id).encode("utf-8"), json.dumps(entry).encode("utf-8")))
         if ops:
-            self._kv_index.put_batch("idx", ops)
+            self._kv_guard.put_batch("guard", ops)
 
     def cleanup_expired_incoming(self, max_age_seconds: int = 7200) -> int:
         """
@@ -304,10 +312,10 @@ class ArchivistDatabase:
         return cleaned
 
     # ---------------- KV helpers ----------------
-    def _open_store(self, path: str):
+    def _open_store(self, path: str, init_size: int | None = None, max_size: int | None = None):
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        init_size = int(CFG.STORAGE_SIZE_INIT)
-        max_size = int(CFG.STORAGE_MAX_BYTES)
+        init_size = int(init_size or CFG.STORAGE_SIZE_INIT)
+        max_size = int(max_size or CFG.STORAGE_MAX_BYTES)
 
         if os.path.isfile(path):
             try:
