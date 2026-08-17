@@ -426,7 +426,7 @@ const FormattedMarkdownContent = ({ content }) => {
                 return (
                   <ul key={para.id} className="doc-bullet-list">
                     {items.map((item) => {
-                      const itemText = item.replace(/^[-*]\s+/, "");
+                      const itemText = item.trim().replace(/^[-*]\s+/, "");
                       return (
                         <li key={`${para.id}-${itemText}`}>
                           {formatInlineMarkdown(itemText)}
@@ -651,8 +651,8 @@ const DocContentRenderer = ({ docData, activeLang }) => {
             <div className="doc-items-list">
               {section.items.map((item) => (
                 <div key={item.label} className="doc-item-row">
-                  <div className="doc-item-label">{item.label}</div>
-                  <div className="doc-item-text">{item.text}</div>
+                  <div className="doc-item-label">{formatInlineMarkdown(item.label)}</div>
+                  <div className="doc-item-text">{formatInlineMarkdown(item.text)}</div>
                 </div>
               ))}
             </div>
