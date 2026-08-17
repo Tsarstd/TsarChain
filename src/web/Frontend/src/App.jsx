@@ -360,7 +360,6 @@ const AppContent = () => {
                 </Suspense>
               }
             />
-            <Route path="/coockiePolicy" element={<Navigate to="/cookiePolicy" replace />} />
             <Route path="/cookies" element={<Navigate to="/cookiePolicy" replace />} />
             <Route
               path="/disclaimer"

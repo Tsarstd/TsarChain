@@ -193,7 +193,7 @@ export const LegalLayout = ({
           {LEGAL_TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = currentPath === tab.path.toLowerCase() || 
-              (tab.path === "/cookiePolicy" && currentPath === "/coockiepolicy") ||
+              (tab.path === "/cookiePolicy" && currentPath === "/cookiepolicy") ||
               (tab.path === "/privacyPolicy" && currentPath === "/privacy-policy");
 
             return (
