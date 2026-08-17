@@ -146,7 +146,7 @@ python benchmarks/native_bench.py \\
 
 When everything is installed correctly you should see something like:
 
-\`\`\`text
+\`\`\`bash
 [randomx] configured lite mode (cache_max=1)
 Native backend is mandatory; helpers module imported tsarcore_native successfully.
 Functions available: ['count_sigops_in_script', 'bip143_sig_hash', 'verify_der_strict_low_s', 'merkle_root', 'hash256', 'hash160', 'batch_verify_der_low_s']

@@ -1,7 +1,7 @@
 import PropTypes from "prop-types";
 import { useDragScroll } from "../utils/useDragScroll";
 import { fmtBytes } from "../utils/format";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useCallback, useEffect, useState, useMemo, useRef, memo } from "react";
 import { ResultGraffiti } from "../components/search/SearchResults";
 import { fetchGraffitiDetail, fetchGraffitiList, fetchByKind } from "../api/explorer";
@@ -115,6 +115,9 @@ GraffitiCard.displayName = "GraffitiCard";
 
 const Graffiti = ({ onSearchClick }) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const jumpParam = useMemo(() => new URLSearchParams(location.search).get("jump"), [location.search]);
+
   const [items, setItems] = useState([]);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -125,8 +128,6 @@ const Graffiti = ({ onSearchClick }) => {
   const [detailStatus, setDetailStatus] = useState("idle");
   const [detailMessage, setDetailMessage] = useState("");
   const [selectedId, setSelectedId] = useState(null);
-  const [navInput, setNavInput] = useState("");
-  const [isNavigating, setIsNavigating] = useState(false);
   
   // Media Filter State ('all' | 'video' | 'image' | 'pdf')
   const [filterTab, setFilterTab] = useState("all");
@@ -371,43 +372,48 @@ const Graffiti = ({ onSearchClick }) => {
   }, [appendAndFocusGraffiti]);
 
   // Jump To Navigation (Supports Graffiti ID & Block Height)
-  const handleNavigateToGraffiti = async () => {
-    const rawInput = navInput.trim();
-    if (!rawInput) {
-      setMessage("Masukkan Graffiti ID atau Block Height");
-      return;
-    }
+  const handleNavigateToGraffiti = useCallback(
+    async (targetInput) => {
+      if (targetInput === null || targetInput === undefined) return;
+      const rawInput = String(targetInput).trim();
+      if (!rawInput) return;
 
-    setIsNavigating(true);
-    setMessage("");
+      setMessage("");
 
-    try {
-      const isHeightQuery = /^\d+$/.test(rawInput);
-      const targetHeight = isHeightQuery ? Number.parseInt(rawInput, 10) : null;
+      try {
+        const isHeightQuery = /^\d+$/.test(rawInput);
+        const targetHeight = isHeightQuery ? Number.parseInt(rawInput, 10) : null;
 
-      const existingGraffiti = isHeightQuery
-        ? items.find((item) => Number(item.block_height) === targetHeight)
-        : items.find((item) => item.art_id?.toLowerCase() === rawInput.toLowerCase());
+        const existingGraffiti = isHeightQuery
+          ? items.find((item) => Number(item.block_height) === targetHeight)
+          : items.find((item) => item.art_id?.toLowerCase() === rawInput.toLowerCase());
 
-      if (existingGraffiti) {
-        setFilterTab("all");
-        await handleSelect(existingGraffiti);
-        scrollToGraffiti(existingGraffiti.art_id);
-        return;
+        if (existingGraffiti) {
+          setFilterTab("all");
+          await handleSelect(existingGraffiti);
+          scrollToGraffiti(existingGraffiti.art_id);
+          return;
+        }
+
+        if (isHeightQuery) {
+          await searchRemoteBlockHeight(targetHeight);
+        } else {
+          await searchRemoteArtId(rawInput);
+        }
+      } catch (err) {
+        console.error("Graffiti navigation error:", err);
+        setMessage(`Gagal navigasi ke graffiti: ${err.message}`);
       }
+    },
+    [items, handleSelect, scrollToGraffiti, searchRemoteBlockHeight, searchRemoteArtId]
+  );
 
-      if (isHeightQuery) {
-        await searchRemoteBlockHeight(targetHeight);
-      } else {
-        await searchRemoteArtId(rawInput);
-      }
-    } catch (err) {
-      console.error("Graffiti navigation error:", err);
-      setMessage(`Gagal navigasi ke graffiti: ${err.message}`);
-    } finally {
-      setIsNavigating(false);
+  // Listen to URL search param ?jump=...
+  useEffect(() => {
+    if (jumpParam && items.length > 0) {
+      handleNavigateToGraffiti(jumpParam);
     }
-  };
+  }, [jumpParam, items.length, location.search, handleNavigateToGraffiti]);
 
   const handleSearchClickLocal = useCallback(
     (value) => {
@@ -420,28 +426,6 @@ const Graffiti = ({ onSearchClick }) => {
     [onSearchClick, navigate]
   );
 
-  const handleGoToLatest = () => {
-    if (filteredItems.length > 0) {
-      const latestGraffiti = filteredItems[0];
-      setSelectedId(latestGraffiti.art_id);
-      handleSelect(latestGraffiti);
-      setNavInput("");
-
-      if (scrollerRef.current) {
-        scrollerRef.current.scrollTo({
-          left: 0,
-          behavior: "smooth",
-        });
-      }
-    }
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter") {
-      handleNavigateToGraffiti();
-    }
-  };
-
   const genesisId = !hasMore && items.length ? items.at(-1)?.art_id : null;
 
   // Rendered cards in current virtual window
@@ -453,7 +437,7 @@ const Graffiti = ({ onSearchClick }) => {
   return (
     <main className="page">
       <section className="section">
-        {/* Top Header Bar: Filter Tabs on Left, Jump To on Right */}
+        {/* Top Header Bar: Filter Tabs */}
         <div className="graffiti-filter-bar glass-panel">
           <div className="graffiti-filter-left">
             <div className="graffiti-filter-title">
@@ -487,34 +471,6 @@ const Graffiti = ({ onSearchClick }) => {
                 type="button"
               >
                 <RiFilePdfLine /> Documents ({counts.pdf})
-              </button>
-            </div>
-          </div>
-
-          <div className="navigation-controls">
-            <button
-              className="nav-button nav-button--back"
-              onClick={handleGoToLatest}
-              title="Kembali ke graffiti terkini"
-              disabled={items.length === 0 || selectedId === items[0]?.art_id}
-            >
-              ←
-            </button>
-            <div className="nav-input-group">
-              <input
-                type="text"
-                className="nav-input"
-                placeholder="Graffiti ID / Block Height"
-                value={navInput}
-                onChange={(e) => setNavInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-              />
-              <button
-                className="nav-button nav-button--go"
-                onClick={handleNavigateToGraffiti}
-                disabled={isNavigating || !navInput.trim()}
-              >
-                {isNavigating ? "..." : "Go"}
               </button>
             </div>
           </div>

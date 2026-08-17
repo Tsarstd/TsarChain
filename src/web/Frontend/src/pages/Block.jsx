@@ -1,5 +1,5 @@
 import PropTypes from "prop-types";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { fmtDateLong, timeAgo } from "../utils/format";
 import { fetchBlockRange, fetchByKind } from "../api/explorer";
 import { ResultBlock } from "../components/search/SearchResults";
@@ -142,11 +142,12 @@ const Block = ({ onSearchClick }) => {
   const [detailStatus, setDetailStatus] = useState("idle");
   const [detailMessage, setDetailMessage] = useState("");
   const [selectedHeight, setSelectedHeight] = useState(null);
-  const [navInput, setNavInput] = useState("");
-  const [isNavigating, setIsNavigating] = useState(false);
   const [isLive, setIsLive] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const location = useLocation();
+  const jumpParam = useMemo(() => new URLSearchParams(location.search).get("jump"), [location.search]);
 
   // Virtualizer Scroll Tracking
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -436,68 +437,86 @@ const Block = ({ onSearchClick }) => {
     }
   }, []);
 
-  // Jump to Block Navigation (Zero Gap Guarantee)
-  const handleNavigateToBlock = async () => {
-    const targetHeight = Number.parseInt(navInput, 10);
-    if (Number.isNaN(targetHeight) || targetHeight < 0) {
-      setMessage("Masukkan nomor Block Height yang valid");
-      return;
-    }
+  // Jump to Block Navigation (Supports Block Height & Hash)
+  const handleNavigateToBlock = useCallback(
+    async (targetInput) => {
+      if (targetInput === null || targetInput === undefined) return;
+      const rawInput = String(targetInput).trim();
+      if (!rawInput) return;
 
-    if (tipHeight !== null && targetHeight > tipHeight) {
-      setMessage(`Block height melebihi tip saat ini (#${tipHeight})`);
-      return;
-    }
+      setMessage("");
 
-    setIsNavigating(true);
-    setMessage("");
+      try {
+        let targetHeight = null;
+        if (/^\d+$/.test(rawInput)) {
+          targetHeight = Number.parseInt(rawInput, 10);
+        } else if (/^[0-9a-fA-F]{64}$/.test(rawInput)) {
+          // Block hash lookup
+          for (const [h, b] of blocksMap.entries()) {
+            if (b?.hash?.toLowerCase() === rawInput.toLowerCase()) {
+              targetHeight = h;
+              break;
+            }
+          }
+          if (targetHeight === null) {
+            const resp = await fetchByKind("block_hash", rawInput).catch(() => null);
+            const blockData = resp?.data || null;
+            if (blockData?.height !== undefined && blockData?.height !== null) {
+              targetHeight = Number(blockData.height);
+              setBlocksMap((prev) => mergeBlocksToMap(prev, [blockData]));
+            } else {
+              setMessage(`Block Hash "${rawInput.slice(0, 10)}..." tidak ditemukan`);
+              return;
+            }
+          }
+        } else {
+          setMessage("Masukkan nomor Block Height atau Block Hash yang valid");
+          return;
+        }
 
-    try {
-      // 1. Math-precise pixel target offset
-      const currentTip = tipHeight ?? targetHeight;
-      const targetIndex = Math.max(0, currentTip - targetHeight);
-      const targetScrollLeft = Math.max(
-        0,
-        targetIndex * slotWidth - (containerWidth / 2 - cardWidth / 2)
-      );
+        if (targetHeight < 0) {
+          setMessage("Block Height tidak valid");
+          return;
+        }
 
-      // 2. Smoothly scroll directly to target position
-      if (scrollerRef.current) {
-        scrollerRef.current.scrollTo({
-          left: targetScrollLeft,
-          behavior: "smooth",
-        });
+        if (tipHeight !== null && targetHeight > tipHeight) {
+          setMessage(`Block height melebihi tip saat ini (#${tipHeight})`);
+          return;
+        }
+
+        // 1. Math-precise pixel target offset
+        const currentTip = tipHeight ?? targetHeight;
+        const targetIndex = Math.max(0, currentTip - targetHeight);
+        const targetScrollLeft = Math.max(
+          0,
+          targetIndex * slotWidth - (containerWidth / 2 - cardWidth / 2)
+        );
+
+        // 2. Smoothly scroll directly to target position
+        if (scrollerRef.current) {
+          scrollerRef.current.scrollTo({
+            left: targetScrollLeft,
+            behavior: "smooth",
+          });
+        }
+
+        // 3. Immediately select block and open details
+        setSelectedHeight(targetHeight);
+        await handleSelect({ height: targetHeight });
+      } catch (err) {
+        console.error("Navigation error:", err);
+        setMessage(`Gagal navigasi ke block: ${err.message}`);
       }
+    },
+    [tipHeight, blocksMap, slotWidth, containerWidth, cardWidth, scrollerRef, handleSelect]
+  );
 
-      // 3. Immediately select block and open details
-      setSelectedHeight(targetHeight);
-      await handleSelect({ height: targetHeight });
-    } catch (err) {
-      console.error("Navigation error:", err);
-      setMessage(`Gagal navigasi ke block #${targetHeight}: ${err.message}`);
-    } finally {
-      setIsNavigating(false);
+  // Listen to URL search param ?jump=...
+  useEffect(() => {
+    if (jumpParam && tipHeight !== null) {
+      handleNavigateToBlock(jumpParam);
     }
-  };
-
-  // Return to Latest Block (←)
-  const handleGoToLatest = () => {
-    if (tipHeight !== null && scrollerRef.current) {
-      setSelectedHeight(tipHeight);
-      handleSelect({ height: tipHeight });
-      setNavInput("");
-      scrollerRef.current.scrollTo({
-        left: 0,
-        behavior: "smooth",
-      });
-    }
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter") {
-      handleNavigateToBlock();
-    }
-  };
+  }, [jumpParam, tipHeight, location.search, handleNavigateToBlock]);
 
   const handleSearchClickLocal = useCallback(
     (value) => {
@@ -540,36 +559,6 @@ const Block = ({ onSearchClick }) => {
               intervalSec={20}
               label="Live Sync"
             />
-          </div>
-          <div className="navigation-controls">
-            <button
-              className="nav-button nav-button--back"
-              onClick={handleGoToLatest}
-              title="Kembali ke block terkini"
-              disabled={tipHeight === null || selectedHeight === tipHeight}
-            >
-              ←
-            </button>
-
-            <div className="nav-input-group">
-              <input
-                type="number"
-                className="nav-input"
-                placeholder={tipHeight === null ? "Block height" : `0 - ${tipHeight}`}
-                value={navInput}
-                onChange={(e) => setNavInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                min="0"
-                max={tipHeight ?? undefined}
-              />
-              <button
-                className="nav-button nav-button--go"
-                onClick={handleNavigateToBlock}
-                disabled={isNavigating || !navInput.trim()}
-              >
-                {isNavigating ? "..." : "Go"}
-              </button>
-            </div>
           </div>
         </div>
 

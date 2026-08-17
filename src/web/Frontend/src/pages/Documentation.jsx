@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import PropTypes from "prop-types";
 import { useSearchParams } from "react-router-dom";
 import { RiMenuUnfoldLine, RiListCheck2 } from "react-icons/ri";
 
@@ -8,6 +7,13 @@ import DocHeader from "../components/docs/DocHeader";
 import DocContentRenderer from "../components/docs/DocContentRenderer";
 import DocTableOfContents from "../components/docs/DocTableOfContents";
 import { getDocData, getDocById } from "../docs";
+
+const getCurrentDocContent = (docData, activeLang) => {
+  if (docData.type === "about") {
+    return activeLang === "id" ? docData.data.id_lang : docData.data.en;
+  }
+  return docData.data;
+};
 
 const Documentation = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -34,14 +40,8 @@ const Documentation = () => {
   const docMeta = getDocById(activeDocId);
   const docData = getDocData(activeDocId);
 
-  // Extract TOC items for right rail
-  const tocItems = docData.type === "about"
-    ? (activeLang === "id" ? docData.data.id_lang?.toc : docData.data.en?.toc)
-    : docData.data.toc;
-
-  const currentContent = docData.type === "about"
-    ? (activeLang === "id" ? docData.data.id_lang : docData.data.en)
-    : docData.data;
+  const currentContent = getCurrentDocContent(docData, activeLang);
+  const tocItems = currentContent?.toc;
 
   // Dynamic document title
   useEffect(() => {
@@ -140,10 +140,6 @@ const Documentation = () => {
       </div>
     </div>
   );
-};
-
-Documentation.propTypes = {
-  onSearchClick: PropTypes.func,
 };
 
 export default Documentation;

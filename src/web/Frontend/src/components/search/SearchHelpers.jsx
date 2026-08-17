@@ -10,13 +10,13 @@ export const useMobile = () => {
 
   useEffect(() => {
     const checkMobile = () => {
-      const mobile = window.innerWidth <= 768;
+      const mobile = (globalThis.window?.innerWidth ?? 1200) <= 768;
       setIsMobile(mobile);
       setMaxCharsPerLine(getMaxCharsPerLine());
     };
     checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    globalThis.addEventListener('resize', checkMobile);
+    return () => globalThis.removeEventListener('resize', checkMobile);
   }, []);
 
   return { isMobile, maxCharsPerLine };
@@ -150,7 +150,11 @@ export const useScrambleText = (
     }
 
     const chars = charset || "0123456789abcdef";
-    const getRandomChar = () => chars[Math.floor(Math.random() * chars.length)];
+    const randomBuffer = new Uint32Array(1);
+    const getRandomChar = () => {
+      globalThis.crypto.getRandomValues(randomBuffer);
+      return chars[randomBuffer[0] % chars.length];
+    };
 
     let animationFrameId;
     const startTime = performance.now();

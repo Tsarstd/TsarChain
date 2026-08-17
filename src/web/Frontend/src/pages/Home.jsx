@@ -1,4 +1,3 @@
-import PropTypes from "prop-types";
 import CyberBackground from "../components/home/CyberBackground";
 import HeroBanner from "../components/home/HeroBanner";
 import TelemetryTicker from "../components/home/TelemetryTicker";
@@ -32,10 +31,6 @@ const Home = () => {
       <DocsHubBanner />
     </div>
   );
-};
-
-Home.propTypes = {
-  onSearchClick: PropTypes.func,
 };
 
 export default Home;

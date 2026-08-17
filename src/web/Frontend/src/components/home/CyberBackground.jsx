@@ -123,7 +123,7 @@ const CyberBackground = () => {
     let height = (canvas.height = globalThis.innerHeight);
 
     // Respect reduced motion preference
-    const prefersReducedMotion = globalThis.matchMedia && globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const prefersReducedMotion = Boolean(globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
 
     // Particles configuration optimized for performance
     const isMobile = width < 768;
@@ -237,6 +237,7 @@ const CyberBackground = () => {
   return (
     <canvas
       ref={canvasRef}
+      tabIndex={-1}
       style={{
         position: "fixed",
         top: 0,

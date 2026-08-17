@@ -5,9 +5,9 @@ import PropTypes from "prop-types";
 const hashString = (str) => {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
+    const char = str.codePointAt(i) ?? 0;
     hash = (hash << 5) - hash + char;
-    hash |= 0; // Convert to 32bit integer
+    hash = Math.trunc(hash); // Convert to 32bit integer
   }
   return Math.abs(hash);
 };
@@ -45,7 +45,7 @@ export const Identicon = ({ value = "", size = 28, className = "" }) => {
     return {
       cells: grid,
       bg: "#141414",
-      fg: PALETTE[fgIndex] !== "#141414" ? PALETTE[fgIndex] : PALETTE[bgIndex],
+      fg: PALETTE[fgIndex] === "#141414" ? PALETTE[bgIndex] : PALETTE[fgIndex],
     };
   }, [value]);
 

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import SearchResultPanel from "./SearchResults";
 import { IoClose } from "react-icons/io5";
@@ -12,30 +12,45 @@ const SearchOverlay = ({
   onSearchClick = () => {},
   onClose,
 }) => {
-  // Handle ESC key
+  const dialogRef = useRef(null);
+
+  // Handle ESC key and backdrop click
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === "Escape" && open && onClose) {
         onClose();
       }
     };
+
+    const handleBackdropClick = (e) => {
+      if (e.target === dialogRef.current && onClose) {
+        onClose();
+      }
+    };
+
+    const dialogEl = dialogRef.current;
+    if (open && dialogEl) {
+      dialogEl.addEventListener("click", handleBackdropClick);
+    }
     globalThis.addEventListener("keydown", handleKeyDown);
-    return () => globalThis.removeEventListener("keydown", handleKeyDown);
+
+    return () => {
+      if (dialogEl) {
+        dialogEl.removeEventListener("click", handleBackdropClick);
+      }
+      globalThis.removeEventListener("keydown", handleKeyDown);
+    };
   }, [open, onClose]);
 
   if (!open) return null;
 
   return (
     <dialog
+      ref={dialogRef}
       className="search-overlay"
       open
       aria-modal="true"
       aria-label="Search Results"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && onClose) {
-          onClose();
-        }
-      }}
     >
       <div className="search-overlay__panel glass-panel">
         <div className="search-overlay__header">

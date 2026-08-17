@@ -735,12 +735,25 @@
   border-left-color: var(--color-tsar-orange);
 }
 
+.recent-searches-dropdown__item-btn,
 .recent-searches-dropdown__item-content {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
   flex: 1;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.recent-searches-dropdown__item-btn:focus-visible {
+  outline: none;
 }
 
 .recent-searches-dropdown__item-icon {
@@ -751,7 +764,9 @@
 }
 
 .recent-searches-dropdown__item:hover .recent-searches-dropdown__item-icon,
-.recent-searches-dropdown__item.active .recent-searches-dropdown__item-icon {
+.recent-searches-dropdown__item.active .recent-searches-dropdown__item-icon,
+.recent-searches-dropdown__item-btn:hover .recent-searches-dropdown__item-icon,
+.recent-searches-dropdown__item-btn:focus-visible .recent-searches-dropdown__item-icon {
   color: var(--color-tsar-orange);
 }
 

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import { IoTimeOutline, IoTrashOutline, IoClose } from "react-icons/io5";
 import {
@@ -16,6 +16,7 @@ const RecentSearchesDropdown = ({
 }) => {
   const [history, setHistory] = useState(() => getSearchHistory());
   const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  const dropdownRef = useRef(null);
 
   if (prevIsOpen !== isOpen) {
     setPrevIsOpen(isOpen);
@@ -23,6 +24,21 @@ const RecentSearchesDropdown = ({
       setHistory(getSearchHistory());
     }
   }
+
+  // Prevent input blur when clicking inside dropdown
+  useEffect(() => {
+    const el = dropdownRef.current;
+    if (!el) return;
+
+    const handleMouseDown = (e) => {
+      e.preventDefault();
+    };
+
+    el.addEventListener("mousedown", handleMouseDown);
+    return () => {
+      el.removeEventListener("mousedown", handleMouseDown);
+    };
+  }, [isOpen]);
 
   const cleanQuery = query?.trim().toLowerCase() || "";
   const filtered = useMemo(() => {
@@ -49,10 +65,9 @@ const RecentSearchesDropdown = ({
   };
 
   return (
-    <div
-      className={`recent-searches-dropdown ${className}`}
-      onMouseDown={(e) => e.preventDefault()}
-      role="region"
+    <section
+      ref={dropdownRef}
+      className={`recent-searches-dropdown ${className}`.trim()}
       aria-label="Recent Searches"
     >
       <div className="recent-searches-dropdown__header">
@@ -70,23 +85,25 @@ const RecentSearchesDropdown = ({
         </button>
       </div>
 
-      <ul className="recent-searches-dropdown__list" role="listbox">
+      <ul className="recent-searches-dropdown__list">
         {filtered.map((item, idx) => {
           const isActive = idx === activeIndex;
           return (
             <li
               key={item}
               className={`recent-searches-dropdown__item ${isActive ? "active" : ""}`}
-              role="option"
-              aria-selected={isActive}
-              onClick={() => onSelect?.(item)}
             >
-              <div className="recent-searches-dropdown__item-content">
+              <button
+                type="button"
+                className="recent-searches-dropdown__item-btn"
+                onClick={() => onSelect?.(item)}
+                title={item}
+              >
                 <IoTimeOutline className="recent-searches-dropdown__item-icon" />
-                <span className="recent-searches-dropdown__item-text" title={item}>
+                <span className="recent-searches-dropdown__item-text">
                   {item}
                 </span>
-              </div>
+              </button>
               <button
                 type="button"
                 className="recent-searches-dropdown__remove-btn"
@@ -112,7 +129,7 @@ const RecentSearchesDropdown = ({
           <kbd className="recent-searches-dropdown__kbd">ESC</kbd> close
         </span>
       </div>
-    </div>
+    </section>
   );
 };
 

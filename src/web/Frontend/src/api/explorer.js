@@ -20,9 +20,13 @@ export const fetchNetwork = async (signal) => {
 export const fetchByKind = async (kind, id, signal) => {
   const map = {
     block: `/api/block/${encodeURIComponent(id)}`,
+    block_hash: `/api/block/${encodeURIComponent(id)}`,
+    block_height: `/api/block/${encodeURIComponent(id)}`,
     tx: `/api/tx/${encodeURIComponent(id)}`,
+    txid_hash: `/api/tx/${encodeURIComponent(id)}`,
     address: `/api/address/${encodeURIComponent(id)}`,
     graffiti: `/api/graffiti/${encodeURIComponent(id)}`,
+    art_id: `/api/graffiti/${encodeURIComponent(id)}`,
   };
   const url = map[kind];
   if (!url) throw new Error("unknown_kind");

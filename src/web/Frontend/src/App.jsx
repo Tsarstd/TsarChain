@@ -30,12 +30,18 @@ import "./styles/address.css";
 import "./styles/live_indicator.css";
 import "./styles/toast.css";
 import "./styles/documentation.css";
+import "./styles/legal.css";
 
 // Lazy-load secondary routes for faster initial load
 const Block = lazy(() => import("./pages/Block"));
 const Graffiti = lazy(() => import("./pages/Graffiti"));
 const Network = lazy(() => import("./pages/Network"));
 const Documentation = lazy(() => import("./pages/Documentation"));
+const Terms = lazy(() => import("./docs/legal/terms"));
+const PrivacyPolicy = lazy(() => import("./docs/legal/privacyPolicy"));
+const CookiePolicy = lazy(() => import("./docs/legal/cookiePolicy"));
+const Disclaimer = lazy(() => import("./docs/legal/disclaimer"));
+const License = lazy(() => import("./docs/legal/license"));
 
 const pageVariants = {
   initial: { opacity: 0, y: 12 },
@@ -119,6 +125,28 @@ const AppContent = () => {
     const trimmed = String(value || "").trim();
     if (!trimmed) return;
     setQuery("");
+
+    const inferred = guessKind(trimmed);
+
+    // Smart context-aware navigation
+    if (location.pathname === "/block") {
+      if (inferred === "block_height" || inferred === "block_hash") {
+        setSearchOpen(false);
+        saveSearchHistory(trimmed);
+        navigate(`/block?jump=${encodeURIComponent(trimmed)}&t=${Date.now()}`, { replace: true });
+        return;
+      }
+    }
+
+    if (location.pathname === "/graffiti") {
+      if (inferred === "art_id" || inferred === "block_height") {
+        setSearchOpen(false);
+        saveSearchHistory(trimmed);
+        navigate(`/graffiti?jump=${encodeURIComponent(trimmed)}&t=${Date.now()}`, { replace: true });
+        return;
+      }
+    }
+
     const searchParams = new URLSearchParams(location.search);
     searchParams.set("search", trimmed);
     const newUrl = `${location.pathname}?${searchParams.toString()}`;
@@ -133,6 +161,28 @@ const AppContent = () => {
       setSearchOpen(true);
       return;
     }
+
+    const inferred = guessKind(q);
+
+    // Smart context-aware navigation
+    if (location.pathname === "/block") {
+      if (inferred === "block_height" || inferred === "block_hash") {
+        setSearchOpen(false);
+        saveSearchHistory(q);
+        navigate(`/block?jump=${encodeURIComponent(q)}&t=${Date.now()}`, { replace: true });
+        return;
+      }
+    }
+
+    if (location.pathname === "/graffiti") {
+      if (inferred === "art_id" || inferred === "block_height") {
+        setSearchOpen(false);
+        saveSearchHistory(q);
+        navigate(`/graffiti?jump=${encodeURIComponent(q)}&t=${Date.now()}`, { replace: true });
+        return;
+      }
+    }
+
     const searchParams = new URLSearchParams(location.search);
     searchParams.set("search", q);
     const newUrl = `${location.pathname}?${searchParams.toString()}`;
@@ -257,6 +307,89 @@ const AppContent = () => {
                     transition={pageTransition}
                   >
                     <Documentation onSearchClick={handleSearchClick} />
+                  </motion.div>
+                </Suspense>
+              }
+            />
+            <Route
+              path="/terms"
+              element={
+                <Suspense fallback={<RouteFallback />}>
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <Terms />
+                  </motion.div>
+                </Suspense>
+              }
+            />
+            <Route
+              path="/privacyPolicy"
+              element={
+                <Suspense fallback={<RouteFallback />}>
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <PrivacyPolicy />
+                  </motion.div>
+                </Suspense>
+              }
+            />
+            <Route path="/privacy-policy" element={<Navigate to="/privacyPolicy" replace />} />
+            <Route
+              path="/cookiePolicy"
+              element={
+                <Suspense fallback={<RouteFallback />}>
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <CookiePolicy />
+                  </motion.div>
+                </Suspense>
+              }
+            />
+            <Route path="/coockiePolicy" element={<Navigate to="/cookiePolicy" replace />} />
+            <Route path="/cookies" element={<Navigate to="/cookiePolicy" replace />} />
+            <Route
+              path="/disclaimer"
+              element={
+                <Suspense fallback={<RouteFallback />}>
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <Disclaimer />
+                  </motion.div>
+                </Suspense>
+              }
+            />
+            <Route
+              path="/license"
+              element={
+                <Suspense fallback={<RouteFallback />}>
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <License />
                   </motion.div>
                 </Suspense>
               }

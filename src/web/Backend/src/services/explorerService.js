@@ -350,8 +350,7 @@ class ExplorerService {
       return { kind, data: null };
     }
     
-    if (kind === "txid_hash" || kind === "block_hash") {
-      // Seacrh TxID First
+    if (kind === "txid_hash") {
       try {
         const txData = await this.getTx(query);
         if (txData?.txid) {
@@ -360,8 +359,6 @@ class ExplorerService {
       } catch (err) {
         console.warn("Search TX fallback error:", err);
       }
-      
-      // If TxID not found, find blockhash
       try {
         const blockData = await this.getBlock(query);
         if (blockData?.hash) {
@@ -370,8 +367,26 @@ class ExplorerService {
       } catch (err) {
         console.warn("Search Block fallback error:", err);
       }
-      
-      // Txid & blockhash not found
+      return { kind: "unknown", data: null };
+    }
+
+    if (kind === "block_hash") {
+      try {
+        const blockData = await this.getBlock(query);
+        if (blockData?.hash) {
+          return { kind: "block", data: blockData };
+        }
+      } catch (err) {
+        console.warn("Search Block fallback error:", err);
+      }
+      try {
+        const txData = await this.getTx(query);
+        if (txData?.txid) {
+          return { kind: "tx", data: txData };
+        }
+      } catch (err) {
+        console.warn("Search TX fallback error:", err);
+      }
       return { kind: "unknown", data: null };
     }
 

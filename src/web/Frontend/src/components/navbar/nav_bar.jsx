@@ -8,10 +8,44 @@ import { useCrt } from "../../context/useCrt";
 import RecentSearchesDropdown from "../search/RecentSearchesDropdown";
 import { getSearchHistory } from "../../utils/searchHistory";
 
+const NAV_LINKS = [
+  { label: "Home", path: "/" },
+  { label: "Block", path: "/block" },
+  { label: "Graffiti", path: "/graffiti" },
+  { label: "Network", path: "/network" },
+  { label: "Docs", path: "/documentation" },
+];
+
 const getFilteredRecent = (q) => {
   const all = getSearchHistory();
   const clean = q?.trim().toLowerCase() || "";
   return clean ? all.filter((item) => item.toLowerCase().includes(clean)) : all;
+};
+
+const handleHistoryKeyNav = (e, items, isOpen, setIsOpen, setActiveIndex) => {
+  if (e.key !== "ArrowDown" && e.key !== "ArrowUp") {
+    if (e.key === "Escape" && isOpen) {
+      e.stopPropagation();
+      setIsOpen(false);
+      setActiveIndex(-1);
+    }
+    return;
+  }
+
+  if (items.length === 0) return;
+
+  if (!isOpen) {
+    setIsOpen(true);
+    setActiveIndex(0);
+    return;
+  }
+
+  e.preventDefault();
+  if (e.key === "ArrowDown") {
+    setActiveIndex((prev) => (prev + 1) % items.length);
+  } else {
+    setActiveIndex((prev) => (prev <= 0 ? items.length - 1 : prev - 1));
+  }
 };
 
 const Navbar = ({ query, onQueryChange, onSearch, onSearchClick }) => {
@@ -29,25 +63,35 @@ const Navbar = ({ query, onQueryChange, onSearch, onSearchClick }) => {
   const mobileInputRef = useRef(null);
   const location = useLocation();
 
-  // Reset drawer states on route navigation
-  useEffect(() => {
-    Promise.resolve().then(() => {
-      setIsMobileMenuOpen(false);
-      setIsMobileSearchOpen(false);
-      setIsDesktopHistoryOpen(false);
-      setIsMobileHistoryOpen(false);
-    });
-  }, [location.pathname]);
+  const [prevPath, setPrevPath] = useState(location.pathname);
+  if (prevPath !== location.pathname) {
+    setPrevPath(location.pathname);
+    setIsMobileMenuOpen(false);
+    setIsMobileSearchOpen(false);
+    setIsDesktopHistoryOpen(false);
+    setIsMobileHistoryOpen(false);
+    setDesktopActiveIndex(-1);
+    setMobileActiveIndex(-1);
+  }
+
+  const closeAllMobile = () => {
+    setIsMobileMenuOpen(false);
+    setIsMobileSearchOpen(false);
+    setIsMobileHistoryOpen(false);
+  };
+
+  const closeAllDrawers = () => {
+    closeAllMobile();
+    setIsDesktopHistoryOpen(false);
+    setDesktopActiveIndex(-1);
+    setMobileActiveIndex(-1);
+  };
 
   const isAnyMobileDrawerOpen = isMobileMenuOpen || isMobileSearchOpen;
 
   // Lock body scroll when mobile drawers are open
   useEffect(() => {
-    if (isAnyMobileDrawerOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
+    document.body.style.overflow = isAnyMobileDrawerOpen ? "hidden" : "";
     return () => {
       document.body.style.overflow = "";
     };
@@ -71,152 +115,100 @@ const Navbar = ({ query, onQueryChange, onSearch, onSearchClick }) => {
 
   // Focus mobile input when mobile search bar opens
   useEffect(() => {
-    if (isMobileSearchOpen) {
-      const timer = setTimeout(() => {
-        mobileInputRef.current?.focus();
-        mobileInputRef.current?.select();
-      }, 80);
-      return () => clearTimeout(timer);
-    }
+    if (!isMobileSearchOpen) return;
+    const timer = setTimeout(() => {
+      mobileInputRef.current?.focus();
+      mobileInputRef.current?.select();
+    }, 80);
+    return () => clearTimeout(timer);
   }, [isMobileSearchOpen]);
+
+  const openSearch = (selectText = false) => {
+    if ((globalThis.window?.innerWidth ?? 1200) <= 768) {
+      setIsMobileMenuOpen(false);
+      setIsMobileSearchOpen(true);
+      return;
+    }
+    desktopInputRef.current?.focus();
+    if (selectText) {
+      desktopInputRef.current?.select();
+    }
+    setIsDesktopHistoryOpen(true);
+  };
 
   // Keyboard shortcut (Ctrl+K or Cmd+K or '/') listener
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === "Escape") {
-        if (isDesktopHistoryOpen) setIsDesktopHistoryOpen(false);
-        if (isMobileHistoryOpen) setIsMobileHistoryOpen(false);
-        if (isMobileSearchOpen) setIsMobileSearchOpen(false);
-        if (isMobileMenuOpen) setIsMobileMenuOpen(false);
+        setIsMobileMenuOpen(false);
+        setIsMobileSearchOpen(false);
+        setIsMobileHistoryOpen(false);
+        setIsDesktopHistoryOpen(false);
+        setDesktopActiveIndex(-1);
+        setMobileActiveIndex(-1);
         return;
       }
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        if (window.innerWidth <= 768) {
-          setIsMobileMenuOpen(false);
-          setIsMobileSearchOpen(true);
-        } else {
-          desktopInputRef.current?.focus();
-          desktopInputRef.current?.select();
-          setIsDesktopHistoryOpen(true);
-        }
-      } else if (e.key === "/" && document.activeElement !== desktopInputRef.current && document.activeElement !== mobileInputRef.current) {
-        const isInput = ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName);
-        if (!isInput) {
-          e.preventDefault();
-          if (window.innerWidth <= 768) {
-            setIsMobileMenuOpen(false);
-            setIsMobileSearchOpen(true);
-          } else {
-            desktopInputRef.current?.focus();
-            setIsDesktopHistoryOpen(true);
-          }
-        }
+        openSearch(true);
+        return;
+      }
+
+      const isInput = ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName);
+      if (e.key === "/" && !isInput) {
+        e.preventDefault();
+        openSearch(false);
       }
     };
+
     globalThis.addEventListener("keydown", handleKeyDown);
     return () => globalThis.removeEventListener("keydown", handleKeyDown);
-  }, [isMobileSearchOpen, isMobileMenuOpen, isDesktopHistoryOpen, isMobileHistoryOpen]);
+  }, []);
 
   const handleSelectRecent = (item) => {
     onQueryChange?.(item);
-    setIsDesktopHistoryOpen(false);
-    setIsMobileHistoryOpen(false);
-    setIsMobileSearchOpen(false);
-    setDesktopActiveIndex(-1);
-    setMobileActiveIndex(-1);
+    closeAllDrawers();
     if (onSearchClick) {
       onSearchClick(item);
-    } else if (onSearch) {
-      onSearch();
+    } else {
+      onSearch?.();
     }
   };
 
-  const handleDesktopSubmit = (event) => {
+  const handleFormSubmit = (event, isHistoryOpen, activeIndex, onComplete) => {
     event.preventDefault();
     const items = getFilteredRecent(query);
-    if (isDesktopHistoryOpen && desktopActiveIndex >= 0 && desktopActiveIndex < items.length) {
-      handleSelectRecent(items[desktopActiveIndex]);
+    if (isHistoryOpen && activeIndex >= 0 && activeIndex < items.length) {
+      handleSelectRecent(items[activeIndex]);
       return;
     }
-    setIsDesktopHistoryOpen(false);
-    setDesktopActiveIndex(-1);
-    if (onSearch) onSearch();
+    onComplete();
+    onSearch?.();
   };
 
-  const handleMobileSubmit = (event) => {
-    event.preventDefault();
-    const items = getFilteredRecent(query);
-    if (isMobileHistoryOpen && mobileActiveIndex >= 0 && mobileActiveIndex < items.length) {
-      handleSelectRecent(items[mobileActiveIndex]);
-      return;
-    }
-    setIsMobileHistoryOpen(false);
-    setIsMobileSearchOpen(false);
-    setMobileActiveIndex(-1);
-    if (onSearch) onSearch();
-  };
+  const handleDesktopSubmit = (e) =>
+    handleFormSubmit(e, isDesktopHistoryOpen, desktopActiveIndex, () => {
+      setIsDesktopHistoryOpen(false);
+      setDesktopActiveIndex(-1);
+    });
+
+  const handleMobileSubmit = (e) =>
+    handleFormSubmit(e, isMobileHistoryOpen, mobileActiveIndex, () => {
+      setIsMobileHistoryOpen(false);
+      setIsMobileSearchOpen(false);
+      setMobileActiveIndex(-1);
+    });
 
   const handleDesktopInputKeyDown = (e) => {
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      const items = getFilteredRecent(query);
-      if (items.length === 0) return;
-
-      if (!isDesktopHistoryOpen) {
-        setIsDesktopHistoryOpen(true);
-        setDesktopActiveIndex(0);
-        return;
-      }
-
-      e.preventDefault();
-      if (e.key === "ArrowDown") {
-        setDesktopActiveIndex((prev) => (prev + 1) % items.length);
-      } else {
-        setDesktopActiveIndex((prev) => (prev <= 0 ? items.length - 1 : prev - 1));
-      }
-    } else if (e.key === "Escape") {
-      if (isDesktopHistoryOpen) {
-        e.stopPropagation();
-        setIsDesktopHistoryOpen(false);
-        setDesktopActiveIndex(-1);
-      }
-    }
+    const items = getFilteredRecent(query);
+    handleHistoryKeyNav(e, items, isDesktopHistoryOpen, setIsDesktopHistoryOpen, setDesktopActiveIndex);
   };
 
   const handleMobileInputKeyDown = (e) => {
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      const items = getFilteredRecent(query);
-      if (items.length === 0) return;
-
-      if (!isMobileHistoryOpen) {
-        setIsMobileHistoryOpen(true);
-        setMobileActiveIndex(0);
-        return;
-      }
-
-      e.preventDefault();
-      if (e.key === "ArrowDown") {
-        setMobileActiveIndex((prev) => (prev + 1) % items.length);
-      } else {
-        setMobileActiveIndex((prev) => (prev <= 0 ? items.length - 1 : prev - 1));
-      }
-    } else if (e.key === "Escape") {
-      if (isMobileHistoryOpen) {
-        e.stopPropagation();
-        setIsMobileHistoryOpen(false);
-        setMobileActiveIndex(-1);
-      }
-    }
+    const items = getFilteredRecent(query);
+    handleHistoryKeyNav(e, items, isMobileHistoryOpen, setIsMobileHistoryOpen, setMobileActiveIndex);
   };
-
-  const navLinks = [
-    { label: "Home", path: "/" },
-    { label: "Block", path: "/block" },
-    { label: "Graffiti", path: "/graffiti" },
-    { label: "Network", path: "/network" },
-    { label: "Docs", path: "/documentation" },
-  ];
 
   const toggleMobileMenu = () => {
     setIsMobileMenuOpen((prev) => !prev);
@@ -228,25 +220,15 @@ const Navbar = ({ query, onQueryChange, onSearch, onSearchClick }) => {
 
   const toggleMobileSearch = () => {
     setIsMobileSearchOpen((prev) => !prev);
-    if (!isMobileSearchOpen) {
-      setIsMobileMenuOpen(false);
-    } else {
+    if (isMobileSearchOpen) {
       setIsMobileHistoryOpen(false);
+    } else {
+      setIsMobileMenuOpen(false);
     }
   };
 
-  const closeAllMobile = () => {
-    setIsMobileMenuOpen(false);
-    setIsMobileSearchOpen(false);
-    setIsMobileHistoryOpen(false);
-  };
-
-  const isLinkActive = (linkPath) => {
-    if (linkPath === "/") {
-      return location.pathname === "/";
-    }
-    return location.pathname.startsWith(linkPath);
-  };
+  const isLinkActive = (linkPath) =>
+    linkPath === "/" ? location.pathname === "/" : location.pathname.startsWith(linkPath);
 
   return (
     <header className="navbar">
@@ -270,7 +252,7 @@ const Navbar = ({ query, onQueryChange, onSearch, onSearchClick }) => {
           {/* Desktop Navigation Menu */}
           <nav className={`navbar__menu ${isMobileMenuOpen ? "open" : ""}`}>
             <ul className="navbar__menu-list">
-              {navLinks.map((link) => (
+              {NAV_LINKS.map((link) => (
                 <li key={link.path} className="navbar__menu-item">
                   <NavLink 
                     to={link.path}

@@ -12,7 +12,7 @@ import {
 } from "react-icons/fa";
 
 // Configure PDF worker
-if (typeof window !== "undefined") {
+if (globalThis.window !== undefined) {
   pdfjs.GlobalWorkerOptions.workerSrc =
     pdfWorker ||
     `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;

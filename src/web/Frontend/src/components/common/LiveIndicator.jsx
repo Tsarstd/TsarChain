@@ -6,8 +6,7 @@ const renderSyncMeta = (refreshing, updated, secs) => {
   if (refreshing) {
     return (
       <span className="syncing-text">
-        <span className="syncing-spinner" />
-        Syncing...
+        <span className="syncing-spinner" /> Syncing...
       </span>
     );
   }

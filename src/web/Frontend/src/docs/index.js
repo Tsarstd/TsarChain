@@ -1,4 +1,4 @@
-import { DOC_CATEGORIES, ALL_DOCS, getDocById } from "./docNavigation";
+import { ALL_DOCS, getDocById } from "./docNavigation";
 
 // About docs
 import { grungepaperEn } from "./about/grungepaperEn";
@@ -88,4 +88,4 @@ export {
   DOC_CATEGORIES,
   ALL_DOCS,
   getDocById
-};
+} from "./docNavigation";

@@ -20,97 +20,6 @@
   flex-wrap: wrap;
 }
 
-/* Navigation Controls (Jump To) */
-.navigation-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-}
-
-.nav-input-group {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  max-width: 280px;
-}
-
-.nav-input {
-  flex: 1;
-  padding: 8px 14px;
-  height: 38px;
-  border: 1px solid var(--border-medium-15);
-  border-radius: 3px;
-  background: var(--bg-surface-1);
-  color: var(--color-tsar-cream);
-  font-family: var(--font-montserrat);
-  font-size: 13px;
-  transition: all 0.2s ease;
-  min-width: 110px;
-  box-sizing: border-box;
-}
-
-.nav-input:focus {
-  outline: none;
-  border-color: var(--color-tsar-orange);
-  box-shadow: 2px 2px 0px var(--color-tsar-black);
-}
-
-.nav-button {
-  padding: 8px 16px;
-  height: 38px;
-  border: 1px solid var(--border-medium-15);
-  border-radius: 3px;
-  background: var(--bg-tint-slate);
-  color: var(--color-tsar-cream);
-  font-family: var(--font-newspaper);
-  font-size: 13px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 52px;
-  box-sizing: border-box;
-}
-
-.nav-button:hover:not(:disabled) {
-  background: var(--color-tsar-orange);
-  color: var(--color-tsar-cream);
-  border-color: var(--color-tsar-orange);
-  box-shadow: 2px 2px 0px var(--color-tsar-black);
-}
-
-.nav-button:active:not(:disabled) {
-  transform: translate(1px, 1px);
-}
-
-.nav-button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.nav-button--back {
-  padding: 8px 14px;
-  font-size: 14px;
-  background: var(--bg-surface-1);
-  border-color: var(--border-medium-15);
-}
-
-.nav-button--go {
-  background: var(--color-tsar-orange);
-  border-color: var(--color-tsar-orange);
-  color: var(--color-tsar-cream);
-}
-
-.nav-button--go:hover:not(:disabled) {
-  background: var(--color-danger-light);
-  border-color: var(--color-danger-light);
-}
-
 /* Lane Scroll - Full Width */
 .lane {
   width: 100%;
@@ -652,18 +561,6 @@
     justify-content: space-between;
   }
 
-  .navigation-controls {
-    width: 100%;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 0;
-  }
-  
-  .nav-input-group {
-    max-width: 100%;
-    flex: 1;
-  }
-  
   .lane-scroll {
     gap: 12px;
     padding: 8px 4px 14px 4px;

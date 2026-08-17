@@ -2,6 +2,12 @@ import { useState, useEffect, useCallback } from "react";
 
 const CHARS = "ABCDEF0123456789!@#$%^&*()_+-=[]{}|;:,.<>?/~`";
 
+const getRandomChar = () => {
+  const buffer = new Uint32Array(1);
+  globalThis.crypto.getRandomValues(buffer);
+  return CHARS[buffer[0] % CHARS.length];
+};
+
 export const useScrambleText = (targetText, options = {}) => {
   const {
     speed = 25,
@@ -31,7 +37,7 @@ export const useScrambleText = (targetText, options = {}) => {
         } else if (i < revealedLength) {
           scrambled += targetText[i];
         } else {
-          scrambled += CHARS[Math.floor(Math.random() * CHARS.length)];
+          scrambled += getRandomChar();
         }
       }
 
@@ -70,7 +76,7 @@ export const useScrambleText = (targetText, options = {}) => {
         } else if (i < revealedLength) {
           scrambled += targetText[i];
         } else {
-          scrambled += CHARS[Math.floor(Math.random() * CHARS.length)];
+          scrambled += getRandomChar();
         }
       }
 
