@@ -293,6 +293,7 @@ class ExplorerService {
       items,
       limit: resp?.limit ?? limit,
       offset: resp?.offset ?? offset,
+      total: resp?.total ?? null,
       nextOffset: offset + items.length,
       hasMore: items.length >= (resp?.limit ?? limit),
     };

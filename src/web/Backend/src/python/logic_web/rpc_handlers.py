@@ -207,6 +207,8 @@ def rpc_block_range(client, opts: dict):
                         storage_result["items"].extend(new_items)
                         storage_result["has_more"] = rpc_resp.get("has_more", False)
                         storage_result["next_height"] = rpc_resp.get("next_height", -1)
+                        if rpc_resp.get("tip_height") is not None:
+                            storage_result["tip_height"] = rpc_resp.get("tip_height")
                 else:
                     storage_result["has_more"] = False
                     storage_result["next_height"] = -1
@@ -339,9 +341,9 @@ def rpc_graffiti_posts(client, opts: dict):
         error_ttl = db_cache.get_error_cache_ttl(resp.get("error") if isinstance(resp, dict) else None)
         cache_ok = error_ttl is not None
     if isinstance(resp, dict) and resp.get("type") == "GRAFFITI_GET_POSTS":
-        out = {"posts": resp.get("posts") or [], "limit": limit, "offset": offset}
+        out = {"posts": resp.get("posts") or [], "limit": limit, "offset": offset, "total": resp.get("total", 0)}
     else:
-        out = {"posts": [], "limit": limit, "offset": offset}
+        out = {"posts": [], "limit": limit, "offset": offset, "total": 0}
     if cache_ok:
         rpc_client._cache_set(key, out, error_ttl)
     return out

@@ -97,13 +97,17 @@ def get_block_range_from_storage(start: int, limit: int) -> dict:
     next_h = start - len(items)
     has_more = next_h >= 0 and len(items) == limit
     
+    tip_h = get_last_stored_height()
+    if (tip_h is None or tip_h < 0) and items and isinstance(items[0], dict):
+        tip_h = items[0].get("height")
+
     return {
         "items": items,
         "start_height": start,
         "limit": limit,
         "has_more": has_more,
         "next_height": next_h if has_more else -1,
-        "tip_height": None,
+        "tip_height": tip_h if tip_h is not None and tip_h >= 0 else None,
     }
 
 

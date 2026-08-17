@@ -1,6 +1,92 @@
 import PropTypes from "prop-types";
 import { useId } from "react";
 
+export const SkeletonBlockCard = ({ height = null }) => {
+  return (
+    <div className="lane-card lane-card--skeleton" style={{ cursor: "default", opacity: 0.85 }}>
+      <div className="lane-card__grid">
+        <div className="stat">
+          <div className="skeleton-line" style={{ width: "65px", height: "12px", marginBottom: "4px" }} />
+          <div className="lane-card__blockheight" style={{ opacity: 0.75 }}>
+            {height !== null && height !== undefined ? (
+              height
+            ) : (
+              <div className="skeleton-line" style={{ width: "70px", height: "24px" }} />
+            )}
+          </div>
+        </div>
+        <div className="skeleton-line" style={{ width: "42px", height: "14px", justifySelf: "right" }} />
+      </div>
+
+      <div className="lane-card__bid" style={{ opacity: 0.4 }}>
+        <div className="skeleton-line" style={{ width: "100px", height: "10px" }} />
+      </div>
+
+      <div className="lane-card__grid">
+        <div className="stat">
+          <span className="label">Transactions</span>
+          <div className="skeleton-line" style={{ width: "28px", height: "14px", marginTop: "2px" }} />
+        </div>
+      </div>
+      <div className="lane-card__grid">
+        <div className="stat">
+          <span className="label">Comments</span>
+          <div className="skeleton-line" style={{ width: "20px", height: "14px", marginTop: "2px" }} />
+        </div>
+        <div className="stat">
+          <span className="label">Payouts</span>
+          <div className="skeleton-line" style={{ width: "20px", height: "14px", marginTop: "2px" }} />
+        </div>
+      </div>
+      <div className="skeleton-line" style={{ width: "100%", height: "11px", marginTop: "4px" }} />
+    </div>
+  );
+};
+
+SkeletonBlockCard.propTypes = {
+  height: PropTypes.number,
+};
+
+export const SkeletonGraffitiCard = ({ height = null }) => {
+  return (
+    <div className="lane-card lane-card--graffiti lane-card--skeleton" style={{ cursor: "default", opacity: 0.85 }}>
+      <div className="lane-card__grid">
+        <div className="stat">
+          <div className="value">Graffiti</div>
+          <div className="lane-card__graffheader">
+            {height !== null && height !== undefined ? (
+              height
+            ) : (
+              <div className="skeleton-line" style={{ width: "50px", height: "24px" }} />
+            )}
+          </div>
+        </div>
+        <div className="skeleton-line" style={{ width: "55px", height: "18px", justifySelf: "right" }} />
+      </div>
+
+      <div className="lane-card__creator" style={{ opacity: 0.7 }}>
+        <div className="skeleton-line" style={{ width: "130px", height: "12px" }} />
+      </div>
+
+      <div className="lane-card__grid">
+        <div className="stat">
+          <span className="label">Size</span>
+          <div className="skeleton-line" style={{ width: "45px", height: "14px", marginTop: "2px" }} />
+        </div>
+        <div className="stat">
+          <span className="label">Comments</span>
+          <div className="skeleton-line" style={{ width: "25px", height: "14px", marginTop: "2px" }} />
+        </div>
+      </div>
+      <div className="skeleton-line" style={{ width: "100%", height: "11px", marginTop: "4px" }} />
+    </div>
+  );
+};
+
+SkeletonGraffitiCard.propTypes = {
+  height: PropTypes.number,
+};
+
 export const SkeletonCard = ({ count = 6 }) => {
   const baseId = useId();
   const items = Array.from({ length: count }, (_, i) => `${baseId}-card-${i}`);

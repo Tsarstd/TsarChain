@@ -119,9 +119,8 @@
 }
 
 .lane-scroll {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 270px;
+  display: flex;
+  flex-direction: row;
   gap: 18px;
   overflow-x: auto;
   padding: 12px 4px 16px 4px;
@@ -236,14 +235,17 @@
   cursor: pointer;
   font: inherit;
   aspect-ratio: 1 / 1;
-  width: 100%;
+  width: 270px;
+  min-width: 270px;
+  max-width: 270px;
+  flex-shrink: 0;
   min-height: 230px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: 6px;
   box-sizing: border-box;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
   position: relative;
   overflow: hidden;
   box-shadow: 2px 2px 0px var(--color-tsar-black);
@@ -663,12 +665,15 @@
   }
   
   .lane-scroll {
-    grid-auto-columns: 220px;
     gap: 12px;
     padding: 8px 4px 14px 4px;
   }
   
   .lane-card {
+    width: 220px;
+    min-width: 220px;
+    max-width: 220px;
+    flex-shrink: 0;
     min-height: 225px;
     height: auto;
     aspect-ratio: auto;
