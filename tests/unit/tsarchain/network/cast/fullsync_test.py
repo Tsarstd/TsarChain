@@ -108,3 +108,22 @@ def test_receive_full_sync_worse_chain(sync):
     with patch.object(sync, "validate_incoming_chain", return_value=True):
         res = sync.receive_full_sync({"chain": incoming})
         assert res is False
+
+
+def test_fullsync_fork_choice_prefers_chainwork_over_height():
+    """Verify that _is_incoming_chain_better prioritizes cumulative chainwork over block height."""
+    handler = FullSyncHandler(broadcast=MagicMock())
+    handler.blockchain = MagicMock()
+    handler.blockchain.height = 100
+
+    # Case 1: Remote has higher height (110 vs 100) but lower chainwork (500 vs 1000)
+    current_list = [{"height": 100, "hash": "0000local"}]
+    incoming = [{"height": 110, "hash": "0000remote"}]
+    handler.calc_chainwork_from_list = MagicMock(side_effect=lambda chain: 1000 if chain == current_list else 500)
+    # local chainwork (1000) > remote (500) -> must return False
+    assert handler._is_incoming_chain_better(incoming, current_list) is False
+
+    # Case 2: Remote has lower height (90 vs 100) but higher chainwork (1500 vs 1000)
+    incoming2 = [{"height": 90, "hash": "0000remote"}]
+    handler.calc_chainwork_from_list = MagicMock(side_effect=lambda chain: 1000 if chain == current_list else 1500)
+    assert handler._is_incoming_chain_better(incoming2, current_list) is True

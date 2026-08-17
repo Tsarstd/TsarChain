@@ -364,3 +364,37 @@ def test_binary_serde_helpers():
     raw_json_proof = json.dumps(proof_entry).encode("utf-8")
     assert deserialize_proof_binary(raw_json_proof)["storer"] == "storer_1"
 
+
+def test_graffiti_registry_stale_key_cleanup_on_flush(mock_kv):
+    """Verify that _flush cleans up stale index keys on reorg / item count reduction."""
+    registry = GraffitiRegistry()
+    registry._stored_counts = {
+        "comments": {"art1": 3},
+        "payouts": {"art1": 2},
+        "proofs": {"art1": 2},
+    }
+    registry._stored_posts = {"art1", "art_deleted"}
+
+    # Current state has fewer items (e.g. after reorg)
+    registry.data = {
+        "posts": {"art1": {"art_id": "art1", "amount_paid": 100, "block_height": 1}},
+        "comments": {"art1": [{"block_height": 1, "amount": 10, "ts": 100}]},
+        "payouts": {"art1": [{"block_height": 1, "amount": 50, "epoch": 1}]},
+        "proofs": {},
+    }
+
+    mock_batch = MagicMock()
+    with patch('tsarchain.contracts.graffiti_registry.batch') as mock_batch_ctx:
+        mock_batch_ctx.return_value.__enter__.return_value = mock_batch
+
+        registry._flush()
+
+        # Check deleted keys
+        deleted_keys = [call.args[0] for call in mock_batch.delete.call_args_list]
+        assert b"p:art_deleted" in deleted_keys
+        assert b"c:art1:00000001" in deleted_keys
+        assert b"c:art1:00000002" in deleted_keys
+        assert b"y:art1:00000001" in deleted_keys
+        assert b"r:art1:00000000" in deleted_keys
+        assert b"r:art1:00000001" in deleted_keys
+

@@ -40,19 +40,35 @@ class ChainOperations:
     def replace_with(self, other_chain: "Blockchain"):
         with self.blockchain.lock:
             self._validate_replacement_chain(other_chain)
+            old_chain = list(self.blockchain.chain)
             self._commit_chain_replacement(other_chain)
+            self._reinject_mempool_from_reorg(old_chain, other_chain.chain)
+            if self.blockchain.chain:
+                last_b = self.blockchain.chain[-1]
+                self._notify_tip(last_b.height, last_b.hash().hex())
 
 
     def swap_tip_if_better(self, block: Block):
         with self.blockchain.lock:
             if not self._is_valid_tip_candidate(block):
                 return None
-            return self._commit_tip_swap(block)
+            old_tip = self._commit_tip_swap(block)
+            self._notify_tip(block.height, block.hash().hex())
+            return old_tip
 
 
 # =============================================================================
 # INTERNAL METHOD
 # =============================================================================
+
+
+    def _notify_tip(self, height: int, blk_hash: str):
+        fn = getattr(self.blockchain, "notify_tip_changed", None)
+        if callable(fn):
+            try:
+                fn(height, blk_hash)
+            except Exception:
+                log.exception("[_notify_tip] callback error")
 
 
     def _add_genesis_block(self, block: Block):
@@ -81,6 +97,7 @@ class ChainOperations:
 
         self._prune_mempool_confirmed(block)
         self.blockchain._mark_chain_dirty(block.height)
+        self._notify_tip(int(block.height), block.hash().hex())
 
 
     def _add_subsequent_block(self, block: Block):
@@ -113,6 +130,7 @@ class ChainOperations:
 
         self._prune_mempool_confirmed(block)
         self.blockchain._schedule_persist()
+        self._notify_tip(int(block.height), block.hash().hex())
 
 
     def _validate_replacement_chain(self, other_chain: "Blockchain"):
@@ -165,6 +183,39 @@ class ChainOperations:
             self.blockchain._utxo_last_flush_height = self.blockchain.height
             self.blockchain._utxo_synced = True
         self.blockchain.save_state()
+
+
+    def _reinject_mempool_from_reorg(self, old_chain: List[Block], new_chain: List[Block]):
+        mempool = getattr(self.blockchain, "get_mempool", lambda: None)()
+        if not mempool:
+            return
+        new_txids = set()
+        for b in new_chain:
+            for tx in (getattr(b, "transactions", []) or []):
+                txid = getattr(tx, "txid", None)
+                if txid:
+                    txid_hex = txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid)
+                    new_txids.add(txid_hex.lower())
+
+        common_h = self.blockchain._common_ancestor_height(new_chain)
+        start_h = max(0, common_h + 1) if common_h >= 0 else 0
+        for b in old_chain[start_h:]:
+            for tx in (getattr(b, "transactions", []) or [])[1:]:
+                txid = getattr(tx, "txid", None)
+                if not txid:
+                    continue
+                txid_hex = (txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid)).lower()
+                if txid_hex not in new_txids:
+                    try:
+                        mempool.add_valid_tx(tx)
+                    except Exception:
+                        pass
+        try:
+            if hasattr(mempool, "recheck_orphans"):
+                mempool.recheck_orphans()
+            mempool.flush()
+        except Exception:
+            pass
 
 
     def _is_valid_tip_candidate(self, block: Block) -> bool:

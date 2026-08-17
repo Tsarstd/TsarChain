@@ -57,8 +57,10 @@ class BlockValidator:
             self._ensure_warm(b_height)
 
             if not self.__class__._pow_light_warmed and CFG.POW_ALGO == "randomx":
-                H.pow_hash_verify_light(block.header(), height=block.height)
-            else:
+                try:
+                    H.pow_hash_verify_light(block.header(), height=block.height)
+                except Exception:
+                    pass
                 self.__class__._pow_light_warmed = True
 
             # 3. Main Block Validation Set

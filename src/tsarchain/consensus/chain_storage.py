@@ -813,7 +813,7 @@ class ChainStorage:
             born = int(entry.get("block_height", entry.get("height", 0)) if isinstance(entry, dict) else getattr(entry, "block_height", getattr(entry, "height", 0)) or 0)
             if is_cb:
                 conf = max(0, (tip_height - born) + 1)
-                if conf > maturity:
+                if conf >= maturity:
                     circulating_estimate += amount
                 else:
                     immature_coinbase += amount
@@ -853,8 +853,8 @@ class ChainStorage:
             
         total_comments = sum(len(v or []) for v in (data_g.get("comments") or {}).values())
         
-        mem = getattr(self.blockchain, "mempool", None)
-        if mem:
+        mem = getattr(self.blockchain, "get_mempool", lambda: None)() or getattr(self.blockchain, "_mempool", None)
+        if mem and hasattr(mem, "get_all_txs"):
             for tx in mem.get_all_txs():
                 for tx_out in getattr(tx, "outputs", []) or []:
                     spk = getattr(tx_out, "script_pubkey", None)

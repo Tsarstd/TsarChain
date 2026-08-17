@@ -1127,3 +1127,33 @@ def test_validate_transactions_duplicate_coinbase(validation_chain):
     assert chain._last_block_validation_error == "duplicate_coinbase"
 
 
+def test_validation_pow_warmup_flag():
+    """Verify that _pow_light_warmed flag is correctly updated to True."""
+    from unittest.mock import MagicMock, patch
+    from tsarchain.consensus.validation import BlockValidator
+    validator = BlockValidator(blockchain=MagicMock())
+    BlockValidator._pow_light_warmed = False
+
+    block = MagicMock()
+    block.height = 1
+    block.prev_block_hash = b"\x01" * 32
+    block.transactions = [MagicMock()]
+    block.header.return_value = b"\x00" * 80
+
+    with patch('tsarchain.consensus.validation.CFG.POW_ALGO', 'randomx'), \
+         patch('tsarchain.utils.helpers.pow_hash_verify_light') as mock_verify:
+        validator._warm_pow_context = MagicMock()
+        validator._ensure_warm = MagicMock()
+        validator._validate_pow = MagicMock(return_value=True)
+        validator.compute_txids_for_block = MagicMock(return_value=True)
+        validator._validate_merkle = MagicMock(return_value=True)
+        validator._ensure_unique_txids = MagicMock(return_value=True)
+        validator._check_block_limits = MagicMock(return_value=True)
+        validator._validate_tx_scripts_and_balances = MagicMock(return_value=True)
+        validator._validate_graffiti_rules = MagicMock(return_value=True)
+
+        validator.validate_block(block)
+        assert BlockValidator._pow_light_warmed is True
+        mock_verify.assert_called_once()
+
+

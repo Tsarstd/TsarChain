@@ -619,3 +619,32 @@ def test_parse_payload_merkle():
     meta_mismatch = meta.copy()
     meta_mismatch["mcount"] = 5
     assert parse_payload(encode_payload(meta_mismatch)) is None
+
+
+def test_find_pool_utxos_fallback_with_txout_objects():
+    """Verify _find_pool_utxos handles TxOut objects in memory fallback scan."""
+    from unittest.mock import MagicMock, patch
+    from tsarchain.contracts.graffiti import _find_pool_utxos
+    from tsarchain.core.tx import TxOut
+    from tsarchain.utils.helpers import Script
+
+    spk_bytes = bytes.fromhex("0020" + "ab" * 32)
+    spk_script = Script.deserialize(spk_bytes)
+    tx_out = TxOut(amount=5000, script_pubkey=spk_script)
+
+    mock_db = MagicMock()
+    mock_db.get.return_value = {}  # index lookup returns empty, triggering fallback
+    mock_db.utxos = {
+        "txid123:0": {
+            "tx_out": tx_out,
+            "is_coinbase": False,
+            "block_height": 10,
+        }
+    }
+
+    with patch('tsarchain.contracts.graffiti._pool_spk_bytes', return_value=spk_bytes):
+        results = _find_pool_utxos(mock_db, "some_art_id")
+        assert len(results) == 1
+        assert results[0]["txid"] == "txid123"
+        assert results[0]["vout"] == 0
+        assert results[0]["amount"] == 5000

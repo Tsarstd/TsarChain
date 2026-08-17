@@ -141,13 +141,13 @@ class FullSyncHandler(BroadcastHandlerProxy):
         tip_local = current_list[-1]["hash"]
         tip_remote = incoming[-1].get("hash", "")
         
-        if h_remote > h_local:
-            return True
-        if h_remote < h_local:
-            return False
         if cw_remote > cw_local:
             return True
         if cw_remote < cw_local:
+            return False
+        if h_remote > h_local:
+            return True
+        if h_remote < h_local:
             return False
         return tip_remote < tip_local
 

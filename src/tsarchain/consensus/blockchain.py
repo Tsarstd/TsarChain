@@ -84,6 +84,7 @@ class Blockchain():
         }
         self._persist_pending = False
         self._cold_reload_attempted: bool = False
+        self._on_tip_changed_callbacks = []
         
 
         self._start_persist_worker()
@@ -365,6 +366,21 @@ class Blockchain():
 
     def median_time_past(self, k: int = CFG.MTP_WINDOWS) -> int:
         return self.difficulty_manager.median_time_past(k)
+
+    def _expected_bits_on_prefix(self, prefix: List[Block], next_height: int) -> int:
+        return self.difficulty_manager._expected_bits_on_prefix(prefix, next_height)
+
+    # ---------------- Tip Notification Callbacks ----------------
+    def register_tip_changed_callback(self, cb):
+        if callable(cb) and cb not in self._on_tip_changed_callbacks:
+            self._on_tip_changed_callbacks.append(cb)
+
+    def notify_tip_changed(self, new_height: int, new_hash: str):
+        for cb in list(self._on_tip_changed_callbacks):
+            try:
+                cb(new_height, new_hash)
+            except Exception:
+                log.exception("[notify_tip_changed] callback error")
 
 
     # ---------------- Proxy Methods for Mining ----------------

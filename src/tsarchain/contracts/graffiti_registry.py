@@ -330,11 +330,14 @@ class GraffitiRegistry:
 
     def _load(self, default: dict) -> dict:
         data = {"posts": {}, "comments": {}, "payouts": {}, "proofs": {}}
+        self._stored_counts = {"comments": {}, "payouts": {}, "proofs": {}}
+        self._stored_posts = set()
         for k, v in iter_prefix("graffiti", b""):
             try:
                 if k.startswith(b"p:"):
                     art_id = k[2:].decode("utf-8")
                     data["posts"][art_id] = deserialize_post_binary(v, art_id)
+                    self._stored_posts.add(art_id)
                 elif k.startswith(b"c:"):
                     parts = k[2:].decode("utf-8").split(":")
                     if len(parts) >= 2:
@@ -352,22 +355,65 @@ class GraffitiRegistry:
                         data["proofs"].setdefault(art_id, []).append(deserialize_proof_binary(v))
             except Exception:
                 log.exception("Error decoding graffiti key %s", k)
+        
+        for art_id, comments in data["comments"].items():
+            self._stored_counts["comments"][art_id] = len(comments)
+        for art_id, payouts in data["payouts"].items():
+            self._stored_counts["payouts"][art_id] = len(payouts)
+        for art_id, proofs in data["proofs"].items():
+            self._stored_counts["proofs"][art_id] = len(proofs)
+
         return data or dict(default)
 
 
     def _flush(self) -> None:
+        if not hasattr(self, "_stored_counts"):
+            self._stored_counts = {"comments": {}, "payouts": {}, "proofs": {}}
+        if not hasattr(self, "_stored_posts"):
+            self._stored_posts = set()
+
         with batch("graffiti") as b:
-            for art_id, post in (self.data.get("posts") or {}).items():
+            current_posts = self.data.get("posts") or {}
+            for art_id, post in current_posts.items():
                 b.put(f"p:{art_id}".encode("utf-8"), serialize_post_binary(post))
-            for art_id, comments in (self.data.get("comments") or {}).items():
+            
+            # Clean up deleted posts
+            for deleted_art in (self._stored_posts - set(current_posts.keys())):
+                b.delete(f"p:{deleted_art}".encode("utf-8"))
+            self._stored_posts = set(current_posts.keys())
+
+            current_comments = self.data.get("comments") or {}
+            all_comment_art_ids = set(self._stored_counts.get("comments", {}).keys()) | set(current_comments.keys())
+            for art_id in all_comment_art_ids:
+                comments = current_comments.get(art_id) or []
                 for idx, c in enumerate(comments):
                     b.put(f"c:{art_id}:{idx:08d}".encode("utf-8"), serialize_comment_binary(c))
-            for art_id, payouts in (self.data.get("payouts") or {}).items():
+                prev_count = self._stored_counts.get("comments", {}).get(art_id, 0)
+                for stale_idx in range(len(comments), prev_count):
+                    b.delete(f"c:{art_id}:{stale_idx:08d}".encode("utf-8"))
+                self._stored_counts.setdefault("comments", {})[art_id] = len(comments)
+
+            current_payouts = self.data.get("payouts") or {}
+            all_payout_art_ids = set(self._stored_counts.get("payouts", {}).keys()) | set(current_payouts.keys())
+            for art_id in all_payout_art_ids:
+                payouts = current_payouts.get(art_id) or []
                 for idx, y in enumerate(payouts):
                     b.put(f"y:{art_id}:{idx:08d}".encode("utf-8"), serialize_payout_binary(y))
-            for art_id, proofs in (self.data.get("proofs") or {}).items():
+                prev_count = self._stored_counts.get("payouts", {}).get(art_id, 0)
+                for stale_idx in range(len(payouts), prev_count):
+                    b.delete(f"y:{art_id}:{stale_idx:08d}".encode("utf-8"))
+                self._stored_counts.setdefault("payouts", {})[art_id] = len(payouts)
+
+            current_proofs = self.data.get("proofs") or {}
+            all_proof_art_ids = set(self._stored_counts.get("proofs", {}).keys()) | set(current_proofs.keys())
+            for art_id in all_proof_art_ids:
+                proofs = current_proofs.get(art_id) or []
                 for idx, r in enumerate(proofs):
                     b.put(f"r:{art_id}:{idx:08d}".encode("utf-8"), serialize_proof_binary(r))
+                prev_count = self._stored_counts.get("proofs", {}).get(art_id, 0)
+                for stale_idx in range(len(proofs), prev_count):
+                    b.delete(f"r:{art_id}:{stale_idx:08d}".encode("utf-8"))
+                self._stored_counts.setdefault("proofs", {})[art_id] = len(proofs)
 
 
 __all__ = ["GraffitiRegistry", "serialize_post_binary", "deserialize_post_binary", "serialize_comment_binary", "deserialize_comment_binary", "serialize_payout_binary", "deserialize_payout_binary", "serialize_proof_binary", "deserialize_proof_binary"]
