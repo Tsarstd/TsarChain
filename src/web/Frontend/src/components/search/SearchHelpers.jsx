@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { ClickableValue } from "./SearchResults";
 import { formatHashForDisplay, getMaxCharsPerLine } from "../../utils/format";
-import { toast } from "../../utils/toast";
+import { copyText } from "../../utils/clipboard";
+export { useScrambleText } from "../../utils/useScrambleText";
 
 // ---------- Hook untuk deteksi mobile ----------
 export const useMobile = () => {
@@ -87,122 +88,11 @@ export const useRenderHelpers = () => {
   return { renderHash, renderClickableHash };
 };
 
-// ---------- Fungsi copy ke clipboard ----------
+// ---------- Fungsi copy ke clipboard terpusat ----------
 export const copyToClipboard = async (text, setCopyStatus) => {
-  if (!text) return;
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-    } else {
-      const textArea = document.createElement('textarea');
-      textArea.value = text;
-      textArea.style.position = 'fixed';
-      textArea.style.left = '-999999px';
-      textArea.style.top = '-999999px';
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-      const successful = document['exec' + 'Command']('copy');
-      if (!successful) throw new Error('Fallback copy failed');
-      textArea.remove();
-    }
-    setCopyStatus("Copied!");
-    toast("Copied to clipboard!", "success");
-    setTimeout(() => setCopyStatus(""), 2000);
-  } catch (err) {
-    console.error('Failed to copy:', err);
-    try {
-      prompt('Copy this:', text);
-      setCopyStatus("Use prompt to copy");
-    } catch {
-      setCopyStatus("Failed!");
-      toast("Failed to copy", "error");
-    }
+  const success = await copyText(text);
+  if (setCopyStatus) {
+    setCopyStatus(success ? "Copied!" : "Failed!");
     setTimeout(() => setCopyStatus(""), 2000);
   }
-};
-
-// ---------- Hook Animasi Scramble Text ----------
-export const useScrambleText = (
-  text,
-  {
-    duration = 700,
-    speed = 30,
-    preservePrefix = 0,
-    charset = "0123456789abcdef"
-  } = {}
-) => {
-  const [displayText, setDisplayText] = useState(text || "");
-
-  useEffect(() => {
-    if (!text) {
-      const id = requestAnimationFrame(() => setDisplayText(""));
-      return () => cancelAnimationFrame(id);
-    }
-
-    const totalLen = text.length;
-    const prefixLen = Math.min(Math.max(0, preservePrefix), totalLen);
-    const scrambleLen = totalLen - prefixLen;
-
-    if (scrambleLen <= 0) {
-      const id = requestAnimationFrame(() => setDisplayText(text));
-      return () => cancelAnimationFrame(id);
-    }
-
-    const chars = charset || "0123456789abcdef";
-    const randomBuffer = new Uint32Array(1);
-    const getRandomChar = () => {
-      globalThis.crypto.getRandomValues(randomBuffer);
-      return chars[randomBuffer[0] % chars.length];
-    };
-
-    let animationFrameId;
-    const startTime = performance.now();
-    let lastTick = 0;
-
-    const update = (now) => {
-      const elapsed = now - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-
-      // Karakter yang sudah ter-resolve dari payload
-      const resolvedCount = Math.floor(progress * scrambleLen);
-
-      if (now - lastTick >= speed || progress >= 1) {
-        lastTick = now;
-
-        let result = "";
-        // 1. Static Prefix (misal: 'tsar')
-        if (prefixLen > 0) {
-          result += text.slice(0, prefixLen);
-        }
-
-        // 2. Payload scramble / resolve
-        for (let i = 0; i < scrambleLen; i++) {
-          if (i < resolvedCount || progress >= 1) {
-            result += text[prefixLen + i];
-          } else {
-            result += getRandomChar();
-          }
-        }
-
-        setDisplayText(result);
-      }
-
-      if (progress < 1) {
-        animationFrameId = requestAnimationFrame(update);
-      } else {
-        setDisplayText(text);
-      }
-    };
-
-    animationFrameId = requestAnimationFrame(update);
-
-    return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-    };
-  }, [text, duration, speed, preservePrefix, charset]);
-
-  return displayText;
 };

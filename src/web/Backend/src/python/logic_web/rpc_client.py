@@ -34,9 +34,7 @@ def _rpc_send(client, payload: dict):
     if RPC_SOURCE and isinstance(payload, dict) and "rpc_source" not in payload:
         payload = dict(payload)
         payload["rpc_source"] = RPC_SOURCE
-    with _CLIENT_LOCK:
-        resp = client.send(payload)
-    return resp
+    return client.send(payload)
 
 
 def _get_client(host: str, port: int):

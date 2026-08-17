@@ -39,13 +39,21 @@ const DocTableOfContents = ({ items = [] }) => {
   useEffect(() => {
     if (!items || items.length === 0) return;
 
-    const rafId = requestAnimationFrame(() => {
-      handleScrollSpy();
-    });
-    globalThis.addEventListener("scroll", handleScrollSpy, { passive: true });
+    let ticking = false;
+    const onScroll = () => {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          handleScrollSpy();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+
+    onScroll();
+    globalThis.addEventListener("scroll", onScroll, { passive: true });
     return () => {
-      cancelAnimationFrame(rafId);
-      globalThis.removeEventListener("scroll", handleScrollSpy);
+      globalThis.removeEventListener("scroll", onScroll);
     };
   }, [items, handleScrollSpy]);
 

@@ -51,8 +51,8 @@ def save_blocks_to_storage(blocks: list) -> None:
             store.put_bytes(WEB_BLOCKS_DB, _block_key(h_int), db_cache._serialize_payload(block))
             if h_int > max_h:
                 max_h = h_int
-        except Exception:
-            log.warning("[webdb] Failed to save block %s", height)
+        except Exception as exc:
+            log.warning("[webdb] Failed to save block %s: %s", height, exc)
 
     if max_h >= 0:
         try:

@@ -411,19 +411,24 @@ const Graffiti = ({ onSearchClick }) => {
   // Listen to URL search param ?jump=...
   useEffect(() => {
     if (jumpParam && items.length > 0) {
-      handleNavigateToGraffiti(jumpParam);
+      const timer = setTimeout(() => {
+        handleNavigateToGraffiti(jumpParam);
+      }, 0);
+      return () => clearTimeout(timer);
     }
-  }, [jumpParam, items.length, location.search, handleNavigateToGraffiti]);
+  }, [jumpParam, items.length, handleNavigateToGraffiti]);
 
   const handleSearchClickLocal = useCallback(
     (value) => {
       if (onSearchClick) {
         onSearchClick(value);
       } else {
-        navigate(`/?search=${encodeURIComponent(value)}`);
+        const searchParams = new URLSearchParams(location.search);
+        searchParams.set("search", value);
+        navigate(`${location.pathname}?${searchParams.toString()}`);
       }
     },
-    [onSearchClick, navigate]
+    [onSearchClick, location.pathname, location.search, navigate]
   );
 
   const genesisId = !hasMore && items.length ? items.at(-1)?.art_id : null;
@@ -574,6 +579,10 @@ GraffitiCard.propTypes = {
   onSelect: PropTypes.func.isRequired,
   active: PropTypes.bool,
   isGenesis: PropTypes.bool,
+};
+
+Graffiti.propTypes = {
+  onSearchClick: PropTypes.func,
 };
 
 export default Graffiti;

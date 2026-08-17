@@ -14,16 +14,9 @@ const RecentSearchesDropdown = ({
   activeIndex = -1,
   className = "",
 }) => {
-  const [history, setHistory] = useState(() => getSearchHistory());
-  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  const [cleared, setCleared] = useState(false);
+  const [removed, setRemoved] = useState(() => new Set());
   const dropdownRef = useRef(null);
-
-  if (prevIsOpen !== isOpen) {
-    setPrevIsOpen(isOpen);
-    if (isOpen) {
-      setHistory(getSearchHistory());
-    }
-  }
 
   // Prevent input blur when clicking inside dropdown
   useEffect(() => {
@@ -42,9 +35,11 @@ const RecentSearchesDropdown = ({
 
   const cleanQuery = query?.trim().toLowerCase() || "";
   const filtered = useMemo(() => {
-    if (!cleanQuery) return history;
-    return history.filter((item) => item.toLowerCase().includes(cleanQuery));
-  }, [history, cleanQuery]);
+    if (!isOpen || cleared) return [];
+    const all = getSearchHistory().filter((item) => !removed.has(item));
+    if (!cleanQuery) return all;
+    return all.filter((item) => item.toLowerCase().includes(cleanQuery));
+  }, [isOpen, cleared, removed, cleanQuery]);
 
   if (!isOpen || filtered.length === 0) {
     return null;
@@ -54,14 +49,14 @@ const RecentSearchesDropdown = ({
     e.preventDefault();
     e.stopPropagation();
     clearSearchHistory();
-    setHistory([]);
+    setCleared(true);
   };
 
   const handleRemoveItem = (e, item) => {
     e.preventDefault();
     e.stopPropagation();
-    const updated = removeSearchHistoryItem(item);
-    setHistory(updated);
+    removeSearchHistoryItem(item);
+    setRemoved((prev) => new Set([...prev, item]));
   };
 
   return (

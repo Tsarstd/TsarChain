@@ -67,9 +67,14 @@ const cleanupGraffitiCache = async () => {
 };
 
 const resolveCachePath = (cachePath) => {
-  if (!cachePath) return null;
-  if (path.isAbsolute(cachePath)) return cachePath;
-  return path.resolve(projectRoot, cachePath);
+  if (!cachePath || typeof cachePath !== "string") return null;
+  const resolved = path.isAbsolute(cachePath) ? path.normalize(cachePath) : path.resolve(projectRoot, cachePath);
+  const relativeToRoot = path.relative(projectRoot, resolved);
+  if (relativeToRoot.startsWith("..") || path.isAbsolute(relativeToRoot)) {
+    console.warn("[backend] Disallowed cache path escape:", cachePath);
+    return null;
+  }
+  return resolved;
 };
 
 const inferMediaType = (meta, filePath) => {
@@ -340,9 +345,17 @@ const streamGraffitiChunks = async (req, res, artId, totalSize, meta) => {
   }
 
   let clientAborted = false;
-  req.on("close", () => {
+  let onDrainResolve = null;
+
+  const onClose = () => {
     clientAborted = true;
-  });
+    if (onDrainResolve) {
+      onDrainResolve();
+      onDrainResolve = null;
+    }
+  };
+
+  req.on("close", onClose);
 
   let currOffset = start;
   const targetEnd = totalSize > 0 ? end : Number.MAX_SAFE_INTEGER;
@@ -364,7 +377,13 @@ const streamGraffitiChunks = async (req, res, artId, totalSize, meta) => {
     currOffset += buf.length;
 
     if (!canContinue && !clientAborted) {
-      await new Promise((resolve) => res.once("drain", resolve));
+      await new Promise((resolve) => {
+        onDrainResolve = resolve;
+        res.once("drain", () => {
+          onDrainResolve = null;
+          resolve();
+        });
+      });
     }
 
     if (chunkResp.eof) break;
@@ -433,7 +452,7 @@ router.get("/search", searchLimiter, async (req, res, next) => {
   }
 });
 
-router.post("/prefetch-blocks", async (_req, res, next) => {
+router.post("/prefetch-blocks", searchLimiter, async (_req, res, next) => {
   try {
     // Trigger prefetch di Python RPC client
     await rpcCall("prefetch_blocks", null, cfg.nodeHost, cfg.nodePort);

@@ -8,16 +8,19 @@ import {
   RiFileCopyLine, 
   RiCheckLine 
 } from "react-icons/ri";
+import { copyText } from "../../utils/clipboard";
 
 const CollapsibleJson = ({ title, subtitle, code, defaultOpen = false }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = (e) => {
+  const handleCopy = async (e) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const success = await copyText(code, "JSON payload copied!");
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (

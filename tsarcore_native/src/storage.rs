@@ -434,9 +434,19 @@ impl LmdbBackend {
                 .begin_rw_txn()
                 .map_err(|e| map_err("lmdb begin_rw_txn", e))?;
             match txn.put(db, &key, &val, WriteFlags::empty()) {
-                Ok(_) => {
-                    return txn.commit().map_err(|e| map_err("lmdb commit", e));
-                }
+                Ok(_) => match txn.commit() {
+                    Ok(_) => return Ok(()),
+                    Err(lmdb::Error::MapFull) => {
+                        log_warning(&format!(
+                            "[lmdb] map full on commit db={} key_len={} val_len={}, trying grow_to_max",
+                            db_name,
+                            key.len(),
+                            val.len()
+                        ));
+                        self.grow_to_max()?;
+                    }
+                    Err(e) => return Err(map_err("lmdb commit", e)),
+                },
                 Err(lmdb::Error::MapFull) => {
                     log_warning(&format!(
                         "[lmdb] map full on put db={} key_len={} val_len={}, trying grow_to_max",
@@ -460,10 +470,18 @@ impl LmdbBackend {
                 .begin_rw_txn()
                 .map_err(|e| map_err("lmdb begin_rw_txn", e))?;
             match txn.del(db, &key, None) {
-                Ok(_) => {
-                    txn.commit().map_err(|e| map_err("lmdb commit", e))?;
-                    return Ok(true);
-                }
+                Ok(_) => match txn.commit() {
+                    Ok(_) => return Ok(true),
+                    Err(lmdb::Error::MapFull) => {
+                        log_warning(&format!(
+                            "[lmdb] map full on commit delete db={} key_len={}, trying grow_to_max",
+                            db_name,
+                            key.len()
+                        ));
+                        self.grow_to_max()?;
+                    }
+                    Err(e) => return Err(map_err("lmdb commit", e)),
+                },
                 Err(lmdb::Error::NotFound) => return Ok(false),
                 Err(lmdb::Error::MapFull) => {
                     log_warning(&format!(
@@ -644,7 +662,17 @@ impl LmdbBackend {
                 drop(txn);
                 self.grow_to_max()?;
             } else {
-                return txn.commit().map_err(|e| map_err("lmdb commit batch", e));
+                match txn.commit() {
+                    Ok(_) => return Ok(()),
+                    Err(lmdb::Error::MapFull) => {
+                        log_warning(&format!(
+                            "[lmdb] map full on batch commit db={}, trying grow_to_max",
+                            db_name
+                        ));
+                        self.grow_to_max()?;
+                    }
+                    Err(e) => return Err(map_err("lmdb commit batch", e)),
+                }
             }
         }
     }

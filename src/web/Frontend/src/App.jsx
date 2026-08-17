@@ -206,7 +206,7 @@ const AppContent = () => {
   }, [location.pathname, location.search, navigate]);
 
   return (
-    <div className={`app ${isCrtEnabled ? "crt-mode-active" : ""}`}>
+    <div className="app">
       {/* 1. Subtle Tsar Studio Film Grain Noise */}
       <div className="grain-overlay" aria-hidden="true" />
       

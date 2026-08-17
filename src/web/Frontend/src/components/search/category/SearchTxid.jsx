@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { useRenderHelpers, copyToClipboard, useScrambleText } from "../SearchHelpers";
 import PropTypes from "prop-types";
-import { saveAs } from 'file-saver';
 import { IoReceiptSharp } from "react-icons/io5";
 import { FaCopy } from "react-icons/fa";
 
@@ -9,7 +8,8 @@ import {
   fmtTsar, 
   fmtAddress,
   fmtTxid,
-  fmtTimestamp
+  fmtTimestamp,
+  downloadFile
 } from "../../../utils/format";
 
 import { getVoutLabel, getAddressType } from "../SearchUX";
@@ -150,7 +150,7 @@ const ResultTx = ({ data, onSearchClick }) => {
   const [isGeneratingReceipt, setIsGeneratingReceipt] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
 
-  const displayTxid = useScrambleText(data?.txid, {
+  const { displayText: displayTxid } = useScrambleText(data?.txid, {
     preservePrefix: 0,
     charset: "0123456789abcdef",
     duration: 700
@@ -175,11 +175,7 @@ const ResultTx = ({ data, onSearchClick }) => {
       const result = await fetchReceipt(data.txid);
       
       if (result.status === "ok" && result.data?.data_url) {
-        const dataUrl = result.data.data_url;
-        const base64Response = await fetch(dataUrl);
-        const blob = await base64Response.blob();
-        
-        saveAs(blob, `${data.txid}.jpg`);
+        downloadFile(result.data.data_url, `${data.txid}.jpg`);
       } else {
         throw new Error(result.message || 'Failed to generate receipt');
       }

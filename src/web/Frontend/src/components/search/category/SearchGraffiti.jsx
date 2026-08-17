@@ -1,5 +1,5 @@
 import PropTypes from "prop-types";
-import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, lazy, Suspense, useCallback } from "react";
 import { useRenderHelpers } from "../SearchHelpers";
 import { ClickableValue } from "../SearchResults";
 import { graffitiMediaUrl } from "../../../api/explorer";
@@ -23,9 +23,9 @@ import {
   fmtTsar, 
   fmtAddress,
   fmtHash,
-  fmtTxid
+  fmtTxid,
+  downloadFile
 } from "../../../utils/format";
-import { saveAs } from "file-saver";
 
 // Lazy-load PDF viewer to reduce initial bundle size by ~450KB
 const SmartPdfViewer = lazy(() => import("./SmartPdfViewer"));
@@ -35,8 +35,15 @@ const ImageZoomViewer = ({ src, alt = "Graffiti preview" }) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const stageRef = useRef(null);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const positionRef = useRef({ x: 0, y: 0 });
+  const scaleRef = useRef(1);
+
+  useEffect(() => {
+    positionRef.current = position;
+    scaleRef.current = scale;
+  }, [position, scale]);
 
   const handleZoomIn = () => {
     setScale((prev) => Math.min(5, Number((prev + 0.25).toFixed(2))));
@@ -55,7 +62,7 @@ const ImageZoomViewer = ({ src, alt = "Graffiti preview" }) => {
     setPosition({ x: 0, y: 0 });
   };
 
-  // Native event listeners for mouse wheel zoom & stage drag
+  // Wheel and double-click listeners on stage
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -74,23 +81,6 @@ const ImageZoomViewer = ({ src, alt = "Graffiti preview" }) => {
       }
     };
 
-    const handleMouseDownNative = (e) => {
-      setIsDragging(true);
-      setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
-    };
-
-    const handleMouseMoveNative = (e) => {
-      if (!isDragging) return;
-      setPosition({
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y,
-      });
-    };
-
-    const handleMouseUpNative = () => {
-      setIsDragging(false);
-    };
-
     const handleDoubleClickNative = () => {
       setScale((prev) => {
         if (prev > 1) {
@@ -102,19 +92,39 @@ const ImageZoomViewer = ({ src, alt = "Graffiti preview" }) => {
     };
 
     stage.addEventListener("wheel", handleWheelNative, { passive: false });
-    stage.addEventListener("mousedown", handleMouseDownNative);
     stage.addEventListener("dblclick", handleDoubleClickNative);
-    globalThis.addEventListener("mousemove", handleMouseMoveNative);
-    globalThis.addEventListener("mouseup", handleMouseUpNative);
 
     return () => {
       stage.removeEventListener("wheel", handleWheelNative);
-      stage.removeEventListener("mousedown", handleMouseDownNative);
       stage.removeEventListener("dblclick", handleDoubleClickNative);
-      globalThis.removeEventListener("mousemove", handleMouseMoveNative);
-      globalThis.removeEventListener("mouseup", handleMouseUpNative);
     };
-  }, [isDragging, dragStart, position]);
+  }, []);
+
+  // Handle Dragging
+  const handleMouseDown = useCallback((e) => {
+    if (e.button !== 0 || scaleRef.current <= 1) return;
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: e.clientX - positionRef.current.x,
+      y: e.clientY - positionRef.current.y,
+    };
+
+    const handleMouseMove = (moveEvent) => {
+      setPosition({
+        x: moveEvent.clientX - dragStartRef.current.x,
+        y: moveEvent.clientY - dragStartRef.current.y,
+      });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      globalThis.removeEventListener("mousemove", handleMouseMove);
+      globalThis.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    globalThis.addEventListener("mousemove", handleMouseMove);
+    globalThis.addEventListener("mouseup", handleMouseUp);
+  }, []);
 
   const isCanDragClass = scale > 1 ? "can-drag" : "";
   const isDraggingClass = isDragging ? "dragging" : "";
@@ -154,6 +164,7 @@ const ImageZoomViewer = ({ src, alt = "Graffiti preview" }) => {
 
       <section
         ref={stageRef}
+        onMouseDown={handleMouseDown}
         className={`image-zoom-stage ${isDraggingClass} ${isCanDragClass}`}
         aria-label="Interactive Graffiti Image Stage"
       >
@@ -211,26 +222,15 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
 
   const targetMediaUrl = data?.preview_url || (data?.art_id ? graffitiMediaUrl(data.art_id) : null);
 
-  const handleDownloadMedia = async () => {
+  const handleDownloadMedia = () => {
     const downloadUrl = targetMediaUrl || (data?.art_id ? graffitiMediaUrl(data.art_id) : null);
     if (!downloadUrl) return;
     const filename = getMediaFilename(data);
-
     setIsDownloading(true);
     try {
-      const response = await fetch(downloadUrl);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const blob = await response.blob();
-      saveAs(blob, filename);
-    } catch {
-      const link = document.createElement("a");
-      link.href = downloadUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      downloadFile(downloadUrl, filename);
     } finally {
-      setIsDownloading(false);
+      setTimeout(() => setIsDownloading(false), 500);
     }
   };
 

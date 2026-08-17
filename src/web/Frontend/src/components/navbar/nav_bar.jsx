@@ -63,16 +63,17 @@ const Navbar = ({ query, onQueryChange, onSearch, onSearchClick }) => {
   const mobileInputRef = useRef(null);
   const location = useLocation();
 
-  const [prevPath, setPrevPath] = useState(location.pathname);
-  if (prevPath !== location.pathname) {
-    setPrevPath(location.pathname);
-    setIsMobileMenuOpen(false);
-    setIsMobileSearchOpen(false);
-    setIsDesktopHistoryOpen(false);
-    setIsMobileHistoryOpen(false);
-    setDesktopActiveIndex(-1);
-    setMobileActiveIndex(-1);
-  }
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsMobileMenuOpen(false);
+      setIsMobileSearchOpen(false);
+      setIsDesktopHistoryOpen(false);
+      setIsMobileHistoryOpen(false);
+      setDesktopActiveIndex(-1);
+      setMobileActiveIndex(-1);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [location.pathname]);
 
   const closeAllMobile = () => {
     setIsMobileMenuOpen(false);
@@ -227,9 +228,6 @@ const Navbar = ({ query, onQueryChange, onSearch, onSearchClick }) => {
     }
   };
 
-  const isLinkActive = (linkPath) =>
-    linkPath === "/" ? location.pathname === "/" : location.pathname.startsWith(linkPath);
-
   return (
     <header className="navbar">
       <div className="navbar__inner">
@@ -237,8 +235,8 @@ const Navbar = ({ query, onQueryChange, onSearch, onSearchClick }) => {
           <NavLink 
             to="/" 
             end 
-            className={() => 
-              `navbar__logo-link ${isLinkActive("/") ? "active" : ""}`
+            className={({ isActive }) => 
+              `navbar__logo-link ${isActive ? "active" : ""}`
             }
             onClick={closeAllMobile}
           >
@@ -256,8 +254,8 @@ const Navbar = ({ query, onQueryChange, onSearch, onSearchClick }) => {
                 <li key={link.path} className="navbar__menu-item">
                   <NavLink 
                     to={link.path}
-                    className={() => 
-                      `navbar__menu-link ${isLinkActive(link.path) ? "active" : ""}`
+                    className={({ isActive }) => 
+                      `navbar__menu-link ${isActive ? "active" : ""}`
                     }
                     onClick={closeAllMobile}
                   >

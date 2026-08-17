@@ -18,6 +18,7 @@ import {
   RiArrowRightSLine
 } from "react-icons/ri";
 import { useDragScroll } from "../../utils/useDragScroll";
+import { copyText } from "../../utils/clipboard";
 
 const LEGAL_TABS = [
   { path: "/terms", label: "Terms of Service", icon: RiFileTextLine },
@@ -47,17 +48,20 @@ export const LegalLayout = ({
 
   useEffect(() => {
     document.title = `${title} | TsarChain Legal`;
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    globalThis.scrollTo({ top: 0, behavior: "smooth" });
   }, [title]);
 
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(window.location.href);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopyLink = async () => {
+    const url = globalThis.location.href;
+    const success = await copyText(url, "Page link copied!");
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const handlePrint = () => {
-    window.print();
+    globalThis.print();
   };
 
   // Normalization for active tab highlighting

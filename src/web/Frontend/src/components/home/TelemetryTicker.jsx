@@ -29,10 +29,10 @@ const TelemetryTicker = ({ initialData }) => {
     };
   }, []);
 
-  const height = data?.chain?.tip_height ?? data?.tip_height ?? 18;
-  const graffitiCount = data?.graffiti?.posts ?? data?.graffiti_posts ?? 142;
-  const difficulty = data?.chain?.tip_difficulty ?? data?.difficulty ?? 5381;
-  const hashrate = data?.chain?.est_network_hashrate_hps_window ?? 1250;
+  const height = data?.chain?.tip_height ?? data?.tip_height ?? null;
+  const graffitiCount = data?.graffiti?.posts ?? data?.graffiti_posts ?? null;
+  const difficulty = data?.chain?.tip_difficulty ?? data?.difficulty ?? null;
+  const hashrate = data?.chain?.est_network_hashrate_hps_window ?? (data ? 0 : null);
 
   return (
     <motion.div 

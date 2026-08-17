@@ -6,7 +6,7 @@ import { ResultTx } from "./category/SearchTxid";
 import { ResultAddress } from "./category/SearchAddress";
 import { ResultGraffiti } from "./category/SearchGraffiti";
 import { SkeletonSearch } from "../common/SkeletonLoader";
-import { toast } from "../../utils/toast";
+import { copyText } from "../../utils/clipboard";
 
 export const ClickableValue = ({
   value,
@@ -27,18 +27,10 @@ export const ClickableValue = ({
   const handleCopy = async (e) => {
     e.stopPropagation();
     if (!value || value === "-") return;
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(value);
-      } else {
-        throw new Error("Clipboard API not available");
-      }
+    const success = await copyText(value);
+    if (success) {
       setCopied(true);
-      toast("Copied to clipboard!", "success");
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error("Copy failed", err);
-      toast("Failed to copy", "error");
     }
   };
 

@@ -7,6 +7,7 @@ import {
   RiShareLine,
   RiCheckLine
 } from "react-icons/ri";
+import { copyText } from "../../utils/clipboard";
 
 const DocHeader = ({ 
   docMeta, 
@@ -18,11 +19,13 @@ const DocHeader = ({
 }) => {
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const handleCopyLink = () => {
+  const handleCopyLink = async () => {
     const url = globalThis.location.href;
-    navigator.clipboard.writeText(url);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2000);
+    const success = await copyText(url, "Document link copied!");
+    if (success) {
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    }
   };
 
   const activeDownload = downloadInfo ? (downloadInfo[activeLang] || downloadInfo.en) : null;

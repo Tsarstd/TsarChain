@@ -99,23 +99,12 @@ export const useDragScroll = () => {
     }, 100);
   }, [startMomentum]);
 
+  // Clean up momentum on unmount
   useEffect(() => {
-    const handleGlobalMouseMove = (e) => {
-      updateDragMove(e.clientX);
-    };
-
-    const handleGlobalMouseUp = () => {
-      endDrag();
-    };
-
-    globalThis.addEventListener("mousemove", handleGlobalMouseMove);
-    globalThis.addEventListener("mouseup", handleGlobalMouseUp);
     return () => {
-      globalThis.removeEventListener("mousemove", handleGlobalMouseMove);
-      globalThis.removeEventListener("mouseup", handleGlobalMouseUp);
       stopMomentum();
     };
-  }, [updateDragMove, endDrag, stopMomentum]);
+  }, [stopMomentum]);
 
   useEffect(() => {
     const el = scrollerRef.current;
@@ -149,6 +138,19 @@ export const useDragScroll = () => {
     dragRef.current.moved = false;
     dragRef.current.wasDrag = false;
     velocityRef.current = 0;
+
+    const handleGlobalMouseMove = (e) => {
+      updateDragMove(e.clientX);
+    };
+
+    const handleGlobalMouseUp = () => {
+      globalThis.removeEventListener("mousemove", handleGlobalMouseMove);
+      globalThis.removeEventListener("mouseup", handleGlobalMouseUp);
+      endDrag();
+    };
+
+    globalThis.addEventListener("mousemove", handleGlobalMouseMove);
+    globalThis.addEventListener("mouseup", handleGlobalMouseUp);
   };
 
   const handleTouchStart = (event) => {
@@ -211,3 +213,4 @@ export const useDragScroll = () => {
   };
 };
 
+export default useDragScroll;

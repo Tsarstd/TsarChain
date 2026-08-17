@@ -8,7 +8,8 @@ import {
   fmtTimestamp,
   fmtTsar, 
   fmtTxid,
-  timeAgo
+  timeAgo,
+  downloadFile
 } from "../../../utils/format";
 import { AddressAnalytics } from "../../common/AddressAnalytics";
 import { fetchHistoryBook } from "../../../api/explorer";
@@ -165,14 +166,15 @@ const renderAddressGrid = (address) => {
   );
 };
 
+const ITEMS_PER_PAGE = 10;
+
 const ResultAddress = ({ data, onSearchClick }) => {
   const { renderClickableHash } = useRenderHelpers();
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
   const [copyStatus, setCopyStatus] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
 
-  const displayAddress = useScrambleText(data?.address, {
+  const { displayText: displayAddress } = useScrambleText(data?.address, {
     preservePrefix: data?.address?.toLowerCase().startsWith("tsar") ? 4 : 0,
     charset: "qpzry9x8gf2tvdw0s3jn54khce6mua7l",
     duration: 700
@@ -185,12 +187,7 @@ const ResultAddress = ({ data, onSearchClick }) => {
       const resData = await fetchHistoryBook(data.address);
       
       if (resData.status === "ok" && resData.data?.data_url) {
-        const link = document.createElement("a");
-        link.href = resData.data.data_url;
-        link.download = resData.data.filename || `history_${data.address.substring(0, 16)}.pdf`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
+        downloadFile(resData.data.data_url, resData.data.filename || `history_${data.address.substring(0, 16)}.pdf`);
       } else {
         alert(resData.data?.message || resData.error || "Failed to download history book.");
       }
@@ -204,10 +201,10 @@ const ResultAddress = ({ data, onSearchClick }) => {
 
   const historyData = data?.history || [];
   const totalItems = Math.min(historyData.length, 200); // limit
-  const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+  const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE));
   const activePage = Math.min(currentPage, totalPages);
-  const startIndex = (activePage - 1) * itemsPerPage;
-  const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+  const startIndex = (activePage - 1) * ITEMS_PER_PAGE;
+  const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, totalItems);
   const currentHistory = historyData.slice(startIndex, endIndex);
   
   const handlePageChange = (page) => {

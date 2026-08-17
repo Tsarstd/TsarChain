@@ -1,100 +1,110 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
-const CHARS = "ABCDEF0123456789!@#$%^&*()_+-=[]{}|;:,.<>?/~`";
+const DEFAULT_CHARS = "ABCDEF0123456789!@#$%^&*()_+-=[]{}|;:,.<>?/~`";
 
-const getRandomChar = () => {
-  const buffer = new Uint32Array(1);
-  globalThis.crypto.getRandomValues(buffer);
-  return CHARS[buffer[0] % CHARS.length];
+const getRandomChar = (charset) => {
+  const chars = charset || DEFAULT_CHARS;
+  return chars[Math.floor(Math.random() * chars.length)];
 };
 
 export const useScrambleText = (targetText, options = {}) => {
   const {
     speed = 25,
-    scrambleDuration = 800,
+    duration = 700,
+    scrambleDuration,
+    preservePrefix = 0,
+    charset = DEFAULT_CHARS,
     trigger = true,
   } = options;
 
-  const [displayText, setDisplayText] = useState(targetText);
+  const totalDuration = scrambleDuration || duration;
+  const [displayText, setDisplayText] = useState(targetText || "");
   const [isScrambling, setIsScrambling] = useState(false);
+  const animFrameRef = useRef(null);
 
   const runScramble = useCallback(() => {
-    if (!targetText) return () => {};
+    if (!targetText) {
+      setDisplayText("");
+      setIsScrambling(false);
+      return;
+    }
+
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+    }
+
     setIsScrambling(true);
+    const totalLen = targetText.length;
+    const prefixLen = Math.min(Math.max(0, preservePrefix), totalLen);
+    const scrambleLen = totalLen - prefixLen;
 
-    const length = targetText.length;
-    const startTime = Date.now();
+    if (scrambleLen <= 0) {
+      setDisplayText(targetText);
+      setIsScrambling(false);
+      return;
+    }
 
-    const interval = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(elapsed / scrambleDuration, 1);
-      const revealedLength = Math.floor(progress * length);
+    const startTime = performance.now();
+    let lastTick = 0;
 
-      let scrambled = "";
-      for (let i = 0; i < length; i++) {
-        if (targetText[i] === " " || targetText[i] === "\n") {
-          scrambled += targetText[i];
-        } else if (i < revealedLength) {
-          scrambled += targetText[i];
-        } else {
-          scrambled += getRandomChar();
+    const update = (now) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / totalDuration, 1);
+      const resolvedCount = Math.floor(progress * scrambleLen);
+
+      if (now - lastTick >= speed || progress >= 1) {
+        lastTick = now;
+
+        let result = "";
+        if (prefixLen > 0) {
+          result += targetText.slice(0, prefixLen);
         }
+
+        for (let i = 0; i < scrambleLen; i++) {
+          const char = targetText[prefixLen + i];
+          if (char === " " || char === "\n") {
+            result += char;
+          } else if (i < resolvedCount || progress >= 1) {
+            result += char;
+          } else {
+            result += getRandomChar(charset);
+          }
+        }
+
+        setDisplayText(result);
       }
 
-      setDisplayText(scrambled);
-
-      if (progress >= 1) {
-        clearInterval(interval);
+      if (progress < 1) {
+        animFrameRef.current = requestAnimationFrame(update);
+      } else {
         setDisplayText(targetText);
         setIsScrambling(false);
+        animFrameRef.current = null;
       }
-    }, speed);
+    };
 
-    return () => clearInterval(interval);
-  }, [targetText, speed, scrambleDuration]);
+    animFrameRef.current = requestAnimationFrame(update);
+  }, [targetText, preservePrefix, totalDuration, speed, charset]);
 
   useEffect(() => {
-    if (!trigger || !targetText) return;
-
-    let isCancelled = false;
-    Promise.resolve().then(() => {
-      if (!isCancelled) setIsScrambling(true);
+    if (!trigger || !targetText) {
+      const rafId = requestAnimationFrame(() => {
+        setDisplayText(targetText || "");
+      });
+      return () => cancelAnimationFrame(rafId);
+    }
+    const rafId = requestAnimationFrame(() => {
+      runScramble();
     });
-    const length = targetText.length;
-    const startTime = Date.now();
-
-    const interval = setInterval(() => {
-      if (isCancelled) return;
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(elapsed / scrambleDuration, 1);
-      const revealedLength = Math.floor(progress * length);
-
-      let scrambled = "";
-      for (let i = 0; i < length; i++) {
-        if (targetText[i] === " " || targetText[i] === "\n") {
-          scrambled += targetText[i];
-        } else if (i < revealedLength) {
-          scrambled += targetText[i];
-        } else {
-          scrambled += getRandomChar();
-        }
-      }
-
-      setDisplayText(scrambled);
-
-      if (progress >= 1) {
-        clearInterval(interval);
-        setDisplayText(targetText);
-        setIsScrambling(false);
-      }
-    }, speed);
-
     return () => {
-      isCancelled = true;
-      clearInterval(interval);
-      setIsScrambling(false);
+      cancelAnimationFrame(rafId);
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+      }
     };
-  }, [trigger, targetText, speed, scrambleDuration]);
+  }, [trigger, targetText, runScramble]);
 
   return { displayText, isScrambling, replay: runScramble };
 };
+
+export default useScrambleText;

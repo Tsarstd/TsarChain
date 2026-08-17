@@ -26,7 +26,7 @@ const DocsHubBanner = () => {
           <a 
             href="https://github.com/Tsarstd/Graffiti-Protocol" 
             target="_blank" 
-            rel="noreferrer"
+            rel="noopener noreferrer" 
             className="btn-hero-secondary"
           >
             <RiGithubLine size={18} />

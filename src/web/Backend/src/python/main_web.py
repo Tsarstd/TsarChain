@@ -106,7 +106,8 @@ def _dispatch_rpc(op: str, param: object | None, host: str, port: int):
     if not _prefetch_started or _prefetch_host_port != f"{host}:{port}":
         try:
             def prefetch_rpc_call(payload):
-                return _rpc_send(client, payload)
+                c = _get_client(host, port)
+                return _rpc_send(c, payload)
             
             db_blocks.start_prefetch_thread(prefetch_rpc_call)
             _prefetch_started = True
@@ -148,7 +149,7 @@ def _dispatch_rpc(op: str, param: object | None, host: str, port: int):
         return rpc_handlers.rpc_graffiti_chunk(client, opts)
     if op == "prefetch_blocks":
         try:
-            db_blocks.prefetch_blocks(lambda payload: _rpc_send(client, payload))
+            db_blocks.prefetch_blocks(lambda payload: _rpc_send(_get_client(host, port), payload))
             return {"status": "ok", "message": "Prefetch started"}
         except Exception as exc:
             return {"status": "error", "message": str(exc)}
@@ -206,9 +207,14 @@ def _worker_loop() -> None:
             
             current_time = time.time()
             if current_time - _last_cleanup > 60:
-                db_files.cleanup_receipt_files(35)
-                db_files.cleanup_history_book_files(35)
                 _last_cleanup = current_time
+                def _do_cleanup():
+                    try:
+                        db_files.cleanup_receipt_files(35)
+                        db_files.cleanup_history_book_files(35)
+                    except Exception:
+                        pass
+                executor.submit(_do_cleanup)
             
             host, port = _parse_host_port(req.get("host"), req.get("port"))
             executor.submit(_handle_request, req_id, str(op), req.get("param"), host, port)

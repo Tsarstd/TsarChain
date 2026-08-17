@@ -40,7 +40,8 @@ app.use("/api", explorerRouter);
 app.use((err, _req, res, _next) => {
   // Fallback error handler so the client always gets JSON.
   console.error("[backend] unhandled error", err);
-  res.status(500).json({ error: "internal_error", detail: err?.message || "Unexpected error" });
+  const detail = process.env.NODE_ENV === "production" ? "An unexpected error occurred" : (err?.message || "Unexpected error");
+  res.status(500).json({ error: "internal_error", detail });
 });
 
 const http = require("node:http");

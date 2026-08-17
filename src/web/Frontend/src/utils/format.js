@@ -171,3 +171,21 @@ export const fmtChainwork = (val) => {
     return s.length <= 14 ? s : `${s.slice(0, 6)}...${s.slice(-6)}`;
   }
 };
+
+export const downloadFile = (url, filename = "download") => {
+  if (!url || typeof url !== "string") return;
+  // Security guard: only allow safe web, blob or data protocols
+  const cleanUrl = url.trim();
+  if (!/^(https?:|blob:|data:|\/)/i.test(cleanUrl)) {
+    console.error("Untrusted protocol for download URL:", cleanUrl);
+    return;
+  }
+  const a = document.createElement("a");
+  a.href = cleanUrl;
+  a.download = filename;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => a.remove(), 100);
+};
+

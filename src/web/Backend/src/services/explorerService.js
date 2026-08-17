@@ -356,16 +356,16 @@ class ExplorerService {
         if (txData?.txid) {
           return { kind: "tx", data: txData };
         }
-      } catch (err) {
-        console.warn("Search TX fallback error:", err);
+      } catch (_err) {
+        // Fallback to block search
       }
       try {
         const blockData = await this.getBlock(query);
         if (blockData?.hash) {
           return { kind: "block", data: blockData };
         }
-      } catch (err) {
-        console.warn("Search Block fallback error:", err);
+      } catch (_err) {
+        // No match found
       }
       return { kind: "unknown", data: null };
     }
@@ -376,16 +376,16 @@ class ExplorerService {
         if (blockData?.hash) {
           return { kind: "block", data: blockData };
         }
-      } catch (err) {
-        console.warn("Search Block fallback error:", err);
+      } catch (_err) {
+        // Fallback to tx search
       }
       try {
         const txData = await this.getTx(query);
         if (txData?.txid) {
           return { kind: "tx", data: txData };
         }
-      } catch (err) {
-        console.warn("Search TX fallback error:", err);
+      } catch (_err) {
+        // No match found
       }
       return { kind: "unknown", data: null };
     }

@@ -514,19 +514,24 @@ const Block = ({ onSearchClick }) => {
   // Listen to URL search param ?jump=...
   useEffect(() => {
     if (jumpParam && tipHeight !== null) {
-      handleNavigateToBlock(jumpParam);
+      const timer = setTimeout(() => {
+        handleNavigateToBlock(jumpParam);
+      }, 0);
+      return () => clearTimeout(timer);
     }
-  }, [jumpParam, tipHeight, location.search, handleNavigateToBlock]);
+  }, [jumpParam, tipHeight, handleNavigateToBlock]);
 
   const handleSearchClickLocal = useCallback(
     (value) => {
       if (onSearchClick) {
         onSearchClick(value);
       } else {
-        navigate(`/?search=${encodeURIComponent(value)}`);
+        const searchParams = new URLSearchParams(location.search);
+        searchParams.set("search", value);
+        navigate(`${location.pathname}?${searchParams.toString()}`);
       }
     },
-    [onSearchClick, navigate]
+    [onSearchClick, location.pathname, location.search, navigate]
   );
 
   // Generate visible cards array

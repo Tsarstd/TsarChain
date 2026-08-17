@@ -15,6 +15,7 @@ import {
   RiShieldCheckLine
 } from "react-icons/ri";
 import CollapsibleJson from "./CollapsibleJson";
+import { copyText } from "../../utils/clipboard";
 
 const ALERT_ICONS = {
   important: <RiAlertLine size={20} color="var(--color-tsar-orange)" />,
@@ -160,10 +161,12 @@ const formatInlineMarkdown = (text) => {
 const TerminalWindow = ({ title = "CLI Output", status = "Completed", output }) => {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(output);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    const success = await copyText(output, "CLI Output copied!");
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const renderedSyntax = useMemo(() => highlightCodeSyntax(output, "terminal"), [output]);
@@ -180,25 +183,17 @@ const TerminalWindow = ({ title = "CLI Output", status = "Completed", output }) 
           <RiCommandLine size={14} />
           <span>{title}</span>
         </div>
-        <div className="doc-terminal-actions">
-          {status && <span className="doc-terminal-status-badge">{status}</span>}
-          <button 
-            type="button" 
-            className="doc-btn-copy doc-btn-copy--terminal" 
-            onClick={handleCopy}
-            title="Copy terminal output"
-            aria-label="Copy terminal output"
-          >
-            {copied ? <RiCheckLine size={13} color="#22c55e" /> : <RiFileCopyLine size={13} />}
+        <div className="doc-terminal-meta">
+          <span className="doc-terminal-status-badge">{status}</span>
+          <button type="button" className="doc-btn-copy" onClick={handleCopy} aria-label="Copy terminal output">
+            {copied ? <RiCheckLine size={14} color="#22c55e" /> : <RiFileCopyLine size={14} />}
             <span>{copied ? "Copied!" : "Copy"}</span>
           </button>
         </div>
       </div>
-      <div className="doc-terminal-body">
-        <pre className="doc-terminal-pre">
-          <code>{renderedSyntax}</code>
-        </pre>
-      </div>
+      <pre className="doc-code-block doc-terminal-body">
+        <code>{renderedSyntax}</code>
+      </pre>
     </div>
   );
 };
@@ -213,10 +208,12 @@ TerminalWindow.propTypes = {
 const CommandCard = ({ command, title = "Command", comment }) => {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(command);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    const success = await copyText(command, "Command copied!");
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (
@@ -252,10 +249,12 @@ CommandCard.propTypes = {
 const CodeSnippet = ({ code, lang = "bash", title }) => {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    const success = await copyText(code, "Code snippet copied!");
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const renderedSyntax = useMemo(() => highlightCodeSyntax(code, lang), [code, lang]);
@@ -291,11 +290,13 @@ const CodeTabs = ({ tabs = [] }) => {
   const activeTab = tabs[activeTabIdx] || tabs[0];
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!activeTab) return;
-    navigator.clipboard.writeText(activeTab.code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const success = await copyText(activeTab.code, "Code tab copied!");
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const renderedSyntax = useMemo(() => {
