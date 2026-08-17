@@ -378,10 +378,6 @@ class SimpleMiner:
                 if trusted_hash and local_hash and local_hash.lower() != trusted_hash:
                     clog("[Sync] Local tip hash differs from trusted; requesting resync...")
                     if self.network:
-                        seeds = self._bootstrap_seeds()
-                        peer = seeds[0] if seeds else None
-                        if peer:
-                            self.network.request_full_sync(peer, force=True)
                         self.network.request_sync(fast=True)
                     time.sleep(2)
                     continue
@@ -460,10 +456,6 @@ class SimpleMiner:
                         clog("[mining] Local tip hash differs from trusted; syncing before mining...")
                         last_gap_log = "hash_mismatch"
                     if self.network:
-                        seeds = self._bootstrap_seeds()
-                        peer = seeds[0] if seeds else None
-                        if peer:
-                            self.network.request_full_sync(peer, force=True)
                         self.network.request_sync(fast=True)
                     time.sleep(2)
                     continue

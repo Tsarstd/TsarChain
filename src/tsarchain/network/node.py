@@ -125,10 +125,6 @@ class Network(NetworkProxy):
         self._peer_best_height: Dict[Tuple[str, int], int] = {}
         self._peer_last_dial: Dict[Tuple[str, int], float] = {}
 
-        self._full_sync_served_at: Dict[str, float] = {}
-        self._full_sync_backoff: Dict[Tuple[str, int], float] = {}
-        self._full_sync_last_request: Dict[Tuple[str, int], float] = {}
-
         self._last_headers_locator: Dict[Tuple[str, int], List[str]] = {}
         self._snapshot_unreachable: Set[Tuple[str, int]] = set()
 
@@ -148,7 +144,6 @@ class Network(NetworkProxy):
         # --- Log throttles to reduce console spam
         self._last_p2p_log = 0.0
         self._last_sync_log = 0.0
-        self._last_fullsync_log = 0.0
         self._last_sync_count = -1
 
     def _init_bootstrap_peers(self) -> None:
@@ -233,9 +228,6 @@ class Network(NetworkProxy):
 
     def request_mempool_snapshot(self, peer: Tuple[str, int], *, force: bool = False) -> Optional[bool]:
         return rpc_client.request_mempool_snapshot(self, peer, force=force)
-
-    def request_full_sync(self, peer: Tuple[str, int], *, force: bool = False) -> bool:
-        return rpc_client.request_full_sync(self, peer, force=force)
     
     # ------------------------------ END OF WRAPPER ------------------------------
 

@@ -11,7 +11,6 @@ from tsarchain.network.rpc.miner_rpc import handle_miner_rpc
 def mock_config():
     with patch("tsarchain.network.rpc.miner_rpc.CFG") as mock_cfg:
         mock_cfg.DEBUG_BENCHMARKS = False
-        mock_cfg.ENABLE_FULL_SYNC = True
         mock_cfg.REPLAY_WINDOW_SEC = 60
         
         # New Block RL
@@ -23,11 +22,6 @@ def mock_config():
         mock_cfg.MINER_INFO_RL_IP_BURST = 10
         mock_cfg.MINER_INFO_RL_WINDOW_S = 60
         mock_cfg.MINER_INFO_RL_BACKOFF_S = 10
-        
-        # Sync RL (GET_FULL_SYNC, FULL_SYNC)
-        mock_cfg.MINER_SYNC_RL_IP_BURST = 10
-        mock_cfg.MINER_SYNC_RL_WINDOW_S = 60
-        mock_cfg.MINER_SYNC_RL_BACKOFF_S = 10
         
         # Headers RL
         mock_cfg.MINER_HEADERS_RL_IP_BURST = 10
@@ -129,36 +123,6 @@ def test_get_info(network, mock_config):
     assert res2 == {"error": "rate_limited"}
 
 
-@patch("tsarchain.network.rpc.miner_rpc.handlers.handle_get_full_sync")
-def test_get_full_sync(mock_handler, network, mock_config):
-    mock_handler.return_value = {"ok": True}
-    
-    msg = {"ts": 123, "nonce": "abc"}
-    res = handle_miner_rpc(network, msg, ("127.0.0.1", 1234), "GET_FULL_SYNC")
-    assert res == {"ok": True}
-    
-    # Disabled
-    mock_config.ENABLE_FULL_SYNC = False
-    res2 = handle_miner_rpc(network, msg, ("127.0.0.1", 1234), "GET_FULL_SYNC")
-    assert res2 == {"type": "SYNC_REDIRECT", "reason": "full_sync_disabled"}
-    mock_config.ENABLE_FULL_SYNC = True
-    
-    # Missing ts/nonce
-    res3 = handle_miner_rpc(network, {}, ("127.0.0.1", 1234), "GET_FULL_SYNC")
-    assert res3 == {"type": "SYNC_REDIRECT", "reason": "replay_guard"}
-    
-    # Nonce guard failed
-    network.nonce_guard.return_value = False
-    res4 = handle_miner_rpc(network, msg, ("127.0.0.1", 1234), "GET_FULL_SYNC")
-    assert res4 == {"type": "SYNC_REDIRECT", "reason": "replay_guard"}
-    network.nonce_guard.return_value = True
-    
-    # Rate limited
-    network.tb_node_allow.return_value = False
-    res5 = handle_miner_rpc(network, msg, ("127.0.0.1", 1234), "GET_FULL_SYNC")
-    assert res5 == {"error": "rate_limited"}
-
-
 @patch("tsarchain.network.rpc.miner_rpc.handlers.handle_get_headers")
 def test_get_headers(mock_handler, network):
     mock_handler.return_value = {"ok": True}
@@ -181,36 +145,6 @@ def test_get_blocks(mock_handler, network):
     network.tb_node_allow.return_value = False
     res2 = handle_miner_rpc(network, {}, ("127.0.0.1", 1234), "GET_BLOCKS")
     assert res2 == {"error": "rate_limited"}
-
-
-@patch("tsarchain.network.rpc.miner_rpc.handlers.handle_full_sync")
-def test_full_sync(mock_handler, network, mock_config):
-    mock_handler.return_value = {"ok": True}
-    
-    msg = {"ts": 123, "nonce": "abc"}
-    res = handle_miner_rpc(network, msg, ("127.0.0.1", 1234), "FULL_SYNC")
-    assert res == {"ok": True}
-    
-    # Disabled
-    mock_config.ENABLE_FULL_SYNC = False
-    res2 = handle_miner_rpc(network, msg, ("127.0.0.1", 1234), "FULL_SYNC")
-    assert res2 == {"status": "ignored", "reason": "full_sync_disabled"}
-    mock_config.ENABLE_FULL_SYNC = True
-    
-    # Missing ts/nonce
-    res3 = handle_miner_rpc(network, {}, ("127.0.0.1", 1234), "FULL_SYNC")
-    assert res3 == {"error": "replay_guard"}
-    
-    # Nonce guard failed
-    network.nonce_guard.return_value = False
-    res4 = handle_miner_rpc(network, msg, ("127.0.0.1", 1234), "FULL_SYNC")
-    assert res4 == {"error": "replay_guard"}
-    network.nonce_guard.return_value = True
-    
-    # Rate limited
-    network.tb_node_allow.return_value = False
-    res5 = handle_miner_rpc(network, msg, ("127.0.0.1", 1234), "FULL_SYNC")
-    assert res5 == {"error": "rate_limited"}
 
 
 def test_mempool(network, mock_config):

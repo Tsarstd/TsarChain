@@ -125,49 +125,6 @@ def handle_get_blocks(self, message, _):
     return {"type": "BLOCKS", "blocks": blocks}
 
 
-@benchmark(label="handle_get_full_sync", threshold_ms=15.0)
-def handle_get_full_sync(self, _, addr):
-    
-    ip = addr[0] if isinstance(addr, tuple) and len(addr) > 0 else "unknown"
-    now = time.time()
-    min_iv = CFG.FULL_SYNC_MIN_INTERVAL
-    last_served = self._full_sync_served_at.get(ip, 0.0)
-    if now - last_served < min_iv:
-        retry_after = max(30.0, min_iv - (now - last_served))
-        return {"type": "SYNC_REJECT", "reason": "rate_limited", "retry_after": retry_after}
-
-    self._full_sync_served_at[ip] = now
-    blocks_available = max(0, self.broadcast.blockchain.height + 1)
-    if blocks_available > CFG.FULL_SYNC_MAX_BLOCKS:
-        return {
-            "type": "SYNC_REDIRECT",
-            "reason": "too_large_chain",
-            "limit_blocks": CFG.FULL_SYNC_MAX_BLOCKS,
-        }
-    full_obj, _, _, _ = self.broadcast.build_full_sync_payload()
-    enc = json.dumps(full_obj, separators=CFG.CANONICAL_SEP, ensure_ascii=False).encode("utf-8")
-
-    hard_cap = CFG.MAX_MSG - len(CFG.NETWORK_MAGIC)
-    if len(enc) > hard_cap:
-        return {
-            "type": "SYNC_REDIRECT",
-            "reason": "payload_would_exceed_limit",
-            "limit_bytes": hard_cap,
-        }
-    return full_obj
-
-
-def handle_full_sync(self, message, addr):
-    now = time.time()
-    if now - getattr(self, "_last_fullsync_log", 0.0) > 5.0:
-        log.trace("[handle_full_sync] Received full sync from %s:%s", addr[0], addr[1] if len(addr) > 1 else 0)
-        self._last_fullsync_log = now
-
-    payload = message.get("data", message)
-    self.broadcast.receive_full_sync(payload)
-    return {"status": "ok"}
-
-
 @benchmark(label="handle_get_block_at", threshold_ms=15.0)
 def handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict: #get block by heigt
         

@@ -432,12 +432,7 @@ RPC_POW_DIFFICULTY_READ        = 12  # difficulty bits for read-only RPC (info/h
 RPC_POW_DIFFICULTY_CHAT        = 14  # difficulty bits for chat presence/send/lookup
 
 
-# ---- FULL SYNC GUARD ----
-ENABLE_FULL_SYNC          = False
-FULL_SYNC_MAX_BLOCKS      = 5_000  # cap on blocks served per full-sync round
-FULL_SYNC_MIN_INTERVAL    = 60  # seconds a peer must wait between full-sync requests
-FULL_SYNC_BACKOFF_INITIAL = 120  # starting backoff between full sync retries
-FULL_SYNC_BACKOFF_MAX     = 600  # maximum backoff delay between full sync retries
+# ---- PAYLOAD BOUNDS & MEMPOOL SYNC ----
 MAX_MSG                   = 3 * 1024 * 1024  # upper bound for inbound message payloads
 MEMPOOL_SYNC_MIN_INTERVAL = 20  # seconds between mempool sync batches
 MEMPOOL_INLINE_MAX_TX     = 100  # tx count allowed inline before streaming
@@ -667,10 +662,6 @@ MINER_HEADERS_RL_BACKOFF_S = 2   # backoff after header limiter trips
 MINER_BLOCKS_RL_IP_BURST   = 50  # GET_BLOCKS bursts per IP
 MINER_BLOCKS_RL_WINDOW_S   = 5   # seconds window for block fetch limiter
 MINER_BLOCKS_RL_BACKOFF_S  = 2   # backoff after block limiter trips
-
-MINER_SYNC_RL_IP_BURST     = 32  # full-sync / chain bursts per IP
-MINER_SYNC_RL_WINDOW_S     = 5   # seconds window for miner sync limiter
-MINER_SYNC_RL_BACKOFF_S    = 3   # backoff after miner sync limiter trips
 
 MINER_NEWBLOCK_RL_IP_BURST  = 16  # NEW_BLOCK announcements per IP
 MINER_NEWBLOCK_RL_WINDOW_S  = 5   # seconds window for new block limiter

@@ -30,7 +30,7 @@ __all__ = ["process_message"]
 # RPC REGISTRY (role → allowed message types)
 # --------------------------------------------------------------------------
 MINER_RPC_TYPES = {
-        "HELLO", "GET_INFO", "NEW_BLOCK", "GET_FULL_SYNC", "FULL_SYNC",
+        "HELLO", "GET_INFO", "NEW_BLOCK",
         "MEMPOOL", "GET_HEADERS", "GET_BLOCKS", "GET_BLOCK_HASH"
 }
 
@@ -62,7 +62,7 @@ ROLE_RPC_MAP = {
 
 
 BOOTSTRAP_MINER_ALLOW = {
-    "HELLO", "GET_FULL_SYNC", "FULL_SYNC", "GET_HEADERS"
+    "HELLO", "GET_HEADERS"
 }
 
 

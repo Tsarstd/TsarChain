@@ -10,7 +10,6 @@ from typing import Dict, Optional, Set, Tuple, TYPE_CHECKING
 
 from .cast.gossip import GossipHandler
 from .cast.receive import ReceiveHandler
-from .cast.fullsync import FullSyncHandler
 from .cast.utxo_local import UTXOLocalHandler
 from .cast.chain_utils import ChainUtilsHandler
 from .cast.mempool_sync import MempoolSyncHandler
@@ -31,7 +30,6 @@ class Broadcast:
     def __init__(self, blockchain=None, utxodb=None):
         self.gossip = GossipHandler(self)
         self.receive = ReceiveHandler(self)
-        self.full_sync = FullSyncHandler(self)
         self.mempool_sync = MempoolSyncHandler(self)
         self.utxo_local = UTXOLocalHandler(self)
         self.chain_utils = ChainUtilsHandler(self)
@@ -91,7 +89,7 @@ class Broadcast:
             raise AttributeError(name)
         self._in_getattr = True
         try:
-            for handler in [self.gossip, self.receive, self.full_sync, self.mempool_sync, self.utxo_local, self.chain_utils]:
+            for handler in [self.gossip, self.receive, self.mempool_sync, self.utxo_local, self.chain_utils]:
                 if hasattr(handler, name):
                     return getattr(handler, name)
         finally:

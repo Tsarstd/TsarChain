@@ -52,14 +52,8 @@ class ReceiveHandler(BroadcastHandlerProxy):
             if last:
                 tip_h = last.hash()
                 if block.height > last.height + 1:
-                    handled = False
                     if self.network:
                         self.network.handle_block_gap(block, origin)
-                        handled = True
-                    if not handled and CFG.ENABLE_FULL_SYNC:
-                        targets = [origin] if origin else list(peers)
-                        for p in targets:
-                            self.request_full_sync(p)
                     return False
                 if block.prev_block_hash != tip_h:
                     potential_fork = True
@@ -205,13 +199,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
             )
             if reason and isinstance(reason, str) and reason.startswith("prevout_missing"):
                 if self.network:
-                    target = origin
-                    if not target and peers:
-                        target = next(iter(peers))
-                    if target:
-                        self.network.request_full_sync(target, force=True)
-                    else:
-                        self.network.request_sync(fast=True)
+                    self.network.request_sync(fast=True)
             return False
         return True
 
@@ -457,14 +445,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
             if self.network and isinstance(reason_str, str) and (
                 "Height mismatch" in reason_str or "prev_block_hash" in reason_str
             ):
-                try:
-                    peer_key = origin if origin else (addr[0], origin_port or 0)
-                    last_req = self.network._full_sync_last_request.get(peer_key, 0.0)
-                    if time.time() - last_req > float(CFG.FULL_SYNC_BACKOFF_INITIAL):
-                        self.network._full_sync_last_request[peer_key] = time.time()
-                        self.network.request_full_sync(peer_key, force=True)
-                except Exception:
-                    log.warning("[_resolve_add_block_failure] full_sync_on_mismatch failed", exc_info=True)
+                self.network.request_sync(fast=True)
             self._log_block_reject(
                 stage="add_block",
                 block_id=block_id,
@@ -473,10 +454,8 @@ class ReceiveHandler(BroadcastHandlerProxy):
                 reason=reason_str,
                 extra={"potential_fork": potential_fork},
             )
-            if potential_fork:
-                targets = [origin] if origin else list(peers)
-                for p in targets:
-                    self.request_full_sync(p, force=True)
+            if potential_fork and self.network:
+                self.network.request_sync(fast=True)
         return ok, old_tip
 
 

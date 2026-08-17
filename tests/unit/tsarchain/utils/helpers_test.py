@@ -6,55 +6,42 @@ import hashlib
 import pytest
 from unittest.mock import patch, MagicMock
 from tsarchain.utils.helpers import ( Script, 
-    sha256, hash160, double_sha256, hash256, sha256d,
-    int_to_little_endian, little_endian_to_int,
-    encode_varint, serialize_bytes_with_len,
-    is_p2wpkh_script, is_p2wpkh, is_p2wsh,
+    sha256, hash160, hash256,
+    int_to_little_endian,
+    is_p2wpkh, is_p2wsh,
     bits_to_target, target_to_bits,
     target_to_difficulty, difficulty_to_target,
     block_id_generator,
     parse_ops, last_pushdata,
-    canonicalize_rs, is_low_s,
+    is_low_s,
     der_encode_sig_strict, der_parse_sig_strict,
     is_signature_canonical_low_s,
     pow_hash_miner, pow_hash_verify_light,
     randomx_key_for_height, pow_key_for_height,
     to_bytes, compute_tx_weight_vsize,
-    util_compute_txid, util_compute_wtxid, tx_to_compact_tuple,
+    tx_to_compact_tuple,
     count_sigops_in_script, batch_verify_der_low_s, bip143_sig_hash,
     verify_der_strict_low_s, sign_digest_der_low_s_native, merkle_root,
     native_validate_block_txs,
-    native_randomx_mine, kv_load_utxo_dict_native
+    native_randomx_mine
 )
 
 def test_hashing():
     data = b"hello world"
     assert sha256(data) == hashlib.sha256(data).digest()
-    assert sha256d(data) == hashlib.sha256(hashlib.sha256(data).digest()).digest()
 
 def test_endian_conversion():
     num = 123456
     b = int_to_little_endian(num, 4)
     assert len(b) == 4
-    assert little_endian_to_int(b) == num
+    assert int.from_bytes(b, 'little') == num
 
-def test_encode_varint():
-    assert encode_varint(0) == b'\x00'
-    assert encode_varint(252) == b'\xfc'
-    assert encode_varint(253) == b'\xfd\xfd\x00'
-    assert encode_varint(65535) == b'\xfd\xff\xff'
-    assert encode_varint(65536) == b'\xfe\x00\x00\x01\x00'
-    assert encode_varint(0xffffffff + 1) == b'\xff\x00\x00\x00\x00\x01\x00\x00\x00'
-    assert serialize_bytes_with_len(b"abc") == b'\x03abc'
-
-def test_is_p2wpkh_script():
+def test_is_p2wpkh():
     valid_script = b'\x00\x14' + b'\x01' * 20
-    assert is_p2wpkh_script(valid_script) is True
     assert is_p2wpkh(valid_script) is True
     assert is_p2wsh(valid_script) is False
 
     invalid_script1 = b'\x00\x14' + b'\x01' * 19
-    assert is_p2wpkh_script(invalid_script1) is False
     assert is_p2wpkh(invalid_script1) is False
 
     valid_p2wsh = b'\x00\x20' + b'\x02' * 32
@@ -138,13 +125,6 @@ def test_der_signatures():
     r2, s2 = der_parse_sig_strict(sig)
     assert r == r2 and s == s2
 
-def test_canonicalize_rs():
-    from tsarchain.utils.helpers import SECP256K1_N
-    r = 100
-    s = SECP256K1_N - 100
-    c_r, c_s = canonicalize_rs(r, s)
-    assert is_low_s(c_s)
-
 def test_randomx_helpers():
     with patch("tsarchain.utils.helpers.CFG") as mock_cfg:
         mock_cfg.POW_ALGO = "randomx"
@@ -162,7 +142,6 @@ def test_native_hash160(m):
 
 @patch("tsarchain.utils.helpers._native_hash256", return_value=b"b"*32)
 def test_native_hash256(m):
-    assert double_sha256(b"data") == b"b"*32
     assert hash256(b"data") == b"b"*32
 
 @patch("tsarchain.utils.helpers._native_count_sigops", return_value=5)
@@ -219,11 +198,6 @@ def test_tx_sizing(m_s):
     assert w == 50
     assert v == 13
 
-@patch("tsarchain.utils.helpers.serialize_tx_compact", return_value=b"tx")
-def test_util_compute_txid(m):
-    util_compute_txid(MagicMock())
-    util_compute_wtxid(MagicMock())
-    
 def test_tx_to_compact_tuple():
     tx = MagicMock()
     tx.version = 1
@@ -249,17 +223,6 @@ def test_tx_to_compact_tuple():
 @patch("tsarchain.utils.helpers._native_randomx_mine", return_value=(1, b"hash"))
 def test_native_randomx_mine(m):
     assert native_randomx_mine(b"hdr", b"tgt", b"key") == (1, b"hash")
-
-@patch("tsarchain.utils.helpers.kv")
-def test_kv_load(m_kv):
-    store = MagicMock()
-    m_kv._ensure_env.return_value = store
-    store.iter_prefix_chunk.side_effect = [
-        [(b"__meta__", b"v"), (b"k1", b'{"a":1}')],
-        []
-    ]
-    res = kv_load_utxo_dict_native()
-    assert res["k1"]["a"] == 1
 
 @patch("tsarchain.utils.helpers._native_randomx_hash", return_value=b"hash")
 def test_pow_hashes(m_hash):

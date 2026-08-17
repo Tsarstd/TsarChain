@@ -110,7 +110,6 @@ def test_attempt_hello_p2p_secure(mock_cfg, mock_env, mock_channel, mock_socket,
     mock_cfg.DISCOVERY_INTERVAL = 10.0
     mock_cfg.HANDSHAKE_TIMEOUT = 5.0
     mock_cfg.HEADERS_FANOUT = 4
-    mock_cfg.ENABLE_FULL_SYNC = False
     mock_cfg.BUFFER_SIZE = 8192
     
     mock_env.return_value = {"env": "yes"}

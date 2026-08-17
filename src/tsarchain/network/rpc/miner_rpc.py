@@ -52,22 +52,6 @@ def handle_miner_rpc(
 
 #----------------------#-------------------
 
-    if mtype == "GET_FULL_SYNC":
-        if not CFG.ENABLE_FULL_SYNC:
-            return {"type": "SYNC_REDIRECT", "reason": "full_sync_disabled"}
-        ts_val = int(message.get("ts", 0))
-        nonce_val = str(message.get("nonce") or "")
-        sender_key = src_node_id or ip
-        if not (ts_val and nonce_val and self.nonce_guard("full_sync_req", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
-            return {"type": "SYNC_REDIRECT", "reason": "replay_guard"}
-        rl_key = f"miner:get_full_sync:{ip}"
-        if not self.tb_node_allow(self.rl_ip, rl_key, CFG.MINER_SYNC_RL_IP_BURST, CFG.MINER_SYNC_RL_WINDOW_S, CFG.MINER_SYNC_RL_IP_BURST, backoff_key=rl_key):
-            self.backoff_node(rl_key, CFG.MINER_SYNC_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
-        return handlers.handle_get_full_sync(self, message, addr)
-
-#----------------------#-------------------
-
     if mtype == "GET_HEADERS":
         rl_key = f"miner:get_headers:{ip}"
         if not self.tb_node_allow(self.rl_ip, rl_key, CFG.MINER_HEADERS_RL_IP_BURST, CFG.MINER_HEADERS_RL_WINDOW_S, CFG.MINER_HEADERS_RL_IP_BURST, backoff_key=rl_key):
@@ -83,23 +67,6 @@ def handle_miner_rpc(
             self.backoff_node(rl_key, CFG.MINER_BLOCKS_RL_BACKOFF_S)
             return {"error": "rate_limited"}
         return handlers.handle_get_blocks(self, message, addr)
-
-#----------------------#-------------------
-
-    if mtype == "FULL_SYNC":
-        if not CFG.ENABLE_FULL_SYNC:
-            return {"status": "ignored", "reason": "full_sync_disabled"}
-        ts_val = int(message.get("ts", 0))
-        nonce_val = str(message.get("nonce") or "")
-        sender_key = src_node_id or ip
-        if not (ts_val and nonce_val and self.nonce_guard("full_sync", sender_key, nonce_val, ts_val, CFG.REPLAY_WINDOW_SEC)):
-            log.warning("[FULL_SYNC] replay guard reject from %s", addr)
-            return {"error": "replay_guard"}
-        rl_key = f"miner:full_sync:{ip}"
-        if not self.tb_node_allow(self.rl_ip, rl_key, CFG.MINER_SYNC_RL_IP_BURST, CFG.MINER_SYNC_RL_WINDOW_S, CFG.MINER_SYNC_RL_IP_BURST, backoff_key=rl_key):
-            self.backoff_node(rl_key, CFG.MINER_SYNC_RL_BACKOFF_S)
-            return {"error": "rate_limited"}
-        return handlers.handle_full_sync(self, message, addr)
 
 #----------------------#-------------------
 

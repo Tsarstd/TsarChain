@@ -69,9 +69,8 @@ This is the public-facing API category used by wallets, blockchain explorers, an
 Restricted endpoints specifically used by validation nodes (Miners) to sync the blockchain and agree on the ledger state. Connections often require the `MINER-AUTHORIZED` scope via pinned public keys.
 
 - `HELLO`: Initial peer handshake.
-- `GET_FULL_SYNC` / `FULL_SYNC`: Bulk download of historical blockchain data.
 - `NEW_BLOCK`: Propagate a freshly mined block to the network.
-- `GET_HEADERS` / `GET_BLOCKS` / `GET_BLOCK_HASH`: Routine sync checks.
+- `GET_HEADERS` / `GET_BLOCKS` / `GET_BLOCK_HASH`: Routine sync checks and block batch downloads.
 
 *Example (NEW_BLOCK):*
 ```json

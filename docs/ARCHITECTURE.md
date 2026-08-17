@@ -126,7 +126,6 @@ This document provides an in-depth technical overview of the Graffiti Protocol. 
     │   │   │   ├── cast/
     │   │   │   │   ├── base.py                  # Proxy Handler
     │   │   │   │   ├── chain_utils.py           # validate incoming chain logic
-    │   │   │   │   ├── fullsync.py              # full sync logic
     │   │   │   │   ├── gossip.py                # gossip block
     │   │   │   │   ├── mempool_sync.py          # mempool sync p2p
     │   │   │   │   ├── receive.py               # receive p2p data logic

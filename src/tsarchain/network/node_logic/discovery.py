@@ -145,6 +145,5 @@ def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
         self._peer_last_dial[norm] = now
 
     self.broadcast.send_mempool_to_peer(norm)
-    if not CFG.ENABLE_FULL_SYNC:
-        self.request_mempool_snapshot(norm, force=True)
+    self.request_mempool_snapshot(norm, force=True)
     return True

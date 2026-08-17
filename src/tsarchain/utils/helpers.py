@@ -240,10 +240,6 @@ def int_to_little_endian(n: int, length: int) -> bytes:
     return n.to_bytes(length, 'little')
 
 
-def little_endian_to_int(b: bytes) -> int:
-    return int.from_bytes(b, 'little')
-
-
 # -----------------------------
 # HASHING
 # -----------------------------
@@ -257,32 +253,8 @@ def hash160(b: bytes) -> bytes:
     return bytes(_native_hash160(bytes(b)))
 
 
-def double_sha256(data: bytes) -> bytes:
-    return bytes(_native_hash256(bytes(data)))
-
-
 def hash256(data: bytes) -> bytes:
     return bytes(_native_hash256(bytes(data)))
-
-
-# -----------------------------
-# VARINT ENCODING (Bitcoin-style)
-# -----------------------------
-
-
-def encode_varint(i: int) -> bytes:
-    if i < 0xfd:
-        return i.to_bytes(1, 'little')
-    elif i <= 0xffff:
-        return b'\xfd' + i.to_bytes(2, 'little')
-    elif i <= 0xffffffff:
-        return b'\xfe' + i.to_bytes(4, 'little')
-    else:
-        return b'\xff' + i.to_bytes(8, 'little')
-
-
-def serialize_bytes_with_len(b: bytes) -> bytes:
-    return encode_varint(len(b)) + b
 
 
 # -----------------------------
@@ -319,16 +291,6 @@ def spkhex_to_address(spk_hex: str) -> str | None:
         return bech32_encode(CFG.ADDRESS_PREFIX, data)
     return None
 
-
-def decode_der_sig(signature: bytes):
-    if signature[0] != 0x30:
-        raise ValueError("Invalid DER encoding")
-    r_len = signature[3]
-    r = int.from_bytes(signature[4:4+r_len], 'big')
-    s_index = 4 + r_len + 2
-    s_len = signature[4 + r_len + 1]
-    s = int.from_bytes(signature[s_index:s_index + s_len], 'big')
-    return r, s
 
 # --- Compact bits <-> target (kanonik & unsigned) ---
 
@@ -377,10 +339,6 @@ def difficulty_to_target(diff: int) -> int:
 def serialize_tx(tx, include_witness: bool = True) -> bytes:
     compact = tx_to_compact_tuple(tx)
     return serialize_tx_compact(compact, include_witness)
-
-
-def serialize_tx_for_txid(tx) -> bytes:
-    return serialize_tx(tx, include_witness=False)
 
 
 def compute_tx_weight_vsize(tx) -> tuple[int, int, int, int]:
@@ -441,24 +399,6 @@ def estimate_block_size_bytes(block) -> int:
         else:
             total += len(json.dumps(tx))
     return int(total)
-
-
-# ========== Convenience: detect p2wpkh from scriptPubKey ==========
-
-
-def is_p2wpkh_script(script_bytes: bytes) -> bool:
-    return isinstance(script_bytes, (bytes, bytearray)) and len(script_bytes) == 22 and script_bytes[0] == 0x00 and script_bytes[1] == 0x14
-
-
-# ========== Compute ==========
-
-
-def util_compute_txid(tx):
-    return hash256(serialize_tx(tx, include_witness=False))
-
-
-def util_compute_wtxid(tx) -> bytes:
-    return hash256(serialize_tx(tx, include_witness=True))
 
 
 # ====== Block Id (Voice Sovereignty flavored) ======
@@ -662,14 +602,6 @@ def is_low_s(s: int) -> bool:
     return 1 <= s <= HALF_N
 
 
-def canonicalize_rs(r: int, s: int) -> Tuple[int, int]:
-    if not (1 <= r < SECP256K1_N) or not (1 <= s < SECP256K1_N):
-        raise DerSigError("r or s out of range")
-    if s > HALF_N:
-        s = SECP256K1_N - s
-    return r, s
-
-
 def der_encode_sig_strict(r: int, s: int) -> bytes:
     def enc_int(x: int) -> bytes:
         if x <= 0:
@@ -770,22 +702,12 @@ def der_parse_sig_strict(sig: bytes) -> Tuple[int, int]:
     return r, s
 
 
-def strip_sighash_flag(sig_with_type: bytes) -> Tuple[bytes, int]:
-    if len(sig_with_type) < 2:
-        raise DerSigError("signature missing sighash byte")
-    return sig_with_type[:-1], sig_with_type[-1]
-
-
 def is_signature_canonical_low_s(der_sig: bytes) -> bool:
     try:
         _, s = der_parse_sig_strict(der_sig)
         return is_low_s(s)
     except DerSigError:
         return False
-
-
-def sha256d(data: bytes) -> bytes:
-    return hashlib.sha256(hashlib.sha256(data).digest()).digest()
 
 
 # ===========================================================================
@@ -882,7 +804,7 @@ def native_utxo_build_ops_compact(block_txs, spend_height: int):
 # =======================
 
 
-def serialize_tx_compact(tx_tuple, include_witness: bool = True) -> bytes:  # Not used directly
+def serialize_tx_compact(tx_tuple, include_witness: bool = True) -> bytes:
     return bytes(_native_serialize_tx_compact(tx_tuple, bool(include_witness)))
 
 
@@ -987,33 +909,4 @@ def native_randomx_mine(
         progress_interval_ms if progress_interval_ms is None else int(progress_interval_ms),
         stop_event,
     )
-
-
-# =======================
-# LMDB UTXO streaming helpers Native (full-sync)
-# =======================
-
-
-def kv_load_utxo_dict_native(limit: int = 1000) -> dict:
-    """
-    Stream UTXO entries dari LMDB via native iter_prefix_chunk.
-    dict key -> parsed JSON entry. Ignored __meta__.
-    """
-    store = kv._ensure_env("utxo")
-    out = {}
-    start_after = None
-    while True:
-        chunk = store.iter_prefix_chunk("utxo", b"", limit, start_after) or []
-        if not chunk:
-            break
-        for k, v in chunk:
-            if k == b"__meta__":
-                continue
-            key = k.decode("utf-8")
-            val = json.loads(v.decode("utf-8"))
-            out[key] = val
-            start_after = k
-        if len(chunk) < limit:
-            break
-    return out
 
