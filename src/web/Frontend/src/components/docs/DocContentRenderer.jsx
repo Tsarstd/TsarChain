@@ -91,55 +91,97 @@ const highlightCodeSyntax = (codeStr) => {
   });
 };
 
-// Format inline markdown (code, bold, italic)
+// Format inline markdown (links, code, bold, italic)
 const formatInlineMarkdown = (text) => {
   if (!text || typeof text !== "string") return text;
   
   const tokens = [];
   let tokenCounter = 0;
-  
-  const parts = text.split(/(`[^`]+`)/g);
-  for (const part of parts) {
-    if (part.startsWith("`") && part.endsWith("`")) {
+
+  // 1. Parse markdown links: [label](url)
+  const linkParts = text.split(/(\[[^\]]+\]\([^)]+\))/g);
+  for (const lPart of linkParts) {
+    const linkMatch = lPart.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (linkMatch) {
       tokens.push({
         id: `tok-${tokenCounter++}`,
-        type: "code",
-        content: part.slice(1, -1)
+        type: "link",
+        label: linkMatch[1],
+        url: linkMatch[2]
       });
       continue;
     }
 
-    const boldParts = part.split(/(\*\*[^*]+\*\*)/g);
-    for (const bPart of boldParts) {
-      if (bPart.startsWith("**") && bPart.endsWith("**")) {
+    // 2. Parse inline code: `code`
+    const codeParts = lPart.split(/(`[^`]+`)/g);
+    for (const cPart of codeParts) {
+      if (cPart.startsWith("`") && cPart.endsWith("`")) {
         tokens.push({
           id: `tok-${tokenCounter++}`,
-          type: "strong",
-          content: bPart.slice(2, -2)
+          type: "code",
+          content: cPart.slice(1, -1)
         });
         continue;
       }
 
-      const italicParts = bPart.split(/(\*[^*]+\*)/g);
-      for (const iPart of italicParts) {
-        if (iPart.startsWith("*") && iPart.endsWith("*") && !iPart.startsWith("**")) {
+      // 3. Parse bold: **bold**
+      const boldParts = cPart.split(/(\*\*[^*]+\*\*)/g);
+      for (const bPart of boldParts) {
+        if (bPart.startsWith("**") && bPart.endsWith("**")) {
           tokens.push({
             id: `tok-${tokenCounter++}`,
-            type: "em",
-            content: iPart.slice(1, -1)
+            type: "strong",
+            content: bPart.slice(2, -2)
           });
-        } else if (iPart) {
-          tokens.push({
-            id: `tok-${tokenCounter++}`,
-            type: "text",
-            content: iPart
-          });
+          continue;
+        }
+
+        // 4. Parse italic: *italic*
+        const italicParts = bPart.split(/(\*[^*]+\*)/g);
+        for (const iPart of italicParts) {
+          if (iPart.startsWith("*") && iPart.endsWith("*") && !iPart.startsWith("**")) {
+            tokens.push({
+              id: `tok-${tokenCounter++}`,
+              type: "em",
+              content: iPart.slice(1, -1)
+            });
+          } else if (iPart) {
+            tokens.push({
+              id: `tok-${tokenCounter++}`,
+              type: "text",
+              content: iPart
+            });
+          }
         }
       }
     }
   }
 
   return tokens.map((token) => {
+    if (token.type === "link") {
+      const isExternal = token.url.startsWith("http://") || token.url.startsWith("https://");
+      return (
+        <a
+          key={token.id}
+          href={token.url}
+          target={isExternal ? "_blank" : undefined}
+          rel={isExternal ? "noopener noreferrer" : undefined}
+          className="doc-inline-link"
+        >
+          {formatInlineMarkdown(token.label)}
+          {isExternal && (
+            <RiExternalLinkLine
+              size={12}
+              style={{
+                display: "inline-block",
+                marginLeft: "3px",
+                verticalAlign: "middle"
+              }}
+            />
+          )}
+        </a>
+      );
+    }
     if (token.type === "code") {
       return (
         <code key={token.id} className="doc-inline-code">

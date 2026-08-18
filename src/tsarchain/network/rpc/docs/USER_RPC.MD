@@ -255,19 +255,19 @@ Address activity and transaction inspection.
 Provides decentralized, end-to-end encrypted messaging via TsarChain's Signal-compatible cryptographic layer.
 
 ```
- Alice (Wallet)                          Node / Relay                         Bob (Wallet)
-   │                                         │                                      │
+ Alice (Wallet)                          Node / Relay                           Bob (Wallet)
+   │                                           │                                      │
    ├── 1. CHAT_PUBLISH_PREKEYS (IK, SPK, OPKs)►│                                      │
-   │                                         │                                      │
-   ├── 2. CHAT_GET_PREKEY (For Bob)─────────►│                                      │
-   │   ◄── Returns Bob's Prekey Bundle ──────┤                                      │
-   │                                         │                                      │
-   ├── 3. Encrypt via Signal X3DH + Ratchet  │                                      │
-   ├── 4. CHAT_SEND (Encrypted Envelope)────►│ (Stores in mailbox)                  │
-   │                                         │◄── 5. CHAT_PULL (Fetch Messages)─────┤
-   │                                         ├──── Returns Encrypted Payload ──────►│
-   │                                         │                                      │
-   │                                         │◄── 6. CHAT_READ (Acknowledge Msg)────┤
+   │                                           │                                      │
+   ├── 2. CHAT_GET_PREKEY (For Bob)───────────►│                                      │
+   │   ◄── Returns Bob's Prekey Bundle ────────┤                                      │
+   │                                           │                                      │
+   ├── 3. Encrypt via Signal X3DH + Ratchet    │                                      │
+   ├── 4. CHAT_SEND (Encrypted Envelope)──────►│    (Stores in mailbox)               │
+   │                                           │◄── 5. CHAT_PULL (Fetch Messages)─────┤
+   │                                           ├──── Returns Encrypted Payload ──────►│
+   │                                           │                                      │
+   │                                           │◄── 6. CHAT_READ (Acknowledge Msg)────┤
 ```
 
 ### Endpoints

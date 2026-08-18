@@ -505,6 +505,20 @@
   word-break: break-word;
 }
 
+.doc-inline-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 500;
+  transition: color 0.15s ease, opacity 0.15s ease;
+  word-break: break-word;
+}
+
+.doc-inline-link:hover {
+  color: var(--accent-peach);
+  opacity: 0.85;
+}
+
 .doc-bullet-list {
   list-style: disc;
   padding-left: 1.5rem;
