@@ -105,9 +105,9 @@ const SearchResultPanel = ({ status, result, kind, message, onSearchClick }) => 
       return (
         <div className="result-empty">There is no result for this query.</div>
       );
-    if (kind === "block" || kind === "block_height" || kind === "block_hash")
+    if (kind === "block" || kind === "block_height" || kind === "block_hash" || (kind === "hash64" && result?.hash))
       return <ResultBlock data={result} onSearchClick={onSearchClick} />;
-    if (kind === "tx" || kind === "txid_hash")
+    if (kind === "tx" || kind === "txid_hash" || (kind === "hash64" && result?.txid))
       return <ResultTx data={result} onSearchClick={onSearchClick} />;
     if (kind === "address") return <ResultAddress data={result} onSearchClick={onSearchClick} />;
     if (kind === "graffiti" || kind === "art_id")

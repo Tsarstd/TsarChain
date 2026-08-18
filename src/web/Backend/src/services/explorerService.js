@@ -350,10 +350,10 @@ class ExplorerService {
       return { kind, data: null };
     }
     
-    if (kind === "txid_hash") {
+    if (kind === "hash64" || kind === "txid_hash" || kind === "block_hash") {
       try {
         const txData = await this.getTx(query);
-        if (txData?.txid) {
+        if (txData?.txid && !txData.error) {
           return { kind: "tx", data: txData };
         }
       } catch (_err) {
@@ -361,28 +361,8 @@ class ExplorerService {
       }
       try {
         const blockData = await this.getBlock(query);
-        if (blockData?.hash) {
+        if (blockData?.hash && !blockData.error) {
           return { kind: "block", data: blockData };
-        }
-      } catch (_err) {
-        // No match found
-      }
-      return { kind: "unknown", data: null };
-    }
-
-    if (kind === "block_hash") {
-      try {
-        const blockData = await this.getBlock(query);
-        if (blockData?.hash) {
-          return { kind: "block", data: blockData };
-        }
-      } catch (_err) {
-        // Fallback to tx search
-      }
-      try {
-        const txData = await this.getTx(query);
-        if (txData?.txid) {
-          return { kind: "tx", data: txData };
         }
       } catch (_err) {
         // No match found

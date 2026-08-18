@@ -466,3 +466,55 @@ def test_process_history_lookup_graffiti_parsing(mixin):
                     item = result['items'][0]
                     assert item['is_graffiti'] is True
                     assert item['event'] == 'POST'
+
+
+def test_find_tx_and_meta_leading_zeros_and_case(mixin):
+    txid_hex = "0044d0cdb2a2a17f497d26ab22309e4a68bbe9dd32cd4a62bfd47706446fc016"
+    tx = DummyTx(
+        txid=bytes.fromhex(txid_hex),
+        inputs=[DummyTxIn(txid=b'0'*32, vout=0)],
+        outputs=[DummyTxOut(amount=25000, script_pubkey=b'\x00\x14' + b'a'*20)]
+    )
+    block = DummyBlock(height=227, timestamp=1787003061, transactions=[tx])
+    mixin.broadcast.blockchain.chain = [block]
+    mixin.broadcast.blockchain.height = 227
+    mixin.broadcast.mempool.get_all_txs.return_value = []
+
+    # Search with exact lowercase
+    where, found_tx, h, ts, conf, chain, mem, tip_h = mixin.find_tx_and_meta(txid_hex)
+    assert where == "chain"
+    assert found_tx == tx
+    assert h == 227
+    assert conf == 1
+
+    # Search with uppercase and whitespace
+    where_uc, found_tx_uc, _, _, _, _, _, _ = mixin.find_tx_and_meta("  " + txid_hex.upper() + "  ")
+    assert where_uc == "chain"
+    assert found_tx_uc == tx
+
+
+def test_find_tx_and_meta_str_txid(mixin):
+    txid_hex = "0044d0cdb2a2a17f497d26ab22309e4a68bbe9dd32cd4a62bfd47706446fc016"
+    # tx with string txid instead of bytes
+    tx = DummyTx(txid=txid_hex)
+    block = DummyBlock(height=10, timestamp=500, transactions=[tx])
+    mixin.broadcast.blockchain.chain = [block]
+    mixin.broadcast.blockchain.height = 10
+    mixin.broadcast.mempool.get_all_txs.return_value = []
+
+    where, found_tx, _, _, _, _, _, _ = mixin.find_tx_and_meta(txid_hex)
+    assert where == "chain"
+    assert found_tx == tx
+
+
+def test_build_outpoint_map_with_leading_zeros(mixin):
+    txid_hex = "0044d0cdb2a2a17f497d26ab22309e4a68bbe9dd32cd4a62bfd47706446fc016"
+    tx = DummyTx(
+        txid=bytes.fromhex(txid_hex),
+        outputs=[DummyTxOut(amount=1000, script_pubkey=b'\x00\x14' + b'x'*20)]
+    )
+    block = DummyBlock(height=227, timestamp=1787003061, transactions=[tx])
+    with patch.object(mixin, '_txout_to_spk_hex', return_value="0014" + "x"*40):
+        chain_map = mixin.build_outpoint_map([block])
+        assert f"{txid_hex}:0" in chain_map
+        assert chain_map[f"{txid_hex}:0"][0] == 1000

@@ -30,7 +30,7 @@ import {
 } from "react-icons/fa";
 
 
-const ResultBlock = ({ data, onSearchClick }) => {
+const ResultBlock = ({ data, onSearchClick, onBlockClick }) => {
   const { renderHash, renderClickableHash } = useRenderHelpers();
   const { isMobile, maxCharsPerLine } = useMobile();
   const [showAllTxs, setShowAllTxs] = useState(false);
@@ -56,12 +56,12 @@ const ResultBlock = ({ data, onSearchClick }) => {
             <FaCube className="block-hero-icon" />
             <span className="block-hero-height">Block #{data?.height ?? "-"}</span>
           </div>
-          {data?.prev_block_hash && (
+          {data?.prev_block_hash && data?.prev_block_hash !== "0".repeat(64) && data?.height !== 0 && (
             <div className="block-prev-nav">
               <span className="prev-label">Prev Block:</span>
               {renderClickableHash(
                 data?.prev_block_hash,
-                onSearchClick,
+                onBlockClick || onSearchClick,
                 data?.prev_block_hash,
                 fmtHash(data?.prev_block_hash) || "-",
                 true
@@ -462,6 +462,7 @@ ResultBlock.propTypes = {
     }),
   }),
   onSearchClick: PropTypes.func.isRequired,
+  onBlockClick: PropTypes.func,
 };
 
 export { ResultBlock }

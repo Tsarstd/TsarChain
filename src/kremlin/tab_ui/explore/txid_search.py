@@ -25,6 +25,7 @@ class TxSearch:
     # ---------- entrypoints ----------
 
     def open_tx_or_block(self, hx: str) -> None:
+        hx = str(hx or "").strip()
         get_tx = self.panel.providers.get("get_tx")
         get_block = self.panel.providers.get("get_block")
         if not callable(get_block) and not callable(get_tx):

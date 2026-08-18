@@ -12,10 +12,7 @@ export function guessKind(raw) {
   if (/^\d{1,7}$/.test(q)) return "block_height";
   
   if (isHex64(q)) {
-    if (lower.startsWith("00")) {
-      return "block_hash";
-    }
-    return "txid_hash";
+    return "hash64";
   }
   
   return "unknown";

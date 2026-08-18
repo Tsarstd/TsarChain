@@ -635,7 +635,11 @@ const Block = ({ onSearchClick }) => {
           </div>
         )}
         {detailStatus === "done" && detail ? (
-          <ResultBlock data={detail} onSearchClick={handleSearchClickLocal} />
+          <ResultBlock
+            data={detail}
+            onSearchClick={handleSearchClickLocal}
+            onBlockClick={handleNavigateToBlock}
+          />
         ) : null}
       </section>
     </main>
