@@ -55,6 +55,8 @@ To bypass aggressive rate limits or authenticate a heavy query, a client can sub
       title: "3. User RPC Category (USER)",
       content: `This is the public-facing API category used by wallets, blockchain explorers, and social chat apps. It handles transactions, fetching blocks, and posting Graffiti art.
 
+> 📖 **Full Technical Specification**: [USER_RPC.MD](https://github.com/Tsarstd/Graffiti-Protocol/tree/main/src/tsarchain/network/rpc/docs/USER_RPC.MD)
+
 ### 1. Wallet & Transactions
 
 - \`GET_BALANCES\` : Fetch UTXO balances for an address.
@@ -87,6 +89,8 @@ To bypass aggressive rate limits or authenticate a heavy query, a client can sub
       title: "4. Miner Consensus RPC (MINER)",
       content: `Restricted endpoints specifically used by validation nodes (Miners) to sync the blockchain and agree on the ledger state. Connections often require the \`MINER-AUTHORIZED\` scope via pinned public keys.
 
+> 📖 **Full Technical Specification**: [MINER_RPC.MD](https://github.com/Tsarstd/Graffiti-Protocol/tree/main/src/tsarchain/network/rpc/docs/MINER_RPC.MD)
+
 - \`HELLO\`: Initial peer handshake.
 - \`NEW_BLOCK\`: Propagate a freshly mined block to the network.
 - \`GET_HEADERS\` / \`GET_BLOCKS\` / \`GET_BLOCK_HASH\`: Routine sync checks and block batch downloads.
@@ -107,6 +111,8 @@ To bypass aggressive rate limits or authenticate a heavy query, a client can sub
       id: "storage-rpc",
       title: "5. Storage Node RPC (STORAGE)",
       content: `Specialized endpoints for nodes that participate in archiving the heavy digital media elements of Graffiti.
+
+> 📖 **Full Technical Specification**: [STORAGE_RPC.MD](https://github.com/Tsarstd/Graffiti-Protocol/tree/main/src/tsarchain/network/rpc/docs/STORAGE_RPC.MD)
 
 - \`GRAFFITI_PROOF_SUBMIT\`: Submits a cryptographic proof proving the node is holding the requested artifact chunk at a specific offset.
 - \`GRAFFITI_BUILD_PAYOUT\`: Calculates and issues compensation for a storage node successfully passing integrity challenges.

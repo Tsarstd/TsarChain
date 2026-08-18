@@ -1,0 +1,296 @@
+# TsarChain User RPC Specification
+
+Technical documentation for the **`USER`** RPC category in the TsarChain Network (`src/tsarchain/network/rpc/user_rpc/` and `src/tsarchain/network/rpc/processing_msg.py`).
+
+---
+
+## 1. Architecture & Security Model
+
+User RPC serves client applications, light wallets (Kremlin), explorers, and decentralized chat clients. Unlike private miner-to-miner RPCs, User RPC is publicly accessible but strictly guarded against Denial of Service (DoS) attacks.
+
+### A. Anti-DoS Proof of Work (PoW)
+To prevent API spam and brute-force attacks without requiring centralized API keys, User RPC uses dynamic Proof of Work challenges (`allow_rpc_with_pow`):
+- **Read Requests** (`GET_*`, `PING`, `STOR_LIST`): Lower difficulty (`CFG.RPC_POW_DIFFICULTY_READ`).
+- **Transaction Submissions** (`NEW_TX`, `CREATE_TX*`): Higher difficulty (`CFG.RPC_POW_DIFFICULTY_TX`).
+- **Chat Relays & Registration** (`CHAT_*`): Chat-specific difficulty (`CFG.RPC_POW_DIFFICULTY_CHAT`).
+
+If a client exceeds standard token bucket burst limits, the server challenges the client to attach a valid `pow` object:
+```json
+{
+  "pow": {
+    "nonce": 123456,
+    "timestamp": 1740000000,
+    "identity": "tsar1q...",
+    "scope": "rpc:balance"
+  }
+}
+```
+
+### B. Dual Token-Bucket Rate Limiting
+Rate limits are enforced at two tiers:
+1. **IP Table (`rl_ip`)**: Prevents volume floods from single IPs.
+2. **Address Table (`rl_addr`)**: Prevents Sybil attacks cycling through IPs against the same account identity.
+
+---
+
+## 2. Category Summary
+
+| Category | Endpoints |
+| :--- | :--- |
+| **Networking** | `PING`, `GET_PEERS`, `STOR_LIST` |
+| **Transactions & Mempool** | `NEW_TX`, `CREATE_TX`, `CREATE_TX_MULTI`, `GET_MEMPOOL` |
+| **Blockchain Explorer** | `GET_BALANCES`, `GET_NETWORK_INFO`, `GET_BLOCK`, `GET_BLOCK_RANGE`, `GET_TX_HISTORY`, `GET_TX_DETAIL`, `GET_TOTAL_UTXO` |
+| **Encrypted P2P Chat** | `CHAT_REGISTER`, `CHAT_LOOKUP_PUB`, `CHAT_PRESENCE`, `CHAT_GET_PREKEY`, `CHAT_PUBLISH_PREKEYS`, `CHAT_SEND`, `CHAT_READ`, `CHAT_PULL`, `CHAT_RELAY` |
+| **Graffiti Protocol** | `GRAFFITI_GET_POSTS`, `GRAFFITI_GET_COMMENTS`, `GRAFFITI_GET_ART`, `GRAFFITI_GET_PAYOUTS` |
+
+---
+
+## 3. Networking Endpoints
+
+### 1. `PING`
+Health check and connection latency probe.
+
+- **Request**: `{"type": "PING"}`
+- **Response**: `{"type": "PONG"}`
+
+---
+
+### 2. `GET_PEERS`
+Returns active connected node peers (restricted to miners for full topology; returns empty list for anonymous users).
+
+- **Request**: `{"type": "GET_PEERS"}`
+- **Response**: `{"type": "PEERS", "peers": [["192.168.1.100", 9333]]}`
+
+---
+
+### 3. `STOR_LIST`
+Lists discovered and verified Archivist Storage Nodes in the network.
+
+- **Request**: `{"type": "STOR_LIST"}`
+- **Response**:
+```json
+{
+  "type": "STOR_LIST",
+  "storers": [
+    {
+      "addr": "tsar1qstorage...",
+      "url": "http://192.168.1.50:8080",
+      "ip": "192.168.1.50",
+      "port": 8080,
+      "last_seen": 1740000000,
+      "alive": true,
+      "trusted": false,
+      "node_id": "stor_node_1"
+    }
+  ]
+}
+```
+
+---
+
+## 4. Transactions & Mempool Endpoints
+
+### 1. `NEW_TX`
+Submits a signed raw transaction to the network. Propagates through Dandelion++ privacy routing (`stem` phase) if enabled.
+
+#### Request Payload
+```json
+{
+  "type": "NEW_TX",
+  "from_addr": "tsar1qsender...",
+  "data": {
+    "txid": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
+    "version": 1,
+    "locktime": 0,
+    "inputs": [ ... ],
+    "outputs": [ ... ]
+  }
+}
+```
+
+#### Response Payload
+```json
+{
+  "status": "ok",
+  "txid": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"
+}
+```
+*Error: `{"status": "error", "reason": "missing_inputs"}`*
+
+---
+
+### 2. `CREATE_TX` / `CREATE_TX_MULTI`
+Generates an unsigned transaction template using available UTXOs from the sender address.
+
+#### Request Payload (`CREATE_TX`)
+```json
+{
+  "type": "CREATE_TX",
+  "from": "tsar1qsender...",
+  "to": "tsar1qrecipient...",
+  "amount": 1000000,
+  "fee_rate": 2
+}
+```
+
+#### Response Payload
+```json
+{
+  "type": "TX_TEMPLATE",
+  "data": {
+    "inputs": [ ... ],
+    "outputs": [ ... ],
+    "fee": 450,
+    "change": 999550
+  }
+}
+```
+
+---
+
+### 3. `GET_MEMPOOL`
+Queries unconfirmed transactions currently held in the local mempool.
+
+- **Modes**:
+  - `mode: "txids"` (Default): Returns list of TXID hex strings.
+  - `mode: "inline"` / `"inline_full"`: Returns full transaction objects up to size limit (`CFG.MEMPOOL_INLINE_MAX_TX`).
+  - `mode: "snapshot"`: Triggers peer P2P mempool push (miner-only).
+
+#### Request Payload
+```json
+{
+  "type": "GET_MEMPOOL",
+  "mode": "txids"
+}
+```
+
+#### Response Payload
+```json
+{
+  "type": "MEMPOOL",
+  "mode": "txids",
+  "txs": [
+    "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"
+  ]
+}
+```
+
+---
+
+## 5. Blockchain Explorer Endpoints
+
+### 1. `GET_BALANCES`
+Queries confirmed, immature, and pending mempool balances for one or more addresses.
+
+#### Request Payload
+```json
+{
+  "type": "GET_BALANCES",
+  "addresses": ["tsar1qalice..."]
+}
+```
+
+#### Response Payload
+```json
+{
+  "type": "BALANCES",
+  "height": 1055,
+  "items": {
+    "tsar1qalice...": {
+      "balance": 5000000,
+      "spendable": 4500000,
+      "immature": 500000,
+      "pending_outgoing": 0,
+      "pending_incoming": 200000,
+      "maturity": 100
+    }
+  }
+}
+```
+
+---
+
+### 2. `GET_NETWORK_INFO`
+Retrieves a snapshot of blockchain state (height, tip hash, difficulty, hashrate, mempool metrics).
+
+- **Request**: `{"type": "GET_NETWORK_INFO"}`
+- **Response**:
+```json
+{
+  "type": "NETWORK_INFO",
+  "data": {
+    "height": 1055,
+    "tip_hash": "00000000a1b2c3...",
+    "difficulty": "0x1d00ffff",
+    "transactions": {
+      "mempool_txs": 4,
+      "mempool_vbytes_estimate": 1024
+    },
+    "peers": {"count": 8}
+  }
+}
+```
+
+---
+
+### 3. `GET_BLOCK` / `GET_BLOCK_RANGE`
+Fetches block details by height, block hash, or sequential range.
+
+- **Request (`GET_BLOCK`)**: `{"type": "GET_BLOCK", "height": 1050}` or `{"type": "GET_BLOCK", "hash": "00000000a1..."}`
+- **Request (`GET_BLOCK_RANGE`)**: `{"type": "GET_BLOCK_RANGE", "start_height": 1050, "limit": 20}`
+
+---
+
+### 4. `GET_TX_HISTORY` / `GET_TX_DETAIL` / `GET_TOTAL_UTXO`
+Address activity and transaction inspection.
+
+- **`GET_TX_HISTORY`**: `{"type": "GET_TX_HISTORY", "address": "tsar1q...", "limit": 50, "offset": 0}`
+- **`GET_TX_DETAIL`**: `{"type": "GET_TX_DETAIL", "txid": "4a5e1e..."}`
+- **`GET_TOTAL_UTXO`**: `{"type": "GET_TOTAL_UTXO", "address": "tsar1q..."}`
+
+---
+
+## 6. Encrypted P2P Chat Endpoints (Signal X3DH / Double Ratchet)
+
+Provides decentralized, end-to-end encrypted messaging via TsarChain's Signal-compatible cryptographic layer.
+
+```
+ Alice (Wallet)                          Node / Relay                         Bob (Wallet)
+   │                                         │                                      │
+   ├── 1. CHAT_PUBLISH_PREKEYS (IK, SPK, OPKs)►│                                      │
+   │                                         │                                      │
+   ├── 2. CHAT_GET_PREKEY (For Bob)─────────►│                                      │
+   │   ◄── Returns Bob's Prekey Bundle ──────┤                                      │
+   │                                         │                                      │
+   ├── 3. Encrypt via Signal X3DH + Ratchet  │                                      │
+   ├── 4. CHAT_SEND (Encrypted Envelope)────►│ (Stores in mailbox)                  │
+   │                                         │◄── 5. CHAT_PULL (Fetch Messages)─────┤
+   │                                         ├──── Returns Encrypted Payload ──────►│
+   │                                         │                                      │
+   │                                         │◄── 6. CHAT_READ (Acknowledge Msg)────┤
+```
+
+### Endpoints
+1. **`CHAT_REGISTER`**: Registers account spend public key and identity public key with dual presence signatures.
+2. **`CHAT_LOOKUP_PUB`**: Resolves an on-chain Tsar address to its chat identity public key.
+3. **`CHAT_PRESENCE`**: Updates node heartbeat presence for online routing.
+4. **`CHAT_PUBLISH_PREKEYS`**: Publishes Signed Prekeys (SPK) and One-Time Prekeys (OPKs) for asynchronous X3DH key agreements.
+5. **`CHAT_GET_PREKEY`**: Fetches a prekey bundle to initiate an encrypted session with a peer.
+6. **`CHAT_SEND`**: Delivers an encrypted message envelope to the recipient's node mailbox.
+7. **`CHAT_PULL`**: Fetches pending incoming encrypted envelopes.
+8. **`CHAT_READ`**: Marks message IDs as delivered/read.
+9. **`CHAT_RELAY`**: Multi-hop onion routing relay for privacy-preserving message transport.
+
+---
+
+## 7. Graffiti Cultural Protocol Endpoints
+
+Handles query endpoints for permanent on-chain ASCII art, posts, and comments.
+
+1. **`GRAFFITI_GET_POSTS`**: Lists posts paginated by `limit` and `offset`.
+   - Request: `{"type": "GRAFFITI_GET_POSTS", "limit": 50, "offset": 0}`
+2. **`GRAFFITI_GET_COMMENTS`**: Lists on-chain threaded comments for an art ID.
+   - Request: `{"type": "GRAFFITI_GET_COMMENTS", "art_id": "art_a1b2...", "limit": 50}`
+3. **`GRAFFITI_GET_ART`**: Retrieves post metadata, storer information, and Merkle root for a specific art ID.
+   - Request: `{"type": "GRAFFITI_GET_ART", "art_id": "art_a1b2..."}`
+4. **`GRAFFITI_GET_PAYOUTS`**: Query epoch payouts for an art ID (*Reserved/Disabled*).
