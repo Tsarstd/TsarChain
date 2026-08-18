@@ -48,7 +48,7 @@ USER_RPC_TYPES = {
         "GRAFFITI_GET_PAYOUTS",
         # Chat & storage listing
         "CHAT_REGISTER", "CHAT_LOOKUP_PUB", "CHAT_PRESENCE", "CHAT_SEND", "CHAT_PULL", "CHAT_RELAY",
-        "CHAT_READ", "CHAT_GET_PREKEY", "CHAT_PUBLISH_PREKEYS", "CHAT_RCPT",
+        "CHAT_READ", "CHAT_GET_PREKEY", "CHAT_PUBLISH_PREKEYS",
         # Mempool utilities
         "GET_MEMPOOL"
 }

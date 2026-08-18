@@ -275,75 +275,14 @@ def test_get_art_pow_failure(mock_self, mock_allow_rpc_failure):
 
 # ==================== Test get_payouts ====================
 
-def test_get_payouts_success(mock_self, mock_registry, mock_allow_rpc_success):
-    """get_payouts: sukses dengan art_id."""
-    mock_self.broadcast.utxodb._graffiti_registry = mock_registry
+def test_get_payouts_temporarily_disabled(mock_self):
+    """get_payouts: endpoint diblokir sementara."""
     message = {"art_id": "graf123", "limit": 30}
     result = graff_activities.get_payouts(
         mock_self, message, pow_obj=None, base_identity="id",
         client_ip="127.0.0.1"
     )
-    assert result["type"] == "GRAFFITI_GET_PAYOUTS"
-    assert result["art_id"] == "graf123"
-    assert result["payouts"] == mock_registry.list_payouts.return_value
-    mock_registry.list_payouts.assert_called_once_with("graf123", 30)
-
-
-def test_get_payouts_no_art_id(mock_self, mock_allow_rpc_success):
-    """get_payouts: art_id kosong, return empty payouts."""
-    mock_self.broadcast.utxodb._graffiti_registry = MagicMock()
-    message = {"art_id": ""}
-    result = graff_activities.get_payouts(
-        mock_self, message, pow_obj=None, base_identity="id",
-        client_ip="127.0.0.1"
-    )
-    assert result["type"] == "GRAFFITI_GET_PAYOUTS"
-    assert result["payouts"] == []
-    mock_self.broadcast.utxodb._graffiti_registry.list_payouts.assert_not_called()
-
-
-def test_get_payouts_default_limit(mock_self, mock_registry, mock_allow_rpc_success):
-    """get_payouts: limit default 100."""
-    mock_self.broadcast.utxodb._graffiti_registry = mock_registry
-    message = {"art_id": "graf123"}
-    result = graff_activities.get_payouts(
-        mock_self, message, pow_obj=None, base_identity="id",
-        client_ip="127.0.0.1"
-    )
-    mock_registry.list_payouts.assert_called_once_with("graf123", 100)
-
-
-def test_get_payouts_limit_clamp(mock_self, mock_registry, mock_allow_rpc_success):
-    """get_payouts: limit 0 -> or 100 -> 100, clamp tetap 100."""
-    mock_self.broadcast.utxodb._graffiti_registry = mock_registry
-    message = {"art_id": "graf123", "limit": 0}
-    result = graff_activities.get_payouts(
-        mock_self, message, pow_obj=None, base_identity="id",
-        client_ip="127.0.0.1"
-    )
-    mock_registry.list_payouts.assert_called_once_with("graf123", 100)
-
-
-def test_get_payouts_no_registry(mock_self, mock_allow_rpc_success):
-    """get_payouts: registry None, return empty list."""
-    mock_self.broadcast.utxodb._graffiti_registry = None
-    message = {"art_id": "graf123"}
-    result = graff_activities.get_payouts(
-        mock_self, message, pow_obj=None, base_identity="id",
-        client_ip="127.0.0.1"
-    )
-    assert result["type"] == "GRAFFITI_GET_PAYOUTS"
-    assert result["payouts"] == []
-
-
-def test_get_payouts_pow_failure(mock_self, mock_allow_rpc_failure):
-    """get_payouts: PoW gagal, return pow_resp."""
-    message = {"art_id": "graf123"}
-    result = graff_activities.get_payouts(
-        mock_self, message, pow_obj=None, base_identity="id",
-        client_ip="127.0.0.1"
-    )
-    assert result == {"error": "pow_required", "pow_challenge": "challenge"}
+    assert result == {"type": "GRAFFITI_GET_PAYOUTS", "error": "endpoint_temporarily_disabled"}
 
 
 # ==================== Test benchmark logging (optional) ====================
