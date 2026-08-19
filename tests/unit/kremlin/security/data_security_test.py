@@ -34,11 +34,12 @@ def test_encrypt_decrypt_blob():
 @patch("kremlin.security.data_security.save_user_key_record")
 @patch("kremlin.security.data_security.load_user_key_record")
 def test_create_keypair(mock_load, mock_save, tmp_path):
+    mock_load.return_value = None
     path = tmp_path / "key.json"
     node_id, pub, priv = data_security.create_keypair(str(path))
     assert len(pub) > 0
     assert len(priv) > 0
-    assert os.path.exists(path)
+    mock_save.assert_called_once()
 
 def test_security_check_attempt():
     data_security.Security.record_success("test")

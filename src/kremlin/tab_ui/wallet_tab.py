@@ -300,8 +300,9 @@ class WalletController:
                 except OSError:
                     pass
         _remove_path(WALLET_FILE, "Keystore")
-        _remove_path(CFG.REGISTRY_PATH, "Wallet registry")
         _remove_path(self._bal_cache_path, "Balance cache")
+        save_wallet_registry([])
+        removed_labels.append("Wallet registry")
         cleared_hist = sum(1 for addr in existing_wallets if HistoryService.cache_clear(addr))
         self.clear_balance_cache()
         return removed_labels, cleared_hist

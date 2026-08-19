@@ -77,21 +77,7 @@ NETWORK ISOLATION (not a fork, but cannot connect to each other):
 =============================================================================
 '''
 
-from collections.abc import Set
-import os
-import sys
 import appdirs
-from pathlib import Path
-
-
-def get_base_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-    else:
-        return Path(__file__).resolve().parents[3]
-
-
-PROJECT_ROOT = get_base_dir()
 
 
 # =============================================================================
@@ -112,29 +98,49 @@ WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wal
 # 2. DATABASE & SNAPSHOTS
 # =============================================================================
 # ---- DATA SCHEMA ----
-# Bump when changing on-disk JSON/LMDB structures (state, utxo, mempool, block cache)
+# Bump when changing on-disk LMDB structures (state, utxo, mempool, block cache)
 DATA_SCHEMA_VERSION = 1
 
 
-# ---- PATH ----
-LMDB_DATA_FILE     = str(PROJECT_ROOT / "data/node")  # fallback LMDB data directory
-LMDB_KEYS_DIR      = str(PROJECT_ROOT / "data/keys")  # LMDB environment path for node_secrets
-LMDB_CHAIN_DIR     = str(PROJECT_ROOT / "data/node/chain")  # LMDB environment path for chain
-LMDB_UTXO_DIR      = str(PROJECT_ROOT / "data/node/utxo")  # LMDB environment path for utxo
-LMDB_STATE_DIR     = str(PROJECT_ROOT / "data/node/state")  # LMDB environment path for state
-LMDB_GRAFFITI_DIR  = str(PROJECT_ROOT / "data/node/graffiti")  # LMDB environment path for graffiti
-LMDB_MEMPOOL_DIR   = str(PROJECT_ROOT / "data/node/mempool")  # LMDB environment path for mempool
+# ---- NODE DATABASE PATHS (LMDB) ----
+NODE_DATA_DIR      = "data/node"  # root data directory for node LMDB environments
+LMDB_CHAIN_DIR     = "data/node/chain"  # LMDB environment path for chain
+LMDB_UTXO_DIR      = "data/node/utxo"  # LMDB environment path for utxo
+LMDB_STATE_DIR     = "data/node/state"  # LMDB environment path for state
+LMDB_GRAFFITI_DIR  = "data/node/graffiti"  # LMDB environment path for graffiti
+LMDB_MEMPOOL_DIR   = "data/node/mempool"  # LMDB environment path for mempool
 
 LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
 LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
 KV_ITER_CHUNK      = 512 # number of entries per chunk when iterating prefix scans (LMDB)
 
 
+# ---- KEYS & SECRETS DATABASE PATHS (LMDB) ----
+LMDB_KEYS_DIR      = "data/keys"  # centralized LMDB path for all secrets/keys
+
+# Key store identifiers / record names
+NODE_KEY_PATH      = "data/keys/node_key"  # primary node identity key identifier
+ARCHIVIST_KEY_PATH = "data/keys/archivist_key"  # archivist node identity key identifier
+PEER_KEYS_PATH     = "data/keys/peer_keys"  # peer key cache identifier
+USER_KEY_PATH      = "data/keys/user_key"  # wallet user keypair identifier
+REGISTRY_PATH      = "data/keys/wallet_registry"  # wallet registry identifier
+CHAT_STATE         = "data/keys/chat_config"  # chat preferences/state identifier
+CHAT_KEYS_DIR      = "data/keys/chat_keys"  # chat keys directory
+PREKEY_DIR         = "data/keys/chat_prekeys"  # chat prekeys directory
+CHAT_SESSION_DIR   = "data/keys/chat_sessions"  # chat sessions directory
+
+
+# ---- ARCHIVIST LMDB PATH ----
+ARCHIVIST_INDEX_DB_PATH         = "data/archivist/storage/index_db"
+ARCHIVIST_PAYOUT_GUARD_DB_PATH  = "data/archivist/storage/payout_guard"
+ARCHIVIST_PAYOUT_GUARD_MAP_SIZE = 4 * 1024 * 1024  # 4MB init
+
+
 # ---- WEB CACHE ----
-WEB_DATABASE_PATH      = str(PROJECT_ROOT / "data/web")  # dedicated LMDB path for web cache
-WEB_MEDIA_CACHE_DIR    = str(PROJECT_ROOT / "data/web/graffiti_cache")  # path for cached media files
-WEB_RECEIPTS_DIR       = str(PROJECT_ROOT / "data/web/receipts")  # path for generated receipts
-WEB_HISTORY_BOOKS_DIR  = str(PROJECT_ROOT / "data/web/history_books")  # path for generated history books
+WEB_DATABASE_PATH      = "data/web"  # dedicated LMDB path for web cache
+WEB_MEDIA_CACHE_DIR    = "data/web/graffiti_cache"  # path for cached media files
+WEB_RECEIPTS_DIR       = "data/web/receipts"  # path for generated receipts
+WEB_HISTORY_BOOKS_DIR  = "data/web/history_books"  # path for generated history books
 LMDB_WEB_SIZE_INIT     = 10 * 1024 * 1024  # initial web LMDB size (10 MB)
 LMDB_WEB_SIZE_MAX      = 64 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
 
@@ -162,7 +168,7 @@ SNAPSHOT_PUBKEY_HEX        = ""  # hex-encoded secp256k1 pubkey used to verify s
 SNAPSHOT_HTTP_TIMEOUT    = 120  # HTTP timeout applied to snapshot downloads (seconds)
 SNAPSHOT_CHUNK_BYTES     = 2 * 1024 * 1024  # chunk size (2MB) when streaming snapshot data & reporting progress
 SNAPSHOT_MIN_SIZE_BYTES  = 1024  # minimum valid snapshot archive size (15 KB; use 1024 for small dev test)
-SNAPSHOT_META_PATH       = str(PROJECT_ROOT / "data/node/snapshot.meta.json")  # cached metadata file for local snapshots
+SNAPSHOT_META_PATH       = "data/node/snapshot.meta.json"  # cached metadata file for local snapshots
 SNAPSHOT_MAX_AGE_SECONDS = 24 * 3600  # maximum tolerated snapshot age (24h)
 SNAPSHOT_USER_AGENT      = "TsarChainSnapshot/1.0"  # UA string used when fetching snapshots
 
@@ -175,38 +181,14 @@ into data/snapshot/tsarchain.tar.gz
 '''
 BACKUP_SNAPSHOT       = True  # True on VPS/Seed node to generate snapshot archives; False on client nodes
 
-BLOCK_BACKUP_SNAPSHOT = 2  # Block interval to generate new snapshot archive (e.g. 50-100 for dev test, 1000 for prod)
-SNAPSHOT_BACKUP_DIR   = str(PROJECT_ROOT / "data/snapshot")  # folder storing backup snapshots
+BLOCK_BACKUP_SNAPSHOT = 20  # Block interval to generate new snapshot archive (e.g. 50-100 for dev test, 1000 for prod)
+SNAPSHOT_BACKUP_DIR   = "data/snapshot"  # folder storing backup snapshots
 
 
 # =============================================================================
-# 3. FILESYSTEM LAYOUT
+# 3. FILESYSTEM & CACHE
 # =============================================================================
 STATE_HEIGHT_CACHE_TTL  = 2.0  # height for utxo validation & cache
-
-
-# ---- ARCHIVIST LMDB PATH ----
-ARCHIVIST_INDEX_DB_PATH         = str(PROJECT_ROOT / "data/archivist/storage/index_db")
-ARCHIVIST_KEY_PATH              = str(PROJECT_ROOT / "data/archivist/archivist_key.json") # primary node identity key storage path
-ARCHIVIST_PAYOUT_GUARD_DB_PATH  = str(PROJECT_ROOT / "data/archivist/storage/payout_guard")
-ARCHIVIST_PAYOUT_GUARD_MAP_SIZE = 4 * 1024 * 1024  # 4MB init
-
-
-# ---- WALLET KEY FILES ----
-USER_KEY_PATH = str(PROJECT_ROOT / "data_user/user_key.json")  # default user keypair location
-REGISTRY_PATH = str(PROJECT_ROOT / "data_user/wallet_registry.json")  # registry of created wallets
-CHAT_STATE    = str(PROJECT_ROOT / "data_user/chat_config.json")  # cached chat preferences and pointers
-
-
-# ---- CHAT KEY FILES ----
-CHAT_KEYS_DIR = str(PROJECT_ROOT / "data_user/chat_keys")
-PREKEY_DIR    = str(PROJECT_ROOT / "data_user/chat_prekeys")
-
-
-# ---- NODE KEYS FILES ----
-KEYS_DATA_DIR         = str(PROJECT_ROOT / "data/keys")  # root folder for node-specific secrets
-NODE_KEY_PATH         = os.path.join(KEYS_DATA_DIR, "node.json")  # primary node identity key storage path
-PEER_KEYS_PATH        = os.path.join(KEYS_DATA_DIR, "node/peer_keys.json")  # known peer key cache linked to node_data
 
 
 # =============================================================================
@@ -549,7 +531,6 @@ CHAT_NUM_HOPS    = 1  # number of relay hops used for onion-lite mode
 
 
 # ---- CHAT STORAGE ----
-CHAT_SESSION_DIR           = os.path.join("data_user", "chat_sessions")  # folder storing per-chat sessions
 CHAT_KEY_TTL_SEC           = 15 * 60  # interval before e2e session keys rotate
 CHAT_PWD_CACHE_TTL_SEC     = 180  # seconds before keystore password must be re-entered
 CHAT_RATCHET_MAX_SKIP      = 200  # guardrail for skipped ratchet messages
@@ -760,18 +741,11 @@ STORAGE_UPLOAD_CHUNK          = 10 * 1024 * 1024  # chunk size used when slicing
 GRAFFITI_CHUNK_BYTES          = 4 * 1024 * 1024  # 4MB chunk size for streaming (web)
 
 
-# ---- CONTRACT METADATA ----
-CONTRACTS_DIR      = str(PROJECT_ROOT / "data_json/node/Contracts")  # storage root for contract-like payloads
-GRAFFITI_FILE      = os.path.join(CONTRACTS_DIR, "graffiti.json")  # graffiti metadata archive path
-
-
 # ---- ARCHIVIST ----
-ARCHIV_PEER_KEYS                   = str(PROJECT_ROOT / "data/archivist/data_peer/storage_peer_keys.json")
-STORAGE_DIR                        = str(PROJECT_ROOT / "data/archivist/storage")  # folder holding uploaded storage blobs
+STORAGE_DIR                        = "data/archivist/storage"  # folder holding uploaded storage blobs
 STORAGE_SIZE_INIT                  = 100 * 1024 * 1024  # initial storage size allocation (100MB)
 STORAGE_MAX_BYTES                  = 128 * 1024 * 1024 * 1024  # cap on cumulative storage usage (64GB)
 RETENTION_GC_SEC                   = 30  # interval between retention garbage collection runs
-ARCHIVIST_AUTO_PAYOUT_GUARD_FILE   = os.path.join(STORAGE_DIR, "payout_guard/auto_payout_guard.json")
 ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC = 135
 
 

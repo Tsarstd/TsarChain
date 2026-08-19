@@ -38,7 +38,9 @@ manual_bootstrap: Optional[Tuple[str, int]] = None
 
 
 def create_keypair(path: str) -> tuple[str, str, str]:
-    load_node_key(path)
+    record = load_node_key(path)
+    if record and record.get("id") and record.get("pubkey") and record.get("privkey"):
+        return record["id"], record["pubkey"], record["privkey"]
     sk = SigningKey.generate()
     vk = sk.verify_key
     priv_hex = sk.encode(encoder=HexEncoder).decode()

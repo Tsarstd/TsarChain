@@ -128,9 +128,6 @@ def sign(priv_hex: str, data: bytes) -> str:
 # ----------------------------------------------------------------------
 # Chat Key Management (X25519 identity key)
 # ----------------------------------------------------------------------
-def _chat_key_path(addr: str) -> str:
-    return os.path.join(CFG.CHAT_KEYS_DIR, f"{addr.lower()}.json")
-
 def chat_dh_gen_keypair() -> tuple[str, str]:
     sk = x25519.X25519PrivateKey.generate()
     pk = sk.public_key()
@@ -147,18 +144,14 @@ def chat_dh_gen_keypair() -> tuple[str, str]:
 
 def load_or_create_chat_dh_key(addr: str, password_provider=None) -> tuple[str, str]:
     addr_c = addr.lower()
-    path = Path(_chat_key_path(addr_c))
-    data, legacy = WALL._secure_load(
+    data, _ = WALL._secure_load(
         namespace="chat_key",
         key=addr_c,
-        path=path,
+        path=None,
         password_provider=password_provider,
         prompt=f"Unlock chat key for {addr_c}",
     )
     if data:
-        if legacy:
-            WALL._secure_store("chat_key", addr_c, path, data, password_provider,
-                          f"Migrate chat key for {addr_c}")
         sk_hex = data.get("sk_hex")
         pk_hex = data.get("pk_hex")
         if not sk_hex or not pk_hex:
@@ -170,39 +163,27 @@ def load_or_create_chat_dh_key(addr: str, password_provider=None) -> tuple[str, 
 
     sk_hex, pk_hex = chat_dh_gen_keypair()
     record = {"sk_hex": sk_hex, "pk_hex": pk_hex, "created": int(time.time())}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    WALL._secure_store("chat_key", addr_c, path, record, password_provider,
+    WALL._secure_store("chat_key", addr_c, None, record, password_provider,
                   f"Create encrypted chat key for {addr_c}")
     return sk_hex, pk_hex
 
 # ----------------------------------------------------------------------
 # Prekey Management (signed prekey + one‑time prekeys)
 # ----------------------------------------------------------------------
-def _prekey_path(addr: str) -> str:
-    safe = re.sub(r"[^0-9a-z]", "_", addr.lower())
-    return os.path.join(CFG.PREKEY_DIR, f"{safe}.json")
-
 def _load_prekey_record(addr: str, password_provider=None) -> Optional[Dict]:
     addr_c = addr.lower()
-    path = Path(_prekey_path(addr_c))
-    record, legacy = WALL._secure_load(
+    record, _ = WALL._secure_load(
         namespace="chat_prekey",
         key=addr_c,
-        path=path,
+        path=None,
         password_provider=password_provider,
         prompt=f"Unlock chat prekeys for {addr_c}",
     )
-    if record is None:
-        return None
-    if legacy:
-        WALL._secure_store("chat_prekey", addr_c, path, record, password_provider, f"Migrate chat prekeys for {addr_c}")
     return record
 
 def _store_prekey_record(addr: str, record: Dict, password_provider) -> None:
     addr_c = addr.lower()
-    path = Path(_prekey_path(addr_c))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    WALL._secure_store("chat_prekey", addr_c, path, record, password_provider, f"Store chat prekeys for {addr_c}")
+    WALL._secure_store("chat_prekey", addr_c, None, record, password_provider, f"Store chat prekeys for {addr_c}")
 
 def get_priv_for_address(address: str, password: str) -> str:
     ks = WALL.load_keystore(password)
@@ -336,34 +317,22 @@ def consume_opk_priv(addr: str, opk_pk_hex: str, password_provider=None) -> str 
 def _session_storage_key(me: str, peer: str) -> str:
     return f"{(me or '').lower()}|{(peer or '').lower()}"
 
-def _session_path(me: str, peer: str) -> Path:
-    base = Path(CFG.CHAT_SESSION_DIR)
-    me_c = (me or "").lower() or "_"
-    peer_c = (peer or "").lower() or "_"
-    return base / me_c / peer_c
-
 def load_chat_session(me: str, peer: str, password_provider) -> Optional[Dict]:
     key = _session_storage_key(me, peer)
-    path = _session_path(me, peer)
-    record, legacy = WALL._secure_load(
+    record, _ = WALL._secure_load(
         namespace="chat_session",
         key=key,
-        path=path,
+        path=None,
         password_provider=password_provider,
         prompt=f"Unlock chat session for {me.lower() if me else ''}",
     )
-    if record and legacy:
-        WALL._secure_store("chat_session", key, path, record, password_provider,
-                      f"Migrate chat session for {me.lower() if me else ''}")
     return record
 
 def store_chat_session(me: str, peer: str, record: Dict, password_provider) -> None:
     key = _session_storage_key(me, peer)
-    path = _session_path(me, peer)
-    WALL._secure_store("chat_session", key, path, record, password_provider,
+    WALL._secure_store("chat_session", key, None, record, password_provider,
                   f"Store chat session for {me.lower() if me else ''}")
 
 def delete_chat_session(me: str, peer: str) -> None:
     key = _session_storage_key(me, peer)
-    path = _session_path(me, peer)
-    WALL._secure_backend_delete("chat_session", key, path)
+    WALL._secure_backend_delete("chat_session", key, None)

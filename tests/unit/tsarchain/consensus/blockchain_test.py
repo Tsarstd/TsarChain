@@ -60,11 +60,10 @@ def mock_config(monkeypatch):
 
     monkeypatch.setattr(bc_mod.CFG, "HASH_CACHE_MAX", 100)
     monkeypatch.setattr(bc_mod.CFG, "UTXO_FLUSH_INTERVAL", 10)
-    monkeypatch.setattr(bc_mod.CFG, "LMDB_CHAIN_DIR", "/tmp/non_existent_blocks.json")
-    monkeypatch.setattr(bc_mod.CFG, "LMDB_DATA_FILE", "/tmp/non_existent_lmdb")
+    monkeypatch.setattr(bc_mod.CFG, "NODE_DATA_DIR", "/tmp/non_existent_lmdb")
 
     monkeypatch.setattr(cs_mod.CFG, "LMDB_CHAIN_DIR", "/tmp/non_existent_blocks.json")
-    monkeypatch.setattr(cs_mod.CFG, "LMDB_DATA_FILE", "/tmp/non_existent_lmdb")
+    monkeypatch.setattr(cs_mod.CFG, "NODE_DATA_DIR", "/tmp/non_existent_lmdb")
     monkeypatch.setattr(cs_mod.CFG, "BLOCK_BACKUP_SNAPSHOT", 0)
     yield bc_mod.CFG
 

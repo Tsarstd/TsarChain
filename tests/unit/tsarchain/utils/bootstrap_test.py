@@ -181,7 +181,7 @@ def test_extract_snapshot_payload_tar():
 @patch("tsarchain.utils.bootstrap.CFG")
 def test_maybe_bootstrap_snapshot_disabled(mock_cfg):
     mock_cfg.SNAPSHOT_BOOTSTRAP_ENABLED = False
-    mock_cfg.LMDB_DATA_FILE = "test_dir"
+    mock_cfg.NODE_DATA_DIR = "test_dir"
     res = maybe_bootstrap_snapshot()
     assert res.status == "skipped"
     assert res.reason == "disabled"
@@ -192,7 +192,7 @@ def test_maybe_bootstrap_snapshot_disabled(mock_cfg):
 def test_maybe_bootstrap_snapshot_skipped_no_url(mock_fetch, mock_cfg):
     mock_cfg.SNAPSHOT_BOOTSTRAP_ENABLED = True
     mock_cfg.SNAPSHOT_REQUIRE_SIGNATURE = False
-    mock_cfg.LMDB_DATA_FILE = "test_dir"
+    mock_cfg.NODE_DATA_DIR = "test_dir"
     mock_cfg.SNAPSHOT_FILE_URL = ""
     mock_fetch.return_value = {}
 
@@ -207,7 +207,7 @@ def test_maybe_bootstrap_snapshot_skipped_no_url(mock_fetch, mock_cfg):
 def test_maybe_bootstrap_snapshot_skipped_local_ahead(mock_local_h, mock_fetch, mock_cfg):
     mock_cfg.SNAPSHOT_BOOTSTRAP_ENABLED = True
     mock_cfg.SNAPSHOT_REQUIRE_SIGNATURE = False
-    mock_cfg.LMDB_DATA_FILE = "test_dir"
+    mock_cfg.NODE_DATA_DIR = "test_dir"
     mock_fetch.return_value = {"url": "http://test.com/snap.tar.gz", "height": 300}
 
     res = maybe_bootstrap_snapshot()
@@ -226,7 +226,7 @@ def test_maybe_bootstrap_snapshot_success(mock_val, mock_ext, mock_dl, mock_fetc
         mock_cfg.SNAPSHOT_BOOTSTRAP_ENABLED = True
         mock_cfg.SNAPSHOT_REQUIRE_SIGNATURE = False
         mock_cfg.SNAPSHOT_MIN_SIZE_BYTES = 100
-        mock_cfg.LMDB_DATA_FILE = node_dir
+        mock_cfg.NODE_DATA_DIR = node_dir
         mock_cfg.SNAPSHOT_META_PATH = os.path.join(node_dir, "snapshot.meta.json")
         mock_fetch.return_value = {"url": "http://test.com/snap.tar.gz", "height": 1000}
 
@@ -252,7 +252,7 @@ def test_maybe_bootstrap_snapshot_validation_failure_rollback(mock_val, mock_ext
         mock_cfg.SNAPSHOT_BOOTSTRAP_ENABLED = True
         mock_cfg.SNAPSHOT_REQUIRE_SIGNATURE = False
         mock_cfg.SNAPSHOT_MIN_SIZE_BYTES = 100
-        mock_cfg.LMDB_DATA_FILE = node_dir
+        mock_cfg.NODE_DATA_DIR = node_dir
         mock_cfg.SNAPSHOT_META_PATH = os.path.join(node_dir, "snapshot.meta.json")
         mock_fetch.return_value = {"url": "http://test.com/snap.tar.gz", "height": 1000}
 

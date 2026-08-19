@@ -11,12 +11,12 @@ from archivist.connect import create_keypair, _scan_nodes, NodeDirectory, RPC
 @patch("archivist.connect.save_node_key")
 def test_create_keypair(mock_save, tmp_path):
     path = str(tmp_path / "key.json")
-    with patch("archivist.connect.load_node_key"):
+    with patch("archivist.connect.load_node_key", return_value=None):
         node_id, pub, priv = create_keypair(path)
     assert node_id is not None
     assert pub is not None
     assert priv is not None
-    assert priv is not None
+    mock_save.assert_called_once()
 
 @patch("archivist.connect._load_stor_peer_keys")
 @patch("archivist.connect._save_stor_peer_keys")

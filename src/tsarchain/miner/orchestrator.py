@@ -84,13 +84,13 @@ def _register_bootstrap_peers(network: Network) -> int:
 
 def _run_snapshot_bootstrap(enabled: bool):
     if not enabled:
-        clog("[Bootstrap] Fast Sync Snapshot: DISABLED (CLI/instance flag). Proceeding with standard P2P Seed RPC sync.")
+        clog("[Bootstrap] Fast Sync Snapshot: DISABLED. Proceeding with Seed RPC sync.")
         return None
 
     if CFG.BACKUP_SNAPSHOT:
-        clog(f"[Snapshot] Automated backup snapshots: ENABLED (Interval: every {CFG.BLOCK_BACKUP_SNAPSHOT} blocks to '{CFG.SNAPSHOT_BACKUP_DIR}')")
+        clog(f"[Snapshot] Auto backup snapshots: ENABLED (Interval: every {CFG.BLOCK_BACKUP_SNAPSHOT} blocks to '{CFG.SNAPSHOT_BACKUP_DIR}')")
     else:
-        clog("[Snapshot] Automated backup snapshots: DISABLED")
+        clog("[Snapshot] Auto backup snapshots: DISABLED")
 
     def _printer(message: str):
         clog(f"[Bootstrap] {message}")
@@ -103,8 +103,8 @@ def _run_snapshot_bootstrap(enabled: bool):
     elif result.status == "installed":
         bytes_mb = float(getattr(result, "bytes_written", 0) or 0) / (1024 * 1024)
         duration = float(getattr(result, "duration_s", 0) or 0)
-        clog(f"[Bootstrap] Snapshot fast sync SUCCESS! Restored local database to height {result.height} ({bytes_mb:.2f} MB in {duration:.1f}s)")
-        clog("[Bootstrap] Database restored (chain, utxo, state, graffiti, mempool). Now connecting to P2P peers to sync remaining blocks...")
+        clog(f"[Bootstrap] Snapshot SUCCESS! Restored local database to height {result.height} ({bytes_mb:.2f} MB in {duration:.1f}s)")
+        clog("[Bootstrap] Database restored. Syncing remaining blocks...")
     else:
         clog(f"[Bootstrap] Snapshot status: {result.status} ({result.reason})")
     return result
@@ -529,8 +529,9 @@ class SimpleMiner:
                     self.abort_block_mining.clear()
                     tip_h, tip_hx = self._get_local_tip()
                     hx_str = f" [{tip_hx[:16]}...]" if tip_hx else ""
-                    clog(f"[mining] New block received from peer at height {tip_h}{hx_str}; switching miner to latest tip.")
+                    clog(f"Received new block at height {tip_h}{hx_str}; switch to latest tip.")
                     continue
+
             except KeyboardInterrupt:
                 self.mining_alive = False
                 if self.cancel_mining:

@@ -99,19 +99,9 @@ def sniff_first_json_frame(sock: socket.socket, timeout: float = 2.0, *, peer_ip
 
 
 def load_or_create_keypair_at(path: str) -> tuple[str, str, str]:
-    node_key_norm = os.path.normpath(CFG.NODE_KEY_PATH)
-        
-    if node_key_norm:
-        record = load_node_key(path)
-        if record and record.get("id") and record.get("pubkey") and record.get("privkey"):
-            return record["id"], record["pubkey"], record["privkey"]
-
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            obj = json.load(f)
-        if node_key_norm:
-            save_node_key(path, obj)
-        return obj["id"], obj["pubkey"], obj["privkey"]
+    record = load_node_key(path)
+    if record and record.get("id") and record.get("pubkey") and record.get("privkey"):
+        return record["id"], record["pubkey"], record["privkey"]
 
     sk = SigningKey.generate()
     vk = sk.verify_key
@@ -119,12 +109,7 @@ def load_or_create_keypair_at(path: str) -> tuple[str, str, str]:
     pub_hex  = vk.encode(encoder=HexEncoder).decode()
     node_id  = hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()
     payload = {"id": node_id, "pubkey": pub_hex, "privkey": priv_hex, "created": int(time.time())}
-    if node_key_norm:
-        save_node_key(path, payload)
-    else:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-        os.chmod(path, 0o600)
+    save_node_key(path, payload)
     return node_id, pub_hex, priv_hex
 
 

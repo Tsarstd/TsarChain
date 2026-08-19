@@ -46,7 +46,7 @@ def maybe_bootstrap_snapshot(progress_cb: ProgressCallback = None) -> SnapshotBo
     (chain, utxo, state, graffiti, mempool) for fast blockchain synchronization.
     """
     start_time = time.time()
-    node_dir = os.path.abspath(CFG.LMDB_DATA_FILE)
+    node_dir = os.path.abspath(CFG.NODE_DATA_DIR)
     meta_path = CFG.SNAPSHOT_META_PATH or os.path.join(node_dir, "snapshot.meta.json")
 
     def _emit(message: str) -> None:

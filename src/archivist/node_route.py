@@ -72,7 +72,7 @@ def _finalize_storage(server, aid: str, meta: dict) -> tuple[bool, Optional[str]
     server.db.delete_blob(aid, incoming=True)
     blob_p = server.db.get_final_blob_path(aid)
     if blob_p and isinstance(blob_p, str):
-        meta["path"] = blob_p
+        meta["path"] = os.path.normpath(blob_p).replace("\\", "/")
     else:
         meta["path"] = f"lmdb://final/{aid}"
     meta["state"] = "stored"

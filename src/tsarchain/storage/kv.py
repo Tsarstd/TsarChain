@@ -21,14 +21,19 @@ _init_lock = threading.RLock()
 
 def get_db_path(name: str) -> str:
     path_map = {
-        "node_secrets": CFG.LMDB_KEYS_DIR,
         "chain": CFG.LMDB_CHAIN_DIR,
         "utxo": CFG.LMDB_UTXO_DIR,
         "state": CFG.LMDB_STATE_DIR,
         "graffiti": CFG.LMDB_GRAFFITI_DIR,
         "mempool": CFG.LMDB_MEMPOOL_DIR,
+        
+        # Keys and secrets
+        "node_secrets": CFG.LMDB_KEYS_DIR,
+        "secure_wallet": CFG.LMDB_KEYS_DIR,
+        "wallet_peer_keys": CFG.LMDB_KEYS_DIR,
+        "stor_peer_keys": CFG.LMDB_KEYS_DIR,
     }
-    return path_map.get(name, CFG.LMDB_DATA_FILE)
+    return path_map.get(name, CFG.NODE_DATA_DIR)
 
 def _init_native_store(name: str = "chain"):
     global _native_store

@@ -17,9 +17,10 @@ def mock_kv():
 @pytest.fixture
 def mock_cfg():
     with patch("tsarchain.network.peers_storage.CFG") as mock_cfg:
-        mock_cfg.NODE_KEY_PATH = "node_key.json"
-        mock_cfg.ARCHIVIST_KEY_PATH = "archivist_key.json"
-        mock_cfg.PEER_KEYS_PATH = "peer_keys.json"
+        mock_cfg.NODE_KEY_PATH = "data/keys/node_key"
+        mock_cfg.ARCHIVIST_KEY_PATH = "data/keys/archivist_key"
+        mock_cfg.PEER_KEYS_PATH = "data/keys/peer_keys"
+        mock_cfg.USER_KEY_PATH = "data/keys/user_key"
         mock_cfg.CANONICAL_SEP = (',', ':')
         yield mock_cfg
 
@@ -101,24 +102,23 @@ def test_save_peer_keys():
 def test_resolve_key_and_path(mock_cfg):
     key, path = peers_storage._resolve_key_and_path("node_key")
     assert key == "node_key"
-    assert path == "node_key.json"
+    assert path == "data/keys/node_key"
 
-    key, path = peers_storage._resolve_key_and_path("node_key.json")
+    key, path = peers_storage._resolve_key_and_path("data/keys/node_key")
     assert key == "node_key"
-    assert path == "node_key.json"
+    assert path == "data/keys/node_key"
 
-    key, path = peers_storage._resolve_key_and_path("custom/path.json")
-    assert key == "custom/path.json"
-    assert path == "custom/path.json"
+    key, path = peers_storage._resolve_key_and_path("data/keys/user_key")
+    assert key == "user_key"
+    assert path == "data/keys/user_key"
 
-def test_load_record_auto_migration(mock_kv, mock_cfg):
+    key, path = peers_storage._resolve_key_and_path("custom/secret.key")
+    assert key == "custom/secret.key"
+    assert path == "custom/secret.key"
+
+def test_load_record_not_found(mock_kv, mock_cfg):
     mock_get, mock_put = mock_kv
-    mock_get.return_value = None  # Key not in KV store yet
-    
-    mock_data = {"id": "node123", "pubkey": "abc"}
-    with patch("os.path.exists", return_value=True):
-        with patch("builtins.open", mock_open(read_data=json.dumps(mock_data))):
-            result = peers_storage._load_record("node_key.json")
-        
-    assert result == mock_data
-    mock_put.assert_called_once_with("node_secrets", b"node_key", json.dumps(mock_data, separators=(',', ':')).encode("utf-8"))
+    mock_get.return_value = None
+    result = peers_storage._load_record("node_key")
+    assert result is None
+    mock_put.assert_not_called()

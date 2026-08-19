@@ -56,10 +56,6 @@ log = get_ctx_logger("tsarchain.wallet.gui")
 
 # ---------------- Constants & Paths ----------------
 manual_bootstrap: Optional[Tuple[str, int]] = None
-user_key_dir = os.path.dirname(CFG.USER_KEY_PATH)
-if user_key_dir:
-    os.makedirs(user_key_dir, exist_ok=True)
-
 USER_ID, USER_PUB, USER_PRIV = create_keypair(CFG.USER_KEY_PATH)
 USER_CTX = {"net_id": CFG.DEFAULT_NET_ID, "node_id": USER_ID, "pubkey": USER_PUB, "privkey": USER_PRIV}
 

@@ -92,7 +92,7 @@ class ArchivistDatabase:
         # Prepare ops BEFORE clearing DB to prevent data loss on serialization failure
         ops = []
         for gid, meta in (index.get("files") or {}).items():
-            ops.append((f"file:{gid}".encode("utf-8"), json.dumps(meta).encode("utf-8")))
+            ops.append((f"file:{gid}".encode("utf-8"), json.dumps(meta, separators=CFG.CANONICAL_SEP).encode("utf-8")))
         for art, gid in (index.get("art_map") or {}).items():
             ops.append((f"art:{art}".encode("utf-8"), str(gid).encode("utf-8")))
 
