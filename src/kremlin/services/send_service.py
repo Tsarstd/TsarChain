@@ -52,14 +52,14 @@ class SendService:
         return int(CFG.TX_BASE_VBYTES) + int(n_inputs) * int(CFG.SEGWIT_INPUT_VBYTES) + int(n_outputs) * int(CFG.SEGWIT_OUTPUT_VBYTES)
 
     @staticmethod
-    def estimate_fee(amount_sats: int, fee_rate_satvb: int, spendable: Optional[int] = None) -> Dict[str, int | float]:
+    def estimate_fee(amount_sats: int, fee_rate_satvb: int, spendable: Optional[int] = None, n_inputs: int = 1) -> Dict[str, int | float]:
         n_outputs = 2
         if spendable is not None:
             approx_fee_room = fee_rate_satvb * 500
             if amount_sats + approx_fee_room >= spendable * 0.995:
                 n_outputs = 1
 
-        vbytes = SendService.estimate_vbytes(n_inputs=1, n_outputs=n_outputs)
+        vbytes = SendService.estimate_vbytes(n_inputs=max(1, int(n_inputs)), n_outputs=n_outputs)
         fee_sat = int(fee_rate_satvb) * int(vbytes)
         fee_tsar = fee_sat / CFG.TSAR
         total_tsar = (amount_sats + fee_sat) / CFG.TSAR
@@ -69,7 +69,8 @@ class SendService:
             "fee_sat": fee_sat,
             "fee_tsar": fee_tsar,
             "total_tsar": total_tsar,
-            "n_outputs": n_outputs,}
+            "n_outputs": n_outputs,
+        }
 
     def create_sign_broadcast(
         self,

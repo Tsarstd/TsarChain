@@ -91,6 +91,11 @@ class StorageGuard:
     def _tb_allow(self, table, key, rate_per_window, window_s, burst, backoff_key=None) -> bool:
         now = self._now()
         with self.lock:
+            if len(table) > 5000:
+                cutoff = now - 600.0
+                expired = [k for k, (_, t) in table.items() if t < cutoff]
+                for k in expired:
+                    table.pop(k, None)
             tokens, last = table.get(key, (burst, now))
             if now > last:
                 refill = (now - last) * (rate_per_window / float(window_s))

@@ -48,7 +48,7 @@ export const architecture = {
 │   │   ├── database_archivist.py            # database logic
 │   │   ├── node_route.py                    # node RPC route
 │   │   ├── server_archivist.py              # server start module
-│   │   ├── storage.guard.py                 # ratelimit guard archivist
+│   │   ├── storage_guard.py                 # ratelimit guard archivist
 │   │   └── wallet_route.py                  # user RPC route
 │   │
 │   ├── kremlin/                            

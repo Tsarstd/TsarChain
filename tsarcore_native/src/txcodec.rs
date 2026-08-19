@@ -604,6 +604,9 @@ pub fn validate_tx_p2wpkh_compact<'py>(
             sigops = sigops.saturating_add(1);
         } else if spk.len() == 34 && spk[0] == 0x00 && spk[1] == 0x20 {
             // P2WSH (Graffiti payout covenant)
+            if wit.len() < 2 {
+                return Ok((false, Some("missing_witness".to_string()), None));
+            }
             let hash32 = &spk[2..34];
             let art_digest = &wit[0];
             let redeem_script = &wit[1];

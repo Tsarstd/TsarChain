@@ -113,7 +113,7 @@ class ArchivistDatabase:
     def get_final_blob_path(self, gid: str) -> str:
         return self._final_blob_path(gid)
 
-    def append_incoming(self, gid: str, chunk: bytes, max_chunk: int) -> int:
+    def append_incoming(self, gid: str, chunk: bytes, max_chunk: int, expected_offset: Optional[int] = None) -> int:
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
         if len(chunk) > int(max_chunk):
@@ -123,6 +123,8 @@ class ArchivistDatabase:
             current = os.path.getsize(path) if os.path.exists(path) else 0
         except OSError:
             current = 0
+        if expected_offset is not None and int(expected_offset) != int(current):
+            raise ValueError(f"offset_mismatch: expected {current}, got {expected_offset}")
         new_size = int(current) + int(len(chunk))
         if new_size > int(CFG.GRAFFITI_MAX_SIZE_BYTES):
             raise ValueError("file_too_large")
@@ -286,6 +288,18 @@ class ArchivistDatabase:
             ops.append((str(art_id).encode("utf-8"), json.dumps(entry).encode("utf-8")))
         if ops:
             self._kv_guard.put_batch("guard", ops)
+
+    def cleanup_expired_payout_guards(self, max_age_seconds: int = 30 * 86400) -> int:
+        if not self.enable_index or not getattr(self, "_kv_guard", None):
+            return 0
+        now = int(time.time())
+        cutoff = now - int(max_age_seconds)
+        current = self.load_payout_guard()
+        cleaned = {k: v for k, v in current.items() if int(v.get("ts", 0)) >= cutoff}
+        removed = len(current) - len(cleaned)
+        if removed > 0:
+            self.save_payout_guard(cleaned)
+        return removed
 
     def cleanup_expired_incoming(self, max_age_seconds: int = 7200) -> int:
         """

@@ -347,6 +347,8 @@ class ArchivistOrchestrator:
     def _load_auto_payout_guard(self) -> None:
         if self._server and hasattr(self._server, "db"):
             try:
+                self._server.db.cleanup_expired_payout_guards()
+                self._server.db.cleanup_expired_incoming()
                 self._auto_payout_guard = self._server.db.load_payout_guard()
             except Exception as exc:
                 self._log(f"[auto-payout] guard load failed: {exc}", error=True)

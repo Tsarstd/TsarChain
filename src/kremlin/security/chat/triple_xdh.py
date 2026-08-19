@@ -297,6 +297,20 @@ class ChatManager:
             log.warning("[ensure_session] bundle missing SPK signature for %s", peer)
             return "bundle_missing_spk_sig"
 
+        if peer and peer.lower().startswith(CFG.ADDRESS_PREFIX):
+            try:
+                from tsarchain.utils.helpers import hash160
+                from bech32 import bech32_encode, convertbits
+                pkh = hash160(bytes.fromhex(spend_pub))
+                data = [0] + convertbits(list(pkh), 8, 5, True)
+                derived_addr = bech32_encode(CFG.ADDRESS_PREFIX, data)
+                if derived_addr and derived_addr.lower() != peer.lower():
+                    log.warning("[ensure_session] spend_pub does not match peer address %s (got %s)", peer, derived_addr)
+                    return "bundle_spend_pub_mismatch"
+            except Exception as e:
+                log.warning("[ensure_session] failed to verify peer address binding for %s: %s", peer, e)
+                return "bundle_address_binding_failed"
+
         try:
             vk = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), bytes.fromhex(spend_pub))
             payload = CFG.CHAT_SPK + bytes.fromhex(spk) + b"|" + bytes.fromhex(spend_pub)
@@ -322,7 +336,7 @@ class ChatManager:
 
         if opk:
             opkr = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(opk))
-            secret += iks.exchange(opkr)
+            secret += eph.exchange(opkr)
 
         rk = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:x3dh:v1").derive(secret)
         sess = RatchetSession.init_as_initiator(
@@ -697,7 +711,7 @@ class ChatManager:
             opk_sk = COM.consume_opk_priv(me, used_opk, provider_me)
             if opk_sk:
                 opks = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(opk_sk))
-                secret += opks.exchange(iks_pub)
+                secret += opks.exchange(eph_pub)
 
         rk = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:x3dh:v1").derive(secret)
         _, my_pk_hex = self._get_chat_dh(me)

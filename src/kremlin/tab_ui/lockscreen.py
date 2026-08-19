@@ -70,7 +70,12 @@ class PasswordLockscreen(tk.Toplevel):
         if not pwd:
             self.error_var.set("Password is required.")
             return
-        _ = list_addresses_in_keystore(pwd)
+        try:
+            _ = list_addresses_in_keystore(pwd)
+        except Exception:
+            self.error_var.set("Incorrect password. Please try again.")
+            self.entry.delete(0, "end")
+            return
 
         self.result = pwd
         self.destroy()

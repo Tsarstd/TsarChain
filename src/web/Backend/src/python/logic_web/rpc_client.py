@@ -67,7 +67,7 @@ def _cache_key(kind: str, *parts: object) -> str:
 
 
 def _determine_cache_policy(payload: object) -> Tuple[bool, int | None]:
-    if payload is None:
+    if not payload:
         return False, None
     if isinstance(payload, dict):
         if payload.get("error"):
@@ -76,6 +76,8 @@ def _determine_cache_policy(payload: object) -> Tuple[bool, int | None]:
         if payload.get("status") == "error":
             ttl = db_cache.get_error_cache_ttl(payload.get("reason"))
             return ttl is not None, ttl
+        if len(payload) == 0:
+            return False, None
     return True, None
 
 

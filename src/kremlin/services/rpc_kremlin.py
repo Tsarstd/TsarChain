@@ -198,9 +198,12 @@ class NodeClient:
             now = time.time()
             wait = (self._last_send_ts + interval) - now
             if wait > 0:
-                time.sleep(wait)
-                now = time.time()
-            self._last_send_ts = now
+                self._last_send_ts = now + wait
+            else:
+                self._last_send_ts = now
+                wait = 0
+        if wait > 0:
+            time.sleep(wait)
 
 
     # ----------- Core Send -----------

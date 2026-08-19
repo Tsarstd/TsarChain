@@ -659,6 +659,13 @@ class Wallet:
         mnemonic = mnemo.generate(strength=mnemonic_strength)
         seed = mnemo.to_seed(mnemonic, passphrase="")
         priv_bytes = hashlib.sha256(seed).digest()[:32]
+        priv_int = int.from_bytes(priv_bytes, "big")
+        # secp256k1 curve order N
+        n_secp = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+        if not (1 <= priv_int < n_secp):
+            # Fallback to hashed scalar mod (n-1) + 1
+            priv_int = (priv_int % (n_secp - 1)) + 1
+            priv_bytes = priv_int.to_bytes(32, "big")
         priv_hex = priv_bytes.hex()
 
         address = add_privkey_to_keystore(priv_hex, password)

@@ -172,16 +172,23 @@ def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
     pub = None
     if callable(get_pubkey_by_nodeid):
         pub = get_pubkey_by_nodeid(node_id)
+
+    provided_pub = envelope.get("pubkey")
+    if pub and provided_pub and pub.lower() != provided_pub.lower():
+        raise ValueError("pinned pubkey mismatch")
+
     if not pub:
-        pub = envelope.get("pubkey")
+        pub = provided_pub
         if not pub:
             raise ValueError("unknown peer pubkey and not provided")
+
     # Enforce binding: node_id must equal sha256(pubkey)
     derived = hashlib.sha256(bytes.fromhex(pub)).hexdigest()
     if derived != node_id:
         raise ValueError("node_id/pubkey mismatch")
     if not _verify_signature(pub, to_sign, envelope.get("sig", "")):
         raise ValueError("bad signature")
+
     # Anti-replay within REPLAY_WINDOW_SEC using per-sender nonce cache
     _nonce_register(node_id, str(envelope.get("nonce")))
     return inner

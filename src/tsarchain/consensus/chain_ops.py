@@ -465,6 +465,21 @@ class ChainOperations:
 
 
     def _validate_subsequent_blocks(self, chain: List[Block], cumulative_supply: int) -> bool:
+        # Ephemeral UTXO state to track inputs/spends throughout candidate chain
+        temp_utxos: dict = {}
+        g_txs = getattr(chain[0], "transactions", []) or []
+        if g_txs:
+            g_txid = getattr(g_txs[0], "txid", None)
+            g_txid_hex = g_txid.hex() if isinstance(g_txid, (bytes, bytearray)) else str(g_txid or "")
+            for idx, out in enumerate(getattr(g_txs[0], "outputs", []) or []):
+                spk = getattr(out, "script_pubkey", None)
+                temp_utxos[f"{g_txid_hex}:{idx}"] = {
+                    "amount": int(getattr(out, "amount", 0)),
+                    "script_pubkey": spk,
+                    "height": 0,
+                    "is_coinbase": True,
+                }
+
         for i in range(1, len(chain)):
             prev = chain[i - 1]
             cur  = chain[i]
@@ -494,8 +509,33 @@ class ChainOperations:
             if not txs or not getattr(txs[0], "is_coinbase", False) or any(getattr(t, "is_coinbase", False) for t in txs[1:]):
                 return False
 
+            cur_height = int(getattr(cur, "height", i))
+            spent_in_block = set()
+            for tx in txs[1:]:
+                tx_in_sum = 0
+                for txin in getattr(tx, "inputs", []):
+                    prev_txid = getattr(txin, "txid", None) or getattr(txin, "prev_tx", None)
+                    prev_txid_hex = prev_txid.hex() if isinstance(prev_txid, (bytes, bytearray)) else str(prev_txid or "")
+                    vout = int(getattr(txin, "vout", getattr(txin, "prev_index", 0)))
+                    outpoint = f"{prev_txid_hex}:{vout}"
+                    if outpoint in spent_in_block or outpoint not in temp_utxos:
+                        log.warning("[_validate_complete_chain] Invalid input %s at block %d", outpoint, cur_height)
+                        return False
+                    spent_in_block.add(outpoint)
+                    entry = temp_utxos[outpoint]
+                    if entry.get("is_coinbase") and (cur_height - entry.get("height", 0)) < CFG.COINBASE_MATURITY:
+                        log.warning("[_validate_complete_chain] Immature coinbase spend at block %d", cur_height)
+                        return False
+                    tx_in_sum += int(entry.get("amount", 0))
+
+                tx_out_sum = sum(int(getattr(o, "amount", 0)) for o in getattr(tx, "outputs", []))
+                if tx_out_sum > tx_in_sum:
+                    log.warning("[_validate_complete_chain] Negative fee at block %d", cur_height)
+                    return False
+                tx.fee = tx_in_sum - tx_out_sum
+
             fees = sum(int(getattr(t, "fee", 0)) for t in txs[1:])
-            base_reward = self.blockchain.scheduled_reward(int(getattr(cur, "height", 0)))
+            base_reward = self.blockchain.scheduled_reward(cur_height)
             reward = min(base_reward, max(0, CFG.MAX_SUPPLY - cumulative_supply))
             actual_cb = sum(int(o.amount) for o in getattr(txs[0], "outputs", []) or [])
             expected_cb = reward + fees
@@ -505,6 +545,28 @@ class ChainOperations:
                     getattr(cur, "height", None), expected_cb, actual_cb, fees,
                 )
                 return False
+
+            for outpoint in spent_in_block:
+                temp_utxos.pop(outpoint, None)
+
+            for tx in txs:
+                txid = getattr(tx, "txid", None)
+                txid_hex = txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid or "")
+                is_cb = bool(getattr(tx, "is_coinbase", False))
+                for idx, out in enumerate(getattr(tx, "outputs", []) or []):
+                    spk = getattr(out, "script_pubkey", None)
+                    if spk is not None:
+                        b = spk.serialize() if hasattr(spk, "serialize") else (bytes(spk) if isinstance(spk, (bytes, bytearray)) else b"")
+                        if len(b) >= 1 and b[0] == 0x6A:
+                            continue
+
+                    temp_utxos[f"{txid_hex}:{idx}"] = {
+                        "amount": int(getattr(out, "amount", 0)),
+                        "script_pubkey": spk,
+                        "height": cur_height,
+                        "is_coinbase": is_cb,
+                    }
+
             cumulative_supply += reward
 
         return True

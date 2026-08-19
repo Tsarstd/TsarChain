@@ -25,7 +25,10 @@ class RewardCalculator:
             return 0
         if height == 0 and CFG.GENESIS_REWARD:
             return int(CFG.GENESIS_REWARD_AMOUNT)
-        return int(CFG.INITIAL_REWARD) // (2 ** (int(max(0, height)) // int(CFG.BLOCKS_PER_HALVING)))
+        epoch = int(max(0, height)) // int(CFG.BLOCKS_PER_HALVING)
+        if epoch >= 64:
+            return 0
+        return int(CFG.INITIAL_REWARD) // (2 ** epoch)
 
 
     def cumulative_supply_until(self, height: int) -> int:

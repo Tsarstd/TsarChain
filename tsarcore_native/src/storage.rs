@@ -332,14 +332,11 @@ impl LmdbBackend {
 
         match drive_type {
             DriveType::Hdd => {
-                let flags = lmdb::EnvironmentFlags::NO_SYNC
-                    | lmdb::EnvironmentFlags::WRITE_MAP
-                    | lmdb::EnvironmentFlags::MAP_ASYNC
-                    | lmdb::EnvironmentFlags::NO_READAHEAD
+                let flags = lmdb::EnvironmentFlags::NO_META_SYNC
                     | lmdb::EnvironmentFlags::NO_MEM_INIT;
                 builder.set_flags(flags);
                 log_warning(&format!(
-                    "[lmdb] HDD profile applied for path='{}': NOSYNC | WRITEMAP | MAPASYNC | NORDAHEAD | NOMEMINIT",
+                    "[lmdb] HDD profile applied for path='{}': NOMETASYNC | NOMEMINIT",
                     path.display()
                 ));
             }

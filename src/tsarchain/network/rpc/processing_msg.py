@@ -100,9 +100,7 @@ def process_message(
 
     message["rpc_source"] = rpc_source
     if role == "UNKNOWN":
-        ip = _client_ip(addr)
-        ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
-        log.warning("[process_message] unknown RPC %s from %s (temp-ban)", mtype, addr)
+        log.warning("[process_message] unknown RPC %s from %s", mtype, addr)
         return {"error": "unknown type", "drop": True}
 
     if (role == "MINER") and (mtype not in BOOTSTRAP_MINER_ALLOW) and not is_miner:

@@ -191,10 +191,15 @@ pub fn calculate_change_and_fee(
     
     if is_coinbase {
         // coinbase: mining reward = total output
-        Ok((0.0, fee, total_output))
+        let out_r = (total_output * 1e8).round() / 1e8;
+        let fee_r = (fee * 1e8).round() / 1e8;
+        Ok((0.0, fee_r, out_r))
     } else {
         let change = total_input - total_output - fee;
-        Ok((total_input, total_output, change.max(0.0)))
+        let in_r = (total_input * 1e8).round() / 1e8;
+        let out_r = (total_output * 1e8).round() / 1e8;
+        let change_r = ((change.max(0.0)) * 1e8).round() / 1e8;
+        Ok((in_r, out_r, change_r))
     }
 }
 
