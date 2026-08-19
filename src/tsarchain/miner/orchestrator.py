@@ -84,21 +84,29 @@ def _register_bootstrap_peers(network: Network) -> int:
 
 def _run_snapshot_bootstrap(enabled: bool):
     if not enabled:
+        clog("[Bootstrap] Fast Sync Snapshot: DISABLED (CLI/instance flag). Proceeding with standard P2P Seed RPC sync.")
         return None
+
+    if CFG.BACKUP_SNAPSHOT:
+        clog(f"[Snapshot] Automated backup snapshots: ENABLED (Interval: every {CFG.BLOCK_BACKUP_SNAPSHOT} blocks to '{CFG.SNAPSHOT_BACKUP_DIR}')")
+    else:
+        clog("[Snapshot] Automated backup snapshots: DISABLED")
 
     def _printer(message: str):
         clog(f"[Bootstrap] {message}")
 
     result = maybe_bootstrap_snapshot(progress_cb=_printer)
     if result.status == "failed":
-        clog(f"[Bootstrap] Snapshot bootstrap Failed: {result.reason}. Continuing with normal sync.")
+        clog(f"[Bootstrap] Snapshot fast sync failed: {result.reason}. Falling back to standard P2P Seed RPC sync.")
     elif result.status == "skipped":
-        clog(f"[Bootstrap] Snapshot bootstrap Skipped: {result.reason}")
+        clog(f"[Bootstrap] Snapshot fast sync skipped ({result.reason}). Using standard P2P Seed RPC sync.")
     elif result.status == "installed":
-        clog("[Bootstrap] Finished Instaling Snapshot")
+        bytes_mb = float(getattr(result, "bytes_written", 0) or 0) / (1024 * 1024)
+        duration = float(getattr(result, "duration_s", 0) or 0)
+        clog(f"[Bootstrap] Snapshot fast sync SUCCESS! Restored local database to height {result.height} ({bytes_mb:.2f} MB in {duration:.1f}s)")
+        clog("[Bootstrap] Database restored (chain, utxo, state, graffiti, mempool). Now connecting to P2P peers to sync remaining blocks...")
     else:
-        reason = result.reason
-        clog(f"[Bootstrap] : {reason}")
+        clog(f"[Bootstrap] Snapshot status: {result.status} ({result.reason})")
     return result
 
 class SimpleMiner:

@@ -77,6 +77,7 @@ NETWORK ISOLATION (not a fork, but cannot connect to each other):
 =============================================================================
 '''
 
+from collections.abc import Set
 import os
 import sys
 import appdirs
@@ -138,30 +139,44 @@ LMDB_WEB_SIZE_INIT     = 10 * 1024 * 1024  # initial web LMDB size (10 MB)
 LMDB_WEB_SIZE_MAX      = 64 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
 
 
-# ---- SNAPSHOT SIGNING ----
-SNAPSHOT_REQUIRE_SIGNATURE = False  # demand signed snapshot manifests when True
-SNAPSHOT_MANIFEST_URL      = ""  # optional URL supplying snapshot manifest
-SNAPSHOT_FILE_URL          = ""  # optional URL for snapshot binary
-SNAPSHOT_PUBKEY_HEX        = ""  # hex-encoded pubkey used to verify snapshot signature
-
-
-# ---- SNAPSHOT MODES ----
+# ---- SNAPSHOT MODES (FAST SYNC BOOTSTRAP) ----
+'''
+Set True on new/client nodes to download snapshot (.tar.gz) on startup.
+Set False on seed/VPS/genesis nodes.
+'''
 SNAPSHOT_BOOTSTRAP_ENABLED = False  # allow nodes to bootstrap via snapshot downloads
 
 
-# ---- SNAPSHOT TRANSFER ----
-SNAPSHOT_HTTP_TIMEOUT    = 90  # HTTP timeout applied to snapshot downloads
-SNAPSHOT_CHUNK_BYTES     = 2 * 1024 * 1024  # chunk size when streaming snapshot data
-SNAPSHOT_MIN_SIZE_BYTES  = 15 * 1024  # ignore snapshot files smaller than this
-SNAPSHOT_META_PATH       = str(PROJECT_ROOT / "data/node/snapshot.meta.json")  # cached metadata file for snapshots
-SNAPSHOT_MAX_AGE_SECONDS = 12 * 3600  # maximum tolerated snapshot age (12h)
+# ---- SNAPSHOT REMOTE SOURCE & SIGNING ----
+
+# URL pointing to snapshot.manifest.json (optional, provides hash, height, signature)
+SNAPSHOT_MANIFEST_URL      = ""  # e.g. "http://seed1.tsarchain.org:8000/snapshot.manifest.json"
+
+# Direct URL to tsarchain.tar.gz archive (used if manifest URL is empty or specified directly)
+SNAPSHOT_FILE_URL          = "http://localhost:8000/tsarchain.tar.gz"  # e.g. "http://seed1.tsarchain.org:8000/tsarchain.tar.gz"
+SNAPSHOT_REQUIRE_SIGNATURE = False  # demand signed snapshot manifests when True (True in prod, False in test/dev)
+SNAPSHOT_PUBKEY_HEX        = ""  # hex-encoded secp256k1 pubkey used to verify snapshot signature
+
+
+# ---- SNAPSHOT TRANSFER & LIMITS ----
+SNAPSHOT_HTTP_TIMEOUT    = 120  # HTTP timeout applied to snapshot downloads (seconds)
+SNAPSHOT_CHUNK_BYTES     = 2 * 1024 * 1024  # chunk size (2MB) when streaming snapshot data & reporting progress
+SNAPSHOT_MIN_SIZE_BYTES  = 1024  # minimum valid snapshot archive size (15 KB; use 1024 for small dev test)
+SNAPSHOT_META_PATH       = str(PROJECT_ROOT / "data/node/snapshot.meta.json")  # cached metadata file for local snapshots
+SNAPSHOT_MAX_AGE_SECONDS = 24 * 3600  # maximum tolerated snapshot age (24h)
 SNAPSHOT_USER_AGENT      = "TsarChainSnapshot/1.0"  # UA string used when fetching snapshots
 
 
-# ---- SNAPSHOT BACKUP ----
+# ---- SNAPSHOT BACKUP (CREATOR / VPS SEED NODE) ----
+
+'''
+Set True on VPS/seed nodes to automatically export & package sub-databases (chain, utxo, state, graffiti, mempool)
+into data/snapshot/tsarchain.tar.gz
+'''
+BACKUP_SNAPSHOT       = True  # True on VPS/Seed node to generate snapshot archives; False on client nodes
+
+BLOCK_BACKUP_SNAPSHOT = 2  # Block interval to generate new snapshot archive (e.g. 50-100 for dev test, 1000 for prod)
 SNAPSHOT_BACKUP_DIR   = str(PROJECT_ROOT / "data/snapshot")  # folder storing backup snapshots
-BACKUP_SNAPSHOT       = False  # toggle to keep automatic backup copies
-BLOCK_BACKUP_SNAPSHOT = 15  # Align last backup marker to nearest interval to avoid drift across restarts
 
 
 # =============================================================================

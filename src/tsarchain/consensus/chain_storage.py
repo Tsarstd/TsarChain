@@ -10,6 +10,7 @@ import time
 import json
 import shutil
 import hashlib
+import tarfile
 import threading
 import datetime as dt
 
@@ -415,12 +416,12 @@ class ChainStorage:
 
 
     def _write_snapshot_manifest(self, target_dir: str, meta: dict, height: int) -> None:
-        data_path = os.path.join(target_dir)
+        archive_path = os.path.join(target_dir, "tsarchain.tar.gz")
         sha = meta.get("sha256")
         size = meta.get("size")
-        if (not sha or not size) and os.path.exists(data_path):
-            size = size or os.path.getsize(data_path)
-            sha = sha or self._hash_file(data_path)
+        if (not sha or not size) and os.path.exists(archive_path):
+            size = size or os.path.getsize(archive_path)
+            sha = sha or self._hash_file(archive_path)
 
         manifest = {
             "version": 1,
@@ -438,43 +439,53 @@ class ChainStorage:
 
     def _run_backup(self, target_dir: str, height: int, ts_hint: int | None):
         try:
-            # 1) copy LMDB env -> data/snapshot/
+            # 1) Copy all 5 active LMDB environments -> data/snapshot/
             self._copy_snapshot_env(target_dir)
 
             backup_dir = os.path.abspath(target_dir)
-            snapshot_data_path = os.path.join(backup_dir, "data.mdb")
 
-            # 2) tip timestamp
+            # 2) Package sub-databases into tsarchain.tar.gz
+            archive_path = os.path.join(backup_dir, "tsarchain.tar.gz")
+            with tarfile.open(archive_path, "w:gz") as tar:
+                for db_name in ("chain", "utxo", "state", "graffiti", "mempool"):
+                    db_path = os.path.join(backup_dir, db_name)
+                    if os.path.exists(db_path):
+                        tar.add(db_path, arcname=db_name)
+
+            # 3) Clean up uncompressed raw staging folders to save disk space
+            for db_name in ("chain", "utxo", "state", "graffiti", "mempool"):
+                db_path = os.path.join(backup_dir, db_name)
+                if os.path.exists(db_path):
+                    shutil.rmtree(db_path, ignore_errors=True)
+
+            archive_stat = os.stat(archive_path)
+            archive_size = int(archive_stat.st_size)
+            archive_sha = self._hash_file(archive_path)
+
+            # 4) Tip timestamp
             tip_ts = ts_hint
             if tip_ts is None and self.blockchain.chain:
                 tip_ts = int(getattr(self.blockchain.chain[-1], "timestamp", 0) or 0)
 
-            # 3) meta baseline from DB live
-            meta = annotate_local_snapshot_meta(height=height, tip_timestamp=tip_ts)
+            # 5) Write metadata and manifest
+            meta = {
+                "height": int(height),
+                "generated_at": int(tip_ts or time.time()),
+                "size": archive_size,
+                "sha256": archive_sha or "",
+                "applied_at": int(time.time()),
+                "source": CFG.SNAPSHOT_FILE_URL or "",
+            }
 
-            # 3b) override size & sha256 with snapshot file
-            if meta and os.path.exists(snapshot_data_path):
-                try:
-                    stat = os.stat(snapshot_data_path)
-                    meta["size"] = int(stat.st_size)
-                    snap_sha = self._hash_file(snapshot_data_path)
-                    if snap_sha:
-                        meta["sha256"] = snap_sha
-                except Exception:
-                    log.exception("[backup_snapshot] Failed to recompute hash/size for snapshot env")
+            meta_name = os.path.basename(CFG.SNAPSHOT_META_PATH or "snapshot.meta.json")
+            backup_meta_path = os.path.join(backup_dir, meta_name)
+            with open(backup_meta_path, "w", encoding="utf-8") as fh:
+                json.dump(meta, fh, indent=2, sort_keys=True)
 
-            if meta:
-                # 4) write snapshot.meta.json to snapshot folder
-                meta_name = os.path.basename(CFG.SNAPSHOT_META_PATH or "snapshot.meta.json")
-                backup_meta_path = os.path.join(backup_dir, meta_name)
-                with open(backup_meta_path, "w", encoding="utf-8") as fh:
-                    json.dump(meta, fh, indent=2, sort_keys=True)
-
-                # 5) generate snapshot.manifest.json from overridden meta
-                self._write_snapshot_manifest(backup_dir, meta, height)
+            self._write_snapshot_manifest(backup_dir, meta, height)
 
             self.blockchain._snapshot_last_backup_height = height
-            log.info("[backup_snapshot] Snapshot updated at height %s to %s", height, target_dir)
+            log.info("[backup_snapshot] Snapshot archive created at height %s in %s (%.2f MB)", height, archive_path, archive_size / (1024 * 1024))
         except Exception:
             log.exception("[backup_snapshot] Unexpected error during snapshot backup:")
         finally:
@@ -491,19 +502,17 @@ class ChainStorage:
         tmp_dir = f"{target_dir}.tmp"
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir, ignore_errors=True)
+        os.makedirs(tmp_dir, exist_ok=True)
 
-        env = _ensure_env("chain")
-        if env is not None:
-            os.makedirs(tmp_dir, exist_ok=True)
-            env.copy(tmp_dir, compact=True)
-        else:
-            os.makedirs(tmp_dir, exist_ok=True)
-            data_file = CFG.LMDB_DATA_FILE
-            if data_file and os.path.exists(data_file):
-                shutil.copy2(
-                    data_file,
-                    os.path.join(tmp_dir, os.path.basename(data_file)),
-                )
+        for db_name in ("chain", "utxo", "state", "graffiti", "mempool"):
+            sub_dir = os.path.join(tmp_dir, db_name)
+            try:
+                env = _ensure_env(db_name)
+                if env is not None:
+                    os.makedirs(sub_dir, exist_ok=True)
+                    env.copy(sub_dir, compact=True)
+            except Exception as exc:
+                log.warning("[_copy_snapshot_env] Failed to copy sub-DB %s: %s", db_name, exc)
 
         if os.path.exists(target_dir):
             shutil.rmtree(target_dir, ignore_errors=True)

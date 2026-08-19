@@ -291,8 +291,8 @@ def test_copy_snapshot_env(storage, monkeypatch, tmp_path):
     monkeypatch.setattr('tsarchain.consensus.chain_storage._ensure_env', lambda *args, **kwargs: env_mock)
 
     storage._copy_snapshot_env(target)
-    # Should create tmp dir and copy
-    env_mock.copy.assert_called_once()
+    # Should create tmp dir and copy all 5 sub-databases (chain, utxo, state, graffiti, mempool)
+    assert env_mock.copy.call_count == 5
     # Check that target exists after replace
     assert os.path.exists(target)
 
