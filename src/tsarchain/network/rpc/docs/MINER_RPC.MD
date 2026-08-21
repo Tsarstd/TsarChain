@@ -31,7 +31,7 @@ These two RPCs are permitted without prior pinned miner pubkey verification.
 
 | RPC Type | Description | Bootstrap Access | Rate Limit (Burst / Window) |
 | :--- | :--- | :---: | :--- |
-| **`HELLO`** | Handshake, peer exchange, initial mempool push | Yes | Connection-level |
+| **`HELLO`** | Handshake, peer exchange, initial mempool push | Yes | `CFG.MINER_INFO_RL_*` |
 | **`GET_INFO`** | Fetch compact node blockchain status and metrics | No | `CFG.MINER_INFO_RL_*` |
 | **`NEW_BLOCK`** | Broadcast newly mined block to peer network | No | `CFG.MINER_NEWBLOCK_RL_*` |
 | **`MEMPOOL`** | Push batch of mempool transactions to peer | No | `CFG.MINER_MEMPOOL_RL_*` |
@@ -83,7 +83,7 @@ Performs the initial handshake between two nodes, registers peers, and aligns th
 Retrieves internal metrics from the miner node (chain height, total blocks, mempool size, UTXO count, active peers).
 
 - **Category**: `MINER_RPC_TYPES` (Miner Only)
-- **Internal Handler**: `_handle_miner_get_info()`
+- **Internal Handler**: `handle_miner_rpc(GET_INFO)`
 
 #### Request Payload
 ```json
@@ -110,13 +110,13 @@ Retrieves internal metrics from the miner node (chain height, total blocks, memp
 Broadcasts a newly mined, validated block to the peer network.
 
 - **Category**: `MINER_RPC_TYPES` (Miner Only)
-- **Internal Handler**: `_handle_miner_new_block()` $\rightarrow$ `self.broadcast.receive_block()`
+- **Internal Handler**: `self.broadcast.receive_block()`
 
 #### Request Payload
 ```json
 {
   "type": "NEW_BLOCK",
-  "block": {
+  "data": {
     "height": 1056,
     "prev_block_hash": "00000000a1b2c3...",
     "merkle_root": "e3b0c44298fc1c...",
@@ -129,6 +129,7 @@ Broadcasts a newly mined, validated block to the peer network.
   }
 }
 ```
+*(Note: `receive_block` also accepts `"block"` as an alias for `"data"` for backwards compatibility).*
 
 #### Response Payload
 ```json
@@ -247,7 +248,7 @@ Downloads complete block data structures by a list of block heights.
 Fetches the block hash at a designated chain height.
 
 - **Category**: `MINER_RPC_TYPES` (Miner Only)
-- **Internal Handler**: `_handle_miner_get_block_hash()` $\rightarrow$ `self.handle_get_block_hash(h)`
+- **Internal Handler**: `self.handle_get_block_hash(h)`
 
 #### Request Payload
 ```json
@@ -265,7 +266,7 @@ Fetches the block hash at a designated chain height.
   "hash": "00000000c7d8e9..."
 }
 ```
-*If height is out of bounds: returns an empty hash or error structure.*
+*If height is missing, invalid, or out of bounds: returns an appropriate error structure (e.g. `{"type": "BLOCK_HASH", "error": "missing_height" | "invalid_height" | "height_out_of_range"}`).*
 
 ---
 

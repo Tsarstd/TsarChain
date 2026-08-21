@@ -25,8 +25,8 @@ class ReceiveHandler(BroadcastHandlerProxy):
         inflight = False
         accepted = False
         try:
-            block_data = message.get("data")
-            if not block_data:
+            block_data = message.get("data") or message.get("block")
+            if not block_data or not isinstance(block_data, dict):
                 return False
 
             block = Block.deserialize_block(block_data)
@@ -152,7 +152,11 @@ class ReceiveHandler(BroadcastHandlerProxy):
                 self.network.request_sync(fast=True)
                 return
 
-            txs_data = message.get("data", [])
+            txs_data = message.get("data") or message.get("txs") or []
+            if not isinstance(txs_data, list):
+                return
+            txs_data = txs_data[:CFG.MEMPOOL_INLINE_MAX_TX]
+
             added_count = 0
             for tx_data in txs_data:
                 tx = Tx.from_dict(tx_data) if isinstance(tx_data, dict) else tx_data

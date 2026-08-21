@@ -13,7 +13,7 @@ from typing import List, Set, Tuple
 
 from . import rpc_client
 from ...utils import config as CFG
-from ..protocol import SecureChannel, build_envelope, recv_message, send_message
+from ..protocol import SecureChannel, build_envelope
 
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.node_logic.discovery")

@@ -18,7 +18,7 @@ def mock_config():
         mock_cfg.MINER_NEWBLOCK_RL_WINDOW_S = 60
         mock_cfg.MINER_NEWBLOCK_RL_BACKOFF_S = 10
         
-        # Info RL (GET_INFO, GET_BLOCK_HASH)
+        # Info RL (HELLO, GET_INFO, GET_BLOCK_HASH)
         mock_cfg.MINER_INFO_RL_IP_BURST = 10
         mock_cfg.MINER_INFO_RL_WINDOW_S = 60
         mock_cfg.MINER_INFO_RL_BACKOFF_S = 10
@@ -55,11 +55,12 @@ def network():
     # Chain state mocks for GET_INFO
     net.broadcast.blockchain.height = 100
     net.broadcast.blockchain.chain = [1] * 101
+    net.broadcast.mempool._pool = {1: 1, 2: 2, 3: 3}
     net.broadcast.mempool.get_all_txs.return_value = [1, 2, 3]
     net.broadcast.utxodb.utxos = {1: 1, 2: 2}
     
     # Peers mock
-    net.peers = [("127.0.0.1", 8333), ("192.168.1.1", 0), ("10.0.0.1", -1), ("1.1.1.1", "bad")]
+    net.peers = {("127.0.0.1", 8333), ("192.168.1.1", 0), ("10.0.0.1", -1), ("1.1.1.1", "bad")}
     
     # Get Block Hash Mock
     net.handle_get_block_hash.return_value = {"hash": "abc", "cache_hit": True}
@@ -79,16 +80,23 @@ def test_hello(mock_handle_hello, network):
     assert res == {"status": "ok"}
     mock_handle_hello.assert_called_once_with(network, {"test": 1}, ("127.0.0.1", 1234), src_node_id="n1", src_pubkey="p1")
 
+    # Rate limited
+    network.tb_node_allow.return_value = False
+    res2 = handle_miner_rpc(network, {"test": 1}, ("127.0.0.1", 1234), "HELLO")
+    assert res2 == {"error": "rate_limited"}
+
 
 def test_new_block(network, mock_config):
     # Success
     res = handle_miner_rpc(network, {"block": 1}, ("127.0.0.1", 1234), "NEW_BLOCK")
     assert res == {"status": "ok"}
-    network.broadcast.receive_block.assert_called_once_with({"block": 1}, ("127.0.0.1", 1234), network.peers)
+    network.broadcast.receive_block.assert_called_once_with({"block": 1}, ("127.0.0.1", 1234), set(network.peers))
     
-    # Test non-tuple addr
+    # Test non-tuple addr and empty tuple
     res2 = handle_miner_rpc(network, {"block": 2}, None, "NEW_BLOCK")
     assert res2 == {"status": "ok"}
+    res_empty_addr = handle_miner_rpc(network, {"block": 3}, (), "NEW_BLOCK")
+    assert res_empty_addr == {"status": "ok"}
     
     # Rate limited
     network.tb_node_allow.return_value = False
@@ -102,6 +110,14 @@ def test_get_block_hash(network, mock_config):
     assert res == {"hash": "abc", "cache_hit": True}
     network.handle_get_block_hash.assert_called_once_with(10)
     
+    # Missing height
+    res_missing = handle_miner_rpc(network, {}, ("127.0.0.1", 1234), "GET_BLOCK_HASH")
+    assert res_missing == {"type": "BLOCK_HASH", "error": "missing_height"}
+
+    # Invalid height string
+    res_invalid = handle_miner_rpc(network, {"height": "invalid_num"}, ("127.0.0.1", 1234), "GET_BLOCK_HASH")
+    assert res_invalid == {"type": "BLOCK_HASH", "error": "invalid_height"}
+
     # Rate limited
     network.tb_node_allow.return_value = False
     res2 = handle_miner_rpc(network, {"height": 10}, ("127.0.0.1", 1234), "GET_BLOCK_HASH")
