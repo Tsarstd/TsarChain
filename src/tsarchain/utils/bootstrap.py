@@ -483,7 +483,7 @@ def _validate_snapshot_chain() -> tuple[bool, Optional[str]]:
                     zero_hex = CFG.ZERO_HASH.hex() if hasattr(CFG.ZERO_HASH, "hex") else bytes(CFG.ZERO_HASH).hex()
                     if prev != zero_hex:
                         return False, "prev_block_hash genesis mismatch"
-                    expected_genesis = (getattr(CFG, "GENESIS_HASH_HEX", "") or "").strip().lower()
+                    expected_genesis = CFG.GENESIS_HASH_HEX
                     if expected_genesis.startswith("0x"):
                         expected_genesis = expected_genesis[2:]
                     if expected_genesis:
@@ -511,7 +511,7 @@ def _validate_snapshot_chain() -> tuple[bool, Optional[str]]:
     if prev_hex != zero_hex:
         return False, "prev_block_hash genesis mismatch"
 
-    expected_genesis = (getattr(CFG, "GENESIS_HASH_HEX", "") or "").strip().lower()
+    expected_genesis = CFG.GENESIS_HASH_HEX
     if expected_genesis.startswith("0x"):
         expected_genesis = expected_genesis[2:]
 

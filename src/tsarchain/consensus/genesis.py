@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 
 def _resolve_genesis_hash():
-    cfg_hex = getattr(CFG, "GENESIS_HASH_HEX", "")
+    cfg_hex = CFG.GENESIS_HASH_HEX
     if cfg_hex:
         log.info("Genesis hash checkpoint configured: %s", cfg_hex)
     
