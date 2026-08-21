@@ -93,6 +93,47 @@ class ChatHandler(NetworkHandlerProxy):
         self.mailbox_put(to_addr, item, CFG.CHAT_TTL_S, CFG.CHAT_MAILBOX_MAX, CFG.CHAT_GLOBAL_QUEUE_MAX)
 
 
+    def record_presence_seen(self, pid: str) -> None:
+        if not pid:
+            return
+        with self.chat_lock:
+            if not hasattr(self, "chat_presence_seen_order"):
+                self.chat_presence_seen_order = collections.deque(maxlen=10000)
+            if pid in self.chat_presence_seen:
+                return
+            if len(self.chat_presence_seen_order) == self.chat_presence_seen_order.maxlen:
+                oldest = self.chat_presence_seen_order.popleft()
+                self.chat_presence_seen.discard(oldest)
+            self.chat_presence_seen_order.append(pid)
+            self.chat_presence_seen.add(pid)
+
+
+    def dedup_pull(self, addr: str, pull_sig: str) -> bool:
+        if not pull_sig or not addr:
+            return False
+        with self.chat_lock:
+            if not hasattr(self, "chat_pull_seen"):
+                self.chat_pull_seen = {}
+            if len(self.chat_pull_seen) > 2000 and addr not in self.chat_pull_seen:
+                oldest_addr = next(iter(self.chat_pull_seen))
+                self.chat_pull_seen.pop(oldest_addr, None)
+            rec = self.chat_pull_seen.get(addr)
+            if rec is None:
+                dq = collections.deque(maxlen=128)
+                st = set()
+                self.chat_pull_seen[addr] = (dq, st)
+            else:
+                dq, st = rec
+            if pull_sig in st:
+                return True
+            if len(dq) == dq.maxlen:
+                old = dq.popleft()
+                st.discard(old)
+            dq.append(pull_sig)
+            st.add(pull_sig)
+            return False
+
+
     def gc_mailboxes(self):
         now = time.time()
         if now - self.chat_gc_last < 30:
@@ -108,34 +149,46 @@ class ChatHandler(NetworkHandlerProxy):
             for addr in empty_mailboxes:
                 self.chat_mailbox.pop(addr, None)
 
-            # bersihkan backoff kadaluarsa
-            expired_backoffs = []
-            for k, until in self.backoff_until.items():
-                if until <= now:
-                    expired_backoffs.append(k)
+            # Clean expired backoffs
+            expired_backoffs = [k for k, until in self.backoff_until.items() if until <= now]
             for k in expired_backoffs:
                 self.backoff_until.pop(k, None)
+
+            # Clean oversized seen structures if needed
+            if hasattr(self, "chat_pull_seen") and len(self.chat_pull_seen) > 2000:
+                self.chat_pull_seen.clear()
+            if len(self.chat_seen_mid) > 2000:
+                # prune half of oldest address keys
+                keys_to_remove = list(self.chat_seen_mid.keys())[:1000]
+                for k in keys_to_remove:
+                    self.chat_seen_mid.pop(k, None)
         self.chat_gc_last = now
 
 
     def dedup_mid(self, from_addr, msg_id):
         if msg_id is None: 
             return False
-        rec = self.chat_seen_mid.get(from_addr)
-        if rec is None:
-            dq = collections.deque(maxlen=self.chat_seen_max)
-            st = set()
-            self.chat_seen_mid[from_addr] = (dq, st)
-        else:
-            dq, st = rec
-        if msg_id in st:
-            return True
-        # tambah
-        dq, st = self.chat_seen_mid[from_addr]
-        if len(dq) == dq.maxlen:
-            old = dq.popleft(); st.discard(old)
-        dq.append(msg_id); st.add(msg_id)
-        return False
+        with self.chat_lock:
+            if len(self.chat_seen_mid) > 2000 and from_addr not in self.chat_seen_mid:
+                try:
+                    oldest_addr = next(iter(self.chat_seen_mid))
+                    self.chat_seen_mid.pop(oldest_addr, None)
+                except StopIteration:
+                    pass
+            rec = self.chat_seen_mid.get(from_addr)
+            if rec is None:
+                dq = collections.deque(maxlen=self.chat_seen_max)
+                st = set()
+                self.chat_seen_mid[from_addr] = (dq, st)
+            else:
+                dq, st = rec
+            if msg_id in st:
+                return True
+            # tambah
+            if len(dq) == dq.maxlen:
+                old = dq.popleft(); st.discard(old)
+            dq.append(msg_id); st.add(msg_id)
+            return False
 
 
 # =============================================================================

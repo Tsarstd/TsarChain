@@ -263,14 +263,14 @@ Provides decentralized, end-to-end encrypted messaging via TsarChain's Signal-co
    │   ◄── Returns Bob's Prekey Bundle ────────┤                                      │
    │                                           │                                      │
    ├── 3. Encrypt via Signal X3DH + Ratchet    │                                      │
-   ├── 4. CHAT_SEND (Encrypted Envelope)──────►│    (Stores in mailbox)               │
+   ├── 4. CHAT_SEND (Encrypted Envelope)──────►│    (Stores in RAM mailbox)           │
    │                                           │◄── 5. CHAT_PULL (Fetch Messages)─────┤
    │                                           ├──── Returns Encrypted Payload ──────►│
-   │                                           │                                      │
-   │                                           │◄── 6. CHAT_READ (Acknowledge Msg)────┤
+   │                                           │     (Instantly deleted from RAM)     │
+   │                                           │◄── 6. CHAT_READ (Read Receipt)───────┤
 ```
 
-### Endpoints
+### Endpoints Overview
 1. **`CHAT_REGISTER`**: Registers account spend public key and identity public key with dual presence signatures.
 2. **`CHAT_LOOKUP_PUB`**: Resolves an on-chain Tsar address to its chat identity public key.
 3. **`CHAT_PRESENCE`**: Updates node heartbeat presence for online routing.
@@ -282,6 +282,43 @@ Provides decentralized, end-to-end encrypted messaging via TsarChain's Signal-co
 9. **`CHAT_RELAY`**: Multi-hop onion routing relay for privacy-preserving message transport.
 
 ---
+
+### 🛡️ Node Architecture: Mailbox & Prekey Bundle Management
+
+The node operates purely as a **Blind Relay & Ephemeral Mailbox Router** with zero ability to decrypt ciphertexts and zero permanent disk persistence for transient chat messages:
+
+#### 1. Prekey Bundle Management (`chat_prekeys`)
+* **Data Structure**: In-memory dictionary `self.chat_prekeys[addr]`.
+* **Bundle Components**:
+  - `ik` *(Identity Key)*: User's long-term public X25519 identity key.
+  - `spk` *(Signed Prekey)*: Semi-static ephemeral public key authenticated via ECDSA Secp256k1.
+  - `sig`: Identity digital signature over the canonical payload `TSAR-SPK|<spk_bytes>|<spend_pub_bytes>`.
+  - `opk_list` *(One-Time Prekeys Pool)*: Pool of single-use ephemeral keys for maximum Forward Secrecy.
+* **Atomic Key Consumption (FIFO Pop)**:
+  - When an initiator calls `CHAT_GET_PREKEY`, the node consumes the top OPK via `lst.pop(0)`.
+  - A consumed OPK is **never issued to any other peer**, ensuring each new cryptographic session begins with unique ephemeral entropy.
+* **Capacity Constraints**: Capped at `CFG.CHAT_OPK_MAX_STORED` (default: 100 OPKs per address) to prevent memory exhaustion.
+
+#### 2. Offline Message Mailbox Queue Management (`chat_mailbox`)
+* **Data Structure**: In-memory FIFO queue per recipient: `self.chat_mailbox[addr] = collections.deque()`.
+* **Strict Capacity Limits**:
+  - `CFG.CHAT_MAILBOX_MAX = 250`: Maximum queued messages per recipient address.
+  - `CFG.CHAT_GLOBAL_QUEUE_MAX = 20_000`: Maximum global accumulation across all registered users on the node.
+  - **Full Capacity Behavior**: If limits are reached, `mailbox_put` returns `{"type": "CHAT_ACK", "status": "mailbox_full"}` and the envelope is **dropped**. The sender receives an immediate visual failure status in the wallet UI (`× mailbox full`).
+* **Lifecycle & Immediate FIFO Drain (`dq.popleft()`)**:
+  - **Recipient Offline**: Transit payloads are held in node RAM.
+  - **Recipient Online (`CHAT_PULL`)**: The node executes `dq.popleft()` for each retrieved message. The payload is **permanently and immediately deleted from node RAM on delivery**.
+  - **Quota Reset**: The recipient's mailbox slot immediately returns to `0 / 250`.
+* **Automated Garbage Collection (`gc_mailboxes`)**:
+  - Messages carry a time-to-live of `CFG.CHAT_TTL_S = 86400` (24 hours).
+  - Background workers and lazy pull/put hooks automatically purge expired, uncollected messages.
+* **Privacy & Anti-Forensic Guarantee**:
+  - The mailbox is **In-Memory Ephemeral (Zero Disk/LMDB Writes)**.
+  - No plaintext, ciphertext, or transmission metadata is retained on storage media, ensuring high forensic privacy.
+
+---
+
+
 
 ## 7. Graffiti Cultural Protocol Endpoints
 

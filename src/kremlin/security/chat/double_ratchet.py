@@ -19,7 +19,6 @@ All cryptographic primitives follow the Signal protocol specifications.
 """
 
 import os
-import time
 from typing import Optional, Dict
 
 from cryptography.hazmat.primitives.asymmetric import x25519

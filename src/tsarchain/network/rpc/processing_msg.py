@@ -115,21 +115,25 @@ def process_message(
     if role == "STORAGE":
         return handle_storage_rpc(network, message, addr, mtype, src_node_id=src_node_id, src_pubkey=src_pubkey)
 
-    dispatch_result = handle_user_rpc(
-        network,
-        message,
-        addr,
-        mtype,
-        client_ip=lambda: _client_ip(addr),
-        is_miner_sender=lambda: is_miner,
-        overlay_realtime_mempool_stats=_overlay_realtime_mempool_stats,
-        choose_relay_route=_choose_relay_route,
-        relay_chain=_relay_chain,
-        send_chat_relay=_send_chat_relay,
-    )
+    try:
+        dispatch_result = handle_user_rpc(
+            network,
+            message,
+            addr,
+            mtype,
+            client_ip=lambda: _client_ip(addr),
+            is_miner_sender=lambda: is_miner,
+            overlay_realtime_mempool_stats=_overlay_realtime_mempool_stats,
+            choose_relay_route=_choose_relay_route,
+            relay_chain=_relay_chain,
+            send_chat_relay=_send_chat_relay,
+        )
 
-    if dispatch_result is not None:
-        return dispatch_result
+        if dispatch_result is not None:
+            return dispatch_result
+    except Exception as e:
+        log.exception("[process_message] Error handling user RPC %s from %s: %s", mtype, addr, e)
+        return {"error": str(e)}
     
     return {"error": "Unknown message type"}
 

@@ -693,17 +693,20 @@ class ChatTab:
             return
         
         self.chat_mgr._pwd_cache_put(addr, pwd)
+        self.chat_hero_pwd_var.set("")
         self.chat_from_var.set(addr)
         self._chat_toggle_online(prewarm=True)
 
     def _chat_logout(self):
         addr = (self.chat_from_var.get() or "").strip().lower()
-        if addr:
+        if hasattr(self.chat_mgr, "clear_pwd_cache"):
+            self.chat_mgr.clear_pwd_cache(addr)
+        elif addr:
             self.chat_mgr.priv_cache.pop(addr, None)
+            cache = getattr(self.chat_mgr, "_pwd_cache", None)
+            if isinstance(cache, dict):
+                cache.pop(addr, None)
 
-        cache = getattr(self.chat_mgr, "_pwd_cache", None)
-        if isinstance(cache, dict):
-            cache.pop(addr, None)
         if hasattr(self, "chat_hero_pwd_var"):
             self.chat_hero_pwd_var.set("")
         if getattr(self, "_chat_poll_job", None):
@@ -847,7 +850,11 @@ class ChatTab:
                     self.toast("Online •", kind="info")
                     self._chat_schedule_next(CFG.CHAT_POLL_INITIAL_MS)
                 else:
-                    self.toast(f"Failed Register: {resp}", kind="error")
+                    err_msg = (resp or {}).get("error") if isinstance(resp, dict) else str(resp)
+                    if err_msg in ("No response from any node", "No peers"):
+                        self.toast("Node tidak terhubung. Pastikan node (cli_node_miner) sudah berjalan.", kind="error")
+                    else:
+                        self.toast(f"Gagal Register: {err_msg or resp}", kind="error")
 
             self.chat_mgr.register(addr, _on)
             return

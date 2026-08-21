@@ -31,7 +31,6 @@ from typing import Callable, Optional, Dict, Any, Tuple
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.asymmetric import ec, x25519
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 # ---------------- Local Project (With Node) ----------------
 from tsarchain.utils import config as CFG
@@ -39,7 +38,6 @@ from tsarchain.utils import config as CFG
 # ---------------- Local Project (Wallet Only) ----------------
 from ..data_security import Wallet
 from ..chat import chat_common as COM
-from tsarchain.utils import config as CFG
 from tsarchain.utils.benchmarks import benchmark
 from ..chat.double_ratchet import RatchetSession
 
@@ -92,6 +90,14 @@ class ChatManager:
     def _pwd_cache_get(self, addr: str) -> Optional[str]:
         rec = self._pwd_cache.get(COM.canon(addr))
         return rec[0] if rec and self._now() < rec[1] else None
+
+    def clear_pwd_cache(self, addr: Optional[str] = None) -> None:
+        if addr:
+            self._pwd_cache.pop(COM.canon(addr), None)
+            self.priv_cache.pop(COM.canon(addr), None)
+        else:
+            self._pwd_cache.clear()
+            self.priv_cache.clear()
 
     def _pwd_provider_for(self, addr: str):
         a = COM.canon(addr)
@@ -533,6 +539,10 @@ class ChatManager:
             pn_val = int(header.get("pn", 0))
             n_val = int(header.get("n", 0))
 
+            key = self._session_key(frm, to)
+            used = self._pending_used_opk.pop(key, None)
+            used_opk_hex = (used or "").lower()
+
             try:
                 sig_parts = [
                     b"CHAT_SEND",
@@ -542,6 +552,7 @@ class ChatManager:
                     str(pn_val).encode(), str(n_val).encode(),
                     bytes.fromhex(msg["enc"]["nonce"]),
                     bytes.fromhex(msg["enc"]["ct"]),
+                    used_opk_hex.encode(),
                 ]
             except Exception:
                 log.exception("Unhandled exception")
@@ -563,8 +574,6 @@ class ChatManager:
                 "chat_sig": chat_sig,
             }
 
-            key = self._session_key(frm, to)
-            used = self._pending_used_opk.pop(key, None)
             if used:
                 payload["used_opk"] = used
 
@@ -671,6 +680,13 @@ class ChatManager:
                     continue
 
             msg_text = self._decrypt_chat_message(me, frm, sess, enc, mid, ts, header)
+            # Self-healing: if decryption fails and message appears to be a new handshake (has used_opk or pn=0, n=0)
+            if msg_text is None and (it.get("used_opk") or (header.get("pn") == 0 and header.get("n") == 0)):
+                log.info("[poll] Attempting responder session recovery for %s -> %s", frm, me)
+                sess = self._init_responder_session(me, frm, my_sk_hex, header, (it.get("used_opk") or "").lower())
+                if sess:
+                    msg_text = self._decrypt_chat_message(me, frm, sess, enc, mid, ts, header)
+
             if msg_text is not None:
                 out.append({"type": "chat", "from": frm, "text": msg_text, "msg_id": mid, "ts": ts, "to": me})
             else:
@@ -679,54 +695,61 @@ class ChatManager:
         return out
 
     def _init_responder_session(self, me: str, frm: str, my_sk_hex: str, header: dict, used_opk: str):
-        provider_me = self._pwd_provider_for(me)
-        pkinfo = COM.get_local_prekeys_for_recv(me, provider_me)
-        spk_sk = (pkinfo.get("spk_sk") or "")
-        if not spk_sk:
-            raise ValueError("missing_spk_sk")
-        
-        from_static = header["static_pub"]
-        from_pub = header["eph_pub"]
+        try:
+            provider_me = self._pwd_provider_for(me)
+            pkinfo = COM.get_local_prekeys_for_recv(me, provider_me)
+            spk_sk = (pkinfo.get("spk_sk") or "")
+            if not spk_sk:
+                log.warning("[_init_responder_session] missing spk_sk for %s", me)
+                return None
+            
+            from_static = header.get("static_pub", "")
+            from_pub = header.get("eph_pub", "")
+            if not from_static or not from_pub:
+                return None
 
-        exp_static = self.expected_pub_or_lookup(frm)
-        if exp_static and exp_static != from_static:
-            log.warning("[poll] static pub mismatch for %s expected=%s got=%s", frm, exp_static, from_static)
-            if callable(self.on_partner_key_changed):
-                try:
-                    self.on_partner_key_changed(frm, exp_static, from_static)
-                except Exception:
-                    log.exception("partner key error")
+            exp_static = self.expected_pub_or_lookup(frm)
+            if exp_static and exp_static != from_static:
+                log.warning("[poll] static pub mismatch for %s expected=%s got=%s", frm, exp_static, from_static)
+                if callable(self.on_partner_key_changed):
+                    try:
+                        self.on_partner_key_changed(frm, exp_static, from_static)
+                    except Exception:
+                        log.exception("partner key error")
+                return None
+
+            ikr = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_sk_hex))
+            spks = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(spk_sk))
+            iks_pub = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(from_static))
+            eph_pub = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(from_pub))
+            dh1 = spks.exchange(iks_pub)
+            dh2 = ikr.exchange(eph_pub)
+            dh3 = spks.exchange(eph_pub)
+            secret = dh1 + dh2 + dh3
+
+            if used_opk:
+                opk_sk = COM.consume_opk_priv(me, used_opk, provider_me)
+                if opk_sk:
+                    opks = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(opk_sk))
+                    secret += opks.exchange(eph_pub)
+
+            rk = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:x3dh:v1").derive(secret)
+            _, my_pk_hex = self._get_chat_dh(me)
+            sess = RatchetSession.init_as_responder(
+                root_key=rk,
+                my_identity=my_pk_hex,
+                their_identity=from_static,
+                their_first_eph=from_pub,
+                my_ratchet_priv=spks,
+                my_static_hex=my_pk_hex,
+            )
+            key = self._session_key(me, frm)
+            self._sessions[key] = sess
+            self._persist_session(me, frm, sess)
+            return sess
+        except Exception as e:
+            log.warning("[_init_responder_session] failed to initialize responder session for %s: %s", frm, e)
             return None
-
-        ikr = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(my_sk_hex))
-        spks = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(spk_sk))
-        iks_pub = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(from_static))
-        eph_pub = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(from_pub))
-        dh1 = spks.exchange(iks_pub)
-        dh2 = ikr.exchange(eph_pub)
-        dh3 = spks.exchange(eph_pub)
-        secret = dh1 + dh2 + dh3
-
-        if used_opk:
-            opk_sk = COM.consume_opk_priv(me, used_opk, provider_me)
-            if opk_sk:
-                opks = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(opk_sk))
-                secret += opks.exchange(eph_pub)
-
-        rk = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"tsar:x3dh:v1").derive(secret)
-        _, my_pk_hex = self._get_chat_dh(me)
-        sess = RatchetSession.init_as_responder(
-            root_key=rk,
-            my_identity=my_pk_hex,
-            their_identity=from_static,
-            their_first_eph=from_pub,
-            my_ratchet_priv=spks,
-            my_static_hex=my_pk_hex,
-        )
-        key = self._session_key(me, frm)
-        self._sessions[key] = sess
-        self._persist_session(me, frm, sess)
-        return sess
 
     def _decrypt_chat_message(self, me: str, frm: str, sess, enc, mid, ts, header):
         pt = sess.decrypt(enc, frm, me, mid, ts, header)

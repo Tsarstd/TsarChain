@@ -19,16 +19,13 @@ All cryptographic primitives follow the Signal protocol specifications.
 """
 
 import os
-import re
 import time
 import hashlib
-from pathlib import Path
 from typing import Optional, Dict
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.asymmetric import x25519, ec
 from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
 
@@ -265,6 +262,15 @@ def rotate_signed_prekey(addr: str, password_provider=None) -> dict:
     payload = CFG.CHAT_SPK + bytes.fromhex(spk_pk) + b"|" + sp_pub
     sig = sign(sp_priv, payload)
     record = _load_prekey_record(addr, password_provider) or {}
+
+    opk_list = []
+    opk_pairs = []
+    refill_count = CFG.CHAT_OPK_REFILL_COUNT
+    for _ in range(int(refill_count)):
+        sk, pk = chat_dh_gen_keypair()
+        opk_list.append(pk)
+        opk_pairs.append({"sk": sk, "pk": pk, "used": False})
+
     record.update({
         "addr": addr.lower(),
         "ik": record.get("ik"),
@@ -272,8 +278,8 @@ def rotate_signed_prekey(addr: str, password_provider=None) -> dict:
         "spk_sk": spk_sk,
         "sig": sig,
         "created": int(time.time()),
-        "opk_list": [],
-        "opk_pairs": [],
+        "opk_list": opk_list,
+        "opk_pairs": opk_pairs,
     })
     _store_prekey_record(addr, record, password_provider)
     return record
