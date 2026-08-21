@@ -438,36 +438,37 @@ class ChainStorage:
 
 
     def _run_backup(self, target_dir: str, height: int, ts_hint: int | None):
+        target_dir = os.path.abspath(target_dir)
+        os.makedirs(target_dir, exist_ok=True)
+        staging_dir = f"{target_dir}.staging_{int(time.time())}"
         try:
-            # 1) Copy all 5 active LMDB environments -> data/snapshot/
-            self._copy_snapshot_env(target_dir)
+            # 1) Copy all 5 active LMDB environments -> isolated staging directory
+            self._copy_snapshot_env(staging_dir)
 
-            backup_dir = os.path.abspath(target_dir)
-
-            # 2) Package sub-databases into tsarchain.tar.gz
-            archive_path = os.path.join(backup_dir, "tsarchain.tar.gz")
-            with tarfile.open(archive_path, "w:gz") as tar:
+            # 2) Package sub-databases into tsarchain.tar.gz in staging
+            staging_archive = os.path.join(staging_dir, "tsarchain.tar.gz")
+            with tarfile.open(staging_archive, "w:gz") as tar:
                 for db_name in ("chain", "utxo", "state", "graffiti", "mempool"):
-                    db_path = os.path.join(backup_dir, db_name)
+                    db_path = os.path.join(staging_dir, db_name)
                     if os.path.exists(db_path):
                         tar.add(db_path, arcname=db_name)
 
             # 3) Clean up uncompressed raw staging folders to save disk space
             for db_name in ("chain", "utxo", "state", "graffiti", "mempool"):
-                db_path = os.path.join(backup_dir, db_name)
+                db_path = os.path.join(staging_dir, db_name)
                 if os.path.exists(db_path):
                     shutil.rmtree(db_path, ignore_errors=True)
 
-            archive_stat = os.stat(archive_path)
+            archive_stat = os.stat(staging_archive)
             archive_size = int(archive_stat.st_size)
-            archive_sha = self._hash_file(archive_path)
+            archive_sha = self._hash_file(staging_archive)
 
             # 4) Tip timestamp
             tip_ts = ts_hint
             if tip_ts is None and self.blockchain.chain:
                 tip_ts = int(getattr(self.blockchain.chain[-1], "timestamp", 0) or 0)
 
-            # 5) Write metadata and manifest
+            # 5) Write metadata and manifest into staging
             meta = {
                 "height": int(height),
                 "generated_at": int(tip_ts or time.time()),
@@ -478,34 +479,40 @@ class ChainStorage:
             }
 
             meta_name = os.path.basename(CFG.SNAPSHOT_META_PATH or "snapshot.meta.json")
-            backup_meta_path = os.path.join(backup_dir, meta_name)
-            with open(backup_meta_path, "w", encoding="utf-8") as fh:
+            staging_meta_path = os.path.join(staging_dir, meta_name)
+            with open(staging_meta_path, "w", encoding="utf-8") as fh:
                 json.dump(meta, fh, indent=2, sort_keys=True)
 
-            self._write_snapshot_manifest(backup_dir, meta, height)
+            self._write_snapshot_manifest(staging_dir, meta, height)
+
+            # 6) Atomically replace output files in target_dir (never delete or rename target_dir itself)
+            target_archive = os.path.join(target_dir, "tsarchain.tar.gz")
+            target_meta = os.path.join(target_dir, meta_name)
+            target_manifest = os.path.join(target_dir, "snapshot.manifest.json")
+
+            os.replace(staging_archive, target_archive)
+            os.replace(staging_meta_path, target_meta)
+            staging_manifest = os.path.join(staging_dir, "snapshot.manifest.json")
+            if os.path.exists(staging_manifest):
+                os.replace(staging_manifest, target_manifest)
 
             self.blockchain._snapshot_last_backup_height = height
-            log.info("[backup_snapshot] Snapshot archive created at height %s in %s (%.2f MB)", height, archive_path, archive_size / (1024 * 1024))
+            log.info("[backup_snapshot] Snapshot archive created at height %s in %s (%.2f MB)", height, target_archive, archive_size / (1024 * 1024))
         except Exception:
             log.exception("[backup_snapshot] Unexpected error during snapshot backup:")
         finally:
+            if os.path.exists(staging_dir):
+                shutil.rmtree(staging_dir, ignore_errors=True)
             with self._backup_lock:
                 self.blockchain._snapshot_backup_active = False
 
 
     def _copy_snapshot_env(self, target_dir: str) -> None:
         target_dir = os.path.abspath(target_dir)
-        parent = os.path.dirname(target_dir)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-
-        tmp_dir = f"{target_dir}.tmp"
-        if os.path.exists(tmp_dir):
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-        os.makedirs(tmp_dir, exist_ok=True)
+        os.makedirs(target_dir, exist_ok=True)
 
         for db_name in ("chain", "utxo", "state", "graffiti", "mempool"):
-            sub_dir = os.path.join(tmp_dir, db_name)
+            sub_dir = os.path.join(target_dir, db_name)
             try:
                 env = _ensure_env(db_name)
                 if env is not None:
@@ -513,10 +520,6 @@ class ChainStorage:
                     env.copy(sub_dir, compact=True)
             except Exception as exc:
                 log.warning("[_copy_snapshot_env] Failed to copy sub-DB %s: %s", db_name, exc)
-
-        if os.path.exists(target_dir):
-            shutil.rmtree(target_dir, ignore_errors=True)
-        os.replace(tmp_dir, target_dir)
 
     
     @staticmethod

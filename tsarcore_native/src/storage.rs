@@ -335,26 +335,13 @@ impl LmdbBackend {
                 let flags = lmdb::EnvironmentFlags::NO_META_SYNC
                     | lmdb::EnvironmentFlags::NO_MEM_INIT;
                 builder.set_flags(flags);
-                log_warning(&format!(
-                    "[lmdb] HDD profile applied for path='{}': NOMETASYNC | NOMEMINIT",
-                    path.display()
-                ));
             }
             DriveType::Ssd => {
                 let flags = lmdb::EnvironmentFlags::NO_META_SYNC
                     | lmdb::EnvironmentFlags::NO_MEM_INIT;
                 builder.set_flags(flags);
-                log_warning(&format!(
-                    "[lmdb] SSD profile applied for path='{}': NOMETASYNC | NOMEMINIT",
-                    path.display()
-                ));
             }
-            DriveType::Nvme => {
-                log_warning(&format!(
-                    "[lmdb] NVME profile applied for path='{}': standard sync",
-                    path.display()
-                ));
-            }
+            DriveType::Nvme => {}
         }
 
         let env = builder.open(path).map_err(|e| map_err("lmdb open", e))?;

@@ -310,6 +310,46 @@ def test_hash_file(tmp_path):
     assert hash_val is None
 
 
+def test_run_backup_atomic_replace(storage, monkeypatch, tmp_path):
+    target_dir = tmp_path / "snapshot"
+    target_dir.mkdir()
+    # Create an existing file simulating an already running HTTP server directory
+    existing_dummy = target_dir / "index.html"
+    existing_dummy.write_text("server running", encoding="utf-8")
+
+    # Mock _ensure_env so env.copy creates dummy data.mdb in each sub-db
+    class FakeEnv:
+        def copy(self, path, compact=True):
+            os.makedirs(path, exist_ok=True)
+            with open(os.path.join(path, "data.mdb"), "w") as fh:
+                fh.write("dummy-data")
+
+    monkeypatch.setattr('tsarchain.consensus.chain_storage._ensure_env', lambda *args, **kwargs: FakeEnv())
+    storage.chain = [Mock(timestamp=123456)]
+
+    storage.chain_storage._run_backup(str(target_dir), height=60, ts_hint=123456)
+
+    # 1. Target dir was NOT wiped out and existing files still exist
+    assert existing_dummy.exists()
+    assert existing_dummy.read_text(encoding="utf-8") == "server running"
+
+    # 2. Snapshot archive and metadata exist in target_dir
+    archive = target_dir / "tsarchain.tar.gz"
+    manifest = target_dir / "snapshot.manifest.json"
+    meta = target_dir / "snapshot.meta.json"
+    assert archive.exists()
+    assert manifest.exists()
+    assert meta.exists()
+
+    with open(manifest, encoding="utf-8") as f:
+        manifest_data = json.load(f)
+    assert manifest_data["height"] == 60
+
+    # 3. State updated
+    assert storage._snapshot_last_backup_height == 60
+
+
+
 # ----------------------------------------------------------------------
 # save_chain / load_chain tests
 # ----------------------------------------------------------------------
