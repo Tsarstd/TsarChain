@@ -118,17 +118,6 @@ KV_ITER_CHUNK      = 512 # number of entries per chunk when iterating prefix sca
 # ---- KEYS & SECRETS DATABASE PATHS (LMDB) ----
 LMDB_KEYS_DIR      = "data/keys"  # centralized LMDB path for all secrets/keys
 
-# Key store identifiers / record names
-NODE_KEY_PATH      = "data/keys/node_key"  # primary node identity key identifier
-ARCHIVIST_KEY_PATH = "data/keys/archivist_key"  # archivist node identity key identifier
-PEER_KEYS_PATH     = "data/keys/peer_keys"  # peer key cache identifier
-USER_KEY_PATH      = "data/keys/user_key"  # wallet user keypair identifier
-REGISTRY_PATH      = "data/keys/wallet_registry"  # wallet registry identifier
-CHAT_STATE         = "data/keys/chat_config"  # chat preferences/state identifier
-CHAT_KEYS_DIR      = "data/keys/chat_keys"  # chat keys directory
-PREKEY_DIR         = "data/keys/chat_prekeys"  # chat prekeys directory
-CHAT_SESSION_DIR   = "data/keys/chat_sessions"  # chat sessions directory
-
 
 # ---- ARCHIVIST LMDB PATH ----
 ARCHIVIST_INDEX_DB_PATH         = "data/archivist/storage/index_db"

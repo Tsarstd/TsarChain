@@ -98,8 +98,8 @@ def sniff_first_json_frame(sock: socket.socket, timeout: float = 2.0, *, peer_ip
     return raw, json.loads(raw.decode("utf-8"))
 
 
-def load_or_create_keypair_at(path: str) -> tuple[str, str, str]:
-    record = load_node_key(path)
+def load_or_create_keypair_at(name_or_path: str = "node_key") -> tuple[str, str, str]:
+    record = load_node_key(name_or_path)
     if record and record.get("id") and record.get("pubkey") and record.get("privkey"):
         return record["id"], record["pubkey"], record["privkey"]
 
@@ -109,7 +109,7 @@ def load_or_create_keypair_at(path: str) -> tuple[str, str, str]:
     pub_hex  = vk.encode(encoder=HexEncoder).decode()
     node_id  = hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()
     payload = {"id": node_id, "pubkey": pub_hex, "privkey": priv_hex, "created": int(time.time())}
-    save_node_key(path, payload)
+    save_node_key(name_or_path, payload)
     return node_id, pub_hex, priv_hex
 
 

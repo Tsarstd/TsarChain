@@ -89,7 +89,7 @@ class Network(NetworkProxy):
             Network.active_ports.add(self.port)
 
     def _init_identity_and_broadcast(self, blockchain=None) -> None:
-        self.node_id, self.pubkey, self.privkey = load_or_create_keypair_at(CFG.NODE_KEY_PATH)
+        self.node_id, self.pubkey, self.privkey = load_or_create_keypair_at("node_key")
         self.node_ctx = {
             "net_id": CFG.DEFAULT_NET_ID,
             "node_id": self.node_id,

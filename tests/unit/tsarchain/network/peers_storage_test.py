@@ -17,10 +17,6 @@ def mock_kv():
 @pytest.fixture
 def mock_cfg():
     with patch("tsarchain.network.peers_storage.CFG") as mock_cfg:
-        mock_cfg.NODE_KEY_PATH = "data/keys/node_key"
-        mock_cfg.ARCHIVIST_KEY_PATH = "data/keys/archivist_key"
-        mock_cfg.PEER_KEYS_PATH = "data/keys/peer_keys"
-        mock_cfg.USER_KEY_PATH = "data/keys/user_key"
         mock_cfg.CANONICAL_SEP = (',', ':')
         yield mock_cfg
 
@@ -102,7 +98,7 @@ def test_save_peer_keys():
 def test_resolve_key_and_path(mock_cfg):
     key, path = peers_storage._resolve_key_and_path("node_key")
     assert key == "node_key"
-    assert path == "data/keys/node_key"
+    assert path == "node_key"
 
     key, path = peers_storage._resolve_key_and_path("data/keys/node_key")
     assert key == "node_key"
@@ -113,7 +109,7 @@ def test_resolve_key_and_path(mock_cfg):
     assert path == "data/keys/user_key"
 
     key, path = peers_storage._resolve_key_and_path("custom/secret.key")
-    assert key == "custom/secret.key"
+    assert key == "secret.key"
     assert path == "custom/secret.key"
 
 def test_load_record_not_found(mock_kv, mock_cfg):

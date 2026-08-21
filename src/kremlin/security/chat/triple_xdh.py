@@ -75,7 +75,6 @@ class ChatManager:
         self.on_partner_key_changed: Optional[Callable[[str, str, str], None]] = None
         self.on_partner_presence: Optional[Callable[[str, Optional[int]], None]] = None
         self.presence_ts: Dict[str, int] = {}
-        os.makedirs(CFG.CHAT_SESSION_DIR, exist_ok=True)
 
     # ----------------------------------------------------------------------
     # Key Management (Caching & Password)

@@ -45,21 +45,10 @@ def isolate_unit_test_storage(request, tmp_path, monkeypatch):
     monkeypatch.setattr(CFG, "SNAPSHOT_META_PATH", str(mock_data / "node/snapshot.meta.json"))
     monkeypatch.setattr(CFG, "SNAPSHOT_BACKUP_DIR", str(mock_data / "snapshot"))
     monkeypatch.setattr(CFG, "ARCHIVIST_INDEX_DB_PATH", str(mock_data / "archivist/storage/index_db"))
-    monkeypatch.setattr(CFG, "ARCHIVIST_KEY_PATH", str(mock_data / "keys/archivist_key"))
     monkeypatch.setattr(CFG, "ARCHIVIST_PAYOUT_GUARD_DB_PATH", str(mock_data / "archivist/storage/payout_guard"))
     monkeypatch.setattr(CFG, "STORAGE_DIR", str(mock_data / "archivist/storage"))
 
-    # 4. Patch centralized key identifiers and paths
-    monkeypatch.setattr(CFG, "NODE_KEY_PATH", str(mock_data / "keys/node_key"))
-    monkeypatch.setattr(CFG, "PEER_KEYS_PATH", str(mock_data / "keys/peer_keys"))
-    monkeypatch.setattr(CFG, "USER_KEY_PATH", str(mock_data / "keys/user_key"))
-    monkeypatch.setattr(CFG, "REGISTRY_PATH", str(mock_data / "keys/wallet_registry"))
-    monkeypatch.setattr(CFG, "CHAT_STATE", str(mock_data / "keys/chat_config"))
-    monkeypatch.setattr(CFG, "CHAT_KEYS_DIR", str(mock_data / "keys/chat_keys"))
-    monkeypatch.setattr(CFG, "PREKEY_DIR", str(mock_data / "keys/chat_prekeys"))
-    monkeypatch.setattr(CFG, "CHAT_SESSION_DIR", str(mock_data / "keys/chat_sessions"))
-
-    # 6. Clear singleton storage caches before test
+    # 4. Clear singleton storage caches before test
     try:
         from tsarchain.storage import kv
         kv._native_stores.clear()

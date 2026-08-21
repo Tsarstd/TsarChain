@@ -46,25 +46,18 @@ def load_peer_keys() -> Dict[str, str]:
 # =============================================================================
 
 
+def _resolve_db_key(name_or_path: str) -> str:
+    base = os.path.basename(name_or_path.strip().replace("\\", "/"))
+    return base if base else name_or_path
+
+
 def _resolve_key_and_path(name_or_path: str) -> tuple[str, Optional[str]]:
-    record_paths = {
-        "node_key": CFG.NODE_KEY_PATH,
-        "archivist_key": CFG.ARCHIVIST_KEY_PATH,
-        "peer_keys": CFG.PEER_KEYS_PATH,
-        "user_key": CFG.USER_KEY_PATH,
-    }
-    if name_or_path in record_paths:
-        return name_or_path, record_paths[name_or_path]
-
-    for key, path in record_paths.items():
-        if path and (name_or_path == path or os.path.normpath(name_or_path) == os.path.normpath(path)):
-            return key, path
-
-    return name_or_path, name_or_path
+    key = _resolve_db_key(name_or_path)
+    return key, name_or_path
 
 
 def _load_record(name: str) -> Optional[Dict]:
-    db_key, _ = _resolve_key_and_path(name)
+    db_key = _resolve_db_key(name)
     raw = get(KEYS_DB_NAME, db_key.encode("utf-8"))
     if raw is not None:
         try:
@@ -75,6 +68,6 @@ def _load_record(name: str) -> Optional[Dict]:
 
 
 def _store_record(name: str, data: Dict) -> None:
-    db_key, _ = _resolve_key_and_path(name)
+    db_key = _resolve_db_key(name)
     payload = json.dumps(data, separators=CFG.CANONICAL_SEP).encode("utf-8")
     put(KEYS_DB_NAME, db_key.encode("utf-8"), payload)

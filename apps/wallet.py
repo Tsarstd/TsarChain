@@ -56,7 +56,7 @@ log = get_ctx_logger("tsarchain.wallet.gui")
 
 # ---------------- Constants & Paths ----------------
 manual_bootstrap: Optional[Tuple[str, int]] = None
-USER_ID, USER_PUB, USER_PRIV = create_keypair(CFG.USER_KEY_PATH)
+USER_ID, USER_PUB, USER_PRIV = create_keypair("user_key")
 USER_CTX = {"net_id": CFG.DEFAULT_NET_ID, "node_id": USER_ID, "pubkey": USER_PUB, "privkey": USER_PRIV}
 
 def _load_peer_keys() -> dict:

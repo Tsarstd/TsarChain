@@ -69,27 +69,26 @@ def mock_password_prompt():
 
 @pytest.fixture
 def chat_manager(mock_rpc, mock_password_prompt):
-    with patch.object(CFG, "CHAT_SESSION_DIR", "/tmp/chat_sessions"):
-        mgr = ChatManager(
-            rpc_send=mock_rpc,
-            password_prompt_cb=mock_password_prompt,
-            key_ttl_sec=3600,
-        )
-        # Reset internal caches
-        mgr.priv_cache = {}
-        mgr.pub_cache = {}
-        mgr._chat_dh_cache = {}
-        mgr._pwd_cache = {}
-        mgr._last_prekey_publish = {}
-        mgr._last_inventory_check = {}
-        mgr._prekey_bundle_cache = {}
-        mgr._sessions = {}
-        mgr._pending_used_opk = {}
-        mgr._registered_addrs = set()
-        # Mock internal methods to avoid side effects
-        mgr._ensure_prekey_inventory = MagicMock()
-        mgr._can_publish_prekeys = MagicMock(wraps=mgr._can_publish_prekeys)
-        return mgr
+    mgr = ChatManager(
+        rpc_send=mock_rpc,
+        password_prompt_cb=mock_password_prompt,
+        key_ttl_sec=3600,
+    )
+    # Reset internal caches
+    mgr.priv_cache = {}
+    mgr.pub_cache = {}
+    mgr._chat_dh_cache = {}
+    mgr._pwd_cache = {}
+    mgr._last_prekey_publish = {}
+    mgr._last_inventory_check = {}
+    mgr._prekey_bundle_cache = {}
+    mgr._sessions = {}
+    mgr._pending_used_opk = {}
+    mgr._registered_addrs = set()
+    # Mock internal methods to avoid side effects
+    mgr._ensure_prekey_inventory = MagicMock()
+    mgr._can_publish_prekeys = MagicMock(wraps=mgr._can_publish_prekeys)
+    return mgr
 
 
 # ---------- Tests ----------

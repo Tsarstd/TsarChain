@@ -59,6 +59,7 @@ NODE_SUBDB_PATHS = {
     'mempool': 'data/node/mempool',
     'graffiti': 'data/node/graffiti',
 }
+KEYS_SUBDBS = ['node_secrets', 'secure_wallet', 'wallet_peer_keys', 'stor_peer_keys']
 KEYS_ENV_PATH = "data/keys"
 LEGACY_NODE_PATH = "data/node"
 
@@ -233,7 +234,7 @@ def open_lmdb_env_dbi(env_path: str, db_name: Optional[str] = None) -> Tuple[Opt
 # ============================================================
 
 def export_keys_data() -> int:
-    """Exports node_secrets from data/keys to data/keys/json_output/node_secrets.json."""
+    """Exports key sub-databases (node_secrets, secure_wallet, wallet_peer_keys, stor_peer_keys) from data/keys to data/keys/json_output/."""
     print("\n🔑 --- Exporting Keys Data ---")
     os.makedirs(KEYS_OUTPUT_DIR, exist_ok=True)
 
@@ -242,19 +243,25 @@ def export_keys_data() -> int:
         print(f"⚠️  Keys LMDB environment directory not found at '{env_path}', skipping...")
         return 0
 
-    env, dbi = open_lmdb_env_dbi(env_path, 'node_secrets')
-    if not env or dbi is None:
-        print(f"⚠️  Sub-database 'node_secrets' not found in {env_path}, skipping...")
-        return 0
+    total_entries = 0
+    for subdb in KEYS_SUBDBS:
+        env, dbi = open_lmdb_env_dbi(env_path, subdb)
+        if not env or dbi is None:
+            continue
 
-    output_file = os.path.join(KEYS_OUTPUT_DIR, "node_secrets.json")
-    print(f"📁 Reading 'node_secrets' from {env_path}")
-    with env.begin(db=dbi, write=False) as txn:
-        with txn.cursor() as cursor:
-            count = stream_write_json(output_file, cursor, db_name="node_secrets")
-            print(f"   ✅ {count} entries written to {output_file}")
-    env.close()
-    return count
+        output_file = os.path.join(KEYS_OUTPUT_DIR, f"{subdb}.json")
+        print(f"📁 Reading '{subdb}' from {env_path}")
+        with env.begin(db=dbi, write=False) as txn:
+            with txn.cursor() as cursor:
+                count = stream_write_json(output_file, cursor, db_name=subdb)
+                print(f"   ✅ {count} entries written to {output_file}")
+                total_entries += count
+        env.close()
+
+    if total_entries == 0:
+        print(f"ℹ️  No populated key sub-databases found in '{env_path}'.")
+
+    return total_entries
 
 
 def sort_utxo_items(items):
@@ -489,7 +496,7 @@ def export_lmdb():
     print("\n" + "=" * 72)
     print("🔒 ALL LMDB EXPORTS & BINARY DECODING COMPLETED SUCCESSFULLY.")
     print("📊 SUMMARY OF EXPORTED ENTRIES:")
-    print(f"   - Keys (node_secrets)    : {keys_count}")
+    print(f"   - Keys (secrets/wallets) : {keys_count}")
     print(f"   - Node (chain,utxo,etc)  : {node_count}")
     print(f"   - Archivist (storage)    : {archivist_count}")
     print(f"   - Web (explorer cache)   : {web_count}")

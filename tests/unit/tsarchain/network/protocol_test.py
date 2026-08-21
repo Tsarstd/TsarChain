@@ -73,7 +73,6 @@ def mock_cfg():
         m.MAX_HANDSHAKE_BYTES = 16384
         m.CANONICAL_SEP = (",", ":")
         m.DEFAULT_NET_ID = "testnet"
-        m.NODE_KEY_PATH = "data/node.key"
         m.HANDSHAKE_TIMEOUT = 10
         m.BAN_MALICIOUS_RPC = 600
         m.P2P_SESSION_TTL_S = 3600

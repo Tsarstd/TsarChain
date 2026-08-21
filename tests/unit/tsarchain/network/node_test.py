@@ -14,7 +14,6 @@ def mock_cfg():
         m_cfg.PORT_START = 8000
         m_cfg.PORT_END = 8005
         m_cfg.DEFAULT_NET_ID = "testnet"
-        m_cfg.NODE_KEY_PATH = "dummy_path"
         m_cfg.BOOTSTRAP_NODES = [("1.1.1.1", 8000)]
         m_cfg.BOOTSTRAP_NODE = ("1.1.1.1", 8000)
         m_cfg.PEER_SCORE_START = 100

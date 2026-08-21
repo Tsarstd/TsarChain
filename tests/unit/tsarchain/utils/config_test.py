@@ -14,7 +14,4 @@ def test_clean_relative_paths():
     assert CFG.LMDB_UTXO_DIR == "data/node/utxo"
     assert CFG.LMDB_STATE_DIR == "data/node/state"
     assert CFG.LMDB_KEYS_DIR == "data/keys"
-    assert CFG.NODE_KEY_PATH == "data/keys/node_key"
-    assert CFG.ARCHIVIST_KEY_PATH == "data/keys/archivist_key"
-    assert CFG.USER_KEY_PATH == "data/keys/user_key"
     assert CFG.STORAGE_DIR == "data/archivist/storage"

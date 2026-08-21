@@ -37,8 +37,8 @@ log = get_ctx_logger("tsarchain.contracts.storage_node.connect")
 manual_bootstrap: Optional[Tuple[str, int]] = None
 
 
-def create_keypair(path: str) -> tuple[str, str, str]:
-    record = load_node_key(path)
+def create_keypair(key_name: str = "archivist_key") -> tuple[str, str, str]:
+    record = load_node_key(key_name)
     if record and record.get("id") and record.get("pubkey") and record.get("privkey"):
         return record["id"], record["pubkey"], record["privkey"]
     sk = SigningKey.generate()
@@ -47,7 +47,7 @@ def create_keypair(path: str) -> tuple[str, str, str]:
     pub_hex  = vk.encode(encoder=HexEncoder).decode()
     node_id  = hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()
     payload = {"id": node_id, "pubkey": pub_hex, "privkey": priv_hex, "created": int(time.time())}
-    save_node_key(path, payload)
+    save_node_key(key_name, payload)
     return node_id, pub_hex, priv_hex
 
 
@@ -84,9 +84,9 @@ def _save_stor_peer_keys(data: Optional[dict] = None) -> None:
 
 
 def _scan_nodes(start: int = CFG.PORT_START, end: int = CFG.PORT_END, manual_nodes: Optional[Sequence[Tuple[str,int]]] = None) -> List[Tuple[str,int]]:
-    kp = load_node_key(CFG.ARCHIVIST_KEY_PATH)
+    kp = load_node_key("archivist_key")
     if kp is None:
-        node_id, pub_hex, priv_hex = create_keypair(CFG.ARCHIVIST_KEY_PATH)
+        node_id, pub_hex, priv_hex = create_keypair("archivist_key")
     else:
         node_id = kp["id"]
         pub_hex = kp["pubkey"]
@@ -193,7 +193,7 @@ class NodeDirectory:
 
 class RPC:
     def __init__(self):
-        node_id, pub, priv = create_keypair(CFG.ARCHIVIST_KEY_PATH)
+        node_id, pub, priv = create_keypair("archivist_key")
         self.ctx = {"net_id": CFG.DEFAULT_NET_ID, "node_id": node_id, "privkey": priv}
         self.pub = pub
         self.priv = priv

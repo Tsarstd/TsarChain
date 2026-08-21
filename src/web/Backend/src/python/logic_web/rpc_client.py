@@ -25,7 +25,7 @@ RPC_SOURCE = "web_backend"
 
 
 def _mk_client(host: str, port: int):
-    user_id, user_pub, user_priv = load_or_create_keypair_at(CFG.USER_KEY_PATH)
+    user_id, user_pub, user_priv = load_or_create_keypair_at("user_key")
     user_ctx = {"net_id": CFG.DEFAULT_NET_ID, "node_id": user_id, "pubkey": user_pub, "privkey": user_priv}
     return NodeClient(CFG, user_ctx=user_ctx, manual_bootstrap=(host, port))
 
