@@ -293,8 +293,18 @@ The node operates purely as a **Blind Relay & Ephemeral Mailbox Router** with ze
   - `ik` *(Identity Key)*: User's long-term public X25519 identity key.
   - `spk` *(Signed Prekey)*: Semi-static ephemeral public key authenticated via ECDSA Secp256k1.
   - `sig`: Identity digital signature over the canonical payload `TSAR-SPK|<spk_bytes>|<spend_pub_bytes>`.
+  - `spend_pub`: User's 33-byte compressed Secp256k1 public key (flag `0x08`) for signature verification.
   - `opk_list` *(One-Time Prekeys Pool)*: Pool of single-use ephemeral keys for maximum Forward Secrecy.
-* **Compact Binary Encoding**: Packed into a zero-overhead raw binary structure (`<QB` header, 32B IK, 32B SPK, signature bytes, and contiguous 32B OPKs) for >60% storage reduction.
+* **Compact Binary Encoding**: Packed into a zero-overhead raw binary structure (`<QB` header, 32B IK, 32B SPK, signature bytes, optional 33B spend pubkey, and contiguous 32B OPKs) for >60% storage reduction.
+* **Node Restart Resilience (Auto-Rehydration)**:
+  - `spend_pub` is persisted in LMDB alongside prekeys.
+  - If the node restarts and RAM cache misses, `get_spend_pub(addr)` automatically lazy-loads `spend_pub` from LMDB into RAM, preventing `no_spend_pub` / `not_registered` errors on existing wallet sessions.
+* **In-Memory `last_seen` Cache**:
+  - Status lookups (`CHAT_LOOKUP_PUB`) read directly from `self.chat_presence_ts` in RAM (with fallback to LMDB only on cold cache miss), eliminating redundant disk I/O during periodic polling.
+* **Bounded ThreadPool for Presence Gossip**:
+  - Presence broadcasts are handled by a dedicated `ThreadPoolExecutor(max_workers=4, thread_name_prefix="presence_relay")`, avoiding OS thread exhaustion under high network load.
+* **Low-Latency Transport (`TCP_NODELAY`)**:
+  - Sockets disable Nagle's algorithm with `TCP_NODELAY` for immediate packet transmission without buffering delay.
 * **Atomic Key Consumption (FIFO Pop)**:
   - When an initiator calls `CHAT_GET_PREKEY`, the node consumes the top OPK via `lst.pop(0)` and atomically updates the record in LMDB.
   - A consumed OPK is **never issued to any other peer**, ensuring each new cryptographic session begins with unique ephemeral entropy.
@@ -310,9 +320,9 @@ The node operates purely as a **Blind Relay & Ephemeral Mailbox Router** with ze
   - **Recipient Offline**: Transit payloads are held in node RAM.
   - **Recipient Online (`CHAT_PULL`)**: The node executes `dq.popleft()` for each retrieved message. The payload is **permanently and immediately deleted from node RAM on delivery**.
   - **Quota Reset**: The recipient's mailbox slot immediately returns to `0 / 250`.
-* **Automated Garbage Collection (`gc_mailboxes`)**:
+* **Asynchronous Garbage Collection (`gc_mailboxes`)**:
   - Messages carry a time-to-live of `CFG.CHAT_TTL_S = 86400` (24 hours).
-  - Background workers and lazy pull/put hooks automatically purge expired, uncollected messages.
+  - Background discovery loop automatically sweeps expired messages asynchronously, keeping client `CHAT_PULL` response latency minimal (sub-millisecond).
 * **Privacy & Anti-Forensic Guarantee**:
   - The mailbox is **In-Memory Ephemeral (Zero Disk/LMDB Writes)**.
   - No plaintext, ciphertext, or transmission metadata is retained on storage media, ensuring high forensic privacy.

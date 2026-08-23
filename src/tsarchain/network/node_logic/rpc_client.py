@@ -175,6 +175,10 @@ def _connect_socket(target: Tuple[str, int], timeout: float) -> socket.socket:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
     s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
+    try:
+        s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    except Exception:
+        pass
     s.settimeout(timeout)
     s.connect((host, port))
     return s

@@ -41,6 +41,7 @@ def encode_prekey_bundle(bundle: dict) -> bytes:
     ik = bundle.get("ik")
     spk = bundle.get("spk")
     sig = bundle.get("sig")
+    spend_pub = bundle.get("spend_pub")
     opk_list = bundle.get("opk_list") or []
 
     flags = 0
@@ -64,6 +65,12 @@ def encode_prekey_bundle(bundle: dict) -> bytes:
                 body.extend(struct.pack("<H", len(sig_bytes)))
                 body.extend(sig_bytes)
                 flags |= 0x04
+        except ValueError:
+            pass
+    if isinstance(spend_pub, str) and len(spend_pub) == 66:
+        try:
+            body.extend(bytes.fromhex(spend_pub))
+            flags |= 0x08
         except ValueError:
             pass
 
@@ -90,6 +97,7 @@ def decode_prekey_bundle(raw: bytes) -> dict:
         ik = None
         spk = None
         sig = None
+        spend_pub = None
         if flags & 0x01:
             if offset + 32 <= len(raw):
                 ik = raw[offset:offset+32].hex()
@@ -105,6 +113,10 @@ def decode_prekey_bundle(raw: bytes) -> dict:
                 if offset + sig_len <= len(raw):
                     sig = raw[offset:offset+sig_len].hex()
                     offset += sig_len
+        if flags & 0x08:
+            if offset + 33 <= len(raw):
+                spend_pub = raw[offset:offset+33].hex()
+                offset += 33
         opk_list = []
         if offset + 4 <= len(raw):
             opk_count = struct.unpack_from("<I", raw, offset)[0]
@@ -120,6 +132,8 @@ def decode_prekey_bundle(raw: bytes) -> dict:
             res["spk"] = spk
         if sig:
             res["sig"] = sig
+        if spend_pub:
+            res["spend_pub"] = spend_pub
         if opk_list:
             res["opk_list"] = opk_list
         return res
@@ -130,6 +144,23 @@ def decode_prekey_bundle(raw: bytes) -> dict:
 # ------------------------------ P2P Chat ------------------------------
 
 class ChatHandler(NetworkHandlerProxy):
+    def get_spend_pub(self, addr: str) -> str | None:
+        if not addr:
+            return None
+        spend_dict = getattr(self, "chat_spend_pub", None)
+        if isinstance(spend_dict, dict):
+            sp = (spend_dict.get(addr) or "").strip().lower()
+            if sp:
+                return sp
+        b = self.get_prekey_bundle(addr)
+        sp = (b.get("spend_pub") or "").strip().lower()
+        if sp:
+            with self.chat_lock:
+                if isinstance(getattr(self, "chat_spend_pub", None), dict):
+                    self.chat_spend_pub[addr] = sp
+            return sp
+        return None
+
     def get_prekey_bundle(self, addr: str) -> dict:
         if not addr:
             return {}
@@ -155,6 +186,10 @@ class ChatHandler(NetworkHandlerProxy):
             raise ValueError("bad peer")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(1.5)
+            try:
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            except Exception:
+                pass
             s.connect(peer)
             env = build_envelope(payload, self.node_ctx, extra={"pubkey": self.pubkey})
             env["pubkey"] = self.pubkey

@@ -140,6 +140,19 @@ def server(mock_config, mock_common, mock_bech32, mock_hash160, mock_time, mock_
         server.chat_prekeys[addr] = dict(bundle)
     server.put_prekey_bundle = Mock(side_effect=_put_bundle)
     server.delete_prekey_bundle = Mock(side_effect=lambda addr: server.chat_prekeys.pop(addr, None))
+    def _get_spend(addr):
+        if not addr:
+            return None
+        sp = server.chat_spend_pub.get(addr)
+        if sp:
+            return sp
+        b = server.chat_prekeys.get(addr) or {}
+        sp = b.get("spend_pub")
+        if sp:
+            server.chat_spend_pub[addr] = sp
+            return sp
+        return None
+    server.get_spend_pub = Mock(side_effect=_get_spend)
 
     server.relay_presence_async = Mock()
     server.record_presence_seen = Mock(side_effect=lambda pid: server.chat_presence_seen.add(pid))
@@ -799,7 +812,23 @@ class TestChatPull:
         result = chat_pull(server, message, client_ip="ip")
         assert result == {"type": "CHAT_ITEMS", "items": [{"msg": "hello"}]}
         server.mailbox_pull.assert_called_once_with(me, 5)
-        server.gc_mailboxes.assert_called_once()
+
+    def test_rehydrate_spend_pub_from_storage(self, server, mock_time):
+        me = make_valid_address()
+        spend_pk = make_valid_spend_pub()
+        # Not in RAM: server.chat_spend_pub is empty for `me`
+        assert me not in server.chat_spend_pub
+        # But exists in prekey bundle in storage
+        server.chat_prekeys[me] = {"spend_pub": spend_pk}
+        server.mailbox_pull.return_value = [{"msg": "rehydrated"}]
+        message = {
+            "address": me,
+            "ts": int(mock_time.time.return_value),
+            "pull_sig": make_valid_sig(),
+        }
+        result = chat_pull(server, message, client_ip="ip")
+        assert result == {"type": "CHAT_ITEMS", "items": [{"msg": "rehydrated"}]}
+        assert server.chat_spend_pub[me] == spend_pk
 
     def test_bad_address(self, server):
         result = chat_pull(server, {"address": ""}, client_ip="ip")

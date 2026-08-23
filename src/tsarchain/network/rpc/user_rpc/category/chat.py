@@ -118,6 +118,7 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
             else:
                 self.chat_presence_seen.add(pid)
             b = self.get_prekey_bundle(addr_s)
+            b["spend_pub"] = spend_pk
             if "ik" not in b: 
                 b["ik"] = chat_pub
                 b["ts"] = now_int
@@ -296,7 +297,7 @@ def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
     if not addr_s or not ik or not spk or not sig:
         return {"error":"missing fields"}
     # validation: addr -> spend_pub exists? and SPK signature is signed by spend key
-    sp = (self.chat_spend_pub.get(addr_s) or "").strip().lower()
+    sp = (self.get_spend_pub(addr_s) or "").strip().lower() if hasattr(self, "get_spend_pub") else (self.chat_spend_pub.get(addr_s) or "").strip().lower()
     if not sp:
         log.warning("[chat_publish_prekeys] Unknown address %s (spend_pub missing)", addr_s)
         return {"error":"unknown_address"}
@@ -310,7 +311,7 @@ def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
         if hasattr(self, "chat_presence_ts"):
             self.chat_presence_ts[addr_s] = now_int
         rec = self.get_prekey_bundle(addr_s)
-        rec.update({"ik": ik, "spk": spk, "sig": sig, "ts": now_int})
+        rec.update({"ik": ik, "spk": spk, "sig": sig, "spend_pub": sp, "ts": now_int})
         if isinstance(opk, str) and len(opk) == 64:
             rec.setdefault("opk_list", []).append(opk)
         self.put_prekey_bundle(addr_s, rec)
@@ -409,7 +410,7 @@ def chat_send(self, message, pow_obj, base_identity, *,
     # routing authenticity signature verification (without decryption)
     if not chat_sig:
         return {"type": "CHAT_ACK", "status": "rejected", "reason": "sig_required"}
-    sp = (self.chat_spend_pub.get(frm) or "").strip().lower()
+    sp = (self.get_spend_pub(frm) or "").strip().lower() if hasattr(self, "get_spend_pub") else (self.chat_spend_pub.get(frm) or "").strip().lower()
     if not sp:
         log.warning("[chat_send] Missing spend_pub for sender %s", frm)
         return {"type": "CHAT_ACK", "status": "rejected", "reason": "no_spend_pub"}
@@ -507,7 +508,7 @@ def chat_read(self, message, pow_obj, base_identity, *,
         return pow_resp
 
     # read receipt verification
-    sp = (self.chat_spend_pub.get(reader) or "").strip().lower()
+    sp = (self.get_spend_pub(reader) or "").strip().lower() if hasattr(self, "get_spend_pub") else (self.chat_spend_pub.get(reader) or "").strip().lower()
     if not sp:
         log.warning("[chat_read] Spend pub missing for reader %s", reader)
         return {"error": "no_spend_pub"}
@@ -549,7 +550,7 @@ def chat_pull(self, message, *,
         log.warning("[chat_pull] Replay detected for %s from %s", me, client_ip)
         return {"type": "CHAT_NONE", "items": [], "error": "replay_detected"}
 
-    spend_pk = self.chat_spend_pub.get(me)
+    spend_pk = self.get_spend_pub(me) if hasattr(self, "get_spend_pub") else self.chat_spend_pub.get(me)
     if not spend_pk:
         return {"type": "CHAT_NONE", "items": [], "error": "not_registered"}
 
@@ -560,7 +561,6 @@ def chat_pull(self, message, *,
         return {"type": "CHAT_NONE", "items": [], "error": "bad_sig"}
 
     items = self.mailbox_pull(me, n)
-    self.gc_mailboxes()
     return {"type": "CHAT_ITEMS", "items": items}
 
 

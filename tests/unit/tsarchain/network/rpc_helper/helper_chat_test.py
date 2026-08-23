@@ -22,6 +22,9 @@ class DummyNode(ChatHandler):
         self.broadcast = Mock()
         self.broadcast.send_gossip = Mock()
         self.chat_lock = threading.Lock()
+        self.chat_spend_pub = {}
+        self.chat_presence_pub = {}
+        self.chat_presence_ts = {}
         self.chat_mailbox = {}
         self.chat_global_count = 0
         self.chat_seen_mid = {}
@@ -341,6 +344,7 @@ class TestPrekeyBundleSerialization:
             "ik": "a" * 64,
             "spk": "b" * 64,
             "sig": "c" * 128,
+            "spend_pub": "02" + "d" * 64,
             "opk_list": ["d" * 64, "e" * 64, "f" * 64],
         }
         raw = encode_prekey_bundle(bundle)
@@ -351,6 +355,7 @@ class TestPrekeyBundleSerialization:
         assert decoded["ik"] == bundle["ik"]
         assert decoded["spk"] == bundle["spk"]
         assert decoded["sig"] == bundle["sig"]
+        assert decoded["spend_pub"] == bundle["spend_pub"]
         assert decoded["opk_list"] == bundle["opk_list"]
 
     def test_encode_decode_partial_bundle(self):
@@ -373,6 +378,7 @@ class TestPrekeyBundleMethods:
             "ik": "11" * 32,
             "spk": "22" * 32,
             "sig": "33" * 64,
+            "spend_pub": "02" + "33" * 32,
             "opk_list": ["44" * 32, "55" * 32],
         }
         # Initially empty
@@ -384,11 +390,33 @@ class TestPrekeyBundleMethods:
         assert fetched["ik"] == bundle["ik"]
         assert fetched["spk"] == bundle["spk"]
         assert fetched["sig"] == bundle["sig"]
+        assert fetched["spend_pub"] == bundle["spend_pub"]
         assert fetched["opk_list"] == bundle["opk_list"]
 
         # Delete bundle
         node.delete_prekey_bundle(addr)
         assert node.get_prekey_bundle(addr) == {}
+
+    def test_get_spend_pub_cache_and_rehydrate(self, node):
+        addr = "tsar1qw508d6qejxtdg4y5r3zarvary0c5xw7k"
+        spend_pk = "02" + "44" * 32
+        
+        # 1. Missing everywhere
+        assert node.get_spend_pub(addr) is None
+        assert node.get_spend_pub("") is None
+
+        # 2. Put in LMDB bundle
+        node.put_prekey_bundle(addr, {"spend_pub": spend_pk})
+        assert addr not in node.chat_spend_pub
+
+        # 3. get_spend_pub rehydrates into RAM cache
+        retrieved = node.get_spend_pub(addr)
+        assert retrieved == spend_pk
+        assert node.chat_spend_pub[addr] == spend_pk
+
+        # 4. Fast RAM hit
+        node.chat_spend_pub[addr] = "02" + "55" * 32
+        assert node.get_spend_pub(addr) == "02" + "55" * 32
 
     def test_empty_address_handling(self, node):
         assert node.get_prekey_bundle("") == {}

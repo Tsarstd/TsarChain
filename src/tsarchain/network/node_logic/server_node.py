@@ -31,6 +31,10 @@ def start_server(self):
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, int(CFG.BUFFER_SIZE))
         s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, int(CFG.BUFFER_SIZE))
+        try:
+            s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except Exception:
+            pass
         s.bind(("0.0.0.0", self.port))
         s.listen(8)
         s.settimeout(1.0)
@@ -38,6 +42,10 @@ def start_server(self):
         while not self._stop.is_set():
             try:
                 conn, addr = s.accept()
+                try:
+                    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                except Exception:
+                    pass
                 ip = addr[0]
                 if ip.startswith("::ffff:"):
                     ip = ip[7:]
