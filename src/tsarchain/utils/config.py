@@ -37,7 +37,7 @@ Changing them may cause different block/tx validity (hard fork) unless otherwise
   3) DIFFICULTY & TIMESTAMPS
    - INITIAL_BITS, MAX_BITS, TARGET_BLOCK_TIME, LWMA_WINDOW
    - FUTURE_DRIFT, MTP_WINDOWS
-   - ENABLE_DIFF_CLAMP, DIFF_CLAMP_MAX_UP, DIFF_CLAMP_MAX_DOWN
+   - DIFF_CLAMP_MAX_UP, DIFF_CLAMP_MAX_DOWN
    - ENABLE_EDA, EDA_WINDOW, EDA_TRIGGER_RATIO, EDA_EASE_MULTIPLIER
 
   4) BLOCK & TRANSACTION LIMITS
@@ -60,7 +60,7 @@ Changing them may cause different block/tx validity (hard fork) unless otherwise
    - GRAFFITI_COMMENT_STORAGE_BP
 
   6) FORK-CHOICE & REORG
-   - ENABLE_CHAINWORK_RULE, ENABLE_REORG_LIMIT, REORG_LIMIT
+   - ENABLE_REORG_LIMIT, REORG_LIMIT
 
   7) POW (RandomX) - CONSENSUS CRITICAL
    - POW_ALGO, RANDOMX_STATIC_KEY
@@ -294,7 +294,6 @@ RANDOMX_CACHE_MAX        = 4      # max RandomX VM entries cached in rust bindin
 
 # ---- CACHE LIMITS (LRU) ----
 HASH_CACHE_MAX          = 5000   # max entries hash cache (LRU)
-RPC_CONN_CACHE_MAX      = 32     # max cached RPC channels/sockets (LRU)
 
 
 # ---- BLOCK & TX LIMITS ----
@@ -311,19 +310,17 @@ MAX_TX_OUTPUTS       = 1_000   # hard cap on number of outputs per transaction
 
 
 # ---- FORK CHOICE ----
-ENABLE_CHAINWORK_RULE = True  # enforce cumulative chainwork comparison for forks
 ENABLE_REORG_LIMIT    = True  # enable reorg depth bounding
 REORG_LIMIT           = 1000  # maximum blocks allowed for automatic reorg
 
 
 # ---- DIFF CLAMP ----
-ENABLE_DIFF_CLAMP   = True  # clamp difficulty adjustments to damp volatility
 DIFF_CLAMP_MAX_UP   = 1.5  # ratio cap for upward difficulty moves
 DIFF_CLAMP_MAX_DOWN = 0.4  # ratio floor for downward difficulty moves
 
 
 # ---- EMERGENCY DIFFICULTY ----
-ENABLE_EDA          = True  # emergency difficulty adjustment switch (often off on prod)
+ENABLE_EDA          = True  # emergency difficulty adjustment switch (often False on production)
 EDA_WINDOW          = 48  # number of blocks observed by EDA
 EDA_TRIGGER_RATIO   = 3.0  # slowdown ratio that triggers EDA easing
 EDA_EASE_MULTIPLIER = 2.0  # difficulty divisor applied when EDA fires
@@ -439,7 +436,6 @@ HEADERS_LOCATOR_DEPTH     = 64  # entries kept in locator list when syncing
 HEADERS_FANOUT            = 32  # peers to fan out header requests to
 HEADERS_SYNC_MIN_INTERVAL = 1  # seconds between header sync loops
 BLOCK_DOWNLOAD_BATCH_MAX  = 2048  # concurrent block download cap
-CHAIN_FORCE_FULL_FLUSH    = False  # force full persistence on every save when True
 
 
 # ---- PEER QUOTAS ----
@@ -536,10 +532,11 @@ CHAT_HISTORY_MAX_PER_PEER  = 200  # Maximum paired chat history entries (stored 
 # =============================================================================
 # 11. RPC & CACHE
 # =============================================================================
-# ---- RPC TIMEOUTS ----
+# ---- RPC TIMEOUTS & CACHE ----
 CONNECT_TIMEOUT_SCAN = 1.25  # timeout for quick port scanning during discovery
 RPC_TIMEOUT          = 4.0   # wallet RPC request timeout in seconds
 RPC_CONN_TTL_SEC     = 60.0  # seconds a cached channel/socket stays warm before re-handshake
+RPC_CONN_CACHE_MAX   = 32    # max cached RPC channels/sockets (LRU)
 RPC_PREFETCH_TIMEOUT = 1.5   # quick dial timeout for pre-connect
 MAX_HANDSHAKE_BYTES  = 16 * 1024  # cap size for initial handshake frames (HS1/HS2/envelope sniff)
 

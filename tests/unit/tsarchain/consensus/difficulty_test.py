@@ -44,7 +44,6 @@ def patch_config_and_helpers():
         mock_cfg.TARGET_BLOCK_TIME = 68
         mock_cfg.MAX_BITS = 0x1F9FFFFF
         mock_cfg.LWMA_WINDOW = 75
-        mock_cfg.ENABLE_DIFF_CLAMP = True
         mock_cfg.DIFF_CLAMP_MAX_UP = 1.5
         mock_cfg.DIFF_CLAMP_MAX_DOWN = 0.4
         mock_cfg.ENABLE_EDA = True
@@ -126,7 +125,6 @@ def test_expected_bits_on_prefix_normal(manager, patch_config_and_helpers):
 def test_expected_bits_on_prefix_with_clamp(manager, patch_config_and_helpers):
     mock_cfg, _, _, _, _ = patch_config_and_helpers
     mock_cfg.LWMA_WINDOW = 2
-    mock_cfg.ENABLE_DIFF_CLAMP = True
     b0 = make_block(0, 0x1F9FFFFF, 0)
     b1 = make_block(1, 0x1F9FFFF0, 68)
     prefix = [b0, b1]
