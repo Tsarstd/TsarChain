@@ -92,6 +92,7 @@ IS_DEV = (MODE.lower() == "dev")  # cached boolean to simplify dev/prod toggles
 APP_NAME        = "Kremlin"  # display name used for user data directories
 APP_AUTHOR      = "TsarStudio"  # vendor string passed into platform dir helpers
 WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wallet folder resolved via appdirs
+GUI_TV_CHUNK    = 200  # batch size for lazy treeview rendering in GUI
 
 
 # =============================================================================
@@ -100,6 +101,7 @@ WALLET_DATA_DIR = appdirs.user_data_dir(APP_NAME, APP_AUTHOR)  # OS-specific wal
 # ---- DATA SCHEMA ----
 # Bump when changing on-disk LMDB structures (state, utxo, mempool, block cache)
 DATA_SCHEMA_VERSION = 1
+STORAGE_DRIVE_TYPE  = None  # drive type override (None: auto-detect, 'hdd', 'ssd', 'nvme')
 
 
 # ---- NODE DATABASE PATHS (LMDB) ----
@@ -133,6 +135,7 @@ WEB_DATABASE_PATH      = "data/web"  # dedicated LMDB path for web cache
 WEB_MEDIA_CACHE_DIR    = "data/web/graffiti_cache"  # path for cached media files
 WEB_RECEIPTS_DIR       = "data/web/receipts"  # path for generated receipts
 WEB_HISTORY_BOOKS_DIR  = "data/web/history_books"  # path for generated history books
+WEB_EXPLORER_URL       = "http://localhost:5173/?search="  # base url for receipt & history QR codes
 LMDB_WEB_SIZE_INIT     = 10 * 1024 * 1024  # initial web LMDB size (10 MB)
 LMDB_WEB_SIZE_MAX      = 64 * 1024 * 1024 * 1024  # max web LMDB size (64 GB)
 

@@ -25,7 +25,6 @@ Safety & behavior
 
 from __future__ import annotations
 
-import os
 import sys
 import argparse
 import multiprocessing as mp
@@ -304,7 +303,6 @@ def main():
     else:
         rx_full_mem = COL.prompt_rx_full_mem()
     CFG.RANDOMX_FULL_MEM = bool(rx_full_mem)
-    os.environ["TSAR_RANDOMX_FULL_MEM"] = "1" if rx_full_mem else "0"
     mode_label = "FULL-MEM (+2.5GB)" if CFG.RANDOMX_FULL_MEM else "LIGHT"
 
     # --- TUI + progress queue ---

@@ -33,7 +33,7 @@ class PaymentReceiptGenerator:
         self.path          = path
         self.template_path = os.path.join(_TEMPLATE_DIR, "receipt_template.jpg")
         self.font_template = os.path.join(_TEMPLATE_DIR, "font_template.ttf")
-        self.qr_prefix     = os.environ.get("EXPLORER_WEB_URL") or "http://localhost:5173/?search="
+        self.qr_prefix     = CFG.WEB_EXPLORER_URL
         
         # Confirmation Stamp
         self.confirmed     = os.path.join(_TEMPLATE_DIR, "confirmed.png")

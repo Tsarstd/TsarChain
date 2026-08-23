@@ -3,7 +3,6 @@
 # Part of TsarChain — see LICENSE
 # Refs: see REFERENCES.md
 
-import os
 import threading
 from contextlib import contextmanager
 from typing import Iterator, Tuple, Optional
@@ -47,7 +46,7 @@ def _init_native_store(name: str = "chain"):
             _native_store = _native_stores[path]
             return _native_store
         
-        drive_override = os.getenv("TSAR_STORAGE_DRIVE_TYPE")
+        drive_override = CFG.STORAGE_DRIVE_TYPE
         map_size_init = int(CFG.LMDB_PREKEYS_SIZE_INIT) if name == "chat_prekeys" else int(CFG.LMDB_MAP_SIZE_INIT)
         map_size_max = int(CFG.LMDB_PREKEYS_SIZE_MAX) if name == "chat_prekeys" else int(CFG.LMDB_MAP_SIZE_MAX)
         store = _native_open_storage(

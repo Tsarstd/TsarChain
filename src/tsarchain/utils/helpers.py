@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import os
 import json
 import string
 import secrets
@@ -132,16 +131,10 @@ def _resolve_rx_full_mem(full_mem_override: bool | None) -> bool:
     """
     Resolution order:
       1) explicit function arg full_mem_override (if not None)
-      2) env var TSAR_RANDOMX_FULL_MEM ("1/true/yes/on" => True, "0/false/no/off" => False)
-      3) CFG.RANDOMX_FULL_MEM
+      2) CFG.RANDOMX_FULL_MEM
     """
     if full_mem_override is not None:
         return bool(full_mem_override)
-    env = (os.getenv("TSAR_RANDOMX_FULL_MEM") or "").strip().lower()
-    if env in ("1", "true", "yes", "y", "on"):
-        return True
-    if env in ("0", "false", "no", "n", "off"):
-        return False
     return bool(CFG.RANDOMX_FULL_MEM)
 
 

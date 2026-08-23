@@ -32,7 +32,7 @@ class HistoryBookGenerator:
         self.header_p2wpkh = os.path.join(_TEMPLATE_DIR, "history_book_head_p2wpkh.jpg")
         self.header_p2wsh  = os.path.join(_TEMPLATE_DIR, "history_book_head_p2wsh.jpg")
         self.font_template = os.path.join(_TEMPLATE_DIR, "font_template.ttf")
-        self.qr_prefix     = os.environ.get("EXPLORER_WEB_URL") or "http://localhost:5173/?search="
+        self.qr_prefix     = CFG.WEB_EXPLORER_URL
         
         os.makedirs(self.output_dir, exist_ok=True)
         self._ensure_template_cache()

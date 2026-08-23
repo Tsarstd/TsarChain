@@ -3,9 +3,9 @@
 # Part of TsarChain — see LICENSE
 # Refs: see REFERENCES.md
 
-import os
 import tkinter as tk
 
+from tsarchain.utils import config as CFG
 from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.ui_utils")
 
@@ -119,7 +119,7 @@ def enable_treeview_hover(app_instance, tree, hover_bg: str | None = None) -> No
 
 def insert_treeview_chunked(app_instance, tv, rows: list[tuple[tuple, tuple]], start: int = 0, chunk: int = -1) -> None:
     if chunk == -1:
-        chunk = int(os.getenv("TSAR_TV_CHUNK", "200"))
+        chunk = CFG.GUI_TV_CHUNK
     end = min(start + chunk, len(rows))
     insert = tv.insert
     for vals, tags in rows[start:end]:

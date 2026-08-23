@@ -340,7 +340,7 @@ class ArchivistDatabase:
                 pass
         if max_size > 0 and max_size < init_size:
             max_size = init_size
-        drive_override = os.getenv("TSAR_STORAGE_DRIVE_TYPE")
+        drive_override = CFG.STORAGE_DRIVE_TYPE
         store = _native_open_storage(
             "lmdb",
             path,

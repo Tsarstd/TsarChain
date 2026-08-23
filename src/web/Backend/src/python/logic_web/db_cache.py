@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import os
 import json
 import time
 import threading
@@ -42,7 +41,7 @@ def _open_store():
                 _native_warned = True
             return None
         try:
-            drive_override = os.getenv("TSAR_STORAGE_DRIVE_TYPE")
+            drive_override = CFG.STORAGE_DRIVE_TYPE
             _store = _native_open_storage(
                 "lmdb",
                 (CFG.WEB_DATABASE_PATH),

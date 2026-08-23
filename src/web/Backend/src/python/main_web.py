@@ -2,12 +2,13 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE
 
-import os
 import sys
 import json
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor
+
+from tsarchain.utils import config as CFG
 
 from web.Backend.src.python.logic_web import db_blocks, db_files
 from web.Backend.src.python.logic_web.rpc_client import (
@@ -79,12 +80,12 @@ def _parse_block_range_opts(param: str | None) -> dict:
 
 
 def _parse_host_port(host_in: object | None, port_in: object | None) -> tuple[str, int]:
-    host_raw = host_in or os.environ.get("TSAR_NODE_HOST") or "127.0.0.1"
+    host_raw = host_in or CFG.BOOTSTRAP_NODE[0]
     host = str(host_raw)
     try:
-        port = int(port_in or os.environ.get("TSAR_NODE_PORT") or 19000)
+        port = int(port_in or CFG.PORT_START)
     except Exception:
-        port = 19000
+        port = CFG.PORT_START
         log.exception("[main_exception] port: %s", port)
     return host, port
 

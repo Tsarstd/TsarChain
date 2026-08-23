@@ -687,7 +687,7 @@ class KremlinWalletGUI(WalletsMixin):
         log_file = "logging/wallet.log"
         open_log_toplevel(self.root, log_file=log_file, attach_to_root=False)
 
-    def _tv_insert_chunked(self, tv: ttk.Treeview, rows: list[tuple[tuple, tuple]], start: int = 0, chunk: int = int(os.getenv("TSAR_TV_CHUNK", "200")),) -> None:
+    def _tv_insert_chunked(self, tv: ttk.Treeview, rows: list[tuple[tuple, tuple]], start: int = 0, chunk: int = CFG.GUI_TV_CHUNK,) -> None:
         end = min(start + chunk, len(rows))
         insert = tv.insert
         for vals, tags in rows[start:end]:
