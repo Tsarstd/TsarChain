@@ -121,14 +121,17 @@ class ChatTab:
         self.service = ChatService(chat_mgr)
         self._rendered_conv: Optional[str] = None
         self.set_palette(theme)
-        if hasattr(self.chat_mgr, "key_ttl_sec"):
-            self.chat_mgr.key_ttl_sec = getattr(self, "_chat_key_ttl_sec", 15 * 60)
         
         # internal state moved from light_wallet
         self.chat_verified_var = tk.StringVar(value="Unverified ❌")
         self.chat_sas_var = tk.StringVar(value="••••••")
         self.chat_textsize_var = tk.StringVar(value="Medium")
         self.chat_context_var = tk.StringVar(value="")
+        self.chat_from_var = tk.StringVar(value="")
+        self.chat_to_var = tk.StringVar(value="")
+        self.selected_friend_var = tk.StringVar(value="(not selected)")
+        self.chat_hero_pwd_var = tk.StringVar(value="")
+        self.chat_hero_addr_combo: Optional[ttk.Combobox] = None
         self._chat_online = False
         self._chat_poll_job = None
         self._typing_after = None
@@ -137,6 +140,9 @@ class ChatTab:
         self._chat_key_ttl_sec = 15 * 60
         self._hero_visible = False
         self.peer_status_var = tk.StringVar(value="Contact: unknown")
+
+        if getattr(self.chat_mgr, "key_ttl_sec", None) is not None:
+            self.chat_mgr.key_ttl_sec = self._chat_key_ttl_sec
 
         def _on_key_changed(addr, old, new):
             self.service.drop_sessions(addr)
@@ -147,9 +153,9 @@ class ChatTab:
                 f"Public key untuk {self._alias_label(addr) or self._mask_addr(addr)} telah berubah.\n\n"
                 "Safety Number diperbarui. Verifikasi kembali sebelum lanjut chat.")
             self._chat_update_security_badges()
-        if hasattr(self.chat_mgr, "on_partner_key_changed"):
+        if getattr(self.chat_mgr, "on_partner_key_changed", None) is not None:
             self.chat_mgr.on_partner_key_changed = _on_key_changed
-        if hasattr(self.chat_mgr, "on_partner_presence"):
+        if getattr(self.chat_mgr, "on_partner_presence", None) is not None:
             self.chat_mgr.on_partner_presence = lambda addr, ts: self._update_peer_presence_label()
         
         self.contacts = getattr(self.contact_mgr, "contacts", {}) if self.contact_mgr else {}
@@ -162,7 +168,6 @@ class ChatTab:
         self.chat_font = tkfont.Font(family=FONT, size=11)
         self.chat_font_mono = tkfont.Font(family="Consolas", size=11)
         self.chat_font_body = tkfont.Font(family=FONT, size=12)
-        self._chat_key_ttl_sec = getattr(self, "_chat_key_ttl_sec", 15 * 60)
 
         self.chat_mgr.password_prompt_cb = self._pwd_prompt_cb
 
@@ -200,13 +205,11 @@ class ChatTab:
         )
         self.chat_context_var = tk.StringVar(value="")
         wallets = list(self.get_wallets_cb() or [])
+        if not self.chat_from_var.get() and wallets:
+            self.chat_from_var.set(wallets[0])
 
         # ======= TOP BAR =======
         top = tk.Frame(f, bg=self.bg)
-        
-        if not hasattr(self, "chat_from_var"):
-            self.chat_from_var = tk.StringVar(value=(wallets[0] if wallets else ""))
-
         top.pack(fill=tk.X, padx=12, pady=8)
 
         sec = tk.Frame(top, bg=self.bg)
@@ -448,11 +451,6 @@ class ChatTab:
         return None
 
     def _build_chat_to_controls(self, parent):
-        if not hasattr(self, "chat_to_var"):
-            self.chat_to_var = tk.StringVar(value="")
-        if not hasattr(self, "selected_friend_var"):
-            self.selected_friend_var = tk.StringVar(value="(not selected)")
-
         tk.Label(parent, textvariable=self.selected_friend_var, bg=self.bg, fg=self.fg)\
             .pack(side=tk.LEFT, padx=8)
         self.block_btn = tk.Button(
@@ -470,7 +468,7 @@ class ChatTab:
             if not raw:
                 self.selected_friend_var.set("(not yet selected)")
             else:
-                alias = self._alias_label(raw) if hasattr(self, "_alias_label") else raw
+                alias = self._alias_label(raw)
                 disp = f"{alias} - {raw[:10]}-{raw[-6:]}" if len(raw) > 20 else f"{alias}"
                 self.selected_friend_var.set(disp)
             self._chat_update_security_badges()
@@ -650,16 +648,17 @@ class ChatTab:
             self.toast(f"Chat unlock key cancelled/failed: {e}", kind="error")
             return False
         
-        if hasattr(self.chat_mgr, "_chat_dh_cache"):
-            sk, pk, _t = self.chat_mgr._chat_dh_cache.get(a, (None, None, 0))
+        dh_cache = getattr(self.chat_mgr, "_chat_dh_cache", None)
+        if isinstance(dh_cache, dict):
+            sk, pk, _t = dh_cache.get(a, (None, None, 0))
             if sk and pk:
-                self.chat_mgr._chat_dh_cache[a] = (sk, pk, time.time() + self._chat_key_ttl_sec)
+                dh_cache[a] = (sk, pk, time.time() + self._chat_key_ttl_sec)
         return True
 
     def _chat_enter_hero(self):
         self.chat_addr_label.pack_forget()
         self.chat_logout_btn.pack_forget()
-        if getattr(self, "_chat_poll_job", None):
+        if self._chat_poll_job:
             self.root.after_cancel(self._chat_poll_job)
         self._chat_poll_job = None
         self.chat_hero.place(relx=0.5, rely=0.5, anchor="center", relwidth=1, relheight=1)
@@ -699,17 +698,19 @@ class ChatTab:
 
     def _chat_logout(self):
         addr = (self.chat_from_var.get() or "").strip().lower()
-        if hasattr(self.chat_mgr, "clear_pwd_cache"):
-            self.chat_mgr.clear_pwd_cache(addr)
+        clear_pwd = getattr(self.chat_mgr, "clear_pwd_cache", None)
+        if callable(clear_pwd):
+            clear_pwd(addr)
         elif addr:
-            self.chat_mgr.priv_cache.pop(addr, None)
+            priv_cache = getattr(self.chat_mgr, "priv_cache", None)
+            if isinstance(priv_cache, dict):
+                priv_cache.pop(addr, None)
             cache = getattr(self.chat_mgr, "_pwd_cache", None)
             if isinstance(cache, dict):
                 cache.pop(addr, None)
 
-        if hasattr(self, "chat_hero_pwd_var"):
-            self.chat_hero_pwd_var.set("")
-        if getattr(self, "_chat_poll_job", None):
+        self.chat_hero_pwd_var.set("")
+        if self._chat_poll_job:
             self.root.after_cancel(self._chat_poll_job)
         self._chat_poll_job = None
         self._chat_set_online_ui(False)
@@ -1072,7 +1073,7 @@ class ChatTab:
         self._update_peer_presence_label()
 
     def _chat_schedule_next(self, delay_ms: Optional[int] = None) -> None:
-        if hasattr(self, "_chat_poll_job") and self._chat_poll_job:
+        if self._chat_poll_job:
             self.root.after_cancel(self._chat_poll_job)
         if not getattr(self, "_chat_online", False):
             self._chat_poll_job = None
@@ -1303,5 +1304,5 @@ class ChatTab:
 
     def reload_addresses(self):
         vals = list(self.get_wallets_cb())
-        if hasattr(self, 'chat_hero_addr_combo'):
+        if self.chat_hero_addr_combo:
             self.chat_hero_addr_combo['values'] = vals

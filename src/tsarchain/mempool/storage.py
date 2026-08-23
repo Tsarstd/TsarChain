@@ -152,7 +152,9 @@ class MempoolStorageMixin:
                 vsize = int(tx_size)
                 weight = int(tx_size * 4)
                 hdr = struct.pack("<dIII", recv_at, fee, vsize, weight)
-                payload = hdr + (tx_obj.to_storage_bytes() if hasattr(tx_obj, "to_storage_bytes") else Tx.to_storage_bytes(tx_obj))
+                to_storage = getattr(tx_obj, "to_storage_bytes", None)
+                tx_bytes = to_storage() if callable(to_storage) else Tx.to_storage_bytes(tx_obj)
+                payload = hdr + tx_bytes
                 b.put(txid.encode("utf-8"), payload)
         return True
 
@@ -164,8 +166,9 @@ class MempoolStorageMixin:
             self._pool = OrderedDict()
             self._size_map = {}
             self._prevout_index = {}
-            if hasattr(self, "_tx_prevouts"):
-                self._tx_prevouts.clear()
+            tx_prevouts = getattr(self, "_tx_prevouts", None)
+            if isinstance(tx_prevouts, dict):
+                tx_prevouts.clear()
             self._fee_heap = []
             self._heap_entries = {}
             for tx in tx_objects:
@@ -196,7 +199,7 @@ class MempoolStorageMixin:
 
     def add_tx(self, tx: Tx) -> None:
         tx_obj = self._tx_from_any(tx)
-        if not hasattr(tx_obj, "_received_at"):
+        if getattr(tx_obj, "_received_at", None) is None:
             setattr(tx_obj, "_received_at", time.time())
         txid = self._normalize_txid(tx_obj.txid)
         tx_size = _estimate_tx_size_bytes(tx_obj)
@@ -260,8 +263,9 @@ class MempoolStorageMixin:
             self._size_map.clear()
             self.current_size = 0
             self._prevout_index.clear()
-            if hasattr(self, "_tx_prevouts"):
-                self._tx_prevouts.clear()
+            tx_prevouts = getattr(self, "_tx_prevouts", None)
+            if isinstance(tx_prevouts, dict):
+                tx_prevouts.clear()
             self._fee_heap.clear()
             self._heap_entries.clear()
         self._mark_dirty()

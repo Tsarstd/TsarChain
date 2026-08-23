@@ -261,8 +261,9 @@ class HistoryTab(tk.Frame):
         if not txid:
             return
         self.app.show_explorer_frame()
-        if hasattr(self.app, "explore_panel") and self.app.explore_panel:
-            self.app.explore_panel.navigate_to_tx(txid)
+        explore_panel = getattr(self.app, "explore_panel", None)
+        if explore_panel:
+            explore_panel.navigate_to_tx(txid)
 
     def _hist_ctx_copy(self, col: int = 0) -> None:
         if not self.history_tree:
@@ -499,8 +500,9 @@ class HistoryTab(tk.Frame):
         if not txid:
             return
         self.app.show_explorer_frame()
-        if hasattr(self.app, "explore_panel") and self.app.explore_panel:
-            self.app.explore_panel._nav(f"tsar://tx/{txid}")
+        explore_panel = getattr(self.app, "explore_panel", None)
+        if explore_panel:
+            explore_panel._nav(f"tsar://tx/{txid}")
 
     @staticmethod
     def _widget_exists(widget) -> bool:

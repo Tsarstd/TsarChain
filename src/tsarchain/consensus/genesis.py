@@ -84,7 +84,8 @@ class GenesisManager:
             raise ValueError("[Blockchain] Genesis prev_block_hash must be ZERO_HASH")
         if GENESIS_HASH is not None:
             try:
-                g_hash = g.hash() if hasattr(g, "hash") else bytes.fromhex(g.get("hash"))
+                hash_fn = getattr(g, "hash", None)
+                g_hash = hash_fn() if callable(hash_fn) else bytes.fromhex(g.get("hash"))
             except Exception as e:
                 raise ValueError(f"[Blockchain] Cannot read genesis hash from chain: {e}")
             if g_hash != GENESIS_HASH:

@@ -299,10 +299,10 @@ class Blockchain():
     def get_mempool_size(self) -> int:
         if self._mempool is not None:
             try:
-                if hasattr(self._mempool, "size") and callable(self._mempool.size):
-                    return self._mempool.size()
-                if hasattr(self._mempool, "__len__"):
-                    return len(self._mempool)
+                size_fn = getattr(self._mempool, "size", None)
+                if callable(size_fn):
+                    return size_fn()
+                return len(self._mempool)
             except Exception:
                 pass
         return 0

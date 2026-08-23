@@ -16,15 +16,21 @@ from tsarchain.consensus.validation import BlockValidator
 
 class ValidationProxy:
     def __getattr__(self, name):
-        if hasattr(self, 'validator') and hasattr(self.validator, name):
-            return getattr(self.validator, name)
+        val = self.__dict__.get('validator')
+        if val is not None:
+            try:
+                return getattr(val, name)
+            except AttributeError:
+                pass
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
     def __setattr__(self, name, value):
-        if name != 'validator' and hasattr(self, 'validator') and hasattr(self.validator, name):
-            setattr(self.validator, name, value)
-        else:
-            super().__setattr__(name, value)
+        if name != 'validator':
+            val = self.__dict__.get('validator')
+            if val is not None and name in dir(val):
+                setattr(val, name, value)
+                return
+        super().__setattr__(name, value)
 
 """
 unit test for validation.py
@@ -1107,12 +1113,10 @@ class TestValidationMixin:
                 self._entry_script_bytes = Mock(return_value=b"script")
         instance = Dummy()
         block = Mock()
-        tx = Mock()
+        tx = Mock(spec=["is_coinbase", "inputs"])
         tx.is_coinbase = False
         tx.inputs = [1, 2, 3]  # length 3
         
-        if hasattr(tx, "sigops_count"):
-            del tx.sigops_count
         block.transactions = [tx]
         store = Mock()
         utxo_view = {}

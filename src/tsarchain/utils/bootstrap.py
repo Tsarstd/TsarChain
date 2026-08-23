@@ -480,7 +480,7 @@ def _validate_snapshot_chain() -> tuple[bool, Optional[str]]:
                     if h != 0:
                         return False, f"genesis block not included in snapshot (first height {h})"
                     prev = (entry_dict.get("prev_block_hash") or "").strip().lower()
-                    zero_hex = CFG.ZERO_HASH.hex() if hasattr(CFG.ZERO_HASH, "hex") else bytes(CFG.ZERO_HASH).hex()
+                    zero_hex = CFG.ZERO_HASH.hex() if isinstance(CFG.ZERO_HASH, (bytes, bytearray)) else bytes(CFG.ZERO_HASH).hex()
                     if prev != zero_hex:
                         return False, "prev_block_hash genesis mismatch"
                     expected_genesis = CFG.GENESIS_HASH_HEX
@@ -507,7 +507,7 @@ def _validate_snapshot_chain() -> tuple[bool, Optional[str]]:
     else:
         prev_hex = str(prev or "").strip().lower()
 
-    zero_hex = CFG.ZERO_HASH.hex() if hasattr(CFG.ZERO_HASH, "hex") else bytes(CFG.ZERO_HASH).hex()
+    zero_hex = CFG.ZERO_HASH.hex() if isinstance(CFG.ZERO_HASH, (bytes, bytearray)) else bytes(CFG.ZERO_HASH).hex()
     if prev_hex != zero_hex:
         return False, "prev_block_hash genesis mismatch"
 

@@ -144,6 +144,11 @@ def decode_prekey_bundle(raw: bytes) -> dict:
 # ------------------------------ P2P Chat ------------------------------
 
 class ChatHandler(NetworkHandlerProxy):
+    def __init__(self, network):
+        super().__init__(network)
+        self.chat_presence_seen_order = collections.deque(maxlen=10000)
+        self.chat_pull_seen = {}
+
     def get_spend_pub(self, addr: str) -> str | None:
         if not addr:
             return None
@@ -263,8 +268,6 @@ class ChatHandler(NetworkHandlerProxy):
         if not pid:
             return
         with self.chat_lock:
-            if not hasattr(self, "chat_presence_seen_order"):
-                self.chat_presence_seen_order = collections.deque(maxlen=10000)
             if pid in self.chat_presence_seen:
                 return
             if len(self.chat_presence_seen_order) == self.chat_presence_seen_order.maxlen:
@@ -278,8 +281,6 @@ class ChatHandler(NetworkHandlerProxy):
         if not pull_sig or not addr:
             return False
         with self.chat_lock:
-            if not hasattr(self, "chat_pull_seen"):
-                self.chat_pull_seen = {}
             if len(self.chat_pull_seen) > 2000 and addr not in self.chat_pull_seen:
                 oldest_addr = next(iter(self.chat_pull_seen))
                 self.chat_pull_seen.pop(oldest_addr, None)
@@ -321,7 +322,7 @@ class ChatHandler(NetworkHandlerProxy):
                 self.backoff_until.pop(k, None)
 
             # Clean oversized seen structures if needed
-            if hasattr(self, "chat_pull_seen") and len(self.chat_pull_seen) > 2000:
+            if len(self.chat_pull_seen) > 2000:
                 self.chat_pull_seen.clear()
             if len(self.chat_seen_mid) > 2000:
                 # prune half of oldest address keys

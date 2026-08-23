@@ -930,12 +930,10 @@ def _find_pool_utxos(utxo_db, art_id: str) -> list[dict]:
         for key, entry in bucket.items():
             txid_hex, idx_str = key.split(":")
             tx_out = entry.get("tx_out") if isinstance(entry, dict) else getattr(entry, "tx_out", None)
-            if hasattr(tx_out, "amount"):
-                amt = int(tx_out.amount)
-            elif isinstance(entry, dict):
-                amt = int(entry.get("amount", 0))
+            if isinstance(tx_out, dict):
+                amt = int(tx_out.get("amount", 0))
             else:
-                amt = int(getattr(entry, "amount", 0))
+                amt = int(getattr(tx_out, "amount", entry.get("amount", 0) if isinstance(entry, dict) else getattr(entry, "amount", 0)) or 0)
             out.append({
                 "txid": txid_hex,
                 "vout": int(idx_str),
@@ -949,18 +947,19 @@ def _find_pool_utxos(utxo_db, art_id: str) -> list[dict]:
         if tx_out is None:
             tx_out = entry
         
-        spk_obj = getattr(tx_out, "script_pubkey", None) if hasattr(tx_out, "script_pubkey") else (tx_out.get("script_pubkey") if isinstance(tx_out, dict) else None)
+        spk_obj = tx_out.get("script_pubkey") if isinstance(tx_out, dict) else getattr(tx_out, "script_pubkey", None)
         if spk_obj is None:
             continue
-        if hasattr(spk_obj, "serialize"):
-            spk_str = spk_obj.serialize().hex()
+        ser = getattr(spk_obj, "serialize", None)
+        if callable(ser):
+            spk_str = ser().hex()
         elif isinstance(spk_obj, (bytes, bytearray)):
             spk_str = bytes(spk_obj).hex()
         else:
             spk_str = str(spk_obj)
 
         if spk_str.lower() == spk_hex:
-            amt = int(getattr(tx_out, "amount", 0) if hasattr(tx_out, "amount") else (tx_out.get("amount", 0) if isinstance(tx_out, dict) else 0))
+            amt = int(tx_out.get("amount", 0) if isinstance(tx_out, dict) else getattr(tx_out, "amount", 0) or 0)
             txid_hex, idx_str = key.split(":")
             out.append({
                 "txid": txid_hex,

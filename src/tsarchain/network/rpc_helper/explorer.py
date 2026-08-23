@@ -231,10 +231,12 @@ class ExplorerHandler(NetworkHandlerProxy):
             return None
         vin0 = cb.inputs[0]
 
-        if hasattr(vin0.script_sig, "serialize"):
-            raw = vin0.script_sig.serialize()
-        elif isinstance(vin0.script_sig, (bytes, bytearray)):
-            raw = bytes(vin0.script_sig)
+        sig = getattr(vin0, "script_sig", None)
+        ser = getattr(sig, "serialize", None)
+        if callable(ser):
+            raw = ser()
+        elif isinstance(sig, (bytes, bytearray)):
+            raw = bytes(sig)
         else:
             return None
 

@@ -204,9 +204,9 @@ class JsonFormatter(logging.Formatter):
 class SafeFormatter(logging.Formatter):
     """Plain-text formatter ensuring contextual tokens have safe default values."""
     def format(self, record: logging.LogRecord) -> str:
-        if not hasattr(record, "height"): record.height = "-"
-        if not hasattr(record, "block"):  record.block  = "-"
-        if not hasattr(record, "peer"):   record.peer   = "-"
+        if getattr(record, "height", None) is None: record.height = "-"
+        if getattr(record, "block", None) is None:  record.block  = "-"
+        if getattr(record, "peer", None) is None:   record.peer   = "-"
         return super().format(record)
 
 

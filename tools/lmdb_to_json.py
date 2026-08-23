@@ -18,8 +18,9 @@ import lmdb
 import base64
 import struct
 
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+reconfig = getattr(sys.stdout, 'reconfigure', None)
+if callable(reconfig):
+    reconfig(encoding='utf-8', errors='replace')
 
 from tqdm import tqdm
 from typing import Any, Dict, List, Union, Optional, Tuple

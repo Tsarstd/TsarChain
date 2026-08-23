@@ -21,15 +21,21 @@ from tsarchain.consensus.validation import BlockValidator
 
 class ValidationProxy:
     def __getattr__(self, name):
-        if hasattr(self, 'validator') and hasattr(self.validator, name):
-            return getattr(self.validator, name)
+        val = self.__dict__.get('validator')
+        if val is not None:
+            try:
+                return getattr(val, name)
+            except AttributeError:
+                pass
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
     def __setattr__(self, name, value):
-        if name != 'validator' and hasattr(self, 'validator') and hasattr(self.validator, name):
-            setattr(self.validator, name, value)
-        else:
-            super().__setattr__(name, value)
+        if name != 'validator':
+            val = self.__dict__.get('validator')
+            if val is not None and name in dir(val):
+                setattr(val, name, value)
+                return
+        super().__setattr__(name, value)
 
 """
 unit test for validation.py
@@ -343,8 +349,9 @@ def test_validate_transactions_graffiti_comment_ok(validation_chain):
     def parse_from_script_side_effect(script):
         # script bisa bytes atau Script; kita coba ambil data
         if script is not None:
-            if hasattr(script, "serialize"):
-                raw = script.serialize()
+            ser = getattr(script, "serialize", None)
+            if callable(ser):
+                raw = ser()
             else:
                 raw = bytes(script)
             data = last_pushdata_side_effect(raw)
@@ -390,8 +397,9 @@ def test_validate_transactions_graffiti_comment_fee_too_low(validation_chain):
 
     def parse_from_script_side_effect(script):
         if script is not None:
-            if hasattr(script, "serialize"):
-                raw = script.serialize()
+            ser = getattr(script, "serialize", None)
+            if callable(ser):
+                raw = ser()
             else:
                 raw = bytes(script)
             data = last_pushdata_side_effect(raw)
@@ -439,8 +447,9 @@ def test_validate_transactions_graffiti_comment_too_large(validation_chain):
 
     def parse_from_script_side_effect(script):
         if script is not None:
-            if hasattr(script, "serialize"):
-                raw = script.serialize()
+            ser = getattr(script, "serialize", None)
+            if callable(ser):
+                raw = ser()
             else:
                 raw = bytes(script)
             data = last_pushdata_side_effect(raw)
@@ -493,8 +502,9 @@ def test_validate_transactions_graffiti_comment_empty(validation_chain):
 
     def parse_from_script_side_effect(script):
         if script is not None:
-            if hasattr(script, "serialize"):
-                raw = script.serialize()
+            ser = getattr(script, "serialize", None)
+            if callable(ser):
+                raw = ser()
             else:
                 raw = bytes(script)
             data = last_pushdata_side_effect(raw)
@@ -541,8 +551,9 @@ def test_validate_transactions_graffiti_comment_tip_negative(validation_chain):
 
     def parse_from_script_side_effect(script):
         if script is not None:
-            if hasattr(script, "serialize"):
-                raw = script.serialize()
+            ser = getattr(script, "serialize", None)
+            if callable(ser):
+                raw = ser()
             else:
                 raw = bytes(script)
             data = last_pushdata_side_effect(raw)
@@ -605,8 +616,9 @@ def test_validate_transactions_graffiti_payout_ok(validation_chain, mocker):
 
     def parse_from_script_side_effect(script):
         if script is not None:
-            if hasattr(script, "serialize"):
-                raw = script.serialize()
+            ser = getattr(script, "serialize", None)
+            if callable(ser):
+                raw = ser()
             else:
                 raw = bytes(script)
             data = last_pushdata_side_effect(raw)
@@ -660,8 +672,9 @@ def test_validate_transactions_graffiti_payout_bad_art_id(validation_chain, mock
 
     def parse_from_script_side_effect(script):
         if script is not None:
-            if hasattr(script, "serialize"):
-                raw = script.serialize()
+            ser = getattr(script, "serialize", None)
+            if callable(ser):
+                raw = ser()
             else:
                 raw = bytes(script)
             data = last_pushdata_side_effect(raw)
@@ -709,8 +722,9 @@ def test_validate_transactions_graffiti_payout_unknown_art(validation_chain, moc
 
     def parse_from_script_side_effect(script):
         if script is not None:
-            if hasattr(script, "serialize"):
-                raw = script.serialize()
+            ser = getattr(script, "serialize", None)
+            if callable(ser):
+                raw = ser()
             else:
                 raw = bytes(script)
             data = last_pushdata_side_effect(raw)
@@ -759,8 +773,9 @@ def test_validate_transactions_graffiti_payout_epoch_rewind(validation_chain, mo
 
     def parse_from_script_side_effect(script):
         if script is not None:
-            if hasattr(script, "serialize"):
-                raw = script.serialize()
+            ser = getattr(script, "serialize", None)
+            if callable(ser):
+                raw = ser()
             else:
                 raw = bytes(script)
             data = last_pushdata_side_effect(raw)
@@ -815,8 +830,9 @@ def test_validate_transactions_graffiti_payout_missing_proof(validation_chain, m
 
     def parse_from_script_side_effect(script):
         if script is not None:
-            if hasattr(script, "serialize"):
-                raw = script.serialize()
+            ser = getattr(script, "serialize", None)
+            if callable(ser):
+                raw = ser()
             else:
                 raw = bytes(script)
             data = last_pushdata_side_effect(raw)
@@ -871,8 +887,9 @@ def test_validate_transactions_graffiti_payout_no_recipients(validation_chain, m
 
     def parse_from_script_side_effect(script):
         if script is not None:
-            if hasattr(script, "serialize"):
-                raw = script.serialize()
+            ser = getattr(script, "serialize", None)
+            if callable(ser):
+                raw = ser()
             else:
                 raw = bytes(script)
             data = last_pushdata_side_effect(raw)
@@ -927,8 +944,9 @@ def test_validate_transactions_graffiti_payout_bad_recipient(validation_chain, m
 
     def parse_from_script_side_effect(script):
         if script is not None:
-            if hasattr(script, "serialize"):
-                raw = script.serialize()
+            ser = getattr(script, "serialize", None)
+            if callable(ser):
+                raw = ser()
             else:
                 raw = bytes(script)
             data = last_pushdata_side_effect(raw)
@@ -983,8 +1001,9 @@ def test_validate_transactions_graffiti_payout_shortfall(validation_chain, mocke
 
     def parse_from_script_side_effect(script):
         if script is not None:
-            if hasattr(script, "serialize"):
-                raw = script.serialize()
+            ser = getattr(script, "serialize", None)
+            if callable(ser):
+                raw = ser()
             else:
                 raw = bytes(script)
             data = last_pushdata_side_effect(raw)
@@ -1051,8 +1070,9 @@ def test_validate_transactions_graffiti_payout_exceeds_pool(validation_chain, mo
 
     def parse_from_script_side_effect(script):
         if script is not None:
-            if hasattr(script, "serialize"):
-                raw = script.serialize()
+            ser = getattr(script, "serialize", None)
+            if callable(ser):
+                raw = ser()
             else:
                 raw = bytes(script)
             data = last_pushdata_side_effect(raw)

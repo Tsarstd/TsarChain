@@ -111,10 +111,12 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
         with self.chat_lock:
             self.chat_spend_pub[addr_s] = spend_pk
             self.chat_presence_pub[addr_s] = chat_pub
-            if hasattr(self, "chat_presence_ts"):
-                self.chat_presence_ts[addr_s] = now_int
-            if hasattr(self, "record_presence_seen"):
-                self.record_presence_seen(pid)
+            presence_ts = getattr(self, "chat_presence_ts", None)
+            if isinstance(presence_ts, dict):
+                presence_ts[addr_s] = now_int
+            rec_seen = getattr(self, "record_presence_seen", None)
+            if callable(rec_seen):
+                rec_seen(pid)
             else:
                 self.chat_presence_seen.add(pid)
             b = self.get_prekey_bundle(addr_s)
@@ -178,16 +180,15 @@ def chat_lookup_pub(self, message, pow_obj, base_identity, *,
         log.warning("[chat_lookup_pub] Addr rate limit/PoW failed for %s", addr_s)
         return pow_resp
     pubhex = self.chat_presence_pub.get(addr_s)
-    last_seen = None
-    if hasattr(self, "chat_presence_ts"):
-        last_seen = self.chat_presence_ts.get(addr_s)
+    presence_ts = getattr(self, "chat_presence_ts", None)
+    last_seen = presence_ts.get(addr_s) if isinstance(presence_ts, dict) else None
     if last_seen is None:
         b = self.get_prekey_bundle(addr_s)
         ts_field = b.get("ts")
         if isinstance(ts_field, (int, float)):
             last_seen = int(ts_field)
-            if hasattr(self, "chat_presence_ts"):
-                self.chat_presence_ts[addr_s] = last_seen
+            if isinstance(presence_ts, dict):
+                presence_ts[addr_s] = last_seen
 
     return {"type": "CHAT_PUBKEY", "address": addr_s, "pubkey": pubhex, "found": bool(pubhex), "last_seen": last_seen}
 
@@ -250,10 +251,12 @@ def chat_presence(self, message, pow_obj, base_identity, addr, *,
     with self.chat_lock:
         self.chat_presence_pub[addr_s] = pubhex
         self.chat_spend_pub[addr_s] = spend_pk
-        if hasattr(self, "chat_presence_ts"):
-            self.chat_presence_ts[addr_s] = now_int
-        if hasattr(self, "record_presence_seen"):
-            self.record_presence_seen(pid)
+        presence_ts = getattr(self, "chat_presence_ts", None)
+        if isinstance(presence_ts, dict):
+            presence_ts[addr_s] = now_int
+        rec_seen = getattr(self, "record_presence_seen", None)
+        if callable(rec_seen):
+            rec_seen(pid)
         else:
             self.chat_presence_seen.add(pid)
         b = self.get_prekey_bundle(addr_s)
@@ -297,7 +300,8 @@ def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
     if not addr_s or not ik or not spk or not sig:
         return {"error":"missing fields"}
     # validation: addr -> spend_pub exists? and SPK signature is signed by spend key
-    sp = (self.get_spend_pub(addr_s) or "").strip().lower() if hasattr(self, "get_spend_pub") else (self.chat_spend_pub.get(addr_s) or "").strip().lower()
+    get_sp = getattr(self, "get_spend_pub", None)
+    sp = (get_sp(addr_s) or "").strip().lower() if callable(get_sp) else (self.chat_spend_pub.get(addr_s) or "").strip().lower()
     if not sp:
         log.warning("[chat_publish_prekeys] Unknown address %s (spend_pub missing)", addr_s)
         return {"error":"unknown_address"}
@@ -308,8 +312,9 @@ def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
         return {"error":"bad_spk_sig"}
     now_int = int(time.time())
     with self.chat_lock:
-        if hasattr(self, "chat_presence_ts"):
-            self.chat_presence_ts[addr_s] = now_int
+        presence_ts = getattr(self, "chat_presence_ts", None)
+        if isinstance(presence_ts, dict):
+            presence_ts[addr_s] = now_int
         rec = self.get_prekey_bundle(addr_s)
         rec.update({"ik": ik, "spk": spk, "sig": sig, "spend_pub": sp, "ts": now_int})
         if isinstance(opk, str) and len(opk) == 64:
@@ -410,7 +415,8 @@ def chat_send(self, message, pow_obj, base_identity, *,
     # routing authenticity signature verification (without decryption)
     if not chat_sig:
         return {"type": "CHAT_ACK", "status": "rejected", "reason": "sig_required"}
-    sp = (self.get_spend_pub(frm) or "").strip().lower() if hasattr(self, "get_spend_pub") else (self.chat_spend_pub.get(frm) or "").strip().lower()
+    get_sp = getattr(self, "get_spend_pub", None)
+    sp = (get_sp(frm) or "").strip().lower() if callable(get_sp) else (self.chat_spend_pub.get(frm) or "").strip().lower()
     if not sp:
         log.warning("[chat_send] Missing spend_pub for sender %s", frm)
         return {"type": "CHAT_ACK", "status": "rejected", "reason": "no_spend_pub"}
@@ -508,7 +514,8 @@ def chat_read(self, message, pow_obj, base_identity, *,
         return pow_resp
 
     # read receipt verification
-    sp = (self.get_spend_pub(reader) or "").strip().lower() if hasattr(self, "get_spend_pub") else (self.chat_spend_pub.get(reader) or "").strip().lower()
+    get_sp = getattr(self, "get_spend_pub", None)
+    sp = (get_sp(reader) or "").strip().lower() if callable(get_sp) else (self.chat_spend_pub.get(reader) or "").strip().lower()
     if not sp:
         log.warning("[chat_read] Spend pub missing for reader %s", reader)
         return {"error": "no_spend_pub"}
@@ -546,11 +553,13 @@ def chat_pull(self, message, *,
         log.warning("[chat_pull] Timestamp drift error for %s (now=%d, ts=%d, ip=%s)", me, now, ts, client_ip)
         return {"type": "CHAT_NONE", "items": [], "error": "ts_drift"}
 
-    if hasattr(self, "dedup_pull") and self.dedup_pull(me, pull_sig):
+    dedup = getattr(self, "dedup_pull", None)
+    if callable(dedup) and dedup(me, pull_sig):
         log.warning("[chat_pull] Replay detected for %s from %s", me, client_ip)
         return {"type": "CHAT_NONE", "items": [], "error": "replay_detected"}
 
-    spend_pk = self.get_spend_pub(me) if hasattr(self, "get_spend_pub") else self.chat_spend_pub.get(me)
+    get_sp = getattr(self, "get_spend_pub", None)
+    spend_pk = get_sp(me) if callable(get_sp) else self.chat_spend_pub.get(me)
     if not spend_pk:
         return {"type": "CHAT_NONE", "items": [], "error": "not_registered"}
 

@@ -79,7 +79,7 @@ class ChainStorage:
             return
         chain = []
         for d in data_list:
-            if hasattr(d, "prev_block_hash") and hasattr(d, "height"):
+            if getattr(d, "prev_block_hash", None) is not None and getattr(d, "height", None) is not None:
                 chain.append(d)
             elif isinstance(d, dict):
                 chain.append(Block.from_dict(d))
@@ -807,13 +807,10 @@ class ChainStorage:
         utxo_set_size = len(utxo_items)
         for entry in utxo_items:
             tx_out = entry.get("tx_out") if isinstance(entry, dict) else getattr(entry, "tx_out", None)
-            amount_val = None
             if isinstance(tx_out, dict):
                 amount_val = tx_out.get("amount")
-            elif hasattr(tx_out, "amount"):
-                amount_val = getattr(tx_out, "amount", None)
-            elif isinstance(entry, dict):
-                amount_val = entry.get("amount")
+            else:
+                amount_val = getattr(tx_out, "amount", entry.get("amount") if isinstance(entry, dict) else None)
             amount = int(amount_val if amount_val is not None else 0)
             if amount <= 0:
                 continue
@@ -863,8 +860,9 @@ class ChainStorage:
         total_comments = sum(len(v or []) for v in (data_g.get("comments") or {}).values())
         
         mem = getattr(self.blockchain, "get_mempool", lambda: None)() or getattr(self.blockchain, "_mempool", None)
-        if mem and hasattr(mem, "get_all_txs"):
-            for tx in mem.get_all_txs():
+        get_all_fn = getattr(mem, "get_all_txs", None)
+        if callable(get_all_fn):
+            for tx in get_all_fn():
                 for tx_out in getattr(tx, "outputs", []) or []:
                     spk = getattr(tx_out, "script_pubkey", None)
                     meta = GRAFFITI.parse_from_script(spk) if spk is not None else None

@@ -142,6 +142,14 @@ class KremlinWalletGUI(WalletsMixin):
         # 4) Tab state
         self._active_tab = "wallets"
         self._sidebar_buttons: dict[str, ttk.Button] = {}
+        self.navigator = None
+        self._conn_hb_job = None
+        self.chat_tab = None
+        self.explore_panel = None
+        self.network_tab = None
+        self.history_tab = None
+        self.graffiti_tab = None
+        self.dev_tab = None
 
         # 5) Build layout dasar
         self.wallets: List[str] = load_registry()
@@ -310,7 +318,7 @@ class KremlinWalletGUI(WalletsMixin):
 
     def _refresh_sidebar_styles(self) -> None:
         active_fg = self.bg if self.current_theme == "dark" else self.fg
-        if hasattr(self, "navigator"):
+        if self.navigator:
             self.navigator.refresh_styles(getattr(self, "_active_tab", ""), self.sidebar_bg, self.sidebar_active, self.fg, active_fg)
 
     @staticmethod
@@ -374,7 +382,7 @@ class KremlinWalletGUI(WalletsMixin):
 
     def _start_conn_heartbeat(self, interval_ms: int = 10000) -> None:
         self._conn_hb_interval = int(max(1000, interval_ms))
-        if hasattr(self, "_conn_hb_job") and self._conn_hb_job:
+        if self._conn_hb_job:
             self.root.after_cancel(self._conn_hb_job)
             self._conn_hb_job = None
 
@@ -486,7 +494,7 @@ class KremlinWalletGUI(WalletsMixin):
         if self._widget_exists(history_tab):
             history_tab.reload_addresses(values)
 
-        if hasattr(self, "chat_tab"):
+        if self.chat_tab:
             self.chat_tab.reload_addresses()
         
         # ---------------- Contact Management ----------------
@@ -522,7 +530,7 @@ class KremlinWalletGUI(WalletsMixin):
         if "explorer" not in self.frames:
             self._build_explorer_frame()
         self.frames["explorer"].pack(fill=tk.BOTH, expand=True)
-        if hasattr(self, "explore_panel"):
+        if self.explore_panel:
             self.explore_panel.on_activated()
 
     def _build_explorer_frame(self) -> None:
@@ -574,17 +582,17 @@ class KremlinWalletGUI(WalletsMixin):
 
 # ---------------- Helpers: UI control ----------------
     def _hide_all_frames(self) -> None:
-        if hasattr(self, "_chat_poll_job") and self._chat_poll_job:
+        if self._chat_poll_job:
             self.root.after_cancel(self._chat_poll_job)
             self._chat_poll_job = None
-        if hasattr(self, "chat_tab") and getattr(self.chat_tab, "_chat_poll_job", None):
+        if self.chat_tab and getattr(self.chat_tab, "_chat_poll_job", None):
             self.root.after_cancel(self.chat_tab._chat_poll_job)
             self.chat_tab._chat_poll_job = None
         for fr in self.frames.values():
             fr.pack_forget()
-        if hasattr(self, "explore_panel"):
+        if self.explore_panel:
             self.explore_panel.on_deactivated()
-        if hasattr(self, "network_tab"):
+        if self.network_tab:
             self.network_tab.on_hide()
 
     def show_wallets_frame(self) -> None:
@@ -640,21 +648,25 @@ class KremlinWalletGUI(WalletsMixin):
 
             self._hide_all_frames()
             chat_frame = self.frames.get("chat")
+            chat_tab_frame = getattr(self.chat_tab, "frame", None) if self.chat_tab else None
             need_build = (
                 chat_frame is None
-                or (not hasattr(self.chat_tab, "frame") or self.chat_tab.frame is None)
-                or (hasattr(self.chat_tab, "frame") and hasattr(self.chat_tab.frame, "winfo_exists") and not self.chat_tab.frame.winfo_exists()))
+                or chat_tab_frame is None
+                or not self._widget_exists(chat_tab_frame)
+            )
             if need_build:
                 parent = tk.Frame(self.main, bg=self.bg)
                 self.frames["chat"] = parent
-                self.chat_tab.set_palette(self.theme_set.chat)
-                self.chat_tab.build(parent)
+                if self.chat_tab:
+                    self.chat_tab.set_palette(self.theme_set.chat)
+                    self.chat_tab.build(parent)
                 chat_frame = parent
             chat_frame.pack(fill=tk.BOTH, expand=True)
             self._activate_tab("chat")
-            self.chat_tab.reload_addresses()
-            if getattr(self.chat_tab, "_chat_online", False):
-                self.chat_tab._chat_schedule_next()
+            if self.chat_tab:
+                self.chat_tab.reload_addresses()
+                if getattr(self.chat_tab, "_chat_online", False):
+                    self.chat_tab._chat_schedule_next()
     
     def show_history_frame(self) -> None:
         if not self._is_wallet_ready():
@@ -674,7 +686,7 @@ class KremlinWalletGUI(WalletsMixin):
     def show_network_frame(self) -> None:
         self._hide_all_frames()
         self.frames["network"].pack(fill=tk.BOTH, expand=True)
-        if hasattr(self, "network_tab"):
+        if self.network_tab:
             self.network_tab.on_show()
 
     def show_dev_frame(self) -> None:

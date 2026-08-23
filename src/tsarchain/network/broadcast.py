@@ -38,8 +38,9 @@ class Broadcast:
         self.blockchain = blockchain or Blockchain()
         
         shared_utxo = utxodb
-        if shared_utxo is None and hasattr(self.blockchain, "ensure_utxodb"):
-            shared_utxo = self.blockchain.ensure_utxodb()
+        ensure_utxo = getattr(self.blockchain, "ensure_utxodb", None)
+        if shared_utxo is None and callable(ensure_utxo):
+            shared_utxo = ensure_utxo()
 
         self._utxo_shared = shared_utxo is not None
         self.utxodb = shared_utxo or UTXODB()
@@ -50,8 +51,9 @@ class Broadcast:
         self.seen_txs: Set[str] = set()
         self._processing_blocks: Set[str] = set()
 
-        if hasattr(self.blockchain, "attach_mempool"):
-            self.blockchain.attach_mempool(self.mempool)  # type: ignore[arg-type]
+        attach_mp = getattr(self.blockchain, "attach_mempool", None)
+        if callable(attach_mp):
+            attach_mp(self.mempool)  # type: ignore[arg-type]
 
         self.last_sync_time = 0
         self.port: Optional[int] = None
@@ -68,20 +70,20 @@ class Broadcast:
         self._gossip_conn_cache: Dict = {}
 
     def shutdown(self):
-        if hasattr(self, "_gossip_conn_cache"):
-            sockets_to_close = []
-            for entry in getattr(self, "_gossip_conn_cache", {}).values():
-                sock = entry.get("sock")
-                if sock:
-                    sockets_to_close.append(sock)
-            for sock in sockets_to_close:
-                sock.close()
+        sockets_to_close = []
+        for entry in getattr(self, "_gossip_conn_cache", {}).values():
+            sock = entry.get("sock")
+            if sock:
+                sockets_to_close.append(sock)
+        for sock in sockets_to_close:
+            sock.close()
                     
         with self.lock:
             self.seen_blocks.clear()
             self.seen_txs.clear()
-        if hasattr(self.blockchain, "shutdown"):
-            self.blockchain.shutdown()
+        bc_shutdown = getattr(self.blockchain, "shutdown", None)
+        if callable(bc_shutdown):
+            bc_shutdown()
         log.info("[shutdown] Broadcast Shutdown complete")
 
     def __getattr__(self, name):
@@ -90,8 +92,9 @@ class Broadcast:
         self._in_getattr = True
         try:
             for handler in [self.gossip, self.receive, self.mempool_sync, self.utxo_local, self.chain_utils]:
-                if hasattr(handler, name):
-                    return getattr(handler, name)
+                val = getattr(handler, name, None)
+                if val is not None:
+                    return val
         finally:
             self._in_getattr = False
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")

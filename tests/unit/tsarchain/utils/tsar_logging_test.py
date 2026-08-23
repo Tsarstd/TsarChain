@@ -54,7 +54,7 @@ def test_get_ctx_logger_and_context_persistence():
 def test_trace_level():
     assert logging.getLevelName(TRACE) == "TRACE"
     logger = get_logger("tsarchain.trace_test")
-    assert hasattr(logger, "trace")
+    assert callable(getattr(logger, "trace", None))
     logger.trace("Trace string")
 
     ctx_logger = get_ctx_logger("tsarchain.trace_ctx")

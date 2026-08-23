@@ -352,7 +352,7 @@ def test_serialize_block_basic(mixin):
             None,
         ]
         mock_serialize_tx.side_effect = lambda tx: {
-            'txid': tx.txid.hex() if hasattr(tx.txid, 'hex') else tx.txid,
+            'txid': tx.txid.hex() if isinstance(tx.txid, (bytes, bytearray)) else tx.txid,
             'vin': [],
             'vout': []
         }

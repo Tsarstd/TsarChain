@@ -162,7 +162,7 @@ class Block:
         return h.serialize_block()
 
     def to_storage_bytes(self) -> bytes:
-        header_bytes = self.header() if hasattr(self, "header") else b""
+        header_bytes = self.header()
         if not isinstance(header_bytes, (bytes, bytearray)):
             header_bytes = b"\x00" * 80
         h = int(getattr(self, "height", 0) or 0)
@@ -172,7 +172,8 @@ class Block:
         txs = getattr(self, "transactions", []) or []
         tx_parts = [struct.pack("<I", len(txs))]
         for tx in txs:
-            tx_raw = tx.to_storage_bytes() if hasattr(tx, "to_storage_bytes") else Tx.to_storage_bytes(tx)
+            to_storage = getattr(tx, "to_storage_bytes", None)
+            tx_raw = to_storage() if callable(to_storage) else Tx.to_storage_bytes(tx)
             if not isinstance(tx_raw, (bytes, bytearray)):
                 tx_raw = b""
             tx_parts.append(struct.pack("<I", len(tx_raw)) + tx_raw)

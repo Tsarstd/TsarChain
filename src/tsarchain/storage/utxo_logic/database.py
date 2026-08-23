@@ -69,18 +69,20 @@ class UTXODatabaseMixin:
 
     def _serialize_entry(self, entry):
         tx_out = entry.get("tx_out")
-        if hasattr(tx_out, "to_dict"):
-            tx_out_dict = tx_out.to_dict()
+        to_dict = getattr(tx_out, "to_dict", None)
+        if callable(to_dict):
+            tx_out_dict = to_dict()
         else:
-            tx_out_dict = dict(tx_out)
+            tx_out_dict = dict(tx_out) if isinstance(tx_out, (dict, list, tuple)) else getattr(tx_out, "__dict__", {})
 
         address = None
         script_type = None
         spk_bytes = None
-        if hasattr(tx_out, "script_pubkey"):
-            spk = tx_out.script_pubkey
-            if hasattr(spk, "serialize"):
-                spk_bytes = spk.serialize()
+        spk = getattr(tx_out, "script_pubkey", None)
+        if spk is not None:
+            spk_ser = getattr(spk, "serialize", None)
+            if callable(spk_ser):
+                spk_bytes = spk_ser()
             elif isinstance(spk, (bytes, bytearray)):
                 spk_bytes = bytes(spk)
             elif isinstance(spk, str):
@@ -98,10 +100,13 @@ class UTXODatabaseMixin:
                 script_type = "p2wpkh"
             elif len(spk_bytes) == 34 and spk_bytes[0] == 0x00 and spk_bytes[1] == 0x20:
                 script_type = "p2wsh"
-            if address is None and hasattr(self, "script_to_address"):
-                address = self.script_to_address(spk_bytes)
-        if address is None and hasattr(self, "script_to_address"):
-            address = self.script_to_address(getattr(tx_out, "script_pubkey", None))
+            script_to_addr = getattr(self, "script_to_address", None)
+            if address is None and callable(script_to_addr):
+                address = script_to_addr(spk_bytes)
+        if address is None:
+            script_to_addr = getattr(self, "script_to_address", None)
+            if callable(script_to_addr):
+                address = script_to_addr(getattr(tx_out, "script_pubkey", None))
         return {
             "tx_out": tx_out_dict,
             "is_coinbase": bool(entry.get("is_coinbase", False)),
@@ -182,8 +187,9 @@ class UTXODatabaseMixin:
                 tx_out = entry.get("tx_out")
                 amt = int(getattr(tx_out, "amount", 0))
                 spk = getattr(tx_out, "script_pubkey", b"")
-                if hasattr(spk, "serialize"):
-                    spk_bytes = spk.serialize()
+                spk_ser = getattr(spk, "serialize", None)
+                if callable(spk_ser):
+                    spk_bytes = spk_ser()
                 elif isinstance(spk, (bytes, bytearray)):
                     spk_bytes = bytes(spk)
                 elif isinstance(spk, str):

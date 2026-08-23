@@ -32,8 +32,9 @@ _COINBASE_EXTRA_STRUCT = "<BHHq"
 
 
 def _extract_script_bytes(script) -> bytes:
-    if hasattr(script, "serialize"):
-        return script.serialize()
+    ser = getattr(script, "serialize", None)
+    if callable(ser):
+        return ser()
     if isinstance(script, str):
         return bytes.fromhex(script)
     return bytes(script or b"")
@@ -81,14 +82,20 @@ class Tx:
     # -------- Signing ----------
 
     def sign_input(self, index: int, priv_key_hex: str, prev_output, amount: int) -> bool:
-        if hasattr(prev_output, "script_pubkey"):
-            script_pubkey_bytes = prev_output.script_pubkey.serialize()
-        elif hasattr(prev_output, "serialize"):
-            script_pubkey_bytes = prev_output.serialize()
-        elif isinstance(prev_output, (bytes, bytearray)):
-            script_pubkey_bytes = bytes(prev_output)
+        spk = getattr(prev_output, "script_pubkey", None)
+        if spk is not None:
+            ser = getattr(spk, "serialize", None)
+            script_pubkey_bytes = ser() if callable(ser) else (bytes(spk) if isinstance(spk, (bytes, bytearray)) else bytes.fromhex(spk) if isinstance(spk, str) else b"")
         else:
-            raise TypeError("prev_output must be TxOut, Script, or bytes")
+            ser = getattr(prev_output, "serialize", None)
+            if callable(ser):
+                script_pubkey_bytes = ser()
+            elif isinstance(prev_output, (bytes, bytearray)):
+                script_pubkey_bytes = bytes(prev_output)
+            elif isinstance(prev_output, str):
+                script_pubkey_bytes = bytes.fromhex(prev_output)
+            else:
+                raise TypeError("prev_output must be TxOut, Script, or bytes")
         if not (len(script_pubkey_bytes) >= 22 and script_pubkey_bytes[0] == 0x00 and script_pubkey_bytes[1] == 0x14):
             raise ValueError("Not a P2WPKH")
         pubkey_hash = script_pubkey_bytes[2:22]

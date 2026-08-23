@@ -11,16 +11,18 @@ class NetworkHandlerProxy:
             raise AttributeError(name)
         self._in_getattr = True
         try:
-            if hasattr(self.network, name):
-                return getattr(self.network, name)
+            return getattr(self.network, name)
+        except AttributeError:
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
         finally:
             self._in_getattr = False
-        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
     def __setattr__(self, name, value):
         if name in ('network', '_in_getattr') or getattr(self, 'network', None) is self:
             super().__setattr__(name, value)
-        elif hasattr(self, 'network') and hasattr(self.network, name):
-            setattr(self.network, name, value)
         else:
-            super().__setattr__(name, value)
+            net = getattr(self, 'network', None)
+            if net is not None and (name in getattr(net, '__dict__', {}) or getattr(net.__class__, name, None) is not None):
+                setattr(net, name, value)
+            else:
+                super().__setattr__(name, value)

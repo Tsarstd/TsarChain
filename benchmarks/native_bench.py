@@ -295,8 +295,9 @@ def bench_verify_ecdsa(num_keys: int, iters: int) -> float:
         vk = sk.verifying_key
         d = secrets.token_bytes(32)
         der = _make_low_s_der(sk, d)
-        if hasattr(H, "is_signature_canonical_low_s"):
-            assert H.is_signature_canonical_low_s(der)
+        is_canon = getattr(H, "is_signature_canonical_low_s", None)
+        if callable(is_canon):
+            assert is_canon(der)
         vectors.append((vk, d, der))
 
     # sanity
@@ -466,7 +467,7 @@ def main():
         "count_sigops_in_script", "bip143_sig_hash",
         "verify_der_strict_low_s", "merkle_root",
         "hash256", "hash160", "batch_verify_der_low_s"
-    ) if hasattr(H, x)])
+    ) if getattr(H, x, None) is not None])
 
     # -------- correctness --------
     print("\n== correctness checks ==")

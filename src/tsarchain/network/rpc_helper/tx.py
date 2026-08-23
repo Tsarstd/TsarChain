@@ -303,11 +303,11 @@ class TxHandler(NetworkHandlerProxy):
                     tx_out = entry.get("tx_out")
                     amt = int(getattr(tx_out, "amount", 0))
                     spk = getattr(tx_out, "script_pubkey", None)
-                    
-                    if hasattr(spk, "serialize"):
-                        spk_bytes = spk.serialize()
+                    ser = getattr(spk, "serialize", None)
+                    if callable(ser):
+                        spk_bytes = ser()
                     elif isinstance(spk, (bytes, bytearray)):
-                        spk_bytes = spk
+                        spk_bytes = bytes(spk)
                     else:
                         spk_bytes = b""
                         

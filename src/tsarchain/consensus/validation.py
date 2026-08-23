@@ -468,9 +468,11 @@ class BlockValidator:
         snapshot: dict[str, dict] = {}
         for tx in txs:
             txid_hex = self._txid_hex(getattr(tx, "txid", None))
-            if txid_hex is None and hasattr(tx, "compute_txid"):
-                tx.compute_txid()
-                txid_hex = self._txid_hex(getattr(tx, "txid", None))
+            if txid_hex is None:
+                compute_fn = getattr(tx, "compute_txid", None)
+                if callable(compute_fn):
+                    compute_fn()
+                    txid_hex = self._txid_hex(getattr(tx, "txid", None))
             txid_lower = txid_hex.lower() if txid_hex else None
 
             if getattr(tx, "is_coinbase", False):
@@ -519,8 +521,8 @@ class BlockValidator:
         else:
             fees_list = [int(getattr(t, "fee", 0)) for t in txs[1:]]
 
-        minted_before = self.blockchain.cumulative_supply_until(block.height)
-        base = self.blockchain.scheduled_reward(block.height)
+        minted_before = int(self.blockchain.cumulative_supply_until(block.height) or 0)
+        base = int(self.blockchain.scheduled_reward(block.height) or 0)
         reward = min(max(0, base), max(0, CFG.MAX_SUPPLY - minted_before))
         total_fee = sum(fees_list)
         expected_cb = reward + total_fee
@@ -548,13 +550,13 @@ class BlockValidator:
 
 
     def _estimate_block_size(self, block: Block) -> Optional[int]: 
-        size = 80  # header
+        total = 80
         for tx in block.transactions or []:
-            tx_size = self._estimate_tx_size(tx)
-            if tx_size is None:
+            sz = self._estimate_tx_size(tx)
+            if sz is None:
                 return None
-            size += tx_size
-        return int(size)
+            total += int(sz)
+        return total
 
 
     def _estimate_tx_size(self, tx) -> Optional[int]: 
@@ -562,19 +564,21 @@ class BlockValidator:
         if isinstance(cached, (bytes, bytearray)):
             return len(cached)
         
-        if hasattr(tx, "serialize") and callable(getattr(tx, "serialize", None)):
+        serialize_fn = getattr(tx, "serialize", None)
+        if callable(serialize_fn):
             try:
-                raw = tx.serialize()
+                raw = serialize_fn()
                 return len(raw if isinstance(raw, (bytes, bytearray)) else bytes.fromhex(raw))
             except Exception:
                 log.exception("[_estimate_block_size] tx.serialize failed")
                 
-        if hasattr(tx, "raw") and isinstance(getattr(tx, "raw"), (bytes, bytearray)):
-            return len(tx.raw)
+        raw_attr = getattr(tx, "raw", None)
+        if isinstance(raw_attr, (bytes, bytearray)):
+            return len(raw_attr)
             
-        if hasattr(tx, "size_bytes"):
-            v = tx.size_bytes
-            return int(v()) if callable(v) else int(v)
+        size_attr = getattr(tx, "size_bytes", None)
+        if size_attr is not None:
+            return int(size_attr()) if callable(size_attr) else int(size_attr)
             
         return None
 
@@ -620,8 +624,9 @@ class BlockValidator:
     def _ensure_unique_txids(self, block: Block) -> bool: 
         seen_txids = set()
         for tx in block.transactions or []:
-            if hasattr(tx, "compute_txid") and (getattr(tx, "txid", None) is None):
-                tx.compute_txid()
+            compute_fn = getattr(tx, "compute_txid", None)
+            if callable(compute_fn) and (getattr(tx, "txid", None) is None):
+                compute_fn()
             txid_b = getattr(tx, "txid", None)
             if not isinstance(txid_b, (bytes, bytearray)):
                 txid_b = bytes.fromhex(txid_b) if isinstance(txid_b, str) else None
@@ -653,17 +658,17 @@ class BlockValidator:
             tx_out = candidate.get("tx_out") or candidate
         else:
             tx_out = getattr(candidate, "tx_out", None) or candidate
-        spk = None
         if isinstance(tx_out, dict):
             spk = tx_out.get("script_pubkey")
-        elif hasattr(tx_out, "script_pubkey"):
-            spk = tx_out.script_pubkey
+        else:
+            spk = getattr(tx_out, "script_pubkey", None)
         if spk is None and isinstance(candidate, dict):
             spk = candidate.get("script_pubkey")
         if spk is None:
             return None
-        if hasattr(spk, "serialize"):
-            return spk.serialize()
+        ser = getattr(spk, "serialize", None)
+        if callable(ser):
+            return ser()
         if isinstance(spk, (bytes, bytearray)):
             return bytes(spk)
         if isinstance(spk, str):
@@ -695,8 +700,9 @@ class BlockValidator:
 
 
     def _extract_raw_spk(self, spk_obj) -> bytes | None: 
-        if hasattr(spk_obj, "serialize"):
-            return spk_obj.serialize()
+        ser = getattr(spk_obj, "serialize", None)
+        if callable(ser):
+            return ser()
         if isinstance(spk_obj, (bytes, bytearray)):
             return bytes(spk_obj)
         if isinstance(spk_obj, str):
@@ -738,8 +744,9 @@ class BlockValidator:
 
 
     def _spk_to_address(self, spk_obj) -> str | None: 
-        if hasattr(spk_obj, "serialize"):
-            spk_bytes = spk_obj.serialize()
+        ser = getattr(spk_obj, "serialize", None)
+        if callable(ser):
+            spk_bytes = ser()
         elif isinstance(spk_obj, (bytes, bytearray)):
             spk_bytes = bytes(spk_obj)
         elif isinstance(spk_obj, str):
@@ -772,10 +779,12 @@ class BlockValidator:
         script_attr = getattr(spk_obj, "script_pubkey", None)
         if script_attr is not None:
             spk_obj = script_attr
-        if hasattr(spk_obj, "serialize"):
-            return spk_obj.serialize()
-        if hasattr(spk_obj, "to_bytes"):
-            return bytes(spk_obj.to_bytes())
+        ser = getattr(spk_obj, "serialize", None)
+        if callable(ser):
+            return ser()
+        to_b = getattr(spk_obj, "to_bytes", None)
+        if callable(to_b):
+            return bytes(to_b())
         return None
 
 
@@ -845,10 +854,8 @@ class BlockValidator:
             return None
         if isinstance(tx_out, dict):
             amount_val = tx_out.get("amount")
-        elif hasattr(tx_out, "amount"):
-            amount_val = getattr(tx_out, "amount", None)
         else:
-            amount_val = getattr(candidate, "amount", None)
+            amount_val = getattr(tx_out, "amount", getattr(candidate, "amount", None))
         amt = int(amount_val if amount_val is not None else 0)
         if isinstance(candidate, dict):
             is_cb = bool(candidate.get("is_coinbase", False))
@@ -913,9 +920,10 @@ class BlockValidator:
         for tx in block.transactions or []:
             if getattr(tx, "is_coinbase", False):
                 continue
-            if hasattr(tx, "sigops_count"):
+            sigops_fn = getattr(tx, "sigops_count", None)
+            if callable(sigops_fn):
                 so = int(
-                    tx.sigops_count(
+                    sigops_fn(
                         lambda txid, vout: self._utxo_lookup(
                             lookup_fn, utxo_view, txid, vout
                         )

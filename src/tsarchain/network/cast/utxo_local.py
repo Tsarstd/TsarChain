@@ -71,8 +71,9 @@ class UTXOLocalHandler(BroadcastHandlerProxy):
             if tx.txid.hex() not in in_chain:
                 new_mempool.append(tx)
 
-        if hasattr(self.mempool, "save_pool"):
-            self.mempool.save_pool(new_mempool)
+        save_pool = getattr(self.mempool, "save_pool", None)
+        if callable(save_pool):
+            save_pool(new_mempool)
         else:
             self.mempool.clear()
             for tx in new_mempool:

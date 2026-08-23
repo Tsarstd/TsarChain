@@ -42,8 +42,9 @@ class UTXOValidationMixin:
         spk = getattr(tx_out, "script_pubkey", None)
         if spk is None:
             return False
-        if hasattr(spk, "serialize"):
-            b = spk.serialize()
+        spk_ser = getattr(spk, "serialize", None)
+        if callable(spk_ser):
+            b = spk_ser()
         elif isinstance(spk, (bytes, bytearray)):
             b = bytes(spk)
         elif isinstance(spk, str):
@@ -129,8 +130,9 @@ class UTXOValidationMixin:
         for txout in getattr(tx, "outputs", []) or []:
             amt = int(getattr(txout, "amount", 0))
             spk_obj = getattr(txout, "script_pubkey", None)
-            if hasattr(spk_obj, "serialize"):
-                spk_bytes = spk_obj.serialize()
+            spk_ser = getattr(spk_obj, "serialize", None)
+            if callable(spk_ser):
+                spk_bytes = spk_ser()
             elif isinstance(spk_obj, (bytes, bytearray)):
                 spk_bytes = bytes(spk_obj)
             elif isinstance(spk_obj, str):
@@ -189,18 +191,22 @@ class UTXOValidationMixin:
 
 
     def _process_graffiti_for_txs(self, txs, block_height: int, block_hash: str | None) -> None:
+        script_to_addr = getattr(self, "script_to_address", None)
         for tx in txs or []:
             outputs_info = []
             for tx_out in getattr(tx, "outputs", []) or []:
-                script_bytes = getattr(tx_out, "script_pubkey", None)
-                if hasattr(script_bytes, "serialize"):
-                    script_bytes = script_bytes.serialize()
-                elif isinstance(script_bytes, str):
-                    script_bytes = bytes.fromhex(script_bytes)
+                raw_spk = getattr(tx_out, "script_pubkey", None)
+                spk_ser = getattr(raw_spk, "serialize", None)
+                if callable(spk_ser):
+                    script_bytes = spk_ser()
+                elif isinstance(raw_spk, str):
+                    script_bytes = bytes.fromhex(raw_spk)
+                elif isinstance(raw_spk, (bytes, bytearray)):
+                    script_bytes = bytes(raw_spk)
+                else:
+                    script_bytes = b""
                 amount = int(getattr(tx_out, "amount", 0))
-                address = None
-                if hasattr(self, "script_to_address"):
-                    address = self.script_to_address(getattr(tx_out, "script_pubkey", None))
+                address = script_to_addr(raw_spk) if callable(script_to_addr) else getattr(tx_out, "address", None)
                 outputs_info.append({"script_bytes": script_bytes, "amount": amount, "address": address})
             self._record_graffiti_event(tx, outputs_info, block_height, block_hash)
 
@@ -260,19 +266,22 @@ class UTXOValidationMixin:
 
     def _build_output_info(self, tx_out) -> dict:
         amount = int(getattr(tx_out, "amount", 0))
-        script_bytes = getattr(tx_out, "script_pubkey", None)
-        if hasattr(script_bytes, "serialize"):
-            script_bytes = script_bytes.serialize()
-        elif isinstance(script_bytes, str):
-            script_bytes = bytes.fromhex(script_bytes)
-        elif isinstance(script_bytes, (bytes, bytearray)):
-            script_bytes = bytes(script_bytes)
+        raw_spk = getattr(tx_out, "script_pubkey", None)
+        spk_ser = getattr(raw_spk, "serialize", None)
+        if callable(spk_ser):
+            script_bytes = spk_ser()
+        elif isinstance(raw_spk, str):
+            script_bytes = bytes.fromhex(raw_spk)
+        elif isinstance(raw_spk, (bytes, bytearray)):
+            script_bytes = bytes(raw_spk)
+        else:
+            script_bytes = b""
             
-        address = None
-        if hasattr(self, "script_to_address"):
-            address = self.script_to_address(getattr(tx_out, "script_pubkey", None))
-        elif hasattr(tx_out, "address"):
-            address = getattr(tx_out, "address")
+        script_to_addr = getattr(self, "script_to_address", None)
+        if callable(script_to_addr):
+            address = script_to_addr(raw_spk)
+        else:
+            address = getattr(tx_out, "address", None)
         return {"script_bytes": script_bytes, "amount": amount, "address": address}
 
 
@@ -313,8 +322,9 @@ class UTXOValidationMixin:
 
 
     def _parse_script_bytes(self, spk) -> bytes:
-        if hasattr(spk, "serialize"):
-            return spk.serialize()
+        spk_ser = getattr(spk, "serialize", None)
+        if callable(spk_ser):
+            return spk_ser()
         if isinstance(spk, (bytes, bytearray)):
             return bytes(spk)
         if isinstance(spk, str):
@@ -416,19 +426,21 @@ class UTXOValidationMixin:
                 continue
 
             amount = int(getattr(txout, "amount", 0))
-            spk_hex = None
-            if hasattr(spk, "serialize"):
-                spk_hex = spk.serialize().hex()
+            spk_ser = getattr(spk, "serialize", None)
+            if callable(spk_ser):
+                spk_hex = spk_ser().hex()
             elif isinstance(spk, (bytes, bytearray)):
                 spk_hex = spk.hex()
             elif spk is not None:
                 spk_hex = str(spk)
+            else:
+                spk_hex = None
 
-            address = None
-            if hasattr(self, "script_to_address"):
-                address = self.script_to_address(spk)
-            elif hasattr(txout, "address"):
-                address = getattr(txout, "address")
+            script_to_addr = getattr(self, "script_to_address", None)
+            if callable(script_to_addr):
+                address = script_to_addr(spk)
+            else:
+                address = getattr(txout, "address", None)
 
             outputs_info.append({"script_bytes": b, "address": address, "amount": amount})
             entry = {

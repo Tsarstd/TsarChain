@@ -349,9 +349,10 @@ def compute_tx_weight_vsize(tx) -> tuple[int, int, int, int]:
 
 
 def _estimate_tx_size_bytes(tx) -> int:
-    if hasattr(tx, "to_storage_bytes"):
+    to_storage = getattr(tx, "to_storage_bytes", None)
+    if callable(to_storage):
         try:
-            raw = tx.to_storage_bytes()
+            raw = to_storage()
             if isinstance(raw, (bytes, bytearray)):
                 return len(raw)
         except Exception:
@@ -371,9 +372,10 @@ def _estimate_tx_size_bytes(tx) -> int:
 
 
 def estimate_block_size_bytes(block) -> int:
-    if hasattr(block, "to_storage_bytes"):
+    to_storage_block = getattr(block, "to_storage_bytes", None)
+    if callable(to_storage_block):
         try:
-            raw = block.to_storage_bytes()
+            raw = to_storage_block()
             if isinstance(raw, (bytes, bytearray)):
                 return len(raw)
         except Exception:
@@ -381,13 +383,14 @@ def estimate_block_size_bytes(block) -> int:
     txs = getattr(block, "transactions", []) or []
     total = 108  # 80 bytes header + 24 bytes metadata + 4 bytes tx count
     for tx in txs:
-        if hasattr(tx, "to_storage_bytes"):
+        to_storage = getattr(tx, "to_storage_bytes", None)
+        if callable(to_storage):
             try:
-                total += 4 + len(tx.to_storage_bytes())
+                total += 4 + len(to_storage())
                 continue
             except Exception:
                 pass
-        if hasattr(tx, 'inputs') and hasattr(tx, 'outputs'):
+        if getattr(tx, "inputs", None) is not None and getattr(tx, "outputs", None) is not None:
             total += _estimate_tx_size_bytes(tx)
         else:
             total += len(json.dumps(tx))
@@ -757,14 +760,18 @@ def merkle_root(transactions):
     for tx in transactions or []:
         if isinstance(tx, (bytes, bytearray)):
             txid = bytes(tx)
-        elif hasattr(tx, "txid") and callable(tx.txid):
-            txid = tx.txid()
-        elif hasattr(tx, "txid"):
-            txid = getattr(tx, "txid")
-        elif hasattr(tx, "hash") and callable(tx.hash):
-            txid = tx.hash()
         else:
-            raise TypeError("merkle_root expects 32-byte txids or objects with .txid/.hash")
+            txid_val = getattr(tx, "txid", None)
+            if callable(txid_val):
+                txid = txid_val()
+            elif txid_val is not None:
+                txid = txid_val
+            else:
+                hash_val = getattr(tx, "hash", None)
+                if callable(hash_val):
+                    txid = hash_val()
+                else:
+                    raise TypeError("merkle_root expects 32-byte txids or objects with .txid/.hash")
         if isinstance(txid, str):
             txid = bytes.fromhex(txid)
         txid = bytes(txid)
@@ -827,8 +834,9 @@ def tx_to_compact_tuple(tx) -> tuple:
         # Preserve scriptsig so coinbase txid includes block-specific entropy
         script_sig_bytes = b""
         script_sig = getattr(txin, "script_sig", None)
-        if hasattr(script_sig, "serialize"):
-            script_sig_bytes = script_sig.serialize()
+        ser_sig = getattr(script_sig, "serialize", None)
+        if callable(ser_sig):
+            script_sig_bytes = ser_sig()
         elif isinstance(script_sig, (bytes, bytearray)):
             script_sig_bytes = bytes(script_sig)
         elif isinstance(script_sig, str):
@@ -848,8 +856,9 @@ def tx_to_compact_tuple(tx) -> tuple:
     for txout in getattr(tx, "outputs", []) or []:
         amt = int(getattr(txout, "amount", 0))
         spk = getattr(txout, "script_pubkey", None)
-        if hasattr(spk, "serialize"):
-            spk_b = spk.serialize()
+        ser_spk = getattr(spk, "serialize", None)
+        if callable(ser_spk):
+            spk_b = ser_spk()
         elif isinstance(spk, (bytes, bytearray)):
             spk_b = bytes(spk)
         elif isinstance(spk, str):

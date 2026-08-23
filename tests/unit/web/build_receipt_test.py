@@ -137,8 +137,8 @@ def test_get_rotated_stamp(temp_dir, reset_caches, mock_image):
         gen = PaymentReceiptGenerator(temp_dir)
         rotated = gen._get_rotated_stamp('confirmed')
         assert rotated is not None
-        assert hasattr(rotated, 'offset_x')
-        assert hasattr(rotated, 'offset_y')
+        assert getattr(rotated, 'offset_x', None) is not None
+        assert getattr(rotated, 'offset_y', None) is not None
 
 def test_determine_tx_type(temp_dir, reset_caches):
     gen = PaymentReceiptGenerator(temp_dir)

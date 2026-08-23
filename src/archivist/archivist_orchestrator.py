@@ -345,11 +345,12 @@ class ArchivistOrchestrator:
 
 
     def _load_auto_payout_guard(self) -> None:
-        if self._server and hasattr(self._server, "db"):
+        server_db = getattr(self._server, "db", None) if self._server else None
+        if server_db is not None:
             try:
-                self._server.db.cleanup_expired_payout_guards()
-                self._server.db.cleanup_expired_incoming()
-                self._auto_payout_guard = self._server.db.load_payout_guard()
+                server_db.cleanup_expired_payout_guards()
+                server_db.cleanup_expired_incoming()
+                self._auto_payout_guard = server_db.load_payout_guard()
             except Exception as exc:
                 self._log(f"[auto-payout] guard load failed: {exc}", error=True)
                 self._auto_payout_guard = {}
@@ -358,9 +359,10 @@ class ArchivistOrchestrator:
 
 
     def _save_auto_payout_guard(self) -> None:
-        if self._server and hasattr(self._server, "db"):
+        server_db = getattr(self._server, "db", None) if self._server else None
+        if server_db is not None:
             try:
-                self._server.db.save_payout_guard(self._auto_payout_guard)
+                server_db.save_payout_guard(self._auto_payout_guard)
             except Exception as exc:
                 self._log(f"[auto-payout] guard save failed: {exc}", error=True)
 

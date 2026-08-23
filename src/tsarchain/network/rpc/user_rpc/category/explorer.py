@@ -474,8 +474,9 @@ def _get_mempool_inline(all_txs) -> dict:
     for tx in all_txs:
         if len(inline) >= limit:
             break
-        if hasattr(tx, "to_dict"):
-            tx_dict = tx.to_dict(include_txid=True)
+        to_dict = getattr(tx, "to_dict", None)
+        if callable(to_dict):
+            tx_dict = to_dict(include_txid=True)
         elif isinstance(tx, dict):
             tx_dict = dict(tx)
         else:

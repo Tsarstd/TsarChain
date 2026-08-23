@@ -89,7 +89,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
 
             # set mining cool-off to reduce stale mining after new tip
             cooloff = float(CFG.MINING_COOLDOWN_AFTER_BLOCK)
-            if cooloff > 0 and hasattr(self.blockchain, "_mining_cooloff_until"):
+            if cooloff > 0:
                 self.blockchain._mining_cooloff_until = time.time() + cooloff
 
             accepted = True
@@ -142,8 +142,9 @@ class ReceiveHandler(BroadcastHandlerProxy):
 
     def receive_mempool(self, message: Dict[str, Any]):
         try:
-            if self.network and hasattr(self.network, "is_caught_up"):
-                if not self.network.is_caught_up(freshness=20.0, height_slack=0):
+            is_caught = getattr(self.network, "is_caught_up", None)
+            if callable(is_caught):
+                if not is_caught(freshness=20.0, height_slack=0):
                     setattr(self.network, "_pending_mempool_pull", True)
                     self.network.request_sync(fast=True)
                     return
@@ -162,7 +163,8 @@ class ReceiveHandler(BroadcastHandlerProxy):
                 tx = Tx.from_dict(tx_data) if isinstance(tx_data, dict) else tx_data
                 if self.mempool.add_valid_tx(tx):
                     added_count += 1
-            rechecked = self.mempool.recheck_orphans() if hasattr(self.mempool, "recheck_orphans") else 0
+            recheck_fn = getattr(self.mempool, "recheck_orphans", None)
+            rechecked = recheck_fn() if callable(recheck_fn) else 0
             if rechecked:
                 added_count += rechecked
                 log.debug("[receive_mempool] Revalidated %s orphan transactions", rechecked)
@@ -339,10 +341,8 @@ class ReceiveHandler(BroadcastHandlerProxy):
 
         if isinstance(tx_out, dict):
             amount_val = tx_out.get("amount")
-        elif hasattr(tx_out, "amount"):
-            amount_val = getattr(tx_out, "amount", None)
         else:
-            amount_val = getattr(candidate, "amount", None)
+            amount_val = getattr(tx_out, "amount", getattr(candidate, "amount", None))
         amount_int = int(amount_val if amount_val is not None else 0)
 
         if isinstance(candidate, dict):
@@ -405,8 +405,9 @@ class ReceiveHandler(BroadcastHandlerProxy):
     def _native_script_bytes(candidate) -> bytes | None:
         if candidate is None:
             return None
-        if hasattr(candidate, "serialize"):
-            return candidate.serialize()
+        ser = getattr(candidate, "serialize", None)
+        if callable(ser):
+            return ser()
         if isinstance(candidate, (bytes, bytearray)):
             return bytes(candidate)
         if isinstance(candidate, str):
@@ -435,7 +436,8 @@ class ReceiveHandler(BroadcastHandlerProxy):
             if len(self.blockchain.chain) >= 2:
                 parent = self.blockchain.chain[-2]
                 expected_h = getattr(parent, "height", 0) + 1
-                parent_hash = parent.hash() if hasattr(parent, "hash") else getattr(parent, "hash", lambda: None)()
+                parent_hash_fn = getattr(parent, "hash", None)
+                parent_hash = parent_hash_fn() if callable(parent_hash_fn) else parent_hash_fn
                 if getattr(block, "height", None) == expected_h and getattr(block, "prev_block_hash", None) == parent_hash:
                     alt = self.blockchain.swap_tip_if_better(block)
                     if alt is not None:
@@ -499,7 +501,8 @@ class ReceiveHandler(BroadcastHandlerProxy):
             self.utxodb.update(block.transactions, block.height, block_hash=blk_hash)
             self.maybe_flush_local_utxo(block.height)
 
-        recovered = self.mempool.recheck_orphans() if hasattr(self.mempool, "recheck_orphans") else 0
+        recheck_fn = getattr(self.mempool, "recheck_orphans", None)
+        recovered = recheck_fn() if callable(recheck_fn) else 0
         if recovered:
             log.info("[_post_add_block_success] Revalidated %s orphan mempool txs", recovered)
 

@@ -100,6 +100,7 @@ class ExplorePanel(tk.Frame):
         self._comment_text_widget: tk.Text | None = None
         self._comment_btn: tk.Button | None = None
         self._center_windows: list[tuple[tk.Widget, int]] = []
+        self._copy_menu_generic: Optional[tk.Menu] = None
 
         # search/render handlers
         self.block_search = BlockSearch(self, _fmt_ts, _fmt_tsar_amount)
@@ -350,7 +351,7 @@ class ExplorePanel(tk.Frame):
         self.clipboard_append(sel)
 
     def _bind_copyable(self, widget: tk.Widget, text_getter: Callable[[], str]):
-        if not hasattr(self, "_copy_menu_generic"):
+        if self._copy_menu_generic is None:
             self._copy_menu_generic = tk.Menu(
                 self,
                 tearoff=0,
@@ -423,7 +424,7 @@ class ExplorePanel(tk.Frame):
     def _calc_center_pad(self, target_width: int) -> int:
         self.text.update_idletasks()
         text_w = self.text.winfo_width()
-        if text_w <= 0 and hasattr(self, "card"):
+        if text_w <= 0 and self.card:
             self.card.update_idletasks()
             text_w = self.card.winfo_width()
         if target_width <= 0:
@@ -439,7 +440,7 @@ class ExplorePanel(tk.Frame):
         if not self._center_windows:
             return
         text_w = self.text.winfo_width()
-        if text_w <= 0 and hasattr(self, "card"):
+        if text_w <= 0 and self.card:
             self.card.update_idletasks()
             text_w = self.card.winfo_width()
         for widget, target in self._center_windows:

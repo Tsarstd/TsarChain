@@ -66,12 +66,15 @@ def _init_native_store(name: str = "chain"):
 
 def sync(force: bool = False) -> None:
     store = _ensure_env("chain")
-    if store is not None and hasattr(store, "sync"):
-        store.sync(force)
+    sync_fn = getattr(store, "sync", None)
+    if callable(sync_fn):
+        sync_fn(force)
     with _init_lock:
         for s in (_native_stores.values()):
-            if s is not store and hasattr(s, "sync"):
-                s.sync(force)
+            if s is not store:
+                s_sync = getattr(s, "sync", None)
+                if callable(s_sync):
+                    s_sync(force)
 
 def _ensure_env(name: str = "chain"):
     path = get_db_path(name)

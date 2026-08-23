@@ -86,10 +86,13 @@ def handle_get_headers(self, message, _):
             else str(blk.prev_block_hash)
         )
 
+        blk_hash_fn = getattr(blk, "hash", None)
+        blk_hash = blk_hash_fn().hex() if callable(blk_hash_fn) else (blk_hash_fn.hex() if isinstance(blk_hash_fn, (bytes, bytearray)) else str(blk_hash_fn or ""))
+
         headers.append(
             {
                 "height": getattr(blk, "height", start_idx),
-                "hash": blk.hash().hex() if hasattr(blk, "hash") else getattr(blk, "hash", ""),
+                "hash": blk_hash,
                 "prev_hash": prev_hash,
                 "timestamp": getattr(blk, "timestamp", 0),
                 "bits": getattr(blk, "bits", 0),

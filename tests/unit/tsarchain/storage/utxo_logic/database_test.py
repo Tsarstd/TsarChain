@@ -11,7 +11,9 @@ class MockTxOut:
         self.script_pubkey = script_pubkey
         
     def to_dict(self):
-        return {"amount": self.amount, "script_pubkey": self.script_pubkey.serialize().hex() if hasattr(self.script_pubkey, "serialize") else self.script_pubkey}
+        ser = getattr(self.script_pubkey, "serialize", None)
+        spk_val = ser().hex() if callable(ser) else self.script_pubkey
+        return {"amount": self.amount, "script_pubkey": spk_val}
 
     @classmethod
     def from_dict(cls, data):
@@ -47,7 +49,8 @@ class MockUTXODatabase(UTXODatabaseMixin):
         
     def _is_unspendable_opreturn(self, tx_out):
         spk = getattr(tx_out, "script_pubkey", None)
-        if hasattr(spk, "serialize") and spk.serialize().startswith(b"\x6a"):
+        ser = getattr(spk, "serialize", None)
+        if callable(ser) and ser().startswith(b"\x6a"):
             return True
         if isinstance(spk, str) and spk.startswith("6a"):
             return True

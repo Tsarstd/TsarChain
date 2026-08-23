@@ -361,9 +361,9 @@ class SimpleMiner:
 
                 trusted_height = self._trusted_best_height(force_refresh=True)
                 trusted_hash = self._trusted_tip_hash(trusted_height) if trusted_height >= 0 else None
-                best_height = -1
-                if hasattr(self.network, "get_best_peer_height"):
-                    best_height = int(self.network.get_best_peer_height())
+                get_best_h = getattr(self.network, "get_best_peer_height", None)
+                if callable(get_best_h):
+                    best_height = int(get_best_h())
 
                 active_peers = self._has_active_peers()
                 if not active_peers and not self._bootstrap_is_self_only():

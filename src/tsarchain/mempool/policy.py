@@ -39,9 +39,11 @@ class MempoolPolicyMixin:
                 self._prevout_index[key] = owner_txid
                 prevouts.add(key)
         if prevouts:
-            if not hasattr(self, "_tx_prevouts"):
+            tx_prevouts = getattr(self, "_tx_prevouts", None)
+            if tx_prevouts is None:
                 self._tx_prevouts = {}
-            self._tx_prevouts[owner_txid] = prevouts
+                tx_prevouts = self._tx_prevouts
+            tx_prevouts[owner_txid] = prevouts
 
     def _drop_tx_prevouts(self, tx_obj: Tx | None) -> None:
         if not tx_obj or getattr(tx_obj, "is_coinbase", False):
@@ -96,9 +98,10 @@ class MempoolPolicyMixin:
         removed = 0
         with self._lock:
             to_remove = set()
-            if hasattr(self, "_prevout_index") and self._prevout_index:
+            prevout_idx = getattr(self, "_prevout_index", None)
+            if prevout_idx:
                 for prev in normalized_spent:
-                    cid = self._prevout_index.get(prev)
+                    cid = prevout_idx.get(prev)
                     if cid and cid in self._pool:
                         to_remove.add(cid)
             if not to_remove:

@@ -82,8 +82,9 @@ class ChainOperations:
         setattr(block, "chainwork", self.blockchain._work_from_bits(block.bits))
         block.difficulty = self.blockchain._work_from_bits(block.bits)
         try:
-            if hasattr(self.blockchain, "_hash_cache"):
-                self.blockchain._hash_cache[int(block.height)] = block.hash().hex()
+            hash_cache = getattr(self.blockchain, "_hash_cache", None)
+            if isinstance(hash_cache, dict):
+                hash_cache[int(block.height)] = block.hash().hex()
         except Exception:
             log.exception("[add_block] cache genesis hash failed")
 
@@ -117,8 +118,9 @@ class ChainOperations:
         block.difficulty = self.blockchain._work_from_bits(block.bits)
         self.blockchain._mark_chain_dirty(block.height)
         try:
-            if hasattr(self.blockchain, "_hash_cache"):
-                self.blockchain._hash_cache[int(block.height)] = block.hash().hex()
+            hash_cache = getattr(self.blockchain, "_hash_cache", None)
+            if isinstance(hash_cache, dict):
+                hash_cache[int(block.height)] = block.hash().hex()
         except Exception:
             log.exception("[add_block] cache tip hash failed")
 
@@ -163,13 +165,17 @@ class ChainOperations:
                     raise ValueError(f"Reject deep reorg: {local_reorg_depth} > {CFG.REORG_LIMIT}")
 
 
+    # ---------------------------
+    # Reorg & Tip Swapping
+    # ---------------------------
     def _commit_chain_replacement(self, other_chain: "Blockchain"):
         self.blockchain.chain = list(other_chain.chain)
         self.blockchain.total_supply = other_chain.total_supply
         self.blockchain.total_blocks = len(self.blockchain.chain)
         try:
-            if hasattr(self.blockchain, "_rebuild_hash_cache"):
-                self.blockchain._rebuild_hash_cache()
+            rebuild_fn = getattr(self.blockchain, "_rebuild_hash_cache", None)
+            if callable(rebuild_fn):
+                rebuild_fn()
         except Exception:
             log.exception("[replace_with] hash cache rebuild failed")
 
@@ -210,8 +216,9 @@ class ChainOperations:
                     except Exception:
                         pass
         try:
-            if hasattr(mempool, "recheck_orphans"):
-                mempool.recheck_orphans()
+            recheck_fn = getattr(mempool, "recheck_orphans", None)
+            if callable(recheck_fn):
+                recheck_fn()
             mempool.flush()
         except Exception:
             pass
@@ -263,8 +270,9 @@ class ChainOperations:
 
         self.blockchain.total_blocks = len(self.blockchain.chain)
         try:
-            if hasattr(self.blockchain, "_hash_cache"):
-                self.blockchain._hash_cache[int(block.height)] = block.hash().hex()
+            hash_cache = getattr(self.blockchain, "_hash_cache", None)
+            if isinstance(hash_cache, dict):
+                hash_cache[int(block.height)] = block.hash().hex()
         except Exception:
             log.exception("[swap_tip_if_better] cache hash failed")
 
@@ -290,15 +298,15 @@ class ChainOperations:
         if not txids:
             return
 
-        pool = None
-        if hasattr(self.blockchain, "get_mempool"):
-            pool = self.blockchain.get_mempool()
+        get_mp = getattr(self.blockchain, "get_mempool", None)
+        pool = get_mp() if callable(get_mp) else None
         if pool is None:
             return
 
         seen: set[str] = set()
-        if hasattr(pool, "remove_many"):
-            pool.remove_many(txids)
+        rem_many = getattr(pool, "remove_many", None)
+        if callable(rem_many):
+            rem_many(txids)
         else:
             for txid in txids:
                 if txid in seen:
@@ -342,8 +350,9 @@ class ChainOperations:
             else:
                 txid_hex = getattr(tx, "txid_hex", lambda: None)()
 
-            if not txid_hex and hasattr(tx, "to_dict"):
-                d = tx.to_dict(include_txid=True)
+            to_dict = getattr(tx, "to_dict", None)
+            if not txid_hex and callable(to_dict):
+                d = to_dict(include_txid=True)
                 txid_hex = d.get("txid")
 
             if txid_hex:
@@ -423,9 +432,10 @@ class ChainOperations:
             return False, 0
         if not self._pow_ok(g):
             return False, 0
-        if hasattr(self.blockchain, "compute_txids_for_block"):
+        compute_txids = getattr(self.blockchain, "compute_txids_for_block", None)
+        if callable(compute_txids):
             try:
-                if not self.blockchain.compute_txids_for_block(g):
+                if not compute_txids(g):
                     return False, 0
             except Exception:
                 log.exception("[_validate_complete_chain] Error computing txids for genesis")
@@ -497,8 +507,9 @@ class ChainOperations:
 
             if not self._pow_ok(cur):
                 return False
-            if hasattr(self.blockchain, "compute_txids_for_block"):
-                if not self.blockchain.compute_txids_for_block(cur):
+            compute_txids = getattr(self.blockchain, "compute_txids_for_block", None)
+            if callable(compute_txids):
+                if not compute_txids(cur):
                     return False
             if not self._merkle_ok(cur):
                 return False
@@ -554,7 +565,8 @@ class ChainOperations:
                 for idx, out in enumerate(getattr(tx, "outputs", []) or []):
                     spk = getattr(out, "script_pubkey", None)
                     if spk is not None:
-                        b = spk.serialize() if hasattr(spk, "serialize") else (bytes(spk) if isinstance(spk, (bytes, bytearray)) else b"")
+                        ser = getattr(spk, "serialize", None)
+                        b = ser() if callable(ser) else (bytes(spk) if isinstance(spk, (bytes, bytearray)) else b"")
                         if len(b) >= 1 and b[0] == 0x6A:
                             continue
 

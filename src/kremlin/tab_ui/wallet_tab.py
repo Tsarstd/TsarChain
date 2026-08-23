@@ -675,18 +675,20 @@ class WalletsMixin:
         self.wallets = []
         save_registry(self.wallets)
 
-        if hasattr(self, "_ks_pwd_cache"):
+        if getattr(self, "_ks_pwd_cache", None) is not None:
             self._ks_pwd_cache = None
 
         self._wallets_after_change()
-        if hasattr(self, "contact_mgr"):
-            self.contact_mgr._contacts = {}
-        if hasattr(self, "contacts"):
+        contact_mgr = getattr(self, "contact_mgr", None)
+        if contact_mgr is not None:
+            contact_mgr._contacts = {}
+        if getattr(self, "contacts", None) is not None:
             self.contacts = {}
-        if hasattr(self, "_contact_pairs"):
+        if getattr(self, "_contact_pairs", None) is not None:
             self._contact_pairs = []
-        if hasattr(self, "_refresh_contacts_ui"):
-            self._refresh_contacts_ui()
+        refresh_contacts = getattr(self, "_refresh_contacts_ui", None)
+        if callable(refresh_contacts):
+            refresh_contacts()
 
         summary_lines = []
         if removed_labels:
@@ -737,17 +739,19 @@ class WalletsMixin:
         return "\n".join(lines)
 
     def _reg(self, addr: str) -> None:
-        if not hasattr(self, "wallets"):
+        if getattr(self, "wallets", None) is None:
             self.wallets = []
         if addr and addr not in self.wallets:
             self.wallets.append(addr)
             save_registry(self.wallets)
         if getattr(self, "wallet_count_label", None):
             self.wallet_count_label.config(text=f"Wallets: {len(self.wallets)}")
-        if hasattr(self, "reload_addresses"):
-            self.reload_addresses()
-        if hasattr(self, "_render_wallet_list"):
-            self._render_wallet_list()
+        reload_addrs = getattr(self, "reload_addresses", None)
+        if callable(reload_addrs):
+            reload_addrs()
+        render_list = getattr(self, "_render_wallet_list", None)
+        if callable(render_list):
+            render_list()
 
     # ------- Secure Mnemonic Dialog -------
     def _show_mnemonic_dialog(self, addr: str, mnemonic: str) -> None:
@@ -1233,23 +1237,29 @@ class WalletsMixin:
             self.wallet_count_label.config(text=f"Wallets: {len(self.wallets)}")
 
     def _wallets_after_change(self) -> None:
-        if hasattr(self, "_render_wallet_list"):
-            self._render_wallet_list()
-        if hasattr(self, "reload_addresses"):
-            self.reload_addresses()
+        render_list = getattr(self, "_render_wallet_list", None)
+        if callable(render_list):
+            render_list()
+        reload_addrs = getattr(self, "reload_addresses", None)
+        if callable(reload_addrs):
+            reload_addrs()
         self._wallets_update_mode()
         self._notify_balance_refresh()
 
     def _reg(self, addr: str) -> None:
-        if not hasattr(self, "wallets"):
+        if getattr(self, "wallets", None) is None:
             self.wallets = []
         if addr and addr not in self.wallets:
             self.wallets.append(addr)
             save_registry(self.wallets)
         if getattr(self, "wallet_count_label", None):
             self.wallet_count_label.config(text=f"Wallets: {len(self.wallets)}")
-        if hasattr(self, "reload_addresses"): self.reload_addresses()
-        if hasattr(self, "_render_wallet_list"): self._render_wallet_list()
+        reload_addrs = getattr(self, "reload_addresses", None)
+        if callable(reload_addrs):
+            reload_addrs()
+        render_list = getattr(self, "_render_wallet_list", None)
+        if callable(render_list):
+            render_list()
         self._notify_balance_refresh(addresses=[addr], immediate=True)
         self._wallets_update_mode()
 
@@ -1379,8 +1389,9 @@ class WalletsMixin:
         if getattr(self, "wallet_count_label", None):
             self.wallet_count_label.config(text=f"Wallets: {len(self.wallets)}")
         self.reload_addresses()
-        if hasattr(self, "_maybe_lock_redirect"):
-            self._maybe_lock_redirect()
+        lock_redirect = getattr(self, "_maybe_lock_redirect", None)
+        if callable(lock_redirect):
+            lock_redirect()
         self._render_wallet_list()
         
         messagebox.showinfo(
@@ -1426,8 +1437,9 @@ class WalletsMixin:
             self.wallet_count_label.config(text=f"Wallets: {len(self.wallets)}")
         self.reload_addresses()
         self._render_wallet_list()
-        if hasattr(self, "_maybe_lock_redirect"):
-            self._maybe_lock_redirect()
+        lock_redirect = getattr(self, "_maybe_lock_redirect", None)
+        if callable(lock_redirect):
+            lock_redirect()
         self._notify_balance_refresh(immediate=True)
         messagebox.showinfo("Deleted", "Wallet removed from keystore and UI.")
 

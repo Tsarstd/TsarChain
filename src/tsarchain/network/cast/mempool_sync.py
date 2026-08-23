@@ -16,6 +16,9 @@ log = get_ctx_logger("tsarchain.network.cast.mempool_sync")
 
 
 class MempoolSyncHandler(BroadcastHandlerProxy):
+    def __init__(self, broadcast):
+        super().__init__(broadcast)
+        self._last_mempool_push: dict = {}
 
     def send_mempool_to_peer(
         self,
@@ -24,9 +27,6 @@ class MempoolSyncHandler(BroadcastHandlerProxy):
         min_interval_s: float | None = None,
         force: bool = False,
     ) -> int:
-        
-        if not hasattr(self, "_last_mempool_push"):
-            self._last_mempool_push = {}
         ttl = float(CFG.MEMPOOL_SYNC_MIN_INTERVAL) if min_interval_s is None else max(0.0, float(min_interval_s))
         now = time.time()
         last = float(self._last_mempool_push.get(peer, 0.0))
@@ -69,7 +69,8 @@ class MempoolSyncHandler(BroadcastHandlerProxy):
         chunks, cur = [], []
         base = {"type": "MEMPOOL", "data": []}
         for tx in txs:
-            d = tx.to_dict() if hasattr(tx, "to_dict") else tx
+            to_dict = getattr(tx, "to_dict", None)
+            d = to_dict() if callable(to_dict) else tx
 
             test = dict(base)
             test["data"] = cur + [d]

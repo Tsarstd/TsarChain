@@ -11,16 +11,18 @@ class BroadcastHandlerProxy:
             raise AttributeError(name)
         self._in_getattr = True
         try:
-            if hasattr(self.broadcast, name):
-                return getattr(self.broadcast, name)
+            return getattr(self.broadcast, name)
+        except AttributeError:
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
         finally:
             self._in_getattr = False
-        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
     def __setattr__(self, name, value):
         if name in ('broadcast', '_in_getattr') or getattr(self, 'broadcast', None) is self:
             super().__setattr__(name, value)
-        elif hasattr(self, 'broadcast') and hasattr(self.broadcast, name):
-            setattr(self.broadcast, name, value)
         else:
-            super().__setattr__(name, value)
+            bcast = getattr(self, 'broadcast', None)
+            if bcast is not None and (name in getattr(bcast, '__dict__', {}) or getattr(bcast.__class__, name, None) is not None):
+                setattr(bcast, name, value)
+            else:
+                super().__setattr__(name, value)

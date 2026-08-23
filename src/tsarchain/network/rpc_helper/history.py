@@ -204,7 +204,7 @@ class HistoryHandler(NetworkHandlerProxy):
                     main_recipient_spk = spk_hex
 
             spk = getattr(o, "script_pubkey", None)
-            if spk is not None and hasattr(spk, "serialize"):
+            if spk is not None:
                 try:
                     meta = GRAFF.parse_from_script(spk)
                     if meta:
@@ -338,8 +338,9 @@ class HistoryHandler(NetworkHandlerProxy):
         spk = getattr(txout, "script_pubkey", None)
         if spk is None:
             return None
-        if hasattr(spk, "serialize"):
-            return spk.serialize().hex()
+        ser = getattr(spk, "serialize", None)
+        if callable(ser):
+            return ser().hex()
         if isinstance(spk, (bytes, bytearray)):
             return bytes(spk).hex()
         if isinstance(spk, str):

@@ -16,11 +16,14 @@ log = get_ctx_logger("tsarchain.network.rpc_helper.guard")
 class GuardHandler(NetworkHandlerProxy):
     _init_lock = threading.RLock()
 
+    def __init__(self, network):
+        super().__init__(network)
+        self.backoff_until = {}
+        self._nonce_guard_lock = threading.RLock()
+        self._nonce_guard_table = {}
 
     def tb_node_allow(self, table, key, rate_per_window, window_s, burst, backoff_key=None):
         now = self._tb_now()
-        if not hasattr(self, "backoff_until"):
-            self.backoff_until = {}
         tokens, last = table.get(key, (burst, now))
         # refill
         if now > last:
@@ -88,12 +91,11 @@ class GuardHandler(NetworkHandlerProxy):
 
 
     def _ensure_nonce_guard_initialized(self):
-        if (hasattr(self, "_nonce_guard_lock") and self._nonce_guard_lock is not None and
-            hasattr(self, "_nonce_guard_table") and self._nonce_guard_table is not None):
+        if getattr(self, "_nonce_guard_lock", None) is not None and getattr(self, "_nonce_guard_table", None) is not None:
             return
 
         with GuardHandler._init_lock:
-            if not hasattr(self, "_nonce_guard_lock") or self._nonce_guard_lock is None:
+            if getattr(self, "_nonce_guard_lock", None) is None:
                 self._nonce_guard_lock = threading.RLock()
-            if not hasattr(self, "_nonce_guard_table") or self._nonce_guard_table is None:
+            if getattr(self, "_nonce_guard_table", None) is None:
                 self._nonce_guard_table = {}

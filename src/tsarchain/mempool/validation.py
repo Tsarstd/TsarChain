@@ -440,14 +440,17 @@ class TxMempoolValidator:
         if isinstance(utxo_data, dict):
             if "tx_out" in utxo_data:
                 txo = utxo_data["tx_out"]
-                if hasattr(txo, "amount"):
-                    return int(getattr(txo, "amount", 0))
                 if isinstance(txo, dict) and "amount" in txo:
                     return int(txo.get("amount", 0))
+                amt = getattr(txo, "amount", None)
+                if amt is not None:
+                    return int(amt)
             if "amount" in utxo_data:
                 return int(utxo_data["amount"])
-        elif hasattr(utxo_data, "amount"):
-            return int(utxo_data.amount)
+        else:
+            amt = getattr(utxo_data, "amount", None)
+            if amt is not None:
+                return int(amt)
         raise ValueError(f"Unknown UTXO format: {utxo_data}")
 
 
@@ -502,8 +505,9 @@ class TxMempoolValidator:
     # Graffiti OP_RETURN guard (size/comment/min fee)
     def _validate_graffiti_output(self, spk_obj) -> bool:
         raw = None
-        if hasattr(spk_obj, "serialize"):
-            raw = spk_obj.serialize()
+        ser = getattr(spk_obj, "serialize", None)
+        if callable(ser):
+            raw = ser()
         elif isinstance(spk_obj, (bytes, bytearray)):
             raw = bytes(spk_obj)
         elif isinstance(spk_obj, str):

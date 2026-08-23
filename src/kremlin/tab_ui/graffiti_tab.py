@@ -69,9 +69,10 @@ class GraffitiController:
 
     def fetch_storers_sync(self) -> list[Dict[str, Any]]:
         rpc = getattr(self.app, "rpc", None)
-        if not rpc or not hasattr(rpc, "send"):
+        rpc_send = getattr(rpc, "send", None)
+        if not callable(rpc_send):
             return []
-        resp = rpc.send({"type": "STOR_LIST"}) or {}
+        resp = rpc_send({"type": "STOR_LIST"}) or {}
         return select_upload_storers(resp, replication_r=CFG.GRAFFITI_REPLICATION_R)
 
     def process_file(self, path: str):
@@ -714,7 +715,8 @@ class GraffitiTab(ttk.Frame):
         if not creator:
             messagebox.showinfo("Graffiti", "Select the wallet creator first.")
             return
-        if not rpc or not hasattr(rpc, "send_async"):
+        rpc_send_async = getattr(rpc, "send_async", None)
+        if not callable(rpc_send_async):
             messagebox.showwarning("Graffiti", "Offline wallet or RPC is not available.")
             return
 
@@ -750,8 +752,9 @@ class GraffitiTab(ttk.Frame):
                     if app:
                         app.switch_tab("explorer")
                         panel = getattr(app, "explore_panel", None)
-                        if panel and hasattr(panel, "navigate_to_art"):
-                            panel.navigate_to_art(art_id_full)
+                        nav = getattr(panel, "navigate_to_art", None)
+                        if callable(nav):
+                            nav(art_id_full)
                 except Exception:
                     log.exception("graffiti_tab: open explorer failed")
 

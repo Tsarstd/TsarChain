@@ -144,7 +144,8 @@ def _handle_storage_proof_submit(self, message, storer_addr, ip, src_node_id):
     err = _verify_proof_merkle_chunk(message, length, proof_hash, mroot, mchunk, mcount, offset)
     if err: return err
 
-    existing = reg.get_proof(art_id, storer, epoch) if hasattr(reg, "get_proof") else None
+    get_proof_fn = getattr(reg, "get_proof", None)
+    existing = get_proof_fn(art_id, storer, epoch) if callable(get_proof_fn) else None
     if existing:
         existing_hash = str(existing.get("hash") or "").strip().lower()
         if existing_hash and existing_hash != proof_hash:

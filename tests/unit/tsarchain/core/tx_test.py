@@ -157,7 +157,7 @@ def test_tx_sign_input(mock_sk, mock_sign, mock_bip, mock_script):
         assert txin.witness[0] == b"der\x01" # SIGHASH_ALL
         assert txin.witness[1] == b"pubkey"
 
-        # Cover line 74: hasattr(prev_output, "serialize")
+        # Cover serialize fallback on prev_output
         prev_out_serialize = MagicMock()
         del prev_out_serialize.script_pubkey # ensure no script_pubkey
         prev_out_serialize.serialize.return_value = b"\x00\x14" + b"b"*20

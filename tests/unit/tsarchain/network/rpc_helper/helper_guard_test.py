@@ -186,18 +186,17 @@ def test_nonce_guard_enforce_max_entries(guard, monkeypatch):
     assert len(table) <= 3
 
 def test_nonce_guard_clean_table_if_not_exists(guard):
-    if hasattr(guard, "_nonce_guard_table"):
+    if getattr(guard, "_nonce_guard_table", None) is not None:
         del guard._nonce_guard_table
     with patch('time.time', return_value=1000.0):
         assert guard.nonce_guard("scope", "sender", "nonce", 1000, 60) is True
-    assert hasattr(guard, "_nonce_guard_table")
-    assert guard._nonce_guard_table is not None
+    assert getattr(guard, "_nonce_guard_table", None) is not None
 
 def test_nonce_guard_lock_created_if_missing(guard):
-    if hasattr(guard, "_nonce_guard_lock"):
+    if getattr(guard, "_nonce_guard_lock", None) is not None:
         del guard._nonce_guard_lock
     with patch('time.time', return_value=1000.0):
         assert guard.nonce_guard("scope", "sender", "nonce", 1000, 60) is True
-    assert hasattr(guard, "_nonce_guard_lock")
-    assert hasattr(guard._nonce_guard_lock, 'acquire')
-    assert hasattr(guard._nonce_guard_lock, 'release')
+    assert getattr(guard, "_nonce_guard_lock", None) is not None
+    assert callable(getattr(guard._nonce_guard_lock, 'acquire', None))
+    assert callable(getattr(guard._nonce_guard_lock, 'release', None))

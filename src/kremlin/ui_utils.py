@@ -43,8 +43,10 @@ def show_toast(app_instance, text: str, ms: int = 1800, kind: str = "info") -> N
         kind = ms
         ms = 1800
     ms = int(ms)
-    if not hasattr(app_instance, "_toasts"):
-        app_instance._toasts = []
+    toasts = getattr(app_instance, "_toasts", None)
+    if toasts is None:
+        toasts = []
+        app_instance._toasts = toasts
     app_instance.root.update_idletasks()
     tw = tk.Toplevel(app_instance.root)
     tw.withdraw()
@@ -52,7 +54,8 @@ def show_toast(app_instance, text: str, ms: int = 1800, kind: str = "info") -> N
     tw.attributes("-topmost", True)
     tw.attributes("-alpha", 0.96)
 
-    palette = getattr(app_instance, "theme_set", None).palette if hasattr(app_instance, "theme_set") else None
+    theme_set = getattr(app_instance, "theme_set", None)
+    palette = getattr(theme_set, "palette", None) if theme_set else None
     warn_color = palette.warning if palette else "#f5a524"
     error_color = palette.danger if palette else "#f1633f"
     info_color = getattr(app_instance, "accent", "#ff6b00")

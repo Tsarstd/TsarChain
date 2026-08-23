@@ -80,18 +80,28 @@ def _count_txpool(pool) -> int:
         return 0
     try:
         p = getattr(pool, "_pool", None)
-        if p is not None and hasattr(p, "__len__"):
-            return len(p)
-        if hasattr(pool, "get_mempool_size") and callable(pool.get_mempool_size):
-            res = pool.get_mempool_size()
+        if p is not None and not isinstance(p, (bytes, str)):
+            try:
+                return len(p)
+            except TypeError:
+                pass
+        get_size = getattr(pool, "get_mempool_size", None)
+        if callable(get_size):
+            res = get_size()
             if isinstance(res, int):
                 return res
-        if hasattr(pool, "get_all_txs") and callable(pool.get_all_txs):
-            txs = pool.get_all_txs()
-            if txs is not None and not isinstance(txs, (bytes, str)) and hasattr(txs, "__len__"):
-                return len(txs)
-        if hasattr(pool, "__len__"):
+        get_txs = getattr(pool, "get_all_txs", None)
+        if callable(get_txs):
+            txs = get_txs()
+            if txs is not None and not isinstance(txs, (bytes, str)):
+                try:
+                    return len(txs)
+                except TypeError:
+                    pass
+        try:
             return len(pool)
+        except TypeError:
+            pass
     except Exception:
         pass
     return 0
@@ -118,8 +128,9 @@ def _safe_mempool_count(runner) -> int:
 
         bc = getattr(runner, "blockchain", None)
         if bc:
-            if hasattr(bc, "get_mempool_size") and callable(bc.get_mempool_size):
-                count = bc.get_mempool_size()
+            get_size = getattr(bc, "get_mempool_size", None)
+            if callable(get_size):
+                count = get_size()
                 if isinstance(count, int) and count > 0:
                     return count
             pool = getattr(bc, "get_mempool", lambda: None)() or getattr(bc, "_mempool", None)

@@ -62,8 +62,9 @@ class NetworkProxy:
                 ]
             
             for handler in self._handlers:
-                if hasattr(handler, name):
-                    return getattr(handler, name)
+                val = getattr(handler, name, None)
+                if val is not None:
+                    return val
         finally:
             self._in_getattr = False
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")

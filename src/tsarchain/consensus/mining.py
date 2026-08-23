@@ -114,7 +114,8 @@ class MiningManager:
         pool = getattr(self.blockchain, "get_mempool", lambda: None)()
         if pool is None:
             pool = TxPool(utxo_store=self.blockchain.ensure_utxodb())
-            if hasattr(self.blockchain, "attach_mempool"):
+            attach_mp = getattr(self.blockchain, "attach_mempool", None)
+            if callable(attach_mp):
                 self.blockchain.attach_mempool(pool)
         return pool
 
@@ -147,13 +148,15 @@ class MiningManager:
             if not pool.validate_transaction(tx, temp_utxos, spend_at_height=height):
                 reason = getattr(pool, "last_error_reason", None)
                 if reason:
-                    txid_hex = getattr(tx, "txid", b"").hex() if hasattr(getattr(tx, "txid", b""), "hex") else str(getattr(tx, "txid", ""))
+                    txid = getattr(tx, "txid", b"")
+                    txid_hex = txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid or "")
                     log.warning("[_build_candidate_block] tx %s rejected: %s", txid_hex[:12], reason)
                 continue
 
             is_graff_post = self._is_graffiti_post(tx)
             if is_graff_post and graffiti_post_seen:
-                txid_hex = getattr(tx, "txid", b"").hex() if hasattr(getattr(tx, "txid", b""), "hex") else str(getattr(tx, "txid", ""))
+                txid = getattr(tx, "txid", b"")
+                txid_hex = txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid or "")
                 log.info("[_build_candidate_block] skip extra Graffiti POST tx=%s (quota per block = 1)", txid_hex[:12])
                 continue
 
@@ -200,8 +203,8 @@ class MiningManager:
         is_stale = latest_hash != new_prev_hash or new_height != latest_height + 1
         
         if is_stale:
-            new_prev_hex = new_prev_hash.hex() if hasattr(new_prev_hash, "hex") else new_prev_hash
-            latest_hex = latest_hash.hex() if hasattr(latest_hash, "hex") else latest_hash
+            new_prev_hex = new_prev_hash.hex() if isinstance(new_prev_hash, (bytes, bytearray)) else str(new_prev_hash or "")
+            latest_hex = latest_hash.hex() if isinstance(latest_hash, (bytes, bytearray)) else str(latest_hash or "")
             log.warning(
                 "[_is_stale_block] discard stale candidate height=%s prev=%s latest=%s",
                 new_height,
@@ -222,12 +225,12 @@ class MiningManager:
     def _validate_and_add_block(self, new_block: Block) -> bool:
         height = getattr(new_block, "height", 0)
         blk_hash = new_block.hash()
-        blk_hex = blk_hash.hex() if hasattr(blk_hash, "hex") else blk_hash
+        blk_hex = blk_hash.hex() if isinstance(blk_hash, (bytes, bytearray)) else str(blk_hash or "")
         
         if not self.blockchain.validate_block(new_block):
             reason = getattr(self.blockchain, "_last_block_validation_error", None) or "unknown"
             prev_hash = getattr(new_block, "prev_block_hash", None)
-            prev_hex = prev_hash.hex() if hasattr(prev_hash, "hex") else prev_hash
+            prev_hex = prev_hash.hex() if isinstance(prev_hash, (bytes, bytearray)) else str(prev_hash or "")
             
             log.warning(
                 "[block_reject] stage=validate source=local_miner height=%s hash=%s prev=%s reason=%s",
@@ -292,7 +295,7 @@ class MiningManager:
                     continue
                 
                 txid = getattr(tx, "txid", None)
-                txid_hex = txid.hex() if hasattr(txid, "hex") else str(txid)
+                txid_hex = txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid or "")
                 log.info("[_select_graffiti_art_id] Graffiti POST found tx=%s art_id=%s", (txid_hex or "")[:12], art_id[:24])
                 return art_id
         return None

@@ -367,9 +367,9 @@ class GraffitiRegistry:
 
 
     def _flush(self) -> None:
-        if not hasattr(self, "_stored_counts"):
+        if getattr(self, "_stored_counts", None) is None:
             self._stored_counts = {"comments": {}, "payouts": {}, "proofs": {}}
-        if not hasattr(self, "_stored_posts"):
+        if getattr(self, "_stored_posts", None) is None:
             self._stored_posts = set()
 
         with batch("graffiti") as b:
