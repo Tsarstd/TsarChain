@@ -2,9 +2,9 @@ name: Unit Tests
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
 
 jobs:
   test-rust:
@@ -31,8 +31,8 @@ jobs:
       - name: Check for Test File Modifications in PR
         if: github.event_name == 'pull_request'
         run: |
-          git fetch origin main:main || true
-          MODIFIED_TESTS=$(git diff --name-only main...HEAD | grep -E '^tests/|^tsarcore_native/tests/' || true)
+          git fetch origin ${{ github.base_ref }}:${{ github.base_ref }} || true
+          MODIFIED_TESTS=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '^tests/|^tsarcore_native/tests/' || true)
           if [ -n "$MODIFIED_TESTS" ]; then
             echo "::warning::PR attempts to modify unit test files:"
             echo "$MODIFIED_TESTS"
