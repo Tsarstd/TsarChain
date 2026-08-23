@@ -14,7 +14,6 @@ from tsarchain.network.node_logic.rpc_client import (
     rpc_request,
     request_mempool_inline,
     request_mempool_snapshot,
-    request_full_sync,
     prefetch_rpc_connections,
     prefetch_peer_channel,
 )
@@ -34,15 +33,12 @@ class MockNode:
         self.peer_pubkeys = {}
         self._peer_last_mempool_sync = {}
         self._snapshot_unreachable = set()
-        self._full_sync_backoff = {}
-        self._full_sync_last_request = {}
         self._peer_last_sync = {}
         self.persistent_peers = [("127.0.0.1", 8333)]
 
         self.broadcast = MagicMock()
         self.broadcast.mempool.add_valid_tx.return_value = True
         self.broadcast.blockchain.height = 100
-        self.broadcast.receive_full_sync.return_value = True
 
     def normalize_peer(self, peer):
         if not peer:
@@ -207,65 +203,6 @@ def test_request_mempool_snapshot_failure(mock_node):
 
 
 # ---------------------------------------------------------
-# request_full_sync tests
-# ---------------------------------------------------------
-@patch("tsarchain.network.node_logic.rpc_client.CFG")
-def test_request_full_sync_success(mock_cfg, mock_node):
-    mock_cfg.ENABLE_FULL_SYNC = True
-    mock_cfg.FULL_SYNC_MIN_INTERVAL = 60
-    mock_cfg.REPLAY_WINDOW_SEC = 300
-    mock_cfg.SYNC_TIMEOUT = 10.0
-    peer = ("127.0.0.1", 8333)
-    
-    mock_node.rpc_request = MagicMock(return_value={
-        "type": "FULL_SYNC",
-        "data": {"chain": [1, 2], "utxos": {"a": "b"}, "mempool": []},
-        "ts": int(time.time()),
-        "nonce": "12345"
-    })
-
-    res = request_full_sync(mock_node, peer, force=True)
-    assert res is True
-    mock_node.broadcast.receive_full_sync.assert_called_once()
-    assert peer in mock_node._peer_last_sync
-
-
-@patch("tsarchain.network.node_logic.rpc_client.CFG")
-def test_request_full_sync_reject(mock_cfg, mock_node):
-    mock_cfg.ENABLE_FULL_SYNC = True
-    mock_cfg.SYNC_TIMEOUT = 10.0
-    mock_cfg.FULL_SYNC_MIN_INTERVAL = 60
-    mock_cfg.REPLAY_WINDOW_SEC = 300
-    mock_cfg.FULL_SYNC_BACKOFF_MAX = 300.0
-    peer = ("127.0.0.1", 8333)
-    
-    mock_node.rpc_request = MagicMock(return_value={
-        "type": "SYNC_REJECT",
-        "retry_after": 60.0
-    })
-
-    res = request_full_sync(mock_node, peer, force=True)
-    assert res is False
-    assert peer in mock_node._full_sync_backoff
-
-
-@patch("tsarchain.network.node_logic.rpc_client.CFG")
-def test_request_full_sync_no_response(mock_cfg, mock_node):
-    mock_cfg.ENABLE_FULL_SYNC = True
-    mock_cfg.SYNC_TIMEOUT = 10.0
-    mock_cfg.FULL_SYNC_MIN_INTERVAL = 60
-    mock_cfg.REPLAY_WINDOW_SEC = 300
-    peer = ("127.0.0.1", 8333)
-    
-    mock_node.rpc_request = MagicMock(return_value=None)
-    mock_node.penalize_peer = MagicMock()
-
-    res = request_full_sync(mock_node, peer, force=True)
-    assert res is False
-    mock_node.penalize_peer.assert_called_once()
-
-
-# ---------------------------------------------------------
 # prefetch_rpc_connections & prefetch_peer_channel tests
 # ---------------------------------------------------------
 @patch("tsarchain.network.node_logic.rpc_client.socket.socket")
@@ -387,18 +324,6 @@ def test_request_mempool_snapshot_backoff(mock_node):
     mock_node._rpc_backoff[peer] = time.time() + 100
     with patch("tsarchain.network.node_logic.rpc_client.time.time", return_value=0):
         assert request_mempool_snapshot(mock_node, peer, force=True) is None
-
-def test_request_full_sync_invalid_peer(mock_node):
-    assert request_full_sync(mock_node, None, force=True) is False
-
-@patch("tsarchain.network.node_logic.rpc_client.CFG")
-def test_request_full_sync_replay_guard_failure(mock_cfg, mock_node):
-    mock_cfg.ENABLE_FULL_SYNC = True
-    mock_cfg.SYNC_TIMEOUT = 10.0
-    peer = ("127.0.0.1", 8333)
-    mock_node.rpc_request = MagicMock(return_value={"type": "FULL_SYNC", "ts": 123, "nonce": "abc"})
-    mock_node.nonce_guard = MagicMock(return_value=False)
-    assert request_full_sync(mock_node, peer, force=True) is False
 
 @patch("tsarchain.network.node_logic.rpc_client.socket.socket")
 def test_prefetch_rpc_connections_exception(mock_socket, mock_node):

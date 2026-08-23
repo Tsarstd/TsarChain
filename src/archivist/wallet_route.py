@@ -168,9 +168,10 @@ def _handle_stor_commit(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]
         fin = os.path.join(inc_dir, f"{aid}.bin")
         if os.path.abspath(tmp_path) != os.path.abspath(fin):
             os.replace(tmp_path, fin)
+        norm_fin = os.path.normpath(fin).replace("\\", "/")
         meta.update(
             {
-                "path": fin,
+                "path": norm_fin,
                 "state": "pending_confirm",
                 "receipt_id": receipt_id,
                 "receipt": receipt,

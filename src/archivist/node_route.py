@@ -48,17 +48,15 @@ def _handle_stor_index(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return {"type": "STOR_INDEX", "status": "ok", **server.index}
 
 def _finalize_storage(server, aid: str, meta: dict) -> tuple[bool, Optional[str]]:
-    already_final = server.db.has_final(aid) if hasattr(server.db, "has_final") else (server.db.get_final_bytes_range(aid, 0, 1) is not None)
-    if already_final is not True:
-        promoted = False
-        if hasattr(server.db, "promote_incoming"):
-            promoted = (server.db.promote_incoming(aid) is True)
+    already_final = (server.db.has_final(aid) is True)
+    if not already_final:
+        promoted = (server.db.promote_incoming(aid) is True)
         if not promoted:
-            data = server.db.pop_incoming(aid) if hasattr(server.db, "pop_incoming") else None
+            data = server.db.pop_incoming(aid)
             if data is None:
                 p = meta.get("path")
                 if p and os.path.isfile(p):
-                    final_p = server.db._final_blob_path(aid) if hasattr(server.db, "_final_blob_path") else None
+                    final_p = server.db.get_final_blob_path(aid)
                     if final_p:
                         os.makedirs(os.path.dirname(final_p) or ".", exist_ok=True)
                         try:
@@ -72,13 +70,14 @@ def _finalize_storage(server, aid: str, meta: dict) -> tuple[bool, Optional[str]
         if not promoted and not server.db.has_final(aid):
             return False, "missing_file"
     server.db.delete_blob(aid, incoming=True)
-    blob_p = server.db._final_blob_path(aid) if hasattr(server.db, "_final_blob_path") else None
+    blob_p = server.db.get_final_blob_path(aid)
     if blob_p and isinstance(blob_p, str):
-        meta["path"] = blob_p
+        meta["path"] = os.path.normpath(blob_p).replace("\\", "/")
     else:
         meta["path"] = f"lmdb://final/{aid}"
     meta["state"] = "stored"
     return True, None
+
 
 @benchmark(label="STOR_PAID", threshold_ms=500.0)
 def _handle_stor_paid(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -172,7 +171,7 @@ def _handle_stor_proof_run(server, msg: Dict[str, Any]) -> Optional[Dict[str, An
     length = int(challenge.get("length", 0))
     
     chunk_index = offset // merkle_chunk if merkle_chunk > 0 else 0
-    chunk, merkle_path = _get_chunk_and_merkle(server, aid, meta, offset, length, merkle_chunk, chunk_index)
+    chunk, merkle_path = _get_chunk_and_merkle(server, aid, offset, length, merkle_chunk, chunk_index)
             
     proof_hash = GRAFFITI.hash_proof_chunk(chunk)
     chunk_b64 = base64.b64encode(chunk).decode("ascii")
@@ -241,17 +240,17 @@ def _remove_expired_files(server, files: dict, remove_keys: list[str]) -> int:
             server.index["art_map"].pop(art_id, None)
     return expired
 
-def _get_chunk_and_merkle(server, aid: str, meta: dict, offset: int, length: int, merkle_chunk: int, chunk_index: int):
+def _get_chunk_and_merkle(server, aid: str, offset: int, length: int, merkle_chunk: int, chunk_index: int):
     chunk = server.db.get_final_bytes_range(aid, offset, length)
     if chunk is None:
         raise FileNotFoundError("file_missing")
     merkle_path = server.db.get_final_merkle_path(aid, merkle_chunk, chunk_index)
     if merkle_path is None:
-        blob_path = server.db._final_blob_path(aid)
+        blob_path = server.db.get_final_blob_path(aid)
         if not os.path.isfile(blob_path):
-            blob_path = server.db._incoming_bin_path(aid)
+            blob_path = server.db.get_incoming_bin_path(aid)
         if not os.path.isfile(blob_path):
-            blob_path = server.db._incoming_part_path(aid)
+            blob_path = server.db.get_incoming_part_path(aid)
         if os.path.isfile(blob_path):
             merkle_path = GRAFFITI.merkle_path_for_file(blob_path, merkle_chunk, chunk_index)
             log.debug("use merkle_path_for_file")

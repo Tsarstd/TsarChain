@@ -552,56 +552,84 @@ pub fn validate_tx_p2wpkh_compact<'py>(
         let sig_der = &sig_full[..sig_full.len() - 1];
         let pubkey = &wit[1];
         let spk = &entry.spk;
-        if spk.len() != 22 || spk[0] != 0x00 || spk[1] != 0x14 {
+        if spk.len() == 22 && spk[0] == 0x00 && spk[1] == 0x14 {
+            if hash160_bytes(pubkey) != spk[2..22] {
+                return Ok((false, Some("pubkey_hash_mismatch".to_string()), None));
+            }
+
+            // build sighash
+            let mut preimage = Vec::with_capacity(156 + 25);
+            preimage.extend_from_slice(&ver.to_le_bytes());
+            preimage.extend_from_slice(&hash_prevouts);
+            preimage.extend_from_slice(&hash_sequence);
+            let mut prev_le = [0u8; 32];
+            for (i, b) in prev.iter().enumerate() {
+                prev_le[31 - i] = *b;
+            }
+            preimage.extend_from_slice(&prev_le);
+            preimage.extend_from_slice(&vout.to_le_bytes());
+            // script_code for p2wpkh
+            preimage.push(0x19); // varint 25
+            preimage.extend_from_slice(&[0x76, 0xa9, 0x14]);
+            preimage.extend_from_slice(&spk[2..22]);
+            preimage.extend_from_slice(&[0x88, 0xac]);
+            preimage.extend_from_slice(&entry.amount.to_le_bytes());
+            preimage.extend_from_slice(&seq.to_le_bytes());
+            preimage.extend_from_slice(&hash_outputs);
+            preimage.extend_from_slice(&lock.to_le_bytes());
+            preimage.extend_from_slice(&(sighash_type as u32).to_le_bytes());
+
+            let digest = sha256d(&preimage);
+
+            let msg = Message::from_digest(digest);
+            let pk = match PublicKey::from_slice(pubkey) {
+                Ok(p) => p,
+                Err(_) => return Ok((false, Some("invalid_pubkey".to_string()), None)),
+            };
+            let sig = match Signature::from_der(sig_der) {
+                Ok(s) => s,
+                Err(_) => return Ok((false, Some("bad_der".to_string()), None)),
+            };
+            let mut norm = sig;
+            if limits.enforce_low_s {
+                norm.normalize_s();
+                if norm != sig {
+                    return Ok((false, Some("high_s".to_string()), None));
+                }
+            }
+            if secp.verify_ecdsa(msg, &norm, &pk).is_err() {
+                return Ok((false, Some("ecdsa_verify_failed".to_string()), None));
+            }
+
+            sigops = sigops.saturating_add(1);
+        } else if spk.len() == 34 && spk[0] == 0x00 && spk[1] == 0x20 {
+            // P2WSH (Graffiti payout covenant)
+            if wit.len() < 2 {
+                return Ok((false, Some("missing_witness".to_string()), None));
+            }
+            let hash32 = &spk[2..34];
+            let art_digest = &wit[0];
+            let redeem_script = &wit[1];
+            if Sha256::digest(redeem_script).as_slice() != hash32 {
+                return Ok((false, Some("witness_script_hash_mismatch".to_string()), None));
+            }
+            if redeem_script.len() < 2 {
+                return Ok((false, Some("redeem_script_too_short".to_string()), None));
+            }
+            let push_len = redeem_script[0] as usize;
+            if push_len + 2 != redeem_script.len() {
+                return Ok((false, Some("redeem_script_malformed".to_string()), None));
+            }
+            let pushed = &redeem_script[1..1 + push_len];
+            if redeem_script[redeem_script.len() - 1] != 0x87 {
+                return Ok((false, Some("redeem_script_missing_equal".to_string()), None));
+            }
+            if pushed != art_digest {
+                return Ok((false, Some("redeem_script_data_mismatch".to_string()), None));
+            }
+        } else {
             return Ok((false, Some("unsupported_spk_type".to_string()), None));
         }
-        if hash160_bytes(pubkey) != spk[2..22] {
-            return Ok((false, Some("pubkey_hash_mismatch".to_string()), None));
-        }
-
-        // build sighash
-        let mut preimage = Vec::with_capacity(156 + 25);
-        preimage.extend_from_slice(&ver.to_le_bytes());
-        preimage.extend_from_slice(&hash_prevouts);
-        preimage.extend_from_slice(&hash_sequence);
-        let mut prev_le = prev.clone();
-        prev_le.reverse();
-        preimage.extend_from_slice(&prev_le);
-        preimage.extend_from_slice(&vout.to_le_bytes());
-        // script_code for p2wpkh
-        preimage.push(0x19); // varint 25
-        preimage.extend_from_slice(&[0x76, 0xa9, 0x14]);
-        preimage.extend_from_slice(&spk[2..22]);
-        preimage.extend_from_slice(&[0x88, 0xac]);
-        preimage.extend_from_slice(&entry.amount.to_le_bytes());
-        preimage.extend_from_slice(&seq.to_le_bytes());
-        preimage.extend_from_slice(&hash_outputs);
-        preimage.extend_from_slice(&lock.to_le_bytes());
-        preimage.extend_from_slice(&(sighash_type as u32).to_le_bytes());
-
-        let digest = sha256d(&preimage);
-
-        let msg = Message::from_digest(digest);
-        let pk = match PublicKey::from_slice(pubkey) {
-            Ok(p) => p,
-            Err(_) => return Ok((false, Some("invalid_pubkey".to_string()), None)),
-        };
-        let sig = match Signature::from_der(sig_der) {
-            Ok(s) => s,
-            Err(_) => return Ok((false, Some("bad_der".to_string()), None)),
-        };
-        let mut norm = sig;
-        if limits.enforce_low_s {
-            norm.normalize_s();
-            if norm != sig {
-                return Ok((false, Some("high_s".to_string()), None));
-            }
-        }
-        if secp.verify_ecdsa(msg, &norm, &pk).is_err() {
-            return Ok((false, Some("ecdsa_verify_failed".to_string()), None));
-        }
-
-        sigops = sigops.saturating_add(1);
     }
 
     if sigops > limits.max_sigops_per_tx {
@@ -610,10 +638,15 @@ pub fn validate_tx_p2wpkh_compact<'py>(
 
     let mut output_sum: u128 = 0;
     for (amt, spk) in &outputs {
-        if spk.is_empty() {
-            return Ok((false, Some("empty_script".to_string()), None));
+        if *amt == 0 {
+            if spk.first().map(|b| *b == 0x6a).unwrap_or(false) {
+                // allow OP_RETURN zero amount
+            } else {
+                return Ok((false, Some("nonpositive_output_amount".to_string()), None));
+            }
+        } else {
+            output_sum += *amt as u128;
         }
-        output_sum += *amt as u128;
     }
     if input_sum < output_sum {
         return Ok((false, Some("inputs_less_than_outputs".to_string()), None));

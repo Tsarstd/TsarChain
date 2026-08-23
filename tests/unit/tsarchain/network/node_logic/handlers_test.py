@@ -10,8 +10,6 @@ from tsarchain.network.node_logic.handlers import (
     handle_hello,
     handle_get_headers,
     handle_get_blocks,
-    handle_get_full_sync,
-    handle_full_sync,
     handle_get_block_at,
     handle_get_block_by_hash,
 )
@@ -41,7 +39,6 @@ class MockNode:
         self.peer_scores = {}
         self.storage_peers = {}
         self._peer_best_height = {}
-        self._full_sync_served_at = {}
 
         self.broadcast = MagicMock()
         self.broadcast.lock = threading.RLock()
@@ -49,7 +46,6 @@ class MockNode:
         self.broadcast.blockchain.chain = [
             MockBlock(i, f"hash{i}", f"hash{i-1}") for i in range(11)
         ]
-        self.broadcast.build_full_sync_payload.return_value = ({"chain": [], "utxos": {}}, None, None, None)
 
     def _is_local_address(self, ip):
         return ip == "127.0.0.1"
@@ -193,70 +189,6 @@ def test_handle_get_blocks(mock_cfg, mock_node):
     assert res["blocks"][0]["hash"] == "hash2"
     assert res["blocks"][1]["hash"] == "hash4"
     assert res["blocks"][2]["hash"] == "hash10"
-
-
-# -------------------------------------------------------------------
-# handle_get_full_sync tests
-# -------------------------------------------------------------------
-@patch("tsarchain.network.node_logic.handlers.time.time")
-@patch("tsarchain.network.node_logic.handlers.CFG")
-def test_handle_get_full_sync_success(mock_cfg, mock_time, mock_node):
-    mock_cfg.FULL_SYNC_MIN_INTERVAL = 60
-    mock_cfg.FULL_SYNC_MAX_BLOCKS = 1000
-    mock_cfg.DEBUG_BENCHMARKS = False
-    mock_cfg.CANONICAL_SEP = (',', ':')
-    mock_cfg.MAX_MSG = 1000000
-    mock_cfg.NETWORK_MAGIC = b"TSAR"
-    mock_time.return_value = 1000.0
-    
-    res = handle_get_full_sync(mock_node, {}, ("192.168.1.10", 8334))
-    assert "chain" in res
-    assert mock_node._full_sync_served_at["192.168.1.10"] == 1000.0
-
-@patch("tsarchain.network.node_logic.handlers.time.time")
-@patch("tsarchain.network.node_logic.handlers.CFG")
-def test_handle_get_full_sync_rate_limited(mock_cfg, mock_time, mock_node):
-    mock_cfg.FULL_SYNC_MIN_INTERVAL = 60
-    mock_time.return_value = 1010.0
-    mock_node._full_sync_served_at["192.168.1.10"] = 1000.0
-    
-    res = handle_get_full_sync(mock_node, {}, ("192.168.1.10", 8334))
-    assert res["type"] == "SYNC_REJECT"
-    assert res["reason"] == "rate_limited"
-
-@patch("tsarchain.network.node_logic.handlers.CFG")
-def test_handle_get_full_sync_too_large(mock_cfg, mock_node):
-    mock_cfg.FULL_SYNC_MIN_INTERVAL = 0
-    mock_cfg.FULL_SYNC_MAX_BLOCKS = 5
-    mock_cfg.DEBUG_BENCHMARKS = False
-    
-    res = handle_get_full_sync(mock_node, {}, ("192.168.1.10", 8334))
-    assert res["type"] == "SYNC_REDIRECT"
-    assert res["reason"] == "too_large_chain"
-
-@patch("tsarchain.network.node_logic.handlers.CFG")
-def test_handle_get_full_sync_exceed_limit(mock_cfg, mock_node):
-    mock_cfg.FULL_SYNC_MIN_INTERVAL = 0
-    mock_cfg.FULL_SYNC_MAX_BLOCKS = 100
-    mock_cfg.DEBUG_BENCHMARKS = False
-    mock_cfg.CANONICAL_SEP = (',', ':')
-    mock_cfg.MAX_MSG = 5 # Very small cap
-    mock_cfg.NETWORK_MAGIC = b"TSAR"
-    
-    res = handle_get_full_sync(mock_node, {}, ("192.168.1.10", 8334))
-    assert res["type"] == "SYNC_REDIRECT"
-    assert res["reason"] == "payload_would_exceed_limit"
-
-
-# -------------------------------------------------------------------
-# handle_full_sync tests
-# -------------------------------------------------------------------
-def test_handle_full_sync(mock_node):
-    msg = {"data": {"chain": [1, 2, 3]}}
-    res = handle_full_sync(mock_node, msg, ("192.168.1.10", 8334))
-    
-    assert res == {"status": "ok"}
-    mock_node.broadcast.receive_full_sync.assert_called_once_with({"chain": [1, 2, 3]})
 
 
 # -------------------------------------------------------------------

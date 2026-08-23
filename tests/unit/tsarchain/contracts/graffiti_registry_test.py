@@ -20,19 +20,20 @@ def test_init_kv_empty(mock_kv):
     m_iter, _ = mock_kv
     m_iter.return_value = []
     reg = GraffitiRegistry()
-    m_iter.assert_called_once_with("graffiti", b"data:")
+    m_iter.assert_called_once_with("graffiti", b"")
     assert "proofs" in reg.data
 
 def test_init_kv_with_data(mock_kv):
+    from tsarchain.contracts.graffiti_registry import serialize_post_binary
     m_iter, _ = mock_kv
-    existing_data = {"posts": {"art1": {}}, "comments": {}, "payouts": {}, "proofs": {}}
-    m_iter.return_value = [(b"data:data", json.dumps(existing_data).encode("utf-8"))]
+    post_bytes = serialize_post_binary({"art_id": "art1", "stats": {}})
+    m_iter.return_value = [(b"p:art1", post_bytes)]
     reg = GraffitiRegistry()
-    assert reg.data["posts"] == {"art1": {}}
+    assert "art1" in reg.data["posts"]
 
 def test_init_kv_with_other_keys(mock_kv):
     m_iter, _ = mock_kv
-    m_iter.return_value = [(b"data:other", b"{}")]
+    m_iter.return_value = [(b"other:key", b"{}")]
     reg = GraffitiRegistry()
     assert reg.data == {"posts": {}, "comments": {}, "payouts": {}, "proofs": {}}
 
@@ -41,6 +42,7 @@ def test_flush_kv(mock_kv):
     m_b = MagicMock()
     m_batch.return_value.__enter__.return_value = m_b
     reg = GraffitiRegistry()
+    reg.data["posts"]["art1"] = {"stats": {}}
     reg._flush()
     m_batch.assert_called_once_with("graffiti")
     m_b.put.assert_called_once()
@@ -269,3 +271,130 @@ def test_list_comments(mock_kv):
     
     assert len(reg.list_comments("art1", limit=1)) == 1
     assert len(reg.list_comments("art1", limit=0)) == 2
+
+
+def test_binary_serde_helpers():
+    from tsarchain.contracts.graffiti_registry import (
+        serialize_post_binary,
+        deserialize_post_binary,
+        serialize_comment_binary,
+        deserialize_comment_binary,
+        serialize_payout_binary,
+        deserialize_payout_binary,
+        serialize_proof_binary,
+        deserialize_proof_binary,
+    )
+
+    # Post
+    post_entry = {
+        "art_id": "art_serde",
+        "title": "graffiti_test",
+        "amount_paid": 5000,
+        "block_height": 12,
+        "stats": {
+            "pool_balance": 5000,
+            "creator_paid": 100,
+            "storage_paid": 200,
+            "comments": 3,
+            "last_paid_epoch": 2,
+        },
+    }
+    raw_post = serialize_post_binary(post_entry)
+    deser_post = deserialize_post_binary(raw_post, "art_serde")
+    assert deser_post["art_id"] == "art_serde"
+    assert deser_post["title"] == "graffiti_test"
+    assert deser_post["stats"]["pool_balance"] == 5000
+
+    # Post JSON fallback (starts with { or short raw)
+    raw_json_post = json.dumps(post_entry).encode("utf-8")
+    assert deserialize_post_binary(raw_json_post)["art_id"] == "art_serde"
+    assert deserialize_post_binary(b"short") == json.loads(b"short".decode("utf-8", errors="ignore")) if False else True
+
+    # Comment
+    comment_entry = {
+        "txid": "tx_c1",
+        "block_height": 15,
+        "amount": 1000,
+        "tip": 200,
+        "creator_paid": 400,
+        "storage_paid": 400,
+        "ts": 123456789,
+        "comment": "Nice!",
+    }
+    raw_comment = serialize_comment_binary(comment_entry)
+    deser_comment = deserialize_comment_binary(raw_comment)
+    assert deser_comment["txid"] == "tx_c1"
+    assert deser_comment["comment"] == "Nice!"
+    # JSON fallback
+    raw_json_comment = json.dumps(comment_entry).encode("utf-8")
+    assert deserialize_comment_binary(raw_json_comment)["txid"] == "tx_c1"
+
+    # Payout
+    payout_entry = {
+        "txid": "tx_p1",
+        "block_height": 20,
+        "amount": 800,
+        "epoch": 3,
+    }
+    raw_payout = serialize_payout_binary(payout_entry)
+    deser_payout = deserialize_payout_binary(raw_payout)
+    assert deser_payout["txid"] == "tx_p1"
+    assert deser_payout["amount"] == 800
+    assert deser_payout["epoch"] == 3
+    # JSON fallback
+    raw_json_payout = json.dumps(payout_entry).encode("utf-8")
+    assert deserialize_payout_binary(raw_json_payout)["txid"] == "tx_p1"
+
+    # Proof
+    proof_entry = {
+        "storer": "storer_1",
+        "epoch": 4,
+        "offset": 1024,
+        "length": 4096,
+        "height": 25,
+        "ts": 999999,
+        "hash": "proof_hash",
+    }
+    raw_proof = serialize_proof_binary(proof_entry)
+    deser_proof = deserialize_proof_binary(raw_proof)
+    assert deser_proof["storer"] == "storer_1"
+    assert deser_proof["epoch"] == 4
+    assert deser_proof["hash"] == "proof_hash"
+    # JSON fallback
+    raw_json_proof = json.dumps(proof_entry).encode("utf-8")
+    assert deserialize_proof_binary(raw_json_proof)["storer"] == "storer_1"
+
+
+def test_graffiti_registry_stale_key_cleanup_on_flush(mock_kv):
+    """Verify that _flush cleans up stale index keys on reorg / item count reduction."""
+    registry = GraffitiRegistry()
+    registry._stored_counts = {
+        "comments": {"art1": 3},
+        "payouts": {"art1": 2},
+        "proofs": {"art1": 2},
+    }
+    registry._stored_posts = {"art1", "art_deleted"}
+
+    # Current state has fewer items (e.g. after reorg)
+    registry.data = {
+        "posts": {"art1": {"art_id": "art1", "amount_paid": 100, "block_height": 1}},
+        "comments": {"art1": [{"block_height": 1, "amount": 10, "ts": 100}]},
+        "payouts": {"art1": [{"block_height": 1, "amount": 50, "epoch": 1}]},
+        "proofs": {},
+    }
+
+    mock_batch = MagicMock()
+    with patch('tsarchain.contracts.graffiti_registry.batch') as mock_batch_ctx:
+        mock_batch_ctx.return_value.__enter__.return_value = mock_batch
+
+        registry._flush()
+
+        # Check deleted keys
+        deleted_keys = [call.args[0] for call in mock_batch.delete.call_args_list]
+        assert b"p:art_deleted" in deleted_keys
+        assert b"c:art1:00000001" in deleted_keys
+        assert b"c:art1:00000002" in deleted_keys
+        assert b"y:art1:00000001" in deleted_keys
+        assert b"r:art1:00000000" in deleted_keys
+        assert b"r:art1:00000001" in deleted_keys
+

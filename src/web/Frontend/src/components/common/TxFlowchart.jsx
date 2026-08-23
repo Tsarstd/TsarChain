@@ -105,7 +105,7 @@ export const TxFlowchart = ({ data, onSearchClick }) => {
         <div className="utxo-header-title">
           <RiNodeTree className="utxo-header-icon" />
           <div>
-            <h4>UTXO Transaction Flowchart</h4>
+            <h4>Transaction Flowchart</h4>
           </div>
         </div>
         <div className="utxo-header-controls">
@@ -258,12 +258,12 @@ export const TxFlowchart = ({ data, onSearchClick }) => {
                         onClick={() => handleAddrClick(item.address)}
                         title={`Search address ${item.address}`}
                       >
-                        <span>vout {item.vout}: {fmtAddress(item.address, 8, 6)}</span>
+                        <span>vout {item.vout} : {fmtAddress(item.address, 8, 6)}</span>
                         <FaExternalLinkAlt className="ext-icon" />
                       </button>
                     ) : (
                       <div className="node-address" title={item.address}>
-                        <span>vout {item.vout}: {fmtAddress(item.address, 8, 6)}</span>
+                        <span>vout {item.vout} : {fmtAddress(item.address, 8, 6)}</span>
                       </div>
                     )}
                   </div>

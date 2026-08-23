@@ -17,6 +17,10 @@ from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.web.build_history_book")
 
 
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+_TEMPLATE_DIR = os.path.abspath(os.path.join(_CURRENT_DIR, "..", "template"))
+
+
 class HistoryBookGenerator:
     _template_cache = {}
     _font_cache = {}
@@ -24,10 +28,11 @@ class HistoryBookGenerator:
 
     def __init__(self, output_dir: str):
         self.output_dir = output_dir
-        self.template_path = "src/web/Backend/src/template/history_book_template_body.jpg"
-        self.header_p2wpkh = "src/web/Backend/src/template/history_book_head_p2wpkh.jpg"
-        self.header_p2wsh  = "src/web/Backend/src/template/history_book_head_p2wsh.jpg"
-        self.font_template = "src/web/Backend/src/template/font_template.ttf"
+        self.template_path = os.path.join(_TEMPLATE_DIR, "history_book_template_body.jpg")
+        self.header_p2wpkh = os.path.join(_TEMPLATE_DIR, "history_book_head_p2wpkh.jpg")
+        self.header_p2wsh  = os.path.join(_TEMPLATE_DIR, "history_book_head_p2wsh.jpg")
+        self.font_template = os.path.join(_TEMPLATE_DIR, "font_template.ttf")
+        self.qr_prefix     = os.environ.get("EXPLORER_WEB_URL") or "http://localhost:5173/?search="
         
         os.makedirs(self.output_dir, exist_ok=True)
         self._ensure_template_cache()
@@ -113,9 +118,9 @@ class HistoryBookGenerator:
     @classmethod
     def _ensure_template_cache(cls):
         template_paths = {
-            'body': "src/web/Backend/src/template/history_book_template_body.jpg",
-            'p2wpkh': "src/web/Backend/src/template/history_book_head_p2wpkh.jpg",
-            'p2wsh': "src/web/Backend/src/template/history_book_head_p2wsh.jpg",
+            'body': os.path.join(_TEMPLATE_DIR, "history_book_template_body.jpg"),
+            'p2wpkh': os.path.join(_TEMPLATE_DIR, "history_book_head_p2wpkh.jpg"),
+            'p2wsh': os.path.join(_TEMPLATE_DIR, "history_book_head_p2wsh.jpg"),
         }
         for key, path in template_paths.items():
             if key not in cls._template_cache:
@@ -134,7 +139,7 @@ class HistoryBookGenerator:
 
     @classmethod
     def _ensure_font_cache(cls):
-        font_template = "src/web/Backend/src/template/font_template.ttf"
+        font_template = os.path.join(_TEMPLATE_DIR, "font_template.ttf")
         font_sizes = {
             'title': 28,
             'normal': 20,
@@ -370,7 +375,7 @@ class HistoryBookGenerator:
         draw.text(((width - line_width) // 2, 85), line_text, font=self.title_font, fill=(151, 151, 151))
         
         # QR Code
-        qr_prefix = "https://localhost:5173/?search="
+        qr_prefix = self.qr_prefix
         address = data.get('address', '')
         qr_data = qr_prefix + address
         qr_bytes = native_core.generate_qr_code(qr_data)

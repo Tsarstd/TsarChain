@@ -1,0 +1,751 @@
+/* ==========================================================================
+   TSAR STUDIO - HOME / EXPLORER MAIN PAGE STYLING
+   ========================================================================== */
+
+.home-container {
+  width: 100%;
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 0 1.5rem 5rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 5.5rem;
+  position: relative;
+  overflow-x: hidden;
+  z-index: 1;
+}
+
+.home-container svg {
+  transition: filter 0.2s ease, transform 0.2s ease;
+  will-change: filter;
+}
+
+.home-container code {
+  background: var(--bg-glass-hover);
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  color: var(--color-tsar-cream);
+}
+
+/* ==========================================================================
+   1. HERO SECTION (STUDIO NEO-BRUTALIST VIBE)
+   ========================================================================== */
+.hero-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: calc(75vh - 72px);
+  padding-top: 3.5rem;
+  position: relative;
+  z-index: 1;
+}
+
+.hero-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.8rem;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.hero-badge-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--color-tsar-orange);
+  color: var(--color-tsar-black);
+  padding: 0.35rem 1rem;
+  border-radius: 2px;
+  width: fit-content;
+  font-family: var(--font-newspaper);
+  font-size: 0.95rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: bold;
+  box-shadow: 2px 2px 0px var(--color-tsar-black);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+.hero-title {
+  font-family: var(--font-newspaper);
+  font-size: clamp(2.8rem, 6vw, 5.2rem);
+  font-weight: normal;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  color: var(--color-tsar-cream);
+  transition: filter 0.3s cubic-bezier(0.16, 1, 0.3, 1), text-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+  will-change: filter, text-shadow;
+}
+
+.hero-title--scrambling {
+  opacity: 0.95;
+  animation: crt-text-glitch 0.25s infinite ease-in-out alternate;
+}
+
+.hero-title--centered {
+  text-align: center;
+}
+
+.hero-title-accent {
+  color: var(--color-tsar-orange);
+  display: inline-block;
+  transition: text-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hero-description {
+  font-family: var(--font-montserrat);
+  font-size: clamp(1.05rem, 1.3vw, 1.25rem);
+  line-height: 1.65;
+  color: var(--text-secondary);
+  max-width: 780px;
+  font-weight: var(--fw-medium);
+}
+
+.hero-description--centered {
+  text-align: center;
+}
+
+.hero-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-medium-15);
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-family: var(--font-montserrat);
+  font-size: 0.85rem;
+  color: var(--color-tsar-cream);
+  transition: all 0.2s ease;
+}
+
+.hero-pill:hover {
+  border-color: var(--color-tsar-orange);
+  color: var(--color-tsar-orange);
+  transform: translateY(-2px);
+  box-shadow: 2px 2px 0px var(--color-tsar-black);
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.2rem;
+  margin-top: 0.8rem;
+}
+
+.hero-actions--centered {
+  justify-content: center;
+}
+
+.btn-hero-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--color-tsar-orange);
+  color: var(--color-tsar-cream);
+  font-family: var(--font-newspaper);
+  font-size: 1.15rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.85rem 2rem;
+  border-radius: 2px;
+  border: 2px solid var(--color-tsar-black);
+  box-shadow: 4px 4px 0px var(--color-tsar-black);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1), filter 0.2s ease, text-shadow 0.2s ease;
+}
+
+.btn-hero-primary svg {
+  transition: filter 0.2s ease;
+}
+
+.btn-hero-primary:hover {
+  background: var(--color-tsar-cream);
+  color: var(--color-tsar-black);
+  border-color: var(--color-tsar-black);
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0px var(--color-tsar-black);
+}
+
+.btn-hero-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--bg-surface-1);
+  color: var(--color-tsar-cream);
+  font-family: var(--font-newspaper);
+  font-size: 1.15rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.85rem 1.8rem;
+  border-radius: 2px;
+  border: 2px solid var(--border-medium);
+  box-shadow: 4px 4px 0px var(--color-tsar-black);
+  cursor: pointer;
+  transition: all 0.2s ease, filter 0.2s ease, text-shadow 0.2s ease;
+}
+
+.btn-hero-secondary svg {
+  transition: filter 0.2s ease;
+}
+
+.btn-hero-secondary:hover {
+  border-color: var(--color-tsar-orange);
+  color: var(--color-tsar-orange);
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0px var(--color-tsar-black);
+}
+
+.btn-hero-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-muted-65);
+  font-family: var(--font-montserrat);
+  font-size: 0.92rem;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.75rem 1.2rem;
+  cursor: pointer;
+  transition: color 0.2s ease, filter 0.2s ease, text-shadow 0.2s ease;
+}
+
+.btn-hero-ghost svg {
+  transition: filter 0.2s ease;
+}
+
+.btn-hero-ghost:hover {
+  color: var(--color-tsar-orange);
+}
+
+/* ==========================================================================
+   2. REALTIME TELEMETRY TICKER BAR
+   ========================================================================== */
+.telemetry-ticker {
+  background: var(--bg-tint-gray-1);
+  border: 1px solid var(--border-medium-15);
+  border-radius: 4px;
+  padding: 1.4rem 2rem;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+  box-shadow: 3px 3px 0px var(--color-tsar-black);
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.ticker-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  position: relative;
+}
+
+.ticker-item:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  right: -0.75rem;
+  top: 15%;
+  height: 70%;
+  width: 1px;
+  background: var(--border);
+}
+
+.ticker-label {
+  font-family: var(--font-montserrat);
+  font-size: 0.75rem;
+  color: var(--text-muted-60);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: var(--fw-bold);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.ticker-label svg {
+  transition: filter 0.2s ease;
+}
+
+.ticker-value {
+  font-family: var(--font-newspaper);
+  font-size: 1.6rem;
+  color: var(--color-tsar-cream);
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  transition: filter 0.2s ease, text-shadow 0.2s ease;
+}
+
+/* ==========================================================================
+   3. MANIFESTO SECTION (STUDIO CULTURE)
+   ========================================================================== */
+.manifesto-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+  position: relative;
+  z-index: 1;
+}
+
+.home-container .section-header {
+  text-align: center;
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.home-container .section-tag,
+.section-tag {
+  font-family: var(--font-newspaper);
+  font-size: 0.85rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-tsar-black);
+  background: var(--color-tsar-orange);
+  padding: 0.3rem 0.8rem;
+  border-radius: 2px;
+  border: 1px solid var(--color-tsar-black);
+  width: fit-content;
+  box-shadow: 2px 2px 0px var(--color-tsar-black);
+}
+
+.home-container .section-title,
+.section-title {
+  font-family: var(--font-newspaper);
+  font-size: clamp(2rem, 3.2vw, 3rem);
+  text-transform: uppercase;
+  line-height: 1.15;
+  color: var(--color-tsar-cream);
+  transition: text-shadow 0.2s ease;
+}
+
+.home-container .section-subtitle,
+.section-subtitle {
+  font-family: var(--font-montserrat);
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--text-secondary-70);
+}
+
+.manifesto-cards-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.8rem;
+  margin-top: 1rem;
+}
+
+.manifesto-card {
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.manifesto-card:hover {
+  border-color: var(--color-tsar-orange);
+  transform: translateY(-3px);
+  box-shadow: 4px 4px 0px var(--color-tsar-black);
+}
+
+.manifesto-card--web2 {
+  border-left: 4px solid var(--border-strong-30);
+}
+
+.manifesto-card--sovereign {
+  border-left: 4px solid var(--color-tsar-orange);
+  background: var(--bg-tint-orange-subtle);
+}
+
+.manifesto-card-tag {
+  font-family: var(--font-newspaper);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted-50);
+}
+
+.manifesto-card--sovereign .manifesto-card-tag {
+  color: var(--color-tsar-orange);
+}
+
+.manifesto-card-heading {
+  font-family: var(--font-newspaper);
+  font-size: 1.5rem;
+  text-transform: uppercase;
+  color: var(--color-tsar-cream);
+  line-height: 1.25;
+  transition: text-shadow 0.2s ease;
+}
+
+.manifesto-card-body {
+  font-family: var(--font-montserrat);
+  font-size: 0.92rem;
+  line-height: 1.65;
+  color: var(--text-secondary-75);
+}
+
+.manifesto-features-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.manifesto-feature-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: var(--font-montserrat);
+  font-size: 0.88rem;
+  color: var(--color-tsar-cream);
+}
+
+.manifesto-feature-icon-bad {
+  color: var(--text-dim);
+  flex-shrink: 0;
+  transition: filter 0.2s ease;
+}
+
+.manifesto-feature-icon-good {
+  color: var(--color-tsar-orange);
+  flex-shrink: 0;
+  transition: filter 0.2s ease;
+}
+
+/* ==========================================================================
+   4. PIPELINE SECTION
+   ========================================================================== */
+.engine-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+  position: relative;
+  z-index: 1;
+}
+
+.engine-pipeline {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1rem;
+  position: relative;
+}
+
+.engine-step-card {
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1.6rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.engine-step-card:hover, .engine-step-card.active {
+  border-color: var(--color-tsar-orange);
+  box-shadow: 3px 3px 0px var(--color-tsar-black);
+  transform: translateY(-3px);
+}
+
+.engine-step-card svg {
+  transition: filter 0.2s ease, transform 0.2s ease;
+}
+
+.engine-step-badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 2px;
+  background: var(--color-tsar-orange);
+  color: var(--color-tsar-cream);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  font-family: var(--font-newspaper);
+}
+
+.engine-step-title {
+  font-family: var(--font-newspaper);
+  font-size: 1.15rem;
+  text-transform: uppercase;
+  color: var(--color-tsar-cream);
+  transition: text-shadow 0.2s ease;
+}
+
+.engine-step-desc {
+  font-family: var(--font-montserrat);
+  font-size: 0.82rem;
+  color: var(--text-muted-65);
+  line-height: 1.5;
+}
+
+/* ==========================================================================
+   5. BENTO GRID ARCHITECTURE
+   ========================================================================== */
+.bento-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+  position: relative;
+  z-index: 1;
+}
+
+.bento-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 1.5rem;
+}
+
+.bento-card {
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1.5rem;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.bento-card:hover {
+  border-color: var(--color-tsar-orange);
+  transform: translateY(-3px);
+  box-shadow: 4px 4px 0px var(--color-tsar-black);
+}
+
+.bento-card-large-1 {
+  grid-column: span 7;
+}
+
+.bento-card-medium-1 {
+  grid-column: span 5;
+}
+
+.bento-card-medium-2 {
+  grid-column: span 5;
+}
+
+.bento-card-large-2 {
+  grid-column: span 7;
+}
+
+.bento-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.bento-card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 4px;
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-medium-15);
+  color: var(--color-tsar-orange);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  flex-shrink: 0;
+  box-shadow: 0 0 8px var(--accent-subtle-hover);
+  transition: all 0.2s ease;
+}
+
+.bento-card:hover .bento-card-icon {
+  box-shadow: 0 0 14px var(--accent-glow-strong);
+  border-color: var(--color-tsar-orange);
+}
+
+.bento-card-icon svg {
+  transition: filter 0.2s ease;
+}
+
+.bento-card-chip {
+  font-family: var(--font-newspaper);
+  font-size: 0.8rem;
+  color: var(--color-tsar-orange);
+  background: var(--accent-subtle);
+  padding: 0.2rem 0.6rem;
+  border-radius: 2px;
+  border: 1px solid var(--border-orange-30);
+  text-transform: uppercase;
+}
+
+.bento-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.bento-card-title {
+  font-family: var(--font-newspaper);
+  font-size: 1.45rem;
+  text-transform: uppercase;
+  color: var(--color-tsar-cream);
+  transition: text-shadow 0.2s ease;
+}
+
+.bento-card-desc {
+  font-family: var(--font-montserrat);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--text-secondary-70);
+}
+
+.bento-tech-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.bento-badge {
+  font-family: var(--font-montserrat);
+  font-size: 0.75rem;
+  font-weight: var(--fw-semibold);
+  background: var(--bg-surface-2-alt);
+  border: 1px solid var(--border);
+  color: var(--text-secondary-75);
+  padding: 0.25rem 0.6rem;
+  border-radius: 2px;
+}
+
+/* ==========================================================================
+   6. RESOURCE & DOCUMENTATION HUB
+   ========================================================================== */
+.docs-hub-banner {
+  background: var(--bg-surface-1);
+  border: 2px solid var(--color-tsar-orange);
+  border-radius: 4px;
+  padding: 3rem 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 4px 4px 0px var(--color-tsar-black);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.docs-hub-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  max-width: 680px;
+}
+
+.docs-hub-title {
+  font-family: var(--font-newspaper);
+  font-size: 2.2rem;
+  text-transform: uppercase;
+  color: var(--color-tsar-cream);
+  transition: text-shadow 0.2s ease;
+}
+
+.docs-hub-desc {
+  font-family: var(--font-montserrat);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--text-secondary-75);
+}
+
+.docs-hub-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+}
+
+.docs-hub-banner > div:last-child svg {
+  transition: filter 0.3s ease, transform 0.3s ease;
+}
+
+/* ==========================================================================
+   RESPONSIVE BREAKPOINTS
+   ========================================================================== */
+@media (max-width: 1024px) {
+  .hero-section {
+    padding-top: 2rem;
+  }
+
+  .telemetry-ticker {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .bento-card-large-1,
+  .bento-card-medium-1,
+  .bento-card-medium-2,
+  .bento-card-large-2 {
+    grid-column: span 12;
+  }
+
+  .engine-pipeline {
+    grid-template-columns: 1fr;
+  }
+
+  .manifesto-cards-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .docs-hub-banner {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .docs-hub-buttons {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 640px) {
+  .home-container {
+    padding: 0 1rem 4rem 1rem;
+    gap: 4rem;
+  }
+
+  .telemetry-ticker {
+    grid-template-columns: 1fr;
+  }
+
+  .ticker-item:not(:last-child)::after {
+    display: none;
+  }
+}

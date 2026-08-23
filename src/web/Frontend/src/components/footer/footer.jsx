@@ -9,36 +9,34 @@ const footerSections = [
   {
     title: "Explore",
     links: [
-      { text: "Home", url: "/Graffiti", isInternal: true },
-      { text: "About", url: "#" },
-      { text: "Services", url: "#" },
-      { text: "Contact", url: "#" }
+      { text: "Block", url: "/block", isInternal: true },
+      { text: "Graffiti", url: "/graffiti", isInternal: true },
+      { text: "Network", url: "/network", isInternal: true },
     ]
   },
   {
     title: "Learn",
     links: [
-      { text: "Documentation", url: "#" },
-      { text: "Tutorials", url: "#" },
-      { text: "Blog", url: "#" },
-      { text: "FAQs", url: "#" }
+      { text: "About", url: "/documentation", isInternal: true },
+      { text: "Tutorials", url: "/documentation?doc=deployment" },
+      { text: "Architecture", url: "/documentation?doc=architecture" }
     ]
   },
   {
     title: "Networks",
     links: [
-      { text: "Devnet", url: "/Network", isInternal: true  },
-      { text: "Testnet", url: "#" },
-      { text: "Info", url: "#"},
+      { text: "Devnet", url: "/network", isInternal: true, status: "On" },
+      { text: "Mainnet", url: "#", status: "Off" },
     ]
   },
   {
     title: "Legal",
     links: [
-      { text: "Privacy Policy", url: "#" },
-      { text: "Terms of Service", url: "#" },
-      { text: "Cookie Policy", url: "#" },
-      { text: "Disclaimer", url: "#" }
+      { text: "Privacy Policy", url: "/privacyPolicy", isInternal: true },
+      { text: "Terms of Service", url: "/terms", isInternal: true },
+      { text: "Cookie Policy", url: "/cookiePolicy", isInternal: true },
+      { text: "Disclaimer", url: "/disclaimer", isInternal: true },
+      { text: "License", url: "/license", isInternal: true },
     ]
   }
 ];
@@ -70,6 +68,18 @@ const Footer = () => {
               <h4 className="site-footer__title">{section.title}</h4>
               <div className="site-footer__links">
                 {section.links.map((link, idx) => {
+                  const content = (
+                    <>
+                      <span className="site-footer__link-text">{link.text}</span>
+                      {link.status && (
+                        <span className={`site-footer__status-badge site-footer__status-badge--${link.status.toLowerCase()}`}>
+                          <span className={`site-footer__status-dot site-footer__status-dot--${link.status.toLowerCase()}`} />
+                          <span className="site-footer__status-label">{link.status}</span>
+                        </span>
+                      )}
+                    </>
+                  );
+
                   // Gunakan Link untuk rute internal, <a> untuk eksternal
                   if (link.isInternal) {
                     return (
@@ -78,7 +88,7 @@ const Footer = () => {
                         to={link.url}
                         key={`${section.title}-${idx}`}
                       >
-                        {link.text}
+                        {content}
                       </Link>
                     );
                   }
@@ -89,7 +99,7 @@ const Footer = () => {
                       href={link.url}
                       key={`${section.title}-${idx}`}
                     >
-                      {link.text}
+                      {content}
                     </a>
                   );
                 })}
@@ -117,7 +127,16 @@ const Footer = () => {
           </div>
           
           <div className="site-footer__copyright">
-            an Experimental Project by - Tsar Studio 2026
+            an Experimental Project by -{" "}
+            <a
+              href="https://tsarstudio.netlify.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="site-footer__copyright-link"
+            >
+              Tsar Studio
+            </a>{" "}
+            {new Date().getFullYear()}
           </div>
         </div>
       </div>

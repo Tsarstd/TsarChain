@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import os
 import json
 import queue
 import threading
@@ -85,6 +84,7 @@ class Blockchain():
         }
         self._persist_pending = False
         self._cold_reload_attempted: bool = False
+        self._on_tip_changed_callbacks = []
         
 
         self._start_persist_worker()
@@ -132,13 +132,13 @@ class Blockchain():
         if height < 0:
             return None
 
-        if height in self._hash_cache:
-            h = self._hash_cache.pop(height)
-            self._hash_cache[height] = h  # move to end (MRU)
-            return h
-        
         with self.lock:
-            if height < 0 or height >= len(self.chain):
+            if height in self._hash_cache:
+                h = self._hash_cache.pop(height)
+                self._hash_cache[height] = h  # move to end (MRU)
+                return h
+
+            if height >= len(self.chain):
                 return None
             
             h = self.chain[height].hash()
@@ -296,6 +296,17 @@ class Blockchain():
     def get_mempool(self) -> TxPool | None:
         return self._mempool
 
+    def get_mempool_size(self) -> int:
+        if self._mempool is not None:
+            try:
+                if hasattr(self._mempool, "size") and callable(self._mempool.size):
+                    return self._mempool.size()
+                if hasattr(self._mempool, "__len__"):
+                    return len(self._mempool)
+            except Exception:
+                pass
+        return 0
+
     @property
     def height(self) -> int:
         return len(self.chain) - 1
@@ -355,6 +366,21 @@ class Blockchain():
 
     def median_time_past(self, k: int = CFG.MTP_WINDOWS) -> int:
         return self.difficulty_manager.median_time_past(k)
+
+    def _expected_bits_on_prefix(self, prefix: List[Block], next_height: int) -> int:
+        return self.difficulty_manager._expected_bits_on_prefix(prefix, next_height)
+
+    # ---------------- Tip Notification Callbacks ----------------
+    def register_tip_changed_callback(self, cb):
+        if callable(cb) and cb not in self._on_tip_changed_callbacks:
+            self._on_tip_changed_callbacks.append(cb)
+
+    def notify_tip_changed(self, new_height: int, new_hash: str):
+        for cb in list(self._on_tip_changed_callbacks):
+            try:
+                cb(new_height, new_hash)
+            except Exception:
+                log.exception("[notify_tip_changed] callback error")
 
 
     # ---------------- Proxy Methods for Mining ----------------

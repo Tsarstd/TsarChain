@@ -42,7 +42,7 @@ This document provides an in-depth technical overview of the Graffiti Protocol. 
     │   │   ├── database_archivist.py            # database logic
     │   │   ├── node_route.py                    # node RPC route
     │   │   ├── server_archivist.py              # server start module
-    │   │   ├── storage.guard.py                 # ratelimit guard archivist
+    │   │   ├── storage_guard.py                 # ratelimit guard archivist
     │   │   └── wallet_route.py                  # user RPC route
     │   │
     │   ├── kremlin/                            
@@ -126,7 +126,6 @@ This document provides an in-depth technical overview of the Graffiti Protocol. 
     │   │   │   ├── cast/
     │   │   │   │   ├── base.py                  # Proxy Handler
     │   │   │   │   ├── chain_utils.py           # validate incoming chain logic
-    │   │   │   │   ├── fullsync.py              # full sync logic
     │   │   │   │   ├── gossip.py                # gossip block
     │   │   │   │   ├── mempool_sync.py          # mempool sync p2p
     │   │   │   │   ├── receive.py               # receive p2p data logic

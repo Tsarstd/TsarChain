@@ -13,7 +13,7 @@ from typing import List, Set, Tuple
 
 from . import rpc_client
 from ...utils import config as CFG
-from ..protocol import SecureChannel, build_envelope, recv_message, send_message
+from ..protocol import SecureChannel, build_envelope
 
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.node_logic.discovery")
@@ -23,6 +23,11 @@ _secure_random = random.SystemRandom()
 def discover_peers_loop(self):
     while not self._stop.is_set():
         _discover_peers(self)
+        if hasattr(self, "gc_mailboxes"):
+            try:
+                self.gc_mailboxes()
+            except Exception:
+                pass
         time.sleep(CFG.DISCOVERY_INTERVAL)
 
 
@@ -145,6 +150,5 @@ def _attempt_hello(self, peer: Tuple[str, int]) -> bool:
         self._peer_last_dial[norm] = now
 
     self.broadcast.send_mempool_to_peer(norm)
-    if not CFG.ENABLE_FULL_SYNC:
-        self.request_mempool_snapshot(norm, force=True)
+    self.request_mempool_snapshot(norm, force=True)
     return True

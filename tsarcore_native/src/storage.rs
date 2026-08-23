@@ -9,7 +9,6 @@ use lmdb_sys as ffi;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
-use hex;
 use std::ffi::CString;
 use std::fs;
 use std::os::raw::c_uint;
@@ -333,32 +332,16 @@ impl LmdbBackend {
 
         match drive_type {
             DriveType::Hdd => {
-                let flags = lmdb::EnvironmentFlags::NO_SYNC
-                    | lmdb::EnvironmentFlags::WRITE_MAP
-                    | lmdb::EnvironmentFlags::MAP_ASYNC
-                    | lmdb::EnvironmentFlags::NO_READAHEAD
+                let flags = lmdb::EnvironmentFlags::NO_META_SYNC
                     | lmdb::EnvironmentFlags::NO_MEM_INIT;
                 builder.set_flags(flags);
-                log_warning(&format!(
-                    "[lmdb] HDD profile applied for path='{}': NOSYNC | WRITEMAP | MAPASYNC | NORDAHEAD | NOMEMINIT",
-                    path.display()
-                ));
             }
             DriveType::Ssd => {
                 let flags = lmdb::EnvironmentFlags::NO_META_SYNC
                     | lmdb::EnvironmentFlags::NO_MEM_INIT;
                 builder.set_flags(flags);
-                log_warning(&format!(
-                    "[lmdb] SSD profile applied for path='{}': NOMETASYNC | NOMEMINIT",
-                    path.display()
-                ));
             }
-            DriveType::Nvme => {
-                log_warning(&format!(
-                    "[lmdb] NVME profile applied for path='{}': standard sync",
-                    path.display()
-                ));
-            }
+            DriveType::Nvme => {}
         }
 
         let env = builder.open(path).map_err(|e| map_err("lmdb open", e))?;
@@ -435,9 +418,19 @@ impl LmdbBackend {
                 .begin_rw_txn()
                 .map_err(|e| map_err("lmdb begin_rw_txn", e))?;
             match txn.put(db, &key, &val, WriteFlags::empty()) {
-                Ok(_) => {
-                    return txn.commit().map_err(|e| map_err("lmdb commit", e));
-                }
+                Ok(_) => match txn.commit() {
+                    Ok(_) => return Ok(()),
+                    Err(lmdb::Error::MapFull) => {
+                        log_warning(&format!(
+                            "[lmdb] map full on commit db={} key_len={} val_len={}, trying grow_to_max",
+                            db_name,
+                            key.len(),
+                            val.len()
+                        ));
+                        self.grow_to_max()?;
+                    }
+                    Err(e) => return Err(map_err("lmdb commit", e)),
+                },
                 Err(lmdb::Error::MapFull) => {
                     log_warning(&format!(
                         "[lmdb] map full on put db={} key_len={} val_len={}, trying grow_to_max",
@@ -461,10 +454,18 @@ impl LmdbBackend {
                 .begin_rw_txn()
                 .map_err(|e| map_err("lmdb begin_rw_txn", e))?;
             match txn.del(db, &key, None) {
-                Ok(_) => {
-                    txn.commit().map_err(|e| map_err("lmdb commit", e))?;
-                    return Ok(true);
-                }
+                Ok(_) => match txn.commit() {
+                    Ok(_) => return Ok(true),
+                    Err(lmdb::Error::MapFull) => {
+                        log_warning(&format!(
+                            "[lmdb] map full on commit delete db={} key_len={}, trying grow_to_max",
+                            db_name,
+                            key.len()
+                        ));
+                        self.grow_to_max()?;
+                    }
+                    Err(e) => return Err(map_err("lmdb commit", e)),
+                },
                 Err(lmdb::Error::NotFound) => return Ok(false),
                 Err(lmdb::Error::MapFull) => {
                     log_warning(&format!(
@@ -524,20 +525,31 @@ impl LmdbBackend {
             .open_ro_cursor(db)
             .map_err(|e| map_err("lmdb cursor", e))?;
         let mut items = Vec::new();
-        for (k, v) in cursor.iter() {
-            if k.starts_with(prefix) {
+
+        if prefix.is_empty() {
+            for (k, v) in cursor.iter() {
                 items.push((k.to_vec(), v.to_vec()));
-            } else if !prefix.is_empty() && k > prefix {
-                // keys are ordered; once passed prefix range we can stop
-                break;
             }
+            return Ok(items);
         }
-        //log_debug(&format!(
-        //    "[lmdb] iter_prefix db={} prefix_len={} items={}",
-        //    db_name,
-        //    prefix.len(),
-        //    items.len()
-        //));  Note: Database creation log removed for performance/cleanliness
+
+        match cursor.get(Some(prefix), None, ffi::MDB_SET_RANGE) {
+            Ok((Some(first_k), first_v)) => {
+                if first_k.starts_with(prefix) {
+                    items.push((first_k.to_vec(), first_v.to_vec()));
+                    while let Ok((Some(k), v)) = cursor.get(None, None, ffi::MDB_NEXT) {
+                        if k.starts_with(prefix) {
+                            items.push((k.to_vec(), v.to_vec()));
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+            Ok((None, _)) | Err(lmdb::Error::NotFound) => {}
+            Err(e) => return Err(map_err("lmdb iter_prefix seek", e)),
+        }
+
         Ok(items)
     }
 
@@ -548,34 +560,56 @@ impl LmdbBackend {
         start_after: Option<&[u8]>,
         limit: usize,
     ) -> PyResult<Vec<(Vec<u8>, Vec<u8>)>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
         let db = self.open_db(db_name)?;
         let txn = self
             .env
             .begin_ro_txn()
             .map_err(|e| map_err("lmdb begin_ro_txn", e))?;
-        let mut cursor = txn
+        let cursor = txn
             .open_ro_cursor(db)
             .map_err(|e| map_err("lmdb cursor", e))?;
 
         let mut items = Vec::with_capacity(limit);
-        let start_after = start_after.map(|s| s.to_vec());
-        for (k, v) in cursor.iter() {
-            if !prefix.is_empty() && !k.starts_with(prefix) {
-                if k > prefix {
-                    break;
+        let seek_key = start_after.unwrap_or(prefix);
+
+        let first = if seek_key.is_empty() {
+            cursor.get(None, None, ffi::MDB_FIRST)
+        } else {
+            cursor.get(Some(seek_key), None, ffi::MDB_SET_RANGE)
+        };
+
+        match first {
+            Ok((Some(mut k), mut v)) => {
+                loop {
+                    let is_after = match start_after {
+                        Some(after) => k > after,
+                        None => true,
+                    };
+                    if is_after {
+                        if !prefix.is_empty() && !k.starts_with(prefix) {
+                            break;
+                        }
+                        items.push((k.to_vec(), v.to_vec()));
+                        if items.len() >= limit {
+                            break;
+                        }
+                    }
+                    match cursor.get(None, None, ffi::MDB_NEXT) {
+                        Ok((Some(next_k), next_v)) => {
+                            k = next_k;
+                            v = next_v;
+                        }
+                        _ => break,
+                    }
                 }
-                continue;
             }
-            if let Some(ref after) = start_after {
-                if k <= &after[..] {
-                    continue;
-                }
-            }
-            items.push((k.to_vec(), v.to_vec()));
-            if items.len() >= limit {
-                break;
-            }
+            Ok((None, _)) | Err(lmdb::Error::NotFound) => {}
+            Err(e) => return Err(map_err("lmdb iter_prefix_chunk seek", e)),
         }
+
         Ok(items)
     }
 
@@ -612,7 +646,17 @@ impl LmdbBackend {
                 drop(txn);
                 self.grow_to_max()?;
             } else {
-                return txn.commit().map_err(|e| map_err("lmdb commit batch", e));
+                match txn.commit() {
+                    Ok(_) => return Ok(()),
+                    Err(lmdb::Error::MapFull) => {
+                        log_warning(&format!(
+                            "[lmdb] map full on batch commit db={}, trying grow_to_max",
+                            db_name
+                        ));
+                        self.grow_to_max()?;
+                    }
+                    Err(e) => return Err(map_err("lmdb commit batch", e)),
+                }
             }
         }
     }
@@ -849,17 +893,20 @@ impl NativeStorage {
                 continue;
             }
             let amount = amount_opt.unwrap_or(0);
-            let spk_hex = spk_opt.as_ref().map(|b| hex::encode(b));
-            let payload = serde_json::json!({
-                "tx_out": {
-                    "amount": amount,
-                    "script_pubkey": spk_hex,
-                },
-                "is_coinbase": is_cb_opt.unwrap_or(false),
-                "block_height": h_opt.unwrap_or(0),
-            });
-            let bytes = serde_json::to_vec(&payload)
-                .map_err(|e| PyErr::new::<PyRuntimeError, _>(format!("utxo json encode: {e}")))?;
+            let spk = spk_opt.unwrap_or_default();
+            let is_cb = is_cb_opt.unwrap_or(false);
+            let h = h_opt.unwrap_or(0);
+
+            // Binary compact UTXO format:
+            // amount (u64, 8B LE) + is_coinbase (u8, 1B) + block_height (i64, 8B LE) + spk_len (u16, 2B LE) + spk_bytes
+            let mut bytes = Vec::with_capacity(8 + 1 + 8 + 2 + spk.len());
+            bytes.extend_from_slice(&amount.to_le_bytes());
+            bytes.push(if is_cb { 1 } else { 0 });
+            bytes.extend_from_slice(&h.to_le_bytes());
+            let spk_len = spk.len() as u16;
+            bytes.extend_from_slice(&spk_len.to_le_bytes());
+            bytes.extend_from_slice(&spk);
+
             batch_ops.push((key_str.into_bytes(), Some(bytes)));
             put_count = put_count.saturating_add(1);
         }

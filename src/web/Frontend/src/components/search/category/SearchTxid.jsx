@@ -1,7 +1,6 @@
-import { useMemo, useState, useEffect } from "react";
-import { useRenderHelpers, copyToClipboard } from "../SearchHelpers";
+import { useMemo, useState } from "react";
+import { useRenderHelpers, copyToClipboard, useScrambleText } from "../SearchHelpers";
 import PropTypes from "prop-types";
-import { saveAs } from 'file-saver';
 import { IoReceiptSharp } from "react-icons/io5";
 import { FaCopy } from "react-icons/fa";
 
@@ -9,41 +8,33 @@ import {
   fmtTsar, 
   fmtAddress,
   fmtTxid,
-  fmtTimestamp
-} from "../../../utils/format"
+  fmtTimestamp,
+  downloadFile
+} from "../../../utils/format";
 
 import { getVoutLabel, getAddressType } from "../SearchUX";
 import { TxFlowchart } from "../../common/TxFlowchart";
-
+import { fetchReceipt } from "../../../api/explorer";
 
 const TxidGridCell = ({ cell, isHighlightedCell }) => {
-  const isLastRow = cell.row === 3;
-  
-  if (isLastRow) {
+  if (cell.row === 3) {
     return (
       <div className="txid-cell">
-        <div className={`txid-single-char-container ${isHighlightedCell ? 'highlighted' : ''}`}>
-          <span className="txid-single-char">
-            {cell.value}
-          </span>
+        <div className="txid-single-char-container">
+          <span className="txid-single-char">{cell.value}</span>
         </div>
       </div>
     );
   }
-  
-  const chars = Array.from(cell.value).map((char, i) => ({
-    id: `char-${cell.id}-${i}`,
-    val: char
-  }));
 
   return (
     <div className="txid-cell">
       <div className={`txid-chunk-container ${isHighlightedCell ? 'highlighted' : ''}`}>
         <div className="txid-chunk-grid">
-          {chars.map((c) => (
-            <div key={c.id} className="txid-chunk-char">
-              {c.val}
-            </div>
+          {cell.value.split('').map((char, charIdx) => (
+            <span key={`char-${cell.id}-${charIdx}`} className="txid-chunk-char">
+              {char}
+            </span>
           ))}
         </div>
       </div>
@@ -62,9 +53,7 @@ TxidGridCell.propTypes = {
 };
 
 const TxidGridRow = ({ row, highlightPositions }) => {
-  const isHighlighted = (rowIdx, colIdx) => {
-    return highlightPositions.some(pos => pos[0] === rowIdx && pos[1] === colIdx);
-  };
+  const isHighlighted = (r, c) => highlightPositions.some((pos) => pos[0] === r && pos[1] === c);
 
   return (
     <div className="txid-row">
@@ -82,9 +71,78 @@ const TxidGridRow = ({ row, highlightPositions }) => {
 TxidGridRow.propTypes = {
   row: PropTypes.shape({
     id: PropTypes.string.isRequired,
-    cells: PropTypes.array.isRequired,
+    cells: PropTypes.arrayOf(PropTypes.object).isRequired,
   }).isRequired,
-  highlightPositions: PropTypes.array.isRequired,
+  highlightPositions: PropTypes.arrayOf(PropTypes.arrayOf(PropTypes.number)).isRequired,
+};
+
+const splitTxidGrid = (txid) => {
+  if (txid?.length !== 64) return [];
+  
+  const grid = [];
+  // Row 0, 1, 2
+  for (let r = 0; r < 3; r++) {
+    const row = [];
+    for (let c = 0; c < 4; c++) {
+      const i = (r * 4 + c) * 5;
+      row.push({
+        id: `cell-${r}-${c}`,
+        value: txid.substring(i, i + 5),
+        row: r,
+        col: c
+      });
+    }
+    grid.push({
+      id: `row-${r}`,
+      cells: row
+    });
+  }
+  
+  // Row 3 (last 4 characters)
+  const lastRow = [];
+  const lastFour = txid.substring(60).split('');
+  lastFour.forEach((char, c) => {
+    lastRow.push({
+      id: `cell-3-${c}`,
+      value: char,
+      row: 3,
+      col: c
+    });
+  });
+  grid.push({
+    id: `row-3`,
+    cells: lastRow
+  });
+  
+  return grid;
+};
+
+const highlightPositions = [
+  [0, 0], [0, 2], // Row 1, Column 1 & 3
+  [1, 1], [1, 3], // Row 2, Column 2 & 4
+  [2, 0], [2, 2], // Row 3, Column 1 & 3
+  [3, 0]          // Row 4, Column 1
+];
+
+const renderTxidGrid = (txid) => {
+  if (!txid) return <span>-</span>;
+  
+  const grid = splitTxidGrid(txid);
+  if (!grid.length) {
+    return <span className="value wrap">{txid}</span>;
+  }
+  
+  return (
+    <div className="txid-container">
+      {grid.map((row) => (
+        <TxidGridRow
+          key={row.id}
+          row={row}
+          highlightPositions={highlightPositions}
+        />
+      ))}
+    </div>
+  );
 };
 
 const ResultTx = ({ data, onSearchClick }) => {
@@ -92,15 +150,21 @@ const ResultTx = ({ data, onSearchClick }) => {
   const [isGeneratingReceipt, setIsGeneratingReceipt] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
 
+  const { displayText: displayTxid } = useScrambleText(data?.txid, {
+    preservePrefix: 0,
+    charset: "0123456789abcdef",
+    duration: 700
+  });
+
   const blockDisplay = useMemo(() => {
-    if (!data?.block_height && data?.block_height !== 0) {
-      return "0";
+    if (data?.block_height === null || data?.block_height === undefined || data?.block_height === "" || data?.block_height === "-") {
+      return data?.status === "confirmed" ? "-" : "Pending";
     }
-    if (data?.block_height === "-") {
+    if (data?.block_height === 0 || data?.block_height === "0") {
       return "Genesis (0)";
     }
     return data?.block_height;
-  }, [data?.block_height]);
+  }, [data?.block_height, data?.status]);
 
   const downloadReceiptDirect = async () => {
     if (!data?.txid) return;
@@ -108,15 +172,10 @@ const ResultTx = ({ data, onSearchClick }) => {
     setIsGeneratingReceipt(true);
     
     try {
-      const response = await fetch(`/api/receipt?txid=${data.txid}`);
-      const result = await response.json();
+      const result = await fetchReceipt(data.txid);
       
-      if (response.ok && result.status === "ok") {
-        const dataUrl = result.data.data_url;
-        const base64Response = await fetch(dataUrl);
-        const blob = await base64Response.blob();
-        
-        saveAs(blob, `${data.txid}.jpg`);
+      if (result.status === "ok" && result.data?.data_url) {
+        downloadFile(result.data.data_url, `${data.txid}.jpg`);
       } else {
         throw new Error(result.message || 'Failed to generate receipt');
       }
@@ -128,11 +187,14 @@ const ResultTx = ({ data, onSearchClick }) => {
     }
   };
 
-  const groupedInputs = useMemo(() => {
-    if (!data?.inputs) return [];
+  const inputs = data?.inputs || [];
+  const outputs = data?.outputs || [];
+
+  const groupedInputs = (() => {
+    if (!inputs.length) return [];
     
     const groups = {};
-    data.inputs.forEach((inp, inpIdx) => {
+    inputs.forEach((inp, inpIdx) => {
       const address = inp.address || 'Unknown';
       if (!groups[address]) {
         groups[address] = {
@@ -150,7 +212,7 @@ const ResultTx = ({ data, onSearchClick }) => {
     });
     
     return Object.values(groups);
-  }, [data?.inputs]);
+  })();
 
   const fmtEventType = (eventType) => {
     if (!eventType) return "";
@@ -165,13 +227,13 @@ const ResultTx = ({ data, onSearchClick }) => {
   };
 
   // GROUP OUTPUTS BY ADDRESS
-  const groupedOutputs = useMemo(() => {
-    if (!data?.outputs) return [];
+  const groupedOutputs = (() => {
+    if (!outputs.length) return [];
     
     const groups = {};
-    const inputAddresses = new Set(data.inputs?.map(inp => inp.address) || []);
+    const inputAddresses = new Set(inputs.map(inp => inp.address).filter(Boolean));
     
-    data.outputs.forEach((out, idx) => {
+    outputs.forEach((out, idx) => {
       const vout = out?.index ?? idx;
       const address = out?.address || 'OP_RETURN';
       const isOP_RETURN = address === 'OP_RETURN' || address === null;
@@ -220,90 +282,18 @@ const ResultTx = ({ data, onSearchClick }) => {
     });
     
     return Object.values(groups);
-  }, [data?.outputs, data?.inputs]);
-
-  useEffect(() => {
-    console.log('Data dari backend:', data);
-    console.log('Outputs dengan event:', data?.outputs?.filter(out => out.event));
-    console.log('Grouped outputs akhir:', groupedOutputs);
-    }, [data, groupedOutputs]);
+  })();
 
   // COUNT UNIQUE RECIPIENTS
-  const recipientCount = useMemo(() => {
+  const recipientCount = (() => {
     if (!groupedOutputs.length) return 0;
     
-    const inputAddresses = new Set(data.inputs?.map(inp => inp.address) || []);
+    const inputAddresses = new Set(inputs.map(inp => inp.address).filter(Boolean));
     
     return groupedOutputs.filter(group => {
       return group.address !== 'OP_RETURN' && !inputAddresses.has(group.address);
     }).length;
-  }, [groupedOutputs, data?.inputs]);
-
-  const splitTxidGrid = (txid) => {
-    if (txid?.length !== 64) return [];
-    
-    const grid = [];
-    // Row 0, 1, 2
-    for (let r = 0; r < 3; r++) {
-      const row = [];
-      for (let c = 0; c < 4; c++) {
-        const i = (r * 4 + c) * 5;
-        row.push({
-          id: `cell-${r}-${c}`,
-          value: txid.substring(i, i + 5),
-          row: r,
-          col: c
-        });
-      }
-      grid.push({
-        id: `row-${r}`,
-        cells: row
-      });
-    }
-    
-    // Row 3 (last 4 characters)
-    const lastRow = [];
-    const lastFour = txid.substring(60).split('');
-    lastFour.forEach((char, c) => {
-      lastRow.push({
-        id: `cell-3-${c}`,
-        value: char,
-        row: 3,
-        col: c
-      });
-    });
-    grid.push({
-      id: `row-3`,
-      cells: lastRow
-    });
-    
-    return grid;
-  };
-
-  const highlightPositions = [
-    [0, 0], [0, 2], // Row 1, Column 1 & 3
-    [1, 1], [1, 3], // Row 2, Column 2 & 4
-    [2, 0], [2, 2], // Row 3, Column 1 & 3
-    [3, 0]          // Row 4, Column 1
-  ];
-
-  const renderTxidGrid = (txid) => {
-    if (!txid) return <span>-</span>;
-    
-    const grid = splitTxidGrid(txid);
-    
-    return (
-      <div className="txid-container">
-        {grid.map((row) => (
-          <TxidGridRow
-            key={row.id}
-            row={row}
-            highlightPositions={highlightPositions}
-          />
-        ))}
-      </div>
-    );
-  };
+  })();
 
   return (
     <>
@@ -316,26 +306,25 @@ const ResultTx = ({ data, onSearchClick }) => {
         width: '100%'
       }}>
         {/* TXID */}
-        <h1 className="stat"> Transaction ID
-        </h1>
-        <h1 className="txid-details">
-          {renderTxidGrid(data?.txid)}
+        <h1 className="stat"> Transaction ID</h1>
+        <div className="txid-details" style={{ width: '100%' }}>
+          {renderTxidGrid(displayTxid)}
           <div className="divider2" />
-        </h1>
+        </div>
+
         {/* BUTTONS CONTAINER - CENTERED */}
         <div className="action-buttons">
-
-          {/* COPY TXID BUTTON */}
           <button
-            onClick={() => copyToClipboard(data.txid, setCopyStatus)}
-            className={`action-button copy-button`}
+            type="button"
+            onClick={() => copyToClipboard(data?.txid, setCopyStatus)}
+            className="action-button copy-button"
           >
-            <span><FaCopy /></span>
-            {copyStatus || "Copy"}
+            <FaCopy />
+            <span>{copyStatus || "Copy"}</span>
           </button>
 
-          {/* DOWNLOAD RECEIPT BUTTON */}
           <button
+            type="button"
             onClick={downloadReceiptDirect}
             disabled={isGeneratingReceipt}
             className={`action-button receipt-button ${isGeneratingReceipt ? 'disabled' : ''}`}
@@ -343,16 +332,15 @@ const ResultTx = ({ data, onSearchClick }) => {
             {isGeneratingReceipt ? (
               <>
                 <span className="spinner"></span>
-                {' '}Generating...
+                <span>Generating...</span>
               </>
             ) : (
               <>
-                <span><IoReceiptSharp /></span>
-                {' '}Download Receipt
+                <IoReceiptSharp />
+                <span>Download Receipt</span>
               </>
             )}
           </button>
-
         </div>
       </div>
       
@@ -394,7 +382,6 @@ const ResultTx = ({ data, onSearchClick }) => {
         {/* END OF TX INFO */}
 
         {/* START OF TX INPUTS */}
-
         <div style={{ display: 'flex' }}>
           <div className="stat">
             <span className="inputs-label">
@@ -454,7 +441,7 @@ const ResultTx = ({ data, onSearchClick }) => {
               {/* UTXOs List */}
               <div className="stat">
                 <span className="info-label" style={{ marginBottom: '4px' }}>
-                  Used {group.utxos.length} UTXO{group.utxos.length === 1 ? '' : '`s'}
+                  Used {group.utxos.length} UTXO{group.utxos.length === 1 ? '' : 's'}
                 </span>
                 {group.utxos.map((utxo) => (
                   <div key={utxo.key} className="tx-items">
@@ -500,7 +487,6 @@ const ResultTx = ({ data, onSearchClick }) => {
         {/* END OF TX INPUTS */}
 
         {/* START OF TX OUTPUTS */}
-
         <div style={{ display: 'flex' }}>
           <div className="stat">
             <span className="outputs-label">
@@ -609,7 +595,6 @@ const ResultTx = ({ data, onSearchClick }) => {
         )}
 
         {/* END OF TX OUTPUTS */}
-
       </div>
     </>
   );
@@ -644,4 +629,4 @@ ResultTx.propTypes = {
   onSearchClick: PropTypes.func.isRequired,
 };
 
-export { ResultTx }
+export { ResultTx };

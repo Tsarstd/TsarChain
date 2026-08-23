@@ -5,20 +5,20 @@ import { fetchNetwork } from "../api/explorer";
 import { fmtBytes, fmtHashrate, fmtNumber, fmtTimestamp, fmtTsar, fmtAddress } from "../utils/format";
 import { SkeletonNetwork } from "../components/common/SkeletonLoader";
 import { LiveIndicator } from "../components/common/LiveIndicator";
+import Identicon from "../components/common/Identicon";
 
 import { 
   RiGlobalLine, 
   RiDashboardLine, 
   RiMoneyDollarCircleLine,
   RiDatabaseLine,
-  RiMegaphoneFill ,
+  RiMegaphoneFill,
   RiHistoryLine,
   RiDatabase2Fill,
   RiBarChartBoxLine,
   RiUserStarLine,
   RiTimerLine
 } from "react-icons/ri";
-
 
 const getPeersCount = (snap, fallback = 0) => {
   const peers = snap?.peers;
@@ -129,6 +129,7 @@ HashDisplay.propTypes = {
   clickable: PropTypes.bool,
 };
 
+// Studio tailored Tokenomics Supply Progress Meter
 const SupplyProgressMeter = ({ circulating, maxSupply }) => {
   if (!maxSupply || maxSupply <= 0) return null;
   const circNum = Number(circulating || 0);
@@ -136,27 +137,28 @@ const SupplyProgressMeter = ({ circulating, maxSupply }) => {
   const pct = Math.min(100, Math.max(0, (circNum / maxNum) * 100));
 
   return (
-    <div className="supply-progress-card glass-panel" style={{ gridColumn: '1 / -1', padding: '16px', borderRadius: '12px', marginTop: '6px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-        <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#94a3b8' }}>
+    <div className="supply-progress-card glass-panel" style={{ gridColumn: '1 / -1', padding: '18px 20px', borderRadius: '4px', marginTop: '6px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+        <span style={{ fontSize: '0.85rem', fontFamily: 'var(--font-newspaper)', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-tsar-cream)' }}>
           Circulating Supply Progress
         </span>
-        <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#38bdf8' }}>
+        <span style={{ fontSize: '0.95rem', fontFamily: 'var(--font-newspaper)', fontWeight: 700, color: 'var(--color-tsar-orange)' }}>
           {pct.toFixed(2)}% Mined
         </span>
       </div>
-      <div style={{ height: '10px', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '5px', overflow: 'hidden' }}>
+      <div style={{ height: '10px', background: '#121212', borderRadius: '2px', overflow: 'hidden', border: '1px solid rgba(255, 248, 240, 0.15)', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.8)' }}>
         <div 
           style={{ 
             height: '100%', 
             width: `${pct}%`, 
-            background: 'linear-gradient(90deg, #38bdf8, #10b981)',
-            borderRadius: '5px',
+            background: 'linear-gradient(90deg, var(--color-tsar-orange) 0%, #ff7a45 50%, var(--color-tsar-cream) 100%)',
+            borderRadius: '2px',
+            boxShadow: '0 0 8px rgba(222, 85, 38, 0.5)',
             transition: 'width 0.8s ease-in-out' 
           }} 
         />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#64748b', marginTop: '6px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'rgba(255, 248, 240, 0.65)', marginTop: '8px', fontFamily: 'monospace' }}>
         <span>Circulating: {fmtTsar(circulating)}</span>
         <span>Max Cap: {fmtTsar(maxSupply)}</span>
       </div>
@@ -169,7 +171,7 @@ SupplyProgressMeter.propTypes = {
   maxSupply: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
 };
 
-const Network = ({onSearchClick}) => {
+const Network = ({ onSearchClick }) => {
   const [snap, setSnap] = useState(null);
   const [status, setStatus] = useState("loading");
   const [message, setMessage] = useState("");
@@ -177,34 +179,39 @@ const Network = ({onSearchClick}) => {
   const [isLive, setIsLive] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const loadData = useCallback((showRefreshing = false) => {
-    if (showRefreshing) setIsRefreshing(true);
-    fetchNetwork()
+  const loadData = useCallback(() => {
+    return fetchNetwork()
       .then((resp) => {
         setSnap(resp.data || null);
         setStatus("done");
         setLastUpdated(new Date());
       })
       .catch((err) => {
-        setMessage(err.message || "Gagal memuat data network.");
-        if (!snap) setStatus("error");
-      })
-      .finally(() => {
-        setIsRefreshing(false);
+        setMessage(err.message || "Failed to load network telemetry.");
+        setStatus((prevStatus) => (prevStatus === "loading" ? "error" : prevStatus));
       });
-  }, [snap]);
+  }, []);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await loadData();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [loadData]);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   useEffect(() => {
     if (!isLive) return;
     const interval = setInterval(() => {
-      loadData(true);
+      handleRefresh();
     }, 30000);
     return () => clearInterval(interval);
-  }, [isLive, loadData]);
+  }, [isLive, handleRefresh]);
 
   const view = useMemo(() => normalizeSnapshot(snap), [snap]);
 
@@ -221,8 +228,9 @@ const Network = ({onSearchClick}) => {
       <main className="page">
         <div className="error-container">
           <div className="error-icon">⚠️</div>
-          <div className="error-message">{message || "Network info tidak tersedia."}</div>
+          <div className="error-message">{message || "Network info not available."}</div>
           <button 
+            type="button"
             className="retry-button"
             onClick={() => globalThis.location.reload()}
           >
@@ -241,19 +249,19 @@ const Network = ({onSearchClick}) => {
   const graffiti = view.graffiti || {};
   const miners = view.miners_snapshot || {};
 
-  // Status indikator untuk network health
-  let networkHealth = "critical ";
-  if (peersCount > 10) {
-    networkHealth = "healthy";
-  } else if (peersCount > 5) {
-    networkHealth = "warning";
-  }
+  // Adaptive network health status
+  let networkHealth;
+  let statusText;
 
-  let statusText = "< 5 Miners";
-  if (networkHealth === "healthy") {
-    statusText = "Operational";
-  } else if (networkHealth === "warning") {
-    statusText = "Degraded";
+  if (peersCount >= 3 || (peersCount >= 1 && chain.tip_height > 0)) {
+    networkHealth = "healthy";
+    statusText = peersCount > 5 ? "Operational" : `Devnet (${peersCount} Peers)`;
+  } else if (peersCount > 0) {
+    networkHealth = "warning";
+    statusText = "Syncing Node";
+  } else {
+    networkHealth = "warning";
+    statusText = "Standalone Node";
   }
 
   return (
@@ -268,11 +276,11 @@ const Network = ({onSearchClick}) => {
             <LiveIndicator
               isLive={isLive}
               onToggleLive={() => setIsLive(prev => !prev)}
-              onRefresh={() => loadData(true)}
+              onRefresh={handleRefresh}
               lastUpdated={lastUpdated}
               isRefreshing={isRefreshing}
               intervalSec={30}
-              label="NETWORK LIVE SYNC"
+              label="Live Sync"
             />
             <div className={`status-indicator ${networkHealth}`}>
               <div className="status-dot"></div>
@@ -283,7 +291,6 @@ const Network = ({onSearchClick}) => {
           </div>
         </div>
 
-        
         {/* Summary stats bar */}
         <div className="summary-bar">
           <div className="summary-stat">
@@ -298,11 +305,8 @@ const Network = ({onSearchClick}) => {
             <span className="summary-label">Hashrate</span>
             <span className="summary-value">{fmtHashrate(chain.est_network_hashrate_hps_window)}</span>
           </div>
-        </div>
-        <div className="divider"/>
-        <div className="summary-bar">
           <div className="summary-stat">
-            <span className="summary-label">Supply</span>
+            <span className="summary-label">Circulating Supply</span>
             <span className="summary-value">{fmtTsar(supply.circulating_estimate)}</span>
           </div>
         </div>
@@ -477,7 +481,7 @@ const Network = ({onSearchClick}) => {
             <StatCard
               label="Pending Transactions"
               value={fmtNumber(txs.mempool_txs)}
-              subtext="Trsansactions in mempool"
+              subtext="Transactions in mempool"
             />
           </InfoSection>
 
@@ -529,12 +533,12 @@ const Network = ({onSearchClick}) => {
           />
         </InfoSection>
 
-        {/* Top Miners */}
+        {/* Top Miners with Identicons */}
         <InfoSection title="Top #10 Miners" icon={RiUserStarLine}>
           <div className="miners-table full-width">
             <div className="table-header">
               <div className="table-col rank">Rank</div>
-              <div className="table-col address">Address</div>
+              <div className="table-col address">Miner Address</div>
               <div className="table-col blocks">Blocks Found</div>
             </div>
             {(miners.top_miners || []).slice(0, 10).map(([addr, found], idx) => (
@@ -542,18 +546,19 @@ const Network = ({onSearchClick}) => {
                 <div className="table-col rank">
                   <div className="rank-badge">{idx + 1}</div>
                 </div>
-                  <div className="table-col address">
-                    <div className="table-col address-list">
-                      <ClickableValue
+                <div className="table-col address">
+                  <div className="miner-address-wrap">
+                    <Identicon value={addr} size={24} />
+                    <ClickableValue
                       value={addr}
                       onSearchClick={onSearchClick}
                       className="value muted"
                       info={addr}
-                      >
-                        {fmtAddress(addr) || "-"}
-                      </ClickableValue>
-                    </div>
+                    >
+                      {fmtAddress(addr) || "-"}
+                    </ClickableValue>
                   </div>
+                </div>
                 <div className="table-col blocks">
                   <span className="block-count">{fmtNumber(found)}</span>
                 </div>

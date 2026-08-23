@@ -297,3 +297,37 @@ def test_tx_props_and_repr():
         assert len(tx.tx_outs) == 1
         
         assert repr(tx) == "<Tx v=1 vin=1 vout=1 lock=0 fee=None>"
+
+
+def test_tx_storage_bytes():
+    from tsarchain.core.coinbase import CoinbaseTx
+    from tsarchain.utils.helpers import spkhex_to_address
+    # Regular Tx
+    txin = TxIn(txid=b"\x01"*32, vout=0, amount=500, script_sig=Script([]), witness=[b"\xaa\xbb"])
+    txout = TxOut(amount=450, script_pubkey=Script([]))
+    tx = Tx(version=1, locktime=10, inputs=[txin], outputs=[txout], auto_compute_txid=True)
+    
+    raw = tx.to_storage_bytes()
+    restored = Tx.from_storage_bytes(raw)
+    assert restored.version == tx.version
+    assert restored.locktime == tx.locktime
+    assert restored.is_coinbase is False
+    assert len(restored.inputs) == 1
+    assert restored.inputs[0].txid == b"\x01"*32
+    assert restored.inputs[0].amount == 500
+    assert restored.inputs[0].witness == [b"\xaa\xbb"]
+    assert len(restored.outputs) == 1
+    assert restored.outputs[0].amount == 450
+
+    # CoinbaseTx
+    addr = spkhex_to_address("0014" + "00" * 20)
+    cb = CoinbaseTx(to_address=addr, reward=5000000000, block_id="blk_10", height=10)
+    raw_cb = cb.to_storage_bytes()
+    restored_cb = Tx.from_storage_bytes(raw_cb)
+    assert isinstance(restored_cb, CoinbaseTx)
+    assert restored_cb.is_coinbase is True
+    assert restored_cb.to_address == addr
+    assert restored_cb.block_id == "blk_10"
+    assert restored_cb.height == 10
+    assert restored_cb.reward == 5000000000
+

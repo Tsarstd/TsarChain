@@ -27,8 +27,8 @@
   justify-content: center;
   align-items: center;
   padding: 6px;
-  background: linear-gradient(135deg, rgba(77, 77, 77, 0.809), rgba(42, 42, 42, 0.768));
-  border: 1px solid rgb(128, 121, 115);
+  background: var(--badge-neutral-bg);
+  border: 1px solid var(--border-gray);
   min-width: 120px;
 }
 
@@ -44,13 +44,13 @@
   align-items: center;
   padding: 6px;
   background: var(--text);
-  border: 1px solid rgb(128, 121, 115);
+  border: 1px solid var(--border-gray);
   min-width: 120px;
 }
 
-.address-chunk-container.highlighted  {
-  background: #979797;
-  border: 1px solid rgb(128, 121, 115);
+.address-chunk-container.highlighted {
+  background: var(--badge-gray-solid);
+  border: 1px solid var(--border-gray);
 }
 
 .address-chunk-grid {
@@ -64,7 +64,7 @@
   text-align: center;
   font-size: 20px;
   font-weight: var(--fw-light);
-  color: #979797;
+  color: var(--badge-gray-solid);
 }
 
 .address-badge-row {
@@ -80,8 +80,8 @@
   justify-content: center;
   align-items: center;
   padding: 6px 20px;
-  background: linear-gradient(135deg, #6d1f76 0%, #57124dc6 100%);
-  border: 1px solid rgb(128, 121, 115);
+  background: var(--badge-p2wsh-bg);
+  border: 1px solid var(--border-gray);
   border-radius: 4px;
   width: 100%;
   max-width: 485px;
@@ -92,8 +92,8 @@
   justify-content: center;
   align-items: center;
   padding: 6px 20px;
-  background: linear-gradient(135deg, #48721e 0%, #3d5c21af 100%);
-  border: 1px solid rgb(128, 121, 115);
+  background: var(--badge-p2wpkh-bg);
+  border: 1px solid var(--border-gray);
   border-radius: 4px;
   width: 100%;
   max-width: 485px;
@@ -102,7 +102,7 @@
 .address-label {
   font-size: 14px;
   font-weight: var(--fw-light);
-  color: #ffffff;
+  color: var(--text-heading);
   text-align: center;
 }
 

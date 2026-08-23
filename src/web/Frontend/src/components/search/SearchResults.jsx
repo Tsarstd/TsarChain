@@ -6,7 +6,7 @@ import { ResultTx } from "./category/SearchTxid";
 import { ResultAddress } from "./category/SearchAddress";
 import { ResultGraffiti } from "./category/SearchGraffiti";
 import { SkeletonSearch } from "../common/SkeletonLoader";
-import { toast } from "../common/ToastContainer";
+import { copyText } from "../../utils/clipboard";
 
 export const ClickableValue = ({
   value,
@@ -27,18 +27,10 @@ export const ClickableValue = ({
   const handleCopy = async (e) => {
     e.stopPropagation();
     if (!value || value === "-") return;
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(value);
-      } else {
-        throw new Error("Clipboard API not available");
-      }
+    const success = await copyText(value);
+    if (success) {
       setCopied(true);
-      toast("Copied to clipboard!", "success");
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error("Copy failed", err);
-      toast("Failed to copy", "error");
     }
   };
 
@@ -51,23 +43,7 @@ export const ClickableValue = ({
       {onSearchClick ? (
         <a
           href={`/?search=${encodeURIComponent(value)}`}
-          className={finalClassName}
-          style={{
-            cursor: "pointer",
-            color: "#5e9de6ff",
-            transition: "color 0.2s",
-            alignSelf: "baseline",
-            background: "none",
-            border: "none",
-            padding: 0,
-            fontFamily: "inherit",
-            fontSize: "inherit",
-            fontWeight: "inherit",
-            lineHeight: "inherit",
-            textAlign: "inherit",
-            display: "inline",
-            textDecoration: "none",
-          }}
+          className={`clickable-link ${finalClassName}`}
           onClick={(e) => {
             if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) {
               return;
@@ -76,8 +52,6 @@ export const ClickableValue = ({
             onSearchClick(value);
           }}
           data-tooltip={currentTooltip || undefined}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#4d7fb7ff")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "#5e9de6ff")}
         >
           {displayValue}
         </a>
@@ -131,9 +105,9 @@ const SearchResultPanel = ({ status, result, kind, message, onSearchClick }) => 
       return (
         <div className="result-empty">There is no result for this query.</div>
       );
-    if (kind === "block" || kind === "block_height" || kind === "block_hash")
+    if (kind === "block" || kind === "block_height" || kind === "block_hash" || (kind === "hash64" && result?.hash))
       return <ResultBlock data={result} onSearchClick={onSearchClick} />;
-    if (kind === "tx" || kind === "txid_hash")
+    if (kind === "tx" || kind === "txid_hash" || (kind === "hash64" && result?.txid))
       return <ResultTx data={result} onSearchClick={onSearchClick} />;
     if (kind === "address") return <ResultAddress data={result} onSearchClick={onSearchClick} />;
     if (kind === "graffiti" || kind === "art_id")

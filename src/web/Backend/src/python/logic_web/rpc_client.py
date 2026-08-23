@@ -25,7 +25,7 @@ RPC_SOURCE = "web_backend"
 
 
 def _mk_client(host: str, port: int):
-    user_id, user_pub, user_priv = load_or_create_keypair_at(CFG.USER_KEY_PATH)
+    user_id, user_pub, user_priv = load_or_create_keypair_at("user_key")
     user_ctx = {"net_id": CFG.DEFAULT_NET_ID, "node_id": user_id, "pubkey": user_pub, "privkey": user_priv}
     return NodeClient(CFG, user_ctx=user_ctx, manual_bootstrap=(host, port))
 
@@ -34,8 +34,7 @@ def _rpc_send(client, payload: dict):
     if RPC_SOURCE and isinstance(payload, dict) and "rpc_source" not in payload:
         payload = dict(payload)
         payload["rpc_source"] = RPC_SOURCE
-    resp = client.send(payload)
-    return resp
+    return client.send(payload)
 
 
 def _get_client(host: str, port: int):
@@ -68,7 +67,7 @@ def _cache_key(kind: str, *parts: object) -> str:
 
 
 def _determine_cache_policy(payload: object) -> Tuple[bool, int | None]:
-    if payload is None:
+    if not payload:
         return False, None
     if isinstance(payload, dict):
         if payload.get("error"):
@@ -77,6 +76,8 @@ def _determine_cache_policy(payload: object) -> Tuple[bool, int | None]:
         if payload.get("status") == "error":
             ttl = db_cache.get_error_cache_ttl(payload.get("reason"))
             return ttl is not None, ttl
+        if len(payload) == 0:
+            return False, None
     return True, None
 
 

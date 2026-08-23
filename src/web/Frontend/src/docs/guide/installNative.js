@@ -1,0 +1,224 @@
+export const installNative = {
+  id: "install-native",
+  title: "Install tsarcore_native",
+  subtitle: "Rust Native Acceleration Module for TsarChain",
+  category: "Guides",
+  badge: "Rust / C++",
+  toc: [
+    { id: "consensus-note", label: "Consensus Note: Single Native Path" },
+    { id: "prerequisites", label: "1. Prerequisites" },
+    { id: "installation-options", label: "2. Installation Options" },
+    { id: "integrate-tsarchain", label: "3. Integrate with TsarChain" },
+    { id: "quick-self-test", label: "4. Quick Self-Test (sanity)" },
+    { id: "testing-native-bench", label: "5. How to Test with native_bench.py" },
+    { id: "troubleshooting", label: "6. Troubleshooting" },
+    { id: "notes", label: "7. Notes" },
+  ],
+  sections: [
+    {
+      id: "consensus-note",
+      title: "⚠️ Consensus Note: Single Native Path",
+      alert: {
+        type: "warning",
+        title: "MANDATORY NATIVE MODULE",
+        text: "For deterministic consensus across platforms/architectures, every node now runs the exact same Rust implementation shipped in tsarcore_native for operations such as merkle_root, sighash_bip143, sigops counting, and block validation. The historical Python implementations have been removed to avoid divergence, so keeping the native library installed is mandatory."
+      },
+      content: `\`tsarcore_native\` is the Rust + PyO3 native acceleration module for **TsarChain**. TsarChain now **requires** this module: all consensus-critical routines (sigops counting, ECDSA verify (low-S) incl. batch, BIP143 sighash, hashing, block validation, etc.) call the Rust bindings directly.`
+    },
+    {
+      id: "prerequisites",
+      title: "1) Prerequisites",
+      content: `- **Python** 3.10–3.12
+- **Rust toolchain (stable)** via [\`rustup\`](https://rustup.rs/)
+- **maturin** (\`pip install maturin\`)
+- **cmake** 4.2.0+ (RandomX vendored sources are compiled during the build)
+
+**Platform notes:**
+- **Windows**: install *Visual Studio Build Tools* (C++ workload). Rust target should be **MSVC** (default).
+- **macOS**: \`xcode-select --install\` for Command Line Tools. Apple Silicon is supported; your wheel arch follows your Python arch (arm64/x86_64).
+- **Linux (Debian/Ubuntu)**: \`sudo apt-get update && sudo apt-get install -y build-essential python3-dev\` in addition to rustup.
+
+> Ensure the Python architecture matches Rust’s target (x64 ↔ x64, arm64 ↔ arm64).`
+    },
+    {
+      id: "installation-options",
+      title: "2. Installation Options",
+      content: `#### A) Install CMake
+
+\`\`\`bash
+# Powershell (Windows)
+winget install -e --id Kitware.CMake
+# Linux
+sudo apt install cmake
+\`\`\`
+
+#### B) Dev‑friendly (editable)
+
+\`\`\`bash
+python -m venv .venv
+# Windows: .venv\\Scripts\\activate
+# macOS/Linux: source .venv/bin/activate
+
+pip install --upgrade pip maturin
+cd tsarcore_native
+maturin develop --release
+\`\`\`
+
+#### C) Build a wheel (for distribution)
+
+\`\`\`bash
+# with your venv active
+pip install --upgrade pip maturin
+cd tsarcore_native
+maturin build --release
+pip install target/wheels/tsarcore_native-*.whl
+\`\`\`
+
+#### D) PEP 517 install via \`pip\`
+
+\`\`\`bash
+# from repo root (venv active)
+pip install --upgrade pip maturin
+pip install ./tsarcore_native
+\`\`\`
+
+#### (Optional) Enable parallel code paths
+
+If you added conditional parallel implementations in Rust, you can expose them with a feature flag:
+
+\`\`\`bash
+cd tsarcore_native
+maturin develop --release --features parallel
+# or
+maturin build --release --features parallel
+\`\`\``
+    },
+    {
+      id: "integrate-tsarchain",
+      title: "3) Integrate with TsarChain",
+      content: `Install \`tsarcore_native\` inside the same environment that runs TsarChain. On startup the code imports the module and will abort with a descriptive error if the binding is unavailable.`
+    },
+    {
+      id: "quick-self-test",
+      title: "4) Quick Self‑Test (sanity)",
+      content: `Run a very small import & call check in your active environment:
+
+\`\`\`bash
+python - <<'PY'
+import tsarcore_native as n
+print("[native] available symbols:", [k for k in dir(n) if not k.startswith("_")][:8], "...")
+print("[native] count_sigops(OP_CHECKSIG):", n.count_sigops(b"\\xac"))
+print("[native] hash256('abc'):", n.hash256(b"abc"))
+print("[native] hash160('abc'):", n.hash160(b"abc"))
+print("OK")
+PY
+\`\`\``
+    },
+    {
+      id: "testing-native-bench",
+      title: "5) How to Test with native_bench.py",
+      content: `\`benchmarks/native_bench.py\` is the all-in-one harness for the Rust bindings. It now runs **only native paths** and checks:
+
+- Deterministic vectors for \`hash256\`, \`hash160\`, \`merkle_root\`, \`bip143_sig_hash\`, strict DER low-S verification (single + batch).
+- Native block validation via \`validate_block_txs_native\` (happy-path block + common failure reasons: witness tamper, immature coinbase, missing witness, unsupported script).
+- Micro-benchmarks for sigops counting, merkle building, single/batch ECDSA verify, and hashing.
+
+### Run with defaults
+
+\`\`\`bash
+# from repo root, inside your project venv
+python benchmarks/native_bench.py
+\`\`\`
+
+Useful knobs (keep or drop as needed):
+
+\`\`\`bash
+python benchmarks/native_bench.py \\
+  --sigops-iters 250000 \\
+  --merkle-n 1000 --merkle-reps 200 \\
+  --ecdsa-keys 200 --ecdsa-iters 5000 \\
+  --batch-keys 256 --batch-iters 2048 \\
+  --hash-total 1500000 \\
+  --no-bench-batch --no-bench-hash   # skip heavy benches if you only need correctness
+\`\`\`
+
+### Sample output
+
+When everything is installed correctly you should see something like:
+
+\`\`\`bash
+[randomx] configured lite mode (cache_max=1)
+Native backend is mandatory; helpers module imported tsarcore_native successfully.
+Functions available: ['count_sigops_in_script', 'bip143_sig_hash', 'verify_der_strict_low_s', 'merkle_root', 'hash256', 'hash160', 'batch_verify_der_low_s']
+
+== correctness checks ==
+[ok] hash256/hash160 vectors
+[ok] merkle root deterministic vector
+[ok] verify_der_strict_low_s (low-S true, high-S false)
+[ok] batch_verify_der_low_s == single verify
+[ok] bip143_sig_hash known vector (SIGHASH_ALL)
+
+== native block validation ==
+[block] valid block: ok
+[validate_block] fail height=1 txs=2 reason=pubkey_hash_mismatch
+[block] invalid witness: ok
+[validate_block] fail height=1 txs=2 reason=coinbase_immature conf=0 need>=3
+[block] immature coinbase: ok
+[validate_block] fail height=1 txs=2 reason=missing_witness
+[block] missing witness: ok
+[validate_block] fail height=1 txs=2 reason=unsupported_script
+[block] unsupported script: ok
+
+== microbench ==
+[sigops] 250.000 loops in 0.086s -> 2.897.277 ops/s
+[merkle] 200 trees (n=1000) in 0.068s -> 2924.0 trees/s
+[ecdsa-single] 5.000 verifications in 0.252s -> 19.870 verif/s
+[ecdsa-batch] ~2.048 verifications in 0.014s -> ~146.597 verif/s
+[hash256] 1.500.000B in 0.001s
+[hash160] 1.500.000B in 0.001s
+\`\`\`
+
+Any deviation (e.g., \`[block] …\` showing a failure reason) means the native validator caught a real issue—fix the underlying data before moving on.`
+    },
+    {
+      id: "troubleshooting",
+      title: "6) Troubleshooting",
+      content: `- **\`ModuleNotFoundError: tsarcore_native\`**
+  - Verify you built inside the **same venv** you’re running.
+  - Re‑activate venv and check with \`pip show tsarcore_native\`.
+
+- **\`ModuleNotFoundError: No module named 'tsarchain'\`**
+  - make sure your \`PYTHONPATH\` includes the \`src\` directory.
+
+\`\`\`bash
+export PYTHONPATH="$PWD/src"
+# Windows
+$env:PYTHONPATH = "$PWD/src"
+set PYTHONPATH=%cd%\\src
+\`\`\`
+
+- **Toolchain/linker errors**
+  - \`rustup update\` to ensure a fresh stable toolchain.
+  - **Windows**: make sure *MSVC Build Tools* are installed; open the “x64 Native Tools” prompt if needed.
+  - **Linux**: ensure \`build-essential\` and \`python3-dev\` are installed.
+
+- **Architecture mismatch**
+  - Python x64 requires Rust x64; Python arm64 requires Rust arm64. On macOS Apple Silicon, prefer a native arm64 Python instead of Rosetta emulation for clean wheels.
+
+- **Clean rebuild**
+  - \`cd tsarcore_native && maturin develop --release --strip\`
+
+- **\`maturin\` complains about \`LICENSE\`**
+  - Example: \`Failed to read .../tsarcore_native/LICENSE\`
+  - Add a \`LICENSE\` file in \`tsarcore_native/\`, or set the appropriate \`license\` / \`license-file\` metadata fields in \`Cargo.toml\`.`
+    },
+    {
+      id: "notes",
+      title: "7) Notes",
+      content: `- Built with **PyO3**; ABI compatibility follows the wheel built by \`maturin\`.
+- The biggest wins from native are: sigops, ECDSA verify (low‑S), BIP143 sighash, batch verify, and hashing.
+
+Happy coding — *Long Live The Voice Sovereignty*.`
+    }
+  ]
+};

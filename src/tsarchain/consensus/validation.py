@@ -57,8 +57,10 @@ class BlockValidator:
             self._ensure_warm(b_height)
 
             if not self.__class__._pow_light_warmed and CFG.POW_ALGO == "randomx":
-                H.pow_hash_verify_light(block.header(), height=block.height)
-            else:
+                try:
+                    H.pow_hash_verify_light(block.header(), height=block.height)
+                except Exception:
+                    pass
                 self.__class__._pow_light_warmed = True
 
             # 3. Main Block Validation Set
@@ -150,8 +152,9 @@ class BlockValidator:
         # pre-warm next epoch key near boundary
         next_epoch = (height // epoch_blocks) + 1
         with self._pow_warm_lock:
-            if self._pow_warm_next_epoch == next_epoch:
+            if getattr(self.__class__, "_pow_warm_next_epoch", None) == next_epoch or getattr(self, "_pow_warm_next_epoch", None) == next_epoch:
                 return
+            self.__class__._pow_warm_next_epoch = next_epoch
             self._pow_warm_next_epoch = next_epoch
 
         def _worker():
@@ -296,14 +299,32 @@ class BlockValidator:
                 meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
                 if not meta or str(meta.get("event", "")).upper() != "POST":
                     continue
+
+                art_id = str(meta.get("art_id") or "").strip().lower()
+                if not art_id:
+                    sha_hex = str(meta.get("sha256") or "").strip().lower()
+                    creator = str(meta.get("creator") or "").strip().lower()
+                    art_id = GRAFFITI.compute_art_id(sha_hex, creator) if sha_hex and creator else ""
+                if not art_id:
+                    continue
+
+                try:
+                    pool_addr = GRAFFITI.derive_pool_address(art_id)
+                    min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
+                except Exception:
+                    continue
+
+                paid = sum(
+                    int(getattr(out, "amount", 0))
+                    for out in getattr(tx, "outputs", []) or []
+                    if (self._spk_to_address(getattr(out, "script_pubkey", None)) if getattr(out, "script_pubkey", None) is not None else getattr(out, "address", None)) == pool_addr
+                )
+                if paid < min_fee:
+                    continue
+
                 graffiti_posts += 1
                 if not first_art_id:
-                    sha_hex = meta.get("sha256")
-                    creator = meta.get("creator")
-                    art_id = meta.get("art_id")
-                    if not art_id and sha_hex and creator:
-                        art_id = GRAFFITI.compute_art_id(sha_hex, creator)
-                    first_art_id = (art_id or "").strip().lower() if art_id else None
+                    first_art_id = art_id
 
         if graffiti_posts > 1:
             self.blockchain._last_block_validation_error = "too_many_graffiti_posts"
@@ -769,58 +790,38 @@ class BlockValidator:
     def _legacy_lookup(self, snapshot_map, prev_txid_hex: str, prev_index: int): 
         if not isinstance(snapshot_map, dict):
             return None
-            
-        entry = self._lookup_direct_keys(snapshot_map, prev_txid_hex, prev_index)
+
+        txid_lower = prev_txid_hex.lower()
+        idx = int(prev_index)
+
+        # Standard key "txid_hex:vout"
+        key = f"{txid_lower}:{idx}"
+        entry = snapshot_map.get(key) or snapshot_map.get(prev_txid_hex)
         if entry is not None:
             return entry
-            
-        return self._lookup_iteration(snapshot_map, prev_txid_hex, prev_index)
 
-
-    def _lookup_direct_keys(self, snapshot_map, prev_txid_hex: str, prev_index: int): 
-        key = f"{prev_txid_hex}:{int(prev_index)}"
-        entry = snapshot_map.get(key) or snapshot_map.get(key.lower())
-        if entry is not None:
-            return entry
+        # Bytes key b"txid_hex:vout"
         entry = snapshot_map.get(key.encode("utf-8"))
         if entry is not None:
             return entry
-            
-        bucket = snapshot_map.get(prev_txid_hex) or snapshot_map.get(prev_txid_hex.lower())
-        if isinstance(bucket, dict) and int(prev_index) in bucket:
-            return bucket[int(prev_index)]
-            
-        tuple_key = (prev_txid_hex, int(prev_index))
-        if tuple_key in snapshot_map:
-            return snapshot_map[tuple_key]
-            
+
+        # Bucket snapshot_map[txid_hex][vout]
+        bucket = snapshot_map.get(txid_lower) or snapshot_map.get(prev_txid_hex)
+        if isinstance(bucket, dict) and idx in bucket:
+            return bucket[idx]
+
+        # Tuple keys (txid_hex, vout) or (txid_bytes, vout)
+        for tuple_key in ((txid_lower, idx), (prev_txid_hex, idx)):
+            if tuple_key in snapshot_map:
+                return snapshot_map[tuple_key]
+
         try:
-            tuple_b = (bytes.fromhex(prev_txid_hex), int(prev_index))
+            tuple_b = (bytes.fromhex(prev_txid_hex), idx)
             if tuple_b in snapshot_map:
                 return snapshot_map[tuple_b]
         except Exception:
             pass
-            
-        return None
 
-
-    def _lookup_iteration(self, snapshot_map, prev_txid_hex: str, prev_index: int): 
-        if len(snapshot_map) > 2048:
-            return None
-            
-        lookup_key_ci = f"{prev_txid_hex}:{int(prev_index)}".lower()
-        for candidate_key, candidate_value in snapshot_map.items():
-            if isinstance(candidate_key, str) and candidate_key.lower() == lookup_key_ci:
-                return candidate_value
-                
-            if isinstance(candidate_key, tuple) and len(candidate_key) == 2:
-                txid_part, vout_part = candidate_key
-                if int(vout_part) != int(prev_index):
-                    continue
-                txid_cmp = txid_part.hex().lower() if isinstance(txid_part, (bytes, bytearray)) else str(txid_part).lower()
-                if txid_cmp == prev_txid_hex.lower():
-                    return candidate_value
-                    
         return None
 
 

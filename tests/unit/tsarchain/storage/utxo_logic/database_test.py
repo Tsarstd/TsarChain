@@ -1,4 +1,5 @@
 import json
+import struct
 import threading
 from unittest.mock import patch
 
@@ -135,9 +136,11 @@ def test_load_save_kv():
     def mock_iter_prefix(prefix, start):
         if prefix == "utxo":
             yield b"__meta__", json.dumps({"b": 2}).encode()
-            yield b"tx1:0", json.dumps({"tx_out": {"amount": 10, "script_pubkey": "0014abcd"}}).encode()
-            yield b"tx2:0", json.dumps({"tx_out": {"amount": 0, "script_pubkey": "6aabcd"}}).encode()
-            yield b"tx_bad", b"bad json"
+            spk1 = bytes.fromhex("0014abcd")
+            yield b"tx1:0", struct.pack("<Q?qH", 10, False, 0, len(spk1)) + spk1
+            spk2 = bytes.fromhex("6aabcd")
+            yield b"tx2:0", struct.pack("<Q?qH", 0, False, 0, len(spk2)) + spk2
+            yield b"tx_bad", b"bad"
         elif prefix == "state":
             yield b"k:total_blocks", b"101"
             
@@ -147,11 +150,9 @@ def test_load_save_kv():
         assert nested["tx1"][0]["tx_out"]["amount"] == 10
         
         # Test loading
-        try:
-            db._load(force=True)
-        except json.JSONDecodeError:
-            pass # ignore bad json in mock
+        db._load(force=True)
         assert "tx1:0" in db.utxos
+        assert db.utxos["tx1:0"]["tx_out"].amount == 10
         
         # Test tip height
         h = db._get_tip_height_from_state(use_cache=False)

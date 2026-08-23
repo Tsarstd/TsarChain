@@ -388,3 +388,14 @@ def test_safe_mempool_count():
     del mock_pool_2._pool
     mock_pool_2.get_all_txs.return_value = ["tx1", "tx2", "tx3"]
     assert _count_txpool(mock_pool_2) == 3
+
+
+def test_simple_miner_abort_on_tip_changed():
+    """Verify SimpleMiner._on_tip_changed sets abort_block_mining event."""
+    from tsarchain.miner.orchestrator import SimpleMiner
+    with patch('tsarchain.miner.orchestrator.signal.signal'), \
+         patch('tsarchain.miner.orchestrator.register_thread_monitoring_signal'):
+        miner = SimpleMiner(address="tsar1qtest", cores=1)
+        assert miner.abort_block_mining.is_set() is False
+        miner._on_tip_changed(10, "0000hash")
+        assert miner.abort_block_mining.is_set() is True

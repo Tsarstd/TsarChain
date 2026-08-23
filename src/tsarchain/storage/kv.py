@@ -19,17 +19,22 @@ _native_store = None
 _native_stores = {}
 _init_lock = threading.RLock()
 
-DB_PATH_MAP = {
-    "node_secrets": CFG.LMDB_KEYS_DIR,
-    "chain": CFG.LMDB_CHAIN_DIR,
-    "utxo": CFG.LMDB_UTXO_DIR,
-    "state": CFG.LMDB_STATE_DIR,
-    "graffiti": CFG.LMDB_GRAFFITI_DIR,
-    "mempool": CFG.LMDB_MEMPOOL_DIR,
-}
-
 def get_db_path(name: str) -> str:
-    return DB_PATH_MAP.get(name, CFG.LMDB_DATA_FILE)
+    path_map = {
+        "chain": CFG.LMDB_CHAIN_DIR,
+        "utxo": CFG.LMDB_UTXO_DIR,
+        "state": CFG.LMDB_STATE_DIR,
+        "graffiti": CFG.LMDB_GRAFFITI_DIR,
+        "mempool": CFG.LMDB_MEMPOOL_DIR,
+        "chat_prekeys": CFG.LMDB_CHAT_PREKEYS,
+        
+        # Keys and secrets
+        "node_secrets": CFG.LMDB_KEYS_DIR,
+        "secure_wallet": CFG.LMDB_KEYS_DIR,
+        "wallet_peer_keys": CFG.LMDB_KEYS_DIR,
+        "stor_peer_keys": CFG.LMDB_KEYS_DIR,
+    }
+    return path_map.get(name, CFG.NODE_DATA_DIR)
 
 def _init_native_store(name: str = "chain"):
     global _native_store
@@ -43,11 +48,13 @@ def _init_native_store(name: str = "chain"):
             return _native_store
         
         drive_override = os.getenv("TSAR_STORAGE_DRIVE_TYPE")
+        map_size_init = int(CFG.LMDB_PREKEYS_SIZE_INIT) if name == "chat_prekeys" else int(CFG.LMDB_MAP_SIZE_INIT)
+        map_size_max = int(CFG.LMDB_PREKEYS_SIZE_MAX) if name == "chat_prekeys" else int(CFG.LMDB_MAP_SIZE_MAX)
         store = _native_open_storage(
             "lmdb",
             path,
-            map_size_init=int(CFG.LMDB_MAP_SIZE_INIT),
-            map_size_max=int(CFG.LMDB_MAP_SIZE_MAX),
+            map_size_init=map_size_init,
+            map_size_max=map_size_max,
             pretty_json=False,
             drive_type=drive_override,
         )

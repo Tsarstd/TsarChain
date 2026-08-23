@@ -16,6 +16,7 @@ from ..storage.utxo import UTXODB
 from ..mempool.pool import TxPool
 from ..core.coinbase import CoinbaseTx
 from ..contracts import graffiti as GRAFFITI
+from ..mempool.scripts import script_to_address
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
@@ -252,8 +253,9 @@ class MiningManager:
 
     def _select_graffiti_art_id(self, txs) -> str | None:
         """
-        Inspect candidate transactions for a Graffiti POST event and return its art_id.
+        Inspect candidate transactions for a valid Graffiti POST event and return its art_id.
         Only the first valid POST per block is used to anchor the block_id.
+        A valid POST must pay >= min_upload_fee to the art's pool address.
         """
         for tx in txs or []:
             for txout in getattr(tx, "outputs", None) or []:
@@ -272,21 +274,54 @@ class MiningManager:
                     creator = str(meta.get("creator") or "").strip().lower()
                     art_id = GRAFFITI.compute_art_id(sha_hex, creator) if sha_hex and creator else ""
                 
-                if art_id:
-                    txid = getattr(tx, "txid", None)
-                    txid_hex = txid.hex() if hasattr(txid, "hex") else str(txid)
-                    log.info("[_select_graffiti_art_id] Graffiti POST found tx=%s art_id=%s", (txid_hex or "")[:12], art_id[:24])
-                    return art_id
+                if not art_id:
+                    continue
+
+                pool_addr = GRAFFITI.derive_pool_address(art_id)
+                min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
+
+                paid = 0
+                for out in getattr(tx, "outputs", []) or []:
+                    out_spk = getattr(out, "script_pubkey", None)
+                    out_addr = script_to_address(out_spk) if out_spk is not None else getattr(out, "address", None)
+                    if out_addr == pool_addr:
+                        paid += int(getattr(out, "amount", 0))
+
+                if paid < min_fee:
+                    log.warning("[_select_graffiti_art_id] Rejecting candidate POST with insufficient pool fee: paid=%s required=%s art_id=%s", paid, min_fee, art_id[:16])
+                    continue
+                
+                txid = getattr(tx, "txid", None)
+                txid_hex = txid.hex() if hasattr(txid, "hex") else str(txid)
+                log.info("[_select_graffiti_art_id] Graffiti POST found tx=%s art_id=%s", (txid_hex or "")[:12], art_id[:24])
+                return art_id
         return None
     
     
     def _is_graffiti_post(self, tx_obj) -> bool:
         for tx_out in getattr(tx_obj, "outputs", None) or []:
             spk = getattr(tx_out, "script_pubkey", None)
-            if spk is not None:
-                meta = GRAFFITI.parse_from_script(spk)
-                if meta and str(meta.get("event", "")).upper() == "POST":
-                    return True
+            if spk is None:
+                continue
+            meta = GRAFFITI.parse_from_script(spk)
+            if not meta or str(meta.get("event", "")).upper() != "POST":
+                continue
+            art_id = str(meta.get("art_id") or "").strip().lower()
+            if not art_id:
+                sha_hex = str(meta.get("sha256") or "").strip().lower()
+                creator = str(meta.get("creator") or "").strip().lower()
+                art_id = GRAFFITI.compute_art_id(sha_hex, creator) if sha_hex and creator else ""
+            if not art_id:
+                continue
+            pool_addr = GRAFFITI.derive_pool_address(art_id)
+            min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
+            paid = sum(
+                int(getattr(out, "amount", 0))
+                for out in getattr(tx_obj, "outputs", []) or []
+                if (script_to_address(getattr(out, "script_pubkey", None)) if getattr(out, "script_pubkey", None) is not None else getattr(out, "address", None)) == pool_addr
+            )
+            if paid >= min_fee:
+                return True
         return False
 
 

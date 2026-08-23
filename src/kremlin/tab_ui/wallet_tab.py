@@ -112,7 +112,7 @@ class CreateWalletDialog(tk.Toplevel):
                 show["v"] = not show["v"]
                 ent.config(show=("" if show["v"] else "*"))
                 eye_btn.config(text=("🙈" if show["v"] else "👁"))
-            eye_btn = tk.Button(box, text="🙈", width=3, command=toggle,
+            eye_btn = tk.Button(box, text="👁", width=3, command=toggle,
                                 bg=theme["panel_bg"], fg=theme["fg"], bd=0, relief=tk.FLAT, cursor="hand2")
             eye_btn.pack(side=tk.LEFT, padx=(6,0))
             return ent
@@ -300,8 +300,9 @@ class WalletController:
                 except OSError:
                     pass
         _remove_path(WALLET_FILE, "Keystore")
-        _remove_path(CFG.REGISTRY_PATH, "Wallet registry")
         _remove_path(self._bal_cache_path, "Balance cache")
+        save_wallet_registry([])
+        removed_labels.append("Wallet registry")
         cleared_hist = sum(1 for addr in existing_wallets if HistoryService.cache_clear(addr))
         self.clear_balance_cache()
         return removed_labels, cleared_hist

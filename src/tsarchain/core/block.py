@@ -4,6 +4,7 @@
 # Refs: see REFERENCES.md
 
 import time
+import struct
 import multiprocessing as mp
 
 from typing import List, Optional
@@ -93,7 +94,8 @@ class Block:
             raise TypeError(f"bits float non-integer: {v}")
         if isinstance(v, str):
             s = v.strip().lower()
-            return int(s, 16) if s.startswith("0x") else int(s)
+            val = int(s, 16) if s.startswith("0x") else int(s)
+            return val & 0xFFFFFFFF
         raise TypeError(f"bits must be int/hexstr, got {type(v)}")
 
     @classmethod
@@ -158,6 +160,63 @@ class Block:
     def header(self) -> bytes:
         h = BlockHeader(self.version, self.prev_block_hash, self.merkle_root, self.timestamp, self.bits, self.nonce)
         return h.serialize_block()
+
+    def to_storage_bytes(self) -> bytes:
+        header_bytes = self.header() if hasattr(self, "header") else b""
+        if not isinstance(header_bytes, (bytes, bytearray)):
+            header_bytes = b"\x00" * 80
+        h = int(getattr(self, "height", 0) or 0)
+        diff = int(getattr(self, "difficulty", 0) or 0)
+        cw = int(getattr(self, "chainwork", 0) or 0)
+        tail = struct.pack("<QQQ", h, diff, cw)
+        txs = getattr(self, "transactions", []) or []
+        tx_parts = [struct.pack("<I", len(txs))]
+        for tx in txs:
+            tx_raw = tx.to_storage_bytes() if hasattr(tx, "to_storage_bytes") else Tx.to_storage_bytes(tx)
+            if not isinstance(tx_raw, (bytes, bytearray)):
+                tx_raw = b""
+            tx_parts.append(struct.pack("<I", len(tx_raw)) + tx_raw)
+        return header_bytes + tail + b"".join(tx_parts)
+
+    @classmethod
+    def from_storage_bytes(cls, raw: bytes) -> "Block":
+        if len(raw) < 108:
+            raise ValueError(f"Raw block data too short: {len(raw)} bytes")
+        version = int.from_bytes(raw[0:4], "little")
+        prev_hash = raw[4:36]
+        merkle = raw[36:68]
+        timestamp = int.from_bytes(raw[68:72], "little")
+        bits = int.from_bytes(raw[72:76], "little")
+        nonce = int.from_bytes(raw[76:80], "little")
+        
+        h, diff, cw = struct.unpack_from("<QQQ", raw, 80)
+        offset = 104
+        
+        (tx_count,) = struct.unpack_from("<I", raw, offset)
+        offset += 4
+        
+        txs = []
+        for _ in range(tx_count):
+            (tx_len,) = struct.unpack_from("<I", raw, offset)
+            offset += 4
+            tx_raw = raw[offset:offset + tx_len]
+            offset += tx_len
+            tx = Tx.from_storage_bytes(tx_raw)
+            txs.append(tx)
+            
+        block = cls(
+            height=h,
+            prev_block_hash=prev_hash,
+            transactions=txs,
+            version=version,
+            bits=bits,
+            timestamp=timestamp,
+            nonce=nonce,
+            merkle_root_precomputed=merkle,
+            difficulty=diff,
+            chainwork=cw,
+        )
+        return block
 
     @classmethod
     def deserialize_block(cls, data: dict):

@@ -40,19 +40,35 @@ class ChainOperations:
     def replace_with(self, other_chain: "Blockchain"):
         with self.blockchain.lock:
             self._validate_replacement_chain(other_chain)
+            old_chain = list(self.blockchain.chain)
             self._commit_chain_replacement(other_chain)
+            self._reinject_mempool_from_reorg(old_chain, other_chain.chain)
+            if self.blockchain.chain:
+                last_b = self.blockchain.chain[-1]
+                self._notify_tip(last_b.height, last_b.hash().hex())
 
 
     def swap_tip_if_better(self, block: Block):
         with self.blockchain.lock:
             if not self._is_valid_tip_candidate(block):
                 return None
-            return self._commit_tip_swap(block)
+            old_tip = self._commit_tip_swap(block)
+            self._notify_tip(block.height, block.hash().hex())
+            return old_tip
 
 
 # =============================================================================
 # INTERNAL METHOD
 # =============================================================================
+
+
+    def _notify_tip(self, height: int, blk_hash: str):
+        fn = getattr(self.blockchain, "notify_tip_changed", None)
+        if callable(fn):
+            try:
+                fn(height, blk_hash)
+            except Exception:
+                log.exception("[_notify_tip] callback error")
 
 
     def _add_genesis_block(self, block: Block):
@@ -81,6 +97,7 @@ class ChainOperations:
 
         self._prune_mempool_confirmed(block)
         self.blockchain._mark_chain_dirty(block.height)
+        self._notify_tip(int(block.height), block.hash().hex())
 
 
     def _add_subsequent_block(self, block: Block):
@@ -113,6 +130,7 @@ class ChainOperations:
 
         self._prune_mempool_confirmed(block)
         self.blockchain._schedule_persist()
+        self._notify_tip(int(block.height), block.hash().hex())
 
 
     def _validate_replacement_chain(self, other_chain: "Blockchain"):
@@ -165,6 +183,39 @@ class ChainOperations:
             self.blockchain._utxo_last_flush_height = self.blockchain.height
             self.blockchain._utxo_synced = True
         self.blockchain.save_state()
+
+
+    def _reinject_mempool_from_reorg(self, old_chain: List[Block], new_chain: List[Block]):
+        mempool = getattr(self.blockchain, "get_mempool", lambda: None)()
+        if not mempool:
+            return
+        new_txids = set()
+        for b in new_chain:
+            for tx in (getattr(b, "transactions", []) or []):
+                txid = getattr(tx, "txid", None)
+                if txid:
+                    txid_hex = txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid)
+                    new_txids.add(txid_hex.lower())
+
+        common_h = self.blockchain._common_ancestor_height(new_chain)
+        start_h = max(0, common_h + 1) if common_h >= 0 else 0
+        for b in old_chain[start_h:]:
+            for tx in (getattr(b, "transactions", []) or [])[1:]:
+                txid = getattr(tx, "txid", None)
+                if not txid:
+                    continue
+                txid_hex = (txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid)).lower()
+                if txid_hex not in new_txids:
+                    try:
+                        mempool.add_valid_tx(tx)
+                    except Exception:
+                        pass
+        try:
+            if hasattr(mempool, "recheck_orphans"):
+                mempool.recheck_orphans()
+            mempool.flush()
+        except Exception:
+            pass
 
 
     def _is_valid_tip_candidate(self, block: Block) -> bool:
@@ -225,7 +276,7 @@ class ChainOperations:
         if store is not None:
             store.rebuild_from_chain(self.blockchain.chain)
             self.blockchain._utxo_dirty = False
-            self.blockchain._utxo_last_flush_height = getattr(self, "height", len(self.blockchain.chain) - 1)
+            self.blockchain._utxo_last_flush_height = self.blockchain.height
         self.blockchain.save_state()
 
         self._prune_mempool_confirmed(block)
@@ -242,12 +293,10 @@ class ChainOperations:
             return
 
         pool = None
-        owned_pool = False
         if hasattr(self.blockchain, "get_mempool"):
             pool = self.blockchain.get_mempool()
         if pool is None:
-            pool = TxPool(utxo_store=self.blockchain.ensure_utxodb())
-            owned_pool = True
+            return
 
         seen: set[str] = set()
         if hasattr(pool, "remove_many"):
@@ -266,9 +315,6 @@ class ChainOperations:
             log.warning("[_prune_mempool_confirmed] pruned conflicts=%d stale=%d", conflicts, stale_removed)
             
         pool.flush()
-
-        if owned_pool:
-            pool.flush(force=True)
 
 
     def _extract_spent_prevouts_and_txids(self, txs: list) -> tuple[set, list]:
@@ -419,6 +465,21 @@ class ChainOperations:
 
 
     def _validate_subsequent_blocks(self, chain: List[Block], cumulative_supply: int) -> bool:
+        # Ephemeral UTXO state to track inputs/spends throughout candidate chain
+        temp_utxos: dict = {}
+        g_txs = getattr(chain[0], "transactions", []) or []
+        if g_txs:
+            g_txid = getattr(g_txs[0], "txid", None)
+            g_txid_hex = g_txid.hex() if isinstance(g_txid, (bytes, bytearray)) else str(g_txid or "")
+            for idx, out in enumerate(getattr(g_txs[0], "outputs", []) or []):
+                spk = getattr(out, "script_pubkey", None)
+                temp_utxos[f"{g_txid_hex}:{idx}"] = {
+                    "amount": int(getattr(out, "amount", 0)),
+                    "script_pubkey": spk,
+                    "height": 0,
+                    "is_coinbase": True,
+                }
+
         for i in range(1, len(chain)):
             prev = chain[i - 1]
             cur  = chain[i]
@@ -448,8 +509,33 @@ class ChainOperations:
             if not txs or not getattr(txs[0], "is_coinbase", False) or any(getattr(t, "is_coinbase", False) for t in txs[1:]):
                 return False
 
+            cur_height = int(getattr(cur, "height", i))
+            spent_in_block = set()
+            for tx in txs[1:]:
+                tx_in_sum = 0
+                for txin in getattr(tx, "inputs", []):
+                    prev_txid = getattr(txin, "txid", None) or getattr(txin, "prev_tx", None)
+                    prev_txid_hex = prev_txid.hex() if isinstance(prev_txid, (bytes, bytearray)) else str(prev_txid or "")
+                    vout = int(getattr(txin, "vout", getattr(txin, "prev_index", 0)))
+                    outpoint = f"{prev_txid_hex}:{vout}"
+                    if outpoint in spent_in_block or outpoint not in temp_utxos:
+                        log.warning("[_validate_complete_chain] Invalid input %s at block %d", outpoint, cur_height)
+                        return False
+                    spent_in_block.add(outpoint)
+                    entry = temp_utxos[outpoint]
+                    if entry.get("is_coinbase") and (cur_height - entry.get("height", 0)) < CFG.COINBASE_MATURITY:
+                        log.warning("[_validate_complete_chain] Immature coinbase spend at block %d", cur_height)
+                        return False
+                    tx_in_sum += int(entry.get("amount", 0))
+
+                tx_out_sum = sum(int(getattr(o, "amount", 0)) for o in getattr(tx, "outputs", []))
+                if tx_out_sum > tx_in_sum:
+                    log.warning("[_validate_complete_chain] Negative fee at block %d", cur_height)
+                    return False
+                tx.fee = tx_in_sum - tx_out_sum
+
             fees = sum(int(getattr(t, "fee", 0)) for t in txs[1:])
-            base_reward = self.blockchain.scheduled_reward(int(getattr(cur, "height", 0)))
+            base_reward = self.blockchain.scheduled_reward(cur_height)
             reward = min(base_reward, max(0, CFG.MAX_SUPPLY - cumulative_supply))
             actual_cb = sum(int(o.amount) for o in getattr(txs[0], "outputs", []) or [])
             expected_cb = reward + fees
@@ -459,6 +545,28 @@ class ChainOperations:
                     getattr(cur, "height", None), expected_cb, actual_cb, fees,
                 )
                 return False
+
+            for outpoint in spent_in_block:
+                temp_utxos.pop(outpoint, None)
+
+            for tx in txs:
+                txid = getattr(tx, "txid", None)
+                txid_hex = txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid or "")
+                is_cb = bool(getattr(tx, "is_coinbase", False))
+                for idx, out in enumerate(getattr(tx, "outputs", []) or []):
+                    spk = getattr(out, "script_pubkey", None)
+                    if spk is not None:
+                        b = spk.serialize() if hasattr(spk, "serialize") else (bytes(spk) if isinstance(spk, (bytes, bytearray)) else b"")
+                        if len(b) >= 1 and b[0] == 0x6A:
+                            continue
+
+                    temp_utxos[f"{txid_hex}:{idx}"] = {
+                        "amount": int(getattr(out, "amount", 0)),
+                        "script_pubkey": spk,
+                        "height": cur_height,
+                        "is_coinbase": is_cb,
+                    }
+
             cumulative_supply += reward
 
         return True

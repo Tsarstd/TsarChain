@@ -5,7 +5,7 @@
 import os
 import time
 import base64
-import secrets
+import random
 
 from io import BytesIO
 from datetime import datetime
@@ -18,6 +18,10 @@ import tsarcore_native as generated_receipt # Rust
 from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.web.build_receipt")
 
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+_TEMPLATE_DIR = os.path.abspath(os.path.join(_CURRENT_DIR, "..", "template"))
+
+
 class PaymentReceiptGenerator:
     _template_cache = None
     _font_cache = {}
@@ -27,20 +31,20 @@ class PaymentReceiptGenerator:
     
     def __init__(self, path: str):
         self.path          = path
-        self.template_path = "src/web/Backend/src/template/receipt_template.jpg"
-        self.font_template = "src/web/Backend/src/template/font_template.ttf"
-        self.qr_prefix     = "https://localhost:5173/?search="
+        self.template_path = os.path.join(_TEMPLATE_DIR, "receipt_template.jpg")
+        self.font_template = os.path.join(_TEMPLATE_DIR, "font_template.ttf")
+        self.qr_prefix     = os.environ.get("EXPLORER_WEB_URL") or "http://localhost:5173/?search="
         
         # Confirmation Stamp
-        self.confirmed     = "src/web/Backend/src/template/confirmed.png"
-        self.unconfirmed   = "src/web/Backend/src/template/mempool.png"
+        self.confirmed     = os.path.join(_TEMPLATE_DIR, "confirmed.png")
+        self.unconfirmed   = os.path.join(_TEMPLATE_DIR, "mempool.png")
         
         # Transactions Type Sticker
-        self.coinbase      = "src/web/Backend/src/template/coinbase.png"
-        self.regular       = "src/web/Backend/src/template/regular.png"
-        self.post          = "src/web/Backend/src/template/post.png"
-        self.comment       = "src/web/Backend/src/template/comment.png"
-        self.payout        = "src/web/Backend/src/template/payout.png"
+        self.coinbase      = os.path.join(_TEMPLATE_DIR, "coinbase.png")
+        self.regular       = os.path.join(_TEMPLATE_DIR, "regular.png")
+        self.post          = os.path.join(_TEMPLATE_DIR, "post.png")
+        self.comment       = os.path.join(_TEMPLATE_DIR, "comment.png")
+        self.payout        = os.path.join(_TEMPLATE_DIR, "payout.png")
         
         os.makedirs(self.path, exist_ok=True)
         self._ensure_template_cache()
@@ -120,7 +124,7 @@ class PaymentReceiptGenerator:
     @classmethod
     def _ensure_template_cache(cls):
         if cls._template_cache is None:
-            template_path = "src/web/Backend/src/template/receipt_template.jpg"
+            template_path = os.path.join(_TEMPLATE_DIR, "receipt_template.jpg")
             if os.path.exists(template_path):
                 img = Image.open(template_path)
                 if img.mode != 'RGB':
@@ -132,7 +136,7 @@ class PaymentReceiptGenerator:
 
     @classmethod
     def _ensure_font_cache(cls):
-        font_template = "src/web/Backend/src/template/font_template.ttf"
+        font_template = os.path.join(_TEMPLATE_DIR, "font_template.ttf")
         font_sizes = {
             'title': 28,
             'normal': 20,
@@ -176,9 +180,9 @@ class PaymentReceiptGenerator:
         cache_key = f"original_{status}"
         if cache_key not in cls._stamp_cache:
             if status == 'confirmed':
-                stamp_path = "src/web/Backend/src/template/confirmed.png"
+                stamp_path = os.path.join(_TEMPLATE_DIR, "confirmed.png")
             else:
-                stamp_path = "src/web/Backend/src/template/mempool.png"
+                stamp_path = os.path.join(_TEMPLATE_DIR, "mempool.png")
             
             if os.path.exists(stamp_path):
                 stamp = Image.open(stamp_path)
@@ -192,9 +196,9 @@ class PaymentReceiptGenerator:
 
     @classmethod
     def _get_rotated_stamp(cls, status: str) -> Optional[Image.Image]:
-        rotation_angle = secrets.randbelow(101) - 50
-        offset_x = secrets.randbelow(21) - 10
-        offset_y = secrets.randbelow(21) - 10
+        rotation_angle = random.randint(-50, 50)
+        offset_x = random.randint(-10, 10)
+        offset_y = random.randint(-10, 10)
         cache_key = f"rotated_{status}_{rotation_angle}"
         
         if cache_key in cls._rotated_stamp_cache:
@@ -221,10 +225,11 @@ class PaymentReceiptGenerator:
             
             cls._rotated_stamp_cache[cache_key] = rotated_stamp
         
-        # Attach dynamic random offsets to the returned object
-        rotated_stamp.offset_x = offset_x
-        rotated_stamp.offset_y = offset_y
-        return rotated_stamp
+        # Return a copy with dynamic random offsets attached to prevent thread mutation race conditions
+        stamp_copy = rotated_stamp.copy()
+        stamp_copy.offset_x = offset_x
+        stamp_copy.offset_y = offset_y
+        return stamp_copy
 
 
     def _get_tx_type_sticker(self, tx_data: Dict[str, Any]) -> Optional[Image.Image]:

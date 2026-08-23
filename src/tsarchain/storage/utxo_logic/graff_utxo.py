@@ -4,8 +4,7 @@
 # Refs: BIP141; BIP173
 
 from typing import Any
-from bech32 import bech32_encode, convertbits
-
+from ...mempool.scripts import script_to_address, extract_script_bytes
 from ...contracts import graffiti as GRAFFITI
 from ...utils import config as CFG
 
@@ -16,13 +15,8 @@ log = get_ctx_logger("tsarchain.storage.utxo_logic.graff_utxo")
 class UTXOGraffitiMixin:
     @staticmethod
     def _script_bytes(spk) -> bytes:
-        if hasattr(spk, "serialize"):
-            return spk.serialize()
-        if isinstance(spk, (bytes, bytearray)):
-            return bytes(spk)
-        if isinstance(spk, str):
-            return bytes.fromhex(spk)
-        return b""
+        res = extract_script_bytes(spk)
+        return res if res is not None else b""
 
 
     def script_to_address(self, script) -> str | None:
@@ -30,14 +24,7 @@ class UTXOGraffitiMixin:
         Attempt to turn common script types (P2WPKH) into a bech32 address.
         Needed for Graffiti payout validation.
         """
-        b = self._script_bytes(script)
-        if len(b) == 22 and b[0] == 0x00 and b[1] == 0x14:
-            data = [0] + list(convertbits(b[2:], 8, 5, True))
-            return bech32_encode(CFG.ADDRESS_PREFIX, data)
-        if len(b) == 34 and b[0] == 0x00 and b[1] == 0x20:
-            data = [0] + list(convertbits(b[2:], 8, 5, True))
-            return bech32_encode(CFG.ADDRESS_PREFIX, data)
-        return None
+        return script_to_address(script)
 
 
     def _record_graffiti_event(self, tx, outputs_info: list[dict[str, Any]], block_height: int | None, block_hash: str | None = None) -> None:

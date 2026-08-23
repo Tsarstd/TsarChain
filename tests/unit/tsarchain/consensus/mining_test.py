@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 from tsarchain.consensus.mining import MiningManager
 from tsarchain.mempool.pool import TxPool
 from tsarchain.storage.utxo import UTXODB
+from tsarchain.contracts import graffiti as GRAFFITI
 
 
 
@@ -52,20 +53,19 @@ def mining_node():
 
 def test_select_graffiti_art_id_found(mining_node):
     """Scenario: a transaction with a valid Graffiti POST exists -> returns art_id."""
+    art_id = "graf" + "a" * 60
+    pool_addr = GRAFFITI.derive_pool_address(art_id)
     tx = Mock()
-    tx.outputs = [Mock()]
-    tx.txid = b'feedface12345678'
     script_pubkey = b'dummy_script'
-
-    # Mock the output's script_pubkey
-    tx.outputs[0].script_pubkey = script_pubkey
+    tx.outputs = [Mock(script_pubkey=script_pubkey), Mock(script_pubkey=None, address=pool_addr, amount=5000000000)]
+    tx.txid = b'feedface12345678'
 
     with patch('tsarchain.consensus.mining.GRAFFITI.parse_from_script') as mock_parse:
-        mock_parse.return_value = {'event': 'POST', 'art_id': 'art123'}
+        mock_parse.return_value = {'event': 'POST', 'art_id': art_id, 'size': 100}
 
         result = mining_node._select_graffiti_art_id([tx])
 
-        assert result == 'art123'
+        assert result == art_id
         mock_parse.assert_called_once_with(script_pubkey)
 
 
@@ -89,21 +89,22 @@ def test_select_graffiti_art_id_not_found(mining_node):
 
 def test_select_graffiti_art_id_computed_from_sha_creator(mining_node):
     """Scenario: POST event without explicit art_id -> computed from sha256+creator."""
+    art_id = "graf" + "b" * 60
+    pool_addr = GRAFFITI.derive_pool_address(art_id)
     tx = Mock()
-    tx.outputs = [Mock()]
-    tx.txid = b'abcd1234'
     script_pubkey = b'post_script'
-    tx.outputs[0].script_pubkey = script_pubkey
+    tx.outputs = [Mock(script_pubkey=script_pubkey), Mock(script_pubkey=None, address=pool_addr, amount=5000000000)]
+    tx.txid = b'abcd1234'
 
     with patch('tsarchain.consensus.mining.GRAFFITI.parse_from_script') as mock_parse, \
          patch('tsarchain.consensus.mining.GRAFFITI.compute_art_id') as mock_compute:
 
-        mock_parse.return_value = {'event': 'POST', 'sha256': 'sha', 'creator': 'creator'}
-        mock_compute.return_value = 'computed_art_123'
+        mock_parse.return_value = {'event': 'POST', 'sha256': 'sha', 'creator': 'creator', 'size': 100}
+        mock_compute.return_value = art_id
 
         result = mining_node._select_graffiti_art_id([tx])
 
-        assert result == 'computed_art_123'
+        assert result == art_id
         mock_compute.assert_called_once_with('sha', 'creator')
 
 
@@ -237,11 +238,16 @@ def test_mine_block_with_graffiti_post_anchoring(mining_node):
     mining_node.blockchain.total_supply = 1000
     mining_node.blockchain.get_last_block.return_value = prev_block
 
+    art_id = "graf" + "c" * 60
+    pool_addr = GRAFFITI.derive_pool_address(art_id)
+
     # Create a tx that is a Graffiti POST
     post_tx = Mock()
     post_tx.inputs = []
-    post_tx.outputs = [Mock()]
-    post_tx.outputs[0].script_pubkey = b'post_script'
+    post_tx.outputs = [
+        Mock(script_pubkey=b'post_script', address=None, amount=0),
+        Mock(script_pubkey=None, address=pool_addr, amount=5000000000),
+    ]
     post_tx.txid = b'post_tx'
     post_tx.fee = 5
     post_tx._received_at = 0
@@ -257,7 +263,7 @@ def test_mine_block_with_graffiti_post_anchoring(mining_node):
          patch('tsarchain.consensus.mining.CFG.MINING_COOLDOWN_AFTER_BLOCK', 0), \
          patch('tsarchain.consensus.mining.CFG.ZERO_HASH', b'\x00'*32):
 
-        mock_parse.return_value = {'event': 'POST', 'art_id': 'art_graffiti_abc'}
+        mock_parse.return_value = {'event': 'POST', 'art_id': art_id, 'size': 100}
 
         # Block mock
         mock_block = Mock()
@@ -276,7 +282,7 @@ def test_mine_block_with_graffiti_post_anchoring(mining_node):
         assert result is mock_block
         # Coinbase should be created with block_id
         mock_coinbase_cls.assert_called_once_with(
-            to_address='miner_addr', reward=100 + 5, height=1, block_id='art_graffiti_abc'
+            to_address='miner_addr', reward=100 + 5, height=1, block_id=art_id
         )
 
 
@@ -386,25 +392,29 @@ def test_mine_block_multiple_graffiti_posts(mining_node):
     mining_node.blockchain.chain[0].height = 0
     mining_node.blockchain.get_last_block.return_value = mining_node.blockchain.chain[0]
     
+    art_id1 = "graf" + "1" * 60
+    pool_addr1 = GRAFFITI.derive_pool_address(art_id1)
     post1 = Mock()
     post1.txid = b'post1'
     post1.inputs = []
     post1.fee = 10
-    post1.outputs = [Mock(script_pubkey=b'post1_spk')]
+    post1.outputs = [Mock(script_pubkey=b'post1_spk', address=None, amount=0), Mock(script_pubkey=None, address=pool_addr1, amount=5000000000)]
     post1._received_at = 1
     
+    art_id2 = "graf" + "2" * 60
+    pool_addr2 = GRAFFITI.derive_pool_address(art_id2)
     post2 = Mock()
     post2.txid = b'post2'
     post2.inputs = []
     post2.fee = 10
-    post2.outputs = [Mock(script_pubkey=b'post2_spk')]
+    post2.outputs = [Mock(script_pubkey=b'post2_spk', address=None, amount=0), Mock(script_pubkey=None, address=pool_addr2, amount=5000000000)]
     post2._received_at = 2
     
     mining_node._mempool.get_all_txs.return_value = [post1, post2]
     
     def parse_mock(spk):
-        if spk == b'post1_spk': return {'event': 'POST', 'art_id': 'art1'}
-        if spk == b'post2_spk': return {'event': 'POST', 'art_id': 'art2'}
+        if spk == b'post1_spk': return {'event': 'POST', 'art_id': art_id1, 'size': 100}
+        if spk == b'post2_spk': return {'event': 'POST', 'art_id': art_id2, 'size': 100}
         return None
         
     with patch('tsarchain.consensus.mining.GRAFFITI.parse_from_script', side_effect=parse_mock), \
@@ -502,10 +512,12 @@ def test_select_graffiti_art_id_script_none(mining_node):
     assert res is None
 
 def test_select_graffiti_art_id_txid_str(mining_node):
+    art_id = "graf" + "d" * 60
+    pool_addr = GRAFFITI.derive_pool_address(art_id)
     tx = Mock()
-    tx.outputs = [Mock(script_pubkey=b'spk')]
+    tx.outputs = [Mock(script_pubkey=b'spk', address=None, amount=0), Mock(script_pubkey=None, address=pool_addr, amount=5000000000)]
     tx.txid = 'txid_str'
     with patch('tsarchain.consensus.mining.GRAFFITI.parse_from_script') as p:
-        p.return_value = {'event': 'POST', 'art_id': 'art1'}
+        p.return_value = {'event': 'POST', 'art_id': art_id, 'size': 100}
         res = mining_node._select_graffiti_art_id([tx])
-        assert res == 'art1'
+        assert res == art_id

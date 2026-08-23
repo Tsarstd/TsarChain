@@ -21,7 +21,6 @@ class DummyNode(ReceiveHandler):
         self._utxo_shared = False
         self.broadcast_block = MagicMock()
         self.broadcast_tx_fluff = MagicMock()
-        self.request_full_sync = MagicMock()
         self.calc_chainwork_from_list = MagicMock(return_value=100)
         self.validate_incoming_chain = MagicMock(return_value=True)
         self.rebuild_utxo_from_chain_locked = MagicMock()
@@ -264,18 +263,16 @@ def test_native_precheck_block_compact_validation(dummy_node):
             assert dummy_node._native_precheck_block(mock_block) is True
 
 @patch("tsarchain.network.cast.receive.Block")
-def test_receive_block_gap_full_sync(mock_block_class, dummy_node):
+def test_receive_block_gap(mock_block_class, dummy_node):
     mock_block = MagicMock()
     mock_block.height = 20
     mock_block_class.deserialize_block.return_value = mock_block
     
     dummy_node.blockchain.get_last_block.return_value.height = 10
     
-    with patch("tsarchain.network.cast.receive.CFG") as mock_cfg:
-        mock_cfg.ENABLE_FULL_SYNC = True
-        msg = {"data": {"hash": "newhash"}}
-        assert dummy_node.receive_block(msg, ("127.0.0.1", 8333), {("127.0.0.1", 8333)}) is False
-        dummy_node.network.handle_block_gap.assert_called_once()
+    msg = {"data": {"hash": "newhash"}}
+    assert dummy_node.receive_block(msg, ("127.0.0.1", 8333), {("127.0.0.1", 8333)}) is False
+    dummy_node.network.handle_block_gap.assert_called_once()
 
 @patch("tsarchain.network.cast.receive.Block")
 def test_receive_block_validation_fails_prevout(mock_block_class, dummy_node):
@@ -293,7 +290,6 @@ def test_receive_block_validation_fails_prevout(mock_block_class, dummy_node):
     
     msg = {"data": {"hash": "newhash"}}
     assert dummy_node.receive_block(msg, ("127.0.0.1", 8333), {("127.0.0.1", 8333)}) is False
-    dummy_node.network.request_full_sync.assert_called_once_with(("127.0.0.1", 8333), force=True)
 
 @patch("tsarchain.network.cast.receive.Block")
 def test_receive_block_add_block_exception_swap_tip(mock_block_class, dummy_node):

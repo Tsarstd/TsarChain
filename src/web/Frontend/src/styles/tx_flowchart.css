@@ -1,82 +1,94 @@
 /* ==========================================================================
-   UTXO TRANSACTION FLOWCHART STYLES
+   TSAR STUDIO - UTXO TRANSACTION FLOWCHART STYLES
    ========================================================================== */
 
 .utxo-flowchart-card {
   margin: 1.5rem 0;
   padding: 1.5rem;
-  background: rgba(15, 23, 42, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  backdrop-filter: blur(16px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
-  transition: all 0.3s ease;
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-medium-15);
+  border-radius: 4px;
+  box-shadow: 3px 3px 0px var(--color-tsar-black);
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .utxo-flowchart-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 1.2rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .utxo-header-title {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  min-width: 0;
 }
 
 .utxo-header-icon {
-  font-size: 1.6rem;
-  color: #38bdf8;
-  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.5));
+  font-size: 1.4rem;
+  color: var(--color-tsar-orange);
+  flex-shrink: 0;
 }
 
 .utxo-header-title h4 {
   margin: 0;
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: #f8fafc;
-  letter-spacing: 0.3px;
+  font-family: var(--font-newspaper);
+  font-size: 1.2rem;
+  text-transform: uppercase;
+  color: var(--color-tsar-cream);
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+.utxo-header-controls {
+  display: flex;
+  align-items: center;
 }
 
 .utxo-toggle-btn {
-  background: rgba(30, 41, 59, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #cbd5e1;
-  padding: 6px 14px;
-  border-radius: 8px;
-  font-size: 0.8rem;
-  font-weight: 600;
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-medium-15);
+  color: var(--color-tsar-cream);
+  font-family: var(--font-newspaper);
+  text-transform: uppercase;
+  padding: 6px 12px;
+  border-radius: 2px;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
   cursor: pointer;
+  white-space: nowrap;
   transition: all 0.2s ease;
 }
 
 .utxo-toggle-btn:hover {
-  background: #082f49;
-  border-color: rgba(56, 189, 248, 0.4);
-  color: #38bdf8;
+  background: var(--color-tsar-orange);
+  border-color: var(--color-tsar-orange);
+  color: var(--color-tsar-cream);
+  box-shadow: 2px 2px 0px var(--color-tsar-black);
 }
 
 /* MAIN DIAGRAM CONTAINER */
 .utxo-flowchart-body {
-  margin-top: 1.5rem;
+  margin-top: 1.25rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .utxo-flow-diagram {
   display: flex;
   align-items: stretch;
   justify-content: space-between;
-  gap: 12px;
+  gap: 14px;
   position: relative;
-}
-
-@media (max-width: 900px) {
-  .utxo-flow-diagram {
-    flex-direction: column;
-    align-items: center;
-  }
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .utxo-column {
@@ -84,6 +96,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  box-sizing: border-box;
 }
 
 .utxo-column-header {
@@ -91,72 +104,80 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 10px;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .col-badge {
-  font-size: 0.7rem;
-  font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 12px;
-  letter-spacing: 0.5px;
+  font-family: var(--font-newspaper);
+  font-size: 0.75rem;
+  padding: 3px 8px;
+  border-radius: 2px;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .input-badge {
-  background: #082f49;
-  color: #38bdf8;
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: var(--bg-surface-0);
+  color: var(--color-tsar-cream);
+  border: 1px solid var(--border-medium);
 }
 
 .output-badge {
-  background: #3b0764;
-  color: #c084fc;
-  border: 1px solid rgba(168, 85, 247, 0.3);
+  background: var(--color-tsar-orange);
+  color: var(--color-tsar-cream);
+  border: 1px solid var(--color-tsar-black);
+  box-shadow: 1px 1px 0px var(--color-tsar-black);
 }
 
 .col-total {
   font-size: 0.8rem;
-  font-family: monospace;
-  font-weight: 700;
-  color: #94a3b8;
+  font-family: var(--font-montserrat);
+  font-weight: var(--fw-bold);
+  color: var(--text-secondary-70);
+  white-space: nowrap;
 }
 
 .utxo-nodes-stack {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* NODE CARDS */
 .utxo-node {
-  background: rgba(30, 41, 59, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
+  background: var(--bg-tint-gray-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
   padding: 10px 12px;
-  transition: all 0.25 ease;
+  transition: all 0.2s ease;
   position: relative;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .utxo-node:hover {
-  border-color: rgba(56, 189, 248, 0.4);
-  background: rgba(30, 41, 59, 0.95);
+  border-color: var(--color-tsar-orange);
   transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: 2px 2px 0px var(--color-tsar-black);
 }
 
 .utxo-node.coinbase {
-  border-color: rgba(234, 179, 8, 0.4);
-  background: rgba(234, 179, 8, 0.08);
+  border-color: var(--color-tsar-orange);
+  background: var(--bg-tint-orange-dark);
 }
 
 .utxo-node.opreturn {
-  border-color: rgba(236, 72, 153, 0.4);
-  background: rgba(236, 72, 153, 0.08);
+  border-color: var(--border-strong-30);
+  background: var(--bg-surface-1);
 }
 
 .utxo-node.change {
-  border-color: rgba(16, 185, 129, 0.3);
-  background: rgba(16, 185, 129, 0.06);
+  border-color: var(--border-strong-30);
+  background: var(--bg-dark-14);
 }
 
 .node-top {
@@ -164,22 +185,35 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 6px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .node-tag {
+  font-family: var(--font-montserrat);
   font-size: 0.72rem;
-  font-weight: 600;
-  color: #94a3b8;
+  font-weight: var(--fw-semibold);
+  color: var(--text-muted-65);
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tag-icon {
+  font-size: 0.8rem;
 }
 
 .node-amount {
   font-size: 0.85rem;
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   font-family: monospace;
-  color: #38bdf8;
+  color: var(--color-tsar-orange);
+  text-align: right;
+  white-space: nowrap;
+  margin-left: auto;
 }
 
 button.node-address {
@@ -190,18 +224,27 @@ button.node-address {
 }
 
 .node-address {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-family: monospace;
-  color: #cbd5e1;
+  color: var(--color-tsar-cream);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px;
-  background: rgba(15, 23, 42, 0.6);
-  border-radius: 6px;
-  white-space: nowrap;
+  gap: 6px;
+  padding: 5px 8px;
+  background: var(--bg-surface-0);
+  border: 1px solid var(--border-subtle-08);
+  border-radius: 2px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.node-address span {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
 }
 
 .node-address.clickable {
@@ -209,38 +252,31 @@ button.node-address {
 }
 
 .node-address.clickable:hover {
-  color: #38bdf8;
-  background: #082f49;
+  color: var(--color-tsar-orange);
+  border-color: var(--color-tsar-orange);
 }
 
 .ext-icon {
   font-size: 0.65rem;
   opacity: 0.7;
+  flex-shrink: 0;
 }
 
-/* FLOW CONNECTORS */
+/* FLOW CONNECTORS (DESKTOP HORIZONTAL) */
 .utxo-flow-connector {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 40px;
+  width: 36px;
   position: relative;
-}
-
-@media (max-width: 900px) {
-  .utxo-flow-connector {
-    height: 40px;
-    width: 100%;
-    transform: rotate(90deg);
-  }
+  flex-shrink: 0;
 }
 
 .connector-line {
   width: 100%;
-  height: 3px;
-  background: linear-gradient(90deg, rgba(56, 189, 248, 0.2), rgba(168, 85, 247, 0.4));
-  border-radius: 2px;
+  height: 2px;
+  background: var(--color-tsar-orange);
   position: relative;
   overflow: hidden;
 }
@@ -251,22 +287,18 @@ button.node-address {
   left: -100%;
   width: 60%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, #38bdf8, transparent);
-  animation: utxoFlowPulse 1.8s infinite linear;
+  background: linear-gradient(90deg, transparent, var(--color-tsar-cream), transparent);
+  animation: utxoFlowPulseHorizontal 1.8s infinite linear;
 }
 
-@keyframes utxoFlowPulse {
-  0% {
-    left: -100%;
-  }
-  100% {
-    left: 200%;
-  }
+@keyframes utxoFlowPulseHorizontal {
+  0% { left: -100%; }
+  100% { left: 200%; }
 }
 
 .connector-arrow {
-  color: #a855f7;
-  font-size: 1rem;
+  color: var(--color-tsar-orange);
+  font-size: 0.9rem;
   margin-top: 4px;
 }
 
@@ -275,57 +307,52 @@ button.node-address {
   display: flex;
   align-items: center;
   justify-content: center;
-  max-width: 310px;
-  min-width: 260px;
-}
-
-@media (max-width: 900px) {
-  .utxo-column--core {
-    max-width: 100%;
-    width: 100%;
-    min-width: 0;
-  }
+  max-width: 290px;
+  min-width: 240px;
+  box-sizing: border-box;
 }
 
 .utxo-core-node {
   width: 100%;
-  background: rgba(30, 41, 59, 0.85);
-  border: 1px solid rgba(168, 85, 247, 0.3);
-  border-radius: 14px;
+  background: var(--bg-tint-orange-darker);
+  border: 2px solid var(--color-tsar-orange);
+  border-radius: 4px;
   padding: 16px;
   text-align: center;
-  box-shadow: 0 0 20px rgba(168, 85, 247, 0.15);
+  box-shadow: 3px 3px 0px var(--color-tsar-black);
   position: relative;
+  box-sizing: border-box;
 }
 
 .core-icon-wrap {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #0284c7, #9333ea);
+  width: 40px;
+  height: 40px;
+  border-radius: 2px;
+  background: var(--color-tsar-orange);
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto 8px auto;
-  box-shadow: 0 0 12px rgba(147, 51, 234, 0.4);
+  box-shadow: 2px 2px 0px var(--color-tsar-black);
 }
 
 .core-icon {
   font-size: 1.2rem;
-  color: #ffffff;
+  color: var(--color-tsar-cream);
 }
 
 .core-title {
-  margin: 0 0 4px 0;
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: #f8fafc;
+  margin: 0 0 3px 0;
+  font-family: var(--font-newspaper);
+  font-size: 1.15rem;
+  text-transform: uppercase;
+  color: var(--color-tsar-cream);
 }
 
 .core-txid {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-family: monospace;
-  color: #94a3b8;
+  color: var(--text-muted-60);
   display: block;
   margin-bottom: 12px;
 }
@@ -333,60 +360,242 @@ button.node-address {
 .core-metrics {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   text-align: left;
-  background: rgba(15, 23, 42, 0.6);
-  padding: 10px 12px;
-  border-radius: 8px;
+  background: var(--bg-surface-0);
+  border: 1px solid var(--border-subtle-08);
+  padding: 8px 10px;
+  border-radius: 2px;
+  box-sizing: border-box;
 }
 
 .core-metric-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   font-size: 0.76rem;
 }
 
 .metric-lbl {
-  color: #94a3b8;
+  color: var(--text-muted-60);
   white-space: nowrap;
-  font-weight: 500;
+  font-family: var(--font-montserrat);
+  font-weight: var(--fw-medium);
+  text-transform: uppercase;
+  font-size: 0.72rem;
 }
 
 .metric-val {
   font-family: monospace;
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   white-space: nowrap;
   text-align: right;
+  color: var(--color-tsar-cream);
+  font-size: 0.78rem;
 }
 
 .text-cyan {
-  color: #38bdf8;
+  color: var(--color-tsar-cream);
 }
 
 .text-amber {
-  color: #f59e0b;
+  color: var(--color-tsar-orange);
 }
 
 .status-pill {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 0.68rem;
-  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 2px;
+  font-family: var(--font-newspaper);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .status-pill.confirmed {
-  background: #064e3b;
-  color: #34d399;
+  background: var(--color-tsar-cream);
+  color: var(--color-tsar-black);
 }
 
 .status-pill.pending {
-  background: #451a03;
-  color: #fbbf24;
+  background: var(--color-tsar-orange);
+  color: var(--color-tsar-cream);
 }
 
+.status-ic {
+  font-size: 0.68rem;
+}
 
+/* ==========================================================================
+   RESPONSIVE / MOBILE STYLES FOR UTXO FLOWCHART
+   ========================================================================== */
+
+@media (max-width: 900px) {
+  .utxo-flow-diagram {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+
+  .utxo-column {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .utxo-column--core {
+    max-width: 100%;
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* Dedicated vertical flow connector on tablet/mobile */
+  .utxo-flow-connector {
+    width: 100%;
+    height: auto;
+    padding: 10px 0;
+    margin: 2px auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transform: none; /* NO ROTATION */
+  }
+
+  .utxo-flow-connector .connector-line {
+    width: 2px;
+    height: 24px;
+    background: var(--color-tsar-orange);
+    position: relative;
+    overflow: hidden;
+    margin: 0 auto 3px auto;
+    border-radius: 1px;
+  }
+
+  .utxo-flow-connector .flow-pulse {
+    position: absolute;
+    top: -100%;
+    left: 0;
+    width: 100%;
+    height: 60%;
+    background: linear-gradient(180deg, transparent, var(--color-tsar-cream), transparent);
+    animation: utxoFlowPulseVertical 1.6s infinite linear;
+  }
+
+  @keyframes utxoFlowPulseVertical {
+    0% { top: -100%; }
+    100% { top: 200%; }
+  }
+
+  .utxo-flow-connector .connector-arrow {
+    transform: rotate(90deg); /* Points downwards cleanly */
+    color: var(--color-tsar-orange);
+    font-size: 0.95rem;
+    margin-top: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .utxo-flowchart-card {
+    padding: 1rem 0.9rem;
+    margin: 1rem 0;
+  }
+
+  .utxo-flowchart-header {
+    padding-bottom: 0.75rem;
+    gap: 8px;
+  }
+
+  .utxo-header-title h4 {
+    font-size: 1.05rem;
+  }
+
+  .utxo-toggle-btn {
+    padding: 4px 10px;
+    font-size: 0.72rem;
+  }
+
+  .utxo-node {
+    padding: 9px 10px;
+  }
+
+  .node-amount {
+    font-size: 0.8rem;
+  }
+
+  .node-address {
+    font-size: 0.75rem;
+    padding: 4px 7px;
+  }
+}
+
+@media (max-width: 480px) {
+  .utxo-flowchart-card {
+    padding: 0.85rem 0.75rem;
+    margin: 0.85rem 0;
+    box-shadow: 2px 2px 0px var(--color-tsar-black);
+  }
+
+  .utxo-header-title h4 {
+    font-size: 0.95rem;
+    letter-spacing: 0.02em;
+  }
+
+  .utxo-header-icon {
+    font-size: 1.2rem;
+  }
+
+  .utxo-toggle-btn {
+    padding: 3px 8px;
+    font-size: 0.68rem;
+  }
+
+  .utxo-core-node {
+    padding: 12px 10px;
+  }
+
+  .core-title {
+    font-size: 1.05rem;
+  }
+
+  .core-metrics {
+    padding: 7px 8px;
+    gap: 6px;
+  }
+
+  .core-metric-item {
+    font-size: 0.72rem;
+  }
+
+  .metric-lbl,
+  .metric-val {
+    font-size: 0.7rem;
+  }
+
+  .col-badge {
+    font-size: 0.7rem;
+    padding: 2px 6px;
+  }
+
+  .col-total {
+    font-size: 0.72rem;
+  }
+
+  .node-top {
+    gap: 6px;
+  }
+
+  .node-tag {
+    font-size: 0.68rem;
+  }
+
+  .node-amount {
+    font-size: 0.75rem;
+  }
+
+  .node-address {
+    font-size: 0.72rem;
+  }
+}

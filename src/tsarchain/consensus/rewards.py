@@ -25,23 +25,43 @@ class RewardCalculator:
             return 0
         if height == 0 and CFG.GENESIS_REWARD:
             return int(CFG.GENESIS_REWARD_AMOUNT)
-        return int(CFG.INITIAL_REWARD) // (2 ** (int(max(0, height)) // int(CFG.BLOCKS_PER_HALVING)))
+        epoch = int(max(0, height)) // int(CFG.BLOCKS_PER_HALVING)
+        if epoch >= 64:
+            return 0
+        return int(CFG.INITIAL_REWARD) // (2 ** epoch)
 
 
     def cumulative_supply_until(self, height: int) -> int:
-        total = 0
         if height <= 0:
             return 0
-        for h in range(height):
-            base = self.scheduled_reward(h)
-            if base <= 0:
+
+        blocks_per_halving = max(1, int(CFG.BLOCKS_PER_HALVING))
+        max_supply = int(CFG.MAX_SUPPLY)
+
+        total = self.scheduled_reward(0)
+        if height == 1:
+            return min(total, max_supply)
+
+        remaining_blocks = height - 1
+        current_h = 1
+
+        while remaining_blocks > 0:
+            reward = self.scheduled_reward(current_h)
+            if reward <= 0:
                 break
-            if total + base > CFG.MAX_SUPPLY:
-                base = CFG.MAX_SUPPLY - total
-            total += base
-            if total >= CFG.MAX_SUPPLY:
-                return CFG.MAX_SUPPLY
-        return total
+
+            epoch = current_h // blocks_per_halving
+            next_epoch_h = (epoch + 1) * blocks_per_halving
+            blocks_in_epoch = min(remaining_blocks, next_epoch_h - current_h)
+
+            total += blocks_in_epoch * reward
+            if total >= max_supply:
+                return max_supply
+
+            remaining_blocks -= blocks_in_epoch
+            current_h += blocks_in_epoch
+
+        return min(total, max_supply)
 
 
     def get_block_reward(self, height: int) -> int:

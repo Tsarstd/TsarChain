@@ -42,7 +42,6 @@ class MockNode:
         self._recent_gap_requests = {}
         self._peer_last_sync = {}
         self._peer_best_height = {("127.0.0.1", 8333): 100, ("127.0.0.1", 8334): 105}
-        self._full_sync_backoff = {}
 
         self.broadcast = MagicMock()
         self.broadcast.lock = threading.RLock()
@@ -68,8 +67,8 @@ class MockNode:
     def request_mempool_snapshot(self, peer, force=False):
         return True
 
-    def request_full_sync(self, peer, force=False):
-        pass
+    def request_sync(self, fast=False):
+        return request_sync(self, fast=fast)
 
     def penalize_peer(self, peer, amount):
         pass
@@ -138,7 +137,6 @@ def test_request_sync_fast(mock_cfg, mock_time, mock_node):
 def test_sync_with_peers_success(mock_sync_peer, mock_cfg, mock_node):
     mock_cfg.MAX_OUTBOUND_PEERS = 2
     mock_cfg.SYNC_INFO_MIN_INTERVAL = 10.0
-    mock_cfg.ENABLE_FULL_SYNC = False
     
     mock_sync_peer.return_value = True
     
@@ -251,13 +249,10 @@ def test_sync_peer_sync_reject(
     mock_build_loc,
     mock_node,
 ):
-    mock_cfg.FULL_SYNC_BACKOFF_INITIAL = 10.0
-    mock_cfg.FULL_SYNC_BACKOFF_MAX = 60.0
     mock_req_headers.return_value = {"type": "SYNC_REJECT", "retry_after": 20.0}
     peer = ("127.0.0.1", 8333)
     
     assert _sync_peer(mock_node, peer) is False
-    assert peer in mock_node._full_sync_backoff
 
 
 @patch("tsarchain.network.node_logic.sync._build_locator")
@@ -361,8 +356,6 @@ def test_download_blocks_success(mock_cfg, mock_apply, mock_node):
 def test_download_blocks_reject(mock_cfg, mock_node):
     mock_cfg.BLOCK_DOWNLOAD_BATCH_MAX = 10
     mock_cfg.SYNC_TIMEOUT = 10.0
-    mock_cfg.FULL_SYNC_BACKOFF_INITIAL = 10.0
-    mock_cfg.FULL_SYNC_BACKOFF_MAX = 60.0
     peer = ("127.0.0.1", 8333)
     heights = [101]
     
@@ -373,7 +366,6 @@ def test_download_blocks_reject(mock_cfg, mock_node):
     
     applied, elapsed = _download_blocks(mock_node, peer, heights)
     assert applied == 0
-    assert peer in mock_node._full_sync_backoff
 
 
 @patch("tsarchain.network.node_logic.sync._apply_block_from_sync")
@@ -389,11 +381,11 @@ def test_download_blocks_reorg_mismatch(mock_cfg, mock_apply, mock_node):
         "blocks": [{"height": 100, "hash": "different_hash"}]
     })
     mock_apply.return_value = False
-    mock_node.request_full_sync = MagicMock()
+    mock_node.request_sync = MagicMock()
     
     applied, elapsed = _download_blocks(mock_node, peer, heights)
     assert applied == 0
-    mock_node.request_full_sync.assert_called_once_with(peer, force=True)
+    mock_node.request_sync.assert_called_once_with(fast=True)
 
 
 # ---------------------------------------------------------

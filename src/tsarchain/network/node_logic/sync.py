@@ -157,14 +157,7 @@ def _process_mempool_sync(self, norm, allow_mempool):
 
 
 def _handle_sync_fallback(self, norm, synced, allow_mempool, inline_status):
-    if not synced:
-        if CFG.ENABLE_FULL_SYNC:
-            self.request_full_sync(norm)
-        elif allow_mempool and inline_status is False:
-            if norm not in self._snapshot_unreachable:
-                self.request_mempool_snapshot(norm)
-                
-    elif allow_mempool and inline_status is False:
+    if allow_mempool and inline_status is False:
         if norm not in self._snapshot_unreachable:
             self.request_mempool_snapshot(norm)
 
@@ -187,9 +180,8 @@ def _sync_peer(self, peer: Tuple[str, int]) -> bool:
         return False
 
     if headers_resp.get("type") == "SYNC_REJECT":
-        retry = float(headers_resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
-        self._full_sync_backoff[peer] = now + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
-        log.info("[_sync_peer] %s rejected header request (retry in %.1fs)", peer, min(retry, CFG.FULL_SYNC_BACKOFF_MAX))
+        retry = float(headers_resp.get("retry_after", 30.0))
+        log.info("[_sync_peer] %s rejected header request (retry in %.1fs)", peer, retry)
         return False
 
     headers = headers_resp.get("headers") or []
@@ -289,7 +281,6 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
     total_applied = 0
     total_attempted = len(unique_heights)
     total_chunks = (total_attempted + batch_size - 1) // batch_size
-    triggered_fullsync = False
     for idx in range(0, len(unique_heights), batch_size):
         chunk = unique_heights[idx : idx + batch_size]
         payload = {"type": "GET_BLOCKS", "heights": chunk, "port": self.port}
@@ -307,19 +298,18 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
 
         if resp.get("type") == "BLOCKS":
             blocks = resp.get("blocks") or []
-            total_applied, elapsed, stop, triggered_fullsync = _process_downloaded_blocks(
-                self, peer, blocks, triggered_fullsync, start_time, total_applied
+            total_applied, elapsed, stop = _process_downloaded_blocks(
+                self, peer, blocks, start_time, total_applied
             )
             if stop:
                 return total_applied, elapsed
 
         elif resp.get("type") == "SYNC_REJECT":
-            retry = float(resp.get("retry_after", CFG.FULL_SYNC_BACKOFF_INITIAL))
-            self._full_sync_backoff[peer] = time.time() + min(retry, CFG.FULL_SYNC_BACKOFF_MAX)
+            retry = float(resp.get("retry_after", 30.0))
             log.info(
                 "[_download_blocks] %s asked to retry later (retry %.1fs)",
                 peer,
-                min(retry, CFG.FULL_SYNC_BACKOFF_MAX),
+                retry,
             )
             break
         else:
@@ -330,7 +320,7 @@ def _download_blocks(self, peer: Tuple[str, int], heights: List[int]) -> Tuple[i
     return total_applied, elapsed
 
 
-def _process_downloaded_blocks(self, peer, blocks, triggered_fullsync, start_time, total_applied):
+def _process_downloaded_blocks(self, peer, blocks, start_time, total_applied):
     for block_obj in blocks:
         h = int(block_obj.get("height", -1))
         bh = str(block_obj.get("hash") or "")
@@ -339,11 +329,9 @@ def _process_downloaded_blocks(self, peer, blocks, triggered_fullsync, start_tim
             local_hash = local_chain[h].hash().hex()
             if local_hash == bh:
                 continue
-            # already have a different block at this height -> prefer full sync once
-            if not triggered_fullsync:
-                self.request_full_sync(peer, force=True)
-                triggered_fullsync = True
-            return total_applied, time.time() - start_time, True, triggered_fullsync
+            # already have a different block at this height -> re-request headers sync to evaluate reorg
+            self.request_sync(fast=True)
+            return total_applied, time.time() - start_time, True
             
         applied = _apply_block_from_sync(self, block_obj, peer)
         if applied:
@@ -352,11 +340,9 @@ def _process_downloaded_blocks(self, peer, blocks, triggered_fullsync, start_tim
             blk_hash = block_obj.get("hash")
             label = str(blk_hash or "unknown")
             log.warning("[_process_downloaded_blocks] Block %s rejected during sync from %s", label[:12], peer)
-            if not triggered_fullsync:
-                self.request_full_sync(peer, force=True)
-                triggered_fullsync = True
-            return total_applied, time.time() - start_time, True, triggered_fullsync
-    return total_applied, 0.0, False, triggered_fullsync
+            self.request_sync(fast=True)
+            return total_applied, time.time() - start_time, True
+    return total_applied, 0.0, False
 
 
 def _apply_block_from_sync(self, block_obj: Dict[str, Any], peer: Tuple[str, int]) -> bool:

@@ -119,3 +119,40 @@ def test_load_index_kv(mock_native, tmp_path):
     assert idx["bytes_used"] == 100
     assert "gid1" in idx["files"]
     assert idx["art_map"]["art1"] == "gid1"
+
+
+def test_payout_guard_persistence(tmp_path):
+    db_path = str(tmp_path / "storage")
+    db = ArchivistDatabase(storage_dir=db_path, enable_blobs=True, enable_index=True)
+    
+    guard_data = {
+        "art_alpha": {"epoch": 10, "ts": 1700000000, "status": "ok"},
+        "art_beta": {"epoch": 12, "ts": 1700000500, "status": "attempt"},
+    }
+    db.save_payout_guard(guard_data)
+    
+    loaded = db.load_payout_guard()
+    assert loaded["art_alpha"]["epoch"] == 10
+    assert loaded["art_alpha"]["status"] == "ok"
+    assert loaded["art_beta"]["epoch"] == 12
+    assert loaded["art_beta"]["status"] == "attempt"
+    
+    # Verify save_index does NOT wipe payout_guard
+    test_idx = {"files": {"gid1": {"size_bytes": 100}}, "bytes_used": 100, "art_map": {"art1": "gid1"}}
+    db.save_index(test_idx)
+    
+    loaded_after_save_index = db.load_payout_guard()
+    assert "art_alpha" in loaded_after_save_index
+    assert loaded_after_save_index["art_alpha"]["epoch"] == 10
+    assert "art_beta" in loaded_after_save_index
+
+
+def test_payout_guard_disabled_index(tmp_path):
+    db = ArchivistDatabase(storage_dir=str(tmp_path), enable_index=False)
+    guard_data = {"art_gamma": {"epoch": 5, "ts": 1700000000, "status": "ok"}}
+    db.save_payout_guard(guard_data)
+    
+    loaded = db.load_payout_guard()
+    assert loaded["art_gamma"]["epoch"] == 5
+    assert loaded["art_gamma"]["status"] == "ok"
+

@@ -37,15 +37,17 @@ log = get_ctx_logger("tsarchain.contracts.storage_node.connect")
 manual_bootstrap: Optional[Tuple[str, int]] = None
 
 
-def create_keypair(path: str) -> tuple[str, str, str]:
-    load_node_key(path)
+def create_keypair(key_name: str = "archivist_key") -> tuple[str, str, str]:
+    record = load_node_key(key_name)
+    if record and record.get("id") and record.get("pubkey") and record.get("privkey"):
+        return record["id"], record["pubkey"], record["privkey"]
     sk = SigningKey.generate()
     vk = sk.verify_key
     priv_hex = sk.encode(encoder=HexEncoder).decode()
     pub_hex  = vk.encode(encoder=HexEncoder).decode()
     node_id  = hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()
     payload = {"id": node_id, "pubkey": pub_hex, "privkey": priv_hex, "created": int(time.time())}
-    save_node_key(path, payload)
+    save_node_key(key_name, payload)
     return node_id, pub_hex, priv_hex
 
 
@@ -55,6 +57,21 @@ def _load_stor_peer_keys() -> dict:
         nid = k.decode('utf-8')[4:]
         m[nid] = v.decode('utf-8')
     return m
+
+
+_STOR_PEER_KEYS_LOCK = threading.Lock()
+_STOR_PEER_KEYS = _load_stor_peer_keys()
+
+
+def _get_peer_key(nid: str) -> Optional[str]:
+    with _STOR_PEER_KEYS_LOCK:
+        return _STOR_PEER_KEYS.get(nid)
+
+
+def _pin_peer_key(nid: str, pk: str) -> None:
+    with _STOR_PEER_KEYS_LOCK:
+        _STOR_PEER_KEYS[nid] = pk
+        _save_stor_peer_keys(_STOR_PEER_KEYS)
 
 
 def _save_stor_peer_keys(data: Optional[dict] = None) -> None:
@@ -67,9 +84,9 @@ def _save_stor_peer_keys(data: Optional[dict] = None) -> None:
 
 
 def _scan_nodes(start: int = CFG.PORT_START, end: int = CFG.PORT_END, manual_nodes: Optional[Sequence[Tuple[str,int]]] = None) -> List[Tuple[str,int]]:
-    kp = load_node_key(CFG.ARCHIVIST_KEY_PATH)
+    kp = load_node_key("archivist_key")
     if kp is None:
-        node_id, pub_hex, priv_hex = create_keypair(CFG.ARCHIVIST_KEY_PATH)
+        node_id, pub_hex, priv_hex = create_keypair("archivist_key")
     else:
         node_id = kp["id"]
         pub_hex = kp["pubkey"]
@@ -122,8 +139,8 @@ def _ping_node(ip: str, port: int, node_id: str, pub_hex: str, priv_hex: str, ct
             chan = SecureChannel(
                 s, role="client",
                 node_id=node_id, node_pub=pub_hex, node_priv=priv_hex,
-                get_pinned=lambda nid: _STOR_PEER_KEYS.get(nid),
-                set_pinned=lambda nid, pk: (_STOR_PEER_KEYS.__setitem__(nid, pk), _save_stor_peer_keys())[-1]
+                get_pinned=_get_peer_key,
+                set_pinned=_pin_peer_key,
             )
             chan.handshake()
             chan.send(json.dumps(ping_env).encode("utf-8"))
@@ -140,9 +157,6 @@ def _ping_node(ip: str, port: int, node_id: str, pub_hex: str, priv_hex: str, ct
     except Exception as e:
         log.warning("Scan node %s:%s failed: %s", ip, port, e)
     return False
-
-
-_STOR_PEER_KEYS = _load_stor_peer_keys()
 
 
 class NodeDirectory:
@@ -179,17 +193,16 @@ class NodeDirectory:
 
 class RPC:
     def __init__(self):
-        node_id, pub, priv = create_keypair(CFG.ARCHIVIST_KEY_PATH)
+        node_id, pub, priv = create_keypair("archivist_key")
         self.ctx = {"net_id": CFG.DEFAULT_NET_ID, "node_id": node_id, "privkey": priv}
         self.pub = pub
         self.priv = priv
         self.node: Optional[tuple[str,int]] = None
-        self.sock = None
         self.lock = threading.RLock()
 
         pkh = hash160(bytes.fromhex(self.pub))
         data = [0] + list(convertbits(pkh, 8, 5, True))
-        self._default_address = bech32_encode(CFG.ADDRESS_PREFIX, data)
+        self.address = self._default_address = bech32_encode(CFG.ADDRESS_PREFIX, data)
         self.trusted = False
 
 
@@ -208,16 +221,18 @@ class RPC:
 
 
     def _send(self, inner: Dict[str, Any]) -> None:
-        if not self.sock:
+        sock = getattr(self, "sock", None)
+        if not sock:
             raise RuntimeError("no socket")
         outer = build_envelope(inner, self.ctx, extra={"pubkey": self.pub})
-        send_message(self.sock, json.dumps(outer).encode("utf-8"))
+        send_message(sock, json.dumps(outer).encode("utf-8"))
 
 
     def _recv(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
-        if not self.sock:
+        sock = getattr(self, "sock", None)
+        if not sock:
             return None
-        raw = recv_message(self.sock, timeout)
+        raw = recv_message(sock, timeout)
         if not raw:
             return None
         outer = json.loads(raw.decode("utf-8"))
@@ -258,8 +273,8 @@ class RPC:
             chan = SecureChannel(
                 s, role="client",
                 node_id=self.ctx.get("node_id"), node_pub=self.pub, node_priv=self.priv,
-                get_pinned=lambda nid: _STOR_PEER_KEYS.get(nid),
-                set_pinned=lambda nid, pk: (_STOR_PEER_KEYS.__setitem__(nid, pk), _save_stor_peer_keys())[-1]
+                get_pinned=_get_peer_key,
+                set_pinned=_pin_peer_key,
             )
             chan.handshake()
             chan.send(json.dumps(payload).encode("utf-8"))

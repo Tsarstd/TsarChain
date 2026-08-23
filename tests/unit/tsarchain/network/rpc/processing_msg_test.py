@@ -52,13 +52,13 @@ def test_process_message_unknown_type(mock_ban, network, mock_config):
     msg = {"type": "UNKNOWN_TYPE"}
     res = process_message(network, msg, ("192.168.1.1", 1234))
     assert res == {"error": "unknown type", "drop": True}
-    mock_ban.assert_called_once_with("192.168.1.1", True)
+    mock_ban.assert_not_called()
 
     # Without tuple addr
     mock_ban.reset_mock()
     res2 = process_message(network, msg, "not_tuple")
     assert res2 == {"error": "unknown type", "drop": True}
-    mock_ban.assert_called_once_with("0.0.0.0", True)
+    mock_ban.assert_not_called()
 
 
 @patch("tsarchain.network.rpc.processing_msg.ban_ip")

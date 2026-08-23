@@ -56,9 +56,7 @@ log = get_ctx_logger("tsarchain.wallet.gui")
 
 # ---------------- Constants & Paths ----------------
 manual_bootstrap: Optional[Tuple[str, int]] = None
-os.makedirs(os.path.dirname(CFG.USER_KEY_PATH), exist_ok=True)
-
-USER_ID, USER_PUB, USER_PRIV = create_keypair(CFG.USER_KEY_PATH)
+USER_ID, USER_PUB, USER_PRIV = create_keypair("user_key")
 USER_CTX = {"net_id": CFG.DEFAULT_NET_ID, "node_id": USER_ID, "pubkey": USER_PUB, "privkey": USER_PRIV}
 
 def _load_peer_keys() -> dict:
@@ -505,7 +503,7 @@ class KremlinWalletGUI(WalletsMixin):
         pairs = self.contact_mgr.pairs()   # List[(label, addr)]
         items = [label for (label, _addr) in pairs]
         self._contact_pairs = pairs
-        for name in ("send_to_combo"):
+        for name in ("send_to_combo",):
             combo = getattr(self, name, None)
             if combo is not None:
                 combo["values"] = items
@@ -612,16 +610,16 @@ class KremlinWalletGUI(WalletsMixin):
         if "send" not in self.frames:
             self._build_send_frame()
         fr = self.frames["send"]
-        if (not getattr(fr, "winfo_children") or len(fr.winfo_children()) == 0):
-            for w in fr.winfo_children():
-                w.destroy()
-            self.send_tab.build(fr)
-            for w in fr.winfo_children():
-                w.destroy()
-            tk.Label(
-                fr, text=f"Send tab failed to render: {e}",
-                bg=self.bg, fg=self.accent, font=("Consolas", 11, "bold")
-           ).pack(anchor="w", padx=12, pady=12)
+        if not fr.winfo_children():
+            try:
+                self.send_tab.build(fr)
+            except Exception as exc:
+                for w in fr.winfo_children():
+                    w.destroy()
+                tk.Label(
+                    fr, text=f"Send tab failed to render: {exc}",
+                    bg=self.bg, fg=self.accent, font=("Consolas", 11, "bold")
+                ).pack(anchor="w", padx=12, pady=12)
         fr.pack(fill=tk.BOTH, expand=True)
         self._activate_tab("send")
         self.reload_addresses()

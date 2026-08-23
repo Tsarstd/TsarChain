@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { ClickableValue } from "./SearchResults";
 import { formatHashForDisplay, getMaxCharsPerLine } from "../../utils/format";
-import { toast } from "../common/ToastContainer";
+import { copyText } from "../../utils/clipboard";
+export { useScrambleText } from "../../utils/useScrambleText";
 
 // ---------- Hook untuk deteksi mobile ----------
 export const useMobile = () => {
@@ -10,13 +11,13 @@ export const useMobile = () => {
 
   useEffect(() => {
     const checkMobile = () => {
-      const mobile = window.innerWidth <= 768;
+      const mobile = (globalThis.window?.innerWidth ?? 1200) <= 768;
       setIsMobile(mobile);
       setMaxCharsPerLine(getMaxCharsPerLine());
     };
     checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    globalThis.addEventListener('resize', checkMobile);
+    return () => globalThis.removeEventListener('resize', checkMobile);
   }, []);
 
   return { isMobile, maxCharsPerLine };
@@ -87,37 +88,11 @@ export const useRenderHelpers = () => {
   return { renderHash, renderClickableHash };
 };
 
-// ---------- Fungsi copy ke clipboard ----------
+// ---------- Fungsi copy ke clipboard terpusat ----------
 export const copyToClipboard = async (text, setCopyStatus) => {
-  if (!text) return;
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-    } else {
-      const textArea = document.createElement('textarea');
-      textArea.value = text;
-      textArea.style.position = 'fixed';
-      textArea.style.left = '-999999px';
-      textArea.style.top = '-999999px';
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-      const successful = document['exec' + 'Command']('copy');
-      if (!successful) throw new Error('Fallback copy failed');
-      textArea.remove();
-    }
-    setCopyStatus("Copied!");
-    toast("Copied to clipboard!", "success");
-    setTimeout(() => setCopyStatus(""), 2000);
-  } catch (err) {
-    console.error('Failed to copy:', err);
-    try {
-      prompt('Copy this:', text);
-      setCopyStatus("Use prompt to copy");
-    } catch {
-      setCopyStatus("Failed!");
-      toast("Failed to copy", "error");
-    }
+  const success = await copyText(text);
+  if (setCopyStatus) {
+    setCopyStatus(success ? "Copied!" : "Failed!");
     setTimeout(() => setCopyStatus(""), 2000);
   }
 };

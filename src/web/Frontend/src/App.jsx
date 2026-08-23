@@ -1,19 +1,22 @@
-import { useCallback, useState, useEffect } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 
 import Navbar from "./components/navbar/nav_bar";
 import Footer from "./components/footer/footer";
-import Block from "./pages/Block";
-import Graffiti from "./pages/Graffiti";
-import Network from "./pages/Network";
-
-import SearchOverlay, { saveSearchHistory } from "./components/search/SearchOverlay";
+import Home from "./pages/Home";
+import SearchOverlay from "./components/search/SearchOverlay";
+import { SkeletonSearch } from "./components/common/SkeletonLoader";
+import { saveSearchHistory } from "./utils/searchHistory";
 import { ToastProvider } from "./components/common/ToastContainer";
+import { CrtProvider } from "./context/CrtContext";
+import { useCrt } from "./context/useCrt";
 import { searchExplorer } from "./api/explorer";
 import { guessKind } from "./utils/searchKind";
 
 import "./App.css";
+import "./styles/crt.css";
+import "./styles/home.css";
 import "./styles/networkpages.css";
 import "./styles/card.css";
 import "./styles/search.css";
@@ -26,6 +29,19 @@ import "./styles/txid.css";
 import "./styles/address.css";
 import "./styles/live_indicator.css";
 import "./styles/toast.css";
+import "./styles/documentation.css";
+import "./styles/legal.css";
+
+// Lazy-load secondary routes for faster initial load
+const Block = lazy(() => import("./pages/Block"));
+const Graffiti = lazy(() => import("./pages/Graffiti"));
+const Network = lazy(() => import("./pages/Network"));
+const Documentation = lazy(() => import("./pages/Documentation"));
+const Terms = lazy(() => import("./docs/legal/terms"));
+const PrivacyPolicy = lazy(() => import("./docs/legal/privacyPolicy"));
+const CookiePolicy = lazy(() => import("./docs/legal/cookiePolicy"));
+const Disclaimer = lazy(() => import("./docs/legal/disclaimer"));
+const License = lazy(() => import("./docs/legal/license"));
 
 const pageVariants = {
   initial: { opacity: 0, y: 12 },
@@ -38,53 +54,104 @@ const pageTransition = {
   ease: [0.25, 0.1, 0.25, 1]
 };
 
-const App = () => {
+const RouteFallback = () => (
+  <div className="page" style={{ padding: "40px 20px" }}>
+    <SkeletonSearch />
+  </div>
+);
+
+const AppContent = () => {
+  const { isCrtEnabled } = useCrt();
   const location = useLocation();
   const navigate = useNavigate();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => new URLSearchParams(globalThis.location?.search || "").get('search') || "");
   const [kind, setKind] = useState("unknown");
   const [result, setResult] = useState(null);
   const [status, setStatus] = useState("idle");
   const [message, setMessage] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(() => Boolean(new URLSearchParams(globalThis.location?.search || "").get('search')?.trim()));
 
+  // Single source of truth: listen to URL search params
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
-    const searchQuery = searchParams.get('search');
+    const searchQuery = searchParams.get('search')?.trim();
     
-    if (searchQuery?.trim()) {
-      setQuery(searchQuery);
-      setSearchOpen(true);
-      runSearch(searchQuery);
-    }
-  }, [location]);
+    if (searchQuery) {
+      const controller = new AbortController();
+      let isMounted = true;
+      saveSearchHistory(searchQuery);
+      const inferred = guessKind(searchQuery);
 
-  const runSearch = useCallback(async (q) => {
-    if (!q.trim()) return;
-    saveSearchHistory(q);
-    const inferred = guessKind(q);
-    setKind(inferred);
-    setStatus("loading");
-    setMessage("");
-    try {
-      const resp = await searchExplorer(q);
-      setResult(resp.data);
-      setKind(resp.kind || inferred);
-      setStatus("done");
-    } catch (err) {
-      setResult(null);
-      setStatus("error");
-      setMessage(err.message || "Gagal memuat data.");
+      Promise.resolve().then(() => {
+        if (!isMounted) return;
+        setSearchOpen(true);
+        setKind(inferred);
+        setStatus("loading");
+        setMessage("");
+      });
+
+      searchExplorer(searchQuery, controller.signal)
+        .then((resp) => {
+          if (isMounted) {
+            setResult(resp.data);
+            setKind(resp.kind || inferred);
+            setStatus("done");
+          }
+        })
+        .catch((err) => {
+          if (err.name === "AbortError") return;
+          if (isMounted) {
+            setResult(null);
+            setStatus("error");
+            setMessage(err.message || "Gagal memuat data.");
+          }
+        });
+
+      return () => {
+        isMounted = false;
+        controller.abort();
+      };
+    } else {
+      Promise.resolve().then(() => {
+        setSearchOpen(false);
+        setResult(null);
+        setStatus("idle");
+        setMessage("");
+      });
     }
-  }, []);
+  }, [location.search]);
 
   const handleSearchClick = useCallback((value) => {
-    setQuery(value);
-    setSearchOpen(true);
-    runSearch(value);
-    const newUrl = `${location.pathname}?search=${encodeURIComponent(value)}`;
+    const trimmed = String(value || "").trim();
+    if (!trimmed) return;
+    setQuery("");
+
+    const inferred = guessKind(trimmed);
+
+    // Smart context-aware navigation
+    if (location.pathname === "/block") {
+      if (inferred === "block_height" || inferred === "block_hash") {
+        setSearchOpen(false);
+        saveSearchHistory(trimmed);
+        navigate(`/block?jump=${encodeURIComponent(trimmed)}&t=${Date.now()}`, { replace: true });
+        return;
+      }
+    }
+
+    if (location.pathname === "/graffiti") {
+      if (inferred === "art_id" || inferred === "block_height") {
+        setSearchOpen(false);
+        saveSearchHistory(trimmed);
+        navigate(`/graffiti?jump=${encodeURIComponent(trimmed)}&t=${Date.now()}`, { replace: true });
+        return;
+      }
+    }
+
+    const searchParams = new URLSearchParams(location.search);
+    searchParams.set("search", trimmed);
+    const newUrl = `${location.pathname}?${searchParams.toString()}`;
     navigate(newUrl, { replace: true });
-  }, [runSearch, location.pathname, navigate]);
+  }, [location.pathname, location.search, navigate]);
 
   const handleSearch = useCallback(() => {
     const q = query.trim();
@@ -94,31 +161,96 @@ const App = () => {
       setSearchOpen(true);
       return;
     }
-    setSearchOpen(true);
-    runSearch(q);
-  }, [query, runSearch]);
+
+    const inferred = guessKind(q);
+
+    // Smart context-aware navigation
+    if (location.pathname === "/block") {
+      if (inferred === "block_height" || inferred === "block_hash") {
+        setSearchOpen(false);
+        saveSearchHistory(q);
+        navigate(`/block?jump=${encodeURIComponent(q)}&t=${Date.now()}`, { replace: true });
+        return;
+      }
+    }
+
+    if (location.pathname === "/graffiti") {
+      if (inferred === "art_id" || inferred === "block_height") {
+        setSearchOpen(false);
+        saveSearchHistory(q);
+        navigate(`/graffiti?jump=${encodeURIComponent(q)}&t=${Date.now()}`, { replace: true });
+        return;
+      }
+    }
+
+    const searchParams = new URLSearchParams(location.search);
+    searchParams.set("search", q);
+    const newUrl = `${location.pathname}?${searchParams.toString()}`;
+    navigate(newUrl, { replace: true });
+  }, [query, location.pathname, location.search, navigate]);
+
+  const handleCloseSearch = useCallback(() => {
+    setSearchOpen(false);
+    setResult(null);
+    setStatus("idle");
+    setMessage("");
+    setQuery("");
+
+    const searchParams = new URLSearchParams(location.search);
+    if (searchParams.has("search")) {
+      searchParams.delete("search");
+      const remainingQuery = searchParams.toString();
+      const newUrl = remainingQuery ? `${location.pathname}?${remainingQuery}` : location.pathname;
+      navigate(newUrl, { replace: true });
+    }
+  }, [location.pathname, location.search, navigate]);
 
   return (
-    <ToastProvider>
-      <div className="app">
-        <Navbar query={query} onQueryChange={setQuery} onSearch={handleSearch} />
-        
-        <SearchOverlay
-          open={searchOpen}
-          status={status}
-          kind={kind}
-          result={result}
-          message={message}
-          onSearchClick={handleSearchClick}
-          onClose={() => setSearchOpen(false)}
-        />
-        
-        <div className="app-main">
-          <AnimatePresence mode="wait">
-            <Routes location={location} key={location.pathname}>
-              <Route
-                path="/"
-                element={
+    <div className="app">
+      {/* 1. Subtle Tsar Studio Film Grain Noise */}
+      <div className="grain-overlay" aria-hidden="true" />
+      
+      {/* 2. Global Retro CRT / TV Tube Raster Overlay */}
+      {isCrtEnabled && <div className="crt-overlay" aria-hidden="true" />}
+
+      <Navbar
+        query={query}
+        onQueryChange={setQuery}
+        onSearch={handleSearch}
+        onSearchClick={handleSearchClick}
+      />
+      
+      <SearchOverlay
+        open={searchOpen}
+        status={status}
+        kind={kind}
+        result={result}
+        message={message}
+        onSearchClick={handleSearchClick}
+        onClose={handleCloseSearch}
+      />
+      
+      <div className="app-main">
+        <AnimatePresence mode="wait">
+          <Routes location={location} key={location.pathname}>
+            <Route
+              path="/"
+              element={
+                <motion.div
+                  variants={pageVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  transition={pageTransition}
+                >
+                  <Home onSearchClick={handleSearchClick} />
+                </motion.div>
+              }
+            />
+            <Route
+              path="/block"
+              element={
+                <Suspense fallback={<RouteFallback />}>
                   <motion.div
                     variants={pageVariants}
                     initial="initial"
@@ -128,11 +260,13 @@ const App = () => {
                   >
                     <Block onSearchClick={handleSearchClick} />
                   </motion.div>
-                }
-              />
-              <Route
-                path="/graffiti"
-                element={
+                </Suspense>
+              }
+            />
+            <Route
+              path="/graffiti"
+              element={
+                <Suspense fallback={<RouteFallback />}>
                   <motion.div
                     variants={pageVariants}
                     initial="initial"
@@ -142,11 +276,13 @@ const App = () => {
                   >
                     <Graffiti onSearchClick={handleSearchClick} />
                   </motion.div>
-                }
-              />
-              <Route
-                path="/network"
-                element={
+                </Suspense>
+              }
+            />
+            <Route
+              path="/network"
+              element={
+                <Suspense fallback={<RouteFallback />}>
                   <motion.div
                     variants={pageVariants}
                     initial="initial"
@@ -156,15 +292,123 @@ const App = () => {
                   >
                     <Network onSearchClick={handleSearchClick} />
                   </motion.div>
-                }
-              />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </AnimatePresence>
-        </div>
-        <Footer />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/documentation"
+              element={
+                <Suspense fallback={<RouteFallback />}>
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <Documentation onSearchClick={handleSearchClick} />
+                  </motion.div>
+                </Suspense>
+              }
+            />
+            <Route
+              path="/terms"
+              element={
+                <Suspense fallback={<RouteFallback />}>
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <Terms />
+                  </motion.div>
+                </Suspense>
+              }
+            />
+            <Route
+              path="/privacyPolicy"
+              element={
+                <Suspense fallback={<RouteFallback />}>
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <PrivacyPolicy />
+                  </motion.div>
+                </Suspense>
+              }
+            />
+            <Route path="/privacy-policy" element={<Navigate to="/privacyPolicy" replace />} />
+            <Route
+              path="/cookiePolicy"
+              element={
+                <Suspense fallback={<RouteFallback />}>
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <CookiePolicy />
+                  </motion.div>
+                </Suspense>
+              }
+            />
+            <Route path="/cookies" element={<Navigate to="/cookiePolicy" replace />} />
+            <Route
+              path="/disclaimer"
+              element={
+                <Suspense fallback={<RouteFallback />}>
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <Disclaimer />
+                  </motion.div>
+                </Suspense>
+              }
+            />
+            <Route
+              path="/license"
+              element={
+                <Suspense fallback={<RouteFallback />}>
+                  <motion.div
+                    variants={pageVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={pageTransition}
+                  >
+                    <License />
+                  </motion.div>
+                </Suspense>
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </AnimatePresence>
       </div>
-    </ToastProvider>
+      <Footer />
+    </div>
+  );
+};
+
+const App = () => {
+  return (
+    <CrtProvider>
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
+    </CrtProvider>
   );
 };
 

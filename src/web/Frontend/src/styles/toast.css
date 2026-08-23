@@ -1,4 +1,7 @@
-/* Toast Notification System Styles */
+/* ==========================================================================
+   TSAR STUDIO - TOAST NOTIFICATION STYLES
+   ========================================================================== */
+
 .toast-container {
   position: fixed;
   bottom: 24px;
@@ -17,40 +20,39 @@
   align-items: center;
   gap: 12px;
   padding: 12px 18px;
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.92);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4), 0 0 15px rgba(56, 189, 248, 0.15);
-  color: #f8fafc;
+  border-radius: 2px;
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-medium-15);
+  box-shadow: 3px 3px 0px var(--color-tsar-black);
+  color: var(--color-tsar-cream);
+  font-family: var(--font-montserrat);
   font-size: 0.875rem;
-  font-weight: 500;
-  animation: toastSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  font-weight: var(--fw-medium);
+  animation: toastSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .toast-item.toast-success {
-  border-left: 4px solid #10b981;
+  border-left: 4px solid var(--color-tsar-cream);
 }
 
 .toast-item.toast-success .toast-icon {
-  color: #10b981;
+  color: var(--color-tsar-cream);
 }
 
 .toast-item.toast-error {
-  border-left: 4px solid #ef4444;
+  border-left: 4px solid var(--color-tsar-orange);
 }
 
 .toast-item.toast-error .toast-icon {
-  color: #ef4444;
+  color: var(--color-tsar-orange);
 }
 
 .toast-item.toast-info {
-  border-left: 4px solid #38bdf8;
+  border-left: 4px solid var(--color-tsar-orange);
 }
 
 .toast-item.toast-info .toast-icon {
-  color: #38bdf8;
+  color: var(--color-tsar-orange);
 }
 
 .toast-icon {
@@ -68,11 +70,11 @@
 @keyframes toastSlideIn {
   0% {
     opacity: 0;
-    transform: translateY(20px) scale(0.95);
+    transform: translateY(20px);
   }
   100% {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 

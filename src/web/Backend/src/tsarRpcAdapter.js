@@ -94,12 +94,8 @@ async function rpcCall(op, param, host, port) {
   const payload = await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       pending.delete(id);
+      console.warn(`[tsarRpcAdapter] RPC request ${id} (${op}) timed out after ${WORKER_REQUEST_TIMEOUT_MS}ms`);
       reject(new Error("rpc_timeout"));
-      try {
-        child.kill();
-      } catch (err) {
-        console.warn("Failed to kill worker on timeout:", err);
-      }
     }, WORKER_REQUEST_TIMEOUT_MS);
 
     pending.set(id, { resolve, reject, timeout });

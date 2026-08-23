@@ -5,7 +5,7 @@ import { RiBarChartFill } from "react-icons/ri";
 import { fmtTsar } from "../../utils/format";
 
 // Global configurable thresholds for Persona Badges
-export const PERSONA_THRESHOLDS = {
+const PERSONA_THRESHOLDS = {
   GRAFFITI_CREATOR: 15,    // Minimal 15 Graffiti POSTs
   GRAFFITI_COMMENTER: 25,  // Minimal 25 Graffiti COMMENTs
   ROYALTY_EARNER: 25,      // Minimal 25 Graffiti PAYOUTs
@@ -21,19 +21,16 @@ const PieChart = ({ title, items, totals = [], size = 180 }) => {
   const radius = size * 0.4;
   const labelRadius = radius * 0.62;
 
-  let cumulativeAngle = -90; // Start at top center (-90deg)
-
   const slices = items
     .filter((item) => item.value > 0)
-    .map((item) => {
+    .reduce((acc, item) => {
+      const prevEndAngle = acc.length > 0 ? acc[acc.length - 1].endAngle : -90;
       const percentage = total > 0 ? (item.value / total) * 100 : 0;
       const angle = (percentage / 100) * 360;
 
-      const startAngle = cumulativeAngle;
-      const endAngle = cumulativeAngle + angle;
+      const startAngle = prevEndAngle;
+      const endAngle = prevEndAngle + angle;
       const midAngle = startAngle + angle / 2;
-
-      cumulativeAngle = endAngle;
 
       const startRad = (startAngle * Math.PI) / 180;
       const endRad = (endAngle * Math.PI) / 180;
@@ -54,15 +51,18 @@ const PieChart = ({ title, items, totals = [], size = 180 }) => {
       const lx = cx + labelRadius * Math.cos(midRad);
       const ly = cy + labelRadius * Math.sin(midRad);
 
-      return {
+      acc.push({
         ...item,
         percentage,
+        startAngle,
+        endAngle,
         pathData,
         lx,
         ly,
         showLabel: percentage >= 5,
-      };
-    });
+      });
+      return acc;
+    }, []);
 
   return (
     <div className="pie-chart-card">
@@ -70,7 +70,13 @@ const PieChart = ({ title, items, totals = [], size = 180 }) => {
       <div className="pie-chart-body">
         <div className="pie-svg-container">
           {total === 0 ? (
-            <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            <svg
+              width={size}
+              height={size}
+              viewBox={`0 0 ${size} ${size}`}
+              className="pie-svg"
+              style={{ maxWidth: '100%', height: 'auto', display: 'block' }}
+            >
               <circle
                 cx={cx}
                 cy={cy}
@@ -92,7 +98,13 @@ const PieChart = ({ title, items, totals = [], size = 180 }) => {
               </text>
             </svg>
           ) : (
-            <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            <svg
+              width={size}
+              height={size}
+              viewBox={`0 0 ${size} ${size}`}
+              className="pie-svg"
+              style={{ maxWidth: '100%', height: 'auto', display: 'block' }}
+            >
               <g className="pie-slices">
                 {slices.map((slice, i) => (
                   <g key={slice.id || i} className="pie-slice-group">
@@ -188,7 +200,7 @@ PieChart.propTypes = {
   size: PropTypes.number,
 };
 
-export const AddressAnalytics = ({ history = [], spendable = 0, balance = 0 }) => {
+export const AddressAnalytics = ({ history = [] }) => {
   const stats = useMemo(() => {
     let receivedCount = 0;
     let receivedAmt = 0;
@@ -326,9 +338,9 @@ export const AddressAnalytics = ({ history = [], spendable = 0, balance = 0 }) =
         <div className="analytics-title-group">
           <RiBarChartFill className="analytics-icon" />
           <div>
-            <h4>Address Flow & Graffiti Analytics</h4>
+            <h4>Address Analytics</h4>
             <span className="analytics-subtitle">
-              Portfolio Breakdown across recent {stats.totalTxs} transactions
+              Total of {stats.totalTxs} Transactions
             </span>
           </div>
         </div>
@@ -351,12 +363,12 @@ export const AddressAnalytics = ({ history = [], spendable = 0, balance = 0 }) =
       {/* 2-Column Pie Charts with Legend & Totals */}
       <div className="analytics-charts-wrapper">
         <PieChart
-          title="Transaction Flow (Received & Sent)"
+          title="Received & Sent"
           items={chart1Items}
           totals={chart1Totals}
         />
         <PieChart
-          title="Network & Graffiti Activity"
+          title="Network Activity"
           items={chart2Items}
           totals={chart2Totals}
         />
@@ -367,6 +379,4 @@ export const AddressAnalytics = ({ history = [], spendable = 0, balance = 0 }) =
 
 AddressAnalytics.propTypes = {
   history: PropTypes.array,
-  spendable: PropTypes.number,
-  balance: PropTypes.number,
 };

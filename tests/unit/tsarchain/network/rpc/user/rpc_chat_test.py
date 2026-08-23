@@ -47,7 +47,6 @@ def mock_config():
         mock.CHAT_LOOKUP_RL_ADDR_BURST = 3
         mock.CHAT_LOOKUP_RL_ADDR_WINDOW_S = 60
         mock.CHAT_LOOKUP_RL_ADDR_BACKOFF_S = 10
-        mock.CHAT_OPK_MAX_STORED = 10
         mock.CHAT_TS_DRIFT_S = 300
         mock.CHAT_MAX_CT_BYTES = 1024
         mock.CHAT_TTL_S = 3600
@@ -128,6 +127,7 @@ def server(mock_config, mock_common, mock_bech32, mock_hash160, mock_time, mock_
     server.chat_lock = Lock()
     server.chat_spend_pub = {}
     server.chat_presence_pub = {}
+    server.chat_presence_ts = {}
     server.chat_presence_seen = set()
     server.chat_prekeys = {}
     server.rl_ip = {}
@@ -135,15 +135,33 @@ def server(mock_config, mock_common, mock_bech32, mock_hash160, mock_time, mock_
     server.peers = {}
 
     # Methods
+    server.get_prekey_bundle = Mock(side_effect=lambda addr: dict(server.chat_prekeys.get(addr) or {}))
+    def _put_bundle(addr, bundle):
+        server.chat_prekeys[addr] = dict(bundle)
+    server.put_prekey_bundle = Mock(side_effect=_put_bundle)
+    server.delete_prekey_bundle = Mock(side_effect=lambda addr: server.chat_prekeys.pop(addr, None))
+    def _get_spend(addr):
+        if not addr:
+            return None
+        sp = server.chat_spend_pub.get(addr)
+        if sp:
+            return sp
+        b = server.chat_prekeys.get(addr) or {}
+        sp = b.get("spend_pub")
+        if sp:
+            server.chat_spend_pub[addr] = sp
+            return sp
+        return None
+    server.get_spend_pub = Mock(side_effect=_get_spend)
+
     server.relay_presence_async = Mock()
+    server.record_presence_seen = Mock(side_effect=lambda pid: server.chat_presence_seen.add(pid))
     server.dedup_mid = Mock(return_value=False)
+    server.dedup_pull = Mock(return_value=False)
     server.mailbox_put = Mock(return_value=True)
     server.mailbox_pull = Mock(return_value=[])
     server.enqueue_rcpt = Mock()
     server.gc_mailboxes = Mock()
-
-    # For chat_relay, we need send_chat_relay function mock
-    # We'll patch it inside test
 
     return server
 
@@ -344,6 +362,16 @@ class TestChatLookupPub:
         message = {"address": addr}
         result = chat_lookup_pub(server, message, {}, "id", client_ip="ip")
         assert result == {"type": "CHAT_PUBKEY", "address": addr, "pubkey": "pubkey123", "found": True, "last_seen": 123456}
+
+    def test_lookup_pub_hits_ram_cache(self, server):
+        addr = make_valid_address()
+        server.chat_presence_pub[addr] = "pubkey_cached"
+        server.chat_presence_ts[addr] = 999888
+        message = {"address": addr}
+        result = chat_lookup_pub(server, message, {}, "id", client_ip="ip")
+        assert result == {"type": "CHAT_PUBKEY", "address": addr, "pubkey": "pubkey_cached", "found": True, "last_seen": 999888}
+        # get_prekey_bundle should NOT be called when presence ts is in RAM
+        server.get_prekey_bundle.assert_not_called()
 
     def test_not_found(self, server):
         addr = make_valid_address()
@@ -784,7 +812,23 @@ class TestChatPull:
         result = chat_pull(server, message, client_ip="ip")
         assert result == {"type": "CHAT_ITEMS", "items": [{"msg": "hello"}]}
         server.mailbox_pull.assert_called_once_with(me, 5)
-        server.gc_mailboxes.assert_called_once()
+
+    def test_rehydrate_spend_pub_from_storage(self, server, mock_time):
+        me = make_valid_address()
+        spend_pk = make_valid_spend_pub()
+        # Not in RAM: server.chat_spend_pub is empty for `me`
+        assert me not in server.chat_spend_pub
+        # But exists in prekey bundle in storage
+        server.chat_prekeys[me] = {"spend_pub": spend_pk}
+        server.mailbox_pull.return_value = [{"msg": "rehydrated"}]
+        message = {
+            "address": me,
+            "ts": int(mock_time.time.return_value),
+            "pull_sig": make_valid_sig(),
+        }
+        result = chat_pull(server, message, client_ip="ip")
+        assert result == {"type": "CHAT_ITEMS", "items": [{"msg": "rehydrated"}]}
+        assert server.chat_spend_pub[me] == spend_pk
 
     def test_bad_address(self, server):
         result = chat_pull(server, {"address": ""}, client_ip="ip")
@@ -908,3 +952,48 @@ class TestChatRelay:
         mock_common.allow_rpc_with_pow.side_effect = [(False, {"error": "limit"}), (True, {})]
         result = chat_relay(server, {}, {}, "id", client_ip="ip", send_chat_relay=Mock())
         assert result == {"error": "limit"}
+
+    def test_chat_pull_replay_rejection(self, server, mock_time):
+        me = make_valid_address()
+        server.chat_spend_pub[me] = make_valid_spend_pub()
+        server.dedup_pull = Mock(return_value=True)  # Replay detected
+        message = {
+            "address": me,
+            "ts": int(mock_time.time.return_value),
+            "pull_sig": make_valid_sig(),
+        }
+        result = chat_pull(server, message, client_ip="ip")
+        assert result == {"type": "CHAT_NONE", "items": [], "error": "replay_detected"}
+
+    def test_chat_send_verifies_used_opk_signature(self, server, mock_common, mock_time):
+        frm = make_valid_address()
+        to = make_valid_address()
+        server.chat_presence_pub[frm] = "f"*64
+        server.chat_spend_pub[frm] = make_valid_spend_pub()
+        
+        signatures_checked = []
+        def check_sigs(sig_list):
+            for item in sig_list:
+                signatures_checked.append(item)
+            return {"chat_send": True}
+        mock_common.verify_chat_signatures.side_effect = check_sigs
+
+        message = {
+            "from": frm,
+            "to": to,
+            "enc": {"nonce": "a"*24, "ct": "c"*100},
+            "msg_id": 123,
+            "ts": int(mock_time.time.return_value),
+            "chat_sig": make_valid_sig(),
+            "ratchet_pn": 0,
+            "ratchet_n": 0,
+            "from_pub": make_valid_pubkey(),
+            "from_static": "f"*64,
+            "used_opk": "k"*64,
+        }
+        result = chat_send(server, message, {}, "id", client_ip="ip",
+                           choose_relay_route=Mock(), relay_chain=Mock())
+        assert result == {"type": "CHAT_ACK", "status": "queued"}
+        assert len(signatures_checked) == 1
+        signed_bytes = signatures_checked[0][2]
+        assert ("k"*64).encode() in signed_bytes

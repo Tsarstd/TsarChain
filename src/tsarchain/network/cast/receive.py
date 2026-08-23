@@ -25,8 +25,8 @@ class ReceiveHandler(BroadcastHandlerProxy):
         inflight = False
         accepted = False
         try:
-            block_data = message.get("data")
-            if not block_data:
+            block_data = message.get("data") or message.get("block")
+            if not block_data or not isinstance(block_data, dict):
                 return False
 
             block = Block.deserialize_block(block_data)
@@ -52,14 +52,8 @@ class ReceiveHandler(BroadcastHandlerProxy):
             if last:
                 tip_h = last.hash()
                 if block.height > last.height + 1:
-                    handled = False
                     if self.network:
                         self.network.handle_block_gap(block, origin)
-                        handled = True
-                    if not handled and CFG.ENABLE_FULL_SYNC:
-                        targets = [origin] if origin else list(peers)
-                        for p in targets:
-                            self.request_full_sync(p)
                     return False
                 if block.prev_block_hash != tip_h:
                     potential_fork = True
@@ -158,7 +152,11 @@ class ReceiveHandler(BroadcastHandlerProxy):
                 self.network.request_sync(fast=True)
                 return
 
-            txs_data = message.get("data", [])
+            txs_data = message.get("data") or message.get("txs") or []
+            if not isinstance(txs_data, list):
+                return
+            txs_data = txs_data[:CFG.MEMPOOL_INLINE_MAX_TX]
+
             added_count = 0
             for tx_data in txs_data:
                 tx = Tx.from_dict(tx_data) if isinstance(tx_data, dict) else tx_data
@@ -205,13 +203,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
             )
             if reason and isinstance(reason, str) and reason.startswith("prevout_missing"):
                 if self.network:
-                    target = origin
-                    if not target and peers:
-                        target = next(iter(peers))
-                    if target:
-                        self.network.request_full_sync(target, force=True)
-                    else:
-                        self.network.request_sync(fast=True)
+                    self.network.request_sync(fast=True)
             return False
         return True
 
@@ -457,14 +449,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
             if self.network and isinstance(reason_str, str) and (
                 "Height mismatch" in reason_str or "prev_block_hash" in reason_str
             ):
-                try:
-                    peer_key = origin if origin else (addr[0], origin_port or 0)
-                    last_req = self.network._full_sync_last_request.get(peer_key, 0.0)
-                    if time.time() - last_req > float(CFG.FULL_SYNC_BACKOFF_INITIAL):
-                        self.network._full_sync_last_request[peer_key] = time.time()
-                        self.network.request_full_sync(peer_key, force=True)
-                except Exception:
-                    log.warning("[_resolve_add_block_failure] full_sync_on_mismatch failed", exc_info=True)
+                self.network.request_sync(fast=True)
             self._log_block_reject(
                 stage="add_block",
                 block_id=block_id,
@@ -473,10 +458,8 @@ class ReceiveHandler(BroadcastHandlerProxy):
                 reason=reason_str,
                 extra={"potential_fork": potential_fork},
             )
-            if potential_fork:
-                targets = [origin] if origin else list(peers)
-                for p in targets:
-                    self.request_full_sync(p, force=True)
+            if potential_fork and self.network:
+                self.network.request_sync(fast=True)
         return ok, old_tip
 
 

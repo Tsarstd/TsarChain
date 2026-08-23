@@ -98,20 +98,10 @@ def sniff_first_json_frame(sock: socket.socket, timeout: float = 2.0, *, peer_ip
     return raw, json.loads(raw.decode("utf-8"))
 
 
-def load_or_create_keypair_at(path: str) -> tuple[str, str, str]:
-    node_key_norm = os.path.normpath(CFG.NODE_KEY_PATH)
-        
-    if node_key_norm:
-        record = load_node_key(path)
-        if record and record.get("id") and record.get("pubkey") and record.get("privkey"):
-            return record["id"], record["pubkey"], record["privkey"]
-
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            obj = json.load(f)
-        if node_key_norm:
-            save_node_key(path, obj)
-        return obj["id"], obj["pubkey"], obj["privkey"]
+def load_or_create_keypair_at(name_or_path: str = "node_key") -> tuple[str, str, str]:
+    record = load_node_key(name_or_path)
+    if record and record.get("id") and record.get("pubkey") and record.get("privkey"):
+        return record["id"], record["pubkey"], record["privkey"]
 
     sk = SigningKey.generate()
     vk = sk.verify_key
@@ -119,12 +109,7 @@ def load_or_create_keypair_at(path: str) -> tuple[str, str, str]:
     pub_hex  = vk.encode(encoder=HexEncoder).decode()
     node_id  = hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()
     payload = {"id": node_id, "pubkey": pub_hex, "privkey": priv_hex, "created": int(time.time())}
-    if node_key_norm:
-        save_node_key(path, payload)
-    else:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-        os.chmod(path, 0o600)
+    save_node_key(name_or_path, payload)
     return node_id, pub_hex, priv_hex
 
 
@@ -172,16 +157,23 @@ def verify_and_unwrap(envelope: dict, get_pubkey_by_nodeid) -> dict:
     pub = None
     if callable(get_pubkey_by_nodeid):
         pub = get_pubkey_by_nodeid(node_id)
+
+    provided_pub = envelope.get("pubkey")
+    if pub and provided_pub and pub.lower() != provided_pub.lower():
+        raise ValueError("pinned pubkey mismatch")
+
     if not pub:
-        pub = envelope.get("pubkey")
+        pub = provided_pub
         if not pub:
             raise ValueError("unknown peer pubkey and not provided")
+
     # Enforce binding: node_id must equal sha256(pubkey)
     derived = hashlib.sha256(bytes.fromhex(pub)).hexdigest()
     if derived != node_id:
         raise ValueError("node_id/pubkey mismatch")
     if not _verify_signature(pub, to_sign, envelope.get("sig", "")):
         raise ValueError("bad signature")
+
     # Anti-replay within REPLAY_WINDOW_SEC using per-sender nonce cache
     _nonce_register(node_id, str(envelope.get("nonce")))
     return inner

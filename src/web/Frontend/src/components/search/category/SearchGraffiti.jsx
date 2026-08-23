@@ -1,46 +1,49 @@
 import PropTypes from "prop-types";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense, useCallback } from "react";
 import { useRenderHelpers } from "../SearchHelpers";
 import { ClickableValue } from "../SearchResults";
 import { graffitiMediaUrl } from "../../../api/explorer";
+import Identicon from "../../common/Identicon";
 import { 
   FaDownload, 
   FaSearchPlus, 
   FaSearchMinus, 
   FaSync, 
-  FaExpand, 
-  FaCompress, 
-  FaAngleLeft, 
-  FaAngleRight,
   FaComments,
   FaCommentDots,
-  FaUserCircle,
   FaCoins,
   FaClock,
   FaChevronDown,
   FaChevronUp
 } from "react-icons/fa";
 
-import { Document, Page, pdfjs } from 'react-pdf';
 import { 
   fmtBytes, 
   fmtTimestamp, 
   fmtTsar, 
   fmtAddress,
   fmtHash,
-  fmtTxid
+  fmtTxid,
+  downloadFile
 } from "../../../utils/format";
 
-// Konfigurasi worker PDF
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Lazy-load PDF viewer to reduce initial bundle size by ~450KB
+const SmartPdfViewer = lazy(() => import("./SmartPdfViewer"));
 
 // Komponen Interactive Image Zoom & Drag
 const ImageZoomViewer = ({ src, alt = "Graffiti preview" }) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const stageRef = useRef(null);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const positionRef = useRef({ x: 0, y: 0 });
+  const scaleRef = useRef(1);
+
+  useEffect(() => {
+    positionRef.current = position;
+    scaleRef.current = scale;
+  }, [position, scale]);
 
   const handleZoomIn = () => {
     setScale((prev) => Math.min(5, Number((prev + 0.25).toFixed(2))));
@@ -59,7 +62,7 @@ const ImageZoomViewer = ({ src, alt = "Graffiti preview" }) => {
     setPosition({ x: 0, y: 0 });
   };
 
-  // Native event listeners for mouse wheel zoom & stage drag
+  // Wheel and double-click listeners on stage
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -78,23 +81,6 @@ const ImageZoomViewer = ({ src, alt = "Graffiti preview" }) => {
       }
     };
 
-    const handleMouseDownNative = (e) => {
-      setIsDragging(true);
-      setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
-    };
-
-    const handleMouseMoveNative = (e) => {
-      if (!isDragging) return;
-      setPosition({
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y,
-      });
-    };
-
-    const handleMouseUpNative = () => {
-      setIsDragging(false);
-    };
-
     const handleDoubleClickNative = () => {
       setScale((prev) => {
         if (prev > 1) {
@@ -106,19 +92,39 @@ const ImageZoomViewer = ({ src, alt = "Graffiti preview" }) => {
     };
 
     stage.addEventListener("wheel", handleWheelNative, { passive: false });
-    stage.addEventListener("mousedown", handleMouseDownNative);
     stage.addEventListener("dblclick", handleDoubleClickNative);
-    globalThis.addEventListener("mousemove", handleMouseMoveNative);
-    globalThis.addEventListener("mouseup", handleMouseUpNative);
 
     return () => {
       stage.removeEventListener("wheel", handleWheelNative);
-      stage.removeEventListener("mousedown", handleMouseDownNative);
       stage.removeEventListener("dblclick", handleDoubleClickNative);
-      globalThis.removeEventListener("mousemove", handleMouseMoveNative);
-      globalThis.removeEventListener("mouseup", handleMouseUpNative);
     };
-  }, [isDragging, dragStart, position]);
+  }, []);
+
+  // Handle Dragging
+  const handleMouseDown = useCallback((e) => {
+    if (e.button !== 0 || scaleRef.current <= 1) return;
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: e.clientX - positionRef.current.x,
+      y: e.clientY - positionRef.current.y,
+    };
+
+    const handleMouseMove = (moveEvent) => {
+      setPosition({
+        x: moveEvent.clientX - dragStartRef.current.x,
+        y: moveEvent.clientY - dragStartRef.current.y,
+      });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      globalThis.removeEventListener("mousemove", handleMouseMove);
+      globalThis.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    globalThis.addEventListener("mousemove", handleMouseMove);
+    globalThis.addEventListener("mouseup", handleMouseUp);
+  }, []);
 
   const isCanDragClass = scale > 1 ? "can-drag" : "";
   const isDraggingClass = isDragging ? "dragging" : "";
@@ -158,6 +164,7 @@ const ImageZoomViewer = ({ src, alt = "Graffiti preview" }) => {
 
       <section
         ref={stageRef}
+        onMouseDown={handleMouseDown}
         className={`image-zoom-stage ${isDraggingClass} ${isCanDragClass}`}
         aria-label="Interactive Graffiti Image Stage"
       >
@@ -181,312 +188,56 @@ ImageZoomViewer.propTypes = {
   alt: PropTypes.string,
 };
 
-// Komponen Smart PDF Viewer dengan Smart Control Toolbar
-const SmartPdfViewer = ({ file, previewUrl }) => {
-  const [numPages, setNumPages] = useState(null);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [pageInput, setPageInput] = useState("1");
-  const [scale, setScale] = useState(1);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const containerRef = useRef(null);
-
-  const onDocumentLoadSuccess = ({ numPages: totalPages }) => {
-    setNumPages(totalPages);
-    setPageNumber(1);
-    setPageInput("1");
-  };
-
-  const goToPrevPage = () => {
-    setPageNumber((prev) => {
-      const next = Math.max(1, prev - 1);
-      setPageInput(String(next));
-      return next;
-    });
-  };
-
-  const goToNextPage = () => {
-    setPageNumber((prev) => {
-      const next = Math.min(numPages || 1, prev + 1);
-      setPageInput(String(next));
-      return next;
-    });
-  };
-
-  const commitPageJump = () => {
-    const val = Number.parseInt(pageInput, 10);
-    if (!Number.isNaN(val) && val >= 1 && val <= (numPages || 1)) {
-      setPageNumber(val);
-    } else {
-      setPageInput(String(pageNumber));
-    }
-  };
-
-  const handlePageInputSubmit = (e) => {
-    if (e.key === "Enter") {
-      commitPageJump();
-    }
-  };
-
-  const handleZoomIn = () => {
-    setScale((prev) => Math.min(2.5, Number((prev + 0.15).toFixed(2))));
-  };
-
-  const handleZoomOut = () => {
-    setScale((prev) => Math.max(0.5, Number((prev - 0.15).toFixed(2))));
-  };
-
-  const toggleFullscreen = () => {
-    if (!containerRef.current) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
-    } else {
-      containerRef.current.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
-    }
-  };
-
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
-  }, []);
-
-  // Keyboard navigation for PDF reader
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
-
-      if (e.key === "ArrowLeft" || e.key === "PageUp") {
-        e.preventDefault();
-        goToPrevPage();
-      } else if (e.key === "ArrowRight" || e.key === "PageDown") {
-        e.preventDefault();
-        goToNextPage();
-      }
-    };
-
-    globalThis.addEventListener("keydown", handleKeyDown);
-    return () => globalThis.removeEventListener("keydown", handleKeyDown);
-  }, [numPages, pageNumber]);
-
-  return (
-    <div
-      ref={containerRef}
-      className={`smart-pdf-container ${isFullscreen ? "fullscreen" : ""}`}
-    >
-      {/* Smart Control Toolbar */}
-      <div className="pdf-smart-toolbar">
-        {/* Direct Page Jump Input & Prev/Next */}
-        <div className="pdf-toolbar-group pdf-page-jump">
-          <button
-            type="button"
-            onClick={goToPrevPage}
-            disabled={pageNumber <= 1}
-            className="pdf-tool-btn"
-            title="Previous Page (←)"
-          >
-            <FaAngleLeft />
-          </button>
-          <div className="pdf-page-counter">
-            <span>Page</span>
-            <input
-              type="number"
-              min={1}
-              max={numPages || 1}
-              value={pageInput}
-              onChange={(e) => setPageInput(e.target.value)}
-              onKeyDown={handlePageInputSubmit}
-              onBlur={commitPageJump}
-              className="pdf-page-input"
-              aria-label="Direct Page Number Jump"
-            />
-            <span>of {numPages || "--"}</span>
-          </div>
-          <button
-            type="button"
-            onClick={goToNextPage}
-            disabled={pageNumber >= (numPages || 1)}
-            className="pdf-tool-btn"
-            title="Next Page (→)"
-          >
-            <FaAngleRight />
-          </button>
-        </div>
-
-        {/* Zoom & Fullscreen Controls */}
-        <div className="pdf-toolbar-group">
-          <button
-            type="button"
-            onClick={handleZoomIn}
-            disabled={scale >= 2.5}
-            className="pdf-tool-btn"
-            title="Zoom In (+)"
-          >
-            <FaSearchPlus />
-          </button>
-          <span className="pdf-scale-indicator">{Math.round(scale * 100)}%</span>
-          <button
-            type="button"
-            onClick={handleZoomOut}
-            disabled={scale <= 0.5}
-            className="pdf-tool-btn"
-            title="Zoom Out (-)"
-          >
-            <FaSearchMinus />
-          </button>
-          <button
-            type="button"
-            onClick={toggleFullscreen}
-            className="pdf-tool-btn"
-            title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Reader Mode"}
-          >
-            {isFullscreen ? <FaCompress /> : <FaExpand />}
-          </button>
-        </div>
-      </div>
-
-      {/* PDF Stage Wrapper */}
-      <div className="pdf-stage-wrapper">
-        <Document
-          file={file}
-          onLoadSuccess={onDocumentLoadSuccess}
-          loading={<div className="pdf-loading">Loading PDF document...</div>}
-          error={
-            <div className="pdf-error muted">
-              PDF document could not be rendered.{" "}
-              {previewUrl && (
-                <a href={previewUrl} target="_blank" rel="noopener noreferrer">
-                  Open PDF directly
-                </a>
-              )}
-            </div>
-          }
-          className="pdf-document"
-        >
-          <Page
-            pageNumber={pageNumber}
-            className="pdf-page"
-            scale={scale}
-            renderTextLayer={false}
-            renderAnnotationLayer={false}
-          />
-        </Document>
-      </div>
-    </div>
-  );
-};
-
-SmartPdfViewer.propTypes = {
-  file: PropTypes.any.isRequired,
-  previewUrl: PropTypes.string,
+const getMediaFilename = (item) => {
+  if (item?.filename) return item.filename;
+  const mime = String(item?.mime || "").toLowerCase();
+  let ext = "";
+  if (mime.includes("pdf") || item?.file_type?.toLowerCase() === "pdf") {
+    ext = ".pdf";
+  } else if (mime.includes("video/mp4") || mime.includes("mp4")) {
+    ext = ".mp4";
+  } else if (mime.includes("video/x-matroska") || mime.includes("mkv")) {
+    ext = ".mkv";
+  } else if (mime.includes("image/jpeg") || mime.includes("image") || mime.includes("jpg") || mime.includes("jpeg")) {
+    ext = ".jpg";
+  } else if (item?.preview_url && /\.(jpg|jpeg|mp4|mkv|pdf)$/i.test(item.preview_url)) {
+    const match = item.preview_url.match(/\.(jpg|jpeg|mp4|mkv|pdf)$/i);
+    if (match) ext = `.${match[1].toLowerCase()}`;
+  }
+  return `${item?.art_id || "graffiti_media"}${ext}`;
 };
 
 const ResultGraffiti = ({ data, onSearchClick }) => {
   const mime = String(data?.mime || "").toLowerCase();
-  const isVideo = mime.includes("video") || mime.includes("mp4");
-  const isPdf = mime.includes("pdf") || data?.preview_url?.toLowerCase().endsWith('.pdf');
+  const isVideo = mime.includes("video") || mime.includes("mp4") || mime.includes("mkv");
+  const isPdf =
+    mime.includes("pdf") ||
+    data?.file_type?.toLowerCase() === "pdf" ||
+    data?.preview_url?.toLowerCase().endsWith(".pdf") ||
+    data?.filename?.toLowerCase().endsWith(".pdf");
   const { renderHash, renderClickableHash } = useRenderHelpers();
   const [showDetails, setShowDetails] = useState(false);
   const [showAllComments, setShowAllComments] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
-  // Percentage Loading State for Media
-  const [loadingProgress, setLoadingProgress] = useState(0);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [mediaBlobUrl, setMediaBlobUrl] = useState(null);
+  const targetMediaUrl = data?.preview_url || (data?.art_id ? graffitiMediaUrl(data.art_id) : null);
 
-  useEffect(() => {
-    const targetUrl = data?.preview_url || (data?.art_id ? graffitiMediaUrl(data.art_id) : null);
-    if (!targetUrl) {
-      setIsLoaded(true);
-      setLoadingProgress(100);
-      return;
+  const handleDownloadMedia = () => {
+    const downloadUrl = targetMediaUrl || (data?.art_id ? graffitiMediaUrl(data.art_id) : null);
+    if (!downloadUrl) return;
+    const filename = getMediaFilename(data);
+    setIsDownloading(true);
+    try {
+      downloadFile(downloadUrl, filename);
+    } finally {
+      setTimeout(() => setIsDownloading(false), 500);
     }
-
-    const size = Number(data?.size || data?.size_bytes || 0);
-    const isLargeOrStreamable = isVideo || (size > 10 * 1024 * 1024);
-
-    if (isLargeOrStreamable) {
-      // Direct HTTP Streaming mode: allow browser native HTTP Range streaming
-      setIsLoaded(true);
-      setLoadingProgress(100);
-      setMediaBlobUrl(null);
-      return;
-    }
-
-    let isMounted = true;
-    setIsLoaded(false);
-    setLoadingProgress(0);
-
-    const xhr = new XMLHttpRequest();
-    xhr.open("GET", targetUrl, true);
-    xhr.responseType = "blob";
-
-    xhr.onprogress = (event) => {
-      if (isMounted) {
-        if (event.lengthComputable && event.total > 0) {
-          const percent = Math.min(99, Math.round((event.loaded / event.total) * 100));
-          setLoadingProgress(percent);
-        } else {
-          setLoadingProgress((prev) => Math.min(95, prev + 15));
-        }
-      }
-    };
-
-    xhr.onload = () => {
-      if (isMounted) {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          const blob = xhr.response;
-          const objectUrl = URL.createObjectURL(blob);
-          setMediaBlobUrl(objectUrl);
-          setLoadingProgress(100);
-          setIsLoaded(true);
-        } else {
-          setIsLoaded(true);
-          setLoadingProgress(100);
-        }
-      }
-    };
-
-    xhr.onerror = () => {
-      if (isMounted) {
-        setIsLoaded(true);
-        setLoadingProgress(100);
-      }
-    };
-
-    xhr.send();
-
-    return () => {
-      isMounted = false;
-      xhr.abort();
-      if (mediaBlobUrl) {
-        URL.revokeObjectURL(mediaBlobUrl);
-      }
-    };
-  }, [data?.art_id, data?.preview_url, data?.size, data?.size_bytes, isVideo]);
+  };
 
   // Render media preview
   const renderMediaPreview = () => {
-    if (!data?.preview_url) {
+    if (!targetMediaUrl) {
       return <div className="muted">Preview is not available</div>;
-    }
-
-    if (!isLoaded) {
-      return (
-        <div className="graffiti-loading-box glass-panel">
-          <div className="graffiti-loading-content">
-            <span className="graffiti-loading-spinner" />
-            <div className="graffiti-loading-text">
-              <span>Loading Graffiti Media...</span>
-              <span className="graffiti-pct">{loadingProgress}%</span>
-            </div>
-            <div className="graffiti-progress-track">
-              <div className="graffiti-progress-fill" style={{ width: `${loadingProgress}%` }} />
-            </div>
-          </div>
-        </div>
-      );
     }
 
     if (isVideo) {
@@ -497,7 +248,7 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
           controlsList="nodownload"
           onContextMenu={(e) => e.preventDefault()}
           preload="metadata"
-          src={mediaBlobUrl || data.preview_url}
+          src={targetMediaUrl}
         >
           <track
             kind="captions"
@@ -511,23 +262,25 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
 
     if (isPdf) {
       return (
-        <SmartPdfViewer
-          file={mediaBlobUrl || data.preview_url}
-          previewUrl={data.preview_url}
-        />
+        <Suspense fallback={<div className="pdf-loading">Loading PDF Viewer Engine...</div>}>
+          <SmartPdfViewer
+            file={targetMediaUrl}
+            previewUrl={targetMediaUrl}
+          />
+        </Suspense>
       );
     }
 
     return (
       <ImageZoomViewer
-        src={mediaBlobUrl || data.preview_url}
+        src={targetMediaUrl}
         alt="Graffiti preview"
       />
     );
   };
 
   return (
-      <>
+    <>
       {/* Media Preview */}
       {renderMediaPreview()}
       <div className="divider" />
@@ -546,42 +299,33 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
           {data?.art_id && (
             <button
               type="button"
-              disabled={!isLoaded}
+              disabled={isDownloading}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px',
                 padding: '8px 18px',
-                backgroundColor: isLoaded ? '#10b981' : '#475569',
-                color: isLoaded ? 'white' : '#94a3b8',
+                backgroundColor: isDownloading ? '#059669' : '#10b981',
+                color: 'white',
                 border: 'none',
                 borderRadius: '4px',
-                cursor: isLoaded ? 'pointer' : 'not-allowed',
+                cursor: isDownloading ? 'wait' : 'pointer',
                 fontSize: '14px',
                 fontWeight: '500',
-                opacity: isLoaded ? 1 : 0.65,
                 transition: 'all 0.3s ease',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                opacity: isDownloading ? 0.8 : 1,
               }}
               onMouseEnter={(e) => {
-                if (isLoaded) e.currentTarget.style.backgroundColor = '#059669';
+                if (!isDownloading) e.currentTarget.style.backgroundColor = '#059669';
               }}
               onMouseLeave={(e) => {
-                if (isLoaded) e.currentTarget.style.backgroundColor = '#10b981';
+                if (!isDownloading) e.currentTarget.style.backgroundColor = '#10b981';
               }}
-              title={isLoaded ? `Download media (${data.art_id})` : `Loading media data (${loadingProgress}%)...`}
-              onClick={() => {
-                if (!isLoaded) return;
-                const downloadUrl = mediaBlobUrl || graffitiMediaUrl(data.art_id);
-                const link = document.createElement("a");
-                link.href = downloadUrl;
-                link.download = `${data.art_id}`;
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-              }}
+              title={`Download media (${data.art_id})`}
+              onClick={handleDownloadMedia}
             >
-              <FaDownload /> {isLoaded ? "Download" : `Loading (${loadingProgress}%)...`}
+              <FaDownload /> {isDownloading ? 'Downloading...' : 'Download Media'}
             </button>
           )}
           <button 
@@ -617,12 +361,15 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
               </div>
               <div className="stat">
                 <span className="info-label">Creator</span>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "4px" }}>
+                  <Identicon value={data.creator || "creator"} size={22} />
                   {renderClickableHash(
                     data.creator,
                     onSearchClick,
                     data.creator,
                     fmtAddress(data.creator) || "-"
                   )}
+                </div>
               </div>
             </div>
             <div className="grid">
@@ -771,9 +518,7 @@ const ResultGraffiti = ({ data, onSearchClick }) => {
                 <div className="comment-card" key={c.txid || `${commenterAddress}-${c.ts}-${index}`}>
                   <div className="comment-card-header">
                     <div className="comment-user-info">
-                      <div className="comment-avatar">
-                        <FaUserCircle />
-                      </div>
+                      <Identicon value={commenterAddress} size={22} />
                       <ClickableValue
                         value={commenterAddress}
                         onSearchClick={onSearchClick}

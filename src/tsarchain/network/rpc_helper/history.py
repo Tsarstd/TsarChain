@@ -66,21 +66,30 @@ class HistoryHandler(NetworkHandlerProxy):
         return self._slice_items(items, limit, offset, direction, status)
 
 
+    def _txid_hex_helper(self, tid) -> str:
+        if isinstance(tid, (bytes, bytearray)):
+            return tid.hex().lower()
+        if isinstance(tid, str):
+            return tid.strip().lower()
+        return ""
+
+
     def find_tx_and_meta(self, txid_hex: str):
+        target = str(txid_hex or "").strip().lower()
         with self.broadcast.lock:
             chain = list(self.broadcast.blockchain.chain)
             tip_height = int(self.broadcast.blockchain.height)
             mem = self.broadcast.mempool.get_all_txs()
         for tx in mem:
-            txid = tx.txid.hex() if getattr(tx, "txid", None) else ""
-            if txid == txid_hex:
+            txid = self._txid_hex_helper(getattr(tx, "txid", None))
+            if txid == target:
                 return ("mempool", tx, None, 0, None, chain, mem, tip_height)
         for b in chain:
             h = int(getattr(b, "height", 0))
             timestamp = int(getattr(b, "timestamp", 0))
             for tx in getattr(b, "transactions", []) or []:
-                txid = tx.txid.hex() if getattr(tx, "txid", None) else ""
-                if txid == txid_hex:
+                txid = self._txid_hex_helper(getattr(tx, "txid", None))
+                if txid == target:
                     conf = max(0, tip_height - h + 1)
                     return ("chain", tx, h, timestamp, conf, chain, mem, tip_height)
 
@@ -133,7 +142,7 @@ class HistoryHandler(NetworkHandlerProxy):
         for b in chain:
             txs = getattr(b, "transactions", []) or []
             for tx in txs:
-                txid = tx.txid.hex() if getattr(tx, "txid", None) else ""
+                txid = self._txid_hex_helper(getattr(tx, "txid", None))
                 for idx, o in enumerate(getattr(tx, "outputs", []) or []):
                     amount = int(getattr(o, "amount", 0))
                     spk_hex = self._txout_to_spk_hex(o) or ""
@@ -142,7 +151,7 @@ class HistoryHandler(NetworkHandlerProxy):
             return chain_map
         mem_map: dict[str, tuple[int, str]] = {}
         for tx in mem:
-            txid = tx.txid.hex() if getattr(tx, "txid", None) else ""
+            txid = self._txid_hex_helper(getattr(tx, "txid", None))
             for idx, o in enumerate(getattr(tx, "outputs", []) or []):
                 amount = int(getattr(o, "amount", 0))
                 spk_hex = self._txout_to_spk_hex(o) or ""
@@ -171,7 +180,7 @@ class HistoryHandler(NetworkHandlerProxy):
 
 
     def _extract_tx_history_item(self, tx, where, h_or_none, timestamp, target_spk_hex, addr, opmap_chain, opmap_mem, tip_height):
-        txid = tx.txid.hex() if getattr(tx, "txid", None) else ""
+        txid = self._txid_hex_helper(getattr(tx, "txid", None))
         is_cb = self.is_coinbase_tx(tx)
         conf = 0
         height = None

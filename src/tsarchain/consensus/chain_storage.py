@@ -10,6 +10,7 @@ import time
 import json
 import shutil
 import hashlib
+import tarfile
 import threading
 import datetime as dt
 
@@ -22,6 +23,7 @@ from ..storage.utxo import UTXODB
 from ..utils import config as CFG
 from ..contracts import graffiti as GRAFFITI
 from ..contracts.graffiti_registry import GraffitiRegistry
+from ..mempool.scripts import script_to_address
 from ..utils.bootstrap import annotate_local_snapshot_meta
 from ..storage.kv import batch, iter_prefix, clear_db, delete, _ensure_env
 from ..utils.helpers import bits_to_target, target_to_difficulty, estimate_block_size_bytes
@@ -36,6 +38,7 @@ if TYPE_CHECKING:
 class ChainStorage:
     def __init__(self, blockchain: "Blockchain"):
         self.blockchain = blockchain
+        self._backup_lock = threading.Lock()
 
 
     def save_chain(self, *, force_full: bool = False):
@@ -77,7 +80,17 @@ class ChainStorage:
             
         if not isinstance(data_list, list) or not data_list:
             return
-        chain = [Block.from_dict(d) for d in data_list]
+        chain = []
+        for d in data_list:
+            if hasattr(d, "prev_block_hash") and hasattr(d, "height"):
+                chain.append(d)
+            elif isinstance(d, dict):
+                chain.append(Block.from_dict(d))
+            else:
+                try:
+                    chain.append(Block.from_dict(d))
+                except Exception:
+                    chain.append(d)
         if not chain or not self._validate_loaded_chain(chain):
             return
 
@@ -214,8 +227,22 @@ class ChainStorage:
                 b.put(b'__meta__', json.dumps(chain_meta, separators=CFG.CANONICAL_SEP).encode('utf-8'))
                 for height in range(start_height, tip_height + 1):
                     key = f"h:{height:012d}".encode('utf-8')
-                    blk_dict, cw_prev = self._serialize_block_for_store(self.blockchain.chain[height], cw_prev)
-                    payload = json.dumps(blk_dict, separators=CFG.CANONICAL_SEP).encode('utf-8')
+                    blk = self.blockchain.chain[height]
+                    cw_prev = int(getattr(blk, "chainwork", 0) or 0)
+                    if cw_prev == 0:
+                        cw_prev = int(self.blockchain._compute_chainwork_for_chain(self.blockchain.chain[:height + 1]))
+                    diff = getattr(blk, "difficulty", None)
+                    if diff is None or diff == 0:
+                        try:
+                            blk.difficulty = int(self.blockchain.calculate_block_difficulty(blk.bits))
+                        except Exception:
+                            blk.difficulty = 1
+                    try:
+                        payload = blk.to_storage_bytes()
+                        if not isinstance(payload, (bytes, bytearray)):
+                            payload = Block.to_storage_bytes(blk)
+                    except Exception:
+                        payload = Block.to_storage_bytes(blk)
                     b.put(key, payload)
             self.blockchain._persisted_height = tip_height
 
@@ -240,12 +267,7 @@ class ChainStorage:
         if not target_dir:
             return
 
-        lock = getattr(self.blockchain, "_snapshot_backup_lock", None)
-        if lock is None:
-            lock = threading.Lock()
-            self.blockchain._snapshot_backup_lock = lock
-
-        with lock:
+        with self._backup_lock:
             if getattr(self.blockchain, "_snapshot_backup_active", False):
                 return
             self.blockchain._snapshot_backup_active = True
@@ -312,8 +334,29 @@ class ChainStorage:
                     continue
                 event = str(meta.get("event", "")).upper()
                 if event == "POST":
+                    art_id = str(meta.get("art_id") or "").strip().lower()
+                    if not art_id:
+                        sha_hex = str(meta.get("sha256") or "").strip().lower()
+                        creator = str(meta.get("creator") or "").strip().lower()
+                        art_id = GRAFFITI.compute_art_id(sha_hex, creator) if sha_hex and creator else ""
+                    if not art_id:
+                        continue
+
+                    pool_addr = GRAFFITI.derive_pool_address(art_id)
+                    min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
+                    paid = 0
+                    for out in getattr(tx, "outputs", []) or []:
+                        out_spk = getattr(out, "script_pubkey", None)
+                        out_addr = script_to_address(out_spk) if out_spk is not None else getattr(out, "address", None)
+                        if out_addr == pool_addr:
+                            paid += int(getattr(out, "amount", 0))
+
+                    if paid < min_fee:
+                        continue
+
                     posts.append({
                         "txid": txid_hex,
+                        "art_id": art_id,
                         "sha256": meta.get("sha256"),
                         "size": meta.get("size"),
                         "mime": meta.get("mime"),
@@ -373,12 +416,12 @@ class ChainStorage:
 
 
     def _write_snapshot_manifest(self, target_dir: str, meta: dict, height: int) -> None:
-        data_path = os.path.join(target_dir)
+        archive_path = os.path.join(target_dir, "tsarchain.tar.gz")
         sha = meta.get("sha256")
         size = meta.get("size")
-        if (not sha or not size) and os.path.exists(data_path):
-            size = size or os.path.getsize(data_path)
-            sha = sha or self._hash_file(data_path)
+        if (not sha or not size) and os.path.exists(archive_path):
+            size = size or os.path.getsize(archive_path)
+            sha = sha or self._hash_file(archive_path)
 
         manifest = {
             "version": 1,
@@ -395,77 +438,88 @@ class ChainStorage:
 
 
     def _run_backup(self, target_dir: str, height: int, ts_hint: int | None):
+        target_dir = os.path.abspath(target_dir)
+        os.makedirs(target_dir, exist_ok=True)
+        staging_dir = f"{target_dir}.staging_{int(time.time())}"
         try:
-            # 1) copy LMDB env -> data/snapshot/
-            self._copy_snapshot_env(target_dir)
+            # 1) Copy all 5 active LMDB environments -> isolated staging directory
+            self._copy_snapshot_env(staging_dir)
 
-            backup_dir = os.path.abspath(target_dir)
-            snapshot_data_path = os.path.join(backup_dir, "data.mdb")
+            # 2) Package sub-databases into tsarchain.tar.gz in staging
+            staging_archive = os.path.join(staging_dir, "tsarchain.tar.gz")
+            with tarfile.open(staging_archive, "w:gz") as tar:
+                for db_name in ("chain", "utxo", "state", "graffiti", "mempool"):
+                    db_path = os.path.join(staging_dir, db_name)
+                    if os.path.exists(db_path):
+                        tar.add(db_path, arcname=db_name)
 
-            # 2) tip timestamp
+            # 3) Clean up uncompressed raw staging folders to save disk space
+            for db_name in ("chain", "utxo", "state", "graffiti", "mempool"):
+                db_path = os.path.join(staging_dir, db_name)
+                if os.path.exists(db_path):
+                    shutil.rmtree(db_path, ignore_errors=True)
+
+            archive_stat = os.stat(staging_archive)
+            archive_size = int(archive_stat.st_size)
+            archive_sha = self._hash_file(staging_archive)
+
+            # 4) Tip timestamp
             tip_ts = ts_hint
             if tip_ts is None and self.blockchain.chain:
                 tip_ts = int(getattr(self.blockchain.chain[-1], "timestamp", 0) or 0)
 
-            # 3) meta baseline from DB live
-            meta = annotate_local_snapshot_meta(height=height, tip_timestamp=tip_ts)
+            # 5) Write metadata and manifest into staging
+            meta = {
+                "height": int(height),
+                "generated_at": int(tip_ts or time.time()),
+                "size": archive_size,
+                "sha256": archive_sha or "",
+                "applied_at": int(time.time()),
+                "source": CFG.SNAPSHOT_FILE_URL or "",
+            }
 
-            # 3b) override size & sha256 with snapshot file
-            if meta and os.path.exists(snapshot_data_path):
-                try:
-                    stat = os.stat(snapshot_data_path)
-                    meta["size"] = int(stat.st_size)
-                    snap_sha = self._hash_file(snapshot_data_path)
-                    if snap_sha:
-                        meta["sha256"] = snap_sha
-                except Exception:
-                    log.exception("[backup_snapshot] Failed to recompute hash/size for snapshot env")
+            meta_name = os.path.basename(CFG.SNAPSHOT_META_PATH or "snapshot.meta.json")
+            staging_meta_path = os.path.join(staging_dir, meta_name)
+            with open(staging_meta_path, "w", encoding="utf-8") as fh:
+                json.dump(meta, fh, indent=2, sort_keys=True)
 
-            if meta:
-                # 4) write snapshot.meta.json to snapshot folder
-                meta_name = os.path.basename(CFG.SNAPSHOT_META_PATH or "snapshot.meta.json")
-                backup_meta_path = os.path.join(backup_dir, meta_name)
-                with open(backup_meta_path, "w", encoding="utf-8") as fh:
-                    json.dump(meta, fh, indent=2, sort_keys=True)
+            self._write_snapshot_manifest(staging_dir, meta, height)
 
-                # 5) generate snapshot.manifest.json from overridden meta
-                self._write_snapshot_manifest(backup_dir, meta, height)
+            # 6) Atomically replace output files in target_dir (never delete or rename target_dir itself)
+            target_archive = os.path.join(target_dir, "tsarchain.tar.gz")
+            target_meta = os.path.join(target_dir, meta_name)
+            target_manifest = os.path.join(target_dir, "snapshot.manifest.json")
+
+            os.replace(staging_archive, target_archive)
+            os.replace(staging_meta_path, target_meta)
+            staging_manifest = os.path.join(staging_dir, "snapshot.manifest.json")
+            if os.path.exists(staging_manifest):
+                os.replace(staging_manifest, target_manifest)
 
             self.blockchain._snapshot_last_backup_height = height
-            log.info("[backup_snapshot] Snapshot updated at height %s to %s", height, target_dir)
+            log.info("[backup_snapshot] Snapshot archive created at height %s in %s (%.2f MB)", height, target_archive, archive_size / (1024 * 1024))
         except Exception:
             log.exception("[backup_snapshot] Unexpected error during snapshot backup:")
         finally:
-            with self.blockchain._snapshot_backup_lock:
+            if os.path.exists(staging_dir):
+                shutil.rmtree(staging_dir, ignore_errors=True)
+            with self._backup_lock:
                 self.blockchain._snapshot_backup_active = False
 
 
     def _copy_snapshot_env(self, target_dir: str) -> None:
         target_dir = os.path.abspath(target_dir)
-        parent = os.path.dirname(target_dir)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
+        os.makedirs(target_dir, exist_ok=True)
 
-        tmp_dir = f"{target_dir}.tmp"
-        if os.path.exists(tmp_dir):
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-
-        env = _ensure_env("chain")
-        if env is not None:
-            os.makedirs(tmp_dir, exist_ok=True)
-            env.copy(tmp_dir, compact=True)
-        else:
-            os.makedirs(tmp_dir, exist_ok=True)
-            data_file = CFG.LMDB_DATA_FILE
-            if data_file and os.path.exists(data_file):
-                shutil.copy2(
-                    data_file,
-                    os.path.join(tmp_dir, os.path.basename(data_file)),
-                )
-
-        if os.path.exists(target_dir):
-            shutil.rmtree(target_dir, ignore_errors=True)
-        os.replace(tmp_dir, target_dir)
+        for db_name in ("chain", "utxo", "state", "graffiti", "mempool"):
+            sub_dir = os.path.join(target_dir, db_name)
+            try:
+                env = _ensure_env(db_name)
+                if env is not None:
+                    os.makedirs(sub_dir, exist_ok=True)
+                    env.copy(sub_dir, compact=True)
+            except Exception as exc:
+                log.warning("[_copy_snapshot_env] Failed to copy sub-DB %s: %s", db_name, exc)
 
     
     @staticmethod
@@ -492,12 +546,26 @@ class ChainStorage:
         blocks: list[tuple[bytes, bytes]] = []
         for k, v in items:
             if k == b'__meta__':
-                meta = json.loads(v.decode('utf-8')) or {}
+                try:
+                    meta = json.loads(v.decode('utf-8')) or {}
+                except Exception:
+                    meta = {}
             elif k.startswith(b'h:'):
                 blocks.append((k, v))
         blocks.sort(key=lambda kv: kv[0])
-        data_list = [json.loads(v.decode('utf-8')) for _, v in blocks]
-        return meta, data_list
+        chain_objs = []
+        for _, v in blocks:
+            if len(v) >= 108 and not v.startswith(b'{'):
+                try:
+                    chain_objs.append(Block.from_storage_bytes(v))
+                    continue
+                except Exception:
+                    pass
+            try:
+                chain_objs.append(json.loads(v.decode('utf-8')))
+            except Exception:
+                pass
+        return meta, chain_objs
 
 
     def _validate_loaded_chain(self, chain: list) -> bool:
@@ -757,7 +825,7 @@ class ChainStorage:
             born = int(entry.get("block_height", entry.get("height", 0)) if isinstance(entry, dict) else getattr(entry, "block_height", getattr(entry, "height", 0)) or 0)
             if is_cb:
                 conf = max(0, (tip_height - born) + 1)
-                if conf > maturity:
+                if conf >= maturity:
                     circulating_estimate += amount
                 else:
                     immature_coinbase += amount
@@ -797,8 +865,8 @@ class ChainStorage:
             
         total_comments = sum(len(v or []) for v in (data_g.get("comments") or {}).values())
         
-        mem = getattr(self.blockchain, "mempool", None)
-        if mem:
+        mem = getattr(self.blockchain, "get_mempool", lambda: None)() or getattr(self.blockchain, "_mempool", None)
+        if mem and hasattr(mem, "get_all_txs"):
             for tx in mem.get_all_txs():
                 for tx_out in getattr(tx, "outputs", []) or []:
                     spk = getattr(tx_out, "script_pubkey", None)

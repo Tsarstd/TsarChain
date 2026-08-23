@@ -5,6 +5,7 @@
 
 import hashlib
 import ipaddress
+import functools
 from typing import TYPE_CHECKING, Any
 
 from ....utils import config as CFG
@@ -185,6 +186,7 @@ def _norm_identity(val: Any) -> str | None:
     return s or None
 
 
+@functools.lru_cache(maxsize=4096)
 def _subnet_key(ip: str) -> str | None:
     try:
         obj = ipaddress.ip_address(ip)

@@ -168,3 +168,15 @@ def test_chat_session(mock_wall):
     
     chat_common.delete_chat_session("alice", "bob")
     mock_wall._secure_backend_delete.assert_called_once()
+
+
+def test_clear_pwd_cache():
+    from kremlin.security.chat.triple_xdh import ChatManager
+    from unittest.mock import Mock
+    mgr = ChatManager(rpc_send=Mock(), password_prompt_cb=Mock())
+    mgr._pwd_cache["alice"] = ("secret", 9999999999.0)
+    mgr.priv_cache["alice"] = ("privkey", 9999999999.0)
+
+    mgr.clear_pwd_cache("alice")
+    assert "alice" not in mgr._pwd_cache
+    assert "alice" not in mgr.priv_cache

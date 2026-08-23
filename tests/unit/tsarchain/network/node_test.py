@@ -14,7 +14,6 @@ def mock_cfg():
         m_cfg.PORT_START = 8000
         m_cfg.PORT_END = 8005
         m_cfg.DEFAULT_NET_ID = "testnet"
-        m_cfg.NODE_KEY_PATH = "dummy_path"
         m_cfg.BOOTSTRAP_NODES = [("1.1.1.1", 8000)]
         m_cfg.BOOTSTRAP_NODE = ("1.1.1.1", 8000)
         m_cfg.PEER_SCORE_START = 100
@@ -254,7 +253,3 @@ def test_wrappers(mock_cfg, mock_socket, mock_broadcast, mock_deps):
     with patch("tsarchain.network.node.rpc_client.request_mempool_snapshot") as m_mem_snap:
         net.request_mempool_snapshot("peer", force=True)
         m_mem_snap.assert_called_once_with(net, "peer", force=True)
-        
-    with patch("tsarchain.network.node.rpc_client.request_full_sync") as m_full:
-        net.request_full_sync("peer", force=True)
-        m_full.assert_called_once_with(net, "peer", force=True)

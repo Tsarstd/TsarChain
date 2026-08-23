@@ -1,19 +1,7 @@
-import { useState, useEffect, createContext, useContext, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import PropTypes from "prop-types";
 import { FaCheckCircle, FaExclamationCircle, FaInfoCircle } from "react-icons/fa";
-
-const ToastContext = createContext({
-  showToast: () => {},
-});
-
-export const useToast = () => useContext(ToastContext);
-
-let globalShowToast = null;
-export const toast = (message, type = "success") => {
-  if (globalShowToast) {
-    globalShowToast(message, type);
-  }
-};
+import { ToastContext, setGlobalShowToast } from "../../utils/toast";
 
 let toastSeq = 0;
 const generateId = () => {
@@ -55,9 +43,9 @@ export const ToastProvider = ({ children }) => {
   }, [removeToast]);
 
   useEffect(() => {
-    globalShowToast = showToast;
+    setGlobalShowToast(showToast);
     return () => {
-      globalShowToast = null;
+      setGlobalShowToast(null);
     };
   }, [showToast]);
 
@@ -83,3 +71,5 @@ export const ToastProvider = ({ children }) => {
 ToastProvider.propTypes = {
   children: PropTypes.node.isRequired,
 };
+
+export default ToastProvider;

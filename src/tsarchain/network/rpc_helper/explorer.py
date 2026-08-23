@@ -22,6 +22,7 @@ class ExplorerHandler(NetworkHandlerProxy):
 
     @benchmark(label="GET_TX_DETAIL", threshold_ms=15.0)
     def process_tx_lookup(self, txid_hex: str, src_tag: str | None = None) -> dict:
+        txid_hex = str(txid_hex or "").strip().lower()
         where, tx, height, timestamp, conf, chain, _, _ = self.find_tx_and_meta(txid_hex)
         if tx is None:
             return {"error": "tx not found", "txid": txid_hex}

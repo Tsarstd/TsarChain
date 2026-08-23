@@ -931,10 +931,15 @@ class GraffitiTab(ttk.Frame):
         if self.post_send_btn:
             self.post_send_btn.config(state="disabled")
 
+        if getattr(self.app, "send_tab", None):
+            self.app.send_tab.clear_opret_hex()
+
         def on_progress(msg: str) -> None:
             self.post_info_var.set(msg)
 
         def on_done(resp: Optional[Dict[str, Any]]) -> None:
+            if getattr(self.app, "send_tab", None):
+                self.app.send_tab.clear_opret_hex()
             def _update():
                 if isinstance(resp, dict) and resp.get("status") in (None, "ok"):
                     txid = resp.get("txid") or resp.get("data", {}).get("txid") or "?"
@@ -963,6 +968,8 @@ class GraffitiTab(ttk.Frame):
             )
         except Exception as exc:
             log.exception(MSG_UNHANDLED_EXC)
+            if getattr(self.app, "send_tab", None):
+                self.app.send_tab.clear_opret_hex()
             messagebox.showerror("Graffiti", f"Broadcast failed: {exc}")
             if self.post_send_btn:
                 self.post_send_btn.config(state="normal")

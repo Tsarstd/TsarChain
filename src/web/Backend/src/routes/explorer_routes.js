@@ -6,6 +6,7 @@ const { ExplorerService } = require("../services/explorerService");
 const { getConfig } = require("../config/env");
 const { createRateLimiter } = require("../utils/rateLimit");
 const { guessKind, isHex64 } = require("../utils/searchKind");
+const { rpcCall } = require("../tsarRpcAdapter");
 
 const isArtId = (s) => /^graf[0-9a-fA-F]{60}$/.test(s || "");
 
@@ -66,19 +67,29 @@ const cleanupGraffitiCache = async () => {
 };
 
 const resolveCachePath = (cachePath) => {
-  if (!cachePath) return null;
-  if (path.isAbsolute(cachePath)) return cachePath;
-  return path.resolve(projectRoot, cachePath);
+  if (!cachePath || typeof cachePath !== "string") return null;
+  const resolved = path.isAbsolute(cachePath) ? path.normalize(cachePath) : path.resolve(projectRoot, cachePath);
+  const relativeToRoot = path.relative(projectRoot, resolved);
+  if (relativeToRoot.startsWith("..") || path.isAbsolute(relativeToRoot)) {
+    console.warn("[backend] Disallowed cache path escape:", cachePath);
+    return null;
+  }
+  return resolved;
 };
 
 const inferMediaType = (meta, filePath) => {
   const mime = meta?.mime || meta?.mime_type;
   if (mime) {
-    if (String(mime).includes("video")) return "video/mp4";
-    if (String(mime).includes("image")) return "image/jpeg";
+    const mimeStr = String(mime).toLowerCase();
+    if (mimeStr.includes("pdf")) return "application/pdf";
+    if (mimeStr.includes("video/mp4") || mimeStr.includes("mp4")) return "video/mp4";
+    if (mimeStr.includes("video/x-matroska") || mimeStr.includes("mkv")) return "video/x-matroska";
+    if (mimeStr.includes("image/jpeg") || mimeStr.includes("image")) return "image/jpeg";
   }
   const ext = path.extname(filePath || "").toLowerCase();
+  if (ext === ".pdf") return "application/pdf";
   if (ext === ".mp4") return "video/mp4";
+  if (ext === ".mkv") return "video/x-matroska";
   if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
   return "application/octet-stream";
 };
@@ -89,7 +100,7 @@ const findCachedFile = async (artId) => {
   } catch {
     return null;
   }
-  for (const ext of [".jpg", ".jpeg", ".mp4", ".bin"]) {
+  for (const ext of [".pdf", ".jpg", ".jpeg", ".mp4", ".mkv", ".bin"]) {
     const candidate = path.join(cacheDir, `${artId}${ext}`);
     try {
       await fsPromises.access(candidate);
@@ -261,6 +272,14 @@ const serveLocalFile = async (req, res, next, filePath, meta = null) => {
     res.setHeader("Cache-Control", "public, max-age=300");
     res.setHeader("Accept-Ranges", "bytes");
 
+    const streamErrorHandler = (err) => {
+      if (!res.headersSent) {
+        next(err);
+      } else {
+        res.destroy(err);
+      }
+    };
+
     const range = parseRangeHeader(req.headers.range, size);
     if (range) {
       if (range.invalid) {
@@ -273,14 +292,14 @@ const serveLocalFile = async (req, res, next, filePath, meta = null) => {
       res.setHeader("Content-Range", `bytes ${range.start}-${range.end}/${size}`);
       res.setHeader("Content-Length", String(range.end - range.start + 1));
       const stream = fs.createReadStream(filePath, { start: range.start, end: range.end });
-      stream.on("error", next);
+      stream.on("error", streamErrorHandler);
       stream.pipe(res);
       return true;
     }
 
     res.setHeader("Content-Length", String(size));
     const stream = fs.createReadStream(filePath);
-    stream.on("error", next);
+    stream.on("error", streamErrorHandler);
     stream.pipe(res);
     return true;
   } catch (err) {
@@ -326,9 +345,17 @@ const streamGraffitiChunks = async (req, res, artId, totalSize, meta) => {
   }
 
   let clientAborted = false;
-  req.on("close", () => {
+  let onDrainResolve = null;
+
+  const onClose = () => {
     clientAborted = true;
-  });
+    if (onDrainResolve) {
+      onDrainResolve();
+      onDrainResolve = null;
+    }
+  };
+
+  req.on("close", onClose);
 
   let currOffset = start;
   const targetEnd = totalSize > 0 ? end : Number.MAX_SAFE_INTEGER;
@@ -350,7 +377,13 @@ const streamGraffitiChunks = async (req, res, artId, totalSize, meta) => {
     currOffset += buf.length;
 
     if (!canContinue && !clientAborted) {
-      await new Promise((resolve) => res.once("drain", resolve));
+      await new Promise((resolve) => {
+        onDrainResolve = resolve;
+        res.once("drain", () => {
+          onDrainResolve = null;
+          resolve();
+        });
+      });
     }
 
     if (chunkResp.eof) break;
@@ -367,17 +400,17 @@ router.get("/graffiti/:artId/media", graffitiMediaLimiter, async (req, res, next
       return res.status(400).json({ error: "invalid_art_id" });
     }
 
+    const metaResp = await svc.getGraffitiMediaMeta(artId);
+    const meta = metaResp?.status === "ok" ? (metaResp.meta || {}) : null;
+
     const filePath = await findCachedFile(artId);
-    if (filePath && (await serveLocalFile(req, res, next, filePath))) {
+    if (filePath && (await serveLocalFile(req, res, next, filePath, meta))) {
       return;
     }
 
-    const metaResp = await svc.getGraffitiMediaMeta(artId);
-    if (metaResp?.status !== "ok") {
+    if (!meta || metaResp?.status !== "ok") {
       return res.status(404).json({ error: "media_not_found" });
     }
-
-    const meta = metaResp.meta || {};
     const totalSize = Number(meta.size_bytes || meta.size || metaResp.size_bytes || 0);
 
     // Smart Caching: file size <= 10MB -> Full download to disk cache
@@ -419,7 +452,7 @@ router.get("/search", searchLimiter, async (req, res, next) => {
   }
 });
 
-router.post("/prefetch-blocks", async (_req, res, next) => {
+router.post("/prefetch-blocks", searchLimiter, async (_req, res, next) => {
   try {
     // Trigger prefetch di Python RPC client
     await rpcCall("prefetch_blocks", null, cfg.nodeHost, cfg.nodePort);

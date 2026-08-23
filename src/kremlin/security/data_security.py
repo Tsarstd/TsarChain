@@ -40,7 +40,6 @@ from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.wallet.data_security")
 
 _SECURE_KV_DB = "secure_wallet"
-_APP_SECRET_PATH = Path(os.path.join("data_user", ".app_secret.json"))
 _APP_SECRET_LOCK = threading.Lock()
 _APP_SECRET_CACHE: Optional[str] = None
 
@@ -65,8 +64,11 @@ def encrypt_blob(blob: bytes, password: str) -> Dict:
         "p": 1,
     }
     
-def create_keypair(path: str) -> tuple[str, str, str]:
-    load_user_key_record()
+def create_keypair(path: str = "") -> tuple[str, str, str]:
+    existing = load_user_key_record()
+    if isinstance(existing, dict) and existing.get("id") and existing.get("pubkey") and existing.get("privkey"):
+        return str(existing["id"]), str(existing["pubkey"]), str(existing["privkey"])
+
     sk = SigningKey.generate()
     vk = sk.verify_key
     priv_hex = sk.encode(encoder=HexEncoder).decode()
@@ -74,9 +76,6 @@ def create_keypair(path: str) -> tuple[str, str, str]:
     node_id  = hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()
     payload = {"id": node_id, "pubkey": pub_hex, "privkey": priv_hex, "created": int(time.time())}
     save_user_key_record(payload)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
-    os.chmod(path, 0o600)
     return node_id, pub_hex, priv_hex
 
 def decrypt_blob(enc: Dict, password: str) -> bytes:
@@ -93,48 +92,50 @@ def decrypt_blob(enc: Dict, password: str) -> bytes:
     ct = bytes.fromhex(enc["ct"])
     return aes.decrypt(nonce, ct, None)
 
-def _secure_backend_read(namespace: str, key: str, path: Optional[Path]) -> Tuple[Optional[Dict], bool]:
-    raw = None
-    from_file = False
+def _secure_backend_read(namespace: str, key: str, path: Optional[Path] = None) -> Tuple[Optional[Dict], bool]:
     val = kv_get(_SECURE_KV_DB, _secure_kv_key(namespace, key))
     if val:
-        raw = val.decode("utf-8")
-    if raw is None and path is not None and path.exists():
-        raw = path.read_text(encoding="utf-8")
-        from_file = True
-    if raw is None:
-        return None, from_file
-    obj = json.loads(raw)
-    return obj, from_file
+        return json.loads(val.decode("utf-8")), False
+    if path is not None and path.exists():
+        try:
+            raw = path.read_text(encoding="utf-8")
+            return json.loads(raw), True
+        except Exception:
+            pass
+    return None, False
 
-def _secure_backend_write(namespace: str, key: str, path: Optional[Path], payload: Dict) -> None:
+def _secure_backend_write(namespace: str, key: str, path: Optional[Path] = None, payload: Dict = None) -> None:
+    if payload is None:
+        return
     data = json.dumps(payload, separators=CFG.CANONICAL_SEP)
     kv_put(_SECURE_KV_DB, _secure_kv_key(namespace, key), data.encode("utf-8"))
     if path is not None and path.exists():
-        path.unlink()
+        try:
+            path.unlink()
+        except OSError:
+            pass
 
-def _secure_backend_delete(namespace: str, key: str, path: Optional[Path]) -> None:
+def _secure_backend_delete(namespace: str, key: str, path: Optional[Path] = None) -> None:
     kv_delete(_SECURE_KV_DB, _secure_kv_key(namespace, key))
     if path is not None and path.exists():
-        path.unlink()
+        try:
+            path.unlink()
+        except OSError:
+            pass
 
 def _get_app_secret_password() -> str:
     global _APP_SECRET_CACHE
     with _APP_SECRET_LOCK:
         if _APP_SECRET_CACHE:
             return _APP_SECRET_CACHE
-        record, _ = _secure_backend_read("app_secret", "global", _APP_SECRET_PATH)
+        record, _ = _secure_backend_read("app_secret", "global", None)
         secret_hex: Optional[str] = None
         if isinstance(record, dict):
             secret_hex = str(record.get("secret") or "") or None
         if not secret_hex:
             secret_hex = os.urandom(32).hex()
             payload = {"secret": secret_hex, "created": int(time.time())}
-            _secure_backend_write("app_secret", "global", _APP_SECRET_PATH, payload)
-            try:
-                os.chmod(_APP_SECRET_PATH, 0o600)
-            except Exception:
-                pass
+            _secure_backend_write("app_secret", "global", None, payload)
         password = base64.urlsafe_b64encode(bytes.fromhex(secret_hex)).decode("utf-8")
         _APP_SECRET_CACHE = password
         return password
@@ -174,19 +175,13 @@ def _secure_store(namespace: str, key: str, path: Optional[Path], data: Dict, pa
     
 def load_chat_state(default: Optional[Dict] = None) -> Dict:
     fallback = default or {"blocked": [], "pubcache": {}, "textsize": "Medium", "history": {}, "verified": {}}
-    path_obj = Path(CFG.CHAT_STATE)
     try:
-        data, legacy = _secure_load("chat_state", "default", path_obj, _app_secret_provider, "Load chat state")
+        data, legacy = _secure_load("chat_state", "default", None, _app_secret_provider, "Load chat state")
     except Exception:
-        log.exception("Failed to load chat state from %s; falling back to default", path_obj)
+        log.exception("Failed to load chat state; falling back to default")
         return fallback.copy()
     if data is None:
         return fallback.copy()
-    if legacy:
-        try:
-            _secure_store("chat_state", "default", path_obj, data, _app_secret_provider, "Migrate chat state")
-        except Exception:
-            log.exception("Failed to migrate (re‑save) chat state to %s after successful load", path_obj)
     return {
         "blocked": list(dict.fromkeys(data.get("blocked", []) or [])),
         "pubcache": data.get("pubcache") or {},
@@ -196,7 +191,6 @@ def load_chat_state(default: Optional[Dict] = None) -> Dict:
     }
 
 def save_chat_state(data: Dict) -> None:
-    path_obj = Path(CFG.CHAT_STATE)
     payload = {
         "blocked": sorted(set(data.get("blocked", []) or [])),
         "pubcache": data.get("pubcache") or {},
@@ -204,16 +198,13 @@ def save_chat_state(data: Dict) -> None:
         "history": data.get("history") or {},
         "verified": data.get("verified") or {},
     }
-    _secure_store("chat_state", "default", path_obj, payload, _app_secret_provider, "Store chat state")
+    _secure_store("chat_state", "default", None, payload, _app_secret_provider, "Store chat state")
 
 def load_wallet_registry(default: Optional[Sequence[str]] = None) -> List[str]:
     fallback = list(default or [])
-    path_obj = Path(CFG.REGISTRY_PATH)
-    data, legacy = _secure_load("wallet_registry", "default", path_obj, _app_secret_provider, "Load wallet registry")
+    data, _ = _secure_load("wallet_registry", "default", None, _app_secret_provider, "Load wallet registry")
     if data is None:
         return fallback
-    if legacy:
-         _secure_store("wallet_registry", "default", path_obj, data, _app_secret_provider, "Migrate wallet registry")
     wallets = data.get("wallets") if isinstance(data, dict) else None
     if not isinstance(wallets, list):
         return fallback
@@ -225,14 +216,13 @@ def load_wallet_registry(default: Optional[Sequence[str]] = None) -> List[str]:
     return seen
 
 def save_wallet_registry(addrs: Sequence[str]) -> None:
-    path_obj = Path(CFG.REGISTRY_PATH)
     uniq: List[str] = []
     for addr in addrs:
         a = (addr or "").strip().lower()
         if a and a not in uniq:
             uniq.append(a)
     payload = {"wallets": uniq, "updated": int(time.time())}
-    _secure_store("wallet_registry", "default", path_obj, payload, _app_secret_provider, "Store wallet registry")
+    _secure_store("wallet_registry", "default", None, payload, _app_secret_provider, "Store wallet registry")
 
 def ensure_wallet_registry(default: Optional[Sequence[str]] = None) -> List[str]:
     wallets = load_wallet_registry(default)
@@ -244,17 +234,13 @@ def ensure_wallet_registry(default: Optional[Sequence[str]] = None) -> List[str]
     return wallets
 
 def load_user_key_record() -> Optional[Dict]:
-    path_obj = Path(CFG.USER_KEY_PATH)
-    data, legacy = _secure_load("user_key", "default", path_obj, _app_secret_provider, "Load user key")
+    data, _ = _secure_load("user_key", "default", None, _app_secret_provider, "Load user key")
     if data is None:
         return None
-    if legacy:
-        _secure_store("user_key", "default", path_obj, data, _app_secret_provider, "Migrate user key")
     return data
 
 def save_user_key_record(record: Dict) -> None:
-    path_obj = Path(CFG.USER_KEY_PATH)
-    _secure_store("user_key", "default", path_obj, record, _app_secret_provider, "Store user key")
+    _secure_store("user_key", "default", None, record, _app_secret_provider, "Store user key")
 
 
 # ---------------- Secure Path ----------------
@@ -585,17 +571,13 @@ class Security:
     @staticmethod
     def secure_erase(data):
         if isinstance(data, str):
-            data_bytes = bytearray(data.encode('utf-8'))
-            for i in range(len(data_bytes)):
-                data_bytes[i] = 0
-            return bytes(data_bytes)
-        
+            encoded = data.encode("utf-8")
+            return b"\x00" * len(encoded)
         elif isinstance(data, (bytes, bytearray)):
-            mutable_data = bytearray(data)
-            for i in range(len(mutable_data)):
-                mutable_data[i] = 0
-            return bytes(mutable_data)
-        
+            if isinstance(data, bytearray):
+                for i in range(len(data)):
+                    data[i] = 0
+            return b"\x00" * len(data)
         return data
             
     @staticmethod
@@ -644,6 +626,13 @@ class Wallet:
         mnemonic = mnemo.generate(strength=mnemonic_strength)
         seed = mnemo.to_seed(mnemonic, passphrase="")
         priv_bytes = hashlib.sha256(seed).digest()[:32]
+        priv_int = int.from_bytes(priv_bytes, "big")
+        # secp256k1 curve order N
+        n_secp = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+        if not (1 <= priv_int < n_secp):
+            # Fallback to hashed scalar mod (n-1) + 1
+            priv_int = (priv_int % (n_secp - 1)) + 1
+            priv_bytes = priv_int.to_bytes(32, "big")
         priv_hex = priv_bytes.hex()
 
         address = add_privkey_to_keystore(priv_hex, password)

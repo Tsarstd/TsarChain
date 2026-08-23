@@ -175,3 +175,20 @@ def test_fetch_graffiti_file(mock_fetch, mock_rpc_client, providers):
     rpc_callable = args[0]
     rpc_callable({"test": 1})
     mock_rpc_client.send.assert_called_with({"test": 1})
+
+
+def test_get_tx_with_leading_zeros(mock_rpc_client, providers):
+    txid_leading_zero = "0044d0cdb2a2a17f497d26ab22309e4a68bbe9dd32cd4a62bfd47706446fc016"
+    mock_rpc_client.send.return_value = {
+        "txid": txid_leading_zero,
+        "inputs": [],
+        "outputs": [{"amount": 25000}],
+        "is_coinbase": True,
+        "height": 227
+    }
+    prov_get_tx = providers["get_tx"]
+    tx = prov_get_tx(txid_leading_zero)
+    mock_rpc_client.send.assert_called_once_with({"type": "GET_TX_DETAIL", "txid": txid_leading_zero})
+    assert tx["txid"] == txid_leading_zero
+    assert tx["height"] == 227
+

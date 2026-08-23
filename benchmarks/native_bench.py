@@ -71,7 +71,7 @@ def _make_low_s_der(sk: SigningKey, digest32: bytes) -> bytes:
     return ecdsa_util.sigencode_der(r, s, n)
 
 def _make_high_s_from_low_der(der_low: bytes) -> bytes:
-    r, s = H.decode_der_sig(der_low)
+    r, s = H.der_parse_sig_strict(der_low)
     n = SECP256k1.order
     if s <= n // 2:
         s = n - s

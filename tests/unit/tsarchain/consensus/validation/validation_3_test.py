@@ -1015,6 +1015,9 @@ def test_graffiti_post_missing_art_id_and_multiple_posts():
             store.lookup_entry.return_value = {"amount": 10, "script_pubkey": b"s"}
             
             with patch("tsarchain.consensus.validation.GRAFFITI") as mock_graf:
+                mock_graf.derive_pool_address.return_value = "tsar1qpool"
+                mock_graf.calc_upload_fee_sats.return_value = 10
+                c._spk_to_address = Mock(return_value="tsar1qpool")
                 # 347: art_id missing, sha_hex and creator present
                 def fake_parse(spk):
                     if spk == b"g1": return {"event": "POST", "sha256": "abc", "creator": "me"}

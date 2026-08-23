@@ -142,7 +142,7 @@ class MockEvent:
         let res = randomx_mine(
             py, prefix.clone(), target.clone(), key.clone(),
             2, // 2 threads
-            false, true, true, true, true, // flags: large_pages=true, secure_jit=true
+            false, false, true, true, false, // flags: full_mem=false, large_pages=false, jit=true, hard_aes=true, secure_jit=false
             Some(q_obj.clone_ref(py)), Some(10), // progress_interval 10ms
             Some(ev_obj.clone_ref(py)),
         ).unwrap();

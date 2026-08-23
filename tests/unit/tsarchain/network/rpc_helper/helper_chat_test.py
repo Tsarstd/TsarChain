@@ -22,6 +22,9 @@ class DummyNode(ChatHandler):
         self.broadcast = Mock()
         self.broadcast.send_gossip = Mock()
         self.chat_lock = threading.Lock()
+        self.chat_spend_pub = {}
+        self.chat_presence_pub = {}
+        self.chat_presence_ts = {}
         self.chat_mailbox = {}
         self.chat_global_count = 0
         self.chat_seen_mid = {}
@@ -136,13 +139,12 @@ class TestRelayPresence:
         node.broadcast.send_gossip.assert_called_once_with(node.peers, expected, exclude=None)
 
     def test_relay_presence_async(self, node, monkeypatch):
-        """relay_presence_async should start a daemon thread."""
-        mock_thread = Mock()
-        monkeypatch.setattr("tsarchain.network.rpc_helper.chat.threading.Thread", mock_thread)
+        """relay_presence_async should submit task to presence ThreadPoolExecutor."""
+        mock_exec = Mock()
+        monkeypatch.setattr("tsarchain.network.rpc_helper.chat.get_presence_executor", Mock(return_value=mock_exec))
 
         node.relay_presence_async({"hops": 0}, exclude="some")
-        mock_thread.assert_called_once_with(target=node._relay_presence, args=({"hops": 0}, "some"), daemon=True)
-        mock_thread.return_value.start.assert_called_once()
+        mock_exec.submit.assert_called_once_with(node._relay_presence, {"hops": 0}, "some")
 
 
 class TestMailbox:
@@ -323,3 +325,100 @@ class TestGcMailboxes:
         node.gc_mailboxes()
         assert "addr" not in node.chat_mailbox
         assert node.chat_global_count == 0
+
+
+class TestPrekeyBundleSerialization:
+
+    def test_encode_decode_empty_and_invalid(self):
+        from tsarchain.network.rpc_helper.chat import encode_prekey_bundle, decode_prekey_bundle
+        assert encode_prekey_bundle(None) == b""
+        assert encode_prekey_bundle({}) != b""
+        assert decode_prekey_bundle(b"") == {}
+        assert decode_prekey_bundle(b"short") == {}
+        assert decode_prekey_bundle(None) == {}
+
+    def test_encode_decode_full_bundle(self):
+        from tsarchain.network.rpc_helper.chat import encode_prekey_bundle, decode_prekey_bundle
+        bundle = {
+            "ts": 1700000000,
+            "ik": "a" * 64,
+            "spk": "b" * 64,
+            "sig": "c" * 128,
+            "spend_pub": "02" + "d" * 64,
+            "opk_list": ["d" * 64, "e" * 64, "f" * 64],
+        }
+        raw = encode_prekey_bundle(bundle)
+        assert isinstance(raw, bytes)
+        assert len(raw) > 0
+        decoded = decode_prekey_bundle(raw)
+        assert decoded["ts"] == bundle["ts"]
+        assert decoded["ik"] == bundle["ik"]
+        assert decoded["spk"] == bundle["spk"]
+        assert decoded["sig"] == bundle["sig"]
+        assert decoded["spend_pub"] == bundle["spend_pub"]
+        assert decoded["opk_list"] == bundle["opk_list"]
+
+    def test_encode_decode_partial_bundle(self):
+        from tsarchain.network.rpc_helper.chat import encode_prekey_bundle, decode_prekey_bundle
+        bundle = {
+            "ts": 123456,
+            "ik": "1" * 64,
+        }
+        raw = encode_prekey_bundle(bundle)
+        decoded = decode_prekey_bundle(raw)
+        assert decoded == {"ts": 123456, "ik": "1" * 64}
+
+
+class TestPrekeyBundleMethods:
+
+    def test_get_put_delete_prekey_bundle(self, node):
+        addr = "tsar1qw508d6qejxtdg4y5r3zarvary0c5xw7k"
+        bundle = {
+            "ts": 1700000000,
+            "ik": "11" * 32,
+            "spk": "22" * 32,
+            "sig": "33" * 64,
+            "spend_pub": "02" + "33" * 32,
+            "opk_list": ["44" * 32, "55" * 32],
+        }
+        # Initially empty
+        assert node.get_prekey_bundle(addr) == {}
+
+        # Put bundle
+        node.put_prekey_bundle(addr, bundle)
+        fetched = node.get_prekey_bundle(addr)
+        assert fetched["ik"] == bundle["ik"]
+        assert fetched["spk"] == bundle["spk"]
+        assert fetched["sig"] == bundle["sig"]
+        assert fetched["spend_pub"] == bundle["spend_pub"]
+        assert fetched["opk_list"] == bundle["opk_list"]
+
+        # Delete bundle
+        node.delete_prekey_bundle(addr)
+        assert node.get_prekey_bundle(addr) == {}
+
+    def test_get_spend_pub_cache_and_rehydrate(self, node):
+        addr = "tsar1qw508d6qejxtdg4y5r3zarvary0c5xw7k"
+        spend_pk = "02" + "44" * 32
+        
+        # 1. Missing everywhere
+        assert node.get_spend_pub(addr) is None
+        assert node.get_spend_pub("") is None
+
+        # 2. Put in LMDB bundle
+        node.put_prekey_bundle(addr, {"spend_pub": spend_pk})
+        assert addr not in node.chat_spend_pub
+
+        # 3. get_spend_pub rehydrates into RAM cache
+        retrieved = node.get_spend_pub(addr)
+        assert retrieved == spend_pk
+        assert node.chat_spend_pub[addr] == spend_pk
+
+        # 4. Fast RAM hit
+        node.chat_spend_pub[addr] = "02" + "55" * 32
+        assert node.get_spend_pub(addr) == "02" + "55" * 32
+
+    def test_empty_address_handling(self, node):
+        assert node.get_prekey_bundle("") == {}
+        node.put_prekey_bundle("", {"ts": 1})
+        node.delete_prekey_bundle("")

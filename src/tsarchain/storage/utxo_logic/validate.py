@@ -167,8 +167,9 @@ class UTXOValidationMixin:
                 spk_hex = None
                 if isinstance(spk_bytes, (bytes, bytearray)):
                     spk_hex = bytes(spk_bytes).hex()
+                tx_out_obj = TxOut.from_dict({"amount": amt_int, "script_pubkey": spk_hex or ""})
                 entry = {
-                    "tx_out": {"amount": amt_int, "script_pubkey": spk_hex},
+                    "tx_out": tx_out_obj,
                     "is_coinbase": bool(is_coinbase),
                     "block_height": int(born_height),
                 }
@@ -176,7 +177,7 @@ class UTXOValidationMixin:
                 self._dirty = True
                 self._dirty_keys.add(key)
                 self._removed_keys.discard(key)
-                self._index_entry(key, entry.get("tx_out"))
+                self._index_entry(key, tx_out_obj)
 
             store = _ensure_env("utxo")
             store.apply_utxo_ops(ops)  # type: ignore[attr-defined]
@@ -396,13 +397,6 @@ class UTXOValidationMixin:
         if utxos is None:
             return utxos
 
-        outputs_info: list[dict[str, Any]] = []
-        for n, txout in enumerate(getattr(tx, "outputs", [])):
-            spk = getattr(txout, "script_pubkey", None)
-            b = self._parse_script_bytes(spk)
-            if len(b) >= 1 and b[0] == 0x6A:
-                continue
-
         is_coinbase = bool(getattr(tx, "is_coinbase", False))
         txid_hex = self._txid_hex(getattr(tx, "txid", None)) or getattr(tx, "txid_hex", lambda: None)()
         detected_layout = self._detect_snapshot_layout(utxos)
@@ -414,6 +408,7 @@ class UTXOValidationMixin:
                 if prev_txid_hex is not None:
                     self._apply_tx_remove_prevout(utxos, prev_txid_hex, vout)
 
+        outputs_info: list[dict[str, Any]] = []
         for n, txout in enumerate(getattr(tx, "outputs", [])):
             spk = getattr(txout, "script_pubkey", None)
             b = self._parse_script_bytes(spk)

@@ -1,13 +1,22 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { RiRefreshLine, RiPauseCircleLine, RiPlayCircleLine } from "react-icons/ri";
+import { RiRefreshLine, RiPauseLine, RiPlayLine } from "react-icons/ri";
 
 const renderSyncMeta = (refreshing, updated, secs) => {
   if (refreshing) {
-    return <span className="syncing-text">Syncing latest data...</span>;
+    return (
+      <span className="syncing-text">
+        <span className="syncing-spinner" /> Syncing...
+      </span>
+    );
   }
   if (updated) {
-    return <span>Updated {secs}s ago</span>;
+    const text = secs <= 1 ? "Just now" : `${secs}s ago`;
+    return (
+      <span className="updated-text">
+        <span className="updated-label">Updated</span> {text}
+      </span>
+    );
   }
   return <span>Connecting...</span>;
 };
@@ -19,7 +28,7 @@ export const LiveIndicator = ({
   lastUpdated,
   isRefreshing,
   intervalSec = 10,
-  label = "LIVE SYNC"
+  label = "Live Sync"
 }) => {
   const [secondsAgo, setSecondsAgo] = useState(0);
 
@@ -35,6 +44,9 @@ export const LiveIndicator = ({
     return () => clearInterval(timer);
   }, [lastUpdated]);
 
+  const nextSyncSec = intervalSec > 0 ? Math.max(0, intervalSec - (secondsAgo % intervalSec)) : 0;
+  const progressPct = intervalSec > 0 ? Math.min(100, Math.max(0, ((secondsAgo % intervalSec) / intervalSec) * 100)) : 0;
+
   return (
     <div className="live-indicator-bar">
       <div className={`live-status-pill ${isLive ? "active" : "paused"}`}>
@@ -42,7 +54,7 @@ export const LiveIndicator = ({
           <span className="live-dot-core" />
           <span className="live-dot-ring" />
         </span>
-        <span className="live-label">{isLive ? label : "SYNC PAUSED"}</span>
+        <span className="live-label">{isLive ? label : "Paused"}</span>
       </div>
 
       <div className="live-sync-meta">
@@ -53,17 +65,19 @@ export const LiveIndicator = ({
         {isLive && intervalSec > 0 && !isRefreshing && (
           <div 
             className="live-progress-mini" 
-            title={`Next auto-sync in ~${Math.max(0, intervalSec - (secondsAgo % intervalSec))}s`}
+            title={`Next auto-sync in ~${nextSyncSec}s`}
           >
             <div 
               className="live-progress-fill"
               style={{
-                width: `${Math.min(100, (secondsAgo % intervalSec) * (100 / intervalSec))}%`
+                width: `${progressPct}%`
               }}
             />
           </div>
         )}
       </div>
+
+      <div className="live-divider" />
 
       <div className="live-actions">
         <button
@@ -72,7 +86,7 @@ export const LiveIndicator = ({
           onClick={onToggleLive}
           title={isLive ? "Pause live auto-refresh" : "Enable live auto-refresh"}
         >
-          {isLive ? <RiPauseCircleLine /> : <RiPlayCircleLine />}
+          {isLive ? <RiPauseLine /> : <RiPlayLine />}
           <span className="btn-label">{isLive ? "Pause" : "Live"}</span>
         </button>
 
@@ -99,3 +113,4 @@ LiveIndicator.propTypes = {
   intervalSec: PropTypes.number,
   label: PropTypes.string,
 };
+

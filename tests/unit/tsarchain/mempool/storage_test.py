@@ -42,9 +42,14 @@ def mempool():
     return DummyMempool()
 
 def test_load_storage_pool(mempool):
+    import struct
+    tx = Tx()
+    tx.txid = bytes.fromhex("abcd")
+    raw_tx = tx.to_storage_bytes()
+    hdr = struct.pack("<dIII", 100.0, 10, 100, 400)
     mock_data = [
         (b"__meta__", b'{"schema_version": 1}'),
-        (b"abcd", b'{"txid": "abcd"}')
+        (b"abcd", hdr + raw_tx)
     ]
     with patch("tsarchain.mempool.storage.iter_prefix", return_value=mock_data):
         entries, meta = mempool._load_storage_pool()

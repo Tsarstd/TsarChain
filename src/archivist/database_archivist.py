@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import json
+import time
 from typing import Dict, Iterator, Tuple, Optional
 
 from tsarcore_native import open_storage as _native_open_storage
@@ -18,6 +19,9 @@ from tsarchain.utils import config as CFG
 
 from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.contracts.storage_node.database_archivist")
+
+
+import shutil
 
 
 def _iter_prefix(store, db_name: str, prefix: bytes) -> Iterator[Tuple[bytes, bytes]]:
@@ -48,9 +52,14 @@ class ArchivistDatabase:
         self.enable_index = enable_index
         self.enable_blobs = enable_blobs
         self._mem_index = {"files": {}, "bytes_used": 0, "art_map": {}}
+        self._mem_guard: dict = {}
+        self._kv_guard = None
 
         if self.enable_index:
             self._kv_index = self._open_store(CFG.ARCHIVIST_INDEX_DB_PATH)
+            guard_path = CFG.ARCHIVIST_PAYOUT_GUARD_DB_PATH
+            guard_map_size = CFG.ARCHIVIST_PAYOUT_GUARD_MAP_SIZE
+            self._kv_guard = self._open_store(guard_path, init_size=guard_map_size)
 
 
     # ---------------- Index ----------------
@@ -80,12 +89,14 @@ class ArchivistDatabase:
                 "art_map": dict(index.get("art_map") or {}),
             }
             return
-        self._kv_index.clear_db("idx")
+        # Prepare ops BEFORE clearing DB to prevent data loss on serialization failure
         ops = []
         for gid, meta in (index.get("files") or {}).items():
-            ops.append((f"file:{gid}".encode("utf-8"), json.dumps(meta).encode("utf-8")))
+            ops.append((f"file:{gid}".encode("utf-8"), json.dumps(meta, separators=CFG.CANONICAL_SEP).encode("utf-8")))
         for art, gid in (index.get("art_map") or {}).items():
             ops.append((f"art:{art}".encode("utf-8"), str(gid).encode("utf-8")))
+
+        self._kv_index.clear_db("idx")
         if ops:
             self._kv_index.put_batch("idx", ops)
 
@@ -99,7 +110,10 @@ class ArchivistDatabase:
     def _final_blob_path(self, gid: str) -> str:
         return os.path.join(self._blobs_dir(), f"{gid}.bin")
 
-    def append_incoming(self, gid: str, chunk: bytes, max_chunk: int) -> int:
+    def get_final_blob_path(self, gid: str) -> str:
+        return self._final_blob_path(gid)
+
+    def append_incoming(self, gid: str, chunk: bytes, max_chunk: int, expected_offset: Optional[int] = None) -> int:
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
         if len(chunk) > int(max_chunk):
@@ -109,6 +123,8 @@ class ArchivistDatabase:
             current = os.path.getsize(path) if os.path.exists(path) else 0
         except OSError:
             current = 0
+        if expected_offset is not None and int(expected_offset) != int(current):
+            raise ValueError(f"offset_mismatch: expected {current}, got {expected_offset}")
         new_size = int(current) + int(len(chunk))
         if new_size > int(CFG.GRAFFITI_MAX_SIZE_BYTES):
             raise ValueError("file_too_large")
@@ -142,17 +158,6 @@ class ArchivistDatabase:
         path = bin_path if os.path.isfile(bin_path) else part_path
 
         if not os.path.isfile(path):
-            inc_dir = self._incoming_dir()
-            if os.path.isdir(inc_dir):
-                try:
-                    for fname in os.listdir(inc_dir):
-                        if fname.startswith(gid):
-                            path = os.path.join(inc_dir, fname)
-                            break
-                except OSError:
-                    pass
-
-        if not os.path.isfile(path):
             return None
         with open(path, "rb") as f:
             data = f.read()
@@ -180,17 +185,6 @@ class ArchivistDatabase:
         src_path = bin_path if os.path.isfile(bin_path) else part_path
 
         if not os.path.isfile(src_path):
-            inc_dir = self._incoming_dir()
-            if os.path.isdir(inc_dir):
-                try:
-                    for fname in os.listdir(inc_dir):
-                        if fname.startswith(gid):
-                            src_path = os.path.join(inc_dir, fname)
-                            break
-                except OSError:
-                    pass
-
-        if not os.path.isfile(src_path):
             return False
 
         final_path = self._final_blob_path(gid)
@@ -201,7 +195,7 @@ class ArchivistDatabase:
             os.replace(src_path, final_path)
         except OSError:
             with open(src_path, "rb") as sf, open(final_path, "wb") as df:
-                df.write(sf.read())
+                shutil.copyfileobj(sf, df, length=64 * 1024)
             try:
                 os.remove(src_path)
             except OSError:
@@ -226,16 +220,6 @@ class ArchivistDatabase:
         bin_path = self._incoming_bin_path(gid)
         part_path = self._incoming_part_path(gid)
         path = bin_path if os.path.isfile(bin_path) else part_path
-        if not os.path.isfile(path):
-            inc_dir = self._incoming_dir()
-            if os.path.isdir(inc_dir):
-                try:
-                    for fname in os.listdir(inc_dir):
-                        if fname.startswith(gid):
-                            path = os.path.join(inc_dir, fname)
-                            break
-                except OSError:
-                    pass
         if os.path.isfile(path):
             try:
                 with open(path, "rb") as f:
@@ -262,17 +246,6 @@ class ArchivistDatabase:
         if not self.enable_blobs:
             raise RuntimeError("blobs_disabled")
         if incoming:
-            inc_dir = self._incoming_dir()
-            if os.path.isdir(inc_dir):
-                try:
-                    for fname in os.listdir(inc_dir):
-                        if fname.startswith(gid):
-                            try:
-                                os.remove(os.path.join(inc_dir, fname))
-                            except OSError:
-                                pass
-                except OSError:
-                    pass
             for path in (self._incoming_part_path(gid), self._incoming_bin_path(gid)):
                 if os.path.isfile(path):
                     try:
@@ -286,6 +259,47 @@ class ArchivistDatabase:
                     os.remove(final_path)
                 except OSError:
                     pass
+
+    # ---------------- Payout Guard KV Store Integration ----------------
+    def load_payout_guard(self) -> dict:
+        if not self.enable_index or not getattr(self, "_kv_guard", None):
+            return dict(self._mem_guard)
+        guard: dict = {}
+        for k, v in _iter_prefix(self._kv_guard, "guard", b""):
+            raw_k = k.decode("utf-8")
+            art_id = raw_k[6:] if raw_k.startswith("guard:") else raw_k
+            try:
+                entry = json.loads(v.decode("utf-8"))
+                if isinstance(entry, dict):
+                    epoch = int(entry.get("epoch", -1))
+                    ts = int(entry.get("ts", 0))
+                    status = str(entry.get("status") or "error").lower()
+                    guard[art_id] = {"epoch": epoch, "ts": ts, "status": status}
+            except Exception:
+                pass
+        return guard
+
+    def save_payout_guard(self, guard_data: dict) -> None:
+        if not self.enable_index or not getattr(self, "_kv_guard", None):
+            self._mem_guard = dict(guard_data or {})
+            return
+        ops = []
+        for art_id, entry in (guard_data or {}).items():
+            ops.append((str(art_id).encode("utf-8"), json.dumps(entry).encode("utf-8")))
+        if ops:
+            self._kv_guard.put_batch("guard", ops)
+
+    def cleanup_expired_payout_guards(self, max_age_seconds: int = 30 * 86400) -> int:
+        if not self.enable_index or not getattr(self, "_kv_guard", None):
+            return 0
+        now = int(time.time())
+        cutoff = now - int(max_age_seconds)
+        current = self.load_payout_guard()
+        cleaned = {k: v for k, v in current.items() if int(v.get("ts", 0)) >= cutoff}
+        removed = len(current) - len(cleaned)
+        if removed > 0:
+            self.save_payout_guard(cleaned)
+        return removed
 
     def cleanup_expired_incoming(self, max_age_seconds: int = 7200) -> int:
         """
@@ -312,10 +326,10 @@ class ArchivistDatabase:
         return cleaned
 
     # ---------------- KV helpers ----------------
-    def _open_store(self, path: str):
+    def _open_store(self, path: str, init_size: int | None = None, max_size: int | None = None):
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        init_size = int(CFG.STORAGE_SIZE_INIT)
-        max_size = int(CFG.STORAGE_MAX_BYTES)
+        init_size = int(init_size or CFG.STORAGE_SIZE_INIT)
+        max_size = int(max_size or CFG.STORAGE_MAX_BYTES)
 
         if os.path.isfile(path):
             try:
@@ -349,6 +363,12 @@ class ArchivistDatabase:
 
     def _incoming_bin_path(self, gid: str) -> str:
         return os.path.join(self._incoming_dir(), f"{gid}.bin")
+
+    def get_incoming_bin_path(self, gid: str) -> str:
+        return self._incoming_bin_path(gid)
+
+    def get_incoming_part_path(self, gid: str) -> str:
+        return self._incoming_part_path(gid)
 
 
 __all__ = ["ArchivistDatabase"]

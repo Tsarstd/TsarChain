@@ -74,6 +74,10 @@ def get_art(self, message, pow_obj, base_identity, *,
 @benchmark(label="GET_PAYOUTS", threshold_ms=15.0)
 def get_payouts(self, message, pow_obj, base_identity, *,
                      client_ip, **kwargs): #NOTE : not used yet
+
+    # Temporary block to avoid unnecessary load until future activation
+    return {"type": "GRAFFITI_GET_PAYOUTS", "error": "endpoint_temporarily_disabled"}
+'''
     ok, pow_resp = _check_graffiti_pow(self, client_ip, base_identity, pow_obj)
     if not ok:
         return pow_resp
@@ -87,7 +91,7 @@ def get_payouts(self, message, pow_obj, base_identity, *,
     payouts = reg.list_payouts(art_id, limit) if reg else []
     
     return {"type": "GRAFFITI_GET_PAYOUTS", "art_id": art_id, "payouts": payouts}
-
+'''
 
 # =============================================================================
 # INTERNAL METHOD

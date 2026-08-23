@@ -55,7 +55,7 @@ def rpc_receipt(client, txid: str):
     if isinstance(tx_data, dict) and tx_data.get("error"):
         return {"status": "error", "message": f"Failed to fetch transaction: {tx_data.get('error')}"}
     
-    output_dir = "data/web/receipts"
+    output_dir = CFG.WEB_RECEIPTS_DIR
     receipt_gen = build_receipt.PaymentReceiptGenerator(output_dir)
     result = receipt_gen.generate_receipt_base64(tx_data)
     if result.get("status") == "success" and txid_norm:
@@ -118,7 +118,7 @@ def rpc_history_book(client, address: str):
             "message": f"History Book requires at least 20 transactions (found {total_txs})."
         }
     
-    output_dir = "data/web/history_books"
+    output_dir = CFG.WEB_HISTORY_BOOKS_DIR
     hb_gen = build_history_book.HistoryBookGenerator(output_dir)
     result = hb_gen.generate_history_book_base64(tx_data)
     if result.get("status") == "success" and addr_norm:
@@ -193,19 +193,25 @@ def rpc_block_range(client, opts: dict):
             
             missing_count = limit - len(storage_result["items"])
             if missing_count > 0:
-                next_start = start_height_int + len(storage_result["items"])
-                rpc_resp = rpc_client._rpc_send(client, {
-                    "type": "GET_BLOCK_RANGE", 
-                    "start_height": next_start, 
-                    "limit": missing_count
-                })
-                
-                if isinstance(rpc_resp, dict) and "items" in rpc_resp:
-                    new_items = rpc_resp.get("items", [])
-                    db_blocks.save_blocks_to_storage(new_items)
-                    storage_result["items"].extend(new_items)
-                    storage_result["has_more"] = rpc_resp.get("has_more", False)
-                    storage_result["next_height"] = rpc_resp.get("next_height")
+                next_start = start_height_int - len(storage_result["items"])
+                if next_start >= 0:
+                    rpc_resp = rpc_client._rpc_send(client, {
+                        "type": "GET_BLOCK_RANGE", 
+                        "start_height": next_start, 
+                        "limit": missing_count
+                    })
+                    
+                    if isinstance(rpc_resp, dict) and "items" in rpc_resp:
+                        new_items = rpc_resp.get("items", [])
+                        db_blocks.save_blocks_to_storage(new_items)
+                        storage_result["items"].extend(new_items)
+                        storage_result["has_more"] = rpc_resp.get("has_more", False)
+                        storage_result["next_height"] = rpc_resp.get("next_height", -1)
+                        if rpc_resp.get("tip_height") is not None:
+                            storage_result["tip_height"] = rpc_resp.get("tip_height")
+                else:
+                    storage_result["has_more"] = False
+                    storage_result["next_height"] = -1
                 return storage_result   
             
         except ValueError:
@@ -335,9 +341,9 @@ def rpc_graffiti_posts(client, opts: dict):
         error_ttl = db_cache.get_error_cache_ttl(resp.get("error") if isinstance(resp, dict) else None)
         cache_ok = error_ttl is not None
     if isinstance(resp, dict) and resp.get("type") == "GRAFFITI_GET_POSTS":
-        out = {"posts": resp.get("posts") or [], "limit": limit, "offset": offset}
+        out = {"posts": resp.get("posts") or [], "limit": limit, "offset": offset, "total": resp.get("total", 0)}
     else:
-        out = {"posts": [], "limit": limit, "offset": offset}
+        out = {"posts": [], "limit": limit, "offset": offset, "total": 0}
     if cache_ok:
         rpc_client._cache_set(key, out, error_ttl)
     return out

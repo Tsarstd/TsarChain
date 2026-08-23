@@ -89,10 +89,20 @@ class SendTab:
             self.amount_entry.config(fg=self.palette["accent"])
         self._refresh_state()
 
-    def set_opret_hex(self, opret_hex: str) -> None:
-        self._opret_hex = (opret_hex or '').strip().lower()
-        b = bytes.fromhex(self._opret_hex) if self._opret_hex else b''
+    def set_opret_hex(self, opret_hex: str | None, for_recipient: str | None = None) -> None:
+        raw = (opret_hex or '').strip().lower()
+        if not raw:
+            self._opret_hex = None
+            self._opret_recipient = None
+            return
+        self._opret_hex = raw
+        self._opret_recipient = (for_recipient or self.to_var.get() or "").strip().lower()
+        b = bytes.fromhex(self._opret_hex)
         self._append_log(f"[graffiti] OP_RETURN prepared ({len(b)} bytes)")
+
+    def clear_opret_hex(self) -> None:
+        self._opret_hex = None
+        self._opret_recipient = None
 
 
     def __init__(
@@ -221,7 +231,8 @@ class SendTab:
 
     def on_wallets_changed(self, wallets: Sequence[str]) -> None:
         values = list(wallets or [])
-        self.from_combo["values"] = values
+        if self.from_combo is not None:
+            self.from_combo["values"] = values
         cur = (self.from_var.get() or "")
         if not values:
             self.from_var.set("")
@@ -623,6 +634,12 @@ class SendTab:
         if not is_dst_valid:
             ok = False
 
+        # Auto-clear OP_RETURN payload if user changes the recipient address
+        cur_to = (self.to_var.get() or "").strip().lower()
+        if getattr(self, "_opret_recipient", None) and cur_to != self._opret_recipient:
+            self._opret_hex = None
+            self._opret_recipient = None
+
         if not is_amt_valid:
             ok = False
 
@@ -704,6 +721,7 @@ class SendTab:
         _extra = {}
         if 'opret_hex' in inspect.signature(self.svc.create_sign_broadcast).parameters and getattr(self, '_opret_hex', None):
             _extra['opret_hex'] = self._opret_hex
+            self._opret_hex = None  # Consume single-use OP_RETURN payload
         self.svc.create_sign_broadcast(
             from_addr=src,
             to_addr=dst,
@@ -726,9 +744,12 @@ class SendTab:
                 self.root.config(cursor="")
             finally:
                 after()
+            return None
         return _u
 
     def _after_send_done(self, src_addr: str) -> None:
+        self._opret_hex = None
+        self._opret_recipient = None
         self._refresh_spendable()
         self.amount_var.set("")
         self._set_amount_placeholder()

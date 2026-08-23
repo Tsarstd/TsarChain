@@ -60,11 +60,10 @@ def mock_config(monkeypatch):
 
     monkeypatch.setattr(bc_mod.CFG, "HASH_CACHE_MAX", 100)
     monkeypatch.setattr(bc_mod.CFG, "UTXO_FLUSH_INTERVAL", 10)
-    monkeypatch.setattr(bc_mod.CFG, "LMDB_CHAIN_DIR", "/tmp/non_existent_blocks.json")
-    monkeypatch.setattr(bc_mod.CFG, "LMDB_DATA_FILE", "/tmp/non_existent_lmdb")
+    monkeypatch.setattr(bc_mod.CFG, "NODE_DATA_DIR", "/tmp/non_existent_lmdb")
 
     monkeypatch.setattr(cs_mod.CFG, "LMDB_CHAIN_DIR", "/tmp/non_existent_blocks.json")
-    monkeypatch.setattr(cs_mod.CFG, "LMDB_DATA_FILE", "/tmp/non_existent_lmdb")
+    monkeypatch.setattr(cs_mod.CFG, "NODE_DATA_DIR", "/tmp/non_existent_lmdb")
     monkeypatch.setattr(cs_mod.CFG, "BLOCK_BACKUP_SNAPSHOT", 0)
     yield bc_mod.CFG
 
@@ -436,3 +435,18 @@ def test_reload_chain_from_kv_block_from_dict_fails(mock_config, mock_kv, mock_b
         result = bc._reload_chain_from_kv()
         assert result is False
         assert bc.chain == []
+
+
+def test_blockchain_expected_bits_proxy():
+    """Verify Blockchain._expected_bits_on_prefix proxies to DifficultyManager."""
+    with patch('tsarchain.consensus.blockchain.BlockValidator'), \
+         patch('tsarchain.consensus.blockchain.ChainOperations'), \
+         patch('tsarchain.consensus.blockchain.ChainStorage'):
+        bc = Blockchain()
+        mock_diff = MagicMock()
+        mock_diff._expected_bits_on_prefix.return_value = 0x1d00ffff
+        bc.difficulty_manager = mock_diff
+
+        result = bc._expected_bits_on_prefix(["dummy_block"], 5)
+        assert result == 0x1d00ffff
+        mock_diff._expected_bits_on_prefix.assert_called_once_with(["dummy_block"], 5)

@@ -73,7 +73,6 @@ def mock_cfg():
         m.MAX_HANDSHAKE_BYTES = 16384
         m.CANONICAL_SEP = (",", ":")
         m.DEFAULT_NET_ID = "testnet"
-        m.NODE_KEY_PATH = "data/node.key"
         m.HANDSHAKE_TIMEOUT = 10
         m.BAN_MALICIOUS_RPC = 600
         m.P2P_SESSION_TTL_S = 3600
@@ -417,19 +416,8 @@ class TestLoadOrCreateKeypair:
             assert pub == "pub1"
             assert priv == "priv1"
 
-    def test_load_from_file(self, mock_cfg):
-        record_data = {"id": "nid2", "pubkey": "pub2", "privkey": "priv2"}
-        with patch("tsarchain.network.protocol.load_node_key", return_value=None), \
-             patch("os.path.exists", return_value=True), \
-             patch("builtins.open", mock_open(read_data=json.dumps(record_data))), \
-             patch("tsarchain.network.protocol.save_node_key") as m_save:
-            nid, pub, priv = load_or_create_keypair_at("some/path")
-            assert nid == "nid2"
-            m_save.assert_called_once()
-
     def test_create_new_key(self, mock_cfg):
         with patch("tsarchain.network.protocol.load_node_key", return_value=None), \
-             patch("os.path.exists", return_value=False), \
              patch("tsarchain.network.protocol.save_node_key") as m_save:
             nid, pub, priv = load_or_create_keypair_at("some/path")
             assert len(nid) == 64  # sha256 hex
@@ -437,42 +425,15 @@ class TestLoadOrCreateKeypair:
             assert len(priv) == 64  # ed25519 privkey hex
             m_save.assert_called_once()
 
-    def test_create_new_key_no_node_key_path(self, mock_cfg):
-        """When NODE_KEY_PATH is empty, should still work with file-based fallback."""
-        mock_cfg.NODE_KEY_PATH = ""
-        with patch("tsarchain.network.protocol.load_node_key", return_value=None), \
-             patch("os.path.exists", return_value=False), \
-             patch("os.path.normpath", return_value=""), \
-             patch("builtins.open", mock_open()), \
-             patch("os.chmod") as m_chmod, \
-             patch("tsarchain.network.protocol.save_node_key") as m_save:  # <- Mock save_node_key
-            nid, pub, priv = load_or_create_keypair_at("")
-            assert len(nid) == 64
-            m_save.assert_not_called()
-            m_chmod.assert_called_once()
-
-    def test_load_from_file_no_node_key_path(self, mock_cfg):
-        """When NODE_KEY_PATH is empty, reads from file without calling save_node_key."""
-        mock_cfg.NODE_KEY_PATH = ""
-        record_data = {"id": "nid3", "pubkey": "pub3", "privkey": "priv3"}
-        with patch("tsarchain.network.protocol.load_node_key", return_value=None), \
-             patch("os.path.exists", return_value=True), \
-             patch("os.path.normpath", return_value=""), \
-             patch("builtins.open", mock_open(read_data=json.dumps(record_data))), \
-             patch("tsarchain.network.protocol.save_node_key") as m_save:
-            nid, pub, priv = load_or_create_keypair_at("")
-            assert nid == "nid3"
-            m_save.assert_not_called()
-
-    def test_load_from_storage_incomplete_record(self, mock_cfg):
-        """Incomplete record from storage should fall through to file."""
-        record_data = {"id": "nid4", "pubkey": "pub4", "privkey": "priv4"}
+    def test_load_from_storage_incomplete_record_creates_new(self, mock_cfg):
+        """Incomplete record from storage should trigger generation of a new valid keypair."""
         with patch("tsarchain.network.protocol.load_node_key", return_value={"id": "nid_only"}), \
-             patch("os.path.exists", return_value=True), \
-             patch("builtins.open", mock_open(read_data=json.dumps(record_data))), \
-             patch("tsarchain.network.protocol.save_node_key"):
+             patch("tsarchain.network.protocol.save_node_key") as m_save:
             nid, pub, priv = load_or_create_keypair_at("some/path")
-            assert nid == "nid4"
+            assert len(nid) == 64
+            assert len(pub) == 64
+            assert len(priv) == 64
+            m_save.assert_called_once()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

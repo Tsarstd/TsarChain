@@ -4,6 +4,7 @@
 
 import json
 import time
+import struct
 
 from ...core.tx import TxOut
 from ...utils import config as CFG
@@ -119,10 +120,17 @@ class UTXODatabaseMixin:
             parts = key.split(":")
             if len(parts) != 2:
                 continue
-            txid, index = parts[0], parts[1]
-            index = int(index)
-            obj = json.loads(v.decode('utf-8'))
-            nested.setdefault(txid, {})[index] = obj
+            txid, index = parts[0], int(parts[1])
+            if len(v) < 19:
+                continue
+            amount, is_cb, block_height, spk_len = struct.unpack_from("<Q?qH", v, 0)
+            spk_hex = v[19:19 + spk_len].hex()
+            entry = {
+                "tx_out": {"amount": amount, "script_pubkey": spk_hex},
+                "is_coinbase": is_cb,
+                "block_height": block_height,
+            }
+            nested.setdefault(txid, {})[index] = entry
         return nested
 
 
@@ -132,17 +140,18 @@ class UTXODatabaseMixin:
                 self._meta = json.loads(v.decode('utf-8')) or {}
                 continue
             key = k.decode('utf-8')
-            obj = json.loads(v.decode('utf-8'))
-            txo = obj.get('tx_out') or obj
-            if isinstance(txo, dict) and 'amount' in txo and 'script_pubkey' in txo:
-                tx_out = TxOut.from_dict(txo)
-                if self._is_unspendable_opreturn(tx_out):
-                    continue
-                self.utxos[key] = {
-                    'tx_out': tx_out,
-                    'is_coinbase': bool(obj.get('is_coinbase', False)),
-                    'block_height': int(obj.get('block_height', 0)),
-                }
+            if len(v) < 19:
+                continue
+            amount, is_cb, block_height, spk_len = struct.unpack_from("<Q?qH", v, 0)
+            spk_hex = v[19:19 + spk_len].hex()
+            tx_out = TxOut.from_dict({"amount": amount, "script_pubkey": spk_hex})
+            if self._is_unspendable_opreturn(tx_out):
+                continue
+            self.utxos[key] = {
+                'tx_out': tx_out,
+                'is_coinbase': bool(is_cb),
+                'block_height': int(block_height),
+            }
 
 
     def _load(self, *, force: bool = False):
@@ -170,8 +179,21 @@ class UTXODatabaseMixin:
                 entry = self.utxos.get(key)
                 if entry is None:
                     continue
-                payload = self._serialize_entry(entry)
-                b.put(key.encode('utf-8'), json.dumps(payload, separators=CFG.CANONICAL_SEP).encode('utf-8'))
+                tx_out = entry.get("tx_out")
+                amt = int(getattr(tx_out, "amount", 0))
+                spk = getattr(tx_out, "script_pubkey", b"")
+                if hasattr(spk, "serialize"):
+                    spk_bytes = spk.serialize()
+                elif isinstance(spk, (bytes, bytearray)):
+                    spk_bytes = bytes(spk)
+                elif isinstance(spk, str):
+                    spk_bytes = bytes.fromhex(spk)
+                else:
+                    spk_bytes = b""
+                is_cb = bool(entry.get("is_coinbase", False))
+                h = int(entry.get("block_height", 0))
+                payload = struct.pack("<Q?qH", amt, is_cb, h, len(spk_bytes)) + spk_bytes
+                b.put(key.encode('utf-8'), payload)
             if not rewrite and self._removed_keys:
                 for key in self._removed_keys:
                     b.delete(key.encode('utf-8'))
