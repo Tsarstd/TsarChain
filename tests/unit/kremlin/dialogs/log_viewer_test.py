@@ -4,6 +4,7 @@
 
 import queue
 import logging
+import pytest
 from unittest.mock import patch, MagicMock
 
 from kremlin.dialogs.log_viewer import (
@@ -20,17 +21,29 @@ def test_tk_log_handler():
     assert q.qsize() == 1
 
 
-def test_tsar_log_viewer_lifecycle_and_features():
+def test_tsar_log_viewer_lifecycle_and_features(tmp_path):
+    dummy_log = tmp_path / "dummy.log"
+    dummy_log.write_text("[INFO] test log line\n", encoding="utf-8")
+    dummy_zip = tmp_path / "dummy.zip"
+
     with patch("kremlin.dialogs.log_viewer.tk") as mock_tk, \
          patch("kremlin.dialogs.log_viewer.ttk"), \
-         patch("kremlin.dialogs.log_viewer.filedialog"), \
-         patch("kremlin.dialogs.log_viewer.messagebox"):
-        
+         patch("kremlin.dialogs.log_viewer.filedialog") as mock_filedialog, \
+         patch("kremlin.dialogs.log_viewer.messagebox"), \
+         patch("kremlin.dialogs.log_viewer.os.system") as mock_os_system, \
+         patch("kremlin.dialogs.log_viewer.os.startfile", create=True) as mock_startfile, \
+         patch("kremlin.dialogs.log_viewer.threading.Thread") as mock_thread, \
+         patch("kremlin.dialogs.log_viewer.export_log_bundle") as mock_export_bundle:
+
         mock_tk.BooleanVar = MagicMock()
         mock_tk.StringVar = MagicMock()
+        mock_filedialog.askopenfilename.return_value = str(dummy_log)
+        mock_filedialog.asksaveasfilename.return_value = str(dummy_zip)
+        mock_export_bundle.return_value = dummy_zip
+
         master = MagicMock()
         q = queue.Queue()
-        
+
         # Initialize viewer
         viewer = TsarLogViewer(
             master,
@@ -38,7 +51,7 @@ def test_tsar_log_viewer_lifecycle_and_features():
             attach_to_root=True,
             filter_queue=queue.Queue()
         )
-        
+
         # Test line parsing
         msg, lvl, mod = viewer._decode_line("[INFO] tsarchain.network: Hello")
         assert lvl == "Info"
@@ -65,35 +78,69 @@ def test_tsar_log_viewer_lifecycle_and_features():
         # Test actions (Clear All, Open Folder, Export)
         viewer.clear_all()
         viewer.open_log_folder()
-        viewer.choose_file()
-        viewer.export_logs()
+        assert mock_os_system.called or mock_startfile.called
 
-        # Close
+        viewer.choose_file()
+        assert viewer.tail_path is not None
+
+        viewer.export_logs()
+        assert mock_thread.called
+
+        # Test export worker execution synchronously
+        viewer._export_worker(str(dummy_zip))
+        assert mock_export_bundle.called
+
+        # Test export worker error handling
+        mock_export_bundle.side_effect = RuntimeError("Disk full")
+        viewer._export_worker(str(dummy_zip))
+
+        # Close and verify cleanup
         viewer._on_close()
+        assert viewer._stop_event.is_set()
 
 
 def test_open_log_toplevel_and_gui_launchers():
     with patch("kremlin.dialogs.log_viewer.tk") as mock_tk, \
-         patch("kremlin.dialogs.log_viewer.TsarLogViewer"):
-        
+         patch("kremlin.dialogs.log_viewer.TsarLogViewer") as mock_viewer:
+
         mock_tk.Tk.return_value = MagicMock()
         mock_tk.Toplevel.return_value = MagicMock()
 
         # 1) Open log toplevel
         win = open_log_toplevel(MagicMock(), log_file="test.log")
         assert win is not None
+        assert mock_viewer.called
 
         # 2) Start log GUI
-        start_log_gui(log_file="test.log")
+        mock_root = MagicMock()
+        mock_tk.Tk.return_value = mock_root
+        start_log_gui(log_file="test.log", title="Custom Title")
+        mock_root.title.assert_called_with("Custom Title")
+        mock_root.mainloop.assert_called_once()
 
-        # 3) Launch GUI in thread
+    # 3) Launch GUI in thread (start_log_gui mocked to prevent GUI spawn and mainloop lock)
+    with patch("kremlin.dialogs.log_viewer.start_log_gui") as mock_start_gui:
         th = launch_gui_in_thread(log_file="test.log")
-        th.join(0.1)
+        th.join(timeout=2.0)
+        assert not th.is_alive()
+        mock_start_gui.assert_called_once_with(log_file="test.log")
 
 
-def test_export_log_bundle():
+def test_open_log_toplevel_and_start_gui_no_tk():
+    with patch("kremlin.dialogs.log_viewer.tk", None):
+        with pytest.raises(RuntimeError, match="Tkinter is not"):
+            open_log_toplevel(MagicMock())
+
+        with pytest.raises(RuntimeError, match="Tkinter is not"):
+            start_log_gui()
+
+        with pytest.raises(RuntimeError, match="Tkinter is not"):
+            TsarLogViewer(MagicMock())
+
+
+def test_export_log_bundle(tmp_path):
+    bundle_path = tmp_path / "test_bundle.zip"
     with patch("kremlin.dialogs.log_viewer.zipfile.ZipFile"), \
          patch("kremlin.dialogs.log_viewer.Path.mkdir"):
-        path = export_log_bundle("test_bundle.zip")
+        path = export_log_bundle(str(bundle_path))
         assert path.name == "test_bundle.zip"
-
