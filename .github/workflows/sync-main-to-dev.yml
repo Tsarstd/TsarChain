@@ -6,6 +6,10 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: sync-main-to-dev
+  cancel-in-progress: false
+
 jobs:
   sync:
     name: Sync main into dev branch
@@ -26,14 +30,14 @@ jobs:
 
       - name: Merge main into dev
         run: |
-          echo "Switching to dev branch..."
-          git checkout dev
-          
-          echo "Pulling latest changes on dev..."
-          git pull origin dev
-          
-          echo "Merging origin/main into dev..."
+          echo "==> Fetching latest branches from remote..."
+          git fetch origin main dev
+
+          echo "==> Switching to dev branch..."
+          git checkout -B dev origin/dev
+
+          echo "==> Merging origin/main into dev..."
           git merge origin/main --no-edit -m "chore(sync): auto-merge main into dev [skip ci]"
-          
-          echo "Pushing merged changes to dev..."
+
+          echo "==> Pushing synchronized changes to dev..."
           git push origin dev
