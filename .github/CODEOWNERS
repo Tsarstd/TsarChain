@@ -1,33 +1,40 @@
-# Workflows and GitHub Settings
-.github/workflows/       @Tsarstd
-.github/                 @Tsarstd
+# ==============================================================================
+# Graffiti Protocol / TsarChain - CODEOWNERS Policy
+# ==============================================================================
 
-# Main App
+# Global
+*                        @Tsarstd
+
+# CI/CD Workflows & Repository Settings
+.github/                 @Tsarstd
+.github/workflows/       @Tsarstd
+
+# Root Dependencies, Security, & Environment Automation
+requirements.txt         @Tsarstd
+setup.sh                 @Tsarstd
+setup.ps1                @Tsarstd
+SECURITY.md              @Tsarstd
+CONTRIBUTING.md          @Tsarstd
+
+# Core Engine, Consensus, & Applications
+src/tsarchain/           @Tsarstd
+src/kremlin/             @Tsarstd
+src/archivist/           @Tsarstd
 apps/                    @Tsarstd
 
-# Core Consensus
-src/tsarchain/           @Tsarstd
+# Rust Core Native Module (Source, Cargo configs, and Tests)
+tsarcore_native/         @Tsarstd
 
-# Kremlin Wallet
-src/kremlin/             @Tsarstd
+# Web Services & API
+src/web/                 @Tsarstd
 
-# Archivist Node
-src/archivist/           @Tsarstd
-
-# Website
-src/web/Backend/         @Tsarstd
-src/web/Frontend/        @Tsarstd
-
-# Rust Native
-tsarcore_native/src/     @Tsarstd
-
-# Unit Tests (Python & Rust)
+# Unit & Integration Tests (Python)
 tests/                   @Tsarstd
-tsarcore_native/tests/   @Tsarstd
 
-# Tools, Docs, etc.
-docs/                    @Tsarstd
+# Automation Scripts, Benchmarks, Tools, & Documentation
+scripts/                 @Tsarstd
 benchmarks/              @Tsarstd
 tools/                   @Tsarstd
+docs/                    @Tsarstd
 assets/                  @Tsarstd
 log_samples/             @Tsarstd
