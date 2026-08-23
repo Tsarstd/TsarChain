@@ -51,7 +51,8 @@ from tsarchain.utils import config as CFG
 from tsarchain.storage.kv import iter_prefix, batch
 
 # ---------------- Logger ----------------
-from tsarchain.utils.tsar_logging import setup_logging, open_log_toplevel, get_ctx_logger
+from tsarchain.utils.tsar_logging import setup_logging, get_ctx_logger
+from kremlin.dialogs.log_viewer import open_log_toplevel
 log = get_ctx_logger("tsarchain.wallet.gui")
 
 # ---------------- Constants & Paths ----------------

@@ -52,6 +52,9 @@ export const architecture = {
 │   │   └── wallet_route.py                  # user RPC route
 │   │
 │   ├── kremlin/                            
+│   │   ├── dialogs/
+│   │   │   └── log_viewer.py                # Log viewer GUI dialog
+│   │   │
 │   │   ├── security/
 │   │   │   ├── chat/
 │   │   │   │     ├── chat_common.py         # Helper & Common chat logic

@@ -42,3 +42,4 @@ tsarcore_native/cobertura.xml
 .DS_Store
 Thumbs.db
 dummy.log
+test.log
