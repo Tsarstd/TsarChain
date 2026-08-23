@@ -1,0 +1,41 @@
+name: Auto-Sync Main to Dev
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  sync:
+    name: Sync main into dev branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: dev
+
+      - name: Configure Git Identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge main into dev
+        run: |
+          echo "Fetching latest branches..."
+          git fetch origin main:main
+          git fetch origin dev:dev
+          
+          echo "Checking out dev..."
+          git checkout dev
+          
+          echo "Merging main into dev..."
+          git merge main -m "chore(sync): auto-merge main into dev [skip ci]"
+          
+          echo "Pushing changes to dev branch..."
+          git push origin dev
