@@ -41,13 +41,20 @@ import logging
 import zipfile
 import platform
 import threading
-import tkinter as tk
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 from collections import deque
-from tkinter import ttk, filedialog, messagebox
 from logging.handlers import RotatingFileHandler
+
+try:
+    import tkinter as tk
+    from tkinter import ttk, filedialog, messagebox
+except ImportError:
+    tk = None  # type: ignore
+    ttk = None  # type: ignore
+    filedialog = None  # type: ignore
+    messagebox = None  # type: ignore
 
 from tsarchain.utils import config as CFG
 
@@ -222,7 +229,7 @@ class TsarLogViewer:
         ("Critical",  logging.CRITICAL),
     ]
 
-    def __init__(self, master: "tk.Tk", *, queue_: "queue.Queue[logging.LogRecord] | None", 
+    def __init__(self, master: Any, *, queue_: "queue.Queue[logging.LogRecord] | None", 
                 log_file: Optional[str] = None, attach_to_root: bool = True,
                 filter_queue: "queue.Queue[str] | None" = None):
         self.master = master
@@ -285,7 +292,7 @@ class TsarLogViewer:
         self.nb = ttk.Notebook(container)
         self.nb.pack(fill=tk.BOTH, expand=True)
 
-        self.text_widgets: dict[str, "tk.Text"] = {}
+        self.text_widgets: dict[str, Any] = {}
         for (name, _) in self.LEVELS:
             frame = ttk.Frame(self.nb)
             self.nb.add(frame, text=f"{name} (0)")
@@ -475,7 +482,7 @@ class TsarLogViewer:
             else:
                 self._set_status(f"Clear UI only (file erase failed: {e})")
                 
-    def _install_readonly(self, text: tk.Text):
+    def _install_readonly(self, text: Any):
         def _block(_): return "break"
 
         for seq in ("<<Cut>>", "<<Paste>>", "<<Clear>>"):
