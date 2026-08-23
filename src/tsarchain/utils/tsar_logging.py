@@ -54,10 +54,10 @@ def _trace(self, msg, *a, **k):
 logging.Logger.trace = _trace  # type: ignore
 
 # Default formats
-if getattr(CFG, "LOG_SHOW_PROCESS", False):
+if CFG.LOG_SHOW_PROCESS:
     _DEFAULT_FMT = "%(asctime)s [%(levelname)s] %(processName)s %(name)s: %(message)s"
 else:
-    _proc_placeholder = getattr(CFG, "LOG_PROC_PLACEHOLDER", "-")
+    _proc_placeholder = CFG.LOG_PROC_PLACEHOLDER
     _DEFAULT_FMT = f"%(asctime)s [%(levelname)s] {_proc_placeholder} %(name)s: %(message)s"
 _DEFAULT_DATEFMT = "%Y-%m-%d %H:%M:%S"
 
@@ -182,8 +182,8 @@ class RateLimitFilter(logging.Filter):
 class JsonFormatter(logging.Formatter):
     """Structured JSON log formatter with context metadata."""
     def format(self, record: logging.LogRecord) -> str:
-        show_proc = getattr(CFG, "LOG_SHOW_PROCESS", False)
-        proc_placeholder = getattr(CFG, "LOG_PROC_PLACEHOLDER", "-")
+        show_proc = CFG.LOG_SHOW_PROCESS
+        proc_placeholder = CFG.LOG_PROC_PLACEHOLDER
 
         d: dict[str, Any] = {
             "ts": self.formatTime(record, _DEFAULT_DATEFMT),
@@ -262,19 +262,19 @@ def setup_logging(
     Configure global TsarChain logging with file rotation and optional console output.
     """
     if level is None:
-        level = getattr(CFG, "LOG_LEVEL", "INFO")
+        level = CFG.LOG_LEVEL
     if to_console is None:
-        to_console = bool(getattr(CFG, "LOG_TO_CONSOLE", False))
+        to_console = bool(CFG.LOG_TO_CONSOLE)
     if rotate_max_bytes is None:
-        rotate_max_bytes = int(getattr(CFG, "LOG_ROTATE_MAX_BYTES", 10_000_000))
+        rotate_max_bytes = int(CFG.LOG_ROTATE_MAX_BYTES)
     if backup_count is None:
-        backup_count = int(getattr(CFG, "LOG_BACKUP_COUNT", 7))
-    enable_redact = bool(getattr(CFG, "FILTER_REDAX", False))
+        backup_count = int(CFG.LOG_BACKUP_COUNT)
+    enable_redact = bool(CFG.FILTER_REDAX)
 
     handlers: list[logging.Handler] = []
-    as_json = str(getattr(CFG, "LOG_FORMAT", "plain")).lower() == "json"
-    rate_seconds_console = float(getattr(CFG, "LOG_RATE_LIMIT_SECONDS", 0.0))
-    rate_seconds_file    = float(getattr(CFG, "LOG_FILE_RATE_LIMIT_SECONDS", 0.0))
+    as_json = str(CFG.LOG_FORMAT).lower() == "json"
+    rate_seconds_console = float(CFG.LOG_RATE_LIMIT_SECONDS)
+    rate_seconds_file    = float(CFG.LOG_FILE_RATE_LIMIT_SECONDS)
 
     # --- File handler ---
     if log_file:

@@ -81,11 +81,10 @@ import appdirs
 
 
 # =============================================================================
-# 1. MODE & APPLICATION
+# 1. RUNTIME PROFILE & APPLICATION
 # =============================================================================
 # ---- RUNTIME PROFILE ----
-MODE   = "dev"  # default runtime profile, switch to "prod" for live nodes
-IS_DEV = (MODE.lower() == "dev")  # cached boolean to simplify dev/prod toggles
+IS_DEV = True  # switch to False for live production nodes
 
 
 # ---- APP METADATA ----
@@ -193,7 +192,7 @@ STATE_HEIGHT_CACHE_TTL  = 2.0  # height for utxo validation & cache
 NET_ID_DEV     = "gulag-net"  # dev network identifier string advertised on handshake
 NET_ID_PROD    = "sputnik-net"  # production network identifier string
 ADDRESS_PREFIX = "tsar"  # bech32-style prefix for wallet addresses
-DEFAULT_NET_ID = NET_ID_DEV if IS_DEV else NET_ID_PROD  # active network id chosen from MODE
+DEFAULT_NET_ID = NET_ID_DEV if IS_DEV else NET_ID_PROD  # active network id chosen from IS_DEV
 NETWORK_MAGIC  = b"TSARCHAIN"  # handshake magic to avoid cross-network chatter
 ZERO_HASH      = b"\x00" * 32  # convenience zero-hash constant for comparisons
 CANONICAL_SEP  = (",", ":")  # tuple of separators used when building canonical ids
@@ -394,6 +393,7 @@ SYNC_TIMEOUT             = 15  # seconds before abandoning slow sync requests
 CONNECT_TIMEOUT          = 2  # TCP dial timeout per peer attempt
 BROADCAST_FAIL_THRESHOLD = 2  # consecutive failures before backing off broadcasting
 BROADCAST_FAIL_BACKOFF_S = 120  # seconds to wait when broadcast keeps failing
+GOSSIP_CONN_TTL          = 10.0  # seconds a cached gossip socket stays valid before cleanup
 
 
 # ---- ANTI-DOS LIMITS ----

@@ -115,7 +115,7 @@ class GossipHandler(BroadcastHandlerProxy):
             if fm:
                 self._failmap.pop(peer, None)
 
-            max_cache = max(1, min(int(getattr(CFG, "MAX_OUTBOUND_PEERS", 16) * 2), 64))
+            max_cache = max(1, min(int(CFG.MAX_OUTBOUND_PEERS * 2), 64))
             with cache_lock:
                 cache[peer] = {"sock": sock, "chan": chan, "ts": time.time()}
                 while len(cache) > max_cache:
@@ -150,7 +150,7 @@ class GossipHandler(BroadcastHandlerProxy):
 
     def _get_cached_connection(self, peer: Tuple[str, int], cache: OrderedDict, cache_lock: threading.RLock) -> Optional[Dict[str, Any]]:
         now = time.time()
-        cache_ttl = max(1.0, float(getattr(CFG, "GOSSIP_CONN_TTL", 10.0)))
+        cache_ttl = max(1.0, float(CFG.GOSSIP_CONN_TTL))
         with cache_lock:
             e = cache.get(peer)
             if e and (now - e.get("ts", 0.0)) < cache_ttl:

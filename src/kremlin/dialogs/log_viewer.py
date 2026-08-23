@@ -409,7 +409,7 @@ class TsarLogViewer:
             if self.tail_path and self.tail_path.exists():
                 base = self.tail_path.parent
             else:
-                base = Path(getattr(CFG, "DATA_DIR", "data")) / "logging"
+                base = Path("logging")
                 base.mkdir(parents=True, exist_ok=True)
 
             if sys.platform.startswith("win"):
@@ -673,10 +673,10 @@ def export_log_bundle(path: str = ZIP_BUNDLE) -> Path:
         z.writestr("log_info.txt", "\n".join([
             f"Python Version : {platform.python_version()}",
             f"Operation System : {platform.platform()}",
-            f"Mode : {getattr(CFG, 'MODE', 'UNKNOWN')}",
-            f"Log Level : {getattr(CFG, 'LOG_LEVEL', 'INFO')}",
-            f"Log Format : {getattr(CFG, 'LOG_FORMAT', 'plain')}",
-            f"Log Rate Limit/sec : {getattr(CFG, 'LOG_RATE_LIMIT_SECONDS', 0.0)}",
+            f"Mode : {'DEV' if CFG.IS_DEV else 'PROD'}",
+            f"Log Level : {CFG.LOG_LEVEL}",
+            f"Log Format : {CFG.LOG_FORMAT}",
+            f"Log Rate Limit/sec : {CFG.LOG_RATE_LIMIT_SECONDS}",
         ]))
         for rp, p in sorted(files_abs.items(), key=lambda kv: (kv[1].stem, kv[1].suffix)):
             try:
