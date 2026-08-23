@@ -118,7 +118,6 @@ def mock_block():
 def test_replace_with_success_higher_work(mocker, dummy_chain):
     """SCENARIO 1: Candidate chain has higher chainwork -> MUST SUCCEED"""
     # Mock CFG
-    mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', True)
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_REORG_LIMIT', False)
     
     # Local Chain Setup (work = 100)
@@ -143,7 +142,6 @@ def test_replace_with_success_higher_work(mocker, dummy_chain):
 
 def test_replace_with_fail_invalid_chain(mocker, dummy_chain):
     """SCENARIO 2: Candidate chain is invalid -> MUST RAISE ValueError"""
-    mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', False)
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_REORG_LIMIT', False)
     mocker.patch.object(dummy_chain.chain_ops, '_validate_complete_chain', return_value=False)
     other = DummyBlockchain()
@@ -155,7 +153,6 @@ def test_replace_with_fail_invalid_chain(mocker, dummy_chain):
 
 def test_replace_with_fail_lower_work(mocker, dummy_chain):
     """SCENARIO 3: Candidate chainwork is lower -> MUST RAISE ValueError"""
-    mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', True)
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_REORG_LIMIT', False)
     
     dummy_chain.chain = [MagicMock(), MagicMock()]
@@ -171,7 +168,6 @@ def test_replace_with_fail_lower_work(mocker, dummy_chain):
 
 def test_replace_with_fail_equal_work_shorter_height(mocker, dummy_chain):
     """SCENARIO 4: Same work, but candidate is shorter -> MUST RAISE"""
-    mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', True)
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_REORG_LIMIT', False)
     
     # Local Chain: height 5 (6 blocks)
@@ -189,7 +185,6 @@ def test_replace_with_fail_equal_work_shorter_height(mocker, dummy_chain):
 
 def test_replace_with_fail_equal_work_equal_height_hash_tie(mocker, dummy_chain):
     """SCENARIO 5: Work and height are the same, but the candidate hash is larger/loses -> MUST RAISE"""
-    mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', True)
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_REORG_LIMIT', False)
     
     # Local tip hash = 0xaaaa
@@ -212,7 +207,6 @@ def test_replace_with_fail_equal_work_equal_height_hash_tie(mocker, dummy_chain)
 
 def test_replace_with_fail_deep_reorg(mocker, dummy_chain):
     """SCENARIO 6: Depth of reorg exceeds the limit -> MUST RAISE"""
-    mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', False)
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_REORG_LIMIT', True)
     mocker.patch('tsarchain.consensus.chain_ops.CFG.REORG_LIMIT', 2)  # Maximum reorg 2 blocks
     
@@ -221,6 +215,7 @@ def test_replace_with_fail_deep_reorg(mocker, dummy_chain):
     other.chain = [MagicMock() for _ in range(10)]
     
     mocker.patch.object(dummy_chain.chain_ops, '_validate_complete_chain', return_value=True)
+    mocker.patch.object(dummy_chain, '_compute_chainwork_for_chain', side_effect=[200, 100]) # their=200, our=100
     # Mock a common ancestor so that the fork occurs at height 5, that means the reorg depth is (10 - 1) - 5 = 4.
     mocker.patch.object(dummy_chain, '_common_ancestor_height', return_value=5)
     
@@ -420,7 +415,6 @@ def test_add_block_prev_hash_mismatch(mocker):
 
 def test_swap_tip_if_better_success_higher_work(mocker):
     """Tip candidate with higher chainwork -> successful swap."""
-    mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', True)
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_REORG_LIMIT', False)
 
     bc = ExtendedDummyBlockchain()
@@ -441,7 +435,6 @@ def test_swap_tip_if_better_success_higher_work(mocker):
 
 def test_swap_tip_if_better_fail_lower_work(mocker):
     """Tip candidate with lower chainwork -> None."""
-    mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', True)
     bc = ExtendedDummyBlockchain()
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     block1 = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block1")
@@ -477,7 +470,6 @@ def test_swap_tip_if_better_fail_height_mismatch(mocker):
 
 def test_swap_tip_if_better_fail_invalid_candidate_chain(mocker):
     """Candidate chain validation fails -> None."""
-    mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', False)
     bc = ExtendedDummyBlockchain()
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     block1 = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block1")
@@ -489,7 +481,6 @@ def test_swap_tip_if_better_fail_invalid_candidate_chain(mocker):
 
 def test_swap_tip_if_better_equal_work_hash_tie_win(mocker):
     """Same Work: smaller candidate hash -> swap successful."""
-    mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', True)
     bc = ExtendedDummyBlockchain()
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     block1 = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block1")  # hash = b"block1"
@@ -504,7 +495,6 @@ def test_swap_tip_if_better_equal_work_hash_tie_win(mocker):
 
 def test_swap_tip_if_better_equal_work_hash_tie_lose(mocker):
     """Same Work: larger candidate hash -> None."""
-    mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', True)
     bc = ExtendedDummyBlockchain()
     block0 = create_mock_block(height=0, prev_hash=b"0000", hash_val=b"block0")
     block1 = create_mock_block(height=1, prev_hash=b"block0", hash_val=b"block1")
@@ -788,7 +778,6 @@ def test_validate_complete_chain_invalid_pow(mocker):
 
 def test_replace_with_persistent_mode(mocker):
     """replace_with should call save_chain, save_state, and rebuild UTXO."""
-    mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', True)
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_REORG_LIMIT', False)
 
     bc = ExtendedDummyBlockchain()
@@ -848,7 +837,6 @@ def test_add_block_persistent_mode(mocker):
 
 def test_swap_tip_if_better_persistent_mode(mocker):
     """swap_tip_if_better should call save_chain, save_state, and rebuild UTXO."""
-    mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_CHAINWORK_RULE', True)
     mocker.patch('tsarchain.consensus.chain_ops.CFG.ENABLE_REORG_LIMIT', False)
 
     bc = ExtendedDummyBlockchain()

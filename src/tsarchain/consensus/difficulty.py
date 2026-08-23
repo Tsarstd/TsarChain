@@ -64,8 +64,7 @@ class DifficultyManager:
         next_target = self._calculate_lwma_target(prefix, n, t)
         max_target  = bits_to_target(int(CFG.MAX_BITS))
         
-        if CFG.ENABLE_DIFF_CLAMP:
-            next_target = self._apply_diff_clamp(prefix, next_target, max_target)
+        next_target = self._apply_diff_clamp(prefix, next_target, max_target)
 
         if CFG.ENABLE_EDA:
             next_target = self._apply_eda(prefix, next_target, max_target, t)

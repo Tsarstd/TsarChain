@@ -42,9 +42,6 @@ class ChainStorage:
 
 
     def save_chain(self, *, force_full: bool = False):
-        if CFG.CHAIN_FORCE_FULL_FLUSH:
-            force_full = True
-
         backup_tip = None
         backup_ts = None
         with self.blockchain.lock:

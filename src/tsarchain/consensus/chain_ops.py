@@ -137,24 +137,23 @@ class ChainOperations:
         if not self._validate_complete_chain(other_chain.chain):
             raise ValueError("Cannot replace with invalid chain")
 
-        if CFG.ENABLE_CHAINWORK_RULE:
-            their_cw = self.blockchain._compute_chainwork_for_chain(other_chain.chain)
-            our_cw   = self.blockchain._compute_chainwork_for_chain(self.blockchain.chain)
-            if their_cw < our_cw:
-                raise ValueError("Reject: candidate chainwork < local")
-            if their_cw == our_cw:
-                their_h = len(other_chain.chain) - 1
-                our_h = len(self.blockchain.chain) - 1
-                if their_h < our_h:
-                    raise ValueError("Reject: candidate height < local at equal work")
-                if their_h == our_h:
-                    try:
-                        their_hash = other_chain.chain[-1].hash()
-                        our_hash = self.blockchain.chain[-1].hash()
-                        if their_hash >= our_hash:
-                            raise ValueError("Reject: candidate tie-break loses (hash)")
-                    except Exception:
-                        raise ValueError("Reject: candidate chainwork tie without deterministic tie-break")
+        their_cw = self.blockchain._compute_chainwork_for_chain(other_chain.chain)
+        our_cw   = self.blockchain._compute_chainwork_for_chain(self.blockchain.chain)
+        if their_cw < our_cw:
+            raise ValueError("Reject: candidate chainwork < local")
+        if their_cw == our_cw:
+            their_h = len(other_chain.chain) - 1
+            our_h = len(self.blockchain.chain) - 1
+            if their_h < our_h:
+                raise ValueError("Reject: candidate height < local at equal work")
+            if their_h == our_h:
+                try:
+                    their_hash = other_chain.chain[-1].hash()
+                    our_hash = self.blockchain.chain[-1].hash()
+                    if their_hash >= our_hash:
+                        raise ValueError("Reject: candidate tie-break loses (hash)")
+                except Exception:
+                    raise ValueError("Reject: candidate chainwork tie without deterministic tie-break")
 
         if CFG.ENABLE_REORG_LIMIT and self.blockchain.chain and other_chain.chain:
             fork_h = self.blockchain._common_ancestor_height(other_chain.chain)
@@ -242,13 +241,12 @@ class ChainOperations:
         if not self._validate_complete_chain(candidate_chain):
             return False
 
-        if CFG.ENABLE_CHAINWORK_RULE:
-            current_cw = self.blockchain._compute_chainwork_for_chain(self.blockchain.chain)
-            candidate_cw = self.blockchain._compute_chainwork_for_chain(candidate_chain)
-            if candidate_cw < current_cw:
-                return False
-            if candidate_cw == current_cw and block.hash() >= current_tip.hash():
-                return False
+        current_cw = self.blockchain._compute_chainwork_for_chain(self.blockchain.chain)
+        candidate_cw = self.blockchain._compute_chainwork_for_chain(candidate_chain)
+        if candidate_cw < current_cw:
+            return False
+        if candidate_cw == current_cw and block.hash() >= current_tip.hash():
+            return False
 
         return True
 
