@@ -34,6 +34,7 @@ def isolate_unit_test_storage(request, tmp_path, monkeypatch):
     monkeypatch.setattr(CFG, "LMDB_STATE_DIR", str(mock_data / "node/state"))
     monkeypatch.setattr(CFG, "LMDB_GRAFFITI_DIR", str(mock_data / "node/graffiti"))
     monkeypatch.setattr(CFG, "LMDB_MEMPOOL_DIR", str(mock_data / "node/mempool"))
+    monkeypatch.setattr(CFG, "LMDB_CHAT_PREKEYS", str(mock_data / "node/chat_prekeys"))
 
     # 2. Patch web database and cache paths
     monkeypatch.setattr(CFG, "WEB_DATABASE_PATH", str(mock_data / "web"))

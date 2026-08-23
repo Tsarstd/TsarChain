@@ -39,6 +39,7 @@ try:
         deserialize_payout_binary,
         deserialize_proof_binary,
     )
+    from tsarchain.network.rpc_helper.chat import decode_prekey_bundle
 except ImportError:
     Block = None
     Tx = None
@@ -47,17 +48,19 @@ except ImportError:
     deserialize_comment_binary = None
     deserialize_payout_binary = None
     deserialize_proof_binary = None
+    decode_prekey_bundle = None
 
 # ============================
 # USER SETTINGS
 # ============================
-NODE_SUBDBS = ['chain', 'state', 'utxo', 'mempool', 'graffiti']
+NODE_SUBDBS = ['chain', 'state', 'utxo', 'mempool', 'graffiti', 'chat_prekeys']
 NODE_SUBDB_PATHS = {
     'chain': 'data/node/chain',
     'state': 'data/node/state',
     'utxo': 'data/node/utxo',
     'mempool': 'data/node/mempool',
     'graffiti': 'data/node/graffiti',
+    'chat_prekeys': 'data/node/chat_prekeys',
 }
 KEYS_SUBDBS = ['node_secrets', 'secure_wallet', 'wallet_peer_keys', 'stor_peer_keys']
 KEYS_ENV_PATH = "data/keys"
@@ -88,6 +91,10 @@ BINARY_STORAGE_REGISTRY = {
     'mempool': {
         'model': 'Compact Binary Header (<dIII) + Binary Tx Bytes',
         'benefit': 'Microsecond memory-mapped queue persistence',
+    },
+    'chat_prekeys': {
+        'model': 'Binary Prekey Bundle (<QB Header + IK + SPK + Sig + OPK Pool)',
+        'benefit': '~60% storage reduction, zero-deserialization overhead for offline bundles',
     },
 }
 # ============================
@@ -167,6 +174,14 @@ def decode_db_value(db_name: str, key_bytes: bytes, value_bytes: bytes) -> Union
                 return tx_dict
             except Exception:
                 pass
+
+    # 4. Chat Prekeys binary decoding
+    if db_name == 'chat_prekeys' and len(value_bytes) >= 9 and not value_bytes.startswith(b'{'):
+        try:
+            if decode_prekey_bundle:
+                return decode_prekey_bundle(value_bytes)
+        except Exception:
+            pass
 
     # Fallback to standard text / json decoding
     return decode_value(value_bytes)

@@ -288,16 +288,17 @@ Provides decentralized, end-to-end encrypted messaging via TsarChain's Signal-co
 The node operates purely as a **Blind Relay & Ephemeral Mailbox Router** with zero ability to decrypt ciphertexts and zero permanent disk persistence for transient chat messages:
 
 #### 1. Prekey Bundle Management (`chat_prekeys`)
-* **Data Structure**: In-memory dictionary `self.chat_prekeys[addr]`.
+* **Data Structure**: Dedicated LMDB binary database `LMDB_CHAT_PREKEYS` (`data/node/chat_prekeys`).
 * **Bundle Components**:
   - `ik` *(Identity Key)*: User's long-term public X25519 identity key.
   - `spk` *(Signed Prekey)*: Semi-static ephemeral public key authenticated via ECDSA Secp256k1.
   - `sig`: Identity digital signature over the canonical payload `TSAR-SPK|<spk_bytes>|<spend_pub_bytes>`.
   - `opk_list` *(One-Time Prekeys Pool)*: Pool of single-use ephemeral keys for maximum Forward Secrecy.
+* **Compact Binary Encoding**: Packed into a zero-overhead raw binary structure (`<QB` header, 32B IK, 32B SPK, signature bytes, and contiguous 32B OPKs) for >60% storage reduction.
 * **Atomic Key Consumption (FIFO Pop)**:
-  - When an initiator calls `CHAT_GET_PREKEY`, the node consumes the top OPK via `lst.pop(0)`.
+  - When an initiator calls `CHAT_GET_PREKEY`, the node consumes the top OPK via `lst.pop(0)` and atomically updates the record in LMDB.
   - A consumed OPK is **never issued to any other peer**, ensuring each new cryptographic session begins with unique ephemeral entropy.
-* **Capacity Constraints**: Capped at `CFG.CHAT_OPK_MAX_STORED` (default: 100 OPKs per address) to prevent memory exhaustion.
+* **Capacity Management**: Backed by `CFG.LMDB_PREKEYS_SIZE_MAX = 250MB` with rate limiting and PoW verification on publish endpoints.
 
 #### 2. Offline Message Mailbox Queue Management (`chat_mailbox`)
 * **Data Structure**: In-memory FIFO queue per recipient: `self.chat_mailbox[addr] = collections.deque()`.

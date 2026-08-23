@@ -109,10 +109,13 @@ LMDB_UTXO_DIR      = "data/node/utxo"  # LMDB environment path for utxo
 LMDB_STATE_DIR     = "data/node/state"  # LMDB environment path for state
 LMDB_GRAFFITI_DIR  = "data/node/graffiti"  # LMDB environment path for graffiti
 LMDB_MEMPOOL_DIR   = "data/node/mempool"  # LMDB environment path for mempool
+LMDB_CHAT_PREKEYS  = "data/node/chat_prekeys"  # LMDB environment path for chat prekeys
 
-LMDB_MAP_SIZE_INIT = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
-LMDB_MAP_SIZE_MAX  = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
-KV_ITER_CHUNK      = 512 # number of entries per chunk when iterating prefix scans (LMDB)
+LMDB_MAP_SIZE_INIT     = 4 * 1024 * 1024  # initial LMDB map size (4 MB)
+LMDB_MAP_SIZE_MAX      = 64 * 1024 * 1024 * 1024  # upper LMDB map cap (64 GB)
+LMDB_PREKEYS_SIZE_INIT = 4 * 1024 * 1024  # initial chat prekeys LMDB size (4 MB)
+LMDB_PREKEYS_SIZE_MAX  = 250 * 1024 * 1024  # max chat prekeys LMDB size (250 MB)
+KV_ITER_CHUNK          = 512 # number of entries per chunk when iterating prefix scans (LMDB)
 
 
 # ---- KEYS & SECRETS DATABASE PATHS (LMDB) ----
@@ -527,8 +530,7 @@ CHAT_RATCHET_INDEX_MAX     = 1_000_000  # maximum double-ratchet index allowed
 CHAT_OPK_MIN_THRESHOLD     = 5  # minimum one-time pre-keys kept ready
 CHAT_OPK_REFILL_COUNT      = 20  # number of pre-keys generated when refilling
 CHAT_SPK_ROTATE_INTERVAL_S = 24 * 3600  # seconds between signed pre-key rotations
-CHAT_OPK_MAX_STORED        = 200  # hard cap untuk jumlah OPK yang disimpan node per alamat
-CHAT_HISTORY_MAX_PER_PEER  = 200  # maksimum entri riwayat chat per pasangan alamat
+CHAT_HISTORY_MAX_PER_PEER  = 200  # Maximum paired chat history entries (stored on client)
 
 
 # =============================================================================
@@ -594,11 +596,11 @@ CHAT_REG_RL_ADDR_BACKOFF_S = 20  # cooldown after chat register per-address limi
 
 # ---- CHAT LOOKUP THROTTLING ----
 CHAT_LOOKUP_RL_IP_BURST       = 20   # lookup pubkey chat per IP
-CHAT_LOOKUP_RL_IP_WINDOW_S    = 10   # jendela waktu limiter lookup pubkey
-CHAT_LOOKUP_RL_BACKOFF_S      = 5    # backoff setelah limiter lookup pubkey kena
-CHAT_LOOKUP_RL_ADDR_BURST     = 10   # limiter lookup pubkey per alamat
-CHAT_LOOKUP_RL_ADDR_WINDOW_S  = 10 # jendela waktu limiter per alamat
-CHAT_LOOKUP_RL_ADDR_BACKOFF_S = 8 # backoff setelah limiter per alamat kena
+CHAT_LOOKUP_RL_IP_WINDOW_S    = 10   # seconds window for pubkey lookup limiter
+CHAT_LOOKUP_RL_BACKOFF_S      = 5    # backoff after pubkey lookup limiter is triggered
+CHAT_LOOKUP_RL_ADDR_BURST     = 10   # pubkey lookup limiter per address
+CHAT_LOOKUP_RL_ADDR_WINDOW_S  = 10   # seconds window for per-address pubkey lookup limiter
+CHAT_LOOKUP_RL_ADDR_BACKOFF_S = 8    # backoff after per-address pubkey lookup limiter is triggered
 
 
 # ---- USER RPC THROTTLING ----

@@ -12,8 +12,8 @@ from collections import deque
 def init_chat_state(self) -> None:
     self.chat_lock = threading.RLock()
     self.chat_presence_pub = {}
+    self.chat_presence_ts = {}
     self.chat_spend_pub = {}
-    self.chat_prekeys = {}
     self.chat_mailbox = {}
     self.chat_global_count = 0
     self.chat_presence_seen = set()

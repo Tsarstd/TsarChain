@@ -6,22 +6,150 @@
 import json
 import time
 import socket
+import struct
 import threading
 import collections
+from concurrent.futures import ThreadPoolExecutor
 
 # ---------------- Local Project ----------------
 from ...utils import config as CFG
 from .base import NetworkHandlerProxy
 from ..protocol import send_message, recv_message,build_envelope, SecureChannel
+from ...storage.kv import get as kv_get, put as kv_put, delete as kv_delete
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.rpc_helper.chat")
 
+_presence_executor: ThreadPoolExecutor | None = None
+_presence_executor_lock = threading.Lock()
+
+
+def get_presence_executor() -> ThreadPoolExecutor:
+    global _presence_executor
+    if _presence_executor is None:
+        with _presence_executor_lock:
+            if _presence_executor is None:
+                _presence_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="presence_relay")
+    return _presence_executor
+
+
+def encode_prekey_bundle(bundle: dict) -> bytes:
+    if not isinstance(bundle, dict):
+        return b""
+    ts = int(bundle.get("ts", 0) or 0)
+    ik = bundle.get("ik")
+    spk = bundle.get("spk")
+    sig = bundle.get("sig")
+    opk_list = bundle.get("opk_list") or []
+
+    flags = 0
+    body = bytearray()
+    if isinstance(ik, str) and len(ik) == 64:
+        try:
+            body.extend(bytes.fromhex(ik))
+            flags |= 0x01
+        except ValueError:
+            pass
+    if isinstance(spk, str) and len(spk) == 64:
+        try:
+            body.extend(bytes.fromhex(spk))
+            flags |= 0x02
+        except ValueError:
+            pass
+    if isinstance(sig, str) and sig:
+        try:
+            sig_bytes = bytes.fromhex(sig)
+            if len(sig_bytes) <= 65535:
+                body.extend(struct.pack("<H", len(sig_bytes)))
+                body.extend(sig_bytes)
+                flags |= 0x04
+        except ValueError:
+            pass
+
+    opk_bytes = bytearray()
+    if isinstance(opk_list, list):
+        for o in opk_list:
+            if isinstance(o, str) and len(o) == 64:
+                try:
+                    opk_bytes.extend(bytes.fromhex(o))
+                except ValueError:
+                    pass
+    opk_count = len(opk_bytes) // 32
+    opk_header = struct.pack("<I", opk_count)
+    header = struct.pack("<QB", ts, flags)
+    return bytes(header + body + opk_header + opk_bytes)
+
+
+def decode_prekey_bundle(raw: bytes) -> dict:
+    if not raw or len(raw) < 9:
+        return {}
+    try:
+        ts, flags = struct.unpack_from("<QB", raw, 0)
+        offset = 9
+        ik = None
+        spk = None
+        sig = None
+        if flags & 0x01:
+            if offset + 32 <= len(raw):
+                ik = raw[offset:offset+32].hex()
+                offset += 32
+        if flags & 0x02:
+            if offset + 32 <= len(raw):
+                spk = raw[offset:offset+32].hex()
+                offset += 32
+        if flags & 0x04:
+            if offset + 2 <= len(raw):
+                sig_len = struct.unpack_from("<H", raw, offset)[0]
+                offset += 2
+                if offset + sig_len <= len(raw):
+                    sig = raw[offset:offset+sig_len].hex()
+                    offset += sig_len
+        opk_list = []
+        if offset + 4 <= len(raw):
+            opk_count = struct.unpack_from("<I", raw, offset)[0]
+            offset += 4
+            for _ in range(opk_count):
+                if offset + 32 <= len(raw):
+                    opk_list.append(raw[offset:offset+32].hex())
+                    offset += 32
+        res: dict = {"ts": ts}
+        if ik:
+            res["ik"] = ik
+        if spk:
+            res["spk"] = spk
+        if sig:
+            res["sig"] = sig
+        if opk_list:
+            res["opk_list"] = opk_list
+        return res
+    except Exception:
+        return {}
+
 
 # ------------------------------ P2P Chat ------------------------------
 
 class ChatHandler(NetworkHandlerProxy):
+    def get_prekey_bundle(self, addr: str) -> dict:
+        if not addr:
+            return {}
+        with self.chat_lock:
+            raw = kv_get("chat_prekeys", addr.encode("utf-8"))
+            return decode_prekey_bundle(raw) if raw else {}
+
+    def put_prekey_bundle(self, addr: str, bundle: dict) -> None:
+        if not addr:
+            return
+        with self.chat_lock:
+            raw = encode_prekey_bundle(bundle)
+            kv_put("chat_prekeys", addr.encode("utf-8"), raw)
+
+    def delete_prekey_bundle(self, addr: str) -> None:
+        if not addr:
+            return
+        with self.chat_lock:
+            kv_delete("chat_prekeys", addr.encode("utf-8"))
+
     def send_to_peer(self, peer: tuple[str,int], payload: dict) -> None:
         if not isinstance(peer, tuple) or len(peer) != 2:
             raise ValueError("bad peer")
@@ -42,7 +170,10 @@ class ChatHandler(NetworkHandlerProxy):
 
 
     def relay_presence_async(self, pres: dict, exclude=None) -> None:
-        threading.Thread(target=self._relay_presence, args=(pres, exclude), daemon=True).start()
+        try:
+            get_presence_executor().submit(self._relay_presence, pres, exclude)
+        except Exception:
+            pass
 
 
     def mailbox_put(self, addr, item, ttl_s, per_addr_max, global_max):

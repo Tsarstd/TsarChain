@@ -106,27 +106,30 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
             return spk_err
 
         now = time.time()
+        now_int = int(now)
         pid = secrets.token_hex(16)
         with self.chat_lock:
             self.chat_spend_pub[addr_s] = spend_pk
             self.chat_presence_pub[addr_s] = chat_pub
+            if hasattr(self, "chat_presence_ts"):
+                self.chat_presence_ts[addr_s] = now_int
             if hasattr(self, "record_presence_seen"):
                 self.record_presence_seen(pid)
             else:
                 self.chat_presence_seen.add(pid)
-            b = self.chat_prekeys.get(addr_s) or {}
+            b = self.get_prekey_bundle(addr_s)
             if "ik" not in b: 
                 b["ik"] = chat_pub
-                b["ts"] = int(now)
-            b["ts"] = int(now)
+                b["ts"] = now_int
+            b["ts"] = now_int
             if spk_valid:
                 b["spk"] = spk_reg
                 b["sig"] = sig_reg
             if opk_reg and len(opk_reg) == 64:
                 b.setdefault("opk_list", []).append(opk_reg)
-            self.chat_prekeys[addr_s] = b
+            self.put_prekey_bundle(addr_s, b)
 
-        pres = {"pid": pid, "address": addr_s, "pubkey": chat_pub, "spend_pub": spend_pk, "presence_sig": presence_sig, "ts": int(now), "hops": 0}
+        pres = {"pid": pid, "address": addr_s, "pubkey": chat_pub, "spend_pub": spend_pk, "presence_sig": presence_sig, "ts": now_int, "hops": 0}
         self.relay_presence_async(pres, exclude=addr)
         return {"type": "CHAT_REGISTERED", "address": addr_s, "pubkey": chat_pub}
     except Exception as exc:
@@ -175,10 +178,15 @@ def chat_lookup_pub(self, message, pow_obj, base_identity, *,
         return pow_resp
     pubhex = self.chat_presence_pub.get(addr_s)
     last_seen = None
-    b = self.chat_prekeys.get(addr_s) or {}
-    ts_field = b.get("ts")
-    if isinstance(ts_field, (int, float)):
-        last_seen = int(ts_field)
+    if hasattr(self, "chat_presence_ts"):
+        last_seen = self.chat_presence_ts.get(addr_s)
+    if last_seen is None:
+        b = self.get_prekey_bundle(addr_s)
+        ts_field = b.get("ts")
+        if isinstance(ts_field, (int, float)):
+            last_seen = int(ts_field)
+            if hasattr(self, "chat_presence_ts"):
+                self.chat_presence_ts[addr_s] = last_seen
 
     return {"type": "CHAT_PUBKEY", "address": addr_s, "pubkey": pubhex, "found": bool(pubhex), "last_seen": last_seen}
 
@@ -237,18 +245,21 @@ def chat_presence(self, message, pow_obj, base_identity, addr, *,
         return pow_resp
 
     pid = message.get("pid") or secrets.token_hex(16)
+    now_int = int(time.time())
     with self.chat_lock:
         self.chat_presence_pub[addr_s] = pubhex
         self.chat_spend_pub[addr_s] = spend_pk
+        if hasattr(self, "chat_presence_ts"):
+            self.chat_presence_ts[addr_s] = now_int
         if hasattr(self, "record_presence_seen"):
             self.record_presence_seen(pid)
         else:
             self.chat_presence_seen.add(pid)
-        b = self.chat_prekeys.get(addr_s) or {}
+        b = self.get_prekey_bundle(addr_s)
         if "ik" not in b:
             b["ik"] = pubhex
-        b["ts"] = int(time.time())
-        self.chat_prekeys[addr_s] = b
+        b["ts"] = now_int
+        self.put_prekey_bundle(addr_s, b)
 
     message["hops"] = hops + 1
     self.relay_presence_async(message, exclude=addr)
@@ -294,16 +305,15 @@ def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
     if not sig_ok.get("spk"):
         log.warning("[chat_publish_prekeys] Bad SPK signature for %s", addr_s)
         return {"error":"bad_spk_sig"}
+    now_int = int(time.time())
     with self.chat_lock:
-        rec = self.chat_prekeys.get(addr_s) or {}
-        rec.update({"ik": ik, "spk": spk, "sig": sig, "ts": int(time.time())})
-        if isinstance(opk, str) and len(opk)==64:
-            lst = rec.setdefault("opk_list", [])
-            lst.append(opk)
-            if len(lst) > CFG.CHAT_OPK_MAX_STORED:
-                # keep it from getting bloated, only keep the latest OPK
-                rec["opk_list"] = lst[-CFG.CHAT_OPK_MAX_STORED:]
-        self.chat_prekeys[addr_s] = rec
+        if hasattr(self, "chat_presence_ts"):
+            self.chat_presence_ts[addr_s] = now_int
+        rec = self.get_prekey_bundle(addr_s)
+        rec.update({"ik": ik, "spk": spk, "sig": sig, "ts": now_int})
+        if isinstance(opk, str) and len(opk) == 64:
+            rec.setdefault("opk_list", []).append(opk)
+        self.put_prekey_bundle(addr_s, rec)
 
     return {"type":"CHAT_PUBLISH_PREKEYS"}
 
@@ -313,12 +323,16 @@ def chat_get_prekey(self, message, *,
                     client_ip, is_miner_sender, **kwargs):
     addr_s = (message.get("address") or "").strip().lower()
     with self.chat_lock:
-        b = self.chat_prekeys.get(addr_s) or {}
+        b = self.get_prekey_bundle(addr_s)
         if not b or ("ik" not in b or "spk" not in b or "sig" not in b):
             return {"error":"no_bundle"}
         lst = b.get("opk_list") or []
         opk = lst.pop(0) if lst else None
-        self.chat_prekeys[addr_s] = b
+        if lst:
+            b["opk_list"] = lst
+        else:
+            b.pop("opk_list", None)
+        self.put_prekey_bundle(addr_s, b)
         sp = self.chat_spend_pub.get(addr_s)
     
     return {"type":"CHAT_PREKEY_BUNDLE","bundle":{"ik": b["ik"], "spk": b["spk"], "sig": b["sig"], "opk": opk, "spend_pub": sp}}

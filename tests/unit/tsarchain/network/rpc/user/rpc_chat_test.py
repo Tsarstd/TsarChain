@@ -47,7 +47,6 @@ def mock_config():
         mock.CHAT_LOOKUP_RL_ADDR_BURST = 3
         mock.CHAT_LOOKUP_RL_ADDR_WINDOW_S = 60
         mock.CHAT_LOOKUP_RL_ADDR_BACKOFF_S = 10
-        mock.CHAT_OPK_MAX_STORED = 10
         mock.CHAT_TS_DRIFT_S = 300
         mock.CHAT_MAX_CT_BYTES = 1024
         mock.CHAT_TTL_S = 3600
@@ -128,6 +127,7 @@ def server(mock_config, mock_common, mock_bech32, mock_hash160, mock_time, mock_
     server.chat_lock = Lock()
     server.chat_spend_pub = {}
     server.chat_presence_pub = {}
+    server.chat_presence_ts = {}
     server.chat_presence_seen = set()
     server.chat_prekeys = {}
     server.rl_ip = {}
@@ -135,6 +135,12 @@ def server(mock_config, mock_common, mock_bech32, mock_hash160, mock_time, mock_
     server.peers = {}
 
     # Methods
+    server.get_prekey_bundle = Mock(side_effect=lambda addr: dict(server.chat_prekeys.get(addr) or {}))
+    def _put_bundle(addr, bundle):
+        server.chat_prekeys[addr] = dict(bundle)
+    server.put_prekey_bundle = Mock(side_effect=_put_bundle)
+    server.delete_prekey_bundle = Mock(side_effect=lambda addr: server.chat_prekeys.pop(addr, None))
+
     server.relay_presence_async = Mock()
     server.record_presence_seen = Mock(side_effect=lambda pid: server.chat_presence_seen.add(pid))
     server.dedup_mid = Mock(return_value=False)
@@ -343,6 +349,16 @@ class TestChatLookupPub:
         message = {"address": addr}
         result = chat_lookup_pub(server, message, {}, "id", client_ip="ip")
         assert result == {"type": "CHAT_PUBKEY", "address": addr, "pubkey": "pubkey123", "found": True, "last_seen": 123456}
+
+    def test_lookup_pub_hits_ram_cache(self, server):
+        addr = make_valid_address()
+        server.chat_presence_pub[addr] = "pubkey_cached"
+        server.chat_presence_ts[addr] = 999888
+        message = {"address": addr}
+        result = chat_lookup_pub(server, message, {}, "id", client_ip="ip")
+        assert result == {"type": "CHAT_PUBKEY", "address": addr, "pubkey": "pubkey_cached", "found": True, "last_seen": 999888}
+        # get_prekey_bundle should NOT be called when presence ts is in RAM
+        server.get_prekey_bundle.assert_not_called()
 
     def test_not_found(self, server):
         addr = make_valid_address()
