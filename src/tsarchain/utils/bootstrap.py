@@ -359,9 +359,8 @@ def _get_local_chain_height() -> Optional[int]:
                 if len(last_val) >= 108 and not last_val.startswith(b"{"):
                     blk = Block.from_storage_bytes(last_val)
                     return int(blk.height)
-                else:
-                    d = json.loads(last_val.decode("utf-8"))
-                    return int(d.get("height", -1))
+                d = json.loads(last_val.decode("utf-8"))
+                return int(d.get("height", -1))
         except Exception:
             pass
     return None
@@ -470,54 +469,33 @@ def _validate_snapshot_chain() -> tuple[bool, Optional[str]]:
 
     if entry_block is None:
         try:
-            entry_dict = json.loads(first_val.decode("utf-8"))
-            if isinstance(entry_dict, dict):
+            d = json.loads(first_val.decode("utf-8"))
+            if isinstance(d, dict):
                 try:
-                    entry_block = Block.from_dict(entry_dict)
+                    entry_block = Block.from_dict(d)
                 except Exception:
-                    # Fallback to dictionary field checks for mock/legacy snapshots
-                    h = int(entry_dict.get("height", -1))
-                    if h != 0:
-                        return False, f"genesis block not included in snapshot (first height {h})"
-                    prev = (entry_dict.get("prev_block_hash") or "").strip().lower()
-                    zero_hex = CFG.ZERO_HASH.hex() if isinstance(CFG.ZERO_HASH, (bytes, bytearray)) else bytes(CFG.ZERO_HASH).hex()
-                    if prev != zero_hex:
-                        return False, "prev_block_hash genesis mismatch"
-                    expected_genesis = CFG.GENESIS_HASH_HEX
-                    if expected_genesis.startswith("0x"):
-                        expected_genesis = expected_genesis[2:]
-                    if expected_genesis:
-                        entry_h = (entry_dict.get("hash") or "").strip().lower()
-                        if entry_h != expected_genesis:
-                            return False, f"genesis hash snapshot ({entry_h}) does not match expected ({expected_genesis})"
-                    return True, None
+                    entry_block = d
         except Exception as exc:
             return False, f"chain entry invalid: {exc}"
 
     if entry_block is None:
         return False, "chain genesis block missing or invalid"
 
-    height = int(getattr(entry_block, "height", -1))
+    height = int(entry_block.get("height", -1) if isinstance(entry_block, dict) else getattr(entry_block, "height", -1))
     if height != 0:
         return False, f"genesis block not included in snapshot (first height {height})"
 
-    prev = getattr(entry_block, "prev_block_hash", b"")
-    if isinstance(prev, (bytes, bytearray)):
-        prev_hex = bytes(prev).hex()
-    else:
-        prev_hex = str(prev or "").strip().lower()
+    prev = entry_block.get("prev_block_hash") if isinstance(entry_block, dict) else getattr(entry_block, "prev_block_hash", b"")
+    prev_hex = bytes(prev).hex() if isinstance(prev, (bytes, bytearray)) else str(prev or "").strip().lower()
 
     zero_hex = CFG.ZERO_HASH.hex() if isinstance(CFG.ZERO_HASH, (bytes, bytearray)) else bytes(CFG.ZERO_HASH).hex()
     if prev_hex != zero_hex:
         return False, "prev_block_hash genesis mismatch"
 
-    expected_genesis = CFG.GENESIS_HASH_HEX
-    if expected_genesis.startswith("0x"):
-        expected_genesis = expected_genesis[2:]
-
+    expected_genesis = CFG.GENESIS_HASH_HEX.lstrip("0x").lower()
     if expected_genesis:
-        entry_hash = entry_block.hash().hex().lower()
-        if entry_hash != expected_genesis:
+        entry_hash = (entry_block.get("hash") or "") if isinstance(entry_block, dict) else entry_block.hash().hex()
+        if str(entry_hash).lower() != expected_genesis:
             return False, f"genesis hash snapshot ({entry_hash}) does not match expected ({expected_genesis})"
 
     return True, None

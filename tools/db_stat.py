@@ -6,17 +6,42 @@
 
 import os
 import sys
+
+reconfig = getattr(sys.stdout, 'reconfigure', None)
+if callable(reconfig):
+    reconfig(encoding='utf-8', errors='replace')
+
 import lmdb
+import struct
 import argparse
 import json
 import math
 import shutil
 import colorama
 import tempfile
+from typing import Any
 from datetime import datetime
 from bech32 import bech32_encode, convertbits
 
+# Add src to sys.path if not present
+_HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SRC = os.path.join(_HERE, 'src')
+if _SRC not in sys.path:
+    sys.path.insert(0, _SRC)
+
 from tsarchain.utils import config as CFG
+try:
+    from tsarchain.contracts.graffiti_registry import (
+        deserialize_post_binary,
+        deserialize_comment_binary,
+        deserialize_payout_binary,
+        deserialize_proof_binary,
+    )
+except ImportError:
+    deserialize_post_binary = None
+    deserialize_comment_binary = None
+    deserialize_payout_binary = None
+    deserialize_proof_binary = None
 
 
 colorama.init()
@@ -266,69 +291,128 @@ def compact_database(db_dir: str, backup: bool = True) -> bool:
         return False
 
 
-def _count(env, name: str) -> int:
+def open_subdb_env(base_dir: str, db_name: str | None = None) -> tuple[lmdb.Environment | None, Any]:
+    if db_name:
+        dedicated = os.path.join(base_dir, db_name)
+        if os.path.isdir(dedicated) and (os.path.exists(os.path.join(dedicated, "data.mdb")) or os.path.exists(os.path.join(dedicated, "lock.mdb"))):
+            try:
+                env = lmdb.open(dedicated, readonly=True, max_dbs=32, lock=False, subdir=True)
+                try:
+                    dbi = env.open_db(db_name.encode('utf-8'), create=False)
+                except lmdb.Error:
+                    dbi = env.open_db(None, create=False)
+                return env, dbi
+            except Exception:
+                pass
     try:
-        dbi = env.open_db(name.encode('utf-8'), create=False)
+        env = lmdb.open(base_dir, readonly=True, max_dbs=32, lock=False, subdir=os.path.isdir(base_dir))
+        if db_name:
+            try:
+                dbi = env.open_db(db_name.encode('utf-8'), create=False)
+            except lmdb.Error:
+                dbi = env.open_db(None, create=False)
+        else:
+            dbi = env.open_db(None, create=False)
+        return env, dbi
     except Exception:
+        return None, None
+
+
+def _count(base_dir: str, name: str) -> int:
+    env, dbi = open_subdb_env(base_dir, name)
+    if not env or dbi is None:
         return 0
     n = 0
-    with env.begin(db=dbi, write=False) as txn:
-        with txn.cursor() as cur:
-            if cur.first():
-                n = 1
-                while cur.next():
-                    n += 1
+    try:
+        with env.begin(db=dbi, write=False) as txn:
+            with txn.cursor() as cur:
+                for k, _ in cur:
+                    if k != b'__meta__':
+                        n += 1
+    finally:
+        env.close()
     return n
 
 
-def _peek_keys(env, name: str, limit: int = 5):
+def _peek_keys(base_dir: str, name: str, limit: int = 5):
     out = []
-    try:
-        dbi = env.open_db(name.encode('utf-8'), create=False)
-    except Exception:
+    env, dbi = open_subdb_env(base_dir, name)
+    if not env or dbi is None:
         return out
-    with env.begin(db=dbi, write=False) as txn:
-        with txn.cursor() as cur:
-            if not cur.first():
-                return out
-            out.append(cur.key())
-            while len(out) < limit and cur.next():
-                out.append(cur.key())
+    try:
+        with env.begin(db=dbi, write=False) as txn:
+            with txn.cursor() as cur:
+                for k, _ in cur:
+                    out.append(k)
+                    if len(out) >= limit:
+                        break
+    finally:
+        env.close()
     return out
 
 
-def _graffiti_summary(env) -> dict | None:
-    try:
-        dbi = env.open_db(b'graffiti', create=False)
-    except Exception:
+def _graffiti_summary(base_dir: str) -> dict | None:
+    env, dbi = open_subdb_env(base_dir, "graffiti")
+    if not env or dbi is None:
         return None
     try:
+        posts = 0
+        comments = 0
+        payouts = 0
+        proofs = 0
         with env.begin(db=dbi, write=False) as txn:
-            raw = txn.get(b"data:data")
-            if not raw:
-                return {"posts": 0, "comments": 0, "payouts": 0}
-            obj = json.loads(raw.decode("utf-8"))
-            posts = len(obj.get("posts") or {})
-            comments = sum(len(v or []) for v in (obj.get("comments") or {}).values())
-            payouts = sum(len(v or []) for v in (obj.get("payouts") or {}).values())
-            return {"posts": posts, "comments": comments, "payouts": payouts}
+            with txn.cursor() as cur:
+                for k, _ in cur:
+                    if k.startswith(b"p:"):
+                        posts += 1
+                    elif k.startswith(b"c:"):
+                        comments += 1
+                    elif k.startswith(b"y:"):
+                        payouts += 1
+                    elif k.startswith(b"r:"):
+                        proofs += 1
+        return {"posts": posts, "comments": comments, "payouts": payouts, "proofs": proofs}
     except Exception:
         return None
+    finally:
+        env.close()
 
 
-def _load_graffiti_registry(env) -> dict | None:
-    try:
-        dbi = env.open_db(b'graffiti', create=False)
-    except Exception:
+def _load_graffiti_registry(base_dir: str) -> dict | None:
+    env, dbi = open_subdb_env(base_dir, "graffiti")
+    if not env or dbi is None:
         return None
     try:
+        posts = {}
+        comments = {}
+        payouts = {}
+        proofs = {}
         with env.begin(db=dbi, write=False) as txn:
-            raw = txn.get(b"data:data")
-            if not raw:
-                return {}
-            return json.loads(raw.decode("utf-8"))
+            with txn.cursor() as cur:
+                for k, v in cur:
+                    try:
+                        if k.startswith(b"p:") and deserialize_post_binary:
+                            art_id = k[2:].decode("utf-8", errors="replace")
+                            posts[art_id] = deserialize_post_binary(v, art_id)
+                        elif k.startswith(b"c:") and deserialize_comment_binary:
+                            parts = k[2:].decode("utf-8", errors="replace").split(":")
+                            if len(parts) >= 2:
+                                comments.setdefault(parts[0], []).append(deserialize_comment_binary(v))
+                        elif k.startswith(b"y:") and deserialize_payout_binary:
+                            parts = k[2:].decode("utf-8", errors="replace").split(":")
+                            if len(parts) >= 2:
+                                payouts.setdefault(parts[0], []).append(deserialize_payout_binary(v))
+                        elif k.startswith(b"r:") and deserialize_proof_binary:
+                            parts = k[2:].decode("utf-8", errors="replace").split(":")
+                            if len(parts) >= 2:
+                                proofs.setdefault(parts[0], []).append(deserialize_proof_binary(v))
+                    except Exception:
+                        pass
+        return {"posts": posts, "comments": comments, "payouts": payouts, "proofs": proofs}
     except Exception:
         return None
+    finally:
+        env.close()
 
 
 def _render_payouts(reg: dict, limit: int = 10) -> None:
@@ -390,7 +474,7 @@ Examples:
         '--db',
         dest='db_dir',
         default=_default_db_dir(),
-        help='LMDB directory (default: from config or data/DB)',
+        help='LMDB directory (default: from config or data/node)',
     )
     ap.add_argument(
         '--peek',
@@ -448,212 +532,145 @@ def run_tool(args) -> int:
         success = compact_database(db_dir, backup=not getattr(args, "no_backup", False))
         return 0 if success else 1
 
-    env = lmdb.open(db_dir, readonly=True, max_dbs=32, lock=False, subdir=True)
+    # Health check mode
+    if getattr(args, "health", False):
+        clog("🔍 LMDB Storage Health Check")
+        clog("=" * 50)
+        # Check health for main sub-databases
+        for sub in SUBDBS:
+            env, _ = open_subdb_env(db_dir, sub)
+            if not env:
+                continue
+            try:
+                health = check_storage_health(env)
+                status_icons = {"HEALTHY": "✅", "WARNING": "⚠️", "CRITICAL": "🚨", "ERROR": "❌"}
+                icon = status_icons.get(health['status'], "🔍")
+                clog(f"[{sub.upper()}] {icon} Status: {health['status']} | Size: {health['current_size_human']} ({health['usage_percent']:.1f}%)")
+            finally:
+                env.close()
+        return 0
 
-    try:
-        # Health check mode
-        if getattr(args, "health", False):
-            clog("🔍 LMDB Storage Health Check")
-            clog("=" * 50)
-            health = check_storage_health(env)
+    # Size-only mode
+    if getattr(args, "size_only", False):
+        total_sz = sum(f.stat().st_size for f in os.scandir(db_dir) if f.is_file())
+        for sub in SUBDBS:
+            subp = os.path.join(db_dir, sub)
+            if os.path.isdir(subp):
+                total_sz += sum(f.stat().st_size for f in os.scandir(subp) if f.is_file())
+        clog(f"Total Storage: {_bytes_to_human(total_sz)}")
+        return 0
 
-            status_icons = {
-                "HEALTHY": "✅",
-                "WARNING": "⚠️",
-                "CRITICAL": "🚨",
-                "ERROR": "❌",
-            }
-            icon = status_icons.get(health['status'], "🔍")
-            clog(f"{icon} Status: {health['status']}")
+    clog(f"📁 DB: {db_dir}", GREEN)
+    clog("\n---------------------", RED)
 
-            clog(f"📊 Current Size: {health['current_size_human']}")
-            clog(f"📈 Max Size: {health['max_size_human']}")
-            clog(f"📐 Usage: {health['usage_percent']:.1f}%")
-            clog(
-                f"💾 Actual Data Usage: {health['actual_usage_percent']:.1f}% "
-                f"({health['used_pages_human']})"
-            )
-            clog(f"🔄 Can Auto-Grow: {'✅ Yes' if health['can_grow'] else '❌ No'}")
+    # chain height via count
+    n_chain = _count(db_dir, 'chain')
+    clog(f"⛓️  {color_text('chain blocks : ', CYAN)}{n_chain}")
 
-            if health['warnings']:
-                clog("\n⚠️  Warnings:")
-                for warning in health['warnings']:
-                    clog(f"  • {warning}")
-
-            if health['recommendations']:
-                clog("\n💡 Recommendations:")
-                for rec in health['recommendations']:
-                    clog(f"  {rec}")
-
-            clog("\n🔧 Technical Details:")
-            clog(f"  Page Size: {health['page_size']} bytes")
-            clog(f"  Leaf Pages: {health['leaf_pages']:,}")
-            clog(f"  Branch Pages: {health['branch_pages']:,}")
-            clog(f"  Overflow Pages: {health['overflow_pages']:,}")
-            clog(f"  Last Transaction ID: {health['last_txn_id']:,}")
-            return 0
-
-        # Size-only mode
-        if getattr(args, "size_only", False):
-            health = check_storage_health(env)
-            clog(
-                f"{health['current_size_human']} / "
-                f"{health['max_size_human']} "
-                f"({health['usage_percent']:.1f}%)"
-            )
-            return 0
-
-        # Original functionality with health indicator
-        clog(f"📁 DB: {db_dir}", GREEN)
-
-        # Quick health indicator
-        health = check_storage_health(env)
-        if health['status'] == 'HEALTHY':
-            status_icon = "✅"
-        elif health['status'] == 'WARNING':
-            status_icon = "⚠️"
-        else:
-            status_icon = "🚨"
-        clog(
-            f"{status_icon} "
-            f"{color_text('Storage Health ', CYAN)}: "
-            f"{health['status']} "
-            f"({health['usage_percent']:.1f}% used)",
-            color=None,
-        )
-        clog("\n---------------------", RED)
-
-        # chain height via count
-        n_chain = _count(env, 'chain')
-        clog(f"⛓️  "
-             f"{color_text('chain blocks : ', CYAN)}"
-             f"{n_chain}"
-        )
-
-        # state snapshot
+    # state snapshot
+    env_state, dbi_state = open_subdb_env(db_dir, 'state')
+    if env_state and dbi_state is not None:
         try:
-            state_db = env.open_db(b'state', create=False)
-            with env.begin(db=state_db, write=False) as txn:
+            with env_state.begin(db=dbi_state, write=False) as txn:
                 tb = txn.get(b'k:total_blocks')
                 ts = txn.get(b'k:total_supply')
                 if tb or ts:
-                    clog(
-                        f"📊 "
-                        f"{color_text('total_blocks : ', CYAN)}"
-                        f"{int(tb.decode('utf-8')) if tb else 0}"
-                    )
-                    clog(
-                        f"💰 "
-                        f"{color_text('total_supply : ', CYAN)}"
-                        f"{int(ts.decode('utf-8')) if ts else 0}"
-                    )
-        except Exception:
-            pass
+                    clog(f"📊 {color_text('total_blocks : ', CYAN)}{int(tb.decode('utf-8')) if tb else 0}")
+                    clog(f"💰 {color_text('total_supply : ', CYAN)}{int(ts.decode('utf-8')) if ts else 0}")
+        finally:
+            env_state.close()
 
-        # UTXO/Mempool
-        n_utxo = _count(env, 'utxo')
-        n_mempool = _count(env, 'mempool')
-        clog(f"📦 "
-             f"{color_text('utxo entries : ', CYAN)}"
-             f"{n_utxo}"
-             
-        )
-        clog(f"📝 "
-             f"{color_text('mempool txs  : ', CYAN)}"
-             f"{n_mempool}"
-        )
-        gstats = _graffiti_summary(env)
-        if gstats:
-            clog(f"{color_text('graffiti     : ', CYAN)}{gstats.get('posts', 0)}")
-            clog(f"{color_text('comments     : ', CYAN)}{gstats.get('comments', 0)}")
-            clog(f"{color_text('payouts      : ', CYAN)}{gstats.get('payouts', 0)}")
+    # UTXO/Mempool
+    n_utxo = _count(db_dir, 'utxo')
+    n_mempool = _count(db_dir, 'mempool')
+    clog(f"📦 {color_text('utxo entries : ', CYAN)}{n_utxo}")
+    clog(f"📝 {color_text('mempool txs  : ', CYAN)}{n_mempool}")
+    
+    gstats = _graffiti_summary(db_dir)
+    if gstats:
+        clog(f"{color_text('graffiti     : ', CYAN)}{gstats.get('posts', 0)}")
+        clog(f"{color_text('comments     : ', CYAN)}{gstats.get('comments', 0)}")
+        clog(f"{color_text('payouts      : ', CYAN)}{gstats.get('payouts', 0)}")
+        clog(f"{color_text('proofs       : ', CYAN)}{gstats.get('proofs', 0)}")
 
-# Optional peeks
-        if getattr(args, "peek", 0) > 0:
-            clog(f"\n🔍 Peeking {args.peek} keys per database:")
-            for name in SUBDBS:
-                keys = _peek_keys(env, name, args.peek)
-                if not keys:
-                    continue
-                try:
-                    show = [k.decode('utf-8', 'ignore') for k in keys]
-                except Exception:
-                    show = [str(k) for k in keys]
-                clog(f"  {name}: {show}")
-
-        # Optional detail dump
-        if getattr(args, "detail", None) == 'utxo':
+    # Optional peeks
+    if getattr(args, "peek", 0) > 0:
+        clog(f"\n🔍 Peeking {args.peek} keys per database:")
+        for name in SUBDBS:
+            keys = _peek_keys(db_dir, name, args.peek)
+            if not keys:
+                continue
             try:
-                dbi = env.open_db(b'utxo', create=False)
+                show = [k.decode('utf-8', 'ignore') for k in keys]
             except Exception:
-                clog('No utxo subdb found')
-                return 0
-            clog(f"{color_text('\n[detail:utxo]', CYAN)}")
-            cnt = 0
-            with env.begin(db=dbi, write=False) as txn:
+                show = [str(k) for k in keys]
+            clog(f"  {name}: {show}")
+
+    # Optional detail dump
+    if getattr(args, "detail", None) == 'utxo':
+        env_utxo, dbi_utxo = open_subdb_env(db_dir, 'utxo')
+        if not env_utxo or dbi_utxo is None:
+            clog('No utxo subdb found')
+            return 0
+        clog(f"{color_text('\n[detail:utxo]', CYAN)}")
+        cnt = 0
+        try:
+            with env_utxo.begin(db=dbi_utxo, write=False) as txn:
                 with txn.cursor() as cur:
-                    if not cur.first():
-                        clog('empty')
-                        return 0
                     limit = max(1, int(getattr(args, "peek", 3)))
-                    while True and cnt < limit:
-                        k = cur.key()
-                        v = cur.value()
+                    for k, v in cur:
+                        if k == b'__meta__':
+                            continue
                         try:
                             key = k.decode('utf-8')
-                            obj = json.loads(v.decode('utf-8'))
-                            txo = obj.get('tx_out') or obj
-                            amt = int(txo.get('amount', 0))
-                            spk_hex = txo.get('script_pubkey', '')
-                            addr = None
-                            try:
-                                spk = bytes.fromhex(spk_hex)
-                                if len(spk) >= 22 and spk[0] == 0x00 and spk[1] == 0x14:
-                                    prog = spk[2:22]
-                                    data = [0] + list(convertbits(prog, 8, 5, True))
-                                    addr = bech32_encode(CFG.ADDRESS_PREFIX, data)
-                            except Exception:
+                            if len(v) >= 19:
+                                amt, is_cb, height, spk_len = struct.unpack_from("<Q?qH", v, 0)
+                                spk = v[19:19 + spk_len]
                                 addr = None
-                            clog(f"- {key} | amount: {amt} | address: {addr or 'n/a'}")
+                                try:
+                                    if len(spk) == 22 and spk[0] == 0x00 and spk[1] == 0x14:
+                                        prog = spk[2:22]
+                                        data = [0] + list(convertbits(prog, 8, 5, True))
+                                        addr = bech32_encode(CFG.ADDRESS_PREFIX, data)
+                                    elif len(spk) == 34 and spk[0] == 0x00 and spk[1] == 0x20:
+                                        prog = spk[2:34]
+                                        data = [0] + list(convertbits(prog, 8, 5, True))
+                                        addr = bech32_encode(CFG.ADDRESS_PREFIX, data)
+                                except Exception:
+                                    addr = None
+                                clog(f"- {key} | amount: {amt} | height: {height} | cb: {is_cb} | address: {addr or 'n/a'}")
+                            else:
+                                clog(f"- {key} | raw size: {len(v)} bytes")
                         except Exception as e:
                             clog(f"- decode error for key {k!r}: {e}")
                         cnt += 1
-                        if not cur.next():
+                        if cnt >= limit:
                             break
-        elif getattr(args, "detail", None) == 'graffiti':
-            try:
-                dbi = env.open_db(b'graffiti', create=False)
-            except Exception:
-                clog('No graffiti subdb found')
-                return 0
-            clog(f"{color_text('\n[detail:graffiti]', CYAN)}")
-            with env.begin(db=dbi, write=False) as txn:
-                raw = txn.get(b"data:data")
-                if not raw:
-                    clog("empty graffiti registry")
-                    return 0
-                try:
-                    obj = json.loads(raw.decode("utf-8"))
-                    posts = obj.get("posts") or {}
-                    comments = obj.get("comments") or {}
-                    payouts = obj.get("payouts") or {}
-                    clog(f"posts   : {len(posts)}")
-                    clog(f"comments: {sum(len(v or []) for v in comments.values())}")
-                    clog(f"payouts : {sum(len(v or []) for v in payouts.values())}")
-                except Exception as e:
-                    clog(f"decode error: {e}")
-        elif getattr(args, "detail", None) == 'payout':
-            reg = _load_graffiti_registry(env)
-            if reg is None:
-                clog("No graffiti registry found")
-                return 0
-            clog(f"{color_text('\n[detail:payout]', CYAN)}")
-            _render_payouts(reg, limit=max(1, int(getattr(args, "peek", 3) or 3)))
+        finally:
+            env_utxo.close()
+    elif getattr(args, "detail", None) == 'graffiti':
+        reg = _load_graffiti_registry(db_dir)
+        if not reg:
+            clog('No graffiti records found')
+            return 0
+        clog(f"{color_text('\n[detail:graffiti]', CYAN)}")
+        posts = reg.get("posts") or {}
+        comments = reg.get("comments") or {}
+        payouts = reg.get("payouts") or {}
+        proofs = reg.get("proofs") or {}
+        clog(f"posts   : {len(posts)}")
+        clog(f"comments: {sum(len(v or []) for v in comments.values())}")
+        clog(f"payouts : {sum(len(v or []) for v in payouts.values())}")
+        clog(f"proofs  : {sum(len(v or []) for v in proofs.values())}")
+    elif getattr(args, "detail", None) == 'payout':
+        reg = _load_graffiti_registry(db_dir)
+        if reg is None:
+            clog("No graffiti registry found")
+            return 0
+        clog(f"{color_text('\n[detail:payout]', CYAN)}")
+        _render_payouts(reg, limit=max(1, int(getattr(args, "peek", 3) or 3)))
 
-        return 0
-
-    finally:
-        env.close()
+    return 0
 
 
 def main(argv=None) -> int:

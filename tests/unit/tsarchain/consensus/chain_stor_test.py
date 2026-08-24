@@ -44,8 +44,6 @@ class TestChainStorage:
         self._snapshot_backup_lock = threading.Lock()
 
     
-    def _build_block_meta(self, block, cw_prev=0): return self.chain_storage._build_block_meta(block, cw_prev)
-    def _serialize_block_for_store(self, block, prev_cw=0): return self.chain_storage._serialize_block_for_store(block, prev_cw)
     def _mark_chain_dirty(self, height=0): return self.chain_storage._mark_chain_dirty(height)
     def _prune_chain_store(self, start_height): return self.chain_storage._prune_chain_store(start_height)
     def _reset_chain_store(self): return self.chain_storage._reset_chain_store()
@@ -139,31 +137,6 @@ def mock_block(mock_tx):
 # ----------------------------------------------------------------------
 # Tests for helper methods
 # ----------------------------------------------------------------------
-def test_build_block_meta(storage, mock_block):
-    cw_prev = 1000
-    meta = storage._build_block_meta(mock_block, cw_prev)
-    assert meta["schema_version"] == CFG.DATA_SCHEMA_VERSION
-    assert meta["tx_count"] == 1
-    assert meta["size_bytes"] > 0
-    assert meta["chainwork"] > 0
-    assert meta["target"] is not None
-    assert meta["difficulty"] is not None
-
-
-def test_serialize_block_for_store(storage, mock_block):
-    # Override stub _work_from_bits agar chainwork bertambah
-    storage._work_from_bits = lambda bits: 1
-    prev_cw = 5000
-    blk_dict, new_cw = storage._serialize_block_for_store(mock_block, prev_cw)
-    assert "_meta" in blk_dict
-    meta = blk_dict["_meta"]
-    assert meta["chainwork"] > prev_cw
-    assert meta["graffiti_post_count"] == 0
-    assert meta["comment_count"] == 0
-    assert meta["payout_count"] == 0
-    assert new_cw == meta["chainwork"]
-
-
 def test_mark_chain_dirty(storage):
     assert storage._chain_dirty_from is None
     storage._mark_chain_dirty(5)
@@ -369,16 +342,13 @@ def test_save_chain_with_kv(storage, monkeypatch):
     # Create a chain with blocks
     block1 = Mock(spec=Block)
     block1.to_dict = Mock(return_value={"height": 0})
+    block1.to_storage_bytes = Mock(return_value=b"block_bytes")
     block1.height = 0
     block1.bits = 0x1d00ffff
     block1.prev_block_hash = b'\x00'*32
     block1.chainwork = 0
     block1.hash = Mock(return_value=b'\x01'*32)
     block1.transactions = []
-
-    monkeypatch.setattr('tsarchain.consensus.chain_storage.estimate_block_size_bytes', Mock(return_value=100))
-    storage.chain_storage._build_block_meta = Mock(return_value={"chainwork": 100})
-    storage.chain_storage._serialize_block_for_store = Mock(return_value=({"height": 0}, 100))
 
     storage.chain = [block1]
     storage._persisted_height = -1
@@ -408,18 +378,19 @@ def test_load_chain_with_kv(storage, monkeypatch):
         if prefix == b'':
             return [
                 (b'__meta__', b'{"tip_height": 2}'),
-                (b'h:000000000000', b'{"height": 0, "prev_block_hash": "' + ZERO_HASH_HEX.encode() + b'", "hash": "' + GENESIS_HASH_HEX.encode() + b'"}'),
-                (b'h:000000000001', b'{"height": 1, "prev_block_hash": "' + GENESIS_HASH_HEX.encode() + b'"}'),
-                (b'h:000000000002', b'{"height": 2, "prev_block_hash": "' + GENESIS_HASH_HEX.encode() + b'"}'),
+                (b'h:000000000000', b'raw_block_0'),
+                (b'h:000000000001', b'raw_block_1'),
+                (b'h:000000000002', b'raw_block_2'),
             ]
         return []
     monkeypatch.setattr('tsarchain.consensus.chain_storage.iter_prefix', mock_iter_prefix)
 
-    # Mock Block.from_dict to return a block with proper attributes
-    def mock_from_dict(d):
+    # Mock Block.from_storage_bytes to return a block with proper attributes
+    def mock_from_storage_bytes(raw):
         b = Mock(spec=Block)
-        b.height = d.get("height", 0)
-        prev = d.get("prev_block_hash", ZERO_HASH_HEX)
+        idx = int(raw.decode('latin1')[-1]) if raw.decode('latin1')[-1].isdigit() else 0
+        b.height = idx
+        prev = ZERO_HASH_HEX if idx == 0 else GENESIS_HASH_HEX
         b.prev_block_hash = bytes.fromhex(prev)
         b.hash = Mock(return_value=bytes.fromhex(GENESIS_HASH_HEX))
         b.transactions = []
@@ -427,7 +398,7 @@ def test_load_chain_with_kv(storage, monkeypatch):
         b.bits = 0x1d00ffff
         b.chainwork = 0
         return b
-    monkeypatch.setattr('tsarchain.consensus.chain_storage.Block', Mock(from_dict=mock_from_dict))
+    monkeypatch.setattr('tsarchain.consensus.chain_storage.Block', Mock(from_storage_bytes=mock_from_storage_bytes))
 
     # Mock GENESIS_HASH to match
     monkeypatch.setattr('tsarchain.consensus.chain_storage.GENESIS_HASH', bytes.fromhex(GENESIS_HASH_HEX))
@@ -458,19 +429,19 @@ def test_load_chain_invalid_genesis(storage, monkeypatch):
     def mock_iter_prefix(db, prefix):
         if prefix == b'':
             return [
-                (b'h:000000000000', b'{"height": 1, "prev_block_hash": "' + ZERO_HASH_HEX.encode() + b'"}'),
+                (b'h:000000000000', b'raw_block_0'),
             ]
         return []
     monkeypatch.setattr('tsarchain.consensus.chain_storage.iter_prefix', mock_iter_prefix)
 
-    # Mock Block.from_dict
-    def mock_from_dict(d):
+    # Mock Block.from_storage_bytes
+    def mock_from_storage_bytes(raw):
         b = Mock(spec=Block)
-        b.height = d["height"]
-        b.prev_block_hash = bytes.fromhex(d["prev_block_hash"])
+        b.height = 1
+        b.prev_block_hash = bytes.fromhex(ZERO_HASH_HEX)
         b.hash = Mock(return_value=bytes.fromhex("1" * 64))
         return b
-    monkeypatch.setattr('tsarchain.consensus.chain_storage.Block', Mock(from_dict=mock_from_dict))
+    monkeypatch.setattr('tsarchain.consensus.chain_storage.Block', Mock(from_storage_bytes=mock_from_storage_bytes))
     monkeypatch.setattr('tsarchain.consensus.chain_storage.CFG.ZERO_HASH', bytes.fromhex(ZERO_HASH_HEX))
 
     # Mock reset_chain_store
@@ -486,18 +457,18 @@ def test_load_chain_wrong_genesis_hash(storage, monkeypatch):
     def mock_iter_prefix(db, prefix):
         if prefix == b'':
             return [
-                (b'h:000000000000', b'{"height": 0, "prev_block_hash": "0000000000000000000000000000000000000000000000000000000000000000"}'),
+                (b'h:000000000000', b'raw_block_0'),
             ]
         return []
     monkeypatch.setattr('tsarchain.consensus.chain_storage.iter_prefix', mock_iter_prefix)
 
-    def mock_from_dict(d):
+    def mock_from_storage_bytes(raw):
         b = Mock(spec=Block)
-        b.height = d["height"]
-        b.prev_block_hash = bytes.fromhex(d["prev_block_hash"])
+        b.height = 0
+        b.prev_block_hash = bytes.fromhex("00"*32)
         b.hash = Mock(return_value=bytes.fromhex("ff"*32))  # different from GENESIS
         return b
-    monkeypatch.setattr('tsarchain.consensus.chain_storage.Block', Mock(from_dict=mock_from_dict))
+    monkeypatch.setattr('tsarchain.consensus.chain_storage.Block', Mock(from_storage_bytes=mock_from_storage_bytes))
     monkeypatch.setattr('tsarchain.consensus.chain_storage.GENESIS_HASH', bytes.fromhex("11"*32))
     monkeypatch.setattr('tsarchain.consensus.chain_storage.CFG.ZERO_HASH', bytes.fromhex("00"*32))
 

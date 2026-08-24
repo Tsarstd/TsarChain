@@ -149,10 +149,22 @@ python benchmarks/native_bench.py
 
 ---
 
-## 6. Verification & PR Guidelines
+## 6. Code Style & Conventions: Strict Prohibition of `hasattr`
+
+> [!IMPORTANT]
+> **DO NOT USE `hasattr()` ANYWHERE IN THIS CODEBASE.**
+> The Graffiti Protocol monorepo is strictly clean of `hasattr()`. 
+> - Always prefer direct attribute access, explicit method invocation, or `getattr(obj, "attr_name", default)` when attributes are truly optional.
+> - For callables, use `ser = getattr(obj, "method", None); if callable(ser): ...`.
+> - Do not write defensive shims with `hasattr()`. Trust established data contracts and concrete class implementations across core models (`Block`, `Tx`, `TxIn`, `TxOut`, `GraffitiRegistry`, etc.).
+
+---
+
+## 7. Verification & PR Guidelines
 
 Before declaring success or submitting pull requests:
 1. Ensure all Rust unit tests pass (`cargo test` inside `tsarcore_native`).
 2. Ensure all Python unit tests pass (`pytest`).
 3. Verify native extension builds without errors (`maturin develop --release`).
 4. Ensure guarded core consensus files (`src/tsarchain/consensus/`, `src/kremlin/security/`, `tests/`) maintain integrity.
+5. Verify that no `hasattr` usage has been introduced into the codebase.

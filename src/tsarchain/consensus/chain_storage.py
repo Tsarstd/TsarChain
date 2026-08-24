@@ -23,7 +23,6 @@ from ..storage.utxo import UTXODB
 from ..utils import config as CFG
 from ..contracts import graffiti as GRAFFITI
 from ..contracts.graffiti_registry import GraffitiRegistry
-from ..mempool.scripts import script_to_address
 from ..utils.bootstrap import annotate_local_snapshot_meta
 from ..storage.kv import batch, iter_prefix, clear_db, delete, _ensure_env
 from ..utils.helpers import bits_to_target, target_to_difficulty, estimate_block_size_bytes
@@ -73,21 +72,7 @@ class ChainStorage:
 
 
     def load_chain(self):
-        meta, data_list = self._fetch_kv_chain_data()
-            
-        if not isinstance(data_list, list) or not data_list:
-            return
-        chain = []
-        for d in data_list:
-            if getattr(d, "prev_block_hash", None) is not None and getattr(d, "height", None) is not None:
-                chain.append(d)
-            elif isinstance(d, dict):
-                chain.append(Block.from_dict(d))
-            else:
-                try:
-                    chain.append(Block.from_dict(d))
-                except Exception:
-                    chain.append(d)
+        meta, chain = self._fetch_kv_chain_data()
         if not chain or not self._validate_loaded_chain(chain):
             return
 
@@ -234,12 +219,7 @@ class ChainStorage:
                             blk.difficulty = int(self.blockchain.calculate_block_difficulty(blk.bits))
                         except Exception:
                             blk.difficulty = 1
-                    try:
-                        payload = blk.to_storage_bytes()
-                        if not isinstance(payload, (bytes, bytearray)):
-                            payload = Block.to_storage_bytes(blk)
-                    except Exception:
-                        payload = Block.to_storage_bytes(blk)
+                    payload = blk.to_storage_bytes()
                     b.put(key, payload)
             self.blockchain._persisted_height = tip_height
 
@@ -275,105 +255,6 @@ class ChainStorage:
             name="tsarchain.snapshot_backup",
             daemon=True,
         ).start()
-
-
-    def _serialize_block_for_store(self, block: Block, prev_chainwork: int = 0) -> tuple[dict, int]:
-        blk_dict = block.to_dict()
-        meta = self._build_block_meta(block, chainwork_so_far=prev_chainwork)
-        graff_posts, graff_comments, graff_payouts = self._extract_graffiti_events(block)
-        meta["graffiti_post_count"] = len(graff_posts)
-        meta["comment_count"] = len(graff_comments)
-        meta["payout_count"] = len(graff_payouts)
-        blk_dict["_meta"] = meta
-        cw = meta.get("chainwork", prev_chainwork)
-        cw_int = int(cw) if cw is not None else int(prev_chainwork)
-        return blk_dict, cw_int
-
-
-    def _build_block_meta(self, block: Block, chainwork_so_far: int = 0) -> dict:
-        txs = getattr(block, "transactions", []) or []
-        tx_count = len(txs)
-        size_b = estimate_block_size_bytes(block)
-        cw = int(chainwork_so_far) + int(self.blockchain._work_from_bits(getattr(block, "bits", CFG.MAX_BITS)))
-        target_val = None
-        difficulty_val = None
-        tgt = bits_to_target(int(getattr(block, "bits", CFG.MAX_BITS)))
-        target_val = int(tgt)
-        difficulty_val = int(target_to_difficulty(tgt))
-        meta = {
-            "schema_version": int(CFG.DATA_SCHEMA_VERSION),
-            "tx_count": tx_count,
-            "size_bytes": int(size_b),
-            "chainwork": int(cw),
-            "target": target_val,
-            "difficulty": difficulty_val,
-        }
-        return meta
-
-
-    def _extract_graffiti_events(self, block: Block) -> tuple[list[dict], list[dict], list[dict]]:
-        posts: list[dict] = []
-        comments: list[dict] = []
-        payouts: list[dict] = []
-
-        def _txid_hex(tx_obj):
-            txid = getattr(tx_obj, "txid", None)
-            if isinstance(txid, (bytes, bytearray)):
-                return txid.hex()
-            return str(txid) if txid is not None else None
-
-        for tx in getattr(block, "transactions", []) or []:
-            txid_hex = _txid_hex(tx)
-            for tx_out in getattr(tx, "outputs", []) or []:
-                spk = getattr(tx_out, "script_pubkey", None)
-                meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
-                if not meta:
-                    continue
-                event = str(meta.get("event", "")).upper()
-                if event == "POST":
-                    art_id = str(meta.get("art_id") or "").strip().lower()
-                    if not art_id:
-                        sha_hex = str(meta.get("sha256") or "").strip().lower()
-                        creator = str(meta.get("creator") or "").strip().lower()
-                        art_id = GRAFFITI.compute_art_id(sha_hex, creator) if sha_hex and creator else ""
-                    if not art_id:
-                        continue
-
-                    pool_addr = GRAFFITI.derive_pool_address(art_id)
-                    min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
-                    paid = 0
-                    for out in getattr(tx, "outputs", []) or []:
-                        out_spk = getattr(out, "script_pubkey", None)
-                        out_addr = script_to_address(out_spk) if out_spk is not None else getattr(out, "address", None)
-                        if out_addr == pool_addr:
-                            paid += int(getattr(out, "amount", 0))
-
-                    if paid < min_fee:
-                        continue
-
-                    posts.append({
-                        "txid": txid_hex,
-                        "art_id": art_id,
-                        "sha256": meta.get("sha256"),
-                        "size": meta.get("size"),
-                        "mime": meta.get("mime"),
-                        "creator": meta.get("creator"),
-                    })
-                elif event == "COMMENT":
-                    comments.append({
-                        "txid": txid_hex,
-                        "art_id": meta.get("art_id"),
-                        "comment_len": meta.get("comment_len"),
-                        "commenter": meta.get("commenter"),
-                    })
-                elif event == "PAYOUT":
-                    payouts.append({
-                        "txid": txid_hex,
-                        "art_id": meta.get("art_id"),
-                        "epoch": meta.get("epoch"),
-                        "recipients": meta.get("recipients"),
-                    })
-        return posts, comments, payouts
 
 
     def _mark_chain_dirty(self, height: int = 0) -> None:
@@ -552,16 +433,10 @@ class ChainStorage:
         blocks.sort(key=lambda kv: kv[0])
         chain_objs = []
         for _, v in blocks:
-            if len(v) >= 108 and not v.startswith(b'{'):
-                try:
-                    chain_objs.append(Block.from_storage_bytes(v))
-                    continue
-                except Exception:
-                    pass
             try:
-                chain_objs.append(json.loads(v.decode('utf-8')))
+                chain_objs.append(Block.from_storage_bytes(v))
             except Exception:
-                pass
+                log.exception("[_fetch_kv_chain_data] Failed to parse block binary from KV")
         return meta, chain_objs
 
 
@@ -807,16 +682,12 @@ class ChainStorage:
         utxo_set_size = len(utxo_items)
         for entry in utxo_items:
             tx_out = entry.get("tx_out") if isinstance(entry, dict) else getattr(entry, "tx_out", None)
-            if isinstance(tx_out, dict):
-                amount_val = tx_out.get("amount")
-            else:
-                amount_val = getattr(tx_out, "amount", entry.get("amount") if isinstance(entry, dict) else None)
-            amount = int(amount_val if amount_val is not None else 0)
+            amount = int(getattr(tx_out, "amount", entry.get("amount", 0) if isinstance(entry, dict) else 0) or 0)
             if amount <= 0:
                 continue
             utxo_total_value += amount
             is_cb = bool(entry.get("is_coinbase", False)) if isinstance(entry, dict) else bool(getattr(entry, "is_coinbase", False))
-            born = int(entry.get("block_height", entry.get("height", 0)) if isinstance(entry, dict) else getattr(entry, "block_height", getattr(entry, "height", 0)) or 0)
+            born = int(entry.get("block_height", 0) if isinstance(entry, dict) else getattr(entry, "block_height", 0) or 0)
             if is_cb:
                 conf = max(0, (tip_height - born) + 1)
                 if conf >= maturity:
@@ -849,11 +720,7 @@ class ChainStorage:
         for post in posts_data.values():
             if not isinstance(post, dict):
                 continue
-            size_val = post.get("size")
-            if size_val is None:
-                stats = post.get("stats") or {}
-                size_val = stats.get("size") or {}
-            total_graffiti_storage += int(size_val or 0)
+            total_graffiti_storage += int(post.get("size") or 0)
             stats = post.get("stats") or {}
             total_pool_balances += int(stats.get("pool_balance", 0) or 0)
             

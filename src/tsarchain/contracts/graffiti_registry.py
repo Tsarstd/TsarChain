@@ -42,14 +42,13 @@ def serialize_post_binary(entry: dict) -> bytes:
 
 
 def deserialize_post_binary(raw: bytes, art_id: str = "") -> dict:
-    if raw.startswith(b"{"):
-        return json.loads(raw.decode("utf-8"))
     header_size = struct.calcsize(_POST_HEADER_STRUCT)
-    if len(raw) < header_size:
-        return json.loads(raw.decode("utf-8"))
-    *_, payload_len = struct.unpack_from(_POST_HEADER_STRUCT, raw, 0)
-    payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
-    data = json.loads(payload_json)
+    if len(raw) >= header_size and not raw.startswith(b"{"):
+        *_, payload_len = struct.unpack_from(_POST_HEADER_STRUCT, raw, 0)
+        payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
+        data = json.loads(payload_json)
+    else:
+        data = json.loads(raw.decode("utf-8"))
     if art_id and "art_id" not in data:
         data["art_id"] = art_id
     return data
@@ -68,14 +67,12 @@ def serialize_comment_binary(entry: dict) -> bytes:
 
 
 def deserialize_comment_binary(raw: bytes) -> dict:
-    if raw.startswith(b"{"):
-        return json.loads(raw.decode("utf-8"))
     header_size = struct.calcsize(_COMMENT_HEADER_STRUCT)
-    if len(raw) < header_size:
-        return json.loads(raw.decode("utf-8"))
-    *_, payload_len = struct.unpack_from(_COMMENT_HEADER_STRUCT, raw, 0)
-    payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
-    return json.loads(payload_json)
+    if len(raw) >= header_size and not raw.startswith(b"{"):
+        *_, payload_len = struct.unpack_from(_COMMENT_HEADER_STRUCT, raw, 0)
+        payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
+        return json.loads(payload_json)
+    return json.loads(raw.decode("utf-8"))
 
 
 def serialize_payout_binary(entry: dict) -> bytes:
@@ -88,14 +85,12 @@ def serialize_payout_binary(entry: dict) -> bytes:
 
 
 def deserialize_payout_binary(raw: bytes) -> dict:
-    if raw.startswith(b"{"):
-        return json.loads(raw.decode("utf-8"))
     header_size = struct.calcsize(_PAYOUT_HEADER_STRUCT)
-    if len(raw) < header_size:
-        return json.loads(raw.decode("utf-8"))
-    *_, payload_len = struct.unpack_from(_PAYOUT_HEADER_STRUCT, raw, 0)
-    payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
-    return json.loads(payload_json)
+    if len(raw) >= header_size and not raw.startswith(b"{"):
+        *_, payload_len = struct.unpack_from(_PAYOUT_HEADER_STRUCT, raw, 0)
+        payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
+        return json.loads(payload_json)
+    return json.loads(raw.decode("utf-8"))
 
 
 def serialize_proof_binary(entry: dict) -> bytes:
@@ -110,14 +105,12 @@ def serialize_proof_binary(entry: dict) -> bytes:
 
 
 def deserialize_proof_binary(raw: bytes) -> dict:
-    if raw.startswith(b"{"):
-        return json.loads(raw.decode("utf-8"))
     header_size = struct.calcsize(_PROOF_HEADER_STRUCT)
-    if len(raw) < header_size:
-        return json.loads(raw.decode("utf-8"))
-    *_, payload_len = struct.unpack_from(_PROOF_HEADER_STRUCT, raw, 0)
-    payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
-    return json.loads(payload_json)
+    if len(raw) >= header_size and not raw.startswith(b"{"):
+        *_, payload_len = struct.unpack_from(_PROOF_HEADER_STRUCT, raw, 0)
+        payload_json = raw[header_size:header_size + payload_len].decode("utf-8")
+        return json.loads(payload_json)
+    return json.loads(raw.decode("utf-8"))
 
 
 class GraffitiRegistry:

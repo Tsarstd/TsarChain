@@ -154,7 +154,7 @@ def test_receive_block_empty(dummy_node):
 def test_receive_block_already_seen(mock_block_class, dummy_node):
     mock_block = MagicMock()
     mock_block.hash.return_value.hex.return_value = "blockhash"
-    mock_block_class.deserialize_block.return_value = mock_block
+    mock_block_class.from_dict.return_value = mock_block
     
     dummy_node.seen_blocks.add("blockhash")
     
@@ -169,7 +169,7 @@ def test_receive_block_success(mock_block_class, dummy_node):
     mock_block.height = 10
     mock_block.transactions = []
     mock_block.hash.return_value.hex.return_value = "newhash"
-    mock_block_class.deserialize_block.return_value = mock_block
+    mock_block_class.from_dict.return_value = mock_block
     
     dummy_node.blockchain.get_last_block.return_value.height = 9
     dummy_node.blockchain.get_last_block.return_value.hash.return_value = "prevhash"
@@ -266,7 +266,7 @@ def test_native_precheck_block_compact_validation(dummy_node):
 def test_receive_block_gap(mock_block_class, dummy_node):
     mock_block = MagicMock()
     mock_block.height = 20
-    mock_block_class.deserialize_block.return_value = mock_block
+    mock_block_class.from_dict.return_value = mock_block
     
     dummy_node.blockchain.get_last_block.return_value.height = 10
     
@@ -279,7 +279,7 @@ def test_receive_block_validation_fails_prevout(mock_block_class, dummy_node):
     mock_block = MagicMock()
     mock_block.height = 10
     mock_block.prev_block_hash = "prevhash"
-    mock_block_class.deserialize_block.return_value = mock_block
+    mock_block_class.from_dict.return_value = mock_block
     
     dummy_node.blockchain.get_last_block.return_value.height = 9
     dummy_node.blockchain.get_last_block.return_value.hash.return_value = "prevhash"
@@ -296,7 +296,7 @@ def test_receive_block_add_block_exception_swap_tip(mock_block_class, dummy_node
     mock_block = MagicMock()
     mock_block.height = 10
     mock_block.prev_block_hash = "parent_hash"
-    mock_block_class.deserialize_block.return_value = mock_block
+    mock_block_class.from_dict.return_value = mock_block
     
     parent_block = MagicMock()
     parent_block.height = 9

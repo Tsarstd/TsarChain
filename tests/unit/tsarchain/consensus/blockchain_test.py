@@ -45,8 +45,7 @@ def mock_kv():
     """Mock iter_prefix and _ensure_env from storage.kv across modules."""
     mock_iter_prefix = Mock(return_value=[])
     mock_store = MagicMock()
-    with patch('tsarchain.consensus.blockchain.iter_prefix', mock_iter_prefix), \
-         patch('tsarchain.consensus.chain_storage.iter_prefix', mock_iter_prefix), \
+    with patch('tsarchain.consensus.chain_storage.iter_prefix', mock_iter_prefix), \
          patch('tsarchain.storage.kv.iter_prefix', mock_iter_prefix), \
          patch('tsarchain.storage.kv._ensure_env', return_value=mock_store):
         yield mock_iter_prefix
@@ -172,44 +171,27 @@ def test_get_block_hash_fallback(mock_config):
     assert 0 in bc._hash_cache
 
 
-def test_reload_chain_from_kv(mock_block_module, mock_kv, mock_config):
-    """Successfully reload chain from LMDB."""
-    iter_prefix = mock_kv
-
-    block_data = {'height': 0, 'hash': 'abc123', 'transactions': []}
-    iter_prefix.return_value = [
-        (b'h:0', json.dumps(block_data).encode('utf-8')),
-        (b'__meta__', b'{"key":"value"}')
-    ]
-
-    mock_block = Mock()
-    mock_block.height = 0
-    mock_block.prev_block_hash = mock_config.ZERO_HASH
-    mock_block_module.from_dict.return_value = mock_block
-
-    with patch.object(Blockchain, 'load_chain', autospec=True) as mock_load, \
-         patch.object(Blockchain, 'load_state', autospec=True) as mock_state, \
-         patch('tsarchain.consensus.blockchain.GenesisManager._persist_empty_state_if_needed', autospec=True), \
-         patch('tsarchain.consensus.blockchain.GenesisManager._enforce_genesis_lock', autospec=True):
-
-        mock_load.return_value = None  # tidak mengisi chain
+def test_reload_chain_from_kv(mock_config):
+    """Successfully reload chain from LMDB via load_chain and load_state."""
+    with patch.object(Blockchain, 'load_chain') as mock_load, \
+         patch.object(Blockchain, 'load_state') as mock_state:
         bc = Blockchain()
+        def fake_load():
+            bc.chain = [Mock(height=0)]
+        mock_load.side_effect = fake_load
         res = bc._reload_chain_from_kv()
         assert res is True
         assert len(bc.chain) == 1
-        assert bc.total_blocks == 1
-        assert bc._chain_meta == {'key': 'value'}
 
 
-def test_reload_chain_from_kv_empty(mock_config, mock_kv):
-    """Reload fails when LMDB has no block data."""
-    iter_prefix = mock_kv
-    iter_prefix.return_value = []  # no data
-
-    bc = Blockchain()
-    result = bc._reload_chain_from_kv()
-    assert result is False
-    assert bc.chain == []
+def test_reload_chain_from_kv_empty(mock_config):
+    """Reload returns False when chain remains empty."""
+    with patch.object(Blockchain, 'load_chain'), patch.object(Blockchain, 'load_state'):
+        bc = Blockchain()
+        bc.chain = []
+        result = bc._reload_chain_from_kv()
+        assert result is False
+        assert bc.chain == []
 
 
 def test_to_dict(mock_config):
@@ -411,30 +393,13 @@ def test_hash_cache_lru(mock_config):
     assert 1 in bc._hash_cache
     assert 2 in bc._hash_cache
     
-def test_reload_chain_from_kv_corrupt_json(mock_config, mock_kv):
-    """Reload fails if JSON data is invalid."""
-    iter_prefix = mock_kv
-    # Data corrupt (not JSON)
-    iter_prefix.return_value = [(b'h:0', b'not a json')]
-
-    with patch.object(Blockchain, 'load_chain', autospec=True):
+def test_reload_chain_from_kv_exception(mock_config):
+    """Reload handles exception gracefully and returns False."""
+    with patch.object(Blockchain, 'load_chain'), patch.object(Blockchain, 'load_state'):
         bc = Blockchain()
+        bc.load_chain = Mock(side_effect=Exception("LMDB error"))
         result = bc._reload_chain_from_kv()
         assert result is False
-        assert bc.chain == []
-
-def test_reload_chain_from_kv_block_from_dict_fails(mock_config, mock_kv, mock_block_module):
-    """Reload fails if Block.from_dict raises an exception."""
-    iter_prefix = mock_kv
-    block_data = {'height': 0, 'hash': 'abc123', 'transactions': []}
-    iter_prefix.return_value = [(b'h:0', json.dumps(block_data).encode('utf-8'))]
-    mock_block_module.from_dict.side_effect = Exception("Corrupt block")
-
-    with patch.object(Blockchain, 'load_chain', autospec=True):
-        bc = Blockchain()
-        result = bc._reload_chain_from_kv()
-        assert result is False
-        assert bc.chain == []
 
 
 def test_blockchain_expected_bits_proxy():

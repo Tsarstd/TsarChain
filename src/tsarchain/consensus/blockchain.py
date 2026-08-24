@@ -28,7 +28,6 @@ from ..core.block import Block
 from ..utils import config as CFG
 from ..storage.utxo import UTXODB
 from ..mempool.pool import TxPool
-from ..storage.kv import iter_prefix
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
@@ -90,9 +89,6 @@ class Blockchain():
         self._start_persist_worker()
         self.load_chain()
         self.load_state()
-        if not self.chain:
-            self._cold_reload_attempted = True
-            self._reload_chain_from_kv()
         if self.chain:
             self.genesis_manager._enforce_genesis_lock()
             self._rebuild_hash_cache()
@@ -108,17 +104,10 @@ class Blockchain():
         try:
             cache: OrderedDict[int, str] = OrderedDict()
             for b in self.chain:
-                h = None
-                try:
-                    h = b.hash()
-                except Exception:
-                    h = getattr(b, "hash", None)
-                    h = h() if callable(h) else h
+                h = b.hash() if callable(getattr(b, "hash", None)) else getattr(b, "hash", None)
                 if isinstance(h, (bytes, bytearray)):
-                    h = h.hex()
-                elif not isinstance(h, str):
-                    h = None
-                if h:
+                    cache[int(getattr(b, "height", 0) or 0)] = h.hex()
+                elif isinstance(h, str) and len(h) >= 64:
                     cache[int(getattr(b, "height", 0) or 0)] = h
             # trim to config bound
             max_entries = max(1, int(CFG.HASH_CACHE_MAX))
@@ -176,46 +165,9 @@ class Blockchain():
 
     def _reload_chain_from_kv(self) -> bool:
         try:
-            items = list(iter_prefix('chain', b''))
-            if not items:
-                return False
-            blocks = []
-            meta = {}
-            for k, v in items:
-                if k == b'__meta__':
-                    try:
-                        meta = json.loads(v.decode('utf-8')) or {}
-                    except Exception:
-                        log.exception("[reload_chain] failed to parse chain meta")
-                    continue
-                if k.startswith(b'h:'):
-                    blocks.append((k, v))
-            blocks.sort(key=lambda kv: kv[0])
-            data_list = [json.loads(v.decode('utf-8')) for _, v in blocks]
-            if not data_list:
-                return False
-            chain = [Block.from_dict(d) for d in data_list]
-            if not chain:
-                return False
-            self.chain = chain
-            try:
-                self._chain_meta = meta
-            except Exception:
-                self._chain_meta = {}
-            self.total_blocks = len(self.chain)
-            try:
-                self.total_supply = self.calculate_total_supply()
-            except Exception:
-                self.total_supply = 0
-            self.supply_in_tsar = self.total_supply / CFG.TSAR if self.total_supply else 0
-            self._persisted_height = len(self.chain) - 1
-            self._chain_dirty_from = None
-            # UTXO akan disinkronkan ulang saat ensure_utxodb dipanggil
-            self._utxo_last_flush_height = self.height
-            self._utxo_dirty = False
-            self._utxo_synced = False
-            log.info("[reload_chain] Loaded %s blocks from LMDB fallback", len(self.chain))
-            return True
+            self.load_chain()
+            self.load_state()
+            return bool(self.chain)
         except Exception:
             log.exception("[reload_chain] Failed to reload chain from LMDB")
             return False

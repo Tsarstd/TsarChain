@@ -37,26 +37,22 @@ class UTXODatabaseMixin:
         utxo_db = cls()
         utxo_db.utxos.clear()
         for key, value in (data or {}).items():
-            if not isinstance(value, dict):
+            if not isinstance(value, dict) or key == '__meta__':
                 continue
             if "tx_out" in value:
                 tx_out_data = value["tx_out"]
-                if isinstance(tx_out_data, dict) and "amount" in tx_out_data and "script_pubkey" in tx_out_data:
-                    tx_out_obj = TxOut.from_dict(tx_out_data)
-                else:
-                    continue
-                utxo_db.utxos[key] = {
-                    "tx_out": tx_out_obj,
-                    "is_coinbase": bool(value.get("is_coinbase", False)),
-                    "block_height": int(value.get("block_height", 0)),
-                }
+                tx_out_obj = TxOut.from_dict(tx_out_data) if isinstance(tx_out_data, dict) else None
             elif "amount" in value and "script_pubkey" in value:
                 tx_out_obj = TxOut.from_dict(value)
-                utxo_db.utxos[key] = {
-                    "tx_out": tx_out_obj,
-                    "is_coinbase": False,
-                    "block_height": 0,
-                }
+            else:
+                continue
+            if tx_out_obj is None:
+                continue
+            utxo_db.utxos[key] = {
+                "tx_out": tx_out_obj,
+                "is_coinbase": bool(value.get("is_coinbase", False)),
+                "block_height": int(value.get("block_height", 0)),
+            }
         utxo_db._dirty = True
         utxo_db._dirty_keys = set(utxo_db.utxos.keys())
         utxo_db._removed_keys.clear()

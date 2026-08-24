@@ -150,10 +150,29 @@ def test_block_from_dict_edge_cases():
         assert b.chainwork == "0002"
         assert b.difficulty == 2.0
 
-def test_block_deserialize_block():
-    with patch("tsarchain.core.block.Block.from_dict") as mock_from:
-        mock_from.return_value = "block"
-        assert Block.deserialize_block({"a": 1}) == "block"
+def test_block_storage_bytes_roundtrip():
+    d = {
+        "height": 5,
+        "version": 1,
+        "prev_block_hash": ("00" * 32),
+        "merkle_root": ("11" * 32),
+        "timestamp": 12345678,
+        "difficulty": 2048,
+        "chainwork": 4096,
+        "bits": 530579455,
+        "nonce": 1475,
+        "transactions": [],
+    }
+    b = Block.from_dict(d)
+    raw = b.to_storage_bytes()
+    assert len(raw) >= 108
+    b_restored = Block.from_storage_bytes(raw)
+    assert b_restored.height == b.height
+    assert b_restored.difficulty == b.difficulty
+    assert b_restored.chainwork == b.chainwork
+    assert b_restored.bits == b.bits
+    assert b_restored.nonce == b.nonce
+    assert b_restored.timestamp == b.timestamp
 
 @patch("tsarchain.core.block.BlockHeader.serialize_block")
 def test_block_header(mock_serialize):

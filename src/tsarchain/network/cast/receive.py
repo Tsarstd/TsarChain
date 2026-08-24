@@ -29,7 +29,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
             if not block_data or not isinstance(block_data, dict):
                 return False
 
-            block = Block.deserialize_block(block_data)
+            block = Block.from_dict(block_data)
             block_id = None
             blk_hash_field = block_data.get("hash")
             if isinstance(blk_hash_field, str) and len(blk_hash_field) >= 64:

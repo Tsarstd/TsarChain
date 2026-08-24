@@ -8,6 +8,7 @@ from typing import Any, Dict
 from ...utils import config as CFG
 from .base import BroadcastHandlerProxy
 
+from ...utils.helpers import bits_to_target
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.cast.chain_utils")
 
@@ -65,13 +66,10 @@ class ChainUtilsHandler(BroadcastHandlerProxy):
         raise TypeError(f"bits must be int/hexstr, got {type(bits)}")
 
     def _work_from_bits(self, bits):
-        bits = self._parse_bits(bits)
-        exp = (bits >> 24) & 0xFF
-        mant = bits & 0x007FFFFF
-        if exp <= 3:
-            target = mant >> (8 * (3 - exp))
-        else:
-            target = mant << (8 * (exp - 3))
+        parsed = self._parse_bits(bits)
+        if parsed is None:
+            return 0
+        target = bits_to_target(parsed)
         if target <= 0:
             return 0
         return (1 << 256) // (target + 1)

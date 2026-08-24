@@ -150,7 +150,7 @@ def decode_db_value(db_name: str, key_bytes: bytes, value_bytes: bytes) -> Union
             pass
 
     # 2. Chain binary decoding
-    if db_name == 'chain' and key_str.startswith('h:') and len(value_bytes) >= 108 and not value_bytes.startswith(b'{'):
+    if db_name == 'chain' and key_str.startswith('h:'):
         if Block:
             try:
                 blk = Block.from_storage_bytes(value_bytes)
@@ -345,13 +345,6 @@ def export_node_data() -> int:
                                 parts = k_bytes[2:].decode("utf-8", errors="replace").split(":")
                                 if len(parts) >= 2:
                                     proofs.setdefault(parts[0], []).append(deserialize_proof_binary(v_bytes))
-                            elif k_bytes == b"data:data":
-                                legacy = json.loads(v_bytes.decode("utf-8"))
-                                if isinstance(legacy, dict):
-                                    posts.update(legacy.get("posts", {}))
-                                    comments.update(legacy.get("comments", {}))
-                                    payouts.update(legacy.get("payouts", {}))
-                                    proofs.update(legacy.get("proofs", {}))
                         except Exception as e:
                             print(f"   ⚠️  Error decoding graffiti key {k_bytes}: {e}")
 

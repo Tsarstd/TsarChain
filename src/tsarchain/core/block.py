@@ -145,16 +145,9 @@ class Block:
         meta = data.get("_meta")
         if isinstance(meta, dict):
             obj._meta = dict(meta)
-            if getattr(obj, "chainwork", None) is None and "chainwork" in meta:
-                obj.chainwork = meta.get("chainwork")
-            if getattr(obj, "difficulty", None) is None and "difficulty" in meta:
-                obj.difficulty = meta.get("difficulty")
-            if getattr(obj, "size_bytes", None) is None and "size_bytes" in meta:
-                obj.size_bytes = meta.get("size_bytes")
-            if getattr(obj, "vbytes", None) is None and "vbytes" in meta:
-                obj.vbytes = meta.get("vbytes")
-            if getattr(obj, "weight", None) is None and "weight" in meta:
-                obj.weight = meta.get("weight")
+            for attr in ("chainwork", "difficulty", "size_bytes", "vbytes", "weight"):
+                if getattr(obj, attr, None) is None and attr in meta:
+                    setattr(obj, attr, meta[attr])
         return obj
 
     def header(self) -> bytes:
@@ -218,10 +211,6 @@ class Block:
             chainwork=cw,
         )
         return block
-
-    @classmethod
-    def deserialize_block(cls, data: dict):
-        return cls.from_dict(data)
 
     # -----------------------------
     # MINING
