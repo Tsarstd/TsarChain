@@ -508,9 +508,8 @@ class ChainOperations:
             if not self._pow_ok(cur):
                 return False
             compute_txids = getattr(self.blockchain, "compute_txids_for_block", None)
-            if callable(compute_txids):
-                if not compute_txids(cur):
-                    return False
+            if callable(compute_txids) and not compute_txids(cur):
+                return False
             if not self._merkle_ok(cur):
                 return False
 

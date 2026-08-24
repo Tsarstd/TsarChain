@@ -220,6 +220,7 @@ class UTXOValidationMixin:
 
 
     def rebuild_from_chain(self, blocks) -> None:
+        log.warning("[rebuild_from_chain] Rebuilding entire UTXO state from %d block(s)...", len(blocks) if blocks else 0)
         with self._lock:
             self.utxos.clear()
             self._dirty_keys.clear()

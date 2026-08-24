@@ -437,6 +437,30 @@ class ChainStorage:
                 chain_objs.append(Block.from_storage_bytes(v))
             except Exception:
                 log.exception("[_fetch_kv_chain_data] Failed to parse block binary from KV")
+
+        if chain_objs:
+            for i in range(len(chain_objs) - 1):
+                next_prev = getattr(chain_objs[i + 1], "prev_block_hash", None)
+                if isinstance(next_prev, (bytes, bytearray)) and len(next_prev) == 32:
+                    chain_objs[i]._cached_hash = bytes(next_prev)
+                    chain_objs[i]._cached_hash_nonce = getattr(chain_objs[i], "nonce", None)
+                    chain_objs[i]._cached_hash_bits = getattr(chain_objs[i], "bits", None)
+                    chain_objs[i]._cached_hash_mr = getattr(chain_objs[i], "merkle_root", None)
+                    chain_objs[i]._cached_hash_prev = getattr(chain_objs[i], "prev_block_hash", None)
+
+            tip_hash_str = meta.get("tip_hash")
+            if isinstance(tip_hash_str, str) and len(tip_hash_str) >= 64:
+                try:
+                    tip_h = bytes.fromhex(tip_hash_str)
+                    last_blk = chain_objs[-1]
+                    last_blk._cached_hash = tip_h
+                    last_blk._cached_hash_nonce = getattr(last_blk, "nonce", None)
+                    last_blk._cached_hash_bits = getattr(last_blk, "bits", None)
+                    last_blk._cached_hash_mr = getattr(last_blk, "merkle_root", None)
+                    last_blk._cached_hash_prev = getattr(last_blk, "prev_block_hash", None)
+                except Exception:
+                    pass
+
         return meta, chain_objs
 
 

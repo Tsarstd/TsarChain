@@ -29,7 +29,10 @@ class UTXOValidator:
             self.blockchain._utxodb = UTXODB()
             self.blockchain._utxo_dirty = False
             self.blockchain._utxo_last_flush_height = self.blockchain.height
-            self.blockchain._utxo_synced = False
+            if getattr(self.blockchain._utxodb, "utxos", None):
+                self.blockchain._utxo_synced = True
+            else:
+                self.blockchain._utxo_synced = False
         if not self.blockchain._utxo_synced:
             self._sync_utxo_store(force=True)
         return self.blockchain._utxodb
