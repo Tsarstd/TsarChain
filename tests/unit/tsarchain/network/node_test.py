@@ -253,3 +253,23 @@ def test_wrappers(mock_cfg, mock_socket, mock_broadcast, mock_deps):
     with patch("tsarchain.network.node.rpc_client.request_mempool_snapshot") as m_mem_snap:
         net.request_mempool_snapshot("peer", force=True)
         m_mem_snap.assert_called_once_with(net, "peer", force=True)
+
+
+def test_network_handler_proxy_delegation(mock_cfg, mock_socket, mock_broadcast, mock_deps):
+    Network.active_ports.clear()
+    net = Network()
+
+    # Network dynamically delegates to handlers (chat, history, explorer, tx, guard)
+    assert callable(net.chat_handler.get_prekey_bundle)
+    assert callable(net.get_prekey_bundle)
+    
+    # Sub-handlers via NetworkHandlerProxy can access Network attributes
+    assert net.chat_handler.port == 8000
+    assert net.chat_handler.node_id == "nid1"
+    
+    # Non-existent attribute raises AttributeError
+    with pytest.raises(AttributeError):
+        _ = net.non_existent_attr_123
+    with pytest.raises(AttributeError):
+        _ = net.chat_handler.non_existent_attr_123
+

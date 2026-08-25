@@ -75,6 +75,10 @@ def rpc_submit_proof(
     timeout: float = 8.0,
 ) -> Optional[Dict[str, Any]]:
     """Submit cryptographic Proof of Retention (PoR) for an artifact chunk to the Node."""
+    try:
+        rpc_addr = rpc.address
+    except AttributeError:
+        rpc_addr = ""
     payload: Dict[str, Any] = {
         "type": "GRAFFITI_PROOF_SUBMIT",
         "art_id": str(art_id).strip().lower(),
@@ -84,7 +88,7 @@ def rpc_submit_proof(
         "hash": str(proof_hash),
         "height": int(height),
         "seed": str(seed),
-        "storer": (getattr(rpc, "address", "") or "").strip().lower(),
+        "storer": str(rpc_addr or "").strip().lower(),
         "ts": int(time.time()),
         "nonce": secrets.token_hex(16),
     }

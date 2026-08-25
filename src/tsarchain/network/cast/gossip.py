@@ -63,13 +63,17 @@ class GossipHandler(BroadcastHandlerProxy):
             if not force and block_id in self.seen_blocks:
                 return 0
             self.seen_blocks.add(block_id)
+        try:
+            p = self.port
+        except AttributeError:
+            p = 0
 
         success = self.send_gossip(
             peers,
             {
                 "type": "NEW_BLOCK",
                 "data": block.to_dict(),
-                "port": getattr(self, "port", 0),
+                "port": p or 0,
             },
             exclude,
         )
@@ -128,7 +132,11 @@ class GossipHandler(BroadcastHandlerProxy):
         except ConnectionRefusedError:
             log.info("[start_gossip] Connect to %s refused", peer)
         except OSError as e:
-            log.warning("[start_gossip] OSError sending to %s: %s", peer, getattr(e, "strerror", e))
+            try:
+                err_msg = e.strerror
+            except AttributeError:
+                err_msg = e
+            log.warning("[start_gossip] OSError sending to %s: %s", peer, err_msg)
 
         self._handle_send_failure(peer, entry, sock)
         return False  
@@ -140,8 +148,14 @@ class GossipHandler(BroadcastHandlerProxy):
 
 
     def _get_gossip_cache(self) -> Tuple[OrderedDict, threading.RLock]:
-        cache = getattr(self, "_gossip_conn_cache", None)
-        cache_lock = getattr(self, "_gossip_conn_lock", None)
+        try:
+            cache = self._gossip_conn_cache
+        except AttributeError:
+            cache = None
+        try:
+            cache_lock = self._gossip_conn_lock
+        except AttributeError:
+            cache_lock = None
         if cache is None or cache_lock is None:
             cache = self._gossip_conn_cache = OrderedDict()
             cache_lock = self._gossip_conn_lock = threading.RLock()

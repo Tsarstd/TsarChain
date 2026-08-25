@@ -18,7 +18,13 @@ class ChainUtilsHandler(BroadcastHandlerProxy):
         total = 0
         last_bits = None
         for i, b in enumerate(chain_list):
-            raw = b.get("bits") if isinstance(b, dict) else getattr(b, "bits", None)
+            if isinstance(b, dict):
+                raw = b.get("bits")
+            else:
+                try:
+                    raw = b.bits
+                except AttributeError:
+                    raw = None
             bits = self._parse_bits(raw)
             if bits is None:
                 bits = CFG.INITIAL_BITS if i == 0 or last_bits is None else last_bits

@@ -92,7 +92,11 @@ class TxHandler(NetworkHandlerProxy):
         ins  = [TxIn(bytes.fromhex(u["txid"]), u["index"], amount=int(u["amount"])) for u in selected]
         non_opret, opret_outs = [], []
         for amt, spk in fixed_outs:
-            is_opret = (isinstance(spk, Script) and getattr(spk, "cmds", None) and spk.cmds and spk.cmds[0] == OP_RETURN)
+            try:
+                cmds = spk.cmds
+                is_opret = isinstance(spk, Script) and bool(cmds) and cmds[0] == OP_RETURN
+            except AttributeError:
+                is_opret = False
             (opret_outs if is_opret else non_opret).append(TxOut(amt, spk))
             
         outs = non_opret
@@ -202,8 +206,14 @@ class TxHandler(NetworkHandlerProxy):
 
     def _check_tx_limits(self, tx_obj: Tx):
         weight, vsize, _, _ = compute_tx_weight_vsize(tx_obj)
-        vin = len(getattr(tx_obj, "inputs", []) or [])
-        vout = len(getattr(tx_obj, "outputs", []) or [])
+        try:
+            vin = len(tx_obj.inputs or [])
+        except AttributeError:
+            vin = 0
+        try:
+            vout = len(tx_obj.outputs or [])
+        except AttributeError:
+            vout = 0
 
         if vsize > int(CFG.MAX_TX_VSIZE):
             raise ValueError("tx_vsize_exceeds_limit")
@@ -296,20 +306,30 @@ class TxHandler(NetworkHandlerProxy):
                 
         missing = [k for k in forced_keys if k not in utxo_by_key]
         if missing:
-            global_utxos = getattr(self.broadcast.utxodb, "utxos", {})
+            try:
+                global_utxos = self.broadcast.utxodb.utxos or {}
+            except AttributeError:
+                global_utxos = {}
             for key in list(missing):
                 txid_hex, idx_str = key.split(":")
                 if entry := global_utxos.get(key):
                     tx_out = entry.get("tx_out")
-                    amt = int(getattr(tx_out, "amount", 0))
-                    spk = getattr(tx_out, "script_pubkey", None)
-                    ser = getattr(spk, "serialize", None)
-                    if callable(ser):
-                        spk_bytes = ser()
-                    elif isinstance(spk, (bytes, bytearray)):
-                        spk_bytes = bytes(spk)
-                    else:
-                        spk_bytes = b""
+                    try:
+                        amt = int(tx_out.amount or 0)
+                    except (AttributeError, TypeError):
+                        amt = 0
+                    try:
+                        spk = tx_out.script_pubkey
+                    except AttributeError:
+                        spk = None
+                    try:
+                        ser = spk.serialize
+                        spk_bytes = ser() if callable(ser) else b""
+                    except AttributeError:
+                        if isinstance(spk, (bytes, bytearray)):
+                            spk_bytes = bytes(spk)
+                        else:
+                            spk_bytes = b""
                         
                     is_cb = bool(entry.get("is_coinbase", False))
                     born  = int(entry.get("block_height", 0))

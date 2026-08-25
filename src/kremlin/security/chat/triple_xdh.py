@@ -72,6 +72,7 @@ class ChatManager:
 
         self._sessions: Dict[tuple[str, str], "RatchetSession"] = {}
         self._pending_used_opk: Dict[tuple[str, str], str] = {}
+        self._registered_addrs: set[str] = set()
         self.on_partner_key_changed: Optional[Callable[[str, str, str], None]] = None
         self.on_partner_presence: Optional[Callable[[str, Optional[int]], None]] = None
         self.presence_ts: Dict[str, int] = {}
@@ -428,21 +429,27 @@ class ChatManager:
 
         if resp.get("type") == "CHAT_REGISTERED":
             self.pub_cache[addr] = chat_pk_hex
-            setattr(self, "_registered_addrs", getattr(self, "_registered_addrs", set()))
-            self._registered_addrs.add(addr)
+            try:
+                self._registered_addrs.add(addr)
+            except AttributeError:
+                self._registered_addrs = {addr}
             self.publish_prekeys(addr, on_done=lambda _r: None)
         on_done(resp)
 
     def _ensure_registered(self, addr: str, cb: Callable[[Optional[str]], None]) -> None:
-        regset = getattr(self, "_registered_addrs", set())
+        try:
+            regset = self._registered_addrs
+        except AttributeError:
+            regset = self._registered_addrs = set()
         if addr in regset:
             cb(None); return
 
         def _on(resp):
             if resp and resp.get("type") == "CHAT_REGISTERED":
-                rs = getattr(self, "_registered_addrs", set())
-                rs.add(addr)
-                self._registered_addrs = rs
+                try:
+                    self._registered_addrs.add(addr)
+                except AttributeError:
+                    self._registered_addrs = {addr}
                 log.info("[register] registered ok untuk %s", addr)
                 cb(None)
             else:

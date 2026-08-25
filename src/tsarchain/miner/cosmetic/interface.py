@@ -164,8 +164,13 @@ def _cpu_brand() -> str:
                 pass
             
         # Windows / fallback
-        name = platform.processor() or getattr(platform.uname(), "processor", "") or ""
-        name = " ".join(str(name).strip().split())
+        name = platform.processor()
+        if not name:
+            try:
+                name = platform.uname().processor
+            except (AttributeError, TypeError):
+                name = ""
+        name = " ".join(str(name or "").strip().split())
         return name or "Unknown CPU"
     except Exception:
         return "Unknown CPU"

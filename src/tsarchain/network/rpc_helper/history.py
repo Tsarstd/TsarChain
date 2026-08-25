@@ -24,8 +24,14 @@ class HistoryHandler(NetworkHandlerProxy):
         if err_result:
             return err_result
 
-        mempool = getattr(self.broadcast, "mempool", None)
-        mem_seq = getattr(mempool, "change_seq", 0)
+        try:
+            mempool = self.broadcast.mempool
+        except AttributeError:
+            mempool = None
+        try:
+            mem_seq = mempool.change_seq
+        except AttributeError:
+            mem_seq = 0
 
         with self.broadcast.lock:
             chain_ref = self.broadcast.blockchain.chain
@@ -42,7 +48,10 @@ class HistoryHandler(NetworkHandlerProxy):
             mem = self.broadcast.mempool.get_all_txs()
 
         tip_hash = self.bhash_hex(chain[-1]) if chain else ""
-        mem_seq = getattr(mempool, "change_seq", mem_seq)
+        try:
+            mem_seq = mempool.change_seq
+        except AttributeError:
+            pass
 
         opmap_chain, opmap_mem = self.build_outpoint_map(chain, mem)
         items = []
@@ -53,9 +62,19 @@ class HistoryHandler(NetworkHandlerProxy):
                 items.append(item)
 
         for b in chain:
-            h = int(getattr(b, "height", 0))
-            block_timestamp = int(getattr(b, "timestamp", 0))
-            for tx in getattr(b, "transactions", []) or []:
+            try:
+                h = int(b.height or 0)
+            except (AttributeError, TypeError, ValueError):
+                h = 0
+            try:
+                block_timestamp = int(b.timestamp or 0)
+            except (AttributeError, TypeError, ValueError):
+                block_timestamp = 0
+            try:
+                txs = b.transactions or []
+            except AttributeError:
+                txs = []
+            for tx in txs:
                 item = self._extract_tx_history_item(tx, "chain", h, block_timestamp, target_spk_hex, addr, opmap_chain, opmap_mem, tip_height)
                 if item:
                     items.append(item)
@@ -81,14 +100,32 @@ class HistoryHandler(NetworkHandlerProxy):
             tip_height = int(self.broadcast.blockchain.height)
             mem = self.broadcast.mempool.get_all_txs()
         for tx in mem:
-            txid = self._txid_hex_helper(getattr(tx, "txid", None))
+            try:
+                txid_val = tx.txid
+            except AttributeError:
+                txid_val = None
+            txid = self._txid_hex_helper(txid_val)
             if txid == target:
                 return ("mempool", tx, None, 0, None, chain, mem, tip_height)
         for b in chain:
-            h = int(getattr(b, "height", 0))
-            timestamp = int(getattr(b, "timestamp", 0))
-            for tx in getattr(b, "transactions", []) or []:
-                txid = self._txid_hex_helper(getattr(tx, "txid", None))
+            try:
+                h = int(b.height or 0)
+            except (AttributeError, TypeError, ValueError):
+                h = 0
+            try:
+                timestamp = int(b.timestamp or 0)
+            except (AttributeError, TypeError, ValueError):
+                timestamp = 0
+            try:
+                txs = b.transactions or []
+            except AttributeError:
+                txs = []
+            for tx in txs:
+                try:
+                    txid_val = tx.txid
+                except AttributeError:
+                    txid_val = None
+                txid = self._txid_hex_helper(txid_val)
                 if txid == target:
                     conf = max(0, tip_height - h + 1)
                     return ("chain", tx, h, timestamp, conf, chain, mem, tip_height)
@@ -97,34 +134,55 @@ class HistoryHandler(NetworkHandlerProxy):
 
 
     def txin_prevkey(self, tin) -> str:
-        txid = getattr(tin, "txid", None)
+        try:
+            txid = tin.txid
+        except AttributeError:
+            txid = None
         if isinstance(txid, (bytes, bytearray)):
             ptx = txid.hex()
         elif isinstance(txid, str) and len(txid) >= 64:
             ptx = txid
         else:
-            p0 = getattr(tin, "prev_tx", b"")
+            try:
+                p0 = tin.prev_tx
+            except AttributeError:
+                p0 = b""
             if isinstance(p0, (bytes, bytearray)):
                 ptx = p0.hex()
             else:
                 ptx = str(p0 or "")
-        idx = getattr(tin, "vout", getattr(tin, "prev_index", 0))
-        idx = int(idx)
+        try:
+            idx = tin.vout
+        except AttributeError:
+            try:
+                idx = tin.prev_index
+            except AttributeError:
+                idx = 0
+        idx = int(idx or 0)
         return f"{ptx}:{idx}"
 
 
     def is_coinbase_tx(self, tx) -> bool:
-        ins = getattr(tx, "inputs", []) or []
+        try:
+            ins = tx.inputs or []
+        except AttributeError:
+            ins = []
         if len(ins) == 0:
             return True
         first = ins[0]
-        p0 = getattr(first, "txid", None)
+        try:
+            p0 = first.txid
+        except AttributeError:
+            p0 = None
         if isinstance(p0, (bytes, bytearray)):
             b = p0
         elif isinstance(p0, str) and len(p0) == 64:
             b = bytes.fromhex(p0)
         else:
-            b = getattr(first, "prev_tx", b"")
+            try:
+                b = first.prev_tx
+            except AttributeError:
+                b = b""
             if not isinstance(b, (bytes, bytearray)):
                 b = b""
         return b == b"\x00" * 32
@@ -140,20 +198,45 @@ class HistoryHandler(NetworkHandlerProxy):
     def build_outpoint_map(self, chain, mem=None):
         chain_map: dict[str, tuple[int, str]] = {}
         for b in chain:
-            txs = getattr(b, "transactions", []) or []
+            try:
+                txs = b.transactions or []
+            except AttributeError:
+                txs = []
             for tx in txs:
-                txid = self._txid_hex_helper(getattr(tx, "txid", None))
-                for idx, o in enumerate(getattr(tx, "outputs", []) or []):
-                    amount = int(getattr(o, "amount", 0))
+                try:
+                    txid_val = tx.txid
+                except AttributeError:
+                    txid_val = None
+                txid = self._txid_hex_helper(txid_val)
+                try:
+                    outputs = tx.outputs or []
+                except AttributeError:
+                    outputs = []
+                for idx, o in enumerate(outputs):
+                    try:
+                        amount = int(o.amount or 0)
+                    except (AttributeError, TypeError):
+                        amount = 0
                     spk_hex = self._txout_to_spk_hex(o) or ""
                     chain_map[f"{txid}:{idx}"] = (amount, spk_hex)
         if mem is None:
             return chain_map
         mem_map: dict[str, tuple[int, str]] = {}
         for tx in mem:
-            txid = self._txid_hex_helper(getattr(tx, "txid", None))
-            for idx, o in enumerate(getattr(tx, "outputs", []) or []):
-                amount = int(getattr(o, "amount", 0))
+            try:
+                txid_val = tx.txid
+            except AttributeError:
+                txid_val = None
+            txid = self._txid_hex_helper(txid_val)
+            try:
+                outputs = tx.outputs or []
+            except AttributeError:
+                outputs = []
+            for idx, o in enumerate(outputs):
+                try:
+                    amount = int(o.amount or 0)
+                except (AttributeError, TypeError):
+                    amount = 0
                 spk_hex = self._txout_to_spk_hex(o) or ""
                 mem_map[f"{txid}:{idx}"] = (amount, spk_hex)
         return chain_map, mem_map
@@ -180,7 +263,11 @@ class HistoryHandler(NetworkHandlerProxy):
 
 
     def _extract_tx_history_item(self, tx, where, h_or_none, timestamp, target_spk_hex, addr, opmap_chain, opmap_mem, tip_height):
-        txid = self._txid_hex_helper(getattr(tx, "txid", None))
+        try:
+            txid_val = tx.txid
+        except AttributeError:
+            txid_val = None
+        txid = self._txid_hex_helper(txid_val)
         is_cb = self.is_coinbase_tx(tx)
         conf = 0
         height = None
@@ -193,8 +280,15 @@ class HistoryHandler(NetworkHandlerProxy):
         is_graffiti = False
         event_type = None
 
-        for o in getattr(tx, "outputs", []) or []:
-            amt = int(getattr(o, "amount", 0))
+        try:
+            outputs = tx.outputs or []
+        except AttributeError:
+            outputs = []
+        for o in outputs:
+            try:
+                amt = int(o.amount or 0)
+            except (AttributeError, TypeError):
+                amt = 0
             spk_hex = self._txout_to_spk_hex(o) or ""
             if spk_hex == target_spk_hex:
                 received_to_addr += amt
@@ -203,7 +297,10 @@ class HistoryHandler(NetworkHandlerProxy):
                     max_rec_amt = amt
                     main_recipient_spk = spk_hex
 
-            spk = getattr(o, "script_pubkey", None)
+            try:
+                spk = o.script_pubkey
+            except AttributeError:
+                spk = None
             if spk is not None:
                 try:
                     meta = GRAFF.parse_from_script(spk)
@@ -217,7 +314,11 @@ class HistoryHandler(NetworkHandlerProxy):
 
         spent_from_addr = 0
         sources = set()
-        for tin in getattr(tx, "inputs", []) or []:
+        try:
+            inputs = tx.inputs or []
+        except AttributeError:
+            inputs = []
+        for tin in inputs:
             key = self.txin_prevkey(tin)
             amt_spk = opmap_chain.get(key)
             if where == "mempool":
@@ -335,12 +436,18 @@ class HistoryHandler(NetworkHandlerProxy):
 
 
     def _txout_to_spk_hex(self, txout) -> str | None:
-        spk = getattr(txout, "script_pubkey", None)
+        try:
+            spk = txout.script_pubkey
+        except AttributeError:
+            spk = None
         if spk is None:
             return None
-        ser = getattr(spk, "serialize", None)
-        if callable(ser):
-            return ser().hex()
+        try:
+            ser = spk.serialize
+            if callable(ser):
+                return ser().hex()
+        except AttributeError:
+            pass
         if isinstance(spk, (bytes, bytearray)):
             return bytes(spk).hex()
         if isinstance(spk, str):
@@ -380,8 +487,14 @@ class HistoryHandler(NetworkHandlerProxy):
 
 
     def _setup_tx_history_cache(self):
-        cache = getattr(self, "_tx_history_cache", None)
-        cache_lock = getattr(self, "_tx_history_cache_lock", None)
+        try:
+            cache = self._tx_history_cache
+        except AttributeError:
+            cache = None
+        try:
+            cache_lock = self._tx_history_cache_lock
+        except AttributeError:
+            cache_lock = None
         if cache is None or cache_lock is None:
             cache = self._tx_history_cache = collections.OrderedDict()
             cache_lock = self._tx_history_cache_lock = threading.RLock()

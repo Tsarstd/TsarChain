@@ -124,7 +124,7 @@ class RatchetSession:
             "my_identity": self.my_identity,
             "their_identity": self.their_identity,
             "my_static_hex": self.my_static_hex,
-            "needs_send_rotation": getattr(self, "_needs_send_rotation", False),
+            "needs_send_rotation": bool(self._needs_send_rotation),
         }
 
     @classmethod
@@ -229,7 +229,7 @@ class RatchetSession:
     # ----------------------------------------------------------------------
     @benchmark(label="encrypt", threshold_ms=5.0)
     def encrypt(self, pt: bytes, frm: str, to: str, mid: int, ts: int) -> dict:
-        if getattr(self, "_needs_send_rotation", False):
+        if self._needs_send_rotation:
             self._rotate_send_chain()
         mk, idx = self._next_sending_message_key()
         header = {

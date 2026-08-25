@@ -30,7 +30,11 @@ class UTXOGraffitiMixin:
     def _record_graffiti_event(self, tx, outputs_info: list[dict[str, Any]], block_height: int | None, block_hash: str | None = None) -> None:
         if block_height is None:
             return
-        txid_hex = self._txid_hex(getattr(tx, "txid", None))
+        try:
+            tx_txid = tx.txid
+        except AttributeError:
+            tx_txid = None
+        txid_hex = self._txid_hex(tx_txid)
         meta = None
         for info in outputs_info:
             script_bytes = info.get("script_bytes") or b""

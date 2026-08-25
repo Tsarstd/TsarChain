@@ -43,7 +43,10 @@ def handle_storage_rpc(
     else:
         peer_port = int(message.get("port", 0))
         with self.lock:
-            peers = dict(getattr(self, "storage_peers", {}) or {})
+            try:
+                peers = dict(self.storage_peers or {})
+            except AttributeError:
+                peers = {}
         peer_meta = _resolve_storage_sender_meta(self, peers, ip, peer_port, src_node_id, src_pubkey)
 
     if not peer_meta:
@@ -59,6 +62,12 @@ def handle_storage_rpc(
         return _handle_storage_proof_submit(self, message, storer_addr, ip, src_node_id)
     elif mtype == "GRAFFITI_BUILD_PAYOUT":
         return _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id)
+    elif mtype == "GRAFFITI_GET_POOL_BALANCE":
+        return _handle_storage_get_pool_balance(self, message, storer_addr)
+    elif mtype == "GRAFFITI_CHECK_REGISTRATION":
+        return {"status": "ok", "registered": True, "storer": storer_addr}
+    elif mtype == "GRAFFITI_PROOF_CHALLENGE":
+        return _handle_storage_proof_challenge(self, message, storer_addr)
 
     return None
 
@@ -123,7 +132,10 @@ def _handle_storage_proof_submit(self, message, storer_addr, ip, src_node_id):
     if err: return err
     art_id, epoch, offset, length, proof_hash, storer, height, seed = basic_fields
 
-    reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
+    try:
+        reg = self.broadcast.utxodb._graffiti_registry
+    except AttributeError:
+        reg = None
     if not reg:
         return {"error": "registry_unavailable"}
     post = reg.get_post(art_id)
@@ -144,8 +156,10 @@ def _handle_storage_proof_submit(self, message, storer_addr, ip, src_node_id):
     err = _verify_proof_merkle_chunk(message, length, proof_hash, mroot, mchunk, mcount, offset)
     if err: return err
 
-    get_proof_fn = getattr(reg, "get_proof", None)
-    existing = get_proof_fn(art_id, storer, epoch) if callable(get_proof_fn) else None
+    try:
+        existing = reg.get_proof(art_id, storer, epoch)
+    except (AttributeError, TypeError):
+        existing = None
     if existing:
         existing_hash = str(existing.get("hash") or "").strip().lower()
         if existing_hash and existing_hash != proof_hash:
@@ -181,13 +195,19 @@ def _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id):
 
     fee_rate = int(message.get("fee_rate", CFG.DEFAULT_FEE_RATE_SATVB))
     epoch_req = int(message.get("epoch", -1))
-    utxo = getattr(self.broadcast, "utxodb", None)
+    try:
+        utxo = self.broadcast.utxodb
+    except AttributeError:
+        utxo = None
     
     if utxo is None:
         return {"error": "utxo_unavailable"}
     
     utxo._load()
-    reg = getattr(utxo, "_graffiti_registry", None)
+    try:
+        reg = utxo._graffiti_registry
+    except AttributeError:
+        reg = None
     proof_entry = reg.get_latest_proof(art_id, storer_addr) if reg else None
     proof_meta = None
     if proof_entry:
@@ -201,7 +221,10 @@ def _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id):
             "storer": proof_entry.get("storer"),
         }
 
-    tip_height = int(getattr(getattr(self.broadcast, "blockchain", None), "height", 0) or 0)
+    try:
+        tip_height = int(self.broadcast.blockchain.height or 0)
+    except (AttributeError, TypeError, ValueError):
+        tip_height = 0
     tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
     
     err, epoch = _validate_payout_epoch(epoch_req, tip_epoch, proof_entry)
@@ -233,7 +256,10 @@ def _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id):
 
 
 def _proof_epoch_window(self) -> tuple[int, int, int]:
-    tip_height = int(getattr(getattr(self.broadcast, "blockchain", None), "height", 0) or 0)
+    try:
+        tip_height = int(self.broadcast.blockchain.height or 0)
+    except (AttributeError, TypeError, ValueError):
+        tip_height = 0
     tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
     drift = int(CFG.GRAFFITI_PROOF_EPOCH_DRIFT)
     return tip_epoch, max(0, tip_epoch - drift), tip_epoch + drift
@@ -380,10 +406,14 @@ def _check_payout_cooldown(self, art_id, storer_addr):
         now = int(time.time())
         guard_key = f"{art_id}:{storer_addr}"
         with self.lock:
-            guard = getattr(self, "_payout_guard", None)
+            try:
+                guard = self._payout_guard
+            except AttributeError:
+                self._payout_guard = {}
+                guard = self._payout_guard
             if guard is None:
-                guard = {}
-                setattr(self, "_payout_guard", guard)
+                self._payout_guard = {}
+                guard = self._payout_guard
             last_ts = int(guard.get(guard_key, 0) or 0)
             if last_ts and (now - last_ts) < cooldown:
                 return {

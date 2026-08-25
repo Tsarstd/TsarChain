@@ -50,7 +50,10 @@ def _open_store():
                 pretty_json=False,
                 drive_type=drive_override,
             )
-            dt = getattr(_store, "drive_type", "unknown")
+            try:
+                dt = _store.drive_type
+            except AttributeError:
+                dt = "unknown"
             log.info("[webdb] Web cache LMDB initialized at '%s' [Drive Profile: %s]", CFG.WEB_DATABASE_PATH, dt.upper())
         except Exception as exc:
             log.warning("[webdb] lmdb disabled: %s", exc)

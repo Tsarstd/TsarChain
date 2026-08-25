@@ -169,7 +169,10 @@ class NetworkTab(tk.Frame):
     def _install_text_tags(self) -> None:
         if not self.net_text:
             return
-        palette = getattr(self.app.theme_set, "palette", None)
+        try:
+            palette = self.app.theme_set.palette
+        except AttributeError:
+            palette = None
         accent = self.app.accent
         info = self.app.inf
         muted = self.app.muted

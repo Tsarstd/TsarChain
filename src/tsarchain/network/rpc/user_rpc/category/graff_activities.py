@@ -28,7 +28,10 @@ def get_posts(self, message, pow_obj, base_identity, *,
     offset = int(message.get("offset", 0) or 0)
     limit = max(1, min(limit, 500))
     offset = max(0, offset)
-    reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
+    try:
+        reg = self.broadcast.utxodb._graffiti_registry
+    except AttributeError:
+        reg = None
     posts = reg.list_posts(limit, offset) if reg else []
         
     return {"type": "GRAFFITI_GET_POSTS", "posts": posts}
@@ -46,7 +49,10 @@ def get_comments(self, message, pow_obj, base_identity, *,
         return {"type": "GRAFFITI_GET_COMMENTS", "comments": []}
     limit = int(message.get("limit", 100) or 100)
     limit = max(1, min(limit, 500))
-    reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
+    try:
+        reg = self.broadcast.utxodb._graffiti_registry
+    except AttributeError:
+        reg = None
     comments = reg.list_comments(art_id, limit) if reg else []
     
     return {"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id, "comments": comments}
@@ -63,7 +69,10 @@ def get_art(self, message, pow_obj, base_identity, *,
     if not art_id_raw:
         return {"type": "GRAFFITI_GET_ART", "error": "missing_art_id"}
     art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
-    reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
+    try:
+        reg = self.broadcast.utxodb._graffiti_registry
+    except AttributeError:
+        reg = None
     post = reg.get_post(art_id) if reg else None
     if not post:
         return {"type": "GRAFFITI_GET_ART", "art_id": art_id, "error": "not_found"}
@@ -77,21 +86,6 @@ def get_payouts(self, message, pow_obj, base_identity, *,
 
     # Temporary block to avoid unnecessary load until future activation
     return {"type": "GRAFFITI_GET_PAYOUTS", "error": "endpoint_temporarily_disabled"}
-'''
-    ok, pow_resp = _check_graffiti_pow(self, client_ip, base_identity, pow_obj)
-    if not ok:
-        return pow_resp
-
-    art_id = str(message.get("art_id") or "").strip().lower()
-    if not art_id:
-        return {"type": "GRAFFITI_GET_PAYOUTS", "payouts": []}
-    limit = int(message.get("limit", 100) or 100)
-    limit = max(1, min(limit, 500))
-    reg = getattr(getattr(self.broadcast, "utxodb", None), "_graffiti_registry", None)
-    payouts = reg.list_payouts(art_id, limit) if reg else []
-    
-    return {"type": "GRAFFITI_GET_PAYOUTS", "art_id": art_id, "payouts": payouts}
-'''
 
 # =============================================================================
 # INTERNAL METHOD

@@ -192,8 +192,9 @@ class JsonFormatter(logging.Formatter):
             "proc": record.processName if show_proc else proc_placeholder,
             "msg": record.getMessage(),
         }
+        rdict = record.__dict__
         for k in ("height", "block", "peer"):
-            v = getattr(record, k, None)
+            v = rdict.get(k)
             if v not in (None, "-"):
                 d[k] = v
         if record.exc_info:
@@ -204,9 +205,10 @@ class JsonFormatter(logging.Formatter):
 class SafeFormatter(logging.Formatter):
     """Plain-text formatter ensuring contextual tokens have safe default values."""
     def format(self, record: logging.LogRecord) -> str:
-        if getattr(record, "height", None) is None: record.height = "-"
-        if getattr(record, "block", None) is None:  record.block  = "-"
-        if getattr(record, "peer", None) is None:   record.peer   = "-"
+        rdict = record.__dict__
+        if "height" not in rdict or record.height is None: record.height = "-"
+        if "block" not in rdict or record.block is None:  record.block  = "-"
+        if "peer" not in rdict or record.peer is None:   record.peer   = "-"
         return super().format(record)
 
 

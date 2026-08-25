@@ -65,7 +65,10 @@ def new_tx(self, message, pow_obj, base_identity, addr, *, client_ip, **kwargs):
         txid = (message.get("data") or {}).get("txid")
         return {"status": "ok", "txid": txid}
     else:
-        reason = getattr(self.broadcast.mempool, 'last_error_reason', None)
+        try:
+            reason = self.broadcast.mempool.last_error_reason
+        except AttributeError:
+            reason = None
         return {"status": "error", "reason": (reason or "invalid tx")}
 
 

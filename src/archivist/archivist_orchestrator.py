@@ -60,7 +60,10 @@ class ArchivistOrchestrator:
         self._load_auto_payout_guard()
 
     def attempt_reconnect(self) -> bool:
-        target = getattr(self, "_target_node", None)
+        try:
+            target = self._target_node
+        except AttributeError:
+            target = None
         storage_port = self.storage_port
         if not target or storage_port is None:
             return False
@@ -228,7 +231,10 @@ class ArchivistOrchestrator:
         self._refresh_pool_listing(files, art_map_idx)
 
     def _refresh_pool_listing(self, files: Dict[str, Any], art_map_idx: Optional[Dict[str, Any]] = None) -> None:
-        rpc = getattr(self, "rpc", None)
+        try:
+            rpc = self.rpc
+        except AttributeError:
+            rpc = None
         if not rpc:
             return
         posts = node_route.rpc_get_graffiti_posts(rpc, limit=500, timeout=6.0)
@@ -306,7 +312,10 @@ class ArchivistOrchestrator:
             self._log("[auto-paid] Updated file payment statuses.")
 
     def _load_auto_payout_guard(self) -> None:
-        server_db = getattr(self._server, "db", None) if self._server else None
+        try:
+            server_db = self._server.db if self._server else None
+        except AttributeError:
+            server_db = None
         if server_db is not None:
             try:
                 server_db.cleanup_expired_payout_guards()
@@ -319,7 +328,10 @@ class ArchivistOrchestrator:
             self._auto_payout_guard = {}
 
     def _save_auto_payout_guard(self) -> None:
-        server_db = getattr(self._server, "db", None) if self._server else None
+        try:
+            server_db = self._server.db if self._server else None
+        except AttributeError:
+            server_db = None
         if server_db is not None:
             try:
                 server_db.save_payout_guard(self._auto_payout_guard)
@@ -332,7 +344,11 @@ class ArchivistOrchestrator:
         tip_height = int((self.last_info or {}).get("height") or 0)
         tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
         cooldown = int(CFG.ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC)
-        recipient = (getattr(self.rpc, "address", "") or "").strip().lower()
+        try:
+            rpc_addr = self.rpc.address
+        except AttributeError:
+            rpc_addr = ""
+        recipient = str(rpc_addr or "").strip().lower()
         if not recipient:
             return
         with self._auto_payout_lock:

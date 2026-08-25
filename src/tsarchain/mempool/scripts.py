@@ -17,9 +17,10 @@ __all__ = ["get_utxo_script_bytes", "extract_script_bytes", "script_to_address"]
 def extract_script_bytes(spk) -> bytes | None:
     if spk is None:
         return None
-    ser = getattr(spk, "serialize", None)
-    if callable(ser):
-        return ser()
+    try:
+        return spk.serialize()
+    except (AttributeError, TypeError):
+        pass
     if isinstance(spk, Script):
         return spk.serialize()
     if isinstance(spk, (bytes, bytearray)):
@@ -54,27 +55,44 @@ def get_utxo_script_bytes(utxo_entry) -> bytes:
         if tx_out is not None:
             if isinstance(tx_out, dict):
                 res = extract_script_bytes(tx_out.get("script_pubkey"))
-                if res is not None: return res
+                if res is not None:
+                    return res
             else:
-                spk = getattr(tx_out, "script_pubkey", None)
+                try:
+                    spk = tx_out.script_pubkey
+                except AttributeError:
+                    spk = None
                 if spk is not None:
                     res = extract_script_bytes(spk)
-                    if res is not None: return res
+                    if res is not None:
+                        return res
         
         res = extract_script_bytes(utxo_entry.get("script_pubkey"))
-        if res is not None: return res
+        if res is not None:
+            return res
 
     else:
-        tx_out = getattr(utxo_entry, "tx_out", None)
+        try:
+            tx_out = utxo_entry.tx_out
+        except AttributeError:
+            tx_out = None
         if tx_out is not None:
-            spk = getattr(tx_out, "script_pubkey", None)
+            try:
+                spk = tx_out.script_pubkey
+            except AttributeError:
+                spk = None
             if spk is not None:
                 res = extract_script_bytes(spk)
-                if res is not None: return res
+                if res is not None:
+                    return res
         
-        spk = getattr(utxo_entry, "script_pubkey", None)
+        try:
+            spk = utxo_entry.script_pubkey
+        except AttributeError:
+            spk = None
         if spk is not None:
             res = extract_script_bytes(spk)
-            if res is not None: return res
+            if res is not None:
+                return res
             
     raise ValueError("script_pubkey not found in UTXO entry")

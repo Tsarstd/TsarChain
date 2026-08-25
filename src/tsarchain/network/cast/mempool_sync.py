@@ -33,13 +33,20 @@ class MempoolSyncHandler(BroadcastHandlerProxy):
         if not force and now - last < ttl:
             return 0
 
-        current_seq = getattr(self.mempool, "change_seq", None)
+        try:
+            current_seq = self.mempool.change_seq
+        except AttributeError:
+            current_seq = None
         if not force and current_seq is not None:
             last_seq = self._last_mempool_seq.get(peer)
             if last_seq is not None and last_seq == current_seq:
                 return 0
 
         sent = 0
+        try:
+            p = self.port
+        except AttributeError:
+            p = 0
         for chunk in self._mempool_chunks():
             if not chunk:
                 continue
@@ -48,7 +55,7 @@ class MempoolSyncHandler(BroadcastHandlerProxy):
                 {
                     "type": "MEMPOOL",
                     "data": chunk,
-                    "port": getattr(self, "port", 0),
+                    "port": p or 0,
                 },
             )
             if ok:
@@ -69,8 +76,10 @@ class MempoolSyncHandler(BroadcastHandlerProxy):
         chunks, cur = [], []
         base = {"type": "MEMPOOL", "data": []}
         for tx in txs:
-            to_dict = getattr(tx, "to_dict", None)
-            d = to_dict() if callable(to_dict) else tx
+            try:
+                d = tx.to_dict() if callable(tx.to_dict) else dict(tx)
+            except (AttributeError, TypeError):
+                d = tx
 
             test = dict(base)
             test["data"] = cur + [d]

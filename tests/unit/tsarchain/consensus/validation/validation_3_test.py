@@ -1106,3 +1106,26 @@ def test_normalize_snapshot_entry_object():
             with patch("tsarchain.consensus.validation.GRAFFITI") as mock_graf:
                 mock_graf.parse_from_script.return_value = None
                 c._validate_transactions(b, utxo_store=store)
+
+
+def test_normalize_snapshot_entry_dict_with_txout_object():
+    c = CovP6DummyConsensus()
+    
+    class TxOutObj:
+        def __init__(self, amount, script_pubkey):
+            self.amount = amount
+            self.script_pubkey = script_pubkey
+
+    entry = {
+        "tx_out": TxOutObj(25000000000, b"\x00\x14" + b"\x02" * 20),
+        "is_coinbase": True,
+        "block_height": 160,
+    }
+
+    normalized = c.validator._normalize_snapshot_entry(entry, "test:0")
+    assert normalized is not None
+    assert normalized["amount"] == 25000000000
+    assert normalized["is_coinbase"] is True
+    assert normalized["block_height"] == 160
+    assert normalized["script_pubkey"] == b"\x00\x14" + b"\x02" * 20
+

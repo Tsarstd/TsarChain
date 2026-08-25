@@ -136,18 +136,35 @@ class ArchivistTUI:
         body_size = 8  # 6 content rows + 2 border lines
 
         # Extract stats from orchestrator if present
-        info = getattr(self.orchestrator, "last_info", {}) or {}
-        idx = getattr(self.orchestrator, "last_index", {}) or {}
+        try:
+            info = self.orchestrator.last_info or {}
+        except AttributeError:
+            info = {}
+        try:
+            idx = self.orchestrator.last_index or {}
+        except AttributeError:
+            idx = {}
         files = idx.get("files") if isinstance(idx, dict) else {}
         files = files if isinstance(files, dict) else {}
 
-        connected = bool(getattr(self.orchestrator, "connected", False))
+        try:
+            connected = bool(self.orchestrator.connected)
+        except AttributeError:
+            connected = False
         bytes_used = idx.get("bytes_used", 0) if isinstance(idx, dict) else 0
         file_count = len(files)
         peers_cnt = info.get("peers", "-") if isinstance(info, dict) else "-"
         tip_height = info.get("height", "-") if isinstance(info, dict) else "-"
-        pending_paid_cnt = len(getattr(self.orchestrator, "pending_paid", set()) or ())
-        pool_cnt = len(getattr(self.orchestrator, "pool_data", {}) or {})
+        try:
+            pending_paid = self.orchestrator.pending_paid or ()
+        except AttributeError:
+            pending_paid = ()
+        pending_paid_cnt = len(pending_paid)
+        try:
+            pool_data_val = self.orchestrator.pool_data or {}
+        except AttributeError:
+            pool_data_val = {}
+        pool_cnt = len(pool_data_val)
 
         # Header Text & Tab Bar
         conn_status = "[bold green]Connected[/bold green]" if connected else "[bold red]Connecting...[/bold red]"
@@ -195,7 +212,10 @@ class ArchivistTUI:
                 Layout(name="body", ratio=1),
             )
             layout["header"].update(Panel(Align.center(header_text), border_style="cyan"))
-            pool_data = getattr(self.orchestrator, "pool_data", {}) or {}
+            try:
+                pool_data = self.orchestrator.pool_data or {}
+            except AttributeError:
+                pool_data = {}
             layout["body"].update(Panel(format_pool_table(pool_data), border_style="gold1"))
             return layout
 

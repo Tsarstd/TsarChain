@@ -24,33 +24,57 @@ class UTXOValidationMixin:
 
 
     def _prevout_from_txin(self, tx_input):
-        prev_txid = getattr(tx_input, "txid", None)
+        try:
+            prev_txid = tx_input.txid
+        except AttributeError:
+            try:
+                prev_txid = tx_input.prev_tx
+            except AttributeError:
+                prev_txid = None
         if prev_txid is None:
-            prev_txid = getattr(tx_input, "prev_tx", None)
+            try:
+                prev_txid = tx_input.prev_tx
+            except AttributeError:
+                prev_txid = None
             
         prev_txid_hex = self._txid_hex(prev_txid)
         
-        vout = getattr(tx_input, "vout", None)
+        try:
+            vout = tx_input.vout
+        except AttributeError:
+            try:
+                vout = tx_input.prev_index
+            except AttributeError:
+                vout = None
         if vout is None:
-            vout = getattr(tx_input, "prev_index", None)     
+            try:
+                vout = tx_input.prev_index
+            except AttributeError:
+                vout = None
         if vout is not None:
             vout = int(vout)
         return prev_txid_hex, vout
 
 
     def _is_unspendable_opreturn(self, tx_out) -> bool:
-        spk = getattr(tx_out, "script_pubkey", None)
+        try:
+            spk = tx_out.script_pubkey
+        except AttributeError:
+            return False
         if spk is None:
             return False
-        spk_ser = getattr(spk, "serialize", None)
-        if callable(spk_ser):
-            b = spk_ser()
-        elif isinstance(spk, (bytes, bytearray)):
-            b = bytes(spk)
-        elif isinstance(spk, str):
-            b = bytes.fromhex(spk)
-        else:
-            return False
+        try:
+            b = spk.serialize()
+        except (AttributeError, TypeError):
+            if isinstance(spk, (bytes, bytearray)):
+                b = bytes(spk)
+            elif isinstance(spk, str):
+                try:
+                    b = bytes.fromhex(spk)
+                except ValueError:
+                    return False
+            else:
+                return False
         
         return len(b) >= 1 and b[0] == 0x6A
 
@@ -73,9 +97,15 @@ class UTXOValidationMixin:
     def _build_compact_block_txs(self, txs) -> list | None:
         block_txs = []
         for tx in txs or []:
-            txid_raw = getattr(tx, "txid", None)
+            try:
+                txid_raw = tx.txid
+            except AttributeError:
+                txid_raw = None
             if isinstance(txid_raw, str):
-                txid_raw = bytes.fromhex(txid_raw)
+                try:
+                    txid_raw = bytes.fromhex(txid_raw)
+                except ValueError:
+                    return None
             if not isinstance(txid_raw, (bytes, bytearray)) or len(txid_raw) != 32:
                 return None
 
@@ -85,14 +115,27 @@ class UTXOValidationMixin:
                 
             outputs_compact = self._build_compact_outputs(tx)
 
+            try:
+                ver = int(tx.version)
+            except (AttributeError, TypeError, ValueError):
+                ver = 1
+            try:
+                lock = int(tx.locktime)
+            except (AttributeError, TypeError, ValueError):
+                lock = 0
+            try:
+                is_cb = bool(tx.is_coinbase)
+            except AttributeError:
+                is_cb = False
+
             block_txs.append(
                 (
-                    int(getattr(tx, "version", 1)),
-                    int(getattr(tx, "locktime", 0)),
+                    ver,
+                    lock,
                     inputs_compact,
                     outputs_compact,
                     bytes(txid_raw),
-                    bool(getattr(tx, "is_coinbase", False)),
+                    is_cb,
                 )
             )
         return block_txs
@@ -100,16 +143,45 @@ class UTXOValidationMixin:
 
     def _build_compact_inputs(self, tx) -> list | None:
         inputs_compact = []
-        for txin in getattr(tx, "inputs", []) or []:
-            prev = getattr(txin, "txid", None) or getattr(txin, "prev_tx", None)
+        try:
+            inputs = tx.inputs or []
+        except AttributeError:
+            inputs = []
+        for txin in inputs:
+            try:
+                prev = txin.txid
+            except AttributeError:
+                prev = None
+            if prev is None:
+                try:
+                    prev = txin.prev_tx
+                except AttributeError:
+                    prev = None
             if isinstance(prev, str):
-                prev = bytes.fromhex(prev)
+                try:
+                    prev = bytes.fromhex(prev)
+                except ValueError:
+                    return None
             if not isinstance(prev, (bytes, bytearray)) or len(prev) != 32:
                 return None
-            vout = int(getattr(txin, "vout", getattr(txin, "prev_index", 0)))
-            seq = getattr(txin, "sequence", 0xffffffff)
+            try:
+                vout_val = txin.vout
+            except AttributeError:
+                try:
+                    vout_val = txin.prev_index
+                except AttributeError:
+                    vout_val = 0
+            vout = int(vout_val if vout_val is not None else 0)
+            try:
+                seq = int(txin.sequence)
+            except (AttributeError, TypeError, ValueError):
+                seq = 0xffffffff
             wit_vec = []
-            for w in getattr(txin, "witness", None) or []:
+            try:
+                witness = txin.witness or []
+            except AttributeError:
+                witness = []
+            for w in witness:
                 if isinstance(w, str):
                     try:
                         wit_vec.append(bytes.fromhex(w))
@@ -127,18 +199,31 @@ class UTXOValidationMixin:
 
     def _build_compact_outputs(self, tx) -> list:
         outputs_compact = []
-        for txout in getattr(tx, "outputs", []) or []:
-            amt = int(getattr(txout, "amount", 0))
-            spk_obj = getattr(txout, "script_pubkey", None)
-            spk_ser = getattr(spk_obj, "serialize", None)
-            if callable(spk_ser):
-                spk_bytes = spk_ser()
-            elif isinstance(spk_obj, (bytes, bytearray)):
-                spk_bytes = bytes(spk_obj)
-            elif isinstance(spk_obj, str):
-                spk_bytes = bytes.fromhex(spk_obj)
-            else:
-                spk_bytes = b""
+        try:
+            outputs = tx.outputs or []
+        except AttributeError:
+            outputs = []
+        for txout in outputs:
+            try:
+                amt = int(txout.amount or 0)
+            except (AttributeError, TypeError):
+                amt = 0
+            try:
+                spk_obj = txout.script_pubkey
+            except AttributeError:
+                spk_obj = None
+            try:
+                spk_bytes = spk_obj.serialize()
+            except (AttributeError, TypeError):
+                if isinstance(spk_obj, (bytes, bytearray)):
+                    spk_bytes = bytes(spk_obj)
+                elif isinstance(spk_obj, str):
+                    try:
+                        spk_bytes = bytes.fromhex(spk_obj)
+                    except ValueError:
+                        spk_bytes = b""
+                else:
+                    spk_bytes = b""
             outputs_compact.append((amt, spk_bytes))
         return outputs_compact
 
@@ -191,22 +276,44 @@ class UTXOValidationMixin:
 
 
     def _process_graffiti_for_txs(self, txs, block_height: int, block_hash: str | None) -> None:
-        script_to_addr = getattr(self, "script_to_address", None)
+        try:
+            script_to_addr = self.script_to_address
+        except AttributeError:
+            script_to_addr = None
         for tx in txs or []:
             outputs_info = []
-            for tx_out in getattr(tx, "outputs", []) or []:
-                raw_spk = getattr(tx_out, "script_pubkey", None)
-                spk_ser = getattr(raw_spk, "serialize", None)
-                if callable(spk_ser):
-                    script_bytes = spk_ser()
-                elif isinstance(raw_spk, str):
-                    script_bytes = bytes.fromhex(raw_spk)
-                elif isinstance(raw_spk, (bytes, bytearray)):
-                    script_bytes = bytes(raw_spk)
+            try:
+                outputs = tx.outputs or []
+            except AttributeError:
+                outputs = []
+            for tx_out in outputs:
+                try:
+                    raw_spk = tx_out.script_pubkey
+                except AttributeError:
+                    raw_spk = None
+                try:
+                    script_bytes = raw_spk.serialize()
+                except (AttributeError, TypeError):
+                    if isinstance(raw_spk, str):
+                        try:
+                            script_bytes = bytes.fromhex(raw_spk)
+                        except ValueError:
+                            script_bytes = b""
+                    elif isinstance(raw_spk, (bytes, bytearray)):
+                        script_bytes = bytes(raw_spk)
+                    else:
+                        script_bytes = b""
+                try:
+                    amount = int(tx_out.amount or 0)
+                except (AttributeError, TypeError):
+                    amount = 0
+                if callable(script_to_addr):
+                    address = script_to_addr(raw_spk)
                 else:
-                    script_bytes = b""
-                amount = int(getattr(tx_out, "amount", 0))
-                address = script_to_addr(raw_spk) if callable(script_to_addr) else getattr(tx_out, "address", None)
+                    try:
+                        address = tx_out.address
+                    except AttributeError:
+                        address = None
                 outputs_info.append({"script_bytes": script_bytes, "amount": amount, "address": address})
             self._record_graffiti_event(tx, outputs_info, block_height, block_hash)
 
@@ -234,21 +341,41 @@ class UTXOValidationMixin:
 
 
     def _rebuild_block(self, block) -> None:
-        txs = getattr(block, "transactions", []) or []
-        height = int(getattr(block, "height", 0))
-        blk_hash = block.hash().hex()
+        try:
+            txs = block.transactions or []
+        except AttributeError:
+            txs = []
+        try:
+            height = int(block.height or 0)
+        except (AttributeError, TypeError):
+            height = 0
+        try:
+            blk_hash = block.hash().hex()
+        except (AttributeError, TypeError):
+            blk_hash = ""
         for tx in txs:
             self._rebuild_tx(tx, height, blk_hash)
 
 
     def _rebuild_tx(self, tx, height: int, blk_hash: str) -> None:
-        txid_hex = self._txid_hex(getattr(tx, "txid", None))
-        is_coinbase = bool(getattr(tx, "is_coinbase", False))
+        try:
+            tx_txid = tx.txid
+        except AttributeError:
+            tx_txid = None
+        txid_hex = self._txid_hex(tx_txid)
+        try:
+            is_coinbase = bool(tx.is_coinbase)
+        except AttributeError:
+            is_coinbase = False
         if not is_coinbase:
             self._rebuild_spend_inputs(tx)
         
         outputs_info = []
-        for index, tx_out in enumerate(getattr(tx, "outputs", []) or []):
+        try:
+            outputs = tx.outputs or []
+        except AttributeError:
+            outputs = []
+        for index, tx_out in enumerate(outputs):
             self.add(txid_hex, index, tx_out, is_coinbase=is_coinbase, block_height=height)
             outputs_info.append(self._build_output_info(tx_out))
             
@@ -256,7 +383,11 @@ class UTXOValidationMixin:
 
 
     def _rebuild_spend_inputs(self, tx) -> None:
-        for tx_input in getattr(tx, "inputs", []) or []:
+        try:
+            inputs = tx.inputs or []
+        except AttributeError:
+            inputs = []
+        for tx_input in inputs:
             prev_txid_hex, vout = self._prevout_from_txin(tx_input)
             if prev_txid_hex is None or vout is None:
                 continue
@@ -266,23 +397,38 @@ class UTXOValidationMixin:
 
 
     def _build_output_info(self, tx_out) -> dict:
-        amount = int(getattr(tx_out, "amount", 0))
-        raw_spk = getattr(tx_out, "script_pubkey", None)
-        spk_ser = getattr(raw_spk, "serialize", None)
-        if callable(spk_ser):
-            script_bytes = spk_ser()
-        elif isinstance(raw_spk, str):
-            script_bytes = bytes.fromhex(raw_spk)
-        elif isinstance(raw_spk, (bytes, bytearray)):
-            script_bytes = bytes(raw_spk)
-        else:
-            script_bytes = b""
+        try:
+            amount = int(tx_out.amount or 0)
+        except (AttributeError, TypeError):
+            amount = 0
+        try:
+            raw_spk = tx_out.script_pubkey
+        except AttributeError:
+            raw_spk = None
+        try:
+            script_bytes = raw_spk.serialize()
+        except (AttributeError, TypeError):
+            if isinstance(raw_spk, str):
+                try:
+                    script_bytes = bytes.fromhex(raw_spk)
+                except ValueError:
+                    script_bytes = b""
+            elif isinstance(raw_spk, (bytes, bytearray)):
+                script_bytes = bytes(raw_spk)
+            else:
+                script_bytes = b""
             
-        script_to_addr = getattr(self, "script_to_address", None)
+        try:
+            script_to_addr = self.script_to_address
+        except AttributeError:
+            script_to_addr = None
         if callable(script_to_addr):
             address = script_to_addr(raw_spk)
         else:
-            address = getattr(tx_out, "address", None)
+            try:
+                address = tx_out.address
+            except AttributeError:
+                address = None
         return {"script_bytes": script_bytes, "amount": amount, "address": address}
 
 
@@ -323,13 +469,17 @@ class UTXOValidationMixin:
 
 
     def _parse_script_bytes(self, spk) -> bytes:
-        spk_ser = getattr(spk, "serialize", None)
-        if callable(spk_ser):
-            return spk_ser()
+        try:
+            return spk.serialize()
+        except (AttributeError, TypeError):
+            pass
         if isinstance(spk, (bytes, bytearray)):
             return bytes(spk)
         if isinstance(spk, str):
-            return bytes.fromhex(spk)
+            try:
+                return bytes.fromhex(spk)
+            except ValueError:
+                return b""
         return b""
 
 
@@ -408,40 +558,89 @@ class UTXOValidationMixin:
         if utxos is None:
             return utxos
 
-        is_coinbase = bool(getattr(tx, "is_coinbase", False))
-        txid_hex = self._txid_hex(getattr(tx, "txid", None)) or getattr(tx, "txid_hex", lambda: None)()
+        try:
+            is_coinbase = bool(tx.is_coinbase)
+        except AttributeError:
+            is_coinbase = False
+        try:
+            tx_txid = tx.txid
+        except AttributeError:
+            tx_txid = None
+        txid_hex = self._txid_hex(tx_txid)
+        if not txid_hex:
+            try:
+                txid_hex_fn = tx.txid_hex
+                txid_hex = txid_hex_fn() if callable(txid_hex_fn) else str(txid_hex_fn or "")
+            except AttributeError:
+                txid_hex = ""
         detected_layout = self._detect_snapshot_layout(utxos)
 
         if not is_coinbase:
-            for txin in getattr(tx, "inputs", []):
-                prev_txid_hex = self._txid_hex(getattr(txin, "txid", None) or getattr(txin, "prev_tx", None))
-                vout = int(getattr(txin, "vout", getattr(txin, "prev_index", 0)))
+            try:
+                inputs = tx.inputs or []
+            except AttributeError:
+                inputs = []
+            for txin in inputs:
+                try:
+                    prev_id = txin.txid
+                except AttributeError:
+                    prev_id = None
+                if prev_id is None:
+                    try:
+                        prev_id = txin.prev_tx
+                    except AttributeError:
+                        prev_id = None
+                prev_txid_hex = self._txid_hex(prev_id)
+                try:
+                    v_val = txin.vout
+                except AttributeError:
+                    try:
+                        v_val = txin.prev_index
+                    except AttributeError:
+                        v_val = 0
+                vout = int(v_val if v_val is not None else 0)
                 if prev_txid_hex is not None:
                     self._apply_tx_remove_prevout(utxos, prev_txid_hex, vout)
 
         outputs_info: list[dict[str, Any]] = []
-        for n, txout in enumerate(getattr(tx, "outputs", [])):
-            spk = getattr(txout, "script_pubkey", None)
+        try:
+            outputs = tx.outputs or []
+        except AttributeError:
+            outputs = []
+        for n, txout in enumerate(outputs):
+            try:
+                spk = txout.script_pubkey
+            except AttributeError:
+                spk = None
             b = self._parse_script_bytes(spk)
             if len(b) >= 1 and b[0] == 0x6A:
                 continue
 
-            amount = int(getattr(txout, "amount", 0))
-            spk_ser = getattr(spk, "serialize", None)
-            if callable(spk_ser):
-                spk_hex = spk_ser().hex()
-            elif isinstance(spk, (bytes, bytearray)):
-                spk_hex = spk.hex()
-            elif spk is not None:
-                spk_hex = str(spk)
-            else:
-                spk_hex = None
+            try:
+                amount = int(txout.amount or 0)
+            except (AttributeError, TypeError):
+                amount = 0
+            try:
+                spk_hex = spk.serialize().hex()
+            except (AttributeError, TypeError):
+                if isinstance(spk, (bytes, bytearray)):
+                    spk_hex = spk.hex()
+                elif spk is not None:
+                    spk_hex = str(spk)
+                else:
+                    spk_hex = None
 
-            script_to_addr = getattr(self, "script_to_address", None)
+            try:
+                script_to_addr = self.script_to_address
+            except AttributeError:
+                script_to_addr = None
             if callable(script_to_addr):
                 address = script_to_addr(spk)
             else:
-                address = getattr(txout, "address", None)
+                try:
+                    address = txout.address
+                except AttributeError:
+                    address = None
 
             outputs_info.append({"script_bytes": b, "address": address, "amount": amount})
             entry = {

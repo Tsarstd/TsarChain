@@ -118,6 +118,8 @@ class GraffitiRegistry:
         self._kv_prefix = "graffiti:"
         self.store = None
         self._data_cache = None
+        self._stored_counts = {"comments": {}, "payouts": {}, "proofs": {}}
+        self._stored_posts = set()
         default = {"posts": {}, "comments": {}, "payouts": {}, "proofs": {}}
         self.data = self._load(default)
         self.data.setdefault("proofs", {})
@@ -360,9 +362,13 @@ class GraffitiRegistry:
 
 
     def _flush(self) -> None:
-        if getattr(self, "_stored_counts", None) is None:
+        try:
+            stored_counts = self._stored_counts
+        except AttributeError:
             self._stored_counts = {"comments": {}, "payouts": {}, "proofs": {}}
-        if getattr(self, "_stored_posts", None) is None:
+        try:
+            stored_posts = self._stored_posts
+        except AttributeError:
             self._stored_posts = set()
 
         with batch("graffiti") as b:

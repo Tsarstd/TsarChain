@@ -592,7 +592,7 @@ def _payout_max_claim(
     outs: list[TxOut] = [TxOut(int(rec_list[0]["amount"]), Script.p2wpkh_script(rec_list[0]["addr"]))]
     outs.append(_build_opret(rec_list))
     tx_final = Tx(version=1, inputs=_build_inputs(selected_utxos_copy), outputs=outs, locktime=0, auto_compute_txid=True)
-    tx_final.fee = total_in - sum(int(getattr(o, "amount", 0) or 0) for o in outs)
+    tx_final.fee = total_in - sum(int(o.amount or 0) for o in outs)
     return tx_final
 
 
@@ -637,7 +637,7 @@ def _payout_select_utxos(
     outs.append(_build_opret(rec_list))
 
     tx_final = Tx(version=1, inputs=_build_inputs(selected_utxos), outputs=outs, locktime=0, auto_compute_txid=True)
-    tx_final.fee = acc - sum(int(getattr(o, "amount", 0) or 0) for o in outs)
+    tx_final.fee = acc - sum(int(o.amount or 0) for o in outs)
     return tx_final
 
 
@@ -925,15 +925,33 @@ def _find_pool_utxos(utxo_db, art_id: str) -> list[dict]:
     spk_hex = _pool_spk_bytes(art_id).hex()
     out: list[dict] = []
     # Coba via index get() jika tersedia
-    bucket = utxo_db.get(spk_hex) or {}
+    try:
+        bucket = utxo_db.get(spk_hex) or {}
+    except (AttributeError, TypeError):
+        bucket = {}
     if isinstance(bucket, dict):
         for key, entry in bucket.items():
             txid_hex, idx_str = key.split(":")
-            tx_out = entry.get("tx_out") if isinstance(entry, dict) else getattr(entry, "tx_out", None)
+            if isinstance(entry, dict):
+                tx_out = entry.get("tx_out")
+            else:
+                try:
+                    tx_out = entry.tx_out
+                except AttributeError:
+                    tx_out = None
             if isinstance(tx_out, dict):
                 amt = int(tx_out.get("amount", 0))
             else:
-                amt = int(getattr(tx_out, "amount", entry.get("amount", 0) if isinstance(entry, dict) else getattr(entry, "amount", 0)) or 0)
+                try:
+                    amt = int(tx_out.amount or 0)
+                except (AttributeError, TypeError):
+                    if isinstance(entry, dict):
+                        amt = int(entry.get("amount", 0) or 0)
+                    else:
+                        try:
+                            amt = int(entry.amount or 0)
+                        except (AttributeError, TypeError):
+                            amt = 0
             out.append({
                 "txid": txid_hex,
                 "vout": int(idx_str),
@@ -942,24 +960,46 @@ def _find_pool_utxos(utxo_db, art_id: str) -> list[dict]:
             })
 
     # Fallback: scan utxo_db.utxos in-memory
-    for key, entry in getattr(utxo_db, "utxos", {}).items():
-        tx_out = entry.get("tx_out") if isinstance(entry, dict) else getattr(entry, "tx_out", None)
+    try:
+        utxos_dict = utxo_db.utxos or {}
+    except AttributeError:
+        utxos_dict = {}
+    for key, entry in utxos_dict.items():
+        if isinstance(entry, dict):
+            tx_out = entry.get("tx_out")
+        else:
+            try:
+                tx_out = entry.tx_out
+            except AttributeError:
+                tx_out = None
         if tx_out is None:
             tx_out = entry
         
-        spk_obj = tx_out.get("script_pubkey") if isinstance(tx_out, dict) else getattr(tx_out, "script_pubkey", None)
+        if isinstance(tx_out, dict):
+            spk_obj = tx_out.get("script_pubkey")
+        else:
+            try:
+                spk_obj = tx_out.script_pubkey
+            except AttributeError:
+                spk_obj = None
         if spk_obj is None:
             continue
-        ser = getattr(spk_obj, "serialize", None)
-        if callable(ser):
-            spk_str = ser().hex()
-        elif isinstance(spk_obj, (bytes, bytearray)):
-            spk_str = bytes(spk_obj).hex()
-        else:
-            spk_str = str(spk_obj)
+        try:
+            spk_str = spk_obj.serialize().hex()
+        except (AttributeError, TypeError):
+            if isinstance(spk_obj, (bytes, bytearray)):
+                spk_str = bytes(spk_obj).hex()
+            else:
+                spk_str = str(spk_obj)
 
         if spk_str.lower() == spk_hex:
-            amt = int(tx_out.get("amount", 0) if isinstance(tx_out, dict) else getattr(tx_out, "amount", 0) or 0)
+            if isinstance(tx_out, dict):
+                amt = int(tx_out.get("amount", 0) or 0)
+            else:
+                try:
+                    amt = int(tx_out.amount or 0)
+                except (AttributeError, TypeError):
+                    amt = 0
             txid_hex, idx_str = key.split(":")
             out.append({
                 "txid": txid_hex,

@@ -481,11 +481,22 @@ def _validate_snapshot_chain() -> tuple[bool, Optional[str]]:
     if entry_block is None:
         return False, "chain genesis block missing or invalid"
 
-    height = int(entry_block.get("height", -1) if isinstance(entry_block, dict) else getattr(entry_block, "height", -1))
+    if isinstance(entry_block, dict):
+        height = int(entry_block.get("height", -1))
+        prev = entry_block.get("prev_block_hash", b"")
+    else:
+        try:
+            height = int(entry_block.height)
+        except (AttributeError, TypeError, ValueError):
+            height = -1
+        try:
+            prev = entry_block.prev_block_hash
+        except AttributeError:
+            prev = b""
+
     if height != 0:
         return False, f"genesis block not included in snapshot (first height {height})"
 
-    prev = entry_block.get("prev_block_hash") if isinstance(entry_block, dict) else getattr(entry_block, "prev_block_hash", b"")
     prev_hex = bytes(prev).hex() if isinstance(prev, (bytes, bytearray)) else str(prev or "").strip().lower()
 
     zero_hex = CFG.ZERO_HASH.hex() if isinstance(CFG.ZERO_HASH, (bytes, bytearray)) else bytes(CFG.ZERO_HASH).hex()

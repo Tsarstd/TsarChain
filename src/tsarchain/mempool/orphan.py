@@ -34,10 +34,16 @@ class OrphanPoolMixin:
 
     def _queue_orphan(self, tx_obj: Tx, missing_key: str) -> None:
         tx_dict = tx_obj.to_dict(include_txid=True)
-        txid_hex = tx_dict.get("txid")
-        if not txid_hex and getattr(tx_obj, "txid", None):
-            txid_hex = tx_obj.txid.hex()
-            tx_dict["txid"] = txid_hex
+        txid_hex = tx_dict.get("txid") if isinstance(tx_dict, dict) else None
+        if not txid_hex:
+            try:
+                tx_txid = tx_obj.txid
+                if tx_txid:
+                    txid_hex = tx_txid.hex() if isinstance(tx_txid, (bytes, bytearray)) else str(tx_txid)
+                    if isinstance(tx_dict, dict):
+                        tx_dict["txid"] = txid_hex
+            except AttributeError:
+                pass
         if not txid_hex:
             return
         key = txid_hex.lower()

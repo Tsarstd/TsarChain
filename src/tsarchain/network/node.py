@@ -62,9 +62,10 @@ class NetworkProxy:
                 ]
             
             for handler in self._handlers:
-                val = getattr(handler, name, None)
-                if val is not None:
-                    return val
+                try:
+                    return handler.__getattribute__(name)
+                except AttributeError:
+                    pass
         finally:
             self._in_getattr = False
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
@@ -98,8 +99,10 @@ class Network(NetworkProxy):
             "privkey": self.privkey,
         }
         self.peer_pubkeys: dict[str, str] = load_peer_keys()
-        self._peer_keys_lock = getattr(self, "_peer_keys_lock", None)
-        if self._peer_keys_lock is None:
+        try:
+            if self._peer_keys_lock is None:
+                self._peer_keys_lock = threading.RLock()
+        except AttributeError:
             self._peer_keys_lock = threading.RLock()
 
         self.broadcast = Broadcast(blockchain=blockchain)
@@ -278,7 +281,11 @@ class Network(NetworkProxy):
         return None
 
     def _is_self_bootstrap(self, host: str, port: int) -> bool:
-        if int(port) != int(getattr(self, "port", -1)):
+        try:
+            self_port = self.port
+        except AttributeError:
+            self_port = -1
+        if int(port) != int(self_port):
             return False
         return self._is_local_address(host)
 

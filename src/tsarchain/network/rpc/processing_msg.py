@@ -160,7 +160,7 @@ def _is_storage_node_id(network, node_id: str | None) -> bool:
     if not node_id:
         return False
     try:
-        peers = getattr(network, "storage_peers", None) or {}
+        peers = network.storage_peers or {}
     except Exception:
         return False
     for meta in peers.values():
@@ -172,7 +172,10 @@ def _is_storage_node_id(network, node_id: str | None) -> bool:
 def _is_miner_sender(network, src_node_id: str | None, src_pubkey: str | None, addr: Any) -> bool:
     if not src_node_id:
         return False
-    peer_pubkeys = getattr(network, "peer_pubkeys", {}) or {}
+    try:
+        peer_pubkeys = network.peer_pubkeys or {}
+    except AttributeError:
+        peer_pubkeys = {}
     pinned = peer_pubkeys.get(src_node_id)
     if not pinned:
         return False
@@ -202,16 +205,25 @@ def _client_ip(addr) -> str:
 
 def _inject_mempool_basic_stats(tx_section: dict, pool) -> None:
     tx_count = None
-    store = getattr(pool, "_pool", None)
+    try:
+        store = pool._pool
+    except AttributeError:
+        store = None
     if isinstance(store, dict):
         tx_count = len(store)
     else:
-        all_txs_fn = getattr(pool, "get_all_txs", None)
-        txs = all_txs_fn() if callable(all_txs_fn) else []
+        try:
+            all_txs_fn = pool.get_all_txs
+            txs = all_txs_fn() if callable(all_txs_fn) else []
+        except AttributeError:
+            txs = []
         tx_count = len(txs or [])
     tx_section["mempool_txs"] = int(tx_count)
 
-    size_est = getattr(pool, "current_size", None)
+    try:
+        size_est = pool.current_size
+    except AttributeError:
+        size_est = None
     if size_est is not None:
         tx_section["mempool_vbytes_estimate"] = int(size_est)
 
@@ -220,11 +232,21 @@ def _inject_mempool_graffiti_stats(snapshot: dict, pool) -> None:
     graff_section = snapshot.setdefault("graffiti", {})
     if isinstance(graff_section, dict):
         on_mem = 0
-        all_txs_fn = getattr(pool, "get_all_txs", None)
-        all_txs = all_txs_fn() if callable(all_txs_fn) else []
+        try:
+            all_txs_fn = pool.get_all_txs
+            all_txs = all_txs_fn() if callable(all_txs_fn) else []
+        except AttributeError:
+            all_txs = []
         for tx in all_txs or []:
-            for tx_out in getattr(tx, "outputs", []) or []:
-                spk = getattr(tx_out, "script_pubkey", None)
+            try:
+                outputs = tx.outputs or []
+            except AttributeError:
+                outputs = []
+            for tx_out in outputs:
+                try:
+                    spk = tx_out.script_pubkey
+                except AttributeError:
+                    spk = None
                 meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
                 if meta and str(meta.get("event", "")).upper() == "POST":
                     on_mem += 1
@@ -240,8 +262,11 @@ def _overlay_realtime_mempool_stats(snapshot: dict, network: "Network") -> None:
     if not isinstance(tx_section, dict):
         return
 
-    broadcast = getattr(network, "broadcast", None)
-    pool = getattr(broadcast, "mempool", None) if broadcast else None
+    try:
+        broadcast = network.broadcast
+        pool = broadcast.mempool if broadcast else None
+    except AttributeError:
+        pool = None
     if pool is None:
         return
 
@@ -261,7 +286,10 @@ def _relay_chain(network, route: list[tuple], inner: dict, src_addr=None):
         return
     first = route[0]
     payload = {"type": "CHAT_RELAY", "route": route[1:], "inner": inner}
-    send_fn = getattr(network, "_send_chat_relay", None)
+    try:
+        send_fn = network._send_chat_relay
+    except AttributeError:
+        send_fn = None
     if callable(send_fn):
         send_fn(first, payload)
     else:

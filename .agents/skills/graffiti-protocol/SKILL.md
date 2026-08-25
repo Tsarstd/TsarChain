@@ -149,14 +149,19 @@ python benchmarks/native_bench.py
 
 ---
 
-## 6. Code Style & Conventions: Strict Prohibition of `hasattr`
+## 6. Code Style & Architectural Conventions: Strict Prohibition of Dynamic Reflection
 
-> [!IMPORTANT]
-> **DO NOT USE `hasattr()` ANYWHERE IN THIS CODEBASE.**
-> The Graffiti Protocol monorepo is strictly clean of `hasattr()`. 
-> - Always prefer direct attribute access, explicit method invocation, or `getattr(obj, "attr_name", default)` when attributes are truly optional.
-> - For callables, use `ser = getattr(obj, "method", None); if callable(ser): ...`.
-> - Do not write defensive shims with `hasattr()`. Trust established data contracts and concrete class implementations across core models (`Block`, `Tx`, `TxIn`, `TxOut`, `GraffitiRegistry`, etc.).
+> [!CAUTION]
+> **TOTAL 100% BAN ON `hasattr()`, `getattr()`, AND `setattr()` IN PRODUCTION CODE (`src/` & `apps/`).**
+> The Graffiti Protocol / TsarChain repository strictly enforces clean, explicit, and deterministic code without runtime reflection shims:
+> 
+> 1. **Zero `hasattr()`**: Strictly prohibited across the entire codebase (0 occurrences). Never use `hasattr()` as a defensive guard.
+> 2. **Zero `getattr()`**: Strictly prohibited for dynamic property lookups or fallback masking. Never use `getattr(obj, "field", default)` to hide uninitialized attributes or type mismatches. 
+>    - The *only* valid exception is inside low-level proxy dunder definitions (`def __getattr__(self, name)` in proxy wrappers) with re-entrancy protection.
+> 3. **Zero `setattr()`**: Strictly prohibited for dynamic monkey-patching or runtime attribute injection. Always declare class attributes explicitly in `__init__` and assign directly (`obj.attr = value`).
+> 4. **Idiomatic EAFP & Direct Access**:
+>    - Always prefer direct attribute access: `obj.attr`.
+>    - When handling duck-typed or optional class attributes, use Pythonic EAFP (`try: ... except AttributeError:`).
 
 ---
 
@@ -164,7 +169,8 @@ python benchmarks/native_bench.py
 
 Before declaring success or submitting pull requests:
 1. Ensure all Rust unit tests pass (`cargo test` inside `tsarcore_native`).
-2. Ensure all Python unit tests pass (`pytest`).
+2. Ensure all Python unit tests pass (`$env:PYTHONPATH="src"; pytest tests/unit/ -v`).
 3. Verify native extension builds without errors (`maturin develop --release`).
-4. Ensure guarded core consensus files (`src/tsarchain/consensus/`, `src/kremlin/security/`, `tests/`) maintain integrity.
-5. Verify that no `hasattr` usage has been introduced into the codebase.
+4. Ensure guarded core consensus files (`src/tsarchain/consensus/`, `src/kremlin/security/`, `tests/`) maintain architectural integrity.
+5. Verify that **NO `hasattr()`, `getattr()`, or `setattr()` calls** have been introduced into `src/` or `apps/`.
+

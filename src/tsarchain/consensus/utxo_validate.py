@@ -29,7 +29,7 @@ class UTXOValidator:
             self.blockchain._utxodb = UTXODB()
             self.blockchain._utxo_dirty = False
             self.blockchain._utxo_last_flush_height = self.blockchain.height
-            if getattr(self.blockchain._utxodb, "utxos", None):
+            if self.blockchain._utxodb.utxos:
                 self.blockchain._utxo_synced = True
             else:
                 self.blockchain._utxo_synced = False
@@ -75,7 +75,7 @@ class UTXOValidator:
             return
         if not self.blockchain.chain:
             # Hindari mengosongkan UTXO saat chain belum termuat (mis. saat genesis lock menunggu sync)
-            if getattr(self.blockchain._utxodb, "utxos", None):
+            if self.blockchain._utxodb.utxos:
                 log.warning("[_sync_utxo_store] Chain kosong; skip clear_db agar snapshot UTXO tidak hilang")
                 self.blockchain._utxo_synced = True
                 self.blockchain._utxo_dirty = False

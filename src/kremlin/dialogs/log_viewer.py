@@ -350,7 +350,10 @@ class TsarLogViewer:
         for h in logging.getLogger().handlers[:]:
             try:
                 if isinstance(h, RotatingFileHandler):
-                    base = getattr(h, "baseFilename", None)
+                    try:
+                        base = h.baseFilename
+                    except AttributeError:
+                        base = None
                     if base and Path(base) == p.resolve():
                         target_handlers.append(h)
             except Exception:
@@ -360,13 +363,20 @@ class TsarLogViewer:
     def _truncate_handler(self, h) -> None:
         h.acquire()
         try:
-            stream = getattr(h, "stream", None)
+            try:
+                stream = h.stream
+            except AttributeError:
+                stream = None
             if stream:
                 stream.seek(0)
                 stream.truncate(0)
                 stream.flush()
             else:
-                open(h.baseFilename, "w", encoding=getattr(h, "encoding", "utf-8")).close()
+                try:
+                    enc = h.encoding or "utf-8"
+                except AttributeError:
+                    enc = "utf-8"
+                open(h.baseFilename, "w", encoding=enc).close()
         finally:
             h.release()
 
@@ -504,7 +514,11 @@ class TsarLogViewer:
             self.master.after(250, self._poll_tail)
 
     def _append_record(self, record: logging.LogRecord):
-        module = _module_from_logger_name(getattr(record, "name", None))
+        try:
+            r_name = record.name
+        except AttributeError:
+            r_name = None
+        module = _module_from_logger_name(r_name)
 
         try:
             msg = self.tk_handler.format(record) if self.tk_handler else logging.Formatter(_DEFAULT_FMT, _DEFAULT_DATEFMT).format(record)
@@ -661,7 +675,13 @@ def export_log_bundle(path: str = ZIP_BUNDLE) -> Path:
             except Exception:
                 pass
             if isinstance(h, RotatingFileHandler):
-                p = Path(getattr(h, "baseFilename"))
+                try:
+                    base = h.baseFilename
+                except AttributeError:
+                    base = None
+                if not base:
+                    continue
+                p = Path(base)
                 _add(p)
                 for bp in p.parent.glob(p.name + ".*"):
                     if bp.is_file():

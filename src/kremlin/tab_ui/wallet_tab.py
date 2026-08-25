@@ -391,8 +391,12 @@ class WalletsMixin:
         self.actions_mb["menu"] = act_menu
         self.actions_mb.pack(side=tk.LEFT, padx=6)
 
+        try:
+            wallets_len = len(self.wallets)
+        except AttributeError:
+            wallets_len = 0
         self.wallet_count_label = tk.Label(
-            right, text=f"Wallets: {len(getattr(self, 'wallets', []))}",
+            right, text=f"Wallets: {wallets_len}",
             bg=self.bg, fg=self.muted, font=("Consolas", 10)
         )
         self.wallet_count_label.pack(side=tk.RIGHT, padx=8)
@@ -421,7 +425,11 @@ class WalletsMixin:
         for c in self.wallet_list_frame.winfo_children():
             c.destroy()
 
-        for addr in getattr(self, "wallets", []):
+        try:
+            wallets_list = self.wallets or []
+        except AttributeError:
+            wallets_list = []
+        for addr in wallets_list:
             card = tk.Frame(self.wallet_list_frame, bg=self.panel_bg, padx=12, pady=10)
             card.pack(fill=tk.X, padx=6, pady=6)
 
@@ -445,9 +453,9 @@ class WalletsMixin:
             action_btn.pack(side=tk.RIGHT)
 
             bal_labels = self._build_balance_block(card)
-            setattr(card, "_bal_labels", bal_labels)
+            card._bal_labels = bal_labels
             card._bal_labels["_address"] = addr
-            setattr(card, "_address", addr)
+            card._address = addr
             self._preload_cached_balance(addr, card._bal_labels)
 
             btns = tk.Frame(card, bg=self.panel_bg)
@@ -660,7 +668,10 @@ class WalletsMixin:
             self._toast("Reset cancelled.", kind="warn")
             return
         pwd = pwd.strip()
-        existing_wallets = list(getattr(self, "wallets", []) or [])
+        try:
+            existing_wallets = list(self.wallets or [])
+        except AttributeError:
+            existing_wallets = []
         errors: list[str] = []
         try:
             removed_labels, cleared_hist = self.wallet_controller.delete_wallet_data(pwd, existing_wallets)
@@ -675,20 +686,28 @@ class WalletsMixin:
         self.wallets = []
         save_registry(self.wallets)
 
-        if getattr(self, "_ks_pwd_cache", None) is not None:
+        try:
             self._ks_pwd_cache = None
+        except AttributeError:
+            pass
 
         self._wallets_after_change()
-        contact_mgr = getattr(self, "contact_mgr", None)
-        if contact_mgr is not None:
-            contact_mgr._contacts = {}
-        if getattr(self, "contacts", None) is not None:
+        try:
+            self.contact_mgr._contacts = {}
+        except AttributeError:
+            pass
+        try:
             self.contacts = {}
-        if getattr(self, "_contact_pairs", None) is not None:
+        except AttributeError:
+            pass
+        try:
             self._contact_pairs = []
-        refresh_contacts = getattr(self, "_refresh_contacts_ui", None)
-        if callable(refresh_contacts):
-            refresh_contacts()
+        except AttributeError:
+            pass
+        try:
+            self._refresh_contacts_ui()
+        except (AttributeError, TypeError):
+            pass
 
         summary_lines = []
         if removed_labels:
@@ -739,24 +758,35 @@ class WalletsMixin:
         return "\n".join(lines)
 
     def _reg(self, addr: str) -> None:
-        if getattr(self, "wallets", None) is None:
+        try:
+            if self.wallets is None:
+                self.wallets = []
+        except AttributeError:
             self.wallets = []
         if addr and addr not in self.wallets:
             self.wallets.append(addr)
             save_registry(self.wallets)
-        if getattr(self, "wallet_count_label", None):
-            self.wallet_count_label.config(text=f"Wallets: {len(self.wallets)}")
-        reload_addrs = getattr(self, "reload_addresses", None)
-        if callable(reload_addrs):
-            reload_addrs()
-        render_list = getattr(self, "_render_wallet_list", None)
-        if callable(render_list):
-            render_list()
+        try:
+            if self.wallet_count_label:
+                self.wallet_count_label.config(text=f"Wallets: {len(self.wallets)}")
+        except AttributeError:
+            pass
+        try:
+            self.reload_addresses()
+        except (AttributeError, TypeError):
+            pass
+        try:
+            self._render_wallet_list()
+        except (AttributeError, TypeError):
+            pass
 
     # ------- Secure Mnemonic Dialog -------
     def _show_mnemonic_dialog(self, addr: str, mnemonic: str) -> None:
         def _safe_cancel_timer():
-            tid = getattr(self, "_security_timer_id", None)
+            try:
+                tid = self._security_timer_id
+            except AttributeError:
+                tid = None
             if tid is not None:
                 self.root.after_cancel(tid)
                 self._security_timer_id = None
@@ -944,7 +974,10 @@ class WalletsMixin:
         theme = {"bg": self.bg, "panel_bg": self.panel_bg, "fg": self.fg, "muted": self.muted, "accent": self.accent}
         dlg = CreateWalletDialog(self.root, theme)
         self.root.wait_window(dlg)
-        pwd = getattr(dlg, "result_password", None)
+        try:
+            pwd = dlg.result_password
+        except AttributeError:
+            pwd = None
         if not pwd:
             return
         
@@ -1085,7 +1118,11 @@ class WalletsMixin:
             
 
     def export_private_key(self) -> None:
-        if not getattr(self, "wallets", []):
+        try:
+            wallets = self.wallets
+        except AttributeError:
+            wallets = []
+        if not wallets:
             messagebox.showerror("Error", "No wallet loaded")
             return
 
@@ -1143,9 +1180,10 @@ class WalletsMixin:
     # ===================== BALANCE HELPERS =====================
 
     def _notify_balance_refresh(self, addresses: Optional[Sequence[str]] = None, immediate: bool = False) -> None:
-        handler = getattr(self, "_handle_balance_refresh_request", None)
-        if callable(handler):
-            handler(addresses=addresses, immediate=immediate)
+        try:
+            self._handle_balance_refresh_request(addresses=addresses, immediate=immediate)
+        except (AttributeError, TypeError):
+            pass
 
     def _collect_balance_targets(self, addresses: Optional[Sequence[str]] = None) -> list[tuple[str, dict]]:
         targets: list[tuple[str, dict]] = []
@@ -1153,10 +1191,19 @@ class WalletsMixin:
         if addresses:
             allowed = {str(a).strip().lower() for a in addresses if a}
             
-        cards = getattr(self, "wallet_list_frame", tk.Frame()).winfo_children()
+        try:
+            cards = self.wallet_list_frame.winfo_children()
+        except AttributeError:
+            cards = []
         for card in cards:
-            bal_labels = getattr(card, "_bal_labels", None)
-            addr = getattr(card, "_address", None)
+            try:
+                bal_labels = card._bal_labels
+            except AttributeError:
+                bal_labels = None
+            try:
+                addr = card._address
+            except AttributeError:
+                addr = None
             if not addr and isinstance(bal_labels, dict):
                 addr = bal_labels.get("_address")
             if not addr or bal_labels is None:
@@ -1228,38 +1275,54 @@ class WalletsMixin:
     # ---------- switch & refresh ----------
 
     def _wallets_update_mode(self) -> None:
-        has = bool(getattr(self, "wallets", []))
+        try:
+            has = bool(self.wallets)
+        except AttributeError:
+            has = False
         self._wallets_hero.pack_forget()
         self._wallets_compact.pack_forget()
         target = self._wallets_compact if has else self._wallets_hero
         target.pack(fill=tk.BOTH, expand=True)
-        if getattr(self, "wallet_count_label", None):
-            self.wallet_count_label.config(text=f"Wallets: {len(self.wallets)}")
+        try:
+            if self.wallet_count_label:
+                self.wallet_count_label.config(text=f"Wallets: {len(self.wallets)}")
+        except AttributeError:
+            pass
 
     def _wallets_after_change(self) -> None:
-        render_list = getattr(self, "_render_wallet_list", None)
-        if callable(render_list):
-            render_list()
-        reload_addrs = getattr(self, "reload_addresses", None)
-        if callable(reload_addrs):
-            reload_addrs()
+        try:
+            self._render_wallet_list()
+        except (AttributeError, TypeError):
+            pass
+        try:
+            self.reload_addresses()
+        except (AttributeError, TypeError):
+            pass
         self._wallets_update_mode()
         self._notify_balance_refresh()
 
     def _reg(self, addr: str) -> None:
-        if getattr(self, "wallets", None) is None:
+        try:
+            if self.wallets is None:
+                self.wallets = []
+        except AttributeError:
             self.wallets = []
         if addr and addr not in self.wallets:
             self.wallets.append(addr)
             save_registry(self.wallets)
-        if getattr(self, "wallet_count_label", None):
-            self.wallet_count_label.config(text=f"Wallets: {len(self.wallets)}")
-        reload_addrs = getattr(self, "reload_addresses", None)
-        if callable(reload_addrs):
-            reload_addrs()
-        render_list = getattr(self, "_render_wallet_list", None)
-        if callable(render_list):
-            render_list()
+        try:
+            if self.wallet_count_label:
+                self.wallet_count_label.config(text=f"Wallets: {len(self.wallets)}")
+        except AttributeError:
+            pass
+        try:
+            self.reload_addresses()
+        except (AttributeError, TypeError):
+            pass
+        try:
+            self._render_wallet_list()
+        except (AttributeError, TypeError):
+            pass
         self._notify_balance_refresh(addresses=[addr], immediate=True)
         self._wallets_update_mode()
 
@@ -1357,7 +1420,10 @@ class WalletsMixin:
     def sync_from_keystore(self) -> None:
         pwd = None
         if not pwd:
-            ask = getattr(self, "_ask_password", None)
+            try:
+                ask = self._ask_password
+            except AttributeError:
+                ask = None
             if callable(ask):
                 pwd = ask(TEXT_KEYSTORE_PWD, "Enter keystore password to sync addresses:")
             else:
@@ -1386,12 +1452,16 @@ class WalletsMixin:
         self.wallets = final
         save_registry(self.wallets)
 
-        if getattr(self, "wallet_count_label", None):
-            self.wallet_count_label.config(text=f"Wallets: {len(self.wallets)}")
+        try:
+            if self.wallet_count_label:
+                self.wallet_count_label.config(text=f"Wallets: {len(self.wallets)}")
+        except AttributeError:
+            pass
         self.reload_addresses()
-        lock_redirect = getattr(self, "_maybe_lock_redirect", None)
-        if callable(lock_redirect):
-            lock_redirect()
+        try:
+            self._maybe_lock_redirect()
+        except (AttributeError, TypeError):
+            pass
         self._render_wallet_list()
         
         messagebox.showinfo(
@@ -1433,13 +1503,17 @@ class WalletsMixin:
         self.wallets = [a for a in (self.wallets or []) if a != addr]
         save_registry(self.wallets)
 
-        if getattr(self, "wallet_count_label", None):
-            self.wallet_count_label.config(text=f"Wallets: {len(self.wallets)}")
+        try:
+            if self.wallet_count_label:
+                self.wallet_count_label.config(text=f"Wallets: {len(self.wallets)}")
+        except AttributeError:
+            pass
         self.reload_addresses()
         self._render_wallet_list()
-        lock_redirect = getattr(self, "_maybe_lock_redirect", None)
-        if callable(lock_redirect):
-            lock_redirect()
+        try:
+            self._maybe_lock_redirect()
+        except (AttributeError, TypeError):
+            pass
         self._notify_balance_refresh(immediate=True)
         messagebox.showinfo("Deleted", "Wallet removed from keystore and UI.")
 

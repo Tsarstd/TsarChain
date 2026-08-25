@@ -62,6 +62,10 @@ class CoinbaseTx(Tx):
             outputs=[txout],
             is_coinbase=True,
             auto_compute_txid=True,
+            to_address=self.to_address,
+            block_id=self.block_id,
+            height=self.height,
+            reward=self.reward,
         )
 
     def to_dict(self, include_txid: bool = True):

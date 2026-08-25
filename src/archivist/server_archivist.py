@@ -240,11 +240,14 @@ class StorageServer:
                                 promoted = True
                             except OSError:
                                 pass
+
                 if data is not None:
                     self.db.put_final(aid, data)
                     promoted = True
+
             if not promoted and not self.db.has_final(aid):
                 return False, "missing_file"
+
         self.db.delete_blob(aid, incoming=True)
         blob_p = self.db.get_final_blob_path(aid)
         if blob_p and isinstance(blob_p, str):
@@ -253,6 +256,7 @@ class StorageServer:
             meta["path"] = f"lmdb://final/{aid}"
         meta["state"] = "stored"
         return True, None
+
 
     def _find_expired_keys(self, files: dict, tip_h: int, expire_after: int) -> list[str]:
         remove_keys = []

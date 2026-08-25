@@ -53,3 +53,31 @@ def test_broadcast_shutdown(mock_dandelion, mock_txpool):
     assert len(broadcast.seen_txs) == 0
     mock_blockchain.shutdown.assert_called_once()
     mock_sock.close.assert_called_once()
+
+
+@patch('tsarchain.network.broadcast.TxPool')
+@patch('tsarchain.network.broadcast.DandelionPP')
+def test_broadcast_handler_proxy_delegation(mock_dandelion, mock_txpool):
+    mock_blockchain = MagicMock()
+    mock_utxodb = MagicMock()
+    
+    broadcast = Broadcast(blockchain=mock_blockchain, utxodb=mock_utxodb)
+    
+    # Verify Broadcast can access methods from its sub-handlers
+    assert callable(broadcast.broadcast_block)
+    assert callable(broadcast.receive_block)
+    
+    # Verify ReceiveHandler (via BroadcastHandlerProxy) can access GossipHandler methods
+    assert callable(broadcast.receive.broadcast_block)
+    assert callable(broadcast.receive.broadcast_tx_fluff)
+    
+    # Verify GossipHandler (via BroadcastHandlerProxy) can access ReceiveHandler methods
+    assert callable(broadcast.gossip.receive_block)
+    
+    # Verify non-existent attribute raises AttributeError
+    import pytest
+    with pytest.raises(AttributeError):
+        _ = broadcast.non_existent_method_xyz
+    with pytest.raises(AttributeError):
+        _ = broadcast.receive.non_existent_method_xyz
+

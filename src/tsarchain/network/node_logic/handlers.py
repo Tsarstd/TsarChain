@@ -86,16 +86,31 @@ def handle_get_headers(self, message, _):
             else str(blk.prev_block_hash)
         )
 
-        blk_hash_fn = getattr(blk, "hash", None)
-        blk_hash = blk_hash_fn().hex() if callable(blk_hash_fn) else (blk_hash_fn.hex() if isinstance(blk_hash_fn, (bytes, bytearray)) else str(blk_hash_fn or ""))
+        try:
+            blk_hash = blk.hash().hex() if callable(blk.hash) else (blk.hash.hex() if isinstance(blk.hash, (bytes, bytearray)) else str(blk.hash or ""))
+        except AttributeError:
+            blk_hash = ""
+
+        try:
+            b_height = blk.height
+        except AttributeError:
+            b_height = start_idx
+        try:
+            b_ts = blk.timestamp
+        except AttributeError:
+            b_ts = 0
+        try:
+            b_bits = blk.bits
+        except AttributeError:
+            b_bits = 0
 
         headers.append(
             {
-                "height": getattr(blk, "height", start_idx),
+                "height": b_height,
                 "hash": blk_hash,
                 "prev_hash": prev_hash,
-                "timestamp": getattr(blk, "timestamp", 0),
-                "bits": getattr(blk, "bits", 0),
+                "timestamp": b_ts,
+                "bits": b_bits,
             }
         )
     more = (start_idx + limit) < len(chain)
@@ -177,7 +192,11 @@ def _process_storage_hello(self, message, peer_ip, peer_port, src_node_id, src_p
     
     # enforce pin consistency
     with self.lock:
-        for _peer, meta in (getattr(self, "storage_peers", {}) or {}).items():
+        try:
+            storage_peers_dict = self.storage_peers or {}
+        except AttributeError:
+            storage_peers_dict = {}
+        for _peer, meta in storage_peers_dict.items():
             if (meta or {}).get("node_id") == src_node_id:
                 pinned_pk = (meta or {}).get("pubkey")
                 if pinned_pk and pinned_pk != src_pubkey:

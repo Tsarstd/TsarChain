@@ -100,16 +100,21 @@ class UTXOBalanceMixin:
         if isinstance(tx_out, dict):
             spk = tx_out.get("script_pubkey")
         else:
-            spk = getattr(tx_out, "script_pubkey", None)
+            try:
+                spk = tx_out.script_pubkey
+            except AttributeError:
+                spk = None
             if spk is None:
-                serialize = getattr(tx_out, "serialize", None)
-                if callable(serialize):
-                    return serialize().hex().lower()
+                try:
+                    return tx_out.serialize().hex().lower()
+                except (AttributeError, TypeError):
+                    pass
         if spk is None:
             return None
-        serialize = getattr(spk, "serialize", None)
-        if callable(serialize):
-            return serialize().hex().lower()
+        try:
+            return spk.serialize().hex().lower()
+        except (AttributeError, TypeError):
+            pass
         if isinstance(spk, (bytes, bytearray)):
             return bytes(spk).hex().lower()
         if isinstance(spk, str):
@@ -120,7 +125,11 @@ class UTXOBalanceMixin:
     def _amount_from_tx_out(self, tx_out) -> int:
         if isinstance(tx_out, dict):
             return int(tx_out.get("amount", 0) or 0)
-        return int(getattr(tx_out, "amount", 0) or 0)
+        try:
+            amt = tx_out.amount
+        except AttributeError:
+            amt = 0
+        return int(amt or 0)
 
 
     def _normalize_target_spk_hex(self, x: str) -> str:

@@ -77,20 +77,38 @@ def identity_from_msg(message: dict[str, Any] | None) -> str | None:
 
 
 def summarize_block(self: "Network", b: Any) -> dict:
-    height     = getattr(b, "height")
-    ts         = getattr(b, "timestamp")
-    txs        = getattr(b, "transactions", []) or []
-    first_tx   = txs[0]
-    block_id   = getattr(first_tx, "block_id")
-    tx_count   = len(txs)
+    try:
+        height = b.height
+    except AttributeError:
+        height = 0
+    try:
+        ts = b.timestamp
+    except AttributeError:
+        ts = 0
+    try:
+        txs = b.transactions
+    except AttributeError:
+        txs = []
+    try:
+        block_id = txs[0].block_id
+    except AttributeError:
+        block_id = None
+    tx_count = len(txs)
     
     graffiti_posts = 0
     graffiti_comments = 0
     graffiti_payouts = 0
 
     for tx in txs:
-        for tx_out in getattr(tx, "outputs", []) or []:
-            spk = getattr(tx_out, "script_pubkey", None)
+        try:
+            outputs = tx.outputs or []
+        except AttributeError:
+            outputs = []
+        for tx_out in outputs:
+            try:
+                spk = tx_out.script_pubkey
+            except AttributeError:
+                spk = None
             if not spk:
                 continue
                 

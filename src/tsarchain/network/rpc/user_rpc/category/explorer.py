@@ -274,7 +274,10 @@ def get_mempool(self, message, pow_obj, base_identity, addr, *,
     txs = self.broadcast.mempool.get_all_txs()
     hexes = []
     for t in txs:
-        txid = getattr(t, "txid", None)
+        try:
+            txid = t.txid
+        except AttributeError:
+            txid = None
         if isinstance(txid, (bytes, bytearray)):
             hexes.append(txid.hex())
         elif isinstance(txid, str):
@@ -406,7 +409,11 @@ def _calculate_mempool_balances(self, mem, opmap_mem, opmap_chain) -> tuple[dict
         spent_local: dict[str, int] = {}
         recv_local: dict[str, int] = {}
 
-        for tin in getattr(tx, "inputs", []) or []:
+        try:
+            inputs = tx.inputs or []
+        except AttributeError:
+            inputs = []
+        for tin in inputs:
             key = self.txin_prevkey(tin)
             amt_spk = opmap_mem.get(key) or opmap_chain.get(key)
             if not amt_spk:
@@ -416,8 +423,15 @@ def _calculate_mempool_balances(self, mem, opmap_mem, opmap_chain) -> tuple[dict
             if owner and amt:
                 spent_local[owner] = spent_local.get(owner, 0) + int(amt)
 
-        for o in getattr(tx, "outputs", []) or []:
-            amt = int(getattr(o, "amount", 0) or 0)
+        try:
+            outputs = tx.outputs or []
+        except AttributeError:
+            outputs = []
+        for o in outputs:
+            try:
+                amt = int(o.amount or 0)
+            except (AttributeError, TypeError):
+                amt = 0
             if amt <= 0:
                 continue
             addr_o = self.txout_to_address(o)
@@ -465,8 +479,8 @@ def _get_mempool_snapshot(self, message, addr, is_miner_sender) -> dict:
 
 
 def _get_mempool_inline(all_txs) -> dict:
-    inline: list[dict] = []
     total = len(all_txs)
+    inline = []
     hard_cap = max(1024, CFG.MAX_MSG) - len(CFG.NETWORK_MAGIC)
     limit = CFG.MEMPOOL_INLINE_MAX_TX
     base = {"type": "MEMPOOL", "mode": "inline_full", "total": total, "txs": []}
@@ -474,17 +488,27 @@ def _get_mempool_inline(all_txs) -> dict:
     for tx in all_txs:
         if len(inline) >= limit:
             break
-        to_dict = getattr(tx, "to_dict", None)
-        if callable(to_dict):
-            tx_dict = to_dict(include_txid=True)
-        elif isinstance(tx, dict):
-            tx_dict = dict(tx)
-        else:
-            continue
+        try:
+            to_dict = tx.to_dict
+            if callable(to_dict):
+                tx_dict = to_dict(include_txid=True)
+            elif isinstance(tx, dict):
+                tx_dict = dict(tx)
+            else:
+                continue
+        except AttributeError:
+            if isinstance(tx, dict):
+                tx_dict = dict(tx)
+            else:
+                continue
 
-        if not tx_dict.get("txid") and getattr(tx, "txid", None):
-            txid_attr = getattr(tx, "txid")
-            tx_dict["txid"] = txid_attr.hex() if isinstance(txid_attr, (bytes, bytearray)) else str(txid_attr)
+        if not tx_dict.get("txid"):
+            try:
+                txid_attr = tx.txid
+                if txid_attr:
+                    tx_dict["txid"] = txid_attr.hex() if isinstance(txid_attr, (bytes, bytearray)) else str(txid_attr)
+            except AttributeError:
+                pass
 
         candidate = dict(base)
         candidate["txs"] = inline + [tx_dict]

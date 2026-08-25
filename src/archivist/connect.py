@@ -221,7 +221,10 @@ class RPC:
 
 
     def _send(self, inner: Dict[str, Any]) -> None:
-        sock = getattr(self, "sock", None)
+        try:
+            sock = self.sock
+        except AttributeError:
+            sock = None
         if not sock:
             raise RuntimeError("no socket")
         outer = build_envelope(inner, self.ctx, extra={"pubkey": self.pub})
@@ -229,7 +232,10 @@ class RPC:
 
 
     def _recv(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
-        sock = getattr(self, "sock", None)
+        try:
+            sock = self.sock
+        except AttributeError:
+            sock = None
         if not sock:
             return None
         raw = recv_message(sock, timeout)

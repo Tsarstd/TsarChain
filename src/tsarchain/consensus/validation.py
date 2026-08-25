@@ -52,7 +52,7 @@ class BlockValidator:
                 return False
 
             # 2. Warm-up POW
-            b_height = int(getattr(block, "height", 0))
+            b_height = int(block.height or 0)
             self._warm_pow_context(b_height)
             self._ensure_warm(b_height)
 
@@ -84,8 +84,14 @@ class BlockValidator:
                     return False
                 
                 store = self.blockchain.ensure_utxodb() or UTXODB()
-                has_lookup = callable(getattr(store, "lookup_entry", None))
-                utxo_view = getattr(store, "utxos", None) if not has_lookup else None
+                try:
+                    has_lookup = callable(store.lookup_entry)
+                except AttributeError:
+                    has_lookup = False
+                try:
+                    utxo_view = store.utxos if not has_lookup else None
+                except AttributeError:
+                    utxo_view = None
                 utxo_view = store.load_utxo_set() if (not has_lookup and utxo_view is None) else utxo_view
                 state_token = self._chain_state_token_locked()
 
@@ -112,18 +118,20 @@ class BlockValidator:
 
 
     def compute_txids_for_block(self, block: Block) -> bool:
-        txs = getattr(block, "transactions", []) or []
+        txs = block.transactions or []
         for tx in txs:
             raw_no_witness = self._serialize_tx_cached(tx, include_witness=False)
             if raw_no_witness is None:
                 self.blockchain._last_block_validation_error = "tx_serialize_failed"
                 return False
             txid_bytes = H.hash256(raw_no_witness)
-            existing = getattr(tx, "txid", None)
+            try:
+                existing = tx.txid
+            except AttributeError:
+                existing = None
             existing_bytes = None
             if isinstance(existing, (bytes, bytearray)):
                 existing_bytes = bytes(existing)
-
             elif isinstance(existing, str):
                 existing_bytes = bytes.fromhex(existing)
 
@@ -131,10 +139,13 @@ class BlockValidator:
                 self.blockchain._last_block_validation_error = "txid_mismatch"
                 return False
 
-            setattr(tx, "_cached_txid_bytes", txid_bytes)
-            setattr(tx, "_cached_raw_tx_nowit", raw_no_witness)
-            setattr(tx, "txid", txid_bytes)
-            setattr(tx, "txid_hex", txid_bytes.hex())
+            try:
+                tx._cached_txid_bytes = txid_bytes
+                tx._cached_raw_tx_nowit = raw_no_witness
+            except AttributeError:
+                pass
+            tx.txid = txid_bytes
+            tx.txid_hex = txid_bytes.hex()
         return True
 
 
@@ -152,7 +163,7 @@ class BlockValidator:
         # pre-warm next epoch key near boundary
         next_epoch = (height // epoch_blocks) + 1
         with self._pow_warm_lock:
-            if getattr(self.__class__, "_pow_warm_next_epoch", None) == next_epoch or getattr(self, "_pow_warm_next_epoch", None) == next_epoch:
+            if self._pow_warm_next_epoch == next_epoch or self.__class__._pow_warm_next_epoch == next_epoch:
                 return
             self.__class__._pow_warm_next_epoch = next_epoch
             self._pow_warm_next_epoch = next_epoch
@@ -193,8 +204,8 @@ class BlockValidator:
 
 
     def _validate_merkle(self, block: Block) -> bool: 
-        computed = merkle_root(block.transactions)
-        header_mr = getattr(block, "merkle_root", None)
+        computed = merkle_root(block.transactions or [])
+        header_mr = block.merkle_root
         if isinstance(header_mr, str):
             header_mr = bytes.fromhex(header_mr)
         return computed == header_mr
@@ -203,20 +214,34 @@ class BlockValidator:
     def _validate_transactions(self, block: Block, utxo_store: UTXODB | None = None) -> bool: 
         store = utxo_store or self.blockchain.ensure_utxodb() or UTXODB()
         self.blockchain._last_block_validation_error = "validation_failed"
-        txs = getattr(block, "transactions", [])
+        try:
+            txs = block.transactions or []
+        except AttributeError:
+            txs = []
         if not txs:
             self.blockchain._last_block_validation_error = "empty_block_transactions"
             return False
 
         cb = txs[0]
-        if not getattr(cb, "is_coinbase", False):
+        try:
+            is_cb = cb.is_coinbase
+        except AttributeError:
+            is_cb = False
+        if not is_cb:
             self.blockchain._last_block_validation_error = "missing_coinbase"
             return False
-        if any(getattr(t, "is_coinbase", False) for t in txs[1:]):
-            self.blockchain._last_block_validation_error = "duplicate_coinbase"
-            return False
+        for t in txs[1:]:
+            try:
+                if t.is_coinbase:
+                    self.blockchain._last_block_validation_error = "duplicate_coinbase"
+                    return False
+            except AttributeError:
+                pass
 
-        spend_height = int(getattr(block, "height", 0))
+        try:
+            spend_height = int(block.height or 0)
+        except AttributeError:
+            spend_height = 0
 
         if not self._validate_tx_guardrails(txs, spend_height):
             return False
@@ -239,16 +264,27 @@ class BlockValidator:
             try:
                 weight, vsize, _base_size, _total_size = H.compute_tx_weight_vsize(tx)
             except Exception:
+                try:
+                    txid_val = tx.txid
+                except AttributeError:
+                    txid_val = None
                 log.exception(
                     "[_validate_tx_guardrails] weight_calc_failed txid=%s height=%s",
-                    getattr(tx, "txid", None),
+                    txid_val,
                     block_height,
                 )
                 self.blockchain._last_block_validation_error = "tx_weight_calc_failed"
                 return False
 
-            vin = len(getattr(tx, "inputs", []))
-            vout = len(getattr(tx, "outputs", []))
+            try:
+                vin = len(tx.inputs or [])
+            except (AttributeError, TypeError):
+                vin = 0
+            try:
+                vout = len(tx.outputs or [])
+            except (AttributeError, TypeError):
+                vout = 0
+
             if vsize > int(CFG.MAX_TX_VSIZE):
                 self.blockchain._last_block_validation_error = "tx_vsize_exceeds_limit"
                 return False
@@ -268,16 +304,25 @@ class BlockValidator:
                 self.blockchain._last_block_validation_error = "tx_outputs_exceed_limit"
                 return False
 
-            for tx_out in getattr(tx, "outputs", []):
-                if not self._validate_graffiti_output(
-                    getattr(tx_out, "script_pubkey", None)
-                ):
+            try:
+                outputs = tx.outputs or []
+            except AttributeError:
+                outputs = []
+            for tx_out in outputs:
+                try:
+                    spk = tx_out.script_pubkey
+                except AttributeError:
+                    spk = None
+                if not self._validate_graffiti_output(spk):
                     return False
         return True
 
 
     def _validate_graffiti_rules(self, txs, cb, store) -> bool: 
-        reg = getattr(store, "_graffiti_registry", None)
+        try:
+            reg = store._graffiti_registry
+        except AttributeError:
+            reg = None
         if reg is None:
             reg = GraffitiRegistry()
             
@@ -294,8 +339,15 @@ class BlockValidator:
         graffiti_posts = 0
         first_art_id = None
         for tx in txs[1:]:  # skip coinbase
-            for tx_out in getattr(tx, "outputs", []):
-                spk = getattr(tx_out, "script_pubkey", None)
+            try:
+                outputs = tx.outputs or []
+            except AttributeError:
+                outputs = []
+            for tx_out in outputs:
+                try:
+                    spk = tx_out.script_pubkey
+                except AttributeError:
+                    spk = None
                 meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
                 if not meta or str(meta.get("event", "")).upper() != "POST":
                     continue
@@ -314,11 +366,19 @@ class BlockValidator:
                 except Exception:
                     continue
 
-                paid = sum(
-                    int(getattr(out, "amount", 0))
-                    for out in getattr(tx, "outputs", []) or []
-                    if (self._spk_to_address(getattr(out, "script_pubkey", None)) if getattr(out, "script_pubkey", None) is not None else getattr(out, "address", None)) == pool_addr
-                )
+                paid = 0
+                for out in outputs:
+                    try:
+                        out_spk = out.script_pubkey
+                    except AttributeError:
+                        out_spk = None
+                    try:
+                        amt = int(out.amount or 0)
+                    except AttributeError:
+                        amt = 0
+                    if self._spk_to_address(out_spk) == pool_addr:
+                        paid += amt
+
                 if paid < min_fee:
                     continue
 
@@ -330,7 +390,10 @@ class BlockValidator:
             self.blockchain._last_block_validation_error = "too_many_graffiti_posts"
             return False
 
-        cb_block_id = getattr(cb, "block_id", None)
+        try:
+            cb_block_id = cb.block_id
+        except AttributeError:
+            cb_block_id = None
         if isinstance(cb_block_id, str):
             cb_block_id = cb_block_id.strip().lower()
         if graffiti_posts == 1 and first_art_id:
@@ -343,16 +406,30 @@ class BlockValidator:
     def _validate_graffiti_payouts(self, txs, reg) -> bool: 
         for tx in txs[1:]:
             paymap: dict[str, int] = {}
-            for out in getattr(tx, "outputs", []):
-                addr = self._spk_to_address(getattr(out, "script_pubkey", None))
+            try:
+                outputs = tx.outputs or []
+            except AttributeError:
+                outputs = []
+            for out in outputs:
+                try:
+                    spk = out.script_pubkey
+                except AttributeError:
+                    spk = None
+                addr = self._spk_to_address(spk)
                 if not addr:
                     continue
-                amt = int(getattr(out, "amount", 0))
+                try:
+                    amt = int(out.amount or 0)
+                except AttributeError:
+                    amt = 0
                 if amt > 0:
                     paymap[addr.strip().lower()] = paymap.get(addr.strip().lower(), 0) + amt
 
-            for out in getattr(tx, "outputs", []):
-                spk = getattr(out, "script_pubkey", None)
+            for out in outputs:
+                try:
+                    spk = out.script_pubkey
+                except AttributeError:
+                    spk = None
                 meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
                 if not meta or str(meta.get("event", "")).upper() != "PAYOUT":
                     continue
@@ -457,37 +534,64 @@ class BlockValidator:
 
 
     def _prepare_tx_snapshot(self, txs, store) -> dict | None: #NOSONAR
-        store_lookup = getattr(store, "lookup_entry", None)
+        try:
+            store_lookup = store.lookup_entry
+        except AttributeError:
+            store_lookup = None
+
         utxo_view = None
         if not callable(store_lookup):
-            utxo_view = getattr(store, "utxos", None)
+            try:
+                utxo_view = store.utxos
+            except AttributeError:
+                utxo_view = None
             if utxo_view is None:
                 utxo_view = store.load_utxo_set()
 
         processed_txids = set()
         snapshot: dict[str, dict] = {}
         for tx in txs:
-            txid_hex = self._txid_hex(getattr(tx, "txid", None))
+            try:
+                tx_txid = tx.txid
+            except AttributeError:
+                tx_txid = None
+            txid_hex = self._txid_hex(tx_txid)
             if txid_hex is None:
-                compute_fn = getattr(tx, "compute_txid", None)
-                if callable(compute_fn):
-                    compute_fn()
-                    txid_hex = self._txid_hex(getattr(tx, "txid", None))
+                try:
+                    tx.compute_txid()
+                    txid_hex = self._txid_hex(tx.txid)
+                except (AttributeError, TypeError):
+                    pass
             txid_lower = txid_hex.lower() if txid_hex else None
 
-            if getattr(tx, "is_coinbase", False):
+            try:
+                is_cb = tx.is_coinbase
+            except AttributeError:
+                is_cb = False
+
+            if is_cb:
                 if txid_lower:
                     processed_txids.add(txid_lower)
                 continue
 
-            for tx_input in getattr(tx, "inputs", []):
-                prev_txid_hex = self._txid_hex(
-                    getattr(tx_input, "txid", None) or getattr(tx_input, "prev_tx", None)
-                )
+            try:
+                inputs = tx.inputs or []
+            except AttributeError:
+                inputs = []
+
+            for tx_input in inputs:
+                try:
+                    in_txid = tx_input.txid
+                except AttributeError:
+                    in_txid = None
+                prev_txid_hex = self._txid_hex(in_txid)
                 if prev_txid_hex is None:
                     self.blockchain._last_block_validation_error = "tx_input_missing_prev_txid"
                     return None
-                prev_index = int(getattr(tx_input, "vout", getattr(tx_input, "prev_index", 0)))
+                try:
+                    prev_index = int(tx_input.vout)
+                except (AttributeError, TypeError, ValueError):
+                    prev_index = 0
                 if prev_txid_hex.lower() in processed_txids:
                     continue
                 snap_key = f"{prev_txid_hex.lower()}:{prev_index}"
@@ -517,9 +621,17 @@ class BlockValidator:
             for tx_obj, fee_val in zip(txs[1:], fees):
                 fee_int = int(fee_val)
                 fees_list.append(fee_int)
-                tx_obj.fee = fee_int
+                try:
+                    tx_obj.fee = fee_int
+                except AttributeError:
+                    pass
         else:
-            fees_list = [int(getattr(t, "fee", 0)) for t in txs[1:]]
+            for t in txs[1:]:
+                try:
+                    f = t.fee
+                except AttributeError:
+                    f = 0
+                fees_list.append(int(f or 0))
 
         minted_before = int(self.blockchain.cumulative_supply_until(block.height) or 0)
         base = int(self.blockchain.scheduled_reward(block.height) or 0)
@@ -527,7 +639,11 @@ class BlockValidator:
         total_fee = sum(fees_list)
         expected_cb = reward + total_fee
 
-        actual_cb = sum(int(o.amount) for o in getattr(cb, "outputs", []))
+        try:
+            cb_outputs = cb.outputs or []
+        except AttributeError:
+            cb_outputs = []
+        actual_cb = sum(int(o.amount or 0) for o in cb_outputs)
         if actual_cb != expected_cb:
             self.blockchain._last_block_validation_error = f"coinbase_amount_mismatch expected={expected_cb} actual={actual_cb}"
             return False
@@ -540,18 +656,41 @@ class BlockValidator:
         Cache the result of serialize_tx to avoid repeated hashing/serialization
         in the validation hot path.
         """
-        attr = "_cached_raw_tx_w" if include_witness else "_cached_raw_tx_nowit"
-        buf = getattr(tx, attr, None)
-        if isinstance(buf, (bytes, bytearray)):
-            return bytes(buf)
-        raw = H.serialize_tx(tx, include_witness=include_witness)
-        setattr(tx, attr, raw)
-        return raw
+        if include_witness:
+            try:
+                buf = tx._cached_raw_tx_w
+                if isinstance(buf, (bytes, bytearray)):
+                    return bytes(buf)
+            except AttributeError:
+                pass
+            raw = H.serialize_tx(tx, include_witness=True)
+            try:
+                tx._cached_raw_tx_w = raw
+            except AttributeError:
+                pass
+            return raw
+        else:
+            try:
+                buf = tx._cached_raw_tx_nowit
+                if isinstance(buf, (bytes, bytearray)):
+                    return bytes(buf)
+            except AttributeError:
+                pass
+            raw = H.serialize_tx(tx, include_witness=False)
+            try:
+                tx._cached_raw_tx_nowit = raw
+            except AttributeError:
+                pass
+            return raw
 
 
     def _estimate_block_size(self, block: Block) -> Optional[int]: 
         total = 80
-        for tx in block.transactions or []:
+        try:
+            txs = block.transactions or []
+        except AttributeError:
+            txs = []
+        for tx in txs:
             sz = self._estimate_tx_size(tx)
             if sz is None:
                 return None
@@ -560,25 +699,36 @@ class BlockValidator:
 
 
     def _estimate_tx_size(self, tx) -> Optional[int]: 
-        cached = getattr(tx, "_cached_raw_tx_w", None)
-        if isinstance(cached, (bytes, bytearray)):
-            return len(cached)
+        try:
+            cached = tx._cached_raw_tx_w
+            if isinstance(cached, (bytes, bytearray)):
+                return len(cached)
+        except AttributeError:
+            pass
         
-        serialize_fn = getattr(tx, "serialize", None)
-        if callable(serialize_fn):
-            try:
+        try:
+            serialize_fn = tx.serialize
+            if callable(serialize_fn):
                 raw = serialize_fn()
                 return len(raw if isinstance(raw, (bytes, bytearray)) else bytes.fromhex(raw))
-            except Exception:
-                log.exception("[_estimate_block_size] tx.serialize failed")
-                
-        raw_attr = getattr(tx, "raw", None)
-        if isinstance(raw_attr, (bytes, bytearray)):
-            return len(raw_attr)
+        except (AttributeError, TypeError):
+            pass
+        except Exception:
+            log.exception("[_estimate_block_size] tx.serialize failed")
             
-        size_attr = getattr(tx, "size_bytes", None)
-        if size_attr is not None:
-            return int(size_attr()) if callable(size_attr) else int(size_attr)
+        try:
+            raw_attr = tx.raw
+            if isinstance(raw_attr, (bytes, bytearray)):
+                return len(raw_attr)
+        except AttributeError:
+            pass
+            
+        try:
+            size_attr = tx.size_bytes
+            if size_attr is not None:
+                return int(size_attr()) if callable(size_attr) else int(size_attr)
+        except AttributeError:
+            pass
             
         return None
 
@@ -611,7 +761,7 @@ class BlockValidator:
             self.blockchain._last_block_validation_error = "timestamp_in_future"
             return False
         if self.blockchain.chain:
-            parent_ts = int(getattr(self.blockchain.chain[-1], "timestamp", 0) or 0)
+            parent_ts = int(self.blockchain.chain[-1].timestamp or 0)
             if block.timestamp + int(CFG.TARGET_BLOCK_TIME) < parent_ts:
                 self.blockchain._last_block_validation_error = "timestamp_backwards"
                 return False
@@ -623,11 +773,25 @@ class BlockValidator:
 
     def _ensure_unique_txids(self, block: Block) -> bool: 
         seen_txids = set()
-        for tx in block.transactions or []:
-            compute_fn = getattr(tx, "compute_txid", None)
-            if callable(compute_fn) and (getattr(tx, "txid", None) is None):
-                compute_fn()
-            txid_b = getattr(tx, "txid", None)
+        try:
+            txs = block.transactions or []
+        except AttributeError:
+            txs = []
+        for tx in txs:
+            try:
+                txid_val = tx.txid
+            except AttributeError:
+                txid_val = None
+            if txid_val is None:
+                try:
+                    tx.compute_txid()
+                except (AttributeError, TypeError):
+                    pass
+                try:
+                    txid_val = tx.txid
+                except AttributeError:
+                    txid_val = None
+            txid_b = txid_val
             if not isinstance(txid_b, (bytes, bytearray)):
                 txid_b = bytes.fromhex(txid_b) if isinstance(txid_b, str) else None
             if txid_b is None:
@@ -641,7 +805,11 @@ class BlockValidator:
 
 
     def _check_block_limits(self, block: Block) -> bool: 
-        txs_ex_coinbase = max(0, (len(block.transactions) or 0) - 1)
+        try:
+            txs_len = len(block.transactions) if block.transactions else 0
+        except AttributeError:
+            txs_len = 0
+        txs_ex_coinbase = max(0, txs_len - 1)
         if txs_ex_coinbase > CFG.MAX_TXS_PER_BLOCK:
             self.blockchain._last_block_validation_error = "too_many_txs"
             return False
@@ -653,27 +821,58 @@ class BlockValidator:
 
 
     def _entry_script_bytes(self, entry) -> bytes | None: 
+        if entry is None:
+            return None
         candidate = entry
+        spk = None
         if isinstance(candidate, dict):
-            tx_out = candidate.get("tx_out") or candidate
+            tx_out = candidate.get("tx_out")
+            if tx_out is not None:
+                if isinstance(tx_out, dict):
+                    spk = tx_out.get("script_pubkey")
+                else:
+                    try:
+                        spk = tx_out.script_pubkey
+                    except AttributeError:
+                        pass
+            if spk is None:
+                spk = candidate.get("script_pubkey")
+        elif isinstance(candidate, (bytes, bytearray)):
+            return bytes(candidate)
+        elif isinstance(candidate, str):
+            try:
+                return bytes.fromhex(candidate)
+            except ValueError:
+                return None
         else:
-            tx_out = getattr(candidate, "tx_out", None) or candidate
-        if isinstance(tx_out, dict):
-            spk = tx_out.get("script_pubkey")
-        else:
-            spk = getattr(tx_out, "script_pubkey", None)
-        if spk is None and isinstance(candidate, dict):
-            spk = candidate.get("script_pubkey")
+            try:
+                tx_out = candidate.tx_out
+                if isinstance(tx_out, dict):
+                    spk = tx_out.get("script_pubkey")
+                else:
+                    try:
+                        spk = tx_out.script_pubkey
+                    except AttributeError:
+                        spk = None
+            except AttributeError:
+                try:
+                    spk = candidate.script_pubkey
+                except AttributeError:
+                    spk = None
+
         if spk is None:
             return None
-        ser = getattr(spk, "serialize", None)
-        if callable(ser):
-            return ser()
         if isinstance(spk, (bytes, bytearray)):
             return bytes(spk)
         if isinstance(spk, str):
-            return bytes.fromhex(spk)
-        return None
+            try:
+                return bytes.fromhex(spk)
+            except ValueError:
+                return None
+        try:
+            return spk.serialize()
+        except (AttributeError, TypeError):
+            return None
 
 
     def _validate_graffiti_output(self, spk_obj) -> bool: 
@@ -700,9 +899,8 @@ class BlockValidator:
 
 
     def _extract_raw_spk(self, spk_obj) -> bytes | None: 
-        ser = getattr(spk_obj, "serialize", None)
-        if callable(ser):
-            return ser()
+        if spk_obj is None:
+            return None
         if isinstance(spk_obj, (bytes, bytearray)):
             return bytes(spk_obj)
         if isinstance(spk_obj, str):
@@ -710,7 +908,10 @@ class BlockValidator:
                 return bytes.fromhex(spk_obj)
             except ValueError:
                 return None
-        return None
+        try:
+            return spk_obj.serialize()
+        except (AttributeError, TypeError):
+            return None
 
 
     def _validate_graffiti_post_event(self, meta) -> bool: 
@@ -744,17 +945,8 @@ class BlockValidator:
 
 
     def _spk_to_address(self, spk_obj) -> str | None: 
-        ser = getattr(spk_obj, "serialize", None)
-        if callable(ser):
-            spk_bytes = ser()
-        elif isinstance(spk_obj, (bytes, bytearray)):
-            spk_bytes = bytes(spk_obj)
-        elif isinstance(spk_obj, str):
-            try:
-                spk_bytes = bytes.fromhex(spk_obj)
-            except ValueError:
-                return None
-        else:
+        spk_bytes = self._extract_raw_spk(spk_obj)
+        if not spk_bytes:
             return None
         if len(spk_bytes) == 22 and spk_bytes[0] == 0x00 and spk_bytes[1] == 0x14:
             prog = spk_bytes[2:]
@@ -776,16 +968,21 @@ class BlockValidator:
             return bytes(spk_obj)
         if isinstance(spk_obj, str):
             return bytes.fromhex(spk_obj)
-        script_attr = getattr(spk_obj, "script_pubkey", None)
-        if script_attr is not None:
-            spk_obj = script_attr
-        ser = getattr(spk_obj, "serialize", None)
-        if callable(ser):
-            return ser()
-        to_b = getattr(spk_obj, "to_bytes", None)
-        if callable(to_b):
-            return bytes(to_b())
-        return None
+        try:
+            spk_obj = spk_obj.script_pubkey
+        except AttributeError:
+            pass
+        if isinstance(spk_obj, (bytes, bytearray)):
+            return bytes(spk_obj)
+        if isinstance(spk_obj, str):
+            return bytes.fromhex(spk_obj)
+        try:
+            return spk_obj.serialize()
+        except (AttributeError, TypeError):
+            try:
+                return bytes(spk_obj.to_bytes())
+            except (AttributeError, TypeError):
+                return None
 
 
     def _txid_hex(self, value): 
@@ -841,30 +1038,54 @@ class BlockValidator:
 
 
     def _normalize_snapshot_entry(self, entry, key_desc: str): 
-        candidate = entry
-        if isinstance(candidate, dict):
-            tx_out = candidate.get("tx_out") or candidate
+        if isinstance(entry, dict):
+            tx_out = entry.get("tx_out") or entry
+            script_bytes = self._script_to_bytes(tx_out)
+            if script_bytes is None:
+                script_bytes = self._script_to_bytes(entry.get("script_pubkey"))
+            if script_bytes is None:
+                log.warning("[native_snapshot] entry %s missing script", key_desc)
+                return None
+            if isinstance(tx_out, dict):
+                amt_val = tx_out.get("amount")
+            else:
+                try:
+                    amt_val = tx_out.amount
+                except AttributeError:
+                    amt_val = None
+            if amt_val is None:
+                amt_val = entry.get("amount", 0)
+            amt = int(amt_val or 0)
+            is_cb = bool(entry.get("is_coinbase", False))
+            born = int(entry.get("block_height", entry.get("height", 0)) or 0)
         else:
-            tx_out = getattr(candidate, "tx_out", None) or candidate
-        script_bytes = self._script_to_bytes(tx_out)
-        if script_bytes is None and isinstance(candidate, dict):
-            script_bytes = self._script_to_bytes(candidate.get("script_pubkey"))
-        if script_bytes is None:
-            log.warning("[native_snapshot] entry %s missing script", key_desc)
-            return None
-        if isinstance(tx_out, dict):
-            amount_val = tx_out.get("amount")
-        else:
-            amount_val = getattr(tx_out, "amount", getattr(candidate, "amount", None))
-        amt = int(amount_val if amount_val is not None else 0)
-        if isinstance(candidate, dict):
-            is_cb = bool(candidate.get("is_coinbase", False))
-            born = int(candidate.get("block_height", candidate.get("height", 0)))
-        else:
-            is_cb = bool(getattr(candidate, "is_coinbase", False))
-            born = int(
-                getattr(candidate, "block_height", getattr(candidate, "height", 0)) or 0
-            )
+            try:
+                tx_out = entry.tx_out or entry
+            except AttributeError:
+                tx_out = entry
+            script_bytes = self._script_to_bytes(tx_out)
+            if script_bytes is None:
+                log.warning("[native_snapshot] entry %s missing script", key_desc)
+                return None
+            try:
+                amt_val = tx_out.amount
+            except AttributeError:
+                try:
+                    amt_val = entry.amount
+                except AttributeError:
+                    amt_val = 0
+            amt = int(amt_val or 0)
+            try:
+                is_cb = bool(entry.is_coinbase)
+            except AttributeError:
+                is_cb = False
+            try:
+                born = int(entry.block_height or 0)
+            except AttributeError:
+                try:
+                    born = int(entry.height or 0)
+                except AttributeError:
+                    born = 0
         return {
             "amount": amt,
             "script_pubkey": script_bytes,
@@ -914,23 +1135,40 @@ class BlockValidator:
 
 
     def _check_sigops_budget(self, block: Block, store: UTXODB, utxo_view) -> bool: 
-        lookup_fn = getattr(store, "lookup_entry", None)
+        try:
+            lookup_fn = store.lookup_entry
+        except AttributeError:
+            lookup_fn = None
 
         total_sigops = 0
-        for tx in block.transactions or []:
-            if getattr(tx, "is_coinbase", False):
-                continue
-            sigops_fn = getattr(tx, "sigops_count", None)
-            if callable(sigops_fn):
-                so = int(
-                    sigops_fn(
-                        lambda txid, vout: self._utxo_lookup(
-                            lookup_fn, utxo_view, txid, vout
+        try:
+            txs = block.transactions or []
+        except AttributeError:
+            txs = []
+        for tx in txs:
+            try:
+                if tx.is_coinbase:
+                    continue
+            except AttributeError:
+                pass
+            so = None
+            try:
+                sigops_fn = tx.sigops_count
+                if callable(sigops_fn):
+                    so = int(
+                        sigops_fn(
+                            lambda txid, vout: self._utxo_lookup(
+                                lookup_fn, utxo_view, txid, vout
+                            )
                         )
                     )
-                )
-            else:
-                so = len(getattr(tx, "inputs", []))
+            except (AttributeError, TypeError):
+                pass
+            if so is None:
+                try:
+                    so = len(tx.inputs or [])
+                except (AttributeError, TypeError):
+                    so = 0
             if so > int(CFG.MAX_SIGOPS_PER_TX):
                 self.blockchain._last_block_validation_error = "sigops_per_tx_exceeded"
                 return False

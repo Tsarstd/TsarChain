@@ -68,8 +68,11 @@ class GraffitiController:
         self._post_plan: Optional[Dict[str, Any]] = None
 
     def fetch_storers_sync(self) -> list[Dict[str, Any]]:
-        rpc = getattr(self.app, "rpc", None)
-        rpc_send = getattr(rpc, "send", None)
+        try:
+            rpc = self.app.rpc
+            rpc_send = rpc.send
+        except AttributeError:
+            rpc_send = None
         if not callable(rpc_send):
             return []
         resp = rpc_send({"type": "STOR_LIST"}) or {}
@@ -180,11 +183,19 @@ class GraffitiController:
         if not plan:
             raise ValueError("No post plan available")
         
-        svc = getattr(self.app, "send_svc", None)
-        rpc_send = getattr(self.app, "rpc_send", None)
+        try:
+            svc = self.app.send_svc
+        except AttributeError:
+            svc = None
+        try:
+            rpc_send = self.app.rpc_send
+        except AttributeError:
+            rpc_send = None
         if not rpc_send:
-            rpc = getattr(self.app, "rpc", None)
-            rpc_send = getattr(rpc, "send_async", None)
+            try:
+                rpc_send = self.app.rpc.send_async
+            except AttributeError:
+                rpc_send = None
         if not svc or not rpc_send:
             raise ValueError("Send service is not available")
         
@@ -214,11 +225,19 @@ class GraffitiController:
             comment_text=text,
         )
         
-        svc = getattr(self.app, "send_svc", None)
-        rpc_send = getattr(self.app, "rpc_send", None)
+        try:
+            svc = self.app.send_svc
+        except AttributeError:
+            svc = None
+        try:
+            rpc_send = self.app.rpc_send
+        except AttributeError:
+            rpc_send = None
         if not rpc_send:
-            rpc = getattr(self.app, "rpc", None)
-            rpc_send = getattr(rpc, "send_async", None)
+            try:
+                rpc_send = self.app.rpc.send_async
+            except AttributeError:
+                rpc_send = None
         if not svc or not rpc_send:
             raise ValueError("Send service tidak tersedia.")
             
@@ -451,7 +470,10 @@ class GraffitiTab(ttk.Frame):
 
     # ---- actions ----
     def refresh_storers(self):
-        rpc = getattr(self.app, "rpc", None)
+        try:
+            rpc = self.app.rpc
+        except AttributeError:
+            rpc = None
         if not rpc:
             return
 
@@ -465,7 +487,10 @@ class GraffitiTab(ttk.Frame):
     def _refresh_creator_wallets(self):
         if not self.creator_cb:
             return
-        wallets = list(getattr(self.app, "wallets", []) or [])
+        try:
+            wallets = list(self.app.wallets or [])
+        except AttributeError:
+            wallets = []
         self.creator_cb["values"] = wallets
         if wallets:
             current = self.creator_var.get()
@@ -711,11 +736,14 @@ class GraffitiTab(ttk.Frame):
     def _open_creator_catalog(self) -> None:
         """Open the catalog of works for the current wallet creator."""
         creator = (self.creator_var.get() or "").strip().lower()
-        rpc = getattr(self.app, "rpc", None)
+        try:
+            rpc = self.app.rpc
+            rpc_send_async = rpc.send_async
+        except AttributeError:
+            rpc_send_async = None
         if not creator:
             messagebox.showinfo("Graffiti", "Select the wallet creator first.")
             return
-        rpc_send_async = getattr(rpc, "send_async", None)
         if not callable(rpc_send_async):
             messagebox.showwarning("Graffiti", "Offline wallet or RPC is not available.")
             return
@@ -747,12 +775,11 @@ class GraffitiTab(ttk.Frame):
                 status_var.set("Art ID copied.")
                 
             def _open():
-                app = getattr(self, "app", None)
                 try:
+                    app = self.app
                     if app:
                         app.switch_tab("explorer")
-                        panel = getattr(app, "explore_panel", None)
-                        nav = getattr(panel, "navigate_to_art", None)
+                        nav = app.explore_panel.navigate_to_art
                         if callable(nav):
                             nav(art_id_full)
                 except Exception:
@@ -934,15 +961,23 @@ class GraffitiTab(ttk.Frame):
         if self.post_send_btn:
             self.post_send_btn.config(state="disabled")
 
-        if getattr(self.app, "send_tab", None):
-            self.app.send_tab.clear_opret_hex()
+        try:
+            send_tab = self.app.send_tab
+        except AttributeError:
+            send_tab = None
+        if send_tab:
+            send_tab.clear_opret_hex()
 
         def on_progress(msg: str) -> None:
             self.post_info_var.set(msg)
 
         def on_done(resp: Optional[Dict[str, Any]]) -> None:
-            if getattr(self.app, "send_tab", None):
-                self.app.send_tab.clear_opret_hex()
+            try:
+                st = self.app.send_tab
+            except AttributeError:
+                st = None
+            if st:
+                st.clear_opret_hex()
             def _update():
                 if isinstance(resp, dict) and resp.get("status") in (None, "ok"):
                     txid = resp.get("txid") or resp.get("data", {}).get("txid") or "?"
@@ -959,8 +994,14 @@ class GraffitiTab(ttk.Frame):
             self.after(0, _update)
 
         try:
-            fee_rate = int(getattr(self.app.send_tab, "fee_rate_var", None).get())
-            ask_pwd = getattr(self.app, "_ask_password", None)
+            try:
+                fee_rate = int(self.app.send_tab.fee_rate_var.get())
+            except (AttributeError, ValueError, TypeError):
+                fee_rate = int(CFG.MIN_FEE_RATE_SATVB)
+            try:
+                ask_pwd = self.app._ask_password
+            except AttributeError:
+                ask_pwd = None
             
             self.controller.broadcast_post(
                 creator_addr=creator,
@@ -971,8 +1012,12 @@ class GraffitiTab(ttk.Frame):
             )
         except Exception as exc:
             log.exception(MSG_UNHANDLED_EXC)
-            if getattr(self.app, "send_tab", None):
-                self.app.send_tab.clear_opret_hex()
+            try:
+                st = self.app.send_tab
+            except AttributeError:
+                st = None
+            if st:
+                st.clear_opret_hex()
             messagebox.showerror("Graffiti", f"Broadcast failed: {exc}")
             if self.post_send_btn:
                 self.post_send_btn.config(state="normal")
@@ -984,7 +1029,10 @@ class GraffitiTab(ttk.Frame):
     def _refresh_comments_for(self, art_id: Optional[str]) -> None:
         if not art_id:
             return
-        rpc = getattr(self.app, "rpc", None)
+        try:
+            rpc = self.app.rpc
+        except AttributeError:
+            rpc = None
         if not rpc:
             return
         def handle(resp: Optional[Dict[str, Any]]):
@@ -1049,8 +1097,14 @@ class GraffitiTab(ttk.Frame):
             self.after(0, finish)
 
         try:
-            fee_rate = int(getattr(self.app.send_tab, "fee_rate_var", None).get())
-            ask_pwd = getattr(self.app, "_ask_password", None)
+            try:
+                fee_rate = int(self.app.send_tab.fee_rate_var.get())
+            except (AttributeError, ValueError, TypeError):
+                fee_rate = int(CFG.MIN_FEE_RATE_SATVB)
+            try:
+                ask_pwd = self.app._ask_password
+            except AttributeError:
+                ask_pwd = None
             
             self.controller.broadcast_comment(
                 art=self._selected_art,

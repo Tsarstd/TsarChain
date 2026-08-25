@@ -50,6 +50,9 @@ class Block:
         self.transactions = transactions
         self.difficulty = difficulty
         self.chainwork = chainwork
+        self.size_bytes: Optional[int] = None
+        self.vbytes: Optional[int] = None
+        self.weight: Optional[int] = None
         if merkle_root_precomputed is not None:
             self.merkle_root = bytes(merkle_root_precomputed)
         else:
@@ -145,9 +148,16 @@ class Block:
         meta = data.get("_meta")
         if isinstance(meta, dict):
             obj._meta = dict(meta)
-            for attr in ("chainwork", "difficulty", "size_bytes", "vbytes", "weight"):
-                if getattr(obj, attr, None) is None and attr in meta:
-                    setattr(obj, attr, meta[attr])
+            if obj.chainwork is None and "chainwork" in meta:
+                obj.chainwork = meta["chainwork"]
+            if obj.difficulty is None and "difficulty" in meta:
+                obj.difficulty = meta["difficulty"]
+            if obj.size_bytes is None and "size_bytes" in meta:
+                obj.size_bytes = meta["size_bytes"]
+            if obj.vbytes is None and "vbytes" in meta:
+                obj.vbytes = meta["vbytes"]
+            if obj.weight is None and "weight" in meta:
+                obj.weight = meta["weight"]
         return obj
 
     def header(self) -> bytes:
@@ -158,15 +168,14 @@ class Block:
         header_bytes = self.header()
         if not isinstance(header_bytes, (bytes, bytearray)):
             header_bytes = b"\x00" * 80
-        h = int(getattr(self, "height", 0) or 0)
-        diff = int(getattr(self, "difficulty", 0) or 0)
-        cw = int(getattr(self, "chainwork", 0) or 0)
+        h = int(self.height or 0)
+        diff = int(self.difficulty or 0)
+        cw = int(self.chainwork or 0)
         tail = struct.pack("<QQQ", h, diff, cw)
-        txs = getattr(self, "transactions", []) or []
+        txs = self.transactions or []
         tx_parts = [struct.pack("<I", len(txs))]
         for tx in txs:
-            to_storage = getattr(tx, "to_storage_bytes", None)
-            tx_raw = to_storage() if callable(to_storage) else Tx.to_storage_bytes(tx)
+            tx_raw = tx.to_storage_bytes()
             if not isinstance(tx_raw, (bytes, bytearray)):
                 tx_raw = b""
             tx_parts.append(struct.pack("<I", len(tx_raw)) + tx_raw)

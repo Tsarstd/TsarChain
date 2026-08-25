@@ -63,7 +63,11 @@ class ChatService:
     def drop_sessions(self, peer):
         p = (peer or "").strip().lower()
         if not p: return
-        for key in (getattr(self.chat_mgr, "_sessions", {}).keys()):
+        try:
+            sessions_dict = self.chat_mgr._sessions
+        except AttributeError:
+            sessions_dict = {}
+        for key in list(sessions_dict.keys()):
             if p in key:
                 try:
                     self.chat_mgr._sessions.pop(key, None)
@@ -141,8 +145,11 @@ class ChatTab:
         self._hero_visible = False
         self.peer_status_var = tk.StringVar(value="Contact: unknown")
 
-        if getattr(self.chat_mgr, "key_ttl_sec", None) is not None:
-            self.chat_mgr.key_ttl_sec = self._chat_key_ttl_sec
+        try:
+            if self.chat_mgr.key_ttl_sec is not None:
+                self.chat_mgr.key_ttl_sec = self._chat_key_ttl_sec
+        except AttributeError:
+            pass
 
         def _on_key_changed(addr, old, new):
             self.service.drop_sessions(addr)
@@ -153,12 +160,19 @@ class ChatTab:
                 f"Public key untuk {self._alias_label(addr) or self._mask_addr(addr)} telah berubah.\n\n"
                 "Safety Number diperbarui. Verifikasi kembali sebelum lanjut chat.")
             self._chat_update_security_badges()
-        if getattr(self.chat_mgr, "on_partner_key_changed", None) is not None:
+        try:
             self.chat_mgr.on_partner_key_changed = _on_key_changed
-        if getattr(self.chat_mgr, "on_partner_presence", None) is not None:
+        except AttributeError:
+            pass
+        try:
             self.chat_mgr.on_partner_presence = lambda addr, ts: self._update_peer_presence_label()
+        except AttributeError:
+            pass
         
-        self.contacts = getattr(self.contact_mgr, "contacts", {}) if self.contact_mgr else {}
+        try:
+            self.contacts = self.contact_mgr.contacts or {} if self.contact_mgr else {}
+        except AttributeError:
+            self.contacts = {}
         self.parent = None
         self.frame = None
         
@@ -200,9 +214,11 @@ class ChatTab:
         # ---- state vars
         self.chat_verified_var = tk.StringVar(value="Unverified ❌")
         self.chat_sas_var = tk.StringVar(value="••••••")
-        self.chat_textsize_var = tk.StringVar(
-            value=getattr(self, "chat_textsize_var", tk.StringVar(value="Medium")).get()
-        )
+        try:
+            txt_size = self.chat_textsize_var.get()
+        except AttributeError:
+            txt_size = "Medium"
+        self.chat_textsize_var = tk.StringVar(value=txt_size)
         self.chat_context_var = tk.StringVar(value="")
         wallets = list(self.get_wallets_cb() or [])
         if not self.chat_from_var.get() and wallets:
@@ -312,8 +328,12 @@ class ChatTab:
 
         def _on_type(_e=None):
             self.typing_var.set("typing.")
-            if getattr(self, "_typing_after", None):
-                self.root.after_cancel(self._typing_after)
+            try:
+                typing_after = self._typing_after
+            except AttributeError:
+                typing_after = None
+            if typing_after:
+                self.root.after_cancel(typing_after)
             self._typing_after = self.root.after(1200, lambda: self.typing_var.set(""))
 
         def _chat_enter_to_send(_e=None):
@@ -434,18 +454,29 @@ class ChatTab:
     def _pwd_prompt_cb(self, addr: str) -> Optional[str]:
         a = (addr or "").strip().lower()
 
-        get_cached = getattr(self.chat_mgr, "_pwd_cache_get", None)
-        if callable(get_cached):
-            cached = get_cached(a)
-            if cached:
-                return cached
+        try:
+            get_cached = self.chat_mgr._pwd_cache_get
+            if callable(get_cached):
+                cached = get_cached(a)
+                if cached:
+                    return cached
+        except AttributeError:
+            pass
 
-        if getattr(self, "_hero_visible", False):
+        try:
+            hero_visible = self._hero_visible
+        except AttributeError:
+            hero_visible = False
+            
+        if hero_visible:
             val = (self.chat_hero_pwd_var.get() or "").strip()
             if val:
-                put_cached = getattr(self.chat_mgr, "_pwd_cache_put", None)
-                if callable(put_cached):
-                    put_cached(a, val)
+                try:
+                    put_cached = self.chat_mgr._pwd_cache_put
+                    if callable(put_cached):
+                        put_cached(a, val)
+                except AttributeError:
+                    pass
                 return val
 
         return None
@@ -531,26 +562,47 @@ class ChatTab:
         meta_sz = cfg["meta"]
         self.chat_font_size = body_sz
 
-        for attr, size in (
+        for font_attr, size in (
             ("font_chat_body", body_sz),
             ("font_chat_meta_peer", meta_sz),
             ("font_chat_meta_me", meta_sz),
         ):
-            font_obj = getattr(self, attr, None)
-            if font_obj is not None:
-                font_obj.configure(size=size)
-        if getattr(self, "chat_font", None):
-            self.chat_font.configure(size=body_sz)
-        if getattr(self, "chat_font_bold", None):
-            self.chat_font_bold.configure(size=body_sz, weight="bold")
-        if getattr(self, "chat_font_small", None):
-            self.chat_font_small.configure(size=max(9, meta_sz))
-        if getattr(self, "chat_font_mono", None):
-            self.chat_font_mono.configure(size=body_sz)
+            try:
+                if font_attr == "font_chat_body" and self.font_chat_body:
+                    self.font_chat_body.configure(size=size)
+                elif font_attr == "font_chat_meta_peer" and self.font_chat_meta_peer:
+                    self.font_chat_meta_peer.configure(size=size)
+                elif font_attr == "font_chat_meta_me" and self.font_chat_meta_me:
+                    self.font_chat_meta_me.configure(size=size)
+            except AttributeError:
+                pass
+        try:
+            if self.chat_font:
+                self.chat_font.configure(size=body_sz)
+        except AttributeError:
+            pass
+        try:
+            if self.chat_font_bold:
+                self.chat_font_bold.configure(size=body_sz, weight="bold")
+        except AttributeError:
+            pass
+        try:
+            if self.chat_font_small:
+                self.chat_font_small.configure(size=max(9, meta_sz))
+        except AttributeError:
+            pass
+        try:
+            if self.chat_font_mono:
+                self.chat_font_mono.configure(size=body_sz)
+        except AttributeError:
+            pass
 
         self._chat_reflow_bubbles()
         self._chat_bottom_align()
-        txt = getattr(self, "chat_log", None)
+        try:
+            txt = self.chat_log
+        except AttributeError:
+            txt = None
         if txt is not None:
             txt.tag_configure("peer", lmargin1=14, lmargin2=14)
             txt.tag_configure("me", lmargin1=120, lmargin2=120)
@@ -561,21 +613,48 @@ class ChatTab:
         # --- Font setup (fallback aman) ---
         base_family = FONT
         mono_family = "Consolas"
-        self.chat_font_size = getattr(self, "chat_font_size", 11)
+        try:
+            self.chat_font_size
+        except AttributeError:
+            self.chat_font_size = 11
 
-        self.chat_font = getattr(self, "chat_font", tkfont.Font(family=base_family, size=self.chat_font_size))
-        self.chat_font_bold = getattr(self, "chat_font_bold", tkfont.Font(family=base_family, size=self.chat_font_size, weight="bold"))
-        self.chat_font_small = getattr(self, "chat_font_small", tkfont.Font(family=base_family, size=max(9, self.chat_font_size - 1)))
-        self.chat_font_large = getattr(self, "chat_font_large", tkfont.Font(family=base_family, size=self.chat_font_size + 2))
-        self.chat_font_mono = getattr(self, "chat_font_mono", tkfont.Font(family=mono_family, size=self.chat_font_size))
+        try:
+            self.chat_font
+        except AttributeError:
+            self.chat_font = tkfont.Font(family=base_family, size=self.chat_font_size)
+        try:
+            self.chat_font_bold
+        except AttributeError:
+            self.chat_font_bold = tkfont.Font(family=base_family, size=self.chat_font_size, weight="bold")
+        try:
+            self.chat_font_small
+        except AttributeError:
+            self.chat_font_small = tkfont.Font(family=base_family, size=max(9, self.chat_font_size - 1))
+        try:
+            self.chat_font_large
+        except AttributeError:
+            self.chat_font_large = tkfont.Font(family=base_family, size=self.chat_font_size + 2)
+        try:
+            self.chat_font_mono
+        except AttributeError:
+            self.chat_font_mono = tkfont.Font(family=mono_family, size=self.chat_font_size)
 
-        txt = getattr(self, "chat_log", None)
+        try:
+            txt = self.chat_log
+        except AttributeError:
+            txt = None
         if not txt:
             return
 
         # --- Warna tema (fallback jika atribut belum ada) ---
-        fg = getattr(self, "fg", self.fg)
-        panel = getattr(self, "panel_bg", self.panel_bg)
+        try:
+            fg = self.fg
+        except AttributeError:
+            fg = "#f2f5f7"
+        try:
+            panel = self.panel_bg
+        except AttributeError:
+            panel = "#161a1f"
 
         # Hapus dan definisikan ulang tag (aman jika belum ada)
         for tag in ("me", "peer", "sys", "ts", "bold", "code", "warn", "error"):
@@ -648,7 +727,10 @@ class ChatTab:
             self.toast(f"Chat unlock key cancelled/failed: {e}", kind="error")
             return False
         
-        dh_cache = getattr(self.chat_mgr, "_chat_dh_cache", None)
+        try:
+            dh_cache = self.chat_mgr._chat_dh_cache
+        except AttributeError:
+            dh_cache = None
         if isinstance(dh_cache, dict):
             sk, pk, _t = dh_cache.get(a, (None, None, 0))
             if sk and pk:
@@ -698,16 +780,21 @@ class ChatTab:
 
     def _chat_logout(self):
         addr = (self.chat_from_var.get() or "").strip().lower()
-        clear_pwd = getattr(self.chat_mgr, "clear_pwd_cache", None)
+        try:
+            clear_pwd = self.chat_mgr.clear_pwd_cache
+        except AttributeError:
+            clear_pwd = None
         if callable(clear_pwd):
             clear_pwd(addr)
         elif addr:
-            priv_cache = getattr(self.chat_mgr, "priv_cache", None)
-            if isinstance(priv_cache, dict):
-                priv_cache.pop(addr, None)
-            cache = getattr(self.chat_mgr, "_pwd_cache", None)
-            if isinstance(cache, dict):
-                cache.pop(addr, None)
+            try:
+                self.chat_mgr.priv_cache.pop(addr, None)
+            except AttributeError:
+                pass
+            try:
+                self.chat_mgr._pwd_cache.pop(addr, None)
+            except AttributeError:
+                pass
 
         self.chat_hero_pwd_var.set("")
         if self._chat_poll_job:
@@ -734,10 +821,16 @@ class ChatTab:
         state_color = self._status_online_fg if on else self._status_offline_fg
         status_text = f"Address: {from_name} • {state_label}"
 
-        if getattr(self, "chat_addr_label", None):
-            self.chat_addr_label.config(text=status_text, fg=state_color)
+        try:
+            if self.chat_addr_label:
+                self.chat_addr_label.config(text=status_text, fg=state_color)
+        except AttributeError:
+            pass
 
-        badge = getattr(self, "chat_offline_badge", None)
+        try:
+            badge = self.chat_offline_badge
+        except AttributeError:
+            badge = None
         if badge is not None:
             badge.config(text=f"● {state_label}", fg=state_color)
         if on:
@@ -749,7 +842,10 @@ class ChatTab:
         self._update_chat_context()
 
     def _update_block_btn(self) -> None:
-        btn = getattr(self, "block_btn", None)
+        try:
+            btn = self.block_btn
+        except AttributeError:
+            btn = None
         if not btn:
             return
         addr = (self.chat_to_var.get() or "").strip().lower()
@@ -784,11 +880,18 @@ class ChatTab:
         self._chat_state_save()
 
     def _chat_render_history_for_current(self, force: bool = False) -> None:
-        txt = getattr(self, "chat_log", None)
+        try:
+            txt = self.chat_log
+        except AttributeError:
+            txt = None
         if not txt:
             return
         conv = self._current_conv_key()
-        if not force and getattr(self, "_rendered_conv", None) == conv:
+        try:
+            rend_conv = self._rendered_conv
+        except AttributeError:
+            rend_conv = None
+        if not force and rend_conv == conv:
             return
         self._rendered_conv = conv
         self._msg_meta_map = {}
@@ -864,8 +967,12 @@ class ChatTab:
             return
         a = addr.strip().lower()
         self.chat_mgr.priv_cache.pop(a, None)
-        if getattr(self, "_chat_poll_job", None):
-            self.root.after_cancel(self._chat_poll_job)
+        try:
+            poll_job = self._chat_poll_job
+        except AttributeError:
+            poll_job = None
+        if poll_job:
+            self.root.after_cancel(poll_job)
         self._chat_poll_job = None
         self._chat_set_online_ui(False)
         self.toast("Offline.", kind="info")
@@ -877,14 +984,20 @@ class ChatTab:
         self._chat_render_history_for_current(force=True)
 
     def _chat_reflow_bubbles(self, *_):
-        txt = getattr(self, "chat_log", None)
+        try:
+            txt = self.chat_log
+        except AttributeError:
+            txt = None
         if txt is None:
             return
         w = int(txt.winfo_width())
         if w <= 0:
             return
         pad = 12
-        frac = getattr(self, "_bubble_frac", 0.62)
+        try:
+            frac = self._bubble_frac
+        except AttributeError:
+            frac = 0.62
         max_w = max(180, int(w * frac))
         max_w = min(max_w, w - pad * 2)
         l_peer = pad
@@ -903,7 +1016,10 @@ class ChatTab:
         )
 
     def _chat_setup_bottom_align(self):
-        txt = getattr(self, "chat_log", None)
+        try:
+            txt = self.chat_log
+        except AttributeError:
+            txt = None
         if not txt:
             return
 
@@ -918,7 +1034,10 @@ class ChatTab:
         self._chat_bottom_align()
 
     def _chat_bottom_align(self, *_):
-        txt = getattr(self, "chat_log", None)
+        try:
+            txt = self.chat_log
+        except AttributeError:
+            txt = None
         if not txt:
             return
         if not txt.winfo_exists():
@@ -936,7 +1055,10 @@ class ChatTab:
                 txt.configure(state=tk.DISABLED)
 
     def _chat_append_line(self, line: str, tag: str = "peer") -> None:
-        txt = getattr(self, "chat_log", None)
+        try:
+            txt = self.chat_log
+        except AttributeError:
+            txt = None
         if txt is None:
             return
         txt.configure(state="normal")
@@ -950,7 +1072,10 @@ class ChatTab:
             txt.configure(state="disabled")
 
     def _chat_append_bubble(self, name: str, text: str, side: str, addr: str = "", mid=None, status: Optional[str] = None, ts: Optional[int] = None, *, me_addr: Optional[str] = None, peer_addr: Optional[str] = None, store_history: bool = True) -> None:
-        txt = getattr(self, "chat_log", None)
+        try:
+            txt = self.chat_log
+        except AttributeError:
+            txt = None
         if txt is None:
             return
         txt.configure(state="normal")
@@ -1075,7 +1200,11 @@ class ChatTab:
     def _chat_schedule_next(self, delay_ms: Optional[int] = None) -> None:
         if self._chat_poll_job:
             self.root.after_cancel(self._chat_poll_job)
-        if not getattr(self, "_chat_online", False):
+        try:
+            is_online = self._chat_online
+        except AttributeError:
+            is_online = False
+        if not is_online:
             self._chat_poll_job = None
             return
         default_delay = int(CFG.CHAT_POLL_INTERVAL_MS)
@@ -1084,7 +1213,11 @@ class ChatTab:
         self._chat_poll_job = self.root.after(delay, self._chat_poll)
 
     def _chat_poll(self) -> None:
-        if not getattr(self, "_chat_online", False):
+        try:
+            is_online = self._chat_online
+        except AttributeError:
+            is_online = False
+        if not is_online:
             return
         addr = (self.chat_from_var.get() or "").strip().lower()
         if not addr:
@@ -1119,7 +1252,11 @@ class ChatTab:
                             "status": "",
                         },
                     )
-                    if mid is not None and mid not in getattr(self.chat_mgr, "read_sent", set()):
+                    try:
+                        read_sent = self.chat_mgr.read_sent
+                    except AttributeError:
+                        read_sent = set()
+                    if mid is not None and mid not in read_sent:
                         self.chat_mgr.read_sent.add(mid)
                         try:
                             self.chat_mgr.send_read_receipt(sender_addr, addr, mid, lambda _r: None)
@@ -1128,7 +1265,11 @@ class ChatTab:
                     continue
                 sender_name = self._alias_label(sender_addr)
                 self._chat_append_bubble(sender_name, text, "peer", sender_addr, ts=ts, me_addr=addr, peer_addr=sender_addr)
-                if mid is not None and mid not in getattr(self.chat_mgr, "read_sent", set()):
+                try:
+                    read_sent = self.chat_mgr.read_sent
+                except AttributeError:
+                    read_sent = set()
+                if mid is not None and mid not in read_sent:
                     self.chat_mgr.read_sent.add(mid)
                     try:
                         self.chat_mgr.send_read_receipt(sender_addr, addr, mid, lambda _r: None)
@@ -1155,7 +1296,11 @@ class ChatTab:
         self.chat_mgr.register(addr, _on)
 
     def _chat_send(self):
-        if not getattr(self, "_chat_online", False):
+        try:
+            is_online = self._chat_online
+        except AttributeError:
+            is_online = False
+        if not is_online:
             self.toast("You are offline. go online first.", kind="warn")
             return
         frm_addr = (self.chat_from_var.get() or "").strip().lower()
@@ -1208,19 +1353,32 @@ class ChatTab:
         self.chat_mgr.send_message(frm_addr, to_addr, text, _on_queued, _on_result)
         
     def _chat_update_send_state(self) -> None:
-        online = getattr(self, "_chat_online", False)
+        try:
+            online = self._chat_online
+        except AttributeError:
+            online = False
         to_val = (self.chat_to_var.get() or "").strip().lower()
         has_to = bool(to_val)
         blocked = has_to and self.service.is_blocked(to_val)
-        if getattr(self, "chat_send_btn", None):
+        try:
+            send_btn = self.chat_send_btn
+        except AttributeError:
+            send_btn = None
+        if send_btn:
             state = (tk.NORMAL if (online and has_to and not blocked) else tk.DISABLED)
-            self.chat_send_btn.config(state=state)
-            entry = getattr(self, "chat_entry", None)
+            send_btn.config(state=state)
+            try:
+                entry = self.chat_entry
+            except AttributeError:
+                entry = None
             if entry:
                 entry.configure(state=(tk.NORMAL if (online and not blocked) else tk.DISABLED))
                 if online and not blocked:
                     entry.focus_set()
-            badge = getattr(self, "chat_offline_badge", None)
+            try:
+                badge = self.chat_offline_badge
+            except AttributeError:
+                badge = None
             if badge:
                 if online:
                     if badge.winfo_ismapped():
@@ -1256,7 +1414,10 @@ class ChatTab:
         if not addr:
             self.peer_status_var.set("Contact: No Address")
             return
-        ts_map = getattr(self.chat_mgr, "presence_ts", {}) or {}
+        try:
+            ts_map = self.chat_mgr.presence_ts or {}
+        except AttributeError:
+            ts_map = {}
         last_seen = ts_map.get(addr)
         if last_seen is None:
             self.peer_status_var.set("Contact: Offline")

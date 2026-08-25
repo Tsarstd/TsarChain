@@ -400,8 +400,14 @@ class PaymentReceiptGenerator:
         base_x = 530
         base_y = 100
         
-        offset_x = getattr(rotated_stamp, 'offset_x', 0)
-        offset_y = getattr(rotated_stamp, 'offset_y', 0)
+        try:
+            offset_x = rotated_stamp.offset_x
+        except AttributeError:
+            offset_x = 0
+        try:
+            offset_y = rotated_stamp.offset_y
+        except AttributeError:
+            offset_y = 0
         
         pos_x = base_x + offset_x
         pos_y = base_y + offset_y

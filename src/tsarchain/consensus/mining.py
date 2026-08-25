@@ -85,8 +85,11 @@ class MiningManager:
 
     def _validate_chain_state(self) -> bool:
         if not self.blockchain.chain:
-            if getattr(self.blockchain, "_reload_chain_from_kv", lambda: False)():
-                log.warning("[_validate_chain_state] chain reloaded from LMDB; continuing mining")
+            try:
+                if self.blockchain._reload_chain_from_kv():
+                    log.warning("[_validate_chain_state] chain reloaded from LMDB; continuing mining")
+            except (AttributeError, TypeError):
+                pass
                 
         if not self.blockchain.chain:
             log.warning("[_validate_chain_state] refusing to mine on empty chain; run --init-genesis or sync from peers first.")
@@ -111,12 +114,16 @@ class MiningManager:
 
 
     def _ensure_mempool(self) -> TxPool:
-        pool = getattr(self.blockchain, "get_mempool", lambda: None)()
+        try:
+            pool = self.blockchain.get_mempool()
+        except (AttributeError, TypeError):
+            pool = None
         if pool is None:
             pool = TxPool(utxo_store=self.blockchain.ensure_utxodb())
-            attach_mp = getattr(self.blockchain, "attach_mempool", None)
-            if callable(attach_mp):
+            try:
                 self.blockchain.attach_mempool(pool)
+            except (AttributeError, TypeError):
+                pass
         return pool
 
 
@@ -134,7 +141,10 @@ class MiningManager:
 
     def _build_candidate_block(self, miner_address: str, height: int, reward: int, last_block: Block | None, pool: TxPool, txs_from_mempool: list) -> Block:
         store = self.blockchain.ensure_utxodb() or UTXODB()
-        current_utxos = getattr(store, "utxos", store.load_utxo_set())
+        try:
+            current_utxos = store.utxos
+        except AttributeError:
+            current_utxos = store.load_utxo_set()
         temp_utxos = current_utxos.copy() if isinstance(current_utxos, dict) else dict(current_utxos)
 
         valid_txs = []
@@ -146,16 +156,19 @@ class MiningManager:
                 continue
 
             if not pool.validate_transaction(tx, temp_utxos, spend_at_height=height):
-                reason = getattr(pool, "last_error_reason", None)
+                try:
+                    reason = pool.last_error_reason
+                except AttributeError:
+                    reason = None
                 if reason:
-                    txid = getattr(tx, "txid", b"")
+                    txid = tx.txid or b""
                     txid_hex = txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid or "")
                     log.warning("[_build_candidate_block] tx %s rejected: %s", txid_hex[:12], reason)
                 continue
 
             is_graff_post = self._is_graffiti_post(tx)
             if is_graff_post and graffiti_post_seen:
-                txid = getattr(tx, "txid", b"")
+                txid = tx.txid or b""
                 txid_hex = txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid or "")
                 log.info("[_build_candidate_block] skip extra Graffiti POST tx=%s (quota per block = 1)", txid_hex[:12])
                 continue
@@ -196,9 +209,9 @@ class MiningManager:
             return False
             
         latest_hash = latest.hash()
-        new_prev_hash = getattr(new_block, "prev_block_hash", None)
-        new_height = getattr(new_block, "height", 0)
-        latest_height = getattr(latest, "height", -1)
+        new_prev_hash = new_block.prev_block_hash
+        new_height = int(new_block.height or 0)
+        latest_height = int(latest.height if latest.height is not None else -1)
 
         is_stale = latest_hash != new_prev_hash or new_height != latest_height + 1
         
@@ -217,19 +230,26 @@ class MiningManager:
     def _apply_mining_cooloff(self):
         cooloff = float(CFG.MINING_COOLDOWN_AFTER_BLOCK)
         if cooloff > 0:
-            remain = float(getattr(self.blockchain, "_mining_cooloff_until", 0.0)) - time.time()
+            try:
+                cooloff_until = float(self.blockchain._mining_cooloff_until or 0.0)
+            except AttributeError:
+                cooloff_until = 0.0
+            remain = cooloff_until - time.time()
             if remain > 0:
                 time.sleep(min(remain, cooloff))
 
 
     def _validate_and_add_block(self, new_block: Block) -> bool:
-        height = getattr(new_block, "height", 0)
+        height = int(new_block.height or 0)
         blk_hash = new_block.hash()
         blk_hex = blk_hash.hex() if isinstance(blk_hash, (bytes, bytearray)) else str(blk_hash or "")
         
         if not self.blockchain.validate_block(new_block):
-            reason = getattr(self.blockchain, "_last_block_validation_error", None) or "unknown"
-            prev_hash = getattr(new_block, "prev_block_hash", None)
+            try:
+                reason = self.blockchain._last_block_validation_error or "unknown"
+            except AttributeError:
+                reason = "unknown"
+            prev_hash = new_block.prev_block_hash
             prev_hex = prev_hash.hex() if isinstance(prev_hash, (bytes, bytearray)) else str(prev_hash or "")
             
             log.warning(
@@ -242,7 +262,10 @@ class MiningManager:
             return False
         
         if not self.blockchain.add_block(new_block):
-            reason = getattr(self.blockchain, "_last_block_validation_error", None) or "unknown"
+            try:
+                reason = self.blockchain._last_block_validation_error or "unknown"
+            except AttributeError:
+                reason = "unknown"
             log.warning(
                 "[block_reject] stage=add_block source=local_miner height=%s hash=%s reason=%s",
                 height,
@@ -254,21 +277,26 @@ class MiningManager:
         return True
 
 
-    def _select_graffiti_art_id(self, txs) -> str | None:
+    def _select_graffiti_art_id(self, txs) -> str | None: #NOSONAR
         """
         Inspect candidate transactions for a valid Graffiti POST event and return its art_id.
         Only the first valid POST per block is used to anchor the block_id.
         A valid POST must pay >= min_upload_fee to the art's pool address.
         """
-        for tx in txs or []:
-            for txout in getattr(tx, "outputs", None) or []:
-                script = getattr(txout, "script_pubkey", None)
-                if script is None:
+        for tx in txs:
+            try:
+                outputs = tx.outputs or []
+            except AttributeError:
+                outputs = []
+            for tx_out in outputs:
+                try:
+                    spk = tx_out.script_pubkey
+                except AttributeError:
+                    spk = None
+                if spk is None:
                     continue
-                meta = GRAFFITI.parse_from_script(script)
-                if not meta:
-                    continue
-                if str(meta.get("event", "POST")).strip().upper() != "POST":
+                meta = GRAFFITI.parse_from_script(spk)
+                if not meta or str(meta.get("event", "")).upper() != "POST":
                     continue
                 
                 art_id = str(meta.get("art_id") or "").strip().lower()
@@ -284,17 +312,32 @@ class MiningManager:
                 min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
 
                 paid = 0
-                for out in getattr(tx, "outputs", []) or []:
-                    out_spk = getattr(out, "script_pubkey", None)
-                    out_addr = script_to_address(out_spk) if out_spk is not None else getattr(out, "address", None)
+                for out in outputs:
+                    try:
+                        out_addr = out.address
+                    except AttributeError:
+                        out_addr = None
+                    if not out_addr:
+                        try:
+                            out_spk = out.script_pubkey
+                        except AttributeError:
+                            out_spk = None
+                        out_addr = script_to_address(out_spk)
                     if out_addr == pool_addr:
-                        paid += int(getattr(out, "amount", 0))
+                        try:
+                            amt = int(out.amount or 0)
+                        except AttributeError:
+                            amt = 0
+                        paid += amt
 
                 if paid < min_fee:
                     log.warning("[_select_graffiti_art_id] Rejecting candidate POST with insufficient pool fee: paid=%s required=%s art_id=%s", paid, min_fee, art_id[:16])
                     continue
                 
-                txid = getattr(tx, "txid", None)
+                try:
+                    txid = tx.txid
+                except AttributeError:
+                    txid = None
                 txid_hex = txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid or "")
                 log.info("[_select_graffiti_art_id] Graffiti POST found tx=%s art_id=%s", (txid_hex or "")[:12], art_id[:24])
                 return art_id
@@ -302,8 +345,15 @@ class MiningManager:
     
     
     def _is_graffiti_post(self, tx_obj) -> bool:
-        for tx_out in getattr(tx_obj, "outputs", None) or []:
-            spk = getattr(tx_out, "script_pubkey", None)
+        try:
+            outputs = tx_obj.outputs or []
+        except AttributeError:
+            outputs = []
+        for tx_out in outputs:
+            try:
+                spk = tx_out.script_pubkey
+            except AttributeError:
+                spk = None
             if spk is None:
                 continue
             meta = GRAFFITI.parse_from_script(spk)
@@ -318,19 +368,40 @@ class MiningManager:
                 continue
             pool_addr = GRAFFITI.derive_pool_address(art_id)
             min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
-            paid = sum(
-                int(getattr(out, "amount", 0))
-                for out in getattr(tx_obj, "outputs", []) or []
-                if (script_to_address(getattr(out, "script_pubkey", None)) if getattr(out, "script_pubkey", None) is not None else getattr(out, "address", None)) == pool_addr
-            )
+            
+            paid = 0
+            for out in outputs:
+                try:
+                    out_addr = out.address
+                except AttributeError:
+                    out_addr = None
+                if not out_addr:
+                    try:
+                        out_spk = out.script_pubkey
+                    except AttributeError:
+                        out_spk = None
+                    out_addr = script_to_address(out_spk)
+                if out_addr == pool_addr:
+                    try:
+                        amt = int(out.amount or 0)
+                    except AttributeError:
+                        amt = 0
+                    paid += amt
+            
             if paid >= min_fee:
                 return True
         return False
 
 
     def _received_at(self, tx_obj) -> float:
-        return float(getattr(tx_obj, "_received_at", 0) or 0)
+        try:
+            return float(tx_obj._received_at or 0)
+        except AttributeError:
+            return 0.0
 
 
     def _fee(self, tx_obj) -> int:
-        return int(getattr(tx_obj, "fee", 0) or 0)
+        try:
+            return int(tx_obj.fee or 0)
+        except AttributeError:
+            return 0

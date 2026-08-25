@@ -104,11 +104,11 @@ class Blockchain():
         try:
             cache: OrderedDict[int, str] = OrderedDict()
             for b in self.chain:
-                h = b.hash() if callable(getattr(b, "hash", None)) else getattr(b, "hash", None)
-                if isinstance(h, (bytes, bytearray)):
-                    cache[int(getattr(b, "height", 0) or 0)] = h.hex()
-                elif isinstance(h, str) and len(h) >= 64:
-                    cache[int(getattr(b, "height", 0) or 0)] = h
+                h_val = b.hash() if callable(b.hash) else b.hash
+                if isinstance(h_val, (bytes, bytearray)):
+                    cache[int(b.height or 0)] = h_val.hex()
+                elif isinstance(h_val, str) and len(h_val) >= 64:
+                    cache[int(b.height or 0)] = h_val
             # trim to config bound
             max_entries = max(1, int(CFG.HASH_CACHE_MAX))
             while len(cache) > max_entries:
@@ -123,26 +123,18 @@ class Blockchain():
 
         with self.lock:
             if height in self._hash_cache:
-                h = self._hash_cache.pop(height)
-                self._hash_cache[height] = h  # move to end (MRU)
-                return h
+                return self._hash_cache[height]
 
-            if height >= len(self.chain):
-                return None
-            
-            h = self.chain[height].hash()
-            h_hex = h.hex() if isinstance(h, (bytes, bytearray)) else str(h)
-            max_entries = max(1, int(CFG.HASH_CACHE_MAX))
-            try:
-                # ensure LRU order and bound
-                if height in self._hash_cache:
-                    self._hash_cache.pop(height, None)
+            if 0 <= height < len(self.chain):
+                block = self.chain[height]
+                h = block.hash()
+                h_hex = h.hex() if isinstance(h, (bytes, bytearray)) else str(h)
                 self._hash_cache[height] = h_hex
+                max_entries = max(1, int(CFG.HASH_CACHE_MAX))
                 while len(self._hash_cache) > max_entries:
                     self._hash_cache.popitem(last=False)
-            except Exception:
-                log.exception("get_block_hash.self.lock")
-            return h_hex
+                return h_hex
+        return None
 
     def _start_persist_worker(self) -> None:
         if self._persist_thread is not None:
@@ -251,10 +243,10 @@ class Blockchain():
     def get_mempool_size(self) -> int:
         if self._mempool is not None:
             try:
-                size_fn = getattr(self._mempool, "size", None)
-                if callable(size_fn):
-                    return size_fn()
-                return len(self._mempool)
+                try:
+                    return self._mempool.size()
+                except (AttributeError, TypeError):
+                    return len(self._mempool)
             except Exception:
                 pass
         return 0

@@ -80,7 +80,7 @@ class KremlinWalletGUI(WalletsMixin):
         self.root = root
 
         # 0) Theme & styles
-        self.current_theme = getattr(self, "current_theme", "dark")
+        self.current_theme = "dark"
         self.theme_set = get_theme(self.current_theme)
         self._set_theme_vars(self.theme_set)
 
@@ -90,6 +90,11 @@ class KremlinWalletGUI(WalletsMixin):
         self._balance_countdown_job = None
         self._balance_next_sec = 0
         self._toasts = []
+        self.contact_mgr = None
+        self._request_locked = None
+        self.wallet_count_label = None
+        self.wallet_refresh_label = None
+        self.send_to_combo = None
 
         root.title("Kremlin")
         root.geometry("1070x700")
@@ -190,7 +195,7 @@ class KremlinWalletGUI(WalletsMixin):
     def _set_theme(self, mode: str | None = None) -> None:
         if mode is not None:
             self.current_theme = mode.lower()
-        self.theme_set = get_theme(getattr(self, "current_theme", "dark"))
+        self.theme_set = get_theme(self.current_theme or "dark")
         self._set_theme_vars(self.theme_set)
 
 
@@ -217,11 +222,11 @@ class KremlinWalletGUI(WalletsMixin):
         self.send_tab = SendTab(
             self.root,
             rpc_send=self.rpc_send,
-            ask_password=lambda addr: self._ask_password("Unlock Address", f"Enter password for\\n{addr}:"),
+            ask_password=lambda addr: self._ask_password("Unlock Address", f"Enter password for\n{addr}:"),
             toast=lambda m, ms=1800, kind='info': show_toast(self, m, ms=ms, kind=kind),
             addresses_provider=lambda: list(self.wallets or []),
-            contact_manager=getattr(self, "contact_mgr", None),
-            busy_request=getattr(self, "_request_locked", None),
+            contact_manager=self.contact_mgr,
+            busy_request=self._request_locked,
             theme=self.theme_set.send,
             on_sent=lambda addr_from: self._handle_balance_refresh_request(addresses=[addr_from], immediate=True),
         )
@@ -257,7 +262,7 @@ class KremlinWalletGUI(WalletsMixin):
     # --- Wallet Lock Screen helpers ---
 
     def _is_wallet_ready(self) -> bool:
-        return bool(getattr(self, "wallets", []))
+        return bool(self.wallets)
 
     def _build_locked_frame(self) -> None:
         f = tk.Frame(self.main, bg=self.bg)
@@ -306,7 +311,7 @@ class KremlinWalletGUI(WalletsMixin):
         self.frames["locked"].pack(fill=tk.BOTH, expand=True)
 
     def _maybe_lock_redirect(self) -> None:
-        if (not self._is_wallet_ready()) and getattr(self, "_active_tab", "") in ("send", "chat", "history"):
+        if (not self._is_wallet_ready()) and (self._active_tab or "") in ("send", "chat", "history"):
             self._show_locked_screen(self._active_tab.capitalize())
 
 
@@ -319,7 +324,7 @@ class KremlinWalletGUI(WalletsMixin):
     def _refresh_sidebar_styles(self) -> None:
         active_fg = self.bg if self.current_theme == "dark" else self.fg
         if self.navigator:
-            self.navigator.refresh_styles(getattr(self, "_active_tab", ""), self.sidebar_bg, self.sidebar_active, self.fg, active_fg)
+            self.navigator.refresh_styles(self._active_tab or "", self.sidebar_bg, self.sidebar_active, self.fg, active_fg)
 
     @staticmethod
     def _widget_exists(widget) -> bool:
@@ -347,21 +352,27 @@ class KremlinWalletGUI(WalletsMixin):
 
         self.navigator.add_theme_toggle(self.toggle_theme)
 
-        palette = getattr(self.theme_set, "palette", None)
+        try:
+            palette = self.theme_set.palette
+        except AttributeError:
+            palette = None
         offline_color = palette.danger if palette else "#d41c1c"
         self.conn_status = self.navigator.add_connection_status(offline_color)
 
         self.frames: Dict[str, tk.Frame] = {}
 
-        if getattr(self, "_conn_online", False):
+        if self._conn_online:
             self._set_conn_status(True)
 
         
         # ---------------- Connection status (UI + heartbeat) ----------------
     def _set_conn_status(self, ok: bool) -> None:
-        prev = getattr(self, "_conn_online", False)
+        prev = self._conn_online
         self._conn_online = bool(ok)
-        palette = getattr(self.theme_set, "palette", None)
+        try:
+            palette = self.theme_set.palette
+        except AttributeError:
+            palette = None
         ok_color = palette.success if palette else "#17c964"
         fail_color = palette.danger if palette else "#d41c1c"
         if self._conn_online:
@@ -373,7 +384,7 @@ class KremlinWalletGUI(WalletsMixin):
             if self._balance_poll_job:
                 self.root.after_cancel(self._balance_poll_job)
                 self._balance_poll_job = None
-            if getattr(self, "wallets", []):
+            if self.wallets:
                 def _reschedule() -> None:
                     self._schedule_balance_refresh()
                 self._request_balance_update(on_complete=_reschedule)
@@ -402,7 +413,7 @@ class KremlinWalletGUI(WalletsMixin):
 
     # ---------------- Balance refresh helpers ----------------
     def _set_balance_refresh_label(self, text: str) -> None:
-        if getattr(self, "wallet_refresh_label", None):
+        if self.wallet_refresh_label:
             self.wallet_refresh_label.config(text=text)
 
     def _cancel_balance_countdown(self) -> None:
@@ -446,7 +457,7 @@ class KremlinWalletGUI(WalletsMixin):
         if not self._conn_online:
             self._schedule_balance_refresh()
             return
-        if not getattr(self, "wallets", []):
+        if not self.wallets:
             self._schedule_balance_refresh()
             return
 
@@ -487,12 +498,11 @@ class KremlinWalletGUI(WalletsMixin):
     def reload_addresses(self) -> None:
         values = list(self.wallets or [])
 
-        if self._widget_exists(getattr(self, "wallet_count_label", None)):
+        if self._widget_exists(self.wallet_count_label):
             self.wallet_count_label.config(text=f"Wallets: {len(values)}")
 
-        history_tab = getattr(self, "history_tab", None)
-        if self._widget_exists(history_tab):
-            history_tab.reload_addresses(values)
+        if self._widget_exists(self.history_tab):
+            self.history_tab.reload_addresses(values)
 
         if self.chat_tab:
             self.chat_tab.reload_addresses()
@@ -512,8 +522,7 @@ class KremlinWalletGUI(WalletsMixin):
         pairs = self.contact_mgr.pairs()   # List[(label, addr)]
         items = [label for (label, _addr) in pairs]
         self._contact_pairs = pairs
-        for name in ("send_to_combo",):
-            combo = getattr(self, name, None)
+        for combo in (self.send_to_combo,):
             if combo is not None:
                 combo["values"] = items
 
@@ -573,7 +582,7 @@ class KremlinWalletGUI(WalletsMixin):
             "explorer": self.show_explorer_frame,
             "network": self.show_network_frame,
             "dev": self.show_dev_frame,
-            "graffiti": getattr(self, "show_graffiti_frame", self.show_wallets_frame),
+            "graffiti": self.show_graffiti_frame,
         }
         fn = m.get((name or '').lower())
         if fn:
@@ -585,9 +594,13 @@ class KremlinWalletGUI(WalletsMixin):
         if self._chat_poll_job:
             self.root.after_cancel(self._chat_poll_job)
             self._chat_poll_job = None
-        if self.chat_tab and getattr(self.chat_tab, "_chat_poll_job", None):
-            self.root.after_cancel(self.chat_tab._chat_poll_job)
-            self.chat_tab._chat_poll_job = None
+        if self.chat_tab:
+            try:
+                if self.chat_tab._chat_poll_job:
+                    self.root.after_cancel(self.chat_tab._chat_poll_job)
+                    self.chat_tab._chat_poll_job = None
+            except AttributeError:
+                pass
         for fr in self.frames.values():
             fr.pack_forget()
         if self.explore_panel:
@@ -648,7 +661,12 @@ class KremlinWalletGUI(WalletsMixin):
 
             self._hide_all_frames()
             chat_frame = self.frames.get("chat")
-            chat_tab_frame = getattr(self.chat_tab, "frame", None) if self.chat_tab else None
+            chat_tab_frame = None
+            if self.chat_tab:
+                try:
+                    chat_tab_frame = self.chat_tab.frame
+                except AttributeError:
+                    chat_tab_frame = None
             need_build = (
                 chat_frame is None
                 or chat_tab_frame is None
@@ -665,8 +683,11 @@ class KremlinWalletGUI(WalletsMixin):
             self._activate_tab("chat")
             if self.chat_tab:
                 self.chat_tab.reload_addresses()
-                if getattr(self.chat_tab, "_chat_online", False):
-                    self.chat_tab._chat_schedule_next()
+                try:
+                    if self.chat_tab._chat_online:
+                        self.chat_tab._chat_schedule_next()
+                except AttributeError:
+                    pass
     
     def show_history_frame(self) -> None:
         if not self._is_wallet_ready():

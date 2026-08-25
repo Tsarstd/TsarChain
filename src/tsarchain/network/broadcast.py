@@ -38,7 +38,11 @@ class Broadcast:
         self.blockchain = blockchain or Blockchain()
         
         shared_utxo = utxodb
-        ensure_utxo = getattr(self.blockchain, "ensure_utxodb", None)
+        ensure_utxo = None
+        try:
+            ensure_utxo = self.blockchain.ensure_utxodb
+        except AttributeError:
+            pass
         if shared_utxo is None and callable(ensure_utxo):
             shared_utxo = ensure_utxo()
 
@@ -51,9 +55,12 @@ class Broadcast:
         self.seen_txs: Set[str] = set()
         self._processing_blocks: Set[str] = set()
 
-        attach_mp = getattr(self.blockchain, "attach_mempool", None)
-        if callable(attach_mp):
-            attach_mp(self.mempool)  # type: ignore[arg-type]
+        try:
+            attach_mp = self.blockchain.attach_mempool
+            if callable(attach_mp):
+                attach_mp(self.mempool)  # type: ignore[arg-type]
+        except AttributeError:
+            pass
 
         self.last_sync_time = 0
         self.port: Optional[int] = None
@@ -71,7 +78,11 @@ class Broadcast:
 
     def shutdown(self):
         sockets_to_close = []
-        for entry in getattr(self, "_gossip_conn_cache", {}).values():
+        try:
+            conn_cache = self._gossip_conn_cache
+        except AttributeError:
+            conn_cache = {}
+        for entry in conn_cache.values():
             sock = entry.get("sock")
             if sock:
                 sockets_to_close.append(sock)
@@ -81,9 +92,12 @@ class Broadcast:
         with self.lock:
             self.seen_blocks.clear()
             self.seen_txs.clear()
-        bc_shutdown = getattr(self.blockchain, "shutdown", None)
-        if callable(bc_shutdown):
-            bc_shutdown()
+        try:
+            bc_shutdown = self.blockchain.shutdown
+            if callable(bc_shutdown):
+                bc_shutdown()
+        except AttributeError:
+            pass
         log.info("[shutdown] Broadcast Shutdown complete")
 
     def __getattr__(self, name):
@@ -92,9 +106,10 @@ class Broadcast:
         self._in_getattr = True
         try:
             for handler in [self.gossip, self.receive, self.mempool_sync, self.utxo_local, self.chain_utils]:
-                val = getattr(handler, name, None)
-                if val is not None:
-                    return val
+                try:
+                    return handler.__getattribute__(name)
+                except AttributeError:
+                    pass
         finally:
             self._in_getattr = False
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")

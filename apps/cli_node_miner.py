@@ -68,29 +68,38 @@ def _safe_peer_counts(net) -> tuple[int, int]:
     if not net:
         return 0, 0
     try:
-        inbound = len(getattr(net, "inbound_peers", ()))
-        outbound = len(getattr(net, "outbound_peers", ()))
-        return inbound, outbound
-    except Exception:
-        return 0, 0
+        inbound = len(net.inbound_peers or ())
+    except AttributeError:
+        inbound = 0
+    try:
+        outbound = len(net.outbound_peers or ())
+    except AttributeError:
+        outbound = 0
+    return inbound, outbound
 
 
 def _count_txpool(pool) -> int:
     if pool is None:
         return 0
     try:
-        p = getattr(pool, "_pool", None)
+        p = pool._pool
         if p is not None and not isinstance(p, (bytes, str)):
             try:
                 return len(p)
             except TypeError:
                 pass
-        get_size = getattr(pool, "get_mempool_size", None)
+    except AttributeError:
+        pass
+    try:
+        get_size = pool.get_mempool_size
         if callable(get_size):
             res = get_size()
             if isinstance(res, int):
                 return res
-        get_txs = getattr(pool, "get_all_txs", None)
+    except AttributeError:
+        pass
+    try:
+        get_txs = pool.get_all_txs
         if callable(get_txs):
             txs = get_txs()
             if txs is not None and not isinstance(txs, (bytes, str)):
@@ -98,46 +107,67 @@ def _count_txpool(pool) -> int:
                     return len(txs)
                 except TypeError:
                     pass
-        try:
-            return len(pool)
-        except TypeError:
-            pass
-    except Exception:
+    except AttributeError:
         pass
-    return 0
+    try:
+        return len(pool)
+    except (TypeError, AttributeError):
+        return 0
 
 
 def _safe_mempool_count(runner) -> int:
     if not runner:
         return 0
     try:
-        net = getattr(runner, "network", None)
-        if net:
-            bcast = getattr(net, "broadcast", None)
-            if bcast:
-                pool = getattr(bcast, "mempool", None)
-                if pool is not None:
-                    count = _count_txpool(pool)
-                    if count > 0:
-                        return count
-            pool = getattr(net, "mempool", None)
+        net = runner.network
+    except AttributeError:
+        net = None
+    if net:
+        try:
+            bcast = net.broadcast
+        except AttributeError:
+            bcast = None
+        if bcast:
+            try:
+                pool = bcast.mempool
+            except AttributeError:
+                pool = None
             if pool is not None:
                 count = _count_txpool(pool)
                 if count > 0:
                     return count
+        try:
+            pool = net.mempool
+        except AttributeError:
+            pool = None
+        if pool is not None:
+            count = _count_txpool(pool)
+            if count > 0:
+                return count
 
-        bc = getattr(runner, "blockchain", None)
-        if bc:
-            get_size = getattr(bc, "get_mempool_size", None)
+    try:
+        bc = runner.blockchain
+    except AttributeError:
+        bc = None
+    if bc:
+        try:
+            get_size = bc.get_mempool_size
             if callable(get_size):
                 count = get_size()
                 if isinstance(count, int) and count > 0:
                     return count
-            pool = getattr(bc, "get_mempool", lambda: None)() or getattr(bc, "_mempool", None)
-            if pool is not None:
-                return _count_txpool(pool)
-    except Exception:
-        pass
+        except AttributeError:
+            pass
+        pool = None
+        try:
+            pool = bc.get_mempool()
+        except (AttributeError, TypeError):
+            try:
+                pool = bc._mempool
+            except AttributeError:
+                pool = None
+        if pool is not None:
+            return _count_txpool(pool)
     return 0
 
 
@@ -260,16 +290,26 @@ def main():
 
     if args.node_only or mode_selected == 1:
         runner = NodeRunner(bootstrap_snapshot=not args.no_bootstrap)
+        def _get_runner_height():
+            try:
+                return int(runner.blockchain.height)
+            except AttributeError:
+                return -1
+
+        def _get_runner_peers():
+            try:
+                return _safe_peer_counts(runner.network)
+            except AttributeError:
+                return (0, 0)
+
         tui = MinerTUI(
             address="Node Only",
             cores=0,
             mode=" Node Only",
             randomx_mode=" Disabled",
             hashrate_queue=None,
-            chain_height_fn=lambda: int(getattr(runner.blockchain, "height", -1))
-            if runner and runner.blockchain
-            else -1,
-            peer_counts_fn=lambda: _safe_peer_counts(getattr(runner, "network", None)),
+            chain_height_fn=_get_runner_height,
+            peer_counts_fn=_get_runner_peers,
             mempool_count_fn=lambda: _safe_mempool_count(runner),
             node_only=True,
         )
@@ -326,16 +366,26 @@ def main():
         progress_queue=progress_q,
     )
 
+    def _get_miner_height():
+        try:
+            return int(miner.blockchain.height)
+        except AttributeError:
+            return -1
+
+    def _get_miner_peers():
+        try:
+            return _safe_peer_counts(miner.network)
+        except AttributeError:
+            return (0, 0)
+
     tui = MinerTUI(
         address=address,
         cores=cores,
         mode=" Mining...",
         randomx_mode=mode_label,
         hashrate_queue=progress_q,
-        chain_height_fn=lambda: int(getattr(miner.blockchain, "height", -1))
-        if miner and miner.blockchain
-        else -1,
-        peer_counts_fn=lambda: _safe_peer_counts(getattr(miner, "network", None)),
+        chain_height_fn=_get_miner_height,
+        peer_counts_fn=_get_miner_peers,
         mempool_count_fn=lambda: _safe_mempool_count(miner),
     )
     

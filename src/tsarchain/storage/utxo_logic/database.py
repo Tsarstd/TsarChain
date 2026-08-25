@@ -65,44 +65,55 @@ class UTXODatabaseMixin:
 
     def _serialize_entry(self, entry):
         tx_out = entry.get("tx_out")
-        to_dict = getattr(tx_out, "to_dict", None)
-        if callable(to_dict):
-            tx_out_dict = to_dict()
+        if isinstance(tx_out, dict):
+            tx_out_dict = dict(tx_out)
+            spk = tx_out.get("script_pubkey")
         else:
-            tx_out_dict = dict(tx_out) if isinstance(tx_out, (dict, list, tuple)) else getattr(tx_out, "__dict__", {})
+            try:
+                to_dict = tx_out.to_dict
+                tx_out_dict = to_dict() if callable(to_dict) else {}
+            except (AttributeError, TypeError):
+                try:
+                    tx_out_dict = tx_out.__dict__
+                except AttributeError:
+                    tx_out_dict = {}
+            try:
+                spk = tx_out.script_pubkey
+            except AttributeError:
+                spk = None
 
         address = None
         script_type = None
         spk_bytes = None
-        spk = getattr(tx_out, "script_pubkey", None)
         if spk is not None:
-            spk_ser = getattr(spk, "serialize", None)
-            if callable(spk_ser):
-                spk_bytes = spk_ser()
-            elif isinstance(spk, (bytes, bytearray)):
-                spk_bytes = bytes(spk)
-            elif isinstance(spk, str):
-                try:
-                    spk_bytes = bytes.fromhex(spk)
-                except ValueError:
-                    pass
+            try:
+                spk_bytes = spk.serialize()
+            except (AttributeError, TypeError):
+                if isinstance(spk, (bytes, bytearray)):
+                    spk_bytes = bytes(spk)
+                elif isinstance(spk, str):
+                    try:
+                        spk_bytes = bytes.fromhex(spk)
+                    except ValueError:
+                        pass
         if not spk_bytes and isinstance(tx_out_dict.get("script_pubkey"), str):
             try:
                 spk_bytes = bytes.fromhex(tx_out_dict["script_pubkey"])
             except ValueError:
                 pass
+        try:
+            script_to_addr = self.script_to_address
+        except AttributeError:
+            script_to_addr = None
         if spk_bytes:
             if len(spk_bytes) == 22 and spk_bytes[0] == 0x00 and spk_bytes[1] == 0x14:
                 script_type = "p2wpkh"
             elif len(spk_bytes) == 34 and spk_bytes[0] == 0x00 and spk_bytes[1] == 0x20:
                 script_type = "p2wsh"
-            script_to_addr = getattr(self, "script_to_address", None)
             if address is None and callable(script_to_addr):
                 address = script_to_addr(spk_bytes)
-        if address is None:
-            script_to_addr = getattr(self, "script_to_address", None)
-            if callable(script_to_addr):
-                address = script_to_addr(getattr(tx_out, "script_pubkey", None))
+        if address is None and callable(script_to_addr):
+            address = script_to_addr(spk)
         return {
             "tx_out": tx_out_dict,
             "is_coinbase": bool(entry.get("is_coinbase", False)),
@@ -157,7 +168,7 @@ class UTXODatabaseMixin:
 
     def _load(self, *, force: bool = False):
         with self._lock:
-            if not force and getattr(self, "_dirty", False):
+            if not force and self._dirty:
                 return
             self.utxos.clear()
             self._address_index = None
@@ -181,17 +192,26 @@ class UTXODatabaseMixin:
                 if entry is None:
                     continue
                 tx_out = entry.get("tx_out")
-                amt = int(getattr(tx_out, "amount", 0))
-                spk = getattr(tx_out, "script_pubkey", b"")
-                spk_ser = getattr(spk, "serialize", None)
-                if callable(spk_ser):
-                    spk_bytes = spk_ser()
-                elif isinstance(spk, (bytes, bytearray)):
-                    spk_bytes = bytes(spk)
-                elif isinstance(spk, str):
-                    spk_bytes = bytes.fromhex(spk)
-                else:
-                    spk_bytes = b""
+                try:
+                    amt = int(tx_out.amount or 0)
+                except AttributeError:
+                    amt = 0
+                try:
+                    spk = tx_out.script_pubkey
+                except AttributeError:
+                    spk = b""
+                try:
+                    spk_bytes = spk.serialize()
+                except (AttributeError, TypeError):
+                    if isinstance(spk, (bytes, bytearray)):
+                        spk_bytes = bytes(spk)
+                    elif isinstance(spk, str):
+                        try:
+                            spk_bytes = bytes.fromhex(spk)
+                        except ValueError:
+                            spk_bytes = b""
+                    else:
+                        spk_bytes = b""
                 is_cb = bool(entry.get("is_coinbase", False))
                 h = int(entry.get("block_height", 0))
                 payload = struct.pack("<Q?qH", amt, is_cb, h, len(spk_bytes)) + spk_bytes

@@ -65,7 +65,10 @@ class ChainStorage:
 
             self.blockchain._chain_dirty_from = None
             backup_tip = tip_height
-            backup_ts = int(getattr(self.blockchain.chain[-1], "timestamp", 0) or 0)
+            try:
+                backup_ts = int(self.blockchain.chain[-1].timestamp or 0)
+            except (AttributeError, TypeError):
+                backup_ts = 0
 
         if backup_tip is not None:
             self._maybe_backup_snapshot(backup_tip, tip_timestamp=backup_ts)
@@ -91,12 +94,12 @@ class ChainStorage:
             self.blockchain._snapshot_last_backup_height = self.blockchain._persisted_height
             
         self.blockchain.ensure_utxodb()
-        self.blockchain._utxo_last_flush_height = getattr(self.blockchain, "height", len(self.blockchain.chain) - 1)
+        self.blockchain._utxo_last_flush_height = self.blockchain.height
         self.blockchain._utxo_dirty = False
         tip_ts = None
         if self.blockchain.chain:
-            tip_ts = int(getattr(self.blockchain.chain[-1], "timestamp", 0) or 0)
-        annotate_local_snapshot_meta(height=getattr(self.blockchain, "height", len(self.blockchain.chain) - 1), tip_timestamp=tip_ts)
+            tip_ts = int(self.blockchain.chain[-1].timestamp or 0)
+        annotate_local_snapshot_meta(height=self.blockchain.height, tip_timestamp=tip_ts)
 
 
     def save_state(self):
@@ -196,7 +199,7 @@ class ChainStorage:
         cw_prev = 0
         if start_height and start_height > 0:
             prev_blk = self.blockchain.chain[start_height - 1]
-            cw_prev = int(getattr(prev_blk, "chainwork", 0) or 0)
+            cw_prev = int(prev_blk.chainwork or 0)
             if cw_prev == 0:
                 cw_prev = int(self.blockchain._compute_chainwork_for_chain(self.blockchain.chain[:start_height]))
                 
@@ -210,15 +213,28 @@ class ChainStorage:
                 for height in range(start_height, tip_height + 1):
                     key = f"h:{height:012d}".encode('utf-8')
                     blk = self.blockchain.chain[height]
-                    cw_prev = int(getattr(blk, "chainwork", 0) or 0)
+                    try:
+                        cw_prev = int(blk.chainwork or 0)
+                    except AttributeError:
+                        cw_prev = 0
                     if cw_prev == 0:
-                        cw_prev = int(self.blockchain._compute_chainwork_for_chain(self.blockchain.chain[:height + 1]))
-                    diff = getattr(blk, "difficulty", None)
+                        try:
+                            cw_prev = int(self.blockchain._compute_chainwork_for_chain(self.blockchain.chain[:height + 1]))
+                        except AttributeError:
+                            cw_prev = 0
+                    try:
+                        diff = blk.difficulty
+                    except AttributeError:
+                        diff = None
                     if diff is None or diff == 0:
                         try:
-                            blk.difficulty = int(self.blockchain.calculate_block_difficulty(blk.bits))
+                            b_bits = blk.bits
+                            blk.difficulty = int(self.blockchain.calculate_block_difficulty(b_bits))
                         except Exception:
-                            blk.difficulty = 1
+                            try:
+                                blk.difficulty = 1
+                            except AttributeError:
+                                pass
                     payload = blk.to_storage_bytes()
                     b.put(key, payload)
             self.blockchain._persisted_height = tip_height
@@ -236,7 +252,10 @@ class ChainStorage:
         if interval <= 0:
             return
 
-        last = getattr(self.blockchain, "_snapshot_last_backup_height", -1)
+        try:
+            last = self.blockchain._snapshot_last_backup_height
+        except AttributeError:
+            last = -1
         if last >= 0 and (tip_height - last) < interval:
             return
 
@@ -245,8 +264,11 @@ class ChainStorage:
             return
 
         with self._backup_lock:
-            if getattr(self.blockchain, "_snapshot_backup_active", False):
-                return
+            try:
+                if self.blockchain._snapshot_backup_active:
+                    return
+            except AttributeError:
+                pass
             self.blockchain._snapshot_backup_active = True
 
         threading.Thread(
@@ -344,7 +366,7 @@ class ChainStorage:
             # 4) Tip timestamp
             tip_ts = ts_hint
             if tip_ts is None and self.blockchain.chain:
-                tip_ts = int(getattr(self.blockchain.chain[-1], "timestamp", 0) or 0)
+                tip_ts = int(self.blockchain.chain[-1].timestamp or 0)
 
             # 5) Write metadata and manifest into staging
             meta = {
@@ -415,9 +437,6 @@ class ChainStorage:
             return None
 
 
-
-
-
     def _fetch_kv_chain_data(self) -> tuple[dict, list]:
         meta = {}
         items = list(iter_prefix('chain', b''))
@@ -440,13 +459,19 @@ class ChainStorage:
 
         if chain_objs:
             for i in range(len(chain_objs) - 1):
-                next_prev = getattr(chain_objs[i + 1], "prev_block_hash", None)
+                try:
+                    next_prev = chain_objs[i + 1].prev_block_hash
+                except AttributeError:
+                    next_prev = None
                 if isinstance(next_prev, (bytes, bytearray)) and len(next_prev) == 32:
-                    chain_objs[i]._cached_hash = bytes(next_prev)
-                    chain_objs[i]._cached_hash_nonce = getattr(chain_objs[i], "nonce", None)
-                    chain_objs[i]._cached_hash_bits = getattr(chain_objs[i], "bits", None)
-                    chain_objs[i]._cached_hash_mr = getattr(chain_objs[i], "merkle_root", None)
-                    chain_objs[i]._cached_hash_prev = getattr(chain_objs[i], "prev_block_hash", None)
+                    try:
+                        chain_objs[i]._cached_hash = bytes(next_prev)
+                        chain_objs[i]._cached_hash_nonce = chain_objs[i].nonce
+                        chain_objs[i]._cached_hash_bits = chain_objs[i].bits
+                        chain_objs[i]._cached_hash_mr = chain_objs[i].merkle_root
+                        chain_objs[i]._cached_hash_prev = chain_objs[i].prev_block_hash
+                    except AttributeError:
+                        pass
 
             tip_hash_str = meta.get("tip_hash")
             if isinstance(tip_hash_str, str) and len(tip_hash_str) >= 64:
@@ -454,10 +479,10 @@ class ChainStorage:
                     tip_h = bytes.fromhex(tip_hash_str)
                     last_blk = chain_objs[-1]
                     last_blk._cached_hash = tip_h
-                    last_blk._cached_hash_nonce = getattr(last_blk, "nonce", None)
-                    last_blk._cached_hash_bits = getattr(last_blk, "bits", None)
-                    last_blk._cached_hash_mr = getattr(last_blk, "merkle_root", None)
-                    last_blk._cached_hash_prev = getattr(last_blk, "prev_block_hash", None)
+                    last_blk._cached_hash_nonce = last_blk.nonce
+                    last_blk._cached_hash_bits = last_blk.bits
+                    last_blk._cached_hash_mr = last_blk.merkle_root
+                    last_blk._cached_hash_prev = last_blk.prev_block_hash
                 except Exception:
                     pass
 
@@ -510,8 +535,14 @@ class ChainStorage:
     def _compute_state_snapshot(self) -> dict:
         tip_height = self.blockchain.height
         utxo = self.blockchain.ensure_utxodb() or UTXODB()
-        utxo_version = getattr(utxo, "version", 0)
-        cache = getattr(self.blockchain, "_state_snapshot_cache", None)
+        try:
+            utxo_version = utxo.version
+        except AttributeError:
+            utxo_version = 0
+        try:
+            cache = self.blockchain._state_snapshot_cache
+        except AttributeError:
+            cache = None
         token = (tip_height, utxo_version)
         if cache and cache.get("token") == token and cache.get("data"):
             return dict(cache["data"])
@@ -532,7 +563,7 @@ class ChainStorage:
         genesis_block = chain[0] if chain else None
         tip_block = chain[-1] if chain else None
         tip_hash = tip_block.hash().hex() if tip_block else None
-        tip_timestamp = int(getattr(tip_block, "timestamp", 0) or 0) if tip_block else None
+        tip_timestamp = int(tip_block.timestamp or 0) if tip_block else None
         genesis_dict = genesis_block.to_dict() if genesis_block else {}
         tip_dict = tip_block.to_dict() if tip_block else {}
 
@@ -602,13 +633,13 @@ class ChainStorage:
         tip_block = chain[-1] if chain else None
         total_block_size_bytes = sum(estimate_block_size_bytes(b) for b in chain)
 
-        cw = getattr(tip_block, "chainwork", None)
+        cw = tip_block.chainwork if tip_block else None
         if cw is None:
             cw = self.blockchain._compute_chainwork_for_chain(chain)
         tip_chainwork = int(cw)
         median_time_past_val = int(self.blockchain.median_time_past())
 
-        tip_bits = int(getattr(tip_block, "bits", 0)) if tip_block else None
+        tip_bits = int(tip_block.bits or 0) if tip_block else None
         tip_target = None
         tip_difficulty = None
         if tip_bits is not None:
@@ -621,7 +652,7 @@ class ChainStorage:
         est_hashrate_hps = None
         if total_blocks >= 2:
             window = min(AVG_WINDOW, total_blocks - 1)
-            timestamps = [int(getattr(chain[i], "timestamp", 0) or 0) for i in range(total_blocks - window - 1, total_blocks)]
+            timestamps = [int(chain[i].timestamp or 0) for i in range(total_blocks - window - 1, total_blocks)]
             intervals = []
             for i in range(1, len(timestamps)):
                 delta = timestamps[i] - timestamps[i - 1]
@@ -651,22 +682,28 @@ class ChainStorage:
         total_fees_paid = 0
         miner_counter: Counter[str] = Counter()
         for blk in chain:
-            txs = getattr(blk, "transactions", []) or []
+            txs = blk.transactions or []
             total_txs += len(txs)
             total_non_coinbase_txs += max(0, len(txs) - 1)
             if not txs:
                 continue
             coinbase = txs[0]
-            outputs = getattr(coinbase, "outputs", []) or []
+            outputs = coinbase.outputs or []
             cb_amt = 0
             if outputs:
-                cb_amt = int(getattr(outputs[0], "amount", 0) or 0)
-            base = self.blockchain.scheduled_reward(int(getattr(blk, "height", 0) or 0))
+                cb_amt = int(outputs[0].amount or 0)
+            base = self.blockchain.scheduled_reward(int(blk.height or 0))
             fee = max(0, cb_amt - base)
             total_fees_paid += fee
-            miner_addr = getattr(coinbase, "to_address", None)
+            try:
+                miner_addr = coinbase.to_address
+            except AttributeError:
+                miner_addr = None
             if not miner_addr and outputs:
-                miner_addr = getattr(outputs[0], "address", None)
+                try:
+                    miner_addr = outputs[0].address
+                except AttributeError:
+                    miner_addr = None
             if miner_addr:
                 miner_counter[str(miner_addr)] += 1
         return {
@@ -681,7 +718,10 @@ class ChainStorage:
         mempool_count = 0
         mempool_vbytes_est = None
         mempool_bytes_est = None
-        pool = getattr(self.blockchain, "get_mempool", lambda: None)()
+        try:
+            pool = self.blockchain.get_mempool()
+        except (AttributeError, TypeError):
+            pool = None
         if pool:
             stats = pool.stats()
             mempool_count = int(stats.get("count", 0))
@@ -705,13 +745,44 @@ class ChainStorage:
             utxo_items = list(utxo.utxos.values())
         utxo_set_size = len(utxo_items)
         for entry in utxo_items:
-            tx_out = entry.get("tx_out") if isinstance(entry, dict) else getattr(entry, "tx_out", None)
-            amount = int(getattr(tx_out, "amount", entry.get("amount", 0) if isinstance(entry, dict) else 0) or 0)
+            if isinstance(entry, dict):
+                tx_out = entry.get("tx_out") or entry
+                if isinstance(tx_out, dict):
+                    amt_val = tx_out.get("amount")
+                else:
+                    try:
+                        amt_val = tx_out.amount
+                    except AttributeError:
+                        amt_val = None
+                if amt_val is None:
+                    amt_val = entry.get("amount", 0)
+                amount = int(amt_val or 0)
+                is_cb = bool(entry.get("is_coinbase", False))
+                born = int(entry.get("block_height", 0) or 0)
+            else:
+                try:
+                    tx_out = entry.tx_out or entry
+                except AttributeError:
+                    tx_out = entry
+                try:
+                    amount = int(tx_out.amount or 0)
+                except AttributeError:
+                    try:
+                        amount = int(entry.amount or 0)
+                    except AttributeError:
+                        amount = 0
+                try:
+                    is_cb = bool(entry.is_coinbase)
+                except AttributeError:
+                    is_cb = False
+                try:
+                    born = int(entry.block_height or 0)
+                except AttributeError:
+                    born = 0
+
             if amount <= 0:
                 continue
             utxo_total_value += amount
-            is_cb = bool(entry.get("is_coinbase", False)) if isinstance(entry, dict) else bool(getattr(entry, "is_coinbase", False))
-            born = int(entry.get("block_height", 0) if isinstance(entry, dict) else getattr(entry, "block_height", 0) or 0)
             if is_cb:
                 conf = max(0, (tip_height - born) + 1)
                 if conf >= maturity:
@@ -733,10 +804,16 @@ class ChainStorage:
         total_comments = 0
         total_graffiti_storage = 0
         graffiti_on_mempool = 0
-        reg = getattr(utxo, "_graffiti_registry", None)
+        try:
+            reg = utxo._graffiti_registry
+        except AttributeError:
+            reg = None
         if reg is None:
             reg = GraffitiRegistry()
-        data_g = getattr(reg, "data", {}) or {}
+        try:
+            data_g = reg.data or {}
+        except AttributeError:
+            data_g = {}
         posts_data = data_g.get("posts") or {}
         graffiti_posts = len(posts_data)
         
@@ -750,12 +827,23 @@ class ChainStorage:
             
         total_comments = sum(len(v or []) for v in (data_g.get("comments") or {}).values())
         
-        mem = getattr(self.blockchain, "get_mempool", lambda: None)() or getattr(self.blockchain, "_mempool", None)
-        get_all_fn = getattr(mem, "get_all_txs", None)
+        try:
+            mem = self.blockchain.get_mempool()
+        except (AttributeError, TypeError):
+            mem = None
+        if mem is None:
+            try:
+                mem = self.blockchain._mempool
+            except AttributeError:
+                mem = None
+        try:
+            get_all_fn = mem.get_all_txs
+        except AttributeError:
+            get_all_fn = None
         if callable(get_all_fn):
             for tx in get_all_fn():
-                for tx_out in getattr(tx, "outputs", []) or []:
-                    spk = getattr(tx_out, "script_pubkey", None)
+                for tx_out in (tx.outputs or []):
+                    spk = tx_out.script_pubkey
                     meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
                     if meta and str(meta.get("event", "")).upper() == "POST":
                         graffiti_on_mempool += 1

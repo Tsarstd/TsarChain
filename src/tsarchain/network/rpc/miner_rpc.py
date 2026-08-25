@@ -69,14 +69,26 @@ def handle_miner_rpc(
         if err := _check_miner_rl(self, ip, "get_info", CFG.MINER_INFO_RL_IP_BURST, CFG.MINER_INFO_RL_WINDOW_S, CFG.MINER_INFO_RL_BACKOFF_S):
             return err
         with self.broadcast.lock:
-            b_height = getattr(self.broadcast.blockchain, "height", 0)
-            b_blocks = len(getattr(self.broadcast.blockchain, "chain", []))
+            try:
+                b_height = self.broadcast.blockchain.height
+            except AttributeError:
+                b_height = 0
+            try:
+                b_blocks = len(self.broadcast.blockchain.chain)
+            except AttributeError:
+                b_blocks = 0
 
-        mempool_obj = getattr(self.broadcast, "mempool", None)
-        mp_count = len(getattr(mempool_obj, "_pool", {})) if mempool_obj else 0
+        try:
+            mempool_obj = self.broadcast.mempool
+            mp_count = len(mempool_obj._pool)
+        except AttributeError:
+            mp_count = 0
 
-        utxodb_obj = getattr(self.broadcast, "utxodb", None)
-        utxo_count = len(getattr(utxodb_obj, "utxos", {})) if utxodb_obj else 0
+        try:
+            utxodb_obj = self.broadcast.utxodb
+            utxo_count = len(utxodb_obj.utxos)
+        except AttributeError:
+            utxo_count = 0
 
         with self.lock:
             peers_count = sum(1 for _, p in self.peers if isinstance(p, int) and p > 0)

@@ -39,11 +39,19 @@ class SidebarNavigator:
         )
 
         def _hover_in(_e):
-            if tab_id != getattr(self.app, "_active_tab", ""):
+            try:
+                active_tab = self.app._active_tab
+            except AttributeError:
+                active_tab = ""
+            if tab_id != active_tab:
                 btn.configure(bg=self.active_bg, fg=self.active_fg)
 
         def _hover_out(_e):
-            if tab_id != getattr(self.app, "_active_tab", ""):
+            try:
+                active_tab = self.app._active_tab
+            except AttributeError:
+                active_tab = ""
+            if tab_id != active_tab:
                 btn.configure(bg=self.bg, fg=self.fg)
 
         btn.bind("<Enter>", _hover_in)

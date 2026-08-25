@@ -59,7 +59,15 @@ def send_message(sock: socket.socket, payload: bytes, *, max_len: int | None = N
             _SEND_DISCONNECT_COUNT += 1
             now = time.time()
             if now - _SEND_DISCONNECT_LAST >= _SEND_DISCONNECT_WINDOW:
-                log.debug("[send_message] peer closed during send (%s) count=%d", getattr(e, "winerror", getattr(e, "errno", e)), _SEND_DISCONNECT_COUNT)
+                err_code = e
+                try:
+                    if e.winerror is not None:
+                        err_code = e.winerror
+                    elif e.errno is not None:
+                        err_code = e.errno
+                except AttributeError:
+                    pass
+                log.debug("[send_message] peer closed during send (%s) count=%d", err_code, _SEND_DISCONNECT_COUNT)
                 _SEND_DISCONNECT_LAST = now
                 _SEND_DISCONNECT_COUNT = 0
             return
@@ -192,8 +200,14 @@ def _is_disconnect_exc(e: BaseException) -> bool:
     if isinstance(e, (ConnectionError, ConnectionResetError, ConnectionAbortedError, TimeoutError, socket.timeout, BrokenPipeError)):
         return True
     if isinstance(e, OSError):
-        code = getattr(e, "errno", None)
-        w    = getattr(e, "winerror", None)
+        try:
+            code = e.errno
+        except AttributeError:
+            code = None
+        try:
+            w = e.winerror
+        except AttributeError:
+            w = None
         return (code in POSIX_DISCONNECT) or (w in WIN_DISCONNECT)
     return False
 

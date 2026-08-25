@@ -14,10 +14,11 @@ class BusyManager:
         self._busy_timers: Dict[str, str | int] = {}
 
     def _set_enabled(self, w: tk.Widget, enabled: bool) -> None:
-        prev = getattr(w, "_prev_state", None)
-        if prev is None:
+        try:
+            prev = w._prev_state
+        except AttributeError:
             prev = w.cget("state")
-            setattr(w, "_prev_state", prev)
+            w._prev_state = prev
         if enabled:
             w["state"] = prev or "normal"
         else:

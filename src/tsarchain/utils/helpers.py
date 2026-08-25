@@ -349,50 +349,76 @@ def compute_tx_weight_vsize(tx) -> tuple[int, int, int, int]:
 
 
 def _estimate_tx_size_bytes(tx) -> int:
-    to_storage = getattr(tx, "to_storage_bytes", None)
-    if callable(to_storage):
-        try:
+    try:
+        to_storage = tx.to_storage_bytes
+        if callable(to_storage):
             raw = to_storage()
             if isinstance(raw, (bytes, bytearray)):
                 return len(raw)
-        except Exception:
-            pass
+    except Exception:
+        pass
     size = 10
-    for txin in getattr(tx, "inputs", []) or []:
+    try:
+        inputs = tx.inputs or []
+    except AttributeError:
+        inputs = []
+    for txin in inputs:
         size += 40
-        if getattr(txin, "script_sig", None):
-            size += len(txin.script_sig.serialize())
-        if getattr(txin, "witness", None):
-            size += sum(len(w) for w in txin.witness)
-    for txout in getattr(tx, "outputs", []) or []:
+        try:
+            script_sig = txin.script_sig
+            if script_sig:
+                size += len(script_sig.serialize())
+        except AttributeError:
+            pass
+        try:
+            witness = txin.witness
+            if witness:
+                size += sum(len(w) for w in witness)
+        except AttributeError:
+            pass
+    try:
+        outputs = tx.outputs or []
+    except AttributeError:
+        outputs = []
+    for txout in outputs:
         size += 8
-        if getattr(txout, "script_pubkey", None):
-            size += len(txout.script_pubkey.serialize())
+        try:
+            spk = txout.script_pubkey
+            if spk:
+                size += len(spk.serialize())
+        except AttributeError:
+            pass
     return int(size)
 
 
 def estimate_block_size_bytes(block) -> int:
-    to_storage_block = getattr(block, "to_storage_bytes", None)
-    if callable(to_storage_block):
-        try:
+    try:
+        to_storage_block = block.to_storage_bytes
+        if callable(to_storage_block):
             raw = to_storage_block()
             if isinstance(raw, (bytes, bytearray)):
                 return len(raw)
-        except Exception:
-            pass
-    txs = getattr(block, "transactions", []) or []
+    except Exception:
+        pass
+    try:
+        txs = block.transactions or []
+    except AttributeError:
+        txs = []
     total = 108  # 80 bytes header + 24 bytes metadata + 4 bytes tx count
     for tx in txs:
-        to_storage = getattr(tx, "to_storage_bytes", None)
-        if callable(to_storage):
-            try:
+        try:
+            to_storage = tx.to_storage_bytes
+            if callable(to_storage):
                 total += 4 + len(to_storage())
                 continue
-            except Exception:
-                pass
-        if getattr(tx, "inputs", None) is not None and getattr(tx, "outputs", None) is not None:
-            total += _estimate_tx_size_bytes(tx)
-        else:
+        except Exception:
+            pass
+        try:
+            if tx.inputs is not None and tx.outputs is not None:
+                total += _estimate_tx_size_bytes(tx)
+            else:
+                total += len(json.dumps(tx))
+        except Exception:
             total += len(json.dumps(tx))
     return int(total)
 
@@ -512,6 +538,10 @@ class Script:
         else:
             raise ValueError("opreturn_exceeds_520_bytes")
         return b.hex()
+
+
+    def to_hex(self) -> str:
+        return self.serialize().hex()
 
 
     def serialize(self) -> bytes:
@@ -761,16 +791,24 @@ def merkle_root(transactions):
         if isinstance(tx, (bytes, bytearray)):
             txid = bytes(tx)
         else:
-            txid_val = getattr(tx, "txid", None)
-            if callable(txid_val):
-                txid = txid_val()
-            elif txid_val is not None:
-                txid = txid_val
-            else:
-                hash_val = getattr(tx, "hash", None)
-                if callable(hash_val):
-                    txid = hash_val()
+            try:
+                txid_val = tx.txid
+                if callable(txid_val):
+                    txid = txid_val()
+                elif txid_val is not None:
+                    txid = txid_val
                 else:
+                    txid = None
+            except AttributeError:
+                txid = None
+            if txid is None:
+                try:
+                    hash_val = tx.hash
+                    if callable(hash_val):
+                        txid = hash_val()
+                    else:
+                        raise TypeError("merkle_root expects 32-byte txids or objects with .txid/.hash")
+                except AttributeError:
                     raise TypeError("merkle_root expects 32-byte txids or objects with .txid/.hash")
         if isinstance(txid, str):
             txid = bytes.fromhex(txid)
@@ -821,31 +859,73 @@ def sighash_bip143_compact(tx_tuple, input_index: int, script_code: bytes, value
 
 
 def tx_to_compact_tuple(tx) -> tuple:
-    version = int(getattr(tx, "version", 1))
-    locktime = int(getattr(tx, "locktime", 0))
+    try:
+        version = int(tx.version)
+    except (AttributeError, TypeError, ValueError):
+        version = 1
+    try:
+        locktime = int(tx.locktime)
+    except (AttributeError, TypeError, ValueError):
+        locktime = 0
     inputs_c = []
-    for txin in getattr(tx, "inputs", []) or []:
-        prev = getattr(txin, "txid", None) or getattr(txin, "prev_tx", None)
+    try:
+        inputs = tx.inputs or []
+    except AttributeError:
+        inputs = []
+    for txin in inputs:
+        try:
+            prev = txin.txid
+        except AttributeError:
+            try:
+                prev = txin.prev_tx
+            except AttributeError:
+                prev = None
         if isinstance(prev, str):
-            prev = bytes.fromhex(prev)
+            try:
+                prev = bytes.fromhex(prev)
+            except ValueError:
+                prev = b""
         prev_b = bytes(prev) if isinstance(prev, (bytes, bytearray)) else b""
-        vout = int(getattr(txin, "vout", getattr(txin, "prev_index", 0)) or 0)
-        seq = int(getattr(txin, "sequence", 0xffffffff))
+        try:
+            vout = int(txin.vout)
+        except (AttributeError, TypeError, ValueError):
+            try:
+                vout = int(txin.prev_index or 0)
+            except (AttributeError, TypeError, ValueError):
+                vout = 0
+        try:
+            seq = int(txin.sequence)
+        except (AttributeError, TypeError, ValueError):
+            seq = 0xffffffff
         # Preserve scriptsig so coinbase txid includes block-specific entropy
         script_sig_bytes = b""
-        script_sig = getattr(txin, "script_sig", None)
-        ser_sig = getattr(script_sig, "serialize", None)
-        if callable(ser_sig):
-            script_sig_bytes = ser_sig()
-        elif isinstance(script_sig, (bytes, bytearray)):
-            script_sig_bytes = bytes(script_sig)
-        elif isinstance(script_sig, str):
-            script_sig_bytes = bytes.fromhex(script_sig)
+        try:
+            script_sig = txin.script_sig
+        except AttributeError:
+            script_sig = None
+        if script_sig is not None:
+            try:
+                script_sig_bytes = script_sig.serialize()
+            except (AttributeError, TypeError):
+                if isinstance(script_sig, (bytes, bytearray)):
+                    script_sig_bytes = bytes(script_sig)
+                elif isinstance(script_sig, str):
+                    try:
+                        script_sig_bytes = bytes.fromhex(script_sig)
+                    except ValueError:
+                        pass
         wit_vec = []
-        for w in getattr(txin, "witness", None) or []:
+        try:
+            witness = txin.witness or []
+        except AttributeError:
+            witness = []
+        for w in witness:
             if isinstance(w, str):
-                wit_vec.append(bytes.fromhex(w))
-                continue
+                try:
+                    wit_vec.append(bytes.fromhex(w))
+                    continue
+                except ValueError:
+                    pass
             if isinstance(w, (bytes, bytearray)):
                 wit_vec.append(bytes(w))
             else:
@@ -853,23 +933,44 @@ def tx_to_compact_tuple(tx) -> tuple:
         inputs_c.append((prev_b, vout, seq, script_sig_bytes, wit_vec))
 
     outputs_c = []
-    for txout in getattr(tx, "outputs", []) or []:
-        amt = int(getattr(txout, "amount", 0))
-        spk = getattr(txout, "script_pubkey", None)
-        ser_spk = getattr(spk, "serialize", None)
-        if callable(ser_spk):
-            spk_b = ser_spk()
-        elif isinstance(spk, (bytes, bytearray)):
-            spk_b = bytes(spk)
-        elif isinstance(spk, str):
-            spk_b = bytes.fromhex(spk)
+    try:
+        outputs = tx.outputs or []
+    except AttributeError:
+        outputs = []
+    for txout in outputs:
+        try:
+            amt = int(txout.amount or 0)
+        except (AttributeError, TypeError):
+            amt = 0
+        try:
+            spk = txout.script_pubkey
+        except AttributeError:
+            spk = None
+        if spk is not None:
+            try:
+                spk_b = spk.serialize()
+            except (AttributeError, TypeError):
+                if isinstance(spk, (bytes, bytearray)):
+                    spk_b = bytes(spk)
+                elif isinstance(spk, str):
+                    try:
+                        spk_b = bytes.fromhex(spk)
+                    except ValueError:
+                        spk_b = b""
+                else:
+                    spk_b = b""
         else:
             spk_b = b""
         outputs_c.append((amt, spk_b))
 
-    tx_tuple = (version, locktime, inputs_c, outputs_c, b"\x00" * 32, bool(getattr(tx, "is_coinbase", False)))
+    try:
+        is_cb = bool(tx.is_coinbase)
+    except AttributeError:
+        is_cb = False
+
+    tx_tuple = (version, locktime, inputs_c, outputs_c, b"\x00" * 32, is_cb)
     txid = txid_from_compact(tx_tuple)
-    return (version, locktime, inputs_c, outputs_c, txid, bool(getattr(tx, "is_coinbase", False)))
+    return (version, locktime, inputs_c, outputs_c, txid, is_cb)
 
 
 # =======================

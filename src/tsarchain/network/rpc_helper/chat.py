@@ -152,7 +152,10 @@ class ChatHandler(NetworkHandlerProxy):
     def get_spend_pub(self, addr: str) -> str | None:
         if not addr:
             return None
-        spend_dict = getattr(self, "chat_spend_pub", None)
+        try:
+            spend_dict = self.chat_spend_pub
+        except AttributeError:
+            spend_dict = None
         if isinstance(spend_dict, dict):
             sp = (spend_dict.get(addr) or "").strip().lower()
             if sp:
@@ -161,8 +164,11 @@ class ChatHandler(NetworkHandlerProxy):
         sp = (b.get("spend_pub") or "").strip().lower()
         if sp:
             with self.chat_lock:
-                if isinstance(getattr(self, "chat_spend_pub", None), dict):
-                    self.chat_spend_pub[addr] = sp
+                try:
+                    if isinstance(self.chat_spend_pub, dict):
+                        self.chat_spend_pub[addr] = sp
+                except AttributeError:
+                    pass
             return sp
         return None
 

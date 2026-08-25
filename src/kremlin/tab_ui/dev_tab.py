@@ -73,7 +73,10 @@ class DevTab(tk.Frame):
     def _populate_text(self) -> None:
         if not self.dev_text:
             return
-        palette = getattr(self.app.theme_set, "palette", None)
+        try:
+            palette = self.app.theme_set.palette
+        except AttributeError:
+            palette = None
         alert_color = palette.danger if palette else self.app.accent
         status_color = palette.success if palette else self.app.accent
 

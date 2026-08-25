@@ -262,7 +262,11 @@ class ArchivistDatabase:
 
     # ---------------- Payout Guard KV Store Integration ----------------
     def load_payout_guard(self) -> dict:
-        if not self.enable_index or not getattr(self, "_kv_guard", None):
+        try:
+            kv_guard = self._kv_guard
+        except AttributeError:
+            kv_guard = None
+        if not self.enable_index or not kv_guard:
             return dict(self._mem_guard)
         guard: dict = {}
         for k, v in _iter_prefix(self._kv_guard, "guard", b""):
@@ -280,7 +284,11 @@ class ArchivistDatabase:
         return guard
 
     def save_payout_guard(self, guard_data: dict) -> None:
-        if not self.enable_index or not getattr(self, "_kv_guard", None):
+        try:
+            kv_guard = self._kv_guard
+        except AttributeError:
+            kv_guard = None
+        if not self.enable_index or not kv_guard:
             self._mem_guard = dict(guard_data or {})
             return
         ops = []
@@ -290,7 +298,11 @@ class ArchivistDatabase:
             self._kv_guard.put_batch("guard", ops)
 
     def cleanup_expired_payout_guards(self, max_age_seconds: int = 30 * 86400) -> int:
-        if not self.enable_index or not getattr(self, "_kv_guard", None):
+        try:
+            kv_guard = self._kv_guard
+        except AttributeError:
+            kv_guard = None
+        if not self.enable_index or not kv_guard:
             return 0
         now = int(time.time())
         cutoff = now - int(max_age_seconds)
@@ -349,7 +361,10 @@ class ArchivistDatabase:
             pretty_json=False,
             drive_type=drive_override,
         )
-        dt = getattr(store, "drive_type", "unknown")
+        try:
+            dt = store.drive_type
+        except AttributeError:
+            dt = "unknown"
         log.info(f"Archivist LMDB storage initialized at '{path}' [Drive Profile: {dt.upper()}]")
         return store
 

@@ -385,7 +385,10 @@ class GraffitiSearch:
 
     def build_comment_composer(self, post: Dict, art_id: str, parent: tk.Widget) -> None:
         p = self.panel
-        wallets = list(getattr(p.app, "wallets", []) or [])
+        try:
+            wallets = list(p.app.wallets or [])
+        except AttributeError:
+            wallets = []
         log.debug("explorer: build comment composer art_id=%s wallets=%s", art_id, len(wallets))
         outer = tk.Frame(parent, bg=p.card_bg)
         outer.pack(anchor="center", pady=8, fill="x")
@@ -428,7 +431,10 @@ class GraffitiSearch:
             p._comment_status_var.set("Please Input your voice first.")
             return
         log.debug("explorer: comment submit art_id=%s len=%s", art_id, len(comment_txt))
-        wallets = list(getattr(p.app, "wallets", []) or [])
+        try:
+            wallets = list(p.app.wallets or [])
+        except AttributeError:
+            wallets = []
         if not wallets:
             p._comment_status_var.set("No wallet Address")
             messagebox.showinfo("Explorer", "Create or load a wallet first.")
@@ -459,20 +465,35 @@ class GraffitiSearch:
 
     def broadcast_comment(self, post: Dict, art_id: str, commenter: str, tip_raw: str, comment_txt: str) -> None:
         p = self.panel
-        svc = getattr(p.app, "send_svc", None)
-        rpc_send = getattr(p.app, "rpc_send", None)
+        try:
+            svc = p.app.send_svc
+        except AttributeError:
+            svc = None
+        try:
+            rpc_send = p.app.rpc_send
+        except AttributeError:
+            rpc_send = None
         if not rpc_send:
-            rpc_send = getattr(getattr(p.app, "rpc", None), "send_async", None)
+            try:
+                rpc_send = p.app.rpc.send_async
+            except AttributeError:
+                rpc_send = None
         if not svc or not rpc_send:
             messagebox.showerror("Explorer", "Send service not available.")
             return
 
-        fee_rate_var = getattr(getattr(p.app, "send_tab", None), "fee_rate_var", None)
+        try:
+            fee_rate_var = p.app.send_tab.fee_rate_var
+        except AttributeError:
+            fee_rate_var = None
         try:
             fee_rate_val = int(fee_rate_var.get()) if fee_rate_var else int(CFG.MIN_FEE_RATE_SATVB)
         except Exception:
             fee_rate_val = int(CFG.MIN_FEE_RATE_SATVB)
-        ask_pwd = getattr(p.app, "_ask_password", None)
+        try:
+            ask_pwd = p.app._ask_password
+        except AttributeError:
+            ask_pwd = None
         pw_provider = (lambda addr: ask_pwd("Unlock Address", f"Input Password for {addr}:")) if ask_pwd else (lambda _addr: None)
 
         base_raw = self.comment_base_tsar_str()
