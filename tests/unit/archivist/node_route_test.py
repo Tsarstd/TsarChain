@@ -2,90 +2,115 @@
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain - see LICENSE
 
-import os
 import pytest
-import base64
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 
-from archivist.node_route import handle_node_rpc
+from archivist.node_route import (
+    rpc_hello,
+    rpc_ping,
+    rpc_get_network_info,
+    rpc_get_graffiti_posts,
+    rpc_submit_proof,
+    rpc_build_payout,
+)
+
 
 @pytest.fixture
-def server(tmp_path):
-    srv = MagicMock()
-    srv.index = {"files": {}, "bytes_used": 0, "art_map": {}}
-    srv.storage_dir = str(tmp_path)
-    srv.db = MagicMock()
-    
-    def norm(aid, meta):
-        return meta
-    srv._normalize_file_meta.side_effect = norm
-    
-    return srv
+def mock_rpc():
+    rpc = MagicMock()
+    rpc.pub = "mock_pub_hex"
+    rpc.address = "tsar1mockaddress"
+    return rpc
 
-def test_ping(server):
-    res = handle_node_rpc(server, {"type": "PING"})
-    assert res == {"type": "PONG"}
 
-def test_stor_index(server):
-    server.index["files"]["gid1"] = {"size_bytes": 100}
-    res = handle_node_rpc(server, {"type": "STOR_INDEX"})
-    assert res["type"] == "STOR_INDEX"
-    assert res["bytes_used"] == 100
+def test_rpc_hello(mock_rpc):
+    mock_rpc.call.side_effect = [
+        {"type": "HELLO_RESPONSE", "port": 8000},
+        {"type": "PONG"},
+    ]
+    ok = rpc_hello(mock_rpc, my_listen_port=39000, trusted=True)
+    assert ok is True
+    assert mock_rpc.call.call_count == 2
+    hello_call = mock_rpc.call.call_args_list[0][0][0]
+    assert hello_call["type"] == "HELLO"
+    assert hello_call["role"] == "NODE_STORAGE"
+    assert hello_call["port"] == 39000
+    assert hello_call["trusted"] is True
 
-def test_stor_paid_missing(server):
-    res = handle_node_rpc(server, {"type": "STOR_PAID", "graffiti_id": "gid1"})
-    assert res["status"] == "error"
-    assert res["reason"] == "no_such"
 
-def test_stor_paid_kv_mode(server):
-    server.db.get_final_bytes_range.return_value = None
-    server.db.pop_incoming.return_value = b"hello"
-    
-    server.index["files"]["gid1"] = {"size_bytes": 5}
-    
-    res = handle_node_rpc(server, {"type": "STOR_PAID", "graffiti_id": "gid1"})
+def test_rpc_ping(mock_rpc):
+    mock_rpc.call.return_value = {"type": "PONG"}
+    assert rpc_ping(mock_rpc) is True
+
+    mock_rpc.call.return_value = None
+    assert rpc_ping(mock_rpc) is False
+
+
+def test_rpc_get_network_info(mock_rpc):
+    mock_rpc.call.return_value = {
+        "type": "NETWORK_INFO",
+        "data": {"chain": {"tip_height": 100}, "peers": {"count": 4}},
+    }
+    info = rpc_get_network_info(mock_rpc)
+    assert isinstance(info, dict)
+    assert info["data"]["chain"]["tip_height"] == 100
+
+    # Error case
+    mock_rpc.call.return_value = {"error": "rate_limited"}
+    assert rpc_get_network_info(mock_rpc) is None
+
+
+def test_rpc_get_graffiti_posts(mock_rpc):
+    mock_rpc.call.return_value = {
+        "type": "GRAFFITI_POSTS",
+        "posts": [{"art_id": "art1", "size": 100}],
+    }
+    posts = rpc_get_graffiti_posts(mock_rpc, limit=10)
+    assert len(posts) == 1
+    assert posts[0]["art_id"] == "art1"
+
+    # Empty / error case
+    mock_rpc.call.return_value = None
+    assert rpc_get_graffiti_posts(mock_rpc) == []
+
+
+def test_rpc_submit_proof(mock_rpc):
+    mock_rpc.call.return_value = {"status": "ok", "art_id": "art1", "epoch": 2}
+    res = rpc_submit_proof(
+        mock_rpc,
+        art_id="art1",
+        epoch=2,
+        offset=0,
+        length=4096,
+        proof_hash="hash123",
+        height=20,
+        seed="seed123",
+        chunk="chunk_b64",
+        path=["path_elem"],
+    )
     assert res["status"] == "ok"
-    assert server.db.put_final.call_count == 1
-    
-    meta = server.index["files"]["gid1"]
-    assert meta["paid"] is True
-    assert meta["path"] == "lmdb://final/gid1"
-    assert meta["state"] == "stored"
+    sent_payload = mock_rpc.call.call_args[0][0]
+    assert sent_payload["type"] == "GRAFFITI_PROOF_SUBMIT"
+    assert sent_payload["art_id"] == "art1"
+    assert sent_payload["epoch"] == 2
+    assert sent_payload["chunk"] == "chunk_b64"
+    assert sent_payload["storer"] == "tsar1mockaddress"
 
-def test_stor_gc_kv(server):
-    server.index["files"]["gid1"] = {"size_bytes": 5, "paid": False, "expire_at_height": 100}
-    
-    handle_node_rpc(server, {"type": "STOR_GC", "tip_height": 105})
-    assert server.db.delete_blob.call_count == 1
 
-@patch("archivist.node_route.GRAFFITI.calc_proof_challenge")
-@patch("archivist.node_route.GRAFFITI.hash_proof_chunk")
-def test_stor_proof_run_kv(mock_hash, mock_chal, server):
-    server.index["files"]["gid1"] = {"size_bytes": 5, "art_id": "art1"}
-    
-    mock_chal.return_value = {"offset": 0, "length": 5, "epoch": 1, "seed": "abc"}
-    mock_hash.return_value = "hash123"
-    
-    server.db.get_final_bytes_range.return_value = b"hello"
-    server.db.get_final_merkle_path.return_value = ["hashA", "hashB"]
-    
-    res = handle_node_rpc(server, {"type": "STOR_PROOF_RUN", "graffiti_id": "gid1", "tip_height": 100})
+def test_rpc_build_payout(mock_rpc):
+    mock_rpc.call.return_value = {"status": "ok", "tx": {"txid": "tx123"}}
+    res = rpc_build_payout(
+        mock_rpc,
+        art_id="art1",
+        recipient="tsar1recipient",
+        amount=50000,
+        epoch=2,
+        broadcast=True,
+    )
     assert res["status"] == "ok"
-    assert res["hash"] == "hash123"
-    assert res["chunk"] == base64.b64encode(b"hello").decode("ascii")
-    assert res["path"] == ["hashA", "hashB"]
+    sent_payload = mock_rpc.call.call_args[0][0]
+    assert sent_payload["type"] == "GRAFFITI_BUILD_PAYOUT"
+    assert sent_payload["art_id"] == "art1"
+    assert sent_payload["recipients"] == [{"addr": "tsar1recipient", "amount": 50000}]
+    assert sent_payload["broadcast"] is True
 
-def test_stor_proof_run_missing(server):
-    res = handle_node_rpc(server, {"type": "STOR_PROOF_RUN", "graffiti_id": "gid1"})
-    assert res["status"] == "error"
-    assert res["reason"] == "no_such"
-
-    # Missing art id
-    server.index["files"]["gid2"] = {"size_bytes": 5}
-    res2 = handle_node_rpc(server, {"type": "STOR_PROOF_RUN", "graffiti_id": "gid2"})
-    assert res2["status"] == "error"
-    assert res2["reason"] == "missing_art_id"
-
-def test_unknown_node_rpc(server):
-    res = handle_node_rpc(server, {"type": "UNKNOWN"})
-    assert res is None

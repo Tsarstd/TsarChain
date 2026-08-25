@@ -130,16 +130,17 @@ To bypass aggressive rate limits or authenticate a heavy query, a client can sub
     {
       id: "archivist-rpc",
       title: "6. Archivist (Storage Layer) RPC",
-      content: `These RPCs are specifically served by Storage Nodes (Archivists) to handle direct file uploads/downloads from users, and to communicate retention proofs with the main network.
+      content: `These RPCs govern communication between users (Wallets), Storage Nodes (Archivists), and the main TsarChain Node network.
 
-### 1. Wallet to Archivist (\`wallet_route.py\`)
+### 1. Wallet to Archivist (Inbound RPC - \`wallet_route.py\`)
 
-Handles the direct file transfer protocol from the end-user (wallet) to the storage node.
+Handles the direct file transfer protocol from the end-user (wallet) to the storage node over TCP socket.
 
 - \`STOR_INIT\`: Initializes an upload session, verifying file size and MIME type.
 - \`STOR_PUT\`: Uploads the artifact data in chunks (\`base64\`).
 - \`STOR_COMMIT\`: Finalizes the upload, verifies the SHA-256 hash, and generates a storage receipt.
 - \`STOR_GET_BY_ART\`: Fetches/downloads a digital artifact using its \`art_id\` or \`graffiti_id\`.
+- \`PING\`: Quick liveness check returning \`{"type": "PONG"}\`.
 
 *Example (STOR_INIT):*
 \`\`\`json
@@ -152,23 +153,39 @@ Handles the direct file transfer protocol from the end-user (wallet) to the stor
 }
 \`\`\`
 
-### 2. Node to Archivist (\`node_route.py\`)
+### 2. Archivist to Node (Outbound RPC - \`node_route.py\` / \`connect.py\`)
 
-Handles integration between the main blockchain bootstrap nodes and the storage nodes.
+Handles client communication from the storage node to the TsarChain Blockchain Node.
 
-- \`STOR_INDEX\`: Returns the storage index and total \`bytes_used\`.
-- \`STOR_PAID\`: Confirms that the user has paid for storage on-chain, finalizing the file.
-- \`STOR_PROOF_RUN\`: Executes a cryptographic Proof-of-Retention challenge at a specific chunk offset.
-- \`STOR_GC\`: Triggers garbage collection for unpaid/expired blobs.
+- \`HELLO\`: Handshake registering storage role (\`NODE_STORAGE\`), payout address, listening port, and public key on the Node.
+- \`PING\`: Heartbeat liveness check with the Node.
+- \`GET_NETWORK_INFO\`: Fetches current chain tip height and peer count.
+- \`GRAFFITI_GET_POSTS\`: Fetches confirmed on-chain graffiti posts to identify files needing proof or payout.
+- \`GRAFFITI_PROOF_SUBMIT\`: Submits cryptographic Proof of Retention (PoR) for stored media chunks.
+- \`GRAFFITI_BUILD_PAYOUT\`: Requests the Node to construct and broadcast a reward payout transaction.
 
-*Example (STOR_PROOF_RUN):*
+*Example (GRAFFITI_PROOF_SUBMIT):*
 \`\`\`json
 {
-  "type": "STOR_PROOF_RUN",
-  "graffiti_id": "grafb5d0...",
-  "tip_height": 14500
+  "type": "GRAFFITI_PROOF_SUBMIT",
+  "art_id": "grafb5d0...",
+  "epoch": 4,
+  "offset": 4096,
+  "length": 4096,
+  "hash": "4da974820fa3deac...",
+  "height": 200,
+  "seed": "f85e9f9f...",
+  "storer": "tsar1q..."
 }
-\`\`\``
+\`\`\`
+
+### 3. Internal Storage Engine (\`server_archivist.py\` Methods)
+
+Operations managed in-memory by \`StorageServer\` without network loopbacks:
+- \`get_index_stats()\`: Reads total files and \`bytes_used\`.
+- \`mark_paid()\`: Promotes incoming blob to final LMDB storage and marks \`paid = True\`.
+- \`run_gc()\`: Cleans expired and unpaid temporary files from storage.
+- \`generate_retention_proof()\`: Extracts chunk and computes challenge hash + Merkle path for Proof of Retention.`
     }
   ]
 };

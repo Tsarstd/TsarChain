@@ -4,6 +4,7 @@
 
 import json
 import pytest
+import base64
 from unittest.mock import patch, MagicMock
 
 from archivist.server_archivist import StorageServer
@@ -18,7 +19,7 @@ def mock_db():
 
 @pytest.fixture
 def server(tmp_path, mock_db):
-    with patch("threading.Thread"): # prevent actual socket binding
+    with patch("threading.Thread"):  # prevent actual socket binding
         srv = StorageServer("127.0.0.1", 12345, str(tmp_path / "stor"))
         return srv
 
@@ -43,6 +44,52 @@ def test_load_and_save_index(server, mock_db):
     server._save_index()
     mock_db.save_index.assert_called_with(server.index)
 
+def test_get_index_stats(server):
+    server.index["files"]["gid1"] = {"size_bytes": 100}
+    stats = server.get_index_stats()
+    assert stats["bytes_used"] == 100
+    assert "gid1" in stats["files"]
+
+def test_mark_paid(server):
+    server.db.has_final.return_value = False
+    server.db.promote_incoming.return_value = True
+    server.db.get_final_blob_path.return_value = "/data/final/gid1.bin"
+
+    server.index["files"]["gid1"] = {"size_bytes": 50, "state": "receiving", "paid": False}
+    res = server.mark_paid(graffiti_id="gid1", art_id="art1", txid="tx123", block_height=10)
+    assert res["status"] == "ok"
+    assert server.index["files"]["gid1"]["paid"] is True
+    assert server.index["files"]["gid1"]["txid_paid"] == "tx123"
+    assert server.index["files"]["gid1"]["confirmed_at_height"] == 10
+
+def test_mark_paid_missing(server):
+    res = server.mark_paid(graffiti_id="nonexistent")
+    assert res["status"] == "error"
+    assert res["reason"] == "no_such"
+
+def test_run_gc(server):
+    server.index["files"]["gid1"] = {"size_bytes": 50, "paid": False, "expire_at_height": 100}
+    res = server.run_gc(tip_height=105)
+    assert res["status"] == "ok"
+    assert res["expired"] == 1
+    assert server.db.delete_blob.call_count == 1
+
+@patch("archivist.server_archivist.GRAFFITI.calc_proof_challenge")
+@patch("archivist.server_archivist.GRAFFITI.hash_proof_chunk")
+def test_generate_retention_proof(mock_hash, mock_chal, server):
+    server.index["files"]["gid1"] = {"size_bytes": 50, "art_id": "art1"}
+    mock_chal.return_value = {"offset": 0, "length": 50, "epoch": 1, "seed": "seed123"}
+    mock_hash.return_value = "hash123"
+
+    server.db.get_final_bytes_range.return_value = b"sample_bytes"
+    server.db.get_final_merkle_path.return_value = ["path1", "path2"]
+
+    res = server.generate_retention_proof(graffiti_id="gid1", tip_height=10)
+    assert res["status"] == "ok"
+    assert res["hash"] == "hash123"
+    assert res["chunk"] == base64.b64encode(b"sample_bytes").decode("ascii")
+    assert res["path"] == ["path1", "path2"]
+
 @patch("archivist.server_archivist.send_message")
 def test_respond(mock_send, server):
     conn = MagicMock()
@@ -61,20 +108,17 @@ def test_client_ip(server):
     assert server._client_ip(None) == "0.0.0.0"
 
 @patch("archivist.server_archivist.wallet_route.handle_wallet_rpc")
-@patch("archivist.server_archivist.node_route.handle_node_rpc")
-def test_handle(mock_node, mock_wallet, server):
+def test_handle(mock_wallet, server):
+    # PING
+    assert server._handle({"type": "PING"}) == {"type": "PONG"}
+
     # Wallet responds
     mock_wallet.return_value = {"status": "ok_wallet"}
-    assert server._handle({"type": "W"}) == {"status": "ok_wallet"}
-    
-    # Node responds
-    mock_wallet.return_value = None
-    mock_node.return_value = {"status": "ok_node"}
-    assert server._handle({"type": "N"}) == {"status": "ok_node"}
+    assert server._handle({"type": "STOR_INIT"}) == {"status": "ok_wallet"}
     
     # Unknown
-    mock_node.return_value = None
-    assert server._handle({"type": "X"}) == {"error": "unknown type"}
+    mock_wallet.return_value = None
+    assert server._handle({"type": "UNKNOWN_ACTION"}) == {"error": "unknown type"}
 
 @patch("archivist.server_archivist.recv_message")
 @patch("archivist.server_archivist.send_message")
@@ -120,5 +164,5 @@ def test_handle_conn_success(mock_verify, mock_send, mock_recv, server):
     mock_verify.return_value = {"type": "PING"}
     with patch.object(server, "_handle", return_value={"status": "pong_env"}):
         server._handle_conn(conn, ("8.8.8.8", 1234))
-        args, kwargs = mock_send.call_args
-        assert b"pong_env" in args[1]
+    args, kwargs = mock_send.call_args
+    assert b"pong_env" in args[1]

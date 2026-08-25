@@ -4,24 +4,20 @@
 
 from __future__ import annotations
 
-import json
 import time
-import socket
-import secrets
 import threading
-
 from typing import Any, Dict, Optional, Callable
 
 from tsarchain.utils import config as CFG
-from tsarcore_native import open_storage as _native_open_storage
 from archivist.connect import RPC, NodeDirectory
 from archivist.server_archivist import StorageServer
+from archivist import node_route
 from tsarchain.contracts import graffiti as GRAFFITI
-from tsarchain.network.protocol import send_message, recv_message
 
 HEARTBEAT_SEC = 30
 REFRESH_SEC = 30
 STORAGE_PORT_OFFSET = 100
+
 
 class ArchivistOrchestrator:
     def __init__(
@@ -63,7 +59,6 @@ class ArchivistOrchestrator:
         self._auto_payout_lock = threading.Lock()
         self._load_auto_payout_guard()
 
-
     def attempt_reconnect(self) -> bool:
         target = getattr(self, "_target_node", None)
         storage_port = self.storage_port
@@ -79,7 +74,6 @@ class ArchivistOrchestrator:
         
         return False
 
-
     def refresh_once(self) -> None:
         if self._refresh_lock.locked():
             return
@@ -88,16 +82,17 @@ class ArchivistOrchestrator:
             idx = None
             info_ok = idx_ok = False
             try:
-                raw_info = self.rpc.call({"type": "GET_NETWORK_INFO"}, timeout=4.0) or {}
+                raw_info = node_route.rpc_get_network_info(self.rpc, timeout=4.0) or {}
                 info = self._normalize_network_info(raw_info)
                 info_ok = isinstance(info, dict)
             except Exception as exc:
                 self._log(f"[refresh] GET_NETWORK_INFO error: {exc}", error=True)
             try:
-                idx = self._call_storage_local({"type": "STOR_INDEX"}, timeout=6.0)
+                if self._server:
+                    idx = self._server.get_index_stats()
                 idx_ok = isinstance(idx, dict)
             except Exception as exc:
-                self._log(f"[refresh] STOR_INDEX error: {exc}", error=True)
+                self._log(f"[refresh] get_index_stats error: {exc}", error=True)
 
             if info_ok:
                 self.last_info = info
@@ -110,7 +105,6 @@ class ArchivistOrchestrator:
                 self._handle_rpc_drop("refresh_index")
             if info_ok and idx_ok:
                 self._trigger_update()
-
 
     def connect(self) -> bool:
         host, miner_port = self._target_node
@@ -138,7 +132,6 @@ class ArchivistOrchestrator:
         self._log("[connect] Failed to connect to any node", error=True)
         return False
 
-
     # ---------- lifecycle ----------
     def start(self) -> bool:
         if not self.connect():
@@ -149,7 +142,6 @@ class ArchivistOrchestrator:
         threading.Thread(target=self._heartbeat_loop, name="ArchivistHeartbeat", daemon=True).start()
         return True
 
-
     def stop(self) -> None:
         self._stop.set()
         self.connected = False
@@ -158,21 +150,17 @@ class ArchivistOrchestrator:
         self.pool_data.clear()
         self._log("Shutdown complete.")
 
-
-# =============================================================================
-# INTERNAL METHOD
-# =============================================================================
-
+    # =========================================================================
+    # INTERNAL METHOD
+    # =========================================================================
 
     def _log(self, msg: str, error: bool = False) -> None:
         if self.log_callback:
             self.log_callback(msg, error)
 
-
     def _trigger_update(self) -> None:
         if self.update_callback:
             self.update_callback()
-
 
     def _normalize_network_info(self, info_obj: Any) -> Optional[Dict[str, Any]]:
         if not isinstance(info_obj, dict) or info_obj.get("error"):
@@ -198,7 +186,6 @@ class ArchivistOrchestrator:
         normalized["peers"] = peers_cnt
         return normalized
 
-
     # ---------- bootstrap ----------
     def _launch_storage_server(self, fallback_start: Optional[int] = None) -> int:
         cand_ports: list[int] = []
@@ -220,22 +207,6 @@ class ArchivistOrchestrator:
             return port
         raise RuntimeError("No free port for storage server")
 
-
-    def _call_storage_local(self, payload: Dict[str, Any], timeout: float = 5.0) -> Optional[Dict[str, Any]]:
-        port = self.storage_port
-        if port is None:
-            return None
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(timeout)
-            s.connect(("127.0.0.1", int(port)))
-            send_message(s, json.dumps(payload).encode("utf-8"))
-            raw = recv_message(s, timeout)
-            if not raw:
-                return None
-            obj = json.loads(raw.decode("utf-8"))
-            return obj if isinstance(obj, dict) else None
-
-
     # ---------- refresh loops ----------
     def _refresh_loop(self) -> None:
         while not self._stop.is_set():
@@ -248,7 +219,6 @@ class ArchivistOrchestrator:
                 self._log(f"[refresh] error: {exc}", error=True)
             time.sleep(self._refresh_sec)
 
-
     def _render_index(self, idx: Dict[str, Any]) -> None:
         files = idx.get("files", {}) if isinstance(idx, dict) else {}
         art_map_idx = idx.get("art_map") if isinstance(idx, dict) else None
@@ -257,20 +227,17 @@ class ArchivistOrchestrator:
         self._mark_pending_payouts(idx)
         self._refresh_pool_listing(files, art_map_idx)
 
-
     def _refresh_pool_listing(self, files: Dict[str, Any], art_map_idx: Optional[Dict[str, Any]] = None) -> None:
         rpc = getattr(self, "rpc", None)
         if not rpc:
             return
-        resp = rpc.call({"type": "GRAFFITI_GET_POSTS", "limit": 500}, timeout=6.0) or {}
-        posts = resp.get("posts") or []
+        posts = node_route.rpc_get_graffiti_posts(rpc, limit=500, timeout=6.0)
         
         files_by_sha, files_by_art = self._build_file_maps(files, art_map_idx)
         self._populate_pool_data(posts, files_by_sha, files_by_art)
         
         self._auto_mark_paid(posts, files_by_art, files_by_sha)
         self._auto_payout()
-
 
     def _build_file_maps(self, files: Dict[str, Any], art_map_idx: Optional[Dict[str, Any]]) -> tuple[dict[str, dict], dict[str, dict]]:
         files_by_sha: dict[str, dict] = {}
@@ -295,7 +262,6 @@ class ArchivistOrchestrator:
                     
         return files_by_sha, files_by_art
 
-
     def _populate_pool_data(self, posts: list[dict], files_by_sha: dict[str, dict], files_by_art: dict[str, dict]) -> None:
         self.pool_data = {}
         for art in posts:
@@ -308,9 +274,8 @@ class ArchivistOrchestrator:
             stats = art.get("stats") or {}
             self.pool_data[aid] = {"post": art, "stats": stats, "file": file_meta["meta"]}
 
-
     def _auto_mark_paid(self, posts: list[dict], files_by_art: dict[str, dict], files_by_sha: dict[str, dict] = None) -> None:
-        if not posts:
+        if not posts or not self._server:
             return
         files_by_sha = files_by_sha or {}
         files_by_art = files_by_art or {}
@@ -333,16 +298,12 @@ class ArchivistOrchestrator:
                 continue
             gid = file_entry.get("id") or sha or aid
             txid = (art.get("txid") or "").strip()
-            resp = self._call_storage_local(
-                {"type": "STOR_PAID", "graffiti_id": gid, "art_id": aid, "txid": txid, "block_height": bh},
-                timeout=4.0,
-            )
+            resp = self._server.mark_paid(graffiti_id=gid, art_id=aid, txid=txid, block_height=bh)
             if isinstance(resp, dict) and resp.get("status") in ("ok", None):
                 marked = True
                 self._log(f"[auto-paid] {gid} (art={aid}, h={bh})")
         if marked:
             self._log("[auto-paid] Updated file payment statuses.")
-
 
     def _load_auto_payout_guard(self) -> None:
         server_db = getattr(self._server, "db", None) if self._server else None
@@ -357,7 +318,6 @@ class ArchivistOrchestrator:
         else:
             self._auto_payout_guard = {}
 
-
     def _save_auto_payout_guard(self) -> None:
         server_db = getattr(self._server, "db", None) if self._server else None
         if server_db is not None:
@@ -365,7 +325,6 @@ class ArchivistOrchestrator:
                 server_db.save_payout_guard(self._auto_payout_guard)
             except Exception as exc:
                 self._log(f"[auto-payout] guard save failed: {exc}", error=True)
-
 
     def _auto_payout(self) -> None:
         if not self.connected or not self.pool_data:
@@ -379,7 +338,6 @@ class ArchivistOrchestrator:
         with self._auto_payout_lock:
             for art_id, entry in self.pool_data.items():
                 self._process_auto_payout_for_art(art_id, entry, tip_epoch, cooldown, recipient)
-
 
     def _process_auto_payout_for_art(self, art_id: str, entry: dict, tip_epoch: int, cooldown: int, recipient: str) -> None:
         stats = entry.get("stats") or {}
@@ -416,16 +374,15 @@ class ArchivistOrchestrator:
         self._log(
             f"[auto-payout] art={art_id[:64]} epoch={last_proof_epoch} gap={gap} pool={pool_balance}"
         )
-        payload = {
-            "type": "GRAFFITI_BUILD_PAYOUT",
-            "art_id": art_id,
-            "recipients": [{"addr": recipient, "amount": pool_balance}],
-            "epoch": last_proof_epoch,
-            "broadcast": True,
-            "ts": int(time.time()),
-            "nonce": secrets.token_hex(16),
-        }
-        resp = self.rpc.call(payload, timeout=8.0)
+        resp = node_route.rpc_build_payout(
+            self.rpc,
+            art_id=art_id,
+            recipient=recipient,
+            amount=pool_balance,
+            epoch=last_proof_epoch,
+            broadcast=True,
+            timeout=8.0,
+        )
         ok = isinstance(resp, dict) and resp.get("status") == "ok"
         self._auto_payout_guard[art_id] = {
             "epoch": last_proof_epoch,
@@ -440,7 +397,6 @@ class ArchivistOrchestrator:
         else:
             self._log(f"[auto-payout] failed art={art_id[:64]} resp={resp}", error=True)
 
-
     # ---------- retention / heartbeat ----------
     def _retention_loop(self) -> None:
         while not self._stop.is_set():
@@ -450,8 +406,8 @@ class ArchivistOrchestrator:
             
             tip = int((self.last_info or {}).get("height") or 0)
             try:
-                gc_resp = self._call_storage_local({"type": "STOR_GC", "tip_height": tip}, timeout=6.0)
-                idx = self._call_storage_local({"type": "STOR_INDEX"}, timeout=6.0)
+                gc_resp = self._server.run_gc(tip_height=tip) if self._server else None
+                idx = self._server.get_index_stats() if self._server else None
                 if isinstance(gc_resp, dict) and gc_resp.get("expired"):
                     self._log(f"[retention] GC removed {gc_resp.get('expired')} expired item(s)")
                 if isinstance(idx, dict):
@@ -464,7 +420,6 @@ class ArchivistOrchestrator:
                 self._log(f"[retention] error: {exc}", error=True)
             self._stop.wait(CFG.RETENTION_GC_SEC)
 
-
     def _run_retention_proofs(self, idx: Dict[str, Any], tip_height: int) -> None:
         files = idx.get("files", {}) if isinstance(idx, dict) else {}
         if not files:
@@ -473,9 +428,8 @@ class ArchivistOrchestrator:
         for gid, meta in files.items():
             self._process_single_retention_proof(gid, meta, epoch_target, tip_height)
 
-
     def _process_single_retention_proof(self, gid: str, meta: dict, epoch_target: int, tip_height: int) -> None:
-        if not isinstance(meta, dict):
+        if not isinstance(meta, dict) or not self._server:
             return
         if not meta.get("paid") or meta.get("state") != "stored":
             return
@@ -487,18 +441,9 @@ class ArchivistOrchestrator:
             self._log(f"[proof] skip {gid[:10]} (missing art_id)")
             return
             
-        payload = {
-            "type": "STOR_PROOF_RUN",
-            "graffiti_id": gid,
-            "art_id": art_id,
-            "tip_height": tip_height,
-        }
-        resp = self._call_storage_local(payload, timeout=10.0)
-        if resp is None:
-            resp = self.rpc.call(payload, timeout=10.0)
-            
+        resp = self._server.generate_retention_proof(graffiti_id=gid, art_id=art_id, tip_height=tip_height)
         if not isinstance(resp, dict) or resp.get("status") != "ok":
-            reason = (resp or {}).get("reason") if isinstance(resp, dict) else "rpc_error"
+            reason = (resp or {}).get("reason") if isinstance(resp, dict) else "error"
             self._log(f"[proof] {gid[:10]} failed ({reason})")
             return
             
@@ -514,44 +459,35 @@ class ArchivistOrchestrator:
         if not self.connected:
             return
             
-        submit = {
-            "type": "GRAFFITI_PROOF_SUBMIT",
-            "art_id": art_id,
-            "epoch": proof_epoch,
-            "offset": offset,
-            "length": length,
-            "hash": phash,
-            "height": tip_height,
-            "seed": seed,
-            "storer": (getattr(self.rpc, "address", "") or "").strip().lower(),
-            "ts": int(time.time()),
-            "nonce": secrets.token_hex(16),
-        }
-        if chunk:
-            submit["chunk"] = chunk
-        if mpath:
-            submit["path"] = mpath
-            
-        ack = self.rpc.call(submit, timeout=8.0)
+        ack = node_route.rpc_submit_proof(
+            self.rpc,
+            art_id=art_id,
+            epoch=proof_epoch,
+            offset=offset,
+            length=length,
+            proof_hash=phash,
+            height=tip_height,
+            seed=seed,
+            chunk=chunk,
+            path=mpath,
+            timeout=8.0,
+        )
         if isinstance(ack, dict) and ack.get("status") == "ok":
             self._log(f"[proof] submitted epoch {proof_epoch} for {art_id[:12]}...")
         else:
             self._log(f"[proof] submit failed: {ack}")
-
 
     def _heartbeat_loop(self) -> None:
         while not self._stop.is_set():
             if not self.connected:
                 self._stop.wait(HEARTBEAT_SEC)
                 continue
-            pong = self.rpc.call({"type": "PING"}, timeout=2.0)
-            ok = isinstance(pong, dict) and pong.get("type") == "PONG"
+            ok = node_route.rpc_ping(self.rpc, timeout=2.0)
             if ok:
                 self.refresh_once()
             else:
                 self._handle_rpc_drop("heartbeat")
             self._stop.wait(HEARTBEAT_SEC)
-
 
     # ---------- state helpers ----------
     def _handle_rpc_drop(self, reason: str = "") -> None:
@@ -566,7 +502,6 @@ class ArchivistOrchestrator:
             self._log("[rpc] reconnected automatically.")
         else:
             self._log("Reconnection failed. Use 'reconnect' command.")
-
 
     def _mark_pending_payouts(self, idx: Dict[str, Any]) -> None:
         files = idx.get("files", {}) if isinstance(idx, dict) else {}
@@ -584,4 +519,4 @@ class ArchivistOrchestrator:
             elif aid in self.pending_paid:
                 self._log(f"[payout] Cleared for {aid}")
                 
-        self.pending_paid = current
+        self.pending_paid = current

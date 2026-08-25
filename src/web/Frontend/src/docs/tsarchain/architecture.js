@@ -46,10 +46,10 @@ export const architecture = {
 │   │   ├── archivist_orchestrator.py        # Storage Node CLI/Main logic
 │   │   ├── connect.py                       # P2P network logic ( send & receive )
 │   │   ├── database_archivist.py            # database logic
-│   │   ├── node_route.py                    # node RPC route
-│   │   ├── server_archivist.py              # server start module
-│   │   ├── storage_guard.py                 # ratelimit guard archivist
-│   │   └── wallet_route.py                  # user RPC route
+│   │   ├── node_route.py                    # Outbound Node RPC client bridge
+│   │   ├── server_archivist.py              # Storage server & local engine module
+│   │   ├── storage_guard.py                 # Ratelimit guard archivist
+│   │   └── wallet_route.py                  # Inbound Wallet RPC route
 │   │
 │   ├── kremlin/                            
 │   │   ├── dialogs/

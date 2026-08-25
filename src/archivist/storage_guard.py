@@ -22,17 +22,12 @@ log = get_ctx_logger("tsarchain.contracts.storage_node.storage_guard")
 
 # ---------- Mapping RPC type -> limiter category ----------
 TYPE_TO_RULE = {
-    # Wallet-facing upload/download
+    # Wallet-facing upload/download & liveness
     "STOR_INIT": "wallet_init",
     "STOR_PUT": "wallet_put",
     "STOR_COMMIT": "wallet_commit",
     "STOR_GET_BY_ART": "wallet_get",
     "PING": "ping",
-    # Node/admin ops
-    "STOR_INDEX": "admin",
-    "STOR_PAID": "admin",
-    "STOR_GC": "admin",
-    "STOR_PROOF_RUN": "admin",
 }
 
 
@@ -49,7 +44,6 @@ RULES = {
     "wallet_put": _rule(CFG.STOR_PUT_RL_IP_BURST, CFG.STOR_PUT_RL_WINDOW_S, CFG.STOR_PUT_RL_BACKOFF_S),
     "wallet_commit": _rule(CFG.STOR_COMMIT_RL_IP_BURST, CFG.STOR_COMMIT_RL_WINDOW_S, CFG.STOR_COMMIT_RL_BACKOFF_S),
     "wallet_get": _rule(CFG.STOR_GET_RL_IP_BURST, CFG.STOR_GET_RL_WINDOW_S, CFG.STOR_GET_RL_BACKOFF_S),
-    "admin": _rule(CFG.STOR_ADMIN_RL_IP_BURST, CFG.STOR_ADMIN_RL_WINDOW_S, CFG.STOR_ADMIN_RL_BACKOFF_S),
     "ping": _rule(20, 10, 2),  # light, for a quick health check
 }
 

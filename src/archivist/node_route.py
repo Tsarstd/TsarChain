@@ -1,264 +1,131 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Tsar Studio
 # Part of TsarChain — see LICENSE
+"""
+Outbound RPC interface from Archivist (Storage Node) to TsarChain Blockchain Node.
+Allowed RPC types: HELLO, PING, GET_NETWORK_INFO, GRAFFITI_GET_POSTS, GRAFFITI_PROOF_SUBMIT, GRAFFITI_BUILD_PAYOUT.
+"""
 
-import os
 import time
-import base64
+import secrets
+from typing import Any, Dict, List, Optional
 
-from typing import Any, Dict, Optional
-
-from tsarchain.utils import config as CFG
 from tsarchain.utils.benchmarks import benchmark
-from tsarchain.contracts import graffiti as GRAFFITI
-
 from tsarchain.utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.contracts.storage_node.node_route")
 
 
-def handle_node_rpc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """
-    RPC handle sent from node/archivist to storage node.
-    """
-    t = str(msg.get("type", "")).upper()
-
-    handlers = {
-        "PING": _handle_ping,
-        "STOR_INDEX": _handle_stor_index,
-        "STOR_PAID": _handle_stor_paid,
-        "STOR_GC": _handle_stor_gc,
-        "STOR_PROOF_RUN": _handle_stor_proof_run,
+@benchmark(label="RPC_HELLO", threshold_ms=25.0)
+def rpc_hello(rpc, my_listen_port: int = 0, trusted: bool = False, timeout: float = 3.0) -> bool:
+    """Send HELLO handshake to register storage role on the Node."""
+    hello_msg = {
+        "type": "HELLO",
+        "role": "NODE_STORAGE",
+        "pubkey": rpc.pub,
+        "address": rpc.address,
+        "url": "",
+        "port": int(my_listen_port) if my_listen_port else 0,
+        "trusted": bool(trusted),
     }
+    _ = rpc.call(hello_msg, timeout=timeout)
+    pong = rpc.call({"type": "PING"}, timeout=timeout)
+    return isinstance(pong, dict) and pong.get("type") == "PONG"
 
-    if t in handlers:
-        return handlers[t](server, msg)
 
+@benchmark(label="RPC_PING", threshold_ms=15.0)
+def rpc_ping(rpc, timeout: float = 2.0) -> bool:
+    """Heartbeat check with the Node."""
+    pong = rpc.call({"type": "PING"}, timeout=timeout)
+    return isinstance(pong, dict) and pong.get("type") == "PONG"
+
+
+@benchmark(label="RPC_GET_NETWORK_INFO", threshold_ms=25.0)
+def rpc_get_network_info(rpc, timeout: float = 4.0) -> Optional[Dict[str, Any]]:
+    """Fetch network status, tip height, and peers count from the Node."""
+    raw = rpc.call({"type": "GET_NETWORK_INFO"}, timeout=timeout)
+    if isinstance(raw, dict) and not raw.get("error"):
+        return raw
     return None
 
-# =============================================================================
-# RPC
-# =============================================================================
 
-def _handle_ping(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    return {"type": "PONG"}
-
-@benchmark(label="STOR_INDEX", threshold_ms=15.0)
-def _handle_stor_index(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    server.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in (server.index.get("files") or {}).values())
-    return {"type": "STOR_INDEX", "status": "ok", **server.index}
-
-def _finalize_storage(server, aid: str, meta: dict) -> tuple[bool, Optional[str]]:
-    already_final = (server.db.has_final(aid) is True)
-    if not already_final:
-        promoted = (server.db.promote_incoming(aid) is True)
-        if not promoted:
-            data = server.db.pop_incoming(aid)
-            if data is None:
-                p = meta.get("path")
-                if p and os.path.isfile(p):
-                    final_p = server.db.get_final_blob_path(aid)
-                    if final_p:
-                        os.makedirs(os.path.dirname(final_p) or ".", exist_ok=True)
-                        try:
-                            os.replace(p, final_p)
-                            promoted = True
-                        except OSError:
-                            pass
-            if data is not None:
-                server.db.put_final(aid, data)
-                promoted = True
-        if not promoted and not server.db.has_final(aid):
-            return False, "missing_file"
-    server.db.delete_blob(aid, incoming=True)
-    blob_p = server.db.get_final_blob_path(aid)
-    if blob_p and isinstance(blob_p, str):
-        meta["path"] = os.path.normpath(blob_p).replace("\\", "/")
-    else:
-        meta["path"] = f"lmdb://final/{aid}"
-    meta["state"] = "stored"
-    return True, None
+@benchmark(label="RPC_GET_GRAFFITI_POSTS", threshold_ms=50.0)
+def rpc_get_graffiti_posts(rpc, limit: int = 500, timeout: float = 6.0) -> List[Dict[str, Any]]:
+    """Query confirmed on-chain graffiti posts from the Node."""
+    resp = rpc.call({"type": "GRAFFITI_GET_POSTS", "limit": int(limit)}, timeout=timeout)
+    if isinstance(resp, dict):
+        posts = resp.get("posts")
+        if isinstance(posts, list):
+            return posts
+    return []
 
 
-@benchmark(label="STOR_PAID", threshold_ms=500.0)
-def _handle_stor_paid(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    aid = str(msg.get("graffiti_id", "")).strip()
-    art_id = str(msg.get("art_id", "")).strip().lower()
-    txid = str(msg.get("txid", "")).strip()
-    block_h = int(msg.get("block_height", 0) or 0)
-    meta = server.index.get("files", {}).get(aid)
-    if not meta and art_id:
-        real_gid = server.index.get("art_map", {}).get(art_id)
-        if real_gid:
-            meta = server.index.get("files", {}).get(real_gid)
-            aid = real_gid
-    if not meta:
-        for gid_k, m in server.index.get("files", {}).items():
-            if m.get("sha256", "").lower() == aid.lower() or m.get("art_id", "").lower() == aid.lower():
-                meta = m
-                aid = gid_k
-                break
-    if not aid or not meta:
-        return {"type": "STOR_PAID", "status": "error", "reason": "no_such"}
-        
-    if art_id:
-        meta["art_id"] = art_id
-        server.index.setdefault("art_map", {})[art_id] = aid
-
-    success, err_reason = _finalize_storage(server, aid, meta)
-    if not success:
-        return {"type": "STOR_PAID", "status": "error", "reason": err_reason}
-
-    meta["paid"] = True
-    if txid:
-        meta["txid_paid"] = txid
-    if block_h > 0:
-        meta["confirmed_at_height"] = block_h
-        meta["expire_at_height"] = 0
-    server.index["files"][aid] = server._normalize_file_meta(aid, meta)
-    server.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in server.index["files"].values())
-    server._save_index()
-    
-    return {
-        "type": "STOR_PAID",
-        "status": "ok",
-        "graffiti_id": aid,
-        "expire_at_height": meta.get("expire_at_height", 0),
-        "confirmed_at_height": meta.get("confirmed_at_height", 0),
+@benchmark(label="RPC_SUBMIT_PROOF", threshold_ms=50.0)
+def rpc_submit_proof(
+    rpc,
+    *,
+    art_id: str,
+    epoch: int,
+    offset: int,
+    length: int,
+    proof_hash: str,
+    height: int,
+    seed: str,
+    chunk: Optional[str] = None,
+    path: Optional[list] = None,
+    timeout: float = 8.0,
+) -> Optional[Dict[str, Any]]:
+    """Submit cryptographic Proof of Retention (PoR) for an artifact chunk to the Node."""
+    payload: Dict[str, Any] = {
+        "type": "GRAFFITI_PROOF_SUBMIT",
+        "art_id": str(art_id).strip().lower(),
+        "epoch": int(epoch),
+        "offset": int(offset),
+        "length": int(length),
+        "hash": str(proof_hash),
+        "height": int(height),
+        "seed": str(seed),
+        "storer": (getattr(rpc, "address", "") or "").strip().lower(),
+        "ts": int(time.time()),
+        "nonce": secrets.token_hex(16),
     }
+    if chunk:
+        payload["chunk"] = chunk
+    if path:
+        payload["path"] = path
 
-@benchmark(label="STOR_GC", threshold_ms=15.0)
-def _handle_stor_gc(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    tip_h = int(msg.get("tip_height", 0) or 0)
-    expire_after = max(0, int(CFG.GRAFFITI_EXPIRE_AFTER_BLOCKS))
-    files = server.index.get("files", {}) or {}
-    
-    remove_keys = _find_expired_keys(files, tip_h, expire_after)
-    expired = _remove_expired_files(server, files, remove_keys)
-            
-    server.index["files"] = files
-    server.index["bytes_used"] = sum(int(v.get("size_bytes", 0)) for v in files.values())
-    server._save_index()
-    if expired:
-        log.info("[STOR_GC] expired=%s tip=%s", expired, tip_h)
-        
-    return {"type": "STOR_GC", "status": "ok", "expired": expired}
+    return rpc.call(payload, timeout=timeout)
 
-@benchmark(label="STOR_PROOF_RUN", threshold_ms=75.0)
-def _handle_stor_proof_run(server, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    aid = str(msg.get("graffiti_id", "")).strip()
-    art_id = str(msg.get("art_id", "")).strip().lower()
-    tip_h = int(msg.get("tip_height", 0) or 0)
-    files = server.index.get("files", {}) or {}
-    if art_id and not aid:
-        aid = (server.index.get("art_map") or {}).get(art_id, "")
 
-    meta = files.get(aid) if aid else None
-    if not meta:
-        return {"type": "STOR_PROOF_RUN", "status": "error", "reason": "no_such"}
-
-    size = int(meta.get("size_bytes", 0) or 0)
-    art_norm = str(meta.get("art_id") or art_id or "").strip().lower()
-    if not art_norm:
-        meta["missed_proofs"] = int(meta.get("missed_proofs", 0)) + 1
-        meta["proof_fail_reason"] = "missing_art_id"
-        server.index["files"][aid] = server._normalize_file_meta(aid, meta)
-        server._save_index()
-        return {"type": "STOR_PROOF_RUN", "status": "error", "reason": "missing_art_id"}
-
-    merkle_chunk = int(CFG.GRAFFITI_PROOF_CHUNK_BYTES)
-    challenge = GRAFFITI.calc_proof_challenge(art_norm, size, tip_h, chunk_bytes=merkle_chunk)
-    offset = int(challenge.get("offset", 0))
-    length = int(challenge.get("length", 0))
-    
-    chunk_index = offset // merkle_chunk if merkle_chunk > 0 else 0
-    chunk, merkle_path = _get_chunk_and_merkle(server, aid, offset, length, merkle_chunk, chunk_index)
-            
-    proof_hash = GRAFFITI.hash_proof_chunk(chunk)
-    chunk_b64 = base64.b64encode(chunk).decode("ascii")
-    now_ts = int(time.time())
-    meta.update(
-        {
-            "last_proof_epoch": int(challenge.get("epoch", 0)),
-            "last_proof_ts": now_ts,
-            "last_proof_offset": offset,
-            "last_proof_length": length,
-            "last_proof_hash": proof_hash,
-            "proof_fail_reason": "",
-            "proof_status": "ok",
-            "missed_proofs": max(0, int(meta.get("missed_proofs", 0))),
-            "last_proof_height": tip_h,
-        }
-    )
-    if art_norm:
-        server.index.setdefault("art_map", {})[art_norm] = aid
-        meta["art_id"] = art_norm
-    server.index["files"][aid] = server._normalize_file_meta(aid, meta)
-    server._save_index()
-        
-    return {
-        "type": "STOR_PROOF_RUN",
-        "status": "ok",
-        "graffiti_id": aid,
-        "art_id": art_norm,
-        "epoch": int(challenge.get("epoch", 0)),
-        "offset": offset,
-        "length": length,
-        "hash": proof_hash,
-        "seed": challenge.get("seed"),
-        "height": tip_h,
-        "chunk": chunk_b64,
-        "path": merkle_path,
+@benchmark(label="RPC_BUILD_PAYOUT", threshold_ms=50.0)
+def rpc_build_payout(
+    rpc,
+    *,
+    art_id: str,
+    recipient: str,
+    amount: int,
+    epoch: int,
+    broadcast: bool = True,
+    timeout: float = 8.0,
+) -> Optional[Dict[str, Any]]:
+    """Request Node to construct and broadcast payout transaction for storage compensation."""
+    payload: Dict[str, Any] = {
+        "type": "GRAFFITI_BUILD_PAYOUT",
+        "art_id": str(art_id).strip().lower(),
+        "recipients": [{"addr": str(recipient).strip().lower(), "amount": int(amount)}],
+        "epoch": int(epoch),
+        "broadcast": bool(broadcast),
+        "ts": int(time.time()),
+        "nonce": secrets.token_hex(16),
     }
-
-# =============================================================================
-# HELPERS
-# =============================================================================
-
-def _find_expired_keys(files: dict, tip_h: int, expire_after: int) -> list[str]:
-    remove_keys = []
-    for gid, meta in files.items():
-        if not isinstance(meta, dict):
-            continue
-        if (not meta.get("paid")) and expire_after > 0 and tip_h > 0:
-            expire_h = int(meta.get("expire_at_height", 0) or 0)
-            if expire_h <= 0:
-                expire_h = tip_h + expire_after
-                meta["expire_at_height"] = expire_h
-        expire_h = int(meta.get("expire_at_height", 0) or 0)
-        if expire_h and tip_h and expire_h <= tip_h and not meta.get("paid"):
-            remove_keys.append(gid)
-    return remove_keys
-
-def _remove_expired_files(server, files: dict, remove_keys: list[str]) -> int:
-    expired = 0
-    for gid in remove_keys:
-        meta = files.pop(gid, None) or {}
-        expired += 1
-        server.db.delete_blob(gid, incoming=True, final=True)
-        art_id = str(meta.get("art_id", "")).strip().lower()
-        if art_id and server.index.get("art_map", {}).get(art_id) == gid:
-            server.index["art_map"].pop(art_id, None)
-    return expired
-
-def _get_chunk_and_merkle(server, aid: str, offset: int, length: int, merkle_chunk: int, chunk_index: int):
-    chunk = server.db.get_final_bytes_range(aid, offset, length)
-    if chunk is None:
-        raise FileNotFoundError("file_missing")
-    merkle_path = server.db.get_final_merkle_path(aid, merkle_chunk, chunk_index)
-    if merkle_path is None:
-        blob_path = server.db.get_final_blob_path(aid)
-        if not os.path.isfile(blob_path):
-            blob_path = server.db.get_incoming_bin_path(aid)
-        if not os.path.isfile(blob_path):
-            blob_path = server.db.get_incoming_part_path(aid)
-        if os.path.isfile(blob_path):
-            merkle_path = GRAFFITI.merkle_path_for_file(blob_path, merkle_chunk, chunk_index)
-            log.debug("use merkle_path_for_file")
-        else:
-            raise FileNotFoundError("file_missing")
-    else:
-        log.debug("use merkle_path_for_lmdb")
-    return chunk, merkle_path
+    return rpc.call(payload, timeout=timeout)
 
 
-__all__ = ["handle_node_rpc"]
+__all__ = [
+    "rpc_hello",
+    "rpc_ping",
+    "rpc_get_network_info",
+    "rpc_get_graffiti_posts",
+    "rpc_submit_proof",
+    "rpc_build_payout",
+]
+
