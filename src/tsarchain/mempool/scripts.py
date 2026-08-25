@@ -18,14 +18,14 @@ def extract_script_bytes(spk) -> bytes | None:
     if spk is None:
         return None
     try:
-        return spk.serialize()
-    except (AttributeError, TypeError):
+        ser = spk.serialize
+        if callable(ser):
+            return ser()
+    except AttributeError:
         pass
-    if isinstance(spk, Script):
-        return spk.serialize()
-    if isinstance(spk, (bytes, bytearray)):
+    if type(spk) in (bytes, bytearray):
         return bytes(spk)
-    if isinstance(spk, str):
+    if type(spk) is str:
         try:
             return bytes.fromhex(spk)
         except ValueError:
@@ -47,13 +47,17 @@ def script_to_address(script) -> str | None:
 
 
 def get_utxo_script_bytes(utxo_entry) -> bytes:
-    if isinstance(utxo_entry, Script):
-        return utxo_entry.serialize()
+    try:
+        ser = utxo_entry.serialize
+        if callable(ser):
+            return ser()
+    except AttributeError:
+        pass
 
-    if isinstance(utxo_entry, dict):
+    if type(utxo_entry) is dict:
         tx_out = utxo_entry.get("tx_out")
         if tx_out is not None:
-            if isinstance(tx_out, dict):
+            if type(tx_out) is dict:
                 res = extract_script_bytes(tx_out.get("script_pubkey"))
                 if res is not None:
                     return res

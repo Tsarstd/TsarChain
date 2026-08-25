@@ -89,15 +89,15 @@ class SendService:
         outputs_payload: list[dict[str, Any]] = []
         if extra_outputs:
             for item in extra_outputs:
-                if not isinstance(item, dict):
-                    continue
                 out = {}
+
                 if item.get("address"):
                     out["address"] = str(item["address"]).strip().lower()
                 if "amount" in item:
                     out["amount"] = int(item["amount"])
                 if out:
                     outputs_payload.append(out)
+
         base_addr = (to_addr or "").strip().lower()
         use_multi = bool(extra_outputs) or bool(opret_hex)
         if use_multi:

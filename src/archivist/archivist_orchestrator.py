@@ -87,13 +87,13 @@ class ArchivistOrchestrator:
             try:
                 raw_info = node_route.rpc_get_network_info(self.rpc, timeout=4.0) or {}
                 info = self._normalize_network_info(raw_info)
-                info_ok = isinstance(info, dict)
+                info_ok = type(info) is dict
             except Exception as exc:
                 self._log(f"[refresh] GET_NETWORK_INFO error: {exc}", error=True)
             try:
                 if self._server:
                     idx = self._server.get_index_stats()
-                idx_ok = isinstance(idx, dict)
+                idx_ok = type(idx) is dict
             except Exception as exc:
                 self._log(f"[refresh] get_index_stats error: {exc}", error=True)
 
@@ -166,20 +166,22 @@ class ArchivistOrchestrator:
             self.update_callback()
 
     def _normalize_network_info(self, info_obj: Any) -> Optional[Dict[str, Any]]:
-        if not isinstance(info_obj, dict) or info_obj.get("error"):
+        if info_obj.get("error"):
             return None
         data = info_obj.get("data") if info_obj.get("type") == "NETWORK_INFO" else info_obj
-        chain = data.get("chain") if isinstance(data, dict) else {}
-        peers = data.get("peers") if isinstance(data, dict) else {}
+
+        chain = data.get("chain")
+        peers = data.get("peers")
 
         def _as_int(val: Any) -> Optional[int]:
             return int(val)
 
-        height = _as_int(chain.get("tip_height") if isinstance(chain, dict) else None)
-        if isinstance(data, dict) and height is None:
+        height = _as_int(chain.get("tip_height"))
+        if height is None:
             height = _as_int(data.get("height"))
-        peers_cnt = _as_int(peers.get("count") if isinstance(peers, dict) else None)
-        if isinstance(data, dict) and peers_cnt is None:
+
+        peers_cnt = _as_int(peers.get("count"))
+        if peers_cnt is None:
             peers_cnt = _as_int(data.get("peers"))
 
         if height is None and peers_cnt is None:
@@ -222,21 +224,19 @@ class ArchivistOrchestrator:
                 self._log(f"[refresh] error: {exc}", error=True)
             time.sleep(self._refresh_sec)
 
+
     def _render_index(self, idx: Dict[str, Any]) -> None:
-        files = idx.get("files", {}) if isinstance(idx, dict) else {}
-        art_map_idx = idx.get("art_map") if isinstance(idx, dict) else None
-        if not isinstance(files, dict):
-            files = {}
+        files = idx.get("files") or {}
+        art_map_idx = idx.get("art_map")
         self._mark_pending_payouts(idx)
         self._refresh_pool_listing(files, art_map_idx)
 
+
     def _refresh_pool_listing(self, files: Dict[str, Any], art_map_idx: Optional[Dict[str, Any]] = None) -> None:
-        try:
-            rpc = self.rpc
-        except AttributeError:
-            rpc = None
+        rpc = self.rpc
         if not rpc:
             return
+
         posts = node_route.rpc_get_graffiti_posts(rpc, limit=500, timeout=6.0)
         
         files_by_sha, files_by_art = self._build_file_maps(files, art_map_idx)
@@ -245,12 +245,14 @@ class ArchivistOrchestrator:
         self._auto_mark_paid(posts, files_by_art, files_by_sha)
         self._auto_payout()
 
+
     def _build_file_maps(self, files: Dict[str, Any], art_map_idx: Optional[Dict[str, Any]]) -> tuple[dict[str, dict], dict[str, dict]]:
         files_by_sha: dict[str, dict] = {}
         files_by_art: dict[str, dict] = {}
         art_map = art_map_idx or {}
-        
-        for gid, meta in (files or {}).items():
+        items = (files or {}).items()
+
+        for gid, meta in items:
             sha = str(meta.get("sha256") or "").lower()
             if sha:
                 files_by_sha[sha] = {"id": gid, "meta": meta}
@@ -258,13 +260,15 @@ class ArchivistOrchestrator:
             if art_id:
                 files_by_art[art_id] = {"id": gid, "meta": meta}
                 
-        if isinstance(art_map, dict):
+        if art_map:
             for art_id, gid in art_map.items():
                 if art_id in files_by_art:
                     continue
-                meta = files.get(gid) if isinstance(files, dict) else None
-                if isinstance(meta, dict):
+
+                meta = files.get(gid)
+                if meta:
                     files_by_art[str(art_id).lower()] = {"id": gid, "meta": meta}
+
                     
         return files_by_sha, files_by_art
 
@@ -305,38 +309,31 @@ class ArchivistOrchestrator:
             gid = file_entry.get("id") or sha or aid
             txid = (art.get("txid") or "").strip()
             resp = self._server.mark_paid(graffiti_id=gid, art_id=aid, txid=txid, block_height=bh)
-            if isinstance(resp, dict) and resp.get("status") in ("ok", None):
+            if resp.get("status") in ("ok", None):
                 marked = True
                 self._log(f"[auto-paid] {gid} (art={aid}, h={bh})")
         if marked:
             self._log("[auto-paid] Updated file payment statuses.")
 
+
     def _load_auto_payout_guard(self) -> None:
-        try:
-            server_db = self._server.db if self._server else None
-        except AttributeError:
-            server_db = None
+        server_db = self._server.db if self._server else None
         if server_db is not None:
-            try:
-                server_db.cleanup_expired_payout_guards()
-                server_db.cleanup_expired_incoming()
-                self._auto_payout_guard = server_db.load_payout_guard()
-            except Exception as exc:
-                self._log(f"[auto-payout] guard load failed: {exc}", error=True)
-                self._auto_payout_guard = {}
+            server_db.cleanup_expired_payout_guards()
+            server_db.cleanup_expired_incoming()
+            self._auto_payout_guard = server_db.load_payout_guard()
         else:
             self._auto_payout_guard = {}
 
+
     def _save_auto_payout_guard(self) -> None:
-        try:
-            server_db = self._server.db if self._server else None
-        except AttributeError:
-            server_db = None
+        server_db = self._server.db if self._server else None
         if server_db is not None:
             try:
                 server_db.save_payout_guard(self._auto_payout_guard)
             except Exception as exc:
                 self._log(f"[auto-payout] guard save failed: {exc}", error=True)
+
 
     def _auto_payout(self) -> None:
         if not self.connected or not self.pool_data:
@@ -344,10 +341,7 @@ class ArchivistOrchestrator:
         tip_height = int((self.last_info or {}).get("height") or 0)
         tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
         cooldown = int(CFG.ARCHIVIST_AUTO_PAYOUT_COOLDOWN_SEC)
-        try:
-            rpc_addr = self.rpc.address
-        except AttributeError:
-            rpc_addr = ""
+        rpc_addr = self.rpc.address
         recipient = str(rpc_addr or "").strip().lower()
         if not recipient:
             return
@@ -372,9 +366,9 @@ class ArchivistOrchestrator:
             
         gap = tip_epoch - last_proof_epoch
         guard_entry = self._auto_payout_guard.get(art_id, {})
-        guard_epoch = int(guard_entry.get("epoch", -1)) if isinstance(guard_entry, dict) else -1
-        guard_ts = int(guard_entry.get("ts", 0)) if isinstance(guard_entry, dict) else 0
-        guard_status = str(guard_entry.get("status") or "").lower() if isinstance(guard_entry, dict) else ""
+        guard_epoch = int(guard_entry.get("epoch", -1))
+        guard_ts = int(guard_entry.get("ts", 0))
+        guard_status = str(guard_entry.get("status") or "").lower()
         
         if guard_epoch > last_proof_epoch:
             return
@@ -399,7 +393,8 @@ class ArchivistOrchestrator:
             broadcast=True,
             timeout=8.0,
         )
-        ok = isinstance(resp, dict) and resp.get("status") == "ok"
+        ok = resp.get("status") == "ok"
+        
         self._auto_payout_guard[art_id] = {
             "epoch": last_proof_epoch,
             "ts": int(time.time()),
@@ -424,9 +419,10 @@ class ArchivistOrchestrator:
             try:
                 gc_resp = self._server.run_gc(tip_height=tip) if self._server else None
                 idx = self._server.get_index_stats() if self._server else None
-                if isinstance(gc_resp, dict) and gc_resp.get("expired"):
+                if gc_resp.get("expired"):
                     self._log(f"[retention] GC removed {gc_resp.get('expired')} expired item(s)")
-                if isinstance(idx, dict):
+                    
+                if idx:
                     self.last_index = idx
                     self._run_retention_proofs(idx, tip)
                     self._mark_pending_payouts(idx)
@@ -437,7 +433,7 @@ class ArchivistOrchestrator:
             self._stop.wait(CFG.RETENTION_GC_SEC)
 
     def _run_retention_proofs(self, idx: Dict[str, Any], tip_height: int) -> None:
-        files = idx.get("files", {}) if isinstance(idx, dict) else {}
+        files = idx.get("files") or {}
         if not files:
             return
         epoch_target = GRAFFITI.compute_proof_epoch(tip_height)
@@ -445,8 +441,9 @@ class ArchivistOrchestrator:
             self._process_single_retention_proof(gid, meta, epoch_target, tip_height)
 
     def _process_single_retention_proof(self, gid: str, meta: dict, epoch_target: int, tip_height: int) -> None:
-        if not isinstance(meta, dict) or not self._server:
+        if not self._server or not meta:
             return
+        
         if not meta.get("paid") or meta.get("state") != "stored":
             return
         last_epoch = int(meta.get("last_proof_epoch", -1))
@@ -458,9 +455,12 @@ class ArchivistOrchestrator:
             return
             
         resp = self._server.generate_retention_proof(graffiti_id=gid, art_id=art_id, tip_height=tip_height)
-        if not isinstance(resp, dict) or resp.get("status") != "ok":
-            reason = (resp or {}).get("reason") if isinstance(resp, dict) else "error"
-            self._log(f"[proof] {gid[:10]} failed ({reason})")
+        ok_proof = False
+        if resp.get("status") == "ok":
+            ok_proof = True
+        if not ok_proof:
+            reason = resp.get("reason")
+            self._log(f"[proof] {gid[:10]} failed ({reason or 'error'})")
             return
             
         proof_epoch = int(resp.get("epoch", epoch_target))
@@ -488,9 +488,12 @@ class ArchivistOrchestrator:
             path=mpath,
             timeout=8.0,
         )
-        if isinstance(ack, dict) and ack.get("status") == "ok":
-            self._log(f"[proof] submitted epoch {proof_epoch} for {art_id[:12]}...")
-        else:
+        try:
+            if ack.get("status") == "ok":
+                self._log(f"[proof] submitted epoch {proof_epoch} for {art_id[:12]}...")
+            else:
+                self._log(f"[proof] submit failed: {ack}")
+        except AttributeError:
             self._log(f"[proof] submit failed: {ack}")
 
     def _heartbeat_loop(self) -> None:
@@ -520,19 +523,16 @@ class ArchivistOrchestrator:
             self._log("Reconnection failed. Use 'reconnect' command.")
 
     def _mark_pending_payouts(self, idx: Dict[str, Any]) -> None:
-        files = idx.get("files", {}) if isinstance(idx, dict) else {}
+        files = idx.get("files") or {}
         current: set[str] = set()
-        for aid, meta in (files.items() if isinstance(files, dict) else []):
-            if not isinstance(meta, dict):
-                continue
-            
+        items = files.items()
+        for aid, meta in items:
             if meta.get("state") == "stored" and not meta.get("paid"):
                 current.add(aid)
                 if aid not in self.pending_paid:
                     size = int(meta.get("size_bytes", 0))
                     self._log(f"[payout] Pending for {aid} ({size} bytes)")
-                    
             elif aid in self.pending_paid:
                 self._log(f"[payout] Cleared for {aid}")
                 
-        self.pending_paid = current
+        self.pending_paid = current

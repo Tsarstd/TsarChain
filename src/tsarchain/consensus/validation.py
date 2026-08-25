@@ -130,9 +130,9 @@ class BlockValidator:
             except AttributeError:
                 existing = None
             existing_bytes = None
-            if isinstance(existing, (bytes, bytearray)):
+            if type(existing) in (bytes, bytearray):
                 existing_bytes = bytes(existing)
-            elif isinstance(existing, str):
+            elif type(existing) is str:
                 existing_bytes = bytes.fromhex(existing)
 
             if existing_bytes is not None and existing_bytes != txid_bytes:
@@ -206,7 +206,7 @@ class BlockValidator:
     def _validate_merkle(self, block: Block) -> bool: 
         computed = merkle_root(block.transactions or [])
         header_mr = block.merkle_root
-        if isinstance(header_mr, str):
+        if type(header_mr) is str:
             header_mr = bytes.fromhex(header_mr)
         return computed == header_mr
 
@@ -394,7 +394,7 @@ class BlockValidator:
             cb_block_id = cb.block_id
         except AttributeError:
             cb_block_id = None
-        if isinstance(cb_block_id, str):
+        if type(cb_block_id) is str:
             cb_block_id = cb_block_id.strip().lower()
         if graffiti_posts == 1 and first_art_id:
             if not cb_block_id or cb_block_id.strip().lower() != first_art_id:
@@ -461,7 +461,7 @@ class BlockValidator:
             return False
 
         recs = meta.get("recipients") or []
-        if not isinstance(recs, list) or not recs:
+        if type(recs) is not list or not recs:
             self.blockchain._last_block_validation_error = "payout_no_recipients"
             return False
             
@@ -614,7 +614,7 @@ class BlockValidator:
 
     def _verify_block_fees_and_rewards(self, block, txs, cb, fees) -> bool: 
         fees_list = []
-        if isinstance(fees, (list, tuple)):
+        if type(fees) in (list, tuple):
             if len(fees) != max(len(txs) - 1, 0):
                 self.blockchain._last_block_validation_error = "fee_mismatch"
                 return False
@@ -659,7 +659,7 @@ class BlockValidator:
         if include_witness:
             try:
                 buf = tx._cached_raw_tx_w
-                if isinstance(buf, (bytes, bytearray)):
+                if type(buf) in (bytes, bytearray):
                     return bytes(buf)
             except AttributeError:
                 pass
@@ -672,7 +672,7 @@ class BlockValidator:
         else:
             try:
                 buf = tx._cached_raw_tx_nowit
-                if isinstance(buf, (bytes, bytearray)):
+                if type(buf) in (bytes, bytearray):
                     return bytes(buf)
             except AttributeError:
                 pass
@@ -701,7 +701,7 @@ class BlockValidator:
     def _estimate_tx_size(self, tx) -> Optional[int]: 
         try:
             cached = tx._cached_raw_tx_w
-            if isinstance(cached, (bytes, bytearray)):
+            if type(cached) in (bytes, bytearray):
                 return len(cached)
         except AttributeError:
             pass
@@ -710,7 +710,7 @@ class BlockValidator:
             serialize_fn = tx.serialize
             if callable(serialize_fn):
                 raw = serialize_fn()
-                return len(raw if isinstance(raw, (bytes, bytearray)) else bytes.fromhex(raw))
+                return len(raw if type(raw) in (bytes, bytearray) else bytes.fromhex(raw))
         except (AttributeError, TypeError):
             pass
         except Exception:
@@ -718,7 +718,7 @@ class BlockValidator:
             
         try:
             raw_attr = tx.raw
-            if isinstance(raw_attr, (bytes, bytearray)):
+            if type(raw_attr) in (bytes, bytearray):
                 return len(raw_attr)
         except AttributeError:
             pass
@@ -792,8 +792,8 @@ class BlockValidator:
                 except AttributeError:
                     txid_val = None
             txid_b = txid_val
-            if not isinstance(txid_b, (bytes, bytearray)):
-                txid_b = bytes.fromhex(txid_b) if isinstance(txid_b, str) else None
+            if type(txid_b) not in (bytes, bytearray):
+                txid_b = bytes.fromhex(txid_b) if type(txid_b) is str else None
             if txid_b is None:
                 self.blockchain._last_block_validation_error = "txid_missing"
                 return False
@@ -825,10 +825,10 @@ class BlockValidator:
             return None
         candidate = entry
         spk = None
-        if isinstance(candidate, dict):
+        if type(candidate) is dict:
             tx_out = candidate.get("tx_out")
             if tx_out is not None:
-                if isinstance(tx_out, dict):
+                if type(tx_out) is dict:
                     spk = tx_out.get("script_pubkey")
                 else:
                     try:
@@ -837,9 +837,9 @@ class BlockValidator:
                         pass
             if spk is None:
                 spk = candidate.get("script_pubkey")
-        elif isinstance(candidate, (bytes, bytearray)):
+        elif type(candidate) in (bytes, bytearray):
             return bytes(candidate)
-        elif isinstance(candidate, str):
+        elif type(candidate) is str:
             try:
                 return bytes.fromhex(candidate)
             except ValueError:
@@ -847,7 +847,7 @@ class BlockValidator:
         else:
             try:
                 tx_out = candidate.tx_out
-                if isinstance(tx_out, dict):
+                if type(tx_out) is dict:
                     spk = tx_out.get("script_pubkey")
                 else:
                     try:
@@ -862,9 +862,9 @@ class BlockValidator:
 
         if spk is None:
             return None
-        if isinstance(spk, (bytes, bytearray)):
+        if type(spk) in (bytes, bytearray):
             return bytes(spk)
-        if isinstance(spk, str):
+        if type(spk) is str:
             try:
                 return bytes.fromhex(spk)
             except ValueError:
@@ -901,9 +901,9 @@ class BlockValidator:
     def _extract_raw_spk(self, spk_obj) -> bytes | None: 
         if spk_obj is None:
             return None
-        if isinstance(spk_obj, (bytes, bytearray)):
+        if type(spk_obj) in (bytes, bytearray):
             return bytes(spk_obj)
-        if isinstance(spk_obj, str):
+        if type(spk_obj) is str:
             try:
                 return bytes.fromhex(spk_obj)
             except ValueError:
@@ -962,19 +962,19 @@ class BlockValidator:
     def _script_to_bytes(self, spk_obj): 
         if spk_obj is None:
             return None
-        if isinstance(spk_obj, dict):
+        if type(spk_obj) is dict:
             spk_obj = spk_obj.get("script_pubkey", spk_obj.get("script"))
-        if isinstance(spk_obj, (bytes, bytearray)):
+        if type(spk_obj) in (bytes, bytearray):
             return bytes(spk_obj)
-        if isinstance(spk_obj, str):
+        if type(spk_obj) is str:
             return bytes.fromhex(spk_obj)
         try:
             spk_obj = spk_obj.script_pubkey
         except AttributeError:
             pass
-        if isinstance(spk_obj, (bytes, bytearray)):
+        if type(spk_obj) in (bytes, bytearray):
             return bytes(spk_obj)
-        if isinstance(spk_obj, str):
+        if type(spk_obj) is str:
             return bytes.fromhex(spk_obj)
         try:
             return spk_obj.serialize()
@@ -988,13 +988,13 @@ class BlockValidator:
     def _txid_hex(self, value): 
         if value is None:
             return None
-        if isinstance(value, (bytes, bytearray)):
+        if type(value) in (bytes, bytearray):
             return value.hex()
         return str(value)
 
 
     def _legacy_lookup(self, snapshot_map, prev_txid_hex: str, prev_index: int): 
-        if not isinstance(snapshot_map, dict):
+        if type(snapshot_map) is not dict:
             return None
 
         txid_lower = prev_txid_hex.lower()
@@ -1013,7 +1013,7 @@ class BlockValidator:
 
         # Bucket snapshot_map[txid_hex][vout]
         bucket = snapshot_map.get(txid_lower) or snapshot_map.get(prev_txid_hex)
-        if isinstance(bucket, dict) and idx in bucket:
+        if type(bucket) is dict and idx in bucket:
             return bucket[idx]
 
         # Tuple keys (txid_hex, vout) or (txid_bytes, vout)
@@ -1038,7 +1038,7 @@ class BlockValidator:
 
 
     def _normalize_snapshot_entry(self, entry, key_desc: str): 
-        if isinstance(entry, dict):
+        if type(entry) is dict:
             tx_out = entry.get("tx_out") or entry
             script_bytes = self._script_to_bytes(tx_out)
             if script_bytes is None:
@@ -1046,7 +1046,7 @@ class BlockValidator:
             if script_bytes is None:
                 log.warning("[native_snapshot] entry %s missing script", key_desc)
                 return None
-            if isinstance(tx_out, dict):
+            if type(tx_out) is dict:
                 amt_val = tx_out.get("amount")
             else:
                 try:
@@ -1102,7 +1102,7 @@ class BlockValidator:
 
         utxo_items = []
         for key, entry in snapshot_dict.items():
-            if isinstance(key, bytes):
+            if type(key) in (bytes, bytearray):
                 key = key.decode("utf-8")
             if ":" not in key:
                 continue
@@ -1126,7 +1126,7 @@ class BlockValidator:
         entry = None
         if callable(lookup_fn):
             entry = lookup_fn(txid_b.hex(), int(vout_i))
-        elif isinstance(utxo_view, dict):
+        elif type(utxo_view) is dict:
             key = f"{txid_b.hex()}:{int(vout_i)}"
             entry = utxo_view.get(key) or utxo_view.get(key.lower())
         if entry is None:

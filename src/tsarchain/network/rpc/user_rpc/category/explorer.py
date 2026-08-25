@@ -55,7 +55,7 @@ def get_balances(self, message, pow_obj, base_identity, *,
     items = {}
     for addr_str in addrs:
         b = self.broadcast.utxodb.get_balance(addr_str, mode="breakdown", current_height=tip_height)
-        if not isinstance(b, dict):
+        if type(b) is not dict:
             b = {"total": int(b or 0), "mature": int(b or 0), "immature": 0}
         pending_out = int(pending_out_map.get(addr_str, 0))
         pending_in = int(incoming_map.get(addr_str, 0))
@@ -97,10 +97,10 @@ def get_network_info(self, message, pow_obj, base_identity, *,
     snap = self.broadcast.blockchain.chain_storage._read_snapshot_state()
     overlay_realtime_mempool_stats(snap, self)
     with self.lock:
-        peers_sane = [(ip,p) for (ip,p) in self.peers if isinstance(p,int) and p>0]
+        peers_sane = [(ip,p) for (ip,p) in self.peers if type(p) is int and p>0]
         
     snap.setdefault("peers", {})
-    if isinstance(snap["peers"], dict):
+    if type(snap["peers"]) is dict:
         snap["peers"]["count"] = len(peers_sane)
     else:
         snap["peers"] = {"count": len(peers_sane)}
@@ -278,10 +278,10 @@ def get_mempool(self, message, pow_obj, base_identity, addr, *,
             txid = t.txid
         except AttributeError:
             txid = None
-        if isinstance(txid, (bytes, bytearray)):
+        if type(txid) in (bytes, bytearray):
             hexes.append(txid.hex())
-        elif isinstance(txid, str):
-            hexes.append(txid)
+        elif txid:
+            hexes.append(str(txid))
         
     return {"type": "MEMPOOL", "mode": "txids", "txs": hexes}
 
@@ -385,7 +385,7 @@ def get_total_utxo(self, message, pow_obj, base_identity, *,
 
 
 def _validate_balances_request(addrs_raw) -> tuple[list[str], dict | None]:
-    if not isinstance(addrs_raw, list) or not addrs_raw:
+    if type(addrs_raw) is not list or not addrs_raw:
         return [], {"error": "missing addresses"}
     if len(addrs_raw) > CFG.MAX_ADDRS_PER_REQ:
         return [], {"error": "too many addresses (max %d)" % CFG.MAX_ADDRS_PER_REQ}
@@ -459,7 +459,7 @@ def _get_mempool_snapshot(self, message, addr, is_miner_sender) -> dict:
         return {"error": "forbidden: miners-only endpoint"}
     peer_port = int(message.get("port", 0))
     target = None
-    if isinstance(addr, tuple):
+    if type(addr) is tuple:
         if peer_port > 0:
             target = self.normalize_peer((addr[0], peer_port))
         if not target:
@@ -492,12 +492,12 @@ def _get_mempool_inline(all_txs) -> dict:
             to_dict = tx.to_dict
             if callable(to_dict):
                 tx_dict = to_dict(include_txid=True)
-            elif isinstance(tx, dict):
+            elif type(tx) is dict:
                 tx_dict = dict(tx)
             else:
                 continue
         except AttributeError:
-            if isinstance(tx, dict):
+            if type(tx) is dict:
                 tx_dict = dict(tx)
             else:
                 continue
@@ -506,7 +506,7 @@ def _get_mempool_inline(all_txs) -> dict:
             try:
                 txid_attr = tx.txid
                 if txid_attr:
-                    tx_dict["txid"] = txid_attr.hex() if isinstance(txid_attr, (bytes, bytearray)) else str(txid_attr)
+                    tx_dict["txid"] = txid_attr.hex() if type(txid_attr) in (bytes, bytearray) else str(txid_attr)
             except AttributeError:
                 pass
 

@@ -106,7 +106,7 @@ def test_get_address_balances_and_utxos(mock_rpc_client, providers):
     def side_effect(payload):
         if payload["type"] == "GET_BALANCES":
             return {"spendable": 100, "immature": 50, "pending": 10}
-        elif payload["type"] == "GET_UTXOS":
+        elif payload["type"] == "GET_TOTAL_UTXO":
             return {"utxos": {"txid1:0": {"amount": 100}}}
         elif payload["type"] == "GET_TX_HISTORY":
             return [{"txid": "tx1"}, {"txid": "tx2"}]
@@ -130,8 +130,8 @@ def test_get_address_fallback_spendable(mock_rpc_client, providers):
     def side_effect(payload):
         if payload["type"] == "GET_BALANCES":
             return {}
-        elif payload["type"] == "GET_UTXOS":
-            return [{"txid": "tx1", "amount": 25}, {"txid": "tx2", "amount": 75}]
+        elif payload["type"] == "GET_TOTAL_UTXO":
+            return {"utxos": [{"txid": "tx1", "amount": 25}, {"txid": "tx2", "amount": 75}]}
         elif payload["type"] == "GET_TX_HISTORY":
             return []
         return {}

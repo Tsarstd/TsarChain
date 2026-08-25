@@ -157,10 +157,15 @@ class HistoryBookGenerator:
 
      
     def _create_blank_page(self, page_type: str = 'body') -> Image.Image:
-        if isinstance(self.__class__._template_cache, dict) and page_type in self.__class__._template_cache:
-            return self.__class__._template_cache[page_type].copy()
-        elif isinstance(self.__class__._template_cache, dict) and 'body' in self.__class__._template_cache:
-            return self.__class__._template_cache['body'].copy()
+        tc = self.__class__._template_cache
+        if tc:
+            try:
+                if page_type in tc:
+                    return tc[page_type].copy()
+                if 'body' in tc:
+                    return tc['body'].copy()
+            except (TypeError, AttributeError):
+                pass
         return Image.new('RGB', (800, 1200), color=(255, 255, 255))
 
 

@@ -219,8 +219,11 @@ class ContextAdapter(logging.LoggerAdapter):
     """
     def process(self, msg: Any, kwargs: Any) -> tuple[Any, Any]:
         extra = dict(self.extra) if self.extra else {}
-        if "extra" in kwargs and isinstance(kwargs["extra"], dict):
-            extra.update(kwargs["extra"])
+        if "extra" in kwargs:
+            try:
+                extra.update(kwargs["extra"])
+            except (TypeError, ValueError):
+                pass
         extra.setdefault("height", "-")
         extra.setdefault("block", "-")
         extra.setdefault("peer", "-")
@@ -314,12 +317,14 @@ def setup_logging(
 
     # Level normalization
     lvl = level
-    if isinstance(lvl, str):
+    try:
         lvl_up = lvl.upper()
         if lvl_up == "TRACE":
             lvl = TRACE
         else:
             lvl = logging._nameToLevel.get(lvl_up, logging.INFO)
+    except AttributeError:
+        pass
 
     logging.basicConfig(level=lvl, handlers=handlers, force=force)
     return logging.getLogger("tsarchain")

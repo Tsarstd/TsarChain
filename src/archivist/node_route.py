@@ -29,21 +29,21 @@ def rpc_hello(rpc, my_listen_port: int = 0, trusted: bool = False, timeout: floa
     }
     _ = rpc.call(hello_msg, timeout=timeout)
     pong = rpc.call({"type": "PING"}, timeout=timeout)
-    return isinstance(pong, dict) and pong.get("type") == "PONG"
+    return pong.get("type") == "PONG"
 
 
 @benchmark(label="RPC_PING", threshold_ms=15.0)
 def rpc_ping(rpc, timeout: float = 2.0) -> bool:
     """Heartbeat check with the Node."""
     pong = rpc.call({"type": "PING"}, timeout=timeout)
-    return isinstance(pong, dict) and pong.get("type") == "PONG"
+    return pong.get("type") == "PONG"
 
 
 @benchmark(label="RPC_GET_NETWORK_INFO", threshold_ms=25.0)
 def rpc_get_network_info(rpc, timeout: float = 4.0) -> Optional[Dict[str, Any]]:
     """Fetch network status, tip height, and peers count from the Node."""
     raw = rpc.call({"type": "GET_NETWORK_INFO"}, timeout=timeout)
-    if isinstance(raw, dict) and not raw.get("error"):
+    if not raw.get("error"):
         return raw
     return None
 
@@ -52,10 +52,9 @@ def rpc_get_network_info(rpc, timeout: float = 4.0) -> Optional[Dict[str, Any]]:
 def rpc_get_graffiti_posts(rpc, limit: int = 500, timeout: float = 6.0) -> List[Dict[str, Any]]:
     """Query confirmed on-chain graffiti posts from the Node."""
     resp = rpc.call({"type": "GRAFFITI_GET_POSTS", "limit": int(limit)}, timeout=timeout)
-    if isinstance(resp, dict):
-        posts = resp.get("posts")
-        if isinstance(posts, list):
-            return posts
+    posts = resp.get("posts")
+    if type(posts) is list:
+        return posts
     return []
 
 
@@ -75,10 +74,8 @@ def rpc_submit_proof(
     timeout: float = 8.0,
 ) -> Optional[Dict[str, Any]]:
     """Submit cryptographic Proof of Retention (PoR) for an artifact chunk to the Node."""
-    try:
-        rpc_addr = rpc.address
-    except AttributeError:
-        rpc_addr = ""
+
+    rpc_addr = rpc.address
     payload: Dict[str, Any] = {
         "type": "GRAFFITI_PROOF_SUBMIT",
         "art_id": str(art_id).strip().lower(),

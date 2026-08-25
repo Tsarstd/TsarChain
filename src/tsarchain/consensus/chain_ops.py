@@ -81,11 +81,9 @@ class ChainOperations:
         self.blockchain.total_blocks = len(self.blockchain.chain)
         block.chainwork = self.blockchain._work_from_bits(block.bits)
         block.difficulty = self.blockchain._work_from_bits(block.bits)
-        try:
-            if isinstance(self.blockchain._hash_cache, dict):
-                self.blockchain._hash_cache[int(block.height)] = block.hash().hex()
-        except Exception:
-            log.exception("[add_block] cache genesis hash failed")
+
+        if type(self.blockchain._hash_cache) is dict:
+            self.blockchain._hash_cache[int(block.height)] = block.hash().hex()
 
         store = self.blockchain.ensure_utxodb()
         if store is not None:
@@ -117,7 +115,7 @@ class ChainOperations:
         block.difficulty = self.blockchain._work_from_bits(block.bits)
         self.blockchain._mark_chain_dirty(block.height)
         try:
-            if isinstance(self.blockchain._hash_cache, dict):
+            if type(self.blockchain._hash_cache) is dict:
                 self.blockchain._hash_cache[int(block.height)] = block.hash().hex()
         except Exception:
             log.exception("[add_block] cache tip hash failed")
@@ -190,58 +188,37 @@ class ChainOperations:
 
 
     def _reinject_mempool_from_reorg(self, old_chain: List[Block], new_chain: List[Block]):
-        try:
-            get_mp = self.blockchain.get_mempool
-            mempool = get_mp() if callable(get_mp) else None
-        except AttributeError:
-            mempool = None
+        get_mp = self.blockchain.get_mempool
+        mempool = get_mp() if callable(get_mp) else None
         if not mempool:
             return
+
         new_txids = set()
         for b in new_chain:
-            try:
-                txs = b.transactions or []
-            except AttributeError:
-                txs = []
+            txs = b.transactions or []
+
             for tx in txs:
-                try:
-                    txid = tx.txid
-                except AttributeError:
-                    txid = None
+                txid = tx.txid
                 if txid:
-                    txid_hex = txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid)
+                    txid_hex = txid.hex() if type(txid) in (bytes, bytearray) else str(txid)
                     new_txids.add(txid_hex.lower())
 
-        try:
-            common_h = self.blockchain._common_ancestor_height(new_chain)
-        except AttributeError:
-            common_h = -1
+        common_h = self.blockchain._common_ancestor_height(new_chain)
         start_h = max(0, common_h + 1) if common_h >= 0 else 0
         for b in old_chain[start_h:]:
-            try:
-                txs = b.transactions or []
-            except AttributeError:
-                txs = []
+            txs = b.transactions or []
+
             for tx in txs[1:]:
-                try:
-                    txid = tx.txid
-                except AttributeError:
-                    txid = None
+                txid = tx.txid
+
                 if not txid:
                     continue
-                txid_hex = (txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid)).lower()
+                txid_hex = (txid.hex() if type(txid) in (bytes, bytearray) else str(txid)).lower()
                 if txid_hex not in new_txids:
-                    try:
-                        mempool.add_valid_tx(tx)
-                    except Exception:
-                        pass
-        try:
-            mempool.recheck_orphans()
-            mempool.flush()
-        except (AttributeError, TypeError):
-            pass
-        except Exception:
-            pass
+                    mempool.add_valid_tx(tx)
+
+        mempool.recheck_orphans()
+        mempool.flush()
 
 
     def _is_valid_tip_candidate(self, block: Block) -> bool:
@@ -250,12 +227,7 @@ class ChainOperations:
 
         current_tip = self.blockchain.chain[-1]
         parent = self.blockchain.chain[-2]
-
-        try:
-            parent_hash = parent.hash()
-        except Exception:
-            log.exception("parent_hash_err")
-            parent_hash = None
+        parent_hash = parent.hash()
 
         if not parent_hash or block.prev_block_hash != parent_hash:
             return False
@@ -290,7 +262,7 @@ class ChainOperations:
 
         self.blockchain.total_blocks = len(self.blockchain.chain)
         try:
-            if isinstance(self.blockchain._hash_cache, dict):
+            if type(self.blockchain._hash_cache) is dict:
                 self.blockchain._hash_cache[int(block.height)] = block.hash().hex()
         except Exception:
             log.exception("[swap_tip_if_better] cache hash failed")
@@ -347,9 +319,9 @@ class ChainOperations:
                 continue
             for txin in (tx.inputs or []):
                 prev_txid = txin.txid
-                if isinstance(prev_txid, (bytes, bytearray)):
+                if type(prev_txid) in (bytes, bytearray):
                     prev_hex = prev_txid.hex()
-                elif isinstance(prev_txid, str):
+                elif type(prev_txid) is str:
                     prev_hex = prev_txid
                 else:
                     continue
@@ -360,12 +332,12 @@ class ChainOperations:
         for tx in txs[1:]:
             txid_hex: str | None = None
             candidate = tx.txid
-            if isinstance(candidate, (bytes, bytearray)):
+            if type(candidate) in (bytes, bytearray):
                 txid_hex = candidate.hex()
-            elif isinstance(candidate, str) and len(candidate) == 64:
+            elif type(candidate) is str and len(candidate) == 64:
                 txid_hex = candidate.lower()
             elif tx.txid_hex:
-                txid_hex = tx.txid_hex if isinstance(tx.txid_hex, str) else tx.txid_hex()
+                txid_hex = tx.txid_hex if type(tx.txid_hex) is str else tx.txid_hex()
             elif callable(tx.to_dict):
                 d = tx.to_dict(include_txid=True)
                 txid_hex = d.get("txid")
@@ -414,7 +386,7 @@ class ChainOperations:
 
 
     def _validate_complete_chain(self, chain: List[Block]) -> bool:
-        if not isinstance(chain, list) or not chain:
+        if type(chain) is not list or not chain:
             return False
 
         g = chain[0]
@@ -434,7 +406,7 @@ class ChainOperations:
     def _merkle_ok(self, b: Block) -> bool:
         comp = merkle_root(b.transactions or [])
         mr = b.merkle_root
-        if isinstance(mr, str):
+        if type(mr) is str:
             mr = bytes.fromhex(mr)
         return comp == mr
 
@@ -447,15 +419,10 @@ class ChainOperations:
             return False, 0
         if not self._pow_ok(g):
             return False, 0
-        try:
-            if callable(self.blockchain.compute_txids_for_block):
-                if not self.blockchain.compute_txids_for_block(g):
-                    return False, 0
-        except (AttributeError, TypeError):
-            pass
-        except Exception:
-            log.exception("[_validate_complete_chain] Error computing txids for genesis")
+
+        if callable(self.blockchain.compute_txids_for_block) and not self.blockchain.compute_txids_for_block(g):
             return False, 0
+
         if not self._merkle_ok(g):
             return False, 0
 
@@ -495,7 +462,7 @@ class ChainOperations:
         g_txs = chain[0].transactions or []
         if g_txs:
             g_txid = g_txs[0].txid
-            g_txid_hex = g_txid.hex() if isinstance(g_txid, (bytes, bytearray)) else str(g_txid or "")
+            g_txid_hex = g_txid.hex() if type(g_txid) in (bytes, bytearray) else str(g_txid or "")
             for idx, out in enumerate(g_txs[0].outputs or []):
                 spk = out.script_pubkey
                 temp_utxos[f"{g_txid_hex}:{idx}"] = {
@@ -524,11 +491,10 @@ class ChainOperations:
 
             if not self._pow_ok(cur):
                 return False
-            try:
-                if callable(self.blockchain.compute_txids_for_block) and not self.blockchain.compute_txids_for_block(cur):
-                    return False
-            except (AttributeError, TypeError):
-                pass
+
+            if callable(self.blockchain.compute_txids_for_block) and not self.blockchain.compute_txids_for_block(cur):
+                return False
+
             if not self._merkle_ok(cur):
                 return False
 
@@ -542,7 +508,7 @@ class ChainOperations:
                 tx_in_sum = 0
                 for txin in (tx.inputs or []):
                     prev_txid = txin.txid
-                    prev_txid_hex = prev_txid.hex() if isinstance(prev_txid, (bytes, bytearray)) else str(prev_txid or "")
+                    prev_txid_hex = prev_txid.hex() if type(prev_txid) in (bytes, bytearray) else str(prev_txid or "")
                     vout = int(txin.vout)
                     outpoint = f"{prev_txid_hex}:{vout}"
                     if outpoint in spent_in_block or outpoint not in temp_utxos:
@@ -578,7 +544,7 @@ class ChainOperations:
 
             for tx in txs:
                 txid = tx.txid
-                txid_hex = txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid or "")
+                txid_hex = txid.hex() if type(txid) in (bytes, bytearray) else str(txid or "")
                 is_cb = bool(tx.is_coinbase)
                 for idx, out in enumerate(tx.outputs or []):
                     spk = out.script_pubkey
@@ -586,7 +552,7 @@ class ChainOperations:
                         try:
                             b = spk.serialize()
                         except (AttributeError, TypeError):
-                            b = bytes(spk) if isinstance(spk, (bytes, bytearray)) else b""
+                            b = bytes(spk) if type(spk) in (bytes, bytearray) else b""
                         if len(b) >= 1 and b[0] == 0x6A:
                             continue
 

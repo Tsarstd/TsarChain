@@ -18,10 +18,10 @@ log = get_ctx_logger("tsarchain.network.rpc_helper.tx")
 
 class TxHandler(NetworkHandlerProxy):
     def create_template_tx(self, from_addr, to_addr, amount, fee_rate):
-        if not isinstance(from_addr, str) or not isinstance(to_addr, str):
+        if type(from_addr) is not str or type(to_addr) is not str:
             raise ValueError("from/to address must be string")
 
-        amt_sat = int(amount * CFG.TSAR) if isinstance(amount, float) else int(amount)
+        amt_sat = int(amount * CFG.TSAR) if type(amount) is float else int(amount)
         # Ensure latest UTXO view from disk before building
         self.broadcast.utxodb._load()
         
@@ -62,9 +62,9 @@ class TxHandler(NetworkHandlerProxy):
 
 
     def create_template_tx_multi(self, from_addr: str, outputs: list, fee_rate: int, force_inputs: list[str] | None = None):
-        if not isinstance(from_addr, str):
+        if type(from_addr) is not str:
             raise ValueError("from must be string")
-        if not isinstance(outputs, list) or not outputs:
+        if type(outputs) is not list or not outputs:
             raise ValueError("outputs must be non-empty list")
 
         fee_rate = int(max(CFG.MIN_FEE_RATE_SATVB, min(fee_rate, CFG.MAX_FEE_RATE_SATVB)))
@@ -94,7 +94,7 @@ class TxHandler(NetworkHandlerProxy):
         for amt, spk in fixed_outs:
             try:
                 cmds = spk.cmds
-                is_opret = isinstance(spk, Script) and bool(cmds) and cmds[0] == OP_RETURN
+                is_opret = bool(cmds) and cmds[0] == OP_RETURN
             except AttributeError:
                 is_opret = False
             (opret_outs if is_opret else non_opret).append(TxOut(amt, spk))
@@ -137,7 +137,7 @@ class TxHandler(NetworkHandlerProxy):
 
     def _build_utxos_list(self, utxos_map, tip_height):
         utxos_list = []
-        for k, v in (utxos_map.items() if isinstance(utxos_map, dict) else []):
+        for k, v in (utxos_map.items() if type(utxos_map) is dict else []):
             txid_hex, idx_str = k.split(":")
             is_cb = bool(v.get("is_coinbase", False))
             born  = int(v.get("block_height", 0))
@@ -146,9 +146,9 @@ class TxHandler(NetworkHandlerProxy):
                 if confirmations < CFG.COINBASE_MATURITY:
                     continue
             spk_val = v.get("script_pubkey")
-            if isinstance(spk_val, bytes):
+            if type(spk_val) is bytes:
                 spk_bytes = spk_val
-            elif isinstance(spk_val, str):
+            elif type(spk_val) is str:
                 spk_bytes = bytes.fromhex(spk_val)
             else:
                 spk_bytes = b""
@@ -233,7 +233,7 @@ class TxHandler(NetworkHandlerProxy):
         fixed_outs = []
         total_target = 0
         for item in outputs:
-            if not isinstance(item, dict):
+            if type(item) is not dict:
                 raise ValueError("output item must be dict")
             amt = int(item.get("amount", 0))
             if "spk_hex" in item:
@@ -326,7 +326,7 @@ class TxHandler(NetworkHandlerProxy):
                         ser = spk.serialize
                         spk_bytes = ser() if callable(ser) else b""
                     except AttributeError:
-                        if isinstance(spk, (bytes, bytearray)):
+                        if type(spk) in (bytes, bytearray):
                             spk_bytes = bytes(spk)
                         else:
                             spk_bytes = b""
@@ -353,7 +353,7 @@ class TxHandler(NetworkHandlerProxy):
             sender_spk_bytes = sender_spk.serialize()
             for key in list(missing):
                 meta = locks.get(key)
-                if not isinstance(meta, dict) or str(meta.get("owner", "")).strip().lower() != str(from_addr).strip().lower():
+                if type(meta) is not dict or str(meta.get("owner", "")).strip().lower() != str(from_addr).strip().lower():
                     continue
                 amt = int(meta.get("amount", 0))
                 if amt <= 0 or not sender_spk_bytes:

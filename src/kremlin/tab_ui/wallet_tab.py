@@ -162,22 +162,27 @@ class CreateWalletDialog(tk.Toplevel):
                     col = "#3a3a3a"
                 b.configure(bg=col)
             self._strength_lbl.config(text=f"- {label}")
-            
         def validate(_e=None):
             s = self.ent_pwd.get()
             match = (s != "") and (s == self.ent_pwd2.get())
             ok_all, details = Security.validate_password_strength(s)
             score, label = 0, "weak"
-            if isinstance(details, dict):
+            try:
                 score = int(details.get("score", 0))
                 label = str(details.get("label", "weak"))
-            elif isinstance(details, (list, tuple)):
-                for x in details:
-                    if isinstance(x, int): score = x
-                    if isinstance(x, str): label = x
-            elif isinstance(details, int):
-                score = details
-            if not isinstance(label, str) or not label:
+            except AttributeError:
+                try:
+                    for x in details:
+                        try:
+                            score = int(x)
+                        except (ValueError, TypeError):
+                            label = str(x)
+                except TypeError:
+                    try:
+                        score = int(details)
+                    except (ValueError, TypeError):
+                        pass
+            if not label or type(label) is not str:
                 label = ("very weak","weak","fair","good","strong","excellent")[max(0,min(5,score))]
 
             _paint_strength(score, label)
@@ -213,7 +218,7 @@ class WalletController:
         try:
             with open(self._bal_cache_path, "r", encoding="utf-8") as f:
                 d = json.load(f)
-                return d if isinstance(d, dict) else {}
+                return d if type(d) is dict else {}
         except Exception:
             return {}
 
@@ -244,41 +249,50 @@ class WalletController:
 
     def get_cached_balance(self, addr: str) -> Optional[dict]:
         d = self._bal_cache.get(addr)
-        if isinstance(d, dict):
-            return {
-                "balance": int(d.get("balance", 0)),
-                "spendable": int(d.get("spendable", 0)),
-                "immature": int(d.get("immature", 0)),
-                "pending_outgoing": int(d.get("pending_outgoing", 0)),
-                "pending_incoming": int(d.get("pending_incoming", 0)),
-                "maturity": int(d.get("maturity", d.get("coinbase_maturity", CFG.COINBASE_MATURITY))),
-            }
+        if d:
+            try:
+                return {
+                    "balance": int(d.get("balance", 0)),
+                    "spendable": int(d.get("spendable", 0)),
+                    "immature": int(d.get("immature", 0)),
+                    "pending_outgoing": int(d.get("pending_outgoing", 0)),
+                    "pending_incoming": int(d.get("pending_incoming", 0)),
+                    "maturity": int(d.get("maturity", d.get("coinbase_maturity", CFG.COINBASE_MATURITY))),
+                }
+            except (AttributeError, TypeError):
+                return None
         return None
 
     def normalize_balance_resp(self, resp: Optional[Dict[str, Any]], target_addr: Optional[str] = None):
-        if not resp or "error" in resp or not isinstance(resp, dict):
+        if not resp:
             return None
-        typ = str(resp.get("type", "")).upper()
-        if typ == "BALANCES" and isinstance(resp.get("items"), dict):
-            if target_addr and target_addr in resp["items"]:
-                d = resp["items"][target_addr] or {}
-                return {
-                    "balance": int(d.get("balance", d.get("total", 0)) or 0),
-                    "spendable": int(d.get("spendable", d.get("confirmed", d.get("mature", d.get("total", 0)))) or 0),
-                    "immature": int(d.get("immature", 0) or 0),
-                    "pending_outgoing": int(d.get("pending_outgoing", d.get("pending", d.get("unconfirmed", 0))) or 0),
-                    "pending_incoming": int(d.get("pending_incoming", 0) or 0),
-                    "maturity": int(d.get("maturity", CFG.COINBASE_MATURITY)),
-                }
+        try:
+            if "error" in resp:
+                return None
+            typ = str(resp.get("type", "")).upper()
+            if typ == "BALANCES":
+                items = resp.get("items")
+                if target_addr and items and target_addr in items:
+                    d = items[target_addr] or {}
+                    return {
+                        "balance": int(d.get("balance", d.get("total", 0)) or 0),
+                        "spendable": int(d.get("spendable", d.get("confirmed", d.get("mature", d.get("total", 0)))) or 0),
+                        "immature": int(d.get("immature", 0) or 0),
+                        "pending_outgoing": int(d.get("pending_outgoing", d.get("pending", d.get("unconfirmed", 0))) or 0),
+                        "pending_incoming": int(d.get("pending_incoming", 0) or 0),
+                        "maturity": int(d.get("maturity", CFG.COINBASE_MATURITY)),
+                    }
+                return None
+            return {
+                "balance": int(resp.get("balance", resp.get("total", 0)) or 0),
+                "spendable": int(resp.get("spendable", resp.get("confirmed", resp.get("mature", resp.get("total", 0)))) or 0),
+                "immature": int(resp.get("immature", 0) or 0),
+                "pending_outgoing": int(resp.get("pending_outgoing", resp.get("pending", resp.get("unconfirmed", 0))) or 0),
+                "pending_incoming": int(resp.get("pending_incoming", 0) or 0),
+                "maturity": int(resp.get("maturity", CFG.COINBASE_MATURITY)),
+            }
+        except (AttributeError, TypeError):
             return None
-        return {
-            "balance": int(resp.get("balance", resp.get("total", 0)) or 0),
-            "spendable": int(resp.get("spendable", resp.get("confirmed", resp.get("mature", resp.get("total", 0)))) or 0),
-            "immature": int(resp.get("immature", 0) or 0),
-            "pending_outgoing": int(resp.get("pending_outgoing", resp.get("pending", resp.get("unconfirmed", 0))) or 0),
-            "pending_incoming": int(resp.get("pending_incoming", 0) or 0),
-            "maturity": int(resp.get("maturity", CFG.COINBASE_MATURITY)),
-        }
 
     def sync_keystore_addresses(self, pwd: str, current_wallets: list[str]) -> tuple[list[str], list[str], list[str]]:
         keystore_addrs = list_addresses_in_keystore(pwd)
@@ -631,7 +645,7 @@ class WalletsMixin:
                 incoming_row.pack_forget()
 
         addr = None
-        if isinstance(bal_labels, dict):
+        try:
             addr = bal_labels.get("_address")
             if addr:
                 cached = {
@@ -644,6 +658,8 @@ class WalletsMixin:
                     "ts": int(time.time()),
                 }
                 self.wallet_controller.cache_balance(addr, cached)
+        except AttributeError:
+            pass
 
     def clear_balance_cache(self):
         self.wallet_controller.clear_balance_cache()
@@ -1204,8 +1220,11 @@ class WalletsMixin:
                 addr = card._address
             except AttributeError:
                 addr = None
-            if not addr and isinstance(bal_labels, dict):
-                addr = bal_labels.get("_address")
+            if not addr:
+                try:
+                    addr = bal_labels.get("_address")
+                except AttributeError:
+                    addr = None
             if not addr or bal_labels is None:
                 continue
             addr_norm = str(addr).strip()
@@ -1251,16 +1270,22 @@ class WalletsMixin:
 
         def handle(resp: Optional[Dict[str, Any]]) -> None:
             try:
-                if isinstance(resp, dict) and resp.get("type") == "BALANCES":
-                    items: Dict[str, Dict[str, Any]] = resp.get("items", {})
+                if resp and resp.get("type") == "BALANCES":
+                    items: Dict[str, Dict[str, Any]] = resp.get("items") or {}
                     for addr in uniq_addrs:
-                        data = items.get(addr)
-                        if not isinstance(data, dict):
+                        try:
+                            data = items.get(addr)
+                            if not data or type(data) is not dict:
+                                data = zero_template()
+                        except (AttributeError, TypeError):
                             data = zero_template()
                         apply(addr, data)
                 else:
                     for addr in uniq_addrs:
                         apply(addr, zero_template())
+            except (AttributeError, TypeError):
+                for addr in uniq_addrs:
+                    apply(addr, zero_template())
             finally:
                 finalize()
 

@@ -173,13 +173,13 @@ class ExplorerHandler(NetworkHandlerProxy):
             h = None
         if callable(h):
             v = h()
-            if isinstance(v, (bytes, bytearray)):
+            if type(v) in (bytes, bytearray):
                 return v.hex()
-            if isinstance(v, str) and len(v) >= 64:
+            if type(v) is str and len(v) >= 64:
                 return v
-        elif isinstance(h, (bytes, bytearray)):
+        elif type(h) in (bytes, bytearray):
             return h.hex()
-        elif isinstance(h, str) and len(h) >= 64:
+        elif type(h) is str and len(h) >= 64:
             return h
         return ""
 
@@ -330,7 +330,7 @@ class ExplorerHandler(NetworkHandlerProxy):
             ser = sig.serialize
             raw = ser() if callable(ser) else None
         except AttributeError:
-            if isinstance(sig, (bytes, bytearray)):
+            if type(sig) in (bytes, bytearray):
                 raw = bytes(sig)
             else:
                 return None
@@ -349,9 +349,9 @@ class ExplorerHandler(NetworkHandlerProxy):
             v = b.prev_block_hash
         except AttributeError:
             v = None
-        if isinstance(v, (bytes, bytearray)):
+        if type(v) in (bytes, bytearray):
             return v.hex()
-        if isinstance(v, str):
+        if type(v) is str:
             return v
         return ""
 
@@ -362,8 +362,8 @@ class ExplorerHandler(NetworkHandlerProxy):
             tid = tx.txid
         except AttributeError:
             tid = None
-        if isinstance(tid, (bytes, bytearray)): txid = tid.hex()
-        elif isinstance(tid, str): txid = tid
+        if type(tid) in (bytes, bytearray): txid = tid.hex()
+        elif type(tid) is str: txid = tid
         try:
             inputs = tx.inputs or []
         except AttributeError:
@@ -386,9 +386,9 @@ class ExplorerHandler(NetworkHandlerProxy):
 
 
     def _to_hex_helper(self, x):
-        if isinstance(x, (bytes, bytearray)):
+        if type(x) in (bytes, bytearray):
             return x.hex()
-        if isinstance(x, str):
+        if type(x) is str:
             return x
         return None
 
@@ -444,7 +444,7 @@ class ExplorerHandler(NetworkHandlerProxy):
                         "txid": txid_hex,
                         "art_id": meta.get("art_id"),
                         "epoch": meta.get("epoch"),
-                        "recipients": recipients if isinstance(recipients, list) else [],
+                        "recipients": recipients if type(recipients) is list else [],
                     })
         return txs, posts, comments, payouts
 

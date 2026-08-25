@@ -26,7 +26,7 @@ class PrevoutRef:
     def from_values(cls, txid_value: Any, vout_value: Any) -> "PrevoutRef | None":
         if txid_value is None or vout_value is None:
             return None
-        if isinstance(txid_value, (bytes, bytearray)):
+        if type(txid_value) in (bytes, bytearray):
             txid_hex = txid_value.hex().lower()
         else:
             txid_hex = str(txid_value).lower()
@@ -48,10 +48,10 @@ class PrevoutMeta:
 def normalize_prevout_set(items: Iterable[Any]) -> set[PrevoutRef]:
     normalized: set[PrevoutRef] = set()
     for item in items or []:
-        if isinstance(item, PrevoutRef):
+        if type(item) is PrevoutRef:
             normalized.add(item)
             continue
-        if isinstance(item, tuple) and len(item) == 2:
+        if type(item) is tuple and len(item) == 2:
             ref = PrevoutRef.from_values(item[0], item[1])
             if ref:
                 normalized.add(ref)

@@ -145,7 +145,7 @@ class MiningManager:
             current_utxos = store.utxos
         except AttributeError:
             current_utxos = store.load_utxo_set()
-        temp_utxos = current_utxos.copy() if isinstance(current_utxos, dict) else dict(current_utxos)
+        temp_utxos = current_utxos.copy() if type(current_utxos) is dict else dict(current_utxos)
 
         valid_txs = []
         used_utxos_in_block = set()
@@ -162,14 +162,14 @@ class MiningManager:
                     reason = None
                 if reason:
                     txid = tx.txid or b""
-                    txid_hex = txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid or "")
+                    txid_hex = txid.hex() if type(txid) in (bytes, bytearray) else str(txid or "")
                     log.warning("[_build_candidate_block] tx %s rejected: %s", txid_hex[:12], reason)
                 continue
 
             is_graff_post = self._is_graffiti_post(tx)
             if is_graff_post and graffiti_post_seen:
                 txid = tx.txid or b""
-                txid_hex = txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid or "")
+                txid_hex = txid.hex() if type(txid) in (bytes, bytearray) else str(txid or "")
                 log.info("[_build_candidate_block] skip extra Graffiti POST tx=%s (quota per block = 1)", txid_hex[:12])
                 continue
 
@@ -216,8 +216,8 @@ class MiningManager:
         is_stale = latest_hash != new_prev_hash or new_height != latest_height + 1
         
         if is_stale:
-            new_prev_hex = new_prev_hash.hex() if isinstance(new_prev_hash, (bytes, bytearray)) else str(new_prev_hash or "")
-            latest_hex = latest_hash.hex() if isinstance(latest_hash, (bytes, bytearray)) else str(latest_hash or "")
+            new_prev_hex = new_prev_hash.hex() if type(new_prev_hash) in (bytes, bytearray) else str(new_prev_hash or "")
+            latest_hex = latest_hash.hex() if type(latest_hash) in (bytes, bytearray) else str(latest_hash or "")
             log.warning(
                 "[_is_stale_block] discard stale candidate height=%s prev=%s latest=%s",
                 new_height,
@@ -242,7 +242,7 @@ class MiningManager:
     def _validate_and_add_block(self, new_block: Block) -> bool:
         height = int(new_block.height or 0)
         blk_hash = new_block.hash()
-        blk_hex = blk_hash.hex() if isinstance(blk_hash, (bytes, bytearray)) else str(blk_hash or "")
+        blk_hex = blk_hash.hex() if type(blk_hash) in (bytes, bytearray) else str(blk_hash or "")
         
         if not self.blockchain.validate_block(new_block):
             try:
@@ -250,7 +250,7 @@ class MiningManager:
             except AttributeError:
                 reason = "unknown"
             prev_hash = new_block.prev_block_hash
-            prev_hex = prev_hash.hex() if isinstance(prev_hash, (bytes, bytearray)) else str(prev_hash or "")
+            prev_hex = prev_hash.hex() if type(prev_hash) in (bytes, bytearray) else str(prev_hash or "")
             
             log.warning(
                 "[block_reject] stage=validate source=local_miner height=%s hash=%s prev=%s reason=%s",
@@ -338,7 +338,7 @@ class MiningManager:
                     txid = tx.txid
                 except AttributeError:
                     txid = None
-                txid_hex = txid.hex() if isinstance(txid, (bytes, bytearray)) else str(txid or "")
+                txid_hex = txid.hex() if type(txid) in (bytes, bytearray) else str(txid or "")
                 log.info("[_select_graffiti_art_id] Graffiti POST found tx=%s art_id=%s", (txid_hex or "")[:12], art_id[:24])
                 return art_id
         return None

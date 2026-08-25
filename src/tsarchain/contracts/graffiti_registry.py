@@ -290,7 +290,7 @@ class GraffitiRegistry:
         payouts = (self.data.get("payouts") or {}).get(art_id, [])
         items = [dict(entry) for entry in payouts]
         items.sort(key=lambda r: int(r.get("block_height") or 0), reverse=True)
-        if isinstance(limit, int) and limit > 0:
+        if type(limit) is int and limit > 0:
             return items[:limit]
         return items
 
@@ -306,7 +306,7 @@ class GraffitiRegistry:
             items.append(rec)
         items.sort(key=lambda r: (int(r.get("block_height") or 0), int(r.get("ts") or 0)), reverse=True)
         off = max(0, int(offset or 0))
-        if isinstance(limit, int) and limit > 0:
+        if type(limit) is int and limit > 0:
             return items[off:off + limit]
         return items[off:]
 
@@ -318,7 +318,7 @@ class GraffitiRegistry:
         comments = (self.data.get("comments") or {}).get(art_id, [])
         items = [dict(entry) for entry in comments]
         items.sort(key=lambda r: (int(r.get("block_height") or 0), int(r.get("ts") or 0)), reverse=True)
-        if isinstance(limit, int) and limit > 0:
+        if type(limit) is int and limit > 0:
             return items[:limit]
         return items
 

@@ -71,10 +71,12 @@ def rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[fl
             log.debug("[rpc_conn] cache_hit=%s peer=%s new_conn=%s", cache_hit, norm, resp is not None)
     except OSError:
         return None
-    except Exception as exc:
+    except AttributeError:
         self._rpc_backoff[norm] = time.time() + max(5.0, float(CFG.TEMP_BAN_SECONDS))
-        if isinstance(exc, AttributeError):
-            log.warning("[rpc_request] Handshake aborted by %s; backing off", norm)
+        log.warning("[rpc_request] Handshake aborted by %s; backing off", norm)
+        return None
+    except Exception:
+        self._rpc_backoff[norm] = time.time() + max(5.0, float(CFG.TEMP_BAN_SECONDS))
         return None
 
     self._rpc_backoff.pop(norm, None)
@@ -117,15 +119,15 @@ def request_mempool_inline(self, peer: Tuple[str, int], *, force: bool = False) 
         return False
 
     txs = resp.get("txs") or resp.get("data")
-    if not isinstance(txs, list):
+    if type(txs) is not list:
         return False
 
-    if txs and all(isinstance(x, (str, bytes)) for x in txs):
+    if txs and all(type(x) in (str, bytes) for x in txs):
         return False
 
     added = 0
     for item in txs:
-        tx_obj = Tx.from_dict(item) if isinstance(item, dict) else item
+        tx_obj = Tx.from_dict(item) if type(item) is dict else item
         if self.broadcast.mempool.add_valid_tx(tx_obj):
             added += 1
 
@@ -328,11 +330,11 @@ def _process_rpc_response(node, resp):
         pk = node.peer_pubkeys.get(qnid)
         if pk:
             return pk
-        if isinstance(nid, str) and qnid == nid and isinstance(pko, str):
+        if type(nid) is str and qnid == nid and type(pko) is str:
             return pko
         return None
 
     inner = verify_and_unwrap(outer, resolver)
-    if isinstance(nid, str) and isinstance(pko, str):
+    if type(nid) is str and type(pko) is str:
         node.peer_pubkeys[nid] = pko
     return inner

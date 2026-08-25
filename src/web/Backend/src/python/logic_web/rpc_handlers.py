@@ -52,8 +52,11 @@ def rpc_receipt(client, txid: str):
                     pass
 
     tx_data = rpc_tx(client, txid_norm)
-    if isinstance(tx_data, dict) and tx_data.get("error"):
-        return {"status": "error", "message": f"Failed to fetch transaction: {tx_data.get('error')}"}
+    try:
+        if tx_data.get("error"):
+            return {"status": "error", "message": f"Failed to fetch transaction: {tx_data.get('error')}"}
+    except AttributeError:
+        pass
     
     output_dir = CFG.WEB_RECEIPTS_DIR
     receipt_gen = build_receipt.PaymentReceiptGenerator(output_dir)
@@ -103,12 +106,19 @@ def rpc_history_book(client, address: str):
                     pass
 
     tx_data = rpc_address(client, addr_norm)
-    if isinstance(tx_data, dict) and tx_data.get("error"):
-        return {"status": "error", "message": f"Failed to fetch address: {tx_data.get('error')}"}
+    try:
+        if tx_data.get("error"):
+            return {"status": "error", "message": f"Failed to fetch address: {tx_data.get('error')}"}
+    except AttributeError:
+        pass
     
-    total_txs = tx_data.get("total_txs") if isinstance(tx_data, dict) else None
-    if total_txs is None and isinstance(tx_data, dict):
-        total_txs = len(tx_data.get("history", []))
+    total_txs = None
+    try:
+        total_txs = tx_data.get("total_txs")
+        if total_txs is None:
+            total_txs = len(tx_data.get("history", []))
+    except (AttributeError, TypeError):
+        total_txs = 0
     if total_txs is None:
         total_txs = 0
 
@@ -140,10 +150,16 @@ def rpc_network(client):
     def _fetch():
         info = rpc_client._rpc_send(client, {"type": "GET_NETWORK_INFO"}) or {}
         peers = rpc_client._rpc_send(client, {"type": "GET_PEERS"}) or {}
-        if isinstance(peers, dict) and "peers" in peers:
-            info["peers"] = peers.get("peers")
-        if isinstance(info, dict) and info.get("type") == "NETWORK_INFO":
-            return info.get("data") or info
+        try:
+            if "peers" in peers:
+                info["peers"] = peers.get("peers")
+        except TypeError:
+            pass
+        try:
+            if info.get("type") == "NETWORK_INFO":
+                return info.get("data") or info
+        except AttributeError:
+            pass
         return info
     return rpc_client._get_or_fetch_cached(key, _fetch)
 
@@ -161,7 +177,11 @@ def rpc_block(client, val: str):
         return cached
     resp = rpc_client._rpc_send(client, payload)
     if rpc_client._payload_has_error(resp):
-        ttl_err = db_cache.get_error_cache_ttl(resp.get("error") if isinstance(resp, dict) else None)
+        try:
+            err_val = resp.get("error")
+        except AttributeError:
+            err_val = None
+        ttl_err = db_cache.get_error_cache_ttl(err_val)
         if ttl_err is not None:
             rpc_client._cache_set(key, resp, ttl_err)
         return resp
@@ -171,10 +191,11 @@ def rpc_block(client, val: str):
 
 def rpc_block_range(client, opts: dict):
     start_height = None
-    if isinstance(opts, dict):
+    try:
         start_height = opts.get("start_height") or opts.get("start") or opts.get("height")
-    
-    limit = int(opts.get("limit", 200) or 200) if isinstance(opts, dict) else 200
+        limit = int(opts.get("limit", 200) or 200)
+    except (AttributeError, TypeError, ValueError):
+        limit = 200
     if start_height is None or start_height == "latest":
         key = rpc_client._cache_key("block_range", "latest", limit)
         cached = rpc_client._cache_get(key)
@@ -201,14 +222,17 @@ def rpc_block_range(client, opts: dict):
                         "limit": missing_count
                     })
                     
-                    if isinstance(rpc_resp, dict) and "items" in rpc_resp:
-                        new_items = rpc_resp.get("items", [])
-                        db_blocks.save_blocks_to_storage(new_items)
-                        storage_result["items"].extend(new_items)
-                        storage_result["has_more"] = rpc_resp.get("has_more", False)
-                        storage_result["next_height"] = rpc_resp.get("next_height", -1)
-                        if rpc_resp.get("tip_height") is not None:
-                            storage_result["tip_height"] = rpc_resp.get("tip_height")
+                    try:
+                        if "items" in rpc_resp:
+                            new_items = rpc_resp.get("items", [])
+                            db_blocks.save_blocks_to_storage(new_items)
+                            storage_result["items"].extend(new_items)
+                            storage_result["has_more"] = rpc_resp.get("has_more", False)
+                            storage_result["next_height"] = rpc_resp.get("next_height", -1)
+                            if rpc_resp.get("tip_height") is not None:
+                                storage_result["tip_height"] = rpc_resp.get("tip_height")
+                    except TypeError:
+                        pass
                 else:
                     storage_result["has_more"] = False
                     storage_result["next_height"] = -1
@@ -223,12 +247,15 @@ def rpc_block_range(client, opts: dict):
         "start_height": start_height
     })
     
-    if not rpc_client._payload_has_error(resp) and isinstance(resp, dict) and "items" in resp:
-        db_blocks.save_blocks_to_storage(resp["items"])
-        
-        if start_height is None or start_height == "latest":
-            cache_key = rpc_client._cache_key("block_range", "latest", limit)
-            rpc_client._cache_set(cache_key, resp, ttl_sec=30)
+    try:
+        if not rpc_client._payload_has_error(resp) and "items" in resp:
+            db_blocks.save_blocks_to_storage(resp["items"])
+            
+            if start_height is None or start_height == "latest":
+                cache_key = rpc_client._cache_key("block_range", "latest", limit)
+                rpc_client._cache_set(cache_key, resp, ttl_sec=30)
+    except TypeError:
+        pass
     
     return resp
 
@@ -308,17 +335,25 @@ def rpc_graffiti(client, art_id: str):
     for resp in (post_resp, comments_resp):
         if not rpc_client._payload_has_error(resp):
             continue
-        ttl = db_cache.get_error_cache_ttl(resp.get("error") if isinstance(resp, dict) else None)
+        try:
+            err_val = resp.get("error")
+        except AttributeError:
+            err_val = None
+        ttl = db_cache.get_error_cache_ttl(err_val)
         if ttl is None:
             cache_ok = False
             break
         if error_ttl is None or ttl > error_ttl:
             error_ttl = ttl
 
-    post = None
-    if isinstance(post_resp, dict):
+    try:
         post = post_resp.get("post") or post_resp
-    comments = comments_resp.get("comments") if isinstance(comments_resp, dict) else None
+    except AttributeError:
+        post = None
+    try:
+        comments = comments_resp.get("comments")
+    except AttributeError:
+        comments = None
     out = {"post": post, "comments": comments}
     if key and cache_ok:
         rpc_client._cache_set(key, out, error_ttl)
@@ -338,11 +373,18 @@ def rpc_graffiti_posts(client, opts: dict):
     cache_ok = True
     error_ttl = None
     if rpc_client._payload_has_error(resp):
-        error_ttl = db_cache.get_error_cache_ttl(resp.get("error") if isinstance(resp, dict) else None)
+        try:
+            err_val = resp.get("error")
+        except AttributeError:
+            err_val = None
+        error_ttl = db_cache.get_error_cache_ttl(err_val)
         cache_ok = error_ttl is not None
-    if isinstance(resp, dict) and resp.get("type") == "GRAFFITI_GET_POSTS":
-        out = {"posts": resp.get("posts") or [], "limit": limit, "offset": offset, "total": resp.get("total", 0)}
-    else:
+    try:
+        if resp.get("type") == "GRAFFITI_GET_POSTS":
+            out = {"posts": resp.get("posts") or [], "limit": limit, "offset": offset, "total": resp.get("total", 0)}
+        else:
+            out = {"posts": [], "limit": limit, "offset": offset, "total": 0}
+    except AttributeError:
         out = {"posts": [], "limit": limit, "offset": offset, "total": 0}
     if cache_ok:
         rpc_client._cache_set(key, out, error_ttl)
@@ -374,7 +416,15 @@ def rpc_graffiti_file(client, opts: dict, fallback_art_id: str | None):
         max_bytes=max_bytes,
         timeout=timeout,
     )
-    if not isinstance(resp, dict):
+    try:
+        out = {
+            "status": resp.get("status") or "error",
+            "reason": resp.get("reason"),
+            "meta": resp.get("meta") or {},
+            "cache_path": resp.get("cache_path"),
+        }
+        return out
+    except AttributeError:
         return {"status": "error", "reason": "bad_response"}
     out = {
         "status": resp.get("status") or "error",

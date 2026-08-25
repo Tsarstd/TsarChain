@@ -42,14 +42,9 @@ def center_window(win: tk.Toplevel, parent: tk.Misc | None = None) -> None:
     win.geometry(f"+{x}+{y}")
 
 def show_toast(app_instance, text: str, ms: int = 1800, kind: str = "info") -> None:
-    if isinstance(ms, str):
-        kind = ms
-        ms = 1800
     ms = int(ms)
-    try:
-        toasts = app_instance._toasts
-    except AttributeError:
-        toasts = app_instance._toasts = []
+    toasts = app_instance._toasts
+
     if toasts is None:
         toasts = []
         app_instance._toasts = toasts
@@ -60,26 +55,17 @@ def show_toast(app_instance, text: str, ms: int = 1800, kind: str = "info") -> N
     tw.attributes("-topmost", True)
     tw.attributes("-alpha", 0.96)
 
-    try:
-        theme_set = app_instance.theme_set
-        palette = theme_set.palette if theme_set else None
-    except AttributeError:
-        palette = None
+    theme_set = app_instance.theme_set
+    palette = theme_set.palette if theme_set else None
+
     warn_color = palette.warning if palette else "#f5a524"
     error_color = palette.danger if palette else "#f1633f"
-    try:
-        info_color = app_instance.accent or "#ff6b00"
-    except AttributeError:
-        info_color = "#ff6b00"
+    info_color = app_instance.accent
+
     border = {"info": info_color, "warn": warn_color, "error": error_color}.get(kind, info_color)
-    try:
-        bg = app_instance.panel_bg or "#161a1f"
-    except AttributeError:
-        bg = "#161a1f"
-    try:
-        fg = app_instance.fg or "#f2f5f7"
-    except AttributeError:
-        fg = "#f2f5f7"
+    bg = app_instance.panel_bg
+    fg = app_instance.fg
+
     w, h = 320, 52
     rx = app_instance.root.winfo_rootx(); ry = app_instance.root.winfo_rooty()
     rw = app_instance.root.winfo_width();  rh = app_instance.root.winfo_height()
@@ -109,10 +95,7 @@ def show_toast(app_instance, text: str, ms: int = 1800, kind: str = "info") -> N
 
 def enable_treeview_hover(app_instance, tree, hover_bg: str | None = None) -> None:
     if hover_bg is None:
-        try:
-            bg = str(app_instance.bg or "#0f1115").lower()
-        except AttributeError:
-            bg = "#0f1115"
+        bg = str(app_instance.bg or "#0f1115").lower()
         hover_bg = "#1e2630" if int(bg.replace("#", "")[:2], 16) < 0x88 else "#e9eef7"
 
     tree.tag_configure("HOVER", background=hover_bg)

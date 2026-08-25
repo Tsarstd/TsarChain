@@ -129,8 +129,6 @@ def _write_cache_file(cache_root: str, art_id: str, meta: dict, data: bytes) -> 
 
 def _extract_total_size(meta: dict) -> int:
     """Safely parse total byte size from a media metadata dictionary."""
-    if not isinstance(meta, dict):
-        return 0
     try:
         return int(meta.get("size_bytes") or meta.get("size") or meta.get("bytes") or 0)
     except Exception:
@@ -139,13 +137,14 @@ def _extract_total_size(meta: dict) -> int:
 
 def _check_storage_response(resp: Any) -> Tuple[bool, str]:
     """Validate a storage RPC response dict and return (is_ok, error_reason)."""
-    if not isinstance(resp, dict):
+    try:
+        if not resp.get("found"):
+            return False, str(resp.get("reason") or "not_found")
+        if resp.get("status") == "error":
+            return False, str(resp.get("reason") or "error")
+        return True, ""
+    except AttributeError:
         return False, "bad_response"
-    if not resp.get("found"):
-        return False, str(resp.get("reason") or "not_found")
-    if resp.get("status") == "error":
-        return False, str(resp.get("reason") or "error")
-    return True, ""
 
 
 def _get_cached_graffiti_file(art_id: str, cache_dir: Optional[str]) -> Optional[dict]:
@@ -187,15 +186,18 @@ def fetch_storers(
     ttl_sec = int(ttl_sec or db_cache.WEB_STOR_LIST_TTL_SEC)
     cache_key = db_cache.make_cache_key("web", cache_scope, "stor_list")
     cached = db_cache.cache_get(cache_key)
-    if isinstance(cached, list):
+    if type(cached) is list:
         return cached[:limit] if limit is not None and limit > 0 else cached
 
     resp = rpc_call({"type": "STOR_LIST"}) or {}
-    if isinstance(resp, dict) and resp.get("error"):
-        ttl_err = db_cache.get_error_cache_ttl(resp.get("error"))
-        if ttl_err is not None:
-            db_cache.cache_set(cache_key, [], ttl_sec=ttl_err)
-        return []
+    try:
+        if resp.get("error"):
+            ttl_err = db_cache.get_error_cache_ttl(resp.get("error"))
+            if ttl_err is not None:
+                db_cache.cache_set(cache_key, [], ttl_sec=ttl_err)
+            return []
+    except AttributeError:
+        pass
 
     storers = resp.get("storers") or resp.get("items") or []
     valid: list[Dict[str, Any]] = []
@@ -478,7 +480,7 @@ def fetch_graffiti_file(
                     host=host, port=port, payload=payload, timeout=timeout, msg_cap=msg_cap,
                     art_norm=art_norm, meta_info=meta_info, cache_root=cache_root, log_tag="oneshot_unknown"
                 )
-                if isinstance(res, str):
+                if type(res) is str:
                     last_error = res
                     continue
                 return res
@@ -511,7 +513,7 @@ def fetch_graffiti_file(
                     host=host, port=port, payload=payload, timeout=timeout, msg_cap=msg_cap,
                     art_norm=art_norm, meta_info=meta_info, cache_root=cache_root, log_tag="oneshot"
                 )
-                if isinstance(res, str):
+                if type(res) is str:
                     last_error = res
                     continue
                 return res

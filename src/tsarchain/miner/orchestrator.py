@@ -340,8 +340,8 @@ class SimpleMiner:
         )
         if resp and resp.get("type") == "BLOCK":
             hx = resp.get("hash")
-            if isinstance(hx, str) and hx:
-                return hx.lower()
+            if hx:
+                return str(hx).lower()
         return None
 
     def start_node(self):
@@ -553,14 +553,17 @@ class SimpleMiner:
                     self.abort_block_mining.set()
                 clog("[signal] Mining interrupted by user")
                 break
-            except Exception as exc:
-                if isinstance(exc, OSError) and exc.errno in INTERRUPTED_ERRNOS:
+            except OSError as exc:
+                if exc.errno in INTERRUPTED_ERRNOS:
                     clog("[mining] Interrupted system call; stopping miners...")
                     self.mining_alive = False
                     self.cancel_mining.set()
                     if self.abort_block_mining:
                         self.abort_block_mining.set()
                     break
+                clog(f"Mining error: {exc}")
+                time.sleep(1)
+            except Exception as exc:
                 clog(f"Mining error: {exc}")
                 time.sleep(1)
 

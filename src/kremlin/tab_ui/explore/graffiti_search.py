@@ -63,35 +63,32 @@ class GraffitiSearch:
             try:
                 post_resp = get_graffiti(art_id)
                 post = None
-                if isinstance(post_resp, dict):
-                    if post_resp.get("error"):
-                        self.panel._ui(self.panel._render_error, f"Graffiti error: {post_resp.get('error')}")
-                        return
-                    post = post_resp.get("post") or post_resp
+                if post_resp.get("error"):
+                    self.panel._ui(self.panel._render_error, f"Graffiti error: {post_resp.get('error')}")
+                    return
+                post = post_resp.get("post") or post_resp
+
                 if not post:
                     self.panel._ui(self.panel._render_error, "Graffiti Not Found.")
                     return
                 comments = []
                 if callable(get_comments):
                     c = get_comments(post.get("art_id") or art_id)
-                    if isinstance(c, dict):
-                        comments = c.get("comments") or []
-                    elif isinstance(c, list):
-                        comments = c
+                    comments = c.get("comments") or []
 
                 img_bytes = None
                 img_meta = None
                 cache_path = None
                 if callable(fetch_file):
                     f = fetch_file(post, art_id)
-                    if isinstance(f, dict):
-                        if f.get("status") == "ok":
-                            img_bytes = f.get("bytes")
-                            img_meta = f.get("meta")
-                            cache_path = f.get("cache_path")
-                        else:
-                            err = f.get("reason") or f.get("error")
-                            self.panel._ui(self.panel._render_error, f"fetch_graffiti_file error: {err}")
+                    if f.get("status") == "ok":
+                        img_bytes = f.get("bytes")
+                        img_meta = f.get("meta")
+                        cache_path = f.get("cache_path")
+                    else:
+                        err = f.get("reason") or f.get("error")
+                        self.panel._ui(self.panel._render_error, f"fetch_graffiti_file error: {err}")
+
 
                 done = True
                 self.panel._ui(self.render_graffiti, post, comments, img_bytes, img_meta or {}, cache_path)
@@ -524,13 +521,14 @@ class GraffitiSearch:
 
         def on_done(resp: Optional[Dict[str, Any]]) -> None:
             def finish():
-                if isinstance(resp, dict) and resp.get("status") in (None, "ok"):
-                    txid = resp.get("txid") or resp.get("data", {}).get("txid") or "?"
+                if resp.get("status") in (None, "ok"):
+                    txid = resp.get("txid") or (resp.get("data") or {}).get("txid") or "?"
                     p._comment_status_var.set(f"COMMENT broadcasted (txid: {txid})")
                     if p._comment_text_widget:
                         p._comment_text_widget.delete("1.0", "end")
                 else:
                     p._comment_status_var.set(f"COMMENT failed: {resp}")
+
                 if p._comment_btn:
                     p._comment_btn.config(state="normal")
             p._ui(finish)

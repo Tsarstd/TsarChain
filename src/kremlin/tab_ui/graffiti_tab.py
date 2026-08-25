@@ -147,7 +147,10 @@ class GraffitiController:
 
     def process_upload_result(self, res: dict):
         self.uploading = False
-        if not isinstance(res, dict) or res.get("status") != "ok":
+        try:
+            if res.get("status") != "ok":
+                return False, res
+        except AttributeError:
             return False, res
 
         receipt = res.get("receipt") or {}
@@ -896,8 +899,12 @@ class GraffitiTab(ttk.Frame):
             self.pbar["value"] = 0
             detail = (res or {}).get("reason") or (res or {}).get("error") or (res or {}).get("stage") or "upload_failed"
             extra = (res or {}).get("resp") or {}
-            if isinstance(extra, dict) and extra.get("reason"):
-                detail = f"{detail} ({extra.get('reason')})"
+            try:
+                reason = extra.get("reason")
+                if reason:
+                    detail = f"{detail} ({reason})"
+            except AttributeError:
+                pass
             messagebox.showerror("Graffiti", f"Upload failed: {detail}")
             self.receipt_var.set(TEXT_RECEIPT_NONE)
             if self.controller._upload_candidates:
@@ -979,13 +986,16 @@ class GraffitiTab(ttk.Frame):
             if st:
                 st.clear_opret_hex()
             def _update():
-                if isinstance(resp, dict) and resp.get("status") in (None, "ok"):
-                    txid = resp.get("txid") or resp.get("data", {}).get("txid") or "?"
-                    self.post_info_var.set(f"POST broadcasted (txid: {txid})")
-                    self._post_plan = None
-                    if after_success:
-                        after_success(txid)
-                else:
+                try:
+                    if resp.get("status") in (None, "ok"):
+                        txid = resp.get("txid") or (resp.get("data") or {}).get("txid") or "?"
+                        self.post_info_var.set(f"POST broadcasted (txid: {txid})")
+                        self._post_plan = None
+                        if after_success:
+                            after_success(txid)
+                    else:
+                        raise ValueError()
+                except Exception:
                     self.post_info_var.set(f"POST failed: {resp}")
                     self.uploading = False
                     self._upload_candidates = []
@@ -1084,13 +1094,16 @@ class GraffitiTab(ttk.Frame):
 
         def on_done(resp: Optional[Dict[str, Any]]) -> None:
             def finish():
-                if isinstance(resp, dict) and resp.get("status") in (None, "ok"):
-                    txid = resp.get("txid") or resp.get("data", {}).get("txid") or "?"
-                    self.comment_status_var.set(f"COMMENT broadcasted (txid: {txid})")
-                    if self.comment_text:
-                        self.comment_text.delete("1.0", tk.END)
-                    self._refresh_current_comments()
-                else:
+                try:
+                    if resp.get("status") in (None, "ok"):
+                        txid = resp.get("txid") or (resp.get("data") or {}).get("txid") or "?"
+                        self.comment_status_var.set(f"COMMENT broadcasted (txid: {txid})")
+                        if self.comment_text:
+                            self.comment_text.delete("1.0", tk.END)
+                        self._refresh_current_comments()
+                    else:
+                        self.comment_status_var.set(f"COMMENT failed: {resp}")
+                except (AttributeError, TypeError):
                     self.comment_status_var.set(f"COMMENT failed: {resp}")
                 if self.comment_send_btn:
                     self.comment_send_btn.config(state="normal")

@@ -48,11 +48,11 @@ class MempoolStorageMixin:
     def _hydrate_pool(self, entries: list) -> None:
         for entry in entries:
             meta = {}
-            if isinstance(entry, dict):
+            if type(entry) is dict:
                 meta = entry.get("_meta") or {}
             tx_obj = self._tx_from_any(entry)
             txid = self._normalize_txid(tx_obj.txid)
-            recv_at = meta.get("received_at") if isinstance(meta, dict) else None
+            recv_at = meta.get("received_at") if type(meta) is dict else None
             if recv_at:
                 try:
                     tx_obj._received_at = float(recv_at)
@@ -60,7 +60,7 @@ class MempoolStorageMixin:
                     pass
 
             hinted_size = None
-            if isinstance(meta, dict):
+            if type(meta) is dict:
                 hinted_size = meta.get("vbytes") or meta.get("virtual_size")
                 
             size = int(hinted_size) if hinted_size is not None else None
@@ -75,14 +75,14 @@ class MempoolStorageMixin:
     def _normalize_txid(self, txid) -> str:
         if txid is None:
             raise ValueError("Transaction missing txid")
-        if isinstance(txid, (bytes, bytearray)):
+        if type(txid) in (bytes, bytearray):
             return txid.hex().lower()
         return str(txid).lower()
 
     def _tx_from_any(self, item) -> Tx:
-        if isinstance(item, Tx):
+        if type(item) is Tx or issubclass(type(item), Tx):
             tx_obj = item
-        elif isinstance(item, dict):
+        elif type(item) is dict:
             tx_obj = Tx.from_dict(item)
         else:
             raise TypeError(f"Unsupported mempool entry type: {type(item)}")
@@ -190,10 +190,8 @@ class MempoolStorageMixin:
             self._size_map = {}
             self._prevout_index = {}
             try:
-                tx_prevouts = self._tx_prevouts
-                if isinstance(tx_prevouts, dict):
-                    tx_prevouts.clear()
-            except AttributeError:
+                self._tx_prevouts.clear()
+            except (AttributeError, TypeError):
                 pass
             self._fee_heap = []
             self._heap_entries = {}
@@ -296,10 +294,8 @@ class MempoolStorageMixin:
             self.current_size = 0
             self._prevout_index.clear()
             try:
-                tx_prevouts = self._tx_prevouts
-                if isinstance(tx_prevouts, dict):
-                    tx_prevouts.clear()
-            except AttributeError:
+                self._tx_prevouts.clear()
+            except (AttributeError, TypeError):
                 pass
             self._fee_heap.clear()
             self._heap_entries.clear()

@@ -221,7 +221,7 @@ class MempoolPolicyMixin:
 
     def add_valid_tx(self, tx_data) -> bool:
         self.last_error_reason = None
-        transaction_obj = Tx.from_dict(tx_data) if isinstance(tx_data, dict) else tx_data
+        transaction_obj = Tx.from_dict(tx_data) if type(tx_data) is dict else tx_data
 
         txid_hex = transaction_obj.txid.hex() if transaction_obj.txid else None
         if txid_hex and self.has_tx(txid_hex):
@@ -293,7 +293,7 @@ class MempoolPolicyMixin:
                 except AttributeError:
                     old_txid = None
                 conflict_txids.append(
-                    old_txid.hex() if isinstance(old_txid, (bytes, bytearray)) else str(old_txid or "")
+                    old_txid.hex() if type(old_txid) in (bytes, bytearray) else str(old_txid or "")
                 )
 
             if (new_rate > worst_old_rate) or (new_fee > worst_old_fee):
@@ -302,9 +302,9 @@ class MempoolPolicyMixin:
                         self.remove_tx(ctid)
             else:
                 any_prev = next(iter(new_prevouts))
-                if isinstance(any_prev, PrevoutRef):
+                try:
                     prev_str = f"{any_prev.txid}:{any_prev.vout}"
-                else:
+                except AttributeError:
                     prev_str = f"{any_prev[0]}:{any_prev[1]}"
                 self.last_error_reason = (
                     f"double_spend_conflict prev={prev_str} with={','.join(conflict_txids)}"

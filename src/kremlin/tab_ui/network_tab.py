@@ -57,9 +57,10 @@ class NetworkController:
     def fmt_last_update(last_up: Any) -> str:
         if last_up in (None, "", "-"):
             return "-"
-        if isinstance(last_up, (int, float)):
-            dt = _dt.datetime.fromtimestamp(int(last_up), tz=_dt.timezone.utc)
-        else:
+        try:
+            val_f = float(last_up)
+            dt = _dt.datetime.fromtimestamp(int(val_f), tz=_dt.timezone.utc)
+        except (ValueError, TypeError):
             s = str(last_up)
             dt = _dt.datetime.fromisoformat(s)
 
@@ -96,18 +97,22 @@ class NetworkController:
 
     @staticmethod
     def extract_peers_count(snap: Optional[Dict[str, Any]], fallback: int) -> int:
-        if isinstance(snap, dict):
-            peers_section = snap.get("peers")
-            if isinstance(peers_section, dict):
-                val = peers_section.get("count")
-                if val is None:
-                    val = peers_section.get("total")
-                if val is None and len(peers_section) == 1:
-                    val = next(iter(peers_section.values()))
-                if val is not None:
-                    return int(val)
-            elif peers_section is not None:
-                return int(peers_section)
+        if snap:
+            try:
+                peers_section = snap.get("peers")
+                try:
+                    val = peers_section.get("count")
+                    if val is None:
+                        val = peers_section.get("total")
+                    if val is None and len(peers_section) == 1:
+                        val = next(iter(peers_section.values()))
+                    if val is not None:
+                        return int(val)
+                except AttributeError:
+                    if peers_section is not None:
+                        return int(peers_section)
+            except (AttributeError, TypeError, ValueError):
+                pass
         return int(fallback)
 
 
@@ -222,8 +227,9 @@ class NetworkTab(tk.Frame):
                 if not resp:
                     self._net_text_write("[-] Failed to fetch network info\n")
                     return
-                if resp.get("type") == "NETWORK_INFO" and isinstance(resp.get("data"), dict):
-                    store["snap"] = resp["data"]
+                data = resp.get("data")
+                if resp.get("type") == "NETWORK_INFO" and data and type(data) is dict:
+                    store["snap"] = data
                 else:
                     store["snap"] = {
                         "schema_version": 1,
@@ -280,7 +286,7 @@ class NetworkTab(tk.Frame):
     def _render_network_snapshot(self, snap: Optional[Dict[str, Any]], peers_cnt: int) -> None:
         self._net_text_enable()
         self.net_text.delete("1.0", tk.END)
-        if not isinstance(snap, dict):
+        if not snap or type(snap) is not dict:
             self.net_text.insert(tk.END, "[-] Snapshot not available\n")
             self._net_text_disable()
             return
@@ -423,7 +429,7 @@ class NetworkTab(tk.Frame):
         self.net_text.insert(tk.END, ("="*84) + "\n", ("sep","center"))
         self.net_text.insert(tk.END, "TOP #10 Miners Leaderboards\n", ("Leaderboards","center"))
         self.net_text.insert(tk.END, ("="*84) + "\n\n", ("sep","center"))
-        if isinstance(miners, list) and miners:
+        if miners:
             top = miners[:10]
             for i, (addr, found) in enumerate(top, start=1):
                 if i == 1:

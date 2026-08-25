@@ -727,14 +727,13 @@ class ChatTab:
             self.toast(f"Chat unlock key cancelled/failed: {e}", kind="error")
             return False
         
-        try:
-            dh_cache = self.chat_mgr._chat_dh_cache
-        except AttributeError:
-            dh_cache = None
-        if isinstance(dh_cache, dict):
-            sk, pk, _t = dh_cache.get(a, (None, None, 0))
-            if sk and pk:
-                dh_cache[a] = (sk, pk, time.time() + self._chat_key_ttl_sec)
+        if dh_cache:
+            try:
+                sk, pk, _t = dh_cache.get(a, (None, None, 0))
+                if sk and pk:
+                    dh_cache[a] = (sk, pk, time.time() + self._chat_key_ttl_sec)
+            except AttributeError:
+                pass
         return True
 
     def _chat_enter_hero(self):
@@ -954,7 +953,10 @@ class ChatTab:
                     self.toast("Online •", kind="info")
                     self._chat_schedule_next(CFG.CHAT_POLL_INITIAL_MS)
                 else:
-                    err_msg = (resp or {}).get("error") if isinstance(resp, dict) else str(resp)
+                    try:
+                        err_msg = (resp or {}).get("error")
+                    except AttributeError:
+                        err_msg = str(resp)
                     if err_msg in ("No response from any node", "No peers"):
                         self.toast("Node tidak terhubung. Pastikan node (cli_node_miner) sudah berjalan.", kind="error")
                     else:
@@ -1102,7 +1104,7 @@ class ChatTab:
             txt.insert(tk.END, header_text, header_tags)
             end_idx = txt.index(tk.END)
 
-            safe_text = text if isinstance(text, str) else str(text)
+            safe_text = str(text) if text is not None else ""
             body = f" {safe_text} \n"
             txt.insert(tk.END, body, (bubble_tag, side_tag))
 

@@ -39,7 +39,7 @@ class DifficultyManager:
             return 0
 
         def _to_int_ts(v):
-            if isinstance(v, (int, float)):
+            if type(v) in (int, float):
                 return int(v)
             return 0
 
@@ -55,7 +55,7 @@ class DifficultyManager:
             t = b.timestamp
         except AttributeError:
             t = 0
-        return int(t) if isinstance(t, (int, float)) else 0
+        return int(t) if type(t) in (int, float) else 0
 
 
     def _expected_bits_on_prefix(self, prefix: "List[Block]", next_height: int) -> int:

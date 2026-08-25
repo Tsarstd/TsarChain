@@ -530,7 +530,10 @@ class ExplorePanel(tk.Frame):
         tip = info.get("tip") or info.get("best_hash") or "-"
         self._kv("Tip", _short(tip, 12), mono=True, vtag="val_hex")
         peers = info.get("peers") or info.get("peer_list") or []
-        peers_n = peers if isinstance(peers, int) else len(peers)
+        try:
+            peers_n = len(peers)
+        except TypeError:
+            peers_n = int(peers)
         self._kv("Peers", str(peers_n), mono=True, vtag="val_num")
         mem = info.get("mempool_count") or info.get("txpool_size") or info.get("mempool")
         self._kv("Mempool", str(mem), mono=True, vtag="val_num")

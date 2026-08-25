@@ -17,8 +17,11 @@ log = get_ctx_logger("tsarchain.network.rpc.user_rpc.category.transactions")
 @benchmark(label="NEW_TX", threshold_ms=15.0)
 def new_tx(self, message, pow_obj, base_identity, addr, *, client_ip, **kwargs):
     sender_addr = str(message.get("from_addr") or message.get("from") or "").strip().lower()
-    if not sender_addr and isinstance(message.get("data"), dict):
-        sender_addr = str((message.get("data") or {}).get("from_addr") or "").strip().lower()
+    if not sender_addr:
+        try:
+            sender_addr = str((message.get("data") or {}).get("from_addr") or "").strip().lower()
+        except AttributeError:
+            pass
 
     ident_tx = sender_addr or base_identity
 

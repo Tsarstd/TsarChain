@@ -186,7 +186,7 @@ class TxMempoolValidator:
         pool_balance = int(stats.get("pool_balance", 0))
 
         recs = payout_meta.get("recipients") or []
-        if not isinstance(recs, list) or not recs:
+        if type(recs) is not list or not recs:
             self.last_error_reason = "payout_no_recipients"
             log.warning(_PAYOUT_REJECT_MSG, art_id[:16], self.last_error_reason)
             return False
@@ -342,7 +342,7 @@ class TxMempoolValidator:
                 return False
             
         recs = meta.get("recipients") or []
-        if not isinstance(recs, list) or not recs:
+        if type(recs) is not list or not recs:
             self.last_error_reason = "payout_no_recipients"
             return False
         
@@ -545,7 +545,7 @@ class TxMempoolValidator:
                 return snapshot[tk]
 
         bucket = snapshot.get(txid) or snapshot.get(txid_raw)
-        if isinstance(bucket, dict) and idx in bucket:
+        if type(bucket) is dict and idx in bucket:
             return bucket[idx]
 
         try:
@@ -560,10 +560,10 @@ class TxMempoolValidator:
 
 
     def _get_utxo_amount(self, utxo_data):
-        if isinstance(utxo_data, dict):
+        if type(utxo_data) is dict:
             if "tx_out" in utxo_data:
                 txo = utxo_data["tx_out"]
-                if isinstance(txo, dict) and "amount" in txo:
+                if type(txo) is dict and "amount" in txo:
                     return int(txo.get("amount", 0))
                 try:
                     amt = txo.amount
@@ -598,7 +598,7 @@ class TxMempoolValidator:
                 txid_val = None
         if txid_val is None:
             return None
-        if isinstance(txid_val, (bytes, bytearray)):
+        if type(txid_val) in (bytes, bytearray):
             return txid_val.hex().lower()
         return str(txid_val).lower()
 
@@ -611,7 +611,7 @@ class TxMempoolValidator:
         txid_raw = str(prev_txid_hex)
         txid = txid_raw.lower()
 
-        if isinstance(snapshot, dict):
+        if type(snapshot) is dict:
             res = self._lookup_in_snapshot_dict(snapshot, txid, txid_raw, idx)
             if res is not None:
                 return res
@@ -627,10 +627,10 @@ class TxMempoolValidator:
 
     def _utxo_snapshot_to_items(self, snapshot) -> list[tuple]:
         items = []
-        if not isinstance(snapshot, dict):
+        if type(snapshot) is not dict:
             return items
         for key, entry in snapshot.items():
-            if isinstance(key, bytes):
+            if type(key) in (bytes, bytearray):
                 key_str = key.decode("utf-8")
             else:
                 key_str = str(key)
@@ -651,9 +651,9 @@ class TxMempoolValidator:
         try:
             raw = spk_obj.serialize()
         except (AttributeError, TypeError):
-            if isinstance(spk_obj, (bytes, bytearray)):
+            if type(spk_obj) in (bytes, bytearray):
                 raw = bytes(spk_obj)
-            elif isinstance(spk_obj, str):
+            elif type(spk_obj) is str:
                 try:
                     raw = bytes.fromhex(spk_obj)
                 except ValueError:

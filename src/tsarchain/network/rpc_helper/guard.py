@@ -47,7 +47,7 @@ class GuardHandler(NetworkHandlerProxy):
 
     def nonce_guard(self, scope: str, sender_key: str, nonce: str, ts: int | float, window: int) -> bool:
         
-        if not (scope and sender_key and nonce and isinstance(ts, (int, float))):
+        if not (scope and sender_key and nonce and type(ts) in (int, float)):
             return False
 
         now = self._tb_now()

@@ -37,11 +37,11 @@ class UTXODatabaseMixin:
         utxo_db = cls()
         utxo_db.utxos.clear()
         for key, value in (data or {}).items():
-            if not isinstance(value, dict) or key == '__meta__':
+            if type(value) is not dict or key == '__meta__':
                 continue
             if "tx_out" in value:
                 tx_out_data = value["tx_out"]
-                tx_out_obj = TxOut.from_dict(tx_out_data) if isinstance(tx_out_data, dict) else None
+                tx_out_obj = TxOut.from_dict(tx_out_data) if type(tx_out_data) is dict else None
             elif "amount" in value and "script_pubkey" in value:
                 tx_out_obj = TxOut.from_dict(value)
             else:
@@ -65,7 +65,7 @@ class UTXODatabaseMixin:
 
     def _serialize_entry(self, entry):
         tx_out = entry.get("tx_out")
-        if isinstance(tx_out, dict):
+        if type(tx_out) is dict:
             tx_out_dict = dict(tx_out)
             spk = tx_out.get("script_pubkey")
         else:
@@ -89,14 +89,14 @@ class UTXODatabaseMixin:
             try:
                 spk_bytes = spk.serialize()
             except (AttributeError, TypeError):
-                if isinstance(spk, (bytes, bytearray)):
+                if type(spk) in (bytes, bytearray):
                     spk_bytes = bytes(spk)
-                elif isinstance(spk, str):
+                elif type(spk) is str:
                     try:
                         spk_bytes = bytes.fromhex(spk)
                     except ValueError:
                         pass
-        if not spk_bytes and isinstance(tx_out_dict.get("script_pubkey"), str):
+        if not spk_bytes and type(tx_out_dict.get("script_pubkey")) is str:
             try:
                 spk_bytes = bytes.fromhex(tx_out_dict["script_pubkey"])
             except ValueError:
@@ -203,9 +203,9 @@ class UTXODatabaseMixin:
                 try:
                     spk_bytes = spk.serialize()
                 except (AttributeError, TypeError):
-                    if isinstance(spk, (bytes, bytearray)):
+                    if type(spk) in (bytes, bytearray):
                         spk_bytes = bytes(spk)
-                    elif isinstance(spk, str):
+                    elif type(spk) is str:
                         try:
                             spk_bytes = bytes.fromhex(spk)
                         except ValueError:
@@ -250,7 +250,7 @@ class UTXODatabaseMixin:
 
 
     def _get_utxo_meta(self, utxo_data):
-        if isinstance(utxo_data, dict):
+        if type(utxo_data) is dict:
             if "is_coinbase" in utxo_data or "block_height" in utxo_data:
                 return bool(utxo_data.get("is_coinbase", False)), int(utxo_data.get("block_height", 0))
         return False, 0

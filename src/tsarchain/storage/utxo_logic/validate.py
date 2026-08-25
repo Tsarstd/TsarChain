@@ -18,7 +18,7 @@ class UTXOValidationMixin:
     def _txid_hex(self, x):
         if x is None:
             return None
-        if isinstance(x, (bytes, bytearray)):
+        if type(x) in (bytes, bytearray):
             return x.hex()
         return str(x)
 
@@ -66,9 +66,9 @@ class UTXOValidationMixin:
         try:
             b = spk.serialize()
         except (AttributeError, TypeError):
-            if isinstance(spk, (bytes, bytearray)):
+            if type(spk) in (bytes, bytearray):
                 b = bytes(spk)
-            elif isinstance(spk, str):
+            elif type(spk) is str:
                 try:
                     b = bytes.fromhex(spk)
                 except ValueError:
@@ -101,12 +101,12 @@ class UTXOValidationMixin:
                 txid_raw = tx.txid
             except AttributeError:
                 txid_raw = None
-            if isinstance(txid_raw, str):
+            if type(txid_raw) is str:
                 try:
                     txid_raw = bytes.fromhex(txid_raw)
                 except ValueError:
                     return None
-            if not isinstance(txid_raw, (bytes, bytearray)) or len(txid_raw) != 32:
+            if type(txid_raw) not in (bytes, bytearray) or len(txid_raw) != 32:
                 return None
 
             inputs_compact = self._build_compact_inputs(tx)
@@ -157,12 +157,12 @@ class UTXOValidationMixin:
                     prev = txin.prev_tx
                 except AttributeError:
                     prev = None
-            if isinstance(prev, str):
+            if type(prev) is str:
                 try:
                     prev = bytes.fromhex(prev)
                 except ValueError:
                     return None
-            if not isinstance(prev, (bytes, bytearray)) or len(prev) != 32:
+            if type(prev) not in (bytes, bytearray) or len(prev) != 32:
                 return None
             try:
                 vout_val = txin.vout
@@ -182,14 +182,14 @@ class UTXOValidationMixin:
             except AttributeError:
                 witness = []
             for w in witness:
-                if isinstance(w, str):
+                if type(w) is str:
                     try:
                         wit_vec.append(bytes.fromhex(w))
                         continue
                     except Exception:
                         log.exception("[_apply_native_ops_for_txs] unexpected error")
                         return None
-                if isinstance(w, (bytes, bytearray)):
+                if type(w) in (bytes, bytearray):
                     wit_vec.append(bytes(w))
                 else:
                     return None
@@ -215,9 +215,9 @@ class UTXOValidationMixin:
             try:
                 spk_bytes = spk_obj.serialize()
             except (AttributeError, TypeError):
-                if isinstance(spk_obj, (bytes, bytearray)):
+                if type(spk_obj) in (bytes, bytearray):
                     spk_bytes = bytes(spk_obj)
-                elif isinstance(spk_obj, str):
+                elif type(spk_obj) is str:
                     try:
                         spk_bytes = bytes.fromhex(spk_obj)
                     except ValueError:
@@ -231,7 +231,7 @@ class UTXOValidationMixin:
     def _apply_native_ops_to_state(self, ops) -> None:
         with self._lock:
             for op in ops or []:
-                if not isinstance(op, (tuple, list)) or len(op) < 5:
+                if type(op) not in (tuple, list) or len(op) < 5:
                     continue
                 key = op[0]
                 amount = op[1]
@@ -239,7 +239,7 @@ class UTXOValidationMixin:
                 is_coinbase = op[3]
                 born_height = op[4]
 
-                if not isinstance(key, str):
+                if type(key) is not str:
                     continue
 
                 if amount is None:
@@ -252,7 +252,7 @@ class UTXOValidationMixin:
 
                 amt_int = int(amount)
                 spk_hex = None
-                if isinstance(spk_bytes, (bytes, bytearray)):
+                if type(spk_bytes) in (bytes, bytearray):
                     spk_hex = bytes(spk_bytes).hex()
                 tx_out_obj = TxOut.from_dict({"amount": amt_int, "script_pubkey": spk_hex or ""})
                 entry = {
@@ -294,12 +294,12 @@ class UTXOValidationMixin:
                 try:
                     script_bytes = raw_spk.serialize()
                 except (AttributeError, TypeError):
-                    if isinstance(raw_spk, str):
+                    if type(raw_spk) is str:
                         try:
                             script_bytes = bytes.fromhex(raw_spk)
                         except ValueError:
                             script_bytes = b""
-                    elif isinstance(raw_spk, (bytes, bytearray)):
+                    elif type(raw_spk) in (bytes, bytearray):
                         script_bytes = bytes(raw_spk)
                     else:
                         script_bytes = b""
@@ -408,12 +408,12 @@ class UTXOValidationMixin:
         try:
             script_bytes = raw_spk.serialize()
         except (AttributeError, TypeError):
-            if isinstance(raw_spk, str):
+            if type(raw_spk) is str:
                 try:
                     script_bytes = bytes.fromhex(raw_spk)
                 except ValueError:
                     script_bytes = b""
-            elif isinstance(raw_spk, (bytes, bytearray)):
+            elif type(raw_spk) in (bytes, bytearray):
                 script_bytes = bytes(raw_spk)
             else:
                 script_bytes = b""
@@ -473,9 +473,9 @@ class UTXOValidationMixin:
             return spk.serialize()
         except (AttributeError, TypeError):
             pass
-        if isinstance(spk, (bytes, bytearray)):
+        if type(spk) in (bytes, bytearray):
             return bytes(spk)
-        if isinstance(spk, str):
+        if type(spk) is str:
             try:
                 return bytes.fromhex(spk)
             except ValueError:
@@ -496,7 +496,7 @@ class UTXOValidationMixin:
             return True
 
         m = snapshot.get(prev_txid_hex)
-        if isinstance(m, dict) and int(vout) in m:
+        if type(m) is dict and int(vout) in m:
             del m[int(vout)]
             if not m:
                 snapshot.pop(prev_txid_hex, None)
@@ -504,7 +504,7 @@ class UTXOValidationMixin:
         
         removed = False
         for addr, lst in list(snapshot.items()):
-            if isinstance(lst, list):
+            if type(lst) is list:
                 for i in range(len(lst) - 1, -1, -1):
                     ent = lst[i]
                     tid = ent.get("txid") or ent.get("txid_hex") or ent.get("prev_txid")
@@ -519,13 +519,13 @@ class UTXOValidationMixin:
 
     def _detect_snapshot_layout(self, snapshot: dict) -> str | None:
         for k, v in snapshot.items():
-            if isinstance(k, str) and ":" in k:
+            if type(k) is str and ":" in k:
                 return "flat_string"
-            if isinstance(k, tuple) and len(k) == 2:
+            if type(k) is tuple and len(k) == 2:
                 return "flat_tuple"
-            if isinstance(v, dict) and all(isinstance(_, int) for _ in v.keys()):
+            if type(v) is dict and all(type(_) is int for _ in v.keys()):
                 return "per_txid_dict"
-            if isinstance(v, list):
+            if type(v) is list:
                 return "per_address_list"
         return None
 
@@ -542,12 +542,12 @@ class UTXOValidationMixin:
             return
         if layout == "per_txid_dict":
             bucket = snapshot.setdefault(txid_hex, {})
-            if isinstance(bucket, dict):
+            if type(bucket) is dict:
                 bucket[int(n)] = entry
                 return
         if layout == "per_address_list" and address:
             bucket = snapshot.setdefault(address, [])
-            if isinstance(bucket, list):
+            if type(bucket) is list:
                 bucket.append(entry)
                 return
 
@@ -623,7 +623,7 @@ class UTXOValidationMixin:
             try:
                 spk_hex = spk.serialize().hex()
             except (AttributeError, TypeError):
-                if isinstance(spk, (bytes, bytearray)):
+                if type(spk) in (bytes, bytearray):
                     spk_hex = spk.hex()
                 elif spk is not None:
                     spk_hex = str(spk)

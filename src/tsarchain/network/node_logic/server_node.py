@@ -88,14 +88,14 @@ def _handle_connection(self, conn, addr):
 
         node_hint = None
         pow_proof = None
-        if isinstance(first, dict):
+        if type(first) is dict:
             node_hint = str(first.get("from") or first.get("node_id") or "").strip().lower() or None
             pow_proof = first.get("pow")
         if not allow_handshake(ip, time.time(), node_id=node_hint, pow_proof=pow_proof):
             log.warning("[_handle_connection] handshake denied ip=%s node=%s", ip, (node_hint or "-"))
             return
 
-        if isinstance(first, dict) and first.get("type") == "P2P_HS1":
+        if type(first) is dict and first.get("type") == "P2P_HS1":
             _process_p2p_channel(self, conn, addr, ip, first)
         else:
             ban_ip(ip, CFG.BAN_MALICIOUS_RPC)
@@ -168,7 +168,7 @@ def _process_p2p_channel(self, conn, addr, ip, first): #NOSONAR
             
             src_nid = outer.get("from")
             src_pub = outer.get("pubkey")
-            if isinstance(src_nid, str) and isinstance(src_pub, str):
+            if type(src_nid) is str and type(src_pub) is str:
                 self.peer_pubkeys[src_nid] = src_pub
                 try:
                     peer_pub = chan.peer_node_pub
@@ -184,7 +184,7 @@ def _process_p2p_channel(self, conn, addr, ip, first): #NOSONAR
 
         response = process_message(self, msg, addr, src_node_id=src_nid, src_pubkey=src_pub)
         if response is not None:
-            drop = bool(response.pop("drop", False)) if isinstance(response, dict) else False
+            drop = bool(response.pop("drop", False)) if type(response) is dict else False
             env = build_envelope(response, self.node_ctx, extra={"pubkey": self.pubkey})
             send_fn(json.dumps(env).encode("utf-8"))
             if drop:

@@ -67,107 +67,66 @@ def clog(message: str, color: str = COL.GREY):
 def _safe_peer_counts(net) -> tuple[int, int]:
     if not net:
         return 0, 0
-    try:
-        inbound = len(net.inbound_peers or ())
-    except AttributeError:
-        inbound = 0
-    try:
-        outbound = len(net.outbound_peers or ())
-    except AttributeError:
-        outbound = 0
+    inbound = len(net.inbound_peers or ())
+    outbound = len(net.outbound_peers or ())
     return inbound, outbound
 
 
 def _count_txpool(pool) -> int:
     if pool is None:
         return 0
-    try:
-        p = pool._pool
-        if p is not None and not isinstance(p, (bytes, str)):
-            try:
-                return len(p)
-            except TypeError:
-                pass
-    except AttributeError:
-        pass
-    try:
-        get_size = pool.get_mempool_size
-        if callable(get_size):
-            res = get_size()
-            if isinstance(res, int):
-                return res
-    except AttributeError:
-        pass
-    try:
-        get_txs = pool.get_all_txs
-        if callable(get_txs):
-            txs = get_txs()
-            if txs is not None and not isinstance(txs, (bytes, str)):
-                try:
-                    return len(txs)
-                except TypeError:
-                    pass
-    except AttributeError:
-        pass
-    try:
-        return len(pool)
-    except (TypeError, AttributeError):
-        return 0
+
+    p = pool._pool
+    if p is not None:
+        return len(p)
+
+    get_size = pool.get_mempool_size
+    if callable(get_size):
+        v = get_size()
+        if type(v) is int:
+            return v
+
+    get_txs = pool.get_all_txs
+    if callable(get_txs):
+        txs = get_txs()
+        if type(txs) in (list, tuple, set, dict):
+            return len(txs)
+
+    return len(pool)
 
 
 def _safe_mempool_count(runner) -> int:
     if not runner:
         return 0
-    try:
-        net = runner.network
-    except AttributeError:
-        net = None
+
+    net = runner.network
     if net:
-        try:
-            bcast = net.broadcast
-        except AttributeError:
-            bcast = None
+        bcast = net.broadcast
         if bcast:
-            try:
-                pool = bcast.mempool
-            except AttributeError:
-                pool = None
+            pool = bcast.mempool
             if pool is not None:
                 count = _count_txpool(pool)
                 if count > 0:
                     return count
-        try:
-            pool = net.mempool
-        except AttributeError:
-            pool = None
+
+        pool = net.mempool
         if pool is not None:
             count = _count_txpool(pool)
             if count > 0:
                 return count
 
-    try:
-        bc = runner.blockchain
-    except AttributeError:
-        bc = None
+    bc = runner.blockchain
     if bc:
-        try:
-            get_size = bc.get_mempool_size
-            if callable(get_size):
-                count = get_size()
-                if isinstance(count, int) and count > 0:
-                    return count
-        except AttributeError:
-            pass
-        pool = None
-        try:
-            pool = bc.get_mempool()
-        except (AttributeError, TypeError):
-            try:
-                pool = bc._mempool
-            except AttributeError:
-                pool = None
+        get_size = bc.get_mempool_size
+        if callable(get_size):
+            count = int(get_size())
+            if count > 0:
+                return count
+
+        pool = bc.get_mempool()
         if pool is not None:
             return _count_txpool(pool)
+
     return 0
 
 

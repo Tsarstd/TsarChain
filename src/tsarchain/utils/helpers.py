@@ -163,12 +163,16 @@ def pow_hash_verify_light(header: bytes, *, height: int | None = None, key_hint:
 
 
 def to_bytes(x) -> bytes:
-    if isinstance(x, Script):
+    try:
         return x.serialize()
-    if isinstance(x, (bytes, bytearray)):
+    except (AttributeError, TypeError):
+        pass
+    if type(x) in (bytes, bytearray):
         return bytes(x)
-    if isinstance(x, str):
+    try:
         return bytes.fromhex(x)
+    except (TypeError, ValueError):
+        pass
     return b""
 
 
@@ -271,9 +275,14 @@ def decode_address(address: str) -> bytes:
 
 
 def spkhex_to_address(spk_hex: str) -> str | None:
-    if isinstance(spk_hex, bytes):
+    try:
         spk_hex = spk_hex.hex()
-    spk_hex = spk_hex.lower()
+    except AttributeError:
+        pass
+    try:
+        spk_hex = str(spk_hex).lower()
+    except Exception:
+        return None
     if spk_hex.startswith("0014") and len(spk_hex) == 44:
         prog = bytes.fromhex(spk_hex[4:])
         data = [0] + convertbits(list(prog), 8, 5, True)
@@ -353,7 +362,7 @@ def _estimate_tx_size_bytes(tx) -> int:
         to_storage = tx.to_storage_bytes
         if callable(to_storage):
             raw = to_storage()
-            if isinstance(raw, (bytes, bytearray)):
+            if type(raw) in (bytes, bytearray):
                 return len(raw)
     except Exception:
         pass
@@ -396,7 +405,7 @@ def estimate_block_size_bytes(block) -> int:
         to_storage_block = block.to_storage_bytes
         if callable(to_storage_block):
             raw = to_storage_block()
-            if isinstance(raw, (bytes, bytearray)):
+            if type(raw) in (bytes, bytearray):
                 return len(raw)
     except Exception:
         pass
@@ -409,17 +418,19 @@ def estimate_block_size_bytes(block) -> int:
         try:
             to_storage = tx.to_storage_bytes
             if callable(to_storage):
-                total += 4 + len(to_storage())
-                continue
+                raw = to_storage()
+                if type(raw) in (bytes, bytearray):
+                    total += 4 + len(raw)
+                    continue
         except Exception:
             pass
         try:
             if tx.inputs is not None and tx.outputs is not None:
-                total += _estimate_tx_size_bytes(tx)
+                total += 4 + _estimate_tx_size_bytes(tx)
             else:
-                total += len(json.dumps(tx))
+                total += 4 + len(json.dumps(tx))
         except Exception:
-            total += len(json.dumps(tx))
+            total += 4 + len(json.dumps(tx))
     return int(total)
 
 
@@ -547,12 +558,13 @@ class Script:
     def serialize(self) -> bytes:
         out = bytearray()
         for cmd in self.cmds:
-            if isinstance(cmd, int):
-                out.append(cmd & 0xff)  # opcode
-            elif isinstance(cmd, (bytes, bytearray)):
-                out += self._encode_pushdata(bytes(cmd))
-            else:
-                raise TypeError(f"Unsupported script cmd type: {type(cmd)}")
+            try:
+                out.append(cmd & 0xff)  # opcode (int)
+            except TypeError:
+                try:
+                    out += self._encode_pushdata(bytes(cmd))
+                except Exception:
+                    raise TypeError(f"Unsupported script cmd type: {type(cmd)}")
         return bytes(out)
 
 
@@ -577,11 +589,9 @@ class Script:
     def to_dict(self):
         cmds_serializable = []
         for cmd in self.cmds:
-            if isinstance(cmd, int):
-                cmds_serializable.append(cmd)
-            elif isinstance(cmd, (bytes, bytearray)):
-                cmds_serializable.append(bytes(cmd).hex())
-            else:
+            try:
+                cmds_serializable.append(cmd.hex())
+            except AttributeError:
                 cmds_serializable.append(cmd)
         return {'cmds': cmds_serializable}
 
@@ -590,11 +600,9 @@ class Script:
     def from_dict(cls, data: dict) -> 'Script':
         cmds = []
         for cmd in data.get('cmds', []):
-            if isinstance(cmd, int):
-                cmds.append(cmd)
-            elif isinstance(cmd, str):
+            try:
                 cmds.append(bytes.fromhex(cmd))
-            else:
+            except (TypeError, ValueError):
                 cmds.append(cmd)
         return cls(cmds)
 
@@ -654,9 +662,10 @@ def der_encode_sig_strict(r: int, s: int) -> bytes:
 
 
 def der_parse_sig_strict(sig: bytes) -> Tuple[int, int]:
-    if not isinstance(sig, (bytes, bytearray)):
+    try:
+        sig = bytes(sig)
+    except TypeError:
         raise DerSigError("signature must be bytes")
-    sig = bytes(sig)
     if len(sig) < 8:  # minimal DER with tiny r,s
         raise DerSigError("signature too short")
 
@@ -771,26 +780,42 @@ def bip143_sig_hash(tx, input_index: int, script_code: bytes, value: int, sighas
 
 
 def verify_der_strict_low_s(vk: "VerifyingKey", digest32: bytes, der_sig: bytes) -> bool:
-    if not isinstance(digest32, (bytes, bytearray)) or len(digest32) != 32:
+    try:
+        d_bytes = bytes(digest32)
+        if len(d_bytes) != 32:
+            raise ValueError("digest32 must be 32-byte")
+    except TypeError:
         raise ValueError("digest32 must be 32-byte")
     pub = _vk_to_bytes(vk)
     if not pub:
         raise ValueError("verifying key conversion failed")
-    return bool(_native_verify_der_low_s(pub, bytes(digest32), bytes(der_sig)))
+    return bool(_native_verify_der_low_s(pub, d_bytes, bytes(der_sig)))
 
 
 def sign_digest_der_low_s_native(priv_hex: str, digest32: bytes) -> bytes:
-    if not isinstance(digest32, (bytes, bytearray)) or len(digest32) != 32:
+    try:
+        d_bytes = bytes(digest32)
+        if len(d_bytes) != 32:
+            raise ValueError("digest32 must be 32-byte")
+    except TypeError:
         raise ValueError("digest32 must be 32-byte")
-    return bytes(_native_sign_der_low_s(priv_hex, bytes(digest32)))
+    return bytes(_native_sign_der_low_s(priv_hex, d_bytes))
 
 
 def merkle_root(transactions):
     txids = []
     for tx in transactions or []:
-        if isinstance(tx, (bytes, bytearray)):
-            txid = bytes(tx)
-        else:
+        txid = None
+        try:
+            txid = bytes.fromhex(tx)
+        except (TypeError, ValueError):
+            try:
+                txid = bytes(tx)
+                if len(txid) != 32:
+                    txid = None
+            except TypeError:
+                txid = None
+        if txid is None:
             try:
                 txid_val = tx.txid
                 if callable(txid_val):
@@ -810,9 +835,10 @@ def merkle_root(transactions):
                         raise TypeError("merkle_root expects 32-byte txids or objects with .txid/.hash")
                 except AttributeError:
                     raise TypeError("merkle_root expects 32-byte txids or objects with .txid/.hash")
-        if isinstance(txid, str):
-            txid = bytes.fromhex(txid)
-        txid = bytes(txid)
+            try:
+                txid = bytes.fromhex(txid)
+            except (TypeError, ValueError):
+                txid = bytes(txid)
         if len(txid) != 32:
             raise ValueError(f"txid must be 32 bytes, got {len(txid)}")
         txids.append(txid)
@@ -880,12 +906,15 @@ def tx_to_compact_tuple(tx) -> tuple:
                 prev = txin.prev_tx
             except AttributeError:
                 prev = None
-        if isinstance(prev, str):
+        if type(prev) in (bytes, bytearray):
+            prev_b = bytes(prev)
+        elif type(prev) is str:
             try:
-                prev = bytes.fromhex(prev)
+                prev_b = bytes.fromhex(prev)
             except ValueError:
-                prev = b""
-        prev_b = bytes(prev) if isinstance(prev, (bytes, bytearray)) else b""
+                prev_b = b""
+        else:
+            prev_b = b""
         try:
             vout = int(txin.vout)
         except (AttributeError, TypeError, ValueError):
@@ -907,12 +936,12 @@ def tx_to_compact_tuple(tx) -> tuple:
             try:
                 script_sig_bytes = script_sig.serialize()
             except (AttributeError, TypeError):
-                if isinstance(script_sig, (bytes, bytearray)):
-                    script_sig_bytes = bytes(script_sig)
-                elif isinstance(script_sig, str):
+                try:
+                    script_sig_bytes = bytes.fromhex(script_sig)
+                except (TypeError, ValueError):
                     try:
-                        script_sig_bytes = bytes.fromhex(script_sig)
-                    except ValueError:
+                        script_sig_bytes = bytes(script_sig)
+                    except TypeError:
                         pass
         wit_vec = []
         try:
@@ -920,16 +949,13 @@ def tx_to_compact_tuple(tx) -> tuple:
         except AttributeError:
             witness = []
         for w in witness:
-            if isinstance(w, str):
+            try:
+                wit_vec.append(bytes.fromhex(w))
+            except (TypeError, ValueError):
                 try:
-                    wit_vec.append(bytes.fromhex(w))
-                    continue
-                except ValueError:
-                    pass
-            if isinstance(w, (bytes, bytearray)):
-                wit_vec.append(bytes(w))
-            else:
-                wit_vec.append(b"")
+                    wit_vec.append(bytes(w))
+                except TypeError:
+                    wit_vec.append(b"")
         inputs_c.append((prev_b, vout, seq, script_sig_bytes, wit_vec))
 
     outputs_c = []
@@ -950,15 +976,13 @@ def tx_to_compact_tuple(tx) -> tuple:
             try:
                 spk_b = spk.serialize()
             except (AttributeError, TypeError):
-                if isinstance(spk, (bytes, bytearray)):
-                    spk_b = bytes(spk)
-                elif isinstance(spk, str):
+                try:
+                    spk_b = bytes.fromhex(spk)
+                except (TypeError, ValueError):
                     try:
-                        spk_b = bytes.fromhex(spk)
-                    except ValueError:
+                        spk_b = bytes(spk)
+                    except TypeError:
                         spk_b = b""
-                else:
-                    spk_b = b""
         else:
             spk_b = b""
         outputs_c.append((amt, spk_b))

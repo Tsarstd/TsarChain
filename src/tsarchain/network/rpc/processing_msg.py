@@ -75,11 +75,11 @@ def process_message(
     src_pubkey: Optional[str] = None,
 ) -> dict | None:
     
-    if not isinstance(message, dict):
+    if type(message) is not dict:
         return {"error": "invalid message: expected JSON object"}
 
     mtype = message.get("type")
-    if not isinstance(mtype, str):
+    if type(mtype) is not str:
         return {"error": "missing or invalid 'type'"}
     
     mtype = mtype.strip().upper()
@@ -164,8 +164,11 @@ def _is_storage_node_id(network, node_id: str | None) -> bool:
     except Exception:
         return False
     for meta in peers.values():
-        if isinstance(meta, dict) and meta.get("node_id") == node_id:
-            return True
+        try:
+            if meta.get("node_id") == node_id:
+                return True
+        except AttributeError:
+            pass
     return False
 
 
@@ -198,8 +201,11 @@ def _identify_rpc_role(
 
 
 def _client_ip(addr) -> str:
-    if isinstance(addr, tuple) and addr:
-        return addr[0]
+    try:
+        if addr:
+            return addr[0]
+    except (TypeError, IndexError):
+        pass
     return "0.0.0.0"
 
 
@@ -207,11 +213,8 @@ def _inject_mempool_basic_stats(tx_section: dict, pool) -> None:
     tx_count = None
     try:
         store = pool._pool
-    except AttributeError:
-        store = None
-    if isinstance(store, dict):
         tx_count = len(store)
-    else:
+    except (AttributeError, TypeError):
         try:
             all_txs_fn = pool.get_all_txs
             txs = all_txs_fn() if callable(all_txs_fn) else []
@@ -229,8 +232,8 @@ def _inject_mempool_basic_stats(tx_section: dict, pool) -> None:
 
 
 def _inject_mempool_graffiti_stats(snapshot: dict, pool) -> None:
-    graff_section = snapshot.setdefault("graffiti", {})
-    if isinstance(graff_section, dict):
+    try:
+        graff_section = snapshot.setdefault("graffiti", {})
         on_mem = 0
         try:
             all_txs_fn = pool.get_all_txs
@@ -251,15 +254,20 @@ def _inject_mempool_graffiti_stats(snapshot: dict, pool) -> None:
                 if meta and str(meta.get("event", "")).upper() == "POST":
                     on_mem += 1
         graff_section["graffiti_on_mempool"] = int(on_mem)
+    except (AttributeError, TypeError):
+        pass
 
 
 def _overlay_realtime_mempool_stats(snapshot: dict, network: "Network") -> None:
     """Inject live mempool stats into the snapshot returned to clients."""
-    if not isinstance(snapshot, dict):
+    if type(snapshot) is not dict:
         return
 
-    tx_section = snapshot.setdefault("transactions", {})
-    if not isinstance(tx_section, dict):
+    try:
+        tx_section = snapshot.setdefault("transactions", {})
+        if type(tx_section) is not dict:
+            return
+    except (AttributeError, TypeError):
         return
 
     try:

@@ -35,7 +35,7 @@ def get_presence_executor() -> ThreadPoolExecutor:
 
 
 def encode_prekey_bundle(bundle: dict) -> bytes:
-    if not isinstance(bundle, dict):
+    if type(bundle) is not dict:
         return b""
     ts = int(bundle.get("ts", 0) or 0)
     ik = bundle.get("ik")
@@ -46,19 +46,19 @@ def encode_prekey_bundle(bundle: dict) -> bytes:
 
     flags = 0
     body = bytearray()
-    if isinstance(ik, str) and len(ik) == 64:
+    if ik and type(ik) is str and len(ik) == 64:
         try:
             body.extend(bytes.fromhex(ik))
             flags |= 0x01
         except ValueError:
             pass
-    if isinstance(spk, str) and len(spk) == 64:
+    if spk and type(spk) is str and len(spk) == 64:
         try:
             body.extend(bytes.fromhex(spk))
             flags |= 0x02
         except ValueError:
             pass
-    if isinstance(sig, str) and sig:
+    if sig and type(sig) is str:
         try:
             sig_bytes = bytes.fromhex(sig)
             if len(sig_bytes) <= 65535:
@@ -67,7 +67,7 @@ def encode_prekey_bundle(bundle: dict) -> bytes:
                 flags |= 0x04
         except ValueError:
             pass
-    if isinstance(spend_pub, str) and len(spend_pub) == 66:
+    if spend_pub and type(spend_pub) is str and len(spend_pub) == 66:
         try:
             body.extend(bytes.fromhex(spend_pub))
             flags |= 0x08
@@ -75,9 +75,9 @@ def encode_prekey_bundle(bundle: dict) -> bytes:
             pass
 
     opk_bytes = bytearray()
-    if isinstance(opk_list, list):
+    if type(opk_list) is list:
         for o in opk_list:
-            if isinstance(o, str) and len(o) == 64:
+            if o and type(o) is str and len(o) == 64:
                 try:
                     opk_bytes.extend(bytes.fromhex(o))
                 except ValueError:
@@ -154,18 +154,18 @@ class ChatHandler(NetworkHandlerProxy):
             return None
         try:
             spend_dict = self.chat_spend_pub
+            if type(spend_dict) is dict:
+                sp = (spend_dict.get(addr) or "").strip().lower()
+                if sp:
+                    return sp
         except AttributeError:
-            spend_dict = None
-        if isinstance(spend_dict, dict):
-            sp = (spend_dict.get(addr) or "").strip().lower()
-            if sp:
-                return sp
+            pass
         b = self.get_prekey_bundle(addr)
         sp = (b.get("spend_pub") or "").strip().lower()
         if sp:
             with self.chat_lock:
                 try:
-                    if isinstance(self.chat_spend_pub, dict):
+                    if type(self.chat_spend_pub) is dict:
                         self.chat_spend_pub[addr] = sp
                 except AttributeError:
                     pass
@@ -193,7 +193,7 @@ class ChatHandler(NetworkHandlerProxy):
             kv_delete("chat_prekeys", addr.encode("utf-8"))
 
     def send_to_peer(self, peer: tuple[str,int], payload: dict) -> None:
-        if not isinstance(peer, tuple) or len(peer) != 2:
+        if type(peer) is not tuple or len(peer) != 2:
             raise ValueError("bad peer")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(1.5)

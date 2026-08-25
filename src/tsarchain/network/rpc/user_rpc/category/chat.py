@@ -112,11 +112,9 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
             self.chat_spend_pub[addr_s] = spend_pk
             self.chat_presence_pub[addr_s] = chat_pub
             try:
-                presence_ts = self.chat_presence_ts
-            except AttributeError:
-                presence_ts = None
-            if isinstance(presence_ts, dict):
-                presence_ts[addr_s] = now_int
+                self.chat_presence_ts[addr_s] = now_int
+            except (AttributeError, TypeError):
+                pass
             try:
                 rec_seen = self.record_presence_seen
             except AttributeError:
@@ -191,17 +189,21 @@ def chat_lookup_pub(self, message, pow_obj, base_identity, *,
         return pow_resp
     pubhex = self.chat_presence_pub.get(addr_s)
     try:
-        presence_ts = self.chat_presence_ts
-    except AttributeError:
-        presence_ts = None
-    last_seen = presence_ts.get(addr_s) if isinstance(presence_ts, dict) else None
+        last_seen = self.chat_presence_ts.get(addr_s)
+    except (AttributeError, TypeError):
+        last_seen = None
     if last_seen is None:
         b = self.get_prekey_bundle(addr_s)
-        ts_field = b.get("ts")
-        if isinstance(ts_field, (int, float)):
-            last_seen = int(ts_field)
-            if isinstance(presence_ts, dict):
-                presence_ts[addr_s] = last_seen
+        try:
+            ts_field = b.get("ts")
+            if ts_field is not None:
+                last_seen = int(ts_field)
+                try:
+                    self.chat_presence_ts[addr_s] = last_seen
+                except (AttributeError, TypeError):
+                    pass
+        except (AttributeError, TypeError, ValueError):
+            pass
 
     return {"type": "CHAT_PUBKEY", "address": addr_s, "pubkey": pubhex, "found": bool(pubhex), "last_seen": last_seen}
 
@@ -265,11 +267,9 @@ def chat_presence(self, message, pow_obj, base_identity, addr, *,
         self.chat_presence_pub[addr_s] = pubhex
         self.chat_spend_pub[addr_s] = spend_pk
         try:
-            presence_ts = self.chat_presence_ts
-        except AttributeError:
-            presence_ts = None
-        if isinstance(presence_ts, dict):
-            presence_ts[addr_s] = now_int
+            self.chat_presence_ts[addr_s] = now_int
+        except (AttributeError, TypeError):
+            pass
         try:
             rec_seen = self.record_presence_seen
         except AttributeError:
@@ -312,6 +312,7 @@ def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
     if not ok:
         log.warning("[chat_publish_prekeys] Rate limit/PoW failed for %s", addr_s)
         return pow_resp
+
     ik  = (message.get("ik")  or "").strip().lower()
     spk = (message.get("spk") or "").strip().lower()
     sig = (message.get("sig") or "").strip().lower()
@@ -323,7 +324,10 @@ def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
         get_sp = self.get_spend_pub
     except AttributeError:
         get_sp = None
-    sp = (get_sp(addr_s) or "").strip().lower() if callable(get_sp) else (self.chat_spend_pub.get(addr_s) or "").strip().lower()
+    try:
+        sp = (get_sp(addr_s) or "").strip().lower() if callable(get_sp) else (self.chat_spend_pub.get(addr_s) or "").strip().lower()
+    except AttributeError:
+        sp = ""
     if not sp:
         log.warning("[chat_publish_prekeys] Unknown address %s (spend_pub missing)", addr_s)
         return {"error":"unknown_address"}
@@ -335,15 +339,16 @@ def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
     now_int = int(time.time())
     with self.chat_lock:
         try:
-            presence_ts = self.chat_presence_ts
-        except AttributeError:
-            presence_ts = None
-        if isinstance(presence_ts, dict):
-            presence_ts[addr_s] = now_int
+            self.chat_presence_ts[addr_s] = now_int
+        except (AttributeError, TypeError):
+            pass
         rec = self.get_prekey_bundle(addr_s)
         rec.update({"ik": ik, "spk": spk, "sig": sig, "spend_pub": sp, "ts": now_int})
-        if isinstance(opk, str) and len(opk) == 64:
-            rec.setdefault("opk_list", []).append(opk)
+        try:
+            if type(opk) is str and len(opk) == 64:
+                rec.setdefault("opk_list", []).append(opk)
+        except (TypeError, AttributeError):
+            pass
         self.put_prekey_bundle(addr_s, rec)
 
     return {"type":"CHAT_PUBLISH_PREKEYS"}
@@ -779,17 +784,17 @@ def _validate_spk_registration(spend_pk, spk_reg, sig_reg) -> tuple[bool, dict |
 def _validate_relay_route(self, route_raw, client_ip) -> tuple[list[tuple], dict | None]:
     route = []
     for hop in route_raw:
-        if isinstance(hop, (list, tuple)) and len(hop) >= 2:
-            try:
+        try:
+            if len(hop) >= 2:
                 hop_norm = (str(hop[0]), int(hop[1]))
-            except Exception:
+            else:
                 return [], {"error": "bad_route_entry"}
-            if hop_norm not in self.peers:
-                log.warning("[CHAT_RELAY] unknown hop=%s from=%s", hop_norm, client_ip)
-                return [], {"error": "unknown_hop"}
-            route.append(hop_norm)
-        else:
+        except (TypeError, IndexError, ValueError):
             return [], {"error": "bad_route_entry"}
+        if hop_norm not in self.peers:
+            log.warning("[CHAT_RELAY] unknown hop=%s from=%s", hop_norm, client_ip)
+            return [], {"error": "unknown_hop"}
+        route.append(hop_norm)
     if len(route) > CFG.CHAT_RELAY_MAX_HOPS:
         return [], {"error": "route_too_long"}
     return route, None
@@ -797,14 +802,21 @@ def _validate_relay_route(self, route_raw, client_ip) -> tuple[list[tuple], dict
 
 def _validate_relay_inner(inner) -> dict | None:
     allowed_inner_types = {"CHAT_SEND_INNER"}
-    if not isinstance(inner, dict) or inner.get("type") not in allowed_inner_types:
+    try:
+        if inner.get("type") not in allowed_inner_types:
+            return {"error": "bad_inner_type"}
+    except AttributeError:
         return {"error": "bad_inner_type"}
     if inner.get("type") == "CHAT_SEND_INNER":
-        msg_obj = inner.get("msg")
-        if not isinstance(msg_obj, dict) or not inner.get("to"):
+        try:
+            msg_obj = inner.get("msg")
+            if not inner.get("to"):
+                return {"error": "bad_inner"}
+            msg_keys = msg_obj.keys()
+        except AttributeError:
             return {"error": "bad_inner"}
         allowed_msg_keys = {"from", "msg_id", "ts", "from_static", "from_pub", "enc", "used_opk", "ratchet_pn", "ratchet_n"}
-        for k in msg_obj.keys():
+        for k in msg_keys:
             if k not in allowed_msg_keys:
                 return {"error": "bad_inner_field"}
     try:

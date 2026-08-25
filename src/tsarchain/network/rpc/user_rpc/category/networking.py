@@ -84,7 +84,7 @@ def stor_list(self, message, pow_obj, base_identity, *,
     by_key = {}
     with self.lock:
         for v in self.storage_peers.values():
-            if not isinstance(v, dict):
+            if type(v) is not dict:
                 continue
             key = v.get("node_id") or v.get("pubkey") or v.get("addr") or f"{v.get('ip')}:{v.get('port')}"
             if not key:

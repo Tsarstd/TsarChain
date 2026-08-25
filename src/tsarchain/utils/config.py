@@ -574,7 +574,7 @@ INFO_RL_BACKOFF_S   = 5   # backoff applied when limit exceeded
 
 
 # ---- HISTORY / UTXO LOOKUP THROTTLING ----
-HISTORY_RL_IP_BURST    = 30   # GET_TX_HISTORY/DETAIL/GET_UTXOS burst allowance
+HISTORY_RL_IP_BURST    = 30   # GET_TX_HISTORY/DETAIL/GET_TOTAL_UTXO burst allowance
 HISTORY_RL_IP_WINDOW_S = 60   # seconds window for history limiter
 HISTORY_RL_BACKOFF_S   = 3   # seconds to back off when tripped
 

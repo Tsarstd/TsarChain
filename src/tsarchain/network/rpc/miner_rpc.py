@@ -33,8 +33,10 @@ def handle_miner_rpc(
     src_node_id: Optional[str] = None,
     src_pubkey: Optional[str] = None,
 ) -> dict | None:
-    """Handle miner-to-miner RPC messages."""
-    ip = addr[0] if (isinstance(addr, tuple) and addr) else "0.0.0.0"
+    try:
+        ip = str(addr[0]) if addr else "0.0.0.0"
+    except (TypeError, IndexError):
+        ip = "0.0.0.0"
 
 
     if mtype == "HELLO":
@@ -91,7 +93,7 @@ def handle_miner_rpc(
             utxo_count = 0
 
         with self.lock:
-            peers_count = sum(1 for _, p in self.peers if isinstance(p, int) and p > 0)
+            peers_count = sum(1 for _, p in self.peers if type(p) is int and p > 0)
 
         return {
             "type": "INFO",

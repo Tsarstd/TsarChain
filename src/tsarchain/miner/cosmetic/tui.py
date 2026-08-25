@@ -239,8 +239,11 @@ class MinerTUI:
                 continue
             except Exception:
                 break
-            if isinstance(msg, tuple) and len(msg) == 2 and msg[0] == "TOTAL_HPS":
-                self.set_hashrate(msg[1])
+            try:
+                if len(msg) == 2 and msg[0] == "TOTAL_HPS":
+                    self.set_hashrate(msg[1])
+            except (TypeError, IndexError):
+                pass
 
     def _make_layout(self) -> Layout:
         term_height = self.console.height or 24

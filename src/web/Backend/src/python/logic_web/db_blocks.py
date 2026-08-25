@@ -34,15 +34,15 @@ def save_blocks_to_storage(blocks: list) -> None:
     if store is None:
         return
     
-    if not isinstance(blocks, list):
+    if not blocks:
         return
     
     max_h = -1
     for block in blocks:
-        if not isinstance(block, dict):
+        try:
+            height = block.get("height")
+        except AttributeError:
             continue
-            
-        height = block.get("height")
         if height is None:
             continue
             
@@ -98,8 +98,11 @@ def get_block_range_from_storage(start: int, limit: int) -> dict:
     has_more = next_h >= 0 and len(items) == limit
     
     tip_h = get_last_stored_height()
-    if (tip_h is None or tip_h < 0) and items and isinstance(items[0], dict):
-        tip_h = items[0].get("height")
+    if (tip_h is None or tip_h < 0) and items:
+        try:
+            tip_h = items[0].get("height")
+        except AttributeError:
+            pass
 
     return {
         "items": items,
@@ -222,9 +225,12 @@ def prefetch_blocks(rpc_call: Callable[[Dict[str, Any]], Optional[Dict[str, Any]
             "limit": blocks_to_fetch
         }) or {}
         
-        if isinstance(resp, dict) and resp.get("error"):
-            log.warning("[webdb] Prefetch failed: %s", resp.get("error"))
-            return False
+        try:
+            if resp.get("error"):
+                log.warning("[webdb] Prefetch failed: %s", resp.get("error"))
+                return False
+        except AttributeError:
+            pass
         
         items = resp.get("items") or []
         if not items:

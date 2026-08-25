@@ -97,7 +97,7 @@ class UTXOBalanceMixin:
     def _script_hex_from_tx_out(self, tx_out) -> str | None:
         if tx_out is None:
             return None
-        if isinstance(tx_out, dict):
+        if type(tx_out) is dict:
             spk = tx_out.get("script_pubkey")
         else:
             try:
@@ -115,15 +115,15 @@ class UTXOBalanceMixin:
             return spk.serialize().hex().lower()
         except (AttributeError, TypeError):
             pass
-        if isinstance(spk, (bytes, bytearray)):
+        if type(spk) in (bytes, bytearray):
             return bytes(spk).hex().lower()
-        if isinstance(spk, str):
+        if type(spk) is str:
             return spk.lower()
         return None
 
 
     def _amount_from_tx_out(self, tx_out) -> int:
-        if isinstance(tx_out, dict):
+        if type(tx_out) is dict:
             return int(tx_out.get("amount", 0) or 0)
         try:
             amt = tx_out.amount

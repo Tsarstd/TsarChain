@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import json
 import queue
 import threading
 import multiprocessing as mp
@@ -105,10 +104,11 @@ class Blockchain():
             cache: OrderedDict[int, str] = OrderedDict()
             for b in self.chain:
                 h_val = b.hash() if callable(b.hash) else b.hash
-                if isinstance(h_val, (bytes, bytearray)):
+                if type(h_val) in (bytes, bytearray):
                     cache[int(b.height or 0)] = h_val.hex()
-                elif isinstance(h_val, str) and len(h_val) >= 64:
+                elif type(h_val) is str and len(h_val) >= 64:
                     cache[int(b.height or 0)] = h_val
+
             # trim to config bound
             max_entries = max(1, int(CFG.HASH_CACHE_MAX))
             while len(cache) > max_entries:
@@ -128,7 +128,7 @@ class Blockchain():
             if 0 <= height < len(self.chain):
                 block = self.chain[height]
                 h = block.hash()
-                h_hex = h.hex() if isinstance(h, (bytes, bytearray)) else str(h)
+                h_hex = h.hex() if type(h) in (bytes, bytearray) else str(h)
                 self._hash_cache[height] = h_hex
                 max_entries = max(1, int(CFG.HASH_CACHE_MAX))
                 while len(self._hash_cache) > max_entries:
@@ -213,15 +213,14 @@ class Blockchain():
             return
         self._persist_stop.set()
         worker = self._persist_thread
-        try:
-            self._persist_queue.put(None, timeout=1.0)
-        except Exception:
-            pass
+        self._persist_queue.put(None, timeout=1.0)
+
         if worker is not None:
             worker.join(timeout=5.0)
             still_alive = worker.is_alive()
         else:
             still_alive = False
+
         if still_alive:
             log.warning("[persist_worker] did not stop gracefully within timeout")
         self._persist_thread = None
@@ -242,13 +241,7 @@ class Blockchain():
 
     def get_mempool_size(self) -> int:
         if self._mempool is not None:
-            try:
-                try:
-                    return self._mempool.size()
-                except (AttributeError, TypeError):
-                    return len(self._mempool)
-            except Exception:
-                pass
+            return self._mempool.size()
         return 0
 
     @property

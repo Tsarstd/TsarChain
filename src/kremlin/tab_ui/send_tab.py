@@ -562,11 +562,15 @@ class SendTab:
 
         def _on_resp(resp: Optional[Dict[str, Any]]) -> None:
             data = None
-            if resp and isinstance(resp, dict):
-                if "items" in resp and isinstance(resp["items"], dict):
-                    data = resp["items"].get(addr)
-                elif "spendable" in resp:
-                    data = resp
+            if resp:
+                try:
+                    items = resp.get("items")
+                    if items:
+                        data = items.get(addr)
+                    elif "spendable" in resp:
+                        data = resp
+                except AttributeError:
+                    pass
             if not data:
                 if self.from_spend_lbl:
                     self.from_spend_lbl.config(text="")
@@ -723,11 +727,9 @@ class SendTab:
 
         def on_broadcasted(res) -> None:
             try:
-                if isinstance(res, str):
-                    txid = res
-                elif isinstance(res, dict):
+                try:
                     txid = res.get("txid") or res.get("hash") or res.get("id") or ""
-                else:
+                except AttributeError:
                     txid = str(res)
                 self._append_log(f"[OK] Broadcasted TXID: {txid}")
                 mb.showinfo("Broadcast Success", f"Transaction broadcasted.\n\nTXID:\n{txid}")

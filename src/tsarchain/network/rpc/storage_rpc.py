@@ -34,7 +34,10 @@ def handle_storage_rpc(
     src_pubkey: Optional[str] = None,
 ) -> dict | None:
     
-    ip = addr[0] if isinstance(addr, tuple) else "0.0.0.0"
+    try:
+        ip = str(addr[0]) if addr else "0.0.0.0"
+    except (TypeError, IndexError):
+        ip = "0.0.0.0"
     err = _check_storage_rate_limit(self, ip)
     if err: return err
 
@@ -333,9 +336,9 @@ def _verify_proof_merkle_chunk(message, length, proof_hash, mroot, mchunk, mcoun
         return None
     chunk_b64 = message.get("chunk")
     path = message.get("path")
-    if not isinstance(chunk_b64, str) or not chunk_b64:
+    if type(chunk_b64) is not str or not chunk_b64:
         return {"error": "merkle_chunk_required"}
-    if not isinstance(path, list):
+    if type(path) is not list:
         return {"error": "merkle_path_required"}
     try:
         chunk_bytes = base64.b64decode(chunk_b64.encode("ascii"), validate=True)
@@ -359,17 +362,17 @@ def _verify_proof_merkle_chunk(message, length, proof_hash, mroot, mchunk, mcoun
 
 def _parse_payout_recipients(message, storer_addr):
     recipients = message.get("recipients") or []
-    if isinstance(recipients, dict):
+    if type(recipients) is dict:
         recipients = [{"addr": a, "amount": v} for a, v in recipients.items()]
     if not recipients and message.get("recipient") and message.get("amount"):
         amt = int(message.get("amount", 0))
         recipients = [{"addr": str(message.get("recipient")).strip(), "amount": amt}]
-    if not isinstance(recipients, list) or not recipients:
+    if type(recipients) is not list or not recipients:
         return {"error": "bad_recipients"}, None
     if len(recipients) != 1:
         return {"error": "payout_requires_single_recipient"}, None
     
-    rec = recipients[0] if isinstance(recipients[0], dict) else {}
+    rec = recipients[0] if type(recipients[0]) is dict else {}
     rec_addr = str(rec.get("addr") or rec.get("address") or "").strip().lower()
     rec_amt = int(rec.get("amount", 0) or 0)
     

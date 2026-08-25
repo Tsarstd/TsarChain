@@ -86,9 +86,9 @@ class HistoryHandler(NetworkHandlerProxy):
 
 
     def _txid_hex_helper(self, tid) -> str:
-        if isinstance(tid, (bytes, bytearray)):
+        if type(tid) in (bytes, bytearray):
             return tid.hex().lower()
-        if isinstance(tid, str):
+        if type(tid) is str:
             return tid.strip().lower()
         return ""
 
@@ -138,16 +138,16 @@ class HistoryHandler(NetworkHandlerProxy):
             txid = tin.txid
         except AttributeError:
             txid = None
-        if isinstance(txid, (bytes, bytearray)):
+        if type(txid) in (bytes, bytearray):
             ptx = txid.hex()
-        elif isinstance(txid, str) and len(txid) >= 64:
+        elif type(txid) is str and len(txid) >= 64:
             ptx = txid
         else:
             try:
                 p0 = tin.prev_tx
             except AttributeError:
                 p0 = b""
-            if isinstance(p0, (bytes, bytearray)):
+            if type(p0) in (bytes, bytearray):
                 ptx = p0.hex()
             else:
                 ptx = str(p0 or "")
@@ -174,16 +174,16 @@ class HistoryHandler(NetworkHandlerProxy):
             p0 = first.txid
         except AttributeError:
             p0 = None
-        if isinstance(p0, (bytes, bytearray)):
+        if type(p0) in (bytes, bytearray):
             b = p0
-        elif isinstance(p0, str) and len(p0) == 64:
+        elif type(p0) is str and len(p0) == 64:
             b = bytes.fromhex(p0)
         else:
             try:
                 b = first.prev_tx
             except AttributeError:
                 b = b""
-            if not isinstance(b, (bytes, bytearray)):
+            if type(b) not in (bytes, bytearray):
                 b = b""
         return b == b"\x00" * 32
 
@@ -248,7 +248,7 @@ class HistoryHandler(NetworkHandlerProxy):
 
 
     def _validate_history_params(self, address: str, limit: int, offset: int) -> tuple[str, str | None, dict | None]:
-        if not isinstance(address, str):
+        if type(address) is not str:
             return "", None, {"items": [], "total": 0, "limit": limit, "offset": offset}
         addr = (address or "").strip().lower()
         if not addr:
@@ -448,9 +448,9 @@ class HistoryHandler(NetworkHandlerProxy):
                 return ser().hex()
         except AttributeError:
             pass
-        if isinstance(spk, (bytes, bytearray)):
+        if type(spk) in (bytes, bytearray):
             return bytes(spk).hex()
-        if isinstance(spk, str):
+        if type(spk) is str:
             return spk.lower()
         return None
 

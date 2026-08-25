@@ -26,13 +26,13 @@ class ReceiveHandler(BroadcastHandlerProxy):
         accepted = False
         try:
             block_data = message.get("data") or message.get("block")
-            if not block_data or not isinstance(block_data, dict):
+            if not block_data or type(block_data) is not dict:
                 return False
 
             block = Block.from_dict(block_data)
             block_id = None
             blk_hash_field = block_data.get("hash")
-            if isinstance(blk_hash_field, str) and len(blk_hash_field) >= 64:
+            if blk_hash_field and type(blk_hash_field) is str and len(blk_hash_field) >= 64:
                 block_id = blk_hash_field
             else:
                 log.exception("[receive_block]")
@@ -112,7 +112,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
     def receive_tx(self, message: Dict[str, Any], addr, peers: Set[Tuple[str, int]]) -> bool:
         try:
             tx_data = message["data"]
-            tx = Tx.from_dict(tx_data) if isinstance(tx_data, dict) else tx_data
+            tx = Tx.from_dict(tx_data) if type(tx_data) is dict else tx_data
             tx_id = tx.txid.hex()
             phase = str(message.get("phase") or "fluff").strip().lower()
 
@@ -170,13 +170,13 @@ class ReceiveHandler(BroadcastHandlerProxy):
                 return
 
             txs_data = message.get("data") or message.get("txs") or []
-            if not isinstance(txs_data, list):
+            if type(txs_data) is not list:
                 return
             txs_data = txs_data[:CFG.MEMPOOL_INLINE_MAX_TX]
 
             added_count = 0
             for tx_data in txs_data:
-                tx = Tx.from_dict(tx_data) if isinstance(tx_data, dict) else tx_data
+                tx = Tx.from_dict(tx_data) if type(tx_data) is dict else tx_data
                 if self.mempool.add_valid_tx(tx):
                     added_count += 1
 
@@ -230,7 +230,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
                 peer=f"{addr[0]}:{origin_port or 0}" if addr else None,
                 reason=reason,
             )
-            if reason and isinstance(reason, str) and reason.startswith("prevout_missing"):
+            if reason and type(reason) is str and reason.startswith("prevout_missing"):
                 if self.network:
                     self.network.request_sync(fast=True)
             return False
@@ -241,7 +241,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
         snapshot = self._build_native_prevout_snapshot(block)
         if snapshot is None:
             return True
-        if isinstance(snapshot, tuple) and len(snapshot) == 2:
+        if type(snapshot) is tuple and len(snapshot) == 2:
             snapshot_dict, utxo_items = snapshot
         else:
             snapshot_dict, utxo_items = snapshot, None
@@ -287,7 +287,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
             log.warning("[_native_precheck_block] block %s rejected (%s)", blk_label, reason or "unknown")
             return False
 
-        if isinstance(fees, (list, tuple)):
+        if type(fees) in (list, tuple):
             block._native_fee_hint = [int(f) for f in fees]  # type: ignore[attr-defined]
         return True
     
@@ -314,7 +314,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
         def _txid_lower(value) -> str | None:
             if value is None:
                 return None
-            if isinstance(value, (bytes, bytearray)):
+            if type(value) in (bytes, bytearray):
                 return bytes(value).hex().lower()
             return str(value).lower()
 
@@ -390,7 +390,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
 
     def _normalize_native_prevout(self, entry):
         candidate = entry
-        if isinstance(candidate, dict):
+        if type(candidate) is dict:
             tx_out = candidate.get("tx_out") or candidate
         else:
             try:
@@ -399,18 +399,18 @@ class ReceiveHandler(BroadcastHandlerProxy):
                 tx_out = candidate
 
         script_bytes = self._native_script_bytes(tx_out)
-        if script_bytes is None and isinstance(candidate, dict):
+        if script_bytes is None and type(candidate) is dict:
             script_bytes = self._native_script_bytes(candidate.get("script_pubkey"))
         if script_bytes is None:
             return None
 
-        if isinstance(tx_out, dict):
+        if type(tx_out) is dict:
             amount_val = tx_out.get("amount")
         else:
             try:
                 amount_val = tx_out.amount
             except AttributeError:
-                if isinstance(candidate, dict):
+                if type(candidate) is dict:
                     amount_val = candidate.get("amount")
                 else:
                     try:
@@ -419,7 +419,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
                         amount_val = None
         amount_int = int(amount_val if amount_val is not None else 0)
 
-        if isinstance(candidate, dict):
+        if type(candidate) is dict:
             is_cb = bool(candidate.get("is_coinbase", False))
             born = int(candidate.get("block_height", candidate.get("height", 0)) or 0)
         else:
@@ -467,12 +467,12 @@ class ReceiveHandler(BroadcastHandlerProxy):
                         prev_txid_b = tx_input.prev_tx
                     except AttributeError:
                         prev_txid_b = None
-                if isinstance(prev_txid_b, str):
+                if type(prev_txid_b) is str:
                     try:
                         prev_txid_b = bytes.fromhex(prev_txid_b)
                     except ValueError:
                         prev_txid_b = None
-                if not isinstance(prev_txid_b, (bytes, bytearray)) or len(prev_txid_b) != 32:
+                if type(prev_txid_b) not in (bytes, bytearray) or len(prev_txid_b) != 32:
                     raise ValueError("txid_missing")
                 try:
                     prev_index = int(tx_input.vout)
@@ -491,9 +491,9 @@ class ReceiveHandler(BroadcastHandlerProxy):
                 except AttributeError:
                     witness = []
                 for w in witness:
-                    if isinstance(w, (bytes, bytearray)):
+                    if type(w) in (bytes, bytearray):
                         wit_vec.append(bytes(w))
-                    elif isinstance(w, str):
+                    elif type(w) is str:
                         try:
                             wit_vec.append(bytes.fromhex(w))
                         except ValueError:
@@ -508,7 +508,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
             except AttributeError:
                 outputs = []
             for tx_out in outputs:
-                if isinstance(tx_out, dict):
+                if type(tx_out) is dict:
                     amt = int(tx_out.get("amount", 0) or 0)
                     spk_obj = tx_out.get("script_pubkey")
                 else:
@@ -529,13 +529,13 @@ class ReceiveHandler(BroadcastHandlerProxy):
                 txid_b = tx.txid
             except AttributeError:
                 txid_b = None
-            if isinstance(txid_b, str):
+            if type(txid_b) is str:
                 try:
                     txid_b = bytes.fromhex(txid_b)
                 except ValueError:
                     txid_b = None
 
-            if not isinstance(txid_b, (bytes, bytearray)) or len(txid_b) != 32:
+            if type(txid_b) not in (bytes, bytearray) or len(txid_b) != 32:
                 raise ValueError("txid_missing")
 
             try:
@@ -558,9 +558,9 @@ class ReceiveHandler(BroadcastHandlerProxy):
                 return ser()
         except AttributeError:
             pass
-        if isinstance(candidate, (bytes, bytearray)):
+        if type(candidate) in (bytes, bytearray):
             return bytes(candidate)
-        if isinstance(candidate, str):
+        if type(candidate) is str:
             try:
                 return bytes.fromhex(candidate)
             except ValueError:
@@ -620,7 +620,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
                 reason_str = self.blockchain._last_block_validation_error
             except AttributeError:
                 reason_str = None
-            if self.network and isinstance(reason_str, str) and (
+            if self.network and type(reason_str) is str and (
                 "Height mismatch" in reason_str or "prev_block_hash" in reason_str
             ):
                 self.network.request_sync(fast=True)

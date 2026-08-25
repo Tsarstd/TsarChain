@@ -463,7 +463,7 @@ class ChainStorage:
                     next_prev = chain_objs[i + 1].prev_block_hash
                 except AttributeError:
                     next_prev = None
-                if isinstance(next_prev, (bytes, bytearray)) and len(next_prev) == 32:
+                if type(next_prev) in (bytes, bytearray) and len(next_prev) == 32:
                     try:
                         chain_objs[i]._cached_hash = bytes(next_prev)
                         chain_objs[i]._cached_hash_nonce = chain_objs[i].nonce
@@ -474,7 +474,7 @@ class ChainStorage:
                         pass
 
             tip_hash_str = meta.get("tip_hash")
-            if isinstance(tip_hash_str, str) and len(tip_hash_str) >= 64:
+            if type(tip_hash_str) is str and len(tip_hash_str) >= 64:
                 try:
                     tip_h = bytes.fromhex(tip_hash_str)
                     last_blk = chain_objs[-1]
@@ -527,7 +527,7 @@ class ChainStorage:
             data["total_supply"] = int(items.get("k:total_supply", "0"))
             data["total_blocks"] = int(items.get("k:total_blocks", "0"))
 
-        if not isinstance(data, dict):
+        if type(data) is not dict:
             data = {}
         return data
 
@@ -656,7 +656,7 @@ class ChainStorage:
             intervals = []
             for i in range(1, len(timestamps)):
                 delta = timestamps[i] - timestamps[i - 1]
-                if isinstance(delta, (int, float)) and delta > 0:
+                if type(delta) in (int, float) and delta > 0:
                     intervals.append(delta)
             if intervals:
                 avg_block_time_sec = sum(intervals) / len(intervals)
@@ -745,9 +745,9 @@ class ChainStorage:
             utxo_items = list(utxo.utxos.values())
         utxo_set_size = len(utxo_items)
         for entry in utxo_items:
-            if isinstance(entry, dict):
+            if type(entry) is dict:
                 tx_out = entry.get("tx_out") or entry
-                if isinstance(tx_out, dict):
+                if type(tx_out) is dict:
                     amt_val = tx_out.get("amount")
                 else:
                     try:
@@ -819,7 +819,7 @@ class ChainStorage:
         
         total_pool_balances = 0
         for post in posts_data.values():
-            if not isinstance(post, dict):
+            if type(post) is not dict:
                 continue
             total_graffiti_storage += int(post.get("size") or 0)
             stats = post.get("stats") or {}

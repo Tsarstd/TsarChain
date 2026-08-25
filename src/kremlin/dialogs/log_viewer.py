@@ -39,12 +39,9 @@ MODULES = ("consensus", "contracts", "core", "mempool", "network", "storage", "u
 
 
 def _ensure_log_file(path: Path) -> None:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if not path.exists():
-            path.touch()
-    except Exception:
-        pass
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.touch()
 
 
 class TkLogHandler(logging.Handler):
@@ -56,10 +53,7 @@ class TkLogHandler(logging.Handler):
         self.setFormatter(logging.Formatter(fmt, datefmt))
 
     def emit(self, record: logging.LogRecord) -> None:
-        try:
-            self.q.put(record, block=False)
-        except Exception:
-            pass
+        self.q.put(record, block=False)
 
 
 class TsarLogViewer:
@@ -219,19 +213,13 @@ class TsarLogViewer:
                 self._append(mapping.get(level_up, "Info"), msg, tag=level_up)
 
     def _on_module_change(self):
-        try:
-            self._current_module_filter = self.module_filter.get()
-        except Exception:
-            self._current_module_filter = "All"
+        self._current_module_filter = self.module_filter.get()
 
         self._render_from_buffer()
         if not self._buf and self.tail_path and self.tail_path.exists():
-            try:
-                with self.tail_path.open("r", encoding="utf-8", errors="replace") as fp:
-                    self._preload_tail_history(fp, max_bytes=512_000)
-                self._render_from_buffer()
-            except Exception:
-                pass
+            with self.tail_path.open("r", encoding="utf-8", errors="replace") as fp:
+                self._preload_tail_history(fp, max_bytes=512_000)
+            self._render_from_buffer()
 
     def _clear_ui_only(self):
         for name, _ in self.LEVELS:
@@ -251,19 +239,16 @@ class TsarLogViewer:
 
             root = logging.getLogger()
             for handler in root.handlers[:]:
-                if isinstance(handler, TkLogHandler):
+                if type(handler) is TkLogHandler:
                     root.removeHandler(handler)
             root.addHandler(self.tk_handler)
 
-            try:
-                for name, lg in logging.root.manager.loggerDict.items():
-                    if isinstance(lg, logging.Logger) and name.startswith(("tsarchain", "apps")):
-                        lg.propagate = True
-                        for handler in lg.handlers[:]:
-                            if isinstance(handler, TkLogHandler):
-                                lg.removeHandler(handler)
-            except Exception:
-                pass
+            for name, lg in logging.root.manager.loggerDict.items():
+                if name.startswith(("tsarchain", "apps")):
+                    lg.propagate = True
+                    for handler in lg.handlers[:]:
+                        if type(handler) is TkLogHandler:
+                            lg.removeHandler(handler)
 
             self._set_status("GUI handler attached (live logging)")
 
@@ -348,34 +333,21 @@ class TsarLogViewer:
     def _get_target_handlers(self, p: Path) -> list:
         target_handlers = []
         for h in logging.getLogger().handlers[:]:
-            try:
-                if isinstance(h, RotatingFileHandler):
-                    try:
-                        base = h.baseFilename
-                    except AttributeError:
-                        base = None
-                    if base and Path(base) == p.resolve():
-                        target_handlers.append(h)
-            except Exception:
-                pass
+            base = h.baseFilename
+            if base and Path(base) == p.resolve():
+                target_handlers.append(h)
         return target_handlers
 
     def _truncate_handler(self, h) -> None:
         h.acquire()
         try:
-            try:
-                stream = h.stream
-            except AttributeError:
-                stream = None
+            stream = h.stream
             if stream:
                 stream.seek(0)
                 stream.truncate(0)
                 stream.flush()
             else:
-                try:
-                    enc = h.encoding or "utf-8"
-                except AttributeError:
-                    enc = "utf-8"
+                enc = h.encoding or "utf-8"
                 open(h.baseFilename, "w", encoding=enc).close()
         finally:
             h.release()
@@ -405,11 +377,8 @@ class TsarLogViewer:
 
         self._tail_last_size = 0
         if self._tail_fp:
-            try:
-                self._tail_fp.seek(0)
-                self._tail_fp.truncate(0)
-            except Exception:
-                pass
+            self._tail_fp.seek(0)
+            self._tail_fp.truncate(0)
 
         if delete_backups:
             self._delete_backup_files(p)
@@ -489,6 +458,7 @@ class TsarLogViewer:
                 batch_count += 1
         except queue.Empty:
             pass
+
         if not self._stop_event.is_set():
             self.master.after(120, self._pollqueue)
 
@@ -514,10 +484,7 @@ class TsarLogViewer:
             self.master.after(250, self._poll_tail)
 
     def _append_record(self, record: logging.LogRecord):
-        try:
-            r_name = record.name
-        except AttributeError:
-            r_name = None
+        r_name = record.name
         module = _module_from_logger_name(r_name)
 
         try:
@@ -608,35 +575,25 @@ class TsarLogViewer:
             pass
 
     def _update_tab_title(self, tab_name: str):
-        try:
-            idx = [name for (name, _) in self.LEVELS].index(tab_name)
-            self.nb.tab(idx, text=f"{tab_name} ({self._counts[tab_name]})")
-        except Exception:
-            pass
+        idx = [name for (name, _) in self.LEVELS].index(tab_name)
+        self.nb.tab(idx, text=f"{tab_name} ({self._counts[tab_name]})")
+
 
     def _set_status(self, msg: str):
-        try:
-            self.status.configure(text=msg)
-        except Exception:
-            pass
+        self.status.configure(text=msg)
 
     def _on_close(self):
-        try:
-            self._stop_event.set()
-            if self.tk_handler:
-                root = logging.getLogger()
-                try:
-                    root.removeHandler(self.tk_handler)
-                except Exception:
-                    pass
-            if self._tail_fp:
-                self._tail_fp.close()
-        except Exception:
-            pass
-        try:
-            self.master.destroy()
-        except Exception:
-            pass
+
+        self._stop_event.set()
+        if self.tk_handler:
+            root = logging.getLogger()
+            root.removeHandler(self.tk_handler)
+
+        if self._tail_fp:
+            self._tail_fp.close()
+
+
+        self.master.destroy()
 
 
 # =========================
@@ -660,34 +617,21 @@ def export_log_bundle(path: str = ZIP_BUNDLE) -> Path:
 
     files_abs: dict[Path, Path] = {}
     def _add(p: Path):
-        try:
-            if p.exists():
-                rp = p.resolve()
-                files_abs.setdefault(rp, p)
-        except Exception:
-            pass
+        if p.exists():
+            rp = p.resolve()
+            files_abs.setdefault(rp, p)
 
     root = logging.getLogger()
     for h in root.handlers[:]:
-        try:
-            try:
-                h.flush()
-            except Exception:
-                pass
-            if isinstance(h, RotatingFileHandler):
-                try:
-                    base = h.baseFilename
-                except AttributeError:
-                    base = None
-                if not base:
-                    continue
-                p = Path(base)
-                _add(p)
-                for bp in p.parent.glob(p.name + ".*"):
-                    if bp.is_file():
-                        _add(bp)
-        except Exception:
-            pass
+        h.flush()
+        base = h.baseFilename
+        if not base:
+            continue
+        p = Path(base)
+        _add(p)
+        for bp in p.parent.glob(p.name + ".*"):
+            if bp.is_file():
+                _add(bp)
 
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("log_info.txt", "\n".join([

@@ -19,9 +19,12 @@ log = get_ctx_logger("tsarchain.network.node_logic.handlers")
 
 
 def handle_hello(self, message, addr, *, src_node_id: str | None = None, src_pubkey: str | None = None):
-    peer_ip = addr[0] if isinstance(addr, tuple) and len(addr) > 0 else str(message.get("ip", "")).strip()
+    try:
+        peer_ip = addr[0] if (addr and len(addr) > 0) else str(message.get("ip", "")).strip()
+    except (TypeError, IndexError):
+        peer_ip = str(message.get("ip", "")).strip()
     peer_port = int(message.get("port", 0))
-    peer_tuple = (peer_ip, peer_port) if peer_ip and isinstance(peer_port, int) and peer_port > 0 else None
+    peer_tuple = (peer_ip, peer_port) if peer_ip and type(peer_port) is int and peer_port > 0 else None
 
     role = str(message.get("role", "")).strip().upper()
     advertised_height = int(message.get("height", -1))
@@ -39,11 +42,11 @@ def handle_hello(self, message, addr, *, src_node_id: str | None = None, src_pub
         if not is_storage:
             _update_peers_from_hello(self, peer_tuple, advertised_height, normalized_incoming)
 
-        sane_peers = [{"ip": ip, "port": port} for ip, port in self.peers if isinstance(port, int) and port > 0]
+        sane_peers = [{"ip": ip, "port": port} for ip, port in self.peers if type(port) is int and port > 0]
         height = int(self.broadcast.blockchain.height)
         peer_port_msg = int(message.get("port", -1))
         
-        if (not is_storage) and isinstance(addr, tuple) and peer_port_msg > 0:
+        if (not is_storage) and type(addr) is tuple and peer_port_msg > 0:
             dst = (addr[0], peer_port_msg)
             self.broadcast.send_mempool_to_peer(dst)
 
@@ -82,12 +85,12 @@ def handle_get_headers(self, message, _):
     for blk in chain[start_idx : start_idx + limit]:
         prev_hash = (
             blk.prev_block_hash.hex()
-            if isinstance(blk.prev_block_hash, (bytes, bytearray))
+            if type(blk.prev_block_hash) in (bytes, bytearray)
             else str(blk.prev_block_hash)
         )
 
         try:
-            blk_hash = blk.hash().hex() if callable(blk.hash) else (blk.hash.hex() if isinstance(blk.hash, (bytes, bytearray)) else str(blk.hash or ""))
+            blk_hash = blk.hash().hex() if callable(blk.hash) else (blk.hash.hex() if type(blk.hash) in (bytes, bytearray) else str(blk.hash or ""))
         except AttributeError:
             blk_hash = ""
 
@@ -127,7 +130,7 @@ def handle_get_headers(self, message, _):
 def handle_get_blocks(self, message, _):
         
     heights = message.get("heights") or []
-    if not isinstance(heights, list):
+    if type(heights) is not list:
         return {"type": "BLOCKS", "blocks": []}
 
     limit = min(len(heights), CFG.BLOCK_DOWNLOAD_BATCH_MAX)
@@ -222,7 +225,7 @@ def _process_storage_hello(self, message, peer_ip, peer_port, src_node_id, src_p
 def _process_incoming_peers(self, incoming_peers):
     normalized_incoming = []
     for entry in incoming_peers:
-        if isinstance(entry, dict):
+        if type(entry) is dict:
             ip = str(entry.get("ip") or entry.get("host") or "").strip()
             port = int(entry.get("port", 0))
             if not ip or port <= 0:
