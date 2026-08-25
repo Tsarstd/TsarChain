@@ -32,6 +32,8 @@ build/
 .hypothesis/
 .coverage
 .sonar/
+activate_env.ps1
+activate_env.sh
 coverage.xml
 sonar-project.properties
 htmlcov/
