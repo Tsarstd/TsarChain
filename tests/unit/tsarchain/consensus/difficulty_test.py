@@ -105,7 +105,7 @@ def test_expected_bits_on_prefix_empty_or_zero_height(manager, patch_config_and_
     assert result == block.bits
 
     block_no_bits = make_block(0, 0, 1000)  # buat block biasa
-    del block_no_bits.bits                  # hapus atribut bits
+    block_no_bits.bits = None               # set atribut bits ke None
     result = manager._expected_bits_on_prefix([block_no_bits], 1)
     assert result == int(mock_cfg.MAX_BITS)
 

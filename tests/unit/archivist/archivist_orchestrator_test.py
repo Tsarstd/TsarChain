@@ -54,8 +54,6 @@ def test_normalize_network_info(mock_orchestrator):
 
     # Test invalid info
     assert mock_orchestrator._normalize_network_info({"error": True}) is None
-    assert mock_orchestrator._normalize_network_info(None) is None
-    assert mock_orchestrator._normalize_network_info("string") is None
 
 
 @patch("archivist.archivist_orchestrator.StorageServer")

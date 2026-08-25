@@ -313,7 +313,7 @@ def test_mine_block_no_mempool(mining_node):
     mining_node.blockchain.chain[0].hash.return_value = b'prev_hash'
     mining_node.blockchain.chain[0].height = 0
     mining_node.blockchain.get_last_block.return_value = mining_node.blockchain.chain[0]
-    delattr(mining_node.blockchain, 'get_mempool')
+    mining_node.blockchain.get_mempool.return_value = None
     with patch('tsarchain.consensus.mining.TxPool') as mock_txpool, \
         patch('tsarchain.consensus.mining.Block') as mock_block_cls, \
         patch('tsarchain.consensus.mining.CoinbaseTx'):

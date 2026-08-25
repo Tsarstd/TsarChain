@@ -385,7 +385,8 @@ def test_safe_mempool_count():
 
     # 3. Test fallback to get_all_txs()
     mock_pool_2 = MagicMock()
-    del mock_pool_2._pool
+    mock_pool_2._pool = None
+    mock_pool_2.get_mempool_size = None
     mock_pool_2.get_all_txs.return_value = ["tx1", "tx2", "tx3"]
     assert _count_txpool(mock_pool_2) == 3
 

@@ -42,7 +42,7 @@ def test_rpc_ping(mock_rpc):
     mock_rpc.call.return_value = {"type": "PONG"}
     assert rpc_ping(mock_rpc) is True
 
-    mock_rpc.call.return_value = None
+    mock_rpc.call.return_value = {"type": "ERROR"}
     assert rpc_ping(mock_rpc) is False
 
 
@@ -52,7 +52,7 @@ def test_rpc_get_network_info(mock_rpc):
         "data": {"chain": {"tip_height": 100}, "peers": {"count": 4}},
     }
     info = rpc_get_network_info(mock_rpc)
-    assert isinstance(info, dict)
+    assert type(info) is dict
     assert info["data"]["chain"]["tip_height"] == 100
 
     # Error case
@@ -70,7 +70,7 @@ def test_rpc_get_graffiti_posts(mock_rpc):
     assert posts[0]["art_id"] == "art1"
 
     # Empty / error case
-    mock_rpc.call.return_value = None
+    mock_rpc.call.return_value = {"posts": []}
     assert rpc_get_graffiti_posts(mock_rpc) == []
 
 

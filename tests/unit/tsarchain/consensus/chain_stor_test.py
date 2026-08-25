@@ -279,8 +279,8 @@ def test_hash_file(tmp_path):
     assert hash_val == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"  # sha256 of "hello world"
 
     # Non-existent file
-    hash_val = ChainStorage._hash_file("nonexistent")
-    assert hash_val is None
+    with pytest.raises(FileNotFoundError):
+        ChainStorage._hash_file("nonexistent")
 
 
 def test_run_backup_atomic_replace(storage, monkeypatch, tmp_path):
@@ -347,6 +347,8 @@ def test_save_chain_with_kv(storage, monkeypatch):
     block1.bits = 0x1d00ffff
     block1.prev_block_hash = b'\x00'*32
     block1.chainwork = 0
+    block1.difficulty = 1.0
+    block1.timestamp = 0
     block1.hash = Mock(return_value=b'\x01'*32)
     block1.transactions = []
 
@@ -397,6 +399,8 @@ def test_load_chain_with_kv(storage, monkeypatch):
         b.timestamp = 0
         b.bits = 0x1d00ffff
         b.chainwork = 0
+        b.nonce = 0
+        b.merkle_root = bytes.fromhex(ZERO_HASH_HEX)
         return b
     monkeypatch.setattr('tsarchain.consensus.chain_storage.Block', Mock(from_storage_bytes=mock_from_storage_bytes))
 
@@ -544,6 +548,10 @@ def test_compute_state_snapshot(storage, monkeypatch):
     # Build a chain with blocks and UTXO
     # Create block with coinbase tx
     cb_tx = Mock(spec=Tx)
+    cb_tx.to_address = "miner1"
+    cb_tx.is_coinbase = True
+    cb_tx.inputs = []
+    cb_tx.locktime = 0
     cb_tx.outputs = [Mock(amount=50_000_000_000, address="miner1")]
     cb_tx.to_dict = Mock(return_value={})
     block0 = Mock(spec=Block)
@@ -603,7 +611,10 @@ def test_compute_state_snapshot(storage, monkeypatch):
     storage._compute_chainwork_for_chain = Mock(return_value=100)
     storage.median_time_past = Mock(return_value=1500)
     storage.scheduled_reward = Mock(return_value=50_000_000_000)
-    storage.get_mempool = Mock(return_value=None)
+    mock_mp = Mock()
+    mock_mp.get_all_txs.return_value = []
+    mock_mp.stats.return_value = {"count": 0, "vbytes": 0, "bytes": 0}
+    storage.get_mempool = Mock(return_value=mock_mp)
 
     # Mock bits_to_target and target_to_difficulty
     monkeypatch.setattr('tsarchain.consensus.chain_storage.bits_to_target', lambda x: 0xffff)

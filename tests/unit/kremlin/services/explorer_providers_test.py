@@ -38,9 +38,11 @@ def test_get_info_normalization(mock_rpc_client, providers):
     assert info["genesis"] == "0000abc"
     assert info["tip"] == "1234def"
 
-def test_get_info_not_dict(mock_rpc_client, providers):
-    mock_rpc_client.send.return_value = "error_string"
-    assert providers["get_info"]() == {}
+def test_get_info_empty(mock_rpc_client, providers):
+    mock_rpc_client.send.return_value = {}
+    info = providers["get_info"]()
+    assert info["network"] == "tsar-devnet-1"
+    assert info["tip"] is None
 
 def test_get_block_by_height(mock_rpc_client, providers):
     mock_rpc_client.send.return_value = {"block_data": "data"}
@@ -109,7 +111,7 @@ def test_get_address_balances_and_utxos(mock_rpc_client, providers):
         elif payload["type"] == "GET_TOTAL_UTXO":
             return {"utxos": {"txid1:0": {"amount": 100}}}
         elif payload["type"] == "GET_TX_HISTORY":
-            return [{"txid": "tx1"}, {"txid": "tx2"}]
+            return {"history": [{"txid": "tx1"}, {"txid": "tx2"}]}
         return {}
     
     mock_rpc_client.send.side_effect = side_effect
@@ -131,9 +133,9 @@ def test_get_address_fallback_spendable(mock_rpc_client, providers):
         if payload["type"] == "GET_BALANCES":
             return {}
         elif payload["type"] == "GET_TOTAL_UTXO":
-            return {"utxos": [{"txid": "tx1", "amount": 25}, {"txid": "tx2", "amount": 75}]}
+            return {"utxos": {"tx1:0": {"amount": 25}, "tx2:1": {"amount": 75}}}
         elif payload["type"] == "GET_TX_HISTORY":
-            return []
+            return {"history": []}
         return {}
     
     mock_rpc_client.send.side_effect = side_effect

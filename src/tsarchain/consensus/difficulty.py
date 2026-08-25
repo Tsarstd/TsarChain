@@ -51,10 +51,7 @@ class DifficultyManager:
     def _ts(self, b) -> int:
         if b is None:
             return 0
-        try:
-            t = b.timestamp
-        except AttributeError:
-            t = 0
+        t = b.timestamp
         return int(t) if type(t) in (int, float) else 0
 
 
@@ -63,11 +60,8 @@ class DifficultyManager:
         if next_height <= 0 or not prefix:
             return int(CFG.MAX_BITS)
         if len(prefix) < 2:
-            try:
-                b = prefix[-1].bits
-                return int(b if b is not None else CFG.MAX_BITS)
-            except AttributeError:
-                return int(CFG.MAX_BITS)
+            b = prefix[-1].bits
+            return int(b if b is not None else CFG.MAX_BITS)
 
         n = min(int(CFG.LWMA_WINDOW), len(prefix))
         next_target = self._calculate_lwma_target(prefix, n, t)
@@ -98,11 +92,7 @@ class DifficultyManager:
             if st >  6 * t: st =  6 * t
             if st < 1:      st = 1
             sum_wst += i * st
-
-            try:
-                bits_val = int(b.bits if b.bits is not None else CFG.MAX_BITS)
-            except AttributeError:
-                bits_val = int(CFG.MAX_BITS)
+            bits_val = int(b.bits if b.bits is not None else CFG.MAX_BITS)
             tgt  = bits_to_target(bits_val)
             diff = max(1, int(target_to_difficulty(tgt)))
             sum_diff += diff

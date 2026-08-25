@@ -66,10 +66,12 @@ class DummyBlockchain:
     def _rebuild_hash_cache(self):
         self.rebuild_cache_called = True
 
-    def _validate_complete_chain(self, chain):
-        raise NotImplementedError("Harus di-mock di test")
+    def get_mempool(self):
+        return None
 
-    
+    def compute_txids_for_block(self, block):
+        return True
+
     def replace_with(self, other_chain):
         return self.chain_ops.replace_with(other_chain)
 
@@ -634,6 +636,9 @@ class ValidatorBlockchain:
 
     def _compute_txids_for_block(self, block):
         return True  # assume txids are valid
+
+    def compute_txids_for_block(self, block):
+        return True
 
     def _work_from_bits(self, bits):
         return 1
