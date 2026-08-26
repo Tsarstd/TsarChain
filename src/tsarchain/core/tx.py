@@ -21,6 +21,7 @@ from ..utils.helpers import (
     txid_from_compact,
     wtxid_from_compact,
     serialize_tx,
+    script_to_address,
 )
 
 # ---------------- Logger ----------------
@@ -35,14 +36,11 @@ _COINBASE_EXTRA_STRUCT = "<BHHq"
 def _extract_script_bytes(script) -> bytes:
     if script is None:
         return b""
-    ser = script.serialize
-    if callable(ser):
-        return ser()
     if type(script) in (bytes, bytearray):
         return bytes(script)
     if type(script) is str:
         return bytes.fromhex(script)
-    return bytes(script)
+    return script.serialize()
 
 
 class Tx:
@@ -95,16 +93,11 @@ class Tx:
     # -------- Signing ----------
 
     def sign_input(self, index: int, priv_key_hex: str, prev_output, amount: int) -> bool:
-        spk = prev_output.script_pubkey
-
-        if spk is not None:
-            script_pubkey_bytes = spk.serialize()
-        elif type(prev_output) in (bytes, bytearray):
-            script_pubkey_bytes = bytes(prev_output)
-        elif type(prev_output) is str:
-            script_pubkey_bytes = bytes.fromhex(prev_output)
-        else:
-            script_pubkey_bytes = prev_output.serialize()
+        try:
+            spk = prev_output.script_pubkey
+        except AttributeError:
+            spk = prev_output
+        script_pubkey_bytes = _extract_script_bytes(spk)
 
         if not (len(script_pubkey_bytes) >= 22 and script_pubkey_bytes[0] == 0x00 and script_pubkey_bytes[1] == 0x14):
             raise ValueError("Not a P2WPKH")
@@ -394,6 +387,10 @@ class TxOut:
         _ = script_pubkey.serialize
         self.amount = amount
         self.script_pubkey = script_pubkey
+
+    @property
+    def address(self) -> str | None:
+        return script_to_address(self.script_pubkey)
 
     def to_dict(self) -> dict:
         return {

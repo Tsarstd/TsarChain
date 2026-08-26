@@ -238,6 +238,24 @@ class ContextAdapter(logging.LoggerAdapter):
             self.log(TRACE, msg, *args, **kwargs)
 
 
+class SafeRotatingFileHandler(RotatingFileHandler):
+    """Windows-safe rotating file handler that gracefully handles file locks during rollover."""
+    def doRollover(self):
+        try:
+            super().doRollover()
+        except (PermissionError, OSError):
+            if self.stream:
+                try:
+                    self.stream.close()
+                except Exception:
+                    pass
+                self.stream = None
+            try:
+                open(self.baseFilename, "w", encoding=self.encoding or "utf-8").close()
+            except Exception:
+                pass
+
+
 # =========================
 # Core APIs
 # =========================
@@ -285,7 +303,7 @@ def setup_logging(
     if log_file:
         log_path = Path(log_file)
         _ensure_log_file(log_path)
-        fh = RotatingFileHandler(
+        fh = SafeRotatingFileHandler(
             log_path,
             maxBytes=int(rotate_max_bytes),
             backupCount=int(backup_count),

@@ -97,6 +97,21 @@ def test_txout_repr(mock_script):
     txout = TxOut(100, mock_script)
     assert repr(txout) == "<TxOut amt=100>"
 
+def test_txout_address_property():
+    from tsarchain.utils import config as CFG
+    from bech32 import bech32_encode, convertbits
+    pkh = b"p"*20
+    data = [0] + list(convertbits(pkh, 8, 5, True))
+    addr = bech32_encode(CFG.ADDRESS_PREFIX, data)
+    spk = Script.p2wpkh_script(addr)
+    txout = TxOut(100, spk)
+    assert txout.address == addr
+
+def test_txout_address_opreturn():
+    opret_spk = Script([0x6a, b"hello"])
+    txout = TxOut(0, opret_spk)
+    assert txout.address is None
+
 def test_tx_init():
     with patch("tsarchain.core.tx.Tx.compute_txid") as mock_compute:
         tx = Tx()
@@ -162,6 +177,16 @@ def test_tx_sign_input(mock_sk, mock_sign, mock_bip, mock_script):
         prev_out2 = MagicMock()
         prev_out2.script_pubkey.serialize.return_value = b"\x00\x14" + b"b"*20
         tx.sign_input(0, "00"*32, prev_out2, 100)
+        assert txin.witness[1] == b"pubkey"
+
+        # Sign with raw bytes script_pubkey (e.g. from Wallet.sign_prepared_tx)
+        raw_spk = b"\x00\x14" + b"c"*20
+        tx.sign_input(0, "00"*32, raw_spk, 100)
+        assert txin.witness[1] == b"pubkey"
+
+        # Sign with hex string script_pubkey
+        hex_spk = raw_spk.hex()
+        tx.sign_input(0, "00"*32, hex_spk, 100)
         assert txin.witness[1] == b"pubkey"
 
         # Invalid p2wpkh

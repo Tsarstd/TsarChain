@@ -162,6 +162,63 @@ def pow_hash_verify_light(header: bytes, *, height: int | None = None, key_hint:
 # -----------------------------
 
 
+def extract_script_bytes(spk, _depth: int = 0) -> bytes | None:
+    if spk is None or _depth > 3:
+        return None
+    if type(spk) in (bytes, bytearray):
+        return bytes(spk)
+    if type(spk) is str:
+        try:
+            return bytes.fromhex(spk)
+        except ValueError:
+            return None
+    if type(spk) is dict:
+        inner = spk.get("tx_out", spk.get("script_pubkey", spk.get("script")))
+        return extract_script_bytes(inner, _depth + 1) if inner is not None else None
+
+    try:
+        spk_attr = spk.script_pubkey
+        if spk_attr is not None:
+            res = extract_script_bytes(spk_attr, _depth + 1)
+            if res is not None:
+                return res
+    except AttributeError:
+        pass
+
+    try:
+        tx_out_attr = spk.tx_out
+        if tx_out_attr is not None:
+            res = extract_script_bytes(tx_out_attr, _depth + 1)
+            if res is not None:
+                return res
+    except AttributeError:
+        pass
+
+    try:
+        ser = spk.serialize
+        if callable(ser):
+            res = ser()
+            if type(res) in (bytes, bytearray):
+                return bytes(res)
+    except (AttributeError, TypeError):
+        pass
+
+    return None
+
+
+def script_to_address(script) -> str | None:
+    b = extract_script_bytes(script)
+    if not b:
+        return None
+    if len(b) == 22 and b[0] == 0x00 and b[1] == 0x14:
+        data = [0] + list(convertbits(b[2:], 8, 5, True))
+        return bech32_encode(CFG.ADDRESS_PREFIX, data)
+    if len(b) == 34 and b[0] == 0x00 and b[1] == 0x20:
+        data = [0] + list(convertbits(b[2:], 8, 5, True))
+        return bech32_encode(CFG.ADDRESS_PREFIX, data)
+    return None
+
+
 def to_bytes(x) -> bytes:
     try:
         return x.serialize()
@@ -589,6 +646,11 @@ class Script:
     def p2wpkh_script(address: str):
         pubkey_hash = decode_address(address)
         return Script([OP_0, pubkey_hash])
+
+    @staticmethod
+    def p2wsh_script(address: str):
+        prog = decode_address(address)
+        return Script([OP_0, prog])
 
 
 class DerSigError(ValueError):

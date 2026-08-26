@@ -402,10 +402,7 @@ class TxMempoolValidator:
                         min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
                         paid = 0
                         for out in outputs:
-                            out_spk = out.script_pubkey
-                            out_addr = out.address
-                            addr_cand = script_to_address(out_spk) if out_spk is not None else out_addr
-                            if addr_cand == pool_addr:
+                            if out.address == pool_addr:
                                 paid += int(out.amount or 0)
                         if paid < min_fee:
                             self.last_error_reason = "graffiti_post_fee_insufficient"

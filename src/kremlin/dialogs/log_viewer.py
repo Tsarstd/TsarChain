@@ -39,9 +39,12 @@ MODULES = ("consensus", "contracts", "core", "mempool", "network", "storage", "u
 
 
 def _ensure_log_file(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
-        path.touch()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.touch()
+    except Exception:
+        pass
 
 
 class TkLogHandler(logging.Handler):

@@ -19,9 +19,9 @@ from tsarchain.network.rpc_helper.explorer import ExplorerHandler
 def mixin():
     """Return an instance of ExplorerHandler with mocked dependencies."""
     m = ExplorerHandler(network=type('Dummy', (), {})())
-    # Provide minimal attributes expected by methods
     m.broadcast = Mock()
-    m.mempool = Mock()
+    m.broadcast.mempool = Mock()
+    m.mempool = m.broadcast.mempool
     # Cache and lock for handle_get_block_hash
     m._block_hash_cache = collections.OrderedDict()
     m._block_hash_cache_lock = threading.RLock()
@@ -162,11 +162,12 @@ def test_extract_block_id_from_block_coinbase_no_inputs(mixin):
     assert mixin._extract_block_id_from_block(block) is None
 
 
+
 def test_extract_block_id_from_block_script_sig_as_bytes(mixin):
-    cb = Mock()
+    cb = Mock(spec=["is_coinbase", "inputs"])
     cb.is_coinbase = True
     cb.inputs = [Mock()]
-    cb.inputs[0].script_sig = Mock(serialize=Mock(return_value=b'\x04\x01\x02\x03'))
+    cb.inputs[0].script_sig = b'\x04\x01\x02\x03'
     block = Mock()
     block.transactions = [cb]
     with patch('tsarchain.network.rpc_helper.explorer.last_pushdata') as mock_last_pushdata:
@@ -174,8 +175,20 @@ def test_extract_block_id_from_block_script_sig_as_bytes(mixin):
         assert mixin._extract_block_id_from_block(block) == 'block_id_789'
 
 
+def test_extract_block_id_from_block_script_sig_as_hex_str(mixin):
+    cb = Mock(spec=["is_coinbase", "inputs"])
+    cb.is_coinbase = True
+    cb.inputs = [Mock()]
+    cb.inputs[0].script_sig = '04010203'
+    block = Mock()
+    block.transactions = [cb]
+    with patch('tsarchain.network.rpc_helper.explorer.last_pushdata') as mock_last_pushdata:
+        mock_last_pushdata.return_value = b'block_id_hex'
+        assert mixin._extract_block_id_from_block(block) == 'block_id_hex'
+
+
 def test_extract_block_id_from_block_last_pushdata_fail(mixin):
-    cb = Mock()
+    cb = Mock(spec=["is_coinbase", "inputs"])
     cb.is_coinbase = True
     cb.inputs = [Mock()]
     cb.inputs[0].script_sig = Mock()
@@ -600,3 +613,20 @@ def test_get_tx_detail_no_fee_if_input_less_than_output(mixin):
         mock_graff.parse_from_script.return_value = None
         result = mixin.process_tx_lookup("txid")
         assert result["fee"] is None
+
+
+def test_explorer_handler_init():
+    dummy_net = type('Dummy', (), {})()
+    handler = ExplorerHandler(dummy_net)
+    assert handler._block_hash_cache is not None
+    assert handler._block_hash_cache_lock is not None
+
+
+def test_get_mempool_graffiti_count_no_broadcast(mixin):
+    mixin.broadcast = None
+    assert mixin._get_mempool_graffiti_count() == 0
+
+
+def test_get_mempool_graffiti_count_no_mempool(mixin):
+    mixin.broadcast.mempool = None
+    assert mixin._get_mempool_graffiti_count() == 0

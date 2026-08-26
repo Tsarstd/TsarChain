@@ -128,8 +128,12 @@ def get_block(self, message, pow_obj, base_identity,*,
     if not ok:
         return pow_resp
     src_tag = message.get("rpc_source")
-    if "height" in message:
-        return handlers.handle_get_block_at(self, int(message["height"]), src_tag=src_tag)
+    raw_h = message.get("height")
+    if raw_h is not None and str(raw_h).strip() != "":
+        try:
+            return handlers.handle_get_block_at(self, int(raw_h), src_tag=src_tag)
+        except (ValueError, TypeError):
+            return {"type": "BLOCK", "error": "invalid_height"}
     hx = str(message.get("hash") or "").strip()
     if not hx:
         return {"type": "BLOCK", "error": "missing_height_or_hash"}

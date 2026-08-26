@@ -16,7 +16,6 @@ from ..storage.utxo import UTXODB
 from ..mempool.pool import TxPool
 from ..core.coinbase import CoinbaseTx
 from ..contracts import graffiti as GRAFFITI
-from ..mempool.scripts import script_to_address
 
 # ---------------- Logger ----------------
 from ..utils.tsar_logging import get_ctx_logger
@@ -282,13 +281,8 @@ class MiningManager:
 
                 paid = 0
                 for out in outputs:
-                    out_addr = out.address
-                    if not out_addr:
-                        out_spk = out.script_pubkey
-                        out_addr = script_to_address(out_spk)
-                    if out_addr == pool_addr:
-                        amt = int(out.amount or 0)
-                        paid += amt
+                    if out.address == pool_addr:
+                        paid += int(out.amount or 0)
 
                 if paid < min_fee:
                     log.warning("[_select_graffiti_art_id] Rejecting candidate POST with insufficient pool fee: paid=%s required=%s art_id=%s", paid, min_fee, art_id[:16])
@@ -322,13 +316,8 @@ class MiningManager:
             
             paid = 0
             for out in outputs:
-                out_addr = out.address
-                if not out_addr:
-                    out_spk = out.script_pubkey
-                    out_addr = script_to_address(out_spk)
-                if out_addr == pool_addr:
-                    amt = int(out.amount or 0)
-                    paid += amt
+                if out.address == pool_addr:
+                    paid += int(out.amount or 0)
             
             if paid >= min_fee:
                 return True

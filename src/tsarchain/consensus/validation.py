@@ -20,7 +20,7 @@ from .genesis import GENESIS_HASH
 from ..utils import config as CFG
 from ..utils.benchmarks import benchmark
 from ..contracts import graffiti as GRAFFITI
-from ..utils.helpers import bits_to_target, merkle_root
+from ..utils.helpers import bits_to_target, merkle_root, extract_script_bytes
 from ..contracts.graffiti_registry import GraffitiRegistry
 
 # ---------------- Logger ----------------
@@ -692,38 +692,7 @@ class BlockValidator:
 
 
     def _entry_script_bytes(self, entry) -> bytes | None: 
-        if entry is None:
-            return None
-        candidate = entry
-        spk = None
-        if type(candidate) is dict:
-            tx_out = candidate.get("tx_out")
-            if tx_out is not None:
-                if type(tx_out) is dict:
-                    spk = tx_out.get("script_pubkey")
-                else:
-                    spk = tx_out.script_pubkey
-            if spk is None:
-                spk = candidate.get("script_pubkey")
-        elif type(candidate) in (bytes, bytearray):
-            return bytes(candidate)
-        elif type(candidate) is str:
-            return bytes.fromhex(candidate)
-        else:
-            tx_out = candidate.tx_out
-            if type(tx_out) is dict:
-                spk = tx_out.get("script_pubkey")
-            else:
-                spk = tx_out.script_pubkey
-
-        if spk is None:
-            return None
-        if type(spk) in (bytes, bytearray):
-            return bytes(spk)
-        if type(spk) is str:
-            return bytes.fromhex(spk)
-
-        return spk.serialize()
+        return extract_script_bytes(entry)
 
 
     def _validate_graffiti_output(self, spk_obj) -> bool: 
@@ -750,17 +719,7 @@ class BlockValidator:
 
 
     def _extract_raw_spk(self, spk_obj) -> bytes | None: 
-        if spk_obj is None:
-            return None
-        if type(spk_obj) in (bytes, bytearray):
-            return bytes(spk_obj)
-        if type(spk_obj) is str:
-            try:
-                return bytes.fromhex(spk_obj)
-            except ValueError:
-                return None
-
-        return spk_obj.serialize()
+        return extract_script_bytes(spk_obj)
 
 
     def _validate_graffiti_post_event(self, meta) -> bool: 
@@ -809,23 +768,7 @@ class BlockValidator:
 
 
     def _script_to_bytes(self, spk_obj): 
-        if spk_obj is None:
-            return None
-        if type(spk_obj) is dict:
-            spk_obj = spk_obj.get("script_pubkey", spk_obj.get("script"))
-        if type(spk_obj) in (bytes, bytearray):
-            return bytes(spk_obj)
-        if type(spk_obj) is str:
-            return bytes.fromhex(spk_obj)
-
-        spk_obj = spk_obj.script_pubkey
-
-        if type(spk_obj) in (bytes, bytearray):
-            return bytes(spk_obj)
-        if type(spk_obj) is str:
-            return bytes.fromhex(spk_obj)
-
-        return spk_obj.serialize()
+        return extract_script_bytes(spk_obj)
 
 
     def _txid_hex(self, value): 

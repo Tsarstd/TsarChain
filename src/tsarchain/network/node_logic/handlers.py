@@ -152,6 +152,8 @@ def handle_get_block_at(self, height: int, src_tag: str | None = None) -> dict: 
 def handle_get_block_by_hash(self, hx: str, src_tag: str | None = None) -> dict:
         
     hx = (hx or "").strip().lower()
+    if hx.startswith("0x"):
+        hx = hx[2:]
     with self.broadcast.lock:
         chain = list(self.broadcast.blockchain.chain)
     for b in chain:

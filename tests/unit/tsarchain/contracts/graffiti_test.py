@@ -648,3 +648,30 @@ def test_find_pool_utxos_fallback_with_txout_objects():
         assert results[0]["txid"] == "txid123"
         assert results[0]["vout"] == 0
         assert results[0]["amount"] == 5000
+
+
+def test_find_pool_utxos_from_index_bucket():
+    """Verify _find_pool_utxos handles dictionary entries returned by UTXODB.get."""
+    from unittest.mock import MagicMock, patch
+    from tsarchain.contracts.graffiti import _find_pool_utxos
+
+    spk_bytes = bytes.fromhex("0020" + "cd" * 32)
+    mock_db = MagicMock()
+    # UTXODB.get returns { "txid:vout": {"amount": ..., "script_pubkey": ..., "is_coinbase": ..., "block_height": ...} }
+    mock_db.get.return_value = {
+        "txid456:1": {
+            "amount": 7500,
+            "script_pubkey": spk_bytes.hex(),
+            "is_coinbase": False,
+            "block_height": 25,
+        }
+    }
+    mock_db.utxos = {}
+
+    with patch('tsarchain.contracts.graffiti._pool_spk_bytes', return_value=spk_bytes):
+        results = _find_pool_utxos(mock_db, "some_art_id")
+        assert len(results) == 1
+        assert results[0]["txid"] == "txid456"
+        assert results[0]["vout"] == 1
+        assert results[0]["amount"] == 7500
+

@@ -18,7 +18,7 @@ from bech32 import bech32_decode, bech32_encode, convertbits
 
 from ..utils import config as CFG
 from ..core.tx import Tx, TxIn, TxOut
-from ..utils.helpers import Script, OP_RETURN, hash160, compute_tx_weight_vsize
+from ..utils.helpers import Script, OP_RETURN, hash160, compute_tx_weight_vsize, extract_script_bytes
 
 from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.contracts.graffiti")
@@ -923,14 +923,8 @@ def _find_pool_utxos(utxo_db, art_id: str) -> list[dict]:
     if type(bucket) is dict:
         for key, entry in bucket.items():
             txid_hex, idx_str = key.split(":")
-            if type(entry) is dict:
-                tx_out = entry.get("tx_out")
-            else:
-                tx_out = entry.tx_out
-            if type(tx_out) is dict:
-                amt = int(tx_out.get("amount", 0))
-            else:
-                amt = int(tx_out.amount or 0)
+            tx_out = entry.get("tx_out", entry) if type(entry) is dict else entry
+            amt = int((tx_out.get("amount", 0) if type(tx_out) is dict else (tx_out.amount or 0)) or 0)
             out.append({
                 "txid": txid_hex,
                 "vout": int(idx_str),
@@ -940,39 +934,18 @@ def _find_pool_utxos(utxo_db, art_id: str) -> list[dict]:
 
     utxos_dict = utxo_db.utxos or {}
     for key, entry in utxos_dict.items():
-        if type(entry) is dict:
-            tx_out = entry.get("tx_out")
-        else:
-            tx_out = entry.tx_out
-        if tx_out is None:
-            tx_out = entry
-        
-        if type(tx_out) is dict:
-            spk_obj = tx_out.get("script_pubkey")
-        else:
-            spk_obj = tx_out.script_pubkey
-        if spk_obj is None:
+        spk_bytes = extract_script_bytes(entry)
+        if not spk_bytes or spk_bytes.hex().lower() != spk_hex:
             continue
-        try:
-            spk_str = spk_obj.serialize().hex()
-        except (AttributeError, TypeError):
-            if type(spk_obj) in (bytes, bytearray):
-                spk_str = bytes(spk_obj).hex()
-            else:
-                spk_str = str(spk_obj)
-
-        if spk_str.lower() == spk_hex:
-            if type(tx_out) is dict:
-                amt = int(tx_out.get("amount", 0) or 0)
-            else:
-                amt = int(tx_out.amount or 0)
-            txid_hex, idx_str = key.split(":")
-            out.append({
-                "txid": txid_hex,
-                "vout": int(idx_str),
-                "amount": amt,
-                "script_pubkey": spk_hex,
-            })
+        tx_out = entry.get("tx_out", entry) if type(entry) is dict else entry
+        amt = int((tx_out.get("amount", 0) if type(tx_out) is dict else (tx_out.amount or 0)) or 0)
+        txid_hex, idx_str = key.split(":")
+        out.append({
+            "txid": txid_hex,
+            "vout": int(idx_str),
+            "amount": amt,
+            "script_pubkey": spk_hex,
+        })
     # dedup by outpoint
     uniq = {}
     for item in out:

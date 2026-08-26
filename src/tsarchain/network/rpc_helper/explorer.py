@@ -11,7 +11,7 @@ from ...utils import config as CFG
 from .base import NetworkHandlerProxy
 from ...contracts import graffiti as GRAFF
 from ...utils.benchmarks import benchmark
-from ...utils.helpers import last_pushdata, estimate_block_size_bytes, spkhex_to_address
+from ...utils.helpers import last_pushdata, estimate_block_size_bytes, spkhex_to_address, extract_script_bytes
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
@@ -19,6 +19,10 @@ log = get_ctx_logger("tsarchain.network.user_rpc_helper.explorer")
 
 
 class ExplorerHandler(NetworkHandlerProxy):
+    def __init__(self, network):
+        super().__init__(network)
+        self._block_hash_cache = collections.OrderedDict()
+        self._block_hash_cache_lock = threading.RLock()
 
     @benchmark(label="GET_TX_DETAIL", threshold_ms=15.0)
     def process_tx_lookup(self, txid_hex: str, src_tag: str | None = None) -> dict:
@@ -226,33 +230,16 @@ class ExplorerHandler(NetworkHandlerProxy):
         if not txs:
             return None
 
-        cb = txs[0]
-        is_cb = cb.is_coinbase
-        if not is_cb:
-            for t in txs:
-                t_is_cb = t.is_coinbase
-                if t_is_cb:
-                    cb = t
-                    break
-            else:
-                return None
-
-        inputs = cb.inputs
-        if not inputs:
+        cb = txs[0] if txs[0].is_coinbase else next((t for t in txs if t.is_coinbase), None)
+        if not cb or not cb.inputs or cb.inputs[0].script_sig is None:
             return None
-    
-        vin0 = inputs[0]
-        sig = vin0.script_sig
-        ser = sig.serialize
-        raw = ser() if callable(ser) else None
 
+        raw = extract_script_bytes(cb.inputs[0].script_sig)
         if not raw:
             return None
 
         data = last_pushdata(raw)
-        if not data:
-            return None
-        return data.decode("utf-8", errors="ignore") or data.hex()
+        return (data.decode("utf-8", errors="ignore") or data.hex()) if data else None
 
 
     def _prevhash_hex(self, b) -> str:
@@ -335,7 +322,7 @@ class ExplorerHandler(NetworkHandlerProxy):
 
     def _get_mempool_graffiti_count(self) -> int:
         count = 0
-        mem = self.mempool
+        mem = self.broadcast.mempool if self.broadcast else None
         if mem:
             for tx in mem.get_all_txs():
                 outputs = tx.outputs or []

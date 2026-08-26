@@ -162,8 +162,12 @@ python benchmarks/native_bench.py
 > 4. **Zero `setattr()`**: Strictly prohibited for dynamic monkey-patching or runtime attribute injection. Always declare class attributes explicitly in `__init__` and assign directly (`obj.attr = value`).
 > 5. **Direct Access**:
 >    - Always prefer direct attribute access: `obj.attr`.
-> 6. **No Single-Line `try-except` Bloat / Speculative Guards**:
->    - Never write multi-line `try-except` blocks around a single statement just to guard against `None` or missing attributes (e.g. `try: return len(pool) except Exception: return 0`).
+> 6. **No Scattered `try-except` Bloat / Speculative Guards**:
+>    - Never write multi-line `try-except` blocks around single statements just to guard against `None` or missing attributes (e.g. `try: return len(pool) except Exception: return 0`).
+>    - Do not scatter or duplicate repetitive `try-except` blocks across calling modules (such as `consensus`, `network`, `contracts`, etc.) to handle polymorphic inputs or attribute extraction.
+>    - **Use / Create Centralized Foundation Helpers in `src/tsarchain/utils/helpers.py`**:
+>      - Centralized helpers like `extract_script_bytes(obj)` are provided to safely and recursively extract raw script bytes from diverse polymorphic inputs (`bytes`, hex `str`, `Script`, `TxOut`, `dict`, etc.).
+>      - If a task requires handling new polymorphic structures or attribute extraction that would otherwise require defensive `try-except` scaffolding, **do not duplicate `try-except` across callers**. Instead, create or extend a centralized, reusable helper function in `src/tsarchain/utils/helpers.py`, allowing calling modules to remain concise (a single clean line of delegation without `try-except`).
 >    - Use concise, idiomatic Python:
 >      - Direct null/ternary check: `return len(pool._pool) if pool else 0` or `bc.get_mempool_size() if bc else 0`.
 >      - If specific known exceptions must be ignored, use stdlib `with contextlib.suppress(SpecificError):` instead of verbose defensive scaffolding.

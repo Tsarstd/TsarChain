@@ -9,7 +9,7 @@ from ...utils import config as CFG
 from .base import NetworkHandlerProxy
 from ...core.tx import Tx, TxIn, TxOut
 from ...contracts import graffiti as GRAFF
-from ...utils.helpers import Script, OP_RETURN, last_pushdata, compute_tx_weight_vsize
+from ...utils.helpers import Script, OP_RETURN, last_pushdata, compute_tx_weight_vsize, extract_script_bytes
 
 # ---------------- Logger ----------------
 from ...utils.tsar_logging import get_ctx_logger
@@ -302,11 +302,9 @@ class TxHandler(NetworkHandlerProxy):
             for key in list(missing):
                 txid_hex, idx_str = key.split(":")
                 if entry := global_utxos.get(key):
-                    tx_out = entry.get("tx_out")
-                    amt = int(tx_out.amount or 0)
-                    spk = tx_out.script_pubkey
-                    ser = spk.serialize
-                    spk_bytes = ser() if callable(ser) else b""
+                    tx_out = entry.get("tx_out") or entry
+                    amt = int((tx_out.get("amount", 0) if type(tx_out) is dict else (tx_out.amount or 0)) or 0)
+                    spk_bytes = extract_script_bytes(tx_out) or b""
                         
                     is_cb = bool(entry.get("is_coinbase", False))
                     born  = int(entry.get("block_height", 0))
