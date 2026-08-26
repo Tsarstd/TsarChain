@@ -9,14 +9,11 @@ from typing import Dict
 
 
 def init_storage_registry(self) -> None:
-    if self.storage_peers is None:
-        self.storage_peers = {}
+    self.storage_peers = {}
 
 def register_storage_peer(self, peer_ip: str, meta: Dict) -> None:
     port = int(meta.get("port", 0))
     with self.lock:
-        if self.storage_peers is None:
-            self.storage_peers = {}
         node_id = meta.get("node_id")
         # enforce pin consistency for the same node_id
         if node_id:

@@ -206,7 +206,7 @@ class ChainStorage:
                     diff = blk.difficulty
                     if diff is None or diff == 0:
                         b_bits = blk.bits
-                        blk.difficulty = int(self.blockchain.calculate_block_difficulty(b_bits))
+                        blk.difficulty = int(target_to_difficulty(bits_to_target(b_bits)))
 
                     payload = blk.to_storage_bytes()
                     b.put(key, payload)
@@ -747,14 +747,15 @@ class ChainStorage:
         if mem is None:
             mem = self.blockchain._mempool
 
-        get_all_fn = mem.get_all_txs
-        if callable(get_all_fn):
-            for tx in get_all_fn():
-                for tx_out in (tx.outputs or []):
-                    spk = tx_out.script_pubkey
-                    meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
-                    if meta and str(meta.get("event", "")).upper() == "POST":
-                        graffiti_on_mempool += 1
+        if mem is not None:
+            get_all_fn = mem.get_all_txs
+            if callable(get_all_fn):
+                for tx in get_all_fn():
+                    for tx_out in (tx.outputs or []):
+                        spk = tx_out.script_pubkey
+                        meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
+                        if meta and str(meta.get("event", "")).upper() == "POST":
+                            graffiti_on_mempool += 1
                         
         total_payouts = sum(len(v or []) for v in (data_g.get("payouts") or {}).values())
 

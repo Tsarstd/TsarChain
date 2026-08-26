@@ -67,79 +67,27 @@ def clog(message: str, color: str = COL.GREY):
 def _safe_peer_counts(net) -> tuple[int, int]:
     if not net:
         return 0, 0
-    inbound = len(net.inbound_peers or ())
-    outbound = len(net.outbound_peers or ())
+    inbound = len(net.inbound_peers) if net.inbound_peers else 0
+    outbound = len(net.outbound_peers) if net.outbound_peers else 0
     return inbound, outbound
-
-
-def _count_txpool(pool) -> int:
-    if pool is None:
-        return 0
-
-    p = pool._pool
-    if p is not None:
-        return len(p)
-
-    get_size = pool.get_mempool_size
-    if callable(get_size):
-        v = get_size()
-        if type(v) is int:
-            return v
-
-    get_txs = pool.get_all_txs
-    if callable(get_txs):
-        txs = get_txs()
-        if type(txs) in (list, tuple, set, dict):
-            return len(txs)
-
-    return len(pool)
 
 
 def _safe_mempool_count(runner) -> int:
     if not runner:
         return 0
-
-    net = runner.network
-    if net:
-        bcast = net.broadcast
-        if bcast:
-            pool = bcast.mempool
-            if pool is not None:
-                count = _count_txpool(pool)
-                if count > 0:
-                    return count
-
-        pool = net.mempool
-        if pool is not None:
-            count = _count_txpool(pool)
-            if count > 0:
-                return count
-
-    bc = runner.blockchain
-    if bc:
-        get_size = bc.get_mempool_size
-        if callable(get_size):
-            count = int(get_size())
-            if count > 0:
-                return count
-
-        pool = bc.get_mempool()
-        if pool is not None:
-            return _count_txpool(pool)
-
+    if runner.blockchain:
+        return runner.blockchain.get_mempool_size()
+    if runner.network and runner.network.broadcast and runner.network.broadcast.mempool:
+        return len(runner.network.broadcast.mempool._pool)
     return 0
 
 
 def _normalize_cores(cores: int | None) -> int | None:
-    cpu_total = mp.cpu_count()
+    cpu_total = mp.cpu_count() or 1
     if cores is None:
-        return cpu_total or 1
+        return cpu_total
     cores_int = int(cores)
-    if cores_int <= 0:
-        return None
-    if cpu_total:
-        cores_int = min(cores_int, cpu_total)
-    return cores_int
+    return min(cores_int, cpu_total) if cores_int > 0 else None
 
 
 def show_thread_report():
@@ -149,21 +97,24 @@ def show_thread_report():
 
 def choose_mode() -> int:
     console = Console()
-    console.print(Panel("[bold yellow]Choose Execution Mode[/bold yellow]\n[bold green]0[/bold green] : Mining Mode (Full Node + Miner)\n[bold blue]1[/bold blue] : Node Only (Relay & Mempool)", border_style="cyan"))
+    console.print(Panel(
+        "[bold yellow]Choose Execution Mode[/bold yellow]\n"
+        "[bold green]0[/bold green] : Mining Mode (Full Node + Miner)\n"
+        "[bold blue]1[/bold blue] : Node Only (Relay & Mempool)",
+        border_style="cyan",
+    ))
 
-    while True:
-        try:
-            sel = Prompt.ask("[bold cyan]Select Mode[/bold cyan]", choices=["0", "1"], default="0").strip()
-        except (KeyboardInterrupt, EOFError):
-            console.print("[yellow]Using default: Mining Mode (0)[/yellow]")
-            return 0
+    try:
+        sel = Prompt.ask("[bold cyan]Select Mode[/bold cyan]", choices=["0", "1"], default="0").strip()
+    except (KeyboardInterrupt, EOFError):
+        console.print("[yellow]Using default: Mining Mode (0)[/yellow]")
+        return 0
 
-        if sel == "0":
-            console.print("[bold green]✓ Selected Mode: Mining Mode (0)[/bold green]\n")
-            return 0
-        elif sel == "1":
-            console.print("[bold blue]✓ Selected Mode: Node Only (1)[/bold blue]\n")
-            return 1
+    if sel == "1":
+        console.print("[bold blue]✓ Selected Mode: Node Only (1)[/bold blue]\n")
+        return 1
+    console.print("[bold green]✓ Selected Mode: Mining Mode (0)[/bold green]\n")
+    return 0
 
         
 def parse_args():
@@ -249,26 +200,14 @@ def main():
 
     if args.node_only or mode_selected == 1:
         runner = NodeRunner(bootstrap_snapshot=not args.no_bootstrap)
-        def _get_runner_height():
-            try:
-                return int(runner.blockchain.height)
-            except AttributeError:
-                return -1
-
-        def _get_runner_peers():
-            try:
-                return _safe_peer_counts(runner.network)
-            except AttributeError:
-                return (0, 0)
-
         tui = MinerTUI(
             address="Node Only",
             cores=0,
             mode=" Node Only",
             randomx_mode=" Disabled",
             hashrate_queue=None,
-            chain_height_fn=_get_runner_height,
-            peer_counts_fn=_get_runner_peers,
+            chain_height_fn=lambda: int(runner.blockchain.height) if runner.blockchain else -1,
+            peer_counts_fn=lambda: _safe_peer_counts(runner.network),
             mempool_count_fn=lambda: _safe_mempool_count(runner),
             node_only=True,
         )
@@ -325,26 +264,14 @@ def main():
         progress_queue=progress_q,
     )
 
-    def _get_miner_height():
-        try:
-            return int(miner.blockchain.height)
-        except AttributeError:
-            return -1
-
-    def _get_miner_peers():
-        try:
-            return _safe_peer_counts(miner.network)
-        except AttributeError:
-            return (0, 0)
-
     tui = MinerTUI(
         address=address,
         cores=cores,
         mode=" Mining...",
         randomx_mode=mode_label,
         hashrate_queue=progress_q,
-        chain_height_fn=_get_miner_height,
-        peer_counts_fn=_get_miner_peers,
+        chain_height_fn=lambda: int(miner.blockchain.height) if miner.blockchain else -1,
+        peer_counts_fn=lambda: _safe_peer_counts(miner.network),
         mempool_count_fn=lambda: _safe_mempool_count(miner),
     )
     

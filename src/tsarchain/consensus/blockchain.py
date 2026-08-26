@@ -66,6 +66,7 @@ class Blockchain():
         self._utxo_synced: bool = False
         
         self._snapshot_last_backup_height: int = -1
+        self._snapshot_backup_active: bool = False
         self._state_snapshot_cache: dict | None = None
         self._last_block_validation_error: str | None = None
         self._mempool: TxPool | None = None

@@ -149,7 +149,7 @@ python benchmarks/native_bench.py
 
 ---
 
-## 6. Code Style & Architectural Conventions: Strict Prohibition of Dynamic Reflection & `isinstance`
+## 6. Code Style & Architectural Conventions: Strict Prohibition of Dynamic Reflection & Defensive Bloat
 
 > [!CAUTION]
 > **TOTAL 100% BAN ON `isinstance()`, `hasattr()`, `getattr()`, AND `setattr()` IN PRODUCTION CODE (`src/` & `apps/`).**
@@ -162,6 +162,11 @@ python benchmarks/native_bench.py
 > 4. **Zero `setattr()`**: Strictly prohibited for dynamic monkey-patching or runtime attribute injection. Always declare class attributes explicitly in `__init__` and assign directly (`obj.attr = value`).
 > 5. **Direct Access**:
 >    - Always prefer direct attribute access: `obj.attr`.
+> 6. **No Single-Line `try-except` Bloat / Speculative Guards**:
+>    - Never write multi-line `try-except` blocks around a single statement just to guard against `None` or missing attributes (e.g. `try: return len(pool) except Exception: return 0`).
+>    - Use concise, idiomatic Python:
+>      - Direct null/ternary check: `return len(pool._pool) if pool else 0` or `bc.get_mempool_size() if bc else 0`.
+>      - If specific known exceptions must be ignored, use stdlib `with contextlib.suppress(SpecificError):` instead of verbose defensive scaffolding.
 
 ---
 

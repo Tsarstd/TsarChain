@@ -580,22 +580,41 @@ class BlockValidator:
 
 
     def _estimate_tx_size(self, tx) -> Optional[int]: 
-        cached = tx._cached_raw_tx_w
-        if type(cached) in (bytes, bytearray):
-            return len(cached)
+        try:
+            cached = tx._cached_raw_tx_w
+            if type(cached) in (bytes, bytearray):
+                return len(cached)
+        except AttributeError:
+            pass
     
-        serialize_fn = tx.serialize
-        if callable(serialize_fn):
-            raw = serialize_fn()
-            return len(raw if type(raw) in (bytes, bytearray) else bytes.fromhex(raw))
+        try:
+            serialize_fn = tx.serialize
+            if callable(serialize_fn):
+                raw = serialize_fn()
+                return len(raw if type(raw) in (bytes, bytearray) else bytes.fromhex(raw))
+        except AttributeError:
+            pass
             
-        raw_attr = tx.raw
-        if type(raw_attr) in (bytes, bytearray):
-            return len(raw_attr)
+        try:
+            raw_attr = tx.raw
+            if type(raw_attr) in (bytes, bytearray):
+                return len(raw_attr)
+        except AttributeError:
+            pass
             
-        size_attr = tx.size_bytes
-        if size_attr is not None:
-            return int(size_attr()) if callable(size_attr) else int(size_attr)
+        try:
+            size_attr = tx.size_bytes
+            if size_attr is not None:
+                return int(size_attr()) if callable(size_attr) else int(size_attr)
+        except AttributeError:
+            pass
+
+        try:
+            raw = self._serialize_tx_cached(tx, include_witness=True)
+            if type(raw) in (bytes, bytearray):
+                return len(raw)
+        except Exception:
+            pass
             
         return None
 

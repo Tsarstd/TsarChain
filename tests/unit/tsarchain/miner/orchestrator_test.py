@@ -7,8 +7,6 @@ import pytest
 import signal
 from unittest.mock import MagicMock, patch
 
-if not hasattr(signal, "siginterrupt"):
-    signal.siginterrupt = MagicMock()
 
 from tsarchain.miner.orchestrator import (
     SimpleMiner, 
@@ -373,25 +371,30 @@ def test_safe_mempool_count():
     apps_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "apps"))
     if apps_dir not in sys.path:
         sys.path.insert(0, apps_dir)
-    from cli_node_miner import _safe_mempool_count, _count_txpool
+    from cli_node_miner import _safe_mempool_count
     
     # 1. Test null runner
     assert _safe_mempool_count(None) == 0
 
     # 2. Test runner with network broadcast mempool
     mock_runner = MagicMock()
+    mock_runner.blockchain = None
     mock_pool = MagicMock()
     mock_pool._pool = {"tx1": "data", "tx2": "data"}
     mock_runner.network.broadcast.mempool = mock_pool
-    
     assert _safe_mempool_count(mock_runner) == 2
 
-    # 3. Test fallback to get_all_txs()
-    mock_pool_2 = MagicMock()
-    mock_pool_2._pool = None
-    mock_pool_2.get_mempool_size = None
-    mock_pool_2.get_all_txs.return_value = ["tx1", "tx2", "tx3"]
-    assert _count_txpool(mock_pool_2) == 3
+    # 3. Test runner with blockchain mempool size
+    mock_runner_bc = MagicMock()
+    mock_runner_bc.blockchain.get_mempool_size.return_value = 5
+    assert _safe_mempool_count(mock_runner_bc) == 5
+
+    # 4. Test runner with real Network proxy (empty mempool without raising AttributeError)
+    from tsarchain.network.node import Network
+    real_runner = MagicMock()
+    real_runner.blockchain = None
+    real_runner.network = Network()
+    assert _safe_mempool_count(real_runner) == 0
 
 
 def test_simple_miner_abort_on_tip_changed():

@@ -8,6 +8,7 @@ import time
 import errno
 import signal
 import threading
+import contextlib
 import multiprocessing as mp
 from multiprocessing.synchronize import Event as MpEvent
 from datetime import datetime
@@ -25,11 +26,8 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.miner.orchestrator")
 
 INTERRUPTED_ERRNOS = {errno.EINTR}
-
-try:
+with contextlib.suppress(AttributeError):
     INTERRUPTED_ERRNOS.add(errno.WSAEINTR)
-except Exception:
-    pass
 
 ADDRESS_PATTERN = re.compile(r"^tsar1[0-9a-z]{20,120}$")
 
@@ -43,17 +41,18 @@ _clog_func = None
 
 def set_clog_func(func):
     global _clog_func
-    _clog_func = func
+    _clog_func = func if func is not clog else None
 
 def clog(message: str, color: str = COL.GREY):
-    if _clog_func:
+    if _clog_func is not None and _clog_func is not clog:
         _clog_func(message, color)
     else:
         print(f"{_stamp()} : {color}{message}{COL.RESET}")
 
 def _enable_siginterrupt():
     for sig in (signal.SIGINT, signal.SIGTERM):
-        signal.siginterrupt(sig, False)
+        with contextlib.suppress(AttributeError, ValueError, OSError):
+            signal.siginterrupt(sig, False)
 
 def _register_bootstrap_peers(network: Network) -> int:
     fallback_nodes = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
@@ -173,10 +172,7 @@ class SimpleMiner:
             self._pending_block_hashes.add(hx)
         while len(self._pending_blocks) > 5:
             old = self._pending_blocks.pop(0)
-            try:
-                self._pending_block_hashes.discard(old.hash().hex())
-            except Exception:
-                log.exception("[_queue_block_for_broadcast] Failed to discard old block hash")
+            self._pending_block_hashes.discard(old.hash().hex())
 
     def _flush_pending_blocks(self) -> None:
         if not self.network or not self._pending_blocks:
@@ -186,10 +182,7 @@ class SimpleMiner:
             try:
                 sent = self.network.publish_block(blk, exclude=None, force=True)
                 if sent and sent > 0:
-                    try:
-                        self._pending_block_hashes.discard(blk.hash().hex())
-                    except Exception:
-                        log.exception("[_flush_pending_blocks] Failed to discard published block hash")
+                    self._pending_block_hashes.discard(blk.hash().hex())
                     continue
             except Exception as exc:
                 clog(f"[broadcast] retry failed: {exc}")
@@ -199,10 +192,7 @@ class SimpleMiner:
     def _has_active_peers(self) -> bool:
         if not self.network:
             return False
-
-        inbound = self.network.inbound_peers or set()
-        outbound = self.network.outbound_peers or set()
-        return bool(inbound or outbound)
+        return bool(self.network.inbound_peers or self.network.outbound_peers)
 
     def _bootstrap_seeds(self) -> list[tuple[str, int]]:
         seeds = []
@@ -227,16 +217,13 @@ class SimpleMiner:
         return bool(self._bootstrap_self_only)
 
     def _get_local_tip(self) -> tuple[int, str | None]:
-        h = int(self.blockchain.height if self.blockchain else -1)
-        hx = None
-        tip = self.blockchain.get_last_block() if self.blockchain else None
-        if tip:
-            hx = tip.hash().hex()
-        return h, hx
+        if not self.blockchain:
+            return -1, None
+        tip = self.blockchain.get_last_block()
+        return int(self.blockchain.height), tip.hash().hex() if tip else None
 
     def _on_tip_changed(self, new_height: int, new_hash: str):
-        if self.abort_block_mining is not None:
-            self.abort_block_mining.set()
+        self.abort_block_mining.set()
 
     def _mine_block_runner(self, result: dict, cancel_event: MpEvent | None = None):
         """
@@ -297,7 +284,6 @@ class SimpleMiner:
                 h = int(info.get("height", -1))
                 if h >= 0:
                     best_map[peer] = h  # keep network state aware of trusted height
-                    self.network._peer_best_height[peer] = h
                     heights.append(h)
 
         best = max(heights) if heights else -1
@@ -553,10 +539,8 @@ class SimpleMiner:
             self.abort_block_mining.set()
             
         if self._progress_q:
-            try:
+            with contextlib.suppress(Exception):
                 self._progress_q.cancel_join_thread()
-            except Exception:
-                pass
 
         if self.network:
             self.network.shutdown()
@@ -587,11 +571,7 @@ class NodeRunner:
     def _has_active_peers(self) -> bool:
         if not self.network:
             return False
-
-        peers = self.network.peers or set()
-        inbound = self.network.inbound_peers or set()
-        outbound = self.network.outbound_peers or set()
-        return bool(peers or inbound or outbound)
+        return bool(self.network.peers or self.network.inbound_peers or self.network.outbound_peers)
 
 
     def start(self):

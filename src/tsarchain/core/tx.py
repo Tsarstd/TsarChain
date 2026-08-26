@@ -20,6 +20,7 @@ from ..utils.helpers import (
     tx_to_compact_tuple,
     txid_from_compact,
     wtxid_from_compact,
+    serialize_tx,
 )
 
 # ---------------- Logger ----------------
@@ -61,6 +62,8 @@ class Tx:
         self._cached_raw_tx_w = None
         self._received_at = None
         self.txid_hex = None
+        self.raw = None
+        self.size_bytes = None
         self.to_address = to_address
         self.block_id = block_id
         self.height = height
@@ -170,6 +173,9 @@ class Tx:
         return wtxid_from_compact(compact)
 
     # -------- Serde ----------
+
+    def serialize(self, include_witness: bool = True) -> bytes:
+        return serialize_tx(self, include_witness=include_witness)
 
     def to_dict(self, include_txid: bool = True) -> dict:
         return {

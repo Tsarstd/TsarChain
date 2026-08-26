@@ -7,7 +7,7 @@ import sys
 import psutil
 import shutil
 import platform
-import subprocess
+import contextlib
 
 from rich.table import Table
 from rich.panel import Panel
@@ -81,111 +81,82 @@ REVERSE = "\033[7m"
 HIDDEN = "\033[8m"
 
 
-def _human_bytes(n: int) -> str:
+def _human_bytes(n: int | float) -> str:
     try:
         n = float(n)
-    except Exception:
+    except (ValueError, TypeError):
         return "?"
-    for unit in ("B","KB","MB","GB","TB","PB","EB"):
+    for unit in ("B", "KB", "MB", "GB", "TB", "PB"):
         if n < 1024.0:
             return f"{n:.1f} {unit}"
         n /= 1024.0
-    return f"{n:.1f} ZB"
+    return f"{n:.1f} EB"
+
 
 def _cpu_brand() -> str:
-    try:
-        sysname = platform.system()
-        if sysname == "Windows":
-            # Registry
-            try:
-                import winreg  # type: ignore
-                with winreg.OpenKey(
-                    winreg.HKEY_LOCAL_MACHINE,
-                    r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as k:
-                    name, _ = winreg.QueryValueEx(k, "ProcessorNameString")
-                    name = " ".join(str(name).split())
-                    if name:
-                        return name
-            except Exception:
-                pass
+    sysname = platform.system()
+    if sysname == "Windows":
+        with contextlib.suppress(Exception):
+            import winreg  # type: ignore
+            with winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
+            ) as k:
+                name, _ = winreg.QueryValueEx(k, "ProcessorNameString")
+                clean = " ".join(str(name).split())
+                if clean:
+                    return clean
+    elif sysname == "Linux":
+        with contextlib.suppress(Exception):
+            with open("/proc/cpuinfo", "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    if "model name" in line:
+                        clean = " ".join(line.split(":", 1)[1].strip().split())
+                        if clean:
+                            return clean
+    name = platform.processor() or ""
+    clean = " ".join(str(name).split())
+    return clean or "Unknown CPU"
 
-            # WMIC
-            try:
-                out = subprocess.check_output(
-                    ["wmic", "cpu", "get", "Name"],
-                    stderr=subprocess.DEVNULL
-                )
-                lines = [l.strip() for l in out.decode(errors="ignore").splitlines() if l.strip()]
-                if len(lines) >= 2:
-                    name = " ".join(lines[1].split())
-                    if name:
-                        return name
-            except Exception:
-                pass
-
-            # PowerShell
-            try:
-                out = subprocess.check_output(
-                    ["powershell", "-NoProfile", "-Command",
-                     "Get-CimInstance Win32_Processor | Select-Object -ExpandProperty Name"],
-                    stderr=subprocess.DEVNULL
-                )
-                name = " ".join(out.decode(errors="ignore").strip().split())
-                if name:
-                    return name
-            except Exception:
-                pass
-        
-        if sysname == "Darwin":
-            try:
-                out = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"])
-                return out.decode().strip()
-            except Exception:
-                pass
-            
-        elif sysname == "Linux":
-            try:
-                with open("/proc/cpuinfo", "r", encoding="utf-8", errors="ignore") as f:
-                    for line in f:
-                        if "model name" in line:
-                            return line.split(":", 1)[1].strip()
-            except Exception:
-                pass
-            
-            # lscpu
-            try:
-                out = subprocess.check_output(["lscpu"], stderr=subprocess.DEVNULL)
-                for line in out.decode(errors="ignore").splitlines():
-                    if "Model name:" in line:
-                        name = " ".join(line.split(":", 1)[1].strip().split())
-                        if name:
-                            return name
-            except Exception:
-                pass
-            
-        # Windows / fallback
-        name = platform.processor()
-        if not name:
-            try:
-                name = platform.uname().processor
-            except (AttributeError, TypeError):
-                name = ""
-        name = " ".join(str(name or "").strip().split())
-        return name or "Unknown CPU"
-    except Exception:
-        return "Unknown CPU"
 
 def print_system_snapshot(cores_hint: int | None = None):
     console = Console()
     try:
         uname = platform.uname()
         vm = psutil.virtual_memory()
-        du = shutil.disk_usage("/")
+        du = shutil.disk_usage(".")
         freq = None
-        try:
+        with contextlib.suppress(Exception):
             freq = psutil.cpu_freq()
-        except Exception:
-            pass
+
+        phys = psutil.cpu_count(logical=False) or 0
+        logi = psutil.cpu_count(logical=True) or 0
+
+        table = Table(show_header=False, box=None, padding=(0, 1))
+        table.add_column("Key", style="bold cyan")
+        table.add_column("Value", style="bold white")
+
+        table.add_row("CPU Model", _cpu_brand())
+
+        core_info = f"{phys} physical / {logi} logical"
+        if cores_hint:
+            core_info += f" (recommended: {cores_hint})"
+        table.add_row("CPU Cores", core_info)
+
+        if freq:
+            base = f"{(freq.min or 0)/1000:.2f}"
+            cur  = f"{(freq.current or 0)/1000:.2f}"
+            mx   = f"{(freq.max or 0)/1000:.2f}"
+            table.add_row("CPU Speed", f"{cur} GHz (base ~{base} / boost ~{mx})")
+
+        table.add_row("RAM Memory", f"{_human_bytes(vm.total)} total, {_human_bytes(vm.available)} free")
+        table.add_row("Disk Space", f"{_human_bytes(du.free)} free of {_human_bytes(du.total)}")
+        table.add_row("OS System", f"{uname.system} {uname.release} ({uname.machine})")
+        table.add_row("Python", f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+
+        console.print(Panel(table, title="[bold gold1]Your Sovereign Hardware Specifications[/bold gold1]", border_style="cyan", expand=False))
+    except Exception as e:
+        console.print(f"[bold red][snapshot] failed: {e}[/bold red]")
 
         phys = psutil.cpu_count(logical=False) or 0
         logi = psutil.cpu_count(logical=True) or 0
