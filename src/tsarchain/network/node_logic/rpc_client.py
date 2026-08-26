@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import socket
 import time
-import secrets
 import threading
 from collections import OrderedDict
 from typing import Optional, Tuple
@@ -36,14 +35,8 @@ def rpc_request(self, peer: Tuple[str, int], payload: dict, timeout: Optional[fl
         log.debug("[rpc_request] backoff active for %s (%.1fs remaining)", norm, retry_at - now)
         return None
     timeout = float(timeout or CFG.SYNC_TIMEOUT)
-    try:
-        cache = self._rpc_conn_cache
-    except AttributeError:
-        cache = None
-    try:
-        cache_lock = self._rpc_conn_cache_lock
-    except AttributeError:
-        cache_lock = None
+    cache = self._rpc_conn_cache
+    cache_lock = self._rpc_conn_cache_lock
     max_cache = max(1, int(CFG.RPC_CONN_CACHE_MAX))
     if cache is None or cache_lock is None:
         cache = self._rpc_conn_cache = OrderedDict()
@@ -196,10 +189,7 @@ def prefetch_rpc_connections(self):
     """
     Dial bootstrap/persistent peers once at startup to warm up handshake+channel.
     """
-    try:
-        peers = list(self.persistent_peers)
-    except AttributeError:
-        peers = []
+    peers = list(self.persistent_peers)
     for peer in peers:
         prefetch_peer_channel(self, peer)
 
@@ -208,12 +198,9 @@ def prefetch_peer_channel(self, peer: Tuple[str, int]):
     """
     Warm a single peer channel (handshake + cache) with short timeout.
     """
-    try:
-        cache = self._rpc_conn_cache
-        cache_lock = self._rpc_conn_cache_lock
-        prefetched = self._rpc_prefetched
-    except AttributeError:
-        return
+    cache = self._rpc_conn_cache
+    cache_lock = self._rpc_conn_cache_lock
+    prefetched = self._rpc_prefetched
     if cache is None or cache_lock is None or prefetched is None:
         return
     norm = self.normalize_peer(peer)

@@ -44,14 +44,8 @@ def sync_with_peers(self):
         return
 
     now = time.time()
-    try:
-        last_count = self._last_sync_count
-    except AttributeError:
-        last_count = -1
-    try:
-        last_log = self._last_sync_log
-    except AttributeError:
-        last_log = 0.0
+    last_count = self._last_sync_count
+    last_log = self._last_sync_log
     if (len(selected) != last_count) or (now - last_log > float(CFG.SYNC_INFO_MIN_INTERVAL)):
         self._last_sync_count = len(selected)
         self._last_sync_log = now
@@ -83,10 +77,7 @@ def handle_block_gap(self, block, origin: Optional[Tuple[str, int]]) -> None:
         return
 
     self._recent_gap_requests[peer] = now
-    try:
-        height = int(block.height or 0)
-    except (AttributeError, TypeError, ValueError):
-        height = 0
+    height = int(block.height or 0)
     # Enlarge the download window when it's far behind to avoid bouncing back and forth between small spans.
     # Use the HEADERS_FANOUT factor and limit it with BLOCK_DOWNLOAD_BATCH_MAX.
     span = max(32, int(CFG.HEADERS_FANOUT) * 2)
@@ -148,10 +139,8 @@ def _select_sync_peers(self):
 def _process_mempool_sync(self, norm, allow_mempool):
     if not allow_mempool:
         return None
-    try:
-        pending_mempool_pull = bool(self._pending_mempool_pull)
-    except AttributeError:
-        pending_mempool_pull = False
+
+    pending_mempool_pull = bool(self._pending_mempool_pull)
     if pending_mempool_pull:
         pulled = self.request_mempool_inline(norm, force=True)
         if pulled is False or pulled is None:
@@ -182,10 +171,7 @@ def _sync_peer(self, peer: Tuple[str, int]) -> bool:
     Returns True if up-to-date or a new block is applied.
     """
     now = time.time()
-    try:
-        fast_until = self._sync_fast_until
-    except AttributeError:
-        fast_until = 0.0
+    fast_until = self._sync_fast_until
     min_iv = 0.0 if now < fast_until else float(CFG.HEADERS_SYNC_MIN_INTERVAL)
     if now - self._peer_last_sync.get(peer, 0.0) < min_iv:
         return False

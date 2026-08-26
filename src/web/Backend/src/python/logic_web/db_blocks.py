@@ -39,10 +39,9 @@ def save_blocks_to_storage(blocks: list) -> None:
     
     max_h = -1
     for block in blocks:
-        try:
-            height = block.get("height")
-        except AttributeError:
+        if type(block) is not dict:
             continue
+        height = block.get("height")
         if height is None:
             continue
             
@@ -55,12 +54,9 @@ def save_blocks_to_storage(blocks: list) -> None:
             log.warning("[webdb] Failed to save block %s: %s", height, exc)
 
     if max_h >= 0:
-        try:
-            prev_max = get_last_stored_height()
-            if max_h > prev_max:
-                store.put_bytes(WEB_BLOCKS_DB, _meta_max_height_key(), str(max_h).encode("utf-8"))
-        except Exception:
-            pass
+        prev_max = get_last_stored_height()
+        if max_h > prev_max:
+            store.put_bytes(WEB_BLOCKS_DB, _meta_max_height_key(), str(max_h).encode("utf-8"))
 
 
 def get_block_from_storage(height: int) -> Optional[dict]:
@@ -99,10 +95,7 @@ def get_block_range_from_storage(start: int, limit: int) -> dict:
     
     tip_h = get_last_stored_height()
     if (tip_h is None or tip_h < 0) and items:
-        try:
-            tip_h = items[0].get("height")
-        except AttributeError:
-            pass
+        tip_h = items[0].get("height")
 
     return {
         "items": items,
@@ -118,7 +111,7 @@ def get_last_stored_height() -> int:
     store = db_cache._open_store()
     if store is None:
         return -1
-    
+
     try:
         meta_raw = store.get_bytes(WEB_BLOCKS_DB, _meta_max_height_key())
         if meta_raw:
@@ -165,6 +158,7 @@ def get_prefetch_last_height() -> int:
     store = db_cache._open_store()
     if store is None:
         return -1
+
     try:
         raw = store.get_bytes(db_cache.WEB_CACHE_DB, _prefetch_last_height_key())
         if raw:

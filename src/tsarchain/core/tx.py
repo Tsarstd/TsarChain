@@ -317,7 +317,7 @@ class Tx:
 
 
 class TxIn:
-    def __init__(self, txid: bytes, vout: int, amount: int = 0, script_sig: Script = None, witness: list = None):
+    def __init__(self, txid: bytes, vout: int, amount: int = 0, script_sig: Script = None, witness: list = None, sequence: int = 0xFFFFFFFF):
         if type(txid) not in (bytes, bytearray) or len(txid) != 32:
             raise ValueError("txid must be 32-byte bytes")
         if type(vout) is not int:
@@ -330,6 +330,7 @@ class TxIn:
         self.amount = int(amount)
         self.script_sig = script_sig or Script([])
         self.witness = list(witness or [])
+        self.sequence = int(sequence)
 
     @property
     def prev_tx(self) -> bytes:

@@ -103,12 +103,10 @@ class UTXOBalanceMixin:
             try:
                 spk = tx_out.script_pubkey
             except AttributeError:
-                spk = None
-            if spk is None:
                 try:
                     return tx_out.serialize().hex().lower()
                 except (AttributeError, TypeError):
-                    pass
+                    spk = None
         if spk is None:
             return None
         try:
@@ -125,10 +123,8 @@ class UTXOBalanceMixin:
     def _amount_from_tx_out(self, tx_out) -> int:
         if type(tx_out) is dict:
             return int(tx_out.get("amount", 0) or 0)
-        try:
-            amt = tx_out.amount
-        except AttributeError:
-            amt = 0
+
+        amt = tx_out.amount
         return int(amt or 0)
 
 

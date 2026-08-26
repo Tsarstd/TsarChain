@@ -69,18 +69,9 @@ class UTXODatabaseMixin:
             tx_out_dict = dict(tx_out)
             spk = tx_out.get("script_pubkey")
         else:
-            try:
-                to_dict = tx_out.to_dict
-                tx_out_dict = to_dict() if callable(to_dict) else {}
-            except (AttributeError, TypeError):
-                try:
-                    tx_out_dict = tx_out.__dict__
-                except AttributeError:
-                    tx_out_dict = {}
-            try:
-                spk = tx_out.script_pubkey
-            except AttributeError:
-                spk = None
+            to_dict = tx_out.to_dict
+            tx_out_dict = to_dict() if callable(to_dict) else {}
+            spk = tx_out.script_pubkey
 
         address = None
         script_type = None
@@ -92,19 +83,12 @@ class UTXODatabaseMixin:
                 if type(spk) in (bytes, bytearray):
                     spk_bytes = bytes(spk)
                 elif type(spk) is str:
-                    try:
-                        spk_bytes = bytes.fromhex(spk)
-                    except ValueError:
-                        pass
+                    spk_bytes = bytes.fromhex(spk)
+
         if not spk_bytes and type(tx_out_dict.get("script_pubkey")) is str:
-            try:
-                spk_bytes = bytes.fromhex(tx_out_dict["script_pubkey"])
-            except ValueError:
-                pass
-        try:
-            script_to_addr = self.script_to_address
-        except AttributeError:
-            script_to_addr = None
+            spk_bytes = bytes.fromhex(tx_out_dict["script_pubkey"])
+
+        script_to_addr = self.script_to_address
         if spk_bytes:
             if len(spk_bytes) == 22 and spk_bytes[0] == 0x00 and spk_bytes[1] == 0x14:
                 script_type = "p2wpkh"
@@ -192,14 +176,8 @@ class UTXODatabaseMixin:
                 if entry is None:
                     continue
                 tx_out = entry.get("tx_out")
-                try:
-                    amt = int(tx_out.amount or 0)
-                except AttributeError:
-                    amt = 0
-                try:
-                    spk = tx_out.script_pubkey
-                except AttributeError:
-                    spk = b""
+                amt = int(tx_out.amount or 0)
+                spk = tx_out.script_pubkey
                 try:
                     spk_bytes = spk.serialize()
                 except (AttributeError, TypeError):
@@ -209,7 +187,7 @@ class UTXODatabaseMixin:
                         try:
                             spk_bytes = bytes.fromhex(spk)
                         except ValueError:
-                            spk_bytes = b""
+                            spk_bytes = spk.encode('utf-8')
                     else:
                         spk_bytes = b""
                 is_cb = bool(entry.get("is_coinbase", False))

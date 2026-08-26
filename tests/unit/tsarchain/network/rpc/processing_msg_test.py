@@ -125,8 +125,8 @@ def test_process_message_storage(mock_handle, network):
     assert msg2["rpc_source"] == "storage_node"
     assert res2 == {"ok": True}
 
-    # Exception in _is_storage_node_id (e.g., getattr raises)
-    type(network).storage_peers = PropertyMock(side_effect=Exception("mock error"))
+    # When src_node_id is not in storage_peers
+    network.storage_peers = {}
     msg3 = {"type": "GRAFFITI_PROOF_SUBMIT"}
     res3 = process_message(network, msg3, ("127.0.0.1", 1234), src_node_id="stor1")
     assert msg3["rpc_source"] == "storage"
@@ -180,7 +180,7 @@ def test_overlay_realtime_mempool_stats(network):
 
     # Mempool with store list
     network.broadcast = MagicMock()
-    network.broadcast.mempool._pool = None
+    network.broadcast.mempool._pool = ["tx1", "tx2", "tx3"]
     network.broadcast.mempool.current_size = 500
     
     tx_mock = MagicMock()

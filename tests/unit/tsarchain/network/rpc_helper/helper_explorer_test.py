@@ -166,7 +166,7 @@ def test_extract_block_id_from_block_script_sig_as_bytes(mixin):
     cb = Mock()
     cb.is_coinbase = True
     cb.inputs = [Mock()]
-    cb.inputs[0].script_sig = b'\x04\x01\x02\x03'
+    cb.inputs[0].script_sig = Mock(serialize=Mock(return_value=b'\x04\x01\x02\x03'))
     block = Mock()
     block.transactions = [cb]
     with patch('tsarchain.network.rpc_helper.explorer.last_pushdata') as mock_last_pushdata:

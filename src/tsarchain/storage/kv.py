@@ -69,17 +69,11 @@ def _init_native_store(name: str = "chain"):
 
 def sync(force: bool = False) -> None:
     store = _ensure_env("chain")
-    try:
-        store.sync(force)
-    except (AttributeError, TypeError):
-        pass
+    store.sync(force)
     with _init_lock:
         for s in _native_stores.values():
             if s is not store:
-                try:
-                    s.sync(force)
-                except (AttributeError, TypeError):
-                    pass
+                s.sync(force)
 
 def _ensure_env(name: str = "chain"):
     path = get_db_path(name)

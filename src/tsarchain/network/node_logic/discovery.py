@@ -23,12 +23,9 @@ _secure_random = random.SystemRandom()
 def discover_peers_loop(self):
     while not self._stop.is_set():
         _discover_peers(self)
-        try:
-            gc_fn = self.gc_mailboxes
-            if callable(gc_fn):
-                gc_fn()
-        except Exception:
-            pass
+        gc_fn = self.gc_mailboxes
+        if callable(gc_fn):
+            gc_fn()
         time.sleep(CFG.DISCOVERY_INTERVAL)
 
 

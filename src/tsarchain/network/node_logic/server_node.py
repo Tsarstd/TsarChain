@@ -141,10 +141,7 @@ def _process_p2p_channel(self, conn, addr, ip, first): #NOSONAR
     send_fn = lambda b: chan.send(b)
     recv_fn = lambda t: chan.recv(t)
     now = time.time()
-    try:
-        last_log = self._last_p2p_log
-    except AttributeError:
-        last_log = 0.0
+    last_log = self._last_p2p_log
     if now - last_log > 5.0:
         self._last_p2p_log = now
     conn.settimeout(None)
@@ -170,10 +167,7 @@ def _process_p2p_channel(self, conn, addr, ip, first): #NOSONAR
             src_pub = outer.get("pubkey")
             if type(src_nid) is str and type(src_pub) is str:
                 self.peer_pubkeys[src_nid] = src_pub
-                try:
-                    peer_pub = chan.peer_node_pub
-                except AttributeError:
-                    peer_pub = None
+                peer_pub = chan.peer_node_pub
                 if peer_pub and src_pub != peer_pub:
                     log.warning("[_process_p2p_channel] Peer pubkey mismatch from %s", addr)
                     continue

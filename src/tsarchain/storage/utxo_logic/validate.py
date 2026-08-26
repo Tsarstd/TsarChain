@@ -35,10 +35,9 @@ class UTXOValidationMixin:
             try:
                 prev_txid = tx_input.prev_tx
             except AttributeError:
-                prev_txid = None
+                pass
             
         prev_txid_hex = self._txid_hex(prev_txid)
-        
         try:
             vout = tx_input.vout
         except AttributeError:
@@ -50,7 +49,7 @@ class UTXOValidationMixin:
             try:
                 vout = tx_input.prev_index
             except AttributeError:
-                vout = None
+                pass
         if vout is not None:
             vout = int(vout)
         return prev_txid_hex, vout
@@ -60,22 +59,11 @@ class UTXOValidationMixin:
         try:
             spk = tx_out.script_pubkey
         except AttributeError:
-            return False
+            spk = tx_out
         if spk is None:
             return False
-        try:
-            b = spk.serialize()
-        except (AttributeError, TypeError):
-            if type(spk) in (bytes, bytearray):
-                b = bytes(spk)
-            elif type(spk) is str:
-                try:
-                    b = bytes.fromhex(spk)
-                except ValueError:
-                    return False
-            else:
-                return False
-        
+    
+        b = self._parse_script_bytes(spk)
         return len(b) >= 1 and b[0] == 0x6A
 
 
@@ -97,15 +85,9 @@ class UTXOValidationMixin:
     def _build_compact_block_txs(self, txs) -> list | None:
         block_txs = []
         for tx in txs or []:
-            try:
-                txid_raw = tx.txid
-            except AttributeError:
-                txid_raw = None
+            txid_raw = tx.txid
             if type(txid_raw) is str:
-                try:
-                    txid_raw = bytes.fromhex(txid_raw)
-                except ValueError:
-                    return None
+                txid_raw = bytes.fromhex(txid_raw)
             if type(txid_raw) not in (bytes, bytearray) or len(txid_raw) != 32:
                 return None
 
@@ -115,19 +97,9 @@ class UTXOValidationMixin:
                 
             outputs_compact = self._build_compact_outputs(tx)
 
-            try:
-                ver = int(tx.version)
-            except (AttributeError, TypeError, ValueError):
-                ver = 1
-            try:
-                lock = int(tx.locktime)
-            except (AttributeError, TypeError, ValueError):
-                lock = 0
-            try:
-                is_cb = bool(tx.is_coinbase)
-            except AttributeError:
-                is_cb = False
-
+            ver = int(tx.version)
+            lock = int(tx.locktime)
+            is_cb = bool(tx.is_coinbase)
             block_txs.append(
                 (
                     ver,
@@ -143,44 +115,24 @@ class UTXOValidationMixin:
 
     def _build_compact_inputs(self, tx) -> list | None:
         inputs_compact = []
-        try:
-            inputs = tx.inputs or []
-        except AttributeError:
-            inputs = []
+        inputs = tx.inputs or []
         for txin in inputs:
-            try:
-                prev = txin.txid
-            except AttributeError:
-                prev = None
+            prev = txin.txid
             if prev is None:
-                try:
-                    prev = txin.prev_tx
-                except AttributeError:
-                    prev = None
+                prev = txin.prev_tx
             if type(prev) is str:
-                try:
-                    prev = bytes.fromhex(prev)
-                except ValueError:
-                    return None
+                prev = bytes.fromhex(prev)
             if type(prev) not in (bytes, bytearray) or len(prev) != 32:
                 return None
-            try:
-                vout_val = txin.vout
-            except AttributeError:
-                try:
-                    vout_val = txin.prev_index
-                except AttributeError:
-                    vout_val = 0
+
+            vout_val = txin.vout
             vout = int(vout_val if vout_val is not None else 0)
             try:
                 seq = int(txin.sequence)
             except (AttributeError, TypeError, ValueError):
-                seq = 0xffffffff
+                seq = 0xFFFFFFFF
             wit_vec = []
-            try:
-                witness = txin.witness or []
-            except AttributeError:
-                witness = []
+            witness = txin.witness or []
             for w in witness:
                 if type(w) is str:
                     try:
@@ -199,31 +151,14 @@ class UTXOValidationMixin:
 
     def _build_compact_outputs(self, tx) -> list:
         outputs_compact = []
-        try:
-            outputs = tx.outputs or []
-        except AttributeError:
-            outputs = []
+        outputs = tx.outputs or []
         for txout in outputs:
-            try:
-                amt = int(txout.amount or 0)
-            except (AttributeError, TypeError):
-                amt = 0
+            amt = int(txout.amount or 0)
             try:
                 spk_obj = txout.script_pubkey
             except AttributeError:
-                spk_obj = None
-            try:
-                spk_bytes = spk_obj.serialize()
-            except (AttributeError, TypeError):
-                if type(spk_obj) in (bytes, bytearray):
-                    spk_bytes = bytes(spk_obj)
-                elif type(spk_obj) is str:
-                    try:
-                        spk_bytes = bytes.fromhex(spk_obj)
-                    except ValueError:
-                        spk_bytes = b""
-                else:
-                    spk_bytes = b""
+                spk_obj = txout
+            spk_bytes = self._parse_script_bytes(spk_obj)
             outputs_compact.append((amt, spk_bytes))
         return outputs_compact
 
@@ -282,31 +217,14 @@ class UTXOValidationMixin:
             script_to_addr = None
         for tx in txs or []:
             outputs_info = []
-            try:
-                outputs = tx.outputs or []
-            except AttributeError:
-                outputs = []
+            outputs = tx.outputs or []
             for tx_out in outputs:
                 try:
                     raw_spk = tx_out.script_pubkey
                 except AttributeError:
-                    raw_spk = None
-                try:
-                    script_bytes = raw_spk.serialize()
-                except (AttributeError, TypeError):
-                    if type(raw_spk) is str:
-                        try:
-                            script_bytes = bytes.fromhex(raw_spk)
-                        except ValueError:
-                            script_bytes = b""
-                    elif type(raw_spk) in (bytes, bytearray):
-                        script_bytes = bytes(raw_spk)
-                    else:
-                        script_bytes = b""
-                try:
-                    amount = int(tx_out.amount or 0)
-                except (AttributeError, TypeError):
-                    amount = 0
+                    raw_spk = tx_out
+                script_bytes = self._parse_script_bytes(raw_spk)
+                amount = int(tx_out.amount or 0)
                 if callable(script_to_addr):
                     address = script_to_addr(raw_spk)
                 else:
@@ -341,40 +259,22 @@ class UTXOValidationMixin:
 
 
     def _rebuild_block(self, block) -> None:
-        try:
-            txs = block.transactions or []
-        except AttributeError:
-            txs = []
-        try:
-            height = int(block.height or 0)
-        except (AttributeError, TypeError):
-            height = 0
-        try:
-            blk_hash = block.hash().hex()
-        except (AttributeError, TypeError):
-            blk_hash = ""
+        txs = block.transactions or []
+        height = int(block.height or 0)
+        blk_hash = block.hash().hex()
         for tx in txs:
             self._rebuild_tx(tx, height, blk_hash)
 
 
     def _rebuild_tx(self, tx, height: int, blk_hash: str) -> None:
-        try:
-            tx_txid = tx.txid
-        except AttributeError:
-            tx_txid = None
+        tx_txid = tx.txid
         txid_hex = self._txid_hex(tx_txid)
-        try:
-            is_coinbase = bool(tx.is_coinbase)
-        except AttributeError:
-            is_coinbase = False
+        is_coinbase = bool(tx.is_coinbase)
         if not is_coinbase:
             self._rebuild_spend_inputs(tx)
         
         outputs_info = []
-        try:
-            outputs = tx.outputs or []
-        except AttributeError:
-            outputs = []
+        outputs = tx.outputs or []
         for index, tx_out in enumerate(outputs):
             self.add(txid_hex, index, tx_out, is_coinbase=is_coinbase, block_height=height)
             outputs_info.append(self._build_output_info(tx_out))
@@ -383,10 +283,7 @@ class UTXOValidationMixin:
 
 
     def _rebuild_spend_inputs(self, tx) -> None:
-        try:
-            inputs = tx.inputs or []
-        except AttributeError:
-            inputs = []
+        inputs = tx.inputs or []
         for tx_input in inputs:
             prev_txid_hex, vout = self._prevout_from_txin(tx_input)
             if prev_txid_hex is None or vout is None:
@@ -397,27 +294,12 @@ class UTXOValidationMixin:
 
 
     def _build_output_info(self, tx_out) -> dict:
-        try:
-            amount = int(tx_out.amount or 0)
-        except (AttributeError, TypeError):
-            amount = 0
+        amount = int(tx_out.amount or 0)
         try:
             raw_spk = tx_out.script_pubkey
         except AttributeError:
-            raw_spk = None
-        try:
-            script_bytes = raw_spk.serialize()
-        except (AttributeError, TypeError):
-            if type(raw_spk) is str:
-                try:
-                    script_bytes = bytes.fromhex(raw_spk)
-                except ValueError:
-                    script_bytes = b""
-            elif type(raw_spk) in (bytes, bytearray):
-                script_bytes = bytes(raw_spk)
-            else:
-                script_bytes = b""
-            
+            raw_spk = tx_out
+        script_bytes = self._parse_script_bytes(raw_spk)
         try:
             script_to_addr = self.script_to_address
         except AttributeError:
@@ -558,77 +440,48 @@ class UTXOValidationMixin:
         if utxos is None:
             return utxos
 
-        try:
-            is_coinbase = bool(tx.is_coinbase)
-        except AttributeError:
-            is_coinbase = False
-        try:
-            tx_txid = tx.txid
-        except AttributeError:
-            tx_txid = None
+        is_coinbase = bool(tx.is_coinbase)
+        tx_txid = tx.txid
         txid_hex = self._txid_hex(tx_txid)
         if not txid_hex:
-            try:
-                txid_hex_fn = tx.txid_hex
-                txid_hex = txid_hex_fn() if callable(txid_hex_fn) else str(txid_hex_fn or "")
-            except AttributeError:
-                txid_hex = ""
+            txid_hex_fn = tx.txid_hex
+            txid_hex = txid_hex_fn() if callable(txid_hex_fn) else str(txid_hex_fn or "")
         detected_layout = self._detect_snapshot_layout(utxos)
 
         if not is_coinbase:
-            try:
-                inputs = tx.inputs or []
-            except AttributeError:
-                inputs = []
+            inputs = tx.inputs or []
             for txin in inputs:
-                try:
-                    prev_id = txin.txid
-                except AttributeError:
-                    prev_id = None
+                prev_id = txin.txid
                 if prev_id is None:
-                    try:
-                        prev_id = txin.prev_tx
-                    except AttributeError:
-                        prev_id = None
+                    prev_id = txin.prev_tx
+
                 prev_txid_hex = self._txid_hex(prev_id)
-                try:
-                    v_val = txin.vout
-                except AttributeError:
-                    try:
-                        v_val = txin.prev_index
-                    except AttributeError:
-                        v_val = 0
+                v_val = txin.vout
                 vout = int(v_val if v_val is not None else 0)
                 if prev_txid_hex is not None:
                     self._apply_tx_remove_prevout(utxos, prev_txid_hex, vout)
 
         outputs_info: list[dict[str, Any]] = []
-        try:
-            outputs = tx.outputs or []
-        except AttributeError:
-            outputs = []
+        outputs = tx.outputs or []
         for n, txout in enumerate(outputs):
             try:
                 spk = txout.script_pubkey
             except AttributeError:
-                spk = None
+                spk = txout
             b = self._parse_script_bytes(spk)
             if len(b) >= 1 and b[0] == 0x6A:
                 continue
 
-            try:
-                amount = int(txout.amount or 0)
-            except (AttributeError, TypeError):
-                amount = 0
+            amount = int(txout.amount or 0)
             try:
                 spk_hex = spk.serialize().hex()
             except (AttributeError, TypeError):
                 if type(spk) in (bytes, bytearray):
-                    spk_hex = spk.hex()
-                elif spk is not None:
-                    spk_hex = str(spk)
+                    spk_hex = bytes(spk).hex()
+                elif type(spk) is str:
+                    spk_hex = spk
                 else:
-                    spk_hex = None
+                    spk_hex = ""
 
             try:
                 script_to_addr = self.script_to_address

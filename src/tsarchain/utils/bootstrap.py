@@ -189,6 +189,7 @@ def _download_with_progress(
     expected_sha: Optional[str],
     emit_cb: Callable[[str], None],
 ) -> int:
+
     req = urllib.request.Request(
         url,
         headers={"User-Agent": CFG.SNAPSHOT_USER_AGENT},
@@ -341,32 +342,23 @@ def _verify_manifest_signature(manifest: dict | None) -> bool:
 def _get_local_chain_height() -> Optional[int]:
     meta_path = CFG.SNAPSHOT_META_PATH
     if meta_path and os.path.exists(meta_path):
-        try:
-            meta = _load_meta(meta_path)
-            h = meta.get("height")
-            try:
-                h_int = int(h)
-                if h_int >= 0:
-                    return h_int
-            except (TypeError, ValueError):
-                pass
-        except Exception:
-            pass
+        meta = _load_meta(meta_path)
+        h = meta.get("height")
+        h_int = int(h)
+        if h_int >= 0:
+            return h_int
 
     chain_dir = CFG.LMDB_CHAIN_DIR
     if chain_dir and os.path.exists(os.path.join(chain_dir, "data.mdb")):
-        try:
-            items = list(iter_prefix("chain", b"h:"))
-            if items:
-                items.sort(key=lambda kv: kv[0])
-                _, last_val = items[-1]
-                if len(last_val) >= 108 and not last_val.startswith(b"{"):
-                    blk = Block.from_storage_bytes(last_val)
-                    return int(blk.height)
-                d = json.loads(last_val.decode("utf-8"))
-                return int(d.get("height", -1))
-        except Exception:
-            pass
+        items = list(iter_prefix("chain", b"h:"))
+        if items:
+            items.sort(key=lambda kv: kv[0])
+            _, last_val = items[-1]
+            if len(last_val) >= 108 and not last_val.startswith(b"{"):
+                blk = Block.from_storage_bytes(last_val)
+                return int(blk.height)
+            d = json.loads(last_val.decode("utf-8"))
+            return int(d.get("height", -1))
     return None
 
 
@@ -401,12 +393,9 @@ def _write_meta(path: str, data: dict) -> None:
 def _safe_lower(source: Optional[dict], key: str) -> str:
     if not source:
         return ""
-    try:
-        val = source.get(key)
-        if type(val) is str:
-            return val.strip().lower()
-    except Exception:
-        pass
+    val = source.get(key)
+    if type(val) is str:
+        return val.strip().lower()
     return ""
 
 
@@ -477,57 +466,28 @@ def _validate_snapshot_chain() -> tuple[bool, Optional[str]]:
     if entry_block is None:
         try:
             d = json.loads(first_val.decode("utf-8"))
-            try:
-                entry_block = Block.from_dict(d)
-            except Exception:
-                entry_block = d
+            entry_block = Block.from_dict(d)
         except Exception as exc:
             return False, f"chain entry invalid: {exc}"
 
     if entry_block is None:
         return False, "chain genesis block missing or invalid"
 
-    try:
-        height = int(entry_block.height)
-    except (AttributeError, TypeError, ValueError):
-        try:
-            height = int(entry_block.get("height", -1))
-        except (AttributeError, TypeError, ValueError):
-            height = -1
-
-    try:
-        prev = entry_block.prev_block_hash
-    except AttributeError:
-        try:
-            prev = entry_block.get("prev_block_hash", b"")
-        except AttributeError:
-            prev = b""
+    height = int(entry_block.height)
+    prev = entry_block.prev_block_hash
 
     if height != 0:
         return False, f"genesis block not included in snapshot (first height {height})"
 
-    try:
-        prev_hex = bytes(prev).hex()
-    except (TypeError, ValueError):
-        prev_hex = str(prev or "").strip().lower()
-
-    try:
-        zero_hex = bytes(CFG.ZERO_HASH).hex()
-    except (TypeError, ValueError):
-        zero_hex = str(CFG.ZERO_HASH or "").strip().lower()
+    prev_hex = bytes(prev).hex()
+    zero_hex = bytes(CFG.ZERO_HASH).hex()
 
     if prev_hex != zero_hex:
         return False, "prev_block_hash genesis mismatch"
 
     expected_genesis = CFG.GENESIS_HASH_HEX.lstrip("0x").lower()
     if expected_genesis:
-        try:
-            entry_hash = entry_block.hash().hex()
-        except (AttributeError, TypeError):
-            try:
-                entry_hash = str(entry_block.get("hash") or "")
-            except AttributeError:
-                entry_hash = ""
+        entry_hash = entry_block.hash().hex()
         if str(entry_hash).lower() != expected_genesis:
             return False, f"genesis hash snapshot ({entry_hash}) does not match expected ({expected_genesis})"
 

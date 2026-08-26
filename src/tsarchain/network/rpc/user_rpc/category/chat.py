@@ -138,10 +138,7 @@ def chat_register(self, message, pow_obj, base_identity, addr, *,
             self.put_prekey_bundle(addr_s, b)
 
         pres = {"pid": pid, "address": addr_s, "pubkey": chat_pub, "spend_pub": spend_pk, "presence_sig": presence_sig, "ts": now_int, "hops": 0}
-        try:
-            self.relay_presence_async(pres, exclude=addr)
-        except AttributeError:
-            pass
+        self.relay_presence_async(pres, exclude=addr)
         return {"type": "CHAT_REGISTERED", "address": addr_s, "pubkey": chat_pub}
     except Exception as exc:
         log.exception("[chat_register] Unexpected error for %s: %s", message.get("address"), exc)
@@ -188,22 +185,13 @@ def chat_lookup_pub(self, message, pow_obj, base_identity, *,
         log.warning("[chat_lookup_pub] Addr rate limit/PoW failed for %s", addr_s)
         return pow_resp
     pubhex = self.chat_presence_pub.get(addr_s)
-    try:
-        last_seen = self.chat_presence_ts.get(addr_s)
-    except (AttributeError, TypeError):
-        last_seen = None
+    last_seen = self.chat_presence_ts.get(addr_s)
     if last_seen is None:
         b = self.get_prekey_bundle(addr_s)
-        try:
-            ts_field = b.get("ts")
-            if ts_field is not None:
-                last_seen = int(ts_field)
-                try:
-                    self.chat_presence_ts[addr_s] = last_seen
-                except (AttributeError, TypeError):
-                    pass
-        except (AttributeError, TypeError, ValueError):
-            pass
+        ts_field = b.get("ts")
+        if ts_field is not None:
+            last_seen = int(ts_field)
+            self.chat_presence_ts[addr_s] = last_seen
 
     return {"type": "CHAT_PUBKEY", "address": addr_s, "pubkey": pubhex, "found": bool(pubhex), "last_seen": last_seen}
 
@@ -266,14 +254,8 @@ def chat_presence(self, message, pow_obj, base_identity, addr, *,
     with self.chat_lock:
         self.chat_presence_pub[addr_s] = pubhex
         self.chat_spend_pub[addr_s] = spend_pk
-        try:
-            self.chat_presence_ts[addr_s] = now_int
-        except (AttributeError, TypeError):
-            pass
-        try:
-            rec_seen = self.record_presence_seen
-        except AttributeError:
-            rec_seen = None
+        self.chat_presence_ts[addr_s] = now_int
+        rec_seen = self.record_presence_seen
         if callable(rec_seen):
             rec_seen(pid)
         else:
@@ -320,14 +302,8 @@ def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
     if not addr_s or not ik or not spk or not sig:
         return {"error":"missing fields"}
     # validation: addr -> spend_pub exists? and SPK signature is signed by spend key
-    try:
-        get_sp = self.get_spend_pub
-    except AttributeError:
-        get_sp = None
-    try:
-        sp = (get_sp(addr_s) or "").strip().lower() if callable(get_sp) else (self.chat_spend_pub.get(addr_s) or "").strip().lower()
-    except AttributeError:
-        sp = ""
+    get_sp = self.get_spend_pub
+    sp = (get_sp(addr_s) or "").strip().lower() if callable(get_sp) else (self.chat_spend_pub.get(addr_s) or "").strip().lower()
     if not sp:
         log.warning("[chat_publish_prekeys] Unknown address %s (spend_pub missing)", addr_s)
         return {"error":"unknown_address"}
@@ -338,17 +314,11 @@ def chat_publish_prekeys(self, message, pow_obj, base_identity, *,
         return {"error":"bad_spk_sig"}
     now_int = int(time.time())
     with self.chat_lock:
-        try:
-            self.chat_presence_ts[addr_s] = now_int
-        except (AttributeError, TypeError):
-            pass
+        self.chat_presence_ts[addr_s] = now_int
         rec = self.get_prekey_bundle(addr_s)
         rec.update({"ik": ik, "spk": spk, "sig": sig, "spend_pub": sp, "ts": now_int})
-        try:
-            if type(opk) is str and len(opk) == 64:
-                rec.setdefault("opk_list", []).append(opk)
-        except (TypeError, AttributeError):
-            pass
+        if type(opk) is str and len(opk) == 64:
+            rec.setdefault("opk_list", []).append(opk)
         self.put_prekey_bundle(addr_s, rec)
 
     return {"type":"CHAT_PUBLISH_PREKEYS"}
@@ -445,10 +415,7 @@ def chat_send(self, message, pow_obj, base_identity, *,
     # routing authenticity signature verification (without decryption)
     if not chat_sig:
         return {"type": "CHAT_ACK", "status": "rejected", "reason": "sig_required"}
-    try:
-        get_sp = self.get_spend_pub
-    except AttributeError:
-        get_sp = None
+    get_sp = self.get_spend_pub
     sp = (get_sp(frm) or "").strip().lower() if callable(get_sp) else (self.chat_spend_pub.get(frm) or "").strip().lower()
     if not sp:
         log.warning("[chat_send] Missing spend_pub for sender %s", frm)
@@ -547,10 +514,7 @@ def chat_read(self, message, pow_obj, base_identity, *,
         return pow_resp
 
     # read receipt verification
-    try:
-        get_sp = self.get_spend_pub
-    except AttributeError:
-        get_sp = None
+    get_sp = self.get_spend_pub
     sp = (get_sp(reader) or "").strip().lower() if callable(get_sp) else (self.chat_spend_pub.get(reader) or "").strip().lower()
     if not sp:
         log.warning("[chat_read] Spend pub missing for reader %s", reader)
@@ -589,18 +553,12 @@ def chat_pull(self, message, *,
         log.warning("[chat_pull] Timestamp drift error for %s (now=%d, ts=%d, ip=%s)", me, now, ts, client_ip)
         return {"type": "CHAT_NONE", "items": [], "error": "ts_drift"}
 
-    try:
-        dedup = self.dedup_pull
-    except AttributeError:
-        dedup = None
+    dedup = self.dedup_pull
     if callable(dedup) and dedup(me, pull_sig):
         log.warning("[chat_pull] Replay detected for %s from %s", me, client_ip)
         return {"type": "CHAT_NONE", "items": [], "error": "replay_detected"}
 
-    try:
-        get_sp = self.get_spend_pub
-    except AttributeError:
-        get_sp = None
+    get_sp = self.get_spend_pub
     spend_pk = get_sp(me) if callable(get_sp) else self.chat_spend_pub.get(me)
     if not spend_pk:
         return {"type": "CHAT_NONE", "items": [], "error": "not_registered"}
@@ -784,12 +742,9 @@ def _validate_spk_registration(spend_pk, spk_reg, sig_reg) -> tuple[bool, dict |
 def _validate_relay_route(self, route_raw, client_ip) -> tuple[list[tuple], dict | None]:
     route = []
     for hop in route_raw:
-        try:
-            if len(hop) >= 2:
-                hop_norm = (str(hop[0]), int(hop[1]))
-            else:
-                return [], {"error": "bad_route_entry"}
-        except (TypeError, IndexError, ValueError):
+        if len(hop) >= 2:
+            hop_norm = (str(hop[0]), int(hop[1]))
+        else:
             return [], {"error": "bad_route_entry"}
         if hop_norm not in self.peers:
             log.warning("[CHAT_RELAY] unknown hop=%s from=%s", hop_norm, client_ip)
@@ -802,19 +757,13 @@ def _validate_relay_route(self, route_raw, client_ip) -> tuple[list[tuple], dict
 
 def _validate_relay_inner(inner) -> dict | None:
     allowed_inner_types = {"CHAT_SEND_INNER"}
-    try:
-        if inner.get("type") not in allowed_inner_types:
-            return {"error": "bad_inner_type"}
-    except AttributeError:
+    if inner.get("type") not in allowed_inner_types:
         return {"error": "bad_inner_type"}
     if inner.get("type") == "CHAT_SEND_INNER":
-        try:
-            msg_obj = inner.get("msg")
-            if not inner.get("to"):
-                return {"error": "bad_inner"}
-            msg_keys = msg_obj.keys()
-        except AttributeError:
+        msg_obj = inner.get("msg")
+        if not inner.get("to"):
             return {"error": "bad_inner"}
+        msg_keys = msg_obj.keys()
         allowed_msg_keys = {"from", "msg_id", "ts", "from_static", "from_pub", "enc", "used_opk", "ratchet_pn", "ratchet_n"}
         for k in msg_keys:
             if k not in allowed_msg_keys:

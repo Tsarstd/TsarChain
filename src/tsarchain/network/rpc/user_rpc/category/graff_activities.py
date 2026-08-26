@@ -28,10 +28,7 @@ def get_posts(self, message, pow_obj, base_identity, *,
     offset = int(message.get("offset", 0) or 0)
     limit = max(1, min(limit, 500))
     offset = max(0, offset)
-    try:
-        reg = self.broadcast.utxodb._graffiti_registry
-    except AttributeError:
-        reg = None
+    reg = self.broadcast.utxodb._graffiti_registry
     posts = reg.list_posts(limit, offset) if reg else []
         
     return {"type": "GRAFFITI_GET_POSTS", "posts": posts}
@@ -49,10 +46,7 @@ def get_comments(self, message, pow_obj, base_identity, *,
         return {"type": "GRAFFITI_GET_COMMENTS", "comments": []}
     limit = int(message.get("limit", 100) or 100)
     limit = max(1, min(limit, 500))
-    try:
-        reg = self.broadcast.utxodb._graffiti_registry
-    except AttributeError:
-        reg = None
+    reg = self.broadcast.utxodb._graffiti_registry
     comments = reg.list_comments(art_id, limit) if reg else []
     
     return {"type": "GRAFFITI_GET_COMMENTS", "art_id": art_id, "comments": comments}
@@ -69,10 +63,7 @@ def get_art(self, message, pow_obj, base_identity, *,
     if not art_id_raw:
         return {"type": "GRAFFITI_GET_ART", "error": "missing_art_id"}
     art_id = GRAFFITI._normalize_art_id(art_id_raw, prefer_prefix=False)
-    try:
-        reg = self.broadcast.utxodb._graffiti_registry
-    except AttributeError:
-        reg = None
+    reg = self.broadcast.utxodb._graffiti_registry
     post = reg.get_post(art_id) if reg else None
     if not post:
         return {"type": "GRAFFITI_GET_ART", "art_id": art_id, "error": "not_found"}

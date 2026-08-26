@@ -38,11 +38,7 @@ class Broadcast:
         self.blockchain = blockchain or Blockchain()
         
         shared_utxo = utxodb
-        ensure_utxo = None
-        try:
-            ensure_utxo = self.blockchain.ensure_utxodb
-        except AttributeError:
-            pass
+        ensure_utxo = self.blockchain.ensure_utxodb
         if shared_utxo is None and callable(ensure_utxo):
             shared_utxo = ensure_utxo()
 
@@ -55,12 +51,9 @@ class Broadcast:
         self.seen_txs: Set[str] = set()
         self._processing_blocks: Set[str] = set()
 
-        try:
-            attach_mp = self.blockchain.attach_mempool
-            if callable(attach_mp):
-                attach_mp(self.mempool)  # type: ignore[arg-type]
-        except AttributeError:
-            pass
+        attach_mp = self.blockchain.attach_mempool
+        if callable(attach_mp):
+            attach_mp(self.mempool)  # type: ignore[arg-type]
 
         self.last_sync_time = 0
         self.port: Optional[int] = None
@@ -78,10 +71,7 @@ class Broadcast:
 
     def shutdown(self):
         sockets_to_close = []
-        try:
-            conn_cache = self._gossip_conn_cache
-        except AttributeError:
-            conn_cache = {}
+        conn_cache = self._gossip_conn_cache
         for entry in conn_cache.values():
             sock = entry.get("sock")
             if sock:
@@ -92,12 +82,10 @@ class Broadcast:
         with self.lock:
             self.seen_blocks.clear()
             self.seen_txs.clear()
-        try:
-            bc_shutdown = self.blockchain.shutdown
-            if callable(bc_shutdown):
-                bc_shutdown()
-        except AttributeError:
-            pass
+
+        bc_shutdown = self.blockchain.shutdown
+        if callable(bc_shutdown):
+            bc_shutdown()
         log.info("[shutdown] Broadcast Shutdown complete")
 
     def __getattr__(self, name):

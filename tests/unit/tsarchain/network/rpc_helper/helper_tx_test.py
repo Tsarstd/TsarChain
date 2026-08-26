@@ -470,8 +470,8 @@ def test_create_template_tx_multi_force_inputs(mixin):
     mixin.broadcast.utxodb.get.return_value = utxos_map
 
     global_utxos = {
-        f"{txid3}:2": {"tx_out": {"amount": 7000, "script_pubkey": b"spk_global"}, "is_coinbase": False, "block_height": 70},
-        f"{txid4}:3": {"tx_out": {"amount": 8000, "script_pubkey": b"spk_global2"}, "is_coinbase": False, "block_height": 80},
+        f"{txid3}:2": {"tx_out": Mock(amount=7000, script_pubkey=Mock(serialize=Mock(return_value=b"spk_global"))), "is_coinbase": False, "block_height": 70},
+        f"{txid4}:3": {"tx_out": Mock(amount=8000, script_pubkey=Mock(serialize=Mock(return_value=b"spk_global2"))), "is_coinbase": False, "block_height": 80},
     }
     mixin.broadcast.utxodb.utxos = global_utxos
 

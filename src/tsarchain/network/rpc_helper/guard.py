@@ -91,21 +91,12 @@ class GuardHandler(NetworkHandlerProxy):
 
 
     def _ensure_nonce_guard_initialized(self):
-        try:
-            if self._nonce_guard_lock is not None and self._nonce_guard_table is not None:
-                return
-        except AttributeError:
-            pass
+        if self._nonce_guard_lock is not None and self._nonce_guard_table is not None:
+            return
 
         with GuardHandler._init_lock:
-            try:
-                if self._nonce_guard_lock is None:
-                    self._nonce_guard_lock = threading.RLock()
-            except AttributeError:
+            if self._nonce_guard_lock is None:
                 self._nonce_guard_lock = threading.RLock()
 
-            try:
-                if self._nonce_guard_table is None:
-                    self._nonce_guard_table = {}
-            except AttributeError:
+            if self._nonce_guard_table is None:
                 self._nonce_guard_table = {}

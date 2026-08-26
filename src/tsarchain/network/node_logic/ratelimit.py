@@ -71,10 +71,7 @@ def allow_handshake(
 
 
 def _subnet_key(ip: str) -> str:
-    try:
-        obj = ipaddress.ip_address(ip)
-    except ValueError:
-        return ip
+    obj = ipaddress.ip_address(ip)
     if obj.version == 4:
         parts = ip.split(".")
         return ".".join(parts[:3]) if len(parts) >= 3 else ip

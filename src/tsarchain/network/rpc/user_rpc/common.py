@@ -63,19 +63,16 @@ def identity_from_msg(message: dict[str, Any] | None) -> str | None:
         message.get("sender"),
         message.get("node_id"),
     ]
-    try:
-        addrs = message.get("addresses")
-        if type(addrs) is list and addrs:
-            candidates.append(addrs[0])
-    except (AttributeError, TypeError):
-        pass
-    try:
-        data = message.get("data")
-        if type(data) is dict:
-            candidates.append(data.get("from_addr"))
-            candidates.append(data.get("addr"))
-    except (AttributeError, TypeError):
-        pass
+
+    addrs = message.get("addresses")
+    if type(addrs) is list and addrs:
+        candidates.append(addrs[0])
+
+    data = message.get("data")
+    if type(data) is dict:
+        candidates.append(data.get("from_addr"))
+        candidates.append(data.get("addr"))
+
     for cand in candidates:
         ident = _norm_identity(cand)
         if ident:
@@ -84,38 +81,20 @@ def identity_from_msg(message: dict[str, Any] | None) -> str | None:
 
 
 def summarize_block(self: "Network", b: Any) -> dict:
-    try:
-        height = b.height
-    except AttributeError:
-        height = 0
-    try:
-        ts = b.timestamp
-    except AttributeError:
-        ts = 0
-    try:
-        txs = b.transactions
-    except AttributeError:
-        txs = []
-    try:
-        block_id = txs[0].block_id
-    except AttributeError:
-        block_id = None
+    height = b.height
+    ts = b.timestamp
+    txs = b.transactions
+    block_id = txs[0].block_id
     tx_count = len(txs)
-    
+
     graffiti_posts = 0
     graffiti_comments = 0
     graffiti_payouts = 0
 
     for tx in txs:
-        try:
-            outputs = tx.outputs or []
-        except AttributeError:
-            outputs = []
+        outputs = tx.outputs or []
         for tx_out in outputs:
-            try:
-                spk = tx_out.script_pubkey
-            except AttributeError:
-                spk = None
+            spk = tx_out.script_pubkey
             if not spk:
                 continue
                 
@@ -158,6 +137,7 @@ def allow_rpc_with_pow(
     pow_obj: dict | None,
     difficulty: int,
 ) -> tuple[bool, dict | None]:
+
     ident = _norm_identity(identity) or f"ip:{ip}"
     subnet = _subnet_key(ip)
     keys: list[str] = []
@@ -169,15 +149,9 @@ def allow_rpc_with_pow(
         keys.append(f"{key_label}:id:{ident}")
 
     if pow_obj:
-        try:
-            nonce = pow_obj.get("nonce")
-        except AttributeError:
-            nonce = None
-        try:
-            if verify_pow(pow_obj, nonce, expected_scope=scope, identity=ident):
-                return True, None
-        except Exception:
-            pass
+        nonce = pow_obj.get("nonce")
+        if verify_pow(pow_obj, nonce, expected_scope=scope, identity=ident):
+            return True, None
 
     allowed = True
     for k in keys:
@@ -188,10 +162,8 @@ def allow_rpc_with_pow(
 
     if backoff_s:
         for k in keys:
-            try:
-                self.backoff_node(k, backoff_s)
-            except Exception:
-                pass
+            self.backoff_node(k, backoff_s)
+
     challenge = issue_pow(scope, ident, difficulty, CFG.POW_TOKEN_TTL_S)
     return False, {
         "error": "pow_required",

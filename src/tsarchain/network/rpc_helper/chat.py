@@ -47,41 +47,27 @@ def encode_prekey_bundle(bundle: dict) -> bytes:
     flags = 0
     body = bytearray()
     if ik and type(ik) is str and len(ik) == 64:
-        try:
-            body.extend(bytes.fromhex(ik))
-            flags |= 0x01
-        except ValueError:
-            pass
+        body.extend(bytes.fromhex(ik))
+        flags |= 0x01
     if spk and type(spk) is str and len(spk) == 64:
-        try:
-            body.extend(bytes.fromhex(spk))
-            flags |= 0x02
-        except ValueError:
-            pass
+        body.extend(bytes.fromhex(spk))
+        flags |= 0x02
     if sig and type(sig) is str:
-        try:
-            sig_bytes = bytes.fromhex(sig)
-            if len(sig_bytes) <= 65535:
-                body.extend(struct.pack("<H", len(sig_bytes)))
-                body.extend(sig_bytes)
-                flags |= 0x04
-        except ValueError:
-            pass
+        sig_bytes = bytes.fromhex(sig)
+        if len(sig_bytes) <= 65535:
+            body.extend(struct.pack("<H", len(sig_bytes)))
+            body.extend(sig_bytes)
+            flags |= 0x04
     if spend_pub and type(spend_pub) is str and len(spend_pub) == 66:
-        try:
-            body.extend(bytes.fromhex(spend_pub))
-            flags |= 0x08
-        except ValueError:
-            pass
+        body.extend(bytes.fromhex(spend_pub))
+        flags |= 0x08
 
     opk_bytes = bytearray()
     if type(opk_list) is list:
         for o in opk_list:
             if o and type(o) is str and len(o) == 64:
-                try:
-                    opk_bytes.extend(bytes.fromhex(o))
-                except ValueError:
-                    pass
+                opk_bytes.extend(bytes.fromhex(o))
+
     opk_count = len(opk_bytes) // 32
     opk_header = struct.pack("<I", opk_count)
     header = struct.pack("<QB", ts, flags)
@@ -164,11 +150,8 @@ class ChatHandler(NetworkHandlerProxy):
         sp = (b.get("spend_pub") or "").strip().lower()
         if sp:
             with self.chat_lock:
-                try:
-                    if type(self.chat_spend_pub) is dict:
-                        self.chat_spend_pub[addr] = sp
-                except AttributeError:
-                    pass
+                if type(self.chat_spend_pub) is dict:
+                    self.chat_spend_pub[addr] = sp
             return sp
         return None
 
@@ -216,10 +199,7 @@ class ChatHandler(NetworkHandlerProxy):
 
 
     def relay_presence_async(self, pres: dict, exclude=None) -> None:
-        try:
-            get_presence_executor().submit(self._relay_presence, pres, exclude)
-        except Exception:
-            pass
+        get_presence_executor().submit(self._relay_presence, pres, exclude)
 
 
     def mailbox_put(self, addr, item, ttl_s, per_addr_max, global_max):

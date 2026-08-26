@@ -104,23 +104,26 @@ class Block:
     @classmethod
     def from_dict(cls, data):
         tx_list = []
-        for tx_data in data["transactions"]:
+        for tx_data in data.get("transactions", []) or []:
             tx_type = tx_data.get("type")
             if tx_type == "Coinbase" or tx_data.get("is_coinbase"):
                 tx_obj = CoinbaseTx.from_dict(tx_data)
             else:
                 tx_obj = Tx.from_dict(tx_data)
             tx_list.append(tx_obj)
-        prev_hash_bytes = (
-            bytes.fromhex(data["prev_block_hash"])
-            if type(data["prev_block_hash"]) is not bytes
-            else data["prev_block_hash"])
+        prev_hash = data.get("prev_block_hash", b"\x00" * 32)
+        if type(prev_hash) is str:
+            prev_hash_bytes = bytes.fromhex(prev_hash)
+        elif type(prev_hash) in (bytes, bytearray):
+            prev_hash_bytes = bytes(prev_hash)
+        else:
+            prev_hash_bytes = b"\x00" * 32
         mr_bytes = data.get("merkle_root")
         if type(mr_bytes) is str:
             mr_bytes = bytes.fromhex(mr_bytes)
         
         obj = cls(
-            height=data["height"],
+            height=data.get("height", 0),
             prev_block_hash=prev_hash_bytes,
             transactions=tx_list,
             timestamp=data.get("timestamp"),

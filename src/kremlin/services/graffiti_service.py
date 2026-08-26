@@ -270,7 +270,7 @@ def filter_online_storers(storers: list[Dict[str, Any]], timeout: float = 2.0) -
             continue
         host, port = endpoint
         try:
-            with _connect_socket(host, port, timeout=timeout):
+            with socket.create_connection((host, port), timeout=timeout):
                 online.append(meta)
         except OSError:
             continue

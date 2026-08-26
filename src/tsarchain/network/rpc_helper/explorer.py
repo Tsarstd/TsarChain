@@ -59,14 +59,8 @@ class ExplorerHandler(NetworkHandlerProxy):
     @benchmark(label="GET_BLOCK_HASH", threshold_ms=15.0)
     def handle_get_block_hash(self, height: int) -> dict:
 
-        try:
-            cache = self._block_hash_cache
-        except AttributeError:
-            cache = None
-        try:
-            cache_lock = self._block_hash_cache_lock
-        except AttributeError:
-            cache_lock = None
+        cache = self._block_hash_cache
+        cache_lock = self._block_hash_cache_lock
         if cache is None or cache_lock is None:
             cache = self._block_hash_cache = collections.OrderedDict()
             cache_lock = self._block_hash_cache_lock = threading.RLock()
@@ -109,53 +103,20 @@ class ExplorerHandler(NetworkHandlerProxy):
     def serialize_block(self, b) -> dict:
         txs, graffiti_posts, graffiti_comments, graffiti_payouts = self._process_block_all_tx(b)
 
-        try:
-            b_height = b.height
-        except AttributeError:
-            b_height = 0
-        try:
-            b_time = b.timestamp
-        except AttributeError:
-            b_time = 0
-        try:
-            b_nonce = b.nonce
-        except AttributeError:
-            b_nonce = 0
-        try:
-            b_difficulty = b.difficulty
-        except AttributeError:
-            b_difficulty = None
-        try:
-            b_version = b.version
-        except AttributeError:
-            b_version = 0
-        try:
-            b_bits = b.bits
-        except AttributeError:
-            b_bits = 0
-        try:
-            b_chainwork = b.chainwork
-        except AttributeError:
-            b_chainwork = None
-        try:
-            b_merkle = self._to_hex_helper(b.merkle_root)
-        except AttributeError:
-            b_merkle = None
-
         return {
             "type": "BLOCK",
             "block_id": self._extract_block_id_from_block(b),
             "hash": self.bhash_hex(b),
             "prev_hash": self._prevhash_hex(b),
-            "height": b_height,
-            "time": b_time,
-            "nonce": b_nonce,
-            "difficulty": b_difficulty,
-            "version": b_version,
-            "bits": b_bits,
-            "chainwork": b_chainwork,
+            "height": b.height,
+            "time": b.timestamp,
+            "nonce": b.nonce,
+            "difficulty": b.difficulty,
+            "version": b.version,
+            "bits": b.bits,
+            "chainwork": b.chainwork,
             "size_bytes": estimate_block_size_bytes(b),
-            "merkle_root": b_merkle,
+            "merkle_root": self._to_hex_helper(b.merkle_root),
             "tx": txs,
             "tx_count": len(txs),
             "graffiti": graffiti_posts,
@@ -167,10 +128,7 @@ class ExplorerHandler(NetworkHandlerProxy):
 
 
     def bhash_hex(self, b) -> str:
-        try:
-            h = b.hash
-        except AttributeError:
-            h = None
+        h = b.hash
         if callable(h):
             v = h()
             if type(v) in (bytes, bytearray):
@@ -192,10 +150,7 @@ class ExplorerHandler(NetworkHandlerProxy):
     def _build_tx_inputs(self, tx, opmap: dict) -> tuple[list, int]:
         vin = []
         total_in = 0
-        try:
-            inputs = tx.inputs or []
-        except AttributeError:
-            inputs = []
+        inputs = tx.inputs or []
         for tin in inputs:
             key = self.txin_prevkey(tin)
             amt, spk_hex = opmap.get(key, (None, None))
@@ -215,21 +170,12 @@ class ExplorerHandler(NetworkHandlerProxy):
     def _build_tx_outputs(self, tx) -> tuple[list, int]:
         vout = []
         total_out = 0
-        try:
-            outputs = tx.outputs or []
-        except AttributeError:
-            outputs = []
+        outputs = tx.outputs or []
         for n, o in enumerate(outputs):
-            try:
-                amt = int(o.amount or 0)
-            except (AttributeError, TypeError):
-                amt = 0
+            amt = int(o.amount or 0)
             total_out += amt
             event_info = None
-            try:
-                spk = o.script_pubkey
-            except AttributeError:
-                spk = None
+            spk = o.script_pubkey
             if spk is not None:
                 meta = GRAFF.parse_from_script(spk)
                 if meta:
@@ -248,38 +194,24 @@ class ExplorerHandler(NetworkHandlerProxy):
 
     def _calculate_block_bonus(self, height: int, chain: list, opmap: dict) -> int | None:
         def _get_h(b):
-            try:
-                return int(b.height or 0)
-            except (AttributeError, TypeError, ValueError):
-                return 0
+            return int(b.height or 0)
         block = next((b for b in chain if _get_h(b) == height), None)
         if not block:
             return None
             
         total_block_fee = 0
-        try:
-            txs = block.transactions or []
-        except AttributeError:
-            txs = []
+        txs = block.transactions or []
         for tx_in_block in txs:
             if self.is_coinbase_tx(tx_in_block):
                 continue
-            try:
-                inputs = tx_in_block.inputs or []
-            except AttributeError:
-                inputs = []
-            try:
-                outputs = tx_in_block.outputs or []
-            except AttributeError:
-                outputs = []
+
+            inputs = tx_in_block.inputs or []
+            outputs = tx_in_block.outputs or []
                 
             tx_total_in = sum(int(opmap.get(self.txin_prevkey(tin), (0, None))[0] or 0)
                               for tin in inputs)
             def _get_amt(o):
-                try:
-                    return int(o.amount or 0)
-                except (AttributeError, TypeError):
-                    return 0
+                return int(o.amount or 0)
             tx_total_out = sum(_get_amt(o) for o in outputs)
             
             tx_fee = tx_total_in - tx_total_out
@@ -290,50 +222,29 @@ class ExplorerHandler(NetworkHandlerProxy):
 
 
     def _extract_block_id_from_block(self, b) -> str | None:
-        try:
-            txs = b.transactions or []
-        except AttributeError:
-            txs = []
+        txs = b.transactions or []
         if not txs:
             return None
 
         cb = txs[0]
-        try:
-            is_cb = cb.is_coinbase
-        except AttributeError:
-            is_cb = False
+        is_cb = cb.is_coinbase
         if not is_cb:
             for t in txs:
-                try:
-                    t_is_cb = t.is_coinbase
-                except AttributeError:
-                    t_is_cb = False
+                t_is_cb = t.is_coinbase
                 if t_is_cb:
                     cb = t
                     break
             else:
                 return None
 
-        try:
-            inputs = cb.inputs
-        except AttributeError:
-            inputs = None
+        inputs = cb.inputs
         if not inputs:
             return None
+    
         vin0 = inputs[0]
-
-        try:
-            sig = vin0.script_sig
-        except AttributeError:
-            sig = None
-        try:
-            ser = sig.serialize
-            raw = ser() if callable(ser) else None
-        except AttributeError:
-            if type(sig) in (bytes, bytearray):
-                raw = bytes(sig)
-            else:
-                return None
+        sig = vin0.script_sig
+        ser = sig.serialize
+        raw = ser() if callable(ser) else None
 
         if not raw:
             return None
@@ -345,10 +256,7 @@ class ExplorerHandler(NetworkHandlerProxy):
 
 
     def _prevhash_hex(self, b) -> str:
-        try:
-            v = b.prev_block_hash
-        except AttributeError:
-            v = None
+        v = b.prev_block_hash
         if type(v) in (bytes, bytearray):
             return v.hex()
         if type(v) is str:
@@ -358,27 +266,15 @@ class ExplorerHandler(NetworkHandlerProxy):
 
     def _serialize_tx_basic(self, tx) -> dict:
         txid = ""
-        try:
-            tid = tx.txid
-        except AttributeError:
-            tid = None
+        tid = tx.txid
         if type(tid) in (bytes, bytearray): txid = tid.hex()
         elif type(tid) is str: txid = tid
-        try:
-            inputs = tx.inputs or []
-        except AttributeError:
-            inputs = []
+        inputs = tx.inputs or []
         n_in = len(inputs)
         vout_list = []
-        try:
-            outputs = tx.outputs or []
-        except AttributeError:
-            outputs = []
+        outputs = tx.outputs or []
         for idx, o in enumerate(outputs):
-            try:
-                amt = int(o.amount or 0)
-            except (AttributeError, TypeError):
-                amt = 0
+            amt = int(o.amount or 0)
             addr = self.txout_to_address(o) or ""
             vout_list.append({"index": idx, "amount": amt, "address": addr})
         
@@ -396,27 +292,15 @@ class ExplorerHandler(NetworkHandlerProxy):
     def _process_block_all_tx(self, b) -> tuple[list, list, list, list]:
         txs, posts, comments, payouts = [], [], [], []
         
-        try:
-            b_txs = b.transactions or []
-        except AttributeError:
-            b_txs = []
+        b_txs = b.transactions or []
         for tx in b_txs:
             txs.append(self._serialize_tx_basic(tx))
-            try:
-                t_txid = tx.txid
-            except AttributeError:
-                t_txid = None
+            t_txid = tx.txid
             txid_hex = self._to_hex_helper(t_txid)
             
-            try:
-                outputs = tx.outputs or []
-            except AttributeError:
-                outputs = []
+            outputs = tx.outputs or []
             for tx_out in outputs:
-                try:
-                    spk = tx_out.script_pubkey
-                except AttributeError:
-                    spk = None
+                spk = tx_out.script_pubkey
                 if not spk:
                     continue
                 if not (meta := GRAFF.parse_from_script(spk)):
@@ -451,21 +335,12 @@ class ExplorerHandler(NetworkHandlerProxy):
 
     def _get_mempool_graffiti_count(self) -> int:
         count = 0
-        try:
-            mem = self.mempool
-        except AttributeError:
-            mem = None
+        mem = self.mempool
         if mem:
             for tx in mem.get_all_txs():
-                try:
-                    outputs = tx.outputs or []
-                except AttributeError:
-                    outputs = []
+                outputs = tx.outputs or []
                 def _has_graff(tx_out):
-                    try:
-                        spk = tx_out.script_pubkey
-                    except AttributeError:
-                        spk = None
+                    spk = tx_out.script_pubkey
                     return bool(GRAFF.parse_from_script(spk)) if spk else False
                 if any(_has_graff(tx_out) for tx_out in outputs):
                     count += 1

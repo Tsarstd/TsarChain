@@ -159,10 +159,7 @@ def get_block_range(self, message, pow_obj, base_identity, *,
 
     raw_start = message.get("start_height", message.get("start"))
     raw_limit = message.get("limit", 200)
-    try:
-        limit = int(raw_limit)
-    except Exception:
-        limit = 200
+    limit = int(raw_limit)
     limit = max(1, min(limit, 500))
 
     with self.broadcast.lock:
@@ -183,10 +180,7 @@ def get_block_range(self, message, pow_obj, base_identity, *,
     if raw_start is None or raw_start == "":
         start_height = tip_height
     else:
-        try:
-            start_height = int(raw_start)
-        except Exception:
-            start_height = tip_height
+        start_height = int(raw_start)
 
     if start_height > tip_height:
         start_height = tip_height
@@ -274,10 +268,7 @@ def get_mempool(self, message, pow_obj, base_identity, addr, *,
     txs = self.broadcast.mempool.get_all_txs()
     hexes = []
     for t in txs:
-        try:
-            txid = t.txid
-        except AttributeError:
-            txid = None
+        txid = t.txid
         if type(txid) in (bytes, bytearray):
             hexes.append(txid.hex())
         elif txid:
@@ -409,10 +400,7 @@ def _calculate_mempool_balances(self, mem, opmap_mem, opmap_chain) -> tuple[dict
         spent_local: dict[str, int] = {}
         recv_local: dict[str, int] = {}
 
-        try:
-            inputs = tx.inputs or []
-        except AttributeError:
-            inputs = []
+        inputs = tx.inputs or []
         for tin in inputs:
             key = self.txin_prevkey(tin)
             amt_spk = opmap_mem.get(key) or opmap_chain.get(key)
@@ -423,15 +411,9 @@ def _calculate_mempool_balances(self, mem, opmap_mem, opmap_chain) -> tuple[dict
             if owner and amt:
                 spent_local[owner] = spent_local.get(owner, 0) + int(amt)
 
-        try:
-            outputs = tx.outputs or []
-        except AttributeError:
-            outputs = []
+        outputs = tx.outputs or []
         for o in outputs:
-            try:
-                amt = int(o.amount or 0)
-            except (AttributeError, TypeError):
-                amt = 0
+            amt = int(o.amount or 0)
             if amt <= 0:
                 continue
             addr_o = self.txout_to_address(o)
@@ -488,27 +470,19 @@ def _get_mempool_inline(all_txs) -> dict:
     for tx in all_txs:
         if len(inline) >= limit:
             break
-        try:
-            to_dict = tx.to_dict
-            if callable(to_dict):
-                tx_dict = to_dict(include_txid=True)
-            elif type(tx) is dict:
-                tx_dict = dict(tx)
-            else:
-                continue
-        except AttributeError:
-            if type(tx) is dict:
-                tx_dict = dict(tx)
-            else:
-                continue
+
+        to_dict = tx.to_dict
+        if callable(to_dict):
+            tx_dict = to_dict(include_txid=True)
+        elif type(tx) is dict:
+            tx_dict = dict(tx)
+        else:
+            continue
 
         if not tx_dict.get("txid"):
-            try:
-                txid_attr = tx.txid
-                if txid_attr:
-                    tx_dict["txid"] = txid_attr.hex() if type(txid_attr) in (bytes, bytearray) else str(txid_attr)
-            except AttributeError:
-                pass
+            txid_attr = tx.txid
+            if txid_attr:
+                tx_dict["txid"] = txid_attr.hex() if type(txid_attr) in (bytes, bytearray) else str(txid_attr)
 
         candidate = dict(base)
         candidate["txs"] = inline + [tx_dict]

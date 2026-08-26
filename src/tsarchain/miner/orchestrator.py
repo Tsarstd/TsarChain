@@ -25,7 +25,12 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.miner.orchestrator")
 
 INTERRUPTED_ERRNOS = {errno.EINTR}
-INTERRUPTED_ERRNOS.add(errno.WSAEINTR)
+
+try:
+    INTERRUPTED_ERRNOS.add(errno.WSAEINTR)
+except Exception:
+    pass
+
 ADDRESS_PATTERN = re.compile(r"^tsar1[0-9a-z]{20,120}$")
 
 def _stamp() -> str:

@@ -42,11 +42,9 @@ def _parse_opts(param: str | None) -> dict:
     if not raw:
         return {}
     if raw.startswith("{") and raw.endswith("}"):
-        try:
-            obj = json.loads(raw)
-            return obj if type(obj) is dict else {}
-        except Exception:
-            return {}
+        obj = json.loads(raw)
+        return obj if type(obj) is dict else {}
+
     parts = [p.strip() for p in raw.split(",") if p.strip()]
     if not parts:
         return {}
@@ -65,11 +63,8 @@ def _parse_block_range_opts(param: str | None) -> dict:
     if not raw:
         return {}
     if raw.startswith("{") and raw.endswith("}"):
-        try:
-            obj = json.loads(raw)
-            return obj if type(obj) is dict else {}
-        except Exception:
-            return {}
+        obj = json.loads(raw)
+        return obj if type(obj) is dict else {}
     parts = [p.strip() for p in raw.split(",") if p.strip()]
     opts = {}
     if parts and parts[0].lstrip("-").isdigit():
@@ -82,11 +77,7 @@ def _parse_block_range_opts(param: str | None) -> dict:
 def _parse_host_port(host_in: object | None, port_in: object | None) -> tuple[str, int]:
     host_raw = host_in or CFG.BOOTSTRAP_NODE[0]
     host = str(host_raw)
-    try:
-        port = int(port_in or CFG.PORT_START)
-    except Exception:
-        port = CFG.PORT_START
-        log.exception("[main_exception] port: %s", port)
+    port = int(port_in or CFG.PORT_START)
     return host, port
 
 

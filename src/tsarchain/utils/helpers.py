@@ -274,15 +274,17 @@ def decode_address(address: str) -> bytes:
     return bytes(decoded)
 
 
-def spkhex_to_address(spk_hex: str) -> str | None:
-    try:
-        spk_hex = spk_hex.hex()
-    except AttributeError:
-        pass
-    try:
-        spk_hex = str(spk_hex).lower()
-    except Exception:
+def spkhex_to_address(spk_hex) -> str | None:
+    if spk_hex is None:
         return None
+    if type(spk_hex) in (bytes, bytearray):
+        spk_hex = bytes(spk_hex).hex()
+    elif type(spk_hex) is not str:
+        try:
+            spk_hex = spk_hex.hex()
+        except (AttributeError, TypeError):
+            spk_hex = str(spk_hex)
+    spk_hex = str(spk_hex).lower()
     if spk_hex.startswith("0014") and len(spk_hex) == 44:
         prog = bytes.fromhex(spk_hex[4:])
         data = [0] + convertbits(list(prog), 8, 5, True)
@@ -358,78 +360,52 @@ def compute_tx_weight_vsize(tx) -> tuple[int, int, int, int]:
 
 
 def _estimate_tx_size_bytes(tx) -> int:
-    try:
-        to_storage = tx.to_storage_bytes
-        if callable(to_storage):
-            raw = to_storage()
-            if type(raw) in (bytes, bytearray):
-                return len(raw)
-    except Exception:
-        pass
+    to_storage = tx.to_storage_bytes
+    if callable(to_storage):
+        raw = to_storage()
+        if type(raw) in (bytes, bytearray):
+            return len(raw)
     size = 10
-    try:
-        inputs = tx.inputs or []
-    except AttributeError:
-        inputs = []
+    inputs = tx.inputs or []
     for txin in inputs:
         size += 40
-        try:
-            script_sig = txin.script_sig
-            if script_sig:
-                size += len(script_sig.serialize())
-        except AttributeError:
-            pass
-        try:
-            witness = txin.witness
-            if witness:
-                size += sum(len(w) for w in witness)
-        except AttributeError:
-            pass
-    try:
-        outputs = tx.outputs or []
-    except AttributeError:
-        outputs = []
+        script_sig = txin.script_sig
+        if script_sig:
+            size += len(script_sig.serialize())
+
+        witness = txin.witness
+        if witness:
+            size += sum(len(w) for w in witness)
+
+    outputs = tx.outputs or []
     for txout in outputs:
         size += 8
-        try:
-            spk = txout.script_pubkey
-            if spk:
-                size += len(spk.serialize())
-        except AttributeError:
-            pass
+        spk = txout.script_pubkey
+        if spk:
+            size += len(spk.serialize())
     return int(size)
 
 
 def estimate_block_size_bytes(block) -> int:
-    try:
-        to_storage_block = block.to_storage_bytes
-        if callable(to_storage_block):
-            raw = to_storage_block()
-            if type(raw) in (bytes, bytearray):
-                return len(raw)
-    except Exception:
-        pass
-    try:
-        txs = block.transactions or []
-    except AttributeError:
-        txs = []
+    to_storage_block = block.to_storage_bytes
+    if callable(to_storage_block):
+        raw = to_storage_block()
+        if type(raw) in (bytes, bytearray):
+            return len(raw)
+
+    txs = block.transactions or []
     total = 108  # 80 bytes header + 24 bytes metadata + 4 bytes tx count
     for tx in txs:
-        try:
-            to_storage = tx.to_storage_bytes
-            if callable(to_storage):
-                raw = to_storage()
-                if type(raw) in (bytes, bytearray):
-                    total += 4 + len(raw)
-                    continue
-        except Exception:
-            pass
-        try:
-            if tx.inputs is not None and tx.outputs is not None:
-                total += 4 + _estimate_tx_size_bytes(tx)
-            else:
-                total += 4 + len(json.dumps(tx))
-        except Exception:
+        to_storage = tx.to_storage_bytes
+        if callable(to_storage):
+            raw = to_storage()
+            if type(raw) in (bytes, bytearray):
+                total += 4 + len(raw)
+                continue
+
+        if tx.inputs is not None and tx.outputs is not None:
+            total += 4 + _estimate_tx_size_bytes(tx)
+        else:
             total += 4 + len(json.dumps(tx))
     return int(total)
 
@@ -805,17 +781,11 @@ def sign_digest_der_low_s_native(priv_hex: str, digest32: bytes) -> bytes:
 def merkle_root(transactions):
     txids = []
     for tx in transactions or []:
-        txid = None
-        try:
+        if type(tx) in (bytes, bytearray):
+            txid = bytes(tx)
+        elif type(tx) is str:
             txid = bytes.fromhex(tx)
-        except (TypeError, ValueError):
-            try:
-                txid = bytes(tx)
-                if len(txid) != 32:
-                    txid = None
-            except TypeError:
-                txid = None
-        if txid is None:
+        else:
             try:
                 txid_val = tx.txid
                 if callable(txid_val):
@@ -835,9 +805,10 @@ def merkle_root(transactions):
                         raise TypeError("merkle_root expects 32-byte txids or objects with .txid/.hash")
                 except AttributeError:
                     raise TypeError("merkle_root expects 32-byte txids or objects with .txid/.hash")
-            try:
+
+            if type(txid) is str:
                 txid = bytes.fromhex(txid)
-            except (TypeError, ValueError):
+            elif type(txid) in (bytes, bytearray):
                 txid = bytes(txid)
         if len(txid) != 32:
             raise ValueError(f"txid must be 32 bytes, got {len(txid)}")
@@ -915,17 +886,19 @@ def tx_to_compact_tuple(tx) -> tuple:
                 prev_b = b""
         else:
             prev_b = b""
+
         try:
             vout = int(txin.vout)
         except (AttributeError, TypeError, ValueError):
             try:
-                vout = int(txin.prev_index or 0)
+                vout = int(txin.prev_index)
             except (AttributeError, TypeError, ValueError):
                 vout = 0
         try:
             seq = int(txin.sequence)
         except (AttributeError, TypeError, ValueError):
-            seq = 0xffffffff
+            seq = 0xFFFFFFFF
+
         # Preserve scriptsig so coinbase txid includes block-specific entropy
         script_sig_bytes = b""
         try:
@@ -936,26 +909,30 @@ def tx_to_compact_tuple(tx) -> tuple:
             try:
                 script_sig_bytes = script_sig.serialize()
             except (AttributeError, TypeError):
-                try:
-                    script_sig_bytes = bytes.fromhex(script_sig)
-                except (TypeError, ValueError):
+                if type(script_sig) in (bytes, bytearray):
+                    script_sig_bytes = bytes(script_sig)
+                elif type(script_sig) is str:
                     try:
-                        script_sig_bytes = bytes(script_sig)
-                    except TypeError:
-                        pass
+                        script_sig_bytes = bytes.fromhex(script_sig)
+                    except ValueError:
+                        script_sig_bytes = b""
+                else:
+                    script_sig_bytes = b""
         wit_vec = []
         try:
             witness = txin.witness or []
         except AttributeError:
             witness = []
         for w in witness:
-            try:
-                wit_vec.append(bytes.fromhex(w))
-            except (TypeError, ValueError):
+            if type(w) is str:
                 try:
-                    wit_vec.append(bytes(w))
-                except TypeError:
-                    wit_vec.append(b"")
+                    wit_vec.append(bytes.fromhex(w))
+                except ValueError:
+                    wit_vec.append(w.encode("utf-8"))
+            elif type(w) in (bytes, bytearray):
+                wit_vec.append(bytes(w))
+            else:
+                wit_vec.append(bytes(w or b""))
         inputs_c.append((prev_b, vout, seq, script_sig_bytes, wit_vec))
 
     outputs_c = []
@@ -976,13 +953,15 @@ def tx_to_compact_tuple(tx) -> tuple:
             try:
                 spk_b = spk.serialize()
             except (AttributeError, TypeError):
-                try:
-                    spk_b = bytes.fromhex(spk)
-                except (TypeError, ValueError):
+                if type(spk) in (bytes, bytearray):
+                    spk_b = bytes(spk)
+                elif type(spk) is str:
                     try:
-                        spk_b = bytes(spk)
-                    except TypeError:
+                        spk_b = bytes.fromhex(spk)
+                    except ValueError:
                         spk_b = b""
+                else:
+                    spk_b = b""
         else:
             spk_b = b""
         outputs_c.append((amt, spk_b))
@@ -991,7 +970,6 @@ def tx_to_compact_tuple(tx) -> tuple:
         is_cb = bool(tx.is_coinbase)
     except AttributeError:
         is_cb = False
-
     tx_tuple = (version, locktime, inputs_c, outputs_c, b"\x00" * 32, is_cb)
     txid = txid_from_compact(tx_tuple)
     return (version, locktime, inputs_c, outputs_c, txid, is_cb)

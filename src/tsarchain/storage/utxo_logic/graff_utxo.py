@@ -30,10 +30,8 @@ class UTXOGraffitiMixin:
     def _record_graffiti_event(self, tx, outputs_info: list[dict[str, Any]], block_height: int | None, block_hash: str | None = None) -> None:
         if block_height is None:
             return
-        try:
-            tx_txid = tx.txid
-        except AttributeError:
-            tx_txid = None
+
+        tx_txid = tx.txid
         txid_hex = self._txid_hex(tx_txid)
         meta = None
         for info in outputs_info:
@@ -64,7 +62,7 @@ class UTXOGraffitiMixin:
         txid_hex: str,
         block_height: int,
         block_hash: str | None = None
-        ) -> None:
+    ) -> None:
         
         sha_hex = str(meta.get("sha256") or "")
         creator = (meta.get("creator") or "").strip().lower()

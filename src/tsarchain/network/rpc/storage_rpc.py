@@ -34,10 +34,7 @@ def handle_storage_rpc(
     src_pubkey: Optional[str] = None,
 ) -> dict | None:
     
-    try:
-        ip = str(addr[0]) if addr else "0.0.0.0"
-    except (TypeError, IndexError):
-        ip = "0.0.0.0"
+    ip = str(addr[0]) if addr else "0.0.0.0"
     err = _check_storage_rate_limit(self, ip)
     if err: return err
 
@@ -46,10 +43,7 @@ def handle_storage_rpc(
     else:
         peer_port = int(message.get("port", 0))
         with self.lock:
-            try:
-                peers = dict(self.storage_peers or {})
-            except AttributeError:
-                peers = {}
+            peers = dict(self.storage_peers or {})
         peer_meta = _resolve_storage_sender_meta(self, peers, ip, peer_port, src_node_id, src_pubkey)
 
     if not peer_meta:
@@ -65,12 +59,6 @@ def handle_storage_rpc(
         return _handle_storage_proof_submit(self, message, storer_addr, ip, src_node_id)
     elif mtype == "GRAFFITI_BUILD_PAYOUT":
         return _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id)
-    elif mtype == "GRAFFITI_GET_POOL_BALANCE":
-        return _handle_storage_get_pool_balance(self, message, storer_addr)
-    elif mtype == "GRAFFITI_CHECK_REGISTRATION":
-        return {"status": "ok", "registered": True, "storer": storer_addr}
-    elif mtype == "GRAFFITI_PROOF_CHALLENGE":
-        return _handle_storage_proof_challenge(self, message, storer_addr)
 
     return None
 
@@ -159,10 +147,7 @@ def _handle_storage_proof_submit(self, message, storer_addr, ip, src_node_id):
     err = _verify_proof_merkle_chunk(message, length, proof_hash, mroot, mchunk, mcount, offset)
     if err: return err
 
-    try:
-        existing = reg.get_proof(art_id, storer, epoch)
-    except (AttributeError, TypeError):
-        existing = None
+    existing = reg.get_proof(art_id, storer, epoch)
     if existing:
         existing_hash = str(existing.get("hash") or "").strip().lower()
         if existing_hash and existing_hash != proof_hash:
@@ -224,10 +209,7 @@ def _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id):
             "storer": proof_entry.get("storer"),
         }
 
-    try:
-        tip_height = int(self.broadcast.blockchain.height or 0)
-    except (AttributeError, TypeError, ValueError):
-        tip_height = 0
+    tip_height = int(self.broadcast.blockchain.height or 0)
     tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
     
     err, epoch = _validate_payout_epoch(epoch_req, tip_epoch, proof_entry)
@@ -259,10 +241,7 @@ def _handle_storage_build_payout(self, message, storer_addr, ip, src_node_id):
 
 
 def _proof_epoch_window(self) -> tuple[int, int, int]:
-    try:
-        tip_height = int(self.broadcast.blockchain.height or 0)
-    except (AttributeError, TypeError, ValueError):
-        tip_height = 0
+    tip_height = int(self.broadcast.blockchain.height or 0)
     tip_epoch = GRAFFITI.compute_proof_epoch(tip_height)
     drift = int(CFG.GRAFFITI_PROOF_EPOCH_DRIFT)
     return tip_epoch, max(0, tip_epoch - drift), tip_epoch + drift

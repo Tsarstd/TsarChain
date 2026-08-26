@@ -159,26 +159,18 @@ def _sanitize_rpc_source(val: Any) -> str | None:
 def _is_storage_node_id(network, node_id: str | None) -> bool:
     if not node_id:
         return False
-    try:
-        peers = network.storage_peers or {}
-    except Exception:
-        return False
+    peers = network.storage_peers or {}
     for meta in peers.values():
-        try:
-            if meta.get("node_id") == node_id:
-                return True
-        except AttributeError:
-            pass
+        if meta.get("node_id") == node_id:
+            return True
     return False
 
 
 def _is_miner_sender(network, src_node_id: str | None, src_pubkey: str | None, addr: Any) -> bool:
     if not src_node_id:
         return False
-    try:
-        peer_pubkeys = network.peer_pubkeys or {}
-    except AttributeError:
-        peer_pubkeys = {}
+
+    peer_pubkeys = network.peer_pubkeys or {}
     pinned = peer_pubkeys.get(src_node_id)
     if not pinned:
         return False
@@ -188,9 +180,7 @@ def _is_miner_sender(network, src_node_id: str | None, src_pubkey: str | None, a
     return True
 
 
-def _identify_rpc_role(
-    mtype: str, network, src_node_id, src_pubkey, addr, *, is_miner: bool | None = None
-) -> tuple[str, str]:
+def _identify_rpc_role(mtype: str, network, src_node_id, src_pubkey, addr, *, is_miner: bool | None = None) -> tuple[str, str]:
     if is_miner is None:
         is_miner = _is_miner_sender(network, src_node_id, src_pubkey, addr)
     for role, allowed in ROLE_RPC_MAP.items():
@@ -201,32 +191,16 @@ def _identify_rpc_role(
 
 
 def _client_ip(addr) -> str:
-    try:
-        if addr:
-            return addr[0]
-    except (TypeError, IndexError):
-        pass
+    if addr:
+        return addr[0]
     return "0.0.0.0"
 
 
 def _inject_mempool_basic_stats(tx_section: dict, pool) -> None:
-    tx_count = None
-    try:
-        store = pool._pool
-        tx_count = len(store)
-    except (AttributeError, TypeError):
-        try:
-            all_txs_fn = pool.get_all_txs
-            txs = all_txs_fn() if callable(all_txs_fn) else []
-        except AttributeError:
-            txs = []
-        tx_count = len(txs or [])
+    store = pool._pool
+    tx_count = len(store)
     tx_section["mempool_txs"] = int(tx_count)
-
-    try:
-        size_est = pool.current_size
-    except AttributeError:
-        size_est = None
+    size_est = pool.current_size
     if size_est is not None:
         tx_section["mempool_vbytes_estimate"] = int(size_est)
 
@@ -235,21 +209,12 @@ def _inject_mempool_graffiti_stats(snapshot: dict, pool) -> None:
     try:
         graff_section = snapshot.setdefault("graffiti", {})
         on_mem = 0
-        try:
-            all_txs_fn = pool.get_all_txs
-            all_txs = all_txs_fn() if callable(all_txs_fn) else []
-        except AttributeError:
-            all_txs = []
+        all_txs_fn = pool.get_all_txs
+        all_txs = all_txs_fn() if callable(all_txs_fn) else []
         for tx in all_txs or []:
-            try:
-                outputs = tx.outputs or []
-            except AttributeError:
-                outputs = []
+            outputs = tx.outputs or []
             for tx_out in outputs:
-                try:
-                    spk = tx_out.script_pubkey
-                except AttributeError:
-                    spk = None
+                spk = tx_out.script_pubkey
                 meta = GRAFFITI.parse_from_script(spk) if spk is not None else None
                 if meta and str(meta.get("event", "")).upper() == "POST":
                     on_mem += 1
@@ -263,18 +228,12 @@ def _overlay_realtime_mempool_stats(snapshot: dict, network: "Network") -> None:
     if type(snapshot) is not dict:
         return
 
-    try:
-        tx_section = snapshot.setdefault("transactions", {})
-        if type(tx_section) is not dict:
-            return
-    except (AttributeError, TypeError):
+    tx_section = snapshot.setdefault("transactions", {})
+    if type(tx_section) is not dict:
         return
 
-    try:
-        broadcast = network.broadcast
-        pool = broadcast.mempool if broadcast else None
-    except AttributeError:
-        pool = None
+    broadcast = network.broadcast
+    pool = broadcast.mempool if broadcast else None
     if pool is None:
         return
 
@@ -294,10 +253,7 @@ def _relay_chain(network, route: list[tuple], inner: dict, src_addr=None):
         return
     first = route[0]
     payload = {"type": "CHAT_RELAY", "route": route[1:], "inner": inner}
-    try:
-        send_fn = network._send_chat_relay
-    except AttributeError:
-        send_fn = None
+    send_fn = network._send_chat_relay
     if callable(send_fn):
         send_fn(first, payload)
     else:

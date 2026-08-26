@@ -47,6 +47,9 @@ class MockNode:
     def set_pinned(self, *args):
         pass
 
+    def gc_mailboxes(self):
+        pass
+
     def request_mempool_snapshot(self, peer, force=False):
         pass
 

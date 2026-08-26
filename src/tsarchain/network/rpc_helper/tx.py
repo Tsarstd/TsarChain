@@ -206,14 +206,8 @@ class TxHandler(NetworkHandlerProxy):
 
     def _check_tx_limits(self, tx_obj: Tx):
         weight, vsize, _, _ = compute_tx_weight_vsize(tx_obj)
-        try:
-            vin = len(tx_obj.inputs or [])
-        except AttributeError:
-            vin = 0
-        try:
-            vout = len(tx_obj.outputs or [])
-        except AttributeError:
-            vout = 0
+        vin = len(tx_obj.inputs or [])
+        vout = len(tx_obj.outputs or [])
 
         if vsize > int(CFG.MAX_TX_VSIZE):
             raise ValueError("tx_vsize_exceeds_limit")
@@ -256,10 +250,8 @@ class TxHandler(NetworkHandlerProxy):
         Validate graffiti OP_RETURN payload against node-side limits.
         Only triggers when payload starts with GRAFFITI_MAGIC.
         """
-        try:
-            raw = spk.serialize()
-        except Exception:
-            return
+
+        raw = spk.serialize()
         data = last_pushdata(raw)
         if not data:
             return
@@ -306,30 +298,15 @@ class TxHandler(NetworkHandlerProxy):
                 
         missing = [k for k in forced_keys if k not in utxo_by_key]
         if missing:
-            try:
-                global_utxos = self.broadcast.utxodb.utxos or {}
-            except AttributeError:
-                global_utxos = {}
+            global_utxos = self.broadcast.utxodb.utxos or {}
             for key in list(missing):
                 txid_hex, idx_str = key.split(":")
                 if entry := global_utxos.get(key):
                     tx_out = entry.get("tx_out")
-                    try:
-                        amt = int(tx_out.amount or 0)
-                    except (AttributeError, TypeError):
-                        amt = 0
-                    try:
-                        spk = tx_out.script_pubkey
-                    except AttributeError:
-                        spk = None
-                    try:
-                        ser = spk.serialize
-                        spk_bytes = ser() if callable(ser) else b""
-                    except AttributeError:
-                        if type(spk) in (bytes, bytearray):
-                            spk_bytes = bytes(spk)
-                        else:
-                            spk_bytes = b""
+                    amt = int(tx_out.amount or 0)
+                    spk = tx_out.script_pubkey
+                    ser = spk.serialize
+                    spk_bytes = ser() if callable(ser) else b""
                         
                     is_cb = bool(entry.get("is_coinbase", False))
                     born  = int(entry.get("block_height", 0))

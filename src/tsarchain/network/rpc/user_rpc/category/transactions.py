@@ -3,7 +3,6 @@
 # Part of TsarChain — see LICENSE
 # Refs: see REFERENCES.md
 
-import time
 from .....utils.benchmarks import benchmark
 
 from .....utils import config as CFG
@@ -18,10 +17,7 @@ log = get_ctx_logger("tsarchain.network.rpc.user_rpc.category.transactions")
 def new_tx(self, message, pow_obj, base_identity, addr, *, client_ip, **kwargs):
     sender_addr = str(message.get("from_addr") or message.get("from") or "").strip().lower()
     if not sender_addr:
-        try:
-            sender_addr = str((message.get("data") or {}).get("from_addr") or "").strip().lower()
-        except AttributeError:
-            pass
+        sender_addr = str((message.get("data") or {}).get("from_addr") or "").strip().lower()
 
     ident_tx = sender_addr or base_identity
 
@@ -68,10 +64,7 @@ def new_tx(self, message, pow_obj, base_identity, addr, *, client_ip, **kwargs):
         txid = (message.get("data") or {}).get("txid")
         return {"status": "ok", "txid": txid}
     else:
-        try:
-            reason = self.broadcast.mempool.last_error_reason
-        except AttributeError:
-            reason = None
+        reason = self.broadcast.mempool.last_error_reason
         return {"status": "error", "reason": (reason or "invalid tx")}
 
 

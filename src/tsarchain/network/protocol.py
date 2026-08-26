@@ -3,7 +3,6 @@
 # Part of TsarChain — see LICENSE
 # Refs: RFC7748-X25519; RFC5869-HKDF; NIST-800-38D-AES-GCM
 
-import os
 import time
 import json
 import errno

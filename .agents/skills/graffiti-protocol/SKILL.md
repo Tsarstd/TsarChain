@@ -156,9 +156,6 @@ python benchmarks/native_bench.py
 > The Graffiti Protocol / TsarChain repository strictly enforces clean, explicit, and deterministic code without runtime reflection shims or defensive type checking:
 > 
 > 1. **Zero `isinstance()`**: Strictly prohibited across `src/` and `apps/` (0 occurrences). Never use `isinstance()` for runtime type guards, polymorphism checks, or branching.
->    - Use direct exact type comparisons where strictly necessary (e.g. `type(x) is dict`, `type(x) in (bytes, bytearray)`, `type(x) is str`).
->    - For duck typing and polymorphism, rely on direct method calls or Pythonic EAFP (`try: ... except (AttributeError, TypeError):`).
->    - For exception handling, catch concrete exceptions (`except (OSError, socket.timeout):`) or use `issubclass(type(e), Exception)`.
 > 2. **Zero `hasattr()`**: Strictly prohibited across the entire codebase (0 occurrences). Never use `hasattr()` as a defensive guard.
 > 3. **Zero `getattr()`**: Strictly prohibited for dynamic property lookups or fallback masking. Never use `getattr(obj, "field", default)` to hide uninitialized attributes or type mismatches. 
 >    - The *only* valid exception is inside low-level proxy dunder definitions (`def __getattr__(self, name)` in proxy wrappers) with re-entrancy protection.
