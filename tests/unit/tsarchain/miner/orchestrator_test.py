@@ -7,6 +7,9 @@ import pytest
 import signal
 from unittest.mock import MagicMock, patch
 
+if not hasattr(signal, "siginterrupt"):
+    signal.siginterrupt = MagicMock()
+
 from tsarchain.miner.orchestrator import (
     SimpleMiner, 
     NodeRunner, 

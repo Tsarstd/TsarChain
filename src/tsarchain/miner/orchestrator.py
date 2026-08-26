@@ -25,11 +25,7 @@ from ..utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.miner.orchestrator")
 
 INTERRUPTED_ERRNOS = {errno.EINTR}
-try:
-    INTERRUPTED_ERRNOS.add(errno.WSAEINTR)
-except AttributeError:
-    pass
-
+INTERRUPTED_ERRNOS.add(errno.WSAEINTR)
 ADDRESS_PATTERN = re.compile(r"^tsar1[0-9a-z]{20,120}$")
 
 def _stamp() -> str:
@@ -52,18 +48,12 @@ def clog(message: str, color: str = COL.GREY):
 
 def _enable_siginterrupt():
     for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            signal.siginterrupt(sig, False)
-        except Exception:
-            pass
+        signal.siginterrupt(sig, False)
 
 def _register_bootstrap_peers(network: Network) -> int:
     fallback_nodes = tuple(CFG.BOOTSTRAP_NODES or (CFG.BOOTSTRAP_NODE,))
     count = 0
-    try:
-        is_self = network._is_self_bootstrap
-    except AttributeError:
-        is_self = None
+    is_self = network._is_self_bootstrap
 
     for peer in fallback_nodes:
         if not peer or len(peer) != 2:
@@ -143,10 +133,7 @@ class SimpleMiner:
                 self.signal_handler(signum, frame)
             finally:
                 if self.tui is not None:
-                    try:
-                        self.tui.stop()
-                    except Exception:
-                        pass
+                    self.tui.stop()
                 self.thread_monitor.print_thread_report(detailed=True)
 
         signal.signal(signal.SIGINT, _sigint_with_report)
@@ -207,14 +194,9 @@ class SimpleMiner:
     def _has_active_peers(self) -> bool:
         if not self.network:
             return False
-        try:
-            inbound = self.network.inbound_peers or set()
-        except AttributeError:
-            inbound = set()
-        try:
-            outbound = self.network.outbound_peers or set()
-        except AttributeError:
-            outbound = set()
+
+        inbound = self.network.inbound_peers or set()
+        outbound = self.network.outbound_peers or set()
         return bool(inbound or outbound)
 
     def _bootstrap_seeds(self) -> list[tuple[str, int]]:
@@ -234,11 +216,9 @@ class SimpleMiner:
         if not seeds or not self.network:
             self._bootstrap_self_only = False
             return False
-        try:
-            is_self = self.network._is_self_bootstrap
-            self._bootstrap_self_only = all(is_self(h, p) for h, p in seeds)
-        except AttributeError:
-            self._bootstrap_self_only = False
+
+        is_self = self.network._is_self_bootstrap
+        self._bootstrap_self_only = all(is_self(h, p) for h, p in seeds)
         return bool(self._bootstrap_self_only)
 
     def _get_local_tip(self) -> tuple[int, str | None]:
@@ -279,19 +259,13 @@ class SimpleMiner:
         if (not force_refresh) and (now - self._last_trusted_probe < 5.0):
             return self._trusted_height_cache
         seeds = self._bootstrap_seeds()
-        try:
-            peers = list(self.network.persistent_peers or ())
-        except AttributeError:
-            peers = []
+        peers = list(self.network.persistent_peers or ())
         if seeds:
             peers = seeds
         heights: list[int] = []
 
         # Use recorded best heights first
-        try:
-            best_map = self.network._peer_best_height or {}
-        except AttributeError:
-            best_map = {}
+        best_map = self.network._peer_best_height or {}
         for peer in peers:
             h = int(best_map.get(peer, -1))
             if h >= 0:
@@ -373,10 +347,7 @@ class SimpleMiner:
 
                 trusted_height = self._trusted_best_height(force_refresh=True)
                 trusted_hash = self._trusted_tip_hash(trusted_height) if trusted_height >= 0 else None
-                try:
-                    best_height = int(self.network.get_best_peer_height())
-                except (AttributeError, TypeError):
-                    best_height = -1
+                best_height = int(self.network.get_best_peer_height())
 
                 active_peers = self._has_active_peers()
                 if not active_peers and not self._bootstrap_is_self_only():
@@ -611,18 +582,10 @@ class NodeRunner:
     def _has_active_peers(self) -> bool:
         if not self.network:
             return False
-        try:
-            peers = self.network.peers or set()
-        except AttributeError:
-            peers = set()
-        try:
-            inbound = self.network.inbound_peers or set()
-        except AttributeError:
-            inbound = set()
-        try:
-            outbound = self.network.outbound_peers or set()
-        except AttributeError:
-            outbound = set()
+
+        peers = self.network.peers or set()
+        inbound = self.network.inbound_peers or set()
+        outbound = self.network.outbound_peers or set()
         return bool(peers or inbound or outbound)
 
 
@@ -694,10 +657,7 @@ class NodeRunner:
                         clog(f"[Sync] Chain height now {height}")
                     self._last_chain_height = height
 
-                try:
-                    peer_sync_map = self.network._peer_last_sync or {}
-                except AttributeError:
-                    peer_sync_map = {}
+                peer_sync_map = self.network._peer_last_sync or {}
                 latest_sync = max(peer_sync_map.values()) if peer_sync_map else 0.0
                 synced_recently = latest_sync and (time.time() - latest_sync) < 10
                 if not self._sync_ready and height >= 0 and synced_recently:

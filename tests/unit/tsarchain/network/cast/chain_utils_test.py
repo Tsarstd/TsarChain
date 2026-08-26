@@ -68,6 +68,8 @@ def test_calc_chainwork_from_list(caster):
     class DummyBlock:
         def __init__(self, bits):
             self.bits = bits
+        def get(self, key, default=None):
+            return self.bits if key == "bits" else default
     chain3 = [DummyBlock(0x1d00ffff)]
     assert caster.calc_chainwork_from_list(chain3) == single_work
 

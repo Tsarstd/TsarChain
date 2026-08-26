@@ -27,26 +27,21 @@ class MempoolSyncHandler(BroadcastHandlerProxy):
         min_interval_s: float | None = None,
         force: bool = False,
     ) -> int:
+
         ttl = float(CFG.MEMPOOL_SYNC_MIN_INTERVAL) if min_interval_s is None else max(0.0, float(min_interval_s))
         now = time.time()
         last = float(self._last_mempool_push.get(peer, 0.0))
         if not force and now - last < ttl:
             return 0
 
-        try:
-            current_seq = self.mempool.change_seq
-        except AttributeError:
-            current_seq = None
+        current_seq = self.mempool.change_seq
         if not force and current_seq is not None:
             last_seq = self._last_mempool_seq.get(peer)
             if last_seq is not None and last_seq == current_seq:
                 return 0
 
         sent = 0
-        try:
-            p = self.port
-        except AttributeError:
-            p = 0
+        p = self.port
         for chunk in self._mempool_chunks():
             if not chunk:
                 continue
@@ -76,11 +71,7 @@ class MempoolSyncHandler(BroadcastHandlerProxy):
         chunks, cur = [], []
         base = {"type": "MEMPOOL", "data": []}
         for tx in txs:
-            try:
-                d = tx.to_dict() if callable(tx.to_dict) else dict(tx)
-            except (AttributeError, TypeError):
-                d = tx
-
+            d = tx.to_dict() if callable(tx.to_dict) else dict(tx)
             test = dict(base)
             test["data"] = cur + [d]
             enc = json.dumps(self._encode(test), separators=CFG.CANONICAL_SEP).encode("utf-8")

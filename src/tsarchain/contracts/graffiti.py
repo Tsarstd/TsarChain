@@ -112,11 +112,7 @@ def validate_graffiti_file(size_bytes: int, mime: str | None = None, filename: s
     Validasi ukuran & tipe file graffiti sesuai kebijakan.
     Mengembalikan MIME ternormalisasi (lowercase) jika valid, atau raise ValueError jika melanggar.
     """
-    try:
-        size_int = int(size_bytes)
-    except Exception:
-        log.exception("[validate_graffiti_file] unexpected error")
-        raise ValueError("bad_size_bytes") from None
+    size_int = int(size_bytes)
     if size_int <= 0:
         raise ValueError("bad_size_bytes")
     if size_int > CFG.GRAFFITI_MAX_SIZE_BYTES:
@@ -130,7 +126,6 @@ def validate_graffiti_file(size_bytes: int, mime: str | None = None, filename: s
     ext = ""
     if filename:
         ext = os.path.splitext(filename)[1].lstrip(".").lower()
-    log.info("mime=%s", mime_norm)
     if mime_norm and _is_valid_mime(mime_norm):
         if _MIME_ALLOWED and mime_norm not in _MIME_ALLOWED:
             raise ValueError("mime_not_allowed")
@@ -924,34 +919,18 @@ def _find_pool_utxos(utxo_db, art_id: str) -> list[dict]:
     """
     spk_hex = _pool_spk_bytes(art_id).hex()
     out: list[dict] = []
-    # Coba via index get() jika tersedia
-    try:
-        bucket = utxo_db.get(spk_hex) or {}
-    except (AttributeError, TypeError):
-        bucket = {}
+    bucket = utxo_db.get(spk_hex) or {}
     if type(bucket) is dict:
         for key, entry in bucket.items():
             txid_hex, idx_str = key.split(":")
             if type(entry) is dict:
                 tx_out = entry.get("tx_out")
             else:
-                try:
-                    tx_out = entry.tx_out
-                except AttributeError:
-                    tx_out = None
+                tx_out = entry.tx_out
             if type(tx_out) is dict:
                 amt = int(tx_out.get("amount", 0))
             else:
-                try:
-                    amt = int(tx_out.amount or 0)
-                except (AttributeError, TypeError):
-                    if type(entry) is dict:
-                        amt = int(entry.get("amount", 0) or 0)
-                    else:
-                        try:
-                            amt = int(entry.amount or 0)
-                        except (AttributeError, TypeError):
-                            amt = 0
+                amt = int(tx_out.amount or 0)
             out.append({
                 "txid": txid_hex,
                 "vout": int(idx_str),
@@ -959,29 +938,19 @@ def _find_pool_utxos(utxo_db, art_id: str) -> list[dict]:
                 "script_pubkey": spk_hex,
             })
 
-    # Fallback: scan utxo_db.utxos in-memory
-    try:
-        utxos_dict = utxo_db.utxos or {}
-    except AttributeError:
-        utxos_dict = {}
+    utxos_dict = utxo_db.utxos or {}
     for key, entry in utxos_dict.items():
         if type(entry) is dict:
             tx_out = entry.get("tx_out")
         else:
-            try:
-                tx_out = entry.tx_out
-            except AttributeError:
-                tx_out = None
+            tx_out = entry.tx_out
         if tx_out is None:
             tx_out = entry
         
         if type(tx_out) is dict:
             spk_obj = tx_out.get("script_pubkey")
         else:
-            try:
-                spk_obj = tx_out.script_pubkey
-            except AttributeError:
-                spk_obj = None
+            spk_obj = tx_out.script_pubkey
         if spk_obj is None:
             continue
         try:
@@ -996,10 +965,7 @@ def _find_pool_utxos(utxo_db, art_id: str) -> list[dict]:
             if type(tx_out) is dict:
                 amt = int(tx_out.get("amount", 0) or 0)
             else:
-                try:
-                    amt = int(tx_out.amount or 0)
-                except (AttributeError, TypeError):
-                    amt = 0
+                amt = int(tx_out.amount or 0)
             txid_hex, idx_str = key.split(":")
             out.append({
                 "txid": txid_hex,

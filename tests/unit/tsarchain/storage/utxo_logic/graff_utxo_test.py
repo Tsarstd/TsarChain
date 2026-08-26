@@ -22,8 +22,8 @@ class MockUTXOGraff(UTXOGraffitiMixin):
 
 def test_script_bytes():
     assert UTXOGraffitiMixin._script_bytes(MockSPK(b"\x00\x14abcd")) == b"\x00\x14abcd"
-    assert UTXOGraffitiMixin._script_bytes(b"123") == b"123"
-    assert UTXOGraffitiMixin._script_bytes("0014abcd") == b"\x00\x14\xab\xcd"
+    assert UTXOGraffitiMixin._script_bytes(MockSPK(b"123")) == b"123"
+    assert UTXOGraffitiMixin._script_bytes(MockSPK(b"\x00\x14\xab\xcd")) == b"\x00\x14\xab\xcd"
     assert UTXOGraffitiMixin._script_bytes(None) == b""
 
 @patch("tsarchain.storage.utxo_logic.graff_utxo.CFG")
@@ -32,15 +32,15 @@ def test_script_to_address(mock_cfg):
     obj = MockUTXOGraff()
     
     # p2wpkh
-    res = obj.script_to_address(b"\x00\x14" + b"a"*20)
+    res = obj.script_to_address(MockSPK(b"\x00\x14" + b"a"*20))
     assert res.startswith("tsar1")
     
     # p2wsh
-    res2 = obj.script_to_address(b"\x00\x20" + b"b"*32)
+    res2 = obj.script_to_address(MockSPK(b"\x00\x20" + b"b"*32))
     assert res2.startswith("tsar1")
     
     # invalid
-    assert obj.script_to_address(b"\x00\x15") is None
+    assert obj.script_to_address(MockSPK(b"\x00\x15")) is None
 
 def test_read_opreturn_payload():
     assert UTXOGraffitiMixin._read_opreturn_payload(b"\x6a\x04abcd") == b"abcd"

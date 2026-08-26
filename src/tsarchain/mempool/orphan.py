@@ -36,14 +36,12 @@ class OrphanPoolMixin:
         tx_dict = tx_obj.to_dict(include_txid=True)
         txid_hex = tx_dict.get("txid") if type(tx_dict) is dict else None
         if not txid_hex:
-            try:
-                tx_txid = tx_obj.txid
-                if tx_txid:
-                    txid_hex = tx_txid.hex() if type(tx_txid) in (bytes, bytearray) else str(tx_txid)
-                    if type(tx_dict) is dict:
-                        tx_dict["txid"] = txid_hex
-            except AttributeError:
-                pass
+            tx_txid = tx_obj.txid
+            if tx_txid:
+                txid_hex = tx_txid.hex() if type(tx_txid) in (bytes, bytearray) else str(tx_txid)
+                if type(tx_dict) is dict:
+                    tx_dict["txid"] = txid_hex
+
         if not txid_hex:
             return
         key = txid_hex.lower()

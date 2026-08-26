@@ -64,35 +64,20 @@ class UTXOLocalHandler(BroadcastHandlerProxy):
         new_mempool = []
         in_chain = set()
         for block in self.blockchain.chain:
-            try:
-                txs = block.transactions or []
-            except AttributeError:
-                txs = []
+            txs = block.transactions or []
             for block_tx in txs:
-                try:
-                    txid_val = block_tx.txid
-                    in_chain.add(txid_val.hex() if txid_val else "")
-                except AttributeError:
-                    in_chain.add("")
+                txid_val = block_tx.txid
+                in_chain.add(txid_val.hex() if txid_val else "")
 
         for tx in current_mempool:
-            try:
-                tx_hex = tx.txid.hex() if tx.txid else ""
-            except AttributeError:
-                tx_hex = ""
+            tx_hex = tx.txid.hex() if tx.txid else ""
             if tx_hex not in in_chain:
                 new_mempool.append(tx)
 
-        try:
-            save_pool = self.mempool.save_pool
-            if callable(save_pool):
-                save_pool(new_mempool)
-            else:
-                self.mempool.clear()
-                for tx in new_mempool:
-                    self.mempool.add_tx(tx)
-                self.mempool.flush()
-        except AttributeError:
+        save_pool = self.mempool.save_pool
+        if callable(save_pool):
+            save_pool(new_mempool)
+        else:
             self.mempool.clear()
             for tx in new_mempool:
                 self.mempool.add_tx(tx)

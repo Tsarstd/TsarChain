@@ -63,7 +63,7 @@ def test_txout_init(mock_script):
 def test_txout_init_invalid(mock_script):
     with pytest.raises(ValueError):
         TxOut(-1, mock_script)
-    with pytest.raises(TypeError):
+    with pytest.raises((TypeError, AttributeError)):
         TxOut(100, "not a script")
 
 def test_txout_to_dict(mock_script):
@@ -113,7 +113,8 @@ def test_tx_init_coinbase():
 
 def test_tx_init_compute_fail():
     with patch("tsarchain.core.tx.Tx.compute_txid", side_effect=Exception("test")):
-        tx = Tx() # Should catch exception
+        with pytest.raises(Exception, match="test"):
+            Tx()
 
 def test_tx_set_fee_from_input_amounts():
     txin = TxIn(b"a"*32, 0)
@@ -157,16 +158,10 @@ def test_tx_sign_input(mock_sk, mock_sign, mock_bip, mock_script):
         assert txin.witness[0] == b"der\x01" # SIGHASH_ALL
         assert txin.witness[1] == b"pubkey"
 
-        # Cover serialize fallback on prev_output
-        prev_out_serialize = MagicMock()
-        del prev_out_serialize.script_pubkey # ensure no script_pubkey
-        prev_out_serialize.serialize.return_value = b"\x00\x14" + b"b"*20
-        tx.sign_input(0, "00"*32, prev_out_serialize, 100)
-        assert txin.witness[1] == b"pubkey"
-
-        # Cover line 76: isinstance(prev_output, (bytes, bytearray))
-        prev_out_bytes = b"\x00\x14" + b"c"*20
-        tx.sign_input(0, "00"*32, prev_out_bytes, 100)
+        # Another valid script_pubkey
+        prev_out2 = MagicMock()
+        prev_out2.script_pubkey.serialize.return_value = b"\x00\x14" + b"b"*20
+        tx.sign_input(0, "00"*32, prev_out2, 100)
         assert txin.witness[1] == b"pubkey"
 
         # Invalid p2wpkh
@@ -174,7 +169,7 @@ def test_tx_sign_input(mock_sk, mock_sign, mock_bip, mock_script):
         with pytest.raises(ValueError):
             tx.sign_input(0, "00"*32, prev_out, 100)
             
-        with pytest.raises(TypeError):
+        with pytest.raises((TypeError, AttributeError)):
             tx.sign_input(0, "00"*32, 123, 100)
 
 @patch("tsarchain.core.tx.is_p2wpkh")

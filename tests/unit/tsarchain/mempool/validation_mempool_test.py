@@ -24,24 +24,21 @@ class TestTxMempoolValidator:
 
     def test_script_to_address(self, validator):
         assert validator._script_to_address(None) is None
-        assert validator._script_to_address(b"") is None
-        assert validator._script_to_address("deadbeef") is None
+        assert validator._script_to_address(DummyScript(b"")) is None
+        assert validator._script_to_address(DummyScript(b"deadbeef")) is None
         
         # P2WPKH: 0x00 0x14 + 20 bytes
         p2wpkh_bytes = b'\x00\x14' + b'\x01' * 20
-        addr1 = validator._script_to_address(p2wpkh_bytes)
+        addr1 = validator._script_to_address(DummyScript(p2wpkh_bytes))
         assert addr1 is not None
 
         # P2WSH: 0x00 0x20 + 32 bytes
         p2wsh_bytes = b'\x00\x20' + b'\x02' * 32
-        addr2 = validator._script_to_address(p2wsh_bytes)
+        addr2 = validator._script_to_address(DummyScript(p2wsh_bytes))
         assert addr2 is not None
 
         # object with serialize
         assert validator._script_to_address(DummyScript(p2wpkh_bytes)) == addr1
-        
-        # str hex
-        assert validator._script_to_address(p2wpkh_bytes.hex()) == addr1
 
     def test_get_utxo_amount(self, validator):
         assert validator._get_utxo_amount({"amount": 100}) == 100
@@ -52,7 +49,7 @@ class TestTxMempoolValidator:
         mock_obj.amount = 400
         assert validator._get_utxo_amount(mock_obj) == 400
         
-        with pytest.raises(ValueError):
+        with pytest.raises((ValueError, AttributeError)):
             validator._get_utxo_amount("invalid")
 
     def test_txin_prev_txid(self, validator):
@@ -70,16 +67,16 @@ class TestTxMempoolValidator:
 
     def test_lookup_utxo_entry(self, validator):
         snapshot = {
-            "aaa:0": "entry1",
-            ("bbb", 1): "entry2",
-            "ccc": {2: "entry3"}
+            "aaaa:0": "entry1",
+            ("bbbb", 1): "entry2",
+            "cccc": {2: "entry3"}
         }
-        assert validator._lookup_utxo_entry(snapshot, "aaa", 0) == "entry1"
-        assert validator._lookup_utxo_entry(snapshot, "bbb", 1) == "entry2"
-        assert validator._lookup_utxo_entry(snapshot, "ccc", 2) == "entry3"
+        assert validator._lookup_utxo_entry(snapshot, "aaaa", 0) == "entry1"
+        assert validator._lookup_utxo_entry(snapshot, "bbbb", 1) == "entry2"
+        assert validator._lookup_utxo_entry(snapshot, "cccc", 2) == "entry3"
 
         validator.utxo.lookup_entry.return_value = "entry4"
-        assert validator._lookup_utxo_entry(snapshot, "ddd", 3) == "entry4"
+        assert validator._lookup_utxo_entry(snapshot, "dddd", 3) == "entry4"
 
         assert validator._lookup_utxo_entry(snapshot, None, 0) is None
         
@@ -91,9 +88,9 @@ class TestTxMempoolValidator:
         
         # Test key as bytes in dict
         snapshot_bytes_key = {
-            b"aaa:0": "entry6"
+            b"aaaa:0": "entry6"
         }
-        assert validator._lookup_utxo_entry(snapshot_bytes_key, "aaa", 0) == "entry6"
+        assert validator._lookup_utxo_entry(snapshot_bytes_key, "aaaa", 0) == "entry6"
 
     @patch("tsarchain.mempool.validation.get_utxo_script_bytes", return_value=b"script")
     def test_utxo_snapshot_to_items(self, mock_get_script, validator):
@@ -120,64 +117,71 @@ class TestTxMempoolValidator:
         mock_cfg.GRAFFITI_COMMENT_MAX_BYTES = 200
         mock_cfg.GRAFFITI_COMMENT_MIN_FEE = 10
         
+        def _make_spk(raw=b""):
+            m = MagicMock()
+            m.serialize.return_value = raw
+            return m
+
         # Test non-OP_RETURN or no magic
         mock_last_pushdata.return_value = b"NOT_MAGIC"
-        assert validator._validate_graffiti_output(b"some_bytes") is True
+        assert validator._validate_graffiti_output(_make_spk(b"some_bytes")) is True
         
         # Test size too large
         mock_last_pushdata.return_value = b"ART\x00" + b"X" * 100
-        assert validator._validate_graffiti_output(b"some_bytes") is False
+        assert validator._validate_graffiti_output(_make_spk(b"some_bytes")) is False
         assert validator.last_error_reason == "graffiti_opreturn_too_large"
         
         # Test invalid payload
         mock_last_pushdata.return_value = b"ART\x00" + b"X" * 10
         mock_graffiti.parse_payload.return_value = None
-        assert validator._validate_graffiti_output(b"some_bytes") is False
+        assert validator._validate_graffiti_output(_make_spk(b"some_bytes")) is False
         assert validator.last_error_reason == "graffiti_payload_invalid"
         
         # Test POST
         mock_graffiti.parse_payload.return_value = {"event": "POST", "size": 0}
-        assert validator._validate_graffiti_output(b"some_bytes") is False
+        assert validator._validate_graffiti_output(_make_spk(b"some_bytes")) is False
         assert validator.last_error_reason == "graffiti_size_invalid"
         
         mock_graffiti.parse_payload.return_value = {"event": "POST", "size": 2000}
-        assert validator._validate_graffiti_output(b"some_bytes") is False
+        assert validator._validate_graffiti_output(_make_spk(b"some_bytes")) is False
         assert validator.last_error_reason == "graffiti_size_exceeds_limit"
         
         mock_graffiti.parse_payload.return_value = {"event": "POST", "size": 500}
-        assert validator._validate_graffiti_output(b"some_bytes") is True
+        assert validator._validate_graffiti_output(_make_spk(b"some_bytes")) is True
         
         # Test COMMENT
         mock_graffiti.parse_payload.return_value = {"event": "COMMENT", "comment_len": 0}
-        assert validator._validate_graffiti_output(b"some_bytes") is False
+        assert validator._validate_graffiti_output(_make_spk(b"some_bytes")) is False
         assert validator.last_error_reason == "graffiti_comment_empty"
         
         mock_graffiti.parse_payload.return_value = {"event": "COMMENT", "comment_len": 300}
-        assert validator._validate_graffiti_output(b"some_bytes") is False
+        assert validator._validate_graffiti_output(_make_spk(b"some_bytes")) is False
         assert validator.last_error_reason == "graffiti_comment_too_large"
         
         mock_graffiti.parse_payload.return_value = {"event": "COMMENT", "comment_len": 100, "amount": 5, "tip": 0}
-        assert validator._validate_graffiti_output(b"some_bytes") is False
+        assert validator._validate_graffiti_output(_make_spk(b"some_bytes")) is False
         assert validator.last_error_reason == "graffiti_comment_fee_too_low"
         
         mock_graffiti.parse_payload.return_value = {"event": "COMMENT", "comment_len": 100, "amount": 15, "tip": -1}
-        assert validator._validate_graffiti_output(b"some_bytes") is False
+        assert validator._validate_graffiti_output(_make_spk(b"some_bytes")) is False
         assert validator.last_error_reason == "graffiti_comment_tip_negative"
         
         mock_graffiti.parse_payload.return_value = {"event": "COMMENT", "comment_len": 100, "amount": 15, "tip": 5}
-        assert validator._validate_graffiti_output(b"some_bytes") is True
+        assert validator._validate_graffiti_output(_make_spk(b"some_bytes")) is True
         
         # Test formats
-        assert validator._validate_graffiti_output("invalid_hex_string") is True
-        assert validator._validate_graffiti_output("") is True
+        assert validator._validate_graffiti_output(_make_spk(b"")) is True
         mock_obj = MagicMock()
         mock_obj.serialize.return_value = b"serialized"
         assert validator._validate_graffiti_output(mock_obj) is True
-        assert validator._validate_graffiti_output("abcdef") is True # valid hex, no pushdata
+        assert validator._validate_graffiti_output(_make_spk(b"\xab\xcd\xef")) is True
 
     @patch("tsarchain.mempool.validation.compute_tx_weight_vsize")
     def test_validate_transaction_invalid_size(self, mock_compute, validator):
         tx = MagicMock(spec=Tx)
+        tx.txid = b"txid"
+        tx.inputs = []
+        tx.outputs = []
         tx.is_coinbase = True
         assert not validator.validate_transaction(tx, {})
 
@@ -194,9 +198,10 @@ class TestTxMempoolValidator:
     @patch("tsarchain.mempool.validation.compute_tx_weight_vsize")
     def test_validate_transaction_limits(self, mock_compute, validator):
         tx = MagicMock(spec=Tx)
+        tx.txid = b"txid"
         tx.is_coinbase = False
-        tx.inputs = [1] * 10
-        tx.outputs = [1] * 10
+        tx.inputs = [MagicMock() for _ in range(10)]
+        tx.outputs = [MagicMock() for _ in range(10)]
         
         with patch("tsarchain.mempool.validation.CFG") as mock_cfg:
             mock_cfg.DEBUG_BENCHMARKS = False
@@ -229,7 +234,7 @@ class TestTxMempoolValidator:
             assert validator.last_error_reason == "tx_inputs_exceed_limit"
             
             # Outputs exceed limit
-            tx.inputs = [1] * 2
+            tx.inputs = [MagicMock() for _ in range(2)]
             mock_cfg.MAX_TX_OUTPUTS = 5
             assert not validator.validate_transaction(tx, {})
             assert validator.last_error_reason == "tx_outputs_exceed_limit"
@@ -238,8 +243,9 @@ class TestTxMempoolValidator:
     @patch.object(TxMempoolValidator, "_validate_graffiti_output")
     def test_validate_transaction_invalid_graffiti_output(self, mock_graffiti_val, mock_compute, validator):
         tx = MagicMock(spec=Tx)
+        tx.txid = b"txid"
         tx.is_coinbase = False
-        tx.inputs = [1]
+        tx.inputs = [MagicMock()]
         out1 = MagicMock()
         tx.outputs = [out1]
         
@@ -264,6 +270,7 @@ class TestTxMempoolValidator:
     @patch("tsarchain.mempool.validation.is_p2wpkh")
     def test_validate_transaction_payout(self, mock_is_p2wpkh, mock_is_p2wsh, mock_script_bytes, mock_graffiti, mock_val_graf, mock_compute, validator):
         tx = MagicMock(spec=Tx)
+        tx.txid = b"txid"
         tx.is_coinbase = False
         tx.inputs = [MagicMock()]
         tx.outputs = [MagicMock(), MagicMock()]
@@ -374,6 +381,7 @@ class TestTxMempoolValidator:
     @patch("tsarchain.mempool.validation.compute_tx_weight_vsize")
     def test_validate_transaction_native_reject(self, mock_compute, mock_native, validator):
         tx = MagicMock(spec=Tx)
+        tx.txid = b"txid"
         tx.is_coinbase = False
         tx.inputs = []
         tx.outputs = []
@@ -406,6 +414,7 @@ class TestTxMempoolValidator:
     @patch("tsarchain.mempool.validation.GRAFFITI")
     def test_validate_transaction_native_success(self, mock_graffiti, mock_utxo_items, mock_compact, mock_native, mock_val_graf, mock_compute, validator):
         tx = MagicMock(spec=Tx)
+        tx.txid = b"txid"
         tx.is_coinbase = False
         tx.inputs = [MagicMock()]
         tx.outputs = [MagicMock()]
@@ -433,6 +442,7 @@ class TestTxMempoolValidator:
             mock_graffiti.parse_from_script.side_effect = [None, {"event": "POST"}, {"event": "POST"}] # current tx (Payout check), current tx (POST check), pool tx
             
             pool_tx = MagicMock()
+            pool_tx.txid = b"txid1"
             pool_tx.outputs = [MagicMock()]
             validator._pool = {"txid1": pool_tx}
             

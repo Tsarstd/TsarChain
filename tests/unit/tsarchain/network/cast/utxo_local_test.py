@@ -82,7 +82,7 @@ def test_clean_mempool_after_chain_replace(sync):
     sync.mempool.save_pool.assert_called_once_with([tx2]) # tx1 is in chain
     
     # Method 2: no save_pool
-    del sync.mempool.save_pool
+    sync.mempool.save_pool = None
     sync._clean_mempool_after_chain_replace()
     
     sync.mempool.clear.assert_called_once()

@@ -28,10 +28,7 @@ class MempoolStorageMixin:
         for k, v in iter_prefix("mempool", b""):
             key = k.decode("utf-8")
             if key == "__meta__":
-                try:
-                    meta = json.loads(v.decode("utf-8")) or {}
-                except Exception:
-                    meta = {}
+                meta = json.loads(v.decode("utf-8")) or {}
                 continue
             if len(v) >= 20:
                 try:
@@ -54,10 +51,7 @@ class MempoolStorageMixin:
             txid = self._normalize_txid(tx_obj.txid)
             recv_at = meta.get("received_at") if type(meta) is dict else None
             if recv_at:
-                try:
-                    tx_obj._received_at = float(recv_at)
-                except AttributeError:
-                    pass
+                tx_obj._received_at = float(recv_at)
 
             hinted_size = None
             if type(meta) is dict:
@@ -86,10 +80,8 @@ class MempoolStorageMixin:
             tx_obj = Tx.from_dict(item)
         else:
             raise TypeError(f"Unsupported mempool entry type: {type(item)}")
-        try:
-            txid_val = tx_obj.txid
-        except AttributeError:
-            txid_val = None
+
+        txid_val = tx_obj.txid
         if not txid_val:
             tx_obj.compute_txid()
         return tx_obj
@@ -116,10 +108,7 @@ class MempoolStorageMixin:
         self.flush(force=False)
 
     def _compute_fee_rate(self, tx_obj: Tx, tx_size: int | None = None) -> float:
-        try:
-            fee = float(tx_obj.fee or 0)
-        except (AttributeError, TypeError):
-            fee = 0.0
+        fee = float(tx_obj.fee or 0)
         if tx_size is None:
             tx_size = _estimate_tx_size_bytes(tx_obj)
         return fee / max(1, int(tx_size))
@@ -153,30 +142,18 @@ class MempoolStorageMixin:
         with batch("mempool") as b:
             b.put(b"__meta__", json.dumps(meta, separators=CFG.CANONICAL_SEP).encode("utf-8"))
             for tx_obj in tx_list:
-                try:
-                    txid_raw = tx_obj.txid
-                except AttributeError:
-                    txid_raw = None
+                txid_raw = tx_obj.txid
                 txid = self._normalize_txid(txid_raw)
                 if not txid:
                     continue
                 tx_size = _estimate_tx_size_bytes(tx_obj)
-                try:
-                    recv_at = float(tx_obj._received_at or now)
-                except (AttributeError, TypeError):
-                    recv_at = float(now)
-                try:
-                    fee = int(tx_obj.fee or 0)
-                except (AttributeError, TypeError):
-                    fee = 0
+                recv_at = float(tx_obj._received_at or now)
+                fee = int(tx_obj.fee or 0)
                 vsize = int(tx_size)
                 weight = int(tx_size * 4)
                 hdr = struct.pack("<dIII", recv_at, fee, vsize, weight)
-                try:
-                    to_storage = tx_obj.to_storage_bytes
-                    tx_bytes = to_storage() if callable(to_storage) else Tx.to_storage_bytes(tx_obj)
-                except (AttributeError, TypeError):
-                    tx_bytes = Tx.to_storage_bytes(tx_obj)
+                to_storage = tx_obj.to_storage_bytes
+                tx_bytes = to_storage() if callable(to_storage) else Tx.to_storage_bytes(tx_obj)
                 payload = hdr + tx_bytes
                 b.put(txid.encode("utf-8"), payload)
         return True
@@ -189,10 +166,7 @@ class MempoolStorageMixin:
             self._pool = OrderedDict()
             self._size_map = {}
             self._prevout_index = {}
-            try:
-                self._tx_prevouts.clear()
-            except (AttributeError, TypeError):
-                pass
+            self._tx_prevouts.clear()
             self._fee_heap = []
             self._heap_entries = {}
             for tx in tx_objects:
@@ -223,14 +197,8 @@ class MempoolStorageMixin:
 
     def add_tx(self, tx: Tx) -> None:
         tx_obj = self._tx_from_any(tx)
-        try:
-            if tx_obj._received_at is None:
-                tx_obj._received_at = time.time()
-        except AttributeError:
-            try:
-                tx_obj._received_at = time.time()
-            except AttributeError:
-                pass
+        if tx_obj._received_at is None:
+            tx_obj._received_at = time.time()
         txid = self._normalize_txid(tx_obj.txid)
         tx_size = _estimate_tx_size_bytes(tx_obj)
         self._ensure_space(tx_size)
@@ -293,10 +261,7 @@ class MempoolStorageMixin:
             self._size_map.clear()
             self.current_size = 0
             self._prevout_index.clear()
-            try:
-                self._tx_prevouts.clear()
-            except (AttributeError, TypeError):
-                pass
+            self._tx_prevouts.clear()
             self._fee_heap.clear()
             self._heap_entries.clear()
         self._mark_dirty()

@@ -202,13 +202,10 @@ def print_system_snapshot(cores_hint: int | None = None):
         table.add_row("CPU Cores", core_info)
 
         if freq:
-            try:
-                base = f"{(freq.min or 0)/1000:.2f}"
-                cur  = f"{(freq.current or 0)/1000:.2f}"
-                mx   = f"{(freq.max or 0)/1000:.2f}"
-                table.add_row("CPU Speed", f"{cur} GHz (base ~{base} / boost ~{mx})")
-            except Exception:
-                pass
+            base = f"{(freq.min or 0)/1000:.2f}"
+            cur  = f"{(freq.current or 0)/1000:.2f}"
+            mx   = f"{(freq.max or 0)/1000:.2f}"
+            table.add_row("CPU Speed", f"{cur} GHz (base ~{base} / boost ~{mx})")
 
         table.add_row("RAM Memory", f"{_human_bytes(vm.total)} total, {_human_bytes(vm.available)} free")
         table.add_row("Disk Space", f"{_human_bytes(du.free)} free of {_human_bytes(du.total)}")

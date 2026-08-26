@@ -58,7 +58,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
                 if block.prev_block_hash != tip_h:
                     potential_fork = True
 
-            if not self._validate_block_before_add(block, block_id, potential_fork, origin, peers, addr, origin_port):
+            if not self._validate_block_before_add(block, block_id, potential_fork, addr, origin_port):
                 return False
 
             old_tip = None
@@ -66,10 +66,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
                 ok = self.blockchain.add_block(block)
             except Exception as exc:
                 ok = False
-                try:
-                    b_h = block.height
-                except AttributeError:
-                    b_h = None
+                b_h = block.height
                 self._log_block_reject(
                     stage="add_block",
                     block_id=block_id,
@@ -79,7 +76,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
                 )
             
             if not ok:
-                ok, old_tip = self._resolve_add_block_failure(block, block_id, potential_fork, origin, peers, addr, origin_port)
+                ok, old_tip = self._resolve_add_block_failure(block, block_id, potential_fork, addr, origin_port)
 
             if not ok:
                 return False
@@ -117,10 +114,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
             phase = str(message.get("phase") or "fluff").strip().lower()
 
             use_dandelion = False
-            try:
-                dpp = self.dandelion
-            except AttributeError:
-                dpp = None
+            dpp = self.dandelion
             use_dandelion = bool(dpp and dpp.enabled(len(peers)))
             is_stem = use_dandelion and phase == "stem"
             if not is_stem:
@@ -149,20 +143,15 @@ class ReceiveHandler(BroadcastHandlerProxy):
 
     def receive_mempool(self, message: Dict[str, Any]):
         try:
-            try:
-                is_caught = self.network.is_caught_up if self.network else None
-                if callable(is_caught):
-                    if not is_caught(freshness=20.0, height_slack=0):
-                        if self.network:
-                            self.network._pending_mempool_pull = True
-                            self.network.request_sync(fast=True)
-                        return
-            except AttributeError:
-                pass
-            try:
-                bc_height = int(self.blockchain.height)
-            except (AttributeError, TypeError, ValueError):
-                bc_height = -1
+            is_caught = self.network.is_caught_up if self.network else None
+            if callable(is_caught):
+                if not is_caught(freshness=20.0, height_slack=0):
+                    if self.network:
+                        self.network._pending_mempool_pull = True
+                        self.network.request_sync(fast=True)
+                    return
+
+            bc_height = int(self.blockchain.height)
             if bc_height < 0:
                 if self.network:
                     self.network._pending_mempool_pull = True
@@ -180,11 +169,8 @@ class ReceiveHandler(BroadcastHandlerProxy):
                 if self.mempool.add_valid_tx(tx):
                     added_count += 1
 
-            try:
-                recheck_fn = self.mempool.recheck_orphans
-                rechecked = recheck_fn() if callable(recheck_fn) else 0
-            except AttributeError:
-                rechecked = 0
+            recheck_fn = self.mempool.recheck_orphans
+            rechecked = recheck_fn() if callable(recheck_fn) else 0
             if rechecked:
                 added_count += rechecked
                 log.debug("[receive_mempool] Revalidated %s orphan transactions", rechecked)
@@ -200,15 +186,13 @@ class ReceiveHandler(BroadcastHandlerProxy):
 # =============================================================================
 
 
-    def _validate_block_before_add(self, block: Block, block_id: str, potential_fork: bool, origin: Tuple[str, int] | None, peers: Set[Tuple[str, int]], addr, origin_port) -> bool:
+    def _validate_block_before_add(self, block: Block, block_id: str, potential_fork: bool, addr, origin_port) -> bool:
         # Defer full validation to the fork resolution path; downstream logic (swap_tip_if_better/add_block)
         # enforces all consensus rules (PoW, UTXO, sigops, etc.) against the correct parent state.
         if potential_fork:
             return True
-        try:
-            b_h = block.height
-        except AttributeError:
-            b_h = None
+
+        b_h = block.height
         if not self._native_precheck_block(block):
             self._log_block_reject(
                 stage="precheck",
@@ -219,10 +203,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
             )
             return False
         if not self.blockchain.validate_block(block):
-            try:
-                reason = self.blockchain._last_block_validation_error
-            except AttributeError:
-                reason = None
+            reason = self.blockchain._last_block_validation_error
             self._log_block_reject(
                 stage="validate",
                 block_id=block_id,
@@ -258,10 +239,8 @@ class ReceiveHandler(BroadcastHandlerProxy):
             "max_tx_outputs": int(CFG.MAX_TX_OUTPUTS),
             "enforce_low_s": True,
         }
-        try:
-            b_h = int(block.height or 0)
-        except (AttributeError, TypeError, ValueError):
-            b_h = 0
+
+        b_h = int(block.height or 0)
         try:
             if utxo_items is not None:
                 tx_payloads = self._parse_block_txs_compact(block)
@@ -293,17 +272,11 @@ class ReceiveHandler(BroadcastHandlerProxy):
     
 
     def _build_native_prevout_snapshot(self, block: Block):
-        try:
-            lookup = self.utxodb.lookup_entry
-        except AttributeError:
-            lookup = None
+        lookup = self.utxodb.lookup_entry
         if not callable(lookup):
             return None
 
-        try:
-            txs = block.transactions or []
-        except AttributeError:
-            txs = []
+        txs = block.transactions or []
         if not txs:
             return {}
 
@@ -319,15 +292,9 @@ class ReceiveHandler(BroadcastHandlerProxy):
             return str(value).lower()
 
         for tx in txs:
-            try:
-                tx_txid = tx.txid
-            except AttributeError:
-                tx_txid = None
+            tx_txid = tx.txid
             txid_lower = _txid_lower(tx_txid)
-            try:
-                is_cb = bool(tx.is_coinbase)
-            except AttributeError:
-                is_cb = False
+            is_cb = bool(tx.is_coinbase)
             if is_cb:
                 if txid_lower:
                     processed_txids.add(txid_lower)
@@ -343,28 +310,14 @@ class ReceiveHandler(BroadcastHandlerProxy):
 
 
     def _process_tx_inputs_for_snapshot(self, tx, lookup, snapshot, utxo_items, processed_txids, _txid_lower):
-        try:
-            inputs = tx.inputs or []
-        except AttributeError:
-            inputs = []
+        inputs = tx.inputs or []
         for tx_input in inputs:
-            try:
-                prev_txid = tx_input.txid
-            except AttributeError:
-                try:
-                    prev_txid = tx_input.prev_tx
-                except AttributeError:
-                    prev_txid = None
+            prev_txid = tx_input.txid
             prev_txid_lower = _txid_lower(prev_txid)
             if prev_txid_lower is None:
                 return False
-            try:
-                prev_index = int(tx_input.vout)
-            except (AttributeError, TypeError, ValueError):
-                try:
-                    prev_index = int(tx_input.prev_index or 0)
-                except (AttributeError, TypeError, ValueError):
-                    prev_index = 0
+
+            prev_index = int(tx_input.vout)
             if prev_txid_lower in processed_txids:
                 continue
             snap_key = f"{prev_txid_lower}:{prev_index}"
@@ -393,10 +346,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
         if type(candidate) is dict:
             tx_out = candidate.get("tx_out") or candidate
         else:
-            try:
-                tx_out = candidate.tx_out or candidate
-            except AttributeError:
-                tx_out = candidate
+            tx_out = candidate.tx_out or candidate
 
         script_bytes = self._native_script_bytes(tx_out)
         if script_bytes is None and type(candidate) is dict:
@@ -407,33 +357,15 @@ class ReceiveHandler(BroadcastHandlerProxy):
         if type(tx_out) is dict:
             amount_val = tx_out.get("amount")
         else:
-            try:
-                amount_val = tx_out.amount
-            except AttributeError:
-                if type(candidate) is dict:
-                    amount_val = candidate.get("amount")
-                else:
-                    try:
-                        amount_val = candidate.amount
-                    except AttributeError:
-                        amount_val = None
+            amount_val = tx_out.amount
         amount_int = int(amount_val if amount_val is not None else 0)
 
         if type(candidate) is dict:
             is_cb = bool(candidate.get("is_coinbase", False))
             born = int(candidate.get("block_height", candidate.get("height", 0)) or 0)
         else:
-            try:
-                is_cb = bool(candidate.is_coinbase)
-            except AttributeError:
-                is_cb = False
-            try:
-                born = int(candidate.block_height or 0)
-            except (AttributeError, TypeError, ValueError):
-                try:
-                    born = int(candidate.height or 0)
-                except (AttributeError, TypeError, ValueError):
-                    born = 0
+            is_cb = bool(candidate.is_coinbase)
+            born = int(candidate.block_height or 0)
 
         return amount_int, script_bytes, is_cb, born
 
@@ -441,107 +373,54 @@ class ReceiveHandler(BroadcastHandlerProxy):
     def _parse_block_txs_compact(self, block: Block): #NOSONAR
         tx_payloads = []
 
-        try:
-            txs = block.transactions or []
-        except AttributeError:
-            txs = []
+        txs = block.transactions or []
         for tx in txs:
-            try:
-                version = int(tx.version)
-            except (AttributeError, TypeError, ValueError):
-                version = 1
-            try:
-                locktime = int(tx.locktime)
-            except (AttributeError, TypeError, ValueError):
-                locktime = 0
+            version = int(tx.version)
+            locktime = int(tx.locktime)
             inputs_payload = []
-            try:
-                inputs = tx.inputs or []
-            except AttributeError:
-                inputs = []
+            inputs = tx.inputs or []
             for tx_input in inputs:
-                try:
-                    prev_txid_b = tx_input.txid
-                except AttributeError:
-                    try:
-                        prev_txid_b = tx_input.prev_tx
-                    except AttributeError:
-                        prev_txid_b = None
+                prev_txid_b = tx_input.txid
                 if type(prev_txid_b) is str:
-                    try:
-                        prev_txid_b = bytes.fromhex(prev_txid_b)
-                    except ValueError:
-                        prev_txid_b = None
+                    prev_txid_b = bytes.fromhex(prev_txid_b)
                 if type(prev_txid_b) not in (bytes, bytearray) or len(prev_txid_b) != 32:
                     raise ValueError("txid_missing")
-                try:
-                    prev_index = int(tx_input.vout)
-                except (AttributeError, TypeError, ValueError):
-                    try:
-                        prev_index = int(tx_input.prev_index or 0)
-                    except (AttributeError, TypeError, ValueError):
-                        prev_index = 0
-                try:
-                    seq = int(tx_input.sequence)
-                except (AttributeError, TypeError, ValueError):
-                    seq = 0xffffffff
+
+                prev_index = int(tx_input.vout)
+                seq = int(tx_input.sequence)
                 wit_vec = []
-                try:
-                    witness = tx_input.witness or []
-                except AttributeError:
-                    witness = []
+                witness = tx_input.witness or []
                 for w in witness:
                     if type(w) in (bytes, bytearray):
                         wit_vec.append(bytes(w))
                     elif type(w) is str:
-                        try:
-                            wit_vec.append(bytes.fromhex(w))
-                        except ValueError:
-                            raise ValueError("witness_invalid")
+                        wit_vec.append(bytes.fromhex(w))
                     else:
                         raise ValueError("witness_invalid")
                 inputs_payload.append((bytes(prev_txid_b), prev_index, seq, wit_vec))
 
             outputs_payload = []
-            try:
-                outputs = tx.outputs or []
-            except AttributeError:
-                outputs = []
+            outputs = tx.outputs or []
             for tx_out in outputs:
                 if type(tx_out) is dict:
                     amt = int(tx_out.get("amount", 0) or 0)
                     spk_obj = tx_out.get("script_pubkey")
                 else:
-                    try:
-                        amt = int(tx_out.amount or 0)
-                    except (AttributeError, TypeError, ValueError):
-                        amt = 0
-                    try:
-                        spk_obj = tx_out.script_pubkey
-                    except AttributeError:
-                        spk_obj = None
+                    amt = int(tx_out.amount or 0)
+                    spk_obj = tx_out.script_pubkey
                 spk_bytes = self._native_script_bytes(spk_obj)
                 if spk_bytes is None:
                     raise ValueError("spk_missing")
                 outputs_payload.append((amt, spk_bytes))
 
-            try:
-                txid_b = tx.txid
-            except AttributeError:
-                txid_b = None
+            txid_b = tx.txid
             if type(txid_b) is str:
-                try:
-                    txid_b = bytes.fromhex(txid_b)
-                except ValueError:
-                    txid_b = None
+                txid_b = bytes.fromhex(txid_b)
 
             if type(txid_b) not in (bytes, bytearray) or len(txid_b) != 32:
                 raise ValueError("txid_missing")
 
-            try:
-                is_cb = bool(tx.is_coinbase)
-            except AttributeError:
-                is_cb = False
+            is_cb = bool(tx.is_coinbase)
 
             tx_payloads.append((version, locktime, inputs_payload, outputs_payload, bytes(txid_b), is_cb))
 
@@ -552,25 +431,18 @@ class ReceiveHandler(BroadcastHandlerProxy):
     def _native_script_bytes(candidate) -> bytes | None:
         if candidate is None:
             return None
-        try:
-            ser = candidate.serialize
-            if callable(ser):
-                return ser()
-        except AttributeError:
-            pass
+
+        ser = candidate.serialize
+        if callable(ser):
+            return ser()
         if type(candidate) in (bytes, bytearray):
             return bytes(candidate)
         if type(candidate) is str:
-            try:
-                return bytes.fromhex(candidate)
-            except ValueError:
-                return None
-        try:
-            script_attr = candidate.script_pubkey
-            if script_attr is not None:
-                return ReceiveHandler._native_script_bytes(script_attr)
-        except AttributeError:
-            pass
+            return bytes.fromhex(candidate)
+
+        script_attr = candidate.script_pubkey
+        if script_attr is not None:
+            return ReceiveHandler._native_script_bytes(script_attr)
         return None
 
 
@@ -579,8 +451,6 @@ class ReceiveHandler(BroadcastHandlerProxy):
         block: Block,
         block_id: str,
         potential_fork: bool,
-        origin: Tuple[str, int] | None,
-        peers: Set[Tuple[str, int]],
         addr,
         origin_port
     ) -> Tuple[bool, Block | None]:
@@ -591,22 +461,12 @@ class ReceiveHandler(BroadcastHandlerProxy):
             # Fast-path fork resolution: if this block attaches to tip-1, try swap_tip_if_better
             if len(self.blockchain.chain) >= 2:
                 parent = self.blockchain.chain[-2]
-                try:
-                    p_h = parent.height
-                except AttributeError:
-                    p_h = 0
+                p_h = parent.height
                 expected_h = p_h + 1
-                try:
-                    parent_hash_fn = parent.hash
-                    parent_hash = parent_hash_fn() if callable(parent_hash_fn) else parent_hash_fn
-                except AttributeError:
-                    parent_hash = None
-                try:
-                    b_h = block.height
-                    b_prev = block.prev_block_hash
-                except AttributeError:
-                    b_h = None
-                    b_prev = None
+                parent_hash_fn = parent.hash
+                parent_hash = parent_hash_fn() if callable(parent_hash_fn) else parent_hash_fn
+                b_h = block.height
+                b_prev = block.prev_block_hash
                 if b_h == expected_h and b_prev == parent_hash:
                     alt = self.blockchain.swap_tip_if_better(block)
                     if alt is not None:
@@ -616,18 +476,13 @@ class ReceiveHandler(BroadcastHandlerProxy):
             log.warning("[_resolve_add_block_failure] swap_tip_if_better failed", exc_info=True)
 
         if not ok:
-            try:
-                reason_str = self.blockchain._last_block_validation_error
-            except AttributeError:
-                reason_str = None
+            reason_str = self.blockchain._last_block_validation_error
             if self.network and type(reason_str) is str and (
                 "Height mismatch" in reason_str or "prev_block_hash" in reason_str
             ):
                 self.network.request_sync(fast=True)
-            try:
-                b_h = block.height
-            except AttributeError:
-                b_h = None
+
+            b_h = block.height
             self._log_block_reject(
                 stage="add_block",
                 block_id=block_id,
@@ -677,11 +532,8 @@ class ReceiveHandler(BroadcastHandlerProxy):
             self.utxodb.update(block.transactions, block.height, block_hash=blk_hash)
             self.maybe_flush_local_utxo(block.height)
 
-        try:
-            recheck_fn = self.mempool.recheck_orphans
-            recovered = recheck_fn() if callable(recheck_fn) else 0
-        except AttributeError:
-            recovered = 0
+        recheck_fn = self.mempool.recheck_orphans
+        recovered = recheck_fn() if callable(recheck_fn) else 0
         if recovered:
             log.info("[_post_add_block_success] Revalidated %s orphan mempool txs", recovered)
 

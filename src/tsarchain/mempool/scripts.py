@@ -17,19 +17,13 @@ __all__ = ["get_utxo_script_bytes", "extract_script_bytes", "script_to_address"]
 def extract_script_bytes(spk) -> bytes | None:
     if spk is None:
         return None
-    try:
-        ser = spk.serialize
-        if callable(ser):
-            return ser()
-    except AttributeError:
-        pass
     if type(spk) in (bytes, bytearray):
         return bytes(spk)
     if type(spk) is str:
-        try:
-            return bytes.fromhex(spk)
-        except ValueError:
-            return None
+        return bytes.fromhex(spk)
+    ser = spk.serialize
+    if callable(ser):
+        return ser()
     return None
 
 
@@ -47,13 +41,6 @@ def script_to_address(script) -> str | None:
 
 
 def get_utxo_script_bytes(utxo_entry) -> bytes:
-    try:
-        ser = utxo_entry.serialize
-        if callable(ser):
-            return ser()
-    except AttributeError:
-        pass
-
     if type(utxo_entry) is dict:
         tx_out = utxo_entry.get("tx_out")
         if tx_out is not None:
@@ -62,10 +49,7 @@ def get_utxo_script_bytes(utxo_entry) -> bytes:
                 if res is not None:
                     return res
             else:
-                try:
-                    spk = tx_out.script_pubkey
-                except AttributeError:
-                    spk = None
+                spk = tx_out.script_pubkey
                 if spk is not None:
                     res = extract_script_bytes(spk)
                     if res is not None:
@@ -76,24 +60,18 @@ def get_utxo_script_bytes(utxo_entry) -> bytes:
             return res
 
     else:
-        try:
-            tx_out = utxo_entry.tx_out
-        except AttributeError:
-            tx_out = None
+        ser = utxo_entry.serialize
+        if callable(ser):
+            return ser()
+        tx_out = utxo_entry.tx_out
         if tx_out is not None:
-            try:
-                spk = tx_out.script_pubkey
-            except AttributeError:
-                spk = None
+            spk = tx_out.script_pubkey
             if spk is not None:
                 res = extract_script_bytes(spk)
                 if res is not None:
                     return res
         
-        try:
-            spk = utxo_entry.script_pubkey
-        except AttributeError:
-            spk = None
+        spk = utxo_entry.script_pubkey
         if spk is not None:
             res = extract_script_bytes(spk)
             if res is not None:

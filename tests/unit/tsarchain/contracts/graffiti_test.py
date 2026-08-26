@@ -136,7 +136,7 @@ def test_validate_graffiti_file():
         validate_graffiti_file(0, mime="image/png")
     with pytest.raises(ValueError, match="bad_size_bytes"):
         validate_graffiti_file(-1, mime="image/png")
-    with pytest.raises(ValueError, match="bad_size_bytes"):
+    with pytest.raises(ValueError):
         validate_graffiti_file("invalid", mime="image/png")
     with pytest.raises(ValueError, match="graffiti_too_large"):
         validate_graffiti_file(MockCFG.GRAFFITI_MAX_SIZE_BYTES + 1, mime="image/png")

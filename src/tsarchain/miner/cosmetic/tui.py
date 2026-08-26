@@ -85,10 +85,7 @@ def _enable_windows_vt100() -> None:
 
 
 def _human_bytes(n: float) -> str:
-    try:
-        n = float(n)
-    except Exception:
-        return "?"
+    n = float(n)
     for unit in ("B", "KB", "MB", "GB", "TB", "PB"):
         if n < 1024.0:
             return f"{n:.1f} {unit}"
@@ -97,10 +94,7 @@ def _human_bytes(n: float) -> str:
 
 
 def _human_hps(hps: float) -> str:
-    try:
-        hps = float(hps)
-    except Exception:
-        return "? H/s"
+    hps = float(hps)
     units = ["H/s", "kH/s", "MH/s", "GH/s", "TH/s"]
     i = 0
     while hps >= 1000.0 and i < len(units) - 1:
@@ -178,10 +172,7 @@ class MinerTUI:
             )
             self._hashrate_thread.start()
 
-        try:
-            self.console.clear()
-        except Exception:
-            pass
+        self.console.clear()
 
         self._live = Live(
             get_renderable=self._make_layout,
@@ -202,10 +193,7 @@ class MinerTUI:
     def stop(self) -> None:
         self._stop_event.set()
         if self._live is not None:
-            try:
-                self._live.stop()
-            except Exception:
-                pass
+            self._live.stop()
             self._live = None
         try:
             sys.stdout.write("\033[?25h\033[0m")
@@ -221,10 +209,7 @@ class MinerTUI:
 
     def force_refresh(self) -> None:
         if self._live is not None:
-            try:
-                self._live.refresh()
-            except Exception:
-                pass
+            self._live.refresh()
 
     # ---- internal loops ----
 
@@ -299,34 +284,22 @@ class MinerTUI:
 
         peers_in, peers_out = 0, 0
         if callable(self.peer_counts_fn):
-            try:
-                res = self.peer_counts_fn()
-                if res:
-                    peers_in, peers_out = res
-            except Exception:
-                pass
+            res = self.peer_counts_fn()
+            if res:
+                peers_in, peers_out = res
 
         height = -1
         if callable(self.chain_height_fn):
-            try:
-                height = self.chain_height_fn()
-            except Exception:
-                pass
+            height = self.chain_height_fn()
 
         thread_str = "N/A"
         if self.show_threads and self.thread_monitor:
-            try:
-                tc = self.thread_monitor.get_thread_counts()
-                thread_str = f"{tc['alive']} alive / {tc['total']} total"
-            except Exception:
-                pass
+            tc = self.thread_monitor.get_thread_counts()
+            thread_str = f"{tc['alive']} alive / {tc['total']} total"
 
         mempool_cnt = 0
         if callable(self.mempool_count_fn):
-            try:
-                mempool_cnt = self.mempool_count_fn() or 0
-            except Exception:
-                pass
+            mempool_cnt = self.mempool_count_fn() or 0
 
         left_table = Table(show_header=False, box=None, padding=(0, 1))
         left_table.add_column("Metric", style="bold cyan", no_wrap=True)

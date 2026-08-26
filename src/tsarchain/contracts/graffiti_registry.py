@@ -362,15 +362,6 @@ class GraffitiRegistry:
 
 
     def _flush(self) -> None:
-        try:
-            stored_counts = self._stored_counts
-        except AttributeError:
-            self._stored_counts = {"comments": {}, "payouts": {}, "proofs": {}}
-        try:
-            stored_posts = self._stored_posts
-        except AttributeError:
-            self._stored_posts = set()
-
         with batch("graffiti") as b:
             current_posts = self.data.get("posts") or {}
             for art_id, post in current_posts.items():

@@ -20,6 +20,8 @@ class DummyNode(GossipHandler):
         self.seen_blocks = set()
         self.seen_txs = set()
         self.port = 8333
+        self._gossip_conn_cache = None
+        self._gossip_conn_lock = None
         
     def _encode(self, msg):
         return msg

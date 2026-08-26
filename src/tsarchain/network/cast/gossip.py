@@ -63,10 +63,8 @@ class GossipHandler(BroadcastHandlerProxy):
             if not force and block_id in self.seen_blocks:
                 return 0
             self.seen_blocks.add(block_id)
-        try:
-            p = self.port
-        except AttributeError:
-            p = 0
+
+        p = self.port
 
         success = self.send_gossip(
             peers,
@@ -148,14 +146,8 @@ class GossipHandler(BroadcastHandlerProxy):
 
 
     def _get_gossip_cache(self) -> Tuple[OrderedDict, threading.RLock]:
-        try:
-            cache = self._gossip_conn_cache
-        except AttributeError:
-            cache = None
-        try:
-            cache_lock = self._gossip_conn_lock
-        except AttributeError:
-            cache_lock = None
+        cache = self._gossip_conn_cache
+        cache_lock = self._gossip_conn_lock
         if cache is None or cache_lock is None:
             cache = self._gossip_conn_cache = OrderedDict()
             cache_lock = self._gossip_conn_lock = threading.RLock()
@@ -216,10 +208,8 @@ class GossipHandler(BroadcastHandlerProxy):
     def _cleanup_socket(self, entry: Dict[str, Any]):
         sock = entry.get("sock")
         if sock:
-            try:
-                sock.close()
-            except Exception:
-                log.exception("[_cleanup_socket]")
+            sock.close()
+            log.info("[_cleanup_socket]")
 
 
     def _handle_send_failure(self, peer: Tuple[str, int], entry: Optional[Dict[str, Any]], sock: Optional[socket.socket]):

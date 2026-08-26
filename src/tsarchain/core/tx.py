@@ -34,12 +34,9 @@ _COINBASE_EXTRA_STRUCT = "<BHHq"
 def _extract_script_bytes(script) -> bytes:
     if script is None:
         return b""
-    try:
-        ser = script.serialize
-        if callable(ser):
-            return ser()
-    except AttributeError:
-        pass
+    ser = script.serialize
+    if callable(ser):
+        return ser()
     if type(script) in (bytes, bytearray):
         return bytes(script)
     if type(script) is str:
@@ -70,10 +67,7 @@ class Tx:
         self.reward = reward
 
         if auto_compute_txid:
-            try:
-                self.compute_txid()
-            except Exception:
-                log.exception("auto_compute_err")
+            self.compute_txid()
             
     # -------- Fee helpers ----------
 
@@ -98,30 +92,16 @@ class Tx:
     # -------- Signing ----------
 
     def sign_input(self, index: int, priv_key_hex: str, prev_output, amount: int) -> bool:
-        try:
-            spk = prev_output.script_pubkey
-        except AttributeError:
-            spk = None
+        spk = prev_output.script_pubkey
 
         if spk is not None:
-            try:
-                script_pubkey_bytes = spk.serialize()
-            except (AttributeError, TypeError):
-                if type(spk) in (bytes, bytearray):
-                    script_pubkey_bytes = bytes(spk)
-                elif type(spk) is str:
-                    script_pubkey_bytes = bytes.fromhex(spk)
-                else:
-                    script_pubkey_bytes = bytes(spk or b"")
+            script_pubkey_bytes = spk.serialize()
         elif type(prev_output) in (bytes, bytearray):
             script_pubkey_bytes = bytes(prev_output)
         elif type(prev_output) is str:
             script_pubkey_bytes = bytes.fromhex(prev_output)
         else:
-            try:
-                script_pubkey_bytes = prev_output.serialize()
-            except AttributeError:
-                raise TypeError("prev_output must be TxOut, Script, or bytes")
+            script_pubkey_bytes = prev_output.serialize()
 
         if not (len(script_pubkey_bytes) >= 22 and script_pubkey_bytes[0] == 0x00 and script_pubkey_bytes[1] == 0x14):
             raise ValueError("Not a P2WPKH")
@@ -152,10 +132,7 @@ class Tx:
                 if type(prev_spk) is str:
                     prev_spk = bytes.fromhex(prev_spk)
 
-            try:
-                script_sig = to_bytes(vin.script_sig.serialize())
-            except AttributeError:
-                script_sig = to_bytes(vin.script_sig or b"")
+            script_sig = to_bytes(vin.script_sig.serialize())
             wstack = [ to_bytes(w) for w in (vin.witness or []) ]
 
             if prev_spk is not None:
@@ -371,17 +348,11 @@ class TxIn:
         self.vout = int(val)
 
     def to_dict(self) -> dict:
-        try:
-            ser_hex = self.script_sig.to_hex
-            if callable(ser_hex):
-                ss_hex = ser_hex()
-            else:
-                ss_hex = str(self.script_sig or "")
-        except AttributeError:
-            if type(self.script_sig) in (bytes, bytearray):
-                ss_hex = self.script_sig.hex()
-            else:
-                ss_hex = str(self.script_sig or "")
+        ser_hex = self.script_sig.to_hex
+        if callable(ser_hex):
+            ss_hex = ser_hex()
+        else:
+            ss_hex = str(self.script_sig or "")
         return {
             "txid": self.txid.hex(),
             "vout": self.vout,
@@ -412,11 +383,8 @@ class TxOut:
     def __init__(self, amount: int, script_pubkey: Script):
         if type(amount) is not int or amount < 0:
             raise ValueError("amount must be integer >= 0")
-        try:
-            _ = script_pubkey.serialize
-        except AttributeError:
-            raise TypeError("script_pubkey must be Script instance")
-            
+
+        _ = script_pubkey.serialize
         self.amount = amount
         self.script_pubkey = script_pubkey
 

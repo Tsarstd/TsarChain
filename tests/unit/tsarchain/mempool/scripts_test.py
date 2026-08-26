@@ -22,10 +22,9 @@ class DummyTxOut:
 
 class DummyEntry:
     def __init__(self, spk=None, tx_out=None):
-        if spk:
-            self.script_pubkey = spk
-        if tx_out:
-            self.tx_out = tx_out
+        self.serialize = None
+        self.script_pubkey = spk
+        self.tx_out = tx_out
 
 def test_get_utxo_script_bytes_dict_with_tx_out_obj():
     spk_hex = '0014' + 'a'*40
