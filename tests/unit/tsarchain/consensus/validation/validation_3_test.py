@@ -34,6 +34,11 @@ class ValidationProxy:
 unit test for validation.py
 """
 
+class FakeTxOut:
+    def __init__(self, amount, script_pubkey):
+        self.amount = amount
+        self.script_pubkey = script_pubkey
+
 # =============================================================================
 # CATEGORY 3: VALIDATION COVERAGE TESTS
 # =============================================================================
@@ -342,7 +347,11 @@ def test_validate_graffiti_various_spk(mocker):
             b.transactions[1].inputs = [Mock(txid=b"prev", vout=0)]
             mock_utxo = Mock()
             c.ensure_utxodb.return_value = mock_utxo
-            mock_utxo.lookup_entry.return_value = {"amount": 10, "script_pubkey": b"s", "is_coinbase": False, "block_height": 0}
+            mock_utxo.lookup_entry.return_value = {
+                'tx_out': FakeTxOut(10, b"s"),
+                'is_coinbase': False,
+                'block_height': 0,
+            }
             
             assert c._validate_transactions(b) is True
 
@@ -562,27 +571,12 @@ def test_normalize_snapshot_objects():
             c._serialize_tx_cached = Mock(return_value=b"x")
             
             store = Mock()
-            class CandidateObj:
-                def __init__(self):
-                    self.validator = BlockValidator(self)
-                    self.amount = 10
-                    self.script_pubkey = b"s"
-                    self.is_coinbase = False
-                    self.block_height = 0
-                    self.tx_out = self # recursive for branch
                     
-            store.lookup_entry = Mock(return_value=CandidateObj())
-            c._validate_transactions(b, utxo_store=store)
-            
-            class CandidateObjNoTxOut:
-                def __init__(self):
-                    self.validator = BlockValidator(self)
-                    self.amount = 10
-                    self.script_pubkey = b"s"
-                    self.is_coinbase = False
-                    self.block_height = 0
-                    self.tx_out = None
-            store.lookup_entry = Mock(return_value=CandidateObjNoTxOut())
+            store.lookup_entry = Mock(return_value={
+                'tx_out': FakeTxOut(10, b"s"),
+                'is_coinbase': False,
+                'block_height': 0,
+            })
             c._validate_transactions(b, utxo_store=store)
 
 def test_missing_txid_and_same_block_spend():
@@ -627,7 +621,11 @@ def test_missing_txid_and_same_block_spend():
             tx3 = CovP4DummyTx(is_coinbase=False, txid_hex="tx3")
             tx3.inputs = [Mock(txid="223344", vout=0), Mock(txid="223344", vout=0)]
             b3 = CovP4DummyBlock(transactions=[cb, tx3])
-            store.lookup_entry = Mock(return_value={"amount": 10, "script_pubkey": b"s"})
+            store.lookup_entry.return_value = {
+                'tx_out': FakeTxOut(10, b"s"),
+                'is_coinbase': False,
+                'block_height': 0,
+            }
             c._validate_transactions(b3, utxo_store=store)
 
 def test_build_payload_bytes_key():
@@ -769,7 +767,11 @@ def test_native_validation_branches():
             c._serialize_tx_cached = Mock(return_value=b"x")
             
             store = Mock()
-            store.lookup_entry.return_value = {"amount": 10, "script_pubkey": b"s"}
+            store.lookup_entry.return_value = {
+                'tx_out': FakeTxOut(10, b"s"),
+                'is_coinbase': False,
+                'block_height': 0,
+            }
             
             # test native_validate_block_txs_compact returns False
             mock_H.native_validate_block_txs_compact.return_value = (False, "my_reason", None)
@@ -908,7 +910,11 @@ def test_spk_to_address_p2wsh():
             mock_H.native_validate_block_txs_compact.return_value = (True, None, None)
             mock_H.last_pushdata.return_value = None
             store = Mock()
-            store.lookup_entry.return_value = {"amount": 10, "script_pubkey": b"s"}
+            store.lookup_entry.return_value = {
+                'tx_out': FakeTxOut(10, b"s"),
+                'is_coinbase': False,
+                'block_height': 0,
+            }
             
             with patch("tsarchain.consensus.validation.GRAFFITI") as mock_graf:
                 mock_graf.parse_from_script.return_value = None
@@ -1028,7 +1034,11 @@ def test_normalize_snapshot_entry_object():
             mock_H.native_validate_block_txs_compact.return_value = (True, None, None)
             mock_H.last_pushdata.return_value = None
             store = Mock()
-            store.lookup_entry.return_value = UtxoObj()
+            store.lookup_entry.return_value = {
+                'tx_out': UtxoObj(),
+                'is_coinbase': True,
+                'block_height': 100,
+            }
             with patch("tsarchain.consensus.validation.GRAFFITI") as mock_graf:
                 mock_graf.parse_from_script.return_value = None
                 c._validate_transactions(b, utxo_store=store)

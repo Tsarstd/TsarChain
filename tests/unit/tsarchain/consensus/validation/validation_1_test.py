@@ -41,6 +41,11 @@ class ValidationProxy:
 unit test for validation.py
 """
 
+class FakeTxOut:
+    def __init__(self, amount, script_pubkey):
+        self.amount = amount
+        self.script_pubkey = script_pubkey
+
 # =============================================================================
 # CATEGORY 1: TRANSACTION VALIDATION TESTS
 # =============================================================================
@@ -156,11 +161,9 @@ def validation_chain(mocker):
     mock_utxo = mocker.patch('tsarchain.consensus.validation.UTXODB')
     mock_utxo_instance = Mock()
     mock_utxo.return_value = mock_utxo_instance
-    # lookup_entry mengembalikan entry untuk prevout
     def lookup_entry(txid_hex, vout):
         return {
-            'amount': 100_000_000,
-            'script_pubkey': b'\x76\xa9\x14' + b'\x00' * 20 + b'\x88\xac',
+            'tx_out': FakeTxOut(100_000_000, b'\x76\xa9\x14' + b'\x00' * 20 + b'\x88\xac'),
             'is_coinbase': False,
             'block_height': 1,
         }

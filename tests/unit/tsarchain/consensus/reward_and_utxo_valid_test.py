@@ -422,7 +422,6 @@ class TestUTXOValidator:
         """When chain empty and genesis lock active, skip flush."""
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.CFG", mock_config)
         monkeypatch.setattr("tsarchain.consensus.utxo_validate.UTXODB", mock_utxodb_class)
-        monkeypatch.setattr("tsarchain.consensus.utxo_validate.GENESIS_HASH", b'fakehash')
 
         from tsarchain.consensus.utxo_validate import UTXOValidator
 

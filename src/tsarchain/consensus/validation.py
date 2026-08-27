@@ -81,8 +81,7 @@ class BlockValidator:
                 
                 store = self.blockchain.ensure_utxodb() or UTXODB()
                 has_lookup = callable(store.lookup_entry)
-                utxo_view = store.utxos if not has_lookup else None
-                utxo_view = store.load_utxo_set() if (not has_lookup and utxo_view is None) else utxo_view
+                utxo_view = None if has_lookup else (store.utxos or store.load_utxo_set())
                 state_token = self._chain_state_token_locked()
 
             # 5. Additional Validation Related to Store/UTXO
@@ -302,12 +301,8 @@ class BlockValidator:
                 if not art_id:
                     continue
 
-                try:
-                    pool_addr = GRAFFITI.derive_pool_address(art_id)
-                    min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
-                except Exception:
-                    continue
-
+                pool_addr = GRAFFITI.derive_pool_address(art_id)
+                min_fee = int(GRAFFITI.calc_upload_fee_sats(int(meta.get("size") or 0)))
                 paid = 0
                 for out in outputs:
                     out_spk = out.script_pubkey
@@ -708,40 +703,18 @@ class BlockValidator:
         return str(value)
 
 
-    def _normalize_snapshot_entry(self, entry, key_desc: str): 
-        if type(entry) is dict:
-            tx_out = entry.get("tx_out") or entry
-            script_bytes = extract_script_bytes(tx_out)
-            if script_bytes is None:
-                script_bytes = extract_script_bytes(entry.get("script_pubkey"))
-            if script_bytes is None:
-                log.warning("[native_snapshot] entry %s missing script", key_desc)
-                return None
-            if type(tx_out) is dict:
-                amt_val = tx_out.get("amount")
-            else:
-                amt_val = tx_out.amount
-            if amt_val is None:
-                amt_val = entry.get("amount", 0)
-            amt = int(amt_val or 0)
-            is_cb = bool(entry.get("is_coinbase", False))
-            born = int(entry.get("block_height", entry.get("height", 0)) or 0)
-        else:
-            tx_out = entry.tx_out or entry
-            script_bytes = extract_script_bytes(tx_out)
-            if script_bytes is None:
-                log.warning("[native_snapshot] entry %s missing script", key_desc)
-                return None
+    def _normalize_snapshot_entry(self, entry, key_desc: str):
+        tx_out = entry.get("tx_out", entry)
+        script_bytes = extract_script_bytes(tx_out)
+        if script_bytes is None:
+            log.warning("[native_snapshot] entry %s missing script", key_desc)
+            return None
 
-            amt_val = tx_out.amount
-            amt = int(amt_val or 0)
-            is_cb = bool(entry.is_coinbase)
-            born = int(entry.block_height or 0)
         return {
-            "amount": amt,
+            "amount": int(tx_out.amount or 0),
             "script_pubkey": script_bytes,
-            "is_coinbase": is_cb,
-            "block_height": born,
+            "is_coinbase": bool(entry.get("is_coinbase", False)),
+            "block_height": int(entry.get("block_height", entry.get("height", 0)) or 0),
         }
 
 
