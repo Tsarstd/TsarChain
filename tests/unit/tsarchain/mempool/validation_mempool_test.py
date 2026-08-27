@@ -506,3 +506,15 @@ class TestTxMempoolValidator:
             mock_graffiti.parse_from_script.side_effect = [None, None, {"event": "PAYOUT", "art_id": "art1", "epoch": 5, "recipients": [{"addr": "addr1", "amount": 100}]}]
             reg_mock.get_post.return_value = {"stats": {"pool_balance": 1000, "last_paid_epoch": 4}}
             assert validator.validate_transaction(tx, {})
+
+
+def test_txpool_len_and_size():
+    from tsarchain.mempool.pool import TxPool
+    with patch.object(TxPool, '_load_storage_pool', return_value=([], {})):
+        pool = TxPool(inherit_state=False)
+        assert len(pool) == 0
+        assert pool.size() == 0
+        pool._pool["tx1"] = MagicMock()
+        pool._pool["tx2"] = MagicMock()
+        assert len(pool) == 2
+        assert pool.size() == 2

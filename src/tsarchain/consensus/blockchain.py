@@ -242,7 +242,7 @@ class Blockchain():
 
     def get_mempool_size(self) -> int:
         if self._mempool is not None:
-            return self._mempool.size()
+            return len(self._mempool._pool)
         return 0
 
     @property

@@ -76,9 +76,13 @@ def _safe_mempool_count(runner) -> int:
     if not runner:
         return 0
     if runner.blockchain:
-        return runner.blockchain.get_mempool_size()
+        count = runner.blockchain.get_mempool_size()
+        if count > 0:
+            return count
     if runner.network and runner.network.broadcast and runner.network.broadcast.mempool:
         return len(runner.network.broadcast.mempool._pool)
+    if runner.blockchain:
+        return runner.blockchain.get_mempool_size()
     return 0
 
 

@@ -224,9 +224,12 @@ def test_from_dict(mock_config, mock_block_module):
 
 def test_attach_mempool(mock_config):
     bc = Blockchain()
+    assert bc.get_mempool_size() == 0
     mock_pool = Mock()
+    mock_pool._pool = {"tx1": "data", "tx2": "data"}
     bc.attach_mempool(mock_pool)
     assert bc.get_mempool() is mock_pool
+    assert bc.get_mempool_size() == 2
 
 
 def test_shutdown(mock_config):

@@ -6,6 +6,8 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from tsarchain.network.cast.receive import ReceiveHandler
+from tsarchain.core.tx import TxOut
+from tsarchain.utils.helpers import Script, OP_0
 
 class DummyNode(ReceiveHandler):
     def __init__(self):
@@ -66,12 +68,27 @@ def test_native_script_bytes():
     mock_wrapper.script_pubkey = mock_inner
     assert ReceiveHandler._native_script_bytes(mock_wrapper) == b"\x11\x22\x33"
 
+    # Real TxOut instance test (no serialize method on TxOut itself)
+    real_script = Script([OP_0, b"\x12" * 20])
+    real_txout = TxOut(amount=5000, script_pubkey=real_script)
+    assert ReceiveHandler._native_script_bytes(real_txout) == real_script.serialize()
+
 def test_normalize_native_prevout(dummy_node):
+    # Test with real TxOut in dict entry (matching production UTXODB lookup_entry)
+    real_script = Script([OP_0, b"\x34" * 20])
+    real_txout = TxOut(amount=7777, script_pubkey=real_script)
+    real_entry = {
+        "tx_out": real_txout,
+        "is_coinbase": False,
+        "block_height": 21,
+    }
+    res = dummy_node._normalize_native_prevout(real_entry)
+    assert res == (7777, real_script.serialize(), False, 21)
+
     mock_spk1 = MagicMock()
     mock_spk1.serialize.return_value = b"\xaa\xbb\xcc"
     mock_tx_out1 = MagicMock()
     mock_tx_out1.amount = 1000
-    mock_tx_out1.serialize = None
     mock_tx_out1.script_pubkey = mock_spk1
     mock_entry1 = MagicMock()
     mock_entry1.tx_out = mock_tx_out1
@@ -85,7 +102,6 @@ def test_normalize_native_prevout(dummy_node):
     mock_spk2.serialize.return_value = b"\xdd\xee"
     mock_tx_out2 = MagicMock()
     mock_tx_out2.amount = 2000
-    mock_tx_out2.serialize = None
     mock_tx_out2.script_pubkey = mock_spk2
     mock_entry2 = MagicMock()
     mock_entry2.tx_out = mock_tx_out2

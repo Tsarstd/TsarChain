@@ -18,6 +18,8 @@ def test_broadcast_init_with_mocks(mock_dandelion, mock_txpool, mock_utxodb_clas
     assert broadcast.seen_blocks == set()
     assert broadcast.seen_txs == set()
     assert broadcast._processing_blocks == set()
+    assert broadcast._gossip_conn_cache == {}
+    assert broadcast._gossip_conn_lock is not None
     
 @patch('tsarchain.network.broadcast.Blockchain')
 @patch('tsarchain.network.broadcast.UTXODB')

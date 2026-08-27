@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import threading
+from collections import OrderedDict
 from typing import Dict, Optional, Set, Tuple, TYPE_CHECKING
 
 from .cast.gossip import GossipHandler
@@ -67,15 +68,18 @@ class Broadcast:
         self._last_mempool_seq: Dict[Tuple[str, int], int] = {}
         self._utxo_last_flush_height = -1
         self.dandelion = DandelionPP(self)
-        self._gossip_conn_cache: Dict = {}
+        self._gossip_conn_cache: OrderedDict = OrderedDict()
+        self._gossip_conn_lock = threading.RLock()
 
     def shutdown(self):
         sockets_to_close = []
-        conn_cache = self._gossip_conn_cache
-        for entry in conn_cache.values():
-            sock = entry.get("sock")
-            if sock:
-                sockets_to_close.append(sock)
+        with self._gossip_conn_lock:
+            conn_cache = self._gossip_conn_cache
+            for entry in conn_cache.values():
+                sock = entry.get("sock")
+                if sock:
+                    sockets_to_close.append(sock)
+            conn_cache.clear()
         for sock in sockets_to_close:
             sock.close()
                     

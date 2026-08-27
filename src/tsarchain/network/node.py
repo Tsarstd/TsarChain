@@ -143,6 +143,7 @@ class Network(NetworkProxy):
 
         self._sync_event = threading.Event()
         self._sync_fast_until = 0.0
+        self._pending_mempool_pull = False
         self.utxodb = self.broadcast.utxodb
 
         # --- Log throttles to reduce console spam

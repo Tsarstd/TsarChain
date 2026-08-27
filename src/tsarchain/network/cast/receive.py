@@ -11,7 +11,7 @@ from ...core.block import Block
 from ...utils import config as CFG
 from .base import BroadcastHandlerProxy
 from ...utils.benchmarks import benchmark
-from ...utils.helpers import native_validate_block_txs, native_validate_block_txs_compact
+from ...utils.helpers import native_validate_block_txs, native_validate_block_txs_compact, extract_script_bytes
 
 from ...utils.tsar_logging import get_ctx_logger
 log = get_ctx_logger("tsarchain.network.cast.receive")
@@ -429,21 +429,7 @@ class ReceiveHandler(BroadcastHandlerProxy):
 
     @staticmethod
     def _native_script_bytes(candidate) -> bytes | None:
-        if candidate is None:
-            return None
-
-        ser = candidate.serialize
-        if callable(ser):
-            return ser()
-        if type(candidate) in (bytes, bytearray):
-            return bytes(candidate)
-        if type(candidate) is str:
-            return bytes.fromhex(candidate)
-
-        script_attr = candidate.script_pubkey
-        if script_attr is not None:
-            return ReceiveHandler._native_script_bytes(script_attr)
-        return None
+        return extract_script_bytes(candidate)
 
 
     def _resolve_add_block_failure( #NOSONAR

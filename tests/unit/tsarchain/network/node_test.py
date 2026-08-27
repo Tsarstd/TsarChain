@@ -82,6 +82,7 @@ def test_network_init_success(mock_cfg, mock_socket, mock_broadcast, mock_deps):
     # Check encode wrapper for broadcast
     encoded = net.broadcast._encode({"test": 1})
     assert isinstance(encoded, dict)
+    assert net._pending_mempool_pull is False
 
 def test_network_init_no_ports(mock_cfg, mock_socket, mock_deps, mock_broadcast):
     Network.active_ports.clear()
